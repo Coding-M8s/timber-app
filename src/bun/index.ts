@@ -1,7 +1,10 @@
-import { BrowserView, BrowserWindow, Updater } from "electrobun/main";
+import { homedir } from "node:os";
+import { BrowserView, BrowserWindow, Updater, Utils } from "electrobun/main";
 import type { AppRPC } from "../shared/rpc";
 import { repositoryChanges } from "./changes";
-import { configuredRepositoryPaths, listRepositories, reloadRepository } from "./git-engine";
+import { reloadRepository } from "./git-engine";
+import { createRepositoryList } from "./repository-list";
+import { settingsFilePath } from "./settings";
 import { createTimberLocator, describeTimberStatus } from "./timber";
 
 const DEV_SERVER_URL = "http://localhost:5173";
@@ -23,13 +26,30 @@ async function mainViewUrl(): Promise<string> {
 const timber = createTimberLocator();
 void timber.current().then(status => console.log(describeTimberStatus(status)));
 
+/** The native folder picker. Null when it was closed without a choice. */
+async function pickFolder(): Promise<string | null> {
+	const [folder] = await Utils.openFileDialog({
+		startingFolder: homedir(),
+		canChooseFiles: false,
+		canChooseDirectory: true,
+		allowsMultipleSelection: false,
+	});
+	return folder || null;
+}
+
+const settingsFile = settingsFilePath();
+console.log(`Settings at ${settingsFile}`);
+const repositories = createRepositoryList({ settingsFile, pickFolder });
+
 const rpc = BrowserView.defineRPC<AppRPC>({
 	maxRequestTime: 15_000,
 	handlers: {
 		requests: {
 			timberStatus: () => timber.current(),
 			recheckTimber: () => timber.refresh(),
-			listRepositories: () => listRepositories(configuredRepositoryPaths()),
+			listRepositories: () => repositories.list(),
+			addRepository: () => repositories.add(),
+			removeRepository: ({ path }) => repositories.remove(path),
 			loadRepository: ({ path }) => reloadRepository(path),
 		},
 		messages: {},

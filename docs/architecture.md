@@ -85,6 +85,44 @@ Nothing that depends on Timber is offered until a usable one is found.
 - In `bun run dev:web`, add `?timber=not-found` or `?timber=too-old` to the
   address to see the notice.
 
+## Saved repository list
+
+The app keeps its own list of repositories, so it is the same after a restart.
+
+- **Where.** One JSON file, `timber-app/settings.json`, in the per-user
+  configuration directory: `$XDG_CONFIG_HOME` or `~/.config` on Linux,
+  `~/Library/Application Support` on macOS, `%APPDATA%` on Windows
+  (`src/bun/settings.ts`). The main process logs the path on start. Each entry
+  holds the path of the primary checkout and the repository's common Git
+  directory. Parsing and formatting are pure, in `src/shared/settings.ts`.
+- **Saving.** The file is written whole to a temporary file beside it, flushed,
+  and renamed into place, so a crash leaves the old file or the new one.
+  Changes run one at a time, and memory changes only after a save worked.
+- **A damaged file.** A file that is not valid settings never stops the app.
+  It starts with an empty list, logs a warning, and first copies the file to
+  `settings.json.damaged`, so the next save does not destroy it.
+- **Adding.** "Add repository" opens the native folder picker in the main
+  process (`src/bun/repository-list.ts`). Git is asked, read-only, which
+  repository owns the folder, so a linked worktree or a folder inside a
+  checkout adds its repository. A folder outside any repository is refused
+  with a message. The request has no time limit, because the picker stays
+  open for as long as the person likes. The picker call blocks the main
+  process, so other requests wait until it closes.
+- **Duplicates.** Two folders are the same repository when Git reports the
+  same common directory for them (`git rev-parse --git-common-dir`, with links
+  resolved), whatever path was picked. Picking a listed repository again
+  selects it and says so.
+- **Removing.** Remove only takes the entry out of the settings file. No Git
+  command runs and nothing in the repository or its folder is touched.
+- **Unavailable.** A saved repository that Git cannot read at its saved path,
+  because the folder is missing or is no longer a primary checkout, stays in
+  the list marked unavailable, with Remove offered. It comes back on the next
+  refresh once the folder does.
+- **Development override.** When `TIMBER_APP_REPOS` is set (paths separated by
+  `;` on Windows or `:` elsewhere), the app shows those repositories instead
+  and leaves the saved list alone. Add and Remove then explain that the
+  variable is set. Paths in it that are not repositories are skipped.
+
 ## Shared state and live updates
 
 Every part of the interface reads one store, so the sidebar, the title bar,
@@ -119,12 +157,19 @@ and the workspace cannot disagree.
   that works clears it. A single reload that Git cannot answer counts as a
   failure, not as a removed repository; only reloading everything changes
   which repositories are listed.
+- **Adding and removing.** After the engine adds or removes a repository the
+  store reloads everything instead of patching its copy, so the screen shows
+  what was saved. The added repository becomes the selection. When nothing
+  changed, the reason is kept as a note below the list until it is dismissed
+  or the next add or remove works.
 - **Refresh.** The Refresh control reloads everything.
 
 In `bun run dev:web` the browser console has `timberMock` for acting out the
 main process: `timberMock.setRepositories(list)`,
-`timberMock.announceChange("/work/timber")`, and
-`timberMock.failReads("Git is busy")` (pass `null` to let reads work again).
+`timberMock.announceChange("/work/timber")`,
+`timberMock.failReads("Git is busy")` (pass `null` to let reads work again),
+and `timberMock.pickFolder("/some/folder")` to choose what "Add repository"
+picks (`null` acts out a closed picker).
 
 ## Milestones
 
@@ -147,8 +192,6 @@ main process: `timberMock.setRepositories(list)`,
   or import Timber's modules as a library. Spawning keeps the two releasable
   apart; importing avoids an output format but ties the app to Timber's
   internals.
-- **Where the repository list lives.** For now it is the `TIMBER_APP_REPOS`
-  environment variable or the starting folder. It needs to become app state.
 - **Rebase backups.** The design shows them, but Timber does not create backup
   branches today. Either Timber gains that, or the app creates them.
 - **Application identifier.** `electrobun.config.ts` holds a placeholder.
@@ -221,6 +264,35 @@ Run for shared state and live updates (issue 2), Linux x64 under WSL with Bun
   one, an announcement for an unknown path led to none, and no full reload
   followed any of them. The window itself was not inspected by eye in this
   run.
+
+Run for the saved repository list (issue 3), Linux x64 under WSL with Bun
+1.4.2, Git 2.43, and Timber 0.1.1:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 145 tests passed, including adding through a linked worktree, a
+  nested folder, and a link, restarting on the same settings file, a missing
+  folder, a damaged file, the override, and a check that adding, listing, and
+  removing leave every file, ref, and index of the temporary repositories as
+  they were.
+- `bun run build:web`, and `bun run dev:web` driven in headless Chrome through
+  `timberMock`: an added repository appeared and was selected, a second add
+  through one of its worktrees reported it as already listed, a plain folder
+  was refused with the message, the unavailable repository showed its note
+  with Remove, and removing every repository left the empty state.
+- `bun run start` under WSLg with `XDG_CONFIG_HOME` pointing at a temporary
+  folder. The interface's own controls were clicked by a temporary script in
+  the main process, and the picker was replaced by a fixed folder (neither is
+  committed). Picking a linked worktree added its repository and wrote the
+  settings file; picking it again answered already listed; after a restart
+  the repository was listed again; a plain folder was refused; with the
+  repository's folder moved away it was listed as unavailable, Remove emptied
+  the saved list, and the files on disk were unchanged; a truncated settings
+  file gave the warning, a `settings.json.damaged` copy, and a working app;
+  with `TIMBER_APP_REPOS` set, Add answered that the list is overridden.
+- The same run with the real picker: "Add repository" opened the native "Open
+  File" dialog, which stayed open for 19 seconds until the app was stopped.
+  Choosing a folder in that dialog by hand was not done in this run, and the
+  window was not inspected by eye.
 
 Not run yet:
 

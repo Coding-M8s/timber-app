@@ -189,11 +189,15 @@ input:focus-visible {
 	overflow-wrap: anywhere;
 }
 
+/* The list scrolls on its own, so what sits below it stays in view however long it gets. */
 .groups {
+	flex: 0 1 auto;
+	min-height: 0;
+	overflow-y: auto;
 	display: flex;
 	flex-direction: column;
 	gap: 8px;
-	padding: 0 6px 12px;
+	padding: 0 6px 8px;
 }
 
 .group {
@@ -219,6 +223,125 @@ input:focus-visible {
 
 .group-header:hover {
 	background: var(--fill-hover);
+}
+
+.group-head {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+}
+
+.group-head .group-header {
+	flex: 1 1 0;
+	min-width: 0;
+}
+
+/* Remove stays out of the way until the header is pointed at or reached by keyboard. */
+.group-remove {
+	width: 24px;
+	height: 24px;
+	opacity: 0;
+}
+
+.group-head:hover .group-remove,
+.group-head:focus-within .group-remove,
+.group-head.unavailable .group-remove {
+	opacity: 1;
+}
+
+.group-head.unavailable .group-name {
+	color: var(--text-3);
+}
+
+.group-flag {
+	flex: none;
+	font-weight: 400;
+	color: var(--error);
+}
+
+.group-missing {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 3px;
+	padding: 4px 10px 6px 23px;
+	font-size: 12px;
+}
+
+.group-missing-text {
+	margin: 0;
+	color: var(--text-3);
+	overflow-wrap: anywhere;
+}
+
+.group-missing-text.path {
+	font-family: var(--font-mono);
+	font-size: 11px;
+}
+
+.text-button {
+	margin-top: 3px;
+	padding: 2px 8px;
+	border: 0;
+	border-radius: 5px;
+	background: var(--fill-hover);
+	color: var(--text-2);
+	font-size: 12px;
+}
+
+.text-button:hover {
+	background: var(--fill-selected);
+	color: var(--text);
+}
+
+.text-button:disabled {
+	color: var(--text-3);
+	cursor: default;
+}
+
+.sidebar-foot {
+	flex: none;
+	display: flex;
+	flex-direction: column;
+	padding: 0 6px 12px;
+}
+
+.sidebar-foot .sidebar-error {
+	align-items: flex-start;
+	margin: 0 2px 8px 4px;
+}
+
+.sidebar-error.info {
+	border-left-color: var(--text-3);
+}
+
+.sidebar-error.info .sidebar-error-title {
+	color: var(--text);
+}
+
+.add-repository {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	height: 28px;
+	padding: 0 6px;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--text-2);
+	font-size: 12px;
+	font-weight: 500;
+	text-align: left;
+}
+
+.add-repository:hover {
+	background: var(--fill-hover);
+	color: var(--text);
+}
+
+.add-repository:disabled {
+	color: var(--text-3);
+	cursor: default;
 }
 
 .chevron {

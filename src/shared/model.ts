@@ -41,5 +41,28 @@ export interface Repository {
 	/** Absolute path of the primary checkout. */
 	path: string;
 	name: string;
+	/**
+	 * False when the saved folder is missing or Git can no longer read it as a
+	 * primary checkout. The repository then stays listed, with no worktrees.
+	 */
+	available: boolean;
 	worktrees: Worktree[];
 }
+
+/** What came of asking to add a repository through the folder picker. */
+export type AddRepositoryResult =
+	| { outcome: "added"; repository: Repository }
+	/** The picked folder belongs to a repository in the list. `repository` is its path there. */
+	| { outcome: "already-listed"; repository: string }
+	| { outcome: "not-a-repository"; folder: string }
+	/** The person closed the picker without choosing. */
+	| { outcome: "cancelled" }
+	/** The list comes from the development override, so the app does not change it. */
+	| { outcome: "overridden" }
+	| { outcome: "failed"; message: string };
+
+/** What came of asking to forget a repository. Nothing on disk changes either way. */
+export type RemoveRepositoryResult =
+	| { outcome: "removed" }
+	| { outcome: "overridden" }
+	| { outcome: "failed"; message: string };

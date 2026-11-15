@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, delimiter, join } from "node:path";
-import { configuredRepositoryPaths, listRepositories, loadRepository, reloadRepository } from "../src/bun/git-engine";
+import { commonDirectory, listRepositories, loadRepository, overrideRepositoryPaths, reloadRepository } from "../src/bun/git-engine";
 
 /** Run Git in a real temporary repository, with a fixed identity and no user configuration. */
 function git(cwd: string, ...args: string[]): void {
@@ -39,6 +39,7 @@ describe("loadRepository", () => {
 	test("lists the primary and linked worktrees with their file status", async () => {
 		const repository = await loadRepository(primary);
 		expect(repository?.name).toBe("sample");
+		expect(repository?.available).toBe(true);
 		expect(repository?.worktrees.map(worktree => [worktree.branch, worktree.primary])).toEqual([["main", true], ["feat/x", false]]);
 
 		const [main, feature] = repository!.worktrees;
@@ -114,9 +115,24 @@ describe("listRepositories", () => {
 	});
 });
 
-describe("configuredRepositoryPaths", () => {
-	test("reads TIMBER_APP_REPOS and falls back to the current folder", () => {
-		expect(configuredRepositoryPaths({ TIMBER_APP_REPOS: ["/a", " /b ", ""].join(delimiter) })).toEqual(["/a", "/b"]);
-		expect(configuredRepositoryPaths({})).toEqual([process.cwd()]);
+describe("commonDirectory", () => {
+	test("is the same for the primary checkout, a linked worktree, and a folder inside either", async () => {
+		const expected = realpathSync(join(primary, ".git"));
+		expect(await commonDirectory(primary)).toBe(expected);
+		expect(await commonDirectory(linked)).toBe(expected);
+		expect(await commonDirectory(join(primary, ".git"))).toBe(expected);
+	});
+
+	test("answers null for a folder that is not a repository", async () => {
+		expect(await commonDirectory(root)).toBeNull();
+		expect(await commonDirectory(join(root, "does-not-exist"))).toBeNull();
+	});
+});
+
+describe("overrideRepositoryPaths", () => {
+	test("reads TIMBER_APP_REPOS, and is null when it names nothing", () => {
+		expect(overrideRepositoryPaths({ TIMBER_APP_REPOS: ["/a", " /b ", ""].join(delimiter) })).toEqual(["/a", "/b"]);
+		expect(overrideRepositoryPaths({})).toBeNull();
+		expect(overrideRepositoryPaths({ TIMBER_APP_REPOS: ` ${delimiter} ` })).toBeNull();
 	});
 });

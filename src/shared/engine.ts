@@ -1,4 +1,4 @@
-import type { Repository, TimberStatus } from "./model";
+import type { AddRepositoryResult, RemoveRepositoryResult, Repository, TimberStatus } from "./model";
 
 /**
  * Everything the interface may ask of the machine it runs on.
@@ -12,7 +12,23 @@ export interface Engine {
 	timberStatus(): Promise<TimberStatus>;
 	/** Look for Timber again, for example after the person installed it. */
 	recheckTimber(): Promise<TimberStatus>;
+	/**
+	 * The saved repositories. One whose folder is missing is still listed,
+	 * marked unavailable.
+	 */
 	listRepositories(): Promise<Repository[]>;
+	/**
+	 * Open the native folder picker and add the repository that the picked
+	 * folder belongs to, which may be one of its linked worktrees. The list is
+	 * saved, so it is still there after a restart.
+	 */
+	addRepository(): Promise<AddRepositoryResult>;
+	/**
+	 * Forget a repository, named by the path of its primary checkout. This only
+	 * changes the app's saved list, never anything in the repository or its
+	 * folder.
+	 */
+	removeRepository(path: string): Promise<RemoveRepositoryResult>;
 	/**
 	 * Read one repository again, named by the path of its primary checkout.
 	 * Null when Git could not read it there.

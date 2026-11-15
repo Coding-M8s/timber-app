@@ -21,6 +21,9 @@ export function createDesktopEngine(): Engine {
 		timberStatus: () => rpc.request.timberStatus({}),
 		recheckTimber: () => rpc.request.recheckTimber({}),
 		listRepositories: () => rpc.request.listRepositories({}),
+		// The folder picker stays open for as long as the person likes.
+		addRepository: () => rpc.request.addRepository({}, { maxRequestTime: Infinity }),
+		removeRepository: path => rpc.request.removeRepository({ path }),
 		loadRepository: path => rpc.request.loadRepository({ path }),
 		onRepositoryChanged: listener => {
 			changeListeners.add(listener);

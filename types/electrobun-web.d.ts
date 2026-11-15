@@ -27,6 +27,7 @@ declare module "electrobun/view" {
 			request: {
 				[Name in keyof Schema["bun"]["requests"]]: (
 					params: Schema["bun"]["requests"][Name]["params"],
+					options?: { maxRequestTime?: number },
 				) => Promise<Schema["bun"]["requests"][Name]["response"]>;
 			};
 		};

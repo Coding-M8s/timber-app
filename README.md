@@ -7,7 +7,7 @@ repository, worktree, agent, and terminal in one window. It is a window onto
 Timber, not a replacement for it, and it has no code editor of its own.
 
 **Status: early scaffold.** The sidebar lists real repositories and worktrees
-with their branch status. Creating, rebasing, and finishing worktrees, agent
+with their branch status, and remembers the repositories you add. Creating, rebasing, and finishing worktrees, agent
 and terminal panes, the diff view, and settings are designed but not built.
 See the [architecture](docs/architecture.md) and [design](docs/design.md) notes.
 
@@ -31,10 +31,10 @@ For the desktop app:
 bun run dev
 ```
 
-The first run downloads the Electrobun toolchain into `.hutch/`. By default the
-app shows the repository it was started from. To show others, list their paths
-in `TIMBER_APP_REPOS`, separated by `;` on Windows or `:` elsewhere. Without a
-usable Timber the app shows install guidance instead; see
+The first run downloads the Electrobun toolchain into `.hutch/`. Use "Add
+repository" in the sidebar to pick a repository folder; the app remembers the
+list, see [saved repository list](docs/architecture.md#saved-repository-list).
+Without a usable Timber the app shows install guidance instead; see
 [finding Timber](docs/architecture.md#finding-timber).
 
 ## Commands
