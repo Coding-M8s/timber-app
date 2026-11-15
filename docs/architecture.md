@@ -61,6 +61,30 @@ To call Timber reliably the app needs machine-readable output from it, for
 example a `--json` option on `timber ls` and on the `done` safety checks. That
 is the main thing this app will ask of Timber. See the open decisions below.
 
+### Finding Timber
+
+Nothing that depends on Timber is offered until a usable one is found.
+
+- On start the main process resolves `timber` from PATH and runs
+  `timber --version`, as an executable plus an argument array
+  (`src/bun/timber.ts`). It logs the result.
+- The app requires Timber 0.1.1 or newer, the first release with the machine
+  interface. The number and the comparison live in
+  `src/shared/timber-version.ts`. A pre-release sorts before its release.
+- The `Engine` contract reports one of three states: ready (path and version),
+  not found, or too old (found and required versions). An executable that
+  fails, or does not print a version, counts as not found.
+- When Timber is not ready, the interface shows a full-window notice with
+  install guidance instead of the worktree list. Retry looks again, so a Timber
+  installed into a folder already on PATH is picked up without a restart. A
+  change to PATH itself still needs a restart, because the app keeps the
+  environment it was started with.
+- For development, `TIMBER_APP_TIMBER_PATH` names the Timber executable to use.
+  It takes precedence over PATH, and a broken value is reported instead of
+  silently falling back.
+- In `bun run dev:web`, add `?timber=not-found` or `?timber=too-old` to the
+  address to see the notice.
+
 ## Milestones
 
 1. **Sidebar, read-only (this scaffold).** Repositories and worktrees with
@@ -113,7 +137,32 @@ Run on Windows with the Electrobun 2.0.6 toolchain:
 - `bun run typecheck:desktop`: no errors against the real SDK, with
   TypeScript 7.
 
+Run for finding Timber (issue 1), Linux x64 with Bun 1.4.2 and Timber 0.1.1:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 45 tests passed, including the three states and the override
+  against real temporary executables.
+- The CI workflow ran on the pull request for this change and passed.
+- `findTimber` against the installed Timber: ready with its path and 0.1.1;
+  not found with an empty PATH; ready through the override with an empty PATH.
+- `bun run build:web`, and `bun run dev:web` in headless Chrome: the ready
+  view and both notices rendered correctly.
+- `bun run start` under WSLg (Ubuntu 24.04 on Windows): at first the window
+  did not open, because the WebKitGTK runtime libraries were missing. After
+  `sudo apt install libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1
+  librsvg2-2` the window opened, found Timber, and listed this repository's
+  worktree. Text fell back to a system font, because Geist is not bundled yet.
+
+Run for the same change on Windows x64 with Bun 1.4.4, no Timber installed:
+
+- `bun run typecheck` and `bun test`: no errors, 45 tests passed.
+- `bun run start`: the window opened on the "Timber is not installed" notice.
+  With a stand-in `timber.cmd` printing 0.1.0 placed on PATH, Retry showed
+  "Timber is too old" with both versions. With it printing 0.1.1, Retry moved
+  on to the normal view. No restart in between. A real Timber for Windows was
+  not tested.
+
 Not run yet:
 
-- Anything on macOS or Linux desktops.
-- The CI workflow.
+- Anything on macOS.
+- A native Linux desktop session, on Wayland or X11. Only WSLg has been run.

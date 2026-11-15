@@ -1,5 +1,5 @@
 import type { RPCSchema } from "electrobun/view";
-import type { Repository } from "./model";
+import type { Repository, TimberStatus } from "./model";
 
 /**
  * The typed bridge between the Bun main process and the interface.
@@ -9,6 +9,8 @@ import type { Repository } from "./model";
 export type AppRPC = {
 	bun: RPCSchema<{
 		requests: {
+			timberStatus: { params: {}; response: TimberStatus };
+			recheckTimber: { params: {}; response: TimberStatus };
 			listRepositories: { params: {}; response: Repository[] };
 		};
 		messages: {};

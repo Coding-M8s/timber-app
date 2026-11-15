@@ -10,6 +10,8 @@ export function createDesktopEngine(): Engine {
 	});
 	new Electroview({ rpc });
 	return {
+		timberStatus: () => rpc.request.timberStatus({}),
+		recheckTimber: () => rpc.request.recheckTimber({}),
 		listRepositories: () => rpc.request.listRepositories({}),
 	};
 }

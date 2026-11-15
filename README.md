@@ -13,7 +13,9 @@ See the [architecture](docs/architecture.md) and [design](docs/design.md) notes.
 
 ## Quick start
 
-You need Git and Bun 1.4.2.
+You need Git, Bun 1.4.2, and for the desktop app
+[Timber](https://github.com/Coding-M8s/timber#quick-start) 0.1.1 or newer on
+your PATH.
 
 ```bash
 bun install --frozen-lockfile
@@ -31,7 +33,9 @@ bun run dev
 
 The first run downloads the Electrobun toolchain into `.hutch/`. By default the
 app shows the repository it was started from. To show others, list their paths
-in `TIMBER_APP_REPOS`, separated by `;` on Windows or `:` elsewhere.
+in `TIMBER_APP_REPOS`, separated by `;` on Windows or `:` elsewhere. Without a
+usable Timber the app shows install guidance instead; see
+[finding Timber](docs/architecture.md#finding-timber).
 
 ## Commands
 

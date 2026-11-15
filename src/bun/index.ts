@@ -1,6 +1,7 @@
 import { BrowserView, BrowserWindow, Updater } from "electrobun/main";
 import type { AppRPC } from "../shared/rpc";
 import { configuredRepositoryPaths, listRepositories } from "./git-engine";
+import { createTimberLocator, describeTimberStatus } from "./timber";
 
 const DEV_SERVER_URL = "http://localhost:5173";
 
@@ -17,10 +18,16 @@ async function mainViewUrl(): Promise<string> {
 	return "views://mainview/index.html";
 }
 
+/** Look for Timber on start, so the answer is ready when the interface asks. */
+const timber = createTimberLocator();
+void timber.current().then(status => console.log(describeTimberStatus(status)));
+
 const rpc = BrowserView.defineRPC<AppRPC>({
 	maxRequestTime: 15_000,
 	handlers: {
 		requests: {
+			timberStatus: () => timber.current(),
+			recheckTimber: () => timber.refresh(),
 			listRepositories: () => listRepositories(configuredRepositoryPaths()),
 		},
 		messages: {},

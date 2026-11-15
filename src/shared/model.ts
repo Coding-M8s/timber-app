@@ -1,3 +1,13 @@
+/**
+ * Whether a usable Timber is installed. Everything that runs Timber depends on
+ * this being "ready".
+ */
+export type TimberStatus =
+	| { state: "ready"; path: string; version: string }
+	/** No Timber answered. `override` is the development override's value when it was set. */
+	| { state: "not-found"; override: string | null }
+	| { state: "too-old"; path: string; found: string; required: string };
+
 /** How a branch stands against its upstream, as of the last fetch. */
 export type SyncState =
 	/** No upstream is configured: the branch has never been published. */
