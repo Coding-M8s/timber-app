@@ -142,12 +142,16 @@ Run for finding Timber (issue 1), Linux x64 with Bun 1.4.2 and Timber 0.1.1:
 - `bun run typecheck` and `bun run typecheck:desktop`: no errors.
 - `bun test`: 45 tests passed, including the three states and the override
   against real temporary executables.
+- The CI workflow ran on the pull request for this change and passed.
 - `findTimber` against the installed Timber: ready with its path and 0.1.1;
   not found with an empty PATH; ready through the override with an empty PATH.
 - `bun run build:web`, and `bun run dev:web` in headless Chrome: the ready
   view and both notices rendered correctly.
-- `bun run start`: built, but the window did not open, because the machine
-  lacks the WebKitGTK runtime libraries. The Linux desktop is still unverified.
+- `bun run start` under WSLg (Ubuntu 24.04 on Windows): at first the window
+  did not open, because the WebKitGTK runtime libraries were missing. After
+  `sudo apt install libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1
+  librsvg2-2` the window opened, found Timber, and listed this repository's
+  worktree. Text fell back to a system font, because Geist is not bundled yet.
 
 Run for the same change on Windows x64 with Bun 1.4.4, no Timber installed:
 
@@ -160,5 +164,5 @@ Run for the same change on Windows x64 with Bun 1.4.4, no Timber installed:
 
 Not run yet:
 
-- Anything on macOS or Linux desktops.
-- The CI workflow.
+- Anything on macOS.
+- A native Linux desktop session, on Wayland or X11. Only WSLg has been run.
