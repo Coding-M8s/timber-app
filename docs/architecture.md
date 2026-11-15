@@ -26,6 +26,21 @@ src/bun        Bun main process: the window, Git queries, later sessions
 `bun run dev:web` runs the interface alone in a browser against the mock
 engine. That loop needs no desktop toolchain and is the default for UI work.
 
+### Two type checks
+
+`bun run typecheck` is the everyday check. It needs no toolchain and applies
+the full strict settings to this project's code, using a small stand-in for
+the Electrobun browser SDK (`types/electrobun-web.d.ts`).
+
+`bun run typecheck:desktop` checks the same code against the real SDK in
+`.hutch/devkit`. Two things about `tsconfig.desktop.json` are deliberate:
+
+- It lists the `electrobun/...` import paths itself instead of extending the
+  devkit's own tsconfig, because that file sets `baseUrl`, which TypeScript 7
+  no longer accepts. Add a line there when the app imports a new SDK entry.
+- It turns `exactOptionalPropertyTypes` off, because the SDK ships as
+  TypeScript source and its own files do not pass that setting.
+
 ## Boundary with Timber
 
 Timber's safety logic must exist once. The app follows two rules:
@@ -90,9 +105,15 @@ Run on Linux x64 with Bun 1.4.2 and Git 2.43 while writing the scaffold:
 - `src/bun/index.ts`, `src/shared/rpc.ts`, and the desktop engine type-check
   against the Electrobun 2.0.6 SDK sources.
 
+Run on Windows with the Electrobun 2.0.6 toolchain:
+
+- `bun run dev:web`: the interface opened in a browser with the sample data.
+- `bun run dev`: the toolchain downloaded and the desktop window launched.
+- `bun run dev:hmr` and `bun run build`: both completed.
+- `bun run typecheck:desktop`: no errors against the real SDK, with
+  TypeScript 7.
+
 Not run yet:
 
-- `bun run dev`, `bun run dev:hmr`, `bun run typecheck:desktop`, and
-  `bun run build`. The Electrobun toolchain could not be downloaded in the
-  environment the scaffold was written in, so the desktop app has never been
-  launched. Run these first on a real machine and record the result here.
+- Anything on macOS or Linux desktops.
+- The CI workflow.

@@ -1,5 +1,13 @@
 {
-  "extends": ["./.hutch/devkit/tsconfig.json", "./tsconfig.json"],
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "electrobun": ["./.hutch/devkit/api/sdks/main/index.ts"],
+      "electrobun/main": ["./.hutch/devkit/api/sdks/main/index.ts"],
+      "electrobun/view": ["./.hutch/devkit/api/browser/index.ts"]
+    },
+    "exactOptionalPropertyTypes": false
+  },
   "include": ["src", "tests"],
   "exclude": ["node_modules", "dist", "build"]
 }

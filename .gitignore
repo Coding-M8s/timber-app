@@ -7,8 +7,9 @@ coverage/
 *.tsbuildinfo
 *.log
 
-# Electrobun devkit and toolchain cache, recreated by `electrobun prepare`
+# Electrobun devkit, toolchain cache, and build scratch, recreated on demand
 .hutch/
+.cottontail-tmp/
 
 # Secrets and local configuration
 .env
