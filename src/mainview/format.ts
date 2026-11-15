@@ -1,4 +1,42 @@
-import type { SyncState, Worktree } from "../shared/model";
+import type { SyncState, TimberStatus, Worktree } from "../shared/model";
+import { REQUIRED_TIMBER_VERSION, TIMBER_OVERRIDE_VARIABLE } from "../shared/timber-version";
+
+/** The command Timber's own quick start gives for installing and for updating. */
+export const TIMBER_INSTALL_COMMAND = "curl -fsSL https://github.com/Coding-M8s/timber/releases/latest/download/install.sh | sh";
+export const TIMBER_INSTALL_GUIDE = "https://github.com/Coding-M8s/timber#quick-start";
+
+export interface TimberProblem {
+	title: string;
+	text: string;
+	/** The line above the install command. */
+	action: string;
+}
+
+/** What to tell the person when Timber is not usable, or null when it is ready. */
+export function describeTimberProblem(status: TimberStatus): TimberProblem | null {
+	switch (status.state) {
+		case "ready":
+			return null;
+		case "too-old":
+			return {
+				title: "Timber is too old",
+				text: `Found Timber ${status.found} at ${status.path}. Timber app needs ${status.required} or newer.`,
+				action: "Update it with:",
+			};
+		case "not-found":
+			return status.override
+				? {
+					title: "Timber did not answer at the override",
+					text: `${TIMBER_OVERRIDE_VARIABLE} points to ${status.override}, but no Timber answered there. Correct it, or unset it to use the timber on your PATH.`,
+					action: "To install Timber:",
+				}
+				: {
+					title: "Timber is not installed",
+					text: `Timber app needs the timber command, version ${REQUIRED_TIMBER_VERSION} or newer, on your PATH.`,
+					action: "Install it with:",
+				};
+	}
+}
 
 /** The name shown for a worktree: its branch, or a short commit when detached. */
 export function worktreeLabel(worktree: Worktree): string {

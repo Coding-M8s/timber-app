@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { describeChanges, describeSync, worktreeLabel } from "../src/mainview/format";
-import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
+import { TIMBER_INSTALL_COMMAND, describeChanges, describeSync, describeTimberProblem, worktreeLabel } from "../src/mainview/format";
+import { createMockEngine, sampleRepositories, sampleTimberStatuses } from "../src/mainview/engine/mock";
 import type { Worktree } from "../src/shared/model";
 
 const base: Worktree = {
@@ -43,5 +43,53 @@ describe("mock engine", () => {
 		const first = await createMockEngine().listRepositories();
 		first[0]!.worktrees.length = 0;
 		expect((await createMockEngine().listRepositories())[0]!.worktrees.length).toBe(sampleRepositories[0]!.worktrees.length);
+	});
+});
+
+describe("describeTimberProblem", () => {
+	test("has nothing to say when Timber is ready", () => {
+		expect(describeTimberProblem(sampleTimberStatuses.ready)).toBeNull();
+	});
+
+	test("says Timber is not installed and which version is needed", () => {
+		const problem = describeTimberProblem({ state: "not-found", override: null })!;
+		expect(problem.title).toBe("Timber is not installed");
+		expect(problem.text).toContain("0.1.1 or newer");
+		expect(problem.action).toBe("Install it with:");
+	});
+
+	test("names the override when it is the one that failed", () => {
+		const problem = describeTimberProblem({ state: "not-found", override: "/opt/dev/timber" })!;
+		expect(problem.text).toContain("TIMBER_APP_TIMBER_PATH points to /opt/dev/timber");
+	});
+
+	test("names the found and required versions for an old Timber", () => {
+		const problem = describeTimberProblem({ state: "too-old", path: "/usr/bin/timber", found: "0.1.0", required: "0.1.1" })!;
+		expect(problem.title).toBe("Timber is too old");
+		expect(problem.text).toBe("Found Timber 0.1.0 at /usr/bin/timber. Timber app needs 0.1.1 or newer.");
+		expect(problem.action).toBe("Update it with:");
+	});
+
+	test("the install command is Timber's own installer", () => {
+		expect(TIMBER_INSTALL_COMMAND).toStartWith("curl -fsSL https://github.com/Coding-M8s/timber/releases/");
+	});
+});
+
+describe("mock engine and Timber", () => {
+	test("is ready by default and can stand in for every state", async () => {
+		expect((await createMockEngine().timberStatus()).state).toBe("ready");
+		for (const status of Object.values(sampleTimberStatuses)) {
+			const engine = createMockEngine(sampleRepositories, status);
+			expect(await engine.timberStatus()).toEqual(status);
+			expect(await engine.recheckTimber()).toEqual(status);
+		}
+	});
+
+	test("can act out an install between the first look and Retry", async () => {
+		let installed = false;
+		const engine = createMockEngine(sampleRepositories, () => installed ? sampleTimberStatuses.ready : sampleTimberStatuses["not-found"]);
+		expect((await engine.timberStatus()).state).toBe("not-found");
+		installed = true;
+		expect((await engine.recheckTimber()).state).toBe("ready");
 	});
 });

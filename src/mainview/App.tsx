@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Engine } from "../shared/engine";
-import type { Repository } from "../shared/model";
+import type { Repository, TimberStatus } from "../shared/model";
 import logoUrl from "./assets/logo.png";
 import { Sidebar } from "./components/Sidebar";
+import { TimberNotice } from "./components/TimberNotice";
 import { Workspace } from "./components/Workspace";
 import { worktreeLabel } from "./format";
 
@@ -11,7 +12,15 @@ type LoadState =
 	| { phase: "ready"; repositories: Repository[] }
 	| { phase: "failed"; message: string };
 
+/** Null until the first look for Timber has answered. */
+type TimberState =
+	| null
+	| { known: true; status: TimberStatus }
+	| { known: false; message: string };
+
 export function App({ engine }: { engine: Engine }) {
+	const [timber, setTimber] = useState<TimberState>(null);
+	const [checkingTimber, setCheckingTimber] = useState(false);
 	const [state, setState] = useState<LoadState>({ phase: "loading" });
 	const [refreshing, setRefreshing] = useState(false);
 	const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -27,9 +36,26 @@ export function App({ engine }: { engine: Engine }) {
 		}
 	}, [engine]);
 
+	const checkTimber = useCallback(async (look: () => Promise<TimberStatus>) => {
+		setCheckingTimber(true);
+		try {
+			setTimber({ known: true, status: await look() });
+		} catch (error) {
+			setTimber({ known: false, message: error instanceof Error ? error.message : String(error) });
+		} finally {
+			setCheckingTimber(false);
+		}
+	}, []);
+
 	useEffect(() => {
-		void load();
-	}, [load]);
+		void checkTimber(() => engine.timberStatus());
+	}, [engine, checkTimber]);
+
+	// Nothing that depends on Timber is offered until a usable one is found.
+	const timberReady = timber?.known === true && timber.status.state === "ready";
+	useEffect(() => {
+		if (timberReady) void load();
+	}, [timberReady, load]);
 
 	const repositories = state.phase === "ready" ? state.repositories : [];
 	const selection = useMemo(() => {
@@ -54,17 +80,30 @@ export function App({ engine }: { engine: Engine }) {
 					</>
 				)}
 			</header>
-			<div className="body">
-				<Sidebar
-					repositories={repositories}
-					selectedPath={selection?.worktree.path ?? null}
-					onSelect={setSelectedPath}
-					onRefresh={() => void load()}
-					refreshing={refreshing}
-					notice={state.phase === "loading" ? "Reading worktrees" : state.phase === "failed" ? state.message : null}
+			{timber === null ? (
+				<main className="notice">
+					<p className="notice-hint">Looking for Timber</p>
+				</main>
+			) : !timberReady ? (
+				<TimberNotice
+					status={timber.known ? timber.status : null}
+					failure={timber.known ? null : timber.message}
+					checking={checkingTimber}
+					onRetry={() => void checkTimber(() => engine.recheckTimber())}
 				/>
-				<Workspace selection={selection} />
-			</div>
+			) : (
+				<div className="body">
+					<Sidebar
+						repositories={repositories}
+						selectedPath={selection?.worktree.path ?? null}
+						onSelect={setSelectedPath}
+						onRefresh={() => void load()}
+						refreshing={refreshing}
+						notice={state.phase === "loading" ? "Reading worktrees" : state.phase === "failed" ? state.message : null}
+					/>
+					<Workspace selection={selection} />
+				</div>
+			)}
 		</div>
 	);
 }
