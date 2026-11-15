@@ -1,19 +1,16 @@
 import { useState } from "react";
-import type { Repository } from "../../shared/model";
-import { worktreeLabel } from "../format";
+import { describeReloadError, worktreeLabel } from "../format";
+import { useAppState, useStore } from "../store/react";
+import { isRunning } from "../store/state";
 import { WorktreeRow } from "./WorktreeRow";
 
-interface SidebarProps {
-	repositories: Repository[];
-	selectedPath: string | null;
-	onSelect: (path: string) => void;
-	onRefresh: () => void;
-	refreshing: boolean;
-	/** A loading or failure line shown above the list. */
-	notice: string | null;
-}
-
-export function Sidebar({ repositories, selectedPath, onSelect, onRefresh, refreshing, notice }: SidebarProps) {
+export function Sidebar() {
+	const store = useStore();
+	const state = useAppState();
+	const { repositories, loaded } = state;
+	const selectedPath = state.selection?.worktree ?? null;
+	const refreshing = isRunning(state, "reload-all");
+	const failure = state.error && describeReloadError(state.error, repositories);
 	const [filter, setFilter] = useState("");
 	const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
 	const query = filter.trim().toLowerCase();
@@ -47,7 +44,7 @@ export function Sidebar({ repositories, selectedPath, onSelect, onRefresh, refre
 					aria-label="Refresh worktrees"
 					title="Refresh worktrees"
 					disabled={refreshing}
-					onClick={onRefresh}
+					onClick={() => void store.refresh()}
 				>
 					<svg aria-hidden="true" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
 						<path d="M13 8a5 5 0 1 1-1.5-3.6" />
@@ -56,7 +53,14 @@ export function Sidebar({ repositories, selectedPath, onSelect, onRefresh, refre
 				</button>
 			</div>
 
-			{notice && <p className="sidebar-note">{notice}</p>}
+			{!loaded && !failure && <p className="sidebar-note">Reading worktrees</p>}
+			{failure && (
+				<div className="sidebar-error" role="alert">
+					<p className="sidebar-error-title">{failure.title}</p>
+					<p className="sidebar-error-text">{failure.text}</p>
+					{loaded && <p className="sidebar-error-text">Showing what was read last.</p>}
+				</div>
+			)}
 
 			<div className="groups">
 				{groups.map(({ repository, matches }) => {
@@ -84,7 +88,7 @@ export function Sidebar({ repositories, selectedPath, onSelect, onRefresh, refre
 											<WorktreeRow
 												worktree={worktree}
 												selected={worktree.path === selectedPath}
-												onSelect={() => onSelect(worktree.path)}
+												onSelect={() => store.select(worktree.path)}
 											/>
 										</li>
 									))}

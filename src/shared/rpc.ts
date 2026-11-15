@@ -12,11 +12,15 @@ export type AppRPC = {
 			timberStatus: { params: {}; response: TimberStatus };
 			recheckTimber: { params: {}; response: TimberStatus };
 			listRepositories: { params: {}; response: Repository[] };
+			loadRepository: { params: { path: string }; response: Repository | null };
 		};
 		messages: {};
 	}>;
 	webview: RPCSchema<{
 		requests: {};
-		messages: {};
+		messages: {
+			/** A repository changed. `path` is its primary checkout. */
+			repositoryChanged: { path: string };
+		};
 	}>;
 };

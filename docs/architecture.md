@@ -85,6 +85,47 @@ Nothing that depends on Timber is offered until a usable one is found.
 - In `bun run dev:web`, add `?timber=not-found` or `?timber=too-old` to the
   address to see the notice.
 
+## Shared state and live updates
+
+Every part of the interface reads one store, so the sidebar, the title bar,
+and the workspace cannot disagree.
+
+- **The store (`src/mainview/store`).** It holds Timber's status, the
+  repositories with their worktrees, the selection, operations in progress,
+  and the latest reload error. `state.ts` is the data and the pure rules,
+  `store.ts` talks to the engine, and `react.tsx` hands the store to
+  components. Components call its actions and keep no copy of its data.
+- **Pushed changes.** The main process reports a change by calling
+  `repositoryChanges.announce(path)` in `src/bun/changes.ts`, where `path` is
+  the repository's primary checkout. That becomes a `repositoryChanged`
+  message over RPC, and the store reloads only that repository through
+  `loadRepository`. A message for a repository that is not on screen is
+  ignored. Nothing announces changes yet: deciding when a repository changed
+  belongs to file watching and fetching.
+- **Merging.** One reload per repository runs at a time. Reloads asked for
+  meanwhile share a single follow-up reload, because the one in progress may
+  have read its data before the change. The same holds for reloading
+  everything.
+- **Stale responses.** Each reload takes a ticket when it asks. A response is
+  dropped when newer data for that repository is already on screen: a full
+  list that answers late keeps a repository that was reloaded on its own
+  since, and a single reload that answers after a newer full list is ignored.
+- **Selection.** The selected worktree stays selected for as long as it
+  exists. When it is gone the selection moves to the primary checkout of the
+  same repository, and when that repository is gone too, to the first
+  worktree in the list.
+- **Failures.** A failed reload leaves the last good data and the selection
+  alone and shows the error above the list. The next reload of the same thing
+  that works clears it. A single reload that Git cannot answer counts as a
+  failure, not as a removed repository; only reloading everything changes
+  which repositories are listed.
+- **Refresh.** The Refresh control reloads everything.
+
+In `bun run dev:web` the browser console has `timberMock` for acting out the
+main process: `timberMock.setRepositories(list)`,
+`timberMock.announceChange("/work/timber")`, and
+`timberMock.failReads("Git is busy")` (pass `null` to let reads work again).
+
 ## Milestones
 
 1. **Sidebar, read-only (this scaffold).** Repositories and worktrees with
@@ -161,6 +202,25 @@ Run for the same change on Windows x64 with Bun 1.4.4, no Timber installed:
   "Timber is too old" with both versions. With it printing 0.1.1, Retry moved
   on to the normal view. No restart in between. A real Timber for Windows was
   not tested.
+
+Run for shared state and live updates (issue 2), Linux x64 under WSL with Bun
+1.4.2, Git 2.43, and Timber 0.1.1:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 94 tests passed, including merged reloads, stale responses,
+  selection fallback, failed reloads, and a reload against a real temporary
+  repository that leaves refs, the index, and files untouched.
+- `bun run build:web`, then the built interface driven in headless Chrome
+  through `timberMock`: selecting a worktree updated the title bar, sidebar,
+  and workspace together; an announced change refreshed that repository only
+  and kept the selection; a failed Refresh kept all seven rows and showed the
+  error; the next Refresh cleared it.
+- `bun run start` under WSLg, with a temporary timer in the main process that
+  announced changes (not committed): three announcements within 2 ms led to
+  two `loadRepository` requests from the interface, a later single one led to
+  one, an announcement for an unknown path led to none, and no full reload
+  followed any of them. The window itself was not inspected by eye in this
+  run.
 
 Not run yet:
 

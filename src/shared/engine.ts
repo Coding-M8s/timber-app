@@ -13,4 +13,14 @@ export interface Engine {
 	/** Look for Timber again, for example after the person installed it. */
 	recheckTimber(): Promise<TimberStatus>;
 	listRepositories(): Promise<Repository[]>;
+	/**
+	 * Read one repository again, named by the path of its primary checkout.
+	 * Null when Git could not read it there.
+	 */
+	loadRepository(path: string): Promise<Repository | null>;
+	/**
+	 * Hear when the machine reports that a repository changed. The listener gets
+	 * the path of its primary checkout. Returns a function that stops listening.
+	 */
+	onRepositoryChanged(listener: (path: string) => void): () => void;
 }

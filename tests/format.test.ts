@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { TIMBER_INSTALL_COMMAND, describeChanges, describeSync, describeTimberProblem, worktreeLabel } from "../src/mainview/format";
+import { TIMBER_INSTALL_COMMAND, describeChanges, describeReloadError, describeSync, describeTimberProblem, worktreeLabel } from "../src/mainview/format";
 import { createMockEngine, sampleRepositories, sampleTimberStatuses } from "../src/mainview/engine/mock";
 import type { Worktree } from "../src/shared/model";
 
@@ -91,5 +91,17 @@ describe("mock engine and Timber", () => {
 		expect((await engine.timberStatus()).state).toBe("not-found");
 		installed = true;
 		expect((await engine.recheckTimber()).state).toBe("ready");
+	});
+});
+
+describe("describeReloadError", () => {
+	test("names the repository when one was being reloaded", () => {
+		expect(describeReloadError({ repository: "/work/timber", message: "Git is busy" }, sampleRepositories))
+			.toEqual({ title: "Could not refresh timber", text: "Git is busy" });
+	});
+
+	test("stays general for a reload of everything or an unknown repository", () => {
+		expect(describeReloadError({ repository: null, message: "Git is busy" }, sampleRepositories).title).toBe("Could not refresh");
+		expect(describeReloadError({ repository: "/work/gone", message: "Git is busy" }, sampleRepositories).title).toBe("Could not refresh");
 	});
 });

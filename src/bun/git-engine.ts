@@ -51,6 +51,16 @@ export async function loadRepository(path: string): Promise<Repository | null> {
 	return { path: primary.path, name: basename(primary.path), worktrees };
 }
 
+/**
+ * Read one known repository again. `path` is its primary checkout, the
+ * identity the interface holds. Null when Git cannot read it, or when that
+ * folder is no longer the primary checkout of a repository.
+ */
+export async function reloadRepository(path: string): Promise<Repository | null> {
+	const repository = await loadRepository(path);
+	return repository?.path === path ? repository : null;
+}
+
 /** Load every configured repository, skipping paths that are not repositories and duplicates. */
 export async function listRepositories(paths: readonly string[]): Promise<Repository[]> {
 	const loaded = await Promise.all(paths.map(loadRepository));
