@@ -1,3 +1,4 @@
+import { realpath } from "node:fs/promises";
 import { basename, delimiter } from "node:path";
 import { parseStatus, parseWorktreeList } from "../shared/git-parse";
 import type { Repository, Worktree, WorktreeStatus } from "../shared/model";
@@ -48,7 +49,23 @@ export async function loadRepository(path: string): Promise<Repository | null> {
 		prunable: entry.prunable,
 		status: entry.prunable ? null : await readStatus(entry.path),
 	})));
-	return { path: primary.path, name: basename(primary.path), worktrees };
+	return { path: primary.path, name: basename(primary.path), available: true, worktrees };
+}
+
+/**
+ * The common Git directory of the repository that owns `path`, with links
+ * resolved, or null when `path` is not inside a Git repository. Every worktree
+ * of one repository answers with the same directory.
+ */
+export async function commonDirectory(path: string): Promise<string | null> {
+	const output = await git(path, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+	const directory = output?.replace(/\r?\n$/, "");
+	if (!directory) return null;
+	try {
+		return await realpath(directory);
+	} catch {
+		return directory;
+	}
 }
 
 /**
@@ -61,7 +78,7 @@ export async function reloadRepository(path: string): Promise<Repository | null>
 	return repository?.path === path ? repository : null;
 }
 
-/** Load every configured repository, skipping paths that are not repositories and duplicates. */
+/** Load every given repository, skipping paths that are not repositories and duplicates. */
 export async function listRepositories(paths: readonly string[]): Promise<Repository[]> {
 	const loaded = await Promise.all(paths.map(loadRepository));
 	const seen = new Set<string>();
@@ -73,11 +90,11 @@ export async function listRepositories(paths: readonly string[]): Promise<Reposi
 }
 
 /**
- * Repositories to show. Until the app keeps its own list, they come from
- * TIMBER_APP_REPOS (paths joined by the platform path separator), falling
- * back to the folder the app was started from.
+ * The development override for the repository list: the paths in
+ * TIMBER_APP_REPOS, joined by the platform path separator. Null when it is
+ * not set, and the app then uses its saved list.
  */
-export function configuredRepositoryPaths(environment: Record<string, string | undefined> = process.env): string[] {
+export function overrideRepositoryPaths(environment: Record<string, string | undefined> = process.env): string[] | null {
 	const configured = (environment.TIMBER_APP_REPOS ?? "").split(delimiter).map(path => path.trim()).filter(Boolean);
-	return configured.length > 0 ? configured : [process.cwd()];
+	return configured.length > 0 ? configured : null;
 }

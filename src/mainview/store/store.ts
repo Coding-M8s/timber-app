@@ -1,7 +1,7 @@
 import type { Engine } from "../../shared/engine";
 import type { TimberStatus } from "../../shared/model";
 import { mergeOverlapping } from "./merge";
-import { type AppState, type Operation, initialState, reconcileSelection, selectionFor, timberReady } from "./state";
+import { type AppState, type Operation, initialState, reconcileSelection, selectionFor, selectionForRepository, timberReady } from "./state";
 
 /**
  * The single holder of what the interface shows: Timber's status, the
@@ -24,6 +24,15 @@ export interface AppStore {
 	refresh(): Promise<void>;
 	/** Reload one repository, named by the path of its primary checkout. */
 	reloadRepository(path: string): Promise<void>;
+	/**
+	 * Open the folder picker and add the picked repository to the saved list.
+	 * The added repository, or the one that was already listed, becomes selected.
+	 */
+	addRepository(): Promise<void>;
+	/** Forget a repository in the app. Nothing on disk changes. */
+	removeRepository(path: string): Promise<void>;
+	/** Put away the note about the latest add or remove. */
+	dismissNotice(): void;
 	/** Select a worktree by its path. A path that no repository has is ignored. */
 	select(worktreePath: string): void;
 }
@@ -116,6 +125,69 @@ export function createAppStore(engine: Engine): AppStore {
 		});
 	}
 
+	function selectRepository(path: string): void {
+		const selection = selectionForRepository(state.repositories, path);
+		if (selection && selection.worktree !== state.selection?.worktree) update({ selection });
+	}
+
+	// One at a time: a second click while the picker is open, or while a repository is being forgotten, does nothing.
+	function addRepository(): Promise<void> {
+		if (state.operations.some(operation => operation.kind === "add-repository")) return Promise.resolve();
+		return track({ kind: "add-repository" }, async () => {
+			try {
+				const result = await engine.addRepository();
+				switch (result.outcome) {
+					case "cancelled":
+						return;
+					case "added":
+						update({ notice: null });
+						// Read the list again instead of patching it, so it is whatever the engine saved.
+						await reloadAll("all");
+						selectRepository(result.repository.path);
+						return;
+					case "already-listed":
+						update({ notice: { kind: "already-listed", repository: result.repository } });
+						selectRepository(result.repository);
+						return;
+					case "not-a-repository":
+						update({ notice: { kind: "not-a-repository", folder: result.folder } });
+						return;
+					case "overridden":
+						update({ notice: { kind: "overridden" } });
+						return;
+					case "failed":
+						update({ notice: { kind: "failed", action: "add", message: result.message } });
+						return;
+				}
+			} catch (error) {
+				update({ notice: { kind: "failed", action: "add", message: messageOf(error) } });
+			}
+		});
+	}
+
+	function removeRepository(path: string): Promise<void> {
+		if (state.operations.some(operation => operation.kind === "remove-repository" && operation.repository === path)) return Promise.resolve();
+		return track({ kind: "remove-repository", repository: path }, async () => {
+			try {
+				const result = await engine.removeRepository(path);
+				switch (result.outcome) {
+					case "removed":
+						update({ notice: null });
+						await reloadAll("all");
+						return;
+					case "overridden":
+						update({ notice: { kind: "overridden" } });
+						return;
+					case "failed":
+						update({ notice: { kind: "failed", action: "remove", message: result.message } });
+						return;
+				}
+			} catch (error) {
+				update({ notice: { kind: "failed", action: "remove", message: messageOf(error) } });
+			}
+		});
+	}
+
 	return {
 		getState: () => state,
 		subscribe(listener) {
@@ -133,6 +205,11 @@ export function createAppStore(engine: Engine): AppStore {
 		retryTimber: () => findTimber(() => engine.recheckTimber()),
 		refresh: () => reloadAll("all"),
 		reloadRepository: path => reloadOne(path),
+		addRepository,
+		removeRepository,
+		dismissNotice() {
+			if (state.notice) update({ notice: null });
+		},
 		select(worktreePath) {
 			const selection = selectionFor(state.repositories, worktreePath);
 			if (selection && selection.worktree !== state.selection?.worktree) update({ selection });

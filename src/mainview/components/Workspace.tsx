@@ -1,8 +1,9 @@
 import { describeChanges, describeSync, worktreeLabel } from "../format";
-import { useAppState } from "../store/react";
-import { selectedWorktree } from "../store/state";
+import { useAppState, useStore } from "../store/react";
+import { isRunning, selectedWorktree } from "../store/state";
 
 export function Workspace() {
+	const store = useStore();
 	const state = useAppState();
 	const selection = selectedWorktree(state);
 	if (!selection) {
@@ -13,8 +14,11 @@ export function Workspace() {
 				<div className="empty">
 					{!waiting && (
 						<>
-							<p className="empty-title">No repository yet</p>
-							<p className="empty-text">Start the app from inside a Git repository, or list repositories in TIMBER_APP_REPOS.</p>
+							<p className="empty-title">{state.repositories.length === 0 ? "No repository yet" : "No worktree to show"}</p>
+							<p className="empty-text">Add a repository to see its worktrees here. The app remembers it for next time.</p>
+							<button type="button" className="button" disabled={isRunning(state, "add-repository")} onClick={() => void store.addRepository()}>
+								Add repository
+							</button>
 						</>
 					)}
 				</div>

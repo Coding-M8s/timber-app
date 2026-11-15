@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
-import { createMockEngine, sampleRepositories, sampleTimberStatuses } from "../src/mainview/engine/mock";
+import { createMockEngine, sampleRepositories, sampleTimberStatuses, sampleUnavailableRepository } from "../src/mainview/engine/mock";
 import { createAppStore } from "../src/mainview/store/store";
 
 const settle = () => Bun.sleep(0);
@@ -86,6 +86,64 @@ describe("App", () => {
 		const markup = renderToStaticMarkup(<App store={store} />);
 		expect(markup).toContain("Timber is not installed");
 		expect(markup).not.toContain('class="sidebar"');
+	});
+
+	test("offers Add repository below the list, and Remove on every repository", async () => {
+		const { store } = await startedStore();
+		const markup = renderToStaticMarkup(<App store={store} />);
+		expect(markup).toMatch(/class="add-repository"[^>]*>.*?Add repository/);
+		expect(markup).toContain('aria-label="Remove timber from the list"');
+		expect(markup).toContain('aria-label="Remove api-server from the list"');
+		expect(markup).toContain("Nothing on disk is changed.");
+	});
+
+	test("an added repository appears in the sidebar, selected", async () => {
+		const { store } = await startedStore();
+		await store.addRepository();
+		const markup = renderToStaticMarkup(<App store={store} />);
+		expect(markup).toContain('aria-label="docs-site"');
+		expect(textOf(markup, "titlebar-repo")).toBe("docs-site");
+		expect(markup.match(/class="row( selected)?"/g)?.length).toBe(9);
+	});
+
+	test("a folder that is not a Git repository is refused with a clear message", async () => {
+		const { store, engine } = await startedStore();
+		engine.pickFolder("/home/sam/Documents");
+		await store.addRepository();
+		const markup = renderToStaticMarkup(<App store={store} />);
+		expect(markup).toContain('role="alert"');
+		expect(textOf(markup, "sidebar-error-title")).toBe("Not a Git repository");
+		expect(markup).toContain("/home/sam/Documents is not inside a Git repository.");
+		expect(markup.match(/class="row( selected)?"/g)?.length).toBe(7);
+	});
+
+	test("adding a repository again says it is already listed, without an alert", async () => {
+		const { store, engine } = await startedStore();
+		engine.pickFolder(FEATURE);
+		await store.addRepository();
+		const markup = renderToStaticMarkup(<App store={store} />);
+		expect(markup).toContain("timber is already in the list");
+		expect(markup).toContain('role="status"');
+		expect(markup).not.toContain('role="alert"');
+	});
+
+	test("a repository whose folder is missing stays in the sidebar, marked unavailable, with Remove", async () => {
+		const { store } = await startedStore(createMockEngine([...sampleRepositories, sampleUnavailableRepository]));
+		const markup = renderToStaticMarkup(<App store={store} />);
+		expect(markup).toContain('aria-label="old-prototype"');
+		expect(textOf(markup, "group-flag")).toBe("unavailable");
+		expect(markup).toContain("The folder is missing, or it is no longer a Git repository.");
+		expect(markup).toContain("/work/old-prototype");
+		expect(markup).toMatch(/class="text-button"[^>]*>Remove</);
+		expect(markup.match(/class="row( selected)?"/g)?.length).toBe(7);
+	});
+
+	test("with no repository, the workspace offers to add one", async () => {
+		const { store } = await startedStore(createMockEngine([]));
+		const markup = renderToStaticMarkup(<App store={store} />);
+		expect(markup).toContain("No repository yet");
+		expect(markup).toMatch(/class="button"[^>]*>Add repository</);
+		expect(markup).not.toContain("TIMBER_APP_REPOS");
 	});
 
 	test("says it is looking before Timber has answered", () => {

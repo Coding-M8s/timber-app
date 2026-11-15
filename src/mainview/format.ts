@@ -1,5 +1,6 @@
 import type { Repository, SyncState, TimberStatus, Worktree } from "../shared/model";
 import { REQUIRED_TIMBER_VERSION, TIMBER_OVERRIDE_VARIABLE } from "../shared/timber-version";
+import type { ListNotice } from "./store/state";
 
 /** The command Timber's own quick start gives for installing and for updating. */
 export const TIMBER_INSTALL_COMMAND = "curl -fsSL https://github.com/Coding-M8s/timber/releases/latest/download/install.sh | sh";
@@ -48,6 +49,48 @@ export function describeReloadError(
 ): { title: string; text: string } {
 	const name = repositories.find(repository => repository.path === error.repository)?.name;
 	return { title: name ? `Could not refresh ${name}` : "Could not refresh", text: error.message };
+}
+
+/** The last part of a path, whichever separator it uses. */
+function folderName(path: string): string {
+	return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+
+/** What Remove does, said wherever it is offered. */
+export const REMOVE_REPOSITORY_HINT = "Removes it from this list only. Nothing on disk is changed.";
+
+/**
+ * What to tell the person when adding or removing a repository left the list
+ * as it was. `problem` is false when nothing went wrong.
+ */
+export function describeListNotice(
+	notice: ListNotice,
+	repositories: readonly Repository[],
+): { title: string; text: string; problem: boolean } {
+	switch (notice.kind) {
+		case "already-listed": {
+			const name = repositories.find(repository => repository.path === notice.repository)?.name ?? folderName(notice.repository);
+			return { title: `${name} is already in the list`, text: "That folder belongs to it, so nothing was added.", problem: false };
+		}
+		case "not-a-repository":
+			return {
+				title: "Not a Git repository",
+				text: `${notice.folder} is not inside a Git repository. Pick a repository folder or one of its worktrees.`,
+				problem: true,
+			};
+		case "overridden":
+			return {
+				title: "The list comes from TIMBER_APP_REPOS",
+				text: "That variable is set, so the app shows its repositories and leaves the saved list alone. Unset it to add or remove repositories here.",
+				problem: true,
+			};
+		case "failed":
+			return {
+				title: notice.action === "add" ? "Could not add the repository" : "Could not remove the repository",
+				text: notice.message,
+				problem: true,
+			};
+	}
 }
 
 /** The name shown for a worktree: its branch, or a short commit when detached. */

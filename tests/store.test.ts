@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Engine } from "../src/shared/engine";
-import type { Repository, TimberStatus } from "../src/shared/model";
-import { createMockEngine, sampleRepositories, sampleTimberStatuses } from "../src/mainview/engine/mock";
+import type { AddRepositoryResult, RemoveRepositoryResult, Repository, TimberStatus } from "../src/shared/model";
+import { createMockEngine, samplePickableRepository, sampleRepositories, sampleTimberStatuses, sampleUnavailableRepository } from "../src/mainview/engine/mock";
 import { isRunning, selectedWorktree } from "../src/mainview/store/state";
 import { createAppStore } from "../src/mainview/store/store";
 
@@ -43,6 +43,8 @@ interface Pending<Value> {
 function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 	const lists: Pending<Repository[]>[] = [];
 	const loads: Pending<Repository | null>[] = [];
+	const adds: Pending<AddRepositoryResult>[] = [];
+	const removes: Pending<RemoveRepositoryResult>[] = [];
 	const listeners = new Set<(path: string) => void>();
 	const engine: Engine = {
 		timberStatus: async () => timber,
@@ -53,6 +55,12 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		loadRepository: path => new Promise((resolve, reject) => {
 			loads.push({ path, resolve, reject });
 		}),
+		addRepository: () => new Promise((resolve, reject) => {
+			adds.push({ path: null, resolve, reject });
+		}),
+		removeRepository: path => new Promise((resolve, reject) => {
+			removes.push({ path, resolve, reject });
+		}),
 		onRepositoryChanged(listener) {
 			listeners.add(listener);
 			return () => void listeners.delete(listener);
@@ -61,7 +69,7 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 	const push = (path: string) => {
 		for (const listener of [...listeners]) listener(path);
 	};
-	return { engine, lists, loads, push, listeners };
+	return { engine, lists, loads, adds, removes, push, listeners };
 }
 
 /** A store on a manual engine, started and past its first load of the sample data. */
@@ -410,5 +418,183 @@ describe("the mock engine", () => {
 		await settle();
 		expect(modifiedCount(store, FEATURE)).toBe(11);
 		expect(await engine.loadRepository("/work/unknown")).toBeNull();
+	});
+});
+
+describe("adding a repository", () => {
+	test("puts it in the list and selects its primary checkout", async () => {
+		const engine = createMockEngine();
+		const store = createAppStore(engine);
+		store.start();
+		await settle();
+		store.select(FEATURE);
+
+		const adding = store.addRepository();
+		expect(isRunning(store.getState(), "add-repository")).toBe(true);
+		await adding;
+		const state = store.getState();
+		expect(isRunning(state, "add-repository")).toBe(false);
+		expect(state.repositories.map(repository => repository.name)).toEqual(["timber", "api-server", "docs-site"]);
+		expect(state.selection).toEqual({ repository: samplePickableRepository.path, worktree: samplePickableRepository.path });
+		expect(state.notice).toBeNull();
+	});
+
+	test("a second time, or through one of its worktrees, adds nothing and says so", async () => {
+		const engine = createMockEngine();
+		const store = createAppStore(engine);
+		store.start();
+		await settle();
+		await store.addRepository();
+
+		store.select(TIMBER);
+		await store.addRepository();
+		expect(store.getState().repositories.length).toBe(3);
+		expect(store.getState().notice).toEqual({ kind: "already-listed", repository: samplePickableRepository.path });
+		expect(store.getState().selection?.repository).toBe(samplePickableRepository.path);
+
+		engine.pickFolder(FEATURE);
+		await store.addRepository();
+		expect(store.getState().repositories.length).toBe(3);
+		expect(store.getState().notice).toEqual({ kind: "already-listed", repository: TIMBER });
+		expect(store.getState().selection).toEqual({ repository: TIMBER, worktree: TIMBER });
+	});
+
+	test("refuses a folder that is not a Git repository and leaves everything as it was", async () => {
+		const engine = createMockEngine();
+		const store = createAppStore(engine);
+		store.start();
+		await settle();
+		store.select(FEATURE);
+		engine.pickFolder("/home/sam/Documents");
+		await store.addRepository();
+		const state = store.getState();
+		expect(state.notice).toEqual({ kind: "not-a-repository", folder: "/home/sam/Documents" });
+		expect(state.repositories.length).toBe(2);
+		expect(state.selection?.worktree).toBe(FEATURE);
+	});
+
+	test("a closed picker changes nothing and keeps an earlier note", async () => {
+		const engine = createMockEngine();
+		const store = createAppStore(engine);
+		store.start();
+		await settle();
+		engine.pickFolder("/nowhere");
+		await store.addRepository();
+		const before = store.getState();
+		engine.pickFolder(null);
+		await store.addRepository();
+		expect(store.getState().repositories).toBe(before.repositories);
+		expect(store.getState().notice).toEqual({ kind: "not-a-repository", folder: "/nowhere" });
+	});
+
+	test("only one picker is open at a time", async () => {
+		const { store, adds, lists } = await loadedStore();
+		const first = store.addRepository();
+		const second = store.addRepository();
+		await settle();
+		expect(adds.length).toBe(1);
+		adds.shift()!.resolve({ outcome: "cancelled" });
+		await Promise.all([first, second]);
+		expect(lists.length).toBe(0);
+		expect(isRunning(store.getState(), "add-repository")).toBe(false);
+	});
+
+	test("reads the list again after adding, so the screen shows what was saved", async () => {
+		const { store, adds, lists } = await loadedStore();
+		const adding = store.addRepository();
+		await settle();
+		adds.shift()!.resolve({ outcome: "added", repository: structuredClone(samplePickableRepository) });
+		await settle();
+		expect(lists.length).toBe(1);
+		lists.shift()!.resolve(structuredClone([...sampleRepositories, samplePickableRepository]));
+		await adding;
+		expect(store.getState().repositories.map(repository => repository.name)).toEqual(["timber", "api-server", "docs-site"]);
+		expect(store.getState().selection?.repository).toBe(samplePickableRepository.path);
+	});
+
+	test("records the override, a failed save, and an engine that throws", async () => {
+		const { store, adds } = await loadedStore();
+		let adding = store.addRepository();
+		await settle();
+		adds.shift()!.resolve({ outcome: "overridden" });
+		await adding;
+		expect(store.getState().notice).toEqual({ kind: "overridden" });
+
+		adding = store.addRepository();
+		await settle();
+		adds.shift()!.resolve({ outcome: "failed", message: "disk full" });
+		await adding;
+		expect(store.getState().notice).toEqual({ kind: "failed", action: "add", message: "disk full" });
+
+		adding = store.addRepository();
+		await settle();
+		adds.shift()!.reject(new Error("bridge closed"));
+		await adding;
+		expect(store.getState().notice).toEqual({ kind: "failed", action: "add", message: "bridge closed" });
+		expect(store.getState().repositories.length).toBe(2);
+
+		store.dismissNotice();
+		expect(store.getState().notice).toBeNull();
+	});
+});
+
+describe("removing a repository", () => {
+	test("takes it off the list and moves the selection on", async () => {
+		const engine = createMockEngine();
+		const store = createAppStore(engine);
+		store.start();
+		await settle();
+		store.select(FEATURE);
+
+		const removing = store.removeRepository(TIMBER);
+		expect(store.getState().operations).toContainEqual({ kind: "remove-repository", repository: TIMBER });
+		await removing;
+		const state = store.getState();
+		expect(state.repositories.map(repository => repository.name)).toEqual(["api-server"]);
+		expect(state.selection).toEqual({ repository: API_SERVER, worktree: API_SERVER });
+		expect(state.operations).toEqual([]);
+	});
+
+	test("works for a repository that is unavailable", async () => {
+		const engine = createMockEngine([...sampleRepositories, sampleUnavailableRepository]);
+		const store = createAppStore(engine);
+		store.start();
+		await settle();
+		expect(store.getState().repositories.map(repository => repository.available)).toEqual([true, true, false]);
+		expect(store.getState().selection).toEqual({ repository: TIMBER, worktree: TIMBER });
+
+		await store.removeRepository(sampleUnavailableRepository.path);
+		expect(store.getState().repositories.map(repository => repository.name)).toEqual(["timber", "api-server"]);
+	});
+
+	test("removing the last one leaves an empty list and no selection", async () => {
+		const engine = createMockEngine();
+		const store = createAppStore(engine);
+		store.start();
+		await settle();
+		await store.removeRepository(TIMBER);
+		await store.removeRepository(API_SERVER);
+		expect(store.getState().repositories).toEqual([]);
+		expect(store.getState().selection).toBeNull();
+		expect(store.getState().loaded).toBe(true);
+	});
+
+	test("asks once per repository, and records a failure without touching the list", async () => {
+		const { store, removes, lists } = await loadedStore();
+		const first = store.removeRepository(TIMBER);
+		const second = store.removeRepository(TIMBER);
+		await settle();
+		expect(removes.map(pending => pending.path)).toEqual([TIMBER]);
+		removes.shift()!.resolve({ outcome: "failed", message: "read-only file system" });
+		await Promise.all([first, second]);
+		expect(lists.length).toBe(0);
+		expect(store.getState().notice).toEqual({ kind: "failed", action: "remove", message: "read-only file system" });
+		expect(store.getState().repositories.length).toBe(2);
+
+		const third = store.removeRepository(TIMBER);
+		await settle();
+		removes.shift()!.reject(new Error("bridge closed"));
+		await third;
+		expect(store.getState().notice).toEqual({ kind: "failed", action: "remove", message: "bridge closed" });
 	});
 });

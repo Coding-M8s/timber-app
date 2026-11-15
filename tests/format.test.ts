@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { TIMBER_INSTALL_COMMAND, describeChanges, describeReloadError, describeSync, describeTimberProblem, worktreeLabel } from "../src/mainview/format";
+import { TIMBER_INSTALL_COMMAND, describeChanges, describeListNotice, describeReloadError, describeSync, describeTimberProblem, worktreeLabel } from "../src/mainview/format";
 import { createMockEngine, sampleRepositories, sampleTimberStatuses } from "../src/mainview/engine/mock";
 import type { Worktree } from "../src/shared/model";
 
@@ -103,5 +103,30 @@ describe("describeReloadError", () => {
 	test("stays general for a reload of everything or an unknown repository", () => {
 		expect(describeReloadError({ repository: null, message: "Git is busy" }, sampleRepositories).title).toBe("Could not refresh");
 		expect(describeReloadError({ repository: "/work/gone", message: "Git is busy" }, sampleRepositories).title).toBe("Could not refresh");
+	});
+});
+
+describe("describeListNotice", () => {
+	test("names the listed repository, falling back to its folder name", () => {
+		expect(describeListNotice({ kind: "already-listed", repository: "/work/timber" }, sampleRepositories))
+			.toEqual({ title: "timber is already in the list", text: "That folder belongs to it, so nothing was added.", problem: false });
+		expect(describeListNotice({ kind: "already-listed", repository: "C:\\work\\other\\" }, sampleRepositories).title)
+			.toBe("other is already in the list");
+	});
+
+	test("says which folder is not a Git repository and what to pick instead", () => {
+		expect(describeListNotice({ kind: "not-a-repository", folder: "/home/sam/Documents" }, [])).toEqual({
+			title: "Not a Git repository",
+			text: "/home/sam/Documents is not inside a Git repository. Pick a repository folder or one of its worktrees.",
+			problem: true,
+		});
+	});
+
+	test("explains the override and passes a failure on", () => {
+		expect(describeListNotice({ kind: "overridden" }, []).title).toBe("The list comes from TIMBER_APP_REPOS");
+		expect(describeListNotice({ kind: "failed", action: "add", message: "disk full" }, []))
+			.toEqual({ title: "Could not add the repository", text: "disk full", problem: true });
+		expect(describeListNotice({ kind: "failed", action: "remove", message: "disk full" }, []).title)
+			.toBe("Could not remove the repository");
 	});
 });

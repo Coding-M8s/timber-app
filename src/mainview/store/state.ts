@@ -16,13 +16,26 @@ export interface Selection {
 export type Operation =
 	| { kind: "find-timber" }
 	| { kind: "reload-all" }
-	| { kind: "reload-repository"; repository: string };
+	| { kind: "reload-repository"; repository: string }
+	| { kind: "add-repository" }
+	| { kind: "remove-repository"; repository: string };
 
 /** Why the latest reload failed. `repository` is null when it was a reload of everything. */
 export interface ReloadError {
 	repository: string | null;
 	message: string;
 }
+
+/**
+ * Why the latest attempt to add or remove a repository left the list as it
+ * was. Paths, not names: the interface words it (see format.ts).
+ */
+export type ListNotice =
+	| { kind: "already-listed"; repository: string }
+	| { kind: "not-a-repository"; folder: string }
+	/** The list comes from the development override. */
+	| { kind: "overridden" }
+	| { kind: "failed"; action: "add" | "remove"; message: string };
 
 /** The one picture of the app that every part of the interface reads. Never changed in place. */
 export interface AppState {
@@ -34,6 +47,8 @@ export interface AppState {
 	selection: Selection | null;
 	operations: readonly Operation[];
 	error: ReloadError | null;
+	/** Null once an add or remove worked, or after the person dismissed it. */
+	notice: ListNotice | null;
 }
 
 export const initialState: AppState = {
@@ -43,6 +58,7 @@ export const initialState: AppState = {
 	selection: null,
 	operations: [],
 	error: null,
+	notice: null,
 };
 
 /** Nothing that depends on Timber is offered until a usable one is found. */
@@ -84,6 +100,13 @@ export function reconcileSelection(repositories: readonly Repository[], previous
 	const fallback = repository?.worktrees.find(worktree => worktree.primary) ?? repository?.worktrees[0];
 	if (repository && fallback) return { repository: repository.path, worktree: fallback.path };
 	return firstWorktree(repositories);
+}
+
+/** The selection for arriving at a repository: its primary checkout. Null when it has no worktree. */
+export function selectionForRepository(repositories: readonly Repository[], repositoryPath: string): Selection | null {
+	const repository = repositories.find(candidate => candidate.path === repositoryPath);
+	const worktree = repository?.worktrees.find(candidate => candidate.primary) ?? repository?.worktrees[0];
+	return repository && worktree ? { repository: repository.path, worktree: worktree.path } : null;
 }
 
 /** The selected worktree and its repository as data, or null when nothing is selected. */
