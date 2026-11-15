@@ -1,17 +1,22 @@
-import type { Repository, Worktree } from "../../shared/model";
 import { describeChanges, describeSync, worktreeLabel } from "../format";
+import { useAppState } from "../store/react";
+import { selectedWorktree } from "../store/state";
 
-interface WorkspaceProps {
-	selection: { repository: Repository; worktree: Worktree } | null;
-}
-
-export function Workspace({ selection }: WorkspaceProps) {
+export function Workspace() {
+	const state = useAppState();
+	const selection = selectedWorktree(state);
 	if (!selection) {
+		// Before the first answer, and after a first load that failed, the sidebar says what is going on.
+		const waiting = !state.loaded;
 		return (
 			<main className="workspace">
 				<div className="empty">
-					<p className="empty-title">No repository yet</p>
-					<p className="empty-text">Start the app from inside a Git repository, or list repositories in TIMBER_APP_REPOS.</p>
+					{!waiting && (
+						<>
+							<p className="empty-title">No repository yet</p>
+							<p className="empty-text">Start the app from inside a Git repository, or list repositories in TIMBER_APP_REPOS.</p>
+						</>
+					)}
 				</div>
 			</main>
 		);

@@ -16,5 +16,9 @@ export async function createEngine(): Promise<Engine> {
 	const timber = state !== null && Object.hasOwn(sampleTimberStatuses, state)
 		? sampleTimberStatuses[state as keyof typeof sampleTimberStatuses]
 		: sampleTimberStatuses.ready;
-	return createMockEngine(sampleRepositories, timber);
+	const engine = createMockEngine(sampleRepositories, timber);
+	// The browser console can act out what the main process would do, for example
+	// timberMock.failReads("Git is busy") or timberMock.announceChange("/work/timber").
+	Object.assign(window, { timberMock: engine });
+	return engine;
 }

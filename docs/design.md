@@ -55,5 +55,5 @@ Dark, neutral surfaces with hairline dividers instead of boxed cards. One
 typeface for the interface and a monospace face only for terminals, diffs,
 paths, and commands. Color carries meaning only: amber for incoming commits,
 blue for outgoing commits and running agents, yellow and green for file
-changes, red for destructive or rewritten state. The tokens live at the top of
-`src/mainview/styles.css`.
+changes, red for destructive or rewritten state and for errors. The tokens
+live at the top of `src/mainview/styles.css`.

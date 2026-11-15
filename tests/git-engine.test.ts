@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, delimiter, join } from "node:path";
-import { configuredRepositoryPaths, listRepositories, loadRepository } from "../src/bun/git-engine";
+import { configuredRepositoryPaths, listRepositories, loadRepository, reloadRepository } from "../src/bun/git-engine";
 
 /** Run Git in a real temporary repository, with a fixed identity and no user configuration. */
 function git(cwd: string, ...args: string[]): void {
@@ -62,6 +62,48 @@ describe("loadRepository", () => {
 		await loadRepository(primary);
 		const status = Bun.spawnSync(["git", "-C", linked, "status", "--porcelain"]).stdout.toString();
 		expect(status).toBe(" M tracked.txt\n?? new.txt\n");
+	});
+});
+
+describe("reloadRepository", () => {
+	/** Everything a read-only query must leave alone: refs, the index, and the working files. */
+	function fingerprint(): string {
+		const run = (cwd: string, ...args: string[]) => Bun.spawnSync(["git", "-C", cwd, ...args]).stdout.toString();
+		return [
+			run(primary, "for-each-ref"),
+			run(primary, "worktree", "list", "--porcelain"),
+			run(primary, "status", "--porcelain"),
+			run(linked, "status", "--porcelain"),
+			run(linked, "ls-files", "--stage"),
+		].join("\n");
+	}
+
+	test("reads a repository again by its primary checkout and sees what changed", async () => {
+		const before = await reloadRepository(primary);
+		expect(before?.worktrees[1]?.status?.untracked).toBe(1);
+
+		const extra = join(linked, "another.txt");
+		writeFileSync(extra, "more\n");
+		try {
+			const after = await reloadRepository(primary);
+			expect(after?.path).toBe(primary);
+			expect(after?.worktrees[1]?.status?.untracked).toBe(2);
+		} finally {
+			rmSync(extra);
+		}
+	});
+
+	test("answers null for anything that is not a primary checkout", async () => {
+		expect(await reloadRepository(linked)).toBeNull();
+		expect(await reloadRepository(root)).toBeNull();
+		expect(await reloadRepository(join(root, "does-not-exist"))).toBeNull();
+	});
+
+	test("leaves refs, the index, and files untouched", async () => {
+		const before = fingerprint();
+		await reloadRepository(primary);
+		await reloadRepository(linked);
+		expect(fingerprint()).toBe(before);
 	});
 });
 

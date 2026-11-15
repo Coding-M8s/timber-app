@@ -1,6 +1,7 @@
 import { BrowserView, BrowserWindow, Updater } from "electrobun/main";
 import type { AppRPC } from "../shared/rpc";
-import { configuredRepositoryPaths, listRepositories } from "./git-engine";
+import { repositoryChanges } from "./changes";
+import { configuredRepositoryPaths, listRepositories, reloadRepository } from "./git-engine";
 import { createTimberLocator, describeTimberStatus } from "./timber";
 
 const DEV_SERVER_URL = "http://localhost:5173";
@@ -29,9 +30,20 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			timberStatus: () => timber.current(),
 			recheckTimber: () => timber.refresh(),
 			listRepositories: () => listRepositories(configuredRepositoryPaths()),
+			loadRepository: ({ path }) => reloadRepository(path),
 		},
 		messages: {},
 	},
+});
+
+// Pass every reported change on to the interface, which reloads that repository.
+repositoryChanges.subscribe(path => {
+	try {
+		rpc.send.repositoryChanged({ path });
+	} catch (error) {
+		// The window may not be connected yet. Its first load reads everything anyway.
+		console.warn(`Could not report a change in ${path}: ${error instanceof Error ? error.message : String(error)}`);
+	}
 });
 
 new BrowserWindow({

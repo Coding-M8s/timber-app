@@ -1,4 +1,4 @@
-import type { SyncState, TimberStatus, Worktree } from "../shared/model";
+import type { Repository, SyncState, TimberStatus, Worktree } from "../shared/model";
 import { REQUIRED_TIMBER_VERSION, TIMBER_OVERRIDE_VARIABLE } from "../shared/timber-version";
 
 /** The command Timber's own quick start gives for installing and for updating. */
@@ -36,6 +36,18 @@ export function describeTimberProblem(status: TimberStatus): TimberProblem | nul
 					action: "Install it with:",
 				};
 	}
+}
+
+/**
+ * What to tell the person when a reload failed. `repository` is the path of
+ * the one that was being reloaded, or null when it was everything.
+ */
+export function describeReloadError(
+	error: { repository: string | null; message: string },
+	repositories: readonly Repository[],
+): { title: string; text: string } {
+	const name = repositories.find(repository => repository.path === error.repository)?.name;
+	return { title: name ? `Could not refresh ${name}` : "Could not refresh", text: error.message };
 }
 
 /** The name shown for a worktree: its branch, or a short commit when detached. */

@@ -1,109 +1,50 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { Engine } from "../shared/engine";
-import type { Repository, TimberStatus } from "../shared/model";
-import logoUrl from "./assets/logo.png";
 import { Sidebar } from "./components/Sidebar";
 import { TimberNotice } from "./components/TimberNotice";
+import { TitleBar } from "./components/TitleBar";
 import { Workspace } from "./components/Workspace";
-import { worktreeLabel } from "./format";
+import { StoreProvider, useAppState, useStore } from "./store/react";
+import { isRunning, timberReady } from "./store/state";
+import type { AppStore } from "./store/store";
 
-type LoadState =
-	| { phase: "loading" }
-	| { phase: "ready"; repositories: Repository[] }
-	| { phase: "failed"; message: string };
+function Body() {
+	const store = useStore();
+	const state = useAppState();
+	const { timber } = state;
 
-/** Null until the first look for Timber has answered. */
-type TimberState =
-	| null
-	| { known: true; status: TimberStatus }
-	| { known: false; message: string };
-
-export function App({ engine }: { engine: Engine }) {
-	const [timber, setTimber] = useState<TimberState>(null);
-	const [checkingTimber, setCheckingTimber] = useState(false);
-	const [state, setState] = useState<LoadState>({ phase: "loading" });
-	const [refreshing, setRefreshing] = useState(false);
-	const [selectedPath, setSelectedPath] = useState<string | null>(null);
-
-	const load = useCallback(async () => {
-		setRefreshing(true);
-		try {
-			setState({ phase: "ready", repositories: await engine.listRepositories() });
-		} catch (error) {
-			setState({ phase: "failed", message: error instanceof Error ? error.message : String(error) });
-		} finally {
-			setRefreshing(false);
-		}
-	}, [engine]);
-
-	const checkTimber = useCallback(async (look: () => Promise<TimberStatus>) => {
-		setCheckingTimber(true);
-		try {
-			setTimber({ known: true, status: await look() });
-		} catch (error) {
-			setTimber({ known: false, message: error instanceof Error ? error.message : String(error) });
-		} finally {
-			setCheckingTimber(false);
-		}
-	}, []);
-
-	useEffect(() => {
-		void checkTimber(() => engine.timberStatus());
-	}, [engine, checkTimber]);
-
+	if (timber === null) {
+		return (
+			<main className="notice">
+				<p className="notice-hint">Looking for Timber</p>
+			</main>
+		);
+	}
 	// Nothing that depends on Timber is offered until a usable one is found.
-	const timberReady = timber?.known === true && timber.status.state === "ready";
-	useEffect(() => {
-		if (timberReady) void load();
-	}, [timberReady, load]);
-
-	const repositories = state.phase === "ready" ? state.repositories : [];
-	const selection = useMemo(() => {
-		for (const repository of repositories) {
-			const worktree = repository.worktrees.find(candidate => candidate.path === selectedPath);
-			if (worktree) return { repository, worktree };
-		}
-		const repository = repositories[0];
-		const worktree = repository?.worktrees[0];
-		return repository && worktree ? { repository, worktree } : null;
-	}, [repositories, selectedPath]);
-
+	if (!timberReady(state)) {
+		return (
+			<TimberNotice
+				status={timber.known ? timber.status : null}
+				failure={timber.known ? null : timber.message}
+				checking={isRunning(state, "find-timber")}
+				onRetry={() => void store.retryTimber()}
+			/>
+		);
+	}
 	return (
-		<div className="app">
-			<header className="titlebar">
-				<img className="titlebar-logo" src={logoUrl} alt="Timber" width={22} height={22} />
-				<span className="titlebar-repo">{selection ? selection.repository.name : "Timber"}</span>
-				{selection && (
-					<>
-						<span className="titlebar-sep" aria-hidden="true">/</span>
-						<span className="titlebar-branch">{worktreeLabel(selection.worktree)}</span>
-					</>
-				)}
-			</header>
-			{timber === null ? (
-				<main className="notice">
-					<p className="notice-hint">Looking for Timber</p>
-				</main>
-			) : !timberReady ? (
-				<TimberNotice
-					status={timber.known ? timber.status : null}
-					failure={timber.known ? null : timber.message}
-					checking={checkingTimber}
-					onRetry={() => void checkTimber(() => engine.recheckTimber())}
-				/>
-			) : (
-				<div className="body">
-					<Sidebar
-						repositories={repositories}
-						selectedPath={selection?.worktree.path ?? null}
-						onSelect={setSelectedPath}
-						onRefresh={() => void load()}
-						refreshing={refreshing}
-						notice={state.phase === "loading" ? "Reading worktrees" : state.phase === "failed" ? state.message : null}
-					/>
-					<Workspace selection={selection} />
-				</div>
-			)}
+		<div className="body">
+			<Sidebar />
+			<Workspace />
 		</div>
+	);
+}
+
+/** Every part below reads the one store it is given. See docs/architecture.md. */
+export function App({ store }: { store: AppStore }) {
+	return (
+		<StoreProvider store={store}>
+			<div className="app">
+				<TitleBar />
+				<Body />
+			</div>
+		</StoreProvider>
 	);
 }

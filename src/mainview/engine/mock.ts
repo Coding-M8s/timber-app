@@ -59,6 +59,16 @@ export const sampleTimberStatuses = {
 	"too-old": { state: "too-old", path: "/home/sam/.local/bin/timber", found: "0.1.0", required: REQUIRED_TIMBER_VERSION },
 } as const satisfies Record<TimberStatus["state"], TimberStatus>;
 
+/** The mock engine, plus the controls a test or the browser build uses to act out changes. */
+export interface MockEngine extends Engine {
+	/** Replace the data, without telling the interface. */
+	setRepositories(repositories: Repository[]): void;
+	/** Report that a repository changed, as the main process would. */
+	announceChange(path: string): void;
+	/** Make every later read of repositories fail with this message, or pass null to let them work again. */
+	failReads(message: string | null): void;
+}
+
 /**
  * `timber` is the answer to every look for Timber. Pass a function to change
  * the answer between looks, for example to act out an install before Retry.
@@ -66,11 +76,32 @@ export const sampleTimberStatuses = {
 export function createMockEngine(
 	repositories: Repository[] = sampleRepositories,
 	timber: TimberStatus | (() => TimberStatus) = sampleTimberStatuses.ready,
-): Engine {
+): MockEngine {
+	let current = repositories;
+	let failure: string | null = null;
+	const listeners = new Set<(path: string) => void>();
 	const look = async () => structuredClone(typeof timber === "function" ? timber() : timber);
+	const read = async <Result>(result: () => Result): Promise<Result> => {
+		if (failure !== null) throw new Error(failure);
+		return structuredClone(result());
+	};
 	return {
 		timberStatus: look,
 		recheckTimber: look,
-		listRepositories: async () => structuredClone(repositories),
+		listRepositories: () => read(() => current),
+		loadRepository: path => read(() => current.find(repository => repository.path === path) ?? null),
+		onRepositoryChanged(listener) {
+			listeners.add(listener);
+			return () => void listeners.delete(listener);
+		},
+		setRepositories(next) {
+			current = next;
+		},
+		announceChange(path) {
+			for (const listener of [...listeners]) listener(path);
+		},
+		failReads(message) {
+			failure = message;
+		},
 	};
 }

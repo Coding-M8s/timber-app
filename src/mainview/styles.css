@@ -13,6 +13,7 @@
 	--ahead: #6ea8fe;
 	--modified: #e2c08d;
 	--untracked: #73c991;
+	--error: #f08b80;
 	--focus: #e8a857;
 	--font-ui: "Geist", "Segoe UI", system-ui, sans-serif;
 	--font-mono: "Geist Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
@@ -164,6 +165,28 @@ input:focus-visible {
 	padding: 6px 16px;
 	font-size: 12px;
 	color: var(--text-3);
+}
+
+.sidebar-error {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	margin: 0 8px 8px 10px;
+	padding: 7px 9px;
+	border-left: 2px solid var(--error);
+	font-size: 12px;
+}
+
+.sidebar-error-title {
+	margin: 0;
+	font-weight: 500;
+	color: var(--error);
+}
+
+.sidebar-error-text {
+	margin: 0;
+	color: var(--text-2);
+	overflow-wrap: anywhere;
 }
 
 .groups {
