@@ -18,6 +18,7 @@ import { createRefreshPolicy } from "./refresh-policy";
 import { type WatchTarget, createRepositoryWatcher } from "./repository-watcher";
 import { createWorktreeStamps } from "./worktree-stamp";
 import { createTerminalSessions } from "./terminals";
+import { createTimberConfigReader } from "./timber-config";
 import { createWorktreeCommands } from "./worktree-commands";
 
 const DEV_SERVER_URL = "http://localhost:5173";
@@ -91,6 +92,8 @@ void watchRepositories();
 
 const done = createDone({ timber: () => timber.current(), findRepository: path => repositories.find(path) });
 const fileChanges = createFileChanges({ findRepository: path => repositories.find(path) });
+// Reads Timber's settings files only, never credentials, and never writes (see ./timber-config.ts).
+const timberConfig = createTimberConfigReader({ isListed: path => repositories.includes(path) });
 const editor = createEditorLauncher({ preferences: () => preferences.load(), findRepository: path => repositories.find(path) });
 
 /** Report to the window. It may not be connected yet, or be reloading; its first load reads everything anyway. */
@@ -107,6 +110,8 @@ const terminals = createTerminalSessions({
 	findRepository: path => repositories.find(path),
 	// An agent's command comes from the saved preferences only (see ./terminals.ts).
 	agents: async () => (await preferences.load()).agents,
+	// `timber setup` runs the Timber that was found, never a command from the window.
+	timber: () => timber.current(),
 	onOutput: output => tell("terminal output", () => rpc.send.terminalOutput(output)),
 	onChange: change => tell("a terminal change", () => rpc.send.terminalChanged(change)),
 });
@@ -149,6 +154,8 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			savePreferences: ({ change }) => preferences.save(change),
 			// Starts the editor from the saved setting only. The request names the worktree, never the command (see ./editor.ts).
 			openInEditor: request => editor.open(request),
+			readTimberSettings: ({ repository }) => timberConfig.read(repository),
+			readTimberIntegrations: () => timberConfig.integrations(),
 			previewDone: request => done.preview(request),
 			// Removes a worktree. Only ever with a preview that `previewDone` handed out (see ./done.ts).
 			applyDone: request => done.apply(request),
@@ -156,7 +163,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			readFileChanges: request => fileChanges.read(request),
 			readFileDiff: request => fileChanges.diff(request),
 			listTerminals: () => terminals.list(),
-			// Starts a shell, or an agent from the saved Settings, only in a worktree Timber lists (see ./terminals.ts).
+			// Starts a shell, an agent from the saved Settings, or timber setup, only in a worktree Timber lists (see ./terminals.ts).
 			openTerminal: request => terminals.open(request),
 			readTerminal: ({ id }) => terminals.read(id),
 			renameTerminal: ({ id, name }) => terminals.rename(id, name),

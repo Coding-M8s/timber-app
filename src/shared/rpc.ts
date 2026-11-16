@@ -5,6 +5,7 @@ import type { Layout } from "./layout";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
 import type { Preferences } from "./preferences";
 import type { OpenTerminalRequest, OpenTerminalResult, TerminalChange, TerminalOutput, TerminalSession, TerminalSnapshot } from "./terminal";
+import type { IntegrationStatuses, TimberSettings } from "./timber-config";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "./timber-done";
 
 /**
@@ -32,6 +33,9 @@ export type AppRPC = {
 			loadPreferences: { params: {}; response: Preferences };
 			savePreferences: { params: { change: Partial<Preferences> }; response: SavePreferencesResult };
 			openInEditor: { params: OpenInEditorRequest; response: OpenInEditorResult };
+			readTimberSettings: { params: { repository: string | null }; response: TimberSettings };
+			/** Waits up to ten seconds for `gh auth status`, so the caller allows longer. */
+			readTimberIntegrations: { params: {}; response: IntegrationStatuses };
 			previewDone: { params: DonePreviewRequest; response: DonePreviewResult };
 			/** Answers only when Timber has ended. Scripts that run before deletion take as long as they take, so the caller must not time it out. */
 			applyDone: { params: DoneApplyRequest; response: DoneApplyResult };
