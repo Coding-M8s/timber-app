@@ -27,8 +27,8 @@ export type Operation =
 	| { kind: "remove-repository"; repository: string }
 	/** Starting the editor for a worktree, named by its registered path. */
 	| { kind: "open-in-editor"; worktree: string }
-	/** Starting a terminal in a worktree, named by its identity (`Worktree.id`). */
-	| { kind: "open-terminal"; worktree: string }
+	/** Starting a session in a worktree, named by its identity (`Worktree.id`): the shell, or the agent named. */
+	| { kind: "open-terminal"; worktree: string; agent: string | null }
 	/** Ending a terminal session, named by its id. */
 	| { kind: "close-terminal"; session: string }
 	/** Reading the changed files of a worktree, named by its identity (`Worktree.id`). */
@@ -57,11 +57,15 @@ export interface ChangesView {
 	diff: FileDiffResult | null;
 }
 
-/** Why a terminal did not start. It stays until dismissed, or until a terminal starts in that worktree. */
+/** Why a session did not start. It stays until dismissed, or until a session starts in that worktree. */
 export interface TerminalProblem {
 	/** The worktree's identity (`Worktree.id`). */
 	worktree: string;
+	/** The agent that did not start, by name, or null for the shell. */
+	agent: string | null;
 	message: string;
+	/** The command that failed, as one line, when it is known. */
+	command: string | null;
 }
 
 /** Why the latest reload failed. `repository` is null when it was a reload of everything. */
@@ -96,7 +100,7 @@ export type DialogRequest =
 	| { kind: "settings"; section?: SettingsSection };
 
 /** The sections of the Settings dialog, in the order they are listed. */
-export const SETTINGS_SECTIONS = ["layout", "editor"] as const;
+export const SETTINGS_SECTIONS = ["layout", "editor", "agents"] as const;
 export type SettingsSection = typeof SETTINGS_SECTIONS[number];
 
 /** The views of the selected worktree, in the order of their tabs. */

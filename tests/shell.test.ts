@@ -1,3 +1,4 @@
+import { AGENT_PRESETS } from "../src/shared/agent";
 import { describe, expect, test } from "bun:test";
 import type { Engine } from "../src/shared/engine";
 import { DEFAULT_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, defaultLayout } from "../src/shared/layout";
@@ -316,15 +317,15 @@ describe("the preferences in the store", () => {
 		expect(store.getState().preferences).toEqual(defaultPreferences());
 		store.start();
 		await settle();
-		expect(store.getState().preferences).toEqual({ sidebarSide: "right", editor: null });
+		expect(store.getState().preferences).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS });
 	});
 
 	test("a save that worked shows at once, and a restarted store has it", async () => {
 		const engine = createMockEngine();
 		const store = await startedStore(engine);
-		expect(await store.savePreferences({ sidebarSide: "right" })).toEqual({ outcome: "saved", preferences: { sidebarSide: "right", editor: null } });
-		expect(store.getState().preferences).toEqual({ sidebarSide: "right", editor: null });
-		expect((await startedStore(engine)).getState().preferences).toEqual({ sidebarSide: "right", editor: null });
+		expect(await store.savePreferences({ sidebarSide: "right" })).toEqual({ outcome: "saved", preferences: { sidebarSide: "right", editor: null, agents: AGENT_PRESETS } });
+		expect(store.getState().preferences).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS });
+		expect((await startedStore(engine)).getState().preferences).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS });
 	});
 
 	test("a save that failed changes nothing on screen and answers with the reason", async () => {
@@ -354,9 +355,9 @@ describe("the preferences in the store", () => {
 		const store = createAppStore(engine);
 		store.start();
 		await store.savePreferences({ sidebarSide: "right" });
-		answer({ sidebarSide: "left", editor: null });
+		answer({ sidebarSide: "left", editor: null, agents: AGENT_PRESETS });
 		await settle();
-		expect(store.getState().preferences).toEqual({ sidebarSide: "right", editor: null });
+		expect(store.getState().preferences).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS });
 	});
 
 	test("preferences that cannot be read leave the defaults and a reason, until a save works", async () => {
@@ -380,11 +381,11 @@ describe("the preferences in the store", () => {
 		const store = await startedStore(engine);
 		const first = store.savePreferences({ sidebarSide: "left" });
 		const second = store.savePreferences({ sidebarSide: "right" });
-		answers[1]!({ outcome: "saved", preferences: { sidebarSide: "right", editor: null } });
+		answers[1]!({ outcome: "saved", preferences: { sidebarSide: "right", editor: null, agents: AGENT_PRESETS } });
 		await second;
-		answers[0]!({ outcome: "saved", preferences: { sidebarSide: "left", editor: null } });
+		answers[0]!({ outcome: "saved", preferences: { sidebarSide: "left", editor: null, agents: AGENT_PRESETS } });
 		await first;
-		expect(store.getState().preferences).toEqual({ sidebarSide: "right", editor: null });
+		expect(store.getState().preferences).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS });
 	});
 
 	test("a change the engine cannot read is a failed save", async () => {

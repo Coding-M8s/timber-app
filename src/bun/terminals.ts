@@ -1,8 +1,11 @@
 import { accessSync, constants } from "node:fs";
+import { type AgentSetting, agentCommand, findAgent } from "../shared/agent";
+import { describeCommandLine } from "../shared/command-line";
 import {
 	type OpenTerminalRequest, type OpenTerminalResult, type Scrollback, type TerminalChange, type TerminalOutput, type TerminalSession,
 	type TerminalSnapshot, TERMINAL_UNSUPPORTED_REASON, clampTerminalSize, cleanSessionName, createScrollback, defaultSessionName, pickShell,
 } from "../shared/terminal";
+import { findExecutable } from "./find-executable";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
 import { sessionMembers, signalEach, signalGroup } from "./process-session";
 
@@ -25,6 +28,11 @@ const DRAIN_MILLISECONDS = 250;
 export interface TerminalDependencies {
 	/** The repository in the app's list, read again (see ./listed-worktree.ts). */
 	findRepository: FindRepository;
+	/**
+	 * The agents as saved in Settings. An agent's command comes only from
+	 * here, never from the interface. None when left out.
+	 */
+	agents?: () => Promise<readonly AgentSetting[]>;
 	/** Hears every part of output, in order per session. */
 	onOutput: (output: TerminalOutput) => void;
 	/** Hears every session that started, ended, or is gone. */
@@ -43,7 +51,7 @@ export interface TerminalDependencies {
 export interface TerminalSessions {
 	/** Every session, running or exited, in the order they started. */
 	list(): TerminalSession[];
-	/** Start another shell in a listed worktree, beside the sessions it has. */
+	/** Start another shell, or an agent from Settings, in a listed worktree, beside the sessions it has. */
 	open(request: OpenTerminalRequest): Promise<OpenTerminalResult>;
 	/** Give a session another name. Null for a session that is gone, or a name with nothing in it. */
 	rename(id: string, name: string): TerminalSession | null;
@@ -136,9 +144,15 @@ function signalSession(live: Live, signal: NodeJS.Signals): void {
  *   terminal (`Bun.Terminal`), started in the worktree's folder with the
  *   app's environment and `TERM=xterm-256color`. The shell leads a session
  *   of processes of its own.
+ * - An agent session starts an agent's command from the saved Settings in
+ *   place of the shell, split without a shell, its executable found on the
+ *   app's PATH. A request names the agent, never the command. An agent whose
+ *   executable is not there starts nothing, and no session is kept. What an
+ *   agent prints is handled as any terminal's output and never read.
  * - Only a worktree Timber lists, in a repository in the app's list, with its
  *   folder there, gets one. Each request starts another, beside the ones the
- *   worktree has, named after its kind ("Terminal", "Terminal 2", ...).
+ *   worktree has, named after the shell or the agent ("Terminal",
+ *   "Terminal 2", "Codex", ...).
  * - Output is kept, up to `SCROLLBACK_LIMIT`, so the interface can draw a
  *   session again, and is sent in numbered parts, never far ahead of what
  *   the window drew (`UNDRAWN_LIMIT`).
@@ -150,7 +164,7 @@ function signalSession(live: Live, signal: NodeJS.Signals): void {
  */
 export function createTerminalSessions(dependencies: TerminalDependencies): TerminalSessions {
 	const {
-		findRepository, onOutput, onChange, environment = process.env, platform = process.platform,
+		findRepository, onOutput, onChange, agents = async () => [], environment = process.env, platform = process.platform,
 		closeMilliseconds = CLOSE_MILLISECONDS, flushMilliseconds = FLUSH_MILLISECONDS, undrawnLimit = UNDRAWN_LIMIT,
 	} = dependencies;
 	const sessions = new Map<string, Live>();
@@ -179,14 +193,55 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		onChange({ id: live.session.id, session: session ? { ...session } : null });
 	}
 
+	/** What a session starts with: the shell, or an agent's executable as found on the PATH, with its arguments. */
+	type Start =
+		| { ok: true; kind: TerminalSession["kind"]; base: string; argv: string[]; command: string }
+		| { ok: false; result: OpenTerminalResult };
+
+	function startOf(agent: AgentSetting | null): Start {
+		if (agent === null) {
+			const shell = pickShell(environment, isExecutable);
+			return { ok: true, kind: "terminal", base: "Terminal", argv: [shell], command: describeCommandLine([shell]) };
+		}
+		const built = agentCommand(agent);
+		if (!built.ok) return { ok: false, result: { outcome: "failed", message: `${built.message} Change it in Settings, Agents. Nothing was started.` } };
+		const command = describeCommandLine([built.executable, ...built.arguments]);
+		const lookup = findExecutable(built.executable, environment.PATH ?? "", { what: agent.name, command: `The command of ${agent.name}`, section: "Settings, Agents" });
+		if (!lookup.ok) {
+			return {
+				ok: false,
+				result: lookup.reason === "relative"
+					? { outcome: "failed", command, message: lookup.message }
+					: { outcome: "not-found", command, executable: built.executable, message: lookup.message },
+			};
+		}
+		const argv = [lookup.path, ...built.arguments];
+		return { ok: true, kind: "agent", base: agent.name, argv, command: describeCommandLine(argv) };
+	}
+
 	async function open(request: OpenTerminalRequest): Promise<OpenTerminalResult> {
 		if (platform === "win32") return { outcome: "unsupported", message: TERMINAL_UNSUPPORTED_REASON };
-		const listed = await findListedWorktree(findRepository, request.repository, request.worktree, "No terminal was started.");
+		// An agent is looked up first: a request for one never falls back to a shell.
+		let agent: AgentSetting | null = null;
+		if (request.agent !== undefined) {
+			if (typeof request.agent !== "string") return { outcome: "not-configured", message: "The request names no agent. Nothing was started." };
+			let saved: readonly AgentSetting[];
+			try {
+				saved = await agents();
+			} catch (error) {
+				return { outcome: "failed", message: `Could not read the agents in Settings: ${messageOf(error)}. Nothing was started.` };
+			}
+			agent = findAgent(saved, request.agent);
+			if (agent === null) return { outcome: "not-configured", message: `No agent called "${request.agent}" is set in Settings, Agents. Nothing was started.` };
+		}
+		const listed = await findListedWorktree(findRepository, request.repository, request.worktree, agent ? `${agent.name} was not started.` : "No terminal was started.");
 		if (!listed.ok) return { outcome: "not-listed", message: listed.message };
 		// From here to the new session being kept nothing waits, so two sessions that start at once get different names.
-		const name = defaultSessionName("terminal", inWorktree(listed.worktree.id).map(live => live.session.name));
+		const start = startOf(agent);
+		if (!start.ok) return start.result;
+		const name = defaultSessionName(start.base, inWorktree(listed.worktree.id).map(live => live.session.name));
 
-		const shell = pickShell(environment, isExecutable);
+		const shell = start.argv[0]!;
 		const { cols, rows } = clampTerminalSize(request.cols, request.rows);
 		const decoder = new TextDecoder();
 		let live: Live | undefined;
@@ -196,7 +251,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		});
 		let child: Bun.Subprocess;
 		try {
-			child = Bun.spawn([shell], {
+			child = Bun.spawn(start.argv, {
 				cwd: request.worktree,
 				env: { ...environment, TERM: "xterm-256color", COLORTERM: "truecolor", TERM_PROGRAM: "timber-app" },
 				terminal: {
@@ -213,17 +268,18 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 				},
 			});
 		} catch (error) {
-			return { outcome: "failed", message: `Could not start ${shell} in ${request.worktree}: ${messageOf(error)}` };
+			return { outcome: "failed", command: start.command, message: `Could not start ${shell} in ${request.worktree}: ${messageOf(error)}` };
 		}
 
 		const session: TerminalSession = {
 			id: crypto.randomUUID(),
-			kind: "terminal",
+			kind: start.kind,
 			name,
 			repository: request.repository,
 			worktree: listed.worktree.id,
 			path: request.worktree,
 			shell,
+			command: start.command,
 			state: { kind: "running" },
 		};
 		const ended = child.exited.then(async () => {

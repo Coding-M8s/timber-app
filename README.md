@@ -10,12 +10,13 @@ Timber, not a replacement for it, and it has no code editor of its own.
 worktrees Timber lists and their branch status, remembers the repositories you add, and creates a worktree on a new branch (`timber new`) or opens an existing branch as one (`timber open`) from the "+" on a repository. Done removes a worktree
 after a preview of what would be lost. Settings, from the cog, puts the
 sidebar on the left or the right and chooses the editor that "Open in
-editor" starts on a worktree. Each worktree can run several terminals in the
-Workspace tab, one chip each (tested on Linux only; not supported on Windows
-yet). The Changes tab lists a worktree's staged, unstaged, and untracked files
-and shows the diff of each, read-only. Rebasing worktrees, agent panes,
-comparing against the base, and the rest of settings are designed but not
-built.
+editor" starts on a worktree. Each worktree can run several terminals and
+coding agents, such as Claude Code and Codex, in the Workspace tab, one chip
+each, started from the "+" menu (tested on Linux only; not supported on
+Windows yet). Settings, Agents lists the agents. The Changes tab lists a
+worktree's staged, unstaged, and untracked files and shows the diff of each,
+read-only. Rebasing worktrees, comparing against the base, and the rest of
+settings are designed but not built.
 See the [architecture](docs/architecture.md) and [design](docs/design.md) notes.
 
 ## Quick start

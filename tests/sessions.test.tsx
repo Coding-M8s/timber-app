@@ -34,11 +34,11 @@ const render = (store: ReturnType<typeof createAppStore>) => renderToStaticMarku
 
 describe("naming sessions", () => {
 	test("a new session takes the kind's name, then the first free number", () => {
-		expect(defaultSessionName("terminal", [])).toBe("Terminal");
-		expect(defaultSessionName("terminal", ["Terminal"])).toBe("Terminal 2");
-		expect(defaultSessionName("terminal", ["Terminal", "Terminal 3"])).toBe("Terminal 2");
-		expect(defaultSessionName("terminal", ["Terminal 2"])).toBe("Terminal");
-		expect(defaultSessionName("terminal", ["build", "Terminal", "Terminal 2"])).toBe("Terminal 3");
+		expect(defaultSessionName("Terminal", [])).toBe("Terminal");
+		expect(defaultSessionName("Terminal", ["Terminal"])).toBe("Terminal 2");
+		expect(defaultSessionName("Terminal", ["Terminal", "Terminal 3"])).toBe("Terminal 2");
+		expect(defaultSessionName("Terminal", ["Terminal 2"])).toBe("Terminal");
+		expect(defaultSessionName("Terminal", ["build", "Terminal", "Terminal 2"])).toBe("Terminal 3");
 	});
 
 	test("a typed name is cleaned up, cut to 40 characters, and refused when nothing is left", () => {
@@ -109,7 +109,7 @@ describe("words for sessions", () => {
 describe("several sessions in one worktree", () => {
 	test("a session that changes keeps its place among the others", () => {
 		const make = (id: string, name: string): TerminalSession =>
-			({ id, kind: "terminal", name, repository: TIMBER, worktree: featureId, path: FEATURE, shell: "/bin/sh", state: { kind: "running" } });
+			({ id, kind: "terminal", name, repository: TIMBER, worktree: featureId, path: FEATURE, shell: "/bin/sh", command: "/bin/sh", state: { kind: "running" } });
 		const list = [make("a", "A"), make("b", "B"), make("c", "C")];
 		expect(withTerminal(list, "a", make("a", "A2")).map(session => session.name)).toEqual(["A2", "B", "C"]);
 		expect(withTerminal(list, "d", make("d", "D")).map(session => session.id)).toEqual(["a", "b", "c", "d"]);
@@ -224,7 +224,7 @@ describe("several sessions in one worktree", () => {
 		expect(markup).toContain('aria-keyshortcuts="Delete F2"');
 		expect(markup).toContain(`role="tabpanel" id="session-panel" aria-labelledby="session-chip-${three.id}"`);
 		expect(markup.match(/class="terminal-screen"/g)).toHaveLength(1);
-		expect(markup).toContain('aria-label="New terminal"');
+		expect(markup).toContain('aria-label="New session" aria-haspopup="menu" aria-expanded="false"');
 		// The chip's close control is for the pointer, out of the tab order; the keyboard has Delete and the session bar's Close.
 		expect(markup).toMatch(/<button type="button" class="session-chip-close" tabindex="-1" aria-label="Close Terminal 3 and end its processes"/);
 		expect(markup).toContain(">Rename</button>");

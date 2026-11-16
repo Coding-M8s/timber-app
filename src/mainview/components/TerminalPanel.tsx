@@ -1,4 +1,5 @@
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import { type SessionMenuItem, describeSessionProblemTitle, describeStarting, menuIndexAfterKey, sessionMenuChoice, sessionMenuItems } from "../agent-format";
 import type { Repository, Worktree } from "../../shared/model";
 import { SESSION_NAME_LIMIT, type TerminalSession } from "../../shared/terminal";
 import { useAppState, useStore } from "../store/react";
@@ -132,14 +133,14 @@ function Session({ session, renaming, onRename }: SessionProps) {
 	const state = describeTerminalState(session);
 	return (
 		<section
-			className="session"
+			className={session.kind === "agent" ? "session agent" : "session"}
 			role="tabpanel"
 			id={SESSION_PANEL_ID}
 			aria-labelledby={renaming ? undefined : sessionChipId(session.id)}
 			aria-label={renaming ? session.name : undefined}
 		>
 			<div className="session-bar">
-				<span className="session-shell" title={session.shell}>{shellName(session.shell)}</span>
+				<span className="session-shell" title={session.command}>{shellName(session.shell)}</span>
 				<span className="session-state" role="status">{state}</span>
 				<span className="session-hint" title={terminalHint(isMac())}>{terminalHint(isMac())}</span>
 				<button type="button" className="text-button" title={`Rename ${session.name} (F2 on its chip)`} onClick={onRename}>Rename</button>
@@ -288,7 +289,7 @@ function Chip({ session, selected, unseen, ids, shownId, closing, closingIds, on
 			>
 				{/* A filled dot while it runs, a hollow one once it ended: the shape says it, not only the color. */}
 				<span className="session-dot" aria-hidden="true" />
-				<span className="session-kind" aria-hidden="true">&gt;_</span>
+				<span className="session-kind" aria-hidden="true">{session.kind === "agent" ? "\u2726" : ">_"}</span>
 				<span className="session-name">{session.name}</span>
 				{exit !== null && <span className="session-exit" aria-hidden="true">{exit}</span>}
 				{unseen && <span className="session-unseen" aria-hidden="true" />}
@@ -301,17 +302,152 @@ function Chip({ session, selected, unseen, ids, shownId, closing, closingIds, on
 	);
 }
 
-/** Why a session did not start in this worktree, until dismissed. */
+/** Why a session did not start in this worktree, with the command that failed, until dismissed. */
 function TerminalProblemNote({ worktree }: { worktree: Worktree }) {
 	const store = useStore();
 	const state = useAppState();
-	const problem = state.terminalProblem?.worktree === worktree.id ? state.terminalProblem.message : null;
+	const problem = state.terminalProblem?.worktree === worktree.id ? state.terminalProblem : null;
 	if (problem === null) return null;
 	return (
 		<div className="sidebar-error terminal-problem" role="alert">
-			<p className="sidebar-error-title">The terminal did not start</p>
-			<p className="sidebar-error-text">{problem}</p>
+			<p className="sidebar-error-title">{describeSessionProblemTitle(problem)}</p>
+			<p className="sidebar-error-text">{problem.message}</p>
+			{problem.command !== null && <pre className="dialog-command" aria-label="Command that failed">{problem.command}</pre>}
 			<button type="button" className="text-button" onClick={() => store.dismissTerminalProblem()}>Dismiss</button>
+		</div>
+	);
+}
+
+const SET_UP_AGENTS = "Set up agents";
+/** The widest the "+" menu gets, in pixels, as in the styles. */
+const MENU_WIDTH = 440;
+
+interface SessionMenuProps {
+	items: readonly SessionMenuItem[];
+	disabled: boolean;
+	title: string;
+	onStart: (agent: string | null) => void;
+	onSetUp: () => void;
+}
+
+/**
+ * "+" at the end of the chips: a menu of what can start, the shell and every
+ * agent from Settings, each with what it runs, then a way to Settings,
+ * Agents. The arrows, Home, and End move through it and wrap; Escape closes
+ * it and Tab or a click elsewhere puts it away. Choosing an entry gives the
+ * keyboard back to "+", so the new session's terminal takes it.
+ */
+function SessionMenu({ items, disabled, title, onStart, onSetUp }: SessionMenuProps) {
+	const menuId = useId();
+	const [open, setOpen] = useState(false);
+	// "+" follows the last chip, so near the window's right edge the menu hangs to the left of it instead.
+	const [alignEnd, setAlignEnd] = useState(false);
+	const button = useRef<HTMLButtonElement>(null);
+	const menu = useRef<HTMLDivElement>(null);
+	const entries = items.length + 1;
+	const itemId = (index: number) => `${menuId}-item-${index}`;
+
+	const show = (index: number) => {
+		const left = button.current?.getBoundingClientRect().left ?? 0;
+		setAlignEnd(typeof window !== "undefined" && left + MENU_WIDTH > window.innerWidth - 8);
+		setOpen(true);
+		focusSoon(itemId(index));
+	};
+	const close = (backToButton: boolean) => {
+		setOpen(false);
+		if (backToButton) button.current?.focus();
+	};
+
+	useEffect(() => {
+		if (!open) return;
+		const away = (event: PointerEvent) => {
+			const target = event.target as Node | null;
+			if (target && !menu.current?.contains(target) && !button.current?.contains(target)) setOpen(false);
+		};
+		document.addEventListener("pointerdown", away);
+		return () => document.removeEventListener("pointerdown", away);
+	}, [open]);
+	useEffect(() => {
+		if (disabled) setOpen(false);
+	}, [disabled]);
+
+	const choose = (index: number) => {
+		const choice = sessionMenuChoice(items, index);
+		close(true);
+		if (choice?.kind === "start") onStart(choice.agent);
+		else if (choice?.kind === "set-up") onSetUp();
+	};
+
+	const onButtonKey = (event: KeyboardEvent<HTMLButtonElement>) => {
+		if (event.key === "ArrowDown") {
+			event.preventDefault();
+			show(0);
+		} else if (event.key === "ArrowUp") {
+			event.preventDefault();
+			show(entries - 1);
+		}
+	};
+
+	const onMenuKey = (event: KeyboardEvent<HTMLDivElement>) => {
+		// Keys here are the menu's: none of them may reach the chips or a terminal.
+		event.stopPropagation();
+		const at = Array.from({ length: entries }, (_, index) => itemId(index)).indexOf(document.activeElement?.id ?? "");
+		const next = menuIndexAfterKey(entries, at === -1 ? 0 : at, event.key);
+		if (next !== null) {
+			event.preventDefault();
+			document.getElementById(itemId(next))?.focus();
+		} else if (event.key === "Escape") {
+			event.preventDefault();
+			close(true);
+		} else if (event.key === "Tab") {
+			// The focused entry goes with the menu, so Tab and Shift+Tab move on from "+".
+			button.current?.focus();
+			setOpen(false);
+		}
+	};
+
+	return (
+		<div className="session-menu-anchor">
+			<button
+				ref={button}
+				type="button"
+				className="icon-button session-add"
+				id={ADD_SESSION_ID}
+				aria-label="New session"
+				aria-haspopup="menu"
+				aria-expanded={open}
+				aria-controls={open ? menuId : undefined}
+				title={title}
+				disabled={disabled}
+				onClick={() => (open ? close(false) : show(0))}
+				onKeyDown={onButtonKey}
+			>
+				<span aria-hidden="true">+</span>
+			</button>
+			{open && (
+				<div ref={menu} className={alignEnd ? "session-menu end" : "session-menu"} role="menu" id={menuId} aria-label="New session" onKeyDown={onMenuKey}>
+					{items.map((item, index) => (
+						<button
+							key={item.agent ?? ""}
+							type="button"
+							role="menuitem"
+							id={itemId(index)}
+							className="session-menu-item"
+							tabIndex={-1}
+							title={item.agent === null ? "Start your shell in this worktree" : `Start ${item.label}: ${item.detail}`}
+							onClick={() => choose(index)}
+						>
+							<span className="session-kind" aria-hidden="true">{item.agent === null ? ">_" : "\u2726"}</span>
+							<span className="session-menu-label">{item.label}</span>
+							<span className={item.agent === null ? "session-menu-detail" : "session-menu-detail mono"}>{item.detail}</span>
+						</button>
+					))}
+					<div className="session-menu-separator" role="separator" />
+					<button type="button" role="menuitem" id={itemId(items.length)} className="session-menu-item" tabIndex={-1} onClick={() => choose(items.length)}>
+						<span className="session-menu-label">{SET_UP_AGENTS}</span>
+					</button>
+				</div>
+			)}
 		</div>
 	);
 }
@@ -340,21 +476,41 @@ export function TerminalPanel({ repository, worktree }: { repository: Repository
 		const active = document.activeElement;
 		if (active === null || active === document.body || panel.current?.contains(active)) document.getElementById(ADD_SESSION_ID)?.focus();
 	}, [worktree.id, sessions.length]);
-	const starting = state.operations.some(operation => operation.kind === "open-terminal" && operation.worktree === worktree.id);
+	const startingOperation = state.operations.find(operation => operation.kind === "open-terminal" && operation.worktree === worktree.id);
+	const starting = startingOperation !== undefined;
+	const startingAgent = startingOperation?.kind === "open-terminal" ? startingOperation.agent : undefined;
 	const missing = !worktree.pathExists;
+	const agents = state.preferences.agents;
 	// A guess at the pane's size, so the first prompt fits. The pane fits it exactly as soon as it shows.
-	const start = () => void store.openTerminal({ repository: repository.path, worktree: worktree.path, ...estimateTerminalSize(panel.current) });
+	const start = (agent: string | null = null) =>
+		void store.openTerminal({ repository: repository.path, worktree: worktree.path, ...estimateTerminalSize(panel.current), ...(agent === null ? {} : { agent }) });
+	const setUpAgents = () => store.openDialog({ kind: "settings", section: "agents" });
 
 	if (!shown) {
 		return (
 			<div className="empty" ref={panel}>
-				<p className="empty-title">No terminal here yet</p>
+				<p className="empty-title">No session here yet</p>
 				<p className="empty-text">
-					Start your shell in this worktree's folder. It keeps running while you look at other worktrees, until you close it or quit the app.
+					Start your shell or a coding agent in this worktree's folder. It keeps running while you look at other worktrees, until you close it or quit the app.
 				</p>
-				<button type="button" className="button" id={ADD_SESSION_ID} disabled={starting || missing} title={missing ? FOLDER_MISSING_TERMINAL : worktree.path} onClick={start}>
-					{starting ? "Starting" : "Open terminal"}
-				</button>
+				<div className="empty-actions">
+					<button type="button" className="button" id={ADD_SESSION_ID} disabled={starting || missing} title={missing ? FOLDER_MISSING_TERMINAL : worktree.path} onClick={() => start()}>
+						{startingAgent === null ? "Starting" : "Open terminal"}
+					</button>
+					{sessionMenuItems(agents).slice(1).map(item => (
+						<button
+							key={item.agent!}
+							type="button"
+							className="button quiet"
+							disabled={starting || missing}
+							title={missing ? FOLDER_MISSING_TERMINAL : `Start ${item.label}: ${item.detail}`}
+							onClick={() => start(item.agent)}
+						>
+							{startingAgent === item.agent ? `Starting ${item.label}` : `Start ${item.label}`}
+						</button>
+					))}
+				</div>
+				<button type="button" className="text-button" onClick={setUpAgents}>{SET_UP_AGENTS}</button>
 				{missing && <p className="empty-text">{FOLDER_MISSING_TERMINAL}</p>}
 				<TerminalProblemNote worktree={worktree} />
 			</div>
@@ -362,7 +518,7 @@ export function TerminalPanel({ repository, worktree }: { repository: Repository
 	}
 
 	const ids = sessions.map(session => session.id);
-	const newTitle = missing ? FOLDER_MISSING_TERMINAL : starting ? "Starting a terminal" : `New terminal in ${worktree.path}`;
+	const newTitle = missing ? FOLDER_MISSING_TERMINAL : startingAgent !== undefined ? describeStarting(startingAgent) : `New session in ${worktree.path}`;
 	return (
 		<div className="sessions" ref={panel}>
 			<div className="session-strip">
@@ -385,17 +541,7 @@ export function TerminalPanel({ repository, worktree }: { repository: Repository
 						),
 					)}
 				</div>
-				<button
-					type="button"
-					className="icon-button session-add"
-					id={ADD_SESSION_ID}
-					aria-label="New terminal"
-					title={newTitle}
-					disabled={starting || missing}
-					onClick={start}
-				>
-					<span aria-hidden="true">+</span>
-				</button>
+				<SessionMenu items={sessionMenuItems(agents)} disabled={starting || missing} title={newTitle} onStart={start} onSetUp={setUpAgents} />
 			</div>
 			<TerminalProblemNote worktree={worktree} />
 			<Session key={shown.id} session={shown} renaming={renaming === shown.id} onRename={() => setRenaming(shown.id)} />

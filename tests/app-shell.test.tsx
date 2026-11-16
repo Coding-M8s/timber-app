@@ -214,7 +214,7 @@ describe("workspace", () => {
 		expect(panel).toContain('aria-labelledby="tab-workspace"');
 		// It holds the button that starts a terminal, so it needs no tab stop of its own.
 		expect(panel).not.toContain("tabindex");
-		expect(markup).toContain("No terminal here yet");
+		expect(markup).toContain("No session here yet");
 		expect(markup).toContain(">Open terminal</button>");
 	});
 
@@ -227,7 +227,7 @@ describe("workspace", () => {
 		expect(tagOf(markup, "tabpanel workspace-panel")).toContain('aria-labelledby="tab-changes"');
 		// Before the first read answers.
 		expect(markup).toContain("Reading changes");
-		expect(markup).not.toContain("No terminal here yet");
+		expect(markup).not.toContain("No session here yet");
 	});
 
 	test("an arrow key on the tab list shows the next tab", async () => {
@@ -366,8 +366,9 @@ describe("settings dialog", () => {
 		expect(nav).not.toBeNull();
 		expect(markup).toContain(`<div class="settings-panel" id="${nav![2]}" aria-labelledby="${nav![1]}">`);
 		// Every other section stays mounted, hidden, so what was typed in it survives a switch.
-		expect(markup.match(/class="settings-panel"[^>]*hidden=""/g)?.length).toBe(1);
+		expect(markup.match(/class="settings-panel"[^>]*hidden=""/g)?.length).toBe(2);
 		expect(markup).toMatch(/class="settings-panel" id="[^"]*-panel-editor"[^>]*hidden=""/);
+		expect(markup).toMatch(/class="settings-panel" id="[^"]*-panel-agents"[^>]*hidden=""/);
 	});
 
 	test("says when the saved settings could not be read", async () => {
