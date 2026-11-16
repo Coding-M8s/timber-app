@@ -66,6 +66,9 @@ export function createDesktopEngine(): Engine {
 		savePreferences: change => rpc.request.savePreferences({ change }),
 		// The main process reads the list first, and waits a moment to hear whether the editor stopped right away.
 		openInEditor: request => rpc.request.openInEditor(request, { maxRequestTime: 60_000 }),
+		// The main process reads the list first, then Git, which it stops after 20 seconds.
+		readFileChanges: request => rpc.request.readFileChanges(request, { maxRequestTime: 60_000 }),
+		readFileDiff: request => rpc.request.readFileDiff(request, { maxRequestTime: 60_000 }),
 		listTerminals: () => rpc.request.listTerminals({}),
 		// The main process reads the list first.
 		openTerminal: request => rpc.request.openTerminal(request, { maxRequestTime: 60_000 }),

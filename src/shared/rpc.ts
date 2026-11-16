@@ -1,4 +1,5 @@
 import type { RPCSchema } from "electrobun/view";
+import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffResult } from "./file-changes";
 import type { Layout } from "./layout";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
 import type { Preferences } from "./preferences";
@@ -33,6 +34,8 @@ export type AppRPC = {
 			previewDone: { params: DonePreviewRequest; response: DonePreviewResult };
 			/** Answers only when Timber has ended. Scripts that run before deletion take as long as they take, so the caller must not time it out. */
 			applyDone: { params: DoneApplyRequest; response: DoneApplyResult };
+			readFileChanges: { params: FileChangesRequest; response: FileChangesResult };
+			readFileDiff: { params: FileDiffRequest; response: FileDiffResult };
 			listTerminals: { params: {}; response: TerminalSession[] };
 			openTerminal: { params: OpenTerminalRequest; response: OpenTerminalResult };
 			readTerminal: { params: { id: string }; response: TerminalSnapshot | null };

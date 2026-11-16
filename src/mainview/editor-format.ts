@@ -1,5 +1,5 @@
 import { splitCommandLine } from "../shared/command-line";
-import { EDITOR_PRESETS, type EditorPreset, type EditorSetting, TERMINAL_EDITOR_REASON, describeEditorCommand, presetOf, sameEditorSetting } from "../shared/editor";
+import { EDITOR_PRESETS, type EditorPreset, type EditorSetting, TERMINAL_EDITOR_REASON, describeEditorCommand, editorTarget, presetOf, sameEditorSetting } from "../shared/editor";
 import type { Worktree } from "../shared/model";
 import type { EditorProblem } from "./store/state";
 
@@ -25,8 +25,13 @@ export interface EditorAction {
 export const NO_EDITOR_HINT = "No editor is set yet. This opens Settings to choose one.";
 export const FOLDER_MISSING_REASON = "The folder of this worktree is missing.";
 
-export function describeEditorAction(editor: EditorSetting | null, worktree: Pick<Worktree, "path" | "pathExists">, running: boolean): EditorAction {
-	const command = editor && describeEditorCommand(editor, worktree.path);
+/**
+ * What "Open in editor" offers for a worktree, or for one file in it when
+ * `file` names one, relative to the worktree as Git reports it.
+ */
+export function describeEditorAction(editor: EditorSetting | null, worktree: Pick<Worktree, "path" | "pathExists">, running: boolean, file?: string): EditorAction {
+	const target = editorTarget(worktree.path, file);
+	const command = editor && (target.ok ? describeEditorCommand(editor, target.path) : null);
 	if (editor === null || command === null) {
 		const hint = editor === null ? NO_EDITOR_HINT : "The editor command in Settings cannot be read. This opens Settings to correct it.";
 		return { available: true, opensSettings: true, command: null, tooltip: `${OPEN_IN_EDITOR}. ${hint}`, reason: null };

@@ -52,8 +52,10 @@ Timber's safety logic must exist once. The app follows two rules:
    [creating and opening worktrees](#creating-and-opening-worktrees)).
 2. **Git is asked directly only for read-only status that Timber does not
    report.** Today that is which repository a folder belongs to, how each
-   branch stands against its upstream, and which branches there are to offer
-   for picking. Git is invoked as an executable plus an argument array.
+   branch stands against its upstream, which branches there are to offer
+   for picking, and the changed files and diffs of the Changes tab (see
+   [the Changes tab](#the-changes-tab)). Git is invoked as an executable
+   plus an argument array.
 
 Timber itself rules out GUI work, a daemon, and a local API inside its own
 repository. That is why this is a separate repository, and why the app's
@@ -492,8 +494,9 @@ pure functions in `src/mainview/shell.ts`.
   and 480 pixels, and never above half the window.
 - **Workspace.** A header for the selected worktree and two tabs, Workspace
   and Changes, as one tab list: the arrows, Home, and End move between tabs.
-  Each tab shows an empty state until its own content exists. Which tab shows
-  is in the store and is not remembered between runs.
+  Workspace holds the terminal and Changes the diff (see
+  [the Changes tab](#the-changes-tab)). Which tab shows is in the store and
+  is not remembered between runs.
 - **Not built yet.** The palette button is disabled and says so in its
   tooltip. The "+" and the Settings cog only ask: each puts a `DialogRequest`
   in the store (`openDialog`), and the New dialog or the Settings dialog is
@@ -629,7 +632,12 @@ Open always pass `--no-editor` to Timber (see
   from the interface. Like Done, it acts only on a repository in the app's
   list and a full path that `timber ls --json` lists for it at that moment,
   and only when that folder is there. These checks come first, so no answer
-  ever carries a command built from a path that was not listed.
+  ever carries a command built from a path that was not listed. The request
+  may also name a `file`, relative to the worktree as Git reports it, which
+  the Changes tab does. The editor then gets that file's full path in place
+  of the folder (`editorTarget` in `src/shared/editor.ts`). A path that is
+  absolute or steps out with `..` is refused, and so is a file that is not
+  there.
 - **Starting.** The executable is looked for on the PATH the app was started
   with (`Bun.which`), or taken as a full path. A relative path is refused.
   It is started with `Bun.spawn` as an executable plus arguments, in the
@@ -657,6 +665,61 @@ Open always pass `--no-editor` to Timber (see
 - **Trying it.** In `bun run dev:web` the mock engine acts it out and starts
   nothing. `timberMock.endEditorLaunches("not-found")` or `("fails")` chooses
   how it ends from then on, and `("opens")` goes back to the start.
+
+## The Changes tab
+
+The Changes tab shows what changed in the selected worktree, as `git status`
+and `git diff` see it. It is read-only: nothing in it stages, discards, or
+commits. Comparing against the base or a rebase backup is a later step.
+
+- **The capabilities.** `readFileChanges({ repository, worktree })` and
+  `readFileDiff({ repository, worktree, file })` on the `Engine` contract.
+  The types and pure parsers are in `src/shared/file-changes.ts`, and the
+  main process side is `src/bun/file-changes.ts`. Both act only on a
+  worktree Timber lists, in a repository in the app's list, whose folder is
+  there (`findListedWorktree`), as "Open in editor" does.
+- **The list.** `git status --porcelain=v2 -z --untracked-files=all`. Each
+  untracked file is listed on its own, not its folder, so it can show its
+  content. A file with staged and unstaged changes is listed once in each
+  group. Groups show conflicts first, then staged, then unstaged (untracked
+  included). Kinds: modified, added, deleted, renamed, copied, type changed,
+  untracked, and conflicted. At most 5,000 files are listed, with a note
+  when there are more.
+- **A diff.** Staged changes are `git diff --cached -- <path>`, unstaged
+  ones `git diff -- <path>`, both paths for a rename or a copy, and an
+  untracked file is `git diff --no-index -- /dev/null <path>`, so every line
+  is an addition. A conflicted file is Git's combined diff. The request names
+  the file by group and path. The main process reads that file's status
+  again and builds the command from what Git says now, so a path from the
+  interface never reaches Git unchecked; one that is absolute or steps out
+  with `..` is refused first. A file that is no longer changed there says so.
+- **Read-only for real.** Every query runs with `GIT_OPTIONAL_LOCKS=0`.
+  Without it, both `git status` and `git diff` rewrite the index to refresh
+  file times, which a test showed. Paths are literal (`--literal-pathspecs`),
+  so a file named `*` means that file. Diffs run with `--no-color
+  --no-ext-diff --no-textconv`, so the person's diff configuration cannot
+  start a program or change the text, and with `LC_ALL=C`, so Git's "Binary
+  files ... differ" is in English for the parser.
+- **Large and binary.** Git's output is read up to 512 KiB, and Git is
+  stopped beyond that. A diff of more than 5,000 lines is not drawn. Either
+  way, and for a binary file, a notice shows instead, with the Git command
+  to run in a terminal. Git is stopped after 20 seconds.
+- **In the window.** The file list sits beside the diff. Each file shows its
+  name, its folder, and Git's letter (M, A, D, R, C, T, U, and ! for a
+  conflict). The first file is selected, and the selection stays on a file
+  for as long as it is listed. The arrows, Home, and End move through the
+  list. The diff shows old and new line numbers and Git's own header lines,
+  such as `rename from`. "Open in editor" opens the selected file, and is not
+  offered for a deleted one.
+- **Refreshing.** The tab reads the list again whenever the worktree's
+  status on screen is read again, which is whenever its repository reloads:
+  the sidebar's Refresh, the tab's own Refresh, or a reported change. The
+  selected file's diff is read again with it. The view is in the store
+  (`changes`), and the latest read wins.
+- **Trying it.** In `bun run dev:web` the billing worktree feat/tax-rules
+  shows every kind of change. `timberMock.failFileChanges("Git is busy")`
+  makes reads fail (`null` to undo), and `timberMock.setFileChanges(path,
+  files)` sets what a worktree lists.
 
 ## Terminal sessions
 
@@ -772,6 +835,8 @@ a terminal that cannot start (`null` to undo).
 3. **Timber actions.** New and open, rebase with a base picker, done with the
    safe and "delete anyway" confirmations.
 4. **Changes.** Diff against the base, the last commit, or a rebase backup.
+   The working tree against the index and the last commit is built (see
+   [the Changes tab](#the-changes-tab)).
 5. **Settings.** Editor, coding assistant, scripts, layout.
 6. **Background refresh.** File watching per worktree and periodic fetch.
    Detecting a force-push needs a fetch and the remote-tracking reflog.
@@ -1342,7 +1407,44 @@ Wayland) with Bun 1.4.2, Git 2.43, and Timber 0.1.1:
   `xdg-open` without a shell. These changes ran in the tests above only, not
   in the desktop window.
 
+Run for the Changes tab (issue 16), Linux x64 (Omarchy, Hyprland on Wayland,
+natively) with Bun 1.4.4, Git 2.56.1, and Timber 0.1.1:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 821 passed, 1 failed. The failure is the terminal test
+  "closing a session ends everything it started", which fails the same way
+  on `main` without this change. Once, under the full suite, the
+  installed-Timber test "an editor configured in Timber does not start"
+  failed too; alone it passed three times out of three.
+- The new tests read real temporary repositories with every kind of change:
+  modified, staged and then edited again, deleted, staged deletion, staged
+  rename, binary, a link turned into a file, untracked files in a new
+  folder and with non-ASCII names, an empty file, a file of more than 5,000
+  lines, one of more than 512 KiB, a `*` in a file name, a merge conflict,
+  and a repository with no commit yet. The list equals what `git status
+  --porcelain=v1 -uall` lists, and diffs equal `git diff` and `git diff
+  --cached`. After every list and diff, with the index's file times made
+  stale, files, refs, and the index bytes were unchanged. Without
+  `GIT_OPTIONAL_LOCKS=0` that test fails, because Git rewrites the index.
+- `bun run build:web`, and `bun run dev:web` driven in headless Chromium
+  over the DevTools protocol: every kind in the billing sample showed, the
+  binary and large notices showed instead of lines, ArrowDown moved the
+  selection and the focus, and at 600 pixels wide the page did not scroll
+  sideways. Screenshots were looked at.
+- `bun run start` with `TIMBER_APP_REPOS` naming a temporary repository with
+  a linked worktree at `.../repo-worktrees/feat changes`, and a temporary
+  driver in the main process (not committed) that clicked the window and
+  logged what the RPC calls answered: the list came back as Git's status
+  (2 staged, 6 unstaged), and the diffs as text, binary, and too large as
+  expected. The index's SHA-256 and `git status` were the same afterwards.
+  Screenshots of the window (`grim`) were looked at. A first try loaded the
+  browser build, because `bun run dev:web` was still serving port 5173.
+
 Not run yet:
+
+- Open in editor for a file from the desktop window. It ran only through the
+  main process module with a stand-in editor, and in the mock engine.
+- The Changes tab on Windows or macOS.
 
 - The sidebar side in the desktop window, and the side read back from the
   settings file after restarting the desktop app. Only the mock engine and

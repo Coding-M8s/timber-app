@@ -4,6 +4,7 @@ import type { AppRPC } from "../shared/rpc";
 import { repositoryChanges } from "./changes";
 import { createDone } from "./done";
 import { createEditorLauncher } from "./editor";
+import { createFileChanges } from "./file-changes";
 import { readBranches } from "./git-engine";
 import { createSavedLayout } from "./layout";
 import { createSavedPreferences } from "./preferences";
@@ -56,6 +57,7 @@ const preferences = createSavedPreferences(settings);
 const worktrees = createWorktreeCommands({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
 
 const done = createDone({ timber: () => timber.current(), findRepository: path => repositories.find(path) });
+const fileChanges = createFileChanges({ findRepository: path => repositories.find(path) });
 const editor = createEditorLauncher({ preferences: () => preferences.load(), findRepository: path => repositories.find(path) });
 
 /** Report to the window. It may not be connected yet, or be reloading; its first load reads everything anyway. */
@@ -107,6 +109,9 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			previewDone: request => done.preview(request),
 			// Removes a worktree. Only ever with a preview that `previewDone` handed out (see ./done.ts).
 			applyDone: request => done.apply(request),
+			// Read-only Git, only in a worktree Timber lists (see ./file-changes.ts). A diff holds file contents: never log it.
+			readFileChanges: request => fileChanges.read(request),
+			readFileDiff: request => fileChanges.diff(request),
 			listTerminals: () => terminals.list(),
 			// Starts a shell only in a worktree Timber lists (see ./terminals.ts).
 			openTerminal: request => terminals.open(request),

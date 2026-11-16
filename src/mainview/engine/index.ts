@@ -26,6 +26,8 @@ export async function createEngine(): Promise<Engine> {
 	// For the Done dialog: timberMock.setChanges(path, { modified: ["a.ts"] }),
 	// timberMock.expirePreviewsAfter(5000), and timberMock.failBranchDeletion(true).
 	// For Open in editor: timberMock.endEditorLaunches("not-found") or ("fails").
+	// For the Changes tab: timberMock.failFileChanges("Git is busy"), or timberMock.setFileChanges(path, files).
+	// The billing worktree feat/tax-rules shows every kind of change.
 	// A removal takes a moment here, so the running state can be seen.
 	engine.setDoneDelay(900);
 	Object.assign(window, { timberMock: engine });
