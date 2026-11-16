@@ -1,3 +1,4 @@
+import { type Layout, defaultLayout } from "../../shared/layout";
 import type { Repository, TimberStatus, Worktree } from "../../shared/model";
 
 /** Null until the first look for Timber has answered. */
@@ -48,6 +49,16 @@ export interface Toast {
 /** The dialog open over the window. One at a time. */
 export type DialogRequest = { kind: "new-worktree"; repository: string };
 
+/** The views of the selected worktree, in the order of their tabs. */
+export const WORKSPACE_TABS = ["workspace", "changes"] as const;
+export type WorkspaceTab = typeof WORKSPACE_TABS[number];
+
+/** Why the layout could not be read on start, or could not be saved. What is on screen stays as it is. */
+export interface LayoutProblem {
+	action: "read" | "save";
+	message: string;
+}
+
 /** How long a toast stays before it disappears on its own. */
 export const TOAST_MILLISECONDS = 5000;
 
@@ -68,6 +79,15 @@ export interface AppState {
 	notice: ListNotice | null;
 	/** Outcomes that worked, oldest first. Failures are never toasts: they stay where the person can act on them. */
 	toasts: readonly Toast[];
+	/**
+	 * The sidebar width and the collapsed repository groups. The engine
+	 * remembers them between runs; this is what is on screen now.
+	 */
+	layout: Layout;
+	/** Null once a save worked, or after the person dismissed it. */
+	layoutProblem: LayoutProblem | null;
+	/** Which view of the selected worktree shows. */
+	tab: WorkspaceTab;
 	/** Null when no dialog is open. */
 	dialog: DialogRequest | null;
 }
@@ -81,6 +101,9 @@ export const initialState: AppState = {
 	error: null,
 	notice: null,
 	toasts: [],
+	layout: defaultLayout(),
+	layoutProblem: null,
+	tab: "workspace",
 	dialog: null,
 };
 

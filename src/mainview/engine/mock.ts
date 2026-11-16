@@ -1,4 +1,5 @@
 import type { Engine } from "../../shared/engine";
+import { type Layout, defaultLayout, forgetRepository, readLayout } from "../../shared/layout";
 import { type AddRepositoryResult, type BranchSuggestion, type Repository, type SyncState, type TimberStatus, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
 import { REQUIRED_TIMBER_VERSION } from "../../shared/timber-version";
 import { type CommandEnding, actOutNew, actOutOpen, isCommandEnding } from "./mock-commands";
@@ -215,6 +216,8 @@ export interface MockEngine extends Engine {
 	 * with the branches of the worktrees and the spare sample branches.
 	 */
 	setBranches(path: string, branches: BranchSuggestion[] | null): void;
+	/** Make every later save of the layout fail with this message, or pass null to let saves work again. */
+	failLayoutSaves(message: string | null): void;
 }
 
 export interface MockEngineOptions {
@@ -264,6 +267,9 @@ export function createMockEngine(
 		current = [...current, found];
 		return { outcome: "added", repository: found };
 	};
+	// The layout lives in memory, for as long as this engine does.
+	let layout: Layout = defaultLayout();
+	let layoutFailure: string | null = null;
 	const listeners = new Set<(path: string) => void>();
 	const look = async () => structuredClone(typeof timber === "function" ? timber() : timber);
 	const read = async <Result>(result: () => Result): Promise<Result> => {
@@ -300,6 +306,7 @@ export function createMockEngine(
 		addRepository: async () => structuredClone(add()),
 		async removeRepository(path) {
 			current = current.filter(repository => repository.path !== path);
+			layout = forgetRepository(layout, path);
 			return { outcome: "removed" };
 		},
 		newWorktree: request => command(request.repository, repository => actOutNew(repository, request, ending)),
@@ -319,6 +326,15 @@ export function createMockEngine(
 		},
 		setBranches(path, branches) {
 			branchLists.set(path, branches);
+		},
+		loadLayout: async () => structuredClone(layout),
+		async saveLayout(next) {
+			if (layoutFailure !== null) return { outcome: "failed", message: layoutFailure };
+			layout = readLayout(structuredClone(next));
+			return { outcome: "saved" };
+		},
+		failLayoutSaves(message) {
+			layoutFailure = message;
 		},
 		setRepositories(next) {
 			current = next;

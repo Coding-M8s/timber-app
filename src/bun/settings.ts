@@ -86,3 +86,37 @@ export async function writeSettings(file: string, settings: Settings): Promise<v
 		throw error;
 	}
 }
+
+/**
+ * The one holder of the settings file in the main process. Everything that
+ * saves a part of the settings goes through it, so the repository list and
+ * the layout cannot save over each other.
+ */
+export interface SettingsHolder {
+	/** The settings file. */
+	readonly file: string;
+	/** The settings as last read or saved. The file is read once, on first use. */
+	current(): Promise<Settings>;
+	/** Write the settings. Memory changes only after the save worked. */
+	save(next: Settings): Promise<void>;
+	/** Run a change after every change asked for before it, so that each one builds on what the last one saved. */
+	inTurn<Result>(task: () => Promise<Result>): Promise<Result>;
+}
+
+export function createSettingsHolder(file: string, warn: (message: string) => void = console.warn): SettingsHolder {
+	let saved: Promise<Settings> | null = null;
+	let last: Promise<unknown> = Promise.resolve();
+	return {
+		file,
+		current: () => saved ??= readSettings(file, warn),
+		async save(next) {
+			await writeSettings(file, next);
+			saved = Promise.resolve(next);
+		},
+		inTurn(task) {
+			const run = last.then(task);
+			last = run.catch(() => {});
+			return run;
+		},
+	};
+}

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Engine } from "../src/shared/engine";
+import { defaultLayout } from "../src/shared/layout";
 import type { AddRepositoryResult, RemoveRepositoryResult, Repository, TimberStatus, WorktreeCommandResult } from "../src/shared/model";
 import { createMockEngine, sampleChanges, samplePickableRepository, sampleRepositories, sampleTimberStatuses, sampleUnavailableRepository } from "../src/mainview/engine/mock";
 import { isRunning, selectedWorktree } from "../src/mainview/store/state";
@@ -87,6 +88,8 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 			listeners.add(listener);
 			return () => void listeners.delete(listener);
 		},
+		loadLayout: async () => defaultLayout(),
+		saveLayout: async () => ({ outcome: "saved" }),
 	};
 	const push = (path: string) => {
 		for (const listener of [...listeners]) listener(path);

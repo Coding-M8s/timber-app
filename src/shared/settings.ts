@@ -1,3 +1,5 @@
+import { type Layout, readLayout } from "./layout";
+
 /**
  * What the app remembers between runs. Parsing and formatting are pure; the
  * main process reads and writes the file (see src/bun/settings.ts).
@@ -15,6 +17,11 @@ export interface SavedRepository {
 
 export interface Settings {
 	repositories: SavedRepository[];
+	/**
+	 * How the window was arranged. Absent until the person first changes the
+	 * layout, and in files written before the app remembered it.
+	 */
+	layout?: Layout;
 }
 
 export const SETTINGS_VERSION = 1;
@@ -38,6 +45,10 @@ function readRepository(value: unknown): SavedRepository | null {
  * Read the text of a settings file. Null when it is damaged: not JSON, not
  * this version, or holding an entry that is not a saved repository. A damaged
  * file is never half-read, so a later save cannot quietly drop part of it.
+ *
+ * The layout is the exception, because it is only a convenience: a layout
+ * part that cannot be read falls back to the defaults (see `readLayout`) and
+ * never costs the repository list.
  */
 export function parseSettings(text: string): Settings | null {
 	let value: unknown;
@@ -59,11 +70,12 @@ export function parseSettings(text: string): Settings | null {
 			repositories.push(repository);
 		}
 	}
-	return { repositories };
+	return value.layout === undefined ? { repositories } : { repositories, layout: readLayout(value.layout) };
 }
 
 /** The text of a settings file, readable and stable enough to edit by hand. */
 export function serializeSettings(settings: Settings): string {
 	const repositories = settings.repositories.map(({ path, commonDir }) => ({ path, commonDir }));
-	return `${JSON.stringify({ version: SETTINGS_VERSION, repositories }, null, "\t")}\n`;
+	const layout = settings.layout && { sidebarWidth: settings.layout.sidebarWidth, collapsed: [...settings.layout.collapsed] };
+	return `${JSON.stringify({ version: SETTINGS_VERSION, repositories, ...(layout ? { layout } : {}) }, null, "\t")}\n`;
 }

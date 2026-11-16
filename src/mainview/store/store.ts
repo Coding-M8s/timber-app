@@ -1,8 +1,9 @@
 import type { Engine } from "../../shared/engine";
+import { type Layout, clampSidebarWidth, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenWorktreeRequest, ReportedWorktree, TimberStatus, WorktreeCommandResult } from "../../shared/model";
 import { describeAdded, describeRemoved, folderName } from "../format";
 import { mergeOverlapping } from "./merge";
-import { type AppState, type DialogRequest, type Operation, TOAST_MILLISECONDS, initialState, keepLastGood, reconcileSelection, selectionFor, selectionForRepository, timberReady } from "./state";
+import { type AppState, type DialogRequest, type Operation, type WorkspaceTab, TOAST_MILLISECONDS, initialState, keepLastGood, reconcileSelection, selectionFor, selectionForRepository, timberReady } from "./state";
 
 /**
  * The single holder of what the interface shows: Timber's status, the
@@ -40,6 +41,22 @@ export interface AppStore {
 	showToast(text: string): void;
 	/** Put a toast away before its time is up. */
 	dismissToast(id: number): void;
+	/** Collapse or open the group of a repository, named by the path of its primary checkout, and remember it. */
+	toggleGroup(repository: string): void;
+	/**
+	 * Set the sidebar width on screen, kept within its limits. Nothing is saved:
+	 * call `saveLayout` when the resize ends.
+	 */
+	resizeSidebar(width: number): void;
+	/**
+	 * Remember the layout on screen for the next run. A save that fails leaves
+	 * the screen alone and is noted in `layoutProblem`.
+	 */
+	saveLayout(): Promise<void>;
+	/** Put away the note about the layout. */
+	dismissLayoutProblem(): void;
+	/** Show one of the views of the selected worktree. */
+	showTab(tab: WorkspaceTab): void;
 	/**
 	 * Create a worktree with `timber new`. Whatever comes of it, the
 	 * repository is read again before this answers, and the worktree Timber
@@ -159,6 +176,50 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		}
 	}));
 
+	/*
+	 * The layout as the engine holds it, null until it answered. A change made
+	 * before that answer wins over it, because the person made it later.
+	 */
+	let savedLayout: Layout | null = null;
+	let layoutTouched = false;
+
+	async function loadLayout(): Promise<void> {
+		try {
+			const layout = await engine.loadLayout();
+			savedLayout = layout;
+			if (!layoutTouched) update({ layout });
+		} catch (error) {
+			update({ layoutProblem: { action: "read", message: messageOf(error) } });
+		}
+	}
+
+	function changeLayout(layout: Layout): void {
+		layoutTouched = true;
+		update({ layout });
+	}
+
+	// One save at a time. Saves asked for meanwhile share one follow-up save of whatever is on screen by then.
+	const saveLayout = mergeOverlapping<"layout">(async () => {
+		const layout = state.layout;
+		if (savedLayout && sameLayout(savedLayout, layout)) return;
+		let failure: string | null = null;
+		try {
+			const result = await engine.saveLayout(layout);
+			if (result.outcome === "failed") failure = result.message;
+		} catch (error) {
+			failure = messageOf(error);
+		}
+		if (failure !== null) {
+			// One note, however many saves fail: a drag or a held key must not pile them up.
+			if (state.layoutProblem?.action !== "save" || state.layoutProblem.message !== failure) {
+				update({ layoutProblem: { action: "save", message: failure } });
+			}
+			return;
+		}
+		savedLayout = layout;
+		if (state.layoutProblem) update({ layoutProblem: null });
+	});
+
 	function findTimber(look: () => Promise<TimberStatus>): Promise<void> {
 		const wasReady = timberReady(state);
 		return track({ kind: "find-timber" }, async () => {
@@ -220,7 +281,9 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				const result = await engine.removeRepository(path);
 				switch (result.outcome) {
 					case "removed":
-						update({ notice: null });
+						// The engine forgot the repository's collapsed group along with it.
+						if (savedLayout) savedLayout = forgetRepository(savedLayout, path);
+						update({ notice: null, layout: forgetRepository(state.layout, path) });
 						await reloadAll("all");
 						showToast(describeRemoved(name ?? folderName(path)));
 						return;
@@ -280,6 +343,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				// Only a repository on screen can be refreshed. Reload everything to pick up a new one.
 				if (state.repositories.some(repository => repository.path === path)) void reloadOne(path);
 			});
+			void loadLayout();
 			void findTimber(() => engine.timberStatus());
 			return stop;
 		},
@@ -302,6 +366,21 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			} catch {
 				return null;
 			}
+		},
+		toggleGroup(repository) {
+			changeLayout(toggleCollapsed(state.layout, repository));
+			void saveLayout("layout");
+		},
+		resizeSidebar(width) {
+			const sidebarWidth = clampSidebarWidth(width);
+			if (sidebarWidth !== state.layout.sidebarWidth) changeLayout({ ...state.layout, sidebarWidth });
+		},
+		saveLayout: () => saveLayout("layout"),
+		dismissLayoutProblem() {
+			if (state.layoutProblem) update({ layoutProblem: null });
+		},
+		showTab(tab) {
+			if (tab !== state.tab) update({ tab });
 		},
 		openDialog(request) {
 			update({ dialog: request });

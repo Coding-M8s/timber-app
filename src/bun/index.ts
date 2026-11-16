@@ -3,9 +3,10 @@ import { BrowserView, BrowserWindow, Updater, Utils } from "electrobun/main";
 import type { AppRPC } from "../shared/rpc";
 import { repositoryChanges } from "./changes";
 import { readBranches } from "./git-engine";
+import { createSavedLayout } from "./layout";
 import { createRepositoryList } from "./repository-list";
 import { createRepositoryReader } from "./repository-reader";
-import { settingsFilePath } from "./settings";
+import { createSettingsHolder, settingsFilePath } from "./settings";
 import { createTimberLocator, describeTimberStatus } from "./timber";
 import { createWorktreeCommands } from "./worktree-commands";
 
@@ -41,7 +42,10 @@ async function pickFolder(): Promise<string | null> {
 
 const settingsFile = settingsFilePath();
 console.log(`Settings at ${settingsFile}`);
-const repositories = createRepositoryList({ settingsFile, pickFolder, reader: createRepositoryReader(() => timber.current()) });
+// One holder for the file, so the repository list and the layout cannot save over each other.
+const settings = createSettingsHolder(settingsFile);
+const repositories = createRepositoryList({ settingsFile, settings, pickFolder, reader: createRepositoryReader(() => timber.current()) });
+const layout = createSavedLayout(settings);
 const worktrees = createWorktreeCommands({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
 
 const rpc = BrowserView.defineRPC<AppRPC>({
@@ -59,6 +63,8 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			// What these answer holds what the command printed, which is private: never log it.
 			newWorktree: request => worktrees.create(request),
 			openWorktree: request => worktrees.open(request),
+			loadLayout: () => layout.load(),
+			saveLayout: ({ layout: next }) => layout.save(next),
 		},
 		messages: {},
 	},

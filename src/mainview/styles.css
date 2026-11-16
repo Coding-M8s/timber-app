@@ -107,13 +107,14 @@ pre:focus-visible {
 	flex: 1 1 auto;
 	min-height: 0;
 	display: flex;
-	gap: 1px;
 	background: var(--line);
 }
 
 .sidebar {
 	flex: none;
-	width: 272px;
+	/* Set on .body from the saved layout. Half the window at most, so the workspace keeps its room. */
+	width: var(--sidebar-width, 272px);
+	max-width: 50%;
 	display: flex;
 	flex-direction: column;
 	background: var(--bg-app);
@@ -503,8 +504,7 @@ pre:focus-visible {
 	display: flex;
 	flex-direction: column;
 	gap: 3px;
-	padding: 12px 18px;
-	border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+	padding: 12px 18px 6px;
 }
 
 .workspace-title {
@@ -985,6 +985,130 @@ pre:focus-visible {
 	user-select: all;
 }
 
+/*
+ * App shell (issue 9): the breadcrumb and palette button in the title bar, the
+ * bottom of the sidebar, the sidebar's resize handle, and the workspace tabs.
+ */
+.breadcrumb {
+	flex: 1 1 0;
+	min-width: 0;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+/* A long repository name is cut at just under half, so the branch always keeps room. */
+.titlebar-repo {
+	flex: none;
+	max-width: 45%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.titlebar-branch {
+	flex: 0 1 auto;
+}
+
+/* A control for something that is not built yet does not answer to the pointer. */
+.icon-button:disabled:hover {
+	background: transparent;
+}
+
+.group-header .group-count,
+.group-header .group-flag {
+	flex: none;
+}
+
+.sidebar-bottom {
+	flex: none;
+	margin-top: auto;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 6px;
+	padding: 8px;
+	border-top: 1px solid var(--line);
+}
+
+.sidebar-bottom .sidebar-error {
+	align-items: flex-start;
+	margin: 0 0 2px 2px;
+}
+
+/* The sidebar's edge: a hairline to look at, and a wider strip around it to grab. */
+.resizer {
+	flex: none;
+	position: relative;
+	z-index: 1;
+	width: 1px;
+	background: var(--line);
+	cursor: col-resize;
+	touch-action: none;
+}
+
+.resizer::before {
+	content: "";
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: -4px;
+	right: -4px;
+}
+
+.resizer:hover,
+.resizer.dragging {
+	background: var(--text-3);
+}
+
+.resizer:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: 0;
+}
+
+.tabs {
+	flex: none;
+	display: flex;
+	gap: 2px;
+	padding: 0 8px;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.tab {
+	position: relative;
+	height: 34px;
+	padding: 0 10px;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--text-3);
+	font-size: 12.5px;
+	font-weight: 500;
+}
+
+.tab:hover,
+.tab.selected {
+	color: var(--text);
+}
+
+/* The line under the tab that shows. */
+.tab.selected::after {
+	content: "";
+	position: absolute;
+	left: 10px;
+	right: 10px;
+	bottom: -1px;
+	height: 2px;
+	border-radius: 1px;
+	background: var(--text);
+}
+
+.tab:focus-visible,
+.tabpanel:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: -2px;
+}
+
 @media (max-width: 640px) {
 	.body {
 		flex-direction: column;
@@ -992,7 +1116,14 @@ pre:focus-visible {
 
 	.sidebar {
 		width: auto;
+		max-width: none;
 		max-height: 45%;
+		border-bottom: 1px solid var(--line);
+	}
+
+	/* Stacked, the sidebar is as wide as the window, so there is no edge to drag. */
+	.resizer {
+		display: none;
 	}
 }
 

@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { REMOVE_REPOSITORY_HINT, TIMBER_LIST_FAILURE_TITLE, describeListNotice, describeReloadError, worktreeLabel } from "../format";
+import { SETTINGS_HINT, describeLayoutProblem, describeRepository } from "../shell";
 import { useAppState, useStore } from "../store/react";
 import { isRunning } from "../store/state";
+import { SIDEBAR_ID } from "./SidebarResizer";
 import { WorktreeRow } from "./WorktreeRow";
 
 export function Sidebar() {
@@ -15,14 +17,10 @@ export function Sidebar() {
 	const adding = isRunning(state, "add-repository");
 	const removing = (path: string) => state.operations.some(operation => operation.kind === "remove-repository" && operation.repository === path);
 	const [filter, setFilter] = useState("");
-	const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+	// Which groups are collapsed is part of the layout the store holds, so it is remembered between runs.
+	const { collapsed } = state.layout;
+	const layoutProblem = state.layoutProblem && describeLayoutProblem(state.layoutProblem);
 	const query = filter.trim().toLowerCase();
-
-	const toggle = (path: string) => setCollapsed(previous => {
-		const next = new Set(previous);
-		if (!next.delete(path)) next.add(path);
-		return next;
-	});
 
 	const groups = repositories.map(repository => ({
 		repository,
@@ -31,7 +29,7 @@ export function Sidebar() {
 	const nothingMatches = query !== "" && groups.every(group => group.matches.length === 0);
 
 	return (
-		<aside className="sidebar" aria-label="Worktrees">
+		<aside id={SIDEBAR_ID} className="sidebar" aria-label="Worktrees">
 			<div className="sidebar-tools">
 				<input
 					className="filter"
@@ -68,7 +66,7 @@ export function Sidebar() {
 			<div className="groups">
 				{groups.map(({ repository, matches }) => {
 					// While filtering, a group opens exactly when it has a match.
-					const open = query ? matches.length > 0 : !collapsed.has(repository.path);
+					const open = query ? matches.length > 0 : !collapsed.includes(repository.path);
 					return (
 						<section key={repository.path} className="group" aria-label={repository.name}>
 							<div className={repository.available ? "group-head" : "group-head unavailable"}>
@@ -76,8 +74,8 @@ export function Sidebar() {
 									type="button"
 									className="group-header"
 									aria-expanded={open}
-									title={repository.path}
-									onClick={() => toggle(repository.path)}
+									title={describeRepository(repository)}
+									onClick={() => store.toggleGroup(repository.path)}
 								>
 									<svg className={open ? "chevron open" : "chevron"} aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
 										<path d="M3.5 2 6.5 5 3.5 8" />
@@ -174,6 +172,26 @@ export function Sidebar() {
 					</button>
 				</div>
 			)}
+
+			{/* Fixed at the bottom, whatever the list above holds. */}
+			<div className="sidebar-bottom">
+				{layoutProblem && (
+					<div className="sidebar-error layout-problem" role="alert">
+						<p className="sidebar-error-title">{layoutProblem.title}</p>
+						<p className="sidebar-error-text">{layoutProblem.text}</p>
+						<p className="sidebar-error-text">{layoutProblem.consequence}</p>
+						<button type="button" className="text-button" onClick={() => store.dismissLayoutProblem()}>Dismiss</button>
+					</div>
+				)}
+				{/* Settings is not built yet, so its button is disabled and says so. */}
+				<button type="button" className="icon-button sidebar-settings" aria-label={SETTINGS_HINT} title={SETTINGS_HINT} disabled>
+					<svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+						<circle cx="8" cy="8" r="4.3" />
+						<circle cx="8" cy="8" r="1.5" />
+						<path strokeWidth="2.2" d="M8 1.3v2.4M8 12.3v2.4M1.3 8h2.4M12.3 8h2.4M3.26 3.26l1.7 1.7M11.04 11.04l1.7 1.7M12.74 3.26l-1.7 1.7M4.96 11.04l-1.7 1.7" />
+					</svg>
+				</button>
+			</div>
 		</aside>
 	);
 }
