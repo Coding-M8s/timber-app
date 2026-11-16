@@ -598,29 +598,36 @@ on a worktree's folder, and nothing else in the app ever starts one: New and
 Open always pass `--no-editor` to Timber (see
 [creating and opening worktrees](#creating-and-opening-worktrees)).
 
-- **The setting.** `editor` in the preferences (`src/shared/preferences.ts`):
-  one command line and whether the editor runs in a terminal, or null when
-  none is chosen. It is read leniently like the rest of the preferences: a
-  value that is not a readable command falls back to "not set" and never
-  costs the file. The Editor section of Settings offers VS Code (`code`), Zed
-  (`zed`), and Neovim (`nvim`, in a terminal) as presets that fill the
-  command field, which can be edited freely. It shows the exact command for
-  an example folder with spaces, and Save is disabled while the command
-  cannot be read.
+- **The setting.** `editor` in the preferences: one command line and
+  whether the editor runs in a terminal, or null when none is chosen. It is
+  one entry of `PREFERENCE_PARTS` (`src/shared/preferences.ts`), with its
+  reader, comparer, and writer in `src/shared/editor.ts`. In the settings
+  file a value that is not a readable command falls back to "not set" and
+  never costs the file; in a save it is refused. The Editor section of
+  Settings offers None, VS Code (`code`), Zed (`zed`), Neovim (`nvim`, in a
+  terminal), and Other command. A preset fills the command field, which can
+  be edited freely. The section shows the exact command for an example
+  folder with spaces. Save is disabled while the command cannot be read, and
+  while Other is chosen with nothing typed: only None removes the editor. A
+  known terminal editor (`nvim`, `vim`, `vi`, `hx`, `nano`, `micro`, `emacs
+  -nw`) without "Runs in a terminal" gets a warning.
 - **The command.** `splitCommandLine` (`src/shared/command-line.ts`) splits
-  the setting without a shell: spaces separate words, single or double quotes
-  group them, a backslash is an ordinary character, nothing is expanded, and
-  a quote that is never closed is an error. `editorCommand`
-  (`src/shared/editor.ts`) adds the worktree's registered path as one last
-  argument, or puts it where the command has `{path}`. The tooltip, the
+  the setting without a shell: spaces, tabs, line breaks, and no-break
+  spaces separate words, single or double quotes group them, a backslash is
+  an ordinary character, nothing is expanded, and a quote that is never
+  closed is an error. `editorCommand` (`src/shared/editor.ts`) adds the
+  worktree's registered path as one last argument, or puts it where the
+  command has `{path}`, taking every character of the path as it is
+  (`$&` and the like included). The tooltip, the
   toast, and every failure show this command, worded by the same function
   the main process runs from.
 - **The capability.** `openInEditor({ repository, worktree })` on the
   `Engine` contract. The request names only the worktree. The command comes
   from the saved setting in the main process (`src/bun/editor.ts`), never
   from the interface. Like Done, it acts only on a repository in the app's
-  list and a path that `timber ls --json` lists for it at that moment, and
-  only when that folder is there.
+  list and a full path that `timber ls --json` lists for it at that moment,
+  and only when that folder is there. These checks come first, so no answer
+  ever carries a command built from a path that was not listed.
 - **Starting.** The executable is looked for on the PATH the app was started
   with (`Bun.which`), or taken as a full path. A relative path is refused.
   It is started with `Bun.spawn` as an executable plus arguments, in the
@@ -628,14 +635,17 @@ Open always pass `--no-editor` to Timber (see
   or output, and then let go (`unref`). So closing the app does not close the
   editor. The main process waits half a second to hear whether it stopped
   right away with an error, as a launcher that cannot find its editor does. A
-  launcher that hands over and exits with 0 counts as opened.
+  launcher that hands over and exits with 0 counts as opened. On Windows a
+  `.cmd` or `.bat` file, which cmd.exe would read again, is refused: VS
+  Code's `code` is one, and launching on Windows is not tested yet.
 - **Answers.** Opened, not configured, a terminal editor, not listed, not
   found, or failed (`OpenInEditorResult` in `src/shared/model.ts`). Not found
   names the command and the PATH the app was started with. A change to PATH
   needs a restart, as for Timber.
 - **In the window.** The control sits beside each worktree row, not inside
   it, because the row is itself a button. It shows when the row is pointed at,
-  reached by keyboard, or selected. The workspace header has it too. The
+  reached by keyboard, or selected, and the row then keeps room for it, so it
+  never covers the branch markers. The workspace header has it too. The
   tooltip is the exact command. With no editor set it opens Settings at
   Editor. With an editor that runs in a terminal, or a worktree whose folder
   is missing, it is disabled with the reason: terminal editors wait for
@@ -1089,7 +1099,8 @@ Run for opening a worktree in an editor (issue 12), Linux x64 (Pop!_OS
 than the app requires, so the tests that need the installed Timber skipped:
 
 - `bun run typecheck` and `bun run typecheck:desktop`: no errors.
-- `bun test`: 591 tests passed and 80 were skipped. New ones cover the
+- `bun test`: 591 tests passed and 80 were skipped (before rebasing on the
+  sidebar side, see the end of this entry). New ones cover the
   command line splitter, building the command with paths with spaces and
   `{path}`, the editor preference in the settings file, the store, and the
   rendered controls and Settings section. `tests/editor-launch.test.ts` runs
@@ -1104,8 +1115,7 @@ than the app requires, so the tests that need the installed Timber skipped:
   way was killed. With `detached` turned off for a moment, that test failed.
 - That New and Open never start an editor is shown by
   `tests/worktree-commands-parse.test.ts` ("the launchers are always switched
-  off") and by the store test that runs both with an editor set and finds
-  that the engine started none.
+  off"), which checks that both always pass `--no-editor`.
 - `bun run build:web`: built. In `bun run dev:web` (on another port) in the
   app's built-in browser: with no editor set, Open in editor opened Settings
   at Editor; Neovim showed the note about terminal sessions and the example
@@ -1122,8 +1132,30 @@ than the app requires, so the tests that need the installed Timber skipped:
   It answered opened after 501 ms (the half-second watch) and exited. VS
   Code kept running in a session of its own, with the folder as its one
   argument and the user's systemd as its parent, and its own window state
-  then listed a window for exactly that folder. The window was not looked at
-  by a person in this run.
+  then listed a window for exactly that folder.
+- After review, rebased on the sidebar side (issue 11), with the fixes:
+  - `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+  - `bun test`: 640 tests passed, 80 were skipped, none failed. Added since:
+    dollar signs in the path where `{path}` stands (one through a stand-in
+    editor), a worktree path that is not a full path, a batch file refused
+    on Windows (acted out with `platform: "win32"` on Linux), no terminal
+    answer for an unlisted worktree, line breaks and no-break spaces in the
+    command, Other with nothing typed, the terminal editor warning, an
+    unreadable editor refused in a save, the Editor panel mounted and hidden
+    while Layout shows, and the mock's answer for an unavailable repository.
+  - `bun run dev:web` in the built-in browser: `vim -p` typed under Editor
+    showed the terminal editor warning; after switching to Layout and back
+    the field still held `vim -p` with Other chosen. On a hovered row and
+    the selected row the branch markers ended at 217 pixels and the editor
+    control started at 223.
+  - VS Code again, the same way, after closing the window above (its
+    process was sent SIGTERM; nothing else of VS Code was running). Setting
+    `code --new-window {path}`, worktree `.../my repo-worktrees/cash$&x $$ it`.
+    It answered opened after 505 ms and the script exited. VS Code ran as
+    `code --new-window <that exact path>` in a session of its own, and made
+    its workspace storage for exactly that folder. Its process was then sent
+    SIGTERM and it closed, recording that folder as its last window. The
+    windows were not looked at by a person.
 
 Not run yet:
 
@@ -1152,5 +1184,7 @@ Not run yet:
 - The stand-in executables of the helper's tests on Windows.
 - Open in editor from the desktop window, and through the RPC bridge. VS
   Code was started only from the main process module, and Zed not at all.
+- Launching an editor on Windows or macOS. On Windows batch files are
+  refused for now, and the stand-in editors of the tests are shell scripts.
 - Anything on macOS.
 - A native Linux desktop session, on Wayland or X11. Only WSLg has been run.

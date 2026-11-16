@@ -104,6 +104,15 @@ describe.skipIf(windows)("opening a worktree in an editor, with stand-in editors
 		expect(await editor.calls()).toEqual([worktree, `--folder=${worktree}`, "--wait"]);
 	});
 
+	test("dollar signs in the path arrive as they are, where {path} stands", async () => {
+		const priced = join(root, "my repo-worktrees", "cash$&x $$ it$'s $1");
+		mkdirSync(priced, { recursive: true });
+		const editor = standInEditor();
+		const result = await launcher({ command: `${editor.name} --folder={path} --wait`, terminal: false }, listed([priced])).open({ repository, worktree: priced });
+		expect(result.outcome).toBe("opened");
+		expect(await editor.calls()).toEqual([priced, `--folder=${priced}`, "--wait"]);
+	});
+
 	test("nothing in the path is read by a shell", async () => {
 		const strange = join(root, "my repo-worktrees", `it's "$(touch pwned)" ; x`);
 		mkdirSync(strange, { recursive: true });
@@ -155,6 +164,26 @@ describe.skipIf(windows)("opening a worktree in an editor, with stand-in editors
 		}
 		await Bun.sleep(100);
 		expect(editor.ran()).toBe(false);
+	});
+
+	test("a worktree path that is not a full path is refused before anything else", async () => {
+		const editor = standInEditor();
+		const result = await launcher({ command: editor.name, terminal: true }, listed(["feat login"])).open({ repository, worktree: "feat login" });
+		expect(result).toEqual({ outcome: "not-listed", message: "feat login is not a full path, so it cannot be a worktree Timber lists. No editor was started." });
+	});
+
+	test("on Windows a batch file is refused, because cmd.exe would read the path again", async () => {
+		const batch = join(bin, "code.cmd");
+		writeFileSync(batch, "#!/bin/sh\n");
+		chmodSync(batch, 0o755);
+		const result = await launcher({ command: "code.cmd", terminal: false }, listed([worktree]), { platform: "win32" }).open(request());
+		expect(result.outcome).toBe("failed");
+		expect(result.outcome === "failed" && result.message).toContain("not tested on Windows yet");
+	});
+
+	test("a terminal editor is answered only for a listed worktree, so no command is built from another path", async () => {
+		const result = await launcher({ command: "nvim", terminal: true }, listed([])).open(request());
+		expect(result.outcome).toBe("not-listed");
 	});
 
 	test("with no editor set, or an editor that runs in a terminal, nothing starts", async () => {

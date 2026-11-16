@@ -62,7 +62,8 @@ export function editorCommand(setting: EditorSetting, path: string): EditorComma
 	const [executable, ...given] = reading.words;
 	if (executable === undefined || executable === "") return { ok: false, message: "The editor command is empty." };
 	const placed = given.some(word => word.includes(PATH_TOKEN));
-	const args = placed ? given.map(word => word.replaceAll(PATH_TOKEN, path)) : [...given, path];
+	// Split and joined, not `replaceAll`, which would read `$&` and the like in the path as patterns.
+	const args = placed ? given.map(word => word.split(PATH_TOKEN).join(path)) : [...given, path];
 	return { ok: true, executable, arguments: args };
 }
 

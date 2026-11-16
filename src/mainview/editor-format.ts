@@ -83,11 +83,32 @@ export function chooseEditor(draft: EditorDraft, choice: EditorChoice): EditorDr
 	return { choice, command: preset.setting.command, terminal: preset.setting.terminal };
 }
 
-/** The draft after typing in the command field or changing the terminal flag. */
+/**
+ * The draft after typing in the command field or changing the terminal flag.
+ * An emptied field stays a command to type, never quietly "None": only
+ * choosing None removes the editor.
+ */
 export function editEditor(draft: EditorDraft, change: { command?: string; terminal?: boolean }): EditorDraft {
 	const command = change.command ?? draft.command;
 	const terminal = change.terminal ?? draft.terminal;
-	return { choice: choiceFor(command, terminal), command, terminal };
+	const choice = choiceFor(command, terminal);
+	return { choice: choice === "none" ? "other" : choice, command, terminal };
+}
+
+/** Editors that run in a terminal, by the name of their executable. */
+const TERMINAL_EDITORS = ["nvim", "vim", "vi", "hx", "nano", "micro"];
+
+/**
+ * The name of a known terminal editor that `words` start, or null. Emacs
+ * counts only with the option that keeps it in the terminal.
+ */
+export function knownTerminalEditor(words: readonly string[]): string | null {
+	const [executable, ...args] = words;
+	if (executable === undefined) return null;
+	const name = (executable.split(/[\\/]/).pop() ?? executable).replace(/\.exe$/i, "").toLowerCase();
+	if (TERMINAL_EDITORS.includes(name)) return name;
+	if (name === "emacs" && args.some(arg => arg === "-nw" || arg === "--no-window-system")) return "emacs -nw";
+	return null;
 }
 
 /** A folder to show the command with, with spaces, so the quoting shows. */
@@ -98,19 +119,27 @@ export interface EditorDraftModel {
 	setting: EditorSetting | null;
 	/** Why the command cannot be saved, or null. */
 	error: string | null;
+	/** What is still to do before Save, or null. */
+	hint: string | null;
+	/** A command that can be saved but will likely not work as meant, or null. */
+	warning: string | null;
 	/** The exact command for `EXAMPLE_WORKTREE`, or null when there is none. */
 	example: string | null;
 	canSave: boolean;
 }
 
 export function editorDraftModel(draft: EditorDraft, saved: EditorSetting | null): EditorDraftModel {
+	const none = { setting: null, error: null, hint: null, warning: null, example: null };
+	if (draft.choice === "none") return { ...none, canSave: saved !== null };
 	const command = draft.command.trim();
-	if (draft.choice === "none" || command === "") {
-		return { setting: null, error: null, example: null, canSave: saved !== null };
-	}
+	if (command === "") return { ...none, hint: "Type a command, or choose None for no editor.", canSave: false };
 	const reading = splitCommandLine(command);
 	const error = !reading.ok ? reading.message : reading.words[0] === "" ? "The command starts with an empty word. Type the editor first." : null;
-	if (error !== null) return { setting: null, error, example: null, canSave: false };
+	if (error !== null || !reading.ok) return { ...none, error, canSave: false };
 	const setting = { command, terminal: draft.terminal };
-	return { setting, error: null, example: describeEditorCommand(setting, EXAMPLE_WORKTREE), canSave: !sameEditorSetting(setting, saved) };
+	const terminalEditor = draft.terminal ? null : knownTerminalEditor(reading.words);
+	const warning = terminalEditor === null
+		? null
+		: `${terminalEditor} runs in a terminal. Without "Runs in a terminal" it would be started with no terminal to show it in.`;
+	return { setting, error: null, hint: null, warning, example: describeEditorCommand(setting, EXAMPLE_WORKTREE), canSave: !sameEditorSetting(setting, saved) };
 }

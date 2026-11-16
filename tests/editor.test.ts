@@ -18,6 +18,14 @@ describe("editorCommand", () => {
 			.toEqual({ ok: true, executable: "edit", arguments: [`--folder=${SPACED}`] });
 	});
 
+	test("dollar signs in the path are taken as they are, where {path} stands", () => {
+		for (const path of ["/work/a$$b", "/work/it$'s", "/work/a$`b", "/work/cash$&x", "/work/$1 and $<name>"]) {
+			expect(editorCommand({ command: "edit --folder={path} --wait", terminal: false }, path))
+				.toEqual({ ok: true, executable: "edit", arguments: [`--folder=${path}`, "--wait"] });
+			expect(editorCommand({ command: "edit {path}", terminal: false }, path)).toEqual({ ok: true, executable: "edit", arguments: [path] });
+		}
+	});
+
 	test("a path that looks like an option, or holds quotes or {path}, is still one argument", () => {
 		for (const path of ["--help", `/work/it's "here"`, "/work/{path}", "/work/a;b|c $(id)"]) {
 			const command = editorCommand({ command: "code -n", terminal: false }, path);
@@ -92,12 +100,13 @@ describe("the editor preference", () => {
 		}
 	});
 
-	test("a change sets it, clears it with null, or leaves it alone when it does not name it or cannot be read", () => {
+	test("a change sets it, clears it with null, leaves it alone when it does not name it, and reports it when it cannot be read", () => {
 		const set = applyPreferenceChange(defaultPreferences(), { editor: { command: "code", terminal: false } });
-		expect(set.editor).toEqual({ command: "code", terminal: false });
-		expect(applyPreferenceChange(set, { sidebarSide: "right" }).editor).toEqual({ command: "code", terminal: false });
-		expect(applyPreferenceChange(set, { editor: { command: "  ", terminal: false } }).editor).toEqual({ command: "code", terminal: false });
-		expect(applyPreferenceChange(set, { editor: null }).editor).toBeNull();
+		expect(set).toEqual({ preferences: { sidebarSide: "left", editor: { command: "code", terminal: false } }, unreadable: [] });
+		expect(applyPreferenceChange(set.preferences, { sidebarSide: "right" })).toEqual({ preferences: { sidebarSide: "right", editor: { command: "code", terminal: false } }, unreadable: [] });
+		expect(applyPreferenceChange(set.preferences, { editor: { command: "  ", terminal: false } })).toEqual({ preferences: set.preferences, unreadable: ["editor"] });
+		expect(applyPreferenceChange(set.preferences, { editor: { command: `code "x`, terminal: false } })).toEqual({ preferences: set.preferences, unreadable: ["editor"] });
+		expect(applyPreferenceChange(set.preferences, { editor: null })).toEqual({ preferences: { sidebarSide: "left", editor: null }, unreadable: [] });
 	});
 
 	test("counts in comparing preferences", () => {

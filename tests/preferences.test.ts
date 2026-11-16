@@ -15,13 +15,13 @@ const one = { path: "/work/timber", commonDir: "/work/timber/.git" };
 
 describe("readPreferences", () => {
 	test("puts the sidebar on the left by default", () => {
-		expect(defaultPreferences()).toEqual({ sidebarSide: "left" });
-		expect(readPreferences(undefined)).toEqual({ sidebarSide: "left" });
+		expect(defaultPreferences()).toEqual({ sidebarSide: "left", editor: null });
+		expect(readPreferences(undefined)).toEqual({ sidebarSide: "left", editor: null });
 	});
 
 	test("keeps a side it can read", () => {
-		expect(readPreferences({ sidebarSide: "right" })).toEqual({ sidebarSide: "right" });
-		expect(readPreferences({ sidebarSide: "left", later: "ignored" })).toEqual({ sidebarSide: "left" });
+		expect(readPreferences({ sidebarSide: "right" })).toEqual({ sidebarSide: "right", editor: null });
+		expect(readPreferences({ sidebarSide: "left", later: "ignored" })).toEqual({ sidebarSide: "left", editor: null });
 	});
 
 	test("falls back to the default for anything it cannot read, and never fails", () => {
@@ -33,14 +33,14 @@ describe("readPreferences", () => {
 
 describe("applyPreferenceChange", () => {
 	test("replaces only what the change names", () => {
-		const saved = { sidebarSide: "right" as const };
+		const saved = { sidebarSide: "right" as const, editor: null };
 		expect(applyPreferenceChange(saved, {})).toEqual({ preferences: saved, unreadable: [] });
 		expect(applyPreferenceChange(saved, { sidebarSide: undefined })).toEqual({ preferences: saved, unreadable: [] });
-		expect(applyPreferenceChange(saved, { sidebarSide: "left" })).toEqual({ preferences: { sidebarSide: "left" }, unreadable: [] });
+		expect(applyPreferenceChange(saved, { sidebarSide: "left" })).toEqual({ preferences: { sidebarSide: "left", editor: null }, unreadable: [] });
 	});
 
 	test("keeps a part of the change it cannot read as it was, and names it", () => {
-		const saved = { sidebarSide: "right" as const };
+		const saved = { sidebarSide: "right" as const, editor: null };
 		expect(applyPreferenceChange(saved, { sidebarSide: "middle" })).toEqual({ preferences: saved, unreadable: ["sidebarSide"] });
 		expect(applyPreferenceChange(saved, { sidebarSide: null })).toEqual({ preferences: saved, unreadable: ["sidebarSide"] });
 		// Something that is not a change at all names nothing.
@@ -49,7 +49,7 @@ describe("applyPreferenceChange", () => {
 	});
 
 	test("every preference in the table is read, compared, and written", () => {
-		const changed = { sidebarSide: "right" as const };
+		const changed = { sidebarSide: "right" as const, editor: { command: "code", terminal: false } };
 		for (const key of Object.keys(PREFERENCE_PARTS) as (keyof typeof PREFERENCE_PARTS)[]) {
 			expect(key in defaultPreferences()).toBe(true);
 			expect(samePreferences(defaultPreferences(), { ...defaultPreferences(), [key]: changed[key] })).toBe(false);
@@ -58,20 +58,20 @@ describe("applyPreferenceChange", () => {
 	});
 
 	test("never changes what it was given", () => {
-		const saved = { sidebarSide: "left" as const };
+		const saved = { sidebarSide: "left" as const, editor: null };
 		applyPreferenceChange(saved, { sidebarSide: "right" });
-		expect(saved).toEqual({ sidebarSide: "left" });
+		expect(saved).toEqual({ sidebarSide: "left", editor: null });
 	});
 
 	test("samePreferences compares every preference", () => {
-		expect(samePreferences({ sidebarSide: "left" }, { sidebarSide: "left" })).toBe(true);
-		expect(samePreferences({ sidebarSide: "left" }, { sidebarSide: "right" })).toBe(false);
+		expect(samePreferences({ sidebarSide: "left", editor: null }, { sidebarSide: "left", editor: null })).toBe(true);
+		expect(samePreferences({ sidebarSide: "left", editor: null }, { sidebarSide: "right", editor: null })).toBe(false);
 	});
 });
 
 describe("the preferences part of the settings file", () => {
 	test("round-trips beside the repositories and the layout", () => {
-		const settings = { repositories: [one], layout: { sidebarWidth: 300, collapsed: [] }, preferences: { sidebarSide: "right" as const } };
+		const settings = { repositories: [one], layout: { sidebarWidth: 300, collapsed: [] }, preferences: { sidebarSide: "right" as const, editor: null } };
 		const text = serializeSettings(settings);
 		expect(JSON.parse(text)).toEqual({ version: 1, ...settings });
 		expect(parseSettings(text)).toEqual(settings);
@@ -139,10 +139,10 @@ describe("the saved preferences in the main process", () => {
 
 	test("are still there after a restart", async () => {
 		const first = appOn();
-		expect(await first.preferences.save({ sidebarSide: "right" })).toEqual({ outcome: "saved", preferences: { sidebarSide: "right" } });
-		expect(onDisk()).toEqual({ version: 1, repositories: [], preferences: { sidebarSide: "right" } });
+		expect(await first.preferences.save({ sidebarSide: "right" })).toEqual({ outcome: "saved", preferences: { sidebarSide: "right", editor: null } });
+		expect(onDisk()).toEqual({ version: 1, repositories: [], preferences: { sidebarSide: "right", editor: null } });
 		// A new holder on the same file is what a restarted app has.
-		expect(await appOn().preferences.load()).toEqual({ sidebarSide: "right" });
+		expect(await appOn().preferences.load()).toEqual({ sidebarSide: "right", editor: null });
 	});
 
 	test("check what the interface sent, and refuse a change they cannot read without saving any of it", async () => {
@@ -152,7 +152,7 @@ describe("the saved preferences in the main process", () => {
 		const result = await preferences.save({ sidebarSide: "top" as "left" });
 		expect(result).toEqual({ outcome: "failed", message: "Nothing was saved, because these settings could not be read: sidebarSide." });
 		expect(readFileSync(settingsFile, "utf8")).toBe(before);
-		expect(await preferences.load()).toEqual({ sidebarSide: "right" });
+		expect(await preferences.load()).toEqual({ sidebarSide: "right", editor: null });
 	});
 
 	test("saving them and changing the layout and the repository list never lose each other's part", async () => {
@@ -168,7 +168,7 @@ describe("the saved preferences in the main process", () => {
 			version: 1,
 			repositories: [{ path: primary, commonDir: join(primary, ".git") }],
 			layout: { sidebarWidth: 330, collapsed: [primary] },
-			preferences: { sidebarSide: "right" },
+			preferences: { sidebarSide: "right", editor: null },
 		});
 		expect(readdirSync(join(settingsFile, ".."))).toEqual(["settings.json"]);
 		// Saving the preferences changed nothing in the repository.
@@ -185,8 +185,8 @@ describe("the saved preferences in the main process", () => {
 			// A user who can write anywhere, such as root, gets a save that works.
 			if (result.outcome === "failed") {
 				expect(result.message).toContain(settingsFile);
-				expect(await first.preferences.load()).toEqual({ sidebarSide: "left" });
-				expect(await appOn().preferences.load()).toEqual({ sidebarSide: "left" });
+				expect(await first.preferences.load()).toEqual({ sidebarSide: "left", editor: null });
+				expect(await appOn().preferences.load()).toEqual({ sidebarSide: "left", editor: null });
 			}
 		} finally {
 			chmodSync(folder, 0o700);
@@ -200,6 +200,6 @@ describe("the saved preferences in the main process", () => {
 		const { preferences } = appOn();
 		expect(await preferences.load()).toEqual(defaultPreferences());
 		await preferences.save({ sidebarSide: "right" });
-		expect(onDisk()).toEqual({ version: 1, repositories: [saved], preferences: { sidebarSide: "right" } });
+		expect(onDisk()).toEqual({ version: 1, repositories: [saved], preferences: { sidebarSide: "right", editor: null } });
 	});
 });

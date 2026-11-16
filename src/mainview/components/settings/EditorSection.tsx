@@ -70,6 +70,13 @@ export function EditorSectionView({ draft, saved, save, onChoose, onEdit, onSave
 					<p className="sidebar-error-text">{model.error}</p>
 				</div>
 			)}
+			{model.hint !== null && <p className="dialog-note">{model.hint}</p>}
+			{model.warning !== null && (
+				<div className="sidebar-error info" role="status">
+					<p className="sidebar-error-title">This looks like a terminal editor</p>
+					<p className="sidebar-error-text">{model.warning}</p>
+				</div>
+			)}
 			{model.setting?.terminal && <p className="dialog-note">{TERMINAL_EDITOR_REASON} Until then Open in editor is unavailable with this editor.</p>}
 			{model.example !== null && (
 				<div className="field">

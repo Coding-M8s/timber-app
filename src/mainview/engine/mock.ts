@@ -432,15 +432,18 @@ export function createMockEngine(
 	const openInEditor = (request: OpenInEditorRequest): OpenInEditorResult => {
 		const { editor } = preferences;
 		if (editor === null) return { outcome: "not-configured" };
+		const repository = current.find(candidate => candidate.path === request.repository);
+		if (!repository) return { outcome: "not-listed", message: `${request.repository} is not a repository in this app's list. No editor was started.` };
+		if (!repository.available) return { outcome: "not-listed", message: `Git cannot read the repository at ${request.repository}. No editor was started.` };
+		const read = asRead(repository);
+		if (read.failure !== null) return { outcome: "not-listed", message: `Timber could not list the worktrees of ${request.repository}, so no editor was started: ${read.failure}` };
+		const target = read.worktrees.find(candidate => candidate.path === request.worktree);
+		if (!target) return { outcome: "not-listed", message: `Timber lists no worktree at ${request.worktree} in ${request.repository}. No editor was started. Refresh the list.` };
+		if (!target.pathExists) return { outcome: "not-listed", message: `The folder ${request.worktree} is missing. No editor was started.` };
 		const built = editorCommand(editor, request.worktree);
 		if (!built.ok) return { outcome: "failed", command: null, message: `${built.message} Change it in Settings, Editor.` };
 		const command = describeCommandLine([built.executable, ...built.arguments]);
 		if (editor.terminal) return { outcome: "terminal-editor", command, message: TERMINAL_EDITOR_REASON };
-		const repository = current.find(candidate => candidate.path === request.repository && candidate.available);
-		if (!repository) return { outcome: "not-listed", message: `${request.repository} is not a repository in this app's list. No editor was started.` };
-		const target = asRead(repository).worktrees.find(candidate => candidate.path === request.worktree);
-		if (!target) return { outcome: "not-listed", message: `Timber lists no worktree at ${request.worktree} in ${request.repository}. No editor was started. Refresh the list.` };
-		if (!target.pathExists) return { outcome: "not-listed", message: `The folder ${request.worktree} is missing. No editor was started.` };
 		switch (editorEnding) {
 			case "not-found":
 				return {

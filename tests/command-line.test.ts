@@ -15,6 +15,11 @@ describe("splitCommandLine", () => {
 		expect(words("   ")).toEqual([]);
 	});
 
+	test("line breaks and no-break spaces separate words too, and stay inside quotes", () => {
+		expect(words("code\r\n--wait\u00A0-n")).toEqual(["code", "--wait", "-n"]);
+		expect(words("'a\u00A0b'")).toEqual(["a\u00A0b"]);
+	});
+
 	test("single and double quotes group text with spaces into one word", () => {
 		expect(words(`"/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" --wait`))
 			.toEqual(["/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code", "--wait"]);

@@ -12,6 +12,14 @@ import type { Preferences } from "../shared/preferences";
  */
 const WATCH_MILLISECONDS = 500;
 
+/**
+ * Windows runs a `.cmd` or `.bat` file through cmd.exe, which reads `&`, `%`,
+ * and `^` in the arguments again, so a worktree path could change the command.
+ * VS Code's `code` on Windows is such a file. Until launching is tested there,
+ * they are refused.
+ */
+const WINDOWS_BATCH = /\.(cmd|bat)$/i;
+
 export interface EditorDependencies {
 	/** The preferences as saved. The editor command comes only from here, never from the interface. */
 	preferences: () => Promise<Preferences>;
@@ -25,6 +33,8 @@ export interface EditorDependencies {
 	environment?: Record<string, string | undefined>;
 	/** How long to watch for an editor that stops right away. Tests shorten it. */
 	watchMilliseconds?: number;
+	/** The operating system, as `process.platform` names it. Tests pass another. */
+	platform?: NodeJS.Platform;
 }
 
 /** Opening a worktree in the person's own editor: the main process side of "Open in editor". */
@@ -46,10 +56,12 @@ function isFolder(path: string): boolean {
 
 /**
  * Why nothing may be opened for this worktree, or null when it may: the
- * repository must be in the app's list, Timber must list the worktree's
- * registered path for it right now, and its folder must be there.
+ * path must be absolute, the repository must be in the app's list, Timber
+ * must list the worktree's registered path for it right now, and its folder
+ * must be there.
  */
 async function refusal(findRepository: EditorDependencies["findRepository"], repositoryPath: string, worktreePath: string): Promise<string | null> {
+	if (!isAbsolute(worktreePath)) return `${worktreePath} is not a full path, so it cannot be a worktree Timber lists. No editor was started.`;
 	let repository: Repository | null;
 	try {
 		repository = await findRepository(repositoryPath);
@@ -96,21 +108,23 @@ async function earlyExit(child: Bun.Subprocess, milliseconds: number): Promise<{
  *   not close it.
  * - An editor that runs in a terminal is not started: that needs a terminal
  *   session of the worktree, which the app does not have yet.
+ * - On Windows a `.cmd` or `.bat` file is refused (see `WINDOWS_BATCH`).
  */
 export function createEditorLauncher(dependencies: EditorDependencies): EditorLauncher {
-	const { preferences, findRepository, environment = process.env, watchMilliseconds = WATCH_MILLISECONDS } = dependencies;
+	const { preferences, findRepository, environment = process.env, watchMilliseconds = WATCH_MILLISECONDS, platform = process.platform } = dependencies;
 
 	async function open(request: OpenInEditorRequest): Promise<OpenInEditorResult> {
 		const { editor } = await preferences();
 		if (editor === null) return { outcome: "not-configured" };
 
+		// The path is checked before any command is built from it, so no answer shows a command for a path that is not listed.
+		const refused = await refusal(findRepository, request.repository, request.worktree);
+		if (refused !== null) return { outcome: "not-listed", message: refused };
+
 		const built = editorCommand(editor, request.worktree);
 		if (!built.ok) return { outcome: "failed", command: null, message: `${built.message} Change it in Settings, Editor.` };
 		const command = describeCommandLine([built.executable, ...built.arguments]);
 		if (editor.terminal) return { outcome: "terminal-editor", command, message: TERMINAL_EDITOR_REASON };
-
-		const refused = await refusal(findRepository, request.repository, request.worktree);
-		if (refused !== null) return { outcome: "not-listed", message: refused };
 
 		const { executable } = built;
 		const searchPath = environment.PATH ?? "";
@@ -128,6 +142,14 @@ export function createEditorLauncher(dependencies: EditorDependencies): EditorLa
 				? `There is no executable file at ${executable}.`
 				: `"${executable}" was not found on the PATH the app was started with: ${searchPath === "" ? "(empty)" : searchPath}. A change to PATH needs a restart of the app, or use the full path in Settings, Editor.`;
 			return { outcome: "not-found", command, executable, message: `Could not start the editor. ${where}` };
+		}
+
+		if (platform === "win32" && WINDOWS_BATCH.test(resolved)) {
+			return {
+				outcome: "failed",
+				command,
+				message: `${resolved} is a batch file, which Windows runs through cmd.exe. Starting editors that way is not tested on Windows yet, so the app does not do it. Use the editor's own .exe as a full path in Settings, Editor.`,
+			};
 		}
 
 		let child: Bun.Subprocess;

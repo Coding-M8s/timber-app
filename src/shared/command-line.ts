@@ -5,10 +5,11 @@
  *
  * The rules are deliberately few, so that what is typed is what runs:
  *
- * - Spaces and tabs separate words.
+ * - Spaces, tabs, line breaks (CR and LF), and no-break spaces separate
+ *   words.
  * - Single or double quotes group text with spaces into one word. Inside
  *   them every character is itself; there is no escape character.
- * - A backslash is an ordinary character, so Windows paths work as typed.
+ * - A backslash is an ordinary character, never an escape.
  * - Nothing is expanded: no variables, no `~`, no wildcards, no `;` or `|`.
  * - A quote that is never closed is an error.
  */
@@ -17,7 +18,7 @@ export type CommandLineReading =
 	| { ok: true; words: string[] }
 	| { ok: false; message: string };
 
-const WHITESPACE = /[ \t\r\n]/;
+const WHITESPACE = /[ \t\r\n\u00A0]/;
 
 export function splitCommandLine(text: string): CommandLineReading {
 	const words: string[] = [];

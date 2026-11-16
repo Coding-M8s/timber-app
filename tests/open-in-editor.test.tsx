@@ -5,7 +5,7 @@ import { EditorSectionView, type EditorSectionViewProps } from "../src/mainview/
 import {
 	EXAMPLE_WORKTREE, FOLDER_MISSING_REASON, NO_EDITOR_HINT, chooseEditor, describeEditorAction, draftOf, editEditor, editorDraftModel,
 } from "../src/mainview/editor-format";
-import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
+import { createMockEngine, sampleUnavailableRepository } from "../src/mainview/engine/mock";
 import { createAppStore } from "../src/mainview/store/store";
 import type { Engine } from "../src/shared/engine";
 import { TERMINAL_EDITOR_REASON } from "../src/shared/editor";
@@ -172,15 +172,6 @@ describe("Open in editor in the window", () => {
 		await both[0];
 		expect(engine.launchedEditors().length).toBe(1);
 	});
-
-	test("New and Open never start an editor: only this action does", async () => {
-		const { store, engine } = await withEditor("code");
-		await store.newWorktree({ repository: TIMBER, name: "feat/login", base: null });
-		await store.openWorktree({ repository: TIMBER, selector: "chore/update-deps", setup: false });
-		expect(store.getState().repositories[0]!.worktrees.length).toBe(sampleRepositories[0]!.worktrees.length + 2);
-		expect(engine.launchedEditors()).toEqual([]);
-		// The commands themselves pass --no-editor to Timber: see tests/worktree-commands-parse.test.ts.
-	});
 });
 
 describe("the Editor section of Settings", () => {
@@ -198,19 +189,38 @@ describe("the Editor section of Settings", () => {
 		expect(editEditor(none, { command: "code" }).choice).toBe("vscode");
 		expect(editEditor(none, { command: "code --wait" }).choice).toBe("other");
 		expect(editEditor(chooseEditor(none, "neovim"), { terminal: false }).choice).toBe("other");
-		expect(editEditor(chooseEditor(none, "zed"), { command: "  " }).choice).toBe("none");
+		// Emptying the field is a command still to type, never quietly "None".
+		expect(editEditor(chooseEditor(none, "zed"), { command: "  " }).choice).toBe("other");
 		expect(draftOf({ command: "nvim", terminal: true }).choice).toBe("neovim");
 	});
 
 	test("the model shows the exact command for an example folder, and Save only for a change that can be read", () => {
 		const code = editorDraftModel(chooseEditor(none, "vscode"), null);
-		expect(code).toEqual({ setting: { command: "code", terminal: false }, error: null, example: `code '${EXAMPLE_WORKTREE}'`, canSave: true });
+		expect(code).toEqual({ setting: { command: "code", terminal: false }, error: null, hint: null, warning: null, example: `code '${EXAMPLE_WORKTREE}'`, canSave: true });
 		expect(editorDraftModel(chooseEditor(none, "vscode"), { command: "code", terminal: false }).canSave).toBe(false);
 		const broken = editorDraftModel(editEditor(none, { command: `code "x` }), null);
 		expect(broken).toMatchObject({ error: "The double quote at character 6 is never closed.", canSave: false, example: null });
 		expect(editorDraftModel(editEditor(none, { command: `"" x` }), null).canSave).toBe(false);
-		expect(editorDraftModel(none, { command: "code", terminal: false })).toEqual({ setting: null, error: null, example: null, canSave: true });
+		expect(editorDraftModel(none, { command: "code", terminal: false })).toEqual({ setting: null, error: null, hint: null, warning: null, example: null, canSave: true });
 		expect(editorDraftModel(none, null).canSave).toBe(false);
+	});
+
+	test("Other with nothing typed cannot be saved, so it never clears a saved editor by accident", () => {
+		const saved = { command: "code", terminal: false };
+		for (const draft of [chooseEditor(none, "other"), editEditor(draftOf(saved), { command: "" })]) {
+			expect(editorDraftModel(draft, saved)).toMatchObject({ setting: null, canSave: false, hint: "Type a command, or choose None for no editor." });
+		}
+		expect(editorDraftModel(chooseEditor(draftOf(saved), "none"), saved)).toMatchObject({ setting: null, canSave: true });
+	});
+
+	test("a known terminal editor without Runs in a terminal gets a warning, and can still be saved", () => {
+		for (const [command, name] of [["vim", "vim"], ["/usr/bin/nvim -p", "nvim"], ["hx", "hx"], ["nano", "nano"], ["micro", "micro"], ["vi", "vi"], ["emacs -nw", "emacs -nw"], [`"C:\\Tools\\nvim.exe"`, "nvim"]] as const) {
+			const model = editorDraftModel(editEditor(none, { command }), null);
+			expect(model.warning).toBe(`${name} runs in a terminal. Without "Runs in a terminal" it would be started with no terminal to show it in.`);
+			expect(model.canSave).toBe(true);
+			expect(editorDraftModel(editEditor(none, { command, terminal: true }), null).warning).toBeNull();
+		}
+		for (const command of ["code", "emacs", "zed", "vimdiff-free-editor"]) expect(editorDraftModel(editEditor(none, { command }), null).warning).toBeNull();
 	});
 
 	const view = (props: Partial<EditorSectionViewProps>) => renderToStaticMarkup(
@@ -223,14 +233,19 @@ describe("the Editor section of Settings", () => {
 		expect(markup).toContain(`<input type="radio" name="editor-choice" checked="" value="vscode"/>`);
 		expect(markup).toContain('value="code"');
 		expect(markup).toContain(`<pre class="dialog-command" aria-label="Example command">code &#x27;${EXAMPLE_WORKTREE}&#x27;</pre>`);
-		expect(markup).toMatch(/<button type="submit" class="button primary">Save<\/button>/);
+		expect(markup).toContain(`<button type="submit" class="button primary" aria-disabled="false">Save</button>`);
 	});
 
 	test("an unreadable command says why, and Save is disabled", () => {
 		const markup = view({ draft: editEditor(none, { command: `code "x` }) });
 		expect(markup).toContain("This command cannot be read");
 		expect(markup).toContain('aria-invalid="true"');
-		expect(markup).toMatch(/<button type="submit" class="button primary" disabled="">Save<\/button>/);
+		expect(markup).toContain(`<button type="submit" class="button primary" aria-disabled="true">Save</button>`);
+	});
+
+	test("draws the hint and the warning", () => {
+		expect(view({ draft: chooseEditor(none, "other") })).toContain("Type a command, or choose None for no editor.");
+		expect(view({ draft: editEditor(none, { command: "vim" }) })).toContain("This looks like a terminal editor");
 	});
 
 	test("Neovim says it needs terminal sessions", () => {
@@ -263,6 +278,9 @@ describe("the mock engine", () => {
 		engine.endEditorLaunches("fails");
 		expect((await engine.openInEditor({ repository: TIMBER, worktree: FEATURE })).outcome).toBe("failed");
 		expect((await engine.openInEditor({ repository: API_SERVER, worktree: MISSING })).outcome).toBe("not-listed");
+		engine.setRepositories([sampleUnavailableRepository]);
+		expect(await engine.openInEditor({ repository: sampleUnavailableRepository.path, worktree: sampleUnavailableRepository.path }))
+			.toEqual({ outcome: "not-listed", message: `Git cannot read the repository at ${sampleUnavailableRepository.path}. No editor was started.` });
 		expect(() => engine.endEditorLaunches("explodes" as never)).toThrow("Unknown ending: explodes");
 	});
 });

@@ -1509,6 +1509,13 @@ pre:focus-visible {
 	position: relative;
 }
 
+/* While the control shows, the row keeps room for it, so it never covers the branch markers. */
+.row-item:hover .row,
+.row-item:focus-within .row,
+.row-item.selected .row {
+	padding-right: 34px;
+}
+
 .row-actions {
 	position: absolute;
 	top: 5px;
@@ -1524,19 +1531,13 @@ pre:focus-visible {
 	opacity: 1;
 }
 
-/* Opaque, so it covers the markers it sits over. The colors are the row's own over --bg-app. */
 .row-editor {
 	width: 24px;
 	height: 24px;
-	background: #1c1c1e;
-}
-
-.row-item.selected .row-editor {
-	background: #212123;
 }
 
 .row-editor:hover {
-	background: #2a2a2d;
+	background: var(--fill-selected);
 }
 
 .workspace-editor {
