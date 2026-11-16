@@ -593,8 +593,9 @@ pure functions in `src/mainview/shell.ts`.
   below the workspace.
 - **Long names.** The breadcrumb, the group headers, and the workspace header
   cut a long name short and carry the whole name in their `title`.
-- **The saved layout.** The sidebar width and the collapsed groups, each
-  named by the path of its primary checkout, are the `layout` part of the
+- **The saved layout.** The sidebar width, the collapsed groups, and the
+  dismissed setup prompts (see [first-run setup](#first-run-setup)), each
+  repository named by the path of its primary checkout, are the `layout` part of the
   settings file (`Layout` in `src/shared/layout.ts`). The interface never
   keeps them itself: it reads them once through `loadLayout` and hands the
   whole layout to `saveLayout`. A file without a `layout` part is valid and
@@ -604,7 +605,7 @@ pure functions in `src/mainview/shell.ts`.
 - **One holder of the file.** The repository list and the layout save through
   the same `SettingsHolder` (`src/bun/settings.ts`), one change at a time,
   each building on what the last one saved. Removing a repository also
-  forgets its collapsed group.
+  forgets its collapsed group and its dismissed setup prompt.
 - **When it is saved.** Collapsing or opening a group saves at once. A resize
   shows at once and saves when the drag ends or the key is let go, never
   while it moves. One save runs at a time, and saves asked for meanwhile share
@@ -1058,6 +1059,72 @@ prints, which is handled as any terminal's output.
 In `bun run dev:web` the mock engine acts out an agent as the pretend shell,
 and `timberMock.missingExecutables(["codex"])` acts out an agent whose
 executable is not on the PATH (`[]` to undo).
+
+## First-run setup
+
+A repository that was never set up for Timber works as any other: Timber
+lists its worktrees and runs its commands with built-in defaults. The app
+offers setup instead of leaving the person to meet those defaults by
+surprise, and never insists on it.
+
+- **Detecting it (`src/bun/setup-state.ts`).** Each read of a repository
+  also says which Timber settings apply to it (`Repository.setup`):
+  `repository` when its primary checkout has a `.timber.toml`, `machine`
+  when only the machine defaults exist, `none` when neither does, and
+  `unknown` when that could not be checked, or the repository is unavailable
+  or Timber could not list it. The machine defaults are where Timber reads
+  them: `config.toml` in `timber` under `XDG_CONFIG_HOME` when it is an
+  absolute path, otherwise under `.config` in the home folder, with the
+  environment Timber lists with. Only whether the files are there is read,
+  never what is in them and never through Timber: `timber ls` already
+  validates both, and reports a file it cannot read as the repository's
+  failure. A `.timber.toml` in a linked worktree does not count, because
+  Timber does not read it there. Machine defaults count as set up: Timber
+  itself offers `timber setup --global` as the alternative, and steers there
+  when a repository's ignore rules or a tracked config get in the way.
+- **The prompt (`SetupPrompt.tsx`).** Between the workspace header and the
+  tabs, for a selected worktree of a repository whose setup is `none` and
+  whose prompt was not dismissed (`showsSetupPrompt` in
+  `src/shared/timber-setup.ts`): one sentence that Timber's defaults work
+  and setup is optional, the command it runs, `timber setup`, "Set up
+  Timber", and "Not now". It is an offer, styled as one, never as an error.
+- **Set up Timber.** The same `timber setup` that Settings runs for a
+  repository (`runTimberSetup` with the `repository` scope, and
+  `timberSetup` in `OpenTerminalRequest`): a Timber setup session in the
+  repository's primary checkout, which becomes selected, with the Workspace
+  tab showing. The main process runs the Timber it found, never a command
+  from the request. A primary checkout whose folder is missing disables the
+  button, and the prompt says why (`timberSetupTarget`). When the session
+  cannot start, for example without a usable Timber or on Windows, that
+  worktree's sessions say why, as for any session. While a Timber setup
+  session of the repository runs, the button reads "Show setup" and shows
+  that session instead of starting another.
+- **When it goes.** `timber setup` ends with exit code 0 whether it saved or
+  was cancelled, and what it writes, `.timber.toml` or the machine defaults
+  and an entry in Git's `info/exclude`, is something the watcher ignores. So
+  when a Timber setup session ends or is closed while it runs, whether it
+  started from the prompt or from Settings, the store reads every
+  repository again, since machine defaults set up all of them at once, and
+  the prompt goes once `setup` is no longer `none`. A setup that ended while
+  the window was reloading counts too, once the sessions are listed.
+  Settings saved some other way, such as from a terminal outside the app,
+  show on the next read, for example when the window gets the focus back.
+- **Not now.** Remembered per repository in the saved layout
+  (`setupDismissed`), so the prompt stays away after a restart, and
+  forgotten when the repository leaves the list. Nothing else changes: the
+  worktrees, terminals, and Timber commands work as before. There is no way
+  back to the prompt in the app yet; `timber setup` in a terminal still sets
+  the repository up.
+- **The empty state.** With no repository in the list, the workspace says
+  so and makes "Add repository" the first step, mentioning that a repository
+  new to Timber gets the offer to set it up.
+- **Later.** Once settings can be saved through Timber, a step-by-step
+  wizard in the app replaces the terminal session, with the same choices.
+
+In `bun run dev:web` the mock engine's folder picker adds `docs-site`, which
+was never set up. A Timber setup session there asks one question: `save`
+acts out saving the settings, the repository's or with `--global` the
+machine's, and `cancel` or `exit` acts out cancelling.
 
 ## Milestones
 
@@ -1832,6 +1899,32 @@ Run for the Settings screen with Timber's settings (issue 21), Linux x64
   Settings again showed the new value. The machine file and the credential
   file were byte for byte the same afterwards. Screenshots were looked at.
 
+Run for first-run setup (issue 23), Linux x64 with Bun 1.4.2, Git 2.43, and
+Timber 0.1.1, after rebasing onto Timber's settings in Settings from `main`:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+  `bun run build:web`: built.
+- `bun test`: 999 tests passed and 1 was skipped. New ones cover, against a
+  real temporary repository: neither file, machine defaults in the home
+  folder and under `XDG_CONFIG_HOME`, a relative `XDG_CONFIG_HOME` ignored,
+  a `.timber.toml` in a linked worktree not counting, one in the primary
+  checkout counting, an unreadable home folder giving `unknown`, and
+  reading leaving every file and ref as it was; the installed Timber
+  listing the repository with its setup from the primary checkout and from
+  a linked worktree; and a stand-in setup that saves, run as a Timber setup
+  session in a pseudo terminal by the main process module, after which the
+  installed Timber's listing reads the repository as set up. Also the
+  dismissed prompts in the layout and the settings file, and, against the
+  mock engine, the four acceptance criteria of the issue, setup from a
+  linked worktree, a missing primary checkout, a setup that ends while a
+  reloaded window has not listed its sessions yet, and the answer on an
+  operating system without terminals. That reload test fails with the
+  reload after the session list taken out.
+- `bun run dev:web` in the browser pane: adding `docs-site` showed the
+  prompt; Set up Timber opened a Timber setup session in its primary
+  checkout; answering `save` ended it with exit code 0 and the prompt went
+  away.
+
 Not run yet:
 
 - Saving settings through `timber setup` inside the app. Setup was started
@@ -1840,7 +1933,8 @@ Not run yet:
   stand-in for its exit code was used.
 - Timber's settings on macOS or Windows, including where the machine file
   is found there.
-
+- The setup prompt in the desktop window, and so its setup session through
+  the RPC bridge. The real Timber's guided setup was not driven by a test.
 - Open in editor for a file from the desktop window. It ran only through the
   main process module with a stand-in editor, and in the mock engine.
 - The Changes tab on Windows or macOS.

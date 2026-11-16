@@ -2,6 +2,7 @@ import { basename } from "node:path";
 import { type Repository, type SyncState, type TimberStatus, type Worktree, worktreeId } from "../shared/model";
 import type { ListedWorktree } from "../shared/timber-ls";
 import { commonDirectory, readBranchSync } from "./git-engine";
+import { readSetupState } from "./setup-state";
 import { describeTimberStatus } from "./timber";
 import { listWorktrees } from "./timber-ls";
 
@@ -44,9 +45,9 @@ export function syncOf(listed: Pick<ListedWorktree, "branch" | "head">, branches
 	return branches.get(listed.branch) ?? (listed.head === null ? { kind: "unpublished" } : null);
 }
 
-/** A repository that Git can read but whose worktrees Timber did not list. */
+/** A repository that Git can read but whose worktrees Timber did not list. Its setup is not told apart then. */
 export function failedRepository(path: string, message: string): Repository {
-	return { path, name: basename(path) || path, available: true, failure: message, worktrees: [] };
+	return { path, name: basename(path) || path, available: true, failure: message, setup: "unknown", worktrees: [] };
 }
 
 /** `timber` answers where Timber is, as of the last look (see ./timber.ts). */
@@ -64,7 +65,8 @@ export function createRepositoryReader(
 		if (!listing.ok) return { outcome: "failed", message: listing.message };
 
 		const { commonGitDir, primaryWorktreeRoot } = listing.repository;
-		const branches = await readBranchSync(commonGitDir);
+		// Timber reads its settings with the same environment it lists with, so the same machine defaults count.
+		const [branches, setup] = await Promise.all([readBranchSync(commonGitDir), readSetupState(primaryWorktreeRoot, environment)]);
 		const worktrees: Worktree[] = listing.worktrees.map(listed => ({
 			id: worktreeId(commonGitDir, listed),
 			...listed,
@@ -72,7 +74,7 @@ export function createRepositoryReader(
 		}));
 		return {
 			outcome: "read",
-			repository: { path: primaryWorktreeRoot, name: basename(primaryWorktreeRoot), available: true, failure: null, worktrees },
+			repository: { path: primaryWorktreeRoot, name: basename(primaryWorktreeRoot), available: true, failure: null, setup, worktrees },
 		};
 	}
 

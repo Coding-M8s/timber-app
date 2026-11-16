@@ -5,6 +5,7 @@ import {
 	MIN_SIDEBAR_WIDTH,
 	clampSidebarWidth,
 	defaultLayout,
+	dismissSetup,
 	forgetRepository,
 	readLayout,
 	sameLayout,
@@ -32,7 +33,7 @@ describe("clampSidebarWidth", () => {
 
 describe("readLayout", () => {
 	test("reads a width and the collapsed repositories", () => {
-		expect(readLayout({ sidebarWidth: 320, collapsed: ["/work/timber"] })).toEqual({ sidebarWidth: 320, collapsed: ["/work/timber"] });
+		expect(readLayout({ sidebarWidth: 320, collapsed: ["/work/timber"], setupDismissed: [] })).toEqual({ sidebarWidth: 320, collapsed: ["/work/timber"], setupDismissed: [] });
 	});
 
 	test("gives the defaults for anything that is not a layout", () => {
@@ -40,13 +41,13 @@ describe("readLayout", () => {
 	});
 
 	test("keeps the readable part when the other part is damaged", () => {
-		expect(readLayout({ sidebarWidth: "wide", collapsed: ["/work/timber"] })).toEqual({ sidebarWidth: DEFAULT_SIDEBAR_WIDTH, collapsed: ["/work/timber"] });
-		expect(readLayout({ sidebarWidth: 320, collapsed: "all" })).toEqual({ sidebarWidth: 320, collapsed: [] });
-		expect(readLayout({ collapsed: ["/work/timber"] })).toEqual({ sidebarWidth: DEFAULT_SIDEBAR_WIDTH, collapsed: ["/work/timber"] });
+		expect(readLayout({ sidebarWidth: "wide", collapsed: ["/work/timber"], setupDismissed: [] })).toEqual({ sidebarWidth: DEFAULT_SIDEBAR_WIDTH, collapsed: ["/work/timber"], setupDismissed: [] });
+		expect(readLayout({ sidebarWidth: 320, collapsed: "all" })).toEqual({ sidebarWidth: 320, collapsed: [], setupDismissed: [] });
+		expect(readLayout({ collapsed: ["/work/timber"] })).toEqual({ sidebarWidth: DEFAULT_SIDEBAR_WIDTH, collapsed: ["/work/timber"], setupDismissed: [] });
 	});
 
 	test("brings a width back within the limits, and drops entries that are not paths or are repeated", () => {
-		expect(readLayout({ sidebarWidth: 9000, collapsed: ["/a", 7, "", null, "/a", "/b"] })).toEqual({ sidebarWidth: MAX_SIDEBAR_WIDTH, collapsed: ["/a", "/b"] });
+		expect(readLayout({ sidebarWidth: 9000, collapsed: ["/a", 7, "", null, "/a", "/b"], setupDismissed: [] })).toEqual({ sidebarWidth: MAX_SIDEBAR_WIDTH, collapsed: ["/a", "/b"], setupDismissed: [] });
 	});
 });
 
@@ -60,23 +61,60 @@ describe("toggleCollapsed, forgetRepository, and sameLayout", () => {
 	});
 
 	test("forget a repository that leaves the list", () => {
-		const layout = { sidebarWidth: 300, collapsed: ["/a", "/b"] };
-		expect(forgetRepository(layout, "/a")).toEqual({ sidebarWidth: 300, collapsed: ["/b"] });
+		const layout = { sidebarWidth: 300, collapsed: ["/a", "/b"], setupDismissed: [] };
+		expect(forgetRepository(layout, "/a")).toEqual({ sidebarWidth: 300, collapsed: ["/b"], setupDismissed: [] });
 		expect(forgetRepository(layout, "/other")).toBe(layout);
 	});
 
 	test("compare width and collapsed groups", () => {
-		const layout = { sidebarWidth: 300, collapsed: ["/a"] };
-		expect(sameLayout(layout, { sidebarWidth: 300, collapsed: ["/a"] })).toBe(true);
-		expect(sameLayout(layout, { sidebarWidth: 301, collapsed: ["/a"] })).toBe(false);
-		expect(sameLayout(layout, { sidebarWidth: 300, collapsed: [] })).toBe(false);
-		expect(sameLayout(layout, { sidebarWidth: 300, collapsed: ["/b"] })).toBe(false);
+		const layout = { sidebarWidth: 300, collapsed: ["/a"], setupDismissed: [] };
+		expect(sameLayout(layout, { sidebarWidth: 300, collapsed: ["/a"], setupDismissed: [] })).toBe(true);
+		expect(sameLayout(layout, { sidebarWidth: 301, collapsed: ["/a"], setupDismissed: [] })).toBe(false);
+		expect(sameLayout(layout, { sidebarWidth: 300, collapsed: [], setupDismissed: [] })).toBe(false);
+		expect(sameLayout(layout, { sidebarWidth: 300, collapsed: ["/b"], setupDismissed: [] })).toBe(false);
+	});
+});
+
+describe("dismissed setup prompts", () => {
+	test("an older layout without them reads as none dismissed", () => {
+		expect(readLayout({ sidebarWidth: 300, collapsed: ["/a"] }).setupDismissed).toEqual([]);
+	});
+
+	test("are read as distinct paths, dropping anything else", () => {
+		expect(readLayout({ setupDismissed: ["/a", 7, "", null, "/a", "/b"] }).setupDismissed).toEqual(["/a", "/b"]);
+		expect(readLayout({ setupDismissed: "all" }).setupDismissed).toEqual([]);
+	});
+
+	test("dismissing adds the repository once and leaves the given layout as it was", () => {
+		const start = defaultLayout();
+		const dismissed = dismissSetup(start, "/work/docs-site");
+		expect(dismissed).toEqual({ ...start, setupDismissed: ["/work/docs-site"] });
+		expect(start.setupDismissed).toEqual([]);
+		expect(dismissSetup(dismissed, "/work/docs-site")).toBe(dismissed);
+	});
+
+	test("a repository that leaves the list is forgotten here too", () => {
+		const layout = { sidebarWidth: 300, collapsed: ["/b"], setupDismissed: ["/a", "/b"] };
+		expect(forgetRepository(layout, "/a")).toEqual({ sidebarWidth: 300, collapsed: ["/b"], setupDismissed: ["/b"] });
+		expect(forgetRepository(layout, "/b")).toEqual({ sidebarWidth: 300, collapsed: [], setupDismissed: ["/a"] });
+	});
+
+	test("count when comparing layouts", () => {
+		const layout = { sidebarWidth: 300, collapsed: [], setupDismissed: ["/a"] };
+		expect(sameLayout(layout, { sidebarWidth: 300, collapsed: [], setupDismissed: ["/a"] })).toBe(true);
+		expect(sameLayout(layout, { sidebarWidth: 300, collapsed: [], setupDismissed: [] })).toBe(false);
+		expect(sameLayout(layout, { sidebarWidth: 300, collapsed: [], setupDismissed: ["/b"] })).toBe(false);
+	});
+
+	test("are written to the settings file and read back", () => {
+		const settings = { repositories: [one], layout: { sidebarWidth: 300, collapsed: [], setupDismissed: [one.path] } };
+		expect(parseSettings(serializeSettings(settings))).toEqual(settings);
 	});
 });
 
 describe("the layout part of the settings file", () => {
 	test("round-trips beside the repositories", () => {
-		const settings = { repositories: [one, two], layout: { sidebarWidth: 340, collapsed: [two.path] } };
+		const settings = { repositories: [one, two], layout: { sidebarWidth: 340, collapsed: [two.path], setupDismissed: [] } };
 		const text = serializeSettings(settings);
 		expect(JSON.parse(text)).toEqual({ version: 1, ...settings });
 		expect(parseSettings(text)).toEqual(settings);
@@ -94,8 +132,8 @@ describe("the layout part of the settings file", () => {
 		for (const layout of [null, "wide", 7, [], { sidebarWidth: "wide", collapsed: 3 }]) {
 			expect(parseSettings(JSON.stringify({ version: 1, repositories: [one, two], layout }))).toEqual({ repositories: [one, two], layout: defaultLayout() });
 		}
-		expect(parseSettings(JSON.stringify({ version: 1, repositories: [one], layout: { sidebarWidth: 1, collapsed: [one.path, 5] } })))
-			.toEqual({ repositories: [one], layout: { sidebarWidth: MIN_SIDEBAR_WIDTH, collapsed: [one.path] } });
+		expect(parseSettings(JSON.stringify({ version: 1, repositories: [one], layout: { sidebarWidth: 1, collapsed: [one.path, 5], setupDismissed: [] } })))
+			.toEqual({ repositories: [one], layout: { sidebarWidth: MIN_SIDEBAR_WIDTH, collapsed: [one.path], setupDismissed: [] } });
 	});
 
 	test("a damaged repository list is still a damaged file, whatever the layout says", () => {

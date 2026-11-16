@@ -99,14 +99,14 @@ export interface Engine {
 	attend(attention: Attention): void;
 	/**
 	 * How the window was arranged when the layout was last saved: the sidebar
-	 * width and the collapsed repository groups. The defaults when nothing was
-	 * saved yet.
+	 * width, the collapsed repository groups, and the repositories whose setup
+	 * prompt was dismissed. The defaults when nothing was saved yet.
 	 */
 	loadLayout(): Promise<Layout>;
 	/**
 	 * Remember the layout for the next run. The whole layout is given each time,
 	 * so the latest call wins. Removing a repository also forgets its collapsed
-	 * group.
+	 * group and its dismissed setup prompt.
 	 */
 	saveLayout(layout: Layout): Promise<SaveLayoutResult>;
 	/**

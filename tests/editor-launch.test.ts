@@ -43,6 +43,7 @@ describe.skipIf(windows)("opening a worktree in an editor, with stand-in editors
 	/** The repository as the app's list would answer, with these worktree paths. */
 	const listed = (paths: string[]): Repository => ({
 		path: repository, name: "my repo", available: true, failure: null,
+		setup: "repository",
 		worktrees: paths.map(path => ({
 			id: path, path, canonicalPath: path, branch: "feat/login", head: null, primary: false, detached: false, locked: false, prunable: false,
 			pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, sync: null,

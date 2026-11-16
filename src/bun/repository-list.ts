@@ -62,7 +62,7 @@ function messageOf(error: unknown): string {
 }
 
 function unavailable(path: string): Repository {
-	return { path, name: basename(path) || path, available: false, failure: null, worktrees: [] };
+	return { path, name: basename(path) || path, available: false, failure: null, setup: "unknown", worktrees: [] };
 }
 
 export function createRepositoryList(options: RepositoryListOptions): RepositoryList {
@@ -170,7 +170,7 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 				const current = await settings();
 				const repositories = current.repositories.filter(entry => entry.path !== path);
 				if (repositories.length === current.repositories.length) return { outcome: "removed" };
-				// A collapsed group is remembered by this path, so it goes with the entry.
+				// A collapsed group and a dismissed setup prompt are remembered by this path, so they go with the entry.
 				const next: Settings = { ...current, repositories };
 				if (current.layout) next.layout = forgetRepository(current.layout, path);
 				try {

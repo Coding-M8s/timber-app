@@ -150,8 +150,9 @@ export interface AppState {
 	/** Outcomes that worked, oldest first. Failures are never toasts: they stay where the person can act on them. */
 	toasts: readonly Toast[];
 	/**
-	 * The sidebar width and the collapsed repository groups. The engine
-	 * remembers them between runs; this is what is on screen now.
+	 * The sidebar width, the collapsed repository groups, and the dismissed
+	 * setup prompts. The engine remembers them between runs; this is what is
+	 * on screen now.
 	 */
 	layout: Layout;
 	/** Null once a save worked, or after the person dismissed it. */

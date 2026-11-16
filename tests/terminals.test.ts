@@ -94,6 +94,7 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 	/** The repository as the app's list would answer: the primary checkout and the linked worktree. */
 	const listed = (): Repository => ({
 		path: repository, name: "my repo", available: true, failure: null,
+		setup: "repository",
 		worktrees: [repository, worktree].map((path, index) => ({
 			id: `id:${path}`, path, canonicalPath: path, branch: index === 0 ? "main" : "feat/login", head: null, primary: index === 0, detached: false,
 			locked: false, prunable: false, pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, sync: null,
