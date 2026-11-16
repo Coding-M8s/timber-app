@@ -3,7 +3,7 @@ import type { MouseEvent, ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { Sidebar } from "../src/mainview/components/Sidebar";
-import { createMockEngine, sampleRepositories, sampleUnavailableRepository } from "../src/mainview/engine/mock";
+import { createMockEngine, sampleRepositories, sampleTimberStatuses, sampleUnavailableRepository } from "../src/mainview/engine/mock";
 import { StoreProvider } from "../src/mainview/store/react";
 import { createAppStore } from "../src/mainview/store/store";
 
@@ -79,11 +79,12 @@ describe("sidebar", () => {
 		expect(settings).toBeLessThan(markup.indexOf("</aside>"));
 	});
 
-	test("the Settings cog is disabled and says it is not built yet", async () => {
+	test("the Settings cog works and is named Settings", async () => {
 		const { store } = await startedStore();
 		const button = tagOf(render(store), "icon-button sidebar-settings");
-		expect(button).toContain("disabled");
-		expect(button).toContain('title="Settings. Not built yet."');
+		expect(button).not.toContain("disabled");
+		expect(button).toContain('aria-label="Settings"');
+		expect(button).toContain('aria-haspopup="dialog"');
 	});
 
 	test("a collapsed group hides its rows, says so, and is still collapsed after a restart", async () => {
@@ -280,5 +281,110 @@ describe("very long names", () => {
 		expect(markup).toContain(`class="titlebar-branch" title="${longBranch}">${longBranch}<`);
 		expect(markup).toContain(`class="workspace-title" title="${longBranch}">${longBranch}<`);
 		expect(tagOf(markup, "group-header")).toContain(`title="${longRepository} (${TIMBER})"`);
+	});
+});
+
+/** Where in the markup each part of the body starts, so their order can be compared. */
+function bodyOrder(markup: string) {
+	return {
+		sidebar: markup.indexOf('<aside id="sidebar"'),
+		resizer: markup.indexOf('class="resizer"'),
+		workspace: markup.indexOf('<main class="workspace"'),
+	};
+}
+
+describe("sidebar side", () => {
+	test("the sidebar is on the left at first: sidebar, edge, workspace", async () => {
+		const { store } = await startedStore();
+		const markup = render(store);
+		const order = bodyOrder(markup);
+		expect(markup).toContain('<div class="body" ');
+		expect(markup).not.toContain("sidebar-right");
+		expect(order.sidebar).toBeGreaterThan(-1);
+		expect(order.sidebar).toBeLessThan(order.resizer);
+		expect(order.resizer).toBeLessThan(order.workspace);
+	});
+
+	test("saved on the right, the parts come in the order they are seen, so the keyboard reaches them that way too", async () => {
+		const { store } = await startedStore();
+		await store.savePreferences({ sidebarSide: "right" });
+		const markup = render(store);
+		const order = bodyOrder(markup);
+		expect(markup).toContain('<div class="body sidebar-right" ');
+		expect(order.workspace).toBeGreaterThan(-1);
+		expect(order.workspace).toBeLessThan(order.resizer);
+		expect(order.resizer).toBeLessThan(order.sidebar);
+		// The edge still says what it controls and how wide it is.
+		expect(tagOf(markup, "resizer")).toContain('aria-controls="sidebar"');
+		expect(tagOf(markup, "resizer")).toContain('aria-valuenow="272"');
+	});
+
+	test("a restarted app puts the sidebar where it was saved", async () => {
+		const engine = createMockEngine();
+		await (await startedStore(engine)).store.savePreferences({ sidebarSide: "right" });
+		const { store } = await startedStore(engine);
+		expect(render(store)).toContain('<div class="body sidebar-right" ');
+	});
+
+	test("the main window has no control for the side, only Settings has", async () => {
+		const { store } = await startedStore();
+		const markup = render(store);
+		expect(markup).not.toContain("Sidebar side");
+		expect(markup).not.toContain('name="sidebar-side"');
+		store.openDialog({ kind: "settings" });
+		expect(render(store)).toContain("Sidebar side");
+	});
+});
+
+describe("settings dialog", () => {
+	test("opens at Layout, with the sections down the side and the saved side chosen", async () => {
+		const { store } = await startedStore();
+		store.openDialog({ kind: "settings" });
+		const markup = render(store);
+		expect(markup).toMatch(/<dialog class="dialog settings-dialog" aria-labelledby="[^"]+">/);
+		expect(markup).toMatch(/<h2 [^>]*class="dialog-title">Settings<\/h2>/);
+		expect(markup).toContain('<nav class="settings-nav" aria-label="Settings sections">');
+		expect(markup).toMatch(/class="settings-nav-item selected" aria-current="page"[^>]*>Layout</);
+		expect(markup).toContain('<input type="radio" name="sidebar-side" checked="" value="left"/>');
+		expect(markup).toContain('<input type="radio" name="sidebar-side" value="right"/>');
+	});
+
+	test("Save is marked unavailable while nothing differs from what is saved, and stays focusable", async () => {
+		const { store } = await startedStore();
+		store.openDialog({ kind: "settings", section: "layout" });
+		expect(render(store)).toContain('<button type="submit" class="button primary" aria-disabled="true">Save</button>');
+	});
+
+	test("each section is a panel named by its entry in the list, and only the chosen one shows", async () => {
+		const { store } = await startedStore();
+		store.openDialog({ kind: "settings" });
+		const markup = render(store);
+		const nav = /<button type="button" id="([^"]+)" class="settings-nav-item selected" aria-current="page" aria-controls="([^"]+)"/.exec(markup);
+		expect(nav).not.toBeNull();
+		expect(markup).toContain(`<div class="settings-panel" id="${nav![2]}" aria-labelledby="${nav![1]}">`);
+		expect(markup).not.toMatch(/class="settings-panel"[^>]*hidden=""/);
+	});
+
+	test("says when the saved settings could not be read", async () => {
+		const engine = createMockEngine();
+		engine.loadPreferences = async () => {
+			throw new Error("permission denied");
+		};
+		const { store } = await startedStore(engine);
+		store.openDialog({ kind: "settings" });
+		const markup = render(store);
+		expect(markup).toContain("Could not read the saved settings");
+		expect(markup).toContain("permission denied");
+	});
+
+	test("shows what is saved, and like every dialog waits for Timber", async () => {
+		const { store } = await startedStore();
+		await store.savePreferences({ sidebarSide: "right" });
+		store.openDialog({ kind: "settings" });
+		expect(render(store)).toContain('<input type="radio" name="sidebar-side" checked="" value="right"/>');
+
+		const { store: waiting } = await startedStore(createMockEngine(sampleRepositories, sampleTimberStatuses["not-found"]));
+		waiting.openDialog({ kind: "settings" });
+		expect(render(waiting)).not.toContain("settings-dialog");
 	});
 });

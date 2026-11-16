@@ -1,11 +1,13 @@
 import { useAppState } from "../store/react";
-import { timberReady } from "../store/state";
+import { SETTINGS_SECTIONS, timberReady } from "../store/state";
 import { DoneDialog } from "./DoneDialog";
 import { NewWorktreeDialog } from "./NewWorktreeDialog";
+import { SettingsDialog } from "./SettingsDialog";
 
 /**
  * The dialog the store says is open (`state.dialog`), over the window. One
- * at a time. Every dialog here runs Timber, so none is shown until Timber is ready.
+ * at a time. None is shown until Timber is ready: most of them run Timber,
+ * and Settings opens from the sidebar, which shows only then.
  */
 export function Dialogs() {
 	const state = useAppState();
@@ -20,5 +22,8 @@ export function Dialogs() {
 		case "done-worktree":
 			// A key per worktree, so a dialog for another one starts from nothing.
 			return <DoneDialog key={`${dialog.repository}\n${dialog.worktree}`} request={dialog} />;
+		case "settings":
+			// A key per section asked for, so asking for another one while Settings is open opens it there.
+			return <SettingsDialog key={dialog.section ?? ""} initialSection={dialog.section ?? SETTINGS_SECTIONS[0]} />;
 	}
 }

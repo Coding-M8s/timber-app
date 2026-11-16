@@ -1,6 +1,7 @@
 import type { Engine } from "../../shared/engine";
 import { type Layout, defaultLayout, forgetRepository, readLayout } from "../../shared/layout";
 import { type AddRepositoryResult, type BranchSuggestion, type Repository, type SyncState, type TimberStatus, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
+import { type Preferences, applyPreferenceChange, defaultPreferences } from "../../shared/preferences";
 import {
 	type DoneApplyResult, type DoneOptions, type DonePreviewResult, DONE_PREVIEW_MINUTES, describeDoneApply, describeDonePreview, readDonePreview,
 } from "../../shared/timber-done";
@@ -238,6 +239,8 @@ export interface MockEngine extends Engine {
 	setBranches(path: string, branches: BranchSuggestion[] | null): void;
 	/** Make every later save of the layout fail with this message, or pass null to let saves work again. */
 	failLayoutSaves(message: string | null): void;
+	/** Make every later save of the preferences fail with this message, or pass null to let saves work again. */
+	failPreferenceSaves(message: string | null): void;
 	/**
 	 * Change the files of one worktree, named by its path, without telling the
 	 * interface: a dirty worktree for the Done dialog. Lists that are left out
@@ -309,6 +312,9 @@ export function createMockEngine(
 	// The layout lives in memory, for as long as this engine does.
 	let layout: Layout = defaultLayout();
 	let layoutFailure: string | null = null;
+	// So do the preferences.
+	let preferences: Preferences = defaultPreferences();
+	let preferencesFailure: string | null = null;
 	const listeners = new Set<(path: string) => void>();
 
 	// The Done dialog. As in the main process, what a preview printed stays here and the interface gets a name for it.
@@ -475,6 +481,17 @@ export function createMockEngine(
 		},
 		failLayoutSaves(message) {
 			layoutFailure = message;
+		},
+		loadPreferences: async () => structuredClone(preferences),
+		async savePreferences(change) {
+			if (preferencesFailure !== null) return { outcome: "failed", message: preferencesFailure };
+			const { preferences: next, unreadable } = applyPreferenceChange(preferences, structuredClone(change));
+			if (unreadable.length > 0) return { outcome: "failed", message: `Nothing was saved, because these settings could not be read: ${unreadable.join(", ")}.` };
+			preferences = next;
+			return { outcome: "saved", preferences: structuredClone(preferences) };
+		},
+		failPreferenceSaves(message) {
+			preferencesFailure = message;
 		},
 		setChanges(path, files) {
 			if (files.ignored) ignored.set(path, files.ignored);

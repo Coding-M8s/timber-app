@@ -1,5 +1,6 @@
 import type { Layout } from "./layout";
-import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenWorktreeRequest, RemoveRepositoryResult, Repository, SaveLayoutResult, TimberStatus, WorktreeCommandResult } from "./model";
+import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenWorktreeRequest, RemoveRepositoryResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
+import type { Preferences } from "./preferences";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "./timber-done";
 
 /**
@@ -94,4 +95,15 @@ export interface Engine {
 	 * group.
 	 */
 	saveLayout(layout: Layout): Promise<SaveLayoutResult>;
+	/**
+	 * The app's own settings from the Settings dialog, such as the side of the
+	 * sidebar. The defaults when nothing was saved yet.
+	 */
+	loadPreferences(): Promise<Preferences>;
+	/**
+	 * Save the preferences that `change` names and keep every other one as it
+	 * was saved, so each section of the Settings dialog saves only its own.
+	 * Saved answers with every preference as it now is. Safe to call again.
+	 */
+	savePreferences(change: Partial<Preferences>): Promise<SavePreferencesResult>;
 }

@@ -1,4 +1,5 @@
 import { type Layout, readLayout } from "./layout";
+import { type Preferences, readPreferences, writePreferences } from "./preferences";
 
 /**
  * What the app remembers between runs. Parsing and formatting are pure; the
@@ -22,6 +23,11 @@ export interface Settings {
 	 * layout, and in files written before the app remembered it.
 	 */
 	layout?: Layout;
+	/**
+	 * The app's own settings, chosen in the Settings dialog. Absent until the
+	 * person first saves one, and in files written before the app had them.
+	 */
+	preferences?: Preferences;
 }
 
 export const SETTINGS_VERSION = 1;
@@ -46,9 +52,9 @@ function readRepository(value: unknown): SavedRepository | null {
  * this version, or holding an entry that is not a saved repository. A damaged
  * file is never half-read, so a later save cannot quietly drop part of it.
  *
- * The layout is the exception, because it is only a convenience: a layout
- * part that cannot be read falls back to the defaults (see `readLayout`) and
- * never costs the repository list.
+ * The layout and the preferences are the exception, because they are only a
+ * convenience: a part that cannot be read falls back to the defaults (see
+ * `readLayout` and `readPreferences`) and never costs the repository list.
  */
 export function parseSettings(text: string): Settings | null {
 	let value: unknown;
@@ -70,12 +76,16 @@ export function parseSettings(text: string): Settings | null {
 			repositories.push(repository);
 		}
 	}
-	return value.layout === undefined ? { repositories } : { repositories, layout: readLayout(value.layout) };
+	const settings: Settings = { repositories };
+	if (value.layout !== undefined) settings.layout = readLayout(value.layout);
+	if (value.preferences !== undefined) settings.preferences = readPreferences(value.preferences);
+	return settings;
 }
 
 /** The text of a settings file, readable and stable enough to edit by hand. */
 export function serializeSettings(settings: Settings): string {
 	const repositories = settings.repositories.map(({ path, commonDir }) => ({ path, commonDir }));
 	const layout = settings.layout && { sidebarWidth: settings.layout.sidebarWidth, collapsed: [...settings.layout.collapsed] };
-	return `${JSON.stringify({ version: SETTINGS_VERSION, repositories, ...(layout ? { layout } : {}) }, null, "\t")}\n`;
+	const preferences = settings.preferences && writePreferences(settings.preferences);
+	return `${JSON.stringify({ version: SETTINGS_VERSION, repositories, ...(layout ? { layout } : {}), ...(preferences ? { preferences } : {}) }, null, "\t")}\n`;
 }

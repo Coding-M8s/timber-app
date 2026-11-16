@@ -1,5 +1,6 @@
 import { type Layout, defaultLayout } from "../../shared/layout";
 import type { Repository, TimberStatus, Worktree } from "../../shared/model";
+import { type Preferences, defaultPreferences } from "../../shared/preferences";
 
 /** Null until the first look for Timber has answered. */
 export type TimberState =
@@ -50,7 +51,13 @@ export interface Toast {
 export type DialogRequest =
 	| { kind: "new-worktree"; repository: string }
 	/** Remove a worktree. `repository` is the path of the primary checkout, `worktree` is `Worktree.id`. */
-	| { kind: "done-worktree"; repository: string; worktree: string };
+	| { kind: "done-worktree"; repository: string; worktree: string }
+	/** The app's settings, open at one section, or at the first when none is named. */
+	| { kind: "settings"; section?: SettingsSection };
+
+/** The sections of the Settings dialog, in the order they are listed. */
+export const SETTINGS_SECTIONS = ["layout"] as const;
+export type SettingsSection = typeof SETTINGS_SECTIONS[number];
 
 /** The views of the selected worktree, in the order of their tabs. */
 export const WORKSPACE_TABS = ["workspace", "changes"] as const;
@@ -89,6 +96,13 @@ export interface AppState {
 	layout: Layout;
 	/** Null once a save worked, or after the person dismissed it. */
 	layoutProblem: LayoutProblem | null;
+	/**
+	 * The app's own settings as last saved, such as the side of the sidebar.
+	 * They change only when the engine says a save worked.
+	 */
+	preferences: Preferences;
+	/** Why the saved preferences could not be read on start. Null once a save worked. */
+	preferencesProblem: string | null;
 	/** Which view of the selected worktree shows. */
 	tab: WorkspaceTab;
 	/** Null when no dialog is open. */
@@ -106,6 +120,8 @@ export const initialState: AppState = {
 	toasts: [],
 	layout: defaultLayout(),
 	layoutProblem: null,
+	preferences: defaultPreferences(),
+	preferencesProblem: null,
 	tab: "workspace",
 	dialog: null,
 };

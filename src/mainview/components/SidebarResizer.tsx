@@ -1,19 +1,22 @@
 import { type KeyboardEvent, type PointerEvent, useRef, useState } from "react";
 import { MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH } from "../../shared/layout";
-import { sidebarWidthAfterKey } from "../shell";
+import { sidebarWidthAfterDrag, sidebarWidthAfterKey } from "../shell";
 import { useAppState, useStore } from "../store/react";
 
 /** The `id` of the sidebar, which the handle says it controls. */
 export const SIDEBAR_ID = "sidebar";
 
 /**
- * The sidebar's edge. Drag it, or focus it and use the arrow keys, Home, and
- * End. The width follows on screen at once and is saved when the drag ends or
+ * The sidebar's edge, between the sidebar and the workspace on whichever side
+ * the sidebar is. Drag it, or focus it and use the arrow keys, Home, and End.
+ * The width follows on screen at once and is saved when the drag ends or
  * the key is let go, never while it moves.
  */
 export function SidebarResizer() {
 	const store = useStore();
-	const width = useAppState().layout.sidebarWidth;
+	const state = useAppState();
+	const width = state.layout.sidebarWidth;
+	const side = state.preferences.sidebarSide;
 	const drag = useRef<{ x: number; width: number } | null>(null);
 	const [dragging, setDragging] = useState(false);
 
@@ -27,7 +30,7 @@ export function SidebarResizer() {
 	};
 	const moveDrag = (event: PointerEvent<HTMLDivElement>) => {
 		const start = drag.current;
-		if (start) store.resizeSidebar(start.width + event.clientX - start.x);
+		if (start) store.resizeSidebar(sidebarWidthAfterDrag(start.width, event.clientX - start.x, side));
 	};
 	const endDrag = () => {
 		if (!drag.current) return;
@@ -37,7 +40,8 @@ export function SidebarResizer() {
 	};
 	const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
 		// From the store, not from the last render: keys can arrive faster than the window is drawn again.
-		const next = sidebarWidthAfterKey(store.getState().layout.sidebarWidth, event.key);
+		const current = store.getState();
+		const next = sidebarWidthAfterKey(current.layout.sidebarWidth, event.key, current.preferences.sidebarSide);
 		if (next === null) return;
 		event.preventDefault();
 		store.resizeSidebar(next);

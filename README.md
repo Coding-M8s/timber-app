@@ -8,8 +8,9 @@ Timber, not a replacement for it, and it has no code editor of its own.
 
 **Status: early scaffold.** The sidebar lists real repositories with the
 worktrees Timber lists and their branch status, remembers the repositories you add, and creates a worktree on a new branch (`timber new`) or opens an existing branch as one (`timber open`) from the "+" on a repository. Done removes a worktree
-after a preview of what would be lost. Rebasing worktrees, agent
-and terminal panes, the diff view, and settings are designed but not built.
+after a preview of what would be lost. Settings, from the cog, puts the
+sidebar on the left or the right. Rebasing worktrees, agent and terminal
+panes, the diff view, and the rest of settings are designed but not built.
 See the [architecture](docs/architecture.md) and [design](docs/design.md) notes.
 
 ## Quick start

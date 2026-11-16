@@ -35,11 +35,13 @@ function Body() {
 	}
 	// The sidebar takes its width from here, so a narrow window can still overrule it in the stylesheet.
 	const widths = { "--sidebar-width": `${state.layout.sidebarWidth}px` } as CSSProperties;
+	// The parts are put in the order they are seen, so the keyboard reaches them in that order too.
+	// Keys keep each part mounted when the side changes, with whatever it holds, such as the filter.
+	const parts = [<Sidebar key="sidebar" />, <SidebarResizer key="resizer" />, <Workspace key="workspace" />];
+	const right = state.preferences.sidebarSide === "right";
 	return (
-		<div className="body" style={widths}>
-			<Sidebar />
-			<SidebarResizer />
-			<Workspace />
+		<div className={right ? "body sidebar-right" : "body"} style={widths}>
+			{right ? parts.reverse() : parts}
 		</div>
 	);
 }

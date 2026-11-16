@@ -492,9 +492,23 @@ pure functions in `src/mainview/shell.ts`.
   and Changes, as one tab list: the arrows, Home, and End move between tabs.
   Each tab shows an empty state until its own content exists. Which tab shows
   is in the store and is not remembered between runs.
-- **Not built yet.** The palette button and the Settings cog are disabled and
-  say so in their tooltip. The "+" only asks: it puts a `DialogRequest` in the
-  store (`openDialog`), and the New dialog is what answers it.
+- **Not built yet.** The palette button is disabled and says so in its
+  tooltip. The "+" and the Settings cog only ask: each puts a `DialogRequest`
+  in the store (`openDialog`), and the New dialog or the Settings dialog is
+  what answers it.
+- **Sidebar side.** The sidebar sits on the left or on the right, as chosen
+  in Settings (see [preferences](#preferences-and-the-settings-dialog)). The
+  window has no control for it. On the right the body is drawn workspace,
+  edge, sidebar, in that order in the page itself, not by CSS, so Tab reaches
+  the parts in the order they are seen. Each part keeps its key, so moving
+  the sidebar keeps its React state, such as the filter. The browser still
+  moves the parts in the page, which resets their scroll position, and
+  would reload a frame inside one. On the right the edge
+  follows the pointer the other way, and the arrow pointing at the workspace
+  widens the sidebar (`sidebarWidthAfterKey` and `sidebarWidthAfterDrag` in
+  `shell.ts`). Home and End still mean the narrowest and the widest. In the
+  narrow layout, where the parts are stacked, a sidebar on the right goes
+  below the workspace.
 - **Long names.** The breadcrumb, the group headers, and the workspace header
   cut a long name short and carry the whole name in their `title`.
 - **The saved layout.** The sidebar width and the collapsed groups, each
@@ -517,6 +531,55 @@ pure functions in `src/mainview/shell.ts`.
   at the bottom of the sidebar says that the layout could not be saved and
   why, until it is dismissed or the next save works. It is not a toast, and
   repeated failures do not add more notes.
+
+## Preferences and the Settings dialog
+
+The app's own settings, such as the side of the sidebar, are chosen in the
+Settings dialog and kept by the app. They are never Timber's configuration.
+
+- **Where.** The `preferences` part of the same settings file
+  (`Preferences` in `src/shared/preferences.ts`), saved through the same
+  `SettingsHolder` as the repository list and the layout
+  (`src/bun/preferences.ts`). A file without it is valid and means the
+  defaults. A part that cannot be read falls back to its default and never
+  makes the file count as damaged. A part this version does not know is left
+  out, so it is lost on the next save, for example after going back to an
+  older build.
+- **One table.** Every preference is one entry in `PREFERENCE_PARTS`, which
+  says how it is read, compared, and written. Reading the file, merging a
+  change, comparing, and writing all go through it, so a new preference
+  cannot be left out of one of them.
+- **Kept apart from the layout.** The layout is saved whole and often,
+  starting from the defaults when the person changes it before it was read.
+  Preferences change only when a section is saved, so they are not part of it.
+- **Saving.** `savePreferences` sends only the preferences one section
+  changes. The main process merges them with what was saved last, in turn
+  with every other change to the file, so one section's Save never undoes
+  another's. The answer carries every preference as saved, and the store
+  shows what the engine answered, never what it asked for. A change with a
+  part that cannot be read saves nothing and is a failure that names it. A
+  failed save changes nothing on screen. Each save takes a ticket, so an
+  older answer that arrives last never replaces a newer one.
+- **The dialog.** `src/mainview/components/SettingsDialog.tsx`, opened by the
+  cog with `{ kind: "settings" }`, or at one section with `section`. The
+  sections are listed down the side, in the order of `SETTINGS_SECTIONS`
+  (`src/mainview/store/state.ts`), named in `SETTINGS_SECTION_LABELS`
+  (`shell.ts`), and each is one entry in `SECTION_VIEWS`. Focus starts on the
+  section that shows. Every section stays mounted and only the chosen one
+  shows, so what was typed in one is still there after looking at another.
+  Each section is a `SettingsSection` with a Save of its own, as the design
+  asks. Save is marked unavailable, not disabled, until something differs
+  from what is saved, so focus stays on it after a save. What is applied
+  changes when the save worked, without a restart. While a section saves,
+  Close, Escape, and the other sections do nothing, so its answer is never
+  lost. A failure stays in the section with the reason and what was chosen,
+  ready to save again. Saved preferences that could not be read on start are
+  reported at the top of the dialog. Nothing in the dialog runs Timber, so it
+  has no command footer.
+- **Sections today.** Layout: the side of the sidebar, left by default.
+
+In `bun run dev:web`, `timberMock.failPreferenceSaves("disk full")` makes
+saving preferences fail (`null` again to undo).
 
 For the Done dialog, with a worktree's path:
 `timberMock.setChanges(path, { modified: ["a.ts"], untracked: ["b.ts"], ignored: ["dist/"] })`
@@ -933,8 +996,44 @@ Run for the Done dialog (issue 8), Linux x64 under WSL with Bun 1.4.2, Git
   off the list while its dialog was open left only Close. The console had no
   errors or warnings. Screenshots of each state were looked at.
 
+Run for the sidebar side (issue 11), Linux x64 with Bun 1.4.2 and Git 2.43.
+The installed Timber was 0.1.0-dev.0, older than required, so the tests that
+run Timber were skipped:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 572 tests passed, 80 were skipped, none failed. The new ones
+  cover reading, merging, and writing preferences, an older settings file,
+  a damaged preferences part, saving preferences against a real temporary
+  settings file at the same time as adding a real temporary repository and
+  saving the layout (all three parts kept, the repository unchanged), the
+  store keeping only what the engine saved, a first read that answers after
+  a save, the keys and the drag on either side, and the rendered order of
+  the parts on either side.
+- `bun run dev:web` in the built-in browser of the Claude desktop app,
+  driven by hand and by short scripts in the page. With "feat" typed in the
+  filter, Settings opened at Layout with Left chosen and Save disabled.
+  Choosing Right and Save moved the sidebar to the right at once and showed
+  "Saved", and the filter still held "feat". On the edge, two presses of the
+  left arrow gave 304 pixels from 272, the right arrow then gave 288, and a
+  pointer drag of 64 pixels to the left gave 352. Tab went from the
+  Workspace tab to the tab panel, the edge, then the filter. With
+  `timberMock.failPreferenceSaves("disk full")`, choosing Left and Save
+  showed "Could not save" with "disk full", and the sidebar stayed on the
+  right. At 600 pixels wide the workspace was on top and the sidebar below
+  it, with nothing scrolling sideways. The console had no errors.
+  Screenshots of each of these were looked at.
+- After review, the same page with saving made to take 1.5 seconds by a
+  script in the page: Settings opened with focus on Layout; Tab, the down
+  arrow, and Enter chose Right and saved; Escape right after did not close
+  the dialog, Close was disabled, and Save read "Saving". When the save
+  ended, focus was on Save, the status said "Saved", and the sidebar was on
+  the right. Escape then closed the dialog.
+
 Not run yet:
 
+- The sidebar side in the desktop window, and the side read back from the
+  settings file after restarting the desktop app. Only the mock engine and
+  the main process module in tests were run.
 - Branch status rows in the desktop window, and a row read out by a screen
   reader. Tooltips were checked as `title` attributes, not seen on hover.
 - The New worktree dialog with both modes in the desktop window. "New

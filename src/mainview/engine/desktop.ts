@@ -39,5 +39,7 @@ export function createDesktopEngine(): Engine {
 		},
 		loadLayout: () => rpc.request.loadLayout({}),
 		saveLayout: layout => rpc.request.saveLayout({ layout }),
+		loadPreferences: () => rpc.request.loadPreferences({}),
+		savePreferences: change => rpc.request.savePreferences({ change }),
 	};
 }
