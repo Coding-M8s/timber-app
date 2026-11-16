@@ -248,7 +248,7 @@ describe("the Editor section of Settings", () => {
 		expect(view({ draft: editEditor(none, { command: "vim" }) })).toContain("This looks like a terminal editor");
 	});
 
-	test("Neovim says it needs terminal sessions", () => {
+	test("Neovim says it is not started from here yet", () => {
 		const markup = view({ draft: chooseEditor(none, "neovim") });
 		expect(markup).toContain(TERMINAL_EDITOR_REASON);
 		expect(markup).toContain(`nvim &#x27;${EXAMPLE_WORKTREE}&#x27;`);

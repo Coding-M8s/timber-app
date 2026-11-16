@@ -208,12 +208,14 @@ describe("workspace", () => {
 		expect(markup).toMatch(/<div class="tabs" role="tablist" aria-label="[^"]+">/);
 		expect(markup).toMatch(/<button type="button" role="tab" id="tab-workspace" class="tab selected" aria-selected="true" aria-controls="workspace-panel" tabindex="0">Workspace</);
 		expect(markup).toMatch(/<button type="button" role="tab" id="tab-changes" class="tab" aria-selected="false" aria-controls="workspace-panel" tabindex="-1">Changes</);
-		const panel = tagOf(markup, "empty tabpanel");
+		const panel = tagOf(markup, "tabpanel workspace-panel");
 		expect(panel).toContain('role="tabpanel"');
 		expect(panel).toContain('id="workspace-panel"');
 		expect(panel).toContain('aria-labelledby="tab-workspace"');
-		expect(panel).toContain('tabindex="0"');
-		expect(markup).toContain("Nothing running here yet");
+		// It holds the button that starts a terminal, so it needs no tab stop of its own.
+		expect(panel).not.toContain("tabindex");
+		expect(markup).toContain("No terminal here yet");
+		expect(markup).toContain(">Open terminal</button>");
 	});
 
 	test("the Changes tab shows its own empty state, and the tab stop moves with it", async () => {
@@ -224,7 +226,7 @@ describe("workspace", () => {
 		expect(markup).toMatch(/id="tab-workspace" class="tab" aria-selected="false" aria-controls="workspace-panel" tabindex="-1"/);
 		expect(tagOf(markup, "empty tabpanel")).toContain('aria-labelledby="tab-changes"');
 		expect(markup).toContain("No changes to show yet");
-		expect(markup).not.toContain("Nothing running here yet");
+		expect(markup).not.toContain("No terminal here yet");
 	});
 
 	test("an arrow key on the tab list shows the next tab", async () => {

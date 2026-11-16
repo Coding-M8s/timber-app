@@ -1,9 +1,9 @@
-import { statSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { describeCommandLine } from "../shared/command-line";
 import { TERMINAL_EDITOR_REASON, editorCommand } from "../shared/editor";
-import type { OpenInEditorRequest, OpenInEditorResult, Repository } from "../shared/model";
+import type { OpenInEditorRequest, OpenInEditorResult } from "../shared/model";
 import type { Preferences } from "../shared/preferences";
+import { type FindRepository, findListedWorktree } from "./listed-worktree";
 
 /**
  * How long to wait after starting an editor to hear whether it stopped right
@@ -23,12 +23,8 @@ const WINDOWS_BATCH = /\.(cmd|bat)$/i;
 export interface EditorDependencies {
 	/** The preferences as saved. The editor command comes only from here, never from the interface. */
 	preferences: () => Promise<Preferences>;
-	/**
-	 * The repository in the app's list whose primary checkout is `path`, read
-	 * again, so that its worktrees are the ones Timber lists right now. Null
-	 * when the list has no such repository (see `RepositoryList.find`).
-	 */
-	findRepository: (path: string) => Promise<Repository | null>;
+	/** The repository in the app's list, read again (see ./listed-worktree.ts). */
+	findRepository: FindRepository;
 	/** The environment the app was started with. Its PATH is where the editor is looked for, and the editor gets all of it. */
 	environment?: Record<string, string | undefined>;
 	/** How long to watch for an editor that stops right away. Tests shorten it. */
@@ -44,38 +40,6 @@ export interface EditorLauncher {
 
 function messageOf(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
-}
-
-function isFolder(path: string): boolean {
-	try {
-		return statSync(path).isDirectory();
-	} catch {
-		return false;
-	}
-}
-
-/**
- * Why nothing may be opened for this worktree, or null when it may: the
- * path must be absolute, the repository must be in the app's list, Timber
- * must list the worktree's registered path for it right now, and its folder
- * must be there.
- */
-async function refusal(findRepository: EditorDependencies["findRepository"], repositoryPath: string, worktreePath: string): Promise<string | null> {
-	if (!isAbsolute(worktreePath)) return `${worktreePath} is not a full path, so it cannot be a worktree Timber lists. No editor was started.`;
-	let repository: Repository | null;
-	try {
-		repository = await findRepository(repositoryPath);
-	} catch (error) {
-		return `Could not read the repository at ${repositoryPath}: ${messageOf(error)}. No editor was started.`;
-	}
-	if (repository === null) return `${repositoryPath} is not a repository in this app's list. No editor was started.`;
-	if (!repository.available) return `Git cannot read the repository at ${repositoryPath}. No editor was started.`;
-	if (repository.failure !== null) return `Timber could not list the worktrees of ${repositoryPath}, so no editor was started: ${repository.failure}`;
-	if (!repository.worktrees.some(worktree => worktree.path === worktreePath)) {
-		return `Timber lists no worktree at ${worktreePath} in ${repositoryPath}. No editor was started. Refresh the list.`;
-	}
-	if (!isFolder(worktreePath)) return `The folder ${worktreePath} is missing. No editor was started.`;
-	return null;
 }
 
 /** Wait up to `milliseconds` for the process to end. Null when it is still running then. */
@@ -106,8 +70,8 @@ async function earlyExit(child: Bun.Subprocess, milliseconds: number): Promise<{
  * - The editor is started detached, in its own session, with no standard
  *   input or output, and the app does not wait for it. Closing the app does
  *   not close it.
- * - An editor that runs in a terminal is not started: that needs a terminal
- *   session of the worktree, which the app does not have yet.
+ * - An editor that runs in a terminal is not started: starting it in the
+ *   worktree's terminal session is a later step.
  * - On Windows a `.cmd` or `.bat` file is refused (see `WINDOWS_BATCH`).
  */
 export function createEditorLauncher(dependencies: EditorDependencies): EditorLauncher {
@@ -118,8 +82,8 @@ export function createEditorLauncher(dependencies: EditorDependencies): EditorLa
 		if (editor === null) return { outcome: "not-configured" };
 
 		// The path is checked before any command is built from it, so no answer shows a command for a path that is not listed.
-		const refused = await refusal(findRepository, request.repository, request.worktree);
-		if (refused !== null) return { outcome: "not-listed", message: refused };
+		const listed = await findListedWorktree(findRepository, request.repository, request.worktree, "No editor was started.");
+		if (!listed.ok) return { outcome: "not-listed", message: listed.message };
 
 		const built = editorCommand(editor, request.worktree);
 		if (!built.ok) return { outcome: "failed", command: null, message: `${built.message} Change it in Settings, Editor.` };

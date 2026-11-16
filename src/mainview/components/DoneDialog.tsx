@@ -6,22 +6,22 @@ import {
 	describeUnpublishedCommits, filesLost, losesWork,
 } from "../done-format";
 import { worktreeLabel } from "../format";
+import { DONE_TERMINAL_WARNING } from "../terminal-format";
 import { useAppState, useStore, useSubmission } from "../store/react";
 import { type DoneSessionState, canRemove, createDoneSession } from "../store/done-session";
-import type { DialogRequest } from "../store/state";
+import { type DialogRequest, terminalFor } from "../store/state";
 import type { SubmissionOutcome, SubmissionState } from "../store/submission";
 import { OperationDialog } from "./OperationDialog";
 import { TimberFailureDetails } from "./TimberFailureDetails";
 
 /**
- * Where the warning about live terminal and agent sessions of the worktree
- * will go. The app has no sessions yet (see Milestones in
- * docs/architecture.md), so there is nothing to warn about and this shows
- * nothing. When sessions exist, list them here, and make closing them part of
- * the flow before Remove.
+ * The warning about a terminal that runs in the worktree. Removing the
+ * worktree ends it: the store closes the session once Timber says the
+ * worktree is removed (`applyDone` in ../store/store.ts).
  */
-function LiveSessionsWarning(_props: { worktree: Worktree }) {
-	return null;
+function LiveSessionsWarning({ terminalRuns }: { terminalRuns: boolean }) {
+	if (!terminalRuns) return null;
+	return <p className="done-warning" role="note">{DONE_TERMINAL_WARNING}</p>;
 }
 
 function FileList({ title, tone, files }: { title: string; tone: "modified" | "untracked" | "ignored"; files: readonly string[] }) {
@@ -46,6 +46,8 @@ export interface DoneDialogViewProps {
 	worktree: Worktree;
 	/** The worktree left the list while the dialog was open. */
 	gone: boolean;
+	/** A terminal session runs in the worktree. */
+	terminalRuns?: boolean;
 	session: DoneSessionState;
 	submission: SubmissionState;
 	/** What the base field holds. It becomes an option, and a new preview, on Enter or on leaving the field. */
@@ -67,7 +69,7 @@ export interface DoneDialogViewProps {
  * the worktree, and Enter in a field never removes.
  */
 export function DoneDialogView(props: DoneDialogViewProps) {
-	const { repository, worktree, gone, session, submission, baseDraft, onBaseDraft, onBaseCommit, onOptions, onRefresh, onRemove, onClose } = props;
+	const { repository, worktree, gone, terminalRuns = false, session, submission, baseDraft, onBaseDraft, onBaseCommit, onOptions, onRefresh, onRemove, onClose } = props;
 	const { options, preview } = session;
 	const label = worktreeLabel(worktree);
 	const basePending = baseOf(baseDraft) !== options.base;
@@ -114,7 +116,7 @@ export function DoneDialogView(props: DoneDialogViewProps) {
 				)
 			) : (
 				<>
-					<LiveSessionsWarning worktree={worktree} />
+					<LiveSessionsWarning terminalRuns={terminalRuns} />
 
 					<div className="done-options" role="group" aria-label="Options">
 						<label className="done-check">
@@ -233,6 +235,7 @@ export function DoneDialog({ request }: { request: Extract<DialogRequest, { kind
 			repository={repository?.name ?? request.repository}
 			worktree={worktree}
 			gone={listed === null && !submissionState.running}
+			terminalRuns={terminalFor(state, worktree.id)?.state.kind === "running"}
 			session={sessionState}
 			submission={submissionState}
 			baseDraft={baseDraft}

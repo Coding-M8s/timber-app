@@ -133,7 +133,7 @@ export type OpenInEditorResult =
 	| { outcome: "opened"; command: string }
 	/** No editor is set in Settings. */
 	| { outcome: "not-configured" }
-	/** The editor runs in a terminal, and the app has no terminal sessions yet. Nothing was started. */
+	/** The editor runs in a terminal, which "Open in editor" does not start yet. Nothing was started. */
 	| { outcome: "terminal-editor"; command: string; message: string }
 	/** The repository is not in the app's list, or Timber does not list that worktree, or its folder is gone. Nothing was started. */
 	| { outcome: "not-listed"; message: string }

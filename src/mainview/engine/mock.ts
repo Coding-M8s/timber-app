@@ -10,6 +10,7 @@ import {
 import { failureOf, readTimberResult } from "../../shared/timber-result";
 import { REQUIRED_TIMBER_VERSION } from "../../shared/timber-version";
 import { type CommandEnding, actOutNew, actOutOpen, isCommandEnding } from "./mock-commands";
+import { type TerminalControls, createMockTerminals } from "./mock-terminals";
 
 const inSync = (branch: string): SyncState => ({ kind: "tracking", upstream: `origin/${branch}`, ahead: 0, behind: 0 });
 
@@ -209,7 +210,8 @@ export const sampleTimberStatuses = {
 } as const satisfies Record<TimberStatus["state"], TimberStatus>;
 
 /** The mock engine, plus the controls a test or the browser build uses to act out changes. */
-export interface MockEngine extends Engine {
+/** The controls for terminals are in ./mock-terminals.ts. */
+export interface MockEngine extends Engine, TerminalControls {
 	/** Replace the data, without telling the interface. */
 	setRepositories(repositories: Repository[]): void;
 	/** Report that a repository changed, as the main process would. */
@@ -482,7 +484,14 @@ export function createMockEngine(
 		}
 		return structuredClone(result);
 	};
+	// As the main process does: only a worktree listed right now, whose folder is there.
+	const terminals = createMockTerminals((path, worktreePath) => {
+		const repository = current.find(candidate => candidate.path === path && candidate.available);
+		const worktree = timberFailures.has(path) ? undefined : repository?.worktrees.find(candidate => candidate.path === worktreePath);
+		return worktree && worktree.pathExists ? worktree : null;
+	});
 	return {
+		...terminals,
 		timberStatus: look,
 		recheckTimber: look,
 		listRepositories: () => read(() => current.map(asRead)),

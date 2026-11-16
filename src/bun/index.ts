@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { BrowserView, BrowserWindow, Updater, Utils } from "electrobun/main";
+import Electrobun, { BrowserView, BrowserWindow, Updater, Utils } from "electrobun/main";
 import type { AppRPC } from "../shared/rpc";
 import { repositoryChanges } from "./changes";
 import { createDone } from "./done";
@@ -11,6 +11,9 @@ import { createRepositoryList } from "./repository-list";
 import { createRepositoryReader } from "./repository-reader";
 import { createSettingsHolder, settingsFilePath } from "./settings";
 import { createTimberLocator, describeTimberStatus } from "./timber";
+import { openWebLink } from "./open-link";
+import { createQuitGuard } from "./quit-guard";
+import { createTerminalSessions } from "./terminals";
 import { createWorktreeCommands } from "./worktree-commands";
 
 const DEV_SERVER_URL = "http://localhost:5173";
@@ -55,6 +58,31 @@ const worktrees = createWorktreeCommands({ timber: () => timber.current(), isLis
 const done = createDone({ timber: () => timber.current(), findRepository: path => repositories.find(path) });
 const editor = createEditorLauncher({ preferences: () => preferences.load(), findRepository: path => repositories.find(path) });
 
+/** Report to the window. It may not be connected yet, or be reloading; its first load reads everything anyway. */
+function tell(what: string, send: () => void): void {
+	try {
+		send();
+	} catch (error) {
+		console.warn(`Could not report ${what} to the window: ${error instanceof Error ? error.message : String(error)}`);
+	}
+}
+
+// What a terminal prints is private, like what a command prints: it goes to the window and is never logged.
+const terminals = createTerminalSessions({
+	findRepository: path => repositories.find(path),
+	onOutput: output => tell("terminal output", () => rpc.send.terminalOutput(output)),
+	onChange: change => tell("a terminal change", () => rpc.send.terminalChanged(change)),
+});
+
+const quitGuard = createQuitGuard({
+	liveCount: () => terminals.liveCount(),
+	// The window answers at once whether it shows the question. One that is broken, or no longer drawn because
+	// Electrobun's native side stopped it (as on SIGTERM), does not answer in time, and then the app quits.
+	ask: live => rpc.request.askQuit({ live }, { maxRequestTime: 2000 }),
+	endAll: () => terminals.closeAll(),
+	quit: () => Utils.quit(),
+});
+
 const rpc = BrowserView.defineRPC<AppRPC>({
 	maxRequestTime: 15_000,
 	handlers: {
@@ -79,24 +107,49 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			previewDone: request => done.preview(request),
 			// Removes a worktree. Only ever with a preview that `previewDone` handed out (see ./done.ts).
 			applyDone: request => done.apply(request),
+			listTerminals: () => terminals.list(),
+			// Starts a shell only in a worktree Timber lists (see ./terminals.ts).
+			openTerminal: request => terminals.open(request),
+			readTerminal: ({ id }) => terminals.read(id),
+			closeTerminal: ({ id }) => terminals.close(id),
+			confirmQuit: () => quitGuard.confirm(),
+			writeClipboard: ({ text }) => Utils.clipboardWriteText(text),
+			readClipboard: () => Utils.clipboardReadText(),
+			// Only web links, to the person's browser, never through a shell (see ./open-link.ts).
+			openLink: ({ url }) => openWebLink(url),
 		},
-		messages: {},
+		messages: {
+			writeTerminal: ({ id, data }) => terminals.write(id, data),
+			resizeTerminal: ({ id, cols, rows }) => terminals.resize(id, cols, rows),
+			terminalDrawn: ({ id, seq }) => terminals.drawn(id, seq),
+		},
 	},
 });
 
 // Pass every reported change on to the interface, which reloads that repository.
-repositoryChanges.subscribe(path => {
-	try {
-		rpc.send.repositoryChanged({ path });
-	} catch (error) {
-		// The window may not be connected yet. Its first load reads everything anyway.
-		console.warn(`Could not report a change in ${path}: ${error instanceof Error ? error.message : String(error)}`);
-	}
-});
+repositoryChanges.subscribe(path => tell(`a change in ${path}`, () => rpc.send.repositoryChanged({ path })));
 
-new BrowserWindow({
+type Veto = { response?: { allow: boolean } };
+// Quitting while terminals run waits for the person (see ./quit-guard.ts). When it goes ahead, every session ends with it.
+// SIGINT and SIGTERM arrive here as the same request: the app's code runs in a Worker, where signal listeners never run,
+// and Electrobun's native side turns the signal into a quit request. So they ask too.
+function guardQuit(event: unknown): void {
+	if (quitGuard.mayQuit()) {
+		// The app goes away in a moment, so there is no time to wait for anything to end by itself.
+		terminals.killAll();
+		return;
+	}
+	(event as Veto).response = { allow: false };
+}
+Electrobun.events.on("before-quit", guardQuit);
+
+const mainWindow = new BrowserWindow({
 	title: "Timber",
 	url: await mainViewUrl(),
 	frame: { width: 1280, height: 820, x: 120, y: 80 },
 	rpc,
+});
+// Closing the last window quits the app, so it asks the same question first.
+mainWindow.on("will-close", event => {
+	if (!quitGuard.mayQuit()) (event as Veto).response = { allow: false };
 });

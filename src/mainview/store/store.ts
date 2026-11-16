@@ -3,11 +3,14 @@ import type { Engine } from "../../shared/engine";
 import { type Layout, clampSidebarWidth, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "../../shared/model";
 import type { Preferences } from "../../shared/preferences";
+import type { OpenTerminalRequest, TerminalChange, TerminalSession } from "../../shared/terminal";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "../../shared/timber-done";
+import { type Draw, createTerminalFeed } from "../terminal-feed";
+import { describeOrphanTerminal } from "../terminal-format";
 import { describeOpenedInEditor } from "../editor-format";
 import { describeAdded, describeRemoved, folderName, worktreeLabel } from "../format";
 import { mergeOverlapping } from "./merge";
-import { type AppState, type DialogRequest, type Operation, type WorkspaceTab, TOAST_MILLISECONDS, initialState, keepLastGood, reconcileSelection, selectionFor, selectionForRepository, timberReady } from "./state";
+import { type AppState, type DialogRequest, type Operation, type WorkspaceTab, TOAST_MILLISECONDS, initialState, keepLastGood, reconcileSelection, selectionFor, selectionForRepository, terminalFor, timberReady, withTerminal } from "./state";
 
 /**
  * The single holder of what the interface shows: Timber's status, the
@@ -109,6 +112,35 @@ export interface AppStore {
 	 * throws.
 	 */
 	applyDone(request: DoneApplyRequest): Promise<DoneApplyResult>;
+	/**
+	 * Start a terminal in a worktree, or find the one it has. The session
+	 * shows in `terminals`; why none started shows in `terminalProblem`. One
+	 * request at a time per worktree. Never throws.
+	 */
+	openTerminal(request: OpenTerminalRequest): Promise<void>;
+	/** End a session and take it away, running or exited. Never throws. */
+	closeTerminal(id: string): Promise<void>;
+	/**
+	 * Draw what a session printed: first what the engine kept, then every new
+	 * part, each once and in order. `draw` calls `done` once it has drawn, so
+	 * the engine sends no more than the pane keeps up with. Returns a
+	 * function that stops drawing.
+	 */
+	watchTerminal(id: string, draw: (draw: Draw, done: () => void) => void): () => void;
+	/** Pass typed or pasted text on to a session. */
+	writeTerminal(id: string, data: string): void;
+	resizeTerminal(id: string, cols: number, rows: number): void;
+	/** Put text from a terminal on the clipboard. Never throws. */
+	copyText(text: string): Promise<void>;
+	/** The clipboard's text, for pasting into a terminal. Null when there is none or it cannot be read. */
+	pasteText(): Promise<string | null>;
+	/** Open a web link from a terminal in the person's browser. Never throws. */
+	openLink(url: string): Promise<void>;
+	dismissTerminalProblem(): void;
+	/** The person agreed to quit while terminals run. */
+	confirmQuit(): Promise<void>;
+	/** The person chose to keep the app open. */
+	cancelQuit(): void;
 }
 
 /** Run `task` after `milliseconds`. Returns a function that calls it off. */
@@ -184,6 +216,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				selection: reconcileSelection(repositories, state.selection),
 				error: null,
 			});
+			endOrphanTerminals();
 		} catch (error) {
 			update({ error: { repository: null, message: messageOf(error) } });
 		}
@@ -205,6 +238,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				selection: reconcileSelection(repositories, state.selection),
 				error: state.error?.repository === path ? null : state.error,
 			});
+			endOrphanTerminals();
 		} catch (error) {
 			if (stale()) return;
 			update({ error: { repository: path, message: messageOf(error) } });
@@ -450,9 +484,21 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		}
 	}
 
+	/** End the terminal of a worktree that was removed: its folder is gone, so there is nothing left to work in. */
+	function closeTerminalOf(repositoryPath: string, worktreePath: string): void {
+		const repository = state.repositories.find(candidate => candidate.path === repositoryPath);
+		const worktree = repository?.worktrees.find(candidate => candidate.path === worktreePath);
+		const session = worktree ? terminalFor(state, worktree.id) : state.terminals.find(candidate => candidate.path === worktreePath && candidate.repository === repositoryPath);
+		if (session) void closeTerminal(session.id);
+	}
+
 	async function applyDone(request: DoneApplyRequest): Promise<DoneApplyResult> {
+		// Read before the list is read again, which no longer has the worktree.
+		const ending = () => closeTerminalOf(request.repository, request.path);
 		try {
-			return await engine.applyDone(request);
+			const result = await engine.applyDone(request);
+			if (result.outcome === "removed") ending();
+			return result;
 		} catch (error) {
 			// The command may have run, or may still be running. Only the list can say what is there now.
 			const diagnostic = `The removal did not answer, so what it did is unknown: ${messageOf(error)}`;
@@ -462,6 +508,88 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		}
 	}
 
+	/**
+	 * End the terminals of worktrees that a list read in full no longer has,
+	 * such as one removed from inside its own terminal, or of a repository
+	 * that left the app's list. Nothing could show them anymore. A repository
+	 * whose worktrees Timber could not list, or whose folder Git cannot read,
+	 * keeps its terminals: that read says nothing about them. A worktree is
+	 * matched by its identity or its registered path, because its identity
+	 * changes while its folder cannot be verified.
+	 */
+	function endOrphanTerminals(): void {
+		for (const session of state.terminals) {
+			const repository = state.repositories.find(candidate => candidate.path === session.repository);
+			const listed = repository !== undefined && (!repository.available || repository.failure !== null || repository.worktrees.some(worktree => worktree.id === session.worktree || worktree.path === session.path));
+			if (listed || state.operations.some(operation => operation.kind === "close-terminal" && operation.session === session.id)) continue;
+			void closeTerminal(session.id);
+			if (session.state.kind === "running") showToast(describeOrphanTerminal(session.path));
+		}
+	}
+
+	async function openTerminal(request: OpenTerminalRequest): Promise<void> {
+		const repository = state.repositories.find(candidate => candidate.path === request.repository);
+		const worktree = repository?.worktrees.find(candidate => candidate.path === request.worktree);
+		const key = worktree?.id ?? request.worktree;
+		if (state.operations.some(operation => operation.kind === "open-terminal" && operation.worktree === key)) return;
+		await track({ kind: "open-terminal", worktree: key }, async () => {
+			let message: string;
+			try {
+				const result = await engine.openTerminal(request);
+				if (result.outcome === "opened") {
+					update({
+						terminals: withTerminal(state.terminals, result.session.id, result.session),
+						terminalProblem: state.terminalProblem?.worktree === key ? null : state.terminalProblem,
+					});
+					return;
+				}
+				message = result.message;
+			} catch (error) {
+				message = `The app did not hear whether the terminal started: ${messageOf(error)}`;
+			}
+			update({ terminalProblem: { worktree: key, message } });
+		});
+	}
+
+	async function closeTerminal(id: string): Promise<void> {
+		if (state.operations.some(operation => operation.kind === "close-terminal" && operation.session === id)) return;
+		await track({ kind: "close-terminal", session: id }, async () => {
+			try {
+				await engine.closeTerminal(id);
+			} catch {
+				// The engine reports the session as gone when it is. Until then it stays, so it can be closed again.
+				return;
+			}
+			update({ terminals: withTerminal(state.terminals, id, null) });
+		});
+	}
+
+	// Sessions whose parts a pane draws. The engine hears at once about every other part, so it never waits on one.
+	const watched = new Map<string, number>();
+
+	function watchTerminal(id: string, draw: (draw: Draw, done: () => void) => void): () => void {
+		const feed = createTerminalFeed();
+		let watching = true;
+		watched.set(id, (watched.get(id) ?? 0) + 1);
+		const show = (next: Draw | null) => {
+			if (!watching || next === null) return;
+			if (next.data === "" && !next.reset) return engine.drawnTerminal(id, next.seq);
+			draw(next, () => engine.drawnTerminal(id, next.seq));
+		};
+		const stop = engine.onTerminalOutput(part => {
+			if (part.id === id) show(feed.receive(part));
+		});
+		engine.readTerminal(id).then(snapshot => show(feed.begin(snapshot)), () => show(feed.begin(null)));
+		return () => {
+			if (!watching) return;
+			watching = false;
+			stop();
+			const count = (watched.get(id) ?? 1) - 1;
+			if (count > 0) watched.set(id, count);
+			else watched.delete(id);
+		};
+	}
+
 	return {
 		getState: () => state,
 		subscribe(listener) {
@@ -469,14 +597,36 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			return () => void listeners.delete(listener);
 		},
 		start() {
-			const stop = engine.onRepositoryChanged(path => {
-				// Only a repository on screen can be refreshed. Reload everything to pick up a new one.
-				if (state.repositories.some(repository => repository.path === path)) void reloadOne(path);
-			});
+			let heard: TerminalChange[] | null = [];
+			const stops = [
+				engine.onRepositoryChanged(path => {
+					// Only a repository on screen can be refreshed. Reload everything to pick up a new one.
+					if (state.repositories.some(repository => repository.path === path)) void reloadOne(path);
+				}),
+				engine.onTerminalChanged(change => {
+					// Until the first list answers, changes wait, and are applied on top of it.
+					if (heard !== null) heard.push(change);
+					else update({ terminals: withTerminal(state.terminals, change.id, change.session) });
+				}),
+				engine.onTerminalOutput(part => {
+					if (!watched.has(part.id)) engine.drawnTerminal(part.id, part.seq);
+				}),
+				engine.onQuitRequested(live => update({ quitRequest: live })),
+			];
 			void loadLayout();
 			void loadPreferences();
 			void findTimber(() => engine.timberStatus());
-			return stop;
+			// Sessions outlive the window, for example when it reloads. Changes heard meanwhile are newer than this answer.
+			const settle = (listed: readonly TerminalSession[]) => {
+				let terminals = listed;
+				for (const change of heard ?? []) terminals = withTerminal(terminals, change.id, change.session);
+				heard = null;
+				update({ terminals });
+			};
+			engine.listTerminals().then(settle, () => settle(state.terminals));
+			return () => {
+				for (const stop of stops) stop();
+			};
 		},
 		retryTimber: () => findTimber(() => engine.recheckTimber()),
 		refresh: () => reloadAll("all"),
@@ -526,5 +676,45 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		},
 		previewDone,
 		applyDone,
+		openTerminal,
+		closeTerminal,
+		watchTerminal,
+		writeTerminal: (id, data) => engine.writeTerminal(id, data),
+		resizeTerminal: (id, cols, rows) => engine.resizeTerminal(id, cols, rows),
+		async copyText(text) {
+			try {
+				await engine.writeClipboard(text);
+			} catch {
+				// Nothing was copied. The selection is still there to try again.
+			}
+		},
+		async pasteText() {
+			try {
+				return await engine.readClipboard();
+			} catch {
+				return null;
+			}
+		},
+		async openLink(url) {
+			try {
+				await engine.openLink(url);
+			} catch {
+				// The link stays in the terminal, to copy instead.
+			}
+		},
+		dismissTerminalProblem() {
+			if (state.terminalProblem) update({ terminalProblem: null });
+		},
+		async confirmQuit() {
+			update({ quitRequest: null });
+			try {
+				await engine.confirmQuit();
+			} catch {
+				// The app is quitting, or did not hear the answer. Quitting again asks again.
+			}
+		},
+		cancelQuit() {
+			if (state.quitRequest !== null) update({ quitRequest: null });
+		},
 	};
 }

@@ -1,6 +1,7 @@
 import { type Layout, defaultLayout } from "../../shared/layout";
 import type { Repository, TimberStatus, Worktree } from "../../shared/model";
 import { type Preferences, defaultPreferences } from "../../shared/preferences";
+import type { TerminalSession } from "../../shared/terminal";
 
 /** Null until the first look for Timber has answered. */
 export type TimberState =
@@ -24,7 +25,18 @@ export type Operation =
 	| { kind: "add-repository" }
 	| { kind: "remove-repository"; repository: string }
 	/** Starting the editor for a worktree, named by its registered path. */
-	| { kind: "open-in-editor"; worktree: string };
+	| { kind: "open-in-editor"; worktree: string }
+	/** Starting a terminal in a worktree, named by its identity (`Worktree.id`). */
+	| { kind: "open-terminal"; worktree: string }
+	/** Ending a terminal session, named by its id. */
+	| { kind: "close-terminal"; session: string };
+
+/** Why a terminal did not start. It stays until dismissed, or until a terminal starts in that worktree. */
+export interface TerminalProblem {
+	/** The worktree's identity (`Worktree.id`). */
+	worktree: string;
+	message: string;
+}
 
 /** Why the latest reload failed. `repository` is null when it was a reload of everything. */
 export interface ReloadError {
@@ -120,6 +132,17 @@ export interface AppState {
 	preferencesProblem: string | null;
 	/** Why the last "Open in editor" opened nothing. Null once one worked, or after the person dismissed it. */
 	editorProblem: EditorProblem | null;
+	/**
+	 * The terminal sessions the engine holds, running or exited, as it last
+	 * reported them. At most one per worktree.
+	 */
+	terminals: readonly TerminalSession[];
+	terminalProblem: TerminalProblem | null;
+	/**
+	 * How many terminals ran when the app was asked to quit, while the
+	 * question is on screen. Null when nothing is asked.
+	 */
+	quitRequest: number | null;
 	/** Which view of the selected worktree shows. */
 	tab: WorkspaceTab;
 	/** Null when no dialog is open. */
@@ -140,6 +163,9 @@ export const initialState: AppState = {
 	preferences: defaultPreferences(),
 	preferencesProblem: null,
 	editorProblem: null,
+	terminals: [],
+	terminalProblem: null,
+	quitRequest: null,
 	tab: "workspace",
 	dialog: null,
 };
@@ -209,4 +235,15 @@ export function selectedWorktree(state: AppState): { repository: Repository; wor
 	const repository = state.repositories.find(candidate => candidate.path === repositoryPath);
 	const worktree = repository?.worktrees.find(candidate => candidate.id === worktreeId);
 	return repository && worktree ? { repository, worktree } : null;
+}
+
+/** The terminal session of a worktree, named by its identity, running or exited. */
+export function terminalFor(state: AppState, worktreeId: string): TerminalSession | null {
+	return state.terminals.find(session => session.worktree === worktreeId) ?? null;
+}
+
+/** Put a session the engine reported in its place, or take it away when `session` is null. */
+export function withTerminal(terminals: readonly TerminalSession[], id: string, session: TerminalSession | null): readonly TerminalSession[] {
+	const others = terminals.filter(candidate => candidate.id !== id);
+	return session ? [...others, session] : others;
 }

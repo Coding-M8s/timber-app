@@ -15,10 +15,14 @@ declare module "electrobun/view" {
 	export class Electroview {
 		constructor(config: { rpc: unknown });
 
-		static defineRPC<Schema extends { bun: { requests: RequestMap }; webview: { messages: object } }>(config: {
+		static defineRPC<Schema extends { bun: { requests: RequestMap; messages: object }; webview: { requests: RequestMap; messages: object } }>(config: {
 			maxRequestTime?: number;
 			handlers: {
-				requests: object;
+				requests: {
+					[Name in keyof Schema["webview"]["requests"]]?: (
+						params: Schema["webview"]["requests"][Name]["params"],
+					) => Schema["webview"]["requests"][Name]["response"] | Promise<Schema["webview"]["requests"][Name]["response"]>;
+				};
 				messages: {
 					[Name in keyof Schema["webview"]["messages"]]?: (payload: Schema["webview"]["messages"][Name]) => void;
 				};
@@ -29,6 +33,9 @@ declare module "electrobun/view" {
 					params: Schema["bun"]["requests"][Name]["params"],
 					options?: { maxRequestTime?: number },
 				) => Promise<Schema["bun"]["requests"][Name]["response"]>;
+			};
+			send: {
+				[Name in keyof Schema["bun"]["messages"]]: (payload: Schema["bun"]["messages"][Name]) => void;
 			};
 		};
 	}
