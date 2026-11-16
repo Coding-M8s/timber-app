@@ -1,10 +1,12 @@
 import { accessSync, constants } from "node:fs";
 import { type AgentSetting, agentCommand, findAgent } from "../shared/agent";
 import { describeCommandLine } from "../shared/command-line";
+import type { TimberStatus } from "../shared/model";
 import {
 	type OpenTerminalRequest, type OpenTerminalResult, type Scrollback, type TerminalChange, type TerminalOutput, type TerminalSession,
-	type TerminalSnapshot, TERMINAL_UNSUPPORTED_REASON, clampTerminalSize, cleanSessionName, createScrollback, defaultSessionName, pickShell,
+	type TerminalSnapshot, TERMINAL_UNSUPPORTED_REASON, TIMBER_SETUP_SESSION_NAME, clampTerminalSize, cleanSessionName, createScrollback, defaultSessionName, pickShell,
 } from "../shared/terminal";
+import { TIMBER_CONFIG_SCOPES, type TimberConfigScope, timberSetupArguments } from "../shared/timber-config";
 import { findExecutable } from "./find-executable";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
 import { sessionMembers, signalEach, signalGroup } from "./process-session";
@@ -33,6 +35,8 @@ export interface TerminalDependencies {
 	 * here, never from the interface. None when left out.
 	 */
 	agents?: () => Promise<readonly AgentSetting[]>;
+	/** Where Timber is, for `timber setup` sessions. Setup never starts while it is not ready. */
+	timber?: () => Promise<TimberStatus>;
 	/** Hears every part of output, in order per session. */
 	onOutput: (output: TerminalOutput) => void;
 	/** Hears every session that started, ended, or is gone. */
@@ -149,6 +153,9 @@ function signalSession(live: Live, signal: NodeJS.Signals): void {
  *   app's PATH. A request names the agent, never the command. An agent whose
  *   executable is not there starts nothing, and no session is kept. What an
  *   agent prints is handled as any terminal's output and never read.
+ * - A Timber setup session runs `timber setup`, or `timber setup --global`,
+ *   with the Timber the app found, in the worktree's folder. The request
+ *   names only which file, never the command.
  * - Only a worktree Timber lists, in a repository in the app's list, with its
  *   folder there, gets one. Each request starts another, beside the ones the
  *   worktree has, named after the shell or the agent ("Terminal",
@@ -164,7 +171,7 @@ function signalSession(live: Live, signal: NodeJS.Signals): void {
  */
 export function createTerminalSessions(dependencies: TerminalDependencies): TerminalSessions {
 	const {
-		findRepository, onOutput, onChange, agents = async () => [], environment = process.env, platform = process.platform,
+		findRepository, onOutput, onChange, agents = async () => [], timber = async (): Promise<TimberStatus> => ({ state: "not-found", override: null }), environment = process.env, platform = process.platform,
 		closeMilliseconds = CLOSE_MILLISECONDS, flushMilliseconds = FLUSH_MILLISECONDS, undrawnLimit = UNDRAWN_LIMIT,
 	} = dependencies;
 	const sessions = new Map<string, Live>();
@@ -198,7 +205,11 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		| { ok: true; kind: TerminalSession["kind"]; base: string; argv: string[]; command: string }
 		| { ok: false; result: OpenTerminalResult };
 
-	function startOf(agent: AgentSetting | null): Start {
+	function startOf(agent: AgentSetting | null, setup: { scope: TimberConfigScope; timber: string } | null): Start {
+		if (setup !== null) {
+			const argv = [setup.timber, ...timberSetupArguments(setup.scope)];
+			return { ok: true, kind: "timber", base: TIMBER_SETUP_SESSION_NAME, argv, command: describeCommandLine(argv) };
+		}
 		if (agent === null) {
 			const shell = pickShell(environment, isExecutable);
 			return { ok: true, kind: "terminal", base: "Terminal", argv: [shell], command: describeCommandLine([shell]) };
@@ -234,10 +245,24 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			agent = findAgent(saved, request.agent);
 			if (agent === null) return { outcome: "not-configured", message: `No agent called "${request.agent}" is set in Settings, Agents. Nothing was started.` };
 		}
-		const listed = await findListedWorktree(findRepository, request.repository, request.worktree, agent ? `${agent.name} was not started.` : "No terminal was started.");
+		// Setup runs the Timber the app found, and only that one.
+		let setup: { scope: TimberConfigScope; timber: string } | null = null;
+		if (request.timberSetup !== undefined) {
+			if (agent !== null || !TIMBER_CONFIG_SCOPES.includes(request.timberSetup)) return { outcome: "failed", message: "The request for Timber setup cannot be read. Nothing was started." };
+			let status: TimberStatus;
+			try {
+				status = await timber();
+			} catch (error) {
+				return { outcome: "failed", message: `Could not find Timber: ${messageOf(error)}. Nothing was started.` };
+			}
+			if (status.state !== "ready") return { outcome: "not-configured", message: "No usable Timber was found, so setup cannot start. Nothing was started." };
+			setup = { scope: request.timberSetup, timber: status.path };
+		}
+		const consequence = agent ? `${agent.name} was not started.` : setup ? "Timber setup was not started." : "No terminal was started.";
+		const listed = await findListedWorktree(findRepository, request.repository, request.worktree, consequence);
 		if (!listed.ok) return { outcome: "not-listed", message: listed.message };
 		// From here to the new session being kept nothing waits, so two sessions that start at once get different names.
-		const start = startOf(agent);
+		const start = startOf(agent, setup);
 		if (!start.ok) return start.result;
 		const name = defaultSessionName(start.base, inWorktree(listed.worktree.id).map(live => live.session.name));
 

@@ -13,6 +13,7 @@ import { REQUIRED_TIMBER_VERSION } from "../../shared/timber-version";
 import { type CommandEnding, actOutNew, actOutOpen, isCommandEnding } from "./mock-commands";
 import { type MockFileChange, derivedFileChanges, diffMockFileChange, listMockFileChanges } from "./mock-file-changes";
 import { type TerminalControls, createMockTerminals } from "./mock-terminals";
+import { type TimberConfigControls, createMockTimberConfig } from "./mock-timber-config";
 
 const inSync = (branch: string): SyncState => ({ kind: "tracking", upstream: `origin/${branch}`, ahead: 0, behind: 0 });
 
@@ -213,7 +214,8 @@ export const sampleTimberStatuses = {
 
 /** The mock engine, plus the controls a test or the browser build uses to act out changes. */
 /** The controls for terminals are in ./mock-terminals.ts. */
-export interface MockEngine extends Engine, TerminalControls {
+/** The controls for Timber's settings are in ./mock-timber-config.ts. */
+export interface MockEngine extends Engine, TerminalControls, TimberConfigControls {
 	/** Replace the data, without telling the interface. */
 	setRepositories(repositories: Repository[]): void;
 	/** Report that a repository changed, as the main process would. */
@@ -525,9 +527,11 @@ export function createMockEngine(
 		const repository = current.find(candidate => candidate.path === path && candidate.available);
 		const worktree = timberFailures.has(path) ? undefined : repository?.worktrees.find(candidate => candidate.path === worktreePath);
 		return worktree && worktree.pathExists ? worktree : null;
-	}, () => preferences.agents);
+	}, () => preferences.agents, () => typeof timber === "function" ? timber() : timber);
+	const timberConfig = createMockTimberConfig(path => current.some(repository => repository.path === path));
 	return {
 		...terminals,
+		...timberConfig,
 		timberStatus: look,
 		recheckTimber: look,
 		listRepositories: () => read(() => current.map(asRead)),

@@ -3,6 +3,7 @@ import { type Layout, defaultLayout } from "../../shared/layout";
 import type { Repository, TimberStatus, Worktree } from "../../shared/model";
 import { type Preferences, defaultPreferences } from "../../shared/preferences";
 import type { TerminalSession } from "../../shared/terminal";
+import type { TimberConfigScope } from "../../shared/timber-config";
 
 /** Null until the first look for Timber has answered. */
 export type TimberState =
@@ -61,7 +62,7 @@ export interface ChangesView {
 export interface TerminalProblem {
 	/** The worktree's identity (`Worktree.id`). */
 	worktree: string;
-	/** The agent that did not start, by name, or null for the shell. */
+	/** The agent that did not start, by name, "Timber setup" for setup, or null for the shell. */
 	agent: string | null;
 	message: string;
 	/** The command that failed, as one line, when it is known. */
@@ -100,7 +101,7 @@ export type DialogRequest =
 	| { kind: "settings"; section?: SettingsSection };
 
 /** The sections of the Settings dialog, in the order they are listed. */
-export const SETTINGS_SECTIONS = ["layout", "editor", "agents"] as const;
+export const SETTINGS_SECTIONS = ["layout", "editor", "agents", "machine", "repository"] as const;
 export type SettingsSection = typeof SETTINGS_SECTIONS[number];
 
 /** The views of the selected worktree, in the order of their tabs. */
@@ -280,6 +281,44 @@ export function selectedWorktree(state: AppState): { repository: Repository; wor
 	const repository = state.repositories.find(candidate => candidate.path === repositoryPath);
 	const worktree = repository?.worktrees.find(candidate => candidate.id === worktreeId);
 	return repository && worktree ? { repository, worktree } : null;
+}
+
+/** A worktree that Timber lists and whose folder is there, so a session can start in it. */
+function usable(repository: Repository, worktree: Worktree | undefined): worktree is Worktree {
+	return worktree !== undefined && repository.available && repository.failure === null && worktree.pathExists;
+}
+
+/**
+ * Where `timber setup` for one of Timber's files would run, or why it cannot.
+ * A repository's setup runs in its primary checkout, so Timber finds that
+ * repository. Machine setup needs no repository, but a session lives in a
+ * worktree, so it runs in the selected one, or else in the first
+ * repository's primary checkout. `repositoryPath` is the primary checkout
+ * of the repository whose settings show.
+ */
+export function timberSetupTarget(
+	state: Pick<AppState, "repositories" | "selection">,
+	scope: TimberConfigScope,
+	repositoryPath: string | null,
+): { ok: true; repository: string; worktree: Worktree } | { ok: false; reason: string } {
+	const primaryOf = (repository: Repository) => repository.worktrees.find(worktree => worktree.primary) ?? repository.worktrees[0];
+	if (scope === "repository") {
+		const repository = state.repositories.find(candidate => candidate.path === repositoryPath);
+		if (!repository) return { ok: false, reason: "Choose a repository first." };
+		const worktree = primaryOf(repository);
+		if (!usable(repository, worktree)) return { ok: false, reason: `Setup runs in the primary checkout of ${repository.name}, which Timber does not list right now or whose folder is missing.` };
+		return { ok: true, repository: repository.path, worktree };
+	}
+	if (state.selection) {
+		const repository = state.repositories.find(candidate => candidate.path === state.selection!.repository);
+		const worktree = repository?.worktrees.find(candidate => candidate.id === state.selection!.worktree);
+		if (repository && usable(repository, worktree)) return { ok: true, repository: repository.path, worktree };
+	}
+	for (const repository of state.repositories) {
+		const worktree = primaryOf(repository);
+		if (usable(repository, worktree)) return { ok: true, repository: repository.path, worktree };
+	}
+	return { ok: false, reason: "Setup runs in a terminal session, and a session needs a worktree. Add a repository first." };
 }
 
 /** The sessions of a worktree, named by its identity, running or exited, in the order they started. */

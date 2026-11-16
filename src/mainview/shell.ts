@@ -17,7 +17,12 @@ export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
 	layout: "Layout",
 	editor: "Editor",
 	agents: "Agents",
+	machine: "Machine",
+	repository: "Repository",
 };
+
+/** Sections that show Timber's own settings, listed under a heading of their own. */
+export const TIMBER_SETTINGS_SECTIONS: readonly SettingsSection[] = ["machine", "repository"];
 
 export const SIDEBAR_SIDE_LABELS: Record<SidebarSide, string> = {
 	left: "Left",

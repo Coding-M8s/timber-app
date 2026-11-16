@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createMockTerminals } from "../src/mainview/engine/mock-terminals";
+import { createMockTimberConfig } from "../src/mainview/engine/mock-timber-config";
 import type { Engine } from "../src/shared/engine";
 import { defaultLayout } from "../src/shared/layout";
 import { defaultPreferences } from "../src/shared/preferences";
@@ -70,6 +71,8 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 	const engine: Engine = {
 		// Terminals as the mock acts them out. Their own tests are in terminal-store.test.ts.
 		...createMockTerminals(() => null),
+		// Timber's settings as the mock acts them out. Their own tests are in timber-settings.test.tsx.
+		...createMockTimberConfig(() => false),
 		timberStatus: async () => timber,
 		recheckTimber: async () => timber,
 		listRepositories: () => new Promise((resolve, reject) => {

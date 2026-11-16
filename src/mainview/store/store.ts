@@ -5,7 +5,8 @@ import { type FileChangeTarget, type FileChangesResult, type FileDiffResult, sam
 import { type Layout, clampSidebarWidth, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "../../shared/model";
 import type { Preferences } from "../../shared/preferences";
-import type { OpenTerminalRequest, TerminalChange, TerminalSession } from "../../shared/terminal";
+import { type OpenTerminalRequest, type TerminalChange, type TerminalSession, TIMBER_SETUP_SESSION_NAME } from "../../shared/terminal";
+import type { IntegrationStatuses, TimberConfigScope, TimberSettings } from "../../shared/timber-config";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "../../shared/timber-done";
 import { type Draw, createTerminalFeed } from "../terminal-feed";
 import { describeOrphanTerminal } from "../terminal-format";
@@ -13,7 +14,7 @@ import { listedOrder } from "../changes-format";
 import { describeOpenedInEditor } from "../editor-format";
 import { describeAdded, describeRemoved, folderName, worktreeLabel } from "../format";
 import { mergeOverlapping } from "./merge";
-import { type AppState, type ChangesView, type DialogRequest, type Operation, type WorkspaceTab, TOAST_MILLISECONDS, initialState, keepLastGood, reconcileSelection, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, timberReady, withTerminal, withoutSession } from "./state";
+import { type AppState, type ChangesView, type DialogRequest, type Operation, type WorkspaceTab, TOAST_MILLISECONDS, initialState, keepLastGood, reconcileSelection, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, timberReady, timberSetupTarget, withTerminal, withoutSession } from "./state";
 
 /**
  * The single holder of what the interface shows: Timber's status, the
@@ -115,6 +116,22 @@ export interface AppStore {
 	 * not be read, which only means there is nothing to pick from.
 	 */
 	listBranches(repository: string): Promise<BranchSuggestion[] | null>;
+	/**
+	 * Timber's settings files, for the Settings dialog: the machine's, and the
+	 * repository's when its primary checkout is given. Read-only. Never
+	 * throws: an engine that could not answer is the reason, as text.
+	 */
+	readTimberSettings(repository: string | null): Promise<TimberSettings | string>;
+	/** Whether Timber can reach GitHub, Jira, and Linear. Read-only. Never throws, as above. */
+	readTimberIntegrations(): Promise<IntegrationStatuses | string>;
+	/**
+	 * Close Settings and start `timber setup` for one of Timber's files in a
+	 * session, where `timberSetupTarget` (state.ts) says, with that worktree
+	 * selected and its session showing. `repository` is the primary checkout
+	 * whose settings show, for repository setup. Never throws: why it did not
+	 * start shows in `terminalProblem`.
+	 */
+	runTimberSetup(scope: TimberConfigScope, repository: string | null): Promise<void>;
 	/** Open a dialog over the window, in place of the one that is open. */
 	openDialog(request: DialogRequest): void;
 	closeDialog(): void;
@@ -677,7 +694,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const worktree = repository?.worktrees.find(candidate => candidate.path === request.worktree);
 		const key = worktree?.id ?? request.worktree;
 		if (state.operations.some(operation => operation.kind === "open-terminal" && operation.worktree === key)) return;
-		const agent = request.agent ?? null;
+		const agent = request.agent ?? (request.timberSetup !== undefined ? TIMBER_SETUP_SESSION_NAME : null);
 		await track({ kind: "open-terminal", worktree: key, agent }, async () => {
 			let message: string;
 			let command: string | null = null;
@@ -860,6 +877,28 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		},
 		readChanges,
 		selectChangedFile,
+		async readTimberSettings(repository) {
+			try {
+				return await engine.readTimberSettings(repository);
+			} catch (error) {
+				return `The app did not hear back: ${messageOf(error)}`;
+			}
+		},
+		async readTimberIntegrations() {
+			try {
+				return await engine.readTimberIntegrations();
+			} catch (error) {
+				return `The app did not hear back: ${messageOf(error)}`;
+			}
+		},
+		async runTimberSetup(scope, repository) {
+			const target = timberSetupTarget(state, scope, repository);
+			if (!target.ok) return;
+			update({ dialog: null, tab: "workspace" });
+			select(target.worktree.id);
+			// The pane gives the session its real size once it shows.
+			await openTerminal({ repository: target.repository, worktree: target.worktree.path, cols: 80, rows: 24, timberSetup: scope });
+		},
 		openDialog(request) {
 			update({ dialog: request });
 		},

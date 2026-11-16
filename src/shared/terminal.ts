@@ -4,6 +4,8 @@
  * interface only draws what it prints and passes on what is typed.
  */
 
+import type { TimberConfigScope } from "./timber-config";
+
 /** Whether a session's process still runs, or how it ended. */
 export type TerminalState =
 	| { kind: "running" }
@@ -11,10 +13,11 @@ export type TerminalState =
 	| { kind: "exited"; exitCode: number | null; signal: string | null };
 
 /**
- * What a session runs: the person's shell, or a coding agent from Settings,
- * which starts the agent's command instead of the shell.
+ * What a session runs: the person's shell, a coding agent from Settings,
+ * which starts the agent's command instead of the shell, or `timber setup`
+ * from Settings, which changes Timber's own settings.
  */
-export const SESSION_KINDS = ["terminal", "agent"] as const;
+export const SESSION_KINDS = ["terminal", "agent", "timber"] as const;
 export type SessionKind = typeof SESSION_KINDS[number];
 
 /** One session in a pseudo terminal, in one worktree. A worktree can have several. */
@@ -52,6 +55,13 @@ export interface OpenTerminalRequest {
 	 * never from the request. Left out for the shell.
 	 */
 	agent?: string;
+	/**
+	 * Start `timber setup` instead of the shell: for the repository's
+	 * settings, or with `--global` for the machine's (`timberSetupArguments`
+	 * in ./timber-config.ts). The main process runs the Timber it found.
+	 * Not together with `agent`.
+	 */
+	timberSetup?: TimberConfigScope;
 }
 
 export type OpenTerminalResult =
@@ -60,7 +70,7 @@ export type OpenTerminalResult =
 	| { outcome: "not-listed"; message: string }
 	/** Terminals cannot run on this operating system yet. */
 	| { outcome: "unsupported"; message: string }
-	/** The saved Settings have no agent with the requested name. Nothing started, not even a shell. */
+	/** The saved Settings have no agent with the requested name, or Timber is not ready for setup. Nothing started, not even a shell. */
 	| { outcome: "not-configured"; message: string }
 	/** The agent's executable is not on the PATH, or not at the full path given. `command` is what would have run. */
 	| { outcome: "not-found"; command: string; executable: string; message: string }
@@ -108,7 +118,10 @@ export const TERMINAL_UNSUPPORTED_REASON =
 /** The longest name a session can have, in characters. */
 export const SESSION_NAME_LIMIT = 40;
 
-const KIND_NAMES: Record<SessionKind, string> = { terminal: "Terminal", agent: "Agent" };
+const KIND_NAMES: Record<SessionKind, string> = { terminal: "Terminal", agent: "Agent", timber: "Timber" };
+
+/** What a `timber setup` session is called. */
+export const TIMBER_SETUP_SESSION_NAME = "Timber setup";
 
 /** What a kind of session is called, such as "Terminal". */
 export function sessionKindName(kind: SessionKind): string {

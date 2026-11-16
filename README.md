@@ -15,8 +15,10 @@ coding agents, such as Claude Code and Codex, in the Workspace tab, one chip
 each, started from the "+" menu (tested on Linux only; not supported on
 Windows yet). Settings, Agents lists the agents. The Changes tab lists a
 worktree's staged, unstaged, and untracked files and shows the diff of each,
-read-only. Rebasing worktrees, comparing against the base, and the rest of
-settings are designed but not built.
+read-only. Settings also shows Timber's own settings for the machine and
+each repository, read-only, with a button that runs `timber setup` in a
+session to change them. Rebasing worktrees, comparing against the base, and
+saving Timber's settings from the app are designed but not built.
 See the [architecture](docs/architecture.md) and [design](docs/design.md) notes.
 
 ## Quick start
