@@ -7,6 +7,7 @@ import type { Preferences } from "./preferences";
 import type { OpenTerminalRequest, OpenTerminalResult, TerminalChange, TerminalOutput, TerminalSession, TerminalSnapshot } from "./terminal";
 import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "./timber-config";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "./timber-done";
+import type { WorkflowList } from "./workflows";
 
 /**
  * Everything the interface may ask of the machine it runs on.
@@ -173,6 +174,17 @@ export interface Engine {
 	 * `connectionCheckArguments` in ./timber-config.ts.
 	 */
 	checkTimberConnection(request: TimberConnectionCheckRequest): Promise<TimberConnectionCheckResult>;
+	/**
+	 * The named workflows Timber offers for a repository in the list, named
+	 * by the path of its primary checkout: each with its description and its
+	 * agent, as a command, none, or not set. They are read with `timber
+	 * __app-config read --scope repository` (./workflows.ts), so the machine
+	 * defaults and `.timber.toml` are merged by name as Timber merges them,
+	 * and the app never parses Timber's TOML for them. A record that cannot
+	 * be read is a failure, never an empty list. An agent's arguments can
+	 * hold tokens: never log them. Read-only and safe to call again.
+	 */
+	listWorkflows(repository: string): Promise<WorkflowList>;
 	/**
 	 * Open a worktree of a repository in the list in the editor from the
 	 * preferences, started detached so it outlives the app. The command comes

@@ -25,6 +25,7 @@ import { createWorktreeStamps } from "./worktree-stamp";
 import { createTerminalSessions } from "./terminals";
 import { createTimberSettings } from "./timber-settings";
 import { createWorktreeCommands } from "./worktree-commands";
+import { createWorkflowReader } from "./workflows";
 
 const DEV_SERVER_URL = "http://localhost:5173";
 
@@ -130,6 +131,8 @@ const done = createDone({ timber: () => timber.current(), findRepository: path =
 const fileChanges = createFileChanges({ findRepository: path => repositories.find(path) });
 // Timber reads and writes its own settings and logins. The app never opens those files (see ./timber-settings.ts).
 const timberSettings = createTimberSettings({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
+// Runs Timber's settings read and keeps only the workflows. What it prints is private: never log it (see ./workflows.ts).
+const workflows = createWorkflowReader({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
 const editor = createEditorLauncher({ preferences: () => preferences.load(), findRepository: path => repositories.find(path) });
 
 /** Report to the window. It may not be connected yet, or be reloading; its first load reads everything anyway. */
@@ -206,6 +209,8 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			// A save request can hold a login typed in Settings: never log it, or what Timber printed (see ./timber-settings.ts).
 			saveTimberSettings: request => timberSettings.save(request),
 			checkTimberConnection: request => timberSettings.check(request),
+			// An agent's arguments can hold tokens: never log the answer.
+			listWorkflows: ({ repository }) => workflows.list(repository),
 			previewDone: request => done.preview(request),
 			// Removes a worktree. Only ever with a preview that `previewDone` handed out (see ./done.ts).
 			applyDone: request => done.apply(request),

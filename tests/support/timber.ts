@@ -70,6 +70,47 @@ export const recordedConfig = {
 	},
 };
 
+const appConfigFixture = (name: string) => readFileSync(join(import.meta.dir, "..", "fixtures", "timber-app-config", name), "utf8");
+
+/**
+ * What `timber __app-config read --scope repository` printed on Linux, exactly
+ * as it was, except that the temporary folder it ran in is written `/work`.
+ * Recorded before Timber 0.1.2, the first release with this command: these
+ * come from a build of Timber's main branch at commit e1ccd00. It
+ * ran with a private HOME and XDG_CONFIG_HOME and no credential variables.
+ * The repository is `/work/sample`.
+ *
+ * The machine `config.toml` defines `review` (an agent command), `triage`
+ * (`agent = false`), and `explore` (no agent, no description).
+ *
+ * `records` are standard output, each with exit code 0:
+ * - `merged`: `.timber.toml` sets `review = false`, adds `ship` (an agent
+ *   command with `wait_for_setup`), and redefines `explore` with a
+ *   description. Timber lists triage, explore, ship.
+ * - `inherited`: no `.timber.toml`, so the machine's three workflows.
+ * - `switchedOff`: `.timber.toml` holds `workflows = false`.
+ * - `none`: neither file exists.
+ *
+ * `failures` are standard error when it exited with 1 and printed nothing:
+ * - `invalidToml`: `.timber.toml` is not TOML.
+ * - `invalidConfig`: `.timber.toml` sets a workflow's agent to text.
+ * - `unknownCommand`: what the released Timber 0.1.1 prints, which has no
+ *   `__app-config`: a first-use hint, then the error.
+ */
+export const recordedAppConfig = {
+	records: {
+		merged: appConfigFixture("merged.json"),
+		inherited: appConfigFixture("inherited.json"),
+		switchedOff: appConfigFixture("switched-off.json"),
+		none: appConfigFixture("none.json"),
+	},
+	failures: {
+		invalidToml: appConfigFixture("invalid-toml.stderr"),
+		invalidConfig: appConfigFixture("invalid-config.stderr"),
+		unknownCommand: appConfigFixture("unknown-command-0.1.1.stderr"),
+	},
+};
+
 /**
  * What `timber __ide-done` of Timber 0.1.1 printed and wrote on Linux, exactly
  * as it was, except that the temporary folder it ran in is written `/work`.

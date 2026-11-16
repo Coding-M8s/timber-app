@@ -16,6 +16,7 @@ import { type MockFileChange, derivedFileChanges, diffMockFileChange, listMockFi
 import { type TerminalControls, createMockTerminals } from "./mock-terminals";
 import { type TimberConfigControls, createMockTimberConfig } from "./mock-timber-config";
 import type { TimberConfigScope } from "../../shared/timber-config";
+import { type WorkflowControls, createMockWorkflows } from "./mock-workflows";
 
 const inSync = (branch: string): SyncState => ({ kind: "tracking", upstream: `origin/${branch}`, ahead: 0, behind: 0 });
 
@@ -226,8 +227,8 @@ export const sampleTimberStatuses = {
 
 /** The mock engine, plus the controls a test or the browser build uses to act out changes. */
 /** The controls for terminals are in ./mock-terminals.ts. */
-/** The controls for Timber's settings are in ./mock-timber-config.ts. */
-export interface MockEngine extends Engine, TerminalControls, TimberConfigControls {
+/** The controls for Timber's settings are in ./mock-timber-config.ts, and for workflows in ./mock-workflows.ts. */
+export interface MockEngine extends Engine, TerminalControls, TimberConfigControls, WorkflowControls {
 	/** Replace the data, without telling the interface. */
 	setRepositories(repositories: Repository[]): void;
 	/** Report that a repository changed, as the main process would. */
@@ -609,9 +610,11 @@ export function createMockEngine(
 		return worktree && worktree.pathExists ? worktree : null;
 	}, () => preferences.agents, () => typeof timber === "function" ? timber() : timber, saveSetup);
 	const timberConfig = createMockTimberConfig(path => current.some(repository => repository.path === path), () => typeof timber === "function" ? timber() : timber);
+	const workflows = createMockWorkflows(path => current.some(repository => repository.path === path), () => typeof timber === "function" ? timber() : timber);
 	return {
 		...terminals,
 		...timberConfig,
+		...workflows,
 		timberStatus: look,
 		recheckTimber: look,
 		listRepositories: () => read(() => current.map(asRead)),

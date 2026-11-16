@@ -125,7 +125,7 @@ describe("createTimberLocator", () => {
 	test("looks once, then again only on refresh", async () => {
 		const answers: TimberStatus[] = [
 			{ state: "not-found", override: null },
-			{ state: "ready", path: "/bin/timber", version: "0.1.1" },
+			{ state: "ready", path: "/bin/timber", version: "0.1.2" },
 		];
 		let looks = 0;
 		const locator = createTimberLocator(async () => answers[looks++]!);
@@ -135,17 +135,17 @@ describe("createTimberLocator", () => {
 		expect(await locator.current()).toEqual({ state: "not-found", override: null });
 		expect(looks).toBe(1);
 
-		expect(await locator.refresh()).toEqual({ state: "ready", path: "/bin/timber", version: "0.1.1" });
-		expect(await locator.current()).toEqual({ state: "ready", path: "/bin/timber", version: "0.1.1" });
+		expect(await locator.refresh()).toEqual({ state: "ready", path: "/bin/timber", version: "0.1.2" });
+		expect(await locator.current()).toEqual({ state: "ready", path: "/bin/timber", version: "0.1.2" });
 		expect(looks).toBe(2);
 	});
 });
 
 describe("describeTimberStatus", () => {
 	test("gives one log line for each state", () => {
-		expect(describeTimberStatus({ state: "ready", path: "/bin/timber", version: "0.1.1" })).toBe("Timber 0.1.1 at /bin/timber");
-		expect(describeTimberStatus({ state: "too-old", path: "/bin/timber", found: "0.1.0", required: "0.1.1" }))
-			.toBe("Timber 0.1.0 at /bin/timber is older than the required 0.1.1");
+		expect(describeTimberStatus({ state: "ready", path: "/bin/timber", version: "0.1.2" })).toBe("Timber 0.1.2 at /bin/timber");
+		expect(describeTimberStatus({ state: "too-old", path: "/bin/timber", found: "0.1.0", required: "0.1.2" }))
+			.toBe("Timber 0.1.0 at /bin/timber is older than the required 0.1.2");
 		expect(describeTimberStatus({ state: "not-found", override: null })).toBe("Timber was not found on PATH");
 		expect(describeTimberStatus({ state: "not-found", override: "/x/timber" })).toBe("No Timber answered at /x/timber (TIMBER_APP_TIMBER_PATH)");
 	});

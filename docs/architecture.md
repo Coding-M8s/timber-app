@@ -399,7 +399,8 @@ Nothing that depends on Timber is offered until a usable one is found.
   `timber --version`, as an executable plus an argument array
   (`src/bun/timber.ts`). It logs the result.
 - The app requires Timber 0.1.2 or newer, the first release with the machine
-  interface including `timber __app-config` for Settings. The number and the comparison live in
+  interface, `__app-config`, and one-off workflows (0.1.1 had only the
+  first). The number and the comparison live in
   `src/shared/timber-version.ts`. A pre-release sorts before its release.
 - The `Engine` contract reports one of three states: ready (path and version),
   not found, or too old (found and required versions). An executable that
@@ -931,6 +932,42 @@ values)` acts out a change made outside the app, `timberMock.breakTimberConfig(f
 diagnostic)` a file Timber cannot read, and `timberMock.setConnection(ok)`
 how a login check ends (`null` for the sample answers).
 
+## Named workflows
+
+The app knows which named workflows Timber offers for a repository, so that
+New and Open can offer them, without parsing Timber's TOML for them.
+
+- **Asking.** `listWorkflows` on the `Engine`, answered by
+  `src/bun/workflows.ts`. For a repository in the app's list only, the main
+  process runs `timber __app-config read --scope repository` in its primary
+  checkout, as an executable plus an argument array, with standard input
+  closed and a limit of ten seconds. Nothing runs while Timber is not ready.
+- **Reading.** `readWorkflowList` in `src/shared/workflows.ts` is pure. It
+  accepts one version 1 record for the repository scope from a Timber that
+  exited with 0, and keeps only `effective.workflows`: so the machine
+  defaults and `.timber.toml` are merged by name exactly as Timber merges
+  them, a repository's `review = false` hides an inherited workflow, and
+  `workflows = false` leaves none. Each workflow keeps its name, its
+  description (made safe to show), and its agent: a command (executable and
+  arguments), none (`agent = false`), or not set. Timber's order is kept.
+  Everything else in the record, including whether credentials are saved,
+  is dropped. Fields the app does not use are ignored.
+- **Never an empty list by mistake.** A failing exit code, output that is
+  not one such record, another schema version, or any workflow that cannot
+  be read fails the whole list, with a message. A repository with no
+  workflows is an empty list. On failure the message carries the last line
+  Timber wrote to standard error, which names the file and the field but
+  never a value; it is cleaned and cut at 300 characters, and never parsed
+  for meaning. A Timber without `__app-config` answers "unknown command".
+- **Private.** Unlike the Settings rows, an agent's arguments are passed on
+  whole, because starting that agent needs them. They can hold tokens, so
+  neither the record, the list, nor Timber's diagnostic is ever logged, and
+  the interface must not show arguments without cleaning them.
+
+In `bun run dev:web` timber has a workflow of each agent kind, api-server
+has none, and billing's fails as its `.timber.toml` is malformed.
+`timberMock.setWorkflows(path, list)` changes one (`null` for the sample).
+
 ## Opening a worktree in an editor
 
 The app has no editor of its own. "Open in editor" starts the person's editor
@@ -1423,6 +1460,15 @@ See the issue 63 run under [what has been verified](#what-has-been-verified).
   `timber` executable and reads version 1 of its JSON records, which keeps the
   two releasable apart. Timber calls that interface experimental, so a new
   schema version means a change here.
+- **The Timber that `listWorkflows` needs.** The app requires Timber 0.1.2,
+  taken to be the next release, because `__app-config` and one-off workflows
+  are on Timber's main branch but in no release yet. Until 0.1.2 is out, the
+  app finds no Timber new enough, CI cannot install it, and a build of
+  Timber's main branch still calls itself 0.1.1. If that release gets
+  another number, change `REQUIRED_TIMBER_VERSION` in
+  `src/shared/timber-version.ts`, its test, the line in
+  [Finding Timber](#finding-timber), the README, and `TIMBER_VERSION` in CI
+  together.
 - **Rebase backups.** The design shows them, but Timber does not create backup
   branches today. Either Timber gains that, or the app creates them.
 - **Application identifier.** `electrobun.config.ts` holds a placeholder.
@@ -2455,6 +2501,49 @@ so nothing was written to the real home folder. Each install log ended at
   starts after installing, an update over an earlier install, the
   uninstaller without `--quiet` in a session that can ask, and anything on
   Windows or macOS.
+
+Run for listing a repository's workflows (issue 51), Linux x64 (Pop!_OS,
+natively) with Bun 1.4.2 and Git 2.43.0:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors. `bun run
+  build:web`: built.
+- `bun test` with the installed Timber 0.1.1, after the required version
+  became 0.1.2: 940 passed, 88 skipped, 0 failed. Every test against the
+  real Timber skips, as 0.1.1 is now too old.
+- `bun test` with `TIMBER_APP_TIMBER_PATH` naming a build of Timber's main
+  branch at commit e1ccd00 (`bun run build`, run with Bun), behind a wrapper
+  that answers `--version` with 0.1.2 because the build calls itself 0.1.1:
+  1017 passed, 1 skipped (one from before), 0 failed. In a real temporary
+  repository with a private HOME and XDG_CONFIG_HOME, machine workflows of
+  each agent kind were listed; with a `.timber.toml` the two were merged by name,
+  `review = false` hid the inherited one, and a workflow defined again
+  replaced the machine's as a whole; `workflows = false` gave an empty
+  list; a malformed file was a failure naming the file and not its
+  content. After each of these four reads the repository and the config
+  folder had the same files, times, refs, and index as before, and Timber
+  had made no home, state, or data folder.
+- The fixtures in `tests/fixtures/timber-app-config` were recorded with that
+  build. Stand-in Timbers showed the exact arguments, the working
+  directory, standard input closed (the stand-in reads it to its end), the
+  time limit, arguments with control characters kept exactly, refusal of a
+  repository outside the list without running Timber, and that a token in
+  a record's arguments or in standard error reached no `console` method and
+  nothing a child process running the reader printed. The released Timber
+  0.1.1 was run once by hand in a private HOME to record what it prints
+  without `__app-config` (exit code 1).
+- After rebasing onto `main` with Timber's settings saved through Timber, on
+  Linux x64 (Omarchy, natively) with Bun 1.4.4, Git 2.56.1, and the released
+  Timber 0.1.2 installed, with no wrapper: `bun run typecheck` and `bun run
+  typecheck:desktop`: no errors. `bun run build:web`: built. `bun test
+  tests/workflows.test.ts tests/workflows-parse.test.ts`: 55 passed, none
+  skipped, so the tests against real temporary repositories ran with the
+  release. `bun test`: 1159 passed, 1 skipped, 1 failed. The failure is
+  "closing a session ends everything it started" in
+  `tests/terminals.test.ts`, which fails the same way on `main` on this
+  machine without this change.
+
+Not run for issue 51: the desktop window and the RPC bridge. Nothing in the
+interface asks for workflows yet.
 
 Not run yet:
 
