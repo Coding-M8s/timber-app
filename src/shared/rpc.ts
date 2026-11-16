@@ -8,6 +8,7 @@ import type { Preferences } from "./preferences";
 import type { OpenTerminalRequest, OpenTerminalResult, TerminalChange, TerminalOutput, TerminalSession, TerminalSnapshot } from "./terminal";
 import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "./timber-config";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "./timber-done";
+import type { WorkflowList } from "./workflows";
 
 /**
  * The typed bridge between the Bun main process and the interface.
@@ -40,6 +41,8 @@ export type AppRPC = {
 			saveTimberSettings: { params: TimberSettingsSaveRequest; response: TimberSettingsSaveResult };
 			/** Waits up to thirty seconds for Timber's login check, so the caller allows longer. */
 			checkTimberConnection: { params: TimberConnectionCheckRequest; response: TimberConnectionCheckResult };
+			/** The main process stops Timber after ten seconds, inside the default time limit. */
+			listWorkflows: { params: { repository: string }; response: WorkflowList };
 			previewDone: { params: DonePreviewRequest; response: DonePreviewResult };
 			/** Answers only when Timber has ended. Scripts that run before deletion take as long as they take, so the caller must not time it out. */
 			applyDone: { params: DoneApplyRequest; response: DoneApplyResult };

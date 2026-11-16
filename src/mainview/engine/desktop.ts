@@ -81,6 +81,7 @@ export function createDesktopEngine(): Engine {
 		saveTimberSettings: request => rpc.request.saveTimberSettings(request, { maxRequestTime: Infinity }),
 		// The main process stops a stuck check after 30 seconds.
 		checkTimberConnection: request => rpc.request.checkTimberConnection(request, { maxRequestTime: 60_000 }),
+		listWorkflows: repository => rpc.request.listWorkflows({ repository }),
 		// The main process reads the list first, then Git, which it stops after 20 seconds.
 		readFileChanges: request => rpc.request.readFileChanges(request, { maxRequestTime: 60_000 }),
 		readFileDiff: request => rpc.request.readFileDiff(request, { maxRequestTime: 60_000 }),

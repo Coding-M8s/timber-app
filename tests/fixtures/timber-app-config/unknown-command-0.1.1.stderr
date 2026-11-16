@@ -1,0 +1,2 @@
+Before using Timber, run `timber setup` inside your repository, or `timber setup --global` to configure defaults for this machine.
+error: unknown command '__app-config'
