@@ -19,6 +19,7 @@ export async function createEngine(): Promise<Engine> {
 	const engine = createMockEngine([...sampleRepositories, sampleUnavailableRepository], timber);
 	// The browser console can act out what the main process would do, for example
 	// timberMock.failReads("Git is busy"), timberMock.announceChange("/work/timber"),
+	// timberMock.failTimber("/work/timber", "Not a Git repository: /work/timber"),
 	// or timberMock.pickFolder("/tmp") to choose what Add repository picks.
 	Object.assign(window, { timberMock: engine });
 	return engine;

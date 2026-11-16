@@ -1,17 +1,25 @@
 import { describe, expect, test } from "bun:test";
-import { TIMBER_INSTALL_COMMAND, describeChanges, describeListNotice, describeReloadError, describeSync, describeTimberProblem, worktreeLabel } from "../src/mainview/format";
+import { TIMBER_INSTALL_COMMAND, TIMBER_LIST_FAILURE_TITLE, describeChanges, describeListNotice, describeReloadError, describeSync, describeTimberProblem, describeWorktreeDetail, describeWorktreeState, worktreeLabel } from "../src/mainview/format";
 import { createMockEngine, sampleRepositories, sampleTimberStatuses } from "../src/mainview/engine/mock";
 import type { Worktree } from "../src/shared/model";
 
 const base: Worktree = {
+	id: "/work/app/.git\0verified\0/work/app",
 	path: "/work/app",
+	canonicalPath: "/work/app",
 	branch: "main",
 	head: "1234567890abcdef1234567890abcdef12345678",
 	primary: true,
+	detached: false,
 	locked: false,
 	prunable: false,
-	status: { modified: 0, untracked: 0, sync: { kind: "unpublished" } },
+	pathExists: true,
+	changes: { kind: "known", modified: [], untracked: [] },
+	sync: { kind: "unpublished" },
 };
+const linked: Worktree = { ...base, primary: false };
+const missing: Worktree = { ...linked, pathExists: false, prunable: true, canonicalPath: null, changes: { kind: "unknown", reason: "Worktree path is missing" } };
+const unread: Worktree = { ...linked, canonicalPath: null, changes: { kind: "unknown", reason: "Cannot inspect worktree; check directory access" } };
 
 describe("describeSync", () => {
 	test("covers every state a branch can be in", () => {
@@ -31,10 +39,32 @@ describe("worktree text", () => {
 		expect(worktreeLabel({ ...base, branch: null, head: null })).toBe("detached");
 	});
 
-	test("describes changes, and stays silent when Git could not read the folder", () => {
+	test("describes changes, and says why when Timber could not read the folder", () => {
 		expect(describeChanges(base)).toBe("Clean");
-		expect(describeChanges({ ...base, status: { modified: 3, untracked: 1, sync: { kind: "unpublished" } } })).toBe("3 modified, 1 untracked");
-		expect(describeChanges({ ...base, status: null })).toBeNull();
+		expect(describeChanges({ ...base, changes: { kind: "known", modified: ["a.ts", "b.ts", "c d.ts"], untracked: ["new.ts"] } })).toBe("3 modified, 1 untracked");
+		expect(describeChanges(missing)).toBe("Status unknown: Worktree path is missing");
+	});
+
+	test("marks a missing folder, an unknown status, a locked and a prunable worktree", () => {
+		expect(describeWorktreeState(base)).toBe("Primary checkout");
+		expect(describeWorktreeState(linked)).toBe("Worktree");
+		expect(describeWorktreeState({ ...linked, branch: null, detached: true })).toBe("Worktree");
+		expect(describeWorktreeState(missing)).toBe("Folder missing");
+		expect(describeWorktreeState(unread)).toBe("Status unknown");
+		expect(describeWorktreeState({ ...unread, primary: true })).toBe("Status unknown");
+		expect(describeWorktreeState({ ...linked, locked: true })).toBe("Locked");
+		expect(describeWorktreeState({ ...missing, locked: true })).toBe("Folder missing, locked");
+		expect(describeWorktreeState({ ...unread, prunable: true })).toBe("Status unknown, prunable");
+	});
+
+	test("explains a worktree in more detail for a tooltip", () => {
+		expect(describeWorktreeDetail(base)).toBe("Not published yet");
+		expect(describeWorktreeDetail({ ...base, sync: null })).toBe("/work/app");
+		expect(describeWorktreeDetail(missing)).toBe("Worktree path is missing: /work/app");
+	});
+
+	test("names the command that failed", () => {
+		expect(TIMBER_LIST_FAILURE_TITLE).toBe("timber ls --json failed");
 	});
 });
 

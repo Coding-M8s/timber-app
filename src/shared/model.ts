@@ -16,25 +16,55 @@ export type SyncState =
 	| { kind: "gone"; upstream: string }
 	| { kind: "tracking"; upstream: string; ahead: number; behind: number };
 
-export interface WorktreeStatus {
-	/** Tracked files with staged or unstaged changes, each counted once. */
-	modified: number;
-	untracked: number;
-	sync: SyncState;
-}
+/**
+ * The files Timber found changed in a worktree. The paths are relative to the
+ * worktree, as Git reports them. Unknown when Timber could not read the
+ * folder, for example because it is missing; `reason` is Timber's own wording.
+ */
+export type WorktreeChanges =
+	| { kind: "known"; modified: string[]; untracked: string[] }
+	| { kind: "unknown"; reason: string };
 
+/** One worktree, as `timber ls --json` lists it. */
 export interface Worktree {
-	/** Absolute path. Unique across repositories, so it doubles as the identity. */
+	/**
+	 * Identity: the repository's common Git directory plus the worktree's
+	 * canonical path (see `worktreeId`). Compare worktrees by this, never by
+	 * branch or label.
+	 */
+	id: string;
+	/** The path registered with Git, verbatim. The exact selector for Timber commands. */
 	path: string;
-	/** Short branch name, or null on a detached HEAD. */
+	/** The path with links resolved. Null when Timber could not verify the folder. */
+	canonicalPath: string | null;
+	/** Exact branch name, or null on a detached HEAD. */
 	branch: string | null;
+	/** Null on a branch with no commit yet. */
 	head: string | null;
 	/** The primary checkout. Timber never removes it. */
 	primary: boolean;
+	detached: boolean;
 	locked: boolean;
 	prunable: boolean;
-	/** Null when the folder is missing or Git could not read it. */
-	status: WorktreeStatus | null;
+	/** False when the folder was missing when Timber looked. */
+	pathExists: boolean;
+	changes: WorktreeChanges;
+	/**
+	 * How the branch stands against its upstream, read from Git because Timber
+	 * does not report it. Null on a detached HEAD, or when Git could not say.
+	 */
+	sync: SyncState | null;
+}
+
+/**
+ * The identity of a worktree. Timber gives a canonical path only for a folder
+ * it verified. Otherwise the registered path stands in, marked as such, so a
+ * missing or replaced folder never shares an identity with a verified one.
+ */
+export function worktreeId(commonGitDir: string, worktree: { path: string; canonicalPath: string | null }): string {
+	return worktree.canonicalPath === null
+		? [commonGitDir, "registered", worktree.path].join("\0")
+		: [commonGitDir, "verified", worktree.canonicalPath].join("\0");
 }
 
 export interface Repository {
@@ -46,6 +76,12 @@ export interface Repository {
 	 * primary checkout. The repository then stays listed, with no worktrees.
 	 */
 	available: boolean;
+	/**
+	 * Why Timber could not list the worktrees on the latest read, or null when
+	 * it did. A failed read carries no worktrees of its own: the engine answers
+	 * with none, and the interface keeps showing the last good list.
+	 */
+	failure: string | null;
 	worktrees: Worktree[];
 }
 

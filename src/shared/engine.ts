@@ -13,8 +13,10 @@ export interface Engine {
 	/** Look for Timber again, for example after the person installed it. */
 	recheckTimber(): Promise<TimberStatus>;
 	/**
-	 * The saved repositories. One whose folder is missing is still listed,
-	 * marked unavailable.
+	 * The saved repositories, each with exactly the worktrees Timber lists, in
+	 * Timber's order. One whose folder is missing is still listed, marked
+	 * unavailable. One whose worktrees Timber could not list has `failure` set
+	 * and no worktrees, never part of a list.
 	 */
 	listRepositories(): Promise<Repository[]>;
 	/**
@@ -31,7 +33,8 @@ export interface Engine {
 	removeRepository(path: string): Promise<RemoveRepositoryResult>;
 	/**
 	 * Read one repository again, named by the path of its primary checkout.
-	 * Null when Git could not read it there.
+	 * Null when Git could not read it there. As in `listRepositories`, a
+	 * repository whose worktrees Timber could not list has `failure` set.
 	 */
 	loadRepository(path: string): Promise<Repository | null>;
 	/**

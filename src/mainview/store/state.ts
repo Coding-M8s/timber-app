@@ -6,9 +6,11 @@ export type TimberState =
 	| { known: true; status: TimberStatus }
 	| { known: false; message: string };
 
-/** The selected worktree, with the repository it was in. Both are paths. */
+/** The selected worktree, with the repository it was in. */
 export interface Selection {
+	/** The path of the repository's primary checkout. */
 	repository: string;
+	/** The worktree's identity (`Worktree.id`), not its path. */
 	worktree: string;
 }
 
@@ -40,7 +42,10 @@ export type ListNotice =
 /** The one picture of the app that every part of the interface reads. Never changed in place. */
 export interface AppState {
 	timber: TimberState;
-	/** The last good data. A failed reload leaves it as it was. */
+	/**
+	 * The last good data. A failed reload leaves it as it was, and a repository
+	 * whose worktrees Timber could not list keeps the ones it had.
+	 */
 	repositories: readonly Repository[];
 	/** Whether the list of repositories has been read at least once. */
 	loaded: boolean;
@@ -73,15 +78,25 @@ export function isRunning(state: AppState, kind: Operation["kind"]): boolean {
 function firstWorktree(repositories: readonly Repository[]): Selection | null {
 	for (const repository of repositories) {
 		const worktree = repository.worktrees[0];
-		if (worktree) return { repository: repository.path, worktree: worktree.path };
+		if (worktree) return { repository: repository.path, worktree: worktree.id };
 	}
 	return null;
 }
 
-/** The selection for picking `worktreePath`, or null when no repository has that worktree. */
-export function selectionFor(repositories: readonly Repository[], worktreePath: string): Selection | null {
-	const repository = repositories.find(candidate => candidate.worktrees.some(worktree => worktree.path === worktreePath));
-	return repository ? { repository: repository.path, worktree: worktreePath } : null;
+/** The selection for picking the worktree with this identity, or null when no repository has it. */
+export function selectionFor(repositories: readonly Repository[], worktreeId: string): Selection | null {
+	const repository = repositories.find(candidate => candidate.worktrees.some(worktree => worktree.id === worktreeId));
+	return repository ? { repository: repository.path, worktree: worktreeId } : null;
+}
+
+/**
+ * What to show for a repository after reading it again. A read in which
+ * Timber could not list the worktrees brings its diagnostic and no worktrees,
+ * so the last good list stays on screen beside the diagnostic.
+ */
+export function keepLastGood(previous: Repository | undefined, next: Repository): Repository {
+	if (next.failure === null || !previous || previous.worktrees.length === 0) return next;
+	return { ...next, worktrees: previous.worktrees };
 }
 
 /**
@@ -98,7 +113,7 @@ export function reconcileSelection(repositories: readonly Repository[], previous
 	if (kept) return kept;
 	const repository = repositories.find(candidate => candidate.path === previous.repository);
 	const fallback = repository?.worktrees.find(worktree => worktree.primary) ?? repository?.worktrees[0];
-	if (repository && fallback) return { repository: repository.path, worktree: fallback.path };
+	if (repository && fallback) return { repository: repository.path, worktree: fallback.id };
 	return firstWorktree(repositories);
 }
 
@@ -106,14 +121,14 @@ export function reconcileSelection(repositories: readonly Repository[], previous
 export function selectionForRepository(repositories: readonly Repository[], repositoryPath: string): Selection | null {
 	const repository = repositories.find(candidate => candidate.path === repositoryPath);
 	const worktree = repository?.worktrees.find(candidate => candidate.primary) ?? repository?.worktrees[0];
-	return repository && worktree ? { repository: repository.path, worktree: worktree.path } : null;
+	return repository && worktree ? { repository: repository.path, worktree: worktree.id } : null;
 }
 
 /** The selected worktree and its repository as data, or null when nothing is selected. */
 export function selectedWorktree(state: AppState): { repository: Repository; worktree: Worktree } | null {
 	if (!state.selection) return null;
-	const { repository: repositoryPath, worktree: worktreePath } = state.selection;
+	const { repository: repositoryPath, worktree: worktreeId } = state.selection;
 	const repository = state.repositories.find(candidate => candidate.path === repositoryPath);
-	const worktree = repository?.worktrees.find(candidate => candidate.path === worktreePath);
+	const worktree = repository?.worktrees.find(candidate => candidate.id === worktreeId);
 	return repository && worktree ? { repository, worktree } : null;
 }

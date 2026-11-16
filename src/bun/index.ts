@@ -2,8 +2,8 @@ import { homedir } from "node:os";
 import { BrowserView, BrowserWindow, Updater, Utils } from "electrobun/main";
 import type { AppRPC } from "../shared/rpc";
 import { repositoryChanges } from "./changes";
-import { reloadRepository } from "./git-engine";
 import { createRepositoryList } from "./repository-list";
+import { createRepositoryReader } from "./repository-reader";
 import { settingsFilePath } from "./settings";
 import { createTimberLocator, describeTimberStatus } from "./timber";
 
@@ -39,7 +39,7 @@ async function pickFolder(): Promise<string | null> {
 
 const settingsFile = settingsFilePath();
 console.log(`Settings at ${settingsFile}`);
-const repositories = createRepositoryList({ settingsFile, pickFolder });
+const repositories = createRepositoryList({ settingsFile, pickFolder, reader: createRepositoryReader(() => timber.current()) });
 
 const rpc = BrowserView.defineRPC<AppRPC>({
 	maxRequestTime: 15_000,
@@ -50,7 +50,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			listRepositories: () => repositories.list(),
 			addRepository: () => repositories.add(),
 			removeRepository: ({ path }) => repositories.remove(path),
-			loadRepository: ({ path }) => reloadRepository(path),
+			loadRepository: ({ path }) => repositories.reload(path),
 		},
 		messages: {},
 	},

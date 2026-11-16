@@ -1,7 +1,8 @@
 import { basename } from "node:path";
 import type { AddRepositoryResult, RemoveRepositoryResult, Repository } from "../shared/model";
 import type { Settings } from "../shared/settings";
-import { commonDirectory, listRepositories, loadRepository, overrideRepositoryPaths, reloadRepository } from "./git-engine";
+import { commonDirectory, overrideRepositoryPaths } from "./git-engine";
+import { type RepositoryReader, failedRepository } from "./repository-reader";
 import { readSettings, writeSettings } from "./settings";
 
 export interface RepositoryListOptions {
@@ -9,6 +10,8 @@ export interface RepositoryListOptions {
 	settingsFile: string;
 	/** Open the native folder picker. Null when the person cancelled. */
 	pickFolder: () => Promise<string | null>;
+	/** Reads a repository and its worktrees. */
+	reader: RepositoryReader;
 	environment?: Record<string, string | undefined>;
 	warn?: (message: string) => void;
 }
@@ -16,7 +19,7 @@ export interface RepositoryListOptions {
 /**
  * The repositories the app shows, saved in the settings file.
  *
- * Adding and removing only ever change that file. The Git calls here are
+ * Adding and removing only ever change that file. Reading a repository is
  * read-only, and nothing in a repository or its folder is touched.
  */
 export interface RepositoryList {
@@ -28,6 +31,8 @@ export interface RepositoryList {
 	addFolder(folder: string): Promise<AddRepositoryResult>;
 	/** Forget a repository, named by the path of its primary checkout. Safe to call again. */
 	remove(path: string): Promise<RemoveRepositoryResult>;
+	/** Read one repository again, named by the path of its primary checkout. See `RepositoryReader.reload`. */
+	reload(path: string): Promise<Repository | null>;
 }
 
 function messageOf(error: unknown): string {
@@ -35,11 +40,11 @@ function messageOf(error: unknown): string {
 }
 
 function unavailable(path: string): Repository {
-	return { path, name: basename(path) || path, available: false, worktrees: [] };
+	return { path, name: basename(path) || path, available: false, failure: null, worktrees: [] };
 }
 
 export function createRepositoryList(options: RepositoryListOptions): RepositoryList {
-	const { settingsFile, pickFolder, environment = process.env, warn = console.warn } = options;
+	const { settingsFile, pickFolder, reader, environment = process.env, warn = console.warn } = options;
 
 	// Read once, then kept in step with the file: memory changes only after a save worked.
 	let saved: Promise<Settings> | null = null;
@@ -65,8 +70,11 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 		return inTurn(async () => {
 			const commonDir = await commonDirectory(folder);
 			// Asking from a linked worktree answers with the repository it belongs to.
-			const repository = commonDir === null ? null : await loadRepository(folder);
-			if (commonDir === null || repository === null) return { outcome: "not-a-repository", folder };
+			const read = commonDir === null ? null : await reader.find(folder);
+			if (commonDir === null || read === null || read.outcome === "not-a-repository") return { outcome: "not-a-repository", folder };
+			// Without Timber's answer the primary checkout is not known, so there is nothing to save.
+			if (read.outcome === "failed") return { outcome: "failed", message: read.message };
+			const { repository } = read;
 
 			const current = await settings();
 			const known = current.repositories.find(entry => entry.commonDir === commonDir || entry.path === repository.path);
@@ -81,12 +89,27 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 		});
 	}
 
+	/** The repositories that own the given folders, each once. A folder outside any repository is skipped. */
+	async function listOverride(folders: readonly string[]): Promise<Repository[]> {
+		const reads = await Promise.all(folders.map(async folder => ({ folder, read: await reader.find(folder) })));
+		const seen = new Set<string>();
+		const listed: Repository[] = [];
+		for (const { folder, read } of reads) {
+			if (read.outcome === "not-a-repository") continue;
+			const repository = read.outcome === "read" ? read.repository : failedRepository(folder, read.message);
+			if (seen.has(repository.path)) continue;
+			seen.add(repository.path);
+			listed.push(repository);
+		}
+		return listed;
+	}
+
 	return {
 		async list() {
 			const override = overrideRepositoryPaths(environment);
-			if (override) return listRepositories(override);
+			if (override) return listOverride(override);
 			const { repositories } = await settings();
-			return Promise.all(repositories.map(async entry => await reloadRepository(entry.path) ?? unavailable(entry.path)));
+			return Promise.all(repositories.map(async entry => await reader.reload(entry.path) ?? unavailable(entry.path)));
 		},
 
 		async add() {
@@ -101,6 +124,8 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 		},
 
 		addFolder,
+
+		reload: path => reader.reload(path),
 
 		remove(path) {
 			if (overridden()) return Promise.resolve({ outcome: "overridden" });

@@ -1,0 +1,135 @@
+import type { WorktreeChanges } from "./model";
+
+/**
+ * Reading `timber ls --json`, version 1 of Timber's machine interface
+ * (docs/ide-contract.md in the Timber repository). Pure: the main process
+ * runs Timber and hands the output here (see src/bun/timber-ls.ts).
+ */
+export const TIMBER_LS_ARGUMENTS = ["ls", "--json"] as const;
+export const TIMBER_LS_COMMAND = `timber ${TIMBER_LS_ARGUMENTS.join(" ")}`;
+export const SUPPORTED_SCHEMA_VERSION = 1;
+
+/** Which repository Timber found from the folder it was run in. */
+export interface ListedRepository {
+	/** The common Git directory, with links resolved. */
+	commonGitDir: string;
+	/** Absolute path of the primary checkout. */
+	primaryWorktreeRoot: string;
+}
+
+/** One `WorktreeRecord`, in the app's words. Upstream state is not part of it. */
+export interface ListedWorktree {
+	path: string;
+	canonicalPath: string | null;
+	branch: string | null;
+	head: string | null;
+	primary: boolean;
+	detached: boolean;
+	locked: boolean;
+	prunable: boolean;
+	pathExists: boolean;
+	changes: WorktreeChanges;
+}
+
+/** A whole list, in Timber's order, or the reason there is none. Never part of a list. */
+export type TimberListing =
+	| { ok: true; repository: ListedRepository; worktrees: ListedWorktree[] }
+	| { ok: false; message: string };
+
+type Fields = Record<string, unknown>;
+
+function isFields(value: unknown): value is Fields {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const isText = (value: unknown): value is string => typeof value === "string";
+const isTextOrNull = (value: unknown): value is string | null => value === null || typeof value === "string";
+const isTextList = (value: unknown): value is string[] => Array.isArray(value) && value.every(isText);
+
+/** `locked` and `prunable` are null, or an object holding an optional reason. */
+function readFlag(value: unknown): boolean | null {
+	if (value === null) return false;
+	return isFields(value) && isTextOrNull(value.reason) ? true : null;
+}
+
+function readChanges(value: unknown): WorktreeChanges | null {
+	if (!isFields(value)) return null;
+	if (value.kind === "known" && isTextList(value.modified) && isTextList(value.untracked)) {
+		return { kind: "known", modified: value.modified, untracked: value.untracked };
+	}
+	if (value.kind === "unknown" && isText(value.reason)) return { kind: "unknown", reason: value.reason };
+	return null;
+}
+
+/** Null when the value is not a version 1 `WorktreeRecord`. Fields this app does not use are ignored. */
+function readWorktree(value: unknown): ListedWorktree | null {
+	if (!isFields(value)) return null;
+	const { path, canonicalPath, branch, head, isPrimary, detached, pathExists } = value;
+	const locked = readFlag(value.locked);
+	const prunable = readFlag(value.prunable);
+	const changes = readChanges(value.status);
+	if (!isText(path) || path === "" || !isTextOrNull(canonicalPath) || !isTextOrNull(branch) || !isTextOrNull(head)) return null;
+	if (typeof isPrimary !== "boolean" || typeof detached !== "boolean" || typeof pathExists !== "boolean") return null;
+	if (locked === null || prunable === null || changes === null) return null;
+	return { path, canonicalPath, branch, head, primary: isPrimary, detached, locked, prunable, pathExists, changes };
+}
+
+function readRepository(value: unknown): ListedRepository | null {
+	if (!isFields(value)) return null;
+	const { commonGitDir, primaryWorktreeRoot } = value;
+	if (!isText(commonGitDir) || commonGitDir === "" || !isText(primaryWorktreeRoot) || primaryWorktreeRoot === "") return null;
+	return { commonGitDir, primaryWorktreeRoot };
+}
+
+const failed = (message: string): TimberListing => ({ ok: false, message });
+const unreadable = (detail: string) => failed(`${TIMBER_LS_COMMAND} did not answer with a record this app can read: ${detail}.`);
+
+/**
+ * Read what one run of `timber ls --json` printed. `exitCode` is the exit
+ * code of that process, or null when it did not exit by itself.
+ *
+ * A list is accepted only as a whole: the output must be one version 1 record
+ * for `ls`, its exit code must be the one the process really had, and every
+ * worktree in it must be readable. Anything else is a failure with a message
+ * for the person, never a shorter list.
+ */
+export function readTimberListing(stdout: string, exitCode: number | null): TimberListing {
+	let record: unknown;
+	try {
+		record = JSON.parse(stdout);
+	} catch {
+		return unreadable(stdout.trim() === "" ? "it printed nothing" : "the output is not valid JSON");
+	}
+	if (!isFields(record)) return unreadable("the output is not a JSON object");
+
+	if (record.schemaVersion !== SUPPORTED_SCHEMA_VERSION) {
+		const found = typeof record.schemaVersion === "number" || typeof record.schemaVersion === "string" ? String(record.schemaVersion) : "none";
+		return failed(`${TIMBER_LS_COMMAND} answered with schema version ${found}, and this app reads version ${SUPPORTED_SCHEMA_VERSION} only. Update Timber app, or install a Timber that matches it.`);
+	}
+
+	const { command, outcome, diagnostic, worktrees } = record;
+	if (command !== "ls") return unreadable("it is not a record for ls");
+	if (outcome !== "succeeded" && outcome !== "failed" && outcome !== "cancelled") return unreadable("its outcome is not one this app knows");
+	if (typeof record.exitCode !== "number" || !Number.isInteger(record.exitCode)) return unreadable("it has no exit code");
+	if (!isTextOrNull(diagnostic)) return unreadable("its diagnostic is not text");
+	if (!Array.isArray(worktrees)) return unreadable("it has no list of worktrees");
+
+	if (record.exitCode !== exitCode) {
+		const actual = exitCode === null ? "did not exit by itself" : `exited with code ${exitCode}`;
+		return failed(`${TIMBER_LS_COMMAND} ${actual}, but its record says exit code ${record.exitCode}. The list was not used.`);
+	}
+	// The contract ties the two together: succeeded exits with 0, and failed never does.
+	if ((outcome === "failed") === (record.exitCode === 0)) return unreadable(`its outcome "${outcome}" does not go with exit code ${record.exitCode}`);
+	if (outcome === "failed") return failed(diagnostic ?? `${TIMBER_LS_COMMAND} failed without saying why.`);
+	if (outcome === "cancelled") return failed(`${TIMBER_LS_COMMAND} was cancelled.`);
+
+	const repository = readRepository(record.repository);
+	if (!repository) return unreadable("it does not say which repository it lists");
+	const listed: ListedWorktree[] = [];
+	for (const [index, value] of worktrees.entries()) {
+		const worktree = readWorktree(value);
+		if (!worktree) return unreadable(`worktree ${index + 1} of ${worktrees.length} is not a worktree record`);
+		listed.push(worktree);
+	}
+	return { ok: true, repository, worktrees: listed };
+}
