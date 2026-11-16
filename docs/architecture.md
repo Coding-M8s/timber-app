@@ -2095,12 +2095,32 @@ Wayland) with Bun 1.4.2, Git 2.43, and Timber 0.1.1:
 - The same with background fetching off, under `strace -f -e
   trace=execve`, after another push to the remote: of 74 Git runs in 60
   seconds, none was a fetch.
-- Not run: the window was not inspected by eye (a screenshot failed under
-  Wayland), so the Fetch now control, the quiet marker, and the red
-  "force-pushed" were seen only in the tests' markup, and `forcePushSeen`
-  from a click was not exercised there. Fetching over SSH or HTTPS with
-  real credentials, a credential helper or agent that shows its own
-  prompt, and anything on Windows or macOS.
+- After the review fixes, `bun run start` again on the same temporary
+  repositories, with the window captured by its X11 id (`xwininfo`, then
+  `import -window`): seen by eye, `main` showed a red "force-pushed" with
+  2 to pull and the header said "origin/main was rewritten: 0 ahead, 2
+  behind", `doomed` showed "upstream gone", and `feature` 1 behind and 1
+  ahead. A mark saved by the earlier build, without the branch's commit,
+  was dropped on reading, as designed. Clicks sent through XTest did not
+  reach the window under COSMIC, so a click in the desktop window was not
+  tried.
+- `bun run dev:web` in the browser pane, by eye and by clicking: Fetch now
+  shows on hovering a repository's header; with
+  `timberMock.endFetches("offline")` a click left the grey "offline" beside
+  the name and no dialog; a working fetch then showed the toast "Fetched
+  timber" and took the marker away; after `timberMock.forcePush`, the row
+  showed the red "force-pushed", which stayed while the worktree was
+  selected and went once another worktree was clicked, and
+  `timberMock.seenForcePushes()` held that mark's time; Settings listed
+  Fetching after Agents with its switch and interval.
+- CI (`.github/workflows/ci.yml`, Ubuntu 24.04 with Git 2.56.1) first
+  failed the test of a remote that wants a password: Git 2.56 says
+  "unable to get password from user" where 2.43 says "terminal prompts
+  disabled". That wording is now read as authentication, and both CI
+  runs pass.
+- Not run: fetching over SSH or HTTPS with real credentials, a credential
+  helper or agent that shows its own prompt, and anything on Windows or
+  macOS.
 
 Not run yet:
 
