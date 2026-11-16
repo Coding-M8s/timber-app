@@ -1,7 +1,6 @@
 import { homedir } from "node:os";
 import Electrobun, { BrowserView, BrowserWindow, Updater, Utils } from "electrobun/main";
 import type { AppRPC } from "../shared/rpc";
-import { describeQuitRequest } from "../shared/terminal";
 import { repositoryChanges } from "./changes";
 import { createDone } from "./done";
 import { createEditorLauncher } from "./editor";
@@ -77,21 +76,9 @@ const terminals = createTerminalSessions({
 
 const quitGuard = createQuitGuard({
 	liveCount: () => terminals.liveCount(),
-	// The window answers at once whether it shows the question. A window that is blank or broken does not answer in time.
+	// The window answers at once whether it shows the question. One that is broken, or no longer drawn because
+	// Electrobun's native side stopped it (as on SIGTERM), does not answer in time, and then the app quits.
 	ask: live => rpc.request.askQuit({ live }, { maxRequestTime: 2000 }),
-	async askNatively(live) {
-		const { title, text } = describeQuitRequest(live);
-		const { response } = await Utils.showMessageBox({
-			type: "warning",
-			title,
-			message: title,
-			detail: text,
-			buttons: ["Keep running", "Quit"],
-			defaultId: 0,
-			cancelId: 0,
-		});
-		return response === 1;
-	},
 	endAll: () => terminals.closeAll(),
 	quit: () => Utils.quit(),
 });

@@ -116,7 +116,7 @@ describe("keys and clicks in a terminal", () => {
 });
 
 describe("asking before quitting", () => {
-	function guard(options: { live?: number; shown?: boolean | "throws"; native?: boolean | "throws"; quits?: boolean; ends?: boolean } = {}) {
+	function guard(options: { live?: number; shown?: boolean | "throws"; quits?: boolean; ends?: boolean } = {}) {
 		const calls: string[] = [];
 		let live = options.live ?? 1;
 		const quitGuard = createQuitGuard({
@@ -125,11 +125,6 @@ describe("asking before quitting", () => {
 				calls.push(`ask ${count}`);
 				if (options.shown === "throws") throw new Error("timed out");
 				return options.shown ?? true;
-			},
-			askNatively: async count => {
-				calls.push(`native ${count}`);
-				if (options.native === "throws") throw new Error("no dialog");
-				return options.native ?? false;
 			},
 			endAll: async () => {
 				calls.push("end all");
@@ -176,22 +171,14 @@ describe("asking before quitting", () => {
 		expect(calls).toEqual(["end all", "quit", "ask 1"]);
 	});
 
-	test("a window that does not show the question in time: a native dialog asks instead", async () => {
-		const kept = guard({ shown: "throws", native: false });
-		expect(kept.quitGuard.mayQuit()).toBe(false);
-		await Bun.sleep(0);
-		await Bun.sleep(0);
-		expect(kept.calls).toEqual(["ask 1", "native 1"]);
-		const quit = guard({ shown: false, native: true });
-		quit.quitGuard.mayQuit();
-		await Bun.sleep(5);
-		expect(quit.calls).toEqual(["ask 1", "native 1", "end all", "quit"]);
-	});
-
-	test("when nobody can be asked at all, the app is not kept from quitting", async () => {
-		const { quitGuard, calls } = guard({ shown: "throws", native: "throws" });
-		quitGuard.mayQuit();
-		await Bun.sleep(5);
-		expect(calls).toEqual(["ask 1", "native 1", "end all", "quit"]);
+	test("a window that does not say in time that it shows the question cannot ask anyone, so the app quits", async () => {
+		// As when Electrobun's native side already stopped drawing the window, which it does on SIGTERM.
+		for (const shown of ["throws", false] as const) {
+			const { quitGuard, calls } = guard({ shown });
+			expect(quitGuard.mayQuit()).toBe(false);
+			await Bun.sleep(5);
+			expect(calls).toEqual(["ask 1", "end all", "quit"]);
+			expect(quitGuard.mayQuit()).toBe(true);
+		}
 	});
 });

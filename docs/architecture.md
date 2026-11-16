@@ -735,18 +735,17 @@ selected, and coming back shows it as it was.
 - **Quitting.** While a terminal runs, the main process says no to
   Electrobun's `before-quit` and to the window's `will-close`, and asks the
   window to show the question (`src/bun/quit-guard.ts`,
-  `src/mainview/components/QuitDialog.tsx`). The window must say within two
-  seconds that it shows it; otherwise a native dialog asks, and when none
-  can be shown the app quits. Quit ends every session, then quits; Keep
-  running and Escape keep everything. SIGINT and SIGTERM, such as Ctrl+C in
-  the terminal that started `bun run dev`, ask too: the app's code runs in
-  a Worker, where signal listeners never run, and Electrobun's native side
-  turns the signal into the same quit request. Known problem: on SIGTERM
-  Electrobun's native side also stops its GTK event loop by itself, which
-  the question cannot hold back. With a terminal running, the app then
-  stays alive with a window that no longer draws or closes (it can go
-  white). Seen with `timeout` stopping `bun run start`; not fixed yet.
-  SIGKILL ends the app without
+  `src/mainview/components/QuitDialog.tsx`). Quit ends every session, then
+  quits; Keep running and Escape keep everything. The window must say
+  within two seconds that it shows the question. When it does not, nobody
+  can be asked, so every session is ended and the app quits. That is what
+  happens on SIGTERM: Electrobun's native side stops its GTK event loop by
+  itself, so the window no longer draws or answers, and holding the app
+  back would leave it running with a window that cannot close (it went
+  white before this was fixed). A native dialog is no way out, because it
+  needs the same event loop. SIGINT and SIGTERM cannot be told from the
+  person quitting in any other way: the app's code runs in a Worker, where
+  signal listeners never run. SIGKILL ends the app without
   asking; the terminals then hang up, which ends the shells and what runs
   in front, but not what ignores a hang-up.
 - **Windows.** `Bun.Terminal` exists on Linux and macOS only, so on Windows
@@ -1267,7 +1266,7 @@ Run for terminal sessions (issue 13), Linux x64 (Pop!_OS 24.04, natively,
 Wayland) with Bun 1.4.2, Git 2.43, and Timber 0.1.1:
 
 - `bun run typecheck` and `bun run typecheck:desktop`: no errors.
-- `bun test`: 763 tests passed and 1 was skipped (it only runs in CI). New
+- `bun test`: 762 tests passed and 1 was skipped (it only runs in CI). New
   ones in `tests/terminals.test.ts` run real shells in pseudo terminals in a
   temporary repository with a linked worktree whose path has a space: the
   shell starts in the worktree's folder with `TERM=xterm-256color`; one
@@ -1319,10 +1318,23 @@ Wayland) with Bun 1.4.2, Git 2.43, and Timber 0.1.1:
     window showed "Quit Timber?". Keep running closed it with the processes
     alive. Quitting again and Quit ended all four processes, and the app
     exited with 0.
-  - SIGTERM to the app showed the same question, and Quit ended both
-    processes. At first SIGTERM was meant to quit without asking, through a
-    signal listener; it never ran, because the app's code runs in a Worker,
-    where Bun does not run signal listeners. That was taken out.
+  - SIGTERM to the app process alone showed the same question, and Quit
+    ended both processes. At first SIGTERM was meant to quit without
+    asking, through a signal listener; it never ran, because the app's code
+    runs in a Worker, where Bun does not run signal listeners. That was
+    taken out.
+  - SIGTERM to the whole process group, as `timeout` sends it to `bun run
+    start`, stopped Electrobun's GTK event loop (`[stopEventLoop]` in the
+    log). With a terminal running, the app then stayed alive with a window
+    that no longer answered and went white once it was closed again. After
+    the fix the window did not answer within two seconds, the app ended the
+    terminal's processes, and it exited; no window was left.
+  - A close request sent to the window over X11 (`WM_DELETE_WINDOW`, the
+    same `delete-event` the close button gives) showed the question; Keep
+    running kept the session running, a cancel event (what Escape sends)
+    closed the question, a second
+    close request showed it again, and Quit exited with 0. Screenshots of
+    the window (`import -window`) before, during, and after were looked at.
   The window was not looked at by a person in these runs.
 - After review, ending a session was changed to wait for every process in
   it, not only the shell, to signal only what was left once the shell
@@ -1362,9 +1374,8 @@ Not run yet:
 - Anything on macOS, terminals included.
 - Terminals on Windows, where `Bun.Terminal` does not exist: they answer
   that they are not supported, and that answer was only acted out on Linux.
-- Closing the window with its own close button while a terminal runs
-  (`will-close`), and the native question that stands in when the window
-  does not answer. Neither could be driven under Wayland.
+- A click on the window's close button by a person. The same request was
+  sent over X11 instead (see above).
 - Copying with Ctrl+Shift+C and opening a link with Ctrl+click in the
   desktop window. Both were checked as functions only.
 - A native Linux desktop session, on Wayland or X11. Only WSLg has been run.

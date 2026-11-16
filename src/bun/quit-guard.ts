@@ -4,17 +4,21 @@
  * Electrobun asks the main process, without waiting, whether the app may quit
  * (`before-quit`) and whether the window may close (`will-close`). While a
  * terminal session runs and the person has not agreed, the answer is no, and
- * the person is asked: in the window, or in a native dialog when the window
- * does not say in time that it shows the question. When the person agrees,
- * every session is ended and the app quits for real.
+ * the window is asked to show the question. When the person agrees, every
+ * session is ended and the app quits for real.
+ *
+ * A window that does not say in time that it shows the question cannot ask
+ * anyone, so the app quits then too. That is also what happens when
+ * Electrobun's native side has already stopped drawing the window, as it
+ * does on SIGTERM: holding the app back then would leave it running with a
+ * window that no longer draws or closes. A native dialog is no way out
+ * there, because it needs the same stopped event loop.
  */
 export interface QuitGuardDependencies {
 	/** How many terminal sessions still run. */
 	liveCount: () => number;
 	/** Ask in the window. Answers whether the window shows the question; may throw or time out. */
 	ask: (live: number) => Promise<boolean>;
-	/** Ask in a native dialog. Answers whether the person chose to quit; throws when no dialog can be shown. */
-	askNatively: (live: number) => Promise<boolean>;
 	/** End every session. */
 	endAll: () => Promise<void>;
 	/** Start quitting. It asks `mayQuit` again, which then says yes. Answers whether quitting started. */
@@ -49,15 +53,8 @@ export function createQuitGuard(dependencies: QuitGuardDependencies): QuitGuard 
 		} catch {
 			shown = false;
 		}
-		if (shown) return;
-		let quit: boolean;
-		try {
-			quit = await dependencies.askNatively(live);
-		} catch {
-			// Nobody can be asked, so nobody can agree: do not keep the app from quitting.
-			quit = true;
-		}
-		if (quit) await confirm();
+		// Nobody can be asked, so nobody can agree: do not keep the app from quitting.
+		if (!shown) await confirm();
 	}
 
 	return {

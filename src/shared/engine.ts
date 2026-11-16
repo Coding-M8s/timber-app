@@ -155,7 +155,7 @@ export interface Engine {
 	/**
 	 * Hear when the app was asked to quit, or its window to close, while
 	 * terminals run. Nothing quits until `confirmQuit`. The listener gets how
-	 * many run. With no listener, the machine asks in a native dialog instead.
+	 * many run. With no listener, nobody can be asked, and the app quits.
 	 * Returns a function that stops listening.
 	 */
 	onQuitRequested(listener: (live: number) => void): () => void;

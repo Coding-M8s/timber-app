@@ -28,7 +28,7 @@ export function createDesktopEngine(): Engine {
 		maxRequestTime: 15_000,
 		handlers: {
 			requests: {
-				// The question shows only when the interface listens. Without it, the main process asks natively.
+				// The question shows only when the interface listens. Without it, nobody can be asked, and the app quits.
 				askQuit: ({ live }) => {
 					if (quitRequests.size() === 0) return false;
 					quitRequests.call(live);
