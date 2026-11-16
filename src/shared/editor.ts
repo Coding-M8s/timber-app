@@ -1,4 +1,5 @@
 import { describeCommandLine, splitCommandLine } from "./command-line";
+import { filePathIn, relativePathProblem } from "./file-changes";
 
 /**
  * The editor that "Open in editor" starts, and how its command is built. Pure:
@@ -65,6 +66,17 @@ export function editorCommand(setting: EditorSetting, path: string): EditorComma
 	// Split and joined, not `replaceAll`, which would read `$&` and the like in the path as patterns.
 	const args = placed ? given.map(word => word.split(PATH_TOKEN).join(path)) : [...given, path];
 	return { ok: true, executable, arguments: args };
+}
+
+/**
+ * What the editor is given: the worktree's folder, or the full path of one
+ * file in it. `file` is relative to the worktree, as Git reports it, and may
+ * not step out of it.
+ */
+export function editorTarget(worktree: string, file: string | undefined): { ok: true; path: string } | { ok: false; message: string } {
+	if (file === undefined) return { ok: true, path: worktree };
+	const problem = relativePathProblem(file);
+	return problem === null ? { ok: true, path: filePathIn(worktree, file) } : { ok: false, message: problem };
 }
 
 /** The command that opens `path`, as one line for showing, or null when the setting cannot be read. */

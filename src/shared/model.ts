@@ -121,6 +121,11 @@ export interface OpenInEditorRequest {
 	repository: string;
 	/** The worktree's registered path, exactly as Timber lists it. */
 	worktree: string;
+	/**
+	 * A file in the worktree to open instead of its folder, relative to it as
+	 * Git reports it, such as `src/app.ts`. Left out to open the folder.
+	 */
+	file?: string;
 }
 
 /**

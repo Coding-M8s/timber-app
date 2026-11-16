@@ -28,14 +28,6 @@ export const TAB_LABELS: Record<WorkspaceTab, string> = {
 	changes: "Changes",
 };
 
-/** What each tab says until its own content exists. The Workspace tab has its terminal (components/TerminalPanel.tsx). */
-export const TAB_EMPTY: Record<Exclude<WorkspaceTab, "workspace">, { title: string; text: string }> = {
-	changes: {
-		title: "No changes to show yet",
-		text: "The diff for this worktree will show here. It is not built yet.",
-	},
-};
-
 /**
  * The tab a key moves to from `current`: the arrows step and wrap around, Home
  * and End jump to the first and the last. Null for any other key.

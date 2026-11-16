@@ -1,9 +1,10 @@
 import type { KeyboardEvent } from "react";
 import { DONE_PRIMARY_NOTE } from "../done-format";
 import { describeChanges, describeWorktreeSync, worktreeLabel } from "../format";
-import { TAB_EMPTY, TAB_LABELS, tabAfterKey } from "../shell";
+import { TAB_LABELS, tabAfterKey } from "../shell";
 import { useAppState, useStore } from "../store/react";
 import { WORKSPACE_TABS, type WorkspaceTab, isRunning, selectedWorktree } from "../store/state";
+import { ChangesPanel } from "./ChangesPanel";
 import { EditorProblemNote, OpenInEditorButton } from "./OpenInEditor";
 import { TerminalPanel } from "./TerminalPanel";
 
@@ -96,10 +97,8 @@ export function Workspace() {
 					<TerminalPanel repository={repository} worktree={worktree} />
 				</div>
 			) : (
-				// A tab stop of its own, because an empty state holds nothing else to focus.
-				<div className="empty tabpanel" role="tabpanel" id={PANEL_ID} aria-labelledby={tabId(state.tab)} tabIndex={0}>
-					<p className="empty-title">{TAB_EMPTY[state.tab].title}</p>
-					<p className="empty-text">{TAB_EMPTY[state.tab].text}</p>
+				<div className="tabpanel workspace-panel" role="tabpanel" id={PANEL_ID} aria-labelledby={tabId(state.tab)}>
+					<ChangesPanel repository={repository} worktree={worktree} />
 				</div>
 			)}
 		</main>

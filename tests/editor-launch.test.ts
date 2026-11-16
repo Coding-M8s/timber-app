@@ -104,6 +104,27 @@ describe.skipIf(windows)("opening a worktree in an editor, with stand-in editors
 		expect(await editor.calls()).toEqual([worktree, `--folder=${worktree}`, "--wait"]);
 	});
 
+	test("a file named in the request is opened in place of the folder, still in the worktree", async () => {
+		mkdirSync(join(worktree, "src dir"), { recursive: true });
+		const file = join(worktree, "src dir", "zażółć.ts");
+		writeFileSync(file, "export {};\n");
+		const editor = standInEditor();
+		const result = await launcher({ command: `${editor.name} --goto {path}`, terminal: false }).open({ ...request(), file: "src dir/zażółć.ts" });
+		expect(result).toEqual({ outcome: "opened", command: `${editor.name} --goto '${file}'` });
+		expect(await editor.calls()).toEqual([worktree, "--goto", file]);
+	});
+
+	test("a file outside the worktree, or one that is not there, starts nothing", async () => {
+		const editor = standInEditor();
+		const run = (file: string) => launcher({ command: editor.name, terminal: false }).open({ ...request(), file });
+		for (const file of ["../escape.txt", "/etc/hostname", "a/../../b"]) {
+			const result = await run(file);
+			expect(result.outcome === "failed" && result.command).toBeNull();
+		}
+		expect(await run("deleted.txt")).toEqual({ outcome: "failed", command: null, message: `There is no file at ${join(worktree, "deleted.txt")}. No editor was started.` });
+		expect(editor.ran()).toBe(false);
+	});
+
 	test("dollar signs in the path arrive as they are, where {path} stands", async () => {
 		const priced = join(root, "my repo-worktrees", "cash$&x $$ it$'s $1");
 		mkdirSync(priced, { recursive: true });
