@@ -11,8 +11,11 @@ worktrees Timber lists and their branch status, remembers the repositories you a
 after a preview of what would be lost. Settings, from the cog, puts the
 sidebar on the left or the right and chooses the editor that "Open in
 editor" starts on a worktree. Each worktree can run several terminals in the
-Workspace tab, one chip each (tested on Linux only; not supported on Windows yet). Rebasing worktrees, agent panes, the diff
-view, and the rest of settings are designed but not built.
+Workspace tab, one chip each (tested on Linux only; not supported on Windows
+yet). The Changes tab lists a worktree's staged, unstaged, and untracked files
+and shows the diff of each, read-only. Rebasing worktrees, agent panes,
+comparing against the base, and the rest of settings are designed but not
+built.
 See the [architecture](docs/architecture.md) and [design](docs/design.md) notes.
 
 ## Quick start

@@ -2,7 +2,7 @@ import type { Engine } from "../../shared/engine";
 import { type Layout, defaultLayout, forgetRepository, readLayout } from "../../shared/layout";
 import { type AddRepositoryResult, type BranchSuggestion, type OpenInEditorRequest, type OpenInEditorResult, type Repository, type SyncState, type TimberStatus, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
 import { describeCommandLine } from "../../shared/command-line";
-import { TERMINAL_EDITOR_REASON, editorCommand } from "../../shared/editor";
+import { TERMINAL_EDITOR_REASON, editorCommand, editorTarget } from "../../shared/editor";
 import { type Preferences, applyPreferenceChange, defaultPreferences } from "../../shared/preferences";
 import {
 	type DoneApplyResult, type DoneOptions, type DonePreviewResult, DONE_PREVIEW_MINUTES, describeDoneApply, describeDonePreview, readDonePreview,
@@ -10,6 +10,7 @@ import {
 import { failureOf, readTimberResult } from "../../shared/timber-result";
 import { REQUIRED_TIMBER_VERSION } from "../../shared/timber-version";
 import { type CommandEnding, actOutNew, actOutOpen, isCommandEnding } from "./mock-commands";
+import { type MockFileChange, derivedFileChanges, diffMockFileChange, listMockFileChanges } from "./mock-file-changes";
 import { type TerminalControls, createMockTerminals } from "./mock-terminals";
 
 const inSync = (branch: string): SyncState => ({ kind: "tracking", upstream: `origin/${branch}`, ahead: 0, behind: 0 });
@@ -273,6 +274,15 @@ export interface MockEngine extends Engine, TerminalControls {
 	endEditorLaunches(ending: EditorEnding): void;
 	/** Every editor the mock acted out starting, oldest first. */
 	launchedEditors(): { request: OpenInEditorRequest; command: string }[];
+	/**
+	 * Decide what the Changes tab of one worktree, named by its path, lists
+	 * from now on, each file with the text Git would print for it. Pass null
+	 * to go back to files made up from the worktree's modified and untracked
+	 * files. The interface is not told.
+	 */
+	setFileChanges(path: string, files: MockFileChange[] | null): void;
+	/** Make every later read of changed files and diffs fail with this message, or pass null to let them work again. */
+	failFileChanges(message: string | null): void;
 }
 
 export const EDITOR_ENDINGS = ["opens", "not-found", "fails"] as const;
@@ -442,7 +452,9 @@ export function createMockEngine(
 		const target = read.worktrees.find(candidate => candidate.path === request.worktree);
 		if (!target) return { outcome: "not-listed", message: `Timber lists no worktree at ${request.worktree} in ${request.repository}. No editor was started. Refresh the list.` };
 		if (!target.pathExists) return { outcome: "not-listed", message: `The folder ${request.worktree} is missing. No editor was started.` };
-		const built = editorCommand(editor, request.worktree);
+		const opened = editorTarget(request.worktree, request.file);
+		if (!opened.ok) return { outcome: "failed", command: null, message: `${opened.message} No editor was started.` };
+		const built = editorCommand(editor, opened.path);
 		if (!built.ok) return { outcome: "failed", command: null, message: `${built.message} Change it in Settings, Editor.` };
 		const command = describeCommandLine([built.executable, ...built.arguments]);
 		if (editor.terminal) return { outcome: "terminal-editor", command, message: TERMINAL_EDITOR_REASON };
@@ -459,6 +471,25 @@ export function createMockEngine(
 				return { outcome: "opened", command };
 		}
 	};
+
+	// The Changes tab, read from the pretend files with the same checks as the main process.
+	const fileChangeLists = new Map<string, MockFileChange[]>();
+	let fileChangeFailure: string | null = null;
+	type Listed = { ok: true; worktree: Worktree } | { ok: false; outcome: "not-listed" | "failed"; message: string };
+	const listedForChanges = (repositoryPath: string, worktreePath: string): Listed => {
+		const notListed = (message: string): Listed => ({ ok: false, outcome: "not-listed", message: `${message} No changes were read.` });
+		if (fileChangeFailure !== null) return { ok: false, outcome: "failed", message: fileChangeFailure };
+		const repository = current.find(candidate => candidate.path === repositoryPath);
+		if (!repository) return notListed(`${repositoryPath} is not a repository in this app's list.`);
+		if (!repository.available) return notListed(`Git cannot read the repository at ${repositoryPath}.`);
+		const read = asRead(repository);
+		if (read.failure !== null) return { ok: false, outcome: "not-listed", message: `Timber could not list the worktrees of ${repositoryPath}, so no changes were read: ${read.failure}` };
+		const target = read.worktrees.find(candidate => candidate.path === worktreePath);
+		if (!target) return notListed(`Timber lists no worktree at ${worktreePath} in ${repositoryPath}.`);
+		if (!target.pathExists) return notListed(`The folder ${worktreePath} is missing.`);
+		return { ok: true, worktree: target };
+	};
+	const filesOf = (worktree: Worktree) => fileChangeLists.get(worktree.path) ?? derivedFileChanges(worktree);
 
 	const look = async () => structuredClone(typeof timber === "function" ? timber() : timber);
 	const read = async <Result>(result: () => Result): Promise<Result> => {
@@ -555,6 +586,23 @@ export function createMockEngine(
 			editorEnding = next;
 		},
 		launchedEditors: () => structuredClone(launches),
+		async readFileChanges(request) {
+			const listed = listedForChanges(request.repository, request.worktree);
+			if (!listed.ok) return { outcome: listed.outcome, message: listed.message };
+			return listMockFileChanges(filesOf(listed.worktree));
+		},
+		async readFileDiff(request) {
+			const listed = listedForChanges(request.repository, request.worktree);
+			if (!listed.ok) return { outcome: listed.outcome, message: listed.message };
+			return diffMockFileChange(filesOf(listed.worktree), structuredClone(request));
+		},
+		setFileChanges(path, files) {
+			if (files === null) fileChangeLists.delete(path);
+			else fileChangeLists.set(path, structuredClone(files));
+		},
+		failFileChanges(message) {
+			fileChangeFailure = message;
+		},
 		setChanges(path, files) {
 			if (files.ignored) ignored.set(path, files.ignored);
 			current = current.map(repository => ({

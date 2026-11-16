@@ -1,3 +1,4 @@
+import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffResult } from "./file-changes";
 import type { Layout } from "./layout";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
 import type { Preferences } from "./preferences";
@@ -115,6 +116,19 @@ export interface Engine {
 	 * New and Open pass `--no-editor` to Timber.
 	 */
 	openInEditor(request: OpenInEditorRequest): Promise<OpenInEditorResult>;
+	/**
+	 * The changed files of a worktree of a repository in the list, as `git
+	 * status` lists them: staged and unstaged apart, every untracked file on
+	 * its own. Read-only and safe to call again.
+	 */
+	readFileChanges(request: FileChangesRequest): Promise<FileChangesResult>;
+	/**
+	 * The diff of one file from `readFileChanges`: `git diff --cached` for a
+	 * staged change, `git diff` for an unstaged one, and the whole file as
+	 * added for an untracked one. A binary file or a very large diff comes
+	 * without its text. Read-only and safe to call again.
+	 */
+	readFileDiff(request: FileDiffRequest): Promise<FileDiffResult>;
 	/**
 	 * Every terminal session the machine holds, running or exited. Sessions
 	 * outlive the window's view of them: one keeps running while another

@@ -1,6 +1,7 @@
+import { statSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { describeCommandLine } from "../shared/command-line";
-import { TERMINAL_EDITOR_REASON, editorCommand } from "../shared/editor";
+import { TERMINAL_EDITOR_REASON, editorCommand, editorTarget } from "../shared/editor";
 import type { OpenInEditorRequest, OpenInEditorResult } from "../shared/model";
 import type { Preferences } from "../shared/preferences";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
@@ -42,6 +43,14 @@ function messageOf(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
+function isFile(path: string): boolean {
+	try {
+		return statSync(path).isFile();
+	} catch {
+		return false;
+	}
+}
+
 /** Wait up to `milliseconds` for the process to end. Null when it is still running then. */
 async function earlyExit(child: Bun.Subprocess, milliseconds: number): Promise<{ code: number | null; signal: string | null } | null> {
 	if (milliseconds <= 0) return null;
@@ -63,7 +72,8 @@ async function earlyExit(child: Bun.Subprocess, milliseconds: number): Promise<{
  *   arguments without a shell, with the worktree's registered path as one
  *   argument. The interface only names the worktree.
  * - Only a worktree that Timber lists, in a repository in the app's list, and
- *   whose folder is there, is opened.
+ *   whose folder is there, is opened. A file is opened in place of the folder
+ *   when the request names one inside the worktree that is there.
  * - The executable is looked for on the PATH the app was started with. A
  *   full path works too. A relative path is refused, because what it means
  *   would depend on the folder.
@@ -85,7 +95,13 @@ export function createEditorLauncher(dependencies: EditorDependencies): EditorLa
 		const listed = await findListedWorktree(findRepository, request.repository, request.worktree, "No editor was started.");
 		if (!listed.ok) return { outcome: "not-listed", message: listed.message };
 
-		const built = editorCommand(editor, request.worktree);
+		const target = editorTarget(request.worktree, request.file);
+		if (!target.ok) return { outcome: "failed", command: null, message: `${target.message} No editor was started.` };
+		if (request.file !== undefined && !isFile(target.path)) {
+			return { outcome: "failed", command: null, message: `There is no file at ${target.path}. No editor was started.` };
+		}
+
+		const built = editorCommand(editor, target.path);
 		if (!built.ok) return { outcome: "failed", command: null, message: `${built.message} Change it in Settings, Editor.` };
 		const command = describeCommandLine([built.executable, ...built.arguments]);
 		if (editor.terminal) return { outcome: "terminal-editor", command, message: TERMINAL_EDITOR_REASON };

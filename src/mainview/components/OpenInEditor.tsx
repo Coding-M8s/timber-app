@@ -4,13 +4,13 @@ import { type EditorAction, OPEN_IN_EDITOR, describeEditorAction, describeEditor
 import { folderName, worktreeLabel } from "../format";
 import { useAppState, useStore } from "../store/react";
 
-/** What "Open in editor" offers for one worktree of a repository, and what pressing it does. */
-export function useOpenInEditor(repository: string, worktree: Worktree): { action: EditorAction; open: () => void } {
+/** What "Open in editor" offers for one worktree of a repository, or one file in it, and what pressing it does. */
+export function useOpenInEditor(repository: string, worktree: Worktree, file?: string): { action: EditorAction; open: () => void } {
 	const store = useStore();
 	const state = useAppState();
 	const running = state.operations.some(operation => operation.kind === "open-in-editor" && operation.worktree === worktree.path);
-	const action = describeEditorAction(state.preferences.editor, worktree, running);
-	return { action, open: () => void store.openInEditor({ repository, worktree: worktree.path }) };
+	const action = describeEditorAction(state.preferences.editor, worktree, running, file);
+	return { action, open: () => void store.openInEditor(file === undefined ? { repository, worktree: worktree.path } : { repository, worktree: worktree.path, file }) };
 }
 
 export function EditorIcon() {
@@ -74,7 +74,7 @@ export function EditorProblemNote() {
 	const problem = state.editorProblem;
 	if (problem === null) return null;
 	const worktree = state.repositories.flatMap(repository => repository.worktrees).find(candidate => candidate.path === problem.worktree);
-	const { title, text, command } = describeEditorProblem(problem, worktree ? worktreeLabel(worktree) : folderName(problem.worktree));
+	const { title, text, command } = describeEditorProblem(problem, problem.file ?? (worktree ? worktreeLabel(worktree) : folderName(problem.worktree)));
 	return (
 		<div className="sidebar-error editor-problem" role="alert">
 			<p className="sidebar-error-title">{title}</p>

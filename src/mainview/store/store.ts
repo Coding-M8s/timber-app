@@ -1,5 +1,6 @@
 import { readableEditorSetting } from "../../shared/editor";
 import type { Engine } from "../../shared/engine";
+import { type FileChangeTarget, type FileChangesResult, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
 import { type Layout, clampSidebarWidth, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "../../shared/model";
 import type { Preferences } from "../../shared/preferences";
@@ -7,10 +8,11 @@ import type { OpenTerminalRequest, TerminalChange, TerminalSession } from "../..
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "../../shared/timber-done";
 import { type Draw, createTerminalFeed } from "../terminal-feed";
 import { describeOrphanTerminal } from "../terminal-format";
+import { listedOrder } from "../changes-format";
 import { describeOpenedInEditor } from "../editor-format";
 import { describeAdded, describeRemoved, folderName, worktreeLabel } from "../format";
 import { mergeOverlapping } from "./merge";
-import { type AppState, type DialogRequest, type Operation, type WorkspaceTab, TOAST_MILLISECONDS, initialState, keepLastGood, reconcileSelection, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, timberReady, withTerminal, withoutSession } from "./state";
+import { type AppState, type ChangesView, type DialogRequest, type Operation, type WorkspaceTab, TOAST_MILLISECONDS, initialState, keepLastGood, reconcileSelection, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, timberReady, withTerminal, withoutSession } from "./state";
 
 /**
  * The single holder of what the interface shows: Timber's status, the
@@ -82,6 +84,16 @@ export interface AppStore {
 	dismissEditorProblem(): void;
 	/** Show one of the views of the selected worktree. */
 	showTab(tab: WorkspaceTab): void;
+	/**
+	 * Read the changed files of a worktree, named by the path of its
+	 * repository and its identity, into `changes`, and then the diff of the
+	 * selected file: the one selected before when it is still listed,
+	 * otherwise the first. Another worktree starts the view afresh. The
+	 * latest read wins. Never throws.
+	 */
+	readChanges(repository: string, worktreeId: string): Promise<void>;
+	/** Select a file of `changes` and read its diff. Never throws. */
+	selectChangedFile(file: FileChangeTarget): Promise<void>;
 	/**
 	 * Create a worktree with `timber new`. Whatever comes of it, the
 	 * repository is read again before this answers, and the worktree Timber
@@ -347,6 +359,76 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		return result;
 	}
 
+	/*
+	 * The latest read of the changed files, and of a diff, wins: an answer that
+	 * comes after a newer request was made is dropped, and so is one for a
+	 * worktree or a file that no longer shows.
+	 */
+	let changesTicket = 0;
+	let diffTicket = 0;
+	const unheard = (what: string, error: unknown) => `The app did not hear back about ${what}: ${messageOf(error)}`;
+
+	async function readDiff(view: ChangesView, file: FileChangeTarget, worktreePath: string): Promise<void> {
+		const ticket = ++diffTicket;
+		let answer!: FileDiffResult;
+		await track({ kind: "read-diff", worktree: view.worktree }, async () => {
+			try {
+				answer = await engine.readFileDiff({ repository: view.repository, worktree: worktreePath, file });
+			} catch (error) {
+				answer = { outcome: "failed", message: unheard(`the changes of ${file.path}`, error) };
+			}
+		});
+		const now = state.changes;
+		if (ticket !== diffTicket || now?.worktree !== view.worktree || now.selected === null || !sameFileChange(now.selected, file)) return;
+		update({ changes: { ...now, diff: answer } });
+	}
+
+	function worktreeOf(repositoryPath: string, worktreeId: string) {
+		return state.repositories.find(candidate => candidate.path === repositoryPath)?.worktrees.find(candidate => candidate.id === worktreeId) ?? null;
+	}
+
+	async function readChanges(repositoryPath: string, worktreeId: string): Promise<void> {
+		const worktree = worktreeOf(repositoryPath, worktreeId);
+		if (!worktree) return;
+		const ticket = ++changesTicket;
+		if (state.changes?.worktree !== worktreeId || state.changes.repository !== repositoryPath) {
+			update({ changes: { repository: repositoryPath, worktree: worktreeId, files: null, more: false, problem: null, selected: null, diff: null } });
+		}
+		let answer!: FileChangesResult;
+		await track({ kind: "read-changes", worktree: worktreeId }, async () => {
+			try {
+				answer = await engine.readFileChanges({ repository: repositoryPath, worktree: worktree.path });
+			} catch (error) {
+				answer = { outcome: "failed", message: unheard("the changed files", error) };
+			}
+		});
+		const view = state.changes;
+		if (ticket !== changesTicket || view?.worktree !== worktreeId) return;
+		if (answer.outcome !== "read") {
+			update({ changes: { ...view, problem: answer.message } });
+			return;
+		}
+		const kept = view.selected === null ? undefined : answer.files.find(file => sameFileChange(file, view.selected!));
+		const chosen = kept ?? listedOrder(answer.files)[0] ?? null;
+		const selected = chosen && { area: chosen.area, path: chosen.path, previousPath: chosen.previousPath };
+		// The same file keeps its diff on screen until the new one answers, so it does not flicker.
+		const next: ChangesView = { ...view, files: answer.files, more: answer.more, problem: null, selected, diff: kept ? view.diff : null };
+		update({ changes: next });
+		if (selected) await readDiff(next, selected, worktree.path);
+	}
+
+	async function selectChangedFile(file: FileChangeTarget): Promise<void> {
+		const view = state.changes;
+		if (!view?.files?.some(candidate => sameFileChange(candidate, file))) return;
+		const worktree = worktreeOf(view.repository, view.worktree);
+		if (!worktree) return;
+		const selected = { area: file.area, path: file.path, previousPath: file.previousPath };
+		if (view.selected && sameFileChange(view.selected, selected) && view.diff !== null) return;
+		const next: ChangesView = { ...view, selected, diff: null };
+		update({ changes: next });
+		await readDiff(next, selected, worktree.path);
+	}
+
 	async function openInEditor(request: OpenInEditorRequest): Promise<OpenInEditorResult | null> {
 		const editorSettings = () => update({ dialog: { kind: "settings", section: "editor" } });
 		// No editor, or one whose command cannot be read: the place to fix that is Settings.
@@ -371,17 +453,17 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		switch (answer.outcome) {
 			case "opened":
 				update({ editorProblem: null });
-				showToast(describeOpenedInEditor(worktree ? worktreeLabel(worktree) : folderName(request.worktree)));
+				showToast(describeOpenedInEditor(request.file ?? (worktree ? worktreeLabel(worktree) : folderName(request.worktree))));
 				break;
 			case "not-configured":
 				// Saved somewhere else since this window read the preferences.
 				editorSettings();
 				break;
 			case "not-listed":
-				update({ editorProblem: { kind: answer.outcome, worktree: request.worktree, command: null, message: answer.message } });
+				update({ editorProblem: { kind: answer.outcome, worktree: request.worktree, file: request.file ?? null, command: null, message: answer.message } });
 				break;
 			default:
-				update({ editorProblem: { kind: answer.outcome, worktree: request.worktree, command: answer.command, message: answer.message } });
+				update({ editorProblem: { kind: answer.outcome, worktree: request.worktree, file: request.file ?? null, command: answer.command, message: answer.message } });
 		}
 		return answer;
 	}
@@ -727,6 +809,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		showTab(tab) {
 			if (tab !== state.tab) update({ tab });
 		},
+		readChanges,
+		selectChangedFile,
 		openDialog(request) {
 			update({ dialog: request });
 		},

@@ -106,6 +106,9 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		loadPreferences: async () => defaultPreferences(),
 		savePreferences: async change => ({ outcome: "saved", preferences: { ...defaultPreferences(), ...change } }),
 		openInEditor: async () => ({ outcome: "not-configured" }),
+		// The Changes tab has its own tests in file-changes-store.test.ts.
+		readFileChanges: async () => ({ outcome: "read", files: [], more: false }),
+		readFileDiff: async () => ({ outcome: "read", file: null, diff: { kind: "unchanged" } }),
 	};
 	const push = (path: string) => {
 		for (const listener of [...listeners]) listener(path);

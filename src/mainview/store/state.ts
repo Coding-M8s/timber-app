@@ -1,3 +1,4 @@
+import type { FileChange, FileChangeTarget, FileDiffResult } from "../../shared/file-changes";
 import { type Layout, defaultLayout } from "../../shared/layout";
 import type { Repository, TimberStatus, Worktree } from "../../shared/model";
 import { type Preferences, defaultPreferences } from "../../shared/preferences";
@@ -29,7 +30,32 @@ export type Operation =
 	/** Starting a terminal in a worktree, named by its identity (`Worktree.id`). */
 	| { kind: "open-terminal"; worktree: string }
 	/** Ending a terminal session, named by its id. */
-	| { kind: "close-terminal"; session: string };
+	| { kind: "close-terminal"; session: string }
+	/** Reading the changed files of a worktree, named by its identity (`Worktree.id`). */
+	| { kind: "read-changes"; worktree: string }
+	/** Reading the diff of one changed file of a worktree, named by its identity. */
+	| { kind: "read-diff"; worktree: string };
+
+/**
+ * The Changes tab of one worktree: its changed files as last read, and the
+ * diff of the selected one. Read only while the tab shows, and started afresh
+ * for another worktree.
+ */
+export interface ChangesView {
+	/** The path of the repository's primary checkout. */
+	repository: string;
+	/** The worktree's identity (`Worktree.id`). */
+	worktree: string;
+	/** Null until the first read answered. A failed read keeps the last good list. */
+	files: readonly FileChange[] | null;
+	/** More files changed than are listed. */
+	more: boolean;
+	/** Why the latest read failed. Null once one worked. */
+	problem: string | null;
+	selected: FileChangeTarget | null;
+	/** The diff of `selected`. Null while the first read of it runs. A newer read replaces it when it answers. */
+	diff: FileDiffResult | null;
+}
 
 /** Why a terminal did not start. It stays until dismissed, or until a terminal starts in that worktree. */
 export interface TerminalProblem {
@@ -91,6 +117,8 @@ export interface EditorProblem {
 	kind: "terminal-editor" | "not-listed" | "not-found" | "failed";
 	/** The worktree's registered path. */
 	worktree: string;
+	/** The file that was to be opened, relative to the worktree, or null for the worktree's folder. */
+	file: string | null;
 	/** The exact command, as shown, or null when none was built. */
 	command: string | null;
 	message: string;
@@ -153,6 +181,8 @@ export interface AppState {
 	quitRequest: number | null;
 	/** Which view of the selected worktree shows. */
 	tab: WorkspaceTab;
+	/** The Changes tab as last read. Null before it was first shown. */
+	changes: ChangesView | null;
 	/** Null when no dialog is open. */
 	dialog: DialogRequest | null;
 }
@@ -177,6 +207,7 @@ export const initialState: AppState = {
 	terminalProblem: null,
 	quitRequest: null,
 	tab: "workspace",
+	changes: null,
 	dialog: null,
 };
 

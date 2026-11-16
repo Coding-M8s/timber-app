@@ -218,14 +218,15 @@ describe("workspace", () => {
 		expect(markup).toContain(">Open terminal</button>");
 	});
 
-	test("the Changes tab shows its own empty state, and the tab stop moves with it", async () => {
+	test("the Changes tab shows its own panel, and the tab stop moves with it", async () => {
 		const { store } = await startedStore();
 		store.showTab("changes");
 		const markup = render(store);
 		expect(markup).toMatch(/id="tab-changes" class="tab selected" aria-selected="true" aria-controls="workspace-panel" tabindex="0"/);
 		expect(markup).toMatch(/id="tab-workspace" class="tab" aria-selected="false" aria-controls="workspace-panel" tabindex="-1"/);
-		expect(tagOf(markup, "empty tabpanel")).toContain('aria-labelledby="tab-changes"');
-		expect(markup).toContain("No changes to show yet");
+		expect(tagOf(markup, "tabpanel workspace-panel")).toContain('aria-labelledby="tab-changes"');
+		// Before the first read answers.
+		expect(markup).toContain("Reading changes");
 		expect(markup).not.toContain("No terminal here yet");
 	});
 
