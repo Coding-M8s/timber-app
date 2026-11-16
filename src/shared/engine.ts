@@ -5,6 +5,7 @@ import type { Layout } from "./layout";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
 import type { Preferences } from "./preferences";
 import type { OpenTerminalRequest, OpenTerminalResult, TerminalChange, TerminalOutput, TerminalSession, TerminalSnapshot } from "./terminal";
+import type { IntegrationStatuses, TimberSettings } from "./timber-config";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "./timber-done";
 
 /**
@@ -126,14 +127,14 @@ export interface Engine {
 	forcePushSeen(seen: ForcePushSeen): void;
 	/**
 	 * How the window was arranged when the layout was last saved: the sidebar
-	 * width and the collapsed repository groups. The defaults when nothing was
-	 * saved yet.
+	 * width, the collapsed repository groups, and the repositories whose setup
+	 * prompt was dismissed. The defaults when nothing was saved yet.
 	 */
 	loadLayout(): Promise<Layout>;
 	/**
 	 * Remember the layout for the next run. The whole layout is given each time,
 	 * so the latest call wins. Removing a repository also forgets its collapsed
-	 * group.
+	 * group and its dismissed setup prompt.
 	 */
 	saveLayout(layout: Layout): Promise<SaveLayoutResult>;
 	/**
@@ -147,6 +148,22 @@ export interface Engine {
 	 * Saved answers with every preference as it now is. Safe to call again.
 	 */
 	savePreferences(change: Partial<Preferences>): Promise<SavePreferencesResult>;
+	/**
+	 * Timber's own settings, read from its files and never written: the
+	 * machine defaults from Timber's global `config.toml`, and with
+	 * `repository`, the path of a primary checkout in the list, that
+	 * repository's `.timber.toml`. A missing file is "missing" and a broken
+	 * one an error, never empty defaults. Arguments and scripts are counted,
+	 * never shown (see ./timber-config.ts). Read-only and safe to call again.
+	 */
+	readTimberSettings(repository: string | null): Promise<TimberSettings>;
+	/**
+	 * Whether Timber can reach GitHub, Jira, and Linear, found without reading
+	 * a credential: environment variables that are set, credential files that
+	 * are there, and the exit code of `gh auth status`. Read-only and safe to
+	 * call again.
+	 */
+	readTimberIntegrations(): Promise<IntegrationStatuses>;
 	/**
 	 * Open a worktree of a repository in the list in the editor from the
 	 * preferences, started detached so it outlives the app. The command comes
@@ -181,7 +198,10 @@ export interface Engine {
 	 * the saved preferences starts instead, its command taken from there only
 	 * (`agentCommand` in ./agent.ts). An agent that is not saved, or whose
 	 * executable is not found, starts nothing and keeps no session. Nothing
-	 * else starts an agent: New and Open never do.
+	 * else starts an agent: New and Open never do. With `timberSetup`,
+	 * `timber setup` starts instead, with the Timber that was found
+	 * (`timberSetupArguments` in ./timber-config.ts), and nothing starts while
+	 * Timber is not ready.
 	 */
 	openTerminal(request: OpenTerminalRequest): Promise<OpenTerminalResult>;
 	/**

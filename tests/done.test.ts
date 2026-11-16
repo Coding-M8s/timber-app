@@ -425,6 +425,7 @@ describe("with a stand-in for Timber", () => {
 	/** The repository as the app's list would answer, with these worktree paths. */
 	const listed = (paths: string[]): Repository => ({
 		path: repository, name: "sample", available: true, failure: null,
+		setup: "repository",
 		worktrees: paths.map(path => ({
 			id: path, path, canonicalPath: path, branch: "feat/dirty", head: null, primary: false, detached: false, locked: false, prunable: false,
 			pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, sync: null,

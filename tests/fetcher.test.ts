@@ -656,7 +656,7 @@ describe.skipIf(windows)("createFetcher against real repositories", () => {
 		expect(tracking()).toContain("main [ahead 2]");
 		// As the sidebar reads it: ahead 2, behind 0, and the branch did not move, so the mark shows.
 		const read = (head: string, behind: number) => withForcePushes({
-			path: mine, name: "mine", available: true, failure: null,
+			path: mine, name: "mine", available: true, failure: null, setup: "unknown",
 			worktrees: [{
 				id: "main", path: mine, canonicalPath: mine, branch: "main", head, primary: true, detached: false, locked: false, prunable: false, pathExists: true,
 				changes: { kind: "known", modified: [], untracked: [] }, sync: { kind: "tracking", upstream: "origin/main", ahead: 2, behind },

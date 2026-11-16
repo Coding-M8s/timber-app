@@ -3,10 +3,11 @@ import { readableEditorSetting } from "../../shared/editor";
 import type { Engine } from "../../shared/engine";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "../../shared/git-fetch";
 import { type FileChangeTarget, type FileChangesResult, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
-import { type Layout, clampSidebarWidth, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
+import { type Layout, clampSidebarWidth, dismissSetup, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "../../shared/model";
 import type { Preferences } from "../../shared/preferences";
-import type { OpenTerminalRequest, TerminalChange, TerminalSession } from "../../shared/terminal";
+import { type OpenTerminalRequest, type TerminalChange, type TerminalSession, TIMBER_SETUP_SESSION_NAME } from "../../shared/terminal";
+import type { IntegrationStatuses, TimberConfigScope, TimberSettings } from "../../shared/timber-config";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "../../shared/timber-done";
 import { type Draw, createTerminalFeed } from "../terminal-feed";
 import { describeOrphanTerminal } from "../terminal-format";
@@ -15,7 +16,7 @@ import { describeOpenedInEditor } from "../editor-format";
 import { describeAdded, describeRemoved, folderName, worktreeLabel } from "../format";
 import { describeFetched } from "../fetch-format";
 import { mergeOverlapping } from "./merge";
-import { type AppState, type ChangesView, type DialogRequest, type Operation, type WorkspaceTab, TOAST_MILLISECONDS, initialState, keepLastGood, reconcileSelection, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, timberReady, withTerminal, withoutSession } from "./state";
+import { type AppState, type ChangesView, type DialogRequest, type Operation, type WorkspaceTab, TOAST_MILLISECONDS, initialState, keepLastGood, reconcileSelection, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, timberReady, timberSetupTarget, withTerminal, withoutSession } from "./state";
 
 /**
  * The single holder of what the interface shows: Timber's status, the
@@ -124,6 +125,22 @@ export interface AppStore {
 	 * not be read, which only means there is nothing to pick from.
 	 */
 	listBranches(repository: string): Promise<BranchSuggestion[] | null>;
+	/**
+	 * Timber's settings files, for the Settings dialog: the machine's, and the
+	 * repository's when its primary checkout is given. Read-only. Never
+	 * throws: an engine that could not answer is the reason, as text.
+	 */
+	readTimberSettings(repository: string | null): Promise<TimberSettings | string>;
+	/** Whether Timber can reach GitHub, Jira, and Linear. Read-only. Never throws, as above. */
+	readTimberIntegrations(): Promise<IntegrationStatuses | string>;
+	/**
+	 * Close Settings and start `timber setup` for one of Timber's files in a
+	 * session, where `timberSetupTarget` (state.ts) says, with that worktree
+	 * selected and its session showing. `repository` is the primary checkout
+	 * whose settings show, for repository setup. Never throws: why it did not
+	 * start shows in `terminalProblem`.
+	 */
+	runTimberSetup(scope: TimberConfigScope, repository: string | null): Promise<void>;
 	/** Open a dialog over the window, in place of the one that is open. */
 	openDialog(request: DialogRequest): void;
 	closeDialog(): void;
@@ -184,6 +201,22 @@ export interface AppStore {
 	/** Open a web link from a terminal in the person's browser. Never throws. */
 	openLink(url: string): Promise<void>;
 	dismissTerminalProblem(): void;
+	/**
+	 * The setup prompt's "Set up Timber": `runTimberSetup` for the
+	 * repository's own settings, named by the path of its primary checkout.
+	 * While a Timber setup session of that repository still runs, that one
+	 * shows instead, because Timber sets up one repository once at a time.
+	 * Whenever a Timber setup session ends or is closed, every repository is
+	 * read again, since machine defaults set up all of them, so the prompt
+	 * goes once settings were saved. Never throws.
+	 */
+	setUpRepository(repository: string): Promise<void>;
+	/**
+	 * Put away the setup prompt of a repository, named by the path of its
+	 * primary checkout, and remember that for the next run. The repository
+	 * works as before; setup stays possible with `timber setup`.
+	 */
+	dismissSetup(repository: string): void;
 	/** The person agreed to quit while terminals run. */
 	confirmQuit(): Promise<void>;
 	/** The person chose to keep the app open. */
@@ -638,7 +671,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				const result = await engine.removeRepository(path);
 				switch (result.outcome) {
 					case "removed":
-						// The engine forgot the repository's collapsed group along with it.
+						// The engine forgot the repository's collapsed group and dismissed setup prompt along with it.
 						if (savedLayout) savedLayout = forgetRepository(savedLayout, path);
 						update({ notice: null, layout: forgetRepository(state.layout, path) });
 						await reloadAll("all");
@@ -748,7 +781,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const worktree = repository?.worktrees.find(candidate => candidate.path === request.worktree);
 		const key = worktree?.id ?? request.worktree;
 		if (state.operations.some(operation => operation.kind === "open-terminal" && operation.worktree === key)) return;
-		const agent = request.agent ?? null;
+		const agent = request.agent ?? (request.timberSetup !== undefined ? TIMBER_SETUP_SESSION_NAME : null);
 		await track({ kind: "open-terminal", worktree: key, agent }, async () => {
 			let message: string;
 			let command: string | null = null;
@@ -772,6 +805,40 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			}
 			update({ terminalProblem: { worktree: key, agent, message, command } });
 		});
+	}
+
+	/** Show a session: select its worktree, choose its chip, and show the Workspace tab. */
+	function reveal(session: TerminalSession): void {
+		const selection = selectionFor(state.repositories, session.worktree);
+		if (selection) select(session.worktree);
+		update({ tab: "workspace", shownSessions: { ...state.shownSessions, [session.worktree]: session.id } });
+	}
+
+	async function runTimberSetup(scope: TimberConfigScope, repository: string | null): Promise<void> {
+		const target = timberSetupTarget(state, scope, repository);
+		if (!target.ok) return;
+		update({ dialog: null, tab: "workspace" });
+		select(target.worktree.id);
+		// The pane gives the session its real size once it shows.
+		await openTerminal({ repository: target.repository, worktree: target.worktree.path, cols: 80, rows: 24, timberSetup: scope });
+	}
+
+	async function setUpRepository(repository: string): Promise<void> {
+		const running = state.terminals.find(session => session.kind === "timber" && session.repository === repository && session.state.kind === "running");
+		if (running) return reveal(running);
+		await runTimberSetup("repository", repository);
+	}
+
+	/**
+	 * Whether this change stops a setup session, given the sessions known
+	 * before it: the session ended, or it was closed while it ran. Whether
+	 * setup saved shows only in the settings, never in how it ended.
+	 */
+	function setupStopped(known: readonly TerminalSession[], change: TerminalChange): boolean {
+		const before = known.find(session => session.id === change.id);
+		const session = change.session ?? before;
+		if (session?.kind !== "timber" || before?.state.kind === "exited") return false;
+		return change.session === null || change.session.state.kind !== "running";
 	}
 
 	async function closeTerminal(id: string): Promise<void> {
@@ -854,9 +921,13 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				}),
 				engine.onTerminalChanged(change => {
 					// Until the first list answers, changes wait, and are applied on top of it.
-					if (heard !== null) heard.push(change);
-					else if (change.session) update({ terminals: withTerminal(state.terminals, change.id, change.session) });
+					if (heard !== null) return void heard.push(change);
+					const stopped = setupStopped(state.terminals, change);
+					if (change.session) update({ terminals: withTerminal(state.terminals, change.id, change.session) });
 					else update(withoutSession(state, change.id));
+					// Setup only ever writes settings, which nothing watches. Read again to see whether it saved. Machine
+					// defaults set up every repository, so every one is read.
+					if (stopped) void reloadAll("all");
 				}),
 				engine.onTerminalOutput(part => {
 					if (!watched.has(part.id)) engine.drawnTerminal(part.id, part.seq);
@@ -887,9 +958,17 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			// Sessions outlive the window, for example when it reloads. Changes heard meanwhile are newer than this answer.
 			const settle = (listed: readonly TerminalSession[]) => {
 				let terminals = listed;
-				for (const change of heard ?? []) terminals = withTerminal(terminals, change.id, change.session);
+				let stopped = false;
+				for (const change of heard ?? []) {
+					// The list may already hold the session as it ended, so any ending heard meanwhile counts.
+					const session = change.session ?? terminals.find(candidate => candidate.id === change.id);
+					stopped ||= session?.kind === "timber" && (change.session === null || change.session.state.kind !== "running");
+					terminals = withTerminal(terminals, change.id, change.session);
+				}
 				heard = null;
 				update({ terminals, unseenSessions: state.unseenSessions.filter(id => terminals.some(session => session.id === id)) });
+				// A setup that stopped before the sessions were listed may have saved after the repositories were read.
+				if (stopped) void reloadAll("all");
 			};
 			engine.listTerminals().then(settle, () => settle(state.terminals));
 			attending = true;
@@ -948,6 +1027,21 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		},
 		readChanges,
 		selectChangedFile,
+		async readTimberSettings(repository) {
+			try {
+				return await engine.readTimberSettings(repository);
+			} catch (error) {
+				return `The app did not hear back: ${messageOf(error)}`;
+			}
+		},
+		async readTimberIntegrations() {
+			try {
+				return await engine.readTimberIntegrations();
+			} catch (error) {
+				return `The app did not hear back: ${messageOf(error)}`;
+			}
+		},
+		runTimberSetup,
 		openDialog(request) {
 			update({ dialog: request });
 		},
@@ -987,6 +1081,11 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		},
 		dismissTerminalProblem() {
 			if (state.terminalProblem) update({ terminalProblem: null });
+		},
+		setUpRepository,
+		dismissSetup(repository) {
+			changeLayout(dismissSetup(state.layout, repository));
+			void saveLayout("layout");
 		},
 		async confirmQuit() {
 			update({ quitRequest: null });

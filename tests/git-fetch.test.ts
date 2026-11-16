@@ -167,7 +167,7 @@ describe("force-push marks", () => {
 		id: `id-${branch}`, path: `/work/a-${branch}`, canonicalPath: null, branch, head: A, primary: false, detached: branch === null,
 		locked: false, prunable: false, pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, sync,
 	});
-	const repository = (worktrees: Worktree[]): Repository => ({ path: "/work/a", name: "a", available: true, failure: null, worktrees });
+	const repository = (worktrees: Worktree[]): Repository => ({ path: "/work/a", name: "a", available: true, failure: null, setup: "unknown", worktrees });
 
 	test("show a mark on the branch's worktree while it is behind the same upstream", () => {
 		const read = repository([worktree("main", { kind: "tracking", upstream: "origin/main", ahead: 1, behind: 2 }), worktree("other", null)]);

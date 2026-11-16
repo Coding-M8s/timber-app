@@ -95,8 +95,20 @@ export interface Repository {
 	 * with none, and the interface keeps showing the last good list.
 	 */
 	failure: string | null;
+	/** Which Timber settings apply to the repository, as of the latest read (see `SetupState`). */
+	setup: SetupState;
 	worktrees: Worktree[];
 }
+
+/**
+ * Which Timber settings a repository has, read from the files Timber reads,
+ * never by asking Timber. "repository" when its primary checkout has a
+ * `.timber.toml`, "machine" when only the machine defaults exist, "none"
+ * when neither file exists, and "unknown" when the files could not be
+ * checked, for example because the repository is unavailable. Only "none"
+ * means the repository was never set up.
+ */
+export type SetupState = "repository" | "machine" | "none" | "unknown";
 
 /** What came of asking to add a repository through the folder picker. */
 export type AddRepositoryResult =

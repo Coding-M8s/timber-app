@@ -217,7 +217,7 @@ describe.skipIf(realTimber === null)("a saved repository whose folder is missing
 		await list.addFolder(moving);
 
 		renameSync(moving, away);
-		const unavailable = { path: moving, name: `moving-${cases}`, available: false, failure: null, worktrees: [] };
+		const unavailable = { path: moving, name: `moving-${cases}`, available: false, failure: null, setup: "unknown" as const, worktrees: [] };
 		expect(await list.list()).toMatchObject([{ name: "other", available: true }, unavailable]);
 		// After a restart too, and listing it did not create the folder or drop the entry.
 		expect((await listOn().list())[1]).toEqual(unavailable);
@@ -237,7 +237,7 @@ describe.skipIf(realTimber === null)("a saved repository whose folder is missing
 		const list = listOn();
 		await list.addFolder(primary);
 		writeFileSync(settingsFile, readFileSync(settingsFile, "utf8").replaceAll(JSON.stringify(primary).slice(1, -1), JSON.stringify(plain).slice(1, -1)));
-		expect(await listOn().list()).toEqual([{ path: plain, name: "plain", available: false, failure: null, worktrees: [] }]);
+		expect(await listOn().list()).toEqual([{ path: plain, name: "plain", available: false, failure: null, setup: "unknown" as const, worktrees: [] }]);
 	});
 });
 
@@ -275,7 +275,7 @@ describe.skipIf(realTimber === null)("finding a repository of the list", () => {
 		const list = listOn();
 		await list.addFolder(gone);
 		rmSync(gone, { recursive: true });
-		expect(await list.find(gone)).toEqual({ path: gone, name: `gone-${cases}`, available: false, failure: null, worktrees: [] });
+		expect(await list.find(gone)).toEqual({ path: gone, name: `gone-${cases}`, available: false, failure: null, setup: "unknown" as const, worktrees: [] });
 	});
 
 	test("with the override, only the repositories it names are found", async () => {
@@ -353,7 +353,7 @@ describe("when Timber cannot list the worktrees", () => {
 	test("a saved repository stays listed, with the diagnostic and no worktrees", async () => {
 		mkdirSync(join(settingsFile, ".."), { recursive: true });
 		writeFileSync(settingsFile, JSON.stringify({ version: 1, repositories: [{ path: primary, commonDir: realpathSync(join(primary, ".git")) }] }));
-		const failed = { path: primary, name: "sample", available: true, failure: diagnostic, worktrees: [] };
+		const failed = { path: primary, name: "sample", available: true, failure: diagnostic, setup: "unknown" as const, worktrees: [] };
 		const list = listOn({ reader: failing() });
 		expect(await list.list()).toEqual([failed]);
 		expect(await list.reload(primary)).toEqual(failed);
@@ -363,7 +363,7 @@ describe("when Timber cannot list the worktrees", () => {
 
 	test("the override lists a repository that Timber fails on by the folder it was given", async () => {
 		const overridden = listOn({ reader: failing(), environment: { TIMBER_APP_REPOS: [linked, plain, linked].join(delimiter) } });
-		expect(await overridden.list()).toEqual([{ path: linked, name: "feat-x", available: true, failure: diagnostic, worktrees: [] }]);
+		expect(await overridden.list()).toEqual([{ path: linked, name: "feat-x", available: true, failure: diagnostic, setup: "unknown" as const, worktrees: [] }]);
 	});
 });
 

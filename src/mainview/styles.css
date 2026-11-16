@@ -963,6 +963,104 @@ pre:focus-visible {
 	margin-top: 0;
 }
 
+.settings-nav-group {
+	margin: 10px 10px 2px;
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--text-3);
+}
+
+/* Timber's own settings, shown read-only. */
+.timber-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+}
+
+.settings-section .mono {
+	font-family: var(--font-mono);
+	font-size: 12px;
+	overflow-wrap: anywhere;
+}
+
+.timber-settings {
+	display: flex;
+	flex-direction: column;
+	margin: 0;
+	border-top: 1px solid var(--line);
+}
+
+.timber-setting {
+	display: grid;
+	grid-template-columns: 150px minmax(0, 1fr);
+	gap: 12px;
+	padding: 7px 0;
+	border-bottom: 1px solid var(--line);
+	font-size: 12.5px;
+}
+
+.timber-setting-label {
+	color: var(--text-2);
+}
+
+.timber-setting-value {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	margin: 0;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.timber-setting.inherited .timber-setting-value > :first-child {
+	color: var(--text-2);
+}
+
+.timber-setting-note {
+	font-size: 11.5px;
+	color: var(--text-3);
+}
+
+.timber-file-state {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.timber-file-title {
+	margin: 0;
+	font-size: 12.5px;
+	font-weight: 600;
+}
+
+.timber-problems {
+	margin: 4px 0;
+	padding-left: 18px;
+}
+
+.timber-block {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	padding-top: 6px;
+}
+
+.timber-block-title {
+	margin: 0;
+	font-size: 12.5px;
+	font-weight: 600;
+}
+
+@media (max-width: 560px) {
+	.timber-setting {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 2px;
+	}
+}
+
 .settings-section-status {
 	margin: 0;
 	font-size: 12px;
@@ -1575,6 +1673,50 @@ pre:focus-visible {
 	align-items: flex-start;
 	margin: 8px 0 0;
 	max-width: 640px;
+}
+
+/* First-run setup: a quiet prompt between the header and the tabs. It is an offer, not an error. */
+.setup-prompt {
+	flex: none;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-start;
+	gap: 8px 16px;
+	margin: 4px 18px 10px;
+	padding: 10px 12px;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+}
+
+.setup-prompt-body {
+	flex: 1 1 320px;
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	min-width: 0;
+}
+
+.setup-prompt-title {
+	margin: 0;
+	font-weight: 500;
+}
+
+.setup-prompt-text {
+	margin: 0;
+	font-size: 12.5px;
+	color: var(--text-3);
+}
+
+.setup-prompt-command {
+	font-family: var(--font-mono);
+	font-size: 11.5px;
+	color: var(--text-2);
+}
+
+.setup-prompt-actions {
+	flex: none;
+	display: flex;
+	gap: 6px;
 }
 
 .field-input.mono {

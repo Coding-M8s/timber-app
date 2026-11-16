@@ -73,7 +73,7 @@ describe("applyPreferenceChange", () => {
 
 describe("the preferences part of the settings file", () => {
 	test("round-trips beside the repositories and the layout", () => {
-		const settings = { repositories: [one], layout: { sidebarWidth: 300, collapsed: [] }, preferences: { sidebarSide: "right" as const, editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting() } };
+		const settings = { repositories: [one], layout: { sidebarWidth: 300, collapsed: [], setupDismissed: [] }, preferences: { sidebarSide: "right" as const, editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting() } };
 		const text = serializeSettings(settings);
 		expect(JSON.parse(text)).toEqual({ version: 1, ...settings });
 		expect(parseSettings(text)).toEqual(settings);
@@ -120,8 +120,8 @@ describe("the saved preferences in the main process", () => {
 
 	/** Stands in for Timber's list: every folder is its own primary checkout. Git still says, for real, what a folder is. */
 	const reader: RepositoryReader = {
-		find: async folder => ({ outcome: "read", repository: { path: folder, name: basename(folder), available: true, failure: null, worktrees: [] } }),
-		reload: async path => ({ path, name: basename(path), available: true, failure: null, worktrees: [] }),
+		find: async folder => ({ outcome: "read", repository: { path: folder, name: basename(folder), available: true, failure: null, setup: "unknown", worktrees: [] } }),
+		reload: async path => ({ path, name: basename(path), available: true, failure: null, setup: "unknown", worktrees: [] }),
 	};
 
 	/** What the main process sets up: one holder of the file, shared by everything that saves a part of it. */
@@ -163,13 +163,13 @@ describe("the saved preferences in the main process", () => {
 		const results = await Promise.all([
 			repositories.addFolder(primary),
 			preferences.save({ sidebarSide: "right" }),
-			layout.save({ sidebarWidth: 330, collapsed: [primary] }),
+			layout.save({ sidebarWidth: 330, collapsed: [primary], setupDismissed: [] }),
 		]);
 		expect(results.map(result => result.outcome)).toEqual(["added", "saved", "saved"]);
 		expect(onDisk()).toEqual({
 			version: 1,
 			repositories: [{ path: primary, commonDir: join(primary, ".git") }],
-			layout: { sidebarWidth: 330, collapsed: [primary] },
+			layout: { sidebarWidth: 330, collapsed: [primary], setupDismissed: [] },
 			preferences: { sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting() },
 		});
 		expect(readdirSync(join(settingsFile, ".."))).toEqual(["settings.json"]);

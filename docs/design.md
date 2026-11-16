@@ -40,6 +40,13 @@ change them here first when they change.
   and terminals. Each session has a chip that shows or hides its pane; a hidden
   session keeps running. Closing an agent pane stops the agent.
 - Changes compares against the base, the last commit, or a rebase backup.
+- A repository that was never set up for Timber shows a quiet prompt above
+  the tabs: Timber's defaults work, setup is optional, the command
+  `timber setup`, "Set up Timber", and "Not now". The button runs Timber's
+  guided setup in a session of its primary checkout, until an in-app wizard
+  replaces it. The prompt goes once settings exist or it is dismissed.
+- With no repository yet, the workspace makes "Add repository" the first
+  step.
 
 ## Dialogs
 
@@ -65,6 +72,9 @@ change them here first when they change.
   pre-done scripts, starting branch, remote, worktree folder, and layout.
   Presets where they help, but every value is editable free-form, and every
   section has Save.
+  Until the app can save Timber's own settings, they are shown read-only in
+  a Machine and a Repository section, each with the file it read and a "Run
+  timber setup" button that shows its command first.
 
 ## Look
 

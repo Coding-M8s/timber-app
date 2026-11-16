@@ -1,5 +1,5 @@
 import { type ComponentType, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { SETTINGS_SECTION_LABELS } from "../shell";
+import { SETTINGS_SECTION_LABELS, TIMBER_SETTINGS_SECTIONS } from "../shell";
 import { useAppState, useStore } from "../store/react";
 import { SETTINGS_SECTIONS, type SettingsSection } from "../store/state";
 import { AgentsSection } from "./settings/AgentsSection";
@@ -7,6 +7,7 @@ import { EditorSection } from "./settings/EditorSection";
 import { FetchSection } from "./settings/FetchSection";
 import { LayoutSection } from "./settings/LayoutSection";
 import { SettingsSavingContext } from "./settings/SettingsSection";
+import { MachineSection, RepositorySection } from "./settings/TimberSections";
 
 /**
  * What each section of the Settings dialog draws. A new section is an entry
@@ -18,6 +19,8 @@ const SECTION_VIEWS: Record<SettingsSection, ComponentType> = {
 	editor: EditorSection,
 	agents: AgentsSection,
 	fetch: FetchSection,
+	machine: MachineSection,
+	repository: RepositorySection,
 };
 
 /**
@@ -25,8 +28,12 @@ const SECTION_VIEWS: Record<SettingsSection, ComponentType> = {
  * its own values with its own Save. Every section stays mounted and only the
  * one chosen shows, so what was typed in one is still there after looking at
  * another. While a section saves, the dialog cannot be closed and the
- * sections cannot be switched, so its answer is never lost. Nothing here
- * runs Timber.
+ * sections cannot be switched, so its answer is never lost.
+ *
+ * Under "Timber", the Machine and Repository sections show Timber's own
+ * settings, read from its files each time the dialog opens, and never
+ * change them. Their "Run timber setup" closes the dialog and starts the
+ * command, shown first, in a terminal session.
  */
 export function SettingsDialog({ initialSection }: { initialSection: SettingsSection }) {
 	const store = useStore();
@@ -84,7 +91,8 @@ export function SettingsDialog({ initialSection }: { initialSection: SettingsSec
 			)}
 			<div className="settings-body">
 				<nav className="settings-nav" aria-label="Settings sections">
-					{SETTINGS_SECTIONS.map(candidate => (
+					{SETTINGS_SECTIONS.map(candidate => [
+						candidate === TIMBER_SETTINGS_SECTIONS[0] && <p key="timber-heading" className="settings-nav-group">Timber</p>,
 						<button
 							key={candidate}
 							ref={candidate === section ? current : undefined}
@@ -97,8 +105,8 @@ export function SettingsDialog({ initialSection }: { initialSection: SettingsSec
 							onClick={() => setSection(candidate)}
 						>
 							{SETTINGS_SECTION_LABELS[candidate]}
-						</button>
-					))}
+						</button>,
+					])}
 				</nav>
 				<SettingsSavingContext value={savingContext}>
 					{SETTINGS_SECTIONS.map(candidate => {
