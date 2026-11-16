@@ -48,6 +48,8 @@ Timber's safety logic must exist once. The app follows two rules:
 1. **What Timber owns or changes goes through Timber's machine interface.**
    The worktree list is `timber ls --json`. New, open, rebase, and done run
    the `timber` command, and the interface shows the command before it runs.
+   Creating a worktree is built, and so is running setup again in one (see
+   [creating and opening worktrees](#creating-and-opening-worktrees)).
 2. **Git is asked directly only for read-only status that Timber does not
    report.** Today that is which repository a folder belongs to and how each
    branch stands against its upstream. Git is invoked as an executable plus an
@@ -122,8 +124,9 @@ The sidebar shows exactly the worktrees Timber lists, in Timber's order
 
 New, open, done, and rebase say how they ended in a result file, not on
 standard output. One helper runs all of them, so no dialog reads a result its
-own way: `runTimberWithResultFile` in `src/bun/timber-run.ts`. No dialog calls
-it yet; the New, Open, and Done dialogs are its first users.
+own way: `runTimberWithResultFile` in `src/bun/timber-run.ts`. Creating and
+opening worktrees are its first users (see
+[below](#creating-and-opening-worktrees)).
 
 - **The file.** Each run gets a fresh file name in a new folder that only
   this user can open, made in the system's temporary folder. Timber creates
@@ -155,6 +158,61 @@ it yet; the New, Open, and Done dialogs are its first users.
 - **The command shown.** `describeTimberCommand` words a command for the
   person, with `<temporary file>` where the result file goes, since its real
   name does not exist before the run. That text is for reading only.
+
+### Creating and opening worktrees
+
+`timber new` and `timber open` are the `newWorktree` and `openWorktree`
+capabilities of the `Engine` contract.
+
+- **One source for the command.** `src/shared/worktree-commands.ts` builds the
+  arguments from a request, and is pure. The interface words the command in a
+  dialog's footer from that function, and the main process runs Timber from
+  the same function with the real result file, so the command shown is the
+  command that runs.
+- **The arguments.** Options first, then `--`, then what the person typed as
+  one argument: `new [--base <ref>] --result-file <path> --no-editor
+  --no-agent -- <name>` and `open [--setup] --result-file <path> --no-editor
+  --no-agent -- <selector>`. Text that starts with a dash is therefore never
+  read as an option. Both launch flags are always passed, so an editor or an
+  agent configured in Timber does not start.
+- **Running.** `src/bun/worktree-commands.ts` runs the command in the
+  repository's primary checkout. It refuses a path that is not a repository
+  in the app's list, runs nothing while Timber is not ready, runs the
+  commands of one repository one after another, and never logs what a
+  command printed or what it answered. It checks nothing about a name, a
+  base, or a folder: those rules are Timber's.
+- **The answer.** A `WorktreeCommandResult` (`src/shared/model.ts`).
+  Succeeded needs a checked record with exit code 0 that names a worktree.
+  A failure says whether the worktree was created all the same
+  (`materialized` in Timber's record) and which worktree Timber reported, by
+  the same identity the list uses and with the exact path for a later
+  command.
+- **Afterwards.** The store's `newWorktree` and `openWorktree` ask the engine
+  once, read that repository again after every outcome, including a request
+  that threw, and select the reported worktree when the list has it. Nothing
+  is retried.
+
+The New worktree dialog (`src/mainview/components/NewWorktreeDialog.tsx`)
+opens from the "+" on a repository's header and names that repository in its
+title. It is a frame around modes (`components/worktree-modes`): each mode
+brings its fields, the exact command it is about to run, and what running it
+means, and the frame draws the selected one in one `OperationDialog`. The
+switch between modes shows only when there is more than one. "New branch" is
+the first mode, with a name and an optional start point.
+
+- A failure before anything was created keeps the form open with Timber's
+  diagnostic, for example for a name or a base that is ambiguous.
+- A failure after the worktree was created is reported as created, setup
+  failed. The worktree is in the list and selected, the form is replaced by
+  that news, and the dialog offers "Open with setup". That runs `timber open
+  --setup` on the exact path Timber reported, shown in the footer before it
+  runs like every other command. The dialog does not suggest creating again.
+- What setup scripts printed is in the failure's details area and is never
+  read by the app.
+- Left out of the agreed mock on purpose: the checkboxes that start an agent
+  or an editor, which are later tickets and would go against `--no-editor
+  --no-agent`, and a line predicting the branch and the folder, which only
+  Timber can know.
 
 ### Finding Timber
 
@@ -227,7 +285,8 @@ and the workspace cannot disagree.
 
 - **The store (`src/mainview/store`).** It holds Timber's status, the
   repositories with their worktrees, the selection, operations in progress,
-  the latest reload error, and the toasts. `state.ts` is the data and the pure rules,
+  the latest reload error, the toasts, and which dialog is open (`dialog`,
+  one at a time, drawn by `components/Dialogs.tsx`). `state.ts` is the data and the pure rules,
   `store.ts` talks to the engine, and `react.tsx` hands the store to
   components. Components call its actions and keep no copy of its data.
 - **Pushed changes.** The main process reports a change by calling
@@ -284,10 +343,11 @@ Every operation reports how it ended in the same way.
   first, with the command and what it printed. The data is `TimberFailure` in
   `src/shared/model.ts`, which `failureOf` makes from a run of the helper
   above.
-- **Trying it.** No real dialog exists yet. In `bun run dev:web`, add
-  `?feedback=demo` to the address for a sample dialog that acts out
-  `timber new` with a choice of endings and runs nothing. The desktop app
-  never loads it.
+- **Trying it.** In `bun run dev:web` the "+" on a repository opens the New
+  worktree dialog against the mock engine, which acts out `timber new` and
+  `timber open` and runs nothing; `timberMock.endCommands` below chooses how
+  they end. Adding `?feedback=demo` to the address still shows the older
+  sample dialog. The desktop app never loads that one.
 
 In `bun run dev:web` the browser console has `timberMock` for acting out the
 main process: `timberMock.setRepositories(list)`,
@@ -296,6 +356,11 @@ main process: `timberMock.setRepositories(list)`,
 `timberMock.failTimber("/work/timber", "Not a Git repository: /work/timber")`
 to make Timber fail on one repository (`null` again to undo), and `timberMock.pickFolder("/some/folder")` to choose what "Add repository"
 picks (`null` acts out a closed picker).
+`timberMock.endCommands(ending)` chooses how `timber new` and `timber open`
+end from then on: `"succeeds"` (the start), `"refused"` (Timber refuses before
+anything is created), `"setup-fails"` (the worktree is created, then the setup
+script fails), or `"no-result"` (exit code 0 and no result file). A name whose
+branch is already checked out is refused whatever the ending.
 
 ## Milestones
 
@@ -507,11 +572,62 @@ Git 2.43, and Timber 0.1.1:
   its name and its markers' sentences as its description, and no marker as a
   node of its own.
 
+Run for the New dialog (issue 6), Linux x64 under WSL with Bun 1.4.2, Git
+2.43, and Timber 0.1.1:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 370 tests passed and 1 was skipped (it only runs in CI). The
+  new ones cover the argument builders and the mapping of results, the main
+  process module against stand-in executables, the store (one request, a
+  reload after every outcome, selection), and the dialog in every state. Five
+  run the installed Timber on temporary repositories:
+  - The dialog's command and `timber new <name> --base develop --result-file
+    <path> --no-editor --no-agent`, typed out and run in a twin repository,
+    left the same folder, branch, and start commit, as `timber ls --json`
+    and Git report them.
+  - A repository that is not in the list was refused, and its worktrees and
+    refs were unchanged.
+  - A base found on two remotes failed with "Base branch shared is missing
+    or ambiguous. Select an exact branch." and created nothing.
+  - A setup script that exits with 7 gave a failure with the worktree
+    created and listed, and its output in the result. `openWorktree` with
+    that path and setup failed again while the script did, creating nothing,
+    and succeeded in the same worktree once the script worked.
+  - With an editor configured and enabled in `.timber.toml`, the dialog's
+    command did not start it, and a plain `timber new` in the same
+    repository did.
+- By hand with the installed Timber in a temporary repository: the form with
+  `--` behaved as the form in the ticket; `--base` took a value that starts
+  with a dash as its value; a name that starts with a dash after `--` was
+  judged as a name.
+- `bun run build:web`, then the built interface driven in headless Chrome 157
+  by a temporary script (not committed), against the mock engine. The "+"
+  opened a modal dialog titled "New worktree in timber" with the focus in
+  Name and the submit button disabled; the footer followed the fields. While
+  the command ran, the fields and both buttons were disabled and a second
+  submit, Escape, and Cancel changed nothing. A refused run kept the dialog
+  open with the diagnostic, closed details, the typed name, and four rows. A
+  run whose setup failed showed "Created fix-login-bug, setup failed", a
+  fifth row that was selected, and "Open with setup" over the `timber open
+  --setup` command; submitting that asked for the reported path with setup,
+  closed the dialog, and showed "Setup finished in fix-login-bug". A run
+  that worked closed the dialog, selected the new row, and showed "Created
+  worktree fix-login-bug". Screenshots of the form, the running state, both
+  failures, and the toast were looked at.
+
 Not run yet:
 
 - Branch status rows in the desktop window, and a row read out by a screen
   reader. Tooltips were checked as `title` attributes, not seen on hover.
-- The helper from inside the running desktop app. Nothing calls it yet.
+- The New worktree dialog in the desktop window, and so `timber new` through
+  the helper and the RPC bridge from inside the running desktop app. The
+  main process module was only run from tests.
+- The mode switch in a browser. The dialog has one mode, so only the switch's
+  markup is tested.
+- An agent configured in Timber. It needs a terminal to start at all, so no
+  test could show the difference `--no-agent` makes.
+- A ticket name that is ambiguous across trackers or remotes, which needs a
+  network. The ambiguous case that was run is the base.
 - A toast after adding or removing a repository in the desktop window. Only
   the sample dialog's toast was run there.
 - The stand-in executables of the helper's tests on Windows.

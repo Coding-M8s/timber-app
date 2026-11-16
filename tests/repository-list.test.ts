@@ -274,6 +274,28 @@ describe.skipIf(realTimber === null)("the TIMBER_APP_REPOS override", () => {
 	});
 });
 
+describe.skipIf(realTimber === null)("includes", () => {
+	test("is true only for the primary checkout of a listed repository", async () => {
+		const list = listOn();
+		expect(await list.includes(primary)).toBe(false);
+		await list.addFolder(linked);
+		expect(await list.includes(primary)).toBe(true);
+		// A worktree, another repository, and a plain folder are not places to run a command in.
+		expect(await list.includes(linked)).toBe(false);
+		expect(await list.includes(other)).toBe(false);
+		expect(await list.includes(plain)).toBe(false);
+		await list.remove(primary);
+		expect(await list.includes(primary)).toBe(false);
+	});
+
+	test("follows the override, by the repositories it resolves to", async () => {
+		await listOn().addFolder(other);
+		const overridden = listOn({ environment: { TIMBER_APP_REPOS: [linked, plain].join(delimiter) } });
+		expect(await overridden.includes(primary)).toBe(true);
+		expect(await overridden.includes(other)).toBe(false);
+	});
+});
+
 describe("when Timber cannot list the worktrees", () => {
 	const failing = () => createRepositoryReader(async () => ({ state: "ready", path: standInTimber(root, "failing-timber", recorded.failed, 1).path, version: "0.1.1" }));
 	const diagnostic = "Not a Git repository: /work/plain";

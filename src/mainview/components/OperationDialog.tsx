@@ -4,6 +4,8 @@ import { TimberFailureDetails } from "./TimberFailureDetails";
 
 interface OperationDialogProps {
 	title: string;
+	/** Sits beside the title, for example a switch between modes. It is outside the fields, so it disables itself while the command runs. */
+	headerAside?: ReactNode;
 	/** The exact Timber command the dialog is about to run, shown before it runs. */
 	command: string;
 	/** The state of the dialog's submission (see `useSubmission`). */
@@ -31,7 +33,7 @@ interface OperationDialogProps {
  * and a retry.
  */
 export function OperationDialog(props: OperationDialogProps) {
-	const { title, command, submission, submitLabel, runningLabel, failureTitle, canSubmit = true, onSubmit, onClose, children } = props;
+	const { title, headerAside, command, submission, submitLabel, runningLabel, failureTitle, canSubmit = true, onSubmit, onClose, children } = props;
 	const { running, failure } = submission;
 	const dialog = useRef<HTMLDialogElement>(null);
 	const titleId = useId();
@@ -60,7 +62,10 @@ export function OperationDialog(props: OperationDialogProps) {
 			}}
 		>
 			<form className="dialog-form" aria-busy={running} onSubmit={submit}>
-				<h2 id={titleId} className="dialog-title">{title}</h2>
+				<header className="dialog-head">
+					<h2 id={titleId} className="dialog-title">{title}</h2>
+					{headerAside}
+				</header>
 				<fieldset className="dialog-fields" disabled={running}>{children}</fieldset>
 				{failure && <TimberFailureDetails title={failureTitle} failure={failure} />}
 				{running && (

@@ -901,6 +901,90 @@ pre:focus-visible {
 	margin: 0;
 }
 
+/* New worktree dialog (issue 6): the "+" on a repository, the dialog's header, its mode switch, and its outcome text. */
+.group-new {
+	width: 24px;
+	height: 24px;
+}
+
+.dialog-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+.dialog-head .dialog-title {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.mode-switch {
+	flex: none;
+	display: inline-flex;
+	padding: 2px;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: var(--bg-pane);
+}
+
+.mode-option {
+	position: relative;
+	padding: 4px 10px;
+	border-radius: 6px;
+	font-size: 12px;
+	color: var(--text-2);
+	cursor: pointer;
+}
+
+.mode-option.selected {
+	background: var(--fill-selected);
+	color: var(--text);
+}
+
+/* The radio button itself is not drawn, but it stays focusable and takes the click. */
+.mode-radio {
+	position: absolute;
+	inset: 0;
+	margin: 0;
+	opacity: 0;
+	cursor: inherit;
+}
+
+.mode-option:has(.mode-radio:focus-visible) {
+	outline: 2px solid var(--focus);
+	outline-offset: 1px;
+}
+
+.mode-option:has(.mode-radio:disabled) {
+	opacity: 0.55;
+	cursor: default;
+}
+
+.field-hint {
+	font-size: 12px;
+	color: var(--text-3);
+}
+
+.dialog-outcome {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 6px;
+}
+
+.dialog-outcome-text {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+.dialog-outcome-text.path {
+	font-family: var(--font-mono);
+	font-size: 12px;
+	color: var(--text-2);
+	user-select: all;
+}
+
 @media (max-width: 640px) {
 	.body {
 		flex-direction: column;

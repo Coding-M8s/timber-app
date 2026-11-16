@@ -6,6 +6,7 @@ import { createRepositoryList } from "./repository-list";
 import { createRepositoryReader } from "./repository-reader";
 import { settingsFilePath } from "./settings";
 import { createTimberLocator, describeTimberStatus } from "./timber";
+import { createWorktreeCommands } from "./worktree-commands";
 
 const DEV_SERVER_URL = "http://localhost:5173";
 
@@ -40,6 +41,7 @@ async function pickFolder(): Promise<string | null> {
 const settingsFile = settingsFilePath();
 console.log(`Settings at ${settingsFile}`);
 const repositories = createRepositoryList({ settingsFile, pickFolder, reader: createRepositoryReader(() => timber.current()) });
+const worktrees = createWorktreeCommands({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
 
 const rpc = BrowserView.defineRPC<AppRPC>({
 	maxRequestTime: 15_000,
@@ -51,6 +53,9 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			addRepository: () => repositories.add(),
 			removeRepository: ({ path }) => repositories.remove(path),
 			loadRepository: ({ path }) => repositories.reload(path),
+			// What these answer holds what the command printed, which is private: never log it.
+			newWorktree: request => worktrees.create(request),
+			openWorktree: request => worktrees.open(request),
 		},
 		messages: {},
 	},

@@ -16,11 +16,13 @@ export async function createEngine(): Promise<Engine> {
 	const timber = state !== null && Object.hasOwn(sampleTimberStatuses, state)
 		? sampleTimberStatuses[state as keyof typeof sampleTimberStatuses]
 		: sampleTimberStatuses.ready;
-	const engine = createMockEngine(browserSampleRepositories, timber);
+	// Acted commands take a moment here, so a dialog's running state can be seen.
+	const engine = createMockEngine(browserSampleRepositories, timber, { commandMilliseconds: 1200 });
 	// The browser console can act out what the main process would do, for example
 	// timberMock.failReads("Git is busy"), timberMock.announceChange("/work/timber"),
 	// timberMock.failTimber("/work/timber", "Not a Git repository: /work/timber"),
-	// or timberMock.pickFolder("/tmp") to choose what Add repository picks.
+	// timberMock.pickFolder("/tmp") to choose what Add repository picks, or
+	// timberMock.endCommands("setup-fails") to choose how timber new and timber open end.
 	Object.assign(window, { timberMock: engine });
 	return engine;
 }

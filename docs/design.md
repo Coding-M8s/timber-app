@@ -46,6 +46,10 @@ change them here first when they change.
   person can correct and retry. What the command printed sits in a details
   area that starts closed.
 - **New or open:** a name or sentence becomes a branch; pick the start point.
+  One dialog, opened from the "+" of a repository and named after it, with a
+  switch between "New branch" and "Existing branch". When the worktree was
+  created but its setup failed, the dialog says so and offers "Open with
+  setup" instead of creating again.
 - **Rebase:** pick the base. A worktree with uncommitted changes is refused,
   as Timber does.
 - **Done:** a clean, published worktree gets a summary of what is removed,

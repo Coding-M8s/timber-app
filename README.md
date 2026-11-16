@@ -7,7 +7,7 @@ repository, worktree, agent, and terminal in one window. It is a window onto
 Timber, not a replacement for it, and it has no code editor of its own.
 
 **Status: early scaffold.** The sidebar lists real repositories with the
-worktrees Timber lists and their branch status, and remembers the repositories you add. Creating, rebasing, and finishing worktrees, agent
+worktrees Timber lists and their branch status, remembers the repositories you add, and creates a worktree with `timber new` from the "+" on a repository. Rebasing and finishing worktrees, agent
 and terminal panes, the diff view, and settings are designed but not built.
 See the [architecture](docs/architecture.md) and [design](docs/design.md) notes.
 

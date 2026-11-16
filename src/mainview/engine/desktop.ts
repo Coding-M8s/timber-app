@@ -25,6 +25,9 @@ export function createDesktopEngine(): Engine {
 		addRepository: () => rpc.request.addRepository({}, { maxRequestTime: Infinity }),
 		removeRepository: path => rpc.request.removeRepository({ path }),
 		loadRepository: path => rpc.request.loadRepository({ path }),
+		// Setup scripts take as long as they take.
+		newWorktree: request => rpc.request.newWorktree(request, { maxRequestTime: Infinity }),
+		openWorktree: request => rpc.request.openWorktree(request, { maxRequestTime: Infinity }),
 		onRepositoryChanged: listener => {
 			changeListeners.add(listener);
 			return () => void changeListeners.delete(listener);

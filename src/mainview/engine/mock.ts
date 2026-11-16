@@ -1,6 +1,7 @@
 import type { Engine } from "../../shared/engine";
-import { type AddRepositoryResult, type Repository, type SyncState, type TimberStatus, type Worktree, worktreeId } from "../../shared/model";
+import { type AddRepositoryResult, type Repository, type SyncState, type TimberStatus, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
 import { REQUIRED_TIMBER_VERSION } from "../../shared/timber-version";
+import { type CommandEnding, actOutNew, actOutOpen, isCommandEnding } from "./mock-commands";
 
 const inSync = (branch: string): SyncState => ({ kind: "tracking", upstream: `origin/${branch}`, ahead: 0, behind: 0 });
 
@@ -173,6 +174,27 @@ export interface MockEngine extends Engine {
 	 * is the path of a known repository or of one of its worktrees.
 	 */
 	pickFolder(folder: string | null): void;
+	/**
+	 * Decide how `timber new` and `timber open` end from now on: "succeeds"
+	 * (the start), "refused", "setup-fails", or "no-result". See
+	 * ./mock-commands.ts for what each one acts out.
+	 */
+	endCommands(ending: CommandEnding): void;
+}
+
+export interface MockEngineOptions {
+	/** How long an acted `timber new` or `timber open` takes. None by default; the browser build waits, so the running state shows. */
+	commandMilliseconds?: number;
+}
+
+/** A command the mock did not act out, with the reason. */
+function notRun(diagnostic: string): WorktreeCommandResult {
+	return { outcome: "failed", failure: { command: null, diagnostic: `${diagnostic} Nothing was run.`, output: null }, worktree: null, created: false };
+}
+
+/** Timber's order: the primary checkout first, then by path. */
+function inTimberOrder(worktrees: Worktree[]): Worktree[] {
+	return [...worktrees].sort((a, b) => Number(b.primary) - Number(a.primary) || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
 /**
@@ -182,6 +204,7 @@ export interface MockEngine extends Engine {
 export function createMockEngine(
 	repositories: Repository[] = sampleRepositories,
 	timber: TimberStatus | (() => TimberStatus) = sampleTimberStatuses.ready,
+	options: MockEngineOptions = {},
 ): MockEngine {
 	let current = repositories;
 	let failure: string | null = null;
@@ -212,6 +235,22 @@ export function createMockEngine(
 		if (failure !== null) throw new Error(failure);
 		return structuredClone(result());
 	};
+	let ending: CommandEnding = "succeeds";
+	const { commandMilliseconds = 0 } = options;
+	// As the main process does: only with a usable Timber, and only in a repository from the list.
+	const command = async (path: string, act: (repository: Repository) => { result: WorktreeCommandResult; created: Worktree | null }): Promise<WorktreeCommandResult> => {
+		if (commandMilliseconds > 0) await new Promise(resolve => setTimeout(resolve, commandMilliseconds));
+		if ((await look()).state !== "ready") return notRun("Timber is not ready.");
+		const repository = current.find(candidate => candidate.path === path && candidate.available);
+		if (!repository) return notRun(`${path} is not a repository in the app's list.`);
+		const { result, created } = act(repository);
+		if (created) {
+			const changed = { ...repository, worktrees: inTimberOrder([...repository.worktrees, created]) };
+			current = current.map(candidate => candidate === repository ? changed : candidate);
+			onDisk.set(path, changed);
+		}
+		return structuredClone(result);
+	};
 	return {
 		timberStatus: look,
 		recheckTimber: look,
@@ -225,9 +264,16 @@ export function createMockEngine(
 			current = current.filter(repository => repository.path !== path);
 			return { outcome: "removed" };
 		},
+		newWorktree: request => command(request.repository, repository => actOutNew(repository, request, ending)),
+		openWorktree: request => command(request.repository, repository => ({ result: actOutOpen(repository, request, ending), created: null })),
 		onRepositoryChanged(listener) {
 			listeners.add(listener);
 			return () => void listeners.delete(listener);
+		},
+		endCommands(next) {
+			// Called from the browser console too, where nothing checks the word.
+			if (!isCommandEnding(next)) throw new Error(`Unknown ending: ${String(next)}`);
+			ending = next;
 		},
 		setRepositories(next) {
 			current = next;

@@ -125,3 +125,48 @@ export interface TimberFailure {
 	/** Null when nothing was captured, for example because the command never started. */
 	output: CapturedOutput | null;
 }
+
+/** What to create with `timber new`. */
+export interface NewWorktreeRequest {
+	/** The path of the repository's primary checkout. Timber runs there. */
+	repository: string;
+	/** A branch name, a sentence, or a ticket, as the person typed it. Timber decides what branch it becomes. */
+	name: string;
+	/** The ref to start from, or null to let Timber pick its configured base. */
+	base: string | null;
+}
+
+/** What to open with `timber open`. */
+export interface OpenWorktreeRequest {
+	/** The path of the repository's primary checkout. Timber runs there. */
+	repository: string;
+	/** A branch, a ticket, or the exact registered path of a worktree (`Worktree.path`). */
+	selector: string;
+	/** Run the setup scripts again in a worktree that already exists. */
+	setup: boolean;
+}
+
+/** The worktree a Timber command reported: enough to find it in the list and to name it to Timber again. */
+export interface ReportedWorktree {
+	/** The same identity the list uses (`Worktree.id`). */
+	id: string;
+	/** The path registered with Git, verbatim. The exact selector for a later Timber command. */
+	path: string;
+	/** Exact branch name, or null on a detached HEAD. */
+	branch: string | null;
+}
+
+/**
+ * How `timber new` or `timber open` ended, as the interface needs it.
+ *
+ * `created` is true when this run made a worktree that Timber verified. A
+ * failure with `created` true means the worktree exists and only what came
+ * after, such as a setup script, did not finish: offer to run setup again in
+ * `worktree`, never to start over. A failure with `worktree` null says
+ * nothing about what exists, so read the list again.
+ */
+export type WorktreeCommandResult =
+	| { outcome: "succeeded"; worktree: ReportedWorktree; created: boolean }
+	/** The person closed Timber's own chooser before anything was changed. */
+	| { outcome: "cancelled" }
+	| { outcome: "failed"; failure: TimberFailure; worktree: ReportedWorktree | null; created: boolean };

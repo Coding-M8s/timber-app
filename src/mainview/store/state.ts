@@ -45,6 +45,9 @@ export interface Toast {
 	text: string;
 }
 
+/** The dialog open over the window. One at a time. */
+export type DialogRequest = { kind: "new-worktree"; repository: string };
+
 /** How long a toast stays before it disappears on its own. */
 export const TOAST_MILLISECONDS = 5000;
 
@@ -65,6 +68,8 @@ export interface AppState {
 	notice: ListNotice | null;
 	/** Outcomes that worked, oldest first. Failures are never toasts: they stay where the person can act on them. */
 	toasts: readonly Toast[];
+	/** Null when no dialog is open. */
+	dialog: DialogRequest | null;
 }
 
 export const initialState: AppState = {
@@ -76,6 +81,7 @@ export const initialState: AppState = {
 	error: null,
 	notice: null,
 	toasts: [],
+	dialog: null,
 };
 
 /** Nothing that depends on Timber is offered until a usable one is found. */
