@@ -200,6 +200,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 
 	// One save at a time. Saves asked for meanwhile share one follow-up save of whatever is on screen by then.
 	const saveLayout = mergeOverlapping<"layout">(async () => {
+		if (!layoutTouched) return;
 		const layout = state.layout;
 		if (savedLayout && sameLayout(savedLayout, layout)) return;
 		let failure: string | null = null;
