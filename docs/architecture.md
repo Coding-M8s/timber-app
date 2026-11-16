@@ -2070,7 +2070,7 @@ Wayland) with Bun 1.4.2, Git 2.43, and Timber 0.1.1:
   backoff (10, 20, 40, 60, 60 minutes from 5), never sooner than a long
   interval, the exact fetch command, and stopping. Also the setting, the
   marks in the settings file, the store, the sidebar, and the row.
-- The desktop runs below were made before the two rounds of review fixes
+- The next three desktop runs were made before the review fixes
   (the mark keeping the branch's commit and going once level, marks judged
   by their time, a repository removed or switched off while its fetch waits
   or runs, a background fetch stopping before its next remote, the slot
@@ -2093,14 +2093,16 @@ Wayland) with Bun 1.4.2, Git 2.43, and Timber 0.1.1:
   fetch failed as offline 10 seconds in, and no other was tried in the 100
   seconds the app ran. Nothing asked for anything.
 - The same with background fetching off, under `strace -f -e
-  trace=execve`, after another push to the remote: of 74 Git runs in 60
-  seconds, none was a fetch.
+  trace=execve`, after the other clone force-pushed a commit made on the
+  repository's first commit to `main` (a real rewrite of `origin/main`):
+  of 74 Git runs in 60 seconds, none was a fetch.
 - After the review fixes, `bun run start` again on the same temporary
   repositories, with the window captured by its X11 id (`xwininfo`, then
   `import -window`): seen by eye, `main` showed a red "force-pushed" with
   2 to pull and the header said "origin/main was rewritten: 0 ahead, 2
-  behind", `doomed` showed "upstream gone", and `feature` 1 behind and 1
-  ahead. A mark saved by the earlier build, without the branch's commit,
+  behind" (the force-push to `main` from the run above, fetched now that
+  background fetching was on again), `doomed` showed "upstream gone", and
+  `feature` 1 behind and 1 ahead. A mark saved by the earlier build, without the branch's commit,
   was dropped on reading, as designed. Clicks sent through XTest did not
   reach the window under COSMIC, so a click in the desktop window was not
   tried.
@@ -2118,9 +2120,16 @@ Wayland) with Bun 1.4.2, Git 2.43, and Timber 0.1.1:
   "unable to get password from user" where 2.43 says "terminal prompts
   disabled". That wording is now read as authentication, and both CI
   runs pass.
-- Not run: fetching over SSH or HTTPS with real credentials, a credential
-  helper or agent that shows its own prompt, and anything on Windows or
-  macOS.
+- With real credentials, through `createFetcher` and `createGitRunner`
+  from a script against a fresh clone of this private repository, with
+  `origin/main` moved back three commits first: over SSH (the person's
+  key, no SSH command configured, so batch mode) the fetch worked in 0.7
+  seconds, moved `origin/main` back, reported the change, and left local
+  branches and tags as they were. With the remote changed to HTTPS and
+  nothing stored for it, it failed in 0.24 seconds as authentication
+  ("terminal prompts disabled") without asking.
+- Not run: a credential helper or agent that shows its own prompt, a click
+  in the desktop window itself, and anything on Windows or macOS.
 
 Not run yet:
 
