@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
-import { createMockEngine, sampleRepositories, sampleTimberStatuses, sampleUnavailableRepository } from "../src/mainview/engine/mock";
+import { createMockEngine, sampleChanges, sampleRepositories, sampleTimberStatuses, sampleUnavailableRepository } from "../src/mainview/engine/mock";
 import { createAppStore } from "../src/mainview/store/store";
 
 const settle = () => Bun.sleep(0);
 const FEATURE = "/work/timber-worktrees/feat-github-issue-lookup";
+const FEATURE_ID = sampleRepositories[0]!.worktrees.find(worktree => worktree.path === FEATURE)!.id;
 
 /** The text of one element, found by its class name. */
 function textOf(markup: string, className: string): string | null {
@@ -23,7 +24,7 @@ async function startedStore(engine = createMockEngine()) {
 describe("App", () => {
 	test("title bar, sidebar, and workspace all show the store's selection", async () => {
 		const { store } = await startedStore();
-		store.select(FEATURE);
+		store.select(FEATURE_ID);
 		const markup = renderToStaticMarkup(<App store={store} />);
 		expect(textOf(markup, "titlebar-repo")).toBe("timber");
 		expect(textOf(markup, "titlebar-branch")).toBe("feat/github-issue-lookup");
@@ -34,10 +35,10 @@ describe("App", () => {
 
 	test("every part follows a pushed change", async () => {
 		const { store, engine } = await startedStore();
-		store.select(FEATURE);
+		store.select(FEATURE_ID);
 		const changed = structuredClone(sampleRepositories);
 		changed[0]!.worktrees[1]!.branch = "feat/renamed";
-		changed[0]!.worktrees[1]!.status!.modified = 12;
+		changed[0]!.worktrees[1]!.changes = sampleChanges(12, 1);
 		engine.setRepositories(changed);
 		engine.announceChange("/work/timber");
 		await settle();
@@ -136,6 +137,54 @@ describe("App", () => {
 		expect(markup).toContain("/work/old-prototype");
 		expect(markup).toMatch(/class="text-button"[^>]*>Remove</);
 		expect(markup.match(/class="row( selected)?"/g)?.length).toBe(7);
+	});
+
+	test("a worktree with a missing folder still has a row, marked as such", async () => {
+		const { store } = await startedStore();
+		const markup = renderToStaticMarkup(<App store={store} />);
+		expect(markup).toMatch(/title="Worktree path is missing: \/work\/api-server-worktrees\/old-removed-folder"[^>]*>.*?old\/removed-folder.*?Folder missing/);
+		store.select(sampleRepositories[1]!.worktrees[2]!.id);
+		expect(renderToStaticMarkup(<App store={store} />)).toContain("Status unknown: Worktree path is missing");
+	});
+
+	test("a detached HEAD and an unknown status still have rows, marked as such", async () => {
+		const changed = structuredClone(sampleRepositories);
+		Object.assign(changed[0]!.worktrees[1]!, { branch: null, detached: true, head: "abcdef1234567890abcdef1234567890abcdef12", sync: null });
+		Object.assign(changed[0]!.worktrees[2]!, { canonicalPath: null, changes: { kind: "unknown", reason: "Path no longer identifies this Git worktree" } });
+		const { store } = await startedStore(createMockEngine(changed));
+		const markup = renderToStaticMarkup(<App store={store} />);
+		expect(markup.match(/class="row( selected)?"/g)?.length).toBe(7);
+		expect(markup).toContain("detached at abcdef1");
+		expect(markup).toMatch(/fix\/macos-portability.*?Status unknown/);
+	});
+
+	test("when Timber cannot list a repository, its diagnostic shows and the last good list stays", async () => {
+		const { store, engine } = await startedStore();
+		engine.failTimber("/work/timber", "Not a Git repository: /work/timber");
+		await store.refresh();
+		let markup = renderToStaticMarkup(<App store={store} />);
+		expect(markup).toContain('role="alert"');
+		expect(markup).toContain("timber ls --json failed");
+		expect(markup).toContain("Not a Git repository: /work/timber");
+		expect(markup).toContain("Showing the worktrees that were listed last.");
+		expect(markup.match(/class="row( selected)?"/g)?.length).toBe(7);
+		expect(textOf(markup, "titlebar-repo")).toBe("timber");
+
+		engine.failTimber("/work/timber", null);
+		await store.reloadRepository("/work/timber");
+		markup = renderToStaticMarkup(<App store={store} />);
+		expect(markup).not.toContain("timber ls --json failed");
+		expect(markup.match(/class="row( selected)?"/g)?.length).toBe(7);
+	});
+
+	test("when Timber fails on the first read, the diagnostic shows and no list is made up", async () => {
+		const engine = createMockEngine();
+		engine.failTimber("/work/api-server", "Could not read configuration.");
+		const { store } = await startedStore(engine);
+		const markup = renderToStaticMarkup(<App store={store} />);
+		expect(markup).toContain("Could not read configuration.");
+		expect(markup).toContain("No worktrees are shown.");
+		expect(markup.match(/class="row( selected)?"/g)?.length).toBe(4);
 	});
 
 	test("with no repository, the workspace offers to add one", async () => {

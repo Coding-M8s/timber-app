@@ -6,8 +6,8 @@ The desktop app for [Timber](https://github.com/Coding-M8s/timber): every
 repository, worktree, agent, and terminal in one window. It is a window onto
 Timber, not a replacement for it, and it has no code editor of its own.
 
-**Status: early scaffold.** The sidebar lists real repositories and worktrees
-with their branch status, and remembers the repositories you add. Creating, rebasing, and finishing worktrees, agent
+**Status: early scaffold.** The sidebar lists real repositories with the
+worktrees Timber lists and their branch status, and remembers the repositories you add. Creating, rebasing, and finishing worktrees, agent
 and terminal panes, the diff view, and settings are designed but not built.
 See the [architecture](docs/architecture.md) and [design](docs/design.md) notes.
 
@@ -44,7 +44,7 @@ Without a usable Timber the app shows install guidance instead; see
 | `bun run dev:web` | Interface in a browser, sample data, hot reload |
 | `bun run dev` | Desktop app, rebuilt and relaunched on change |
 | `bun run dev:hmr` | Desktop app with interface hot reload |
-| `bun test` | Unit tests, including Git tests in temporary repositories |
+| `bun test` | Unit tests, including Git tests in temporary repositories. The ones that list real repositories need Timber and are skipped without it |
 | `bun run typecheck` | Type check without the Electrobun toolchain |
 | `bun run typecheck:desktop` | Type check against the real Electrobun SDK |
 | `bun run build:web` | Build the interface only |

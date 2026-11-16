@@ -1,4 +1,5 @@
 import type { Repository, SyncState, TimberStatus, Worktree } from "../shared/model";
+import { TIMBER_LS_COMMAND } from "../shared/timber-ls";
 import { REQUIRED_TIMBER_VERSION, TIMBER_OVERRIDE_VARIABLE } from "../shared/timber-version";
 import type { ListNotice } from "./store/state";
 
@@ -109,10 +110,37 @@ export function describeSync(sync: SyncState): string {
 	return `In sync with ${sync.upstream}`;
 }
 
-/** One plain sentence for the working tree, or null when Git could not read it. */
-export function describeChanges(worktree: Worktree): string | null {
-	if (!worktree.status) return null;
-	const { modified, untracked } = worktree.status;
+/** One plain sentence for the working tree. When Timber could not read it, the sentence says why. */
+export function describeChanges(worktree: Worktree): string {
+	const { changes } = worktree;
+	if (changes.kind === "unknown") return `Status unknown: ${changes.reason}`;
+	const modified = changes.modified.length;
+	const untracked = changes.untracked.length;
 	if (modified === 0 && untracked === 0) return "Clean";
 	return `${modified} modified, ${untracked} untracked`;
 }
+
+/**
+ * The short line under a worktree's name: what kind it is, or what is unusual
+ * about it. A missing folder and an unreadable status are always said.
+ */
+export function describeWorktreeState(worktree: Worktree): string {
+	const notes: string[] = [];
+	if (!worktree.pathExists) notes.push("folder missing");
+	else if (worktree.changes.kind === "unknown") notes.push("status unknown");
+	if (worktree.locked) notes.push("locked");
+	// A missing folder is why Git calls a worktree prunable, so that alone says it.
+	if (worktree.prunable && worktree.pathExists) notes.push("prunable");
+	if (notes.length === 0) return worktree.primary ? "Primary checkout" : "Worktree";
+	const text = notes.join(", ");
+	return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** The longer explanation of a worktree for a tooltip: its upstream state, or why its status is unknown. */
+export function describeWorktreeDetail(worktree: Worktree): string {
+	if (worktree.changes.kind === "unknown") return `${worktree.changes.reason}: ${worktree.path}`;
+	return worktree.sync ? describeSync(worktree.sync) : worktree.path;
+}
+
+/** What to say on a repository whose worktrees Timber could not list. */
+export const TIMBER_LIST_FAILURE_TITLE = `${TIMBER_LS_COMMAND} failed`;

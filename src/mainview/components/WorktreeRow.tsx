@@ -1,5 +1,5 @@
 import type { SyncState, Worktree } from "../../shared/model";
-import { describeSync, worktreeLabel } from "../format";
+import { describeWorktreeDetail, describeWorktreeState, worktreeLabel } from "../format";
 
 function Arrow({ direction }: { direction: "up" | "down" }) {
 	return (
@@ -21,13 +21,6 @@ function SyncBadge({ sync }: { sync: SyncState }) {
 	);
 }
 
-function subtitle(worktree: Worktree): string {
-	if (worktree.prunable) return "Folder missing";
-	if (worktree.primary) return "Primary checkout";
-	if (worktree.locked) return "Locked";
-	return "Worktree";
-}
-
 interface WorktreeRowProps {
 	worktree: Worktree;
 	selected: boolean;
@@ -35,23 +28,25 @@ interface WorktreeRowProps {
 }
 
 export function WorktreeRow({ worktree, selected, onSelect }: WorktreeRowProps) {
-	const status = worktree.status;
+	const { changes, sync } = worktree;
+	const modified = changes.kind === "known" ? changes.modified.length : 0;
+	const untracked = changes.kind === "known" ? changes.untracked.length : 0;
 	return (
 		<button
 			type="button"
 			className={selected ? "row selected" : "row"}
 			aria-current={selected}
-			title={status ? describeSync(status.sync) : worktree.path}
+			title={describeWorktreeDetail(worktree)}
 			onClick={onSelect}
 		>
 			<span className="row-line">
 				<span className="row-name">{worktreeLabel(worktree)}</span>
-				{status && <SyncBadge sync={status.sync} />}
+				{sync && <SyncBadge sync={sync} />}
 			</span>
 			<span className="row-line row-meta">
-				<span className="row-sub">{subtitle(worktree)}</span>
-				{status && status.modified > 0 && <span className="count modified">{status.modified}M</span>}
-				{status && status.untracked > 0 && <span className="count untracked">{status.untracked}U</span>}
+				<span className="row-sub">{describeWorktreeState(worktree)}</span>
+				{modified > 0 && <span className="count modified">{modified}M</span>}
+				{untracked > 0 && <span className="count untracked">{untracked}U</span>}
 			</span>
 		</button>
 	);

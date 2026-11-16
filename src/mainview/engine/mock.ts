@@ -1,21 +1,36 @@
 import type { Engine } from "../../shared/engine";
-import type { AddRepositoryResult, Repository, SyncState, TimberStatus, Worktree } from "../../shared/model";
+import { type AddRepositoryResult, type Repository, type SyncState, type TimberStatus, type Worktree, worktreeId } from "../../shared/model";
 import { REQUIRED_TIMBER_VERSION } from "../../shared/timber-version";
 
 const inSync = (branch: string): SyncState => ({ kind: "tracking", upstream: `origin/${branch}`, ahead: 0, behind: 0 });
 
-function worktree(repository: string, branch: string, overrides: Partial<Worktree> = {}): Worktree {
+/** Pretend file names, so a sample can say how many files changed. */
+const files = (count: number, prefix: string) => Array.from({ length: count }, (_, index) => `${prefix}-${index + 1}.ts`);
+
+/** Sample changes with this many modified and untracked files. */
+export const sampleChanges = (modified: number, untracked: number): Worktree["changes"] =>
+	({ kind: "known", modified: files(modified, "src/changed"), untracked: files(untracked, "src/new") });
+
+type SampleOverrides = Partial<Omit<Worktree, "id" | "path" | "canonicalPath" | "detached">>;
+
+function worktree(repository: string, branch: string, overrides: SampleOverrides = {}): Worktree {
 	const primary = overrides.primary ?? false;
-	return {
-		path: primary ? `/work/${repository}` : `/work/${repository}-worktrees/${branch.replaceAll("/", "-")}`,
-		branch,
+	const path = primary ? `/work/${repository}` : `/work/${repository}-worktrees/${branch.replaceAll("/", "-")}`;
+	const sample = {
+		path,
+		branch: branch as string | null,
 		head: "0000000000000000000000000000000000000000",
 		primary,
 		locked: false,
 		prunable: false,
-		status: { modified: 0, untracked: 0, sync: inSync(branch) },
+		pathExists: true,
+		changes: sampleChanges(0, 0),
+		sync: inSync(branch) as SyncState | null,
 		...overrides,
 	};
+	// As Timber does: a canonical path only for a folder whose status it could read.
+	const canonicalPath = sample.pathExists && sample.changes.kind === "known" ? path : null;
+	return { ...sample, id: worktreeId(`/work/${repository}/.git`, { path, canonicalPath }), canonicalPath, detached: sample.branch === null };
 }
 
 /** Sample data covering every state the sidebar can show. Used in the browser build and in tests. */
@@ -24,19 +39,22 @@ export const sampleRepositories: Repository[] = [
 		path: "/work/timber",
 		name: "timber",
 		available: true,
+		failure: null,
 		worktrees: [
 			worktree("timber", "main", {
 				primary: true,
-				status: { modified: 0, untracked: 0, sync: { kind: "tracking", upstream: "origin/main", ahead: 0, behind: 2 } },
+				sync: { kind: "tracking", upstream: "origin/main", ahead: 0, behind: 2 },
 			}),
 			worktree("timber", "feat/github-issue-lookup", {
-				status: { modified: 3, untracked: 1, sync: { kind: "tracking", upstream: "origin/feat/github-issue-lookup", ahead: 2, behind: 0 } },
+				changes: sampleChanges(3, 1),
+				sync: { kind: "tracking", upstream: "origin/feat/github-issue-lookup", ahead: 2, behind: 0 },
 			}),
 			worktree("timber", "fix/macos-portability", {
-				status: { modified: 0, untracked: 0, sync: { kind: "tracking", upstream: "origin/fix/macos-portability", ahead: 3, behind: 3 } },
+				sync: { kind: "tracking", upstream: "origin/fix/macos-portability", ahead: 3, behind: 3 },
 			}),
 			worktree("timber", "spike/new-idea", {
-				status: { modified: 0, untracked: 2, sync: { kind: "unpublished" } },
+				changes: sampleChanges(0, 2),
+				sync: { kind: "unpublished" },
 			}),
 		],
 	},
@@ -44,12 +62,18 @@ export const sampleRepositories: Repository[] = [
 		path: "/work/api-server",
 		name: "api-server",
 		available: true,
+		failure: null,
 		worktrees: [
 			worktree("api-server", "main", { primary: true }),
 			worktree("api-server", "feat/rate-limit-headers", {
-				status: { modified: 0, untracked: 0, sync: { kind: "gone", upstream: "origin/feat/rate-limit-headers" } },
+				sync: { kind: "gone", upstream: "origin/feat/rate-limit-headers" },
 			}),
-			worktree("api-server", "old/removed-folder", { prunable: true, status: null }),
+			worktree("api-server", "old/removed-folder", {
+				prunable: true,
+				pathExists: false,
+				changes: { kind: "unknown", reason: "Worktree path is missing" },
+				sync: { kind: "unpublished" },
+			}),
 		],
 	},
 ];
@@ -59,6 +83,7 @@ export const sampleUnavailableRepository: Repository = {
 	path: "/work/old-prototype",
 	name: "old-prototype",
 	available: false,
+	failure: null,
 	worktrees: [],
 };
 
@@ -67,10 +92,12 @@ export const samplePickableRepository: Repository = {
 	path: "/work/docs-site",
 	name: "docs-site",
 	available: true,
+	failure: null,
 	worktrees: [
 		worktree("docs-site", "main", { primary: true }),
 		worktree("docs-site", "feat/search", {
-			status: { modified: 1, untracked: 0, sync: { kind: "unpublished" } },
+			changes: sampleChanges(1, 0),
+			sync: { kind: "unpublished" },
 		}),
 	],
 };
@@ -91,6 +118,11 @@ export interface MockEngine extends Engine {
 	/** Make every later read of repositories fail with this message, or pass null to let them work again. */
 	failReads(message: string | null): void;
 	/**
+	 * Make Timber fail to list the worktrees of one repository, named by its
+	 * primary checkout, with this diagnostic. Pass null to let it work again.
+	 */
+	failTimber(path: string, diagnostic: string | null): void;
+	/**
 	 * Decide what the folder picker answers from now on: a folder, or null for
 	 * a picker closed without a choice. A folder counts as a repository when it
 	 * is the path of a known repository or of one of its worktrees.
@@ -108,6 +140,12 @@ export function createMockEngine(
 ): MockEngine {
 	let current = repositories;
 	let failure: string | null = null;
+	const timberFailures = new Map<string, string>();
+	// As the main process does: a failed listing brings the diagnostic and no worktrees.
+	const asRead = (repository: Repository): Repository => {
+		const diagnostic = timberFailures.get(repository.path);
+		return diagnostic === undefined || !repository.available ? repository : { ...repository, failure: diagnostic, worktrees: [] };
+	};
 	let picked: string | null = samplePickableRepository.path;
 	// Everything on the pretend disk: whatever was ever listed, plus one repository to add.
 	const onDisk = new Map<string, Repository>([samplePickableRepository, ...repositories].map(repository => [repository.path, repository]));
@@ -132,8 +170,11 @@ export function createMockEngine(
 	return {
 		timberStatus: look,
 		recheckTimber: look,
-		listRepositories: () => read(() => current),
-		loadRepository: path => read(() => current.find(repository => repository.path === path && repository.available) ?? null),
+		listRepositories: () => read(() => current.map(asRead)),
+		loadRepository: path => read(() => {
+			const found = current.find(repository => repository.path === path && repository.available);
+			return found ? asRead(found) : null;
+		}),
 		addRepository: async () => structuredClone(add()),
 		async removeRepository(path) {
 			current = current.filter(repository => repository.path !== path);
@@ -155,6 +196,10 @@ export function createMockEngine(
 		},
 		failReads(message) {
 			failure = message;
+		},
+		failTimber(path, diagnostic) {
+			if (diagnostic === null) timberFailures.delete(path);
+			else timberFailures.set(path, diagnostic);
 		},
 	};
 }

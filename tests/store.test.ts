@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Engine } from "../src/shared/engine";
 import type { AddRepositoryResult, RemoveRepositoryResult, Repository, TimberStatus } from "../src/shared/model";
-import { createMockEngine, samplePickableRepository, sampleRepositories, sampleTimberStatuses, sampleUnavailableRepository } from "../src/mainview/engine/mock";
+import { createMockEngine, sampleChanges, samplePickableRepository, sampleRepositories, sampleTimberStatuses, sampleUnavailableRepository } from "../src/mainview/engine/mock";
 import { isRunning, selectedWorktree } from "../src/mainview/store/state";
 import { createAppStore } from "../src/mainview/store/store";
 
@@ -10,12 +10,26 @@ const TIMBER = "/work/timber";
 const API_SERVER = "/work/api-server";
 const FEATURE = "/work/timber-worktrees/feat-github-issue-lookup";
 
+/** The identity of the sample worktree at `path`, which is what the store selects by. */
+function idOf(path: string): string {
+	for (const repository of [...sampleRepositories, samplePickableRepository]) {
+		const worktree = repository.worktrees.find(candidate => candidate.path === path);
+		if (worktree) return worktree.id;
+	}
+	throw new Error(`No sample worktree at ${path}`);
+}
+const TIMBER_ID = idOf(TIMBER);
+const FEATURE_ID = idOf(FEATURE);
+
+const counts = (worktree: Repository["worktrees"][number] | undefined) =>
+	worktree?.changes.kind === "known" ? { modified: worktree.changes.modified.length, untracked: worktree.changes.untracked.length } : undefined;
+
 /** A copy of the sample data in which the worktree at `path` has this many modified files. */
 function withModified(path: string, modified: number): Repository[] {
 	const copy = structuredClone(sampleRepositories);
 	for (const repository of copy) {
 		for (const worktree of repository.worktrees) {
-			if (worktree.path === path && worktree.status) worktree.status.modified = modified;
+			if (worktree.path === path) worktree.changes = sampleChanges(modified, counts(worktree)?.untracked ?? 0);
 		}
 	}
 	return copy;
@@ -28,7 +42,7 @@ function repositoryIn(repositories: Repository[], path: string): Repository {
 function modifiedCount(store: { getState(): { repositories: readonly Repository[] } }, path: string): number | undefined {
 	for (const repository of store.getState().repositories) {
 		const worktree = repository.worktrees.find(candidate => candidate.path === path);
-		if (worktree) return worktree.status?.modified;
+		if (worktree) return counts(worktree)?.modified;
 	}
 	return undefined;
 }
@@ -95,7 +109,7 @@ describe("starting", () => {
 		expect(state.timber).toEqual({ known: true, status: sampleTimberStatuses.ready });
 		expect(state.loaded).toBe(true);
 		expect(state.repositories.map(repository => repository.name)).toEqual(["timber", "api-server"]);
-		expect(state.selection).toEqual({ repository: TIMBER, worktree: TIMBER });
+		expect(state.selection).toEqual({ repository: TIMBER, worktree: TIMBER_ID });
 		expect(state.operations).toEqual([]);
 		expect(state.error).toBeNull();
 	});
@@ -234,12 +248,12 @@ describe("stale responses", () => {
 		expect(modifiedCount(store, FEATURE)).toBe(7);
 
 		const olderList = withModified(FEATURE, 1);
-		repositoryIn(olderList, API_SERVER).worktrees[0]!.status!.untracked = 6;
+		repositoryIn(olderList, API_SERVER).worktrees[0]!.changes = sampleChanges(0, 6);
 		lists[0]!.resolve(olderList);
 		await settle();
 		// The reloaded repository keeps its newer data. The rest of the list is still applied.
 		expect(modifiedCount(store, FEATURE)).toBe(7);
-		expect(repositoryIn([...store.getState().repositories], API_SERVER).worktrees[0]!.status!.untracked).toBe(6);
+		expect(counts(repositoryIn([...store.getState().repositories], API_SERVER).worktrees[0])?.untracked).toBe(6);
 		expect(store.getState().error).toBeNull();
 	});
 
@@ -283,54 +297,54 @@ describe("stale responses", () => {
 describe("selection", () => {
 	test("stays on the selected worktree across a full refresh and a single reload", async () => {
 		const { store, lists, loads, push } = await loadedStore();
-		store.select(FEATURE);
-		expect(store.getState().selection).toEqual({ repository: TIMBER, worktree: FEATURE });
+		store.select(FEATURE_ID);
+		expect(store.getState().selection).toEqual({ repository: TIMBER, worktree: FEATURE_ID });
 
 		void store.refresh();
 		lists[0]!.resolve(withModified(FEATURE, 2));
 		await settle();
-		expect(store.getState().selection).toEqual({ repository: TIMBER, worktree: FEATURE });
+		expect(store.getState().selection).toEqual({ repository: TIMBER, worktree: FEATURE_ID });
 		// The selection points at the refreshed data, not a copy from before.
-		expect(selectedWorktree(store.getState())?.worktree.status?.modified).toBe(2);
+		expect(counts(selectedWorktree(store.getState())?.worktree)?.modified).toBe(2);
 
 		push(TIMBER);
 		loads[0]!.resolve(repositoryIn(withModified(FEATURE, 3), TIMBER));
 		await settle();
-		expect(store.getState().selection).toEqual({ repository: TIMBER, worktree: FEATURE });
-		expect(selectedWorktree(store.getState())?.worktree.status?.modified).toBe(3);
+		expect(store.getState().selection).toEqual({ repository: TIMBER, worktree: FEATURE_ID });
+		expect(counts(selectedWorktree(store.getState())?.worktree)?.modified).toBe(3);
 	});
 
 	test("moves to the primary checkout when a reload shows the selected worktree is gone", async () => {
 		const { store, loads, push } = await loadedStore();
-		store.select(FEATURE);
+		store.select(FEATURE_ID);
 		push(TIMBER);
 		const reloaded = repositoryIn(structuredClone(sampleRepositories), TIMBER);
 		reloaded.worktrees = reloaded.worktrees.filter(worktree => worktree.path !== FEATURE);
 		loads[0]!.resolve(reloaded);
 		await settle();
-		expect(store.getState().selection).toEqual({ repository: TIMBER, worktree: TIMBER });
+		expect(store.getState().selection).toEqual({ repository: TIMBER, worktree: TIMBER_ID });
 	});
 
 	test("moves to the first worktree when a refresh shows the whole repository is gone", async () => {
 		const { store, lists } = await loadedStore();
-		store.select("/work/api-server-worktrees/feat-rate-limit-headers");
+		store.select(idOf("/work/api-server-worktrees/feat-rate-limit-headers"));
 		void store.refresh();
 		lists[0]!.resolve(structuredClone(sampleRepositories).filter(repository => repository.path !== API_SERVER));
 		await settle();
-		expect(store.getState().selection).toEqual({ repository: TIMBER, worktree: TIMBER });
+		expect(store.getState().selection).toEqual({ repository: TIMBER, worktree: TIMBER_ID });
 	});
 
 	test("ignores a path that no repository has", async () => {
 		const { store } = await loadedStore();
 		store.select("/nowhere");
-		expect(store.getState().selection).toEqual({ repository: TIMBER, worktree: TIMBER });
+		expect(store.getState().selection).toEqual({ repository: TIMBER, worktree: TIMBER_ID });
 	});
 });
 
 describe("a failed reload", () => {
 	test("of everything keeps the last good data and selection, and records the error", async () => {
 		const { store, lists } = await loadedStore();
-		store.select(FEATURE);
+		store.select(FEATURE_ID);
 		const before = store.getState().repositories;
 
 		void store.refresh();
@@ -340,7 +354,7 @@ describe("a failed reload", () => {
 		expect(state.error).toEqual({ repository: null, message: "Git is busy" });
 		expect(state.repositories).toBe(before);
 		expect(state.loaded).toBe(true);
-		expect(state.selection).toEqual({ repository: TIMBER, worktree: FEATURE });
+		expect(state.selection).toEqual({ repository: TIMBER, worktree: FEATURE_ID });
 		expect(state.operations).toEqual([]);
 	});
 
@@ -427,7 +441,7 @@ describe("adding a repository", () => {
 		const store = createAppStore(engine);
 		store.start();
 		await settle();
-		store.select(FEATURE);
+		store.select(FEATURE_ID);
 
 		const adding = store.addRepository();
 		expect(isRunning(store.getState(), "add-repository")).toBe(true);
@@ -435,7 +449,7 @@ describe("adding a repository", () => {
 		const state = store.getState();
 		expect(isRunning(state, "add-repository")).toBe(false);
 		expect(state.repositories.map(repository => repository.name)).toEqual(["timber", "api-server", "docs-site"]);
-		expect(state.selection).toEqual({ repository: samplePickableRepository.path, worktree: samplePickableRepository.path });
+		expect(state.selection).toEqual({ repository: samplePickableRepository.path, worktree: idOf(samplePickableRepository.path) });
 		expect(state.notice).toBeNull();
 	});
 
@@ -446,7 +460,7 @@ describe("adding a repository", () => {
 		await settle();
 		await store.addRepository();
 
-		store.select(TIMBER);
+		store.select(TIMBER_ID);
 		await store.addRepository();
 		expect(store.getState().repositories.length).toBe(3);
 		expect(store.getState().notice).toEqual({ kind: "already-listed", repository: samplePickableRepository.path });
@@ -456,7 +470,7 @@ describe("adding a repository", () => {
 		await store.addRepository();
 		expect(store.getState().repositories.length).toBe(3);
 		expect(store.getState().notice).toEqual({ kind: "already-listed", repository: TIMBER });
-		expect(store.getState().selection).toEqual({ repository: TIMBER, worktree: TIMBER });
+		expect(store.getState().selection).toEqual({ repository: TIMBER, worktree: TIMBER_ID });
 	});
 
 	test("refuses a folder that is not a Git repository and leaves everything as it was", async () => {
@@ -464,13 +478,13 @@ describe("adding a repository", () => {
 		const store = createAppStore(engine);
 		store.start();
 		await settle();
-		store.select(FEATURE);
+		store.select(FEATURE_ID);
 		engine.pickFolder("/home/sam/Documents");
 		await store.addRepository();
 		const state = store.getState();
 		expect(state.notice).toEqual({ kind: "not-a-repository", folder: "/home/sam/Documents" });
 		expect(state.repositories.length).toBe(2);
-		expect(state.selection?.worktree).toBe(FEATURE);
+		expect(state.selection?.worktree).toBe(FEATURE_ID);
 	});
 
 	test("a closed picker changes nothing and keeps an earlier note", async () => {
@@ -544,14 +558,14 @@ describe("removing a repository", () => {
 		const store = createAppStore(engine);
 		store.start();
 		await settle();
-		store.select(FEATURE);
+		store.select(FEATURE_ID);
 
 		const removing = store.removeRepository(TIMBER);
 		expect(store.getState().operations).toContainEqual({ kind: "remove-repository", repository: TIMBER });
 		await removing;
 		const state = store.getState();
 		expect(state.repositories.map(repository => repository.name)).toEqual(["api-server"]);
-		expect(state.selection).toEqual({ repository: API_SERVER, worktree: API_SERVER });
+		expect(state.selection).toEqual({ repository: API_SERVER, worktree: idOf(API_SERVER) });
 		expect(state.operations).toEqual([]);
 	});
 
@@ -561,7 +575,7 @@ describe("removing a repository", () => {
 		store.start();
 		await settle();
 		expect(store.getState().repositories.map(repository => repository.available)).toEqual([true, true, false]);
-		expect(store.getState().selection).toEqual({ repository: TIMBER, worktree: TIMBER });
+		expect(store.getState().selection).toEqual({ repository: TIMBER, worktree: TIMBER_ID });
 
 		await store.removeRepository(sampleUnavailableRepository.path);
 		expect(store.getState().repositories.map(repository => repository.name)).toEqual(["timber", "api-server"]);
@@ -596,5 +610,58 @@ describe("removing a repository", () => {
 		removes.shift()!.reject(new Error("bridge closed"));
 		await third;
 		expect(store.getState().notice).toEqual({ kind: "failed", action: "remove", message: "bridge closed" });
+	});
+});
+
+describe("a repository whose worktrees Timber could not list", () => {
+	const diagnostic = "Not a Git repository: /work/timber";
+
+	test("keeps its last good worktrees and the selection, and shows the diagnostic, on a pushed change", async () => {
+		const engine = createMockEngine();
+		const store = createAppStore(engine);
+		store.start();
+		await settle();
+		store.select(FEATURE_ID);
+		const before = repositoryIn([...store.getState().repositories], TIMBER).worktrees;
+
+		engine.failTimber(TIMBER, diagnostic);
+		engine.announceChange(TIMBER);
+		await settle();
+		const failed = repositoryIn([...store.getState().repositories], TIMBER);
+		expect(failed.failure).toBe(diagnostic);
+		expect(failed.worktrees).toBe(before);
+		expect(store.getState().selection).toEqual({ repository: TIMBER, worktree: FEATURE_ID });
+		// It is not a failed reload of the app: the other repositories are as fresh as ever.
+		expect(store.getState().error).toBeNull();
+	});
+
+	test("keeps them across a refresh of everything, and takes the new list once Timber answers again", async () => {
+		const engine = createMockEngine();
+		const store = createAppStore(engine);
+		store.start();
+		await settle();
+		engine.failTimber(TIMBER, diagnostic);
+		await store.refresh();
+		await store.refresh();
+		expect(repositoryIn([...store.getState().repositories], TIMBER)).toMatchObject({ failure: diagnostic });
+		expect(repositoryIn([...store.getState().repositories], TIMBER).worktrees.length).toBe(4);
+		expect(repositoryIn([...store.getState().repositories], API_SERVER).failure).toBeNull();
+
+		engine.failTimber(TIMBER, null);
+		engine.setRepositories(withModified(FEATURE, 6));
+		await store.refresh();
+		expect(repositoryIn([...store.getState().repositories], TIMBER).failure).toBeNull();
+		expect(modifiedCount(store, FEATURE)).toBe(6);
+	});
+
+	test("shows no worktrees when there was never a good list", async () => {
+		const engine = createMockEngine();
+		engine.failTimber(TIMBER, diagnostic);
+		const store = createAppStore(engine);
+		store.start();
+		await settle();
+		expect(repositoryIn([...store.getState().repositories], TIMBER)).toMatchObject({ failure: diagnostic, worktrees: [] });
+		// The selection starts on the first worktree there is.
+		expect(store.getState().selection).toEqual({ repository: API_SERVER, worktree: idOf(API_SERVER) });
 	});
 });

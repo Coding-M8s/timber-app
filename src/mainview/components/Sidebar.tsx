@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { REMOVE_REPOSITORY_HINT, describeListNotice, describeReloadError, worktreeLabel } from "../format";
+import { REMOVE_REPOSITORY_HINT, TIMBER_LIST_FAILURE_TITLE, describeListNotice, describeReloadError, worktreeLabel } from "../format";
 import { useAppState, useStore } from "../store/react";
 import { isRunning } from "../store/state";
 import { WorktreeRow } from "./WorktreeRow";
@@ -8,7 +8,7 @@ export function Sidebar() {
 	const store = useStore();
 	const state = useAppState();
 	const { repositories, loaded } = state;
-	const selectedPath = state.selection?.worktree ?? null;
+	const selectedId = state.selection?.worktree ?? null;
 	const refreshing = isRunning(state, "reload-all");
 	const failure = state.error && describeReloadError(state.error, repositories);
 	const notice = state.notice && describeListNotice(state.notice, repositories);
@@ -100,14 +100,23 @@ export function Sidebar() {
 									</svg>
 								</button>
 							</div>
+							{repository.available && repository.failure !== null && (
+								<div className="sidebar-error group-failure" role="alert">
+									<p className="sidebar-error-title">{TIMBER_LIST_FAILURE_TITLE}</p>
+									<p className="sidebar-error-text">{repository.failure}</p>
+									<p className="sidebar-error-text">
+										{repository.worktrees.length > 0 ? "Showing the worktrees that were listed last." : "No worktrees are shown."}
+									</p>
+								</div>
+							)}
 							{open && repository.available && (
 								<ul className="rows">
 									{matches.map(worktree => (
-										<li key={worktree.path}>
+										<li key={worktree.id}>
 											<WorktreeRow
 												worktree={worktree}
-												selected={worktree.path === selectedPath}
-												onSelect={() => store.select(worktree.path)}
+												selected={worktree.id === selectedId}
+												onSelect={() => store.select(worktree.id)}
 											/>
 										</li>
 									))}

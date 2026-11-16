@@ -259,6 +259,11 @@ input:focus-visible {
 	color: var(--error);
 }
 
+/* Timber's diagnostic for one repository sits under its header, in line with its rows. */
+.sidebar-error.group-failure {
+	margin: 2px 8px 6px 23px;
+}
+
 .group-missing {
 	display: flex;
 	flex-direction: column;

@@ -3,16 +3,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpath
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { type RepositoryListOptions, createRepositoryList } from "../src/bun/repository-list";
-
-/** Run Git in a real temporary repository, with a fixed identity and no user configuration. */
-function git(cwd: string, ...args: string[]): void {
-	const result = Bun.spawnSync(["git", "-C", cwd, "-c", "user.name=Timber Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false", ...args], {
-		stdout: "ignore",
-		stderr: "pipe",
-		env: { ...process.env, GIT_CONFIG_GLOBAL: "", GIT_CONFIG_NOSYSTEM: "1" },
-	});
-	if (result.exitCode !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr.toString()}`);
-}
+import { createRepositoryReader } from "../src/bun/repository-reader";
+import { git, realTimber, recorded, standInTimber } from "./support/timber";
 
 let root: string;
 let primary: string;
@@ -54,11 +46,15 @@ afterAll(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-/** A list on this test's settings file. `pick` is what the folder picker answers. */
+/** Reads repositories with the Timber installed on this machine. */
+const reader = createRepositoryReader(async () => ({ state: "ready", path: realTimber!, version: "0.1.1" }));
+
+/** A list on this test's settings file. */
 function listOn(overrides: Partial<RepositoryListOptions> = {}) {
 	return createRepositoryList({
 		settingsFile,
 		pickFolder: async () => null,
+		reader,
 		environment: {},
 		warn: () => {},
 		...overrides,
@@ -83,7 +79,7 @@ function fingerprint(folder: string): string {
 
 const names = async (list: { list(): Promise<{ name: string }[]> }) => (await list.list()).map(repository => repository.name);
 
-describe("adding", () => {
+describe.skipIf(realTimber === null)("adding", () => {
 	test("a repository appears in the list and is still there after a restart", async () => {
 		const first = listOn({ pickFolder: async () => primary });
 		expect(await first.list()).toEqual([]);
@@ -183,7 +179,7 @@ describe("adding", () => {
 	});
 });
 
-describe("removing", () => {
+describe.skipIf(realTimber === null)("removing", () => {
 	test("forgets the repository, for good, and changes nothing on disk", async () => {
 		const list = listOn();
 		await list.addFolder(primary);
@@ -211,7 +207,7 @@ describe("removing", () => {
 	});
 });
 
-describe("a saved repository whose folder is missing", () => {
+describe.skipIf(realTimber === null)("a saved repository whose folder is missing", () => {
 	test("stays in the list, marked unavailable, comes back with its folder, and can be removed", async () => {
 		const moving = join(root, `moving-${cases}`);
 		const away = `${moving}-away`;
@@ -221,7 +217,7 @@ describe("a saved repository whose folder is missing", () => {
 		await list.addFolder(moving);
 
 		renameSync(moving, away);
-		const unavailable = { path: moving, name: `moving-${cases}`, available: false, worktrees: [] };
+		const unavailable = { path: moving, name: `moving-${cases}`, available: false, failure: null, worktrees: [] };
 		expect(await list.list()).toMatchObject([{ name: "other", available: true }, unavailable]);
 		// After a restart too, and listing it did not create the folder or drop the entry.
 		expect((await listOn().list())[1]).toEqual(unavailable);
@@ -241,11 +237,11 @@ describe("a saved repository whose folder is missing", () => {
 		const list = listOn();
 		await list.addFolder(primary);
 		writeFileSync(settingsFile, readFileSync(settingsFile, "utf8").replaceAll(JSON.stringify(primary).slice(1, -1), JSON.stringify(plain).slice(1, -1)));
-		expect(await listOn().list()).toEqual([{ path: plain, name: "plain", available: false, worktrees: [] }]);
+		expect(await listOn().list()).toEqual([{ path: plain, name: "plain", available: false, failure: null, worktrees: [] }]);
 	});
 });
 
-describe("a damaged settings file", () => {
+describe.skipIf(realTimber === null)("a damaged settings file", () => {
 	test("does not stop the list from working, and is kept as a copy", async () => {
 		mkdirSync(join(settingsFile, ".."), { recursive: true });
 		writeFileSync(settingsFile, '{"version":1,"repositories":[{"path":"/work/tim');
@@ -260,7 +256,7 @@ describe("a damaged settings file", () => {
 	});
 });
 
-describe("the TIMBER_APP_REPOS override", () => {
+describe.skipIf(realTimber === null)("the TIMBER_APP_REPOS override", () => {
 	test("replaces the saved list without changing it, and refuses add and remove", async () => {
 		await listOn().addFolder(other);
 		const savedText = readFileSync(settingsFile, "utf8");
@@ -275,5 +271,37 @@ describe("the TIMBER_APP_REPOS override", () => {
 
 		// Without the override the saved list is back.
 		expect(await names(listOn())).toEqual(["other"]);
+	});
+});
+
+describe("when Timber cannot list the worktrees", () => {
+	const failing = () => createRepositoryReader(async () => ({ state: "ready", path: standInTimber(root, "failing-timber", recorded.failed, 1).path, version: "0.1.1" }));
+	const diagnostic = "Not a Git repository: /work/plain";
+
+	test("adding reports the diagnostic and saves nothing", async () => {
+		const list = listOn({ reader: failing() });
+		expect(await list.addFolder(primary)).toEqual({ outcome: "failed", message: diagnostic });
+		expect(await list.list()).toEqual([]);
+		expect(existsSync(settingsFile)).toBe(false);
+	});
+
+	test("a folder outside any repository is still refused as not a repository", async () => {
+		expect(await listOn({ reader: failing() }).addFolder(plain)).toEqual({ outcome: "not-a-repository", folder: plain });
+	});
+
+	test("a saved repository stays listed, with the diagnostic and no worktrees", async () => {
+		mkdirSync(join(settingsFile, ".."), { recursive: true });
+		writeFileSync(settingsFile, JSON.stringify({ version: 1, repositories: [{ path: primary, commonDir: realpathSync(join(primary, ".git")) }] }));
+		const failed = { path: primary, name: "sample", available: true, failure: diagnostic, worktrees: [] };
+		const list = listOn({ reader: failing() });
+		expect(await list.list()).toEqual([failed]);
+		expect(await list.reload(primary)).toEqual(failed);
+		// The saved list is untouched, so the repository is back as soon as Timber answers.
+		expect(JSON.parse(readFileSync(settingsFile, "utf8")).repositories.length).toBe(1);
+	});
+
+	test("the override lists a repository that Timber fails on by the folder it was given", async () => {
+		const overridden = listOn({ reader: failing(), environment: { TIMBER_APP_REPOS: [linked, plain, linked].join(delimiter) } });
+		expect(await overridden.list()).toEqual([{ path: linked, name: "feat-x", available: true, failure: diagnostic, worktrees: [] }]);
 	});
 });

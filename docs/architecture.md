@@ -45,21 +45,55 @@ the Electrobun browser SDK (`types/electrobun-web.d.ts`).
 
 Timber's safety logic must exist once. The app follows two rules:
 
-1. **Read-only queries may call Git directly.** Listing worktrees and reading
-   status is plain `git worktree list` and `git status`, invoked as an
-   executable plus an argument array.
-2. **Anything that changes a repository goes through Timber.** New, open,
-   rebase, and done run the `timber` command, and the interface shows the
-   command before it runs.
+1. **What Timber owns or changes goes through Timber's machine interface.**
+   The worktree list is `timber ls --json`. New, open, rebase, and done run
+   the `timber` command, and the interface shows the command before it runs.
+2. **Git is asked directly only for read-only status that Timber does not
+   report.** Today that is which repository a folder belongs to and how each
+   branch stands against its upstream. Git is invoked as an executable plus an
+   argument array.
 
 Timber itself rules out GUI work, a daemon, and a local API inside its own
 repository. That is why this is a separate repository, and why the app's
 long-running parts (sessions, file watching) live here in the main process
 instead of in a `timber serve` mode.
 
-To call Timber reliably the app needs machine-readable output from it, for
-example a `--json` option on `timber ls` and on the `done` safety checks. That
-is the main thing this app will ask of Timber. See the open decisions below.
+### The worktree list
+
+The sidebar shows exactly the worktrees Timber lists, in Timber's order
+(primary first, then by registered path).
+
+- **Asking.** For each repository the main process runs `timber ls --json`
+  with the repository's folder as the working directory
+  (`src/bun/timber-ls.ts`), using the Timber found on start. Only standard
+  output is read. The run is stopped after 10 seconds.
+- **Accepting.** `src/shared/timber-ls.ts` reads the record, and is pure. A
+  list is used only as a whole: the output must be one JSON record for `ls`
+  with `schemaVersion` 1, the exit code in the record must be the exit code
+  the process really had, and every worktree record must be readable.
+  Anything else is a failure with a message, never a shorter list. Fields the
+  app does not use, or that a later Timber adds within version 1, are ignored.
+- **Mapping.** Each `WorktreeRecord` becomes a `Worktree` in
+  `src/shared/model.ts`: branch, detached, primary, locked, prunable, whether
+  the folder exists, and the changes, which are either known with their
+  modified and untracked paths or unknown with Timber's reason. Ignored files
+  are left out.
+- **Identity.** A worktree's `id` is the common Git directory plus its
+  canonical path, and the selection holds that, not a path or a branch.
+  Timber gives a canonical path only for a folder it verified. For a missing
+  or replaced folder the registered path stands in and is marked as such, so
+  it never shares an identity with a verified folder. The registered `path`
+  is kept verbatim as the exact selector for later Timber commands.
+- **Upstream state.** Version 1 does not report ahead, behind, upstream gone,
+  or local only. One read-only `git for-each-ref` per repository, run against
+  the common Git directory from the record, gives it for every branch
+  (`readBranchSync` in `src/bun/git-engine.ts`). A detached HEAD has none.
+- **Failures.** A repository that Git can read but Timber could not list
+  comes back with `failure` set to the diagnostic and no worktrees. The store
+  keeps the worktrees it listed last, and the sidebar shows the diagnostic
+  under the repository's header with the command that failed. The next read
+  that works clears it. Whether a saved folder is a repository at all is
+  still Git's answer, so a missing folder is unavailable, not a failure.
 
 ### Finding Timber
 
@@ -102,10 +136,11 @@ The app keeps its own list of repositories, so it is the same after a restart.
   It starts with an empty list, logs a warning, and first copies the file to
   `settings.json.damaged`, so the next save does not destroy it.
 - **Adding.** "Add repository" opens the native folder picker in the main
-  process (`src/bun/repository-list.ts`). Git is asked, read-only, which
-  repository owns the folder, so a linked worktree or a folder inside a
-  checkout adds its repository. A folder outside any repository is refused
-  with a message. The request has no time limit, because the picker stays
+  process (`src/bun/repository-list.ts`). Git says, read-only, whether the
+  folder is inside a repository, and Timber's list names its primary
+  checkout, so a linked worktree or a folder inside a checkout adds its
+  repository. A folder outside any repository is refused with a message, and
+  so is one that Timber cannot list, with Timber's diagnostic. The request has no time limit, because the picker stays
   open for as long as the person likes. The picker call blocks the main
   process, so other requests wait until it closes.
 - **Duplicates.** Two folders are the same repository when Git reports the
@@ -122,6 +157,7 @@ The app keeps its own list of repositories, so it is the same after a restart.
   `;` on Windows or `:` elsewhere), the app shows those repositories instead
   and leaves the saved list alone. Add and Remove then explain that the
   variable is set. Paths in it that are not repositories are skipped.
+  A repository in it that Timber cannot list is shown under the given folder.
 
 ## Shared state and live updates
 
@@ -156,7 +192,8 @@ and the workspace cannot disagree.
   alone and shows the error above the list. The next reload of the same thing
   that works clears it. A single reload that Git cannot answer counts as a
   failure, not as a removed repository; only reloading everything changes
-  which repositories are listed.
+  which repositories are listed. A repository whose worktrees Timber could
+  not list is not a failed reload: see [the worktree list](#the-worktree-list).
 - **Adding and removing.** After the engine adds or removes a repository the
   store reloads everything instead of patching its copy, so the screen shows
   what was saved. The added repository becomes the selection. When nothing
@@ -168,14 +205,15 @@ In `bun run dev:web` the browser console has `timberMock` for acting out the
 main process: `timberMock.setRepositories(list)`,
 `timberMock.announceChange("/work/timber")`,
 `timberMock.failReads("Git is busy")` (pass `null` to let reads work again),
-and `timberMock.pickFolder("/some/folder")` to choose what "Add repository"
+`timberMock.failTimber("/work/timber", "Not a Git repository: /work/timber")`
+to make Timber fail on one repository (`null` again to undo), and `timberMock.pickFolder("/some/folder")` to choose what "Add repository"
 picks (`null` acts out a closed picker).
 
 ## Milestones
 
-1. **Sidebar, read-only (this scaffold).** Repositories and worktrees with
-   branch status: commits to push and pull, never published, upstream deleted,
-   modified and untracked counts.
+1. **Sidebar, read-only (this scaffold).** Repositories and the worktrees
+   Timber lists, with branch status: commits to push and pull, never
+   published, upstream deleted, modified and untracked counts.
 2. **Sessions.** Agent and terminal panes. Each is a pseudo-terminal owned by
    the main process (`Bun.Terminal`), rendered by xterm.js. Several per
    worktree, and hidden panes keep running.
@@ -188,10 +226,10 @@ picks (`null` acts out a closed picker).
 
 ## Open decisions
 
-- **How the app calls Timber.** Spawn the `timber` executable and parse JSON,
-  or import Timber's modules as a library. Spawning keeps the two releasable
-  apart; importing avoids an output format but ties the app to Timber's
-  internals.
+- **Timber's machine interface is experimental.** The app spawns the
+  `timber` executable and reads version 1 of its JSON records, which keeps the
+  two releasable apart. Timber calls that interface experimental, so a new
+  schema version means a change here.
 - **Rebase backups.** The design shows them, but Timber does not create backup
   branches today. Either Timber gains that, or the app creates them.
 - **Application identifier.** `electrobun.config.ts` holds a placeholder.
@@ -294,7 +332,38 @@ Run for the saved repository list (issue 3), Linux x64 under WSL with Bun
   Choosing a folder in that dialog by hand was not done in this run, and the
   window was not inspected by eye.
 
+Run for the worktree list from `timber ls --json` (issue 4), Linux x64 under
+WSL with Bun 1.4.2, Git 2.43, and Timber 0.1.1:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 199 tests passed and 1 was skipped (it only runs in CI). They
+  include the mapping and every failure case against output recorded from
+  Timber 0.1.1, stand-in executables that replay that output with a chosen
+  exit code, and the installed Timber on a temporary repository with a
+  detached HEAD, a locked worktree, a missing folder, a replaced folder, and
+  spaces and non-ASCII characters in paths, branches, and file names. That
+  run compares the order with the table `timber ls` prints and checks that
+  every file, ref, and index is left as it was.
+- The same `bun test` with the v0.1.1 release installed by the command the CI
+  workflow uses, a fresh home folder, and `CI=1`: 200 tests passed. With no
+  Timber on PATH: 174 passed and 26 were skipped.
+- `bun run build:web`, and `bun run dev:web` in headless Chrome: the sample
+  data rendered with its missing-folder row marked. With two Timber failures
+  acted out through `timberMock.failTimber` (by a temporary line, not
+  committed), one repository showed the diagnostic above its last good rows
+  and the other showed the diagnostic and no rows.
+- `bun run start` under WSLg with `XDG_CONFIG_HOME` pointing at a temporary
+  folder and a temporary log line in the main process (not committed): the
+  interface asked for the list and got the seven worktrees of the temporary
+  repository in the order `timber ls` prints them, with the detached HEAD,
+  the locked worktree, the missing folder, the unknown status, and the
+  non-ASCII path intact, this repository's own checkout, and a plain folder
+  as unavailable. The window was not inspected by eye in this run.
+
 Not run yet:
+
+- The CI workflow with its new step that installs Timber. It runs on the pull
+  request for this change.
 
 - Anything on macOS.
 - A native Linux desktop session, on Wayland or X11. Only WSLg has been run.

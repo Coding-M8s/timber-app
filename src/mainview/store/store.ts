@@ -1,7 +1,7 @@
 import type { Engine } from "../../shared/engine";
 import type { TimberStatus } from "../../shared/model";
 import { mergeOverlapping } from "./merge";
-import { type AppState, type Operation, initialState, reconcileSelection, selectionFor, selectionForRepository, timberReady } from "./state";
+import { type AppState, type Operation, initialState, keepLastGood, reconcileSelection, selectionFor, selectionForRepository, timberReady } from "./state";
 
 /**
  * The single holder of what the interface shows: Timber's status, the
@@ -33,8 +33,8 @@ export interface AppStore {
 	removeRepository(path: string): Promise<void>;
 	/** Put away the note about the latest add or remove. */
 	dismissNotice(): void;
-	/** Select a worktree by its path. A path that no repository has is ignored. */
-	select(worktreePath: string): void;
+	/** Select a worktree by its identity (`Worktree.id`). One that no repository has is ignored. */
+	select(worktreeId: string): void;
 }
 
 function messageOf(error: unknown): string {
@@ -76,8 +76,9 @@ export function createAppStore(engine: Engine): AppStore {
 			const listed = await engine.listRepositories();
 			// A repository that was reloaded on its own after this list was asked for keeps that newer data.
 			const repositories = listed.map(repository => {
+				const current = state.repositories.find(candidate => candidate.path === repository.path);
 				const newer = (repositoryTickets.get(repository.path) ?? 0) > ticket;
-				return (newer && state.repositories.find(current => current.path === repository.path)) || repository;
+				return (newer && current) || keepLastGood(current, repository);
 			});
 			listTicket = ticket;
 			update({
@@ -101,7 +102,7 @@ export function createAppStore(engine: Engine): AppStore {
 			if (!repository) throw new Error(`Git could not read ${path}`);
 			if (!state.repositories.some(current => current.path === path)) return;
 			repositoryTickets.set(path, ticket);
-			const repositories = state.repositories.map(current => current.path === path ? repository : current);
+			const repositories = state.repositories.map(current => current.path === path ? keepLastGood(current, repository) : current);
 			update({
 				repositories,
 				selection: reconcileSelection(repositories, state.selection),
@@ -210,8 +211,8 @@ export function createAppStore(engine: Engine): AppStore {
 		dismissNotice() {
 			if (state.notice) update({ notice: null });
 		},
-		select(worktreePath) {
-			const selection = selectionFor(state.repositories, worktreePath);
+		select(worktreeId) {
+			const selection = selectionFor(state.repositories, worktreeId);
 			if (selection && selection.worktree !== state.selection?.worktree) update({ selection });
 		},
 	};

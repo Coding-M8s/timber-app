@@ -1,18 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, delimiter, join } from "node:path";
-import { commonDirectory, listRepositories, loadRepository, overrideRepositoryPaths, reloadRepository } from "../src/bun/git-engine";
-
-/** Run Git in a real temporary repository, with a fixed identity and no user configuration. */
-function git(cwd: string, ...args: string[]): void {
-	const result = Bun.spawnSync(["git", "-C", cwd, "-c", "user.name=Timber Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false", ...args], {
-		stdout: "ignore",
-		stderr: "pipe",
-		env: { ...process.env, GIT_CONFIG_GLOBAL: "", GIT_CONFIG_NOSYSTEM: "1" },
-	});
-	if (result.exitCode !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr.toString()}`);
-}
+import { delimiter, join } from "node:path";
+import { commonDirectory, overrideRepositoryPaths, readBranchSync } from "../src/bun/git-engine";
+import { git } from "./support/timber";
 
 let root: string;
 let primary: string;
@@ -27,91 +18,63 @@ beforeAll(() => {
 	git(primary, "add", "tracked.txt");
 	git(primary, "commit", "-m", "Initial commit");
 	git(primary, "worktree", "add", "-b", "feat/x", linked);
-	writeFileSync(join(linked, "tracked.txt"), "two\n");
-	writeFileSync(join(linked, "new.txt"), "new\n");
+
+	// A remote with one branch in each state the sidebar shows.
+	const remote = join(root, "remote.git");
+	git(root, "init", "--bare", remote);
+	git(primary, "remote", "add", "origin", remote);
+	git(primary, "push", "--set-upstream", "origin", "main");
+	for (const branch of ["ahead", "behind", "both", "deleted", "zażółć"]) {
+		git(primary, "branch", branch, "main");
+		git(primary, "push", "--set-upstream", "origin", branch);
+	}
+	git(primary, "commit", "--allow-empty", "-m", "Second commit");
+	git(primary, "branch", "--force", "ahead", "main");
+	git(primary, "branch", "--force", "both", "main");
+	git(primary, "commit", "--allow-empty", "-m", "Third commit");
+	git(primary, "push", "origin", "main:behind");
+	// A commit on the side, so that "both" and its upstream each have one the other lacks.
+	git(linked, "commit", "--allow-empty", "-m", "Side commit");
+	git(primary, "push", "--force", "origin", "feat/x:both");
+	git(primary, "push", "origin", "--delete", "deleted");
+	git(primary, "push", "origin", "main");
 });
 
 afterAll(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-describe("loadRepository", () => {
-	test("lists the primary and linked worktrees with their file status", async () => {
-		const repository = await loadRepository(primary);
-		expect(repository?.name).toBe("sample");
-		expect(repository?.available).toBe(true);
-		expect(repository?.worktrees.map(worktree => [worktree.branch, worktree.primary])).toEqual([["main", true], ["feat/x", false]]);
-
-		const [main, feature] = repository!.worktrees;
-		expect(main?.status).toEqual({ modified: 0, untracked: 0, sync: { kind: "unpublished" } });
-		expect(feature?.status).toEqual({ modified: 1, untracked: 1, sync: { kind: "unpublished" } });
-		expect(basename(feature!.path)).toBe("feat-x");
+describe("readBranchSync", () => {
+	test("reads every branch against its upstream from a real repository", async () => {
+		const branches = await readBranchSync(join(primary, ".git"));
+		expect(Object.fromEntries(branches!)).toEqual({
+			"main": { kind: "tracking", upstream: "origin/main", ahead: 0, behind: 0 },
+			"ahead": { kind: "tracking", upstream: "origin/ahead", ahead: 1, behind: 0 },
+			"behind": { kind: "tracking", upstream: "origin/behind", ahead: 0, behind: 2 },
+			"both": { kind: "tracking", upstream: "origin/both", ahead: 1, behind: 1 },
+			"deleted": { kind: "gone", upstream: "origin/deleted" },
+			"zażółć": { kind: "tracking", upstream: "origin/zażółć", ahead: 0, behind: 0 },
+			"feat/x": { kind: "unpublished" },
+		});
 	});
 
-	test("finds the same repository when asked from a linked worktree", async () => {
-		const repository = await loadRepository(linked);
-		expect(repository?.name).toBe("sample");
-		expect(repository?.worktrees.length).toBe(2);
+	test("answers null where there is no repository", async () => {
+		expect(await readBranchSync(join(root, "does-not-exist", ".git"))).toBeNull();
 	});
 
-	test("answers null for a folder that is not a repository", async () => {
-		expect(await loadRepository(root)).toBeNull();
-		expect(await loadRepository(join(root, "does-not-exist"))).toBeNull();
-	});
-
-	test("leaves the repository untouched", async () => {
-		await loadRepository(primary);
-		const status = Bun.spawnSync(["git", "-C", linked, "status", "--porcelain"]).stdout.toString();
-		expect(status).toBe(" M tracked.txt\n?? new.txt\n");
-	});
-});
-
-describe("reloadRepository", () => {
-	/** Everything a read-only query must leave alone: refs, the index, and the working files. */
-	function fingerprint(): string {
+	test("leaves refs, the index, and files untouched", async () => {
 		const run = (cwd: string, ...args: string[]) => Bun.spawnSync(["git", "-C", cwd, ...args]).stdout.toString();
-		return [
+		const fingerprint = () => [
 			run(primary, "for-each-ref"),
 			run(primary, "worktree", "list", "--porcelain"),
 			run(primary, "status", "--porcelain"),
 			run(linked, "status", "--porcelain"),
 			run(linked, "ls-files", "--stage"),
 		].join("\n");
-	}
-
-	test("reads a repository again by its primary checkout and sees what changed", async () => {
-		const before = await reloadRepository(primary);
-		expect(before?.worktrees[1]?.status?.untracked).toBe(1);
-
-		const extra = join(linked, "another.txt");
-		writeFileSync(extra, "more\n");
-		try {
-			const after = await reloadRepository(primary);
-			expect(after?.path).toBe(primary);
-			expect(after?.worktrees[1]?.status?.untracked).toBe(2);
-		} finally {
-			rmSync(extra);
-		}
-	});
-
-	test("answers null for anything that is not a primary checkout", async () => {
-		expect(await reloadRepository(linked)).toBeNull();
-		expect(await reloadRepository(root)).toBeNull();
-		expect(await reloadRepository(join(root, "does-not-exist"))).toBeNull();
-	});
-
-	test("leaves refs, the index, and files untouched", async () => {
 		const before = fingerprint();
-		await reloadRepository(primary);
-		await reloadRepository(linked);
+		await readBranchSync(join(primary, ".git"));
+		await commonDirectory(linked);
 		expect(fingerprint()).toBe(before);
-	});
-});
-
-describe("listRepositories", () => {
-	test("skips folders that are not repositories and lists a repository once", async () => {
-		const repositories = await listRepositories([primary, root, linked]);
-		expect(repositories.map(repository => repository.name)).toEqual(["sample"]);
 	});
 });
 

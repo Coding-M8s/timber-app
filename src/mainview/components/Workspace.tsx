@@ -33,8 +33,8 @@ export function Workspace() {
 			<header className="workspace-header">
 				<h1 className="workspace-title">{worktreeLabel(worktree)}</h1>
 				<div className="workspace-meta">
-					{worktree.status && <span>{describeSync(worktree.status.sync)}</span>}
-					{changes && <span>{changes}</span>}
+					{worktree.sync && <span>{describeSync(worktree.sync)}</span>}
+					<span>{changes}</span>
 					<span className="path">{worktree.path}</span>
 				</div>
 			</header>
