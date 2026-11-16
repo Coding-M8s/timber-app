@@ -1,6 +1,7 @@
 import type { Layout } from "./layout";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
 import type { Preferences } from "./preferences";
+import type { OpenTerminalRequest, OpenTerminalResult, TerminalChange, TerminalOutput, TerminalSession, TerminalSnapshot } from "./terminal";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "./timber-done";
 
 /**
@@ -114,4 +115,59 @@ export interface Engine {
 	 * New and Open pass `--no-editor` to Timber.
 	 */
 	openInEditor(request: OpenInEditorRequest): Promise<OpenInEditorResult>;
+	/**
+	 * Every terminal session the machine holds, running or exited. Sessions
+	 * outlive the window's view of them: one keeps running while another
+	 * worktree is selected, and after the interface reloads.
+	 */
+	listTerminals(): Promise<TerminalSession[]>;
+	/**
+	 * Start the person's shell in a worktree of a repository in the list, or
+	 * answer the session it already has: one per worktree. `cols` and `rows`
+	 * are the pane's size. Safe to call again.
+	 */
+	openTerminal(request: OpenTerminalRequest): Promise<OpenTerminalResult>;
+	/**
+	 * The end of what a session printed, to draw it again, with the number of
+	 * the last part it holds (see `onTerminalOutput`). Null for a session that
+	 * is gone.
+	 */
+	readTerminal(id: string): Promise<TerminalSnapshot | null>;
+	/**
+	 * Say that the window drew a session's parts up to and including `seq`, or
+	 * will not draw them. The machine sends a session only so far ahead of
+	 * this. Nothing comes back.
+	 */
+	drawnTerminal(id: string, seq: number): void;
+	/** Pass what was typed or pasted on to a running session. Nothing comes back. */
+	writeTerminal(id: string, data: string): void;
+	/** Tell a running session the size of its pane. Nothing comes back. */
+	resizeTerminal(id: string, cols: number, rows: number): void;
+	/**
+	 * End a session and forget it: a running process is hung up on, and killed
+	 * if it does not end. Answers once it has ended. Safe to call again.
+	 */
+	closeTerminal(id: string): Promise<void>;
+	/** Hear each part of what any session prints, numbered per session. Returns a function that stops listening. */
+	onTerminalOutput(listener: (output: TerminalOutput) => void): () => void;
+	/** Hear when a session starts, ends, or is gone. Returns a function that stops listening. */
+	onTerminalChanged(listener: (change: TerminalChange) => void): () => void;
+	/**
+	 * Hear when the app was asked to quit, or its window to close, while
+	 * terminals run. Nothing quits until `confirmQuit`. The listener gets how
+	 * many run. With no listener, the machine asks in a native dialog instead.
+	 * Returns a function that stops listening.
+	 */
+	onQuitRequested(listener: (live: number) => void): () => void;
+	/** The person agreed to quit: end every session and quit the app. */
+	confirmQuit(): Promise<void>;
+	/** Put text on the system clipboard, for copying from a terminal. */
+	writeClipboard(text: string): Promise<void>;
+	/** The text on the system clipboard, for pasting into a terminal. Null when there is none. */
+	readClipboard(): Promise<string | null>;
+	/**
+	 * Open a web link from a terminal in the person's browser. Only `http` and
+	 * `https` links are opened. Answers whether it was handed on.
+	 */
+	openLink(url: string): Promise<boolean>;
 }

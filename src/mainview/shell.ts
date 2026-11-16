@@ -28,12 +28,8 @@ export const TAB_LABELS: Record<WorkspaceTab, string> = {
 	changes: "Changes",
 };
 
-/** What each tab says until its own content exists. */
-export const TAB_EMPTY: Record<WorkspaceTab, { title: string; text: string }> = {
-	workspace: {
-		title: "Nothing running here yet",
-		text: "Agent and terminal panes for this worktree will show here. They are not built yet.",
-	},
+/** What each tab says until its own content exists. The Workspace tab has its terminal (components/TerminalPanel.tsx). */
+export const TAB_EMPTY: Record<Exclude<WorkspaceTab, "workspace">, { title: string; text: string }> = {
 	changes: {
 		title: "No changes to show yet",
 		text: "The diff for this worktree will show here. It is not built yet.",

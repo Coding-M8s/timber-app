@@ -1,9 +1,11 @@
 import { Dialogs } from "./components/Dialogs";
+import { QuitDialog } from "./components/QuitDialog";
 import { Sidebar } from "./components/Sidebar";
 import { SidebarResizer } from "./components/SidebarResizer";
 import { TimberNotice } from "./components/TimberNotice";
 import type { CSSProperties, ReactNode } from "react";
 import { TitleBar } from "./components/TitleBar";
+import { TerminalViewKeeper } from "./components/TerminalPanel";
 import { Toasts } from "./components/Toasts";
 import { Workspace } from "./components/Workspace";
 import { StoreProvider, useAppState, useStore } from "./store/react";
@@ -60,6 +62,9 @@ export function App({ store, children }: { store: AppStore; children?: ReactNode
 				<Toasts />
 				<Dialogs />
 				{children}
+				{/* Over any other dialog: the app is about to quit. */}
+				<QuitDialog />
+				<TerminalViewKeeper />
 			</div>
 		</StoreProvider>
 	);

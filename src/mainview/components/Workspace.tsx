@@ -5,6 +5,7 @@ import { TAB_EMPTY, TAB_LABELS, tabAfterKey } from "../shell";
 import { useAppState, useStore } from "../store/react";
 import { WORKSPACE_TABS, type WorkspaceTab, isRunning, selectedWorktree } from "../store/state";
 import { EditorProblemNote, OpenInEditorButton } from "./OpenInEditor";
+import { TerminalPanel } from "./TerminalPanel";
 
 const tabId = (tab: WorkspaceTab) => `tab-${tab}`;
 const PANEL_ID = "workspace-panel";
@@ -37,7 +38,6 @@ export function Workspace() {
 	const label = worktreeLabel(worktree);
 	const changes = describeChanges(worktree);
 	const sync = describeWorktreeSync(worktree);
-	const empty = TAB_EMPTY[state.tab];
 
 	// As in any tab list: the arrows, Home, and End move between tabs, and the tab reached shows at once.
 	const onTabKey = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -91,11 +91,17 @@ export function Workspace() {
 					</button>
 				))}
 			</div>
-			{/* A tab stop of its own, because an empty state holds nothing else to focus. */}
-			<div className="empty tabpanel" role="tabpanel" id={PANEL_ID} aria-labelledby={tabId(state.tab)} tabIndex={0}>
-				<p className="empty-title">{empty.title}</p>
-				<p className="empty-text">{empty.text}</p>
-			</div>
+			{state.tab === "workspace" ? (
+				<div className="tabpanel workspace-panel" role="tabpanel" id={PANEL_ID} aria-labelledby={tabId(state.tab)}>
+					<TerminalPanel repository={repository} worktree={worktree} />
+				</div>
+			) : (
+				// A tab stop of its own, because an empty state holds nothing else to focus.
+				<div className="empty tabpanel" role="tabpanel" id={PANEL_ID} aria-labelledby={tabId(state.tab)} tabIndex={0}>
+					<p className="empty-title">{TAB_EMPTY[state.tab].title}</p>
+					<p className="empty-text">{TAB_EMPTY[state.tab].text}</p>
+				</div>
+			)}
 		</main>
 	);
 }

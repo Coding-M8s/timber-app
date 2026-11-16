@@ -1,18 +1,44 @@
 import { Electroview } from "electrobun/view";
 import type { Engine } from "../../shared/engine";
 import type { AppRPC } from "../../shared/rpc";
+import type { TerminalChange, TerminalOutput } from "../../shared/terminal";
+
+/** A set of listeners, and the function that adds one and returns how to take it away. */
+function listeners<Value>() {
+	const all = new Set<(value: Value) => void>();
+	return {
+		call: (value: Value) => {
+			for (const listener of [...all]) listener(value);
+		},
+		size: () => all.size,
+		add: (listener: (value: Value) => void) => {
+			all.add(listener);
+			return () => void all.delete(listener);
+		},
+	};
+}
 
 /** The real engine: every call crosses the typed bridge to the Bun main process. */
 export function createDesktopEngine(): Engine {
-	const changeListeners = new Set<(path: string) => void>();
+	const changes = listeners<string>();
+	const terminalOutput = listeners<TerminalOutput>();
+	const terminalChanges = listeners<TerminalChange>();
+	const quitRequests = listeners<number>();
 	const rpc = Electroview.defineRPC<AppRPC>({
 		maxRequestTime: 15_000,
 		handlers: {
-			requests: {},
-			messages: {
-				repositoryChanged: ({ path }) => {
-					for (const listener of [...changeListeners]) listener(path);
+			requests: {
+				// The question shows only when the interface listens. Without it, the main process asks natively.
+				askQuit: ({ live }) => {
+					if (quitRequests.size() === 0) return false;
+					quitRequests.call(live);
+					return true;
 				},
+			},
+			messages: {
+				repositoryChanged: ({ path }) => changes.call(path),
+				terminalOutput: output => terminalOutput.call(output),
+				terminalChanged: change => terminalChanges.call(change),
 			},
 		},
 	});
@@ -33,15 +59,28 @@ export function createDesktopEngine(): Engine {
 		previewDone: request => rpc.request.previewDone(request, { maxRequestTime: 60_000 }),
 		// Scripts that run before deletion take as long as they take.
 		applyDone: request => rpc.request.applyDone(request, { maxRequestTime: Infinity }),
-		onRepositoryChanged: listener => {
-			changeListeners.add(listener);
-			return () => void changeListeners.delete(listener);
-		},
+		onRepositoryChanged: changes.add,
 		loadLayout: () => rpc.request.loadLayout({}),
 		saveLayout: layout => rpc.request.saveLayout({ layout }),
 		loadPreferences: () => rpc.request.loadPreferences({}),
 		savePreferences: change => rpc.request.savePreferences({ change }),
 		// The main process reads the list first, and waits a moment to hear whether the editor stopped right away.
 		openInEditor: request => rpc.request.openInEditor(request, { maxRequestTime: 60_000 }),
+		listTerminals: () => rpc.request.listTerminals({}),
+		// The main process reads the list first.
+		openTerminal: request => rpc.request.openTerminal(request, { maxRequestTime: 60_000 }),
+		readTerminal: id => rpc.request.readTerminal({ id }),
+		drawnTerminal: (id, seq) => rpc.send.terminalDrawn({ id, seq }),
+		writeTerminal: (id, data) => rpc.send.writeTerminal({ id, data }),
+		resizeTerminal: (id, cols, rows) => rpc.send.resizeTerminal({ id, cols, rows }),
+		closeTerminal: id => rpc.request.closeTerminal({ id }),
+		onTerminalOutput: terminalOutput.add,
+		onTerminalChanged: terminalChanges.add,
+		onQuitRequested: quitRequests.add,
+		// Ending every session can take a moment, and the app quits right after.
+		confirmQuit: () => rpc.request.confirmQuit({}, { maxRequestTime: 30_000 }),
+		writeClipboard: text => rpc.request.writeClipboard({ text }),
+		readClipboard: () => rpc.request.readClipboard({}),
+		openLink: url => rpc.request.openLink({ url }),
 	};
 }

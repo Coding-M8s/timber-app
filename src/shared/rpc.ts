@@ -2,6 +2,7 @@ import type { RPCSchema } from "electrobun/view";
 import type { Layout } from "./layout";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
 import type { Preferences } from "./preferences";
+import type { OpenTerminalRequest, OpenTerminalResult, TerminalChange, TerminalOutput, TerminalSession, TerminalSnapshot } from "./terminal";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "./timber-done";
 
 /**
@@ -32,14 +33,34 @@ export type AppRPC = {
 			previewDone: { params: DonePreviewRequest; response: DonePreviewResult };
 			/** Answers only when Timber has ended. Scripts that run before deletion take as long as they take, so the caller must not time it out. */
 			applyDone: { params: DoneApplyRequest; response: DoneApplyResult };
+			listTerminals: { params: {}; response: TerminalSession[] };
+			openTerminal: { params: OpenTerminalRequest; response: OpenTerminalResult };
+			readTerminal: { params: { id: string }; response: TerminalSnapshot | null };
+			closeTerminal: { params: { id: string }; response: void };
+			confirmQuit: { params: {}; response: void };
+			writeClipboard: { params: { text: string }; response: void };
+			readClipboard: { params: {}; response: string | null };
+			openLink: { params: { url: string }; response: boolean };
 		};
-		messages: {};
+		messages: {
+			/** Typed or pasted text for a session. */
+			writeTerminal: { id: string; data: string };
+			resizeTerminal: { id: string; cols: number; rows: number };
+			/** The window drew a session's parts up to `seq`. */
+			terminalDrawn: { id: string; seq: number };
+		};
 	}>;
 	webview: RPCSchema<{
-		requests: {};
+		requests: {
+			/** Show the question before quitting. Answers whether the window shows it, at once. */
+			askQuit: { params: { live: number }; response: boolean };
+		};
 		messages: {
 			/** A repository changed. `path` is its primary checkout. */
 			repositoryChanged: { path: string };
+			/** Part of what a session printed. */
+			terminalOutput: TerminalOutput;
+			terminalChanged: TerminalChange;
 		};
 	}>;
 };

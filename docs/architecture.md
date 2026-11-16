@@ -11,7 +11,7 @@ src/mainview   React interface, runs in the webview
       |        talks only to the Engine contract
 src/shared     Engine contract, data model, typed bridge, pure parsers
       |
-src/bun        Bun main process: the window, Git queries, later sessions
+src/bun        Bun main process: the window, Git queries, terminal sessions
 ```
 
 - **Interface (`src/mainview`).** React with plain CSS. It never touches Git,
@@ -231,9 +231,11 @@ decides, both when it previews and again when it removes.
   list, as after a partial failure, the dialog says so and offers only Close.
   The same holds when a worktree leaves the list for any other reason while
   its dialog is open.
-- **Live sessions.** The app has no terminal or agent sessions yet, so there
-  is nothing to warn about. The warning's place is `LiveSessionsWarning` in
-  `src/mainview/components/DoneDialog.tsx`, which shows nothing today.
+- **Live sessions.** When a terminal runs in the worktree, the dialog says
+  that removing the worktree ends it (`LiveSessionsWarning` in
+  `src/mainview/components/DoneDialog.tsx`). Once Timber says the worktree is
+  removed, the store closes that terminal (`applyDone` in
+  `src/mainview/store/store.ts`). A failed removal leaves it running.
 
 ### Creating and opening worktrees
 
@@ -648,13 +650,116 @@ Open always pass `--no-editor` to Timber (see
   never covers the branch markers. The workspace header has it too. The
   tooltip is the exact command. With no editor set it opens Settings at
   Editor. With an editor that runs in a terminal, or a worktree whose folder
-  is missing, it is disabled with the reason: terminal editors wait for
-  terminal sessions, which do not exist yet. A started editor is a toast. Any
+  is missing, it is disabled with the reason: starting a terminal editor in
+  the worktree's terminal is a later step. A started editor is a toast. Any
   other answer is a note under the workspace header that names the command,
   until it is dismissed or the next open works (`editorProblem` in the store).
 - **Trying it.** In `bun run dev:web` the mock engine acts it out and starts
   nothing. `timberMock.endEditorLaunches("not-found")` or `("fails")` chooses
   how it ends from then on, and `("opens")` goes back to the start.
+
+## Terminal sessions
+
+A worktree can have one terminal: the person's shell, running in its folder,
+drawn in the Workspace tab. It keeps running while another worktree is
+selected, and coming back shows it as it was.
+
+- **Who owns it.** The main process (`src/bun/terminals.ts`). Each session is
+  a pseudo terminal from `Bun.Terminal`, started with `SHELL` when that is a
+  full path to an executable, otherwise `/bin/sh`, in the worktree's
+  registered path, with the app's environment and `TERM=xterm-256color`. The
+  shell leads a process session of its own.
+- **Which worktrees.** As for "Open in editor": only a repository in the
+  app's list and a full path that `timber ls --json` lists for it at that
+  moment, whose folder is there (`findListedWorktree` in
+  `src/bun/listed-worktree.ts`, shared with `src/bun/editor.ts`). One session
+  per worktree: asking again answers the one it has, running or exited.
+- **The contract.** `openTerminal`, `listTerminals`, `readTerminal`,
+  `writeTerminal`, `resizeTerminal`, `drawnTerminal`, `closeTerminal`, and
+  the listeners `onTerminalOutput` and `onTerminalChanged` on the `Engine`.
+  Typing, resizing, and saying what was drawn are RPC messages with no
+  answer. Output comes as messages too. The data is in
+  `src/shared/terminal.ts`.
+- **Output.** Gathered for 4 ms, or until 64 KiB, and sent in parts numbered
+  per session. The main process keeps the last 512 KiB (`SCROLLBACK_LIMIT`)
+  so the interface can draw a session again, for example after the window
+  reloads. The window says which parts it drew. When more than 1 MiB it has
+  not drawn is on its way, the main process keeps output without sending it,
+  and once the window caught up sends what it kept in one part that starts
+  the screen afresh. So a program that prints without end cannot bury the
+  window, and Ctrl+C still gets through. What a terminal prints is private,
+  like what a command prints: it is never logged.
+- **Drawing.** xterm.js 6.0.0 with the fit and web links addons, pinned
+  exactly, and loaded the first time a terminal shows
+  (`src/mainview/terminal-view.ts`). Each session's drawn terminal lives
+  outside React for as long as the session does; a pane borrows it while it
+  shows, so its scrollback and screen survive switching worktrees. A pane
+  that shows for the first time draws what the main process kept, then
+  every new part once (`src/mainview/terminal-feed.ts`, pure). What was kept
+  can start in the middle of a full-screen program's picture, so when it
+  leaves the alternate screen on, the size is changed for a moment and the
+  program draws itself again. The pane's size goes to the shell after it
+  has rested for 50 ms, never while a drag moves. A pane takes the keyboard
+  only when nothing else has it, so moving through the sidebar keeps it
+  there.
+- **Copy, paste, links.** Ctrl+Shift+C and Ctrl+Shift+V on Linux and
+  Windows, Cmd+C and Cmd+V on macOS, through the system clipboard in the
+  main process (`writeClipboard`, `readClipboard`), so Ctrl+C and Ctrl+V stay
+  the program's. Pasting marks the text as pasted for programs that ask. A
+  link opens with Ctrl+click, or Cmd+click on macOS, and only an `http` or
+  `https` link with no spaces or control characters in it, in the person's
+  browser (`openLink`, `src/bun/open-link.ts`). The link goes, as the URL
+  parser writes it out, as the one argument of `xdg-open` on Linux or `open`
+  on macOS, never through a shell, because it is whatever a program printed.
+  Elsewhere nothing opens yet. The bar above the
+  terminal says so. Fonts and colors come from the design tokens; the ANSI
+  colors are muted to sit on the dark surface.
+- **Ending.** Closing a session hangs up its terminal and sends SIGHUP to
+  every process in the shell's session, waits until all of them ended or two
+  seconds passed, kills what is still there, and answers once the shell has
+  ended. Every process in the session is found through `/proc` on Linux
+  (`src/bun/process-session.ts`); elsewhere the shell's process group stands
+  in while the shell runs, which misses jobs in groups of their own. Once
+  the shell ended, its session id can go to another process when the
+  session is empty, so from then on only the processes left right when it
+  ended are ever signalled. Only a program that started a session of its own, as a daemon
+  does on purpose, outlives it. When the shell ends by itself, what it left
+  is hung up on, as a terminal does when it closes, and the session stays
+  with its exit code until it is dismissed. A program started with `nohup`
+  then goes on, and dismissing the session ends it.
+- **Worktrees that go.** After a list read, the store ends the terminal of a
+  worktree that a full read no longer lists, such as one removed from inside
+  its own terminal, or of a repository that left the app's list, with a
+  toast. A repository whose worktrees Timber could not list, or whose folder
+  Git cannot read, keeps its terminals.
+- **Quitting.** While a terminal runs, the main process says no to
+  Electrobun's `before-quit` and to the window's `will-close`, and asks the
+  window to show the question (`src/bun/quit-guard.ts`,
+  `src/mainview/components/QuitDialog.tsx`). The window must say within two
+  seconds that it shows it; otherwise a native dialog asks, and when none
+  can be shown the app quits. Quit ends every session, then quits; Keep
+  running and Escape keep everything. SIGINT and SIGTERM, such as Ctrl+C in
+  the terminal that started `bun run dev`, ask too: the app's code runs in
+  a Worker, where signal listeners never run, and Electrobun's native side
+  turns the signal into the same quit request. Known problem: on SIGTERM
+  Electrobun's native side also stops its GTK event loop by itself, which
+  the question cannot hold back. With a terminal running, the app then
+  stays alive with a window that no longer draws or closes (it can go
+  white). Seen with `timeout` stopping `bun run start`; not fixed yet.
+  SIGKILL ends the app without
+  asking; the terminals then hang up, which ends the shells and what runs
+  in front, but not what ignores a hang-up.
+- **Windows.** `Bun.Terminal` exists on Linux and macOS only, so on Windows
+  `openTerminal` answers that terminals are not supported there yet, and
+  nothing starts.
+- **Not built.** Several sessions per worktree, agent panes, keeping
+  sessions after a restart, and starting a terminal editor in a session.
+
+In `bun run dev:web` the mock engine acts out a shell that echoes what is
+typed and knows `pwd`, `clear`, and `exit`. `timberMock.requestQuit()` acts
+out quitting, `timberMock.endTerminal(id, code)` a shell that exits by
+itself, and `timberMock.failTerminals({ outcome: "unsupported", message })`
+a terminal that cannot start (`null` to undo).
 
 ## Milestones
 
@@ -663,7 +768,8 @@ Open always pass `--no-editor` to Timber (see
    published, upstream deleted, modified and untracked counts.
 2. **Sessions.** Agent and terminal panes. Each is a pseudo-terminal owned by
    the main process (`Bun.Terminal`), rendered by xterm.js. Several per
-   worktree, and hidden panes keep running.
+   worktree, and hidden panes keep running. One terminal per worktree is
+   built (see [terminal sessions](#terminal-sessions)).
 3. **Timber actions.** New and open, rebase with a base picker, done with the
    safe and "delete anyway" confirmations.
 4. **Changes.** Diff against the base, the last commit, or a rebase backup.
@@ -1157,6 +1263,73 @@ than the app requires, so the tests that need the installed Timber skipped:
     SIGTERM and it closed, recording that folder as its last window. The
     windows were not looked at by a person.
 
+Run for terminal sessions (issue 13), Linux x64 (Pop!_OS 24.04, natively,
+Wayland) with Bun 1.4.2, Git 2.43, and Timber 0.1.1:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 763 tests passed and 1 was skipped (it only runs in CI). New
+  ones in `tests/terminals.test.ts` run real shells in pseudo terminals in a
+  temporary repository with a linked worktree whose path has a space: the
+  shell starts in the worktree's folder with `TERM=xterm-256color`; one
+  session per worktree, also for two requests at once; a path Timber does
+  not list, a repository not in the list, and a relative path start
+  nothing; `stty size` follows a resize, and a size out of range is clamped;
+  a script that switches to the alternate screen and reads one raw key gets
+  it; parts are numbered and a snapshot holds them; `exit 3` leaves the
+  session with exit code 3 until it is closed; closing ends every process in
+  the shell's session, a background `sleep` and a program that ignores
+  SIGHUP included, and leaves `git status` and the refs as they were;
+  a program that needs 0.3 seconds after SIGHUP to clean up gets to;
+  a `nohup` job outlives a shell that exits by itself and ends when the
+  session is dismissed; killing all sessions at once leaves nothing; a
+  window that catches up while output is still being gathered gets it all
+  in the fresh start; a link reaches a stand-in `xdg-open` as one argument
+  that no shell reads; a window that draws nothing
+  stops getting parts and then gets one part that starts afresh with the
+  end of the output; and on Windows nothing starts. `tests/terminal-parse.test.ts`
+  covers the pure rules, the feed, the keys, and the quit guard;
+  `tests/terminal-store.test.tsx` the store and the rendered pane against
+  the mock engine.
+- `bun run build:web`: built, with xterm.js in a chunk of its own.
+- `bun run dev:web` (on another port) in the app's built-in browser: Open
+  terminal showed the mock shell, `pwd` answered, selecting another worktree
+  and coming back showed the same screen, `timberMock.requestQuit()` showed
+  "Quit Timber?" with focus on Keep running, Escape closed it, `exit`
+  showed "Exited with code 0" with Dismiss, and Dismiss brought back Open
+  terminal. No console errors. Screenshots were looked at.
+- `bun run start` with `XDG_CONFIG_HOME` pointing at a temporary folder,
+  `TIMBER_APP_REPOS` naming a temporary repository with a linked worktree
+  at `.../my repo-worktrees/feat term`, and a temporary driver in the main
+  process (not committed) that clicked the interface and evaluated script
+  in the window over Electrobun's RPC. Text went in through the clipboard
+  and Ctrl+Shift+V, which is the same path as typing (xterm.js `onData`,
+  the RPC message, the pseudo terminal), and Enter and `q` as key events:
+  - Open terminal started bash in the worktree's folder; `pwd` printed it
+    and `stty size` said 24 125. After the window was made 900 by 600,
+    `stty size` said 18 77 and the earlier lines were wrapped again.
+  - `less /etc/os-release` drew its full screen, and `q` brought back the
+    prompt and the lines before it.
+  - A text put on the system clipboard and pasted with Ctrl+Shift+V ran
+    (`pasted-42`).
+  - Selecting the primary checkout showed Open terminal; selecting the
+    worktree again showed the same screen.
+  - With a background `sleep` and a program that ignores SIGHUP in front,
+    the close control ended all four processes of the session.
+  - With a terminal running, quitting (`Utils.quit()`) did not quit and the
+    window showed "Quit Timber?". Keep running closed it with the processes
+    alive. Quitting again and Quit ended all four processes, and the app
+    exited with 0.
+  - SIGTERM to the app showed the same question, and Quit ended both
+    processes. At first SIGTERM was meant to quit without asking, through a
+    signal listener; it never ran, because the app's code runs in a Worker,
+    where Bun does not run signal listeners. That was taken out.
+  The window was not looked at by a person in these runs.
+- After review, ending a session was changed to wait for every process in
+  it, not only the shell, to signal only what was left once the shell
+  ended, and to send held output in the right order; links now open through
+  `xdg-open` without a shell. These changes ran in the tests above only, not
+  in the desktop window.
+
 Not run yet:
 
 - The sidebar side in the desktop window, and the side read back from the
@@ -1186,5 +1359,12 @@ Not run yet:
   Code was started only from the main process module, and Zed not at all.
 - Launching an editor on Windows or macOS. On Windows batch files are
   refused for now, and the stand-in editors of the tests are shell scripts.
-- Anything on macOS.
+- Anything on macOS, terminals included.
+- Terminals on Windows, where `Bun.Terminal` does not exist: they answer
+  that they are not supported, and that answer was only acted out on Linux.
+- Closing the window with its own close button while a terminal runs
+  (`will-close`), and the native question that stands in when the window
+  does not answer. Neither could be driven under Wayland.
+- Copying with Ctrl+Shift+C and opening a link with Ctrl+click in the
+  desktop window. Both were checked as functions only.
 - A native Linux desktop session, on Wayland or X11. Only WSLg has been run.

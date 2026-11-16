@@ -44,7 +44,7 @@ export function presetOf(setting: EditorSetting | null): EditorPreset | null {
 }
 
 /** Why a terminal editor cannot be opened yet. */
-export const TERMINAL_EDITOR_REASON = "Editors that run in a terminal open in a terminal session of the worktree, and the app does not have terminal sessions yet.";
+export const TERMINAL_EDITOR_REASON = "Editors that run in a terminal are not started from here yet. Open a terminal for the worktree in the Workspace tab and start it there.";
 
 export type EditorCommand =
 	| { ok: true; executable: string; arguments: string[] }

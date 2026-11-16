@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type EditorDependencies, createEditorLauncher } from "../src/bun/editor";
-import type { EditorSetting } from "../src/shared/editor";
+import { type EditorSetting, TERMINAL_EDITOR_REASON } from "../src/shared/editor";
 import type { Repository } from "../src/shared/model";
 import { defaultPreferences } from "../src/shared/preferences";
 
@@ -191,7 +191,7 @@ describe.skipIf(windows)("opening a worktree in an editor, with stand-in editors
 		expect(await launcher(null).open(request())).toEqual({ outcome: "not-configured" });
 		const terminal = await launcher({ command: editor.name, terminal: true }).open(request());
 		expect(terminal).toMatchObject({ outcome: "terminal-editor", command: `${editor.name} '${worktree}'` });
-		expect(terminal.outcome === "terminal-editor" && terminal.message).toContain("terminal sessions");
+		expect(terminal.outcome === "terminal-editor" && terminal.message).toBe(TERMINAL_EDITOR_REASON);
 		await Bun.sleep(100);
 		expect(editor.ran()).toBe(false);
 	});
