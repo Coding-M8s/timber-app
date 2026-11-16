@@ -582,6 +582,10 @@ Settings dialog and kept by the app. They are never Timber's configuration.
   reported at the top of the dialog. Nothing in the dialog runs Timber, so it
   has no command footer.
 - **Sections today.** Layout: the side of the sidebar, left by default.
+  Editor: the editor that "Open in editor" starts (see
+  [opening a worktree in an editor](#opening-a-worktree-in-an-editor)).
+  Agents: the coding agents the "+" menu starts (see
+  [agent sessions](#agent-sessions)).
 
 In `bun run dev:web`, `timberMock.failPreferenceSaves("disk full")` makes
 saving preferences fail (`null` again to undo).
@@ -738,10 +742,11 @@ shows, and coming back shows it as it was.
   moment, whose folder is there (`findListedWorktree` in
   `src/bun/listed-worktree.ts`, shared with `src/bun/editor.ts`). Each
   `openTerminal` starts one more session beside the ones the worktree has.
-- **Kinds and names.** A session has a kind and a name. The only kind is
-  `terminal` for now; agent sessions will be another kind that starts an
-  agent's command instead of the shell. The main process names a new session
-  after its kind, "Terminal", then "Terminal 2" and on, the first name no
+- **Kinds and names.** A session has a kind and a name. The kind is
+  `terminal` for the shell, or `agent` for a coding agent, which starts the
+  agent's command instead of the shell (see [agent sessions](#agent-sessions)).
+  The main process names a new session after the shell or the agent,
+  "Terminal" or "Codex", then "Terminal 2" and on, the first name no
   session of that worktree has, exited ones included. It picks the name with
   no wait between reading the names and keeping the session, so two sessions
   that start at once get different names. `renameTerminal` gives a session
@@ -782,8 +787,12 @@ shows, and coming back shows it as it was.
 - **Chips.** Above the pane, one chip per session of the selected worktree,
   in the order they started, with the kind, the name, a filled blue dot
   while it runs, a hollow dot and its exit code once it ended, and a ring
-  when it printed since it was last on screen. "+" at their end starts
-  another terminal, and shows it; agents will make it a menu. The chips are
+  when it printed since it was last on screen. The kind shows as `>_` for a
+  terminal and a star for an agent. "+" at their end is a menu of what can
+  start: Terminal, every agent from Settings with its exact command, and
+  "Set up agents", which opens Settings at Agents. The arrows, Home, and End
+  move through it and wrap, Escape closes it and gives the keyboard back to
+  "+", and Tab or a click elsewhere puts it away. What starts shows at once. The chips are
   a tab list: one tab stop, the arrows, Home, and End show another session
   at once, and the focus stays on the chips. Click, Enter, or Space shows a
   session and puts the keyboard in its terminal. Delete closes the session
@@ -857,15 +866,60 @@ shows, and coming back shows it as it was.
 - **Windows.** `Bun.Terminal` exists on Linux and macOS only, so on Windows
   `openTerminal` answers that terminals are not supported there yet, and
   nothing starts.
-- **Not built.** Agent sessions, split views showing two sessions side by
-  side, keeping sessions after a restart, and starting a terminal editor in
-  a session.
+- **Not built.** Split views showing two sessions side by side, keeping
+  sessions after a restart, and starting a terminal editor in a session.
 
 In `bun run dev:web` the mock engine acts out a shell that echoes what is
 typed and knows `pwd`, `clear`, and `exit`. `timberMock.requestQuit()` acts
 out quitting, `timberMock.endTerminal(id, code)` a shell that exits by
 itself, and `timberMock.failTerminals({ outcome: "unsupported", message })`
 a terminal that cannot start (`null` to undo).
+
+## Agent sessions
+
+A coding agent, such as Claude Code or Codex, runs in a session of a
+worktree beside its terminals. An agent session is a terminal session that
+starts the agent's command in the worktree's folder instead of the shell.
+The app only hosts it: it never reads, parses, or answers what an agent
+prints, which is handled as any terminal's output.
+
+- **The setting.** `agents` in the preferences (`AgentSetting` in
+  `src/shared/agent.ts`): a list of a name and a command, in menu order.
+  Claude Code (`claude`) and Codex (`codex`) until a list is saved; a saved
+  empty list stays empty. Settings, Agents edits it row by row, offers the
+  presets missing by name as one click each, shows the exact command of each
+  row, and saves with its own Save. A name is cleaned up as a session name,
+  must differ from the others ignoring case, and may not be "Terminal", the
+  shell's entry in the same menu. The list holds 20 agents at most, and a
+  command 1000 characters. The list is read whole: one entry in the file that
+  cannot be read puts the presets back, and the next save of the section
+  writes them.
+- **The command.** Split by `splitCommandLine`, never by a shell, as for the
+  editor: quotes group words, nothing is expanded. Nothing is added to it,
+  and it starts in the worktree's folder. The executable is looked for on
+  the PATH the app was started with, or is a full path; a relative path is
+  refused (`findExecutable` in `src/bun/find-executable.ts`, shared with
+  "Open in editor"). An app started from a desktop launcher can have a
+  shorter PATH than a terminal, so an agent that a terminal finds may need
+  its full path here.
+- **Starting.** `openTerminal` with `agent` set to the agent's name. The main
+  process takes the command from the saved preferences only, never from the
+  request. A name that is not saved starts nothing, not even a shell. The
+  session's `shell` is the executable as found and `command` the whole line,
+  shown in the session bar's tooltip. Only the "+" menu and the buttons of a
+  worktree with no session start an agent; New and Open never do.
+- **When it cannot start.** An executable that is not found starts nothing
+  and keeps no session, so the other sessions are not touched. The pane
+  shows why, with the command that failed, until it is dismissed or a session
+  starts there. An agent that starts and stops at once, such as a script
+  whose interpreter is missing, is an exited session with what it printed
+  and its exit code.
+- **Ending.** As for a terminal: closing its chip hangs up on the agent and
+  everything it started, and kills what is still there after two seconds.
+
+In `bun run dev:web` the mock engine acts out an agent as the pretend shell,
+and `timberMock.missingExecutables(["codex"])` acts out an agent whose
+executable is not on the PATH (`[]` to undo).
 
 ## Milestones
 
@@ -874,14 +928,16 @@ a terminal that cannot start (`null` to undo).
    published, upstream deleted, modified and untracked counts.
 2. **Sessions.** Agent and terminal panes. Each is a pseudo-terminal owned by
    the main process (`Bun.Terminal`), rendered by xterm.js. Several per
-   worktree, and hidden panes keep running. Several terminals per worktree
-   are built (see [terminal sessions](#terminal-sessions)); agents are not.
+   worktree, and hidden panes keep running. Built: several terminals and
+   agents per worktree (see [terminal sessions](#terminal-sessions) and
+   [agent sessions](#agent-sessions)).
 3. **Timber actions.** New and open, rebase with a base picker, done with the
    safe and "delete anyway" confirmations.
 4. **Changes.** Diff against the base, the last commit, or a rebase backup.
    The working tree against the index and the last commit is built (see
    [the Changes tab](#the-changes-tab)).
-5. **Settings.** Editor, coding assistant, scripts, layout.
+5. **Settings.** Editor, agents, scripts, layout. Built: layout, editor, and
+   agents.
 6. **Background refresh.** File watching per worktree and periodic fetch.
    Detecting a force-push needs a fetch and the remote-tracking reflog.
 
@@ -1519,6 +1575,44 @@ with Bun 1.4.2 and Git 2.43:
   pane takes it, so it is unverified in the desktop window.
 - Not run: the desktop window (`bun run start`), so neither the keys nor
   several real shells through the RPC bridge were tried there.
+
+Run for agent sessions (issue 15), Linux x64 (Pop!_OS 24.04, natively) with
+Bun 1.4.2 and Git 2.43:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 878 tests passed and 1 was skipped (846 before). With pretend
+  agents (shell scripts on the sessions' PATH) in a temporary repository: an
+  agent started in the worktree's folder under its own name with the
+  executable as found; `fake-codex --model "big one" --sandbox=workspace-write`
+  got exactly those three arguments; two agents and a terminal ran in one
+  worktree at once, each with only its own output, and a second Codex took
+  "Codex 2"; a missing executable, a missing full path, and a relative path
+  started nothing, kept no session, sent no change, named the command and
+  the PATH searched, and left the running agent and terminal answering; an
+  agent name not in the settings started nothing, not even a shell; closing
+  an agent ended its process. In the store and the rendered app: agents
+  start only through `openTerminal` with an agent, New and Open start no
+  session, the pane shows the failed command, and the Agents section
+  validates names and saves only the agents.
+- `bun run build:web`: built.
+- `bun run dev:web` in the built-in browser of the Claude desktop app: Start
+  Claude Code from an empty worktree; "+" opened the menu with Terminal,
+  Claude Code, Codex, and Set up agents; the arrows and Enter started Codex
+  with the keyboard in its terminal; with `claude` acted out as missing, the
+  pane said "Claude Code did not start" with the PATH and the command while
+  both sessions kept running; End and Enter opened Settings at Agents, and
+  an agent added there with arguments was saved. With ten chips, "+" sat at
+  the window's right edge and the menu opened to its left, inside the
+  window. Tab from the menu closed it and moved on from "+". Adding an
+  agent put the focus in the new row's name, and removing one on the next
+  row's Remove.
+- The real Claude Code 2.1.325 and Codex CLI 0.169.0 were started through
+  `createTerminalSessions` in a temporary repository, as agents with the
+  commands `claude --version` and `codex --version`: both were found on the
+  PATH, printed their versions in the pseudo terminal, and exited with 0.
+- Not run: the desktop window (`bun run start`), so the menu and agents
+  through the RPC bridge, and an interactive agent session, were not tried
+  there.
 
 Not run yet:
 

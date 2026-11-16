@@ -125,10 +125,12 @@ export interface AppStore {
 	 */
 	applyDone(request: DoneApplyRequest): Promise<DoneApplyResult>;
 	/**
-	 * Start another terminal in a worktree and choose its chip. The session
-	 * shows in `terminals`; why none started shows in `terminalProblem`. One
-	 * request at a time per worktree, so a double click starts one. Never
-	 * throws.
+	 * Start another session in a worktree, the shell or the agent that
+	 * `request.agent` names, and choose its chip. This is the only way an
+	 * agent starts: New and Open never start one. The session shows in
+	 * `terminals`; why none started shows in `terminalProblem`, with the
+	 * command that failed. One request at a time per worktree, so a double
+	 * click starts one. Never throws.
 	 */
 	openTerminal(request: OpenTerminalRequest): Promise<void>;
 	/**
@@ -639,8 +641,10 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const worktree = repository?.worktrees.find(candidate => candidate.path === request.worktree);
 		const key = worktree?.id ?? request.worktree;
 		if (state.operations.some(operation => operation.kind === "open-terminal" && operation.worktree === key)) return;
-		await track({ kind: "open-terminal", worktree: key }, async () => {
+		const agent = request.agent ?? null;
+		await track({ kind: "open-terminal", worktree: key, agent }, async () => {
 			let message: string;
+			let command: string | null = null;
 			try {
 				const result = await engine.openTerminal(request);
 				if (result.outcome === "opened") {
@@ -655,10 +659,11 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 					return;
 				}
 				message = result.message;
+				if ((result.outcome === "not-found" || result.outcome === "failed") && result.command !== undefined) command = result.command;
 			} catch (error) {
-				message = `The app did not hear whether the terminal started: ${messageOf(error)}`;
+				message = `The app did not hear whether ${agent ?? "the terminal"} started: ${messageOf(error)}`;
 			}
-			update({ terminalProblem: { worktree: key, message } });
+			update({ terminalProblem: { worktree: key, agent, message, command } });
 		});
 	}
 

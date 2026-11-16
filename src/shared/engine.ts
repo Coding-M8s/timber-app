@@ -138,7 +138,11 @@ export interface Engine {
 	/**
 	 * Start the person's shell in a worktree of a repository in the list, as
 	 * a new session beside any it has. Each call starts one. `cols` and
-	 * `rows` are the pane's size.
+	 * `rows` are the pane's size. With `agent`, the agent of that name from
+	 * the saved preferences starts instead, its command taken from there only
+	 * (`agentCommand` in ./agent.ts). An agent that is not saved, or whose
+	 * executable is not found, starts nothing and keeps no session. Nothing
+	 * else starts an agent: New and Open never do.
 	 */
 	openTerminal(request: OpenTerminalRequest): Promise<OpenTerminalResult>;
 	/**

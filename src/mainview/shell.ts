@@ -16,6 +16,7 @@ export const SETTINGS_LABEL = "Settings";
 export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
 	layout: "Layout",
 	editor: "Editor",
+	agents: "Agents",
 };
 
 export const SIDEBAR_SIDE_LABELS: Record<SidebarSide, string> = {

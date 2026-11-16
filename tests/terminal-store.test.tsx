@@ -60,7 +60,7 @@ describe("terminals in the store", () => {
 		const { store, engine } = await startedStore();
 		engine.failTerminals({ outcome: "unsupported", message: "Not on this system." });
 		await store.openTerminal({ repository: TIMBER, worktree: FEATURE, cols: 80, rows: 24 });
-		expect(store.getState().terminalProblem).toEqual({ worktree: featureId, message: "Not on this system." });
+		expect(store.getState().terminalProblem).toEqual({ worktree: featureId, agent: null, message: "Not on this system.", command: null });
 		expect(render(store)).toContain("The terminal did not start");
 		engine.failTerminals(null);
 		await store.openTerminal({ repository: TIMBER, worktree: FEATURE, cols: 80, rows: 24 });
@@ -209,7 +209,7 @@ describe("terminals in the store", () => {
 		expect(store.getState().quitRequest).toBe(1);
 		const markup = render(store);
 		expect(markup).toContain("Quit Timber?");
-		expect(markup).toContain("A terminal is still running. Quitting ends it and everything running in it.");
+		expect(markup).toContain("A session is still running. Quitting ends it and everything running in it.");
 		expect(markup).toMatch(/<button type="button" class="button quiet"[^>]*>Keep running<\/button>/);
 		store.cancelQuit();
 		expect(store.getState().quitRequest).toBeNull();

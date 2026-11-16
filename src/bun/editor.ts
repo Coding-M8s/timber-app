@@ -1,9 +1,9 @@
 import { statSync } from "node:fs";
-import { isAbsolute } from "node:path";
 import { describeCommandLine } from "../shared/command-line";
 import { TERMINAL_EDITOR_REASON, editorCommand, editorTarget } from "../shared/editor";
 import type { OpenInEditorRequest, OpenInEditorResult } from "../shared/model";
 import type { Preferences } from "../shared/preferences";
+import { findExecutable } from "./find-executable";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
 
 /**
@@ -107,22 +107,13 @@ export function createEditorLauncher(dependencies: EditorDependencies): EditorLa
 		if (editor.terminal) return { outcome: "terminal-editor", command, message: TERMINAL_EDITOR_REASON };
 
 		const { executable } = built;
-		const searchPath = environment.PATH ?? "";
-		if (!isAbsolute(executable) && /[\\/]/.test(executable)) {
-			return {
-				outcome: "failed",
-				command,
-				message: `The editor command starts with the relative path ${executable}. Use a command found on the PATH, or a full path, in Settings, Editor.`,
-			};
+		const lookup = findExecutable(executable, environment.PATH ?? "", { what: "the editor", command: "The editor command", section: "Settings, Editor" });
+		if (!lookup.ok) {
+			return lookup.reason === "relative"
+				? { outcome: "failed", command, message: lookup.message }
+				: { outcome: "not-found", command, executable, message: lookup.message };
 		}
-		// With a full path, `Bun.which` only checks that it is an executable file.
-		const resolved = Bun.which(executable, { PATH: searchPath });
-		if (resolved === null) {
-			const where = isAbsolute(executable)
-				? `There is no executable file at ${executable}.`
-				: `"${executable}" was not found on the PATH the app was started with: ${searchPath === "" ? "(empty)" : searchPath}. A change to PATH needs a restart of the app, or use the full path in Settings, Editor.`;
-			return { outcome: "not-found", command, executable, message: `Could not start the editor. ${where}` };
-		}
+		const resolved = lookup.path;
 
 		if (platform === "win32" && WINDOWS_BATCH.test(resolved)) {
 			return {

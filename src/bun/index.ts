@@ -72,6 +72,8 @@ function tell(what: string, send: () => void): void {
 // What a terminal prints is private, like what a command prints: it goes to the window and is never logged.
 const terminals = createTerminalSessions({
 	findRepository: path => repositories.find(path),
+	// An agent's command comes from the saved preferences only (see ./terminals.ts).
+	agents: async () => (await preferences.load()).agents,
 	onOutput: output => tell("terminal output", () => rpc.send.terminalOutput(output)),
 	onChange: change => tell("a terminal change", () => rpc.send.terminalChanged(change)),
 });
@@ -113,7 +115,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			readFileChanges: request => fileChanges.read(request),
 			readFileDiff: request => fileChanges.diff(request),
 			listTerminals: () => terminals.list(),
-			// Starts a shell only in a worktree Timber lists (see ./terminals.ts).
+			// Starts a shell, or an agent from the saved Settings, only in a worktree Timber lists (see ./terminals.ts).
 			openTerminal: request => terminals.open(request),
 			readTerminal: ({ id }) => terminals.read(id),
 			renameTerminal: ({ id, name }) => terminals.rename(id, name),

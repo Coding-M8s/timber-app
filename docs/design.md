@@ -55,7 +55,7 @@ change them here first when they change.
 - **Done:** a clean, published worktree gets a summary of what is removed,
   including ignored files. One with unsaved work gets "Delete anyway?" with
   Keep as the default.
-- **Settings:** sections for editor, coding assistant, Jira, setup scripts,
+- **Settings:** sections for editor, agents, Jira, setup scripts,
   pre-done scripts, starting branch, remote, worktree folder, and layout.
   Presets where they help, but every value is editable free-form, and every
   section has Save.

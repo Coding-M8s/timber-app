@@ -370,6 +370,150 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 		expect(reset.data).toContain("done-42");
 		expect(reset.seq).toBe(sessions.read(session.id)!.seq);
 	});
+
+	describe("agent sessions", () => {
+		/** A folder of pretend agents, put on the PATH of the sessions, each printing its arguments and folder, then echoing lines. */
+		function agentsBin(): string {
+			const bin = join(root, "agent bin");
+			mkdirSync(bin, { recursive: true });
+			for (const name of ["fake-claude", "fake-codex"]) {
+				const script = join(bin, name);
+				writeFileSync(script, `#!/bin/sh\nprintf '${name} in %s args' "$(pwd)"\nfor arg in "$@"; do printf ' [%s]' "$arg"; done\necho\nwhile read line; do echo "${name} got $line"; done\n`);
+				chmodSync(script, 0o755);
+			}
+			return bin;
+		}
+
+		const AGENTS = [
+			{ name: "Claude Code", command: "fake-claude" },
+			{ name: "Codex", command: `fake-codex --model "big one" --sandbox=workspace-write` },
+			{ name: "Missing", command: "no-such-agent --flag" },
+		];
+
+		function startWithAgents(overrides: Partial<TerminalDependencies> = {}): TerminalSessions {
+			const bin = agentsBin();
+			return start({
+				environment: { PATH: `${bin}:${process.env.PATH}`, HOME: root, SHELL: "/bin/sh", PS1: "$ ", LANG: "C.UTF-8" },
+				agents: async () => AGENTS,
+				...overrides,
+			});
+		}
+
+		async function openedAgent(agent: string, path = worktree) {
+			const result = await sessions.open({ repository, worktree: path, cols: 80, rows: 24, agent });
+			if (result.outcome !== "opened") throw new Error(`Not opened: ${JSON.stringify(result)}`);
+			return result.session;
+		}
+
+		const seen = async (id: string, text: string) => {
+			const found = await until(() => printed(id).includes(text));
+			if (!found) throw new Error(`Did not see ${text}. Printed: ${JSON.stringify(printed(id))}`);
+		};
+
+		test("an agent starts its command in the worktree's folder, named after the agent, with the executable as found", async () => {
+			startWithAgents();
+			const session = await openedAgent("Claude Code");
+			const executable = join(root, "agent bin", "fake-claude");
+			expect(session).toMatchObject({ kind: "agent", name: "Claude Code", path: worktree, shell: executable, state: { kind: "running" } });
+			expect(session.command).toBe(`'${executable}'`);
+			await seen(session.id, `fake-claude in ${worktree} args\r\n`);
+			sessions.write(session.id, "hello\r");
+			await seen(session.id, "fake-claude got hello");
+		});
+
+		test("a custom command with arguments gets each argument as it was typed, with no shell", async () => {
+			startWithAgents();
+			const session = await openedAgent("Codex");
+			await seen(session.id, "args [--model] [big one] [--sandbox=workspace-write]");
+			expect(session.command).toBe(`'${join(root, "agent bin", "fake-codex")}' --model 'big one' --sandbox=workspace-write`);
+		});
+
+		test("two different agents and a terminal run in one worktree at the same time, each with its own output", async () => {
+			startWithAgents();
+			const claude = await openedAgent("Claude Code");
+			const codex = await openedAgent("Codex");
+			const terminal = (await opened()).session;
+			const again = await openedAgent("Codex");
+			expect([claude.name, codex.name, terminal.name, again.name]).toEqual(["Claude Code", "Codex", "Terminal", "Codex 2"]);
+			sessions.write(claude.id, "one\r");
+			sessions.write(codex.id, "two\r");
+			await seen(claude.id, "fake-claude got one");
+			await seen(codex.id, "fake-codex got two");
+			expect(printed(claude.id)).not.toContain("got two");
+			expect(printed(codex.id)).not.toContain("got one");
+			expect(sessions.liveCount()).toBe(4);
+		});
+
+		test("a missing executable starts nothing, names the command and the PATH, and leaves the other sessions alone", async () => {
+			startWithAgents();
+			const claude = await openedAgent("Claude Code");
+			const terminal = (await opened()).session;
+			const before = sessions.list();
+			const changesBefore = changes.length;
+			const result = await sessions.open({ repository, worktree, cols: 80, rows: 24, agent: "Missing" });
+			expect(result).toEqual({
+				outcome: "not-found",
+				command: "no-such-agent --flag",
+				executable: "no-such-agent",
+				message: `Could not start Missing. "no-such-agent" was not found on the PATH the app was started with: ${join(root, "agent bin")}:${process.env.PATH}. A change to PATH needs a restart of the app, or use the full path in Settings, Agents.`,
+			});
+			expect(sessions.list()).toEqual(before);
+			expect(changes.length).toBe(changesBefore);
+			expect(sessions.liveCount()).toBe(2);
+			sessions.write(claude.id, "still\r");
+			await seen(claude.id, "fake-claude got still");
+			await run(terminal.id, "echo alive-$((1+1))", "alive-2");
+		});
+
+		test("a full path that is not there, or a relative path, starts nothing", async () => {
+			startWithAgents({ agents: async () => [{ name: "Gone", command: join(root, "nowhere", "agent") }, { name: "Relative", command: "./bin/agent" }] });
+			const gone = await sessions.open({ repository, worktree, cols: 80, rows: 24, agent: "Gone" });
+			expect(gone).toMatchObject({ outcome: "not-found", message: `Could not start Gone. There is no executable file at ${join(root, "nowhere", "agent")}.` });
+			const relative = await sessions.open({ repository, worktree, cols: 80, rows: 24, agent: "Relative" });
+			expect(relative).toMatchObject({ outcome: "failed", command: "./bin/agent" });
+			expect(relative.outcome === "failed" && relative.message).toContain("relative path ./bin/agent");
+			expect(sessions.list()).toEqual([]);
+		});
+
+		test("an agent that is not in the saved settings starts nothing, not even a shell", async () => {
+			startWithAgents();
+			const result = await sessions.open({ repository, worktree, cols: 80, rows: 24, agent: "Aider" });
+			expect(result).toEqual({ outcome: "not-configured", message: 'No agent called "Aider" is set in Settings, Agents. Nothing was started.' });
+			// Names are matched exactly, as saved.
+			expect((await sessions.open({ repository, worktree, cols: 80, rows: 24, agent: "codex" })).outcome).toBe("not-configured");
+			expect(sessions.list()).toEqual([]);
+			expect(changes).toEqual([]);
+		});
+
+		test("an agent goes only where a terminal may go", async () => {
+			startWithAgents();
+			const result = await sessions.open({ repository, worktree: unlisted, cols: 80, rows: 24, agent: "Claude Code" });
+			expect(result.outcome).toBe("not-listed");
+			expect(result.outcome === "not-listed" && result.message).toContain("Claude Code was not started.");
+			expect(sessions.list()).toEqual([]);
+		});
+
+		test("closing an agent session ends the agent, and an agent that exits stays with its exit code", async () => {
+			startWithAgents();
+			const claude = await openedAgent("Claude Code");
+			await seen(claude.id, "fake-claude in");
+			expect(running("fake-claude")).toBe(true);
+			await sessions.close(claude.id);
+			expect(sessions.list()).toEqual([]);
+			expect(running("fake-claude")).toBe(false);
+			const codex = await openedAgent("Codex");
+			await seen(codex.id, "fake-codex in");
+			// End of input ends the pretend agent's loop, and the script with it.
+			sessions.write(codex.id, "\x04");
+			expect(await until(() => sessions.list().find(session => session.id === codex.id)?.state.kind === "exited")).toBe(true);
+			expect(sessions.list()[0]!.state).toEqual({ kind: "exited", exitCode: 0, signal: null });
+		});
+
+		/** Whether a pretend agent of this temporary folder still runs. */
+		function running(name: string): boolean {
+			return Bun.spawnSync(["pgrep", "-f", join(root, "agent bin", name)], { stdout: "pipe" }).exitCode === 0;
+		}
+	});
 });
 
 describe.skipIf(!posix)("opening a link from a terminal", () => {

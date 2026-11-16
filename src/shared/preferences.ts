@@ -3,6 +3,7 @@
  * behaves, never how Timber is configured. They are the `preferences` part of
  * the app's settings file. Everything here is pure.
  */
+import { AGENT_PRESETS, type AgentSetting, readAgentSettings, sameAgentSettings, writeAgentSettings } from "./agent";
 import { type EditorSetting, readEditorSetting, sameEditorSetting, writeEditorSetting } from "./editor";
 
 /** The sides of the window the sidebar can be on. */
@@ -14,6 +15,13 @@ export interface Preferences {
 	sidebarSide: SidebarSide;
 	/** The editor that "Open in editor" starts. Null until one is chosen. */
 	editor: EditorSetting | null;
+	/**
+	 * The coding agents the "+" menu of a worktree's sessions starts, in menu
+	 * order. Claude Code and Codex until a list is saved; a saved empty list
+	 * stays empty. Read whole: one entry that cannot be read puts the presets
+	 * back, and the next save of the Agents section writes them.
+	 */
+	agents: readonly AgentSetting[];
 }
 
 /** How one preference is read from outside, compared, and written to the settings file. */
@@ -44,6 +52,12 @@ export const PREFERENCE_PARTS: { [Key in keyof Preferences]: PreferencePart<Pref
 		read: readEditorSetting,
 		same: sameEditorSetting,
 		write: writeEditorSetting,
+	},
+	agents: {
+		fallback: () => AGENT_PRESETS.map(agent => ({ ...agent })),
+		read: readAgentSettings,
+		same: sameAgentSettings,
+		write: writeAgentSettings,
 	},
 };
 

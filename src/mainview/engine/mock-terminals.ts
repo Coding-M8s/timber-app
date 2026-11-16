@@ -1,3 +1,5 @@
+import { type AgentSetting, agentCommand, findAgent } from "../../shared/agent";
+import { describeCommandLine } from "../../shared/command-line";
 import type { Engine } from "../../shared/engine";
 import type { Worktree } from "../../shared/model";
 import {
@@ -28,6 +30,8 @@ export interface TerminalControls {
 	terminalSize(id: string): { cols: number; rows: number } | null;
 	/** Make every later start of a terminal answer this way, or null to start them again. */
 	failTerminals(result: Exclude<OpenTerminalResult, { outcome: "opened" }> | null): void;
+	/** Act out these agent executables, by the name a command starts with, as not found on the PATH. Empty for all found. */
+	missingExecutables(executables: readonly string[]): void;
 	/** The links a terminal asked to open. */
 	openedLinks(): string[];
 	/** The last part of a session the window said it drew. */
@@ -43,25 +47,34 @@ interface Acted {
 	drawn: number;
 }
 
+/** The PATH the mock acts out looking on. */
+export const MOCK_PATH = "/usr/local/bin:/usr/bin:/bin";
+
 /**
  * Terminals acted out in memory, for the browser build and tests. Each one is
  * a pretend shell that echoes what is typed and knows `pwd`, `clear`, and
- * `exit`. Output arrives a moment later, as it would over the bridge.
+ * `exit`. An agent session is the same pretend program, started from the
+ * agents that `agents` answers, as the saved preferences. Output arrives a
+ * moment later, as it would over the bridge.
  */
-export function createMockTerminals(findWorktree: (repository: string, path: string) => Worktree | null): TerminalCapabilities & TerminalControls {
+export function createMockTerminals(
+	findWorktree: (repository: string, path: string) => Worktree | null,
+	agents: () => readonly AgentSetting[] = () => [],
+): TerminalCapabilities & TerminalControls {
 	const sessions = new Map<string, Acted>();
 	const output = new Set<(output: TerminalOutput) => void>();
 	const changes = new Set<(change: TerminalChange) => void>();
 	const quitListeners = new Set<(live: number) => void>();
 	let lastId = 0;
 	let failing: Exclude<OpenTerminalResult, { outcome: "opened" }> | null = null;
+	let missing: readonly string[] = [];
 	let confirmed = false;
 	let clipboard = "";
 	const links: string[] = [];
 
 	const later = (task: () => void) => void Promise.resolve().then(task);
 	const live = () => [...sessions.values()].filter(acted => acted.session.state.kind === "running").length;
-	const prompt = (acted: Acted) => `\x1b[32m${acted.session.path.split("/").at(-1)}\x1b[0m $ `;
+	const prompt = (acted: Acted) => acted.session.kind === "agent" ? "\x1b[35m>\x1b[0m " : `\x1b[32m${acted.session.path.split("/").at(-1)}\x1b[0m $ `;
 
 	function print(acted: Acted, data: string): void {
 		const seq = acted.scrollback.append(data);
@@ -121,23 +134,58 @@ export function createMockTerminals(findWorktree: (repository: string, path: str
 		listTerminals: async () => [...sessions.values()].map(acted => structuredClone(acted.session)),
 		async openTerminal(request) {
 			if (failing) return structuredClone(failing);
+			let agent: AgentSetting | null = null;
+			if (request.agent !== undefined) {
+				if (typeof request.agent !== "string") return { outcome: "not-configured", message: "The request names no agent. Nothing was started." };
+				agent = findAgent(agents(), request.agent);
+				if (agent === null) return { outcome: "not-configured", message: `No agent called "${request.agent}" is set in Settings, Agents. Nothing was started.` };
+			}
 			const worktree = findWorktree(request.repository, request.worktree);
-			if (!worktree) return { outcome: "not-listed", message: `Timber lists no worktree at ${request.worktree} in ${request.repository}. No terminal was started. Refresh the list.` };
+			const notStarted = agent ? `${agent.name} was not started.` : "No terminal was started.";
+			if (!worktree) return { outcome: "not-listed", message: `Timber lists no worktree at ${request.worktree} in ${request.repository}. ${notStarted} Refresh the list.` };
+			let shell = "/bin/mock-shell";
+			let args: string[] = [];
+			if (agent) {
+				const built = agentCommand(agent);
+				if (!built.ok) return { outcome: "failed", message: `${built.message} Change it in Settings, Agents. Nothing was started.` };
+				const command = describeCommandLine([built.executable, ...built.arguments]);
+				if (!built.executable.startsWith("/") && /[\\/]/.test(built.executable)) {
+					return {
+						outcome: "failed",
+						command,
+						message: `The command of ${agent.name} starts with the relative path ${built.executable}. Use a command found on the PATH, or a full path, in Settings, Agents.`,
+					};
+				}
+				if (missing.includes(built.executable)) {
+					return {
+						outcome: "not-found",
+						command,
+						executable: built.executable,
+						message: `Could not start ${agent.name}. "${built.executable}" was not found on the PATH the app was started with: ${MOCK_PATH}. A change to PATH needs a restart of the app, or use the full path in Settings, Agents.`,
+					};
+				}
+				shell = built.executable.startsWith("/") ? built.executable : `/usr/local/bin/${built.executable}`;
+				args = built.arguments;
+			}
 			const taken = [...sessions.values()].filter(acted => acted.session.worktree === worktree.id).map(acted => acted.session.name);
 			const session: TerminalSession = {
 				id: `mock-terminal-${++lastId}`,
-				kind: "terminal",
-				name: defaultSessionName("terminal", taken),
+				kind: agent ? "agent" : "terminal",
+				name: defaultSessionName(agent ? agent.name : "Terminal", taken),
 				repository: request.repository,
 				worktree: worktree.id,
 				path: worktree.path,
-				shell: "/bin/mock-shell",
+				shell,
+				command: describeCommandLine([shell, ...args]),
 				state: { kind: "running" },
 			};
 			const acted: Acted = { session, scrollback: createScrollback(), line: "", typed: "", size: { cols: request.cols, rows: request.rows }, drawn: 0 };
 			sessions.set(session.id, acted);
 			announce({ id: session.id, session });
-			print(acted, `A pretend shell in ${session.path}. Try pwd, clear, or exit.\r\n${prompt(acted)}`);
+			const greeting = agent
+				? `A pretend ${agent.name} in ${session.path}, started as ${session.command}. Nothing runs in the browser. Try exit.\r\n`
+				: `A pretend shell in ${session.path}. Try pwd, clear, or exit.\r\n`;
+			print(acted, `${greeting}${prompt(acted)}`);
 			return { outcome: "opened", session: structuredClone(session) };
 		},
 		async renameTerminal(id, name) {
@@ -217,6 +265,9 @@ export function createMockTerminals(findWorktree: (repository: string, path: str
 		},
 		failTerminals(result) {
 			failing = result;
+		},
+		missingExecutables(executables) {
+			missing = [...executables];
 		},
 		openedLinks: () => [...links],
 	};

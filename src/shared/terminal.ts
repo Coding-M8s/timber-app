@@ -11,10 +11,10 @@ export type TerminalState =
 	| { kind: "exited"; exitCode: number | null; signal: string | null };
 
 /**
- * What a session runs. Only the person's shell for now; agents come later,
- * as sessions that start an agent's command instead of the shell.
+ * What a session runs: the person's shell, or a coding agent from Settings,
+ * which starts the agent's command instead of the shell.
  */
-export const SESSION_KINDS = ["terminal"] as const;
+export const SESSION_KINDS = ["terminal", "agent"] as const;
 export type SessionKind = typeof SESSION_KINDS[number];
 
 /** One session in a pseudo terminal, in one worktree. A worktree can have several. */
@@ -30,12 +30,14 @@ export interface TerminalSession {
 	worktree: string;
 	/** The worktree's registered path, where the shell started. */
 	path: string;
-	/** The shell that runs, as an executable path. */
+	/** The executable that runs, as a full path: the shell, or the agent's executable as found on the PATH. */
 	shell: string;
+	/** What was started, as one line for showing, such as `/usr/bin/zsh` or `/usr/local/bin/codex --full-auto`. */
+	command: string;
 	state: TerminalState;
 }
 
-/** Start another terminal in a worktree. Named as for "Open in editor". */
+/** Start another session in a worktree. Named as for "Open in editor". */
 export interface OpenTerminalRequest {
 	/** The path of the repository's primary checkout. */
 	repository: string;
@@ -44,6 +46,12 @@ export interface OpenTerminalRequest {
 	/** The size of the pane, so the first prompt is drawn for it. */
 	cols: number;
 	rows: number;
+	/**
+	 * The name of an agent in the saved Settings to start instead of the
+	 * shell. The main process takes its command from the saved setting only,
+	 * never from the request. Left out for the shell.
+	 */
+	agent?: string;
 }
 
 export type OpenTerminalResult =
@@ -52,7 +60,12 @@ export type OpenTerminalResult =
 	| { outcome: "not-listed"; message: string }
 	/** Terminals cannot run on this operating system yet. */
 	| { outcome: "unsupported"; message: string }
-	| { outcome: "failed"; message: string };
+	/** The saved Settings have no agent with the requested name. Nothing started, not even a shell. */
+	| { outcome: "not-configured"; message: string }
+	/** The agent's executable is not on the PATH, or not at the full path given. `command` is what would have run. */
+	| { outcome: "not-found"; command: string; executable: string; message: string }
+	/** `command` is what was to run, when it was known. */
+	| { outcome: "failed"; message: string; command?: string };
 
 /**
  * Part of what a session printed. `seq` counts the parts of one session from
@@ -95,7 +108,7 @@ export const TERMINAL_UNSUPPORTED_REASON =
 /** The longest name a session can have, in characters. */
 export const SESSION_NAME_LIMIT = 40;
 
-const KIND_NAMES: Record<SessionKind, string> = { terminal: "Terminal" };
+const KIND_NAMES: Record<SessionKind, string> = { terminal: "Terminal", agent: "Agent" };
 
 /** What a kind of session is called, such as "Terminal". */
 export function sessionKindName(kind: SessionKind): string {
@@ -103,17 +116,22 @@ export function sessionKindName(kind: SessionKind): string {
 }
 
 /**
- * The name for a new session of a kind: the kind's name, then "Terminal 2",
- * "Terminal 3", and so on, the first that no other session in the worktree
- * has. `taken` are the names of the worktree's sessions.
+ * The name for a new session: `base`, such as "Terminal" or an agent's name,
+ * then "Terminal 2", "Terminal 3", and so on, the first that no other session
+ * in the worktree has. `taken` are the names of the worktree's sessions. A
+ * numbered name is cut to fit `SESSION_NAME_LIMIT` before its number.
  */
-export function defaultSessionName(kind: SessionKind, taken: readonly string[]): string {
-	const base = sessionKindName(kind);
+export function defaultSessionName(base: string, taken: readonly string[]): string {
 	const names = new Set(taken);
+	// The base is cut so that the name with its number still fits `SESSION_NAME_LIMIT`.
+	const numbered = (number: number) => {
+		const suffix = ` ${number}`;
+		return `${Array.from(base).slice(0, SESSION_NAME_LIMIT - suffix.length).join("").trimEnd()}${suffix}`;
+	};
 	if (!names.has(base)) return base;
 	let number = 2;
-	while (names.has(`${base} ${number}`)) number += 1;
-	return `${base} ${number}`;
+	while (names.has(numbered(number))) number += 1;
+	return numbered(number);
 }
 
 /**
@@ -198,9 +216,9 @@ export function describeTerminalExit(state: Extract<TerminalState, { kind: "exit
 	return state.signal ? `Stopped by ${state.signal}` : "Exited";
 }
 
-/** The question before quitting while terminals run. */
+/** The question before quitting while sessions run. */
 export function describeQuitRequest(live: number): { title: string; text: string } {
-	const count = live === 1 ? "A terminal is" : `${live} terminals are`;
+	const count = live === 1 ? "A session is" : `${live} sessions are`;
 	return {
 		title: "Quit Timber?",
 		text: `${count} still running. Quitting ends ${live === 1 ? "it" : "them"} and everything running in ${live === 1 ? "it" : "them"}.`,

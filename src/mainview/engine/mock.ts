@@ -520,7 +520,7 @@ export function createMockEngine(
 		const repository = current.find(candidate => candidate.path === path && candidate.available);
 		const worktree = timberFailures.has(path) ? undefined : repository?.worktrees.find(candidate => candidate.path === worktreePath);
 		return worktree && worktree.pathExists ? worktree : null;
-	});
+	}, () => preferences.agents);
 	return {
 		...terminals,
 		timberStatus: look,
