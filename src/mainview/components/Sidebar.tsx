@@ -87,6 +87,19 @@ export function Sidebar() {
 										? <span className="group-count">{repository.worktrees.length}</span>
 										: <span className="group-flag">unavailable</span>}
 								</button>
+								{repository.available && (
+									<button
+										type="button"
+										className="icon-button group-new"
+										aria-label={`New worktree in ${repository.name}`}
+										title={`New worktree in ${repository.name}`}
+										onClick={() => store.openDialog({ kind: "new-worktree", repository: repository.path })}
+									>
+										<svg aria-hidden="true" width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+											<path d="M5.5 1.5v8M1.5 5.5h8" />
+										</svg>
+									</button>
+								)}
 								<button
 									type="button"
 									className="icon-button group-remove"

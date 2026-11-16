@@ -1,3 +1,4 @@
+import { Dialogs } from "./components/Dialogs";
 import { Sidebar } from "./components/Sidebar";
 import { TimberNotice } from "./components/TimberNotice";
 import type { ReactNode } from "react";
@@ -51,6 +52,7 @@ export function App({ store, children }: { store: AppStore; children?: ReactNode
 				<TitleBar />
 				<Body />
 				<Toasts />
+				<Dialogs />
 				{children}
 			</div>
 		</StoreProvider>

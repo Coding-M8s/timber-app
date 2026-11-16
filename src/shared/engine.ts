@@ -1,4 +1,4 @@
-import type { AddRepositoryResult, RemoveRepositoryResult, Repository, TimberStatus } from "./model";
+import type { AddRepositoryResult, NewWorktreeRequest, OpenWorktreeRequest, RemoveRepositoryResult, Repository, TimberStatus, WorktreeCommandResult } from "./model";
 
 /**
  * Everything the interface may ask of the machine it runs on.
@@ -37,6 +37,20 @@ export interface Engine {
 	 * repository whose worktrees Timber could not list has `failure` set.
 	 */
 	loadRepository(path: string): Promise<Repository | null>;
+	/**
+	 * Create a worktree by running `timber new` in a repository from the list.
+	 * The command is `newWorktreeArguments` in ./worktree-commands.ts, so the
+	 * interface can show it before asking. It runs once and is never retried
+	 * here. Not safe to call again blindly: read the list after every outcome.
+	 */
+	newWorktree(request: NewWorktreeRequest): Promise<WorktreeCommandResult>;
+	/**
+	 * Open a branch or an existing worktree by running `timber open` in a
+	 * repository from the list, with setup run again when asked. The command is
+	 * `openWorktreeArguments` in ./worktree-commands.ts. It runs once and is
+	 * never retried here. Read the list after every outcome.
+	 */
+	openWorktree(request: OpenWorktreeRequest): Promise<WorktreeCommandResult>;
 	/**
 	 * Hear when the machine reports that a repository changed. The listener gets
 	 * the path of its primary checkout. Returns a function that stops listening.

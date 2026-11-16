@@ -33,6 +33,8 @@ export interface RepositoryList {
 	remove(path: string): Promise<RemoveRepositoryResult>;
 	/** Read one repository again, named by the path of its primary checkout. See `RepositoryReader.reload`. */
 	reload(path: string): Promise<Repository | null>;
+	/** Whether `path` is the primary checkout of a repository in the list. Commands that change a repository run only in these. */
+	includes(path: string): Promise<boolean>;
 }
 
 function messageOf(error: unknown): string {
@@ -126,6 +128,12 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 		addFolder,
 
 		reload: path => reader.reload(path),
+
+		async includes(path) {
+			const override = overrideRepositoryPaths(environment);
+			if (override) return (await listOverride(override)).some(repository => repository.path === path);
+			return (await settings()).repositories.some(entry => entry.path === path);
+		},
 
 		remove(path) {
 			if (overridden()) return Promise.resolve({ outcome: "overridden" });

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Engine } from "../src/shared/engine";
-import type { AddRepositoryResult, RemoveRepositoryResult, Repository, TimberStatus } from "../src/shared/model";
+import type { AddRepositoryResult, RemoveRepositoryResult, Repository, TimberStatus, WorktreeCommandResult } from "../src/shared/model";
 import { createMockEngine, sampleChanges, samplePickableRepository, sampleRepositories, sampleTimberStatuses, sampleUnavailableRepository } from "../src/mainview/engine/mock";
 import { isRunning, selectedWorktree } from "../src/mainview/store/state";
 import { createAppStore } from "../src/mainview/store/store";
@@ -59,6 +59,7 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 	const loads: Pending<Repository | null>[] = [];
 	const adds: Pending<AddRepositoryResult>[] = [];
 	const removes: Pending<RemoveRepositoryResult>[] = [];
+	const commands: (Pending<WorktreeCommandResult> & { kind: "new" | "open"; request: object })[] = [];
 	const listeners = new Set<(path: string) => void>();
 	const engine: Engine = {
 		timberStatus: async () => timber,
@@ -75,6 +76,12 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		removeRepository: path => new Promise((resolve, reject) => {
 			removes.push({ path, resolve, reject });
 		}),
+		newWorktree: request => new Promise((resolve, reject) => {
+			commands.push({ kind: "new", request, path: request.repository, resolve, reject });
+		}),
+		openWorktree: request => new Promise((resolve, reject) => {
+			commands.push({ kind: "open", request, path: request.repository, resolve, reject });
+		}),
 		onRepositoryChanged(listener) {
 			listeners.add(listener);
 			return () => void listeners.delete(listener);
@@ -83,7 +90,7 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 	const push = (path: string) => {
 		for (const listener of [...listeners]) listener(path);
 	};
-	return { engine, lists, loads, adds, removes, push, listeners };
+	return { engine, lists, loads, adds, removes, commands, push, listeners };
 }
 
 /** A store on a manual engine, started and past its first load of the sample data. */
@@ -663,5 +670,136 @@ describe("a repository whose worktrees Timber could not list", () => {
 		expect(repositoryIn([...store.getState().repositories], TIMBER)).toMatchObject({ failure: diagnostic, worktrees: [] });
 		// The selection starts on the first worktree there is.
 		expect(store.getState().selection).toEqual({ repository: API_SERVER, worktree: idOf(API_SERVER) });
+	});
+});
+
+describe("creating and opening a worktree", () => {
+	const NEW_PATH = "/work/timber-worktrees/feat-login";
+	const created = { id: `/work/timber/.git\0verified\0${NEW_PATH}`, path: NEW_PATH, branch: "feat/login" };
+	const failure = { command: "timber new shown", diagnostic: "Base branch nope is missing or ambiguous. Select an exact branch.", output: { text: "error\n", truncated: false } };
+	const request = { repository: TIMBER, name: "feat/login", base: null };
+
+	/** The sample data after Timber made the new worktree. */
+	function withCreated(): Repository {
+		const repository = structuredClone(repositoryIn(sampleRepositories, TIMBER));
+		repository.worktrees.push({ ...structuredClone(repository.worktrees[1]!), ...created, canonicalPath: NEW_PATH });
+		return repository;
+	}
+
+	const outcomes: [string, WorktreeCommandResult, boolean][] = [
+		["succeeded", { outcome: "succeeded", worktree: created, created: true }, true],
+		["created, but setup failed", { outcome: "failed", failure, worktree: created, created: true }, true],
+		["failed before creation", { outcome: "failed", failure, worktree: null, created: false }, false],
+		["cancelled", { outcome: "cancelled" }, false],
+	];
+
+	for (const [name, result, selects] of outcomes) {
+		test(`${name}: asks once, reads the repository again, and ${selects ? "selects the reported worktree" : "keeps the selection"}`, async () => {
+			const { store, commands, loads, lists } = await loadedStore();
+			store.select(FEATURE_ID);
+			const answer = store.newWorktree(request);
+			await settle();
+			expect(commands.map(command => [command.kind, command.request])).toEqual([["new", request]]);
+			// Nothing is read again before the command has ended.
+			expect(loads.length).toBe(0);
+
+			commands[0]!.resolve(result);
+			await settle();
+			expect(loads.map(load => load.path)).toEqual([TIMBER]);
+			loads.shift()!.resolve(result.outcome !== "cancelled" && result.worktree ? withCreated() : structuredClone(repositoryIn(sampleRepositories, TIMBER)));
+
+			expect(await answer).toEqual(result);
+			expect(store.getState().selection).toEqual({ repository: TIMBER, worktree: selects ? created.id : FEATURE_ID });
+			// Once, and only that repository.
+			await settle();
+			expect(commands.length).toBe(1);
+			expect(loads.length).toBe(0);
+			expect(lists.length).toBe(0);
+		});
+	}
+
+	test("a request that throws is a failed result, and the repository is still read again", async () => {
+		const { store, commands, loads } = await loadedStore();
+		const answer = store.newWorktree(request);
+		await settle();
+		commands[0]!.reject(new Error("bridge closed"));
+		await settle();
+		expect(loads.map(load => load.path)).toEqual([TIMBER]);
+		loads.shift()!.resolve(withCreated());
+		const result = await answer;
+		expect(result).toMatchObject({ outcome: "failed", worktree: null, created: false, failure: { command: null, output: null } });
+		expect(result.outcome === "failed" && result.failure.diagnostic).toContain("bridge closed");
+		expect(result.outcome === "failed" && result.failure.diagnostic).toContain("What it did is unknown");
+		// The list shows what is there, even though nobody said what happened.
+		expect(repositoryIn([...store.getState().repositories], TIMBER).worktrees.length).toBe(5);
+		expect(commands.length).toBe(1);
+	});
+
+	test("a reported worktree that the list does not have leaves the selection alone", async () => {
+		const { store, commands, loads } = await loadedStore();
+		const answer = store.newWorktree(request);
+		await settle();
+		commands[0]!.resolve({ outcome: "succeeded", worktree: created, created: true });
+		await settle();
+		loads.shift()!.resolve(structuredClone(repositoryIn(sampleRepositories, TIMBER)));
+		await answer;
+		expect(store.getState().selection).toEqual({ repository: TIMBER, worktree: TIMBER_ID });
+	});
+
+	test("a reload that fails afterwards still answers with the result, and records the error", async () => {
+		const { store, commands, loads } = await loadedStore();
+		const answer = store.newWorktree(request);
+		await settle();
+		commands[0]!.resolve({ outcome: "succeeded", worktree: created, created: true });
+		await settle();
+		loads.shift()!.reject(new Error("Git is busy"));
+		expect(await answer).toMatchObject({ outcome: "succeeded" });
+		expect(store.getState().error).toEqual({ repository: TIMBER, message: "Git is busy" });
+	});
+
+	test("open: asks once with the request, reads the repository again, and selects the worktree", async () => {
+		const { store, commands, loads } = await loadedStore();
+		const open = { repository: TIMBER, selector: FEATURE, setup: true };
+		const answer = store.openWorktree(open);
+		await settle();
+		expect(commands.map(command => [command.kind, command.request])).toEqual([["open", open]]);
+		const result: WorktreeCommandResult = { outcome: "failed", failure, worktree: { id: FEATURE_ID, path: FEATURE, branch: "feat/github-issue-lookup" }, created: false };
+		commands[0]!.resolve(result);
+		await settle();
+		expect(loads.map(load => load.path)).toEqual([TIMBER]);
+		loads.shift()!.resolve(structuredClone(repositoryIn(sampleRepositories, TIMBER)));
+		expect(await answer).toEqual(result);
+		expect(store.getState().selection).toEqual({ repository: TIMBER, worktree: FEATURE_ID });
+		expect(commands.length).toBe(1);
+	});
+
+	test("with the mock engine: the new worktree is listed in Timber's order and selected", async () => {
+		const store = createAppStore(createMockEngine());
+		store.start();
+		await settle();
+		const result = await store.newWorktree({ repository: API_SERVER, name: "Add retry budget", base: null });
+		expect(result).toMatchObject({ outcome: "succeeded", created: true, worktree: { branch: "add-retry-budget" } });
+		const state = store.getState();
+		expect(repositoryIn([...state.repositories], API_SERVER).worktrees.map(worktree => worktree.branch))
+			.toEqual(["main", "add-retry-budget", "feat/rate-limit-headers", "old/removed-folder"]);
+		expect(selectedWorktree(state)?.worktree.branch).toBe("add-retry-budget");
+	});
+});
+
+describe("the dialog that is open", () => {
+	test("is none at first, opens one at a time, and closes", async () => {
+		const { store } = await loadedStore();
+		expect(store.getState().dialog).toBeNull();
+		let heard = 0;
+		store.subscribe(() => heard++);
+		store.openDialog({ kind: "new-worktree", repository: TIMBER });
+		expect(store.getState().dialog).toEqual({ kind: "new-worktree", repository: TIMBER });
+		store.openDialog({ kind: "new-worktree", repository: API_SERVER });
+		expect(store.getState().dialog).toEqual({ kind: "new-worktree", repository: API_SERVER });
+		store.closeDialog();
+		expect(store.getState().dialog).toBeNull();
+		expect(heard).toBe(3);
+		store.closeDialog();
+		expect(heard).toBe(3);
 	});
 });

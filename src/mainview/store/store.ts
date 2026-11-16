@@ -1,8 +1,8 @@
 import type { Engine } from "../../shared/engine";
-import type { TimberStatus } from "../../shared/model";
+import type { NewWorktreeRequest, OpenWorktreeRequest, TimberStatus, WorktreeCommandResult } from "../../shared/model";
 import { describeAdded, describeRemoved, folderName } from "../format";
 import { mergeOverlapping } from "./merge";
-import { type AppState, type Operation, TOAST_MILLISECONDS, initialState, keepLastGood, reconcileSelection, selectionFor, selectionForRepository, timberReady } from "./state";
+import { type AppState, type DialogRequest, type Operation, TOAST_MILLISECONDS, initialState, keepLastGood, reconcileSelection, selectionFor, selectionForRepository, timberReady } from "./state";
 
 /**
  * The single holder of what the interface shows: Timber's status, the
@@ -40,6 +40,18 @@ export interface AppStore {
 	showToast(text: string): void;
 	/** Put a toast away before its time is up. */
 	dismissToast(id: number): void;
+	/**
+	 * Create a worktree with `timber new`. Whatever comes of it, the
+	 * repository is read again before this answers, and the worktree Timber
+	 * reported is selected when the list has it. The command runs once and is
+	 * never retried here. A request that did not get through is a failed result.
+	 */
+	newWorktree(request: NewWorktreeRequest): Promise<WorktreeCommandResult>;
+	/** Open a branch or a worktree with `timber open`. Reads the repository again and selects as `newWorktree` does. */
+	openWorktree(request: OpenWorktreeRequest): Promise<WorktreeCommandResult>;
+	/** Open a dialog over the window, in place of the one that is open. */
+	openDialog(request: DialogRequest): void;
+	closeDialog(): void;
 }
 
 /** Run `task` after `milliseconds`. Returns a function that calls it off. */
@@ -220,6 +232,29 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		});
 	}
 
+	function select(worktreeId: string): void {
+		const selection = selectionFor(state.repositories, worktreeId);
+		if (selection && selection.worktree !== state.selection?.worktree) update({ selection });
+	}
+
+	/**
+	 * One Timber command that works on a repository's worktrees. The command is
+	 * asked for once. The repository is read again after every outcome,
+	 * because even a failure can leave a new worktree behind.
+	 */
+	async function runWorktreeCommand(repository: string, ask: () => Promise<WorktreeCommandResult>): Promise<WorktreeCommandResult> {
+		let result: WorktreeCommandResult;
+		try {
+			result = await ask();
+		} catch (error) {
+			const diagnostic = `The app did not hear how the command ended: ${messageOf(error)}. What it did is unknown, so check the list before trying again.`;
+			result = { outcome: "failed", failure: { command: null, diagnostic, output: null }, worktree: null, created: false };
+		}
+		await reloadOne(repository);
+		if (result.outcome !== "cancelled" && result.worktree) select(result.worktree.id);
+		return result;
+	}
+
 	return {
 		getState: () => state,
 		subscribe(listener) {
@@ -242,11 +277,16 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		dismissNotice() {
 			if (state.notice) update({ notice: null });
 		},
-		select(worktreeId) {
-			const selection = selectionFor(state.repositories, worktreeId);
-			if (selection && selection.worktree !== state.selection?.worktree) update({ selection });
-		},
+		select,
 		showToast,
 		dismissToast,
+		newWorktree: request => runWorktreeCommand(request.repository, () => engine.newWorktree(request)),
+		openWorktree: request => runWorktreeCommand(request.repository, () => engine.openWorktree(request)),
+		openDialog(request) {
+			update({ dialog: request });
+		},
+		closeDialog() {
+			if (state.dialog) update({ dialog: null });
+		},
 	};
 }
