@@ -1,6 +1,7 @@
 import { type Attention, sameAttention } from "../../shared/attention";
 import { readableEditorSetting } from "../../shared/editor";
 import type { Engine } from "../../shared/engine";
+import type { FetchResult, ForcePushSeen, RepositoryFetch } from "../../shared/git-fetch";
 import { type FileChangeTarget, type FileChangesResult, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
 import { type Layout, clampSidebarWidth, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "../../shared/model";
@@ -12,6 +13,7 @@ import { describeOrphanTerminal } from "../terminal-format";
 import { listedOrder } from "../changes-format";
 import { describeOpenedInEditor } from "../editor-format";
 import { describeAdded, describeRemoved, folderName, worktreeLabel } from "../format";
+import { describeFetched } from "../fetch-format";
 import { mergeOverlapping } from "./merge";
 import { type AppState, type ChangesView, type DialogRequest, type Operation, type WorkspaceTab, TOAST_MILLISECONDS, initialState, keepLastGood, reconcileSelection, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, timberReady, withTerminal, withoutSession } from "./state";
 
@@ -42,6 +44,13 @@ export interface AppStore {
 	refresh(): Promise<void>;
 	/** Reload one repository, named by the path of its primary checkout. */
 	reloadRepository(path: string): Promise<void>;
+	/**
+	 * Fetch a repository now, named by the path of its primary checkout, or
+	 * wait for the fetch that runs. Fetched: a toast. Failed: the quiet marker
+	 * on the repository, through `fetches`, never a dialog. Never throws.
+	 * Answers with what the engine said, or null when one was already asked.
+	 */
+	fetchNow(path: string): Promise<FetchResult | null>;
 	/**
 	 * Open the folder picker and add the picked repository to the saved list.
 	 * The added repository, or the one that was already listed, becomes selected.
@@ -228,6 +237,34 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		}
 	}
 
+	/*
+	 * A branch marked force-pushed stays marked until the person has seen it:
+	 * it showed in the selected worktree while the window showed and had the
+	 * focus, and then the selection moved on. A mark that arrives on the
+	 * selected worktree stays until the selection moves on. The engine is told
+	 * the mark's `at`, so a newer rewrite stays marked.
+	 */
+	let shownForcePush: (ForcePushSeen & { worktree: string }) | null = null;
+
+	function noteForcePush(): void {
+		if (!attending) return;
+		const selected = selectedWorktree(state);
+		if (shownForcePush && selected?.worktree.id !== shownForcePush.worktree) {
+			const { worktree: _left, ...seen } = shownForcePush;
+			shownForcePush = null;
+			try {
+				engine.forcePushSeen(seen);
+			} catch {
+				// The mark stays, and is seen again next time.
+			}
+		}
+		const sync = selected?.worktree.sync;
+		const branch = selected?.worktree.branch;
+		if (!selected || !branch || sync?.kind !== "tracking" || !sync.forcePushed || !windowState.visible || !windowState.focused) return;
+		if (shownForcePush?.worktree === selected.worktree.id && shownForcePush.at === sync.forcePushed.at) return;
+		shownForcePush = { repository: selected.repository.path, worktree: selected.worktree.id, branch, at: sync.forcePushed.at };
+	}
+
 	function update(change: Partial<AppState>): void {
 		state = { ...state, ...change };
 		// A session on screen is seen, whatever put it there: a chip, the selection, the tab, or a session that started or ended.
@@ -237,6 +274,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		}
 		for (const listener of [...listeners]) listener();
 		attend();
+		noteForcePush();
 	}
 
 	function dismissToast(id: number): void {
@@ -502,6 +540,39 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				break;
 			default:
 				update({ editorProblem: { kind: answer.outcome, worktree: request.worktree, file: request.file ?? null, command: answer.command, message: answer.message } });
+		}
+		return answer;
+	}
+
+	function showFetch(status: RepositoryFetch): void {
+		update({ fetches: { ...state.fetches, [status.repository]: status } });
+	}
+
+	async function fetchNow(path: string): Promise<FetchResult | null> {
+		if (state.operations.some(operation => operation.kind === "fetch-repository" && operation.repository === path)) return null;
+		let answer!: FetchResult;
+		await track({ kind: "fetch-repository", repository: path }, async () => {
+			try {
+				answer = await engine.fetchNow(path);
+			} catch (error) {
+				answer = { outcome: "not-listed", message: `The app did not hear how the fetch ended: ${messageOf(error)}` };
+			}
+		});
+		const name = state.repositories.find(repository => repository.path === path)?.name ?? folderName(path);
+		switch (answer.outcome) {
+			case "fetched":
+				showFetch(answer.fetch);
+				showToast(describeFetched(name));
+				break;
+			case "failed":
+				showFetch(answer.fetch);
+				break;
+			case "not-listed": {
+				// Nothing ran, or it stopped early; the marker on the repository says why, quietly, as for a failed fetch.
+				const before = state.fetches[path] ?? { repository: path, fetching: false, lastFetched: null, failure: null };
+				showFetch({ ...before, fetching: false, failure: { kind: "failed", message: answer.message, at: Date.now() } });
+				break;
+			}
 		}
 		return answer;
 	}
@@ -794,7 +865,22 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 					if (state.terminals.some(session => session.id === part.id)) update({ unseenSessions: [...state.unseenSessions, part.id] });
 				}),
 				engine.onQuitRequested(live => update({ quitRequest: live })),
+				engine.onFetchChanged(status => {
+					heardFetches.add(status.repository);
+					showFetch(status);
+				}),
 			];
+			// What was heard while the first answer was on its way is newer than it.
+			const heardFetches = new Set<string>();
+			engine.fetchStatuses().then(statuses => {
+				const fetches = { ...state.fetches };
+				for (const status of statuses) {
+					if (!heardFetches.has(status.repository)) fetches[status.repository] = status;
+				}
+				update({ fetches });
+			}, () => {
+				// Nothing is known until the next fetch reports itself.
+			});
 			void loadLayout();
 			void loadPreferences();
 			void findTimber(() => engine.timberStatus());
@@ -817,10 +903,12 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			if (next.visible === windowState.visible && next.focused === windowState.focused) return;
 			windowState = { visible: next.visible, focused: next.focused };
 			attend();
+			noteForcePush();
 		},
 		retryTimber: () => findTimber(() => engine.recheckTimber()),
 		refresh: () => reloadAll("all"),
 		reloadRepository: path => reloadOne(path),
+		fetchNow,
 		addRepository,
 		removeRepository,
 		dismissNotice() {

@@ -16,7 +16,18 @@ export type SyncState =
 	| { kind: "unpublished" }
 	/** An upstream is configured, but its remote-tracking ref no longer exists. */
 	| { kind: "gone"; upstream: string }
-	| { kind: "tracking"; upstream: string; ahead: number; behind: number };
+	| {
+		kind: "tracking";
+		upstream: string;
+		ahead: number;
+		behind: number;
+		/**
+		 * Set when a fetch by the app found the upstream rewritten: its previous
+		 * commit is not an ancestor of the new one, as after a force-push. `at`
+		 * names the mark, for saying that the person saw it. Absent otherwise.
+		 */
+		forcePushed?: { at: number };
+	};
 
 /**
  * The files Timber found changed in a worktree. The paths are relative to the

@@ -1,5 +1,6 @@
 import type { FileChange, FileChangeTarget, FileDiffResult } from "../../shared/file-changes";
 import { type Layout, defaultLayout } from "../../shared/layout";
+import type { RepositoryFetch } from "../../shared/git-fetch";
 import type { Repository, TimberStatus, Worktree } from "../../shared/model";
 import { type Preferences, defaultPreferences } from "../../shared/preferences";
 import type { TerminalSession } from "../../shared/terminal";
@@ -34,7 +35,9 @@ export type Operation =
 	/** Reading the changed files of a worktree, named by its identity (`Worktree.id`). */
 	| { kind: "read-changes"; worktree: string }
 	/** Reading the diff of one changed file of a worktree, named by its identity. */
-	| { kind: "read-diff"; worktree: string };
+	| { kind: "read-diff"; worktree: string }
+	/** Fetching a repository because the person asked, named by the path of its primary checkout. */
+	| { kind: "fetch-repository"; repository: string };
 
 /**
  * The Changes tab of one worktree: its changed files as last read, and the
@@ -100,7 +103,7 @@ export type DialogRequest =
 	| { kind: "settings"; section?: SettingsSection };
 
 /** The sections of the Settings dialog, in the order they are listed. */
-export const SETTINGS_SECTIONS = ["layout", "editor", "agents"] as const;
+export const SETTINGS_SECTIONS = ["layout", "editor", "agents", "fetch"] as const;
 export type SettingsSection = typeof SETTINGS_SECTIONS[number];
 
 /** The views of the selected worktree, in the order of their tabs. */
@@ -189,6 +192,12 @@ export interface AppState {
 	changes: ChangesView | null;
 	/** Null when no dialog is open. */
 	dialog: DialogRequest | null;
+	/**
+	 * Where fetching stands for each repository, by the path of its primary
+	 * checkout, as the engine last reported it. A repository missing here
+	 * has not been fetched since the app started.
+	 */
+	fetches: Readonly<Record<string, RepositoryFetch>>;
 }
 
 export const initialState: AppState = {
@@ -213,6 +222,7 @@ export const initialState: AppState = {
 	tab: "workspace",
 	changes: null,
 	dialog: null,
+	fetches: {},
 };
 
 /** Nothing that depends on Timber is offered until a usable one is found. */

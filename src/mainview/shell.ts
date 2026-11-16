@@ -17,6 +17,7 @@ export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
 	layout: "Layout",
 	editor: "Editor",
 	agents: "Agents",
+	fetch: "Fetching",
 };
 
 export const SIDEBAR_SIDE_LABELS: Record<SidebarSide, string> = {

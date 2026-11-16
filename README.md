@@ -15,7 +15,9 @@ coding agents, such as Claude Code and Codex, in the Workspace tab, one chip
 each, started from the "+" menu (tested on Linux only; not supported on
 Windows yet). Settings, Agents lists the agents. The Changes tab lists a
 worktree's staged, unstaged, and untracked files and shows the diff of each,
-read-only. Rebasing worktrees, comparing against the base, and the rest of
+read-only. The app fetches each repository in the background (Settings,
+Fetching) or on "Fetch now", updating only remote-tracking branches, and marks
+branches whose upstream moved, was force-pushed, or was deleted. Rebasing worktrees, comparing against the base, and the rest of
 settings are designed but not built.
 See the [architecture](docs/architecture.md) and [design](docs/design.md) notes.
 

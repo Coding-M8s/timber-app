@@ -2254,3 +2254,52 @@ pre:focus-visible {
 	font-size: 12px;
 	color: var(--error);
 }
+
+/* Fetching (issue 25): Fetch now on each repository, the quiet marker of a failed fetch, and a rewritten upstream. */
+.group-fetch {
+	width: 24px;
+	height: 24px;
+	opacity: 0;
+}
+
+.group-head:hover .group-fetch,
+.group-head:focus-within .group-fetch,
+.group-fetch.fetching {
+	opacity: 1;
+}
+
+.group-fetch[aria-disabled="true"] {
+	cursor: default;
+	color: var(--text-3);
+}
+
+.group-fetch.fetching svg {
+	animation: fetch-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes fetch-pulse {
+	0%,
+	100% {
+		transform: translateY(-1px);
+	}
+	50% {
+		transform: translateY(1px);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.group-fetch.fetching svg {
+		animation: none;
+	}
+}
+
+/* Quiet: grey words beside the name, not the red of errors. */
+.group-flag.fetch-failed {
+	color: var(--text-3);
+	font-size: 11px;
+}
+
+/* Red, as the design gives rewritten state, and always with its words. */
+.sync-note.rewritten {
+	color: var(--error);
+}

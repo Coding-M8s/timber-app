@@ -4,6 +4,7 @@ import { useAppState, useStore } from "../store/react";
 import { SETTINGS_SECTIONS, type SettingsSection } from "../store/state";
 import { AgentsSection } from "./settings/AgentsSection";
 import { EditorSection } from "./settings/EditorSection";
+import { FetchSection } from "./settings/FetchSection";
 import { LayoutSection } from "./settings/LayoutSection";
 import { SettingsSavingContext } from "./settings/SettingsSection";
 
@@ -16,6 +17,7 @@ const SECTION_VIEWS: Record<SettingsSection, ComponentType> = {
 	layout: LayoutSection,
 	editor: EditorSection,
 	agents: AgentsSection,
+	fetch: FetchSection,
 };
 
 /**

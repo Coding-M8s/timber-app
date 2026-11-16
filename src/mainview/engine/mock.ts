@@ -8,6 +8,7 @@ import { type Preferences, applyPreferenceChange, defaultPreferences } from "../
 import {
 	type DoneApplyResult, type DoneOptions, type DonePreviewResult, DONE_PREVIEW_MINUTES, describeDoneApply, describeDonePreview, readDonePreview,
 } from "../../shared/timber-done";
+import type { FetchFailureKind, FetchResult, ForcePushSeen, RepositoryFetch } from "../../shared/git-fetch";
 import { failureOf, readTimberResult } from "../../shared/timber-result";
 import { REQUIRED_TIMBER_VERSION } from "../../shared/timber-version";
 import { type CommandEnding, actOutNew, actOutOpen, isCommandEnding } from "./mock-commands";
@@ -286,7 +287,34 @@ export interface MockEngine extends Engine, TerminalControls {
 	setFileChanges(path: string, files: MockFileChange[] | null): void;
 	/** Make every later read of changed files and diffs fail with this message, or pass null to let them work again. */
 	failFileChanges(message: string | null): void;
+	/**
+	 * Decide how fetches end from now on: "fetches" (the start), or failing as
+	 * "offline", "authentication", or "failed". The mock fetches nothing in the
+	 * background; only Fetch now runs one.
+	 */
+	endFetches(ending: FetchEnding): void;
+	/** How long a fetch takes from now on, to look at the running state. */
+	setFetchDelay(milliseconds: number): void;
+	/**
+	 * Act out a fetch that found the upstream of `branch` rewritten in the
+	 * repository at `path`: its worktree shows as force-pushed and behind, and
+	 * the interface is told. Answers the mark's `at`, or null when no worktree
+	 * of that repository is on that branch.
+	 */
+	forcePush(path: string, branch: string): number | null;
+	/** Every force-push the interface said the person saw, oldest first. */
+	seenForcePushes(): ForcePushSeen[];
 }
+
+export const FETCH_ENDINGS = ["fetches", "offline", "authentication", "failed"] as const;
+export type FetchEnding = typeof FETCH_ENDINGS[number];
+
+/** What a failed fetch prints, in the mock, for each way it can fail. */
+const MOCK_FETCH_FAILURES: Record<FetchFailureKind, string> = {
+	offline: "fatal: unable to access 'https://github.com/acme/app.git/': Could not resolve host: github.com",
+	authentication: "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+	failed: "fatal: 'origin' does not appear to be a git repository\nfatal: Could not read from remote repository.",
+};
 
 export const EDITOR_ENDINGS = ["opens", "not-found", "fails"] as const;
 export type EditorEnding = typeof EDITOR_ENDINGS[number];
@@ -347,6 +375,35 @@ export function createMockEngine(
 	const listeners = new Set<(path: string) => void>();
 	// The mock watches nothing: changes are acted out with `announceChange`. It only keeps what it was told.
 	let attended: Attention | null = null;
+
+	// Fetching, acted out: Fetch now only, ended as `fetchEnding` says. Nothing reaches a network.
+	const fetches = new Map<string, RepositoryFetch>();
+	const fetchListeners = new Set<(status: RepositoryFetch) => void>();
+	let fetchEnding: FetchEnding = "fetches";
+	let fetchDelay = 0;
+	const running = new Map<string, Promise<FetchResult>>();
+	const seen: ForcePushSeen[] = [];
+	const fetchOf = (path: string): RepositoryFetch => fetches.get(path) ?? { repository: path, fetching: false, lastFetched: null, failure: null };
+	const tellFetch = (status: RepositoryFetch) => {
+		fetches.set(status.repository, status);
+		for (const listener of [...fetchListeners]) listener(structuredClone(status));
+	};
+	const announce = (path: string) => {
+		for (const listener of [...listeners]) listener(path);
+	};
+	/** Change the sync state of every worktree of `path` on `branch`. Answers whether one was there. */
+	const changeSync = (path: string, branch: string, change: (sync: SyncState | null) => SyncState | null): boolean => {
+		let found = false;
+		current = current.map(repository => repository.path !== path ? repository : {
+			...repository,
+			worktrees: repository.worktrees.map(candidate => {
+				if (candidate.branch !== branch) return candidate;
+				found = true;
+				return { ...candidate, sync: change(candidate.sync) };
+			}),
+		});
+		return found;
+	};
 
 	// The Done dialog. As in the main process, what a preview printed stays here and the interface gets a name for it.
 	const ignored = new Map<string, readonly string[]>(Object.entries(sampleIgnored));
@@ -639,9 +696,68 @@ export function createMockEngine(
 			picked = folder;
 		},
 		attention: () => attended,
-		announceChange(path) {
-			for (const listener of [...listeners]) listener(path);
+		announceChange: announce,
+		fetchStatuses: async () => current.filter(repository => repository.available).map(repository => structuredClone(fetchOf(repository.path))),
+		fetchNow(path) {
+			const ongoing = running.get(path);
+			if (ongoing) return ongoing;
+			if (!current.some(repository => repository.path === path && repository.available)) {
+				return Promise.resolve({ outcome: "not-listed", message: `${path} is not a repository in this app's list. Nothing was fetched.` });
+			}
+			const run = (async (): Promise<FetchResult> => {
+				tellFetch({ ...fetchOf(path), fetching: true });
+				if (fetchDelay > 0) await new Promise(resolve => setTimeout(resolve, fetchDelay));
+				const before = fetchOf(path);
+				if (fetchEnding === "fetches") {
+					const fetch = { ...before, fetching: false, lastFetched: Date.now(), failure: null };
+					tellFetch(fetch);
+					return { outcome: "fetched", fetch: structuredClone(fetch) };
+				}
+				const fetch = { ...before, fetching: false, failure: { kind: fetchEnding, message: MOCK_FETCH_FAILURES[fetchEnding], at: Date.now() } };
+				tellFetch(fetch);
+				return { outcome: "failed", fetch: structuredClone(fetch) };
+			})();
+			running.set(path, run);
+			// Taken away once it ended, which can be before this line when it does not wait.
+			void run.finally(() => {
+				if (running.get(path) === run) running.delete(path);
+			});
+			return run;
 		},
+		onFetchChanged(listener) {
+			fetchListeners.add(listener);
+			return () => void fetchListeners.delete(listener);
+		},
+		forcePushSeen(next) {
+			seen.push(structuredClone(next));
+			// As the main process does: told only when a mark went, and only the mark of that time.
+			let cleared = false;
+			changeSync(next.repository, next.branch, sync => {
+				if (sync?.kind !== "tracking" || sync.forcePushed?.at !== next.at) return sync;
+				cleared = true;
+				const { forcePushed: _seen, ...rest } = sync;
+				return rest;
+			});
+			if (cleared) announce(next.repository);
+		},
+		endFetches(next) {
+			// Called from the browser console too, where nothing checks the word.
+			if (!FETCH_ENDINGS.includes(next)) throw new Error(`Unknown ending: ${String(next)}`);
+			fetchEnding = next;
+		},
+		setFetchDelay(milliseconds) {
+			fetchDelay = milliseconds;
+		},
+		forcePush(path, branch) {
+			const at = Date.now();
+			const found = changeSync(path, branch, sync => sync?.kind === "tracking"
+				? { ...sync, behind: Math.max(1, sync.behind), forcePushed: { at } }
+				: { kind: "tracking", upstream: `origin/${branch}`, ahead: 0, behind: 1, forcePushed: { at } });
+			if (!found) return null;
+			announce(path);
+			return at;
+		},
+		seenForcePushes: () => structuredClone(seen),
 		failReads(message) {
 			failure = message;
 		},

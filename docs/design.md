@@ -14,15 +14,21 @@ change them here first when they change.
 
 - Worktrees are grouped under collapsible repository headers. Selecting a
   worktree in another repository switches to it.
-- Each repository header has a control to create a worktree in it, and an
-  "Add repository" control sits below the list.
+- Each repository header has a control to create a worktree in it and a
+  "Fetch now" control, and an "Add repository" control sits below the list.
+- The app fetches every repository in the background, on an interval from
+  Settings that can be turned off. A failed fetch, such as while offline or
+  without stored credentials, shows a quiet grey word beside the
+  repository's name ("offline", "sign-in needed", "fetch failed") with the
+  reason in its tooltip. Never a dialog, and never a prompt for credentials.
 - Each row shows the branch, its state against the remote, running agents, and
   uncommitted changes.
 - Branch state follows VS Code conventions: a down arrow with a count for
   commits to pull, an up arrow for commits to push, "force-pushed" when the
   remote branch was rewritten, "upstream gone" when it was deleted, and "local
-  only" when it was never published. Modified and untracked counts use the
-  yellow `M` and green `U`.
+  only" when it was never published. "force-pushed" stays until the person
+  has selected that worktree and moved on. Modified and untracked counts use
+  the yellow `M` and green `U`.
 - Rebase backups are listed below the worktrees with compare, restore, and
   delete.
 - Settings is a cogwheel at the bottom of the sidebar.
@@ -55,7 +61,7 @@ change them here first when they change.
 - **Done:** a clean, published worktree gets a summary of what is removed,
   including ignored files. One with unsaved work gets "Delete anyway?" with
   Keep as the default.
-- **Settings:** sections for editor, agents, Jira, setup scripts,
+- **Settings:** sections for editor, agents, fetching, Jira, setup scripts,
   pre-done scripts, starting branch, remote, worktree folder, and layout.
   Presets where they help, but every value is editable free-form, and every
   section has Save.

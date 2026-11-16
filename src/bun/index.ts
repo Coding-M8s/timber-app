@@ -1,9 +1,14 @@
 import { homedir } from "node:os";
 import Electrobun, { BrowserView, BrowserWindow, Updater, Utils } from "electrobun/main";
+import { type ForcePushMarks, withForcePushes } from "../shared/git-fetch";
+import type { Repository } from "../shared/model";
 import type { AppRPC } from "../shared/rpc";
 import { repositoryChanges } from "./changes";
 import { createDone } from "./done";
 import { createEditorLauncher } from "./editor";
+import { createGitRunner } from "./fetch-git";
+import { createFetcher } from "./fetcher";
+import { createSavedForcePushes } from "./force-pushes";
 import { createFileChanges } from "./file-changes";
 import { readBranches } from "./git-engine";
 import { createSavedLayout } from "./layout";
@@ -71,6 +76,36 @@ const refreshPolicy = createRefreshPolicy({
 	onReturn: () => void watchRepositories(),
 });
 const watcher = createRepositoryWatcher({ onChange: path => refreshPolicy.changed(path) });
+
+/*
+ * Fetching (see docs/architecture.md, "Fetching"). Every repository in the list is fetched in the background on the
+ * interval from the preferences, and when the person asks. A fetch writes only remote-tracking refs. What it moved
+ * is reported like any other change, through the refresh policy, so a hidden window catches up when it returns.
+ */
+const savedForcePushes = createSavedForcePushes(settings);
+const fetcher = createFetcher({
+	runGit: createGitRunner(),
+	onChanged: path => refreshPolicy.changed(path),
+	onStatus: status => tell("where fetching stands", () => rpc.send.fetchChanged(status)),
+	marks: await savedForcePushes.load(),
+	saveMarks: marks => void savedForcePushes.save(marks),
+});
+// Nothing is fetched in the background until the preferences say whether to.
+void preferences.load().then(
+	saved => fetcher.configure(saved.fetch),
+	error => console.warn(`Could not read whether to fetch in the background, so nothing is fetched until Fetch now: ${error instanceof Error ? error.message : String(error)}`),
+);
+
+/**
+ * A repository as read, with its branches marked force-pushed where a fetch found a rewrite nobody saw yet. `marks`
+ * were taken before the read, so a mark that a fetch made while Git answered is never judged by an older read: it
+ * shows on the next one, which that fetch asks for.
+ */
+function marked(repository: Repository, marks: ForcePushMarks[string] | undefined): Repository {
+	const { repository: shown, stale } = withForcePushes(repository, marks);
+	if (stale.length > 0) fetcher.forget(repository.path, stale);
+	return shown;
+}
 /**
  * Watch exactly the repositories in the list. Called on start, after adding or removing one, and when the window
  * returns. One runs at a time, so an older answer never replaces a newer one.
@@ -81,6 +116,7 @@ function watchRepositories(): Promise<void> {
 		try {
 			watchTargets = await repositories.watchTargets();
 			watcher.sync(watchTargets);
+			fetcher.sync(watchTargets);
 		} catch (error) {
 			console.warn(`Could not read which repositories to watch: ${error instanceof Error ? error.message : String(error)}`);
 		}
@@ -126,7 +162,10 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 		requests: {
 			timberStatus: () => timber.current(),
 			recheckTimber: () => timber.refresh(),
-			listRepositories: () => repositories.list(),
+			listRepositories: async () => {
+				const marks = fetcher.allMarks();
+				return (await repositories.list()).map(repository => marked(repository, marks[repository.path]));
+			},
 			addRepository: async () => {
 				const result = await repositories.add();
 				if (result.outcome === "added") await watchRepositories();
@@ -134,10 +173,15 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			},
 			removeRepository: async ({ path }) => {
 				const result = await repositories.remove(path);
+				if (result.outcome === "removed") fetcher.remove(path);
 				await watchRepositories();
 				return result;
 			},
-			loadRepository: ({ path }) => repositories.reload(path),
+			loadRepository: async ({ path }) => {
+				const marks = fetcher.marks(path);
+				const repository = await repositories.reload(path);
+				return repository && marked(repository, marks);
+			},
 			// Read-only, and still only for a repository the app lists.
 			listBranches: async ({ repository }) => await repositories.includes(repository) ? readBranches(repository) : null,
 			// What these answer holds what the command printed, which is private: never log it.
@@ -146,7 +190,11 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			loadLayout: () => layout.load(),
 			saveLayout: ({ layout: next }) => layout.save(next),
 			loadPreferences: () => preferences.load(),
-			savePreferences: ({ change }) => preferences.save(change),
+			savePreferences: async ({ change }) => {
+				const result = await preferences.save(change);
+				if (result.outcome === "saved") fetcher.configure(result.preferences.fetch);
+				return result;
+			},
 			// Starts the editor from the saved setting only. The request names the worktree, never the command (see ./editor.ts).
 			openInEditor: request => editor.open(request),
 			previewDone: request => done.preview(request),
@@ -166,12 +214,21 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			readClipboard: () => Utils.clipboardReadText(),
 			// Only web links, to the person's browser, never through a shell (see ./open-link.ts).
 			openLink: ({ url }) => openWebLink(url),
+			fetchStatuses: async () => fetcher.statuses(),
+			// Writes only remote-tracking refs, and never asks for credentials (see ./fetcher.ts).
+			fetchNow: ({ repository }) => fetcher.fetchNow(repository),
 		},
 		messages: {
 			writeTerminal: ({ id, data }) => terminals.write(id, data),
 			resizeTerminal: ({ id, cols, rows }) => terminals.resize(id, cols, rows),
 			terminalDrawn: ({ id, seq }) => terminals.drawn(id, seq),
-			attend: attention => refreshPolicy.attend(attention),
+			attend: attention => {
+				refreshPolicy.attend(attention);
+				fetcher.setVisible(attention.visible);
+			},
+			forcePushSeen: ({ repository, branch, at }) => {
+				if (fetcher.acknowledge(repository, branch, at)) refreshPolicy.changed(repository);
+			},
 		},
 	},
 });
@@ -189,6 +246,8 @@ function guardQuit(event: unknown): void {
 		terminals.killAll();
 		refreshPolicy.stop();
 		watcher.stop();
+		// Asks a running Git to stop, so it can remove its lock files before the app goes.
+		fetcher.stop();
 		return;
 	}
 	(event as Veto).response = { allow: false };

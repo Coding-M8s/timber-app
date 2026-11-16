@@ -1,4 +1,5 @@
 import type { Attention } from "./attention";
+import type { FetchResult, ForcePushSeen, RepositoryFetch } from "./git-fetch";
 import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffResult } from "./file-changes";
 import type { Layout } from "./layout";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
@@ -93,9 +94,36 @@ export interface Engine {
 	 * edits, and reports what changed through `onRepositoryChanged`: only
 	 * while the window shows, catching up once when it shows again, and for
 	 * the selected worktree's repository when the focus comes back. Nothing
-	 * comes back. Safe to call with the same value again.
+	 * comes back. Safe to call with the same value again. Background fetches
+	 * also wait while the window is hidden (see `fetchNow`).
 	 */
 	attend(attention: Attention): void;
+	/**
+	 * Where fetching stands for each repository in the list: whether a fetch
+	 * runs, when one last worked, and why the latest one failed. The machine
+	 * fetches every repository in the background on the interval from the
+	 * preferences, unless that is off, and reports each change through
+	 * `onFetchChanged`.
+	 */
+	fetchStatuses(): Promise<RepositoryFetch[]>;
+	/**
+	 * Fetch a repository of the list now, named by its primary checkout, or
+	 * wait for the fetch that runs. Works whether or not background fetching
+	 * is on. A fetch only updates remote-tracking refs: it never pulls,
+	 * merges, rebases, or changes a local branch, a tag, or a working tree,
+	 * and it never asks for credentials. What changed is reported through
+	 * `onRepositoryChanged`. Safe to call again.
+	 */
+	fetchNow(repository: string): Promise<FetchResult>;
+	/** Hear where fetching stands for a repository whenever it changes. Returns a function that stops listening. */
+	onFetchChanged(listener: (status: RepositoryFetch) => void): () => void;
+	/**
+	 * Say that the person saw a branch marked force-pushed (`SyncState`'s
+	 * `forcePushed`), so the mark goes. Only the mark with that `at` goes, so
+	 * a newer rewrite stays marked. Nothing comes back; the repository is
+	 * reported changed when a mark went.
+	 */
+	forcePushSeen(seen: ForcePushSeen): void;
 	/**
 	 * How the window was arranged when the layout was last saved: the sidebar
 	 * width and the collapsed repository groups. The defaults when nothing was
