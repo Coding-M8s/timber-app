@@ -1,14 +1,15 @@
 import { realpath } from "node:fs/promises";
 import { delimiter } from "node:path";
-import { BRANCH_SYNC_FORMAT, parseBranchSync } from "../shared/git-parse";
-import type { SyncState } from "../shared/model";
+import { BRANCH_LIST_FORMAT, BRANCH_SYNC_FORMAT, parseBranchList, parseBranchSync } from "../shared/git-parse";
+import type { BranchSuggestion, SyncState } from "../shared/model";
 
 /**
  * Read-only Git queries.
  *
  * Timber lists the worktrees (see ./timber-ls.ts). Git is asked directly only
- * for what Timber does not report: which repository a folder belongs to, and
- * how each branch stands against its upstream. Git is always invoked as an
+ * for what Timber does not report: which repository a folder belongs to, how
+ * each branch stands against its upstream, and which branches there are to
+ * offer for picking. Git is always invoked as an
  * executable plus an argument array, never through a shell, and nothing here
  * changes a repository.
  */
@@ -53,6 +54,16 @@ export async function commonDirectory(path: string): Promise<string | null> {
 export async function readBranchSync(commonGitDir: string): Promise<Map<string, SyncState> | null> {
 	const output = await git(["--git-dir", commonGitDir, "for-each-ref", `--format=${BRANCH_SYNC_FORMAT}`, "refs/heads"]);
 	return output === null ? null : parseBranchSync(output);
+}
+
+/**
+ * The branches of a repository to offer for picking: local branches, then
+ * remote-tracking branches as of the last fetch. `folder` is the primary
+ * checkout or any of its worktrees. Null when Git could not answer.
+ */
+export async function readBranches(folder: string): Promise<BranchSuggestion[] | null> {
+	const output = await git(["-C", folder, "for-each-ref", `--format=${BRANCH_LIST_FORMAT}`, "refs/heads", "refs/remotes"]);
+	return output === null ? null : parseBranchList(output);
 }
 
 /**

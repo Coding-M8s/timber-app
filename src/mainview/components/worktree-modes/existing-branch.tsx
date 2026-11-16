@@ -1,0 +1,69 @@
+import { useEffect, useState, useSyncExternalStore } from "react";
+import type { Repository } from "../../../shared/model";
+import { RESULT_FILE_PLACEHOLDER, describeTimberCommand } from "../../../shared/timber-result";
+import { openWorktreeArguments } from "../../../shared/worktree-commands";
+import { useStore } from "../../store/react";
+import type { Submission } from "../../store/submission";
+import { BranchField } from "../BranchField";
+import { type ExistingBranchForm, type ExistingBranchFormState, canOpen, createExistingBranchForm, openRequest } from "./existing-branch-form";
+import type { WorktreeDialogMode } from "./mode";
+import { reportedLabel } from "./new-branch-model";
+
+/**
+ * The "Existing branch" mode as the dialog shows it, for one state of its
+ * form. `repository` is the path of the primary checkout, and `running` is
+ * true while the dialog's command runs.
+ */
+export function existingBranchMode(form: ExistingBranchForm, state: ExistingBranchFormState, repository: string, running: boolean): WorktreeDialogMode {
+	const { selector, setup, branches, kept } = state;
+
+	const fields = (
+		<>
+			<BranchField label="Branch, ticket, or worktree path" value={selector} branches={branches} disabled={running} onChange={form.setSelector} />
+			<label className="check">
+				<input type="checkbox" checked={setup} onChange={event => form.setSetup(event.target.checked)} />
+				<span className="check-text">
+					<span>Rerun setup</span>
+					<span className="check-hint">Runs the setup steps again when the worktree already exists. A new worktree always gets them.</span>
+				</span>
+			</label>
+			{kept && (
+				<p className="dialog-note" role="status">
+					{reportedLabel(kept.worktree)} has its worktree, and it is selected in the list. Nothing needs to be created again.
+					The fields now name that worktree with Rerun setup ticked: once the cause is fixed, submit to run setup again, or close this dialog.
+				</p>
+			)}
+		</>
+	);
+
+	return {
+		label: "Existing branch",
+		fields,
+		// Worded from the same request that `run` sends, so the command shown is the command that runs.
+		command: describeTimberCommand(openWorktreeArguments(openRequest(repository, state), RESULT_FILE_PLACEHOLDER)),
+		canSubmit: canOpen(state),
+		submitLabel: "Open worktree",
+		runningLabel: "Opening the worktree",
+		failureTitle: kept
+			? kept.created ? "The worktree was created, but setup failed" : "The worktree was opened, but setup failed"
+			: "Could not open the worktree",
+		run: form.run,
+	};
+}
+
+/**
+ * "Existing branch": `timber open`. The person types a branch, a ticket key,
+ * or a worktree path, or picks a branch from the list. The text goes to
+ * Timber without the spaces around it and otherwise as given, and Timber
+ * alone decides what it means.
+ */
+export function useExistingBranchMode(repository: Repository, submission: Submission): WorktreeDialogMode {
+	const store = useStore();
+	const [form] = useState(() => createExistingBranchForm(store, repository.path, submission));
+	const state = useSyncExternalStore(form.subscribe, form.getState, form.getState);
+	// Read when the dialog opens, and again whenever the repository was read again: the other mode may have made a branch.
+	useEffect(() => {
+		void form.readBranches();
+	}, [form, repository]);
+	return existingBranchMode(form, state, repository.path, submission.getState().running);
+}

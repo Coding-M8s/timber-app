@@ -1,5 +1,5 @@
 import type { Engine } from "../../shared/engine";
-import type { NewWorktreeRequest, OpenWorktreeRequest, TimberStatus, WorktreeCommandResult } from "../../shared/model";
+import type { BranchSuggestion, NewWorktreeRequest, OpenWorktreeRequest, ReportedWorktree, TimberStatus, WorktreeCommandResult } from "../../shared/model";
 import { describeAdded, describeRemoved, folderName } from "../format";
 import { mergeOverlapping } from "./merge";
 import { type AppState, type DialogRequest, type Operation, TOAST_MILLISECONDS, initialState, keepLastGood, reconcileSelection, selectionFor, selectionForRepository, timberReady } from "./state";
@@ -49,6 +49,11 @@ export interface AppStore {
 	newWorktree(request: NewWorktreeRequest): Promise<WorktreeCommandResult>;
 	/** Open a branch or a worktree with `timber open`. Reads the repository again and selects as `newWorktree` does. */
 	openWorktree(request: OpenWorktreeRequest): Promise<WorktreeCommandResult>;
+	/**
+	 * The branches of a repository to offer for picking. Null when they could
+	 * not be read, which only means there is nothing to pick from.
+	 */
+	listBranches(repository: string): Promise<BranchSuggestion[] | null>;
 	/** Open a dialog over the window, in place of the one that is open. */
 	openDialog(request: DialogRequest): void;
 	closeDialog(): void;
@@ -237,6 +242,15 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		if (selection && selection.worktree !== state.selection?.worktree) update({ selection });
 	}
 
+	/** Select the worktree a Timber command reported, when the list that was just read has it. */
+	function selectReported(repositoryPath: string, reported: ReportedWorktree): void {
+		const repository = state.repositories.find(candidate => candidate.path === repositoryPath);
+		// By identity first. The registered path stands in when Timber could verify the folder in only one of the two reads.
+		const worktree = repository?.worktrees.find(candidate => candidate.id === reported.id)
+			?? repository?.worktrees.find(candidate => candidate.path === reported.path);
+		if (worktree) select(worktree.id);
+	}
+
 	/**
 	 * One Timber command that works on a repository's worktrees. The command is
 	 * asked for once. The repository is read again after every outcome,
@@ -251,7 +265,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			result = { outcome: "failed", failure: { command: null, diagnostic, output: null }, worktree: null, created: false };
 		}
 		await reloadOne(repository);
-		if (result.outcome !== "cancelled" && result.worktree) select(result.worktree.id);
+		if (result.outcome !== "cancelled" && result.worktree) selectReported(repository, result.worktree);
 		return result;
 	}
 
@@ -282,6 +296,13 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		dismissToast,
 		newWorktree: request => runWorktreeCommand(request.repository, () => engine.newWorktree(request)),
 		openWorktree: request => runWorktreeCommand(request.repository, () => engine.openWorktree(request)),
+		async listBranches(repository) {
+			try {
+				return await engine.listBranches(repository);
+			} catch {
+				return null;
+			}
+		},
 		openDialog(request) {
 			update({ dialog: request });
 		},

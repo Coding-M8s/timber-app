@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseBranchSync } from "../src/shared/git-parse";
+import { parseBranchList, parseBranchSync } from "../src/shared/git-parse";
 
 const line = (ref: string, upstream = "", track = "") => `${[ref, upstream, track].join("\0")}\n`;
 
@@ -41,5 +41,62 @@ describe("parseBranchSync", () => {
 		].join("");
 		expect([...parseBranchSync(output).keys()]).toEqual(["fine"]);
 		expect(parseBranchSync("").size).toBe(0);
+	});
+});
+
+/** One line of the branch list: a ref and, for a symbolic ref, what it points to. */
+const listed = (ref: string, symref = "") => `${[ref, symref].join("\0")}\n`;
+
+describe("parseBranchList", () => {
+	test("lists local branches by name, then remote-tracking branches as remote/branch", () => {
+		const output = [
+			listed("refs/heads/feat/login"),
+			listed("refs/heads/main"),
+			listed("refs/remotes/fork/main"),
+			listed("refs/remotes/origin/feat/login"),
+			listed("refs/remotes/origin/main"),
+		].join("");
+		expect(parseBranchList(output)).toEqual([
+			{ selector: "feat/login", kind: "local" },
+			{ selector: "main", kind: "local" },
+			{ selector: "fork/main", kind: "remote" },
+			{ selector: "origin/feat/login", kind: "remote" },
+			{ selector: "origin/main", kind: "remote" },
+		]);
+	});
+
+	test("local branches come first whatever order Git answered in", () => {
+		const output = [listed("refs/remotes/origin/a"), listed("refs/heads/b")].join("");
+		expect(parseBranchList(output).map(branch => branch.selector)).toEqual(["b", "origin/a"]);
+	});
+
+	test("leaves out a symbolic ref such as origin/HEAD, which points to a branch and is not one", () => {
+		const output = [listed("refs/remotes/origin/HEAD", "refs/remotes/origin/main"), listed("refs/remotes/origin/main")].join("");
+		expect(parseBranchList(output)).toEqual([{ selector: "origin/main", kind: "remote" }]);
+	});
+
+	test("leaves out nothing else: a branch that is both local and remote is listed twice, under both names", () => {
+		const output = [listed("refs/heads/feat/x"), listed("refs/remotes/origin/feat/x")].join("");
+		expect(parseBranchList(output).map(branch => branch.selector)).toEqual(["feat/x", "origin/feat/x"]);
+	});
+
+	test("keeps non-ASCII characters and a leading dash exactly", () => {
+		const output = [listed("refs/heads/feat/zażółć"), listed("refs/remotes/fork/-odd")].join("");
+		expect(parseBranchList(output)).toEqual([
+			{ selector: "feat/zażółć", kind: "local" },
+			{ selector: "fork/-odd", kind: "remote" },
+		]);
+	});
+
+	test("skips lines it cannot read and other kinds of refs, and returns nothing for empty output", () => {
+		const output = [
+			"refs/heads/short\n",
+			listed("refs/tags/v1"),
+			listed("refs/heads/"),
+			`${["refs/heads/long", "", "more"].join("\0")}\n`,
+			listed("refs/heads/fine"),
+		].join("");
+		expect(parseBranchList(output)).toEqual([{ selector: "fine", kind: "local" }]);
+		expect(parseBranchList("")).toEqual([]);
 	});
 });

@@ -1,9 +1,11 @@
-import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
+import { readBranches } from "../src/bun/git-engine";
+import { listWorktrees } from "../src/bun/timber-ls";
 import { createWorktreeCommands } from "../src/bun/worktree-commands";
-import type { TimberStatus } from "../src/shared/model";
+import { type NewWorktreeRequest, type OpenWorktreeRequest, type TimberStatus, worktreeId } from "../src/shared/model";
 import { newWorktreeArguments, openWorktreeArguments } from "../src/shared/worktree-commands";
 import { type StandInRun, git, realTimber, recordedResult, standInResultTimber } from "./support/timber";
 
@@ -119,6 +121,36 @@ describe("createWorktreeCommands, with a stand-in Timber", () => {
 		});
 		const result = await commands.create({ repository, name: "feat/login", base: null });
 		expect(result.outcome === "failed" && result.failure.diagnostic).toBe("Could not start timber new: settings are unreadable. Nothing was run.");
+	});
+
+	test("a request that is not complete is refused before anything runs, whatever came over the bridge", async () => {
+		const { commands, timber } = commandsOn({ result: recordedResult.succeeded });
+		const incomplete = [
+			await commands.open({ repository, selector: 7, setup: false } as unknown as OpenWorktreeRequest),
+			await commands.open({ repository, selector: "feat/login" } as unknown as OpenWorktreeRequest),
+			await commands.open({ selector: "feat/login", setup: false } as unknown as OpenWorktreeRequest),
+			await commands.create({ repository, name: ["--base", "x"], base: null } as unknown as NewWorktreeRequest),
+			await commands.create({ repository, name: "feat/login" } as unknown as NewWorktreeRequest),
+		];
+		for (const [index, result] of incomplete.entries()) {
+			const command = index < 3 ? "open" : "new";
+			expect(result).toEqual({
+				outcome: "failed",
+				failure: { command: null, diagnostic: `The request for timber ${command} is not complete. Nothing was run.`, output: null },
+				worktree: null,
+				created: false,
+			});
+		}
+		expect(() => timber.notes()).toThrow();
+	});
+
+	test("a selector that looks like an option, or has spaces around it, reaches Timber as one argument after the --", async () => {
+		const opened = JSON.stringify({ ...JSON.parse(recordedResult.succeeded), command: "open", materialized: false });
+		for (const selector of ["--setup", " feat/login ", "-"]) {
+			const { commands, timber } = commandsOn({ result: opened });
+			await commands.open({ repository, selector, setup: false });
+			expect(timber.notes().arguments.slice(-2)).toEqual(["--", selector]);
+		}
 	});
 
 	test("commands in one repository run one after another, and other repositories do not wait", async () => {
@@ -321,5 +353,191 @@ describe.skipIf(realTimber === null)("createWorktreeCommands, with the installed
 		// The same configuration does start the editor for a plain command, so the check above means something.
 		expect(inTerminal(primary, "new", "feat/loud").exitCode).toBe(0);
 		expect(existsSync(marker)).toBe(true);
+	});
+});
+
+describe.skipIf(realTimber === null)("timber open, with the installed Timber on a real repository", () => {
+	let work: string;
+	let primary: string;
+	let outside: string;
+	let scratch: string;
+	let environment: Record<string, string | undefined>;
+	let commands: ReturnType<typeof createWorktreeCommands>;
+
+	/** Hooks are configured the way a person does it: `.timber.toml` in the primary checkout. */
+	const setupHook = (script: string) => writeFileSync(join(primary, ".timber.toml"), `[hooks]\npost_create = [${JSON.stringify(script)}]\n`);
+	const noHooks = () => rmSync(join(primary, ".timber.toml"), { force: true });
+
+	/** Everything a command could change: refs, registered worktrees, and the files of the primary checkout. */
+	const fingerprint = () => [
+		git(primary, "for-each-ref"),
+		git(primary, "worktree", "list", "--porcelain"),
+		git(primary, "status", "--porcelain"),
+		readdirSync(work).sort().join("\n"),
+		existsSync(join(work, "my sample-worktrees")) ? readdirSync(join(work, "my sample-worktrees")).sort().join("\n") : "",
+	].join("\n--\n");
+
+	const open = (selector: string, setup = false, repository = primary) => commands.open({ repository, selector, setup });
+
+	/** The identity `timber ls --json` gives the worktree at `path` right now. */
+	async function listedId(path: string): Promise<string | undefined> {
+		const listing = await listWorktrees(realTimber!, primary, environment);
+		if (!listing.ok) throw new Error(listing.message);
+		const listed = listing.worktrees.find(worktree => worktree.path === path);
+		return listed && worktreeId(listing.repository.commonGitDir, listed);
+	}
+
+	beforeAll(() => {
+		work = realpathSync(mkdtempSync(join(tmpdir(), "timber-app-open-real-")));
+		primary = join(work, "my sample");
+		outside = join(work, "not listed");
+		scratch = join(work, "temporary");
+		mkdirSync(scratch);
+		// A home of its own, so Timber's first-use marker and any user configuration stay out of this.
+		const home = join(work, "home");
+		mkdirSync(home);
+		environment = { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: join(home, ".config"), XDG_STATE_HOME: join(home, ".local", "state"), GIT_CONFIG_GLOBAL: "", GIT_CONFIG_NOSYSTEM: "1" };
+
+		git(work, "init", "--initial-branch=main", primary);
+		writeFileSync(join(primary, "tracked.txt"), "one\n");
+		git(primary, "add", "tracked.txt");
+		git(primary, "commit", "-m", "Initial commit");
+		for (const remote of ["origin", "fork"]) {
+			git(work, "init", "--bare", join(work, `${remote}.git`));
+			git(primary, "remote", "add", remote, join(work, `${remote}.git`));
+		}
+		git(primary, "push", "--set-upstream", "origin", "main");
+		// Local branches without a worktree, one branch that only origin has, and one that both remotes have.
+		for (const branch of ["feat/zażółć-login", "feat/reopened", "feat/with-setup", "feat/setup-fails"]) git(primary, "branch", branch, "main");
+		git(primary, "push", "origin", "main:feat/remote-only", "main:twice");
+		git(primary, "push", "fork", "main:twice");
+		git(primary, "fetch", "--all");
+
+		git(work, "init", "--initial-branch=main", outside);
+		git(outside, "commit", "--allow-empty", "-m", "Initial commit");
+		git(outside, "branch", "feat/elsewhere");
+
+		commands = createWorktreeCommands({
+			timber: async () => ready(realTimber!),
+			isListed: async path => path === primary,
+			environment,
+			temporaryRoot: scratch,
+		});
+	});
+
+	afterEach(() => {
+		noHooks();
+		expect(readdirSync(scratch)).toEqual([]);
+	});
+
+	afterAll(() => {
+		rmSync(work, { recursive: true, force: true });
+	});
+
+	test("a branch with no worktree gets one, with the identity the list gives it", async () => {
+		const result = await open("feat/zażółć-login");
+		expect(result).toMatchObject({ outcome: "succeeded", created: true, worktree: { branch: "feat/zażółć-login" } });
+		if (result.outcome !== "succeeded") return;
+		expect(git(primary, "worktree", "list", "--porcelain")).toContain(`worktree ${result.worktree.path}\n`);
+		expect(git(result.worktree.path, "branch", "--show-current").trim()).toBe("feat/zażółć-login");
+		expect(result.worktree.id).toBe((await listedId(result.worktree.path))!);
+	});
+
+	test("a branch that already has a worktree returns it with created false, and nothing new exists", async () => {
+		const first = await open("feat/reopened");
+		expect(first).toMatchObject({ outcome: "succeeded", created: true });
+		const before = fingerprint();
+		const again = await open("feat/reopened");
+		expect(again).toMatchObject({ outcome: "succeeded", created: false });
+		expect(again.outcome === "succeeded" && again.worktree).toEqual(first.outcome === "succeeded" && first.worktree);
+		expect(fingerprint()).toBe(before);
+	});
+
+	test("a remote-tracking branch from the list opens under the name the list gives it", async () => {
+		const offered = await readBranches(primary);
+		expect(offered).toContainEqual({ selector: "origin/feat/remote-only", kind: "remote" });
+		const result = await open("origin/feat/remote-only");
+		expect(result).toMatchObject({ outcome: "succeeded", created: true, worktree: { branch: "feat/remote-only" } });
+		if (result.outcome !== "succeeded") return;
+		expect(git(result.worktree.path, "rev-parse", "--abbrev-ref", "@{upstream}").trim()).toBe("origin/feat/remote-only");
+	});
+
+	test("Rerun setup runs the setup step again on an existing worktree, named by its absolute path", async () => {
+		setupHook("echo ran >> setup.log");
+		const created = await open("feat/with-setup");
+		expect(created).toMatchObject({ outcome: "succeeded", created: true });
+		if (created.outcome !== "succeeded") return;
+		const log = () => readFileSync(join(created.worktree.path, "setup.log"), "utf8");
+		// A new worktree always gets its setup.
+		expect(log()).toBe("ran\n");
+
+		// Opening it again leaves setup alone.
+		expect(await open("feat/with-setup")).toMatchObject({ outcome: "succeeded", created: false });
+		expect(log()).toBe("ran\n");
+
+		// "Open with setup": the exact path as the selector, with --setup.
+		const worktrees = git(primary, "worktree", "list", "--porcelain");
+		const rerun = await open(created.worktree.path, true);
+		expect(rerun).toEqual({ outcome: "succeeded", worktree: created.worktree, created: false });
+		expect(log()).toBe("ran\nran\n");
+		expect(git(primary, "worktree", "list", "--porcelain")).toBe(worktrees);
+	});
+
+	test("a setup step that fails reports the worktree, and its output is kept but never logged", async () => {
+		setupHook("echo TOKEN=private-value; exit 7");
+		const spies = (["log", "info", "warn", "error", "debug"] as const).map(method => spyOn(console, method).mockImplementation(() => {}));
+		try {
+			// On a worktree this run creates: it exists afterwards, and the result says it was created.
+			const created = await open("feat/setup-fails");
+			expect(created).toMatchObject({ outcome: "failed", created: true, worktree: { branch: "feat/setup-fails" } });
+			if (created.outcome !== "failed" || !created.worktree) throw new Error("Timber named no worktree");
+			expect(created.failure.diagnostic).toContain("Setup post_create step 1 failed (exit code 7)");
+			expect(created.failure.output?.text).toContain("TOKEN=private-value");
+			expect(git(primary, "worktree", "list", "--porcelain")).toContain(`worktree ${created.worktree.path}\n`);
+
+			// On a worktree that was already there: the same worktree, not created.
+			const existing = await open(created.worktree.path, true);
+			expect(existing).toMatchObject({ outcome: "failed", created: false, worktree: created.worktree });
+			for (const spy of spies) expect(spy).not.toHaveBeenCalled();
+		} finally {
+			for (const spy of spies) spy.mockRestore();
+		}
+	});
+
+	test("an unknown selector fails with Timber's guidance and changes nothing", async () => {
+		const before = fingerprint();
+		const result = await open("no/such-branch");
+		expect(result).toMatchObject({ outcome: "failed", worktree: null, created: false });
+		expect(result.outcome === "failed" && result.failure.diagnostic).toBe('No existing branch or worktree matches "no/such-branch". Check the exact branch or absolute worktree path.');
+		expect(result.outcome === "failed" && result.failure.command).toBe("timber open --result-file <temporary file> --no-editor --no-agent -- no/such-branch");
+		expect(fingerprint()).toBe(before);
+	});
+
+	test("an ambiguous selector fails with Timber's list of exact names and changes nothing", async () => {
+		const before = fingerprint();
+		const result = await open("twice");
+		expect(result).toMatchObject({ outcome: "failed", worktree: null, created: false });
+		const diagnostic = result.outcome === "failed" ? result.failure.diagnostic : "";
+		expect(diagnostic).toContain('Input "twice" matches 2 targets.');
+		expect(diagnostic).toContain("fork/twice");
+		expect(diagnostic).toContain("origin/twice");
+		expect(fingerprint()).toBe(before);
+	});
+
+	test("text that looks like an option is a selector to Timber, not an option", async () => {
+		const before = fingerprint();
+		for (const selector of ["--help", "--setup", "-w"]) {
+			const result = await open(selector);
+			expect(result.outcome === "failed" && result.failure.diagnostic).toBe(`No existing branch or worktree matches "${selector}". Check the exact branch or absolute worktree path.`);
+		}
+		expect(fingerprint()).toBe(before);
+	});
+
+	test("a repository that is not in the list is refused before Timber runs, and stays as it was", async () => {
+		const state = () => [git(outside, "for-each-ref"), git(outside, "worktree", "list", "--porcelain"), readdirSync(work).sort().join("\n")].join("\n--\n");
+		const before = state();
+		const result = await open("feat/elsewhere", false, outside);
+		expect(result).toMatchObject({ outcome: "failed", failure: { command: null, diagnostic: `${outside} is not a repository in the app's list. Nothing was run.` }, worktree: null });
+		expect(state()).toBe(before);
 	});
 });

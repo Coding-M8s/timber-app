@@ -170,3 +170,13 @@ export type WorktreeCommandResult =
 	/** The person closed Timber's own chooser before anything was changed. */
 	| { outcome: "cancelled" }
 	| { outcome: "failed"; failure: TimberFailure; worktree: ReportedWorktree | null; created: boolean };
+
+/** A branch offered for picking wherever a branch is typed. Only a suggestion: any text may be typed instead. */
+export interface BranchSuggestion {
+	/**
+	 * The name as it is shown and as it is given to Timber: a local branch by
+	 * its name, a remote-tracking branch as `<remote>/<branch>`.
+	 */
+	selector: string;
+	kind: "local" | "remote";
+}
