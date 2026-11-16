@@ -1675,6 +1675,50 @@ pre:focus-visible {
 	max-width: 640px;
 }
 
+/* First-run setup: a quiet prompt between the header and the tabs. It is an offer, not an error. */
+.setup-prompt {
+	flex: none;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-start;
+	gap: 8px 16px;
+	margin: 4px 18px 10px;
+	padding: 10px 12px;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+}
+
+.setup-prompt-body {
+	flex: 1 1 320px;
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	min-width: 0;
+}
+
+.setup-prompt-title {
+	margin: 0;
+	font-weight: 500;
+}
+
+.setup-prompt-text {
+	margin: 0;
+	font-size: 12.5px;
+	color: var(--text-3);
+}
+
+.setup-prompt-command {
+	font-family: var(--font-mono);
+	font-size: 11.5px;
+	color: var(--text-2);
+}
+
+.setup-prompt-actions {
+	flex: none;
+	display: flex;
+	gap: 6px;
+}
+
 .field-input.mono {
 	font-family: var(--font-mono);
 	font-size: 12px;

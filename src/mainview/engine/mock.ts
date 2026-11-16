@@ -14,6 +14,7 @@ import { type CommandEnding, actOutNew, actOutOpen, isCommandEnding } from "./mo
 import { type MockFileChange, derivedFileChanges, diffMockFileChange, listMockFileChanges } from "./mock-file-changes";
 import { type TerminalControls, createMockTerminals } from "./mock-terminals";
 import { type TimberConfigControls, createMockTimberConfig } from "./mock-timber-config";
+import type { TimberConfigScope } from "../../shared/timber-config";
 
 const inSync = (branch: string): SyncState => ({ kind: "tracking", upstream: `origin/${branch}`, ahead: 0, behind: 0 });
 
@@ -56,6 +57,7 @@ export const sampleRepositories: Repository[] = [
 		name: "timber",
 		available: true,
 		failure: null,
+		setup: "repository",
 		worktrees: [
 			worktree("timber", "main", {
 				primary: true,
@@ -79,6 +81,7 @@ export const sampleRepositories: Repository[] = [
 		name: "api-server",
 		available: true,
 		failure: null,
+		setup: "repository",
 		worktrees: [
 			worktree("api-server", "main", { primary: true }),
 			worktree("api-server", "feat/rate-limit-headers", {
@@ -105,6 +108,8 @@ export const sampleStatesRepository: Repository = {
 	name: "billing",
 	available: true,
 	failure: null,
+	// Set up with the machine defaults only, which counts as set up.
+	setup: "machine",
 	worktrees: [
 		worktree("billing", "main", { primary: true }),
 		worktree("billing", "review-build", {
@@ -139,18 +144,24 @@ export const sampleUnavailableRepository: Repository = {
 	name: "old-prototype",
 	available: false,
 	failure: null,
+	setup: "unknown",
 	worktrees: [],
 };
 
 /** What `bun run dev:web` lists: every row state, and a repository that is unavailable. */
 export const browserSampleRepositories: Repository[] = [...sampleRepositories, sampleStatesRepository, sampleUnavailableRepository];
 
-/** A repository on the pretend disk that is not in the list yet. The mock's folder picker chooses it by default. */
+/**
+ * A repository on the pretend disk that is not in the list yet. The mock's
+ * folder picker chooses it by default. It was never set up for Timber, so
+ * adding it shows the setup prompt.
+ */
 export const samplePickableRepository: Repository = {
 	path: "/work/docs-site",
 	name: "docs-site",
 	available: true,
 	failure: null,
+	setup: "none",
 	worktrees: [
 		worktree("docs-site", "main", { primary: true }),
 		worktree("docs-site", "feat/search", {
@@ -323,7 +334,7 @@ export function createMockEngine(
 	// As the main process does: a failed listing brings the diagnostic and no worktrees.
 	const asRead = (repository: Repository): Repository => {
 		const diagnostic = timberFailures.get(repository.path);
-		return diagnostic === undefined || !repository.available ? repository : { ...repository, failure: diagnostic, worktrees: [] };
+		return diagnostic === undefined || !repository.available ? repository : { ...repository, failure: diagnostic, setup: "unknown", worktrees: [] };
 	};
 	let picked: string | null = samplePickableRepository.path;
 	// Everything on the pretend disk: whatever was ever listed, plus one repository to add.
@@ -522,12 +533,24 @@ export function createMockEngine(
 		}
 		return structuredClone(result);
 	};
+	/**
+	 * A pretend setup that saves: the repository's own settings, as `timber
+	 * setup` writes its `.timber.toml`, or the machine defaults, which every
+	 * repository with none of its own then has.
+	 */
+	const saveSetup = (scope: TimberConfigScope, path: string) => {
+		const saved = (repository: Repository): Repository =>
+			scope === "repository" ? (repository.path === path ? { ...repository, setup: "repository" } : repository)
+				: repository.setup === "none" ? { ...repository, setup: "machine" } : repository;
+		current = current.map(saved);
+		for (const [key, repository] of onDisk) onDisk.set(key, saved(repository));
+	};
 	// As the main process does: only a worktree listed right now, whose folder is there.
 	const terminals = createMockTerminals((path, worktreePath) => {
 		const repository = current.find(candidate => candidate.path === path && candidate.available);
 		const worktree = timberFailures.has(path) ? undefined : repository?.worktrees.find(candidate => candidate.path === worktreePath);
 		return worktree && worktree.pathExists ? worktree : null;
-	}, () => preferences.agents, () => typeof timber === "function" ? timber() : timber);
+	}, () => preferences.agents, () => typeof timber === "function" ? timber() : timber, saveSetup);
 	const timberConfig = createMockTimberConfig(path => current.some(repository => repository.path === path));
 	return {
 		...terminals,

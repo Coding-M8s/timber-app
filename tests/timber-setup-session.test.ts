@@ -53,6 +53,7 @@ describe.skipIf(!posix)("timber setup in a session", () => {
 
 	const listed = (): Repository => ({
 		path: repository, name: "my repo", available: true, failure: null,
+		setup: "repository",
 		worktrees: [{
 			id: `id:${repository}`, path: repository, canonicalPath: repository, branch: "main", head: null, primary: true, detached: false,
 			locked: false, prunable: false, pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, sync: null,

@@ -6,6 +6,7 @@ import { useAppState, useStore } from "../store/react";
 import { WORKSPACE_TABS, type WorkspaceTab, isRunning, selectedWorktree } from "../store/state";
 import { ChangesPanel } from "./ChangesPanel";
 import { EditorProblemNote, OpenInEditorButton } from "./OpenInEditor";
+import { SetupPrompt } from "./SetupPrompt";
 import { TerminalPanel } from "./TerminalPanel";
 
 const tabId = (tab: WorkspaceTab) => `tab-${tab}`;
@@ -18,13 +19,18 @@ export function Workspace() {
 	if (!selection) {
 		// Before the first answer, and after a first load that failed, the sidebar says what is going on.
 		const waiting = !state.loaded;
+		const first = state.repositories.length === 0;
 		return (
 			<main className="workspace">
 				<div className="empty">
 					{!waiting && (
 						<>
-							<p className="empty-title">{state.repositories.length === 0 ? "No repository yet" : "No worktree to show"}</p>
-							<p className="empty-text">Add a repository to see its worktrees here. The app remembers it for next time.</p>
+							<p className="empty-title">{first ? "No repository yet" : "No worktree to show"}</p>
+							<p className="empty-text">
+								{first
+									? "Start by adding a Git repository. Its worktrees show here, and the app remembers it for next time. If it is new to Timber, the app offers to set it up."
+									: "Select a worktree in the sidebar, or add another repository. The app remembers it for next time."}
+							</p>
 							<button type="button" className="button" disabled={isRunning(state, "add-repository")} onClick={() => void store.addRepository()}>
 								Add repository
 							</button>
@@ -74,6 +80,7 @@ export function Workspace() {
 				</div>
 				<EditorProblemNote />
 			</header>
+			<SetupPrompt repository={repository} />
 			<div className="tabs" role="tablist" aria-label="Views of this worktree" onKeyDown={onTabKey}>
 				{WORKSPACE_TABS.map(tab => (
 					<button

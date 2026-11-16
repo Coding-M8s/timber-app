@@ -85,7 +85,11 @@ export function parseSettings(text: string): Settings | null {
 /** The text of a settings file, readable and stable enough to edit by hand. */
 export function serializeSettings(settings: Settings): string {
 	const repositories = settings.repositories.map(({ path, commonDir }) => ({ path, commonDir }));
-	const layout = settings.layout && { sidebarWidth: settings.layout.sidebarWidth, collapsed: [...settings.layout.collapsed] };
+	const layout = settings.layout && {
+		sidebarWidth: settings.layout.sidebarWidth,
+		collapsed: [...settings.layout.collapsed],
+		setupDismissed: [...settings.layout.setupDismissed],
+	};
 	const preferences = settings.preferences && writePreferences(settings.preferences);
 	return `${JSON.stringify({ version: SETTINGS_VERSION, repositories, ...(layout ? { layout } : {}), ...(preferences ? { preferences } : {}) }, null, "\t")}\n`;
 }

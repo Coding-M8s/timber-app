@@ -7,6 +7,12 @@ export interface Layout {
 	sidebarWidth: number;
 	/** The repositories whose group is collapsed, each named by the path of its primary checkout. */
 	collapsed: string[];
+	/**
+	 * The repositories whose setup prompt the person dismissed with "Not now",
+	 * each named by the path of its primary checkout. Setup stays possible
+	 * with `timber setup` in a terminal.
+	 */
+	setupDismissed: string[];
 }
 
 export const DEFAULT_SIDEBAR_WIDTH = 272;
@@ -14,7 +20,7 @@ export const MIN_SIDEBAR_WIDTH = 200;
 export const MAX_SIDEBAR_WIDTH = 480;
 
 export function defaultLayout(): Layout {
-	return { sidebarWidth: DEFAULT_SIDEBAR_WIDTH, collapsed: [] };
+	return { sidebarWidth: DEFAULT_SIDEBAR_WIDTH, collapsed: [], setupDismissed: [] };
 }
 
 /** A whole number of pixels within the limits. Anything that is not a number gives the default width. */
@@ -31,20 +37,30 @@ export function clampSidebarWidth(width: number): number {
 export function readLayout(value: unknown): Layout {
 	const layout = defaultLayout();
 	if (typeof value !== "object" || value === null || Array.isArray(value)) return layout;
-	const { sidebarWidth, collapsed } = value as Record<string, unknown>;
+	const { sidebarWidth, collapsed, setupDismissed } = value as Record<string, unknown>;
 	if (typeof sidebarWidth === "number") layout.sidebarWidth = clampSidebarWidth(sidebarWidth);
-	if (Array.isArray(collapsed)) {
-		for (const path of collapsed) {
-			if (typeof path === "string" && path !== "" && !layout.collapsed.includes(path)) layout.collapsed.push(path);
-		}
-	}
+	layout.collapsed = readPaths(collapsed);
+	layout.setupDismissed = readPaths(setupDismissed);
 	return layout;
 }
 
+/** The distinct non-empty paths of a list from outside. Anything else in it is left out. */
+function readPaths(value: unknown): string[] {
+	const paths: string[] = [];
+	if (!Array.isArray(value)) return paths;
+	for (const path of value) {
+		if (typeof path === "string" && path !== "" && !paths.includes(path)) paths.push(path);
+	}
+	return paths;
+}
+
+const samePaths = (one: readonly string[], other: readonly string[]) =>
+	one.length === other.length && one.every((path, index) => path === other[index]);
+
 export function sameLayout(one: Layout, other: Layout): boolean {
 	return one.sidebarWidth === other.sidebarWidth
-		&& one.collapsed.length === other.collapsed.length
-		&& one.collapsed.every((path, index) => path === other.collapsed[index]);
+		&& samePaths(one.collapsed, other.collapsed)
+		&& samePaths(one.setupDismissed, other.setupDismissed);
 }
 
 /** The layout with the group of this repository collapsed when it was open, and open when it was collapsed. */
@@ -55,9 +71,17 @@ export function toggleCollapsed(layout: Layout, repository: string): Layout {
 	return { ...layout, collapsed };
 }
 
+/** The layout with the setup prompt of this repository dismissed. */
+export function dismissSetup(layout: Layout, repository: string): Layout {
+	return layout.setupDismissed.includes(repository) ? layout : { ...layout, setupDismissed: [...layout.setupDismissed, repository] };
+}
+
 /** The layout without anything remembered about this repository, for when it leaves the list. */
 export function forgetRepository(layout: Layout, repository: string): Layout {
-	return layout.collapsed.includes(repository)
-		? { ...layout, collapsed: layout.collapsed.filter(path => path !== repository) }
-		: layout;
+	if (!layout.collapsed.includes(repository) && !layout.setupDismissed.includes(repository)) return layout;
+	return {
+		...layout,
+		collapsed: layout.collapsed.filter(path => path !== repository),
+		setupDismissed: layout.setupDismissed.filter(path => path !== repository),
+	};
 }

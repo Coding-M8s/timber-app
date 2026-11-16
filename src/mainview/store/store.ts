@@ -2,7 +2,7 @@ import { type Attention, sameAttention } from "../../shared/attention";
 import { readableEditorSetting } from "../../shared/editor";
 import type { Engine } from "../../shared/engine";
 import { type FileChangeTarget, type FileChangesResult, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
-import { type Layout, clampSidebarWidth, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
+import { type Layout, clampSidebarWidth, dismissSetup, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "../../shared/model";
 import type { Preferences } from "../../shared/preferences";
 import { type OpenTerminalRequest, type TerminalChange, type TerminalSession, TIMBER_SETUP_SESSION_NAME } from "../../shared/terminal";
@@ -192,6 +192,22 @@ export interface AppStore {
 	/** Open a web link from a terminal in the person's browser. Never throws. */
 	openLink(url: string): Promise<void>;
 	dismissTerminalProblem(): void;
+	/**
+	 * The setup prompt's "Set up Timber": `runTimberSetup` for the
+	 * repository's own settings, named by the path of its primary checkout.
+	 * While a Timber setup session of that repository still runs, that one
+	 * shows instead, because Timber sets up one repository once at a time.
+	 * Whenever a Timber setup session ends or is closed, every repository is
+	 * read again, since machine defaults set up all of them, so the prompt
+	 * goes once settings were saved. Never throws.
+	 */
+	setUpRepository(repository: string): Promise<void>;
+	/**
+	 * Put away the setup prompt of a repository, named by the path of its
+	 * primary checkout, and remember that for the next run. The repository
+	 * works as before; setup stays possible with `timber setup`.
+	 */
+	dismissSetup(repository: string): void;
 	/** The person agreed to quit while terminals run. */
 	confirmQuit(): Promise<void>;
 	/** The person chose to keep the app open. */
@@ -584,7 +600,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				const result = await engine.removeRepository(path);
 				switch (result.outcome) {
 					case "removed":
-						// The engine forgot the repository's collapsed group along with it.
+						// The engine forgot the repository's collapsed group and dismissed setup prompt along with it.
 						if (savedLayout) savedLayout = forgetRepository(savedLayout, path);
 						update({ notice: null, layout: forgetRepository(state.layout, path) });
 						await reloadAll("all");
@@ -720,6 +736,40 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		});
 	}
 
+	/** Show a session: select its worktree, choose its chip, and show the Workspace tab. */
+	function reveal(session: TerminalSession): void {
+		const selection = selectionFor(state.repositories, session.worktree);
+		if (selection) select(session.worktree);
+		update({ tab: "workspace", shownSessions: { ...state.shownSessions, [session.worktree]: session.id } });
+	}
+
+	async function runTimberSetup(scope: TimberConfigScope, repository: string | null): Promise<void> {
+		const target = timberSetupTarget(state, scope, repository);
+		if (!target.ok) return;
+		update({ dialog: null, tab: "workspace" });
+		select(target.worktree.id);
+		// The pane gives the session its real size once it shows.
+		await openTerminal({ repository: target.repository, worktree: target.worktree.path, cols: 80, rows: 24, timberSetup: scope });
+	}
+
+	async function setUpRepository(repository: string): Promise<void> {
+		const running = state.terminals.find(session => session.kind === "timber" && session.repository === repository && session.state.kind === "running");
+		if (running) return reveal(running);
+		await runTimberSetup("repository", repository);
+	}
+
+	/**
+	 * Whether this change stops a setup session, given the sessions known
+	 * before it: the session ended, or it was closed while it ran. Whether
+	 * setup saved shows only in the settings, never in how it ended.
+	 */
+	function setupStopped(known: readonly TerminalSession[], change: TerminalChange): boolean {
+		const before = known.find(session => session.id === change.id);
+		const session = change.session ?? before;
+		if (session?.kind !== "timber" || before?.state.kind === "exited") return false;
+		return change.session === null || change.session.state.kind !== "running";
+	}
+
 	async function closeTerminal(id: string): Promise<void> {
 		if (state.operations.some(operation => operation.kind === "close-terminal" && operation.session === id)) return;
 		await track({ kind: "close-terminal", session: id }, async () => {
@@ -800,9 +850,13 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				}),
 				engine.onTerminalChanged(change => {
 					// Until the first list answers, changes wait, and are applied on top of it.
-					if (heard !== null) heard.push(change);
-					else if (change.session) update({ terminals: withTerminal(state.terminals, change.id, change.session) });
+					if (heard !== null) return void heard.push(change);
+					const stopped = setupStopped(state.terminals, change);
+					if (change.session) update({ terminals: withTerminal(state.terminals, change.id, change.session) });
 					else update(withoutSession(state, change.id));
+					// Setup only ever writes settings, which nothing watches. Read again to see whether it saved. Machine
+					// defaults set up every repository, so every one is read.
+					if (stopped) void reloadAll("all");
 				}),
 				engine.onTerminalOutput(part => {
 					if (!watched.has(part.id)) engine.drawnTerminal(part.id, part.seq);
@@ -818,9 +872,17 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			// Sessions outlive the window, for example when it reloads. Changes heard meanwhile are newer than this answer.
 			const settle = (listed: readonly TerminalSession[]) => {
 				let terminals = listed;
-				for (const change of heard ?? []) terminals = withTerminal(terminals, change.id, change.session);
+				let stopped = false;
+				for (const change of heard ?? []) {
+					// The list may already hold the session as it ended, so any ending heard meanwhile counts.
+					const session = change.session ?? terminals.find(candidate => candidate.id === change.id);
+					stopped ||= session?.kind === "timber" && (change.session === null || change.session.state.kind !== "running");
+					terminals = withTerminal(terminals, change.id, change.session);
+				}
 				heard = null;
 				update({ terminals, unseenSessions: state.unseenSessions.filter(id => terminals.some(session => session.id === id)) });
+				// A setup that stopped before the sessions were listed may have saved after the repositories were read.
+				if (stopped) void reloadAll("all");
 			};
 			engine.listTerminals().then(settle, () => settle(state.terminals));
 			attending = true;
@@ -891,14 +953,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				return `The app did not hear back: ${messageOf(error)}`;
 			}
 		},
-		async runTimberSetup(scope, repository) {
-			const target = timberSetupTarget(state, scope, repository);
-			if (!target.ok) return;
-			update({ dialog: null, tab: "workspace" });
-			select(target.worktree.id);
-			// The pane gives the session its real size once it shows.
-			await openTerminal({ repository: target.repository, worktree: target.worktree.path, cols: 80, rows: 24, timberSetup: scope });
-		},
+		runTimberSetup,
 		openDialog(request) {
 			update({ dialog: request });
 		},
@@ -938,6 +993,11 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		},
 		dismissTerminalProblem() {
 			if (state.terminalProblem) update({ terminalProblem: null });
+		},
+		setUpRepository,
+		dismissSetup(repository) {
+			changeLayout(dismissSetup(state.layout, repository));
+			void saveLayout("layout");
 		},
 		async confirmQuit() {
 			update({ quitRequest: null });
