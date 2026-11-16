@@ -1,6 +1,7 @@
 import type { RPCSchema } from "electrobun/view";
 import type { Layout } from "./layout";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenWorktreeRequest, RemoveRepositoryResult, Repository, SaveLayoutResult, TimberStatus, WorktreeCommandResult } from "./model";
+import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "./timber-done";
 
 /**
  * The typed bridge between the Bun main process and the interface.
@@ -24,6 +25,9 @@ export type AppRPC = {
 			openWorktree: { params: OpenWorktreeRequest; response: WorktreeCommandResult };
 			loadLayout: { params: {}; response: Layout };
 			saveLayout: { params: { layout: Layout }; response: SaveLayoutResult };
+			previewDone: { params: DonePreviewRequest; response: DonePreviewResult };
+			/** Answers only when Timber has ended. Scripts that run before deletion take as long as they take, so the caller must not time it out. */
+			applyDone: { params: DoneApplyRequest; response: DoneApplyResult };
 		};
 		messages: {};
 	}>;

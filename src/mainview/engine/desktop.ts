@@ -29,6 +29,10 @@ export function createDesktopEngine(): Engine {
 		// Setup scripts take as long as they take.
 		newWorktree: request => rpc.request.newWorktree(request, { maxRequestTime: Infinity }),
 		openWorktree: request => rpc.request.openWorktree(request, { maxRequestTime: Infinity }),
+		// The main process reads the list first, and stops a stuck preview after 30 seconds.
+		previewDone: request => rpc.request.previewDone(request, { maxRequestTime: 60_000 }),
+		// Scripts that run before deletion take as long as they take.
+		applyDone: request => rpc.request.applyDone(request, { maxRequestTime: Infinity }),
 		onRepositoryChanged: listener => {
 			changeListeners.add(listener);
 			return () => void changeListeners.delete(listener);

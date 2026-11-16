@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { Engine } from "../src/shared/engine";
 import { defaultLayout } from "../src/shared/layout";
 import type { AddRepositoryResult, RemoveRepositoryResult, Repository, TimberStatus, WorktreeCommandResult } from "../src/shared/model";
+import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "../src/shared/timber-done";
 import { createMockEngine, sampleChanges, samplePickableRepository, sampleRepositories, sampleTimberStatuses, sampleUnavailableRepository } from "../src/mainview/engine/mock";
 import { isRunning, selectedWorktree } from "../src/mainview/store/state";
 import { createAppStore } from "../src/mainview/store/store";
@@ -61,6 +62,8 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 	const adds: Pending<AddRepositoryResult>[] = [];
 	const removes: Pending<RemoveRepositoryResult>[] = [];
 	const commands: (Pending<WorktreeCommandResult> & { kind: "new" | "open"; request: object })[] = [];
+	const previews: (Pending<DonePreviewResult> & { request: DonePreviewRequest })[] = [];
+	const applies: (Pending<DoneApplyResult> & { request: DoneApplyRequest })[] = [];
 	const listeners = new Set<(path: string) => void>();
 	const engine: Engine = {
 		timberStatus: async () => timber,
@@ -84,6 +87,12 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		openWorktree: request => new Promise((resolve, reject) => {
 			commands.push({ kind: "open", request, path: request.repository, resolve, reject });
 		}),
+		previewDone: request => new Promise((resolve, reject) => {
+			previews.push({ path: request.path, request, resolve, reject });
+		}),
+		applyDone: request => new Promise((resolve, reject) => {
+			applies.push({ path: request.path, request, resolve, reject });
+		}),
 		onRepositoryChanged(listener) {
 			listeners.add(listener);
 			return () => void listeners.delete(listener);
@@ -94,7 +103,7 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 	const push = (path: string) => {
 		for (const listener of [...listeners]) listener(path);
 	};
-	return { engine, lists, loads, adds, removes, commands, push, listeners };
+	return { engine, lists, loads, adds, removes, commands, previews, applies, push, listeners };
 }
 
 /** A store on a manual engine, started and past its first load of the sample data. */
@@ -846,5 +855,127 @@ describe("the branches to pick from", () => {
 		expect(await store.listBranches(TIMBER)).toBeNull();
 		engine.failReads("Git is busy");
 		expect(await store.listBranches(API_SERVER)).toBeNull();
+	});
+});
+
+describe("the dialog that is open, for Done", () => {
+	test("is none at first, then the one that was opened, then none again", async () => {
+		const { store } = await loadedStore();
+		expect(store.getState().dialog).toBeNull();
+		let heard = 0;
+		store.subscribe(() => heard++);
+		const request = { kind: "done-worktree", repository: TIMBER, worktree: FEATURE_ID } as const;
+		store.openDialog(request);
+		expect(store.getState().dialog).toEqual(request);
+		store.closeDialog();
+		expect(store.getState().dialog).toBeNull();
+		store.closeDialog();
+		expect(heard).toBe(2);
+	});
+
+	test("opening does not ask the engine for anything", async () => {
+		const { store, previews, applies, loads } = await loadedStore();
+		store.openDialog({ kind: "done-worktree", repository: TIMBER, worktree: FEATURE_ID });
+		await settle();
+		expect([previews.length, applies.length, loads.length]).toEqual([0, 0, 0]);
+	});
+});
+
+describe("removing a worktree", () => {
+	const request = { repository: TIMBER, path: FEATURE, preview: "preview-1" };
+	const failure = { command: "timber __ide-done apply", diagnostic: "Worktree, files, settings or repository changed. Review the updated preview before removing.", output: null };
+
+	/** The sample data without the worktree at `path`. */
+	const without = (path: string): Repository => {
+		const repository = structuredClone(repositoryIn(sampleRepositories, TIMBER));
+		return { ...repository, worktrees: repository.worktrees.filter(worktree => worktree.path !== path) };
+	};
+
+	test("a preview is passed on as it is, and reads nothing again", async () => {
+		const { store, previews, loads } = await loadedStore();
+		const asked = store.previewDone({ repository: TIMBER, path: FEATURE, options: { keepBranch: true, keepIgnored: false, base: null } });
+		expect(previews[0]!.request).toEqual({ repository: TIMBER, path: FEATURE, options: { keepBranch: true, keepIgnored: false, base: null } });
+		previews[0]!.resolve({ outcome: "failed", failure });
+		expect(await asked).toEqual({ outcome: "failed", failure });
+		expect(loads.length).toBe(0);
+	});
+
+	test("a preview that the engine could not answer is a failed preview, not an error", async () => {
+		const { store, previews } = await loadedStore();
+		const asked = store.previewDone({ repository: TIMBER, path: FEATURE, options: { keepBranch: false, keepIgnored: false, base: null } });
+		previews[0]!.reject(new Error("The request timed out"));
+		expect(await asked).toEqual({ outcome: "failed", failure: { command: null, diagnostic: "The preview did not answer: The request timed out", output: null } });
+	});
+
+	test("after a removal that worked, the repository is read again before the answer, and the selection moves on", async () => {
+		const { store, applies, loads, lists } = await loadedStore();
+		store.select(FEATURE_ID);
+		let answer: unknown = null;
+		const asked = store.applyDone(request).then(result => (answer = result));
+		expect(applies.map(apply => apply.request)).toEqual([request]);
+		expect(loads.length).toBe(0);
+
+		applies[0]!.resolve({ outcome: "removed" });
+		await settle();
+		// The list is asked for, and the answer waits for it.
+		expect(loads.map(load => load.path)).toEqual([TIMBER]);
+		expect(answer).toBeNull();
+		loads[0]!.resolve(without(FEATURE));
+		await asked;
+		expect(answer).toEqual({ outcome: "removed" });
+		expect(repositoryIn([...store.getState().repositories], TIMBER).worktrees.some(worktree => worktree.path === FEATURE)).toBe(false);
+		expect(store.getState().selection).toEqual({ repository: TIMBER, worktree: TIMBER_ID });
+		// One removal and one reload of that repository, and nothing else.
+		expect([applies.length, loads.length, lists.length]).toEqual([1, 1, 0]);
+	});
+
+	test("after a removal that failed, the repository is read again all the same, and nothing is tried again", async () => {
+		const { store, applies, loads } = await loadedStore();
+		const asked = store.applyDone(request);
+		applies[0]!.resolve({ outcome: "failed", ran: true, failure });
+		await settle();
+		expect(loads.map(load => load.path)).toEqual([TIMBER]);
+		// The folder is gone although the command failed: the list says so.
+		loads[0]!.resolve(without(FEATURE));
+		expect(await asked).toEqual({ outcome: "failed", ran: true, failure });
+		expect(repositoryIn([...store.getState().repositories], TIMBER).worktrees.some(worktree => worktree.path === FEATURE)).toBe(false);
+		await settle();
+		expect([applies.length, loads.length]).toEqual([1, 1]);
+	});
+
+	test("a removal that was refused before it ran is still followed by a reload", async () => {
+		const { store, applies, loads } = await loadedStore();
+		const asked = store.applyDone(request);
+		applies[0]!.resolve({ outcome: "failed", ran: false, failure });
+		await settle();
+		expect(loads.length).toBe(1);
+		loads[0]!.resolve(structuredClone(repositoryIn(sampleRepositories, TIMBER)));
+		expect(await asked).toMatchObject({ outcome: "failed", ran: false });
+	});
+
+	test("a removal that the engine could not answer is a failure of unknown extent, followed by a reload and no second try", async () => {
+		const { store, applies, loads } = await loadedStore();
+		const asked = store.applyDone(request);
+		applies[0]!.reject(new Error("The window lost its connection"));
+		await settle();
+		expect(loads.map(load => load.path)).toEqual([TIMBER]);
+		loads[0]!.resolve(without(FEATURE));
+		expect(await asked).toEqual({
+			outcome: "failed",
+			ran: true,
+			failure: { command: null, diagnostic: "The removal did not answer, so what it did is unknown: The window lost its connection", output: null },
+		});
+		expect(repositoryIn([...store.getState().repositories], TIMBER).worktrees.some(worktree => worktree.path === FEATURE)).toBe(false);
+		expect(applies.length).toBe(1);
+	});
+
+	test("a reload that fails after the removal does not hide how the removal ended", async () => {
+		const { store, applies, loads } = await loadedStore();
+		const asked = store.applyDone(request);
+		applies[0]!.resolve({ outcome: "removed" });
+		await settle();
+		loads[0]!.reject(new Error("Git is busy"));
+		expect(await asked).toEqual({ outcome: "removed" });
+		expect(store.getState().error).toEqual({ repository: TIMBER, message: "Git is busy" });
 	});
 });

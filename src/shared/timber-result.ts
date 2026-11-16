@@ -13,6 +13,15 @@ export type ResultCommand = "new" | "open" | "done" | "rebase";
 /** Stands for the result file wherever a command is shown. The real path is a fresh temporary file. */
 export const RESULT_FILE_PLACEHOLDER = "<temporary file>";
 
+/**
+ * Stands for the approval file of `timber __ide-done apply` wherever that
+ * command is shown. The real file is a private temporary one that holds the
+ * preview Timber printed, unchanged.
+ */
+export const APPROVAL_FILE_PLACEHOLDER = "<approved preview>";
+
+const PLACEHOLDERS: readonly string[] = [RESULT_FILE_PLACEHOLDER, APPROVAL_FILE_PLACEHOLDER];
+
 /** A record that passed every check. */
 export interface ResultRecord {
 	/** Null when Timber failed before it knew which repository it was in. */
@@ -54,7 +63,7 @@ const PLAIN_ARGUMENT = /^[A-Za-z0-9_@%+=:,./-]+$/;
  */
 export function describeTimberCommand(timberArguments: readonly string[]): string {
 	const shown = timberArguments.map(argument =>
-		argument === RESULT_FILE_PLACEHOLDER || PLAIN_ARGUMENT.test(argument) ? argument : `'${argument.replaceAll("'", `'\\''`)}'`);
+		PLACEHOLDERS.includes(argument) || PLAIN_ARGUMENT.test(argument) ? argument : `'${argument.replaceAll("'", `'\\''`)}'`);
 	return ["timber", ...shown].join(" ");
 }
 

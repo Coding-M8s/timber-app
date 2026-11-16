@@ -256,6 +256,45 @@ describe.skipIf(realTimber === null)("a damaged settings file", () => {
 	});
 });
 
+describe.skipIf(realTimber === null)("finding a repository of the list", () => {
+	test("answers only for a primary checkout that is in the list", async () => {
+		const list = listOn();
+		await list.addFolder(linked);
+		expect(await list.find(primary)).toMatchObject({ path: primary, available: true, failure: null });
+		expect((await list.find(primary))?.worktrees.map(worktree => worktree.path)).toEqual([primary, linked]);
+		// A repository that is on disk but not in the list, one of the listed repository's worktrees, and a plain folder.
+		expect(await list.find(other)).toBeNull();
+		expect(await list.find(linked)).toBeNull();
+		expect(await list.find(plain)).toBeNull();
+		expect(await list.find(`${primary}/`)).toBeNull();
+	});
+
+	test("a listed repository whose folder is gone is found as unavailable", async () => {
+		const gone = join(root, `gone-${cases}`);
+		makeRepository(gone);
+		const list = listOn();
+		await list.addFolder(gone);
+		rmSync(gone, { recursive: true });
+		expect(await list.find(gone)).toEqual({ path: gone, name: `gone-${cases}`, available: false, failure: null, worktrees: [] });
+	});
+
+	test("with the override, only the repositories it names are found", async () => {
+		await listOn().addFolder(other);
+		const overridden = listOn({ environment: { TIMBER_APP_REPOS: linked } });
+		expect(await overridden.find(primary)).toMatchObject({ path: primary });
+		expect(await overridden.find(other)).toBeNull();
+	});
+
+	test("finding changes nothing", async () => {
+		const list = listOn();
+		await list.addFolder(primary);
+		const before = [fingerprint(primary), fingerprint(linked), readFileSync(settingsFile, "utf8")];
+		await list.find(primary);
+		await list.find(other);
+		expect([fingerprint(primary), fingerprint(linked), readFileSync(settingsFile, "utf8")]).toEqual(before);
+	});
+});
+
 describe.skipIf(realTimber === null)("the TIMBER_APP_REPOS override", () => {
 	test("replaces the saved list without changing it, and refuses add and remove", async () => {
 		await listOn().addFolder(other);

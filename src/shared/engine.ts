@@ -1,5 +1,6 @@
 import type { Layout } from "./layout";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenWorktreeRequest, RemoveRepositoryResult, Repository, SaveLayoutResult, TimberStatus, WorktreeCommandResult } from "./model";
+import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "./timber-done";
 
 /**
  * Everything the interface may ask of the machine it runs on.
@@ -59,6 +60,23 @@ export interface Engine {
 	 * never retried here. Read the list after every outcome.
 	 */
 	openWorktree(request: OpenWorktreeRequest): Promise<WorktreeCommandResult>;
+	/**
+	 * Ask Timber what removing a worktree would do, with `timber __ide-done
+	 * preview`. Read-only and safe to call again: nothing is removed and no
+	 * script runs. The answer names the preview, and the engine keeps what
+	 * Timber printed for `applyDone`.
+	 */
+	previewDone(request: DonePreviewRequest): Promise<DonePreviewResult>;
+	/**
+	 * Remove a worktree with `timber __ide-done apply`, approving one preview by
+	 * its name. This is the only capability that deletes work. A preview is
+	 * used up by one call, whatever came of it, so calling again with the same
+	 * name removes nothing. Timber refuses when the worktree no longer matches
+	 * the preview. A failure can leave the folder removed and the branch in
+	 * place, so read the list again after every outcome, and never try again
+	 * without a new preview that the person has seen.
+	 */
+	applyDone(request: DoneApplyRequest): Promise<DoneApplyResult>;
 	/**
 	 * Hear when the machine reports that a repository changed. The listener gets
 	 * the path of its primary checkout. Returns a function that stops listening.

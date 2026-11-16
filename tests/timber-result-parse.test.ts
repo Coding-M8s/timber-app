@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { RESULT_FILE_PLACEHOLDER, describeTimberCommand, failureOf, readTimberResult } from "../src/shared/timber-result";
+import { APPROVAL_FILE_PLACEHOLDER, RESULT_FILE_PLACEHOLDER, describeTimberCommand, failureOf, readTimberResult } from "../src/shared/timber-result";
 import { recordedResult } from "./support/timber";
 
 /** The recorded record with some fields replaced. */
@@ -147,5 +147,13 @@ describe("failureOf", () => {
 
 	test("a run that worked has none", () => {
 		expect(failureOf({ command: "timber new x", result: readTimberResult("new", recordedResult.succeeded, 0), output })).toBeNull();
+	});
+});
+
+describe("describeTimberCommand, with an approval file", () => {
+	test("both placeholders are shown as they are, and other text in angle brackets is quoted", () => {
+		expect(describeTimberCommand(["__ide-done", "apply", "--approval-file", APPROVAL_FILE_PLACEHOLDER, "--result-file", RESULT_FILE_PLACEHOLDER, "--", "/work/a b"]))
+			.toBe("timber __ide-done apply --approval-file <approved preview> --result-file <temporary file> -- '/work/a b'");
+		expect(describeTimberCommand(["new", "<approved>"])).toBe("timber new '<approved>'");
 	});
 });

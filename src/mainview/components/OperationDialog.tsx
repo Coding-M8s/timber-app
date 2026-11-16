@@ -21,6 +21,17 @@ interface OperationDialogProps {
 	onSubmit: () => void;
 	/** Asked for by Cancel and Escape. Never while the command runs. */
 	onClose: () => void;
+	/**
+	 * For a command that deletes work. The submit button is marked as such,
+	 * and nothing but pressing that button itself submits: Enter in a field
+	 * does not, and focus starts on the other button, the one that closes the
+	 * dialog and changes nothing.
+	 */
+	destructive?: boolean;
+	/** On the button that closes the dialog. "Cancel" unless given, for example "Keep". */
+	cancelLabel?: string;
+	/** Shown right below a failure, for what the person should know next. */
+	failureNote?: ReactNode;
 	/** The fields. They are disabled as a group while the command runs. */
 	children: ReactNode;
 }
@@ -34,8 +45,10 @@ interface OperationDialogProps {
  */
 export function OperationDialog(props: OperationDialogProps) {
 	const { title, headerAside, command, submission, submitLabel, runningLabel, failureTitle, canSubmit = true, onSubmit, onClose, children } = props;
+	const { destructive = false, cancelLabel = "Cancel", failureNote } = props;
 	const { running, failure } = submission;
 	const dialog = useRef<HTMLDialogElement>(null);
+	const cancel = useRef<HTMLButtonElement>(null);
 	const titleId = useId();
 
 	// Opened as a modal, so the rest of the window is inert and focus stays inside.
@@ -45,9 +58,19 @@ export function OperationDialog(props: OperationDialogProps) {
 		return () => element?.close();
 	}, []);
 
+	// Opening moves focus to the first control, and a run takes it away, because the buttons are disabled meanwhile.
+	// A destructive dialog puts it on the button that changes nothing, at the start and after every run.
+	useEffect(() => {
+		if (destructive && !running) cancel.current?.focus();
+	}, [destructive, running]);
+
+	const run = () => {
+		if (!running && canSubmit) onSubmit();
+	};
 	const submit = (event: SubmitEvent<HTMLFormElement>) => {
 		event.preventDefault();
-		if (!running && canSubmit) onSubmit();
+		// Enter in a field submits a form. A destructive command runs only from its own button.
+		if (!destructive) run();
 	};
 
 	return (
@@ -68,6 +91,7 @@ export function OperationDialog(props: OperationDialogProps) {
 				</header>
 				<fieldset className="dialog-fields" disabled={running}>{children}</fieldset>
 				{failure && <TimberFailureDetails title={failureTitle} failure={failure} />}
+				{failure && failureNote}
 				{running && (
 					<div className="dialog-progress">
 						<div className="progress" role="progressbar" aria-label={runningLabel} />
@@ -77,10 +101,16 @@ export function OperationDialog(props: OperationDialogProps) {
 				<footer className="dialog-foot">
 					<pre className="dialog-command" aria-label="Command that will run">{command}</pre>
 					<div className="dialog-buttons">
-						<button type="button" className="button quiet" disabled={running} onClick={onClose}>Cancel</button>
-						<button type="submit" className="button primary" disabled={running || !canSubmit}>
-							{running ? "Running" : submitLabel}
-						</button>
+						<button ref={cancel} type="button" className="button quiet" disabled={running} autoFocus={destructive} onClick={onClose}>{cancelLabel}</button>
+						{destructive ? (
+							<button type="button" className="button danger" disabled={running || !canSubmit} onClick={run}>
+								{running ? "Running" : submitLabel}
+							</button>
+						) : (
+							<button type="submit" className="button primary" disabled={running || !canSubmit}>
+								{running ? "Running" : submitLabel}
+							</button>
+						)}
 					</div>
 				</footer>
 			</form>
