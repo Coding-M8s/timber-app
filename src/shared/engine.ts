@@ -1,4 +1,4 @@
-import type { AddRepositoryResult, NewWorktreeRequest, OpenWorktreeRequest, RemoveRepositoryResult, Repository, TimberStatus, WorktreeCommandResult } from "./model";
+import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenWorktreeRequest, RemoveRepositoryResult, Repository, TimberStatus, WorktreeCommandResult } from "./model";
 
 /**
  * Everything the interface may ask of the machine it runs on.
@@ -37,6 +37,13 @@ export interface Engine {
 	 * repository whose worktrees Timber could not list has `failure` set.
 	 */
 	loadRepository(path: string): Promise<Repository | null>;
+	/**
+	 * The branches of a repository to offer for picking, read from Git without
+	 * changing anything: local branches, then remote-tracking branches as of
+	 * the last fetch. `repository` is the path of its primary checkout. Null
+	 * when they could not be read.
+	 */
+	listBranches(repository: string): Promise<BranchSuggestion[] | null>;
 	/**
 	 * Create a worktree by running `timber new` in a repository from the list.
 	 * The command is `newWorktreeArguments` in ./worktree-commands.ts, so the

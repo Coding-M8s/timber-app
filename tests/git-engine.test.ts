@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
-import { commonDirectory, overrideRepositoryPaths, readBranchSync } from "../src/bun/git-engine";
+import { commonDirectory, overrideRepositoryPaths, readBranchSync, readBranches } from "../src/bun/git-engine";
 import { git } from "./support/timber";
 
 let root: string;
@@ -38,6 +38,12 @@ beforeAll(() => {
 	git(primary, "push", "--force", "origin", "feat/x:both");
 	git(primary, "push", "origin", "--delete", "deleted");
 	git(primary, "push", "origin", "main");
+	// A second remote and the pointer origin/HEAD, for the list of branches to pick from.
+	const fork = join(root, "fork.git");
+	git(root, "init", "--bare", fork);
+	git(primary, "remote", "add", "fork", fork);
+	git(primary, "push", "fork", "main:main", "main:only-on-fork");
+	git(primary, "remote", "set-head", "origin", "main");
 });
 
 afterAll(() => {
@@ -85,7 +91,32 @@ describe("readBranchSync", () => {
 		const before = fingerprint();
 		await readBranchSync(join(primary, ".git"));
 		await commonDirectory(linked);
+		expect(await readBranches(primary)).not.toBeNull();
+		expect(await readBranches(linked)).not.toBeNull();
 		expect(fingerprint()).toBe(before);
+	});
+});
+
+describe("readBranches", () => {
+	test("lists local branches, then remote-tracking branches of every remote, from a real repository", async () => {
+		expect(await readBranches(primary)).toEqual([
+			...["ahead", "behind", "both", "deleted", "feat/x", "main", "zażółć"].map(selector => ({ selector, kind: "local" as const })),
+			...["fork/main", "fork/only-on-fork", "origin/ahead", "origin/behind", "origin/both", "origin/main", "origin/zażółć"].map(selector => ({ selector, kind: "remote" as const })),
+		]);
+	});
+
+	test("origin/HEAD is there in Git and is left out of the list", async () => {
+		expect(git(primary, "symbolic-ref", "refs/remotes/origin/HEAD").trim()).toBe("refs/remotes/origin/main");
+		expect((await readBranches(primary))!.some(branch => branch.selector === "origin/HEAD")).toBe(false);
+	});
+
+	test("answers the same from a linked worktree", async () => {
+		expect(await readBranches(linked)).toEqual(await readBranches(primary));
+	});
+
+	test("answers null where there is no repository", async () => {
+		expect(await readBranches(root)).toBeNull();
+		expect(await readBranches(join(root, "does-not-exist"))).toBeNull();
 	});
 });
 

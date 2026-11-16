@@ -4,6 +4,7 @@ import { useStore, useSubmission } from "../store/react";
 import type { SubmissionState } from "../store/submission";
 import { OperationDialog } from "./OperationDialog";
 import { ModeSwitch } from "./worktree-modes/ModeSwitch";
+import { useExistingBranchMode } from "./worktree-modes/existing-branch";
 import type { WorktreeDialogMode } from "./worktree-modes/mode";
 import { useNewBranchMode } from "./worktree-modes/new-branch";
 
@@ -54,7 +55,7 @@ export function WorktreeDialogFrame({ repository, modes, selected, submission, o
 export function NewWorktreeDialog({ repository }: { repository: Repository }) {
 	const store = useStore();
 	const { submission, state } = useSubmission(() => store.closeDialog());
-	const modes = [useNewBranchMode(repository, submission)];
+	const modes = [useNewBranchMode(repository, submission), useExistingBranchMode(repository, submission)];
 	const [selected, setSelected] = useState(0);
 	return (
 		<WorktreeDialogFrame

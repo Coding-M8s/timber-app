@@ -1,4 +1,4 @@
-import { type NewWorktreeRequest, type OpenWorktreeRequest, type Repository, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
+import { type BranchSuggestion, type NewWorktreeRequest, type OpenWorktreeRequest, type Repository, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
 import { RESULT_FILE_PLACEHOLDER, type ResultCommand, type TimberRun, describeTimberCommand, readTimberResult } from "../../shared/timber-result";
 import { newWorktreeArguments, openWorktreeArguments, worktreeCommandResult } from "../../shared/worktree-commands";
 
@@ -13,6 +13,7 @@ import { newWorktreeArguments, openWorktreeArguments, worktreeCommandResult } fr
 export const commandEndings = {
 	"succeeds": "Timber does what was asked",
 	"refused": "Timber refuses before anything is created",
+	"ambiguous": "Timber finds several matches for what was typed, and lists them",
 	"setup-fails": "The setup script fails, after the worktree was created",
 	"no-result": "Timber exits with 0 but leaves no result",
 } as const;
@@ -62,7 +63,11 @@ function branchFor(name: string): string {
 	return /\s/.test(trimmed) ? trimmed.toLowerCase().replaceAll(/\s+/g, "-") : trimmed;
 }
 
-function newWorktreeIn(repository: Repository, branch: string): Worktree {
+/** Timber's guidance when what was typed matches more than one branch. */
+const ambiguousDiagnostic = (input: string) =>
+	`Input "${input}" matches 2 targets. Did you mean one of these exact branches or paths?\n  fork/${input}\n  origin/${input}`;
+
+function newWorktreeIn(repository: Repository, branch: string, sync: Worktree["sync"] = { kind: "unpublished" }): Worktree {
 	const path = `${repository.path}-worktrees/${branch.replaceAll("/", "-")}`;
 	return {
 		id: worktreeId(`${repository.path}/.git`, { path, canonicalPath: path }),
@@ -76,7 +81,7 @@ function newWorktreeIn(repository: Repository, branch: string): Worktree {
 		prunable: false,
 		pathExists: true,
 		changes: { kind: "known", modified: [], untracked: [] },
-		sync: { kind: "unpublished" },
+		sync,
 	};
 }
 
@@ -93,6 +98,7 @@ export function actOutNew(repository: Repository, request: NewWorktreeRequest, e
 	const existing = repository.worktrees.find(worktree => worktree.branch === branch);
 	if (existing) return refused(`Branch ${branch} is already checked out at ${existing.path}. Use timber open instead.`);
 	if (ending === "refused") return refused(`Base branch ${request.base ?? "main"} is missing or ambiguous. Select an exact branch.`);
+	if (ending === "ambiguous") return refused(ambiguousDiagnostic(request.name));
 
 	const created = newWorktreeIn(repository, branch);
 	const fields = { materialized: true, worktree: worktreeRecord(created) };
@@ -107,22 +113,53 @@ export function actOutNew(repository: Repository, request: NewWorktreeRequest, e
 	}
 }
 
-/** Act out `timber open` on a worktree that exists. It creates nothing: the mock has no branches without a worktree. */
-export function actOutOpen(repository: Repository, request: OpenWorktreeRequest, ending: CommandEnding): WorktreeCommandResult {
+/**
+ * Act out `timber open`. The pretend Timber knows a worktree by its branch or
+ * its path, and a branch without a worktree by the name `branches` lists it
+ * under. `created` is the worktree to add to the pretend disk, or null when
+ * the command made none.
+ */
+export function actOutOpen(
+	repository: Repository,
+	request: OpenWorktreeRequest,
+	ending: CommandEnding,
+	branches: readonly BranchSuggestion[] = [],
+): { result: WorktreeCommandResult; created: Worktree | null } {
 	const acted = stage("open", repository, describeTimberCommand(openWorktreeArguments(request, RESULT_FILE_PLACEHOLDER)));
-	const found = repository.worktrees.find(worktree => worktree.path === request.selector || worktree.branch === request.selector);
-	if (!found) return acted.failed(`No existing branch or worktree matches "${request.selector}". Check the exact branch or absolute worktree path.`);
-	const fields = { worktree: worktreeRecord(found) };
-	const printed = `Opened existing worktree at ${found.path}\n`;
+	const { selector } = request;
+	const refused = (diagnostic: string) => ({ result: acted.failed(diagnostic), created: null });
+	if (ending === "ambiguous") return refused(ambiguousDiagnostic(selector));
+
+	const found = repository.worktrees.find(worktree => worktree.path === selector || worktree.branch === selector);
+	if (found) {
+		const fields = { worktree: worktreeRecord(found) };
+		const printed = `Opened existing worktree at ${found.path}\n`;
+		switch (ending) {
+			case "succeeds":
+				return { result: acted.succeeded(fields, printed), created: null };
+			case "refused":
+				return refused(`Worktree ${found.path} is missing or unverifiable. Check it before opening it again.`);
+			case "setup-fails":
+				// Without --setup an existing worktree runs no setup, so there is nothing to fail.
+				return { result: request.setup ? acted.failed(setupDiagnostic(found.path), fields, SETUP_OUTPUT) : acted.succeeded(fields, printed), created: null };
+			case "no-result":
+				return { result: acted.noResult(printed), created: null };
+		}
+	}
+
+	const branch = branches.find(candidate => candidate.selector === selector);
+	if (!branch || ending === "refused") return refused(`No existing branch or worktree matches "${selector}". Check the exact branch or absolute worktree path.`);
+	// A remote-tracking branch becomes a local branch that follows it. A new worktree always gets its setup.
+	const name = branch.kind === "remote" ? selector.slice(selector.indexOf("/") + 1) : selector;
+	const created = newWorktreeIn(repository, name, branch.kind === "remote" ? { kind: "tracking", upstream: selector, ahead: 0, behind: 0 } : { kind: "unpublished" });
+	const fields = { materialized: true, worktree: worktreeRecord(created) };
+	const printed = `Created worktree at ${created.path}\n`;
 	switch (ending) {
 		case "succeeds":
-			return acted.succeeded(fields, printed);
-		case "refused":
-			return acted.failed(`Worktree ${found.path} is missing or unverifiable. Check it before opening it again.`);
+			return { result: acted.succeeded(fields, printed), created };
 		case "setup-fails":
-			// Without --setup an existing worktree runs no setup, so there is nothing to fail.
-			return request.setup ? acted.failed(setupDiagnostic(found.path), fields, SETUP_OUTPUT) : acted.succeeded(fields, printed);
+			return { result: acted.failed(setupDiagnostic(created.path), fields, printed + SETUP_OUTPUT), created };
 		case "no-result":
-			return acted.noResult(printed);
+			return { result: acted.noResult(printed), created };
 	}
 }

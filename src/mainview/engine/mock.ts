@@ -1,5 +1,5 @@
 import type { Engine } from "../../shared/engine";
-import { type AddRepositoryResult, type Repository, type SyncState, type TimberStatus, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
+import { type AddRepositoryResult, type BranchSuggestion, type Repository, type SyncState, type TimberStatus, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
 import { REQUIRED_TIMBER_VERSION } from "../../shared/timber-version";
 import { type CommandEnding, actOutNew, actOutOpen, isCommandEnding } from "./mock-commands";
 
@@ -148,6 +148,35 @@ export const samplePickableRepository: Repository = {
 	],
 };
 
+/**
+ * Branches on the pretend disk that have no worktree yet, by repository path.
+ * The mock's branch list offers them beside the branches of the worktrees.
+ */
+export const sampleSpareBranches: Record<string, BranchSuggestion[]> = {
+	"/work/timber": [
+		{ selector: "chore/update-deps", kind: "local" },
+		{ selector: "origin/feat/config-reload", kind: "remote" },
+		{ selector: "origin/release/0.2", kind: "remote" },
+	],
+};
+
+const byName = (one: BranchSuggestion, other: BranchSuggestion) => one.selector < other.selector ? -1 : one.selector > other.selector ? 1 : 0;
+
+/** The branches the pretend Git knows in a repository: local ones first, as the real list has them. */
+function branchesOf(repository: Repository): BranchSuggestion[] {
+	const spare = sampleSpareBranches[repository.path] ?? [];
+	const local = new Set(spare.filter(branch => branch.kind === "local").map(branch => branch.selector));
+	const remote = new Set(spare.filter(branch => branch.kind === "remote").map(branch => branch.selector));
+	for (const { branch, sync } of repository.worktrees) {
+		if (branch !== null) local.add(branch);
+		if (sync?.kind === "tracking") remote.add(sync.upstream);
+	}
+	return [
+		...[...local].map((selector): BranchSuggestion => ({ selector, kind: "local" })).sort(byName),
+		...[...remote].map((selector): BranchSuggestion => ({ selector, kind: "remote" })).sort(byName),
+	];
+}
+
 /** One sample of each state Timber can be found in. */
 export const sampleTimberStatuses = {
 	"ready": { state: "ready", path: "/home/sam/.local/bin/timber", version: REQUIRED_TIMBER_VERSION },
@@ -176,10 +205,16 @@ export interface MockEngine extends Engine {
 	pickFolder(folder: string | null): void;
 	/**
 	 * Decide how `timber new` and `timber open` end from now on: "succeeds"
-	 * (the start), "refused", "setup-fails", or "no-result". See
+	 * (the start), "refused", "ambiguous", "setup-fails", or "no-result". See
 	 * ./mock-commands.ts for what each one acts out.
 	 */
 	endCommands(ending: CommandEnding): void;
+	/**
+	 * Decide what the branch list of one repository answers from now on: these
+	 * branches, or null for a list that cannot be read. Until then it answers
+	 * with the branches of the worktrees and the spare sample branches.
+	 */
+	setBranches(path: string, branches: BranchSuggestion[] | null): void;
 }
 
 export interface MockEngineOptions {
@@ -236,6 +271,9 @@ export function createMockEngine(
 		return structuredClone(result());
 	};
 	let ending: CommandEnding = "succeeds";
+	const branchLists = new Map<string, BranchSuggestion[] | null>();
+	const listedBranches = (repository: Repository) =>
+		branchLists.has(repository.path) ? branchLists.get(repository.path)! : branchesOf(repository);
 	const { commandMilliseconds = 0 } = options;
 	// As the main process does: only with a usable Timber, and only in a repository from the list.
 	const command = async (path: string, act: (repository: Repository) => { result: WorktreeCommandResult; created: Worktree | null }): Promise<WorktreeCommandResult> => {
@@ -265,7 +303,11 @@ export function createMockEngine(
 			return { outcome: "removed" };
 		},
 		newWorktree: request => command(request.repository, repository => actOutNew(repository, request, ending)),
-		openWorktree: request => command(request.repository, repository => ({ result: actOutOpen(repository, request, ending), created: null })),
+		openWorktree: request => command(request.repository, repository => actOutOpen(repository, request, ending, listedBranches(repository) ?? [])),
+		listBranches: path => read(() => {
+			const found = current.find(repository => repository.path === path && repository.available);
+			return found ? listedBranches(found) : null;
+		}),
 		onRepositoryChanged(listener) {
 			listeners.add(listener);
 			return () => void listeners.delete(listener);
@@ -274,6 +316,9 @@ export function createMockEngine(
 			// Called from the browser console too, where nothing checks the word.
 			if (!isCommandEnding(next)) throw new Error(`Unknown ending: ${String(next)}`);
 			ending = next;
+		},
+		setBranches(path, branches) {
+			branchLists.set(path, branches);
 		},
 		setRepositories(next) {
 			current = next;

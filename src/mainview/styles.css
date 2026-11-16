@@ -1013,3 +1013,90 @@ pre:focus-visible {
 		opacity: 0.6;
 	}
 }
+
+/* The "Existing branch" mode of the worktree dialog (issue 7): the branches to pick from, the checkbox, and the note. */
+/* Timber's guidance can list choices, one per line. */
+.failure-diagnostic {
+	white-space: pre-wrap;
+}
+
+/* The branches to pick from. The box keeps its height, so the dialog does not jump while the list narrows. */
+.branch-box {
+	height: 138px;
+	border: 1px solid var(--line);
+	border-radius: 7px;
+	overflow: hidden;
+}
+
+.branch-list {
+	height: 100%;
+	margin: 0;
+	padding: 4px;
+	list-style: none;
+	overflow-y: auto;
+}
+
+.branch-option {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 4px 7px;
+	border-radius: 5px;
+	cursor: default;
+}
+
+.branch-option:hover {
+	background: var(--fill-hover);
+}
+
+.branch-option.active {
+	background: var(--fill-selected);
+}
+
+.branch-name {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.branch-kind {
+	flex: none;
+	font-size: 11.5px;
+	color: var(--text-3);
+}
+
+.branch-note {
+	margin: 0;
+	padding: 8px 10px;
+	font-size: 12px;
+	color: var(--text-3);
+}
+
+.check {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+}
+
+.check input {
+	margin: 2px 0 0;
+	accent-color: var(--text);
+}
+
+.check-text {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+}
+
+.check-hint {
+	font-size: 12px;
+	color: var(--text-3);
+}
+
+.dialog-note {
+	margin: 0;
+	font-size: 12px;
+	color: var(--text-2);
+	overflow-wrap: anywhere;
+}

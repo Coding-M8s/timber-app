@@ -55,6 +55,8 @@ export function createWorktreeCommands(options: WorktreeCommandsOptions): Worktr
 	}
 
 	function run(repository: string, command: ResultCommand, timberArguments: (resultFile: string) => string[]): Promise<WorktreeCommandResult> {
+		// Before the queue, which is kept by repository: a request without one has no place in it.
+		if (typeof repository !== "string") return Promise.resolve(notRun(`The request for timber ${command} is not complete.`));
 		return inTurn(repository, async () => {
 			try {
 				if (!await isListed(repository)) return notRun(`${repository} is not a repository in the app's list.`);
@@ -74,8 +76,19 @@ export function createWorktreeCommands(options: WorktreeCommandsOptions): Worktr
 		});
 	}
 
+	// A request comes over the bridge, so its shape is checked and not assumed: only text ever becomes an argument.
+	const incomplete = (command: ResultCommand) => Promise.resolve(notRun(`The request for timber ${command} is not complete.`));
+
 	return {
-		create: request => run(request.repository, "new", resultFile => newWorktreeArguments(request, resultFile)),
-		open: request => run(request.repository, "open", resultFile => openWorktreeArguments(request, resultFile)),
+		create(request) {
+			const { repository, name, base } = request;
+			if (typeof name !== "string" || (base !== null && typeof base !== "string")) return incomplete("new");
+			return run(repository, "new", resultFile => newWorktreeArguments({ repository, name, base }, resultFile));
+		},
+		open(request) {
+			const { repository, selector, setup } = request;
+			if (typeof selector !== "string" || typeof setup !== "boolean") return incomplete("open");
+			return run(repository, "open", resultFile => openWorktreeArguments({ repository, selector, setup }, resultFile));
+		},
 	};
 }

@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import { BrowserView, BrowserWindow, Updater, Utils } from "electrobun/main";
 import type { AppRPC } from "../shared/rpc";
 import { repositoryChanges } from "./changes";
+import { readBranches } from "./git-engine";
 import { createRepositoryList } from "./repository-list";
 import { createRepositoryReader } from "./repository-reader";
 import { settingsFilePath } from "./settings";
@@ -53,6 +54,8 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			addRepository: () => repositories.add(),
 			removeRepository: ({ path }) => repositories.remove(path),
 			loadRepository: ({ path }) => repositories.reload(path),
+			// Read-only, and still only for a repository the app lists.
+			listBranches: async ({ repository }) => await repositories.includes(repository) ? readBranches(repository) : null,
 			// What these answer holds what the command printed, which is private: never log it.
 			newWorktree: request => worktrees.create(request),
 			openWorktree: request => worktrees.open(request),

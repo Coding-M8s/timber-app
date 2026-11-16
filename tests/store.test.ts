@@ -76,6 +76,7 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		removeRepository: path => new Promise((resolve, reject) => {
 			removes.push({ path, resolve, reject });
 		}),
+		listBranches: async () => null,
 		newWorktree: request => new Promise((resolve, reject) => {
 			commands.push({ kind: "new", request, path: request.repository, resolve, reject });
 		}),
@@ -773,6 +774,29 @@ describe("creating and opening a worktree", () => {
 		expect(commands.length).toBe(1);
 	});
 
+	test("the reported worktree is found by its registered path when the list gives it another identity", async () => {
+		const { store, commands, loads } = await loadedStore();
+		const answer = store.openWorktree({ repository: TIMBER, selector: "feat/login", setup: false });
+		await settle();
+		// Timber could not verify the folder when it wrote the record, and could when it listed.
+		commands[0]!.resolve({ outcome: "failed", failure, worktree: { ...created, id: `/work/timber/.git\0registered\0${NEW_PATH}` }, created: false });
+		await settle();
+		loads.shift()!.resolve(withCreated());
+		await answer;
+		expect(store.getState().selection).toEqual({ repository: TIMBER, worktree: created.id });
+	});
+
+	test("a reported path that only another repository has is not selected", async () => {
+		const { store, commands, loads } = await loadedStore();
+		const answer = store.openWorktree({ repository: API_SERVER, selector: "x", setup: false });
+		await settle();
+		commands[0]!.resolve({ outcome: "succeeded", worktree: { id: "unknown", path: FEATURE, branch: "feat/github-issue-lookup" }, created: false });
+		await settle();
+		loads.shift()!.resolve(structuredClone(repositoryIn(sampleRepositories, API_SERVER)));
+		await answer;
+		expect(store.getState().selection).toEqual({ repository: TIMBER, worktree: TIMBER_ID });
+	});
+
 	test("with the mock engine: the new worktree is listed in Timber's order and selected", async () => {
 		const store = createAppStore(createMockEngine());
 		store.start();
@@ -801,5 +825,23 @@ describe("the dialog that is open", () => {
 		expect(heard).toBe(3);
 		store.closeDialog();
 		expect(heard).toBe(3);
+	});
+});
+
+describe("the branches to pick from", () => {
+	test("come from the engine, for the repository asked about", async () => {
+		const store = createAppStore(createMockEngine());
+		const branches = await store.listBranches(TIMBER);
+		expect(branches).toContainEqual({ selector: "chore/update-deps", kind: "local" });
+		expect(branches).toContainEqual({ selector: "origin/feat/config-reload", kind: "remote" });
+	});
+
+	test("are null, not an error, when they cannot be read", async () => {
+		const engine = createMockEngine();
+		const store = createAppStore(engine);
+		engine.setBranches(TIMBER, null);
+		expect(await store.listBranches(TIMBER)).toBeNull();
+		engine.failReads("Git is busy");
+		expect(await store.listBranches(API_SERVER)).toBeNull();
 	});
 });
