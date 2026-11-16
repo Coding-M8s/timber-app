@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { TIMBER_INSTALL_COMMAND, TIMBER_LIST_FAILURE_TITLE, describeChanges, describeListNotice, describeReloadError, describeSync, describeTimberProblem, describeWorktreeDetail, describeWorktreeState, worktreeLabel } from "../src/mainview/format";
-import { createMockEngine, sampleRepositories, sampleTimberStatuses } from "../src/mainview/engine/mock";
+import { TIMBER_INSTALL_COMMAND, TIMBER_LIST_FAILURE_TITLE, describeChanges, describeListNotice, describeReloadError, describeRow, describeRowMarkers, describeSync, describeTimberProblem, describeWorktreeKind, describeWorktreeSync, worktreeLabel } from "../src/mainview/format";
+import { browserSampleRepositories, createMockEngine, sampleRepositories, sampleTimberStatuses } from "../src/mainview/engine/mock";
 import type { Worktree } from "../src/shared/model";
 
 const base: Worktree = {
@@ -45,26 +45,157 @@ describe("worktree text", () => {
 		expect(describeChanges(missing)).toBe("Status unknown: Worktree path is missing");
 	});
 
-	test("marks a missing folder, an unknown status, a locked and a prunable worktree", () => {
-		expect(describeWorktreeState(base)).toBe("Primary checkout");
-		expect(describeWorktreeState(linked)).toBe("Worktree");
-		expect(describeWorktreeState({ ...linked, branch: null, detached: true })).toBe("Worktree");
-		expect(describeWorktreeState(missing)).toBe("Folder missing");
-		expect(describeWorktreeState(unread)).toBe("Status unknown");
-		expect(describeWorktreeState({ ...unread, primary: true })).toBe("Status unknown");
-		expect(describeWorktreeState({ ...linked, locked: true })).toBe("Locked");
-		expect(describeWorktreeState({ ...missing, locked: true })).toBe("Folder missing, locked");
-		expect(describeWorktreeState({ ...unread, prunable: true })).toBe("Status unknown, prunable");
+	test("says how a worktree's branch stands, and that it is unknown when Git could not say", () => {
+		expect(describeWorktreeSync(base)).toBe("Not published yet");
+		expect(describeWorktreeSync({ ...linked, sync: null })).toBe("Sync unknown");
+		expect(describeWorktreeSync({ ...linked, branch: null, detached: true, sync: null })).toBeNull();
 	});
 
-	test("explains a worktree in more detail for a tooltip", () => {
-		expect(describeWorktreeDetail(base)).toBe("Not published yet");
-		expect(describeWorktreeDetail({ ...base, sync: null })).toBe("/work/app");
-		expect(describeWorktreeDetail(missing)).toBe("Worktree path is missing: /work/app");
+	test("says which kind of checkout a worktree is", () => {
+		expect(describeWorktreeKind(base)).toBe("Primary checkout");
+		expect(describeWorktreeKind(linked)).toBe("Worktree");
+		expect(describeWorktreeKind({ ...missing, primary: true })).toBe("Primary checkout");
 	});
 
 	test("names the command that failed", () => {
 		expect(TIMBER_LIST_FAILURE_TITLE).toBe("timber ls --json failed");
+	});
+});
+
+describe("describeRowMarkers", () => {
+	const tracking = (ahead: number, behind: number): Worktree => ({ ...linked, sync: { kind: "tracking", upstream: "origin/main", ahead, behind } });
+	const level = tracking(0, 0);
+	/** Each marker as "kind|place|text", which is everything but the tooltip. */
+	const shown = (worktree: Worktree) => describeRowMarkers(worktree).map(marker => `${marker.kind}|${marker.place}|${marker.text}`);
+	const tooltips = (worktree: Worktree) => describeRowMarkers(worktree).map(marker => marker.tooltip);
+
+	test("a clean worktree that is level with its upstream has no markers", () => {
+		expect(describeRowMarkers(level)).toEqual([]);
+		expect(describeRowMarkers({ ...level, primary: true })).toEqual([]);
+	});
+
+	test("commits to push", () => {
+		expect(describeRowMarkers(tracking(2, 0))).toEqual([
+			{ kind: "ahead", place: "branch", text: "2", tooltip: "2 commits to push to origin/main, as of the last fetch." },
+		]);
+		expect(tooltips(tracking(1, 0))).toEqual(["1 commit to push to origin/main, as of the last fetch."]);
+	});
+
+	test("commits to pull", () => {
+		expect(describeRowMarkers(tracking(0, 3))).toEqual([
+			{ kind: "behind", place: "branch", text: "3", tooltip: "3 commits to pull from origin/main, as of the last fetch." },
+		]);
+		expect(tooltips(tracking(0, 1))).toEqual(["1 commit to pull from origin/main, as of the last fetch."]);
+	});
+
+	test("both, with the commits to pull first", () => {
+		expect(shown(tracking(12, 1))).toEqual(["behind|branch|1", "ahead|branch|12"]);
+	});
+
+	test("local only, for a branch with no upstream", () => {
+		expect(describeRowMarkers({ ...linked, sync: { kind: "unpublished" } })).toEqual([
+			{ kind: "local-only", place: "branch", text: "local only", tooltip: "This branch has no upstream. It has not been published." },
+		]);
+	});
+
+	test("upstream gone, for a branch whose upstream was deleted", () => {
+		expect(describeRowMarkers({ ...linked, sync: { kind: "gone", upstream: "origin/feat/x" } })).toEqual([
+			{ kind: "upstream-gone", place: "branch", text: "upstream gone", tooltip: "The upstream branch origin/feat/x no longer exists, as of the last fetch." },
+		]);
+	});
+
+	test("sync unknown, for a branch Git could not answer about, so it is not taken for up to date", () => {
+		expect(describeRowMarkers({ ...level, sync: null })).toEqual([{
+			kind: "sync-unknown",
+			place: "branch",
+			text: "sync unknown",
+			tooltip: "Git could not say how this branch stands against its upstream. It may have commits to push or to pull.",
+		}]);
+	});
+
+	test("detached HEAD, which has no upstream state to show or to miss", () => {
+		expect(describeRowMarkers({ ...level, branch: null, detached: true, sync: null })).toEqual([
+			{ kind: "detached", place: "state", text: "detached HEAD", tooltip: "No branch is checked out here. The folder is at commit 1234567." },
+		]);
+		expect(tooltips({ ...level, branch: null, detached: true, head: null, sync: null })).toEqual(["No branch is checked out here."]);
+	});
+
+	test("locked", () => {
+		expect(describeRowMarkers({ ...level, locked: true })).toEqual([
+			{ kind: "locked", place: "state", text: "locked", tooltip: "Locked: Git will not prune, move, or remove this worktree until it is unlocked." },
+		]);
+	});
+
+	test("prunable, for a worktree whose folder is still there", () => {
+		expect(describeRowMarkers({ ...level, prunable: true })).toEqual([{
+			kind: "prunable",
+			place: "state",
+			text: "prunable",
+			tooltip: "Prunable: Git considers the record of this worktree stale, and git worktree prune would remove the record.",
+		}]);
+	});
+
+	test("folder missing, which says prunable by itself and never shows as clean", () => {
+		expect(describeRowMarkers({ ...missing, sync: level.sync })).toEqual([
+			{ kind: "folder-missing", place: "state", text: "folder missing", tooltip: "The folder is missing: /work/app. Its status is unknown." },
+		]);
+		expect(shown({ ...missing, sync: level.sync, locked: true })).toEqual(["folder-missing|state|folder missing", "locked|state|locked"]);
+	});
+
+	test("status unknown, with Timber's reason, and never as clean", () => {
+		expect(describeRowMarkers({ ...unread, sync: level.sync })).toEqual([{
+			kind: "status-unknown",
+			place: "state",
+			text: "status unknown",
+			tooltip: "Timber could not read this worktree, so it may hold changes. Timber says: Cannot inspect worktree; check directory access.",
+		}]);
+		expect(shown({ ...unread, sync: level.sync, prunable: true })).toEqual(["status-unknown|state|status unknown", "prunable|state|prunable"]);
+		// A reason that already ends a sentence is not given a second full stop.
+		expect(tooltips({ ...unread, sync: level.sync, changes: { kind: "unknown", reason: "Disk not ready. " } }))
+			.toEqual(["Timber could not read this worktree, so it may hold changes. Timber says: Disk not ready."]);
+	});
+
+	test("counts of modified and untracked files", () => {
+		expect(describeRowMarkers({ ...level, changes: { kind: "known", modified: ["a.ts", "b.ts", "c d.ts"], untracked: ["new.ts"] } })).toEqual([
+			{ kind: "modified", place: "changes", text: "3M", tooltip: "3 files with uncommitted changes: modified, added, deleted, or renamed." },
+			{ kind: "untracked", place: "changes", text: "1U", tooltip: "1 untracked file: new, and not added to Git." },
+		]);
+		expect(describeRowMarkers({ ...level, changes: { kind: "known", modified: ["a.ts"], untracked: [] } })).toEqual([
+			{ kind: "modified", place: "changes", text: "1M", tooltip: "1 file with uncommitted changes: modified, added, deleted, or renamed." },
+		]);
+		expect(describeRowMarkers({ ...level, changes: { kind: "known", modified: [], untracked: ["a", "b"] } })).toEqual([
+			{ kind: "untracked", place: "changes", text: "2U", tooltip: "2 untracked files: new, and not added to Git." },
+		]);
+	});
+
+	test("everything at once, in the order the row shows it", () => {
+		const busy: Worktree = { ...tracking(1, 14), locked: true, prunable: true, changes: { kind: "known", modified: ["a"], untracked: ["b"] } };
+		expect(shown(busy)).toEqual(["behind|branch|14", "ahead|branch|1", "locked|state|locked", "prunable|state|prunable", "modified|changes|1M", "untracked|changes|1U"]);
+		expect(shown({ ...unread, sync: null, locked: true })).toEqual(["sync-unknown|branch|sync unknown", "status-unknown|state|status unknown", "locked|state|locked"]);
+	});
+
+	test("every marker has a short text and a whole sentence, and the row's description is all the sentences", () => {
+		const all = browserSampleRepositories.flatMap(repository => repository.worktrees).flatMap(describeRowMarkers);
+		expect(all.length).toBeGreaterThan(0);
+		for (const marker of all) {
+			expect(marker.text).not.toBe("");
+			expect(marker.tooltip).toMatch(/^[A-Z0-9].*\.$/);
+		}
+		const markers = describeRowMarkers({ ...tracking(2, 0), changes: { kind: "known", modified: ["a"], untracked: [] } });
+		expect(describeRow(markers)).toBe("2 commits to push to origin/main, as of the last fetch. 1 file with uncommitted changes: modified, added, deleted, or renamed.");
+		expect(describeRow([])).toBe("");
+	});
+});
+
+describe("sample data", () => {
+	test("the browser build shows every marker a row can have, and a row with none", () => {
+		const worktrees = browserSampleRepositories.flatMap(repository => repository.worktrees);
+		const kinds = new Set(worktrees.flatMap(describeRowMarkers).map(marker => marker.kind));
+		expect([...kinds].sort()).toEqual([
+			"ahead", "behind", "detached", "folder-missing", "local-only", "locked", "modified", "prunable", "status-unknown", "sync-unknown", "untracked", "upstream-gone",
+		]);
+		expect(worktrees.some(worktree => describeRowMarkers(worktree).length === 0)).toBe(true);
+		expect(new Set(worktrees.map(worktree => worktree.id)).size).toBe(worktrees.length);
 	});
 });
 

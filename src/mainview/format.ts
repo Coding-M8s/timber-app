@@ -116,6 +116,16 @@ export function describeSync(sync: SyncState): string {
 	return `In sync with ${sync.upstream}`;
 }
 
+/**
+ * One plain sentence for how a worktree's branch stands against its upstream,
+ * or null on a detached HEAD, which has none. A branch Git could not answer
+ * about says so, so that it is never taken for up to date.
+ */
+export function describeWorktreeSync(worktree: Worktree): string | null {
+	if (worktree.branch === null) return null;
+	return worktree.sync ? describeSync(worktree.sync) : "Sync unknown";
+}
+
 /** One plain sentence for the working tree. When Timber could not read it, the sentence says why. */
 export function describeChanges(worktree: Worktree): string {
 	const { changes } = worktree;
@@ -126,26 +136,101 @@ export function describeChanges(worktree: Worktree): string {
 	return `${modified} modified, ${untracked} untracked`;
 }
 
-/**
- * The short line under a worktree's name: what kind it is, or what is unusual
- * about it. A missing folder and an unreadable status are always said.
- */
-export function describeWorktreeState(worktree: Worktree): string {
-	const notes: string[] = [];
-	if (!worktree.pathExists) notes.push("folder missing");
-	else if (worktree.changes.kind === "unknown") notes.push("status unknown");
-	if (worktree.locked) notes.push("locked");
-	// A missing folder is why Git calls a worktree prunable, so that alone says it.
-	if (worktree.prunable && worktree.pathExists) notes.push("prunable");
-	if (notes.length === 0) return worktree.primary ? "Primary checkout" : "Worktree";
-	const text = notes.join(", ");
-	return text.charAt(0).toUpperCase() + text.slice(1);
+/** The short line under a worktree's name: which kind of checkout it is. */
+export function describeWorktreeKind(worktree: Worktree): string {
+	return worktree.primary ? "Primary checkout" : "Worktree";
 }
 
-/** The longer explanation of a worktree for a tooltip: its upstream state, or why its status is unknown. */
-export function describeWorktreeDetail(worktree: Worktree): string {
-	if (worktree.changes.kind === "unknown") return `${worktree.changes.reason}: ${worktree.path}`;
-	return worktree.sync ? describeSync(worktree.sync) : worktree.path;
+/** Everything a worktree row can be marked with. */
+export type RowMarkerKind =
+	| "behind"
+	| "ahead"
+	| "local-only"
+	| "upstream-gone"
+	| "sync-unknown"
+	| "detached"
+	| "folder-missing"
+	| "status-unknown"
+	| "locked"
+	| "prunable"
+	| "modified"
+	| "untracked";
+
+/** One thing worth knowing about a worktree at a glance. */
+export interface RowMarker {
+	kind: RowMarkerKind;
+	/** Where in the row it sits: beside the branch name, on the line below it, or with the change counts. */
+	place: "branch" | "state" | "changes";
+	/** What the row shows. For "behind" and "ahead" this is the count alone, and the row draws the arrow. */
+	text: string;
+	/** A whole sentence in plain words, for the tooltip and for assistive technology. */
+	tooltip: string;
+}
+
+const counted = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
+
+/** End a text that came from elsewhere with a full stop, unless it already ends a sentence. */
+const asSentence = (text: string) => /[.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`;
+
+/** How the branch stands against its upstream. A detached HEAD has no branch, so it has none of these. */
+function syncMarkers(worktree: Worktree): RowMarker[] {
+	if (worktree.branch === null) return [];
+	const { sync } = worktree;
+	const marker = (kind: RowMarkerKind, text: string, tooltip: string): RowMarker => ({ kind, place: "branch", text, tooltip });
+	// Not knowing is said, so that it is never read as "nothing to push or pull".
+	if (sync === null) return [marker("sync-unknown", "sync unknown", "Git could not say how this branch stands against its upstream. It may have commits to push or to pull.")];
+	if (sync.kind === "unpublished") return [marker("local-only", "local only", "This branch has no upstream. It has not been published.")];
+	if (sync.kind === "gone") return [marker("upstream-gone", "upstream gone", `The upstream branch ${sync.upstream} no longer exists, as of the last fetch.`)];
+	const markers: RowMarker[] = [];
+	if (sync.behind > 0) markers.push(marker("behind", String(sync.behind), `${counted(sync.behind, "commit")} to pull from ${sync.upstream}, as of the last fetch.`));
+	if (sync.ahead > 0) markers.push(marker("ahead", String(sync.ahead), `${counted(sync.ahead, "commit")} to push to ${sync.upstream}, as of the last fetch.`));
+	return markers;
+}
+
+/**
+ * Everything a worktree row is marked with, in the order the row shows it. A
+ * clean worktree on a branch that is level with its upstream has no markers.
+ *
+ * A status or an upstream state that could not be read always gets a marker
+ * of its own, so a row without markers never means "not known".
+ */
+export function describeRowMarkers(worktree: Worktree): RowMarker[] {
+	const { changes } = worktree;
+	const markers = syncMarkers(worktree);
+	const state = (kind: RowMarkerKind, text: string, tooltip: string) => void markers.push({ kind, place: "state", text, tooltip });
+
+	if (worktree.branch === null) {
+		const where = worktree.head ? ` The folder is at commit ${worktree.head.slice(0, 7)}.` : "";
+		state("detached", "detached HEAD", `No branch is checked out here.${where}`);
+	}
+	if (!worktree.pathExists) {
+		const unknown = changes.kind === "unknown" ? " Its status is unknown." : "";
+		state("folder-missing", "folder missing", `The folder is missing: ${worktree.path}.${unknown}`);
+	} else if (changes.kind === "unknown") {
+		state("status-unknown", "status unknown", `Timber could not read this worktree, so it may hold changes. Timber says: ${asSentence(changes.reason)}`);
+	}
+	if (worktree.locked) state("locked", "locked", "Locked: Git will not prune, move, or remove this worktree until it is unlocked.");
+	// A missing folder is why Git calls a worktree prunable, so that marker alone says it.
+	if (worktree.prunable && worktree.pathExists) {
+		state("prunable", "prunable", "Prunable: Git considers the record of this worktree stale, and git worktree prune would remove the record.");
+	}
+
+	if (changes.kind === "known") {
+		const modified = changes.modified.length;
+		const untracked = changes.untracked.length;
+		if (modified > 0) {
+			markers.push({ kind: "modified", place: "changes", text: `${modified}M`, tooltip: `${counted(modified, "file")} with uncommitted changes: modified, added, deleted, or renamed.` });
+		}
+		if (untracked > 0) {
+			markers.push({ kind: "untracked", place: "changes", text: `${untracked}U`, tooltip: `${counted(untracked, "untracked file")}: new, and not added to Git.` });
+		}
+	}
+	return markers;
+}
+
+/** Every marker's sentence in one text: what a row tells assistive technology beyond its name. */
+export function describeRow(markers: readonly RowMarker[]): string {
+	return markers.map(marker => marker.tooltip).join(" ");
 }
 
 /** What to say on a repository whose worktrees Timber could not list. */

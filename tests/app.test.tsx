@@ -142,7 +142,8 @@ describe("App", () => {
 	test("a worktree with a missing folder still has a row, marked as such", async () => {
 		const { store } = await startedStore();
 		const markup = renderToStaticMarkup(<App store={store} />);
-		expect(markup).toMatch(/title="Worktree path is missing: \/work\/api-server-worktrees\/old-removed-folder"[^>]*>.*?old\/removed-folder.*?Folder missing/);
+		expect(markup).toMatch(/title="\/work\/api-server-worktrees\/old-removed-folder"[^>]*>.*?old\/removed-folder.*?folder missing/);
+		expect(markup).toContain("The folder is missing: /work/api-server-worktrees/old-removed-folder. Its status is unknown.");
 		store.select(sampleRepositories[1]!.worktrees[2]!.id);
 		expect(renderToStaticMarkup(<App store={store} />)).toContain("Status unknown: Worktree path is missing");
 	});
@@ -155,7 +156,8 @@ describe("App", () => {
 		const markup = renderToStaticMarkup(<App store={store} />);
 		expect(markup.match(/class="row( selected)?"/g)?.length).toBe(7);
 		expect(markup).toContain("detached at abcdef1");
-		expect(markup).toMatch(/fix\/macos-portability.*?Status unknown/);
+		expect(markup).toMatch(/detached at abcdef1.*?detached HEAD/);
+		expect(markup).toMatch(/fix\/macos-portability.*?status unknown/);
 	});
 
 	test("when Timber cannot list a repository, its diagnostic shows and the last good list stays", async () => {

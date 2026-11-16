@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createRepositoryReader } from "../src/bun/repository-reader";
-import type { Repository, TimberStatus } from "../src/shared/model";
-import { git, realTimber, recorded, standInTimber } from "./support/timber";
+import { createRepositoryReader, syncOf } from "../src/bun/repository-reader";
+import type { Repository, SyncState, TimberStatus } from "../src/shared/model";
+import { fingerprint, git, realTimber, recorded, standInTimber } from "./support/timber";
 
 let root: string;
 let primary: string;
@@ -53,22 +53,6 @@ afterAll(() => {
 });
 
 const ready = (path: string): TimberStatus => ({ state: "ready", path, version: "0.1.1" });
-
-/** Every file under `folder` with its size and time of last change, and what Git says about the repository. */
-function fingerprint(folder: string): string {
-	const files: string[] = [];
-	const walk = (directory: string) => {
-		for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-			const path = join(directory, entry.name);
-			if (entry.isDirectory()) walk(path);
-			else files.push(`${path} ${statSync(path).size} ${statSync(path).mtimeMs}`);
-		}
-	};
-	walk(folder);
-	// Without optional locks, so that looking does not itself refresh the index file.
-	const run = (...args: string[]) => Bun.spawnSync(["git", "-C", folder, ...args], { env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } }).stdout.toString();
-	return [...files, run("for-each-ref"), run("worktree", "list", "--porcelain"), run("status", "--porcelain"), run("ls-files", "--stage")].join("\n");
-}
 
 describe.skipIf(realTimber === null)("with the installed Timber, on a real repository", () => {
 	const reader = () => createRepositoryReader(async () => ready(realTimber!));
@@ -199,6 +183,31 @@ describe("when Timber does not give a list", () => {
 	test("a folder outside any repository is not a repository, whatever Timber would say", async () => {
 		expect(await standIn("unasked", recorded.succeeded, 0).find(plain)).toEqual({ outcome: "not-a-repository" });
 		expect(await standIn("unasked", recorded.succeeded, 0).reload(join(root, "does-not-exist"))).toBeNull();
+	});
+});
+
+describe("syncOf", () => {
+	const level: SyncState = { kind: "tracking", upstream: "origin/main", ahead: 0, behind: 0 };
+	const branches = new Map<string, SyncState>([["main", level]]);
+	const head = "c42c7d84343eb4d8ac9bff5dfeb489b57da8196f";
+
+	test("takes what Git said about the branch, by exact name", () => {
+		expect(syncOf({ branch: "main", head }, branches)).toEqual(level);
+	});
+
+	test("a detached HEAD has no upstream state", () => {
+		expect(syncOf({ branch: null, head }, branches)).toBeNull();
+	});
+
+	test("a branch Git did not answer about is unknown, never level or unpublished", () => {
+		expect(syncOf({ branch: "main", head }, null)).toBeNull();
+		expect(syncOf({ branch: "Main", head }, branches)).toBeNull();
+		expect(syncOf({ branch: "feat/unlisted", head }, branches)).toBeNull();
+	});
+
+	test("a branch with no commit yet cannot have been published", () => {
+		expect(syncOf({ branch: "fresh", head: null }, branches)).toEqual({ kind: "unpublished" });
+		expect(syncOf({ branch: "fresh", head: null }, null)).toBeNull();
 	});
 });
 

@@ -1,5 +1,5 @@
 import type { Engine } from "../../shared/engine";
-import { createMockEngine, sampleRepositories, sampleTimberStatuses, sampleUnavailableRepository } from "./mock";
+import { browserSampleRepositories, createMockEngine, sampleTimberStatuses } from "./mock";
 
 /**
  * Pick the engine for where the interface is running. Electrobun injects
@@ -16,7 +16,7 @@ export async function createEngine(): Promise<Engine> {
 	const timber = state !== null && Object.hasOwn(sampleTimberStatuses, state)
 		? sampleTimberStatuses[state as keyof typeof sampleTimberStatuses]
 		: sampleTimberStatuses.ready;
-	const engine = createMockEngine([...sampleRepositories, sampleUnavailableRepository], timber);
+	const engine = createMockEngine(browserSampleRepositories, timber);
 	// The browser console can act out what the main process would do, for example
 	// timberMock.failReads("Git is busy"), timberMock.announceChange("/work/timber"),
 	// timberMock.failTimber("/work/timber", "Not a Git repository: /work/timber"),
