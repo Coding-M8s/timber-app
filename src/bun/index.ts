@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import { BrowserView, BrowserWindow, Updater, Utils } from "electrobun/main";
 import type { AppRPC } from "../shared/rpc";
 import { repositoryChanges } from "./changes";
+import { createDone } from "./done";
 import { readBranches } from "./git-engine";
 import { createSavedLayout } from "./layout";
 import { createRepositoryList } from "./repository-list";
@@ -48,6 +49,8 @@ const repositories = createRepositoryList({ settingsFile, settings, pickFolder, 
 const layout = createSavedLayout(settings);
 const worktrees = createWorktreeCommands({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
 
+const done = createDone({ timber: () => timber.current(), findRepository: path => repositories.find(path) });
+
 const rpc = BrowserView.defineRPC<AppRPC>({
 	maxRequestTime: 15_000,
 	handlers: {
@@ -65,6 +68,9 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			openWorktree: request => worktrees.open(request),
 			loadLayout: () => layout.load(),
 			saveLayout: ({ layout: next }) => layout.save(next),
+			previewDone: request => done.preview(request),
+			// Removes a worktree. Only ever with a preview that `previewDone` handed out (see ./done.ts).
+			applyDone: request => done.apply(request),
 		},
 		messages: {},
 	},

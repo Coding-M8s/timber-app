@@ -62,6 +62,41 @@ describe("runTimberWithResultFile", () => {
 		expect(notes.folderMode).toBe(0o700);
 	});
 
+	test("an approved preview is saved beside the result file, byte for byte, and removed with it", async () => {
+		// Bytes that are not text, to show that nothing is decoded and written again.
+		const approval = new Uint8Array([0x7b, 0x22, 0xff, 0xfe, 0x00, 0x0d, 0x0a, 0x20, 0x7d, 0x0a, 0x0a]);
+		const timber = standInResultTimber(root, `stand-in-${++count}`, { result: recordedResult.succeeded });
+		const run = await runTimberWithResultFile({
+			executable: timber.path,
+			command: "new",
+			arguments: (resultFile, approvalFile) => ["__ide-done", "apply", "--approval-file", approvalFile, "--result-file", resultFile, "--", "/work/sample-worktrees/feat x"],
+			approval,
+			folder: repository,
+			temporaryRoot: temporary,
+		});
+		const notes = timber.notes();
+		expect(run.result.outcome).toBe("succeeded");
+		expect(run.command).toBe("timber __ide-done apply --approval-file <approved preview> --result-file <temporary file> -- '/work/sample-worktrees/feat x'");
+		expect([...Buffer.from(notes.approval!, "base64")]).toEqual([...approval]);
+		expect(dirname(notes.approvalFile!)).toBe(dirname(notes.resultFile!));
+		expect(notes.approvalFile).not.toBe(notes.resultFile);
+		expect(notes.arguments).toEqual(["__ide-done", "apply", "--approval-file", notes.approvalFile!, "--result-file", notes.resultFile!, "--", "/work/sample-worktrees/feat x"]);
+		if (process.platform !== "win32") expect(notes.approvalMode).toBe(0o600);
+		expect(existsSync(notes.approvalFile!)).toBe(false);
+	});
+
+	test("without an approved preview no approval file is made", async () => {
+		const timber = standInResultTimber(root, `stand-in-${++count}`, { result: recordedResult.succeeded });
+		await runTimberWithResultFile({
+			executable: timber.path,
+			command: "new",
+			arguments: (resultFile, approvalFile) => ["new", "feat/login", "--approval-file", approvalFile, "--result-file", resultFile],
+			folder: repository,
+			temporaryRoot: temporary,
+		});
+		expect(timber.notes().approval).toBeNull();
+	});
+
 	test("every run gets its own file, so a retry never meets an old one", async () => {
 		const timber = standInResultTimber(root, "twice", { result: recordedResult.succeeded });
 		const request = { executable: timber.path, command: "new" as const, arguments: newArguments, folder: repository, temporaryRoot: temporary };

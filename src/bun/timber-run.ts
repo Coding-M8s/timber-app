@@ -1,8 +1,8 @@
-import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 import { createOutputCapture } from "../shared/captured-output";
-import { RESULT_FILE_PLACEHOLDER, type ResultCommand, type TimberRun, describeTimberCommand, readTimberResult } from "../shared/timber-result";
+import { APPROVAL_FILE_PLACEHOLDER, RESULT_FILE_PLACEHOLDER, type ResultCommand, type TimberRun, describeTimberCommand, readTimberResult } from "../shared/timber-result";
 
 export interface TimberRunRequest {
 	/** The Timber executable found on start (see ./timber.ts). */
@@ -12,9 +12,18 @@ export interface TimberRunRequest {
 	/**
 	 * Everything after `timber`, given the path of the result file. Called once
 	 * with the real path to run, and once with `RESULT_FILE_PLACEHOLDER` for the
-	 * text that is shown, so it must put the path in as it is.
+	 * text that is shown, so it must put the path in as it is. The same holds
+	 * for `approvalFile`, which stands for the file made from `approval` and is
+	 * shown as `APPROVAL_FILE_PLACEHOLDER`.
 	 */
-	arguments: (resultFile: string) => string[];
+	arguments: (resultFile: string, approvalFile: string) => string[];
+	/**
+	 * For `timber __ide-done apply` only: the preview the person approved,
+	 * exactly the bytes Timber printed. It is written unchanged to a file beside
+	 * the result file, in the same private folder, before Timber runs, and is
+	 * removed with that folder.
+	 */
+	approval?: Uint8Array;
 	/** The working directory: the repository's primary checkout or one of its worktrees. */
 	folder: string;
 	environment?: Record<string, string | undefined>;
@@ -50,6 +59,8 @@ async function resolved(path: string): Promise<string> {
  *   shell, with standard input closed.
  * - The file is read only after the process ended, and the folder is removed
  *   whatever happened.
+ * - An approved preview, when the command takes one, is saved in that same
+ *   folder, byte for byte as it was given.
  * - There is no time limit, because setup scripts take as long as they take.
  *
  * What the command printed comes back limited in size and is never logged
@@ -58,7 +69,7 @@ async function resolved(path: string): Promise<string> {
  */
 export async function runTimberWithResultFile(request: TimberRunRequest): Promise<TimberRun> {
 	const { executable, command, folder, environment = process.env } = request;
-	const shown = describeTimberCommand(request.arguments(RESULT_FILE_PLACEHOLDER));
+	const shown = describeTimberCommand(request.arguments(RESULT_FILE_PLACEHOLDER, APPROVAL_FILE_PLACEHOLDER));
 	const capture = createOutputCapture();
 	const failed = (diagnostic: string): TimberRun => ({ command: shown, result: { outcome: "failed", diagnostic, record: null }, output: capture.finish() });
 
@@ -75,10 +86,19 @@ export async function runTimberWithResultFile(request: TimberRunRequest): Promis
 			return failed(`The temporary folder ${privateFolder} is inside ${folder}, and the result of timber ${command} must stay outside the repository. Nothing was run.`);
 		}
 		const resultFile = join(privateFolder, "result.json");
+		const approvalFile = join(privateFolder, "approval.json");
+		if (request.approval !== undefined) {
+			try {
+				// A new file that only this user can read. Only the path is ever logged, never what it holds.
+				await writeFile(approvalFile, request.approval, { flag: "wx", mode: 0o600 });
+			} catch (error) {
+				return failed(`Could not save the approved preview for timber ${command}: ${messageOf(error)}. Nothing was run.`);
+			}
+		}
 
 		let exitCode: number | null;
 		try {
-			const child = Bun.spawn([executable, ...request.arguments(resultFile)], {
+			const child = Bun.spawn([executable, ...request.arguments(resultFile, approvalFile)], {
 				cwd: folder,
 				stdin: "ignore",
 				stdout: "pipe",

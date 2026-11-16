@@ -1,0 +1,9 @@
+{
+	"primary": "error: Select an existing linked worktree; the primary worktree cannot be removed.\n",
+	"locked": "error: Worktree at /work/sample-worktrees/feat-locked is locked; unlock it explicitly before cleanup.\n",
+	"keep-ignored": "error: Ignored files exist. Move them out of the worktree or choose to discard ignored files.\n",
+	"missing-base": "error: Base branch no-such-branch is missing or ambiguous. Select an exact branch.\n",
+	"own-base": "error: The cleanup target branch is the validated base; choose a different base or leave this worktree in place.\n",
+	"not-a-worktree": "error: Select an existing linked worktree; the primary worktree cannot be removed.\n",
+	"relative-path": "error: Native cleanup requires an exact absolute worktree path.\n"
+}

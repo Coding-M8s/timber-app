@@ -1,6 +1,10 @@
 import type { Engine } from "../../shared/engine";
 import { type Layout, defaultLayout, forgetRepository, readLayout } from "../../shared/layout";
 import { type AddRepositoryResult, type BranchSuggestion, type Repository, type SyncState, type TimberStatus, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
+import {
+	type DoneApplyResult, type DoneOptions, type DonePreviewResult, DONE_PREVIEW_MINUTES, describeDoneApply, describeDonePreview, readDonePreview,
+} from "../../shared/timber-done";
+import { failureOf, readTimberResult } from "../../shared/timber-result";
 import { REQUIRED_TIMBER_VERSION } from "../../shared/timber-version";
 import { type CommandEnding, actOutNew, actOutOpen, isCommandEnding } from "./mock-commands";
 
@@ -178,6 +182,22 @@ function branchesOf(repository: Repository): BranchSuggestion[] {
 	];
 }
 
+/** Ignored files in the sample worktrees, by worktree path. The list of worktrees does not carry them. */
+export const sampleIgnored: Readonly<Record<string, readonly string[]>> = {
+	"/work/timber-worktrees/feat-github-issue-lookup": [".env.local", "dist/"],
+};
+
+/** A stand-in for Timber's snapshot: 64 hexadecimal digits that change whenever the text does. */
+function fingerprint(text: string): string {
+	let digits = "";
+	for (let round = 0; round < 8; round++) {
+		let hash = 0x811c9dc5 ^ round;
+		for (let index = 0; index < text.length; index++) hash = Math.imul(hash ^ text.charCodeAt(index), 0x01000193);
+		digits += (hash >>> 0).toString(16).padStart(8, "0");
+	}
+	return digits;
+}
+
 /** One sample of each state Timber can be found in. */
 export const sampleTimberStatuses = {
 	"ready": { state: "ready", path: "/home/sam/.local/bin/timber", version: REQUIRED_TIMBER_VERSION },
@@ -218,6 +238,25 @@ export interface MockEngine extends Engine {
 	setBranches(path: string, branches: BranchSuggestion[] | null): void;
 	/** Make every later save of the layout fail with this message, or pass null to let saves work again. */
 	failLayoutSaves(message: string | null): void;
+	/**
+	 * Change the files of one worktree, named by its path, without telling the
+	 * interface: a dirty worktree for the Done dialog. Lists that are left out
+	 * stay as they are. Called while that dialog is open, it is a change
+	 * between preview and Remove, which the removal then refuses.
+	 */
+	setChanges(path: string, files: { modified?: string[]; untracked?: string[]; ignored?: string[] }): void;
+	/**
+	 * Make every later preview expire this many milliseconds after it was
+	 * made, in place of ten minutes. Pass null for ten minutes again.
+	 */
+	expirePreviewsAfter(milliseconds: number | null): void;
+	/**
+	 * Act out a partial failure: while true, a removal deletes the folder, so
+	 * the worktree leaves the list, and then fails to delete the branch.
+	 */
+	failBranchDeletion(fail: boolean): void;
+	/** How long a removal takes from now on, to look at the running state. */
+	setDoneDelay(milliseconds: number): void;
 }
 
 export interface MockEngineOptions {
@@ -271,6 +310,102 @@ export function createMockEngine(
 	let layout: Layout = defaultLayout();
 	let layoutFailure: string | null = null;
 	const listeners = new Set<(path: string) => void>();
+
+	// The Done dialog. As in the main process, what a preview printed stays here and the interface gets a name for it.
+	const ignored = new Map<string, readonly string[]>(Object.entries(sampleIgnored));
+	const heldPreviews = new Map<string, { text: string; repository: string; path: string; options: DoneOptions; expiresAt: number }>();
+	let lastPreview = 0;
+	let previewLifetime: number | null = null;
+	let branchDeletionFails = false;
+	let doneDelay = 0;
+
+	/**
+	 * What Timber would print for a preview right now, or why there is none.
+	 * `ran` is false when the app itself stopped before running Timber.
+	 */
+	const previewRecord = (repositoryPath: string, path: string, options: DoneOptions): { text: string } | { refused: string; ran?: false } => {
+		const status = typeof timber === "function" ? timber() : timber;
+		if (status.state !== "ready") return { refused: "Timber is not ready. Nothing was run.", ran: false };
+		const repository = current.find(candidate => candidate.path === repositoryPath);
+		if (!repository) return { refused: `${repositoryPath} is not a repository in this app's list. Nothing was run.`, ran: false };
+		const target = asRead(repository).worktrees.find(candidate => candidate.path === path);
+		if (!target) return { refused: `Timber lists no worktree at ${path} in ${repositoryPath}. Nothing was run. Refresh the list.`, ran: false };
+		// From here on Timber runs, and the words are its own.
+		if (target.primary) return { refused: "Select an existing linked worktree; the primary worktree cannot be removed." };
+		if (target.locked) return { refused: `Worktree at ${path} is locked; unlock it explicitly before cleanup.` };
+		if (target.changes.kind !== "known") return { refused: "Cannot verify worktree file status." };
+		const ignoredHere = ignored.get(path) ?? [];
+		if (options.keepIgnored && ignoredHere.length > 0) return { refused: "Ignored files exist. Move them out of the worktree or choose to discard ignored files." };
+		if (options.base !== null && !repository.worktrees.some(candidate => candidate.branch === options.base)) {
+			return { refused: `Base branch ${options.base} is missing or ambiguous. Select an exact branch.` };
+		}
+		if (!options.keepBranch && target.branch !== null && target.branch === options.base) return { refused: "The cleanup target is the base branch and cannot be deleted." };
+		const record = {
+			repository: { commonGitDir: `${repository.path}/.git`, primaryWorktreeRoot: repository.path, currentWorktreeRoot: repository.path },
+			worktree: {
+				path, branch: target.branch, head: target.head, isPrimary: false, locked: null, prunable: null, pathExists: true,
+				status: { kind: "known", modified: target.changes.modified, untracked: target.changes.untracked, ignored: ignoredHere },
+				canonicalPath: target.canonicalPath ?? path, detached: target.detached,
+			},
+			options: { keepBranch: options.keepBranch, discardIgnored: !options.keepIgnored, ...(options.base === null ? {} : { base: options.base }) },
+		};
+		const expiresAt = Date.now() + (previewLifetime ?? DONE_PREVIEW_MINUTES * 60_000);
+		return { text: `${JSON.stringify({ schemaVersion: 1, snapshot: fingerprint(JSON.stringify(record)), expiresAt, ...record })}\n` };
+	};
+	const snapshotOf = (text: string): unknown => (JSON.parse(text) as { snapshot: unknown }).snapshot;
+
+	const previewDone = (repositoryPath: string, path: string, options: DoneOptions): DonePreviewResult => {
+		const command = describeDonePreview(path, options);
+		const printed = previewRecord(repositoryPath, path, options);
+		if ("refused" in printed) return { outcome: "failed", failure: { command: printed.ran === false ? null : command, diagnostic: printed.refused, output: null } };
+		// Read exactly as the main process reads what the real Timber prints.
+		const reading = readDonePreview(printed.text);
+		if (!reading.ok) return { outcome: "failed", failure: { command, diagnostic: reading.message, output: null } };
+		const id = `mock-preview-${++lastPreview}`;
+		heldPreviews.set(id, { text: printed.text, repository: repositoryPath, path, options, expiresAt: reading.preview.expiresAt });
+		return { outcome: "previewed", id, preview: reading.preview };
+	};
+
+	const applyDone = (repositoryPath: string, path: string, id: string): DoneApplyResult => {
+		const refused = (diagnostic: string): DoneApplyResult => ({ outcome: "failed", ran: false, failure: { command: null, diagnostic, output: null } });
+		const approved = heldPreviews.get(id);
+		heldPreviews.delete(id);
+		if (!approved) return refused("The app no longer holds that preview, so there is nothing to approve. Nothing was run. Ask for a new preview.");
+		if (approved.repository !== repositoryPath || approved.path !== path) return refused(`That preview is for ${approved.path}, not for ${path}. Nothing was run. Ask for a new preview.`);
+		if (approved.expiresAt <= Date.now()) return refused("The preview expired. Nothing was run. Ask for a new preview.");
+
+		// What Timber would write to its result file, read exactly as the main process reads the real one.
+		const command = describeDoneApply(path);
+		const approvedRecord = JSON.parse(approved.text) as { repository: unknown; worktree: { branch: string | null; head: string | null } };
+		const ended = (diagnostic: string | null, printed: string): DoneApplyResult => {
+			const exitCode = diagnostic === null ? 0 : 1;
+			const text = JSON.stringify({
+				schemaVersion: 1, command: "done", outcome: diagnostic === null ? "succeeded" : "failed", exitCode,
+				repository: approvedRecord.repository, worktree: approvedRecord.worktree, materialized: false, diagnostic,
+			});
+			const failure = failureOf({ command, result: readTimberResult("done", text, exitCode), output: { text: printed, truncated: false } });
+			return failure ? { outcome: "failed", ran: true, failure } : { outcome: "removed" };
+		};
+		const now = previewRecord(repositoryPath, path, approved.options);
+		if ("refused" in now) return now.ran === false ? refused(now.refused) : ended(now.refused, `error: ${now.refused}\n`);
+		if (snapshotOf(now.text) !== snapshotOf(approved.text)) {
+			const changed = "Worktree, files, settings or repository changed. Review the updated preview before removing.";
+			return ended(changed, `error: ${changed}\n`);
+		}
+
+		// The folder goes, and with it the worktree's place in the list.
+		current = current.map(repository => repository.path === repositoryPath
+			? { ...repository, worktrees: repository.worktrees.filter(candidate => candidate.path !== path) }
+			: repository);
+		ignored.delete(path);
+		const { branch, head } = approvedRecord.worktree;
+		if (branchDeletionFails && branch !== null && !approved.options.keepBranch) {
+			const partial = `The worktree was removed from ${path}, but local branch ${branch} was not deleted: Could not conditionally delete local branch ${branch}. Local branch ${branch} was retained at ${head}. Inspect the branch and retry cleanup.`;
+			return ended(partial, `error: ${partial}\n`);
+		}
+		return ended(null, `Removed worktree at ${path}\n`);
+	};
+
 	const look = async () => structuredClone(typeof timber === "function" ? timber() : timber);
 	const read = async <Result>(result: () => Result): Promise<Result> => {
 		if (failure !== null) throw new Error(failure);
@@ -315,6 +450,11 @@ export function createMockEngine(
 			const found = current.find(repository => repository.path === path && repository.available);
 			return found ? listedBranches(found) : null;
 		}),
+		previewDone: async ({ repository, path, options }) => structuredClone(previewDone(repository, path, options)),
+		async applyDone({ repository, path, preview }) {
+			if (doneDelay > 0) await new Promise(resolve => setTimeout(resolve, doneDelay));
+			return structuredClone(applyDone(repository, path, preview));
+		},
 		onRepositoryChanged(listener) {
 			listeners.add(listener);
 			return () => void listeners.delete(listener);
@@ -335,6 +475,26 @@ export function createMockEngine(
 		},
 		failLayoutSaves(message) {
 			layoutFailure = message;
+		},
+		setChanges(path, files) {
+			if (files.ignored) ignored.set(path, files.ignored);
+			current = current.map(repository => ({
+				...repository,
+				worktrees: repository.worktrees.map(candidate => {
+					if (candidate.path !== path) return candidate;
+					const before = candidate.changes.kind === "known" ? candidate.changes : { modified: [], untracked: [] };
+					return { ...candidate, changes: { kind: "known", modified: files.modified ?? before.modified, untracked: files.untracked ?? before.untracked } };
+				}),
+			}));
+		},
+		expirePreviewsAfter(milliseconds) {
+			previewLifetime = milliseconds;
+		},
+		failBranchDeletion(fail) {
+			branchDeletionFails = fail;
+		},
+		setDoneDelay(milliseconds) {
+			doneDelay = milliseconds;
 		},
 		setRepositories(next) {
 			current = next;

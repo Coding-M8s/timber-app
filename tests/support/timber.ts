@@ -5,6 +5,7 @@ import { findTimber } from "../../src/bun/timber";
 const windows = process.platform === "win32";
 const fixtures = join(import.meta.dir, "..", "fixtures", "timber-ls");
 const resultFixtures = join(import.meta.dir, "..", "fixtures", "timber-result");
+const doneFixtures = join(import.meta.dir, "..", "fixtures", "timber-done");
 
 /**
  * Output recorded from `timber ls --json` of Timber 0.1.1 on Linux, exactly
@@ -33,6 +34,58 @@ export const recorded = {
 export const recordedResult = {
 	succeeded: readFileSync(join(resultFixtures, "succeeded.json"), "utf8"),
 	failed: readFileSync(join(resultFixtures, "failed.json"), "utf8"),
+};
+
+const doneFixture = (name: string) => readFileSync(join(doneFixtures, name), "utf8");
+
+/**
+ * What `timber __ide-done` of Timber 0.1.1 printed and wrote on Linux, exactly
+ * as it was, except that the temporary folder it ran in is written `/work`.
+ * The repository is `/work/sample` with worktrees in `/work/sample-worktrees`.
+ *
+ * `previews` are standard output of `preview`:
+ * - `clean`: nothing to lose.
+ * - `dirty`: an edited file, a staged new file, a renamed file, untracked files
+ *   (one in a folder, one with a space and non-ASCII characters), and ignored
+ *   files.
+ * - `ignored`: only an ignored file.
+ * - `keepBranch`, `base`, `everyOption`: the clean worktree with
+ *   `--keep-branch`, with `--base=main`, and with both plus `--keep-ignored`.
+ * - `detached`: a detached HEAD.
+ * - `unpublished`: a branch with a commit that is nowhere else. The preview
+ *   does not mention it.
+ *
+ * `refusals` are standard error of `preview` when it exits with 1 and prints
+ * no preview: the primary checkout, a locked worktree, `--keep-ignored` with
+ * ignored files, a base that does not exist, the worktree's own branch as the
+ * base, a path that is no worktree, and a relative path.
+ *
+ * `results` are result files of `apply`:
+ * - `removed`: the dirty worktree was removed (exit code 0).
+ * - `changed`: a file was added after the preview (exit code 1, nothing removed).
+ * - `otherTarget`: the approval was for another worktree (exit code 1).
+ * - `primary`: the target was the primary checkout (exit code 1, no worktree).
+ * - `partial`: the folder was removed and deleting the branch failed (exit code 1).
+ */
+export const recordedDone = {
+	previews: {
+		clean: doneFixture("preview-clean.json"),
+		dirty: doneFixture("preview-dirty.json"),
+		ignored: doneFixture("preview-ignored.json"),
+		keepBranch: doneFixture("preview-keep-branch.json"),
+		base: doneFixture("preview-base.json"),
+		everyOption: doneFixture("preview-keep-branch-keep-ignored-base.json"),
+		detached: doneFixture("preview-detached.json"),
+		unpublished: doneFixture("preview-unpublished.json"),
+	},
+	refusals: JSON.parse(doneFixture("refusals.json")) as Record<"primary" | "locked" | "keep-ignored" | "missing-base" | "own-base" | "not-a-worktree" | "relative-path", string>,
+	results: {
+		removed: doneFixture("result-removed.json"),
+		changed: doneFixture("result-changed.json"),
+		otherTarget: doneFixture("result-other-target.json"),
+		primary: doneFixture("result-primary.json"),
+		partial: doneFixture("result-partial.json"),
+	},
 };
 
 /** The Timber installed on this machine, or null. Tests that need the real one are skipped without it. */
@@ -109,6 +162,12 @@ export interface StandInNotes {
 	resultFileExisted: boolean;
 	/** Permission bits of the folder holding the result file, or null when there is no such folder. */
 	folderMode: number | null;
+	/** The path it was given after `--approval-file`, or null. */
+	approvalFile: string | null;
+	/** What that file held when the stand-in ran, as base64 so that every byte counts. Null when there was no file. */
+	approval: string | null;
+	/** Permission bits of the approval file, or null. */
+	approvalMode: number | null;
 }
 
 const STAND_IN_SCRIPT = `
@@ -120,8 +179,18 @@ const at = given.indexOf("--result-file");
 const resultFile = at === -1 ? null : given[at + 1] ?? null;
 let folderMode = null;
 try { if (resultFile !== null) folderMode = statSync(dirname(resultFile)).mode & 0o777; } catch {}
+const approvalAt = given.indexOf("--approval-file");
+const approvalFile = approvalAt === -1 ? null : given[approvalAt + 1] ?? null;
+let approval = null;
+let approvalMode = null;
+try {
+	if (approvalFile !== null) {
+		approval = readFileSync(approvalFile).toString("base64");
+		approvalMode = statSync(approvalFile).mode & 0o777;
+	}
+} catch {}
 writeFileSync(join(__dirname, "notes.json"), JSON.stringify({
-	arguments: given, cwd: process.cwd(), resultFile, folderMode,
+	arguments: given, cwd: process.cwd(), resultFile, folderMode, approvalFile, approval, approvalMode,
 	resultFileExisted: resultFile !== null && existsSync(resultFile),
 }));
 if (run.result !== null && resultFile !== null) writeFileSync(resultFile, run.result, { flag: "wx", mode: 0o600 });

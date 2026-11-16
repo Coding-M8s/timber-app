@@ -1,4 +1,5 @@
 import type { KeyboardEvent } from "react";
+import { DONE_PRIMARY_NOTE } from "../done-format";
 import { describeChanges, describeWorktreeSync, worktreeLabel } from "../format";
 import { TAB_EMPTY, TAB_LABELS, tabAfterKey } from "../shell";
 import { useAppState, useStore } from "../store/react";
@@ -31,7 +32,7 @@ export function Workspace() {
 		);
 	}
 
-	const { worktree } = selection;
+	const { repository, worktree } = selection;
 	const label = worktreeLabel(worktree);
 	const changes = describeChanges(worktree);
 	const sync = describeWorktreeSync(worktree);
@@ -54,6 +55,19 @@ export function Workspace() {
 					{sync && <span>{sync}</span>}
 					<span>{changes}</span>
 					<span className="path">{worktree.path}</span>
+				</div>
+				<div className="workspace-done">
+					{/* Opens the Done dialog, which asks Timber for a preview. Nothing is removed before its Remove button. */}
+					<button
+						type="button"
+						className="button"
+						disabled={worktree.primary}
+						title={worktree.primary ? DONE_PRIMARY_NOTE : "Remove this worktree, after a preview of what would be lost"}
+						onClick={() => store.openDialog({ kind: "done-worktree", repository: repository.path, worktree: worktree.id })}
+					>
+						Done
+					</button>
+					{worktree.primary && <span className="workspace-done-note">{DONE_PRIMARY_NOTE}</span>}
 				</div>
 			</header>
 			<div className="tabs" role="tablist" aria-label="Views of this worktree" onKeyDown={onTabKey}>

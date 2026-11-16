@@ -41,6 +41,13 @@ export interface RepositoryList {
 	reload(path: string): Promise<Repository | null>;
 	/** Whether `path` is the primary checkout of a repository in the list. Commands that change a repository run only in these. */
 	includes(path: string): Promise<boolean>;
+	/**
+	 * The repository in the list whose primary checkout is `path`, read again.
+	 * Null when the list has no such repository, whatever is in that folder.
+	 * Commands that change a repository use this, so they only ever act on one
+	 * the app shows.
+	 */
+	find(path: string): Promise<Repository | null>;
 }
 
 function messageOf(error: unknown): string {
@@ -129,6 +136,14 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 			const override = overrideRepositoryPaths(environment);
 			if (override) return (await listOverride(override)).some(repository => repository.path === path);
 			return (await settings()).repositories.some(entry => entry.path === path);
+		},
+
+		async find(path) {
+			const override = overrideRepositoryPaths(environment);
+			if (override) return (await listOverride(override)).find(repository => repository.path === path) ?? null;
+			const { repositories } = await settings();
+			if (!repositories.some(entry => entry.path === path)) return null;
+			return await reader.reload(path) ?? unavailable(path);
 		},
 
 		remove(path) {

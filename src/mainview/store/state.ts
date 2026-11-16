@@ -47,7 +47,10 @@ export interface Toast {
 }
 
 /** The dialog open over the window. One at a time. */
-export type DialogRequest = { kind: "new-worktree"; repository: string };
+export type DialogRequest =
+	| { kind: "new-worktree"; repository: string }
+	/** Remove a worktree. `repository` is the path of the primary checkout, `worktree` is `Worktree.id`. */
+	| { kind: "done-worktree"; repository: string; worktree: string };
 
 /** The views of the selected worktree, in the order of their tabs. */
 export const WORKSPACE_TABS = ["workspace", "changes"] as const;

@@ -23,6 +23,10 @@ export async function createEngine(): Promise<Engine> {
 	// timberMock.failTimber("/work/timber", "Not a Git repository: /work/timber"),
 	// timberMock.pickFolder("/tmp") to choose what Add repository picks, or
 	// timberMock.endCommands("setup-fails") to choose how timber new and timber open end.
+	// For the Done dialog: timberMock.setChanges(path, { modified: ["a.ts"] }),
+	// timberMock.expirePreviewsAfter(5000), and timberMock.failBranchDeletion(true).
+	// A removal takes a moment here, so the running state can be seen.
+	engine.setDoneDelay(900);
 	Object.assign(window, { timberMock: engine });
 	return engine;
 }

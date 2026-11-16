@@ -1,6 +1,7 @@
 import type { Engine } from "../../shared/engine";
 import { type Layout, clampSidebarWidth, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenWorktreeRequest, ReportedWorktree, TimberStatus, WorktreeCommandResult } from "../../shared/model";
+import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "../../shared/timber-done";
 import { describeAdded, describeRemoved, folderName } from "../format";
 import { mergeOverlapping } from "./merge";
 import { type AppState, type DialogRequest, type Operation, type WorkspaceTab, TOAST_MILLISECONDS, initialState, keepLastGood, reconcileSelection, selectionFor, selectionForRepository, timberReady } from "./state";
@@ -74,6 +75,19 @@ export interface AppStore {
 	/** Open a dialog over the window, in place of the one that is open. */
 	openDialog(request: DialogRequest): void;
 	closeDialog(): void;
+	/**
+	 * Ask Timber what removing a worktree would do. Read-only. Never throws: an
+	 * engine that could not answer is a failed preview with the reason.
+	 */
+	previewDone(request: DonePreviewRequest): Promise<DonePreviewResult>;
+	/**
+	 * Remove a worktree, approving one preview. The engine is asked exactly
+	 * once and nothing is tried again. Whatever came of it, including an
+	 * engine that could not answer, the repository is read again before this
+	 * answers, because the folder can be gone while the branch remains. Never
+	 * throws.
+	 */
+	applyDone(request: DoneApplyRequest): Promise<DoneApplyResult>;
 }
 
 /** Run `task` after `milliseconds`. Returns a function that calls it off. */
@@ -333,6 +347,26 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		return result;
 	}
 
+	async function previewDone(request: DonePreviewRequest): Promise<DonePreviewResult> {
+		try {
+			return await engine.previewDone(request);
+		} catch (error) {
+			return { outcome: "failed", failure: { command: null, diagnostic: `The preview did not answer: ${messageOf(error)}`, output: null } };
+		}
+	}
+
+	async function applyDone(request: DoneApplyRequest): Promise<DoneApplyResult> {
+		try {
+			return await engine.applyDone(request);
+		} catch (error) {
+			// The command may have run, or may still be running. Only the list can say what is there now.
+			const diagnostic = `The removal did not answer, so what it did is unknown: ${messageOf(error)}`;
+			return { outcome: "failed", ran: true, failure: { command: null, diagnostic, output: null } };
+		} finally {
+			await reloadOne(request.repository);
+		}
+	}
+
 	return {
 		getState: () => state,
 		subscribe(listener) {
@@ -389,5 +423,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		closeDialog() {
 			if (state.dialog) update({ dialog: null });
 		},
+		previewDone,
+		applyDone,
 	};
 }

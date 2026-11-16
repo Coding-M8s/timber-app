@@ -125,8 +125,8 @@ The sidebar shows exactly the worktrees Timber lists, in Timber's order
 New, open, done, and rebase say how they ended in a result file, not on
 standard output. One helper runs all of them, so no dialog reads a result its
 own way: `runTimberWithResultFile` in `src/bun/timber-run.ts`. Creating and
-opening worktrees are its first users (see
-[below](#creating-and-opening-worktrees)).
+opening worktrees use it (see [below](#creating-and-opening-worktrees)), and
+so does the Done dialog (see [removing a worktree](#removing-a-worktree)).
 
 - **The file.** Each run gets a fresh file name in a new folder that only
   this user can open, made in the system's temporary folder. Timber creates
@@ -158,6 +158,82 @@ opening worktrees are its first users (see
 - **The command shown.** `describeTimberCommand` words a command for the
   person, with `<temporary file>` where the result file goes, since its real
   name does not exist before the run. That text is for reading only.
+- **An approval file.** `timber __ide-done apply` also reads a file. The
+  helper writes the bytes it is given, unchanged, to a new file beside the
+  result file, in the same private folder, readable by this user only, and
+  removes it with the folder. It is shown as `<approved preview>`.
+
+### Removing a worktree
+
+Done runs Timber's native cleanup approval: a preview that changes nothing,
+then a removal that is tied to that one preview. The app never works out by
+itself what is safe to delete. It shows what the preview says, and Timber
+decides, both when it previews and again when it removes.
+
+- **Entry.** The Done control in the workspace header opens the dialog for
+  the selected worktree. For the primary checkout the control is disabled
+  with the reason. Timber refuses the primary checkout anyway, and the main
+  process does not rely on the interface's check.
+- **Preview.** Opening the dialog runs
+  `timber __ide-done preview [--keep-branch] [--keep-ignored] [--base=<ref>] -- <registered path>`
+  in the primary checkout (`src/bun/done.ts`). It runs no script and removes
+  nothing, and it is stopped after 30 seconds. Standard output is the
+  preview, read by the pure `readDonePreview` in `src/shared/timber-done.ts`:
+  one version 1 record with a snapshot, `expiresAt`, the repository, the
+  worktree with its modified, untracked, and ignored files, and the options
+  as Timber understood them. A refusal exits with 1 and says why on standard
+  error, and that line is shown as it is. A preview for another path or other
+  options than were asked for is not used.
+- **Which worktrees.** Both commands act only on a repository in the app's
+  list (`RepositoryList.find`) and on a path that `timber ls --json` lists
+  for it at that moment. That registered path, verbatim, goes after `--`.
+  Neither runs while Timber is not ready.
+- **What is shown.** The exact folder and branch, every modified and
+  untracked file, the ignored paths and how far the removal reaches for them,
+  whether the local branch is deleted or kept, that nothing on a remote is
+  touched, both commands, and until when the preview holds. The preview says
+  nothing about commits, and the removal deletes a branch whose commits are
+  nowhere else. So the dialog adds one sentence from what the list already
+  shows: never published, upstream deleted, or commits to push.
+- **Two wordings.** Modified or untracked files, or such commits, make it
+  "Delete anyway?" with Keep. Otherwise it is a plain confirmation. This only
+  chooses the words. In both, focus starts on the button that keeps the
+  worktree, Enter in a field never removes, and the one Remove button is the
+  only thing that does.
+- **Options.** Keep branch, keep ignored files, and base are the preview's
+  flags. Changing one takes the preview off the screen at once and asks for a
+  new one. Every question takes a ticket, so an older answer never replaces a
+  newer one (`src/mainview/store/done-session.ts`). Remove is possible only
+  for a preview that is on screen, is for the options on screen, and has not
+  expired.
+- **Where the preview is kept.** In the main process. The interface gets the
+  parsed preview to show and a name for it, never the text. On Remove it sends
+  the name back, and the main process writes the bytes Timber printed,
+  unchanged, to the approval file. So the interface cannot alter what is
+  approved, and the name ties the approval to the one preview that was on
+  screen. Timber itself compares only the snapshot, the expiry, the target,
+  and the options, so an approval sent back by the interface could have had
+  its file list rewritten unnoticed. A name is used up by one call, whatever
+  came of it, and at most 16 previews are kept.
+- **Remove.** `timber __ide-done apply --approval-file <approved preview>
+  --result-file <temporary file> -- <same path>` through the helper above,
+  with no time limit, because scripts that run before deletion take as long
+  as they take. Timber refuses when the worktree no longer matches the
+  snapshot, and when the preview is older than ten minutes. The dialog does
+  not let an expired preview be submitted, and the main process refuses one
+  before running anything.
+- **After every outcome** the store reads the repository again before it
+  answers (`applyDone` in `src/mainview/store/store.ts`), also after a
+  failure and after an engine that could not answer, because the folder can
+  be gone while the branch remains. Nothing is ever tried again by itself.
+  After a failure the dialog shows Timber's diagnostic and a new preview,
+  which needs a new press of Remove. When the worktree is no longer in the
+  list, as after a partial failure, the dialog says so and offers only Close.
+  The same holds when a worktree leaves the list for any other reason while
+  its dialog is open.
+- **Live sessions.** The app has no terminal or agent sessions yet, so there
+  is nothing to warn about. The warning's place is `LiveSessionsWarning` in
+  `src/mainview/components/DoneDialog.tsx`, which shows nothing today.
 
 ### Creating and opening worktrees
 
@@ -314,8 +390,8 @@ and the workspace cannot disagree.
 - **The store (`src/mainview/store`).** It holds Timber's status, the
   repositories with their worktrees, the selection, operations in progress,
   the latest reload error, the toasts, the layout, the tab that shows, and
-  which dialog is open (`dialog`, one at a time, drawn by
-  `components/Dialogs.tsx`). `state.ts` is the data and the pure rules,
+  which dialog is open (`dialog`, one at a time, changed by `openDialog` and
+  `closeDialog`, drawn by `components/Dialogs.tsx`). `state.ts` is the data and the pure rules,
   `store.ts` talks to the engine, and `react.tsx` hands the store to
   components. Components call its actions and keep no copy of its data.
 - **Pushed changes.** The main process reports a change by calling
@@ -376,7 +452,8 @@ Every operation reports how it ended in the same way.
   worktree dialog against the mock engine, which acts out `timber new` and
   `timber open` and runs nothing; `timberMock.endCommands` below chooses how
   they end. In `/work/timber` the mock has a few branches without a worktree
-  to open. Adding `?feedback=demo` to the address still shows the older
+  to open. The Done button in the workspace header opens the Done dialog,
+  which the mock engine acts out as well. Adding `?feedback=demo` to the address still shows the older
   sample dialog. The desktop app never loads that one.
 
 In `bun run dev:web` the browser console has `timberMock` for acting out the
@@ -440,6 +517,16 @@ pure functions in `src/mainview/shell.ts`.
   at the bottom of the sidebar says that the layout could not be saved and
   why, until it is dismissed or the next save works. It is not a toast, and
   repeated failures do not add more notes.
+
+For the Done dialog, with a worktree's path:
+`timberMock.setChanges(path, { modified: ["a.ts"], untracked: ["b.ts"], ignored: ["dist/"] })`
+makes a dirty worktree, and called while the dialog is open it is a change
+between preview and Remove, which the removal refuses;
+`timberMock.expirePreviewsAfter(5000)` makes previews expire after that many
+milliseconds (`null` for ten minutes again);
+`timberMock.failBranchDeletion(true)` acts out a partial failure, in which
+the worktree leaves the list and the branch is not deleted; and
+`timberMock.setDoneDelay(3000)` sets how long a removal takes.
 
 ## Milestones
 
@@ -805,6 +892,47 @@ Run for the app shell (issue 9), Linux x64 under WSL with Bun 1.4.2, Git
   and the repository still listed. The window was not inspected by eye in
   these runs.
 
+Run for the Done dialog (issue 8), Linux x64 under WSL with Bun 1.4.2, Git
+2.43, and Timber 0.1.1:
+
+- `timber __ide-done preview` and `apply` by hand against temporary
+  repositories, to learn what they really print: a clean worktree, modified,
+  staged, renamed, untracked, and ignored files, an unpublished commit, a
+  detached HEAD, a locked worktree, the primary checkout, every option, a
+  change after the preview, an approval with altered options, an expired
+  one, and a folder of refs made read-only so that deleting the branch
+  fails. The output is recorded in `tests/fixtures/timber-done`.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 602 tests passed and 1 was skipped (it only runs in CI). With
+  the installed Timber on temporary repositories they check that the preview
+  lists the files `git status --porcelain` shows and leaves every file, ref,
+  and index as it was; that Remove deletes the folder and the branch, and
+  only the folder with keep branch; that a change after the preview, the
+  primary checkout, a locked worktree, another repository, a path Timber
+  does not list, a preview for another worktree, an expired preview, and an
+  altered approval are all refused with nothing removed; that a real partial
+  failure is reported with the folder gone and the branch in place; that the
+  temporary folder is empty afterwards; and that nothing is logged. With no
+  usable Timber (`TIMBER_APP_TIMBER_PATH` pointing nowhere): 333 passed and
+  53 were skipped.
+- `bun run build:web`, then the built interface with the mock engine, driven
+  in headless Chrome 133 over its debugging protocol by a temporary script
+  (not committed). Done was disabled on the primary checkout with the
+  reason. A clean worktree got the plain confirmation, with focus on Cancel,
+  and Enter there closed the dialog and removed nothing. Enter in the base
+  field asked for a preview with `--base=main` and removed nothing, and
+  Remove was disabled until that preview arrived. A dirty worktree got
+  "Delete anyway?" with its files and focus on Keep. With a file added
+  through `timberMock.setChanges` while the dialog was open, Remove showed
+  the running state, during which Escape did nothing, and then Timber's
+  refusal above a new preview that listed the new file, with the row still
+  in the list and focus back on Keep. Remove on that preview closed the
+  dialog, took the row away, and showed the toast. A partial failure showed
+  Timber's diagnostic, the row gone, and only Close. A preview set to expire
+  after 1.5 seconds disabled Remove until "Preview again". A worktree taken
+  off the list while its dialog was open left only Close. The console had no
+  errors or warnings. Screenshots of each state were looked at.
+
 Not run yet:
 
 - Branch status rows in the desktop window, and a row read out by a screen
@@ -821,6 +949,9 @@ Not run yet:
   network. The ambiguous case that was run is the base.
 - A pointer drag of the resize handle in the desktop window, and the shell's
   keyboard use there. Only headless Chrome was driven that way.
+- The Done dialog in the desktop window, and so the helper from inside the
+  running desktop app. The main process module was run by the tests only.
+- A removal with scripts that run before deletion configured in Timber.
 - A toast after adding or removing a repository in the desktop window. Only
   the sample dialog's toast was run there.
 - The stand-in executables of the helper's tests on Windows.
