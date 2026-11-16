@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { createEngine } from "./engine";
 import { createAppStore } from "./store/store";
+import { followWindowState } from "./window-state";
 import "./styles.css";
 
 const root = createRoot(document.getElementById("root")!);
@@ -22,6 +23,7 @@ Promise.all([createEngine(), sampleDialog()]).then(
 	([engine, sample]) => {
 		const store = createAppStore(engine);
 		store.start();
+		followWindowState(window => store.windowChanged(window));
 		root.render(
 			<StrictMode>
 				<App store={store}>{sample}</App>

@@ -1,4 +1,5 @@
 import type { RPCSchema } from "electrobun/view";
+import type { Attention } from "./attention";
 import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffResult } from "./file-changes";
 import type { Layout } from "./layout";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
@@ -52,6 +53,8 @@ export type AppRPC = {
 			resizeTerminal: { id: string; cols: number; rows: number };
 			/** The window drew a session's parts up to `seq`. */
 			terminalDrawn: { id: string; seq: number };
+			/** How the window is, and which worktree is selected (see `Engine.attend`). */
+			attend: Attention;
 		};
 	}>;
 	webview: RPCSchema<{

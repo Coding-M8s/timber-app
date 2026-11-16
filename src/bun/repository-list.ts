@@ -4,6 +4,7 @@ import { forgetRepository } from "../shared/layout";
 import type { Settings } from "../shared/settings";
 import { commonDirectory, overrideRepositoryPaths } from "./git-engine";
 import { type RepositoryReader, failedRepository } from "./repository-reader";
+import type { WatchTarget } from "./repository-watcher";
 import { type SettingsHolder, createSettingsHolder } from "./settings";
 
 export interface RepositoryListOptions {
@@ -48,6 +49,12 @@ export interface RepositoryList {
 	 * the app shows.
 	 */
 	find(path: string): Promise<Repository | null>;
+	/**
+	 * The repositories to watch for changes: the primary checkout of each, with
+	 * its common Git directory. From the saved list without asking Timber, or,
+	 * with the override, from the repositories it lists. Read-only.
+	 */
+	watchTargets(): Promise<WatchTarget[]>;
 }
 
 function messageOf(error: unknown): string {
@@ -144,6 +151,17 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 			const { repositories } = await settings();
 			if (!repositories.some(entry => entry.path === path)) return null;
 			return await reader.reload(path) ?? unavailable(path);
+		},
+
+		async watchTargets() {
+			const override = overrideRepositoryPaths(environment);
+			if (!override) return (await settings()).repositories.map(({ path, commonDir }) => ({ path, commonDir }));
+			const listed = await listOverride(override);
+			const targets = await Promise.all(listed.map(async ({ path }) => {
+				const commonDir = await commonDirectory(path);
+				return commonDir === null ? null : { path, commonDir };
+			}));
+			return targets.filter(target => target !== null);
 		},
 
 		remove(path) {

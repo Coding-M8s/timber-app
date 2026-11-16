@@ -97,6 +97,7 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		applyDone: request => new Promise((resolve, reject) => {
 			applies.push({ path: request.path, request, resolve, reject });
 		}),
+		attend: () => {},
 		onRepositoryChanged(listener) {
 			listeners.add(listener);
 			return () => void listeners.delete(listener);
@@ -987,5 +988,63 @@ describe("removing a worktree", () => {
 		loads[0]!.reject(new Error("Git is busy"));
 		expect(await asked).toEqual({ outcome: "removed" });
 		expect(store.getState().error).toEqual({ repository: TIMBER, message: "Git is busy" });
+	});
+});
+
+describe("telling the engine what the window attends to", () => {
+	test("says nothing before start, then the window and the selected worktree, and every change of either", async () => {
+		const engine = createMockEngine();
+		const store = createAppStore(engine);
+		store.windowChanged({ visible: true, focused: false });
+		expect(engine.attention()).toBeNull();
+
+		const stop = store.start();
+		// Timber is not known yet, so nothing is selected.
+		expect(engine.attention()).toEqual({ visible: true, focused: false, selected: null });
+		await settle();
+		const first = store.getState().selection;
+		expect(first).not.toBeNull();
+		expect(engine.attention()?.selected).toEqual({ repository: TIMBER, worktree: TIMBER });
+
+		store.select(FEATURE_ID);
+		expect(engine.attention()).toEqual({ visible: true, focused: false, selected: { repository: TIMBER, worktree: FEATURE } });
+
+		store.windowChanged({ visible: false, focused: false });
+		expect(engine.attention()).toEqual({ visible: false, focused: false, selected: { repository: TIMBER, worktree: FEATURE } });
+
+		stop();
+		store.windowChanged({ visible: true, focused: true });
+		expect(engine.attention()?.visible).toBe(false);
+	});
+
+	test("tells the engine only when something it hears about changed", async () => {
+		const engine = createMockEngine();
+		const told: unknown[] = [];
+		engine.attend = attention => void told.push(attention);
+		const store = createAppStore(engine);
+		store.start();
+		await settle();
+		const count = told.length;
+		store.select(TIMBER_ID);
+		store.windowChanged({ visible: true, focused: true });
+		store.showToast("Something else changed");
+		expect(told.length).toBe(count);
+	});
+
+	test("keeps working when the engine cannot be told, and tells it on the next change", async () => {
+		const engine = createMockEngine();
+		let broken = true;
+		const told: unknown[] = [];
+		engine.attend = attention => {
+			if (broken) throw new Error("bridge not up");
+			told.push(attention);
+		};
+		const store = createAppStore(engine);
+		store.start();
+		await settle();
+		expect(store.getState().loaded).toBe(true);
+		broken = false;
+		store.select(FEATURE_ID);
+		expect(told).toEqual([{ visible: true, focused: true, selected: { repository: TIMBER, worktree: FEATURE } }]);
 	});
 });

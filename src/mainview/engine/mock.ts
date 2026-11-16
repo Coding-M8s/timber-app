@@ -1,3 +1,4 @@
+import type { Attention } from "../../shared/attention";
 import type { Engine } from "../../shared/engine";
 import { type Layout, defaultLayout, forgetRepository, readLayout } from "../../shared/layout";
 import { type AddRepositoryResult, type BranchSuggestion, type OpenInEditorRequest, type OpenInEditorResult, type Repository, type SyncState, type TimberStatus, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
@@ -217,6 +218,8 @@ export interface MockEngine extends Engine, TerminalControls {
 	setRepositories(repositories: Repository[]): void;
 	/** Report that a repository changed, as the main process would. */
 	announceChange(path: string): void;
+	/** What the interface last said through `attend`, or null before it said anything. */
+	attention(): Attention | null;
 	/** Make every later read of repositories fail with this message, or pass null to let them work again. */
 	failReads(message: string | null): void;
 	/**
@@ -342,6 +345,8 @@ export function createMockEngine(
 	let preferences: Preferences = defaultPreferences();
 	let preferencesFailure: string | null = null;
 	const listeners = new Set<(path: string) => void>();
+	// The mock watches nothing: changes are acted out with `announceChange`. It only keeps what it was told.
+	let attended: Attention | null = null;
 
 	// The Done dialog. As in the main process, what a preview printed stays here and the interface gets a name for it.
 	const ignored = new Map<string, readonly string[]>(Object.entries(sampleIgnored));
@@ -547,6 +552,9 @@ export function createMockEngine(
 			if (doneDelay > 0) await new Promise(resolve => setTimeout(resolve, doneDelay));
 			return structuredClone(applyDone(repository, path, preview));
 		},
+		attend(attention) {
+			attended = attention;
+		},
 		onRepositoryChanged(listener) {
 			listeners.add(listener);
 			return () => void listeners.delete(listener);
@@ -630,6 +638,7 @@ export function createMockEngine(
 		pickFolder(folder) {
 			picked = folder;
 		},
+		attention: () => attended,
 		announceChange(path) {
 			for (const listener of [...listeners]) listener(path);
 		},

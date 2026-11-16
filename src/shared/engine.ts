@@ -1,3 +1,4 @@
+import type { Attention } from "./attention";
 import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffResult } from "./file-changes";
 import type { Layout } from "./layout";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
@@ -85,6 +86,16 @@ export interface Engine {
 	 * the path of its primary checkout. Returns a function that stops listening.
 	 */
 	onRepositoryChanged(listener: (path: string) => void): () => void;
+	/**
+	 * Say whether the window shows, whether it has the focus, and which
+	 * worktree is selected, whenever one of them changes. The machine watches
+	 * the repositories' Git metadata and checks the selected worktree for
+	 * edits, and reports what changed through `onRepositoryChanged`: only
+	 * while the window shows, catching up once when it shows again, and for
+	 * the selected worktree's repository when the focus comes back. Nothing
+	 * comes back. Safe to call with the same value again.
+	 */
+	attend(attention: Attention): void;
 	/**
 	 * How the window was arranged when the layout was last saved: the sidebar
 	 * width and the collapsed repository groups. The defaults when nothing was

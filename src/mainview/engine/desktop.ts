@@ -60,6 +60,7 @@ export function createDesktopEngine(): Engine {
 		// Scripts that run before deletion take as long as they take.
 		applyDone: request => rpc.request.applyDone(request, { maxRequestTime: Infinity }),
 		onRepositoryChanged: changes.add,
+		attend: attention => rpc.send.attend(attention),
 		loadLayout: () => rpc.request.loadLayout({}),
 		saveLayout: layout => rpc.request.saveLayout({ layout }),
 		loadPreferences: () => rpc.request.loadPreferences({}),
