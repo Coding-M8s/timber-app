@@ -3,7 +3,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { type ITheme, Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import type { AppStore } from "./store/store";
-import { clipboardKey, leftInAlternateScreen, opensLink } from "./terminal-format";
+import { clipboardKey, leftInAlternateScreen, opensLink, sessionChipId, sessionKey } from "./terminal-format";
 
 /**
  * The drawn terminal of one session.
@@ -92,6 +92,14 @@ function createView(store: AppStore, id: string): TerminalView {
 	terminal.onResize(({ cols, rows }) => store.resizeTerminal(id, cols, rows));
 	const mac = isMac();
 	terminal.attachCustomKeyEventHandler(event => {
+		// Switching sessions and going to the chips are the app's keys, never the program's.
+		const move = sessionKey(event, mac);
+		if (move !== null) {
+			event.preventDefault();
+			if (move === "chips") document.getElementById(sessionChipId(id))?.focus();
+			else store.stepSession(id, move === "next" ? 1 : -1);
+			return false;
+		}
 		const action = clipboardKey(event, mac);
 		if (action === "copy") {
 			if (terminal.hasSelection()) void store.copyText(terminal.getSelection());

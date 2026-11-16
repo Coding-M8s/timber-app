@@ -12,7 +12,7 @@ import { listedOrder } from "../changes-format";
 import { describeOpenedInEditor } from "../editor-format";
 import { describeAdded, describeRemoved, folderName, worktreeLabel } from "../format";
 import { mergeOverlapping } from "./merge";
-import { type AppState, type ChangesView, type DialogRequest, type Operation, type WorkspaceTab, TOAST_MILLISECONDS, initialState, keepLastGood, reconcileSelection, selectionFor, selectionForRepository, terminalFor, timberReady, withTerminal } from "./state";
+import { type AppState, type ChangesView, type DialogRequest, type Operation, type WorkspaceTab, TOAST_MILLISECONDS, initialState, keepLastGood, reconcileSelection, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, timberReady, withTerminal, withoutSession } from "./state";
 
 /**
  * The single holder of what the interface shows: Timber's status, the
@@ -125,12 +125,29 @@ export interface AppStore {
 	 */
 	applyDone(request: DoneApplyRequest): Promise<DoneApplyResult>;
 	/**
-	 * Start a terminal in a worktree, or find the one it has. The session
+	 * Start another terminal in a worktree and choose its chip. The session
 	 * shows in `terminals`; why none started shows in `terminalProblem`. One
-	 * request at a time per worktree. Never throws.
+	 * request at a time per worktree, so a double click starts one. Never
+	 * throws.
 	 */
 	openTerminal(request: OpenTerminalRequest): Promise<void>;
-	/** End a session and take it away, running or exited. Never throws. */
+	/**
+	 * Choose the chip of a session in its worktree, so its pane shows. The
+	 * other sessions keep running. Nothing happens for a session that is gone.
+	 */
+	showSession(id: string): void;
+	/**
+	 * Show the session `step` chips away from this one in its worktree,
+	 * wrapping around, for the keys that switch sessions from a terminal.
+	 */
+	stepSession(id: string, step: 1 | -1): void;
+	/**
+	 * Give a session another name. Answers whether the engine took it: a name
+	 * with nothing in it, a session that is gone, or an engine that did not
+	 * answer leaves the name as it was. Never throws.
+	 */
+	renameTerminal(id: string, name: string): Promise<boolean>;
+	/** End a session and take it away, running or exited. The others are left alone. Never throws. */
 	closeTerminal(id: string): Promise<void>;
 	/**
 	 * Draw what a session printed: first what the engine kept, then every new
@@ -176,6 +193,11 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 
 	function update(change: Partial<AppState>): void {
 		state = { ...state, ...change };
+		// A session on screen is seen, whatever put it there: a chip, the selection, the tab, or a session that started or ended.
+		const onScreen = sessionOnScreen(state);
+		if (onScreen && state.unseenSessions.includes(onScreen.id)) {
+			state = { ...state, unseenSessions: state.unseenSessions.filter(id => id !== onScreen.id) };
+		}
 		for (const listener of [...listeners]) listener();
 	}
 
@@ -566,17 +588,17 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		}
 	}
 
-	/** End the terminal of a worktree that was removed: its folder is gone, so there is nothing left to work in. */
-	function closeTerminalOf(repositoryPath: string, worktreePath: string): void {
+	/** End every session of a worktree that was removed: its folder is gone, so there is nothing left to work in. */
+	function closeTerminalsOf(repositoryPath: string, worktreePath: string): void {
 		const repository = state.repositories.find(candidate => candidate.path === repositoryPath);
 		const worktree = repository?.worktrees.find(candidate => candidate.path === worktreePath);
-		const session = worktree ? terminalFor(state, worktree.id) : state.terminals.find(candidate => candidate.path === worktreePath && candidate.repository === repositoryPath);
-		if (session) void closeTerminal(session.id);
+		const sessions = worktree ? sessionsOf(state, worktree.id) : state.terminals.filter(candidate => candidate.path === worktreePath && candidate.repository === repositoryPath);
+		for (const session of sessions) void closeTerminal(session.id);
 	}
 
 	async function applyDone(request: DoneApplyRequest): Promise<DoneApplyResult> {
 		// Read before the list is read again, which no longer has the worktree.
-		const ending = () => closeTerminalOf(request.repository, request.path);
+		const ending = () => closeTerminalsOf(request.repository, request.path);
 		try {
 			const result = await engine.applyDone(request);
 			if (result.outcome === "removed") ending();
@@ -600,13 +622,16 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	 * changes while its folder cannot be verified.
 	 */
 	function endOrphanTerminals(): void {
+		// One toast per worktree, however many of its sessions ran.
+		const ended = new Map<string, number>();
 		for (const session of state.terminals) {
 			const repository = state.repositories.find(candidate => candidate.path === session.repository);
 			const listed = repository !== undefined && (!repository.available || repository.failure !== null || repository.worktrees.some(worktree => worktree.id === session.worktree || worktree.path === session.path));
 			if (listed || state.operations.some(operation => operation.kind === "close-terminal" && operation.session === session.id)) continue;
 			void closeTerminal(session.id);
-			if (session.state.kind === "running") showToast(describeOrphanTerminal(session.path));
+			if (session.state.kind === "running") ended.set(session.path, (ended.get(session.path) ?? 0) + 1);
 		}
+		for (const [path, count] of ended) showToast(describeOrphanTerminal(path, count));
 	}
 
 	async function openTerminal(request: OpenTerminalRequest): Promise<void> {
@@ -619,8 +644,12 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			try {
 				const result = await engine.openTerminal(request);
 				if (result.outcome === "opened") {
+					const { session } = result;
 					update({
-						terminals: withTerminal(state.terminals, result.session.id, result.session),
+						terminals: withTerminal(state.terminals, session.id, session),
+						// The new session shows. What it printed while this answer was on its way counts as seen.
+						shownSessions: { ...state.shownSessions, [session.worktree]: session.id },
+						unseenSessions: state.unseenSessions.filter(id => id !== session.id),
 						terminalProblem: state.terminalProblem?.worktree === key ? null : state.terminalProblem,
 					});
 					return;
@@ -642,8 +671,34 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				// The engine reports the session as gone when it is. Until then it stays, so it can be closed again.
 				return;
 			}
-			update({ terminals: withTerminal(state.terminals, id, null) });
+			update(withoutSession(state, id));
 		});
+	}
+
+	function showSession(id: string): void {
+		const session = state.terminals.find(candidate => candidate.id === id);
+		if (!session || state.shownSessions[session.worktree] === id) return;
+		update({ shownSessions: { ...state.shownSessions, [session.worktree]: id } });
+	}
+
+	function stepSession(id: string, step: 1 | -1): void {
+		const session = state.terminals.find(candidate => candidate.id === id);
+		if (!session) return;
+		const siblings = sessionsOf(state, session.worktree);
+		const at = siblings.findIndex(candidate => candidate.id === id);
+		const next = siblings[(at + step + siblings.length) % siblings.length];
+		if (next && next.id !== id) showSession(next.id);
+	}
+
+	async function renameTerminal(id: string, name: string): Promise<boolean> {
+		try {
+			const session = await engine.renameTerminal(id, name);
+			if (!session || !state.terminals.some(candidate => candidate.id === id)) return false;
+			update({ terminals: withTerminal(state.terminals, id, session) });
+			return true;
+		} catch {
+			return false;
+		}
 	}
 
 	// Sessions whose parts a pane draws. The engine hears at once about every other part, so it never waits on one.
@@ -688,10 +743,14 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				engine.onTerminalChanged(change => {
 					// Until the first list answers, changes wait, and are applied on top of it.
 					if (heard !== null) heard.push(change);
-					else update({ terminals: withTerminal(state.terminals, change.id, change.session) });
+					else if (change.session) update({ terminals: withTerminal(state.terminals, change.id, change.session) });
+					else update(withoutSession(state, change.id));
 				}),
 				engine.onTerminalOutput(part => {
 					if (!watched.has(part.id)) engine.drawnTerminal(part.id, part.seq);
+					// A chip marks a session that printed while it was not on screen.
+					if (part.data === "" || state.unseenSessions.includes(part.id) || sessionOnScreen(state)?.id === part.id) return;
+					if (state.terminals.some(session => session.id === part.id)) update({ unseenSessions: [...state.unseenSessions, part.id] });
 				}),
 				engine.onQuitRequested(live => update({ quitRequest: live })),
 			];
@@ -703,7 +762,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				let terminals = listed;
 				for (const change of heard ?? []) terminals = withTerminal(terminals, change.id, change.session);
 				heard = null;
-				update({ terminals });
+				update({ terminals, unseenSessions: state.unseenSessions.filter(id => terminals.some(session => session.id === id)) });
 			};
 			engine.listTerminals().then(settle, () => settle(state.terminals));
 			return () => {
@@ -761,6 +820,9 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		previewDone,
 		applyDone,
 		openTerminal,
+		showSession,
+		stepSession,
+		renameTerminal,
 		closeTerminal,
 		watchTerminal,
 		writeTerminal: (id, data) => engine.writeTerminal(id, data),

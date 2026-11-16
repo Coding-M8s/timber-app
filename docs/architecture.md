@@ -723,9 +723,10 @@ commits. Comparing against the base or a rebase backup is a later step.
 
 ## Terminal sessions
 
-A worktree can have one terminal: the person's shell, running in its folder,
-drawn in the Workspace tab. It keeps running while another worktree is
-selected, and coming back shows it as it was.
+A worktree can have any number of terminal sessions: each is the person's
+shell, running in its folder, drawn in the Workspace tab under a chip of its
+own. Every session keeps running while another one, or another worktree,
+shows, and coming back shows it as it was.
 
 - **Who owns it.** The main process (`src/bun/terminals.ts`). Each session is
   a pseudo terminal from `Bun.Terminal`, started with `SHELL` when that is a
@@ -735,11 +736,24 @@ selected, and coming back shows it as it was.
 - **Which worktrees.** As for "Open in editor": only a repository in the
   app's list and a full path that `timber ls --json` lists for it at that
   moment, whose folder is there (`findListedWorktree` in
-  `src/bun/listed-worktree.ts`, shared with `src/bun/editor.ts`). One session
-  per worktree: asking again answers the one it has, running or exited.
+  `src/bun/listed-worktree.ts`, shared with `src/bun/editor.ts`). Each
+  `openTerminal` starts one more session beside the ones the worktree has.
+- **Kinds and names.** A session has a kind and a name. The only kind is
+  `terminal` for now; agent sessions will be another kind that starts an
+  agent's command instead of the shell. The main process names a new session
+  after its kind, "Terminal", then "Terminal 2" and on, the first name no
+  session of that worktree has, exited ones included. It picks the name with
+  no wait between reading the names and keeping the session, so two sessions
+  that start at once get different names. `renameTerminal` gives a session
+  another name, kept in the main process so it survives a reload of the
+  window. A name is cleaned up first (`cleanSessionName` in
+  `src/shared/terminal.ts`): control characters and runs of white space
+  become one space, it is trimmed and cut to 40 characters, and a name with
+  nothing left is refused. Names may repeat.
 - **The contract.** `openTerminal`, `listTerminals`, `readTerminal`,
-  `writeTerminal`, `resizeTerminal`, `drawnTerminal`, `closeTerminal`, and
-  the listeners `onTerminalOutput` and `onTerminalChanged` on the `Engine`.
+  `renameTerminal`, `writeTerminal`, `resizeTerminal`, `drawnTerminal`,
+  `closeTerminal`, and the listeners `onTerminalOutput` and
+  `onTerminalChanged` on the `Engine`.
   Typing, resizing, and saying what was drawn are RPC messages with no
   answer. Output comes as messages too. The data is in
   `src/shared/terminal.ts`.
@@ -765,6 +779,34 @@ selected, and coming back shows it as it was.
   has rested for 50 ms, never while a drag moves. A pane takes the keyboard
   only when nothing else has it, so moving through the sidebar keeps it
   there.
+- **Chips.** Above the pane, one chip per session of the selected worktree,
+  in the order they started, with the kind, the name, a filled blue dot
+  while it runs, a hollow dot and its exit code once it ended, and a ring
+  when it printed since it was last on screen. "+" at their end starts
+  another terminal, and shows it; agents will make it a menu. The chips are
+  a tab list: one tab stop, the arrows, Home, and End show another session
+  at once, and the focus stays on the chips. Click, Enter, or Space shows a
+  session and puts the keyboard in its terminal. Delete closes the session
+  on the focused chip and F2 renames it, as for closable tabs; a double
+  click renames too. The close control on a chip is for the pointer; on the
+  keyboard the session bar has Rename and Close. In the rename field Enter
+  and leaving the field save, and Escape keeps the name. Closing the chip
+  that shows shows the one after it, or else the one before, skipping any
+  that are being closed. A chip being closed is dimmed until its processes
+  ended, which can take two seconds. Tab belongs to
+  the program in a terminal, so Ctrl+PageUp and Ctrl+PageDown (Cmd+Shift+[
+  and ] on macOS) show the previous and next session from inside one, and
+  Ctrl+Shift+S (Cmd+Shift+S) puts the focus on the chips. Which chip shows
+  in each worktree, and which sessions printed unseen, are the interface's
+  own (`shownSessions` and `unseenSessions` in
+  `src/mainview/store/state.ts`): after the window reloads, each worktree
+  shows its first session and nothing is marked. A session counts as seen
+  whenever it is on screen: its chip shows in the selected worktree while
+  the Workspace tab shows. A program that keeps redrawing, such as a
+  spinner, keeps its chip marked.
+- **The sidebar.** A worktree's row shows how many of its sessions run, in
+  blue with the count, and says so in the row's description, such as "2
+  sessions running". Exited sessions are not counted.
 - **Copy, paste, links.** Ctrl+Shift+C and Ctrl+Shift+V on Linux and
   Windows, Cmd+C and Cmd+V on macOS, through the system clipboard in the
   main process (`writeClipboard`, `readClipboard`), so Ctrl+C and Ctrl+V stay
@@ -790,10 +832,11 @@ selected, and coming back shows it as it was.
   is hung up on, as a terminal does when it closes, and the session stays
   with its exit code until it is dismissed. A program started with `nohup`
   then goes on, and dismissing the session ends it.
-- **Worktrees that go.** After a list read, the store ends the terminal of a
-  worktree that a full read no longer lists, such as one removed from inside
-  its own terminal, or of a repository that left the app's list, with a
-  toast. A repository whose worktrees Timber could not list, or whose folder
+- **Worktrees that go.** After a list read, the store ends every session of
+  a worktree that a full read no longer lists, such as one removed from
+  inside its own terminal, or of a repository that left the app's list, with
+  one toast per worktree. Done warns with the number of running sessions and
+  ends all of them after a removal. A repository whose worktrees Timber could not list, or whose folder
   Git cannot read, keeps its terminals.
 - **Quitting.** While a terminal runs, the main process says no to
   Electrobun's `before-quit` and to the window's `will-close`, and asks the
@@ -814,8 +857,9 @@ selected, and coming back shows it as it was.
 - **Windows.** `Bun.Terminal` exists on Linux and macOS only, so on Windows
   `openTerminal` answers that terminals are not supported there yet, and
   nothing starts.
-- **Not built.** Several sessions per worktree, agent panes, keeping
-  sessions after a restart, and starting a terminal editor in a session.
+- **Not built.** Agent sessions, split views showing two sessions side by
+  side, keeping sessions after a restart, and starting a terminal editor in
+  a session.
 
 In `bun run dev:web` the mock engine acts out a shell that echoes what is
 typed and knows `pwd`, `clear`, and `exit`. `timberMock.requestQuit()` acts
@@ -830,8 +874,8 @@ a terminal that cannot start (`null` to undo).
    published, upstream deleted, modified and untracked counts.
 2. **Sessions.** Agent and terminal panes. Each is a pseudo-terminal owned by
    the main process (`Bun.Terminal`), rendered by xterm.js. Several per
-   worktree, and hidden panes keep running. One terminal per worktree is
-   built (see [terminal sessions](#terminal-sessions)).
+   worktree, and hidden panes keep running. Several terminals per worktree
+   are built (see [terminal sessions](#terminal-sessions)); agents are not.
 3. **Timber actions.** New and open, rebase with a base picker, done with the
    safe and "delete anyway" confirmations.
 4. **Changes.** Diff against the base, the last commit, or a rebase backup.
@@ -1439,6 +1483,42 @@ natively) with Bun 1.4.4, Git 2.56.1, and Timber 0.1.1:
   expected. The index's SHA-256 and `git status` were the same afterwards.
   Screenshots of the window (`grim`) were looked at. A first try loaded the
   browser build, because `bun run dev:web` was still serving port 5173.
+
+Run for several sessions per worktree (issue 14), Linux x64 (Pop!_OS, natively)
+with Bun 1.4.2 and Git 2.43:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 846 tests passed and 1 was skipped, after merging the Changes
+  tab from `main` (786 before). With a real shell in a
+  temporary repository: three sessions in one worktree, two of them started
+  at once, got "Terminal", "Terminal 2", and "Terminal 3", each printed only
+  what was typed into it, closing the second left the other two running and
+  answering, and the next one took "Terminal 2" again. Renaming cleaned up
+  the name, kept the order, refused an empty name, and survived the shell
+  exiting. In the store and the rendered app: the newest session shows,
+  switching chips leaves every session running with its output unchanged,
+  closing the chip that shows shows the next one, output to a session that
+  is not on screen marks its chip until it shows (also across worktrees and
+  the Changes tab), the sidebar count follows the running sessions, Done and
+  a worktree that left the list end every session with one toast, and the
+  chips render as a tablist with one tab stop.
+- `bun run build:web`: built.
+- `bun run dev:web` in the built-in browser of the Claude desktop app, driven
+  by clicks, typing, and short scripts in the page. Three sessions ran in one
+  worktree. Ctrl+Shift+S from inside a terminal put the focus on its chip;
+  the left arrow showed the session before it with the focus kept on the
+  chips; F2, typing, and Enter renamed it and put the focus back on its chip;
+  Escape in the field kept the name. A click on the chip that shows put the
+  keyboard in its terminal. Delete closed the session that showed and moved
+  the focus to the chip that now showed; closing the last one put it on
+  "Open terminal". An exited session showed a hollow dot and "exit 1", a
+  session that printed while hidden showed the ring, and the sidebar row
+  showed 2 for two running sessions. Ctrl+PageDown dispatched to the
+  terminal showed the next session with the keyboard in it; a real
+  Ctrl+PageUp key press did not reach the page there, because the browser
+  pane takes it, so it is unverified in the desktop window.
+- Not run: the desktop window (`bun run start`), so neither the keys nor
+  several real shells through the RPC bridge were tried there.
 
 Not run yet:
 

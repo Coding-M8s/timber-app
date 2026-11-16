@@ -136,25 +136,71 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 
 	test("a terminal opens in the worktree's folder, with the shell, and says so", async () => {
 		start();
-		const { session, started } = await opened();
-		expect(started).toBe(true);
-		expect(session).toMatchObject({ repository, worktree: `id:${worktree}`, path: worktree, shell: "/bin/sh", state: { kind: "running" } });
+		const { session } = await opened();
+		expect(session).toMatchObject({ kind: "terminal", name: "Terminal", repository, worktree: `id:${worktree}`, path: worktree, shell: "/bin/sh", state: { kind: "running" } });
 		expect(changes).toEqual([{ id: session.id, session }]);
 		await run(session.id, "pwd", `${worktree}\r\n`);
 		await run(session.id, "echo $TERM", "xterm-256color");
 		expect(sessions.liveCount()).toBe(1);
 	});
 
-	test("a worktree has one session: asking again, even at the same time, answers it", async () => {
+	test("a worktree can have several sessions, each with its own name, even when they start at once", async () => {
 		start();
 		const [first, second] = await Promise.all([opened(), opened()]);
-		expect(second.session.id).toBe(first.session.id);
-		expect([first.started, second.started].sort()).toEqual([false, true]);
 		const third = await opened();
-		expect(third).toMatchObject({ started: false, session: { id: first.session.id } });
+		const ids = [first, second, third].map(result => result.session.id);
+		expect(new Set(ids).size).toBe(3);
+		expect([first, second, third].map(result => result.session.name).sort()).toEqual(["Terminal", "Terminal 2", "Terminal 3"]);
 		const primary = await opened(repository);
-		expect(primary.session.id).not.toBe(first.session.id);
-		expect(sessions.list().map(session => session.path)).toEqual([worktree, repository]);
+		// Names count per worktree.
+		expect(primary.session.name).toBe("Terminal");
+		expect(sessions.list().map(session => session.id)).toEqual([...ids, primary.session.id]);
+		expect(sessions.liveCount()).toBe(4);
+	});
+
+	test("three sessions in one worktree each keep their own output, and closing one leaves the others running", async () => {
+		start();
+		const one = (await opened()).session;
+		const two = (await opened()).session;
+		const three = (await opened()).session;
+		await run(one.id, "echo first-$((40+1))", "first-41");
+		await run(two.id, "echo second-$((40+2))", "second-42");
+		await run(three.id, "echo third-$((40+3))", "third-43");
+		const read = (id: string) => sessions.read(id)!.data;
+		expect(read(one.id)).toContain("first-41");
+		expect(read(one.id)).not.toContain("second-42");
+		expect(read(two.id)).toContain("second-42");
+		expect(read(two.id)).not.toContain("third-43");
+		expect(read(three.id)).not.toContain("first-41");
+
+		await sessions.close(two.id);
+		expect(sessions.read(two.id)).toBeNull();
+		expect(sessions.list().map(session => [session.id, session.state.kind])).toEqual([[one.id, "running"], [three.id, "running"]]);
+		await run(one.id, "echo still-$((1+1))", "still-2");
+		await run(three.id, "echo still-$((2+1))", "still-3");
+		expect(read(one.id)).toContain("first-41");
+		expect(sessions.liveCount()).toBe(2);
+		// A new session takes the first free name again.
+		expect((await opened()).session.name).toBe("Terminal 2");
+	});
+
+	test("a session can be renamed in place, cleaned up, and an empty name changes nothing", async () => {
+		start();
+		const one = (await opened()).session;
+		const two = (await opened()).session;
+		changes.length = 0;
+		expect(sessions.rename(one.id, "  dev\tserver\n ")).toMatchObject({ id: one.id, name: "dev server" });
+		expect(changes).toEqual([{ id: one.id, session: { ...one, name: "dev server" } }]);
+		expect(sessions.rename(one.id, " \n ")).toBeNull();
+		expect(sessions.rename("no-such-session", "x")).toBeNull();
+		expect(sessions.rename(one.id, 42 as unknown as string)).toBeNull();
+		expect(sessions.rename(two.id, "x".repeat(100))!.name).toBe("x".repeat(40));
+		// Renaming keeps the order, and the name survives the shell ending.
+		expect(sessions.list().map(session => [session.id, session.name])).toEqual([[one.id, "dev server"], [two.id, "x".repeat(40)]]);
+		sessions.write(one.id, "exit 3\r");
+		expect(await until(() => sessions.list()[0]!.state.kind === "exited")).toBe(true);
+		expect(sessions.list()[0]).toMatchObject({ name: "dev server", state: { kind: "exited", exitCode: 3 } });
+		expect(sessions.rename(one.id, "done")!.name).toBe("done");
 	});
 
 	test("only a worktree Timber lists, in a listed repository, gets a terminal", async () => {

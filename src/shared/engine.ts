@@ -136,11 +136,17 @@ export interface Engine {
 	 */
 	listTerminals(): Promise<TerminalSession[]>;
 	/**
-	 * Start the person's shell in a worktree of a repository in the list, or
-	 * answer the session it already has: one per worktree. `cols` and `rows`
-	 * are the pane's size. Safe to call again.
+	 * Start the person's shell in a worktree of a repository in the list, as
+	 * a new session beside any it has. Each call starts one. `cols` and
+	 * `rows` are the pane's size.
 	 */
 	openTerminal(request: OpenTerminalRequest): Promise<OpenTerminalResult>;
+	/**
+	 * Give a session another name, cleaned up as `cleanSessionName` does. The
+	 * change is also heard through `onTerminalChanged`. Answers the session as
+	 * it now is, or null when it is gone or the name has nothing in it.
+	 */
+	renameTerminal(id: string, name: string): Promise<TerminalSession | null>;
 	/**
 	 * The end of what a session printed, to draw it again, with the number of
 	 * the last part it holds (see `onTerminalOutput`). Null for a session that
