@@ -14,6 +14,9 @@ import { createSettingsHolder, settingsFilePath } from "./settings";
 import { createTimberLocator, describeTimberStatus } from "./timber";
 import { openWebLink } from "./open-link";
 import { createQuitGuard } from "./quit-guard";
+import { createRefreshPolicy } from "./refresh-policy";
+import { type WatchTarget, createRepositoryWatcher } from "./repository-watcher";
+import { createWorktreeStamps } from "./worktree-stamp";
 import { createTerminalSessions } from "./terminals";
 import { createWorktreeCommands } from "./worktree-commands";
 
@@ -56,6 +59,36 @@ const layout = createSavedLayout(settings);
 const preferences = createSavedPreferences(settings);
 const worktrees = createWorktreeCommands({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
 
+/*
+ * Background refresh (see docs/architecture.md, "Watching for changes"). The watcher hears changes to the Git
+ * metadata of every listed repository, the policy passes them on only while the window shows, and checks the
+ * selected worktree for edits now and then. What they report goes out through `repositoryChanges`.
+ */
+let watchTargets: readonly WatchTarget[] = [];
+const refreshPolicy = createRefreshPolicy({
+	announce: path => repositoryChanges.announce(path),
+	readStamp: createWorktreeStamps({ targets: () => watchTargets }),
+	onReturn: () => void watchRepositories(),
+});
+const watcher = createRepositoryWatcher({ onChange: path => refreshPolicy.changed(path) });
+/**
+ * Watch exactly the repositories in the list. Called on start, after adding or removing one, and when the window
+ * returns. One runs at a time, so an older answer never replaces a newer one.
+ */
+let watchSync: Promise<void> = Promise.resolve();
+function watchRepositories(): Promise<void> {
+	watchSync = watchSync.then(async () => {
+		try {
+			watchTargets = await repositories.watchTargets();
+			watcher.sync(watchTargets);
+		} catch (error) {
+			console.warn(`Could not read which repositories to watch: ${error instanceof Error ? error.message : String(error)}`);
+		}
+	});
+	return watchSync;
+}
+void watchRepositories();
+
 const done = createDone({ timber: () => timber.current(), findRepository: path => repositories.find(path) });
 const fileChanges = createFileChanges({ findRepository: path => repositories.find(path) });
 const editor = createEditorLauncher({ preferences: () => preferences.load(), findRepository: path => repositories.find(path) });
@@ -94,8 +127,16 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			timberStatus: () => timber.current(),
 			recheckTimber: () => timber.refresh(),
 			listRepositories: () => repositories.list(),
-			addRepository: () => repositories.add(),
-			removeRepository: ({ path }) => repositories.remove(path),
+			addRepository: async () => {
+				const result = await repositories.add();
+				if (result.outcome === "added") await watchRepositories();
+				return result;
+			},
+			removeRepository: async ({ path }) => {
+				const result = await repositories.remove(path);
+				await watchRepositories();
+				return result;
+			},
 			loadRepository: ({ path }) => repositories.reload(path),
 			// Read-only, and still only for a repository the app lists.
 			listBranches: async ({ repository }) => await repositories.includes(repository) ? readBranches(repository) : null,
@@ -130,6 +171,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			writeTerminal: ({ id, data }) => terminals.write(id, data),
 			resizeTerminal: ({ id, cols, rows }) => terminals.resize(id, cols, rows),
 			terminalDrawn: ({ id, seq }) => terminals.drawn(id, seq),
+			attend: attention => refreshPolicy.attend(attention),
 		},
 	},
 });
@@ -145,6 +187,8 @@ function guardQuit(event: unknown): void {
 	if (quitGuard.mayQuit()) {
 		// The app goes away in a moment, so there is no time to wait for anything to end by itself.
 		terminals.killAll();
+		refreshPolicy.stop();
+		watcher.stop();
 		return;
 	}
 	(event as Veto).response = { allow: false };

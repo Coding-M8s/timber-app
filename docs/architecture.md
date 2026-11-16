@@ -11,7 +11,8 @@ src/mainview   React interface, runs in the webview
       |        talks only to the Engine contract
 src/shared     Engine contract, data model, typed bridge, pure parsers
       |
-src/bun        Bun main process: the window, Git queries, terminal sessions
+src/bun        Bun main process: the window, Git queries, terminal sessions,
+               watching for changes
 ```
 
 - **Interface (`src/mainview`).** React with plain CSS. It never touches Git,
@@ -53,9 +54,11 @@ Timber's safety logic must exist once. The app follows two rules:
 2. **Git is asked directly only for read-only status that Timber does not
    report.** Today that is which repository a folder belongs to, how each
    branch stands against its upstream, which branches there are to offer
-   for picking, and the changed files and diffs of the Changes tab (see
-   [the Changes tab](#the-changes-tab)). Git is invoked as an executable
-   plus an argument array.
+   for picking, the changed files and diffs of the Changes tab (see
+   [the Changes tab](#the-changes-tab)), and the status of the selected
+   worktree for the background check (see
+   [watching for changes](#watching-for-changes)). Git is invoked as an
+   executable plus an argument array.
 
 Timber itself rules out GUI work, a daemon, and a local API inside its own
 repository. That is why this is a separate repository, and why the app's
@@ -403,8 +406,8 @@ and the workspace cannot disagree.
   the repository's primary checkout. That becomes a `repositoryChanged`
   message over RPC, and the store reloads only that repository through
   `loadRepository`. A message for a repository that is not on screen is
-  ignored. Nothing announces changes yet: deciding when a repository changed
-  belongs to file watching and fetching.
+  ignored. What announces a change is described in
+  [watching for changes](#watching-for-changes).
 - **Merging.** One reload per repository runs at a time. Reloads asked for
   meanwhile share a single follow-up reload, because the one in progress may
   have read its data before the change. The same holds for reloading
@@ -429,6 +432,79 @@ and the workspace cannot disagree.
   changed, the reason is kept as a note below the list until it is dismissed
   or the next add or remove works.
 - **Refresh.** The Refresh control reloads everything.
+
+## Watching for changes
+
+The sidebar and the Changes tab follow what happens outside the app, such as
+a commit in a terminal or a file saved in an editor, without a press of
+Refresh. Everything here is in the main process and only reads. What it
+finds becomes a `repositoryChanged` message, so the interface reloads one
+repository through the path described [above](#shared-state-and-live-updates).
+
+- **What is watched (`src/bun/repository-watcher.ts`).** For each repository
+  in the list, its common Git directory: the folder itself (HEAD, the index,
+  `packed-refs`, `config`), `refs` and `worktrees` recursively (each linked
+  worktree keeps its HEAD and index in `worktrees/<name>`), and `reftable`
+  when there is one. Working trees are never watched, so a dependency install
+  or a build costs nothing here. `src/shared/git-watch.ts` decides, purely,
+  which names count: lock files, logs, objects, and the scratch files of a
+  commit, merge, or rebase in progress do not.
+- **Which repositories.** `RepositoryList.watchTargets` gives each primary
+  checkout with its common Git directory, from the saved list without asking
+  Timber (or from the repositories the `TIMBER_APP_REPOS` override lists).
+  The watches follow the list on start, after adding or removing a
+  repository, and whenever the window comes back.
+- **Grouping.** Events for one repository are reported once nothing more
+  happened for 300 ms, and at the latest 2 seconds after the first, so a
+  rebase or a burst of new branches is one reload, or one every 2 seconds
+  while it lasts.
+- **Folders that come and go.** `worktrees` exists only while there are
+  linked worktrees, and its watch stops working when it is removed. Its
+  appearing or going in the common directory starts the watch again. A
+  folder that is not there is not an error. The common directory's own
+  watch is started again the same way when the repository is removed and
+  made again in place. A watch that cannot start for another reason, such
+  as the system's limit on watches, is reported once as a warning with the
+  folder and the reason, and tried again whenever the watches follow the
+  list (see above). Until then changes in that folder are missed; the
+  check of the selected worktree, getting the focus back, and Refresh
+  still work.
+- **Edits in the working tree (`src/bun/worktree-stamp.ts`).** Saving a file
+  touches no Git metadata, so while the window shows, the selected worktree
+  is checked every 4 seconds, never sooner than ten times as long as the last
+  check took. The check reads `git status` with the Changes tab's options,
+  plus the size and modification time of the first 200 files it lists, so
+  editing a file that was already modified counts too. A different answer
+  from the last one is reported as a change of that worktree's repository.
+  A check that fails, or does not answer within 10 seconds, counts as not
+  read and keeps the last answer to compare with.
+  It runs without Timber, so it first checks that the repository is in the
+  list and that Git names the repository's own common directory for the
+  folder. Nothing it reads leaves the main process or is logged.
+- **The window (`src/bun/refresh-policy.ts`).** The interface tells the
+  engine through `attend` whether the window shows, whether it has the
+  focus, and which worktree is selected, whenever one of them changes
+  (`src/mainview/window-state.ts` follows the page's `visibilitychange`,
+  `focus`, and `blur`). While the window is hidden nothing is reported and
+  nothing is checked; repositories that changed meanwhile are reported once
+  when it shows again. Showing it again, or giving it the focus back,
+  also reports the selected worktree's repository, at most once in 2
+  seconds. Until the window has said anything it counts as shown, so a
+  webview that never sends these events still gets every change.
+- **No double reloads.** Before the selected worktree's repository is
+  reported, its stamp is read again, and the next check compares against
+  that. So a commit is reloaded once, by the watcher, and not again by the
+  check.
+- **No locks.** Every read here runs Git with `GIT_OPTIONAL_LOCKS=0`, as the
+  other status reads do, and Timber's `timber ls` does the same for its own
+  Git calls. So the app never takes the index lock from a Git command the
+  person runs, and its own reads do not rewrite the index, which would
+  otherwise wake the watcher again. The check also turns `core.fsmonitor`
+  off, so a background read never starts a monitor from the repository's
+  configuration.
+- **Not done here.** No fetch: ahead and behind counts are still as of the
+  person's last fetch. An already open diff updates when the status of the
+  worktree changes or the window gets the focus back.
 
 ## Reporting outcomes
 
@@ -462,7 +538,8 @@ Every operation reports how it ended in the same way.
 
 In `bun run dev:web` the browser console has `timberMock` for acting out the
 main process: `timberMock.setRepositories(list)`,
-`timberMock.announceChange("/work/timber")`,
+`timberMock.announceChange("/work/timber")`, `timberMock.attention()` (what
+the interface last said through `attend`; the mock watches nothing),
 `timberMock.failReads("Git is busy")` (pass `null` to let reads work again),
 `timberMock.failTimber("/work/timber", "Not a Git repository: /work/timber")`
 to make Timber fail on one repository (`null` again to undo), and `timberMock.pickFolder("/some/folder")` to choose what "Add repository"
@@ -940,6 +1017,8 @@ executable is not on the PATH (`[]` to undo).
    agents.
 6. **Background refresh.** File watching per worktree and periodic fetch.
    Detecting a force-push needs a fetch and the remote-tracking reflog.
+   Watching the Git metadata and checking the selected worktree are built
+   (see [watching for changes](#watching-for-changes)); fetching is not.
 
 ## Open decisions
 
@@ -1614,6 +1693,47 @@ Bun 1.4.2 and Git 2.43:
   through the RPC bridge, and an interactive agent session, were not tried
   there.
 
+Run for watching for changes (issue 24), Linux x64 (Pop!_OS 24.04, natively,
+COSMIC on Wayland) with Bun 1.4.2, Git 2.43, and Timber 0.1.1:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 923 tests passed and 1 was skipped, after merging agent
+  sessions from `main` (891 before). New ones cover which file
+  names count; grouping with a stand-in clock (one report after 300 ms of
+  quiet, one every 2 seconds during a long burst); a missing `worktrees`
+  folder, one that goes and comes back, a watch that cannot start and one
+  that breaks; the policy while hidden, shown, and refocused, the order of
+  stamp and report, the longer wait after a slow check, a change seen
+  across a failed check, and a check that never answers; the store's
+  `attend` calls; and, against real temporary repositories, a commit, a
+  nested branch, a checkout, adding and removing linked worktrees, a
+  checkout inside one, and staging a file in a repository removed and made
+  again in place each reported, file edits and the app's own status check
+  reported nothing, the stamp changed with an edit, a second edit of the
+  same file, and a new file, and reading it left every file, ref, and the
+  index as they were (with `GIT_OPTIONAL_LOCKS=0` taken out, that test
+  fails, because Git then rewrites the index). The real-repository tests
+  were run three times in a row without a failure.
+- `bun run start` with `TIMBER_APP_REPOS` set to a temporary repository and
+  `XDG_CONFIG_HOME` to a temporary folder, with a temporary log line in the
+  main process for each report and each `attend` (not committed). This ran
+  before the review fixes (re-watching a common directory made again in
+  place, keeping the last stamp across a failed check, the 10 second limit
+  on a check, and one watch update at a time), which were run in the tests
+  only. The window sent `attend` with the selected worktree once the list
+  loaded. From a
+  terminal: a commit was reported after 347 ms, `git worktree add` after
+  351 ms, editing a file after 4.0 s, and editing it again after 3.0 s; 200
+  new branches and 20 commits within 435 ms were reported once; 12 idle
+  seconds brought no report. Over 20 idle seconds the main process used 9
+  ticks of CPU at 100 per second (under half a percent of one core) with
+  one repository. No lock errors appeared.
+- Not run: hiding or minimizing the desktop window, so whether its webview
+  sends `visibilitychange` there is unverified; the hidden behaviour is
+  tested only in the policy and the store. Several repositories at once in
+  the desktop window. A rebase in the desktop window (the burst above stands
+  in for it). The window was not inspected by eye.
+
 Not run yet:
 
 - Open in editor for a file from the desktop window. It ran only through the
@@ -1648,6 +1768,8 @@ Not run yet:
 - Launching an editor on Windows or macOS. On Windows batch files are
   refused for now, and the stand-in editors of the tests are shell scripts.
 - Anything on macOS, terminals included.
+- Watching for changes on Windows or macOS, where `fs.watch` works
+  differently. It was run only on Linux.
 - Terminals on Windows, where `Bun.Terminal` does not exist: they answer
   that they are not supported, and that answer was only acted out on Linux.
 - A click on the window's close button by a person. The same request was

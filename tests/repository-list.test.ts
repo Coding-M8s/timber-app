@@ -366,3 +366,23 @@ describe("when Timber cannot list the worktrees", () => {
 		expect(await overridden.list()).toEqual([{ path: linked, name: "feat-x", available: true, failure: diagnostic, worktrees: [] }]);
 	});
 });
+
+describe.skipIf(realTimber === null)("the repositories to watch", () => {
+	test("are the saved ones, each with its common Git directory, without asking Timber", async () => {
+		const list = listOn();
+		expect(await list.watchTargets()).toEqual([]);
+		await list.addFolder(linked);
+		await list.addFolder(other);
+		const before = fingerprint(primary);
+		expect(await listOn({ reader: { find: async () => { throw new Error("Timber was asked"); }, reload: async () => { throw new Error("Timber was asked"); } } }).watchTargets()).toEqual([
+			{ path: primary, commonDir: join(primary, ".git") },
+			{ path: other, commonDir: join(other, ".git") },
+		]);
+		expect(fingerprint(primary)).toBe(before);
+	});
+
+	test("with the override, are the repositories it lists, each once", async () => {
+		const environment = { TIMBER_APP_REPOS: [linked, primary, plain].join(delimiter) };
+		expect(await listOn({ environment }).watchTargets()).toEqual([{ path: primary, commonDir: join(primary, ".git") }]);
+	});
+});

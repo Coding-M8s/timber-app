@@ -1,3 +1,4 @@
+import { type Attention, sameAttention } from "../../shared/attention";
 import { readableEditorSetting } from "../../shared/editor";
 import type { Engine } from "../../shared/engine";
 import { type FileChangeTarget, type FileChangesResult, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
@@ -12,7 +13,7 @@ import { listedOrder } from "../changes-format";
 import { describeOpenedInEditor } from "../editor-format";
 import { describeAdded, describeRemoved, folderName, worktreeLabel } from "../format";
 import { mergeOverlapping } from "./merge";
-import { type AppState, type ChangesView, type DialogRequest, type Operation, type WorkspaceTab, TOAST_MILLISECONDS, initialState, keepLastGood, reconcileSelection, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, timberReady, withTerminal, withoutSession } from "./state";
+import { type AppState, type ChangesView, type DialogRequest, type Operation, type WorkspaceTab, TOAST_MILLISECONDS, initialState, keepLastGood, reconcileSelection, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, timberReady, withTerminal, withoutSession } from "./state";
 
 /**
  * The single holder of what the interface shows: Timber's status, the
@@ -29,6 +30,12 @@ export interface AppStore {
 	 * that stops listening to the engine.
 	 */
 	start(): () => void;
+	/**
+	 * Say whether the window shows and has the focus. From `start` on, the
+	 * store tells the engine whenever this or the selected worktree changes,
+	 * so the machine refreshes in the background only what can be seen.
+	 */
+	windowChanged(window: WindowState): void;
 	/** Look for Timber again, for example after the person installed it. */
 	retryTimber(): Promise<void>;
 	/** Reload everything. */
@@ -174,6 +181,12 @@ export interface AppStore {
 	cancelQuit(): void;
 }
 
+/** How the window is, as the page sees it. */
+export interface WindowState {
+	visible: boolean;
+	focused: boolean;
+}
+
 /** Run `task` after `milliseconds`. Returns a function that calls it off. */
 export type Schedule = (task: () => void, milliseconds: number) => () => void;
 
@@ -193,6 +206,28 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	let lastToast = 0;
 	const toastTimers = new Map<number, () => void>();
 
+	// What the engine was last told through `attend`, and whether to tell it: only between `start` and its stop.
+	let windowState: WindowState = { visible: true, focused: true };
+	let attended: Attention | null = null;
+	let attending = false;
+
+	function attend(): void {
+		if (!attending) return;
+		const selected = selectedWorktree(state);
+		const next: Attention = {
+			...windowState,
+			selected: selected && timberReady(state) ? { repository: selected.repository.path, worktree: selected.worktree.path } : null,
+		};
+		if (attended && sameAttention(attended, next)) return;
+		attended = next;
+		try {
+			engine.attend(next);
+		} catch {
+			// The bridge may not be up yet. The next change tells the engine again.
+			attended = null;
+		}
+	}
+
 	function update(change: Partial<AppState>): void {
 		state = { ...state, ...change };
 		// A session on screen is seen, whatever put it there: a chip, the selection, the tab, or a session that started or ended.
@@ -201,6 +236,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			state = { ...state, unseenSessions: state.unseenSessions.filter(id => id !== onScreen.id) };
 		}
 		for (const listener of [...listeners]) listener();
+		attend();
 	}
 
 	function dismissToast(id: number): void {
@@ -770,9 +806,17 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				update({ terminals, unseenSessions: state.unseenSessions.filter(id => terminals.some(session => session.id === id)) });
 			};
 			engine.listTerminals().then(settle, () => settle(state.terminals));
+			attending = true;
+			attend();
 			return () => {
+				attending = false;
 				for (const stop of stops) stop();
 			};
+		},
+		windowChanged(next) {
+			if (next.visible === windowState.visible && next.focused === windowState.focused) return;
+			windowState = { visible: next.visible, focused: next.focused };
+			attend();
 		},
 		retryTimber: () => findTimber(() => engine.recheckTimber()),
 		refresh: () => reloadAll("all"),
