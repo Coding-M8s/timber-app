@@ -3,6 +3,7 @@ import { BrowserView, BrowserWindow, Updater, Utils } from "electrobun/main";
 import type { AppRPC } from "../shared/rpc";
 import { repositoryChanges } from "./changes";
 import { createDone } from "./done";
+import { createEditorLauncher } from "./editor";
 import { readBranches } from "./git-engine";
 import { createSavedLayout } from "./layout";
 import { createSavedPreferences } from "./preferences";
@@ -52,6 +53,7 @@ const preferences = createSavedPreferences(settings);
 const worktrees = createWorktreeCommands({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
 
 const done = createDone({ timber: () => timber.current(), findRepository: path => repositories.find(path) });
+const editor = createEditorLauncher({ preferences: () => preferences.load(), findRepository: path => repositories.find(path) });
 
 const rpc = BrowserView.defineRPC<AppRPC>({
 	maxRequestTime: 15_000,
@@ -72,6 +74,8 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			saveLayout: ({ layout: next }) => layout.save(next),
 			loadPreferences: () => preferences.load(),
 			savePreferences: ({ change }) => preferences.save(change),
+			// Starts the editor from the saved setting only. The request names the worktree, never the command (see ./editor.ts).
+			openInEditor: request => editor.open(request),
 			previewDone: request => done.preview(request),
 			// Removes a worktree. Only ever with a preview that `previewDone` handed out (see ./done.ts).
 			applyDone: request => done.apply(request),

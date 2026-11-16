@@ -3,6 +3,7 @@
  * behaves, never how Timber is configured. They are the `preferences` part of
  * the app's settings file. Everything here is pure.
  */
+import { type EditorSetting, readEditorSetting, sameEditorSetting, writeEditorSetting } from "./editor";
 
 /** The sides of the window the sidebar can be on. */
 export const SIDEBAR_SIDES = ["left", "right"] as const;
@@ -11,6 +12,8 @@ export type SidebarSide = typeof SIDEBAR_SIDES[number];
 export interface Preferences {
 	/** Which side of the window the sidebar is on. */
 	sidebarSide: SidebarSide;
+	/** The editor that "Open in editor" starts. Null until one is chosen. */
+	editor: EditorSetting | null;
 }
 
 /** How one preference is read from outside, compared, and written to the settings file. */
@@ -35,6 +38,12 @@ export const PREFERENCE_PARTS: { [Key in keyof Preferences]: PreferencePart<Pref
 		read: value => SIDEBAR_SIDES.includes(value as SidebarSide) ? value as SidebarSide : undefined,
 		same: (one, other) => one === other,
 		write: value => value,
+	},
+	editor: {
+		fallback: () => null,
+		read: readEditorSetting,
+		same: sameEditorSetting,
+		write: writeEditorSetting,
 	},
 };
 

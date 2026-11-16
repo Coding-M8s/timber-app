@@ -102,6 +102,7 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		saveLayout: async () => ({ outcome: "saved" }),
 		loadPreferences: async () => defaultPreferences(),
 		savePreferences: async change => ({ outcome: "saved", preferences: { ...defaultPreferences(), ...change } }),
+		openInEditor: async () => ({ outcome: "not-configured" }),
 	};
 	const push = (path: string) => {
 		for (const listener of [...listeners]) listener(path);

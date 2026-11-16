@@ -1499,3 +1499,64 @@ pre:focus-visible {
 	bottom: 0;
 	background: var(--bg-main);
 }
+
+/*
+ * Open in editor (issue 12): the control beside a worktree row, the one in
+ * the workspace header, the note when nothing opened, and the command field
+ * in Settings.
+ */
+.row-item {
+	position: relative;
+}
+
+/* While the control shows, the row keeps room for it, so it never covers the branch markers. */
+.row-item:hover .row,
+.row-item:focus-within .row,
+.row-item.selected .row {
+	padding-right: 34px;
+}
+
+.row-actions {
+	position: absolute;
+	top: 5px;
+	right: 4px;
+	display: flex;
+	opacity: 0;
+}
+
+/* Like Remove on a group: out of the way until the row is pointed at, reached by keyboard, or selected. */
+.row-item:hover .row-actions,
+.row-item:focus-within .row-actions,
+.row-item.selected .row-actions {
+	opacity: 1;
+}
+
+.row-editor {
+	width: 24px;
+	height: 24px;
+}
+
+.row-editor:hover {
+	background: var(--fill-selected);
+}
+
+.workspace-editor {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.workspace-done .workspace-editor {
+	margin-top: 0;
+}
+
+.editor-problem {
+	align-items: flex-start;
+	margin: 8px 0 0;
+	max-width: 640px;
+}
+
+.field-input.mono {
+	font-family: var(--font-mono);
+	font-size: 12px;
+}

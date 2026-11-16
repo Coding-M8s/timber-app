@@ -4,6 +4,7 @@ import { describeChanges, describeWorktreeSync, worktreeLabel } from "../format"
 import { TAB_EMPTY, TAB_LABELS, tabAfterKey } from "../shell";
 import { useAppState, useStore } from "../store/react";
 import { WORKSPACE_TABS, type WorkspaceTab, isRunning, selectedWorktree } from "../store/state";
+import { EditorProblemNote, OpenInEditorButton } from "./OpenInEditor";
 
 const tabId = (tab: WorkspaceTab) => `tab-${tab}`;
 const PANEL_ID = "workspace-panel";
@@ -57,6 +58,7 @@ export function Workspace() {
 					<span className="path">{worktree.path}</span>
 				</div>
 				<div className="workspace-done">
+					<OpenInEditorButton repository={repository.path} worktree={worktree} />
 					{/* Opens the Done dialog, which asks Timber for a preview. Nothing is removed before its Remove button. */}
 					<button
 						type="button"
@@ -69,6 +71,7 @@ export function Workspace() {
 					</button>
 					{worktree.primary && <span className="workspace-done-note">{DONE_PRIMARY_NOTE}</span>}
 				</div>
+				<EditorProblemNote />
 			</header>
 			<div className="tabs" role="tablist" aria-label="Views of this worktree" onKeyDown={onTabKey}>
 				{WORKSPACE_TABS.map(tab => (

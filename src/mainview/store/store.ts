@@ -1,9 +1,11 @@
+import { readableEditorSetting } from "../../shared/editor";
 import type { Engine } from "../../shared/engine";
 import { type Layout, clampSidebarWidth, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
-import type { BranchSuggestion, NewWorktreeRequest, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "../../shared/model";
+import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "../../shared/model";
 import type { Preferences } from "../../shared/preferences";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "../../shared/timber-done";
-import { describeAdded, describeRemoved, folderName } from "../format";
+import { describeOpenedInEditor } from "../editor-format";
+import { describeAdded, describeRemoved, folderName, worktreeLabel } from "../format";
 import { mergeOverlapping } from "./merge";
 import { type AppState, type DialogRequest, type Operation, type WorkspaceTab, TOAST_MILLISECONDS, initialState, keepLastGood, reconcileSelection, selectionFor, selectionForRepository, timberReady } from "./state";
 
@@ -64,6 +66,17 @@ export interface AppStore {
 	 * failed save with the reason.
 	 */
 	savePreferences(change: Partial<Preferences>): Promise<SavePreferencesResult>;
+	/**
+	 * Open a worktree in the editor from the preferences. With no usable
+	 * editor set, this opens Settings at Editor instead and asks nothing of
+	 * the engine.
+	 * Started: a toast. Anything else: `editorProblem`, which names the
+	 * command. One at a time per worktree. Never throws. Answers with what the
+	 * engine said, or null when it was not asked.
+	 */
+	openInEditor(request: OpenInEditorRequest): Promise<OpenInEditorResult | null>;
+	/** Put away the note about the last "Open in editor". */
+	dismissEditorProblem(): void;
 	/** Show one of the views of the selected worktree. */
 	showTab(tab: WorkspaceTab): void;
 	/**
@@ -278,6 +291,45 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		return result;
 	}
 
+	async function openInEditor(request: OpenInEditorRequest): Promise<OpenInEditorResult | null> {
+		const editorSettings = () => update({ dialog: { kind: "settings", section: "editor" } });
+		// No editor, or one whose command cannot be read: the place to fix that is Settings.
+		if (state.preferences.editor === null || !readableEditorSetting(state.preferences.editor)) {
+			editorSettings();
+			return null;
+		}
+		if (state.operations.some(operation => operation.kind === "open-in-editor" && operation.worktree === request.worktree)) return null;
+		const ask = async (): Promise<OpenInEditorResult> => {
+			try {
+				return await engine.openInEditor(request);
+			} catch (error) {
+				return { outcome: "failed", command: null, message: `The app did not hear whether the editor started: ${messageOf(error)}` };
+			}
+		};
+		let answer!: OpenInEditorResult;
+		await track({ kind: "open-in-editor", worktree: request.worktree }, async () => {
+			answer = await ask();
+		});
+		const repository = state.repositories.find(candidate => candidate.path === request.repository);
+		const worktree = repository?.worktrees.find(candidate => candidate.path === request.worktree);
+		switch (answer.outcome) {
+			case "opened":
+				update({ editorProblem: null });
+				showToast(describeOpenedInEditor(worktree ? worktreeLabel(worktree) : folderName(request.worktree)));
+				break;
+			case "not-configured":
+				// Saved somewhere else since this window read the preferences.
+				editorSettings();
+				break;
+			case "not-listed":
+				update({ editorProblem: { kind: answer.outcome, worktree: request.worktree, command: null, message: answer.message } });
+				break;
+			default:
+				update({ editorProblem: { kind: answer.outcome, worktree: request.worktree, command: answer.command, message: answer.message } });
+		}
+		return answer;
+	}
+
 	function findTimber(look: () => Promise<TimberStatus>): Promise<void> {
 		const wasReady = timberReady(state);
 		return track({ kind: "find-timber" }, async () => {
@@ -459,6 +511,10 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			if (state.layoutProblem) update({ layoutProblem: null });
 		},
 		savePreferences,
+		openInEditor,
+		dismissEditorProblem() {
+			if (state.editorProblem) update({ editorProblem: null });
+		},
 		showTab(tab) {
 			if (tab !== state.tab) update({ tab });
 		},

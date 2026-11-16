@@ -25,6 +25,7 @@ export async function createEngine(): Promise<Engine> {
 	// timberMock.endCommands("setup-fails") to choose how timber new and timber open end.
 	// For the Done dialog: timberMock.setChanges(path, { modified: ["a.ts"] }),
 	// timberMock.expirePreviewsAfter(5000), and timberMock.failBranchDeletion(true).
+	// For Open in editor: timberMock.endEditorLaunches("not-found") or ("fails").
 	// A removal takes a moment here, so the running state can be seen.
 	engine.setDoneDelay(900);
 	Object.assign(window, { timberMock: engine });

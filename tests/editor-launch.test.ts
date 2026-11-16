@@ -1,0 +1,259 @@
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { type EditorDependencies, createEditorLauncher } from "../src/bun/editor";
+import type { EditorSetting } from "../src/shared/editor";
+import type { Repository } from "../src/shared/model";
+import { defaultPreferences } from "../src/shared/preferences";
+
+const windows = process.platform === "win32";
+
+/** Wait until `check` holds, for at most `milliseconds`. */
+async function until(check: () => boolean, milliseconds = 5000): Promise<boolean> {
+	const end = Date.now() + milliseconds;
+	while (Date.now() < end) {
+		if (check()) return true;
+		await Bun.sleep(20);
+	}
+	return check();
+}
+
+// The stand-in editors are shell scripts, so these run where there is a POSIX shell.
+describe.skipIf(windows)("opening a worktree in an editor, with stand-in editors", () => {
+	let root: string;
+	let bin: string;
+	let repository: string;
+	let worktree: string;
+	let count = 0;
+
+	beforeAll(() => {
+		// Paths are compared as the editor sees them, so resolve the temporary folder once (it is a link on macOS).
+		root = realpathSync(mkdtempSync(join(tmpdir(), "timber-app-editor-")));
+		bin = join(root, "editor bin");
+		repository = join(root, "my repo");
+		worktree = join(root, "my repo-worktrees", "feat login");
+		for (const folder of [bin, repository, worktree]) mkdirSync(folder, { recursive: true });
+	});
+
+	afterAll(() => {
+		rmSync(root, { recursive: true, force: true });
+	});
+
+	/** The repository as the app's list would answer, with these worktree paths. */
+	const listed = (paths: string[]): Repository => ({
+		path: repository, name: "my repo", available: true, failure: null,
+		worktrees: paths.map(path => ({
+			id: path, path, canonicalPath: path, branch: "feat/login", head: null, primary: false, detached: false, locked: false, prunable: false,
+			pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, sync: null,
+		})),
+	});
+
+	/**
+	 * A stand-in editor in the folder with a space in its name. It writes the
+	 * folder it runs in and then each argument on a line of its own to a file
+	 * beside it, so the test sees exactly what it was given. `body` runs after.
+	 */
+	function standInEditor(body = "") {
+		const name = `edit-${++count}`;
+		const path = join(bin, name);
+		const record = join(bin, `${name}.calls`);
+		writeFileSync(path, [
+			"#!/bin/sh",
+			`{ pwd; for argument in "$@"; do printf '%s\\n' "$argument"; done; } > "${record}.tmp"`,
+			`mv "${record}.tmp" "${record}"`,
+			body,
+			"",
+		].join("\n"));
+		chmodSync(path, 0o755);
+		return {
+			name,
+			path,
+			ran: () => existsSync(record),
+			/** The folder it ran in, then its arguments. */
+			calls: async () => {
+				expect(await until(() => existsSync(record))).toBe(true);
+				return readFileSync(record, "utf8").split("\n").slice(0, -1);
+			},
+		};
+	}
+
+	function launcher(editor: EditorSetting | null, found: Repository | null = listed([worktree]), more: Partial<EditorDependencies> = {}) {
+		return createEditorLauncher({
+			preferences: async () => ({ ...defaultPreferences(), editor }),
+			findRepository: async () => found,
+			environment: { ...process.env, PATH: `${bin}:/usr/bin:/bin` },
+			watchMilliseconds: 0,
+			...more,
+		});
+	}
+
+	const request = () => ({ repository, worktree });
+
+	test("a command on the PATH gets the worktree path as one argument, and runs in the worktree", async () => {
+		const editor = standInEditor();
+		const result = await launcher({ command: `${editor.name} --new-window`, terminal: false }).open(request());
+		expect(result).toEqual({ outcome: "opened", command: `${editor.name} --new-window '${worktree}'` });
+		expect(await editor.calls()).toEqual([worktree, "--new-window", worktree]);
+	});
+
+	test("a full path with spaces works, and {path} puts the path where the command says", async () => {
+		const editor = standInEditor();
+		const result = await launcher({ command: `"${editor.path}" --folder={path} --wait`, terminal: false }).open(request());
+		expect(result).toEqual({ outcome: "opened", command: `'${editor.path}' '--folder=${worktree}' --wait` });
+		expect(await editor.calls()).toEqual([worktree, `--folder=${worktree}`, "--wait"]);
+	});
+
+	test("dollar signs in the path arrive as they are, where {path} stands", async () => {
+		const priced = join(root, "my repo-worktrees", "cash$&x $$ it$'s $1");
+		mkdirSync(priced, { recursive: true });
+		const editor = standInEditor();
+		const result = await launcher({ command: `${editor.name} --folder={path} --wait`, terminal: false }, listed([priced])).open({ repository, worktree: priced });
+		expect(result.outcome).toBe("opened");
+		expect(await editor.calls()).toEqual([priced, `--folder=${priced}`, "--wait"]);
+	});
+
+	test("nothing in the path is read by a shell", async () => {
+		const strange = join(root, "my repo-worktrees", `it's "$(touch pwned)" ; x`);
+		mkdirSync(strange, { recursive: true });
+		const editor = standInEditor();
+		const result = await launcher({ command: editor.name, terminal: false }, listed([strange])).open({ repository, worktree: strange });
+		expect(result.outcome).toBe("opened");
+		expect(await editor.calls()).toEqual([strange, strange]);
+		expect(existsSync(join(strange, "pwned"))).toBe(false);
+		expect(existsSync(join(bin, "pwned"))).toBe(false);
+	});
+
+	test("a missing executable names the command and the PATH the app was started with", async () => {
+		const result = await launcher({ command: "no-such-editor --new", terminal: false }).open(request());
+		expect(result).toEqual({
+			outcome: "not-found",
+			command: `no-such-editor --new '${worktree}'`,
+			executable: "no-such-editor",
+			message: `Could not start the editor. "no-such-editor" was not found on the PATH the app was started with: ${bin}:/usr/bin:/bin. A change to PATH needs a restart of the app, or use the full path in Settings, Editor.`,
+		});
+		const empty = await launcher({ command: "code", terminal: false }, listed([worktree]), { environment: { HOME: root } }).open(request());
+		expect(empty.outcome === "not-found" && empty.message).toContain("the PATH the app was started with: (empty).");
+		const absolute = await launcher({ command: `"${join(bin, "missing")}"`, terminal: false }).open(request());
+		expect(absolute.outcome === "not-found" && absolute.message).toBe(`Could not start the editor. There is no executable file at ${join(bin, "missing")}.`);
+	});
+
+	test("a relative path is refused, because its meaning would depend on the folder", async () => {
+		const editor = standInEditor();
+		const result = await launcher({ command: `./${editor.name}`, terminal: false }).open(request());
+		expect(result.outcome).toBe("failed");
+		expect(result.outcome === "failed" && result.message).toContain("relative path");
+		await Bun.sleep(100);
+		expect(editor.ran()).toBe(false);
+	});
+
+	test("nothing starts for a worktree Timber does not list, a repository outside the list, or a missing folder", async () => {
+		const editor = standInEditor();
+		const gone = join(root, "my repo-worktrees", "gone");
+		const cases: [Repository | null, string, string][] = [
+			[null, worktree, "is not a repository in this app's list"],
+			[{ ...listed([worktree]), available: false }, worktree, "Git cannot read the repository"],
+			[{ ...listed([]), failure: "Timber is too old" }, worktree, "Timber could not list the worktrees"],
+			[listed([join(root, "elsewhere")]), worktree, `Timber lists no worktree at ${worktree}`],
+			[listed([gone]), gone, `The folder ${gone} is missing`],
+		];
+		for (const [found, path, words] of cases) {
+			const result = await launcher({ command: editor.name, terminal: false }, found).open({ repository, worktree: path });
+			expect(result.outcome).toBe("not-listed");
+			expect(result.outcome === "not-listed" && result.message).toContain(words);
+		}
+		await Bun.sleep(100);
+		expect(editor.ran()).toBe(false);
+	});
+
+	test("a worktree path that is not a full path is refused before anything else", async () => {
+		const editor = standInEditor();
+		const result = await launcher({ command: editor.name, terminal: true }, listed(["feat login"])).open({ repository, worktree: "feat login" });
+		expect(result).toEqual({ outcome: "not-listed", message: "feat login is not a full path, so it cannot be a worktree Timber lists. No editor was started." });
+	});
+
+	test("on Windows a batch file is refused, because cmd.exe would read the path again", async () => {
+		const batch = join(bin, "code.cmd");
+		writeFileSync(batch, "#!/bin/sh\n");
+		chmodSync(batch, 0o755);
+		const result = await launcher({ command: "code.cmd", terminal: false }, listed([worktree]), { platform: "win32" }).open(request());
+		expect(result.outcome).toBe("failed");
+		expect(result.outcome === "failed" && result.message).toContain("not tested on Windows yet");
+	});
+
+	test("a terminal editor is answered only for a listed worktree, so no command is built from another path", async () => {
+		const result = await launcher({ command: "nvim", terminal: true }, listed([])).open(request());
+		expect(result.outcome).toBe("not-listed");
+	});
+
+	test("with no editor set, or an editor that runs in a terminal, nothing starts", async () => {
+		const editor = standInEditor();
+		expect(await launcher(null).open(request())).toEqual({ outcome: "not-configured" });
+		const terminal = await launcher({ command: editor.name, terminal: true }).open(request());
+		expect(terminal).toMatchObject({ outcome: "terminal-editor", command: `${editor.name} '${worktree}'` });
+		expect(terminal.outcome === "terminal-editor" && terminal.message).toContain("terminal sessions");
+		await Bun.sleep(100);
+		expect(editor.ran()).toBe(false);
+	});
+
+	test("an editor that stops right away with an error is a failure, and one that hands over and exits with 0 is not", async () => {
+		const failing = standInEditor("exit 3");
+		const failed = await launcher({ command: failing.name, terminal: false }, listed([worktree]), { watchMilliseconds: 3000 }).open(request());
+		expect(failed).toEqual({
+			outcome: "failed",
+			command: `${failing.name} '${worktree}'`,
+			message: "The editor exited with code 3 right after it started. Try the command in a terminal to see why.",
+		});
+		const handing = standInEditor("exit 0");
+		const opened = await launcher({ command: handing.name, terminal: false }, listed([worktree]), { watchMilliseconds: 3000 }).open(request());
+		expect(opened.outcome).toBe("opened");
+	});
+
+	test("an editor that keeps running does not hold up the answer longer than the watch", async () => {
+		const running = standInEditor("sleep 5");
+		const started = Date.now();
+		const result = await launcher({ command: running.name, terminal: false }, listed([worktree]), { watchMilliseconds: 200 }).open(request());
+		expect(result.outcome).toBe("opened");
+		expect(Date.now() - started).toBeLessThan(2000);
+	});
+
+	test("the editor outlives the process that started it, even when that process's whole group is killed", async () => {
+		const survived = join(bin, "survived");
+		const control = join(bin, "control survived");
+		// It writes its process ID, waits, and then says it is still there.
+		const editor = standInEditor(`echo $$ > "${join(bin, "editor.pid")}"\nsleep 1\necho yes > "${survived}"`);
+		const helper = join(bin, "helper.ts");
+		const ready = join(bin, "helper ready");
+		writeFileSync(helper, `
+			import { createEditorLauncher } from ${JSON.stringify(join(import.meta.dir, "..", "src", "bun", "editor.ts"))};
+			const repository = ${JSON.stringify(listed([worktree]))};
+			const launcher = createEditorLauncher({
+				preferences: async () => ({ sidebarSide: "left", editor: { command: ${JSON.stringify(editor.name)}, terminal: false } }),
+				findRepository: async () => repository,
+				environment: { ...process.env, PATH: ${JSON.stringify(`${bin}:/usr/bin:/bin`)} },
+				watchMilliseconds: 0,
+			});
+			// A child started the ordinary way, in the helper's own process group, to show what the kill reaches.
+			Bun.spawn(["/bin/sh", "-c", ${JSON.stringify(`sleep 1; echo yes > "${control}"`)}], { stdio: ["ignore", "ignore", "ignore"] });
+			const result = await launcher.open({ repository: ${JSON.stringify(repository)}, worktree: ${JSON.stringify(worktree)} });
+			await Bun.write(${JSON.stringify(ready)}, JSON.stringify(result));
+			setInterval(() => {}, 1000);
+		`);
+		// The helper leads a process group of its own, as an app started from a terminal or a launcher does.
+		const app = Bun.spawn([process.execPath, helper], { stdio: ["ignore", "ignore", "inherit"], detached: true });
+		expect(await until(() => existsSync(ready))).toBe(true);
+		expect(JSON.parse(readFileSync(ready, "utf8"))).toMatchObject({ outcome: "opened" });
+		expect(await until(() => existsSync(join(bin, "editor.pid")))).toBe(true);
+
+		// Closing the app: every process in its group is killed at once.
+		process.kill(-app.pid, "SIGKILL");
+		await app.exited;
+		expect(app.signalCode).toBe("SIGKILL");
+
+		expect(await until(() => existsSync(survived), 5000)).toBe(true);
+		expect(await editor.calls()).toEqual([worktree, worktree]);
+		// The ordinary child had the same second to wait, and was killed with the app.
+		await Bun.sleep(300);
+		expect(existsSync(control)).toBe(false);
+	});
+});

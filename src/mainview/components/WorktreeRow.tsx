@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { type ReactNode, useId } from "react";
 import type { Worktree } from "../../shared/model";
 import { type RowMarker, type RowMarkerKind, describeRow, describeRowMarkers, describeWorktreeKind, worktreeLabel } from "../format";
 
@@ -45,15 +45,20 @@ interface WorktreeRowProps {
 	worktree: Worktree;
 	selected: boolean;
 	onSelect: () => void;
+	/**
+	 * Controls for the worktree beside the row, such as "Open in editor". The
+	 * row is itself a button, so they sit next to it, not inside it.
+	 */
+	actions?: ReactNode;
 }
 
 /** One worktree in the sidebar. What it is marked with comes from `describeRowMarkers`; this only draws it. */
-export function WorktreeRow({ worktree, selected, onSelect }: WorktreeRowProps) {
+export function WorktreeRow({ worktree, selected, onSelect, actions }: WorktreeRowProps) {
 	const descriptionId = useId();
 	const markers = describeRowMarkers(worktree);
 	const at = (place: RowMarker["place"]) => markers.filter(marker => marker.place === place).map(marker => <Marker key={marker.kind} marker={marker} />);
 	const flags = at("state");
-	return (
+	const row = (
 		<button
 			type="button"
 			className={selected ? "row selected" : "row"}
@@ -73,5 +78,12 @@ export function WorktreeRow({ worktree, selected, onSelect }: WorktreeRowProps) 
 			</span>
 			{markers.length > 0 && <span id={descriptionId} className="row-description" hidden>{describeRow(markers)}</span>}
 		</button>
+	);
+	if (actions === undefined) return row;
+	return (
+		<div className={selected ? "row-item selected" : "row-item"}>
+			{row}
+			<span className="row-actions">{actions}</span>
+		</div>
 	);
 }

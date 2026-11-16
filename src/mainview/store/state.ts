@@ -22,7 +22,9 @@ export type Operation =
 	| { kind: "reload-all" }
 	| { kind: "reload-repository"; repository: string }
 	| { kind: "add-repository" }
-	| { kind: "remove-repository"; repository: string };
+	| { kind: "remove-repository"; repository: string }
+	/** Starting the editor for a worktree, named by its registered path. */
+	| { kind: "open-in-editor"; worktree: string };
 
 /** Why the latest reload failed. `repository` is null when it was a reload of everything. */
 export interface ReloadError {
@@ -56,7 +58,7 @@ export type DialogRequest =
 	| { kind: "settings"; section?: SettingsSection };
 
 /** The sections of the Settings dialog, in the order they are listed. */
-export const SETTINGS_SECTIONS = ["layout"] as const;
+export const SETTINGS_SECTIONS = ["layout", "editor"] as const;
 export type SettingsSection = typeof SETTINGS_SECTIONS[number];
 
 /** The views of the selected worktree, in the order of their tabs. */
@@ -66,6 +68,19 @@ export type WorkspaceTab = typeof WORKSPACE_TABS[number];
 /** Why the layout could not be read on start, or could not be saved. What is on screen stays as it is. */
 export interface LayoutProblem {
 	action: "read" | "save";
+	message: string;
+}
+
+/**
+ * Why "Open in editor" did not open a worktree. It stays until it is
+ * dismissed, or until opening a worktree in the editor next works.
+ */
+export interface EditorProblem {
+	kind: "terminal-editor" | "not-listed" | "not-found" | "failed";
+	/** The worktree's registered path. */
+	worktree: string;
+	/** The exact command, as shown, or null when none was built. */
+	command: string | null;
 	message: string;
 }
 
@@ -103,6 +118,8 @@ export interface AppState {
 	preferences: Preferences;
 	/** Why the saved preferences could not be read on start. Null once a save worked. */
 	preferencesProblem: string | null;
+	/** Why the last "Open in editor" opened nothing. Null once one worked, or after the person dismissed it. */
+	editorProblem: EditorProblem | null;
 	/** Which view of the selected worktree shows. */
 	tab: WorkspaceTab;
 	/** Null when no dialog is open. */
@@ -122,6 +139,7 @@ export const initialState: AppState = {
 	layoutProblem: null,
 	preferences: defaultPreferences(),
 	preferencesProblem: null,
+	editorProblem: null,
 	tab: "workspace",
 	dialog: null,
 };

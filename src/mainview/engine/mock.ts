@@ -1,6 +1,8 @@
 import type { Engine } from "../../shared/engine";
 import { type Layout, defaultLayout, forgetRepository, readLayout } from "../../shared/layout";
-import { type AddRepositoryResult, type BranchSuggestion, type Repository, type SyncState, type TimberStatus, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
+import { type AddRepositoryResult, type BranchSuggestion, type OpenInEditorRequest, type OpenInEditorResult, type Repository, type SyncState, type TimberStatus, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
+import { describeCommandLine } from "../../shared/command-line";
+import { TERMINAL_EDITOR_REASON, editorCommand } from "../../shared/editor";
 import { type Preferences, applyPreferenceChange, defaultPreferences } from "../../shared/preferences";
 import {
 	type DoneApplyResult, type DoneOptions, type DonePreviewResult, DONE_PREVIEW_MINUTES, describeDoneApply, describeDonePreview, readDonePreview,
@@ -260,7 +262,19 @@ export interface MockEngine extends Engine {
 	failBranchDeletion(fail: boolean): void;
 	/** How long a removal takes from now on, to look at the running state. */
 	setDoneDelay(milliseconds: number): void;
+	/**
+	 * Decide how "Open in editor" ends from now on, for an editor that is set
+	 * and a worktree that is listed: "opens" (the start), "not-found" (the
+	 * executable is not on the PATH), or "fails" (the editor stops right away
+	 * with an error).
+	 */
+	endEditorLaunches(ending: EditorEnding): void;
+	/** Every editor the mock acted out starting, oldest first. */
+	launchedEditors(): { request: OpenInEditorRequest; command: string }[];
 }
+
+export const EDITOR_ENDINGS = ["opens", "not-found", "fails"] as const;
+export type EditorEnding = typeof EDITOR_ENDINGS[number];
 
 export interface MockEngineOptions {
 	/** How long an acted `timber new` or `timber open` takes. None by default; the browser build waits, so the running state shows. */
@@ -412,6 +426,38 @@ export function createMockEngine(
 		return ended(null, `Removed worktree at ${path}\n`);
 	};
 
+	// "Open in editor", acted out with the same checks as the main process, and nothing started.
+	let editorEnding: EditorEnding = "opens";
+	const launches: { request: OpenInEditorRequest; command: string }[] = [];
+	const openInEditor = (request: OpenInEditorRequest): OpenInEditorResult => {
+		const { editor } = preferences;
+		if (editor === null) return { outcome: "not-configured" };
+		const repository = current.find(candidate => candidate.path === request.repository);
+		if (!repository) return { outcome: "not-listed", message: `${request.repository} is not a repository in this app's list. No editor was started.` };
+		if (!repository.available) return { outcome: "not-listed", message: `Git cannot read the repository at ${request.repository}. No editor was started.` };
+		const read = asRead(repository);
+		if (read.failure !== null) return { outcome: "not-listed", message: `Timber could not list the worktrees of ${request.repository}, so no editor was started: ${read.failure}` };
+		const target = read.worktrees.find(candidate => candidate.path === request.worktree);
+		if (!target) return { outcome: "not-listed", message: `Timber lists no worktree at ${request.worktree} in ${request.repository}. No editor was started. Refresh the list.` };
+		if (!target.pathExists) return { outcome: "not-listed", message: `The folder ${request.worktree} is missing. No editor was started.` };
+		const built = editorCommand(editor, request.worktree);
+		if (!built.ok) return { outcome: "failed", command: null, message: `${built.message} Change it in Settings, Editor.` };
+		const command = describeCommandLine([built.executable, ...built.arguments]);
+		if (editor.terminal) return { outcome: "terminal-editor", command, message: TERMINAL_EDITOR_REASON };
+		switch (editorEnding) {
+			case "not-found":
+				return {
+					outcome: "not-found", command, executable: built.executable,
+					message: `Could not start the editor. "${built.executable}" was not found on the PATH the app was started with: /usr/local/bin:/usr/bin:/bin. A change to PATH needs a restart of the app, or use the full path in Settings, Editor.`,
+				};
+			case "fails":
+				return { outcome: "failed", command, message: "The editor exited with code 1 right after it started. Try the command in a terminal to see why." };
+			case "opens":
+				launches.push({ request: structuredClone(request), command });
+				return { outcome: "opened", command };
+		}
+	};
+
 	const look = async () => structuredClone(typeof timber === "function" ? timber() : timber);
 	const read = async <Result>(result: () => Result): Promise<Result> => {
 		if (failure !== null) throw new Error(failure);
@@ -493,6 +539,13 @@ export function createMockEngine(
 		failPreferenceSaves(message) {
 			preferencesFailure = message;
 		},
+		openInEditor: async request => structuredClone(openInEditor(request)),
+		endEditorLaunches(next) {
+			// Called from the browser console too, where nothing checks the word.
+			if (!EDITOR_ENDINGS.includes(next)) throw new Error(`Unknown ending: ${String(next)}`);
+			editorEnding = next;
+		},
+		launchedEditors: () => structuredClone(launches),
 		setChanges(path, files) {
 			if (files.ignored) ignored.set(path, files.ignored);
 			current = current.map(repository => ({

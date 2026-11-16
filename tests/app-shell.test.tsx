@@ -362,7 +362,9 @@ describe("settings dialog", () => {
 		const nav = /<button type="button" id="([^"]+)" class="settings-nav-item selected" aria-current="page" aria-controls="([^"]+)"/.exec(markup);
 		expect(nav).not.toBeNull();
 		expect(markup).toContain(`<div class="settings-panel" id="${nav![2]}" aria-labelledby="${nav![1]}">`);
-		expect(markup).not.toMatch(/class="settings-panel"[^>]*hidden=""/);
+		// Every other section stays mounted, hidden, so what was typed in it survives a switch.
+		expect(markup.match(/class="settings-panel"[^>]*hidden=""/g)?.length).toBe(1);
+		expect(markup).toMatch(/class="settings-panel" id="[^"]*-panel-editor"[^>]*hidden=""/);
 	});
 
 	test("says when the saved settings could not be read", async () => {
