@@ -92,6 +92,8 @@ describe("readFetchFailure", () => {
 	test("reads refused or missing credentials as authentication, before the hang-up that follows them", () => {
 		const authentication = [
 			"fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+			// Git 2.56, as the CI runner printed it.
+			"fatal: unable to get password from user\nfatal: remote helper 'askme' aborted session",
 			"git@github.com: Permission denied (publickey).\nfatal: Could not read from remote repository.",
 			"remote: Invalid username or password.\nfatal: Authentication failed for 'https://github.com/acme/app.git/'",
 			"Host key verification failed.\nfatal: Could not read from remote repository.",

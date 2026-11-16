@@ -124,6 +124,8 @@ const AUTHENTICATION_PATTERNS: readonly RegExp[] = [
 	/authentication failed/i,
 	/permission denied \(/i,
 	/could not read (?:username|password)/i,
+	// Newer Git, when it may not ask: "unable to get password from user".
+	/unable to get (?:username|password)/i,
 	/terminal prompts disabled/i,
 	/host key verification failed/i,
 	/invalid username or password/i,
