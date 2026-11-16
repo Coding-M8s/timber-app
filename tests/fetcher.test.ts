@@ -739,7 +739,8 @@ describe.skipIf(windows)("createFetcher against real repositories", () => {
 		const { fetcher, changed } = realFetcher({ ...testEnvironment, PATH: `${root}:${process.env.PATH}` });
 		const result = await fetcher.fetchNow(mine);
 		expect(result.outcome).toBe("failed");
-		expect(result.outcome === "failed" && result.fetch.failure?.kind).toBe("authentication");
+		// The whole failure, so a mismatch shows what Git said.
+		expect(result.outcome === "failed" ? result.fetch.failure : null).toMatchObject({ kind: "authentication" });
 		expect(changed).toEqual([]);
 	});
 });
