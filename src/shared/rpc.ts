@@ -1,5 +1,6 @@
 import type { RPCSchema } from "electrobun/view";
-import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenWorktreeRequest, RemoveRepositoryResult, Repository, TimberStatus, WorktreeCommandResult } from "./model";
+import type { Layout } from "./layout";
+import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenWorktreeRequest, RemoveRepositoryResult, Repository, SaveLayoutResult, TimberStatus, WorktreeCommandResult } from "./model";
 
 /**
  * The typed bridge between the Bun main process and the interface.
@@ -21,6 +22,8 @@ export type AppRPC = {
 			newWorktree: { params: NewWorktreeRequest; response: WorktreeCommandResult };
 			/** As `newWorktree`: no time limit. */
 			openWorktree: { params: OpenWorktreeRequest; response: WorktreeCommandResult };
+			loadLayout: { params: {}; response: Layout };
+			saveLayout: { params: { layout: Layout }; response: SaveLayoutResult };
 		};
 		messages: {};
 	}>;

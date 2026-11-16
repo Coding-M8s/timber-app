@@ -313,8 +313,9 @@ and the workspace cannot disagree.
 
 - **The store (`src/mainview/store`).** It holds Timber's status, the
   repositories with their worktrees, the selection, operations in progress,
-  the latest reload error, the toasts, and which dialog is open (`dialog`,
-  one at a time, drawn by `components/Dialogs.tsx`). `state.ts` is the data and the pure rules,
+  the latest reload error, the toasts, the layout, the tab that shows, and
+  which dialog is open (`dialog`, one at a time, drawn by
+  `components/Dialogs.tsx`). `state.ts` is the data and the pure rules,
   `store.ts` talks to the engine, and `react.tsx` hands the store to
   components. Components call its actions and keep no copy of its data.
 - **Pushed changes.** The main process reports a change by calling
@@ -394,6 +395,51 @@ branch is already checked out is refused whatever the ending, and so is text
 for `timber open` that matches no worktree and no listed branch.
 `timberMock.setBranches("/work/timber", list)` replaces the branches offered
 for picking (`null` acts out a list that cannot be read).
+`timberMock.failLayoutSaves("disk full")` makes saving the layout fail
+(`null` again to undo).
+
+## The shell and the saved layout
+
+The window is a title bar over a sidebar and a workspace
+(`src/mainview/components`). The words and keyboard rules of that frame are
+pure functions in `src/mainview/shell.ts`.
+
+- **Title bar.** The logo, a breadcrumb of the selected repository and
+  worktree, and the command palette button.
+- **Sidebar.** The filter and Refresh, one collapsible group per repository
+  with a "+" for a new worktree, "Add repository" after the list, and the
+  Settings cog fixed at the bottom. Its edge is a resize handle: drag it, or
+  focus it and use the arrow keys, Home, and End. The width stays between 200
+  and 480 pixels, and never above half the window.
+- **Workspace.** A header for the selected worktree and two tabs, Workspace
+  and Changes, as one tab list: the arrows, Home, and End move between tabs.
+  Each tab shows an empty state until its own content exists. Which tab shows
+  is in the store and is not remembered between runs.
+- **Not built yet.** The palette button and the Settings cog are disabled and
+  say so in their tooltip. The "+" only asks: it puts a `DialogRequest` in the
+  store (`openDialog`), and the New dialog is what answers it.
+- **Long names.** The breadcrumb, the group headers, and the workspace header
+  cut a long name short and carry the whole name in their `title`.
+- **The saved layout.** The sidebar width and the collapsed groups, each
+  named by the path of its primary checkout, are the `layout` part of the
+  settings file (`Layout` in `src/shared/layout.ts`). The interface never
+  keeps them itself: it reads them once through `loadLayout` and hands the
+  whole layout to `saveLayout`. A file without a `layout` part is valid and
+  means the defaults. A `layout` part that cannot be read falls back to the
+  defaults part by part and never makes the file count as damaged, so it
+  cannot cost the repository list.
+- **One holder of the file.** The repository list and the layout save through
+  the same `SettingsHolder` (`src/bun/settings.ts`), one change at a time,
+  each building on what the last one saved. Removing a repository also
+  forgets its collapsed group.
+- **When it is saved.** Collapsing or opening a group saves at once. A resize
+  shows at once and saves when the drag ends or the key is let go, never
+  while it moves. One save runs at a time, and saves asked for meanwhile share
+  one follow-up save of whatever is on screen by then.
+- **When saving fails.** The window stays as the person arranged it. One note
+  at the bottom of the sidebar says that the layout could not be saved and
+  why, until it is dismissed or the next save works. It is not a toast, and
+  repeated failures do not add more notes.
 
 ## Milestones
 
@@ -717,6 +763,48 @@ WSL with Bun 1.4.2, Git 2.43, and Timber 0.1.1:
   window was not inspected by eye: a grab of the X display under WSLg came
   out black.
 
+Run for the app shell (issue 9), Linux x64 under WSL with Bun 1.4.2, Git
+2.43, and Timber 0.1.1:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 485 tests passed and 1 was skipped (it only runs in CI). They
+  include the layout part of the settings file with an older file and a
+  damaged layout part, saving it against a real temporary settings file
+  together with adding and removing real temporary repositories, the store's
+  layout, tabs, and dialog request, and the rendered shell.
+- `bun run build:web`, then the built interface driven in headless Chrome 133
+  by a temporary script (not committed), at 1280 by 820 and at 960 by 820.
+  Selecting a worktree in the other repository changed the breadcrumb and the
+  workspace header. Tab reached, in order, the filter, Refresh, each group's
+  header, Remove, and "+", every row, "Add repository", the resize handle,
+  the tab that shows, and the tab panel, each with the 2 pixel focus outline;
+  the disabled palette button and Settings cog were skipped. On the tab list
+  the right arrow showed Changes and moved focus to it, a second one wrapped
+  to Workspace, and End and Home worked. On the resize handle five repeats of
+  the right arrow widened the sidebar from 272 to 352 pixels with no save
+  until the key was let go, then one; End gave 480 and Home 200. A pointer
+  drag of 88 pixels gave 360 with no save while it moved and one on release,
+  and drags far past either side stopped at 480 and 200. Collapsing a group
+  by click and by Enter hid its rows and reached the mock engine. "+" opened
+  nothing. With saves failing, three changes left one note and no toast. With
+  very long names the breadcrumb, the group header, and at 960 wide the
+  workspace header were cut short with the whole name in `title`, the page
+  did not scroll sideways, and with the sidebar at its widest the workspace
+  kept 479 pixels at 960 wide. The console stayed empty. Screenshots of the
+  default view, both widths with long names, the focused handle, the Changes
+  tab, and the note were looked at.
+- `bun run start` under WSLg, twice, with `XDG_CONFIG_HOME` pointing at a
+  temporary folder that held an older settings file with one repository and
+  no layout, and a temporary script and log lines in the main process (not
+  committed). The first run read the default layout, three right-arrow keys
+  on the handle and a click on the group header led to two saves, and the
+  file then held the repository and the layout with a width of 288 and the
+  group collapsed. That width showed that keys sent in one go were counted
+  from a stale width, which was then fixed. The second run read that layout
+  back, the same keys gave 336, and the file held 336 with the group open
+  and the repository still listed. The window was not inspected by eye in
+  these runs.
+
 Not run yet:
 
 - Branch status rows in the desktop window, and a row read out by a screen
@@ -731,6 +819,8 @@ Not run yet:
   test could show the difference `--no-agent` makes.
 - A ticket name that is ambiguous across trackers or remotes, which needs a
   network. The ambiguous case that was run is the base.
+- A pointer drag of the resize handle in the desktop window, and the shell's
+  keyboard use there. Only headless Chrome was driven that way.
 - A toast after adding or removing a repository in the desktop window. Only
   the sample dialog's toast was run there.
 - The stand-in executables of the helper's tests on Windows.

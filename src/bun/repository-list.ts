@@ -1,13 +1,19 @@
 import { basename } from "node:path";
 import type { AddRepositoryResult, RemoveRepositoryResult, Repository } from "../shared/model";
+import { forgetRepository } from "../shared/layout";
 import type { Settings } from "../shared/settings";
 import { commonDirectory, overrideRepositoryPaths } from "./git-engine";
 import { type RepositoryReader, failedRepository } from "./repository-reader";
-import { readSettings, writeSettings } from "./settings";
+import { type SettingsHolder, createSettingsHolder } from "./settings";
 
 export interface RepositoryListOptions {
 	/** The settings file that holds the list. */
 	settingsFile: string;
+	/**
+	 * The holder of that file, when something else saves to it as well, as the
+	 * layout does. Without one the list holds the file on its own.
+	 */
+	settings?: SettingsHolder;
 	/** Open the native folder picker. Null when the person cancelled. */
 	pickFolder: () => Promise<string | null>;
 	/** Reads a repository and its worktrees. */
@@ -49,23 +55,13 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 	const { settingsFile, pickFolder, reader, environment = process.env, warn = console.warn } = options;
 
 	// Read once, then kept in step with the file: memory changes only after a save worked.
-	let saved: Promise<Settings> | null = null;
-	const settings = () => saved ??= readSettings(settingsFile, warn);
-
 	// Changes run one after another, so two of them cannot save over each other.
-	let last: Promise<unknown> = Promise.resolve();
-	function inTurn<Result>(task: () => Promise<Result>): Promise<Result> {
-		const run = last.then(task);
-		last = run.catch(() => {});
-		return run;
-	}
+	const holder = options.settings ?? createSettingsHolder(settingsFile, warn);
+	const settings = () => holder.current();
+	const save = (next: Settings) => holder.save(next);
+	const inTurn = <Result>(task: () => Promise<Result>) => holder.inTurn(task);
 
 	const overridden = () => overrideRepositoryPaths(environment) !== null;
-
-	async function save(next: Settings): Promise<void> {
-		await writeSettings(settingsFile, next);
-		saved = Promise.resolve(next);
-	}
 
 	function addFolder(folder: string): Promise<AddRepositoryResult> {
 		if (overridden()) return Promise.resolve({ outcome: "overridden" });
@@ -141,8 +137,11 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 				const current = await settings();
 				const repositories = current.repositories.filter(entry => entry.path !== path);
 				if (repositories.length === current.repositories.length) return { outcome: "removed" };
+				// A collapsed group is remembered by this path, so it goes with the entry.
+				const next: Settings = { ...current, repositories };
+				if (current.layout) next.layout = forgetRepository(current.layout, path);
 				try {
-					await save({ ...current, repositories });
+					await save(next);
 				} catch (error) {
 					return { outcome: "failed", message: `Could not save settings to ${settingsFile}: ${messageOf(error)}` };
 				}

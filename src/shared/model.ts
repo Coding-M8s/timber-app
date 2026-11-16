@@ -103,6 +103,11 @@ export type RemoveRepositoryResult =
 	| { outcome: "overridden" }
 	| { outcome: "failed"; message: string };
 
+/** What came of asking to remember the layout. A failure never changes what is on screen. */
+export type SaveLayoutResult =
+	| { outcome: "saved" }
+	| { outcome: "failed"; message: string };
+
 /**
  * What a Timber command printed, standard output and standard error together
  * in the order they arrived. It is limited in size: when the command printed

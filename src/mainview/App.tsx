@@ -1,7 +1,8 @@
 import { Dialogs } from "./components/Dialogs";
 import { Sidebar } from "./components/Sidebar";
+import { SidebarResizer } from "./components/SidebarResizer";
 import { TimberNotice } from "./components/TimberNotice";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { TitleBar } from "./components/TitleBar";
 import { Toasts } from "./components/Toasts";
 import { Workspace } from "./components/Workspace";
@@ -32,9 +33,12 @@ function Body() {
 			/>
 		);
 	}
+	// The sidebar takes its width from here, so a narrow window can still overrule it in the stylesheet.
+	const widths = { "--sidebar-width": `${state.layout.sidebarWidth}px` } as CSSProperties;
 	return (
-		<div className="body">
+		<div className="body" style={widths}>
 			<Sidebar />
+			<SidebarResizer />
 			<Workspace />
 		</div>
 	);

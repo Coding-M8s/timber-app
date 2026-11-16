@@ -33,5 +33,7 @@ export function createDesktopEngine(): Engine {
 			changeListeners.add(listener);
 			return () => void changeListeners.delete(listener);
 		},
+		loadLayout: () => rpc.request.loadLayout({}),
+		saveLayout: layout => rpc.request.saveLayout({ layout }),
 	};
 }

@@ -1,6 +1,11 @@
+import type { KeyboardEvent } from "react";
 import { describeChanges, describeWorktreeSync, worktreeLabel } from "../format";
+import { TAB_EMPTY, TAB_LABELS, tabAfterKey } from "../shell";
 import { useAppState, useStore } from "../store/react";
-import { isRunning, selectedWorktree } from "../store/state";
+import { WORKSPACE_TABS, type WorkspaceTab, isRunning, selectedWorktree } from "../store/state";
+
+const tabId = (tab: WorkspaceTab) => `tab-${tab}`;
+const PANEL_ID = "workspace-panel";
 
 export function Workspace() {
 	const store = useStore();
@@ -27,21 +32,52 @@ export function Workspace() {
 	}
 
 	const { worktree } = selection;
+	const label = worktreeLabel(worktree);
 	const changes = describeChanges(worktree);
 	const sync = describeWorktreeSync(worktree);
+	const empty = TAB_EMPTY[state.tab];
+
+	// As in any tab list: the arrows, Home, and End move between tabs, and the tab reached shows at once.
+	const onTabKey = (event: KeyboardEvent<HTMLDivElement>) => {
+		const next = tabAfterKey(state.tab, event.key);
+		if (next === null) return;
+		event.preventDefault();
+		store.showTab(next);
+		document.getElementById(tabId(next))?.focus();
+	};
+
 	return (
 		<main className="workspace">
 			<header className="workspace-header">
-				<h1 className="workspace-title">{worktreeLabel(worktree)}</h1>
+				<h1 className="workspace-title" title={label}>{label}</h1>
 				<div className="workspace-meta">
 					{sync && <span>{sync}</span>}
 					<span>{changes}</span>
 					<span className="path">{worktree.path}</span>
 				</div>
 			</header>
-			<div className="empty">
-				<p className="empty-title">Nothing running here yet</p>
-				<p className="empty-text">Agent and terminal panes are the next milestone. See docs/architecture.md.</p>
+			<div className="tabs" role="tablist" aria-label="Views of this worktree" onKeyDown={onTabKey}>
+				{WORKSPACE_TABS.map(tab => (
+					<button
+						key={tab}
+						type="button"
+						role="tab"
+						id={tabId(tab)}
+						className={tab === state.tab ? "tab selected" : "tab"}
+						aria-selected={tab === state.tab}
+						aria-controls={PANEL_ID}
+						// Only the tab that shows is a tab stop. The arrows reach the others.
+						tabIndex={tab === state.tab ? 0 : -1}
+						onClick={() => store.showTab(tab)}
+					>
+						{TAB_LABELS[tab]}
+					</button>
+				))}
+			</div>
+			{/* A tab stop of its own, because an empty state holds nothing else to focus. */}
+			<div className="empty tabpanel" role="tabpanel" id={PANEL_ID} aria-labelledby={tabId(state.tab)} tabIndex={0}>
+				<p className="empty-title">{empty.title}</p>
+				<p className="empty-text">{empty.text}</p>
 			</div>
 		</main>
 	);

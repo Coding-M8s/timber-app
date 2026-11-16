@@ -1,4 +1,5 @@
-import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenWorktreeRequest, RemoveRepositoryResult, Repository, TimberStatus, WorktreeCommandResult } from "./model";
+import type { Layout } from "./layout";
+import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenWorktreeRequest, RemoveRepositoryResult, Repository, SaveLayoutResult, TimberStatus, WorktreeCommandResult } from "./model";
 
 /**
  * Everything the interface may ask of the machine it runs on.
@@ -63,4 +64,16 @@ export interface Engine {
 	 * the path of its primary checkout. Returns a function that stops listening.
 	 */
 	onRepositoryChanged(listener: (path: string) => void): () => void;
+	/**
+	 * How the window was arranged when the layout was last saved: the sidebar
+	 * width and the collapsed repository groups. The defaults when nothing was
+	 * saved yet.
+	 */
+	loadLayout(): Promise<Layout>;
+	/**
+	 * Remember the layout for the next run. The whole layout is given each time,
+	 * so the latest call wins. Removing a repository also forgets its collapsed
+	 * group.
+	 */
+	saveLayout(layout: Layout): Promise<SaveLayoutResult>;
 }
