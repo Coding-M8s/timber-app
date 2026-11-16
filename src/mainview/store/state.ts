@@ -39,6 +39,15 @@ export type ListNotice =
 	| { kind: "overridden" }
 	| { kind: "failed"; action: "add" | "remove"; message: string };
 
+/** A short note that an operation worked. It disappears on its own. */
+export interface Toast {
+	id: number;
+	text: string;
+}
+
+/** How long a toast stays before it disappears on its own. */
+export const TOAST_MILLISECONDS = 5000;
+
 /** The one picture of the app that every part of the interface reads. Never changed in place. */
 export interface AppState {
 	timber: TimberState;
@@ -54,6 +63,8 @@ export interface AppState {
 	error: ReloadError | null;
 	/** Null once an add or remove worked, or after the person dismissed it. */
 	notice: ListNotice | null;
+	/** Outcomes that worked, oldest first. Failures are never toasts: they stay where the person can act on them. */
+	toasts: readonly Toast[];
 }
 
 export const initialState: AppState = {
@@ -64,6 +75,7 @@ export const initialState: AppState = {
 	operations: [],
 	error: null,
 	notice: null,
+	toasts: [],
 };
 
 /** Nothing that depends on Timber is offered until a usable one is found. */

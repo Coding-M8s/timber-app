@@ -95,6 +95,44 @@ The sidebar shows exactly the worktrees Timber lists, in Timber's order
   that works clears it. Whether a saved folder is a repository at all is
   still Git's answer, so a missing folder is unavailable, not a failure.
 
+### Commands that report through a result file
+
+New, open, done, and rebase say how they ended in a result file, not on
+standard output. One helper runs all of them, so no dialog reads a result its
+own way: `runTimberWithResultFile` in `src/bun/timber-run.ts`. No dialog calls
+it yet; the New, Open, and Done dialogs are its first users.
+
+- **The file.** Each run gets a fresh file name in a new folder that only
+  this user can open, made in the system's temporary folder. Timber creates
+  the file itself and refuses one that exists, so a retry never reuses a
+  name. A temporary folder that turns out to lie inside the folder the
+  command runs in is refused before anything runs.
+- **Running.** Timber runs as an executable plus an argument array, with
+  standard input closed and no time limit, because setup scripts take as long
+  as they take. The file is read only after the process has ended, and the
+  folder is removed whatever happened.
+- **Accepting.** `src/shared/timber-result.ts` reads the file, and is pure.
+  A result counts only when the file holds one `schemaVersion` 1 record for
+  the command that ran, its exit code is the one the process really had, and
+  outcome and exit code go together. A missing, empty, or malformed file is a
+  failure even when the process exited with 0 and printed something that
+  looks like success.
+- **Outcomes.** Succeeded and cancelled always come from a checked record. A
+  failure carries Timber's diagnostic and the record when there is one, so a
+  dialog can tell "created, but setup failed" (`materialized`) from "nothing
+  happened". With no usable record, what the command did is unknown: the
+  message says so, and the caller reads the list again and never retries by
+  itself.
+- **Output.** Standard output and standard error are kept together in the
+  order they arrive, but only the last 64 KiB, with terminal escape sequences
+  removed (`src/shared/captured-output.ts`). It is never parsed. It is also
+  private, because setup scripts can print anything: it goes to the person in
+  the failure's details area and is never written to a log. Callers of the
+  helper must not log it either.
+- **The command shown.** `describeTimberCommand` words a command for the
+  person, with `<temporary file>` where the result file goes, since its real
+  name does not exist before the run. That text is for reading only.
+
 ### Finding Timber
 
 Nothing that depends on Timber is offered until a usable one is found.
@@ -166,7 +204,7 @@ and the workspace cannot disagree.
 
 - **The store (`src/mainview/store`).** It holds Timber's status, the
   repositories with their worktrees, the selection, operations in progress,
-  and the latest reload error. `state.ts` is the data and the pure rules,
+  the latest reload error, and the toasts. `state.ts` is the data and the pure rules,
   `store.ts` talks to the engine, and `react.tsx` hands the store to
   components. Components call its actions and keep no copy of its data.
 - **Pushed changes.** The main process reports a change by calling
@@ -200,6 +238,33 @@ and the workspace cannot disagree.
   changed, the reason is kept as a note below the list until it is dismissed
   or the next add or remove works.
 - **Refresh.** The Refresh control reloads everything.
+
+## Reporting outcomes
+
+Every operation reports how it ended in the same way.
+
+- **Toasts.** An operation that worked says so in a toast, for example
+  "Added docs-site". The store holds the toasts and takes each one away after
+  five seconds (`showToast` in `src/mainview/store/store.ts`); it can also be
+  dismissed. Only successes are toasts. A failure stays where the person can
+  act on it.
+- **Dialogs.** Every dialog that runs a Timber command is an
+  `OperationDialog` (`src/mainview/components`) driven by a submission
+  (`src/mainview/store/submission.ts`, through `useSubmission`). The command
+  is shown before it runs. While it runs, the fields and buttons are
+  disabled, a progress bar shows, the dialog cannot be closed, and a second
+  submission does nothing. When it worked, the dialog closes and the toast
+  shows. When it failed, the dialog stays open with the failure, ready for a
+  correction and a retry.
+- **Failures.** A failed Timber command is always shown by
+  `TimberFailureDetails`: the diagnostic, and a details area, closed at
+  first, with the command and what it printed. The data is `TimberFailure` in
+  `src/shared/model.ts`, which `failureOf` makes from a run of the helper
+  above.
+- **Trying it.** No real dialog exists yet. In `bun run dev:web`, add
+  `?feedback=demo` to the address for a sample dialog that acts out
+  `timber new` with a choice of endings and runs nothing. The desktop app
+  never loads it.
 
 In `bun run dev:web` the browser console has `timberMock` for acting out the
 main process: `timberMock.setRepositories(list)`,
@@ -360,10 +425,47 @@ WSL with Bun 1.4.2, Git 2.43, and Timber 0.1.1:
   non-ASCII path intact, this repository's own checkout, and a plain folder
   as unavailable. The window was not inspected by eye in this run.
 
+Run for error and result feedback (issue 5), Linux x64 under WSL with Bun
+1.4.2, Git 2.43, and Timber 0.1.1:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 264 tests passed and 1 was skipped (it only runs in CI). They
+  cover the helper against stand-in executables that write a result file as
+  Timber does: success, failure, cancelled, a missing, an empty, and a cut
+  result file with exit code 0, an exit code that differs from the record, a
+  killed process, output beyond the limit, and that nothing is logged. After
+  every one of them the temporary folder is empty and the repository folder
+  is unchanged. Three tests run the installed Timber: `timber new` creates a
+  real worktree and the record says so, the same command again fails with
+  Timber's diagnostic, and arguments Timber refuses leave no result.
+- `bun run build:web`, then the built interface with `?feedback=demo`, driven
+  in headless Chrome 157 by a temporary script (not committed). While the
+  sample command ran, the fields, Cancel, and the submit button were
+  disabled, the progress bar showed, and a second submit, Escape, and Cancel
+  changed nothing. The refused run left the dialog open with Timber's
+  diagnostic and the details area closed. The run without a result file was
+  reported as a failure. The run that worked closed the dialog and showed one
+  toast, which was still there after 4.5 seconds and gone after 5.2. Removing
+  a repository showed "Removed api-server from the list", and its dismiss
+  button took it away. Screenshots of the running state, the failure with its
+  details open, and the toast were looked at.
+
+- `bun run start` under WSLg with `XDG_CONFIG_HOME` pointing at a temporary
+  folder: the window opened and found Timber. Then the same with the sample
+  dialog loaded in the desktop webview and driven by a temporary script
+  (neither is committed): the dialog opened as a modal in the middle of the
+  window, the running state disabled the fields and both buttons and held
+  through a second submit, Escape, and Cancel, the refused run kept the
+  dialog open with the diagnostic and closed details, and the run that
+  worked closed the dialog and showed the toast in the bottom right corner,
+  still there after 4.5 seconds and gone after 5.4. The window was not
+  inspected by eye in this run.
+
 Not run yet:
 
-- The CI workflow with its new step that installs Timber. It runs on the pull
-  request for this change.
-
+- The helper from inside the running desktop app. Nothing calls it yet.
+- A toast after adding or removing a repository in the desktop window. Only
+  the sample dialog's toast was run there.
+- The stand-in executables of the helper's tests on Windows.
 - Anything on macOS.
 - A native Linux desktop session, on Wayland or X11. Only WSLg has been run.

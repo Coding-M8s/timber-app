@@ -102,3 +102,26 @@ export type RemoveRepositoryResult =
 	| { outcome: "removed" }
 	| { outcome: "overridden" }
 	| { outcome: "failed"; message: string };
+
+/**
+ * What a Timber command printed, standard output and standard error together
+ * in the order they arrived. It is limited in size: when the command printed
+ * more, only the end is kept and `truncated` is true.
+ *
+ * Private: setup scripts can print anything, so this is shown to the person
+ * and never written to a log.
+ */
+export interface CapturedOutput {
+	text: string;
+	truncated: boolean;
+}
+
+/** A Timber command that failed, as every dialog reports it. */
+export interface TimberFailure {
+	/** The command as it was shown before it ran. Null when the failure came before any command ran. */
+	command: string | null;
+	/** Why it failed: the diagnostic from Timber's record, or the app's own words when there is no usable record. */
+	diagnostic: string;
+	/** Null when nothing was captured, for example because the command never started. */
+	output: CapturedOutput | null;
+}

@@ -1,0 +1,124 @@
+import type { CapturedOutput, TimberFailure } from "./model";
+import { type Fields, type ListedRepository, type ListedWorktree, SUPPORTED_SCHEMA_VERSION, isFields, isTextOrNull, readRepository, readWorktree } from "./timber-ls";
+
+/**
+ * Reading the result file of a Timber command, version 1 of Timber's machine
+ * interface (docs/ide-contract.md in the Timber repository). Pure: the main
+ * process runs Timber and hands the file's text here (see src/bun/timber-run.ts).
+ */
+
+/** The Timber commands that write a result file. */
+export type ResultCommand = "new" | "open" | "done" | "rebase";
+
+/** Stands for the result file wherever a command is shown. The real path is a fresh temporary file. */
+export const RESULT_FILE_PLACEHOLDER = "<temporary file>";
+
+/** A record that passed every check. */
+export interface ResultRecord {
+	/** Null when Timber failed before it knew which repository it was in. */
+	repository: ListedRepository | null;
+	/** The worktree as Timber saw it during the command, not a promise that it is still there. */
+	worktree: ListedWorktree | null;
+	/** True when this run created a worktree that Timber verified. False does not prove that nothing was created. */
+	materialized: boolean;
+	/** The whole record, for what only one command reports, such as `rebase`. */
+	fields: Fields;
+}
+
+/**
+ * How a Timber command ended. Succeeded and cancelled always come from a
+ * checked record. Failed has `record` null when there was no record to trust:
+ * what the command changed is then unknown, so read the list again and never
+ * retry by itself.
+ */
+export type TimberResult =
+	| { outcome: "succeeded"; record: ResultRecord }
+	/** The person closed Timber's own chooser before anything was changed. */
+	| { outcome: "cancelled"; record: ResultRecord }
+	| { outcome: "failed"; diagnostic: string; record: ResultRecord | null };
+
+/** One run of a Timber command with a result file. */
+export interface TimberRun {
+	/** The command for display, with `RESULT_FILE_PLACEHOLDER` for the result file. */
+	command: string;
+	result: TimberResult;
+	output: CapturedOutput;
+}
+
+const PLAIN_ARGUMENT = /^[A-Za-z0-9_@%+=:,./-]+$/;
+
+/**
+ * A Timber command as one line of text, for showing before it runs and
+ * beside a failure. Quoted as a POSIX shell would need, but for reading only:
+ * Timber is always run from the argument array, never from this text.
+ */
+export function describeTimberCommand(timberArguments: readonly string[]): string {
+	const shown = timberArguments.map(argument =>
+		argument === RESULT_FILE_PLACEHOLDER || PLAIN_ARGUMENT.test(argument) ? argument : `'${argument.replaceAll("'", `'\\''`)}'`);
+	return ["timber", ...shown].join(" ");
+}
+
+function describeExit(exitCode: number | null): string {
+	return exitCode === null ? "did not exit by itself" : `exited with code ${exitCode}`;
+}
+
+/**
+ * Read the result file of one run. `text` is what the file held after the
+ * process ended, or null when there was no file. `exitCode` is the exit code
+ * of that process, or null when it did not exit by itself.
+ *
+ * A result counts only when the file holds one version 1 record for this
+ * command and its exit code is the one the process really had. A missing,
+ * empty, or malformed file is a failure whatever the process printed.
+ */
+export function readTimberResult(command: ResultCommand, text: string | null, exitCode: number | null): TimberResult {
+	const name = `timber ${command}`;
+	const failed = (diagnostic: string, record: ResultRecord | null = null): TimberResult => ({ outcome: "failed", diagnostic, record });
+	const noResult = (detail: string) => failed(
+		`${name} ${describeExit(exitCode)} and ${detail}, so what it did is unknown. The details below show what it printed.`,
+	);
+	const unreadable = (detail: string) => noResult(`left a result this app cannot read (${detail})`);
+
+	if (text === null) return noResult("left no result");
+	if (text.trim() === "") return noResult("left an empty result");
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(text);
+	} catch {
+		return unreadable("it is not valid JSON");
+	}
+	if (!isFields(parsed)) return unreadable("it is not a JSON object");
+
+	if (parsed.schemaVersion !== SUPPORTED_SCHEMA_VERSION) {
+		const found = typeof parsed.schemaVersion === "number" || typeof parsed.schemaVersion === "string" ? String(parsed.schemaVersion) : "none";
+		return failed(`${name} answered with schema version ${found}, and this app reads version ${SUPPORTED_SCHEMA_VERSION} only, so what it did is unknown. Update Timber app, or install a Timber that matches it.`);
+	}
+
+	const { outcome, diagnostic, materialized } = parsed;
+	if (parsed.command !== command) return unreadable(`it is not a record for ${command}`);
+	if (outcome !== "succeeded" && outcome !== "failed" && outcome !== "cancelled") return unreadable("its outcome is not one this app knows");
+	if (typeof parsed.exitCode !== "number" || !Number.isInteger(parsed.exitCode)) return unreadable("it has no exit code");
+	if (!isTextOrNull(diagnostic)) return unreadable("its diagnostic is not text");
+	if (typeof materialized !== "boolean") return unreadable("it does not say whether a worktree was created");
+
+	if (parsed.exitCode !== exitCode) {
+		return failed(`${name} ${describeExit(exitCode)}, but its result says exit code ${parsed.exitCode}. The result was not used, so what it did is unknown.`);
+	}
+	// The contract ties the two together: succeeded and cancelled exit with 0, and failed never does.
+	if ((outcome === "failed") === (parsed.exitCode === 0)) return unreadable(`its outcome "${outcome}" does not go with exit code ${parsed.exitCode}`);
+
+	const repository = parsed.repository === null ? null : readRepository(parsed.repository);
+	if (parsed.repository !== null && repository === null) return unreadable("its repository is not a repository record");
+	const worktree = parsed.worktree === null ? null : readWorktree(parsed.worktree);
+	if (parsed.worktree !== null && worktree === null) return unreadable("its worktree is not a worktree record");
+
+	const record: ResultRecord = { repository, worktree, materialized, fields: parsed };
+	if (outcome === "failed") return failed(diagnostic ?? `${name} failed without saying why.`, record);
+	return { outcome, record };
+}
+
+/** The failure to show for a run, or null when it did not fail. */
+export function failureOf(run: TimberRun): TimberFailure | null {
+	if (run.result.outcome !== "failed") return null;
+	return { command: run.command, diagnostic: run.result.diagnostic, output: run.output };
+}

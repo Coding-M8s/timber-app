@@ -1,4 +1,4 @@
-import type { Repository, SyncState, TimberStatus, Worktree } from "../shared/model";
+import type { CapturedOutput, Repository, SyncState, TimberStatus, Worktree } from "../shared/model";
 import { TIMBER_LS_COMMAND } from "../shared/timber-ls";
 import { REQUIRED_TIMBER_VERSION, TIMBER_OVERRIDE_VARIABLE } from "../shared/timber-version";
 import type { ListNotice } from "./store/state";
@@ -53,9 +53,15 @@ export function describeReloadError(
 }
 
 /** The last part of a path, whichever separator it uses. */
-function folderName(path: string): string {
+export function folderName(path: string): string {
 	return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
+
+/** The toast after a repository was added to the list. */
+export const describeAdded = (name: string) => `Added ${name}`;
+
+/** The toast after a repository was taken off the list. It says "from the list" because nothing on disk changed. */
+export const describeRemoved = (name: string) => `Removed ${name} from the list`;
 
 /** What Remove does, said wherever it is offered. */
 export const REMOVE_REPOSITORY_HINT = "Removes it from this list only. Nothing on disk is changed.";
@@ -144,3 +150,12 @@ export function describeWorktreeDetail(worktree: Worktree): string {
 
 /** What to say on a repository whose worktrees Timber could not list. */
 export const TIMBER_LIST_FAILURE_TITLE = `${TIMBER_LS_COMMAND} failed`;
+
+/** Said beside captured output wherever it is shown. */
+export const OUTPUT_PRIVACY_NOTE = "This can hold private content from setup scripts. It is shown here only and is not written to any log.";
+
+/** The line above captured output: what it is, and whether the start is missing. */
+export function describeOutput(output: CapturedOutput): string {
+	if (output.text.trim() === "") return "The command printed nothing.";
+	return output.truncated ? "The command printed more than is kept. This is the end of it." : "What the command printed.";
+}
