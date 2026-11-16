@@ -111,6 +111,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			// Starts a shell only in a worktree Timber lists (see ./terminals.ts).
 			openTerminal: request => terminals.open(request),
 			readTerminal: ({ id }) => terminals.read(id),
+			renameTerminal: ({ id, name }) => terminals.rename(id, name),
 			closeTerminal: ({ id }) => terminals.close(id),
 			confirmQuit: () => quitGuard.confirm(),
 			writeClipboard: ({ text }) => Utils.clipboardWriteText(text),

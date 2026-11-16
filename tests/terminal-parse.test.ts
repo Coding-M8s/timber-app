@@ -52,8 +52,8 @@ describe("terminal rules", () => {
 		expect(describeTerminalExit({ kind: "exited", exitCode: 0, signal: null })).toBe("Exited with code 0");
 		expect(describeTerminalExit({ kind: "exited", exitCode: null, signal: "SIGKILL" })).toBe("Stopped by SIGKILL");
 		expect(describeTerminalState({ state: { kind: "running" } })).toBe("Running");
-		expect(closeTerminalLabel({ state: { kind: "running" } })).toBe("Close terminal and end its processes");
-		expect(closeTerminalLabel({ state: { kind: "exited", exitCode: 1, signal: null } })).toBe("Dismiss this terminal");
+		expect(closeTerminalLabel({ name: "Terminal 2", state: { kind: "running" } })).toBe("Close Terminal 2 and end its processes");
+		expect(closeTerminalLabel({ name: "build", state: { kind: "exited", exitCode: 1, signal: null } })).toBe("Dismiss build");
 		expect(shellName("/usr/bin/zsh")).toBe("zsh");
 	});
 

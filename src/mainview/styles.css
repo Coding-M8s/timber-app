@@ -432,7 +432,8 @@ pre:focus-visible {
 }
 
 /* With nothing between them, the change counts still sit at the far end. */
-.row-sub + .count {
+.row-sub + .count,
+.row-sub + .row-sessions {
 	margin-left: auto;
 }
 
@@ -457,6 +458,24 @@ pre:focus-visible {
 }
 
 .sync,
+/* Sessions running in the worktree: blue, as for running agents, with the count. */
+.row-sessions {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font-family: var(--font-mono);
+	font-size: 11px;
+	color: var(--ahead);
+}
+
+.row-sessions-dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--ahead);
+}
+
 .count {
 	flex: none;
 	font-family: var(--font-mono);
@@ -1561,7 +1580,7 @@ pre:focus-visible {
 	font-size: 12px;
 }
 
-/* Terminal sessions: one per worktree, in the Workspace tab. */
+/* Terminal sessions: any number per worktree, in the Workspace tab, one chip each. */
 .workspace-panel {
 	flex: 1 1 auto;
 	min-height: 0;
@@ -1588,32 +1607,161 @@ pre:focus-visible {
 	color: var(--text-3);
 }
 
+.sessions {
+	flex: 1 1 auto;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+}
+
+.session-strip {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	min-height: 36px;
+	padding: 3px 6px;
+	border-bottom: 1px solid var(--line);
+}
+
+.session-chips {
+	flex: 0 1 auto;
+	min-width: 0;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	overflow-x: auto;
+	scrollbar-width: thin;
+}
+
 .session-chip {
+	flex: none;
 	display: inline-flex;
 	align-items: center;
-	gap: 6px;
-	padding: 2px 8px;
 	border-radius: 6px;
+	color: var(--text-2);
+}
+
+.session-chip:hover {
+	background: var(--fill-hover);
+}
+
+.session-chip.selected {
 	background: var(--fill-selected);
 	color: var(--text);
 }
 
-.session-dot {
-	width: 6px;
-	height: 6px;
-	border-radius: 50%;
-	background: var(--text-3);
+.session-chip-tab {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	max-width: 240px;
+	padding: 4px 4px 4px 9px;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: inherit;
+	font-size: 12.5px;
 }
 
-/* Blue for what runs, as for running agents. */
+.session-kind {
+	font-family: var(--font-mono);
+	font-size: 11px;
+	color: var(--text-3);
+}
+
+.session-name {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.session-exit {
+	font-family: var(--font-mono);
+	font-size: 11px;
+	color: var(--text-3);
+}
+
+/* Being closed: it can take up to two seconds for its processes to end. */
+.session-chip.closing {
+	opacity: 0.5;
+}
+
+.session-chip.exited .session-name {
+	color: var(--text-3);
+}
+
+/* New output since the session was last on screen: a small ring beside the name. */
+.session-unseen {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	border: 2px solid var(--text);
+	box-sizing: border-box;
+}
+
+.session-chip-close {
+	width: 22px;
+	height: 22px;
+	margin-right: 2px;
+	border: 0;
+	border-radius: 5px;
+	background: transparent;
+	color: var(--text-3);
+	font-size: 14px;
+	line-height: 1;
+}
+
+.session-chip-close:hover {
+	background: var(--fill-hover);
+	color: var(--text);
+}
+
+.session-rename {
+	flex: none;
+	width: 160px;
+	height: 26px;
+	padding: 0 8px;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: var(--bg-main);
+	color: var(--text);
+	font: inherit;
+	font-size: 12.5px;
+}
+
+.session-add {
+	width: 26px;
+	height: 26px;
+	font-size: 16px;
+}
+
+.session-dot {
+	flex: none;
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	box-sizing: border-box;
+	border: 1.5px solid var(--text-3);
+}
+
+/* Blue and filled for what runs, as for running agents. Hollow once it ended. */
 .session-chip.running .session-dot {
+	border-color: var(--ahead);
 	background: var(--ahead);
 }
 
 .session-shell {
+	flex: none;
 	font-family: var(--font-mono);
 	font-size: 11.5px;
 	color: var(--text-3);
+	white-space: nowrap;
+}
+
+.session-state {
+	flex: none;
+	white-space: nowrap;
 }
 
 .session-hint {

@@ -4,10 +4,10 @@ import { App } from "../src/mainview/App";
 import { DoneDialogView } from "../src/mainview/components/DoneDialog";
 import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { createDoneSession } from "../src/mainview/store/done-session";
-import { terminalFor } from "../src/mainview/store/state";
+import { shownSession } from "../src/mainview/store/state";
 import { createAppStore } from "../src/mainview/store/store";
 import type { Draw } from "../src/mainview/terminal-feed";
-import { DONE_TERMINAL_WARNING, describeOrphanTerminal } from "../src/mainview/terminal-format";
+import { describeDoneSessionsWarning, describeOrphanTerminal } from "../src/mainview/terminal-format";
 import type { TerminalSession } from "../src/shared/terminal";
 
 const settle = async () => {
@@ -30,18 +30,29 @@ async function withTerminal() {
 	const started = await startedStore();
 	await started.store.openTerminal({ repository: TIMBER, worktree: FEATURE, cols: 90, rows: 30 });
 	await settle();
-	const session = terminalFor(started.store.getState(), featureId)!;
+	const session = shownSession(started.store.getState(), featureId)!;
 	return { ...started, session };
 }
 
 const render = (store: ReturnType<typeof createAppStore>) => renderToStaticMarkup(<App store={store} />);
 
 describe("terminals in the store", () => {
-	test("opening a terminal shows its session, and opening again answers the same one", async () => {
+	test("opening a terminal shows its session, and opening again starts another that shows", async () => {
 		const { store, engine, session } = await withTerminal();
-		expect(session).toMatchObject({ repository: TIMBER, path: FEATURE, worktree: featureId, state: { kind: "running" } });
+		expect(session).toMatchObject({ kind: "terminal", name: "Terminal", repository: TIMBER, path: FEATURE, worktree: featureId, state: { kind: "running" } });
 		expect(engine.terminalSize(session.id)).toEqual({ cols: 90, rows: 30 });
 		await store.openTerminal({ repository: TIMBER, worktree: FEATURE, cols: 80, rows: 24 });
+		const terminals = store.getState().terminals;
+		expect(terminals.map(candidate => candidate.name)).toEqual(["Terminal", "Terminal 2"]);
+		expect(shownSession(store.getState(), featureId)!.id).toBe(terminals[1]!.id);
+	});
+
+	test("two clicks at once start one session", async () => {
+		const { store } = await startedStore();
+		await Promise.all([
+			store.openTerminal({ repository: TIMBER, worktree: FEATURE, cols: 80, rows: 24 }),
+			store.openTerminal({ repository: TIMBER, worktree: FEATURE, cols: 80, rows: 24 }),
+		]);
 		expect(store.getState().terminals).toHaveLength(1);
 	});
 
@@ -86,7 +97,7 @@ describe("terminals in the store", () => {
 		const { store, engine, session } = await withTerminal();
 		engine.endTerminal(session.id, 2);
 		await settle();
-		expect(terminalFor(store.getState(), featureId)!.state).toEqual({ kind: "exited", exitCode: 2, signal: null });
+		expect(shownSession(store.getState(), featureId)!.state).toEqual({ kind: "exited", exitCode: 2, signal: null });
 		const markup = render(store);
 		expect(markup).toContain("Exited with code 2");
 		expect(markup).toContain(">Dismiss</button>");
@@ -103,7 +114,7 @@ describe("terminals in the store", () => {
 		expect(render(store)).toContain(">Open terminal</button>");
 		store.select(featureId);
 		const markup = render(store);
-		expect(markup).toContain(`aria-label="Terminal in ${FEATURE}"`);
+		expect(markup).toContain(`aria-labelledby="session-chip-${session.id}"`);
 		expect(store.getState().terminals.map(candidate => candidate.id)).toEqual([session.id]);
 	});
 
@@ -170,7 +181,7 @@ describe("terminals in the store", () => {
 				repository="timber"
 				worktree={sampleRepositories[0]!.worktrees.find(worktree => worktree.id === featureId)!}
 				gone={false}
-				terminalRuns
+				runningSessions={1}
 				session={createDoneSession({ repository: TIMBER, path: FEATURE, preview: store.previewDone, apply: store.applyDone, listed: () => true }).getState()}
 				submission={{ running: false, failure: null }}
 				baseDraft=""
@@ -182,7 +193,7 @@ describe("terminals in the store", () => {
 				onClose={() => {}}
 			/>,
 		);
-		expect(markup).toContain(DONE_TERMINAL_WARNING);
+		expect(markup).toContain(describeDoneSessionsWarning(1));
 		const preview = await store.previewDone({ repository: TIMBER, path: FEATURE, options: { keepBranch: false, keepIgnored: false, base: null } });
 		if (preview.outcome !== "previewed") throw new Error("No preview");
 		const result = await store.applyDone({ repository: TIMBER, path: FEATURE, preview: preview.id });
@@ -203,7 +214,7 @@ describe("terminals in the store", () => {
 		store.cancelQuit();
 		expect(store.getState().quitRequest).toBeNull();
 		expect(engine.quitConfirmed()).toBe(false);
-		expect(terminalFor(store.getState(), featureId)!.id).toBe(session.id);
+		expect(shownSession(store.getState(), featureId)!.id).toBe(session.id);
 	});
 
 	test("Quit ends every terminal and quits", async () => {
@@ -235,23 +246,23 @@ describe("terminals in the store", () => {
 describe("the Workspace tab", () => {
 	test("offers to open a terminal, and not for a worktree whose folder is missing", async () => {
 		const { store } = await startedStore();
-		expect(render(store)).toMatch(/<button type="button" class="button" title="[^"]+">Open terminal<\/button>/);
+		expect(render(store)).toMatch(/<button type="button" class="button" id="session-add" title="[^"]+">Open terminal<\/button>/);
 		const missing = createMockEngine();
 		const started = await startedStore(missing);
 		const repository = (await missing.listRepositories()).find(candidate => candidate.worktrees.some(worktree => worktree.path === MISSING));
 		expect(repository).toBeDefined();
 		started.store.select(repository!.worktrees.find(worktree => worktree.path === MISSING)!.id);
-		expect(render(started.store)).toMatch(/<button type="button" class="button" disabled=""[^>]*>Open terminal<\/button>/);
+		expect(render(started.store)).toMatch(/<button type="button" class="button" id="session-add" disabled=""[^>]*>Open terminal<\/button>/);
 	});
 
 	test("a running session shows its chip, state, hint, and a close control", async () => {
 		const { store } = await withTerminal();
 		const markup = render(store);
-		expect(markup).toContain('class="session-chip running"');
+		expect(markup).toContain('class="session-chip selected running"');
 		expect(markup).toContain("mock-shell");
 		expect(markup).toContain('role="status">Running</span>');
 		expect(markup).toContain("Ctrl+Shift+C copies");
-		expect(markup).toContain('aria-label="Close terminal and end its processes"');
+		expect(markup).toContain('aria-label="Close Terminal and end its processes"');
 		expect(markup).toContain('class="terminal-screen"');
 	});
 });

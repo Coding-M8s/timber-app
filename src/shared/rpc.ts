@@ -36,6 +36,7 @@ export type AppRPC = {
 			listTerminals: { params: {}; response: TerminalSession[] };
 			openTerminal: { params: OpenTerminalRequest; response: OpenTerminalResult };
 			readTerminal: { params: { id: string }; response: TerminalSnapshot | null };
+			renameTerminal: { params: { id: string; name: string }; response: TerminalSession | null };
 			closeTerminal: { params: { id: string }; response: void };
 			confirmQuit: { params: {}; response: void };
 			writeClipboard: { params: { text: string }; response: void };

@@ -1,7 +1,7 @@
 import { accessSync, constants } from "node:fs";
 import {
 	type OpenTerminalRequest, type OpenTerminalResult, type Scrollback, type TerminalChange, type TerminalOutput, type TerminalSession,
-	type TerminalSnapshot, TERMINAL_UNSUPPORTED_REASON, clampTerminalSize, createScrollback, pickShell,
+	type TerminalSnapshot, TERMINAL_UNSUPPORTED_REASON, clampTerminalSize, cleanSessionName, createScrollback, defaultSessionName, pickShell,
 } from "../shared/terminal";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
 import { sessionMembers, signalEach, signalGroup } from "./process-session";
@@ -39,12 +39,14 @@ export interface TerminalDependencies {
 	undrawnLimit?: number;
 }
 
-/** The main process side of terminal sessions. One per worktree at most. */
+/** The main process side of terminal sessions. A worktree can have several. */
 export interface TerminalSessions {
 	/** Every session, running or exited, in the order they started. */
 	list(): TerminalSession[];
-	/** Start a shell in a listed worktree, or answer the session it already has. */
+	/** Start another shell in a listed worktree, beside the sessions it has. */
 	open(request: OpenTerminalRequest): Promise<OpenTerminalResult>;
+	/** Give a session another name. Null for a session that is gone, or a name with nothing in it. */
+	rename(id: string, name: string): TerminalSession | null;
 	/** The end of what a session printed. Null for a session that is gone. */
 	read(id: string): TerminalSnapshot | null;
 	/** The window drew a session's parts up to and including `seq`. */
@@ -135,8 +137,8 @@ function signalSession(live: Live, signal: NodeJS.Signals): void {
  *   app's environment and `TERM=xterm-256color`. The shell leads a session
  *   of processes of its own.
  * - Only a worktree Timber lists, in a repository in the app's list, with its
- *   folder there, gets one, and at most one. Asking again answers the one it
- *   has, running or exited.
+ *   folder there, gets one. Each request starts another, beside the ones the
+ *   worktree has, named after its kind ("Terminal", "Terminal 2", ...).
  * - Output is kept, up to `SCROLLBACK_LIMIT`, so the interface can draw a
  *   session again, and is sent in numbered parts, never far ahead of what
  *   the window drew (`UNDRAWN_LIMIT`).
@@ -153,7 +155,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 	} = dependencies;
 	const sessions = new Map<string, Live>();
 
-	const forWorktree = (worktreeId: string) => [...sessions.values()].find(live => live.session.worktree === worktreeId);
+	const inWorktree = (worktreeId: string) => [...sessions.values()].filter(live => live.session.worktree === worktreeId);
 
 	function send(live: Live, output: TerminalOutput): void {
 		live.undrawn.push({ seq: output.seq, size: output.data.length });
@@ -181,9 +183,8 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		if (platform === "win32") return { outcome: "unsupported", message: TERMINAL_UNSUPPORTED_REASON };
 		const listed = await findListedWorktree(findRepository, request.repository, request.worktree, "No terminal was started.");
 		if (!listed.ok) return { outcome: "not-listed", message: listed.message };
-		// From here to the new session being kept nothing waits, so two requests that crossed cannot both start a shell.
-		const existing = forWorktree(listed.worktree.id);
-		if (existing) return { outcome: "opened", session: { ...existing.session }, started: false };
+		// From here to the new session being kept nothing waits, so two sessions that start at once get different names.
+		const name = defaultSessionName("terminal", inWorktree(listed.worktree.id).map(live => live.session.name));
 
 		const shell = pickShell(environment, isExecutable);
 		const { cols, rows } = clampTerminalSize(request.cols, request.rows);
@@ -217,6 +218,8 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 
 		const session: TerminalSession = {
 			id: crypto.randomUUID(),
+			kind: "terminal",
+			name,
 			repository: request.repository,
 			worktree: listed.worktree.id,
 			path: request.worktree,
@@ -240,7 +243,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		live = { session, process: child, scrollback: createScrollback(), pending: "", flushTimer: null, undrawn: [], undrawnSize: 0, held: false, leftovers: null, ended };
 		sessions.set(session.id, live);
 		changed(live, session);
-		return { outcome: "opened", session: { ...session }, started: true };
+		return { outcome: "opened", session: { ...session } };
 	}
 
 	/** Kill the shell, if it still runs, and what is left in its session. */
@@ -272,6 +275,13 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 	return {
 		list: () => [...sessions.values()].map(live => ({ ...live.session })),
 		open,
+		rename(id, name) {
+			const live = sessions.get(id);
+			const clean = cleanSessionName(name);
+			if (!live || clean === null) return null;
+			if (clean !== live.session.name) changed(live, { ...live.session, name: clean });
+			return { ...live.session };
+		},
 		read(id) {
 			const live = sessions.get(id);
 			if (!live) return null;

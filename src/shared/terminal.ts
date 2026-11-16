@@ -10,10 +10,20 @@ export type TerminalState =
 	/** `exitCode` is null when a signal stopped the process, and then `signal` names it. */
 	| { kind: "exited"; exitCode: number | null; signal: string | null };
 
-/** One terminal, in one worktree. A worktree has at most one. */
+/**
+ * What a session runs. Only the person's shell for now; agents come later,
+ * as sessions that start an agent's command instead of the shell.
+ */
+export const SESSION_KINDS = ["terminal"] as const;
+export type SessionKind = typeof SESSION_KINDS[number];
+
+/** One session in a pseudo terminal, in one worktree. A worktree can have several. */
 export interface TerminalSession {
 	/** Made by the main process. Never reused while the app runs. */
 	id: string;
+	kind: SessionKind;
+	/** What its chip says, such as "Terminal 2". The person can rename it. */
+	name: string;
 	/** The path of the repository's primary checkout. */
 	repository: string;
 	/** The worktree's identity (`Worktree.id`), which the selection holds too. */
@@ -25,7 +35,7 @@ export interface TerminalSession {
 	state: TerminalState;
 }
 
-/** Start a terminal in a worktree, or find the one it has. Named as for "Open in editor". */
+/** Start another terminal in a worktree. Named as for "Open in editor". */
 export interface OpenTerminalRequest {
 	/** The path of the repository's primary checkout. */
 	repository: string;
@@ -37,8 +47,7 @@ export interface OpenTerminalRequest {
 }
 
 export type OpenTerminalResult =
-	/** `started` is false when the worktree already had a session, which is answered as it is. */
-	| { outcome: "opened"; session: TerminalSession; started: boolean }
+	| { outcome: "opened"; session: TerminalSession }
 	/** The repository or worktree is not one Timber lists right now, or its folder is missing. */
 	| { outcome: "not-listed"; message: string }
 	/** Terminals cannot run on this operating system yet. */
@@ -82,6 +91,43 @@ export const MAX_ROWS = 500;
 
 export const TERMINAL_UNSUPPORTED_REASON =
 	"Terminals need a pseudo terminal, which Bun offers on Linux and macOS only. Windows is not supported yet.";
+
+/** The longest name a session can have, in characters. */
+export const SESSION_NAME_LIMIT = 40;
+
+const KIND_NAMES: Record<SessionKind, string> = { terminal: "Terminal" };
+
+/** What a kind of session is called, such as "Terminal". */
+export function sessionKindName(kind: SessionKind): string {
+	return KIND_NAMES[kind];
+}
+
+/**
+ * The name for a new session of a kind: the kind's name, then "Terminal 2",
+ * "Terminal 3", and so on, the first that no other session in the worktree
+ * has. `taken` are the names of the worktree's sessions.
+ */
+export function defaultSessionName(kind: SessionKind, taken: readonly string[]): string {
+	const base = sessionKindName(kind);
+	const names = new Set(taken);
+	if (!names.has(base)) return base;
+	let number = 2;
+	while (names.has(`${base} ${number}`)) number += 1;
+	return `${base} ${number}`;
+}
+
+/**
+ * A name the person typed, made fit for a chip: invisible format characters
+ * such as zero-width spaces are dropped, control characters and runs of
+ * white space become one space, the ends are trimmed, and it is cut to
+ * `SESSION_NAME_LIMIT` characters. Null when nothing is left, or when it is
+ * not text.
+ */
+export function cleanSessionName(name: unknown): string | null {
+	if (typeof name !== "string") return null;
+	const clean = Array.from(name.replace(/\p{Cf}+/gu, "").replace(/[\s\u0000-\u001f\u007f-\u009f]+/gu, " ").trim()).slice(0, SESSION_NAME_LIMIT).join("").trim();
+	return clean === "" ? null : clean;
+}
 
 /** The size to use for a requested one: whole numbers within limits, and 80 by 24 for anything unreadable. */
 export function clampTerminalSize(cols: unknown, rows: unknown): { cols: number; rows: number } {

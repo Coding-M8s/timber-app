@@ -1,6 +1,7 @@
 import { type ReactNode, useId } from "react";
 import type { Worktree } from "../../shared/model";
 import { type RowMarker, type RowMarkerKind, describeRow, describeRowMarkers, describeWorktreeKind, worktreeLabel } from "../format";
+import { describeRunningSessions } from "../terminal-format";
 
 function Arrow({ direction }: { direction: "up" | "down" }) {
 	return (
@@ -45,6 +46,8 @@ interface WorktreeRowProps {
 	worktree: Worktree;
 	selected: boolean;
 	onSelect: () => void;
+	/** How many sessions run in the worktree. Shown only when there are any. */
+	runningSessions?: number;
 	/**
 	 * Controls for the worktree beside the row, such as "Open in editor". The
 	 * row is itself a button, so they sit next to it, not inside it.
@@ -53,9 +56,11 @@ interface WorktreeRowProps {
 }
 
 /** One worktree in the sidebar. What it is marked with comes from `describeRowMarkers`; this only draws it. */
-export function WorktreeRow({ worktree, selected, onSelect, actions }: WorktreeRowProps) {
+export function WorktreeRow({ worktree, selected, onSelect, runningSessions = 0, actions }: WorktreeRowProps) {
 	const descriptionId = useId();
 	const markers = describeRowMarkers(worktree);
+	const sessions = runningSessions > 0 ? describeRunningSessions(runningSessions) : null;
+	const description = [describeRow(markers), sessions === null ? "" : `${sessions}.`].filter(Boolean).join(" ");
 	const at = (place: RowMarker["place"]) => markers.filter(marker => marker.place === place).map(marker => <Marker key={marker.kind} marker={marker} />);
 	const flags = at("state");
 	const row = (
@@ -63,7 +68,7 @@ export function WorktreeRow({ worktree, selected, onSelect, actions }: WorktreeR
 			type="button"
 			className={selected ? "row selected" : "row"}
 			aria-current={selected}
-			aria-describedby={markers.length > 0 ? descriptionId : undefined}
+			aria-describedby={description !== "" ? descriptionId : undefined}
 			title={worktree.path}
 			onClick={onSelect}
 		>
@@ -74,9 +79,16 @@ export function WorktreeRow({ worktree, selected, onSelect, actions }: WorktreeR
 			<span className="row-line row-meta">
 				<span className="row-sub">{describeWorktreeKind(worktree)}</span>
 				{flags.length > 0 && <span className="row-flags">{flags}</span>}
+				{sessions !== null && (
+					// Blue, as for running agents, with the count beside it. Its sentence is in the row's description.
+					<span className="row-sessions" title={sessions} aria-hidden="true">
+						<span className="row-sessions-dot" />
+						{runningSessions}
+					</span>
+				)}
 				{at("changes")}
 			</span>
-			{markers.length > 0 && <span id={descriptionId} className="row-description" hidden>{describeRow(markers)}</span>}
+			{description !== "" && <span id={descriptionId} className="row-description" hidden>{description}</span>}
 		</button>
 	);
 	if (actions === undefined) return row;

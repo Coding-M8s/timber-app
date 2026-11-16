@@ -1,12 +1,13 @@
 import type { Engine } from "../../shared/engine";
 import type { Worktree } from "../../shared/model";
 import {
-	type OpenTerminalResult, type Scrollback, type TerminalChange, type TerminalOutput, type TerminalSession, createScrollback, isWebLink,
+	type OpenTerminalResult, type Scrollback, type TerminalChange, type TerminalOutput, type TerminalSession, cleanSessionName, createScrollback,
+	defaultSessionName, isWebLink,
 } from "../../shared/terminal";
 
 /** The part of the engine about terminals, and how they are acted out. */
 export type TerminalCapabilities = Pick<Engine,
-	| "listTerminals" | "openTerminal" | "readTerminal" | "drawnTerminal" | "writeTerminal" | "resizeTerminal" | "closeTerminal"
+	| "listTerminals" | "openTerminal" | "renameTerminal" | "readTerminal" | "drawnTerminal" | "writeTerminal" | "resizeTerminal" | "closeTerminal"
 	| "onTerminalOutput" | "onTerminalChanged" | "onQuitRequested" | "confirmQuit" | "writeClipboard" | "readClipboard" | "openLink"
 >;
 
@@ -122,10 +123,11 @@ export function createMockTerminals(findWorktree: (repository: string, path: str
 			if (failing) return structuredClone(failing);
 			const worktree = findWorktree(request.repository, request.worktree);
 			if (!worktree) return { outcome: "not-listed", message: `Timber lists no worktree at ${request.worktree} in ${request.repository}. No terminal was started. Refresh the list.` };
-			const existing = [...sessions.values()].find(acted => acted.session.worktree === worktree.id);
-			if (existing) return { outcome: "opened", session: structuredClone(existing.session), started: false };
+			const taken = [...sessions.values()].filter(acted => acted.session.worktree === worktree.id).map(acted => acted.session.name);
 			const session: TerminalSession = {
 				id: `mock-terminal-${++lastId}`,
+				kind: "terminal",
+				name: defaultSessionName("terminal", taken),
 				repository: request.repository,
 				worktree: worktree.id,
 				path: worktree.path,
@@ -136,7 +138,17 @@ export function createMockTerminals(findWorktree: (repository: string, path: str
 			sessions.set(session.id, acted);
 			announce({ id: session.id, session });
 			print(acted, `A pretend shell in ${session.path}. Try pwd, clear, or exit.\r\n${prompt(acted)}`);
-			return { outcome: "opened", session: structuredClone(session), started: true };
+			return { outcome: "opened", session: structuredClone(session) };
+		},
+		async renameTerminal(id, name) {
+			const acted = sessions.get(id);
+			const clean = cleanSessionName(name);
+			if (!acted || clean === null) return null;
+			if (clean !== acted.session.name) {
+				acted.session = { ...acted.session, name: clean };
+				announce({ id, session: acted.session });
+			}
+			return structuredClone(acted.session);
 		},
 		readTerminal: async id => sessions.get(id)?.scrollback.snapshot() ?? null,
 		drawnTerminal(id, seq) {

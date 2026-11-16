@@ -70,6 +70,7 @@ export function createDesktopEngine(): Engine {
 		// The main process reads the list first.
 		openTerminal: request => rpc.request.openTerminal(request, { maxRequestTime: 60_000 }),
 		readTerminal: id => rpc.request.readTerminal({ id }),
+		renameTerminal: (id, name) => rpc.request.renameTerminal({ id, name }),
 		drawnTerminal: (id, seq) => rpc.send.terminalDrawn({ id, seq }),
 		writeTerminal: (id, data) => rpc.send.writeTerminal({ id, data }),
 		resizeTerminal: (id, cols, rows) => rpc.send.resizeTerminal({ id, cols, rows }),

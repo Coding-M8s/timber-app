@@ -134,9 +134,17 @@ export interface AppState {
 	editorProblem: EditorProblem | null;
 	/**
 	 * The terminal sessions the engine holds, running or exited, as it last
-	 * reported them. At most one per worktree.
+	 * reported them, in the order they started. A worktree can have several.
 	 */
 	terminals: readonly TerminalSession[];
+	/**
+	 * The session whose chip is chosen in each worktree, by the worktree's
+	 * identity. A worktree that is missing here, or whose chosen session is
+	 * gone, shows its first session (see `shownSession`).
+	 */
+	shownSessions: Readonly<Record<string, string>>;
+	/** Sessions that printed something since they were last on screen, by id. */
+	unseenSessions: readonly string[];
 	terminalProblem: TerminalProblem | null;
 	/**
 	 * How many terminals ran when the app was asked to quit, while the
@@ -164,6 +172,8 @@ export const initialState: AppState = {
 	preferencesProblem: null,
 	editorProblem: null,
 	terminals: [],
+	shownSessions: {},
+	unseenSessions: [],
 	terminalProblem: null,
 	quitRequest: null,
 	tab: "workspace",
@@ -237,13 +247,61 @@ export function selectedWorktree(state: AppState): { repository: Repository; wor
 	return repository && worktree ? { repository, worktree } : null;
 }
 
-/** The terminal session of a worktree, named by its identity, running or exited. */
-export function terminalFor(state: AppState, worktreeId: string): TerminalSession | null {
-	return state.terminals.find(session => session.worktree === worktreeId) ?? null;
+/** The sessions of a worktree, named by its identity, running or exited, in the order they started. */
+export function sessionsOf(state: Pick<AppState, "terminals">, worktreeId: string): TerminalSession[] {
+	return state.terminals.filter(session => session.worktree === worktreeId);
 }
 
-/** Put a session the engine reported in its place, or take it away when `session` is null. */
+/** How many sessions of a worktree still run. */
+export function runningSessionCount(state: Pick<AppState, "terminals">, worktreeId: string): number {
+	return sessionsOf(state, worktreeId).filter(session => session.state.kind === "running").length;
+}
+
+/**
+ * The session whose chip is chosen in a worktree: the one chosen last, or
+ * the first when that one is gone or none was chosen. Null when the worktree
+ * has no session.
+ */
+export function shownSession(state: Pick<AppState, "terminals" | "shownSessions">, worktreeId: string): TerminalSession | null {
+	const sessions = sessionsOf(state, worktreeId);
+	const chosen = state.shownSessions[worktreeId];
+	return sessions.find(session => session.id === chosen) ?? sessions[0] ?? null;
+}
+
+/** The session on screen right now: the chosen one of the selected worktree, while the Workspace tab shows. */
+export function sessionOnScreen(state: AppState): TerminalSession | null {
+	if (state.tab !== "workspace" || !state.selection) return null;
+	return shownSession(state, state.selection.worktree);
+}
+
+/**
+ * Take a session away, with what points at it. When it was the chosen one of
+ * its worktree, the chip after it is chosen, or else the one before it.
+ */
+export function withoutSession(state: Pick<AppState, "terminals" | "shownSessions" | "unseenSessions">, id: string): Pick<AppState, "terminals" | "shownSessions" | "unseenSessions"> {
+	const session = state.terminals.find(candidate => candidate.id === id);
+	const terminals = withTerminal(state.terminals, id, null);
+	const unseenSessions = state.unseenSessions.filter(candidate => candidate !== id);
+	if (!session || state.shownSessions[session.worktree] !== id) {
+		return { terminals, shownSessions: state.shownSessions, unseenSessions };
+	}
+	const siblings = sessionsOf(state, session.worktree);
+	const at = siblings.findIndex(candidate => candidate.id === id);
+	const next = siblings[at + 1] ?? siblings[at - 1];
+	const shownSessions = { ...state.shownSessions };
+	if (next) shownSessions[session.worktree] = next.id;
+	else delete shownSessions[session.worktree];
+	return { terminals, shownSessions, unseenSessions };
+}
+
+/**
+ * Put a session the engine reported in its place, or take it away when
+ * `session` is null. A session that changed keeps its place, so chips never
+ * move; a new one goes last.
+ */
 export function withTerminal(terminals: readonly TerminalSession[], id: string, session: TerminalSession | null): readonly TerminalSession[] {
-	const others = terminals.filter(candidate => candidate.id !== id);
-	return session ? [...others, session] : others;
+	if (!session) return terminals.filter(candidate => candidate.id !== id);
+	const index = terminals.findIndex(candidate => candidate.id === id);
+	if (index === -1) return [...terminals, session];
+	return terminals.map((candidate, at) => at === index ? session : candidate);
 }
