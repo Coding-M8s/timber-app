@@ -41,5 +41,7 @@ export function createDesktopEngine(): Engine {
 		saveLayout: layout => rpc.request.saveLayout({ layout }),
 		loadPreferences: () => rpc.request.loadPreferences({}),
 		savePreferences: change => rpc.request.savePreferences({ change }),
+		// The main process reads the list first, and waits a moment to hear whether the editor stopped right away.
+		openInEditor: request => rpc.request.openInEditor(request, { maxRequestTime: 60_000 }),
 	};
 }

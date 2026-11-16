@@ -1,0 +1,268 @@
+import { describe, expect, test } from "bun:test";
+import { renderToStaticMarkup } from "react-dom/server";
+import { App } from "../src/mainview/App";
+import { EditorSectionView, type EditorSectionViewProps } from "../src/mainview/components/settings/EditorSection";
+import {
+	EXAMPLE_WORKTREE, FOLDER_MISSING_REASON, NO_EDITOR_HINT, chooseEditor, describeEditorAction, draftOf, editEditor, editorDraftModel,
+} from "../src/mainview/editor-format";
+import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
+import { createAppStore } from "../src/mainview/store/store";
+import type { Engine } from "../src/shared/engine";
+import { TERMINAL_EDITOR_REASON } from "../src/shared/editor";
+
+const settle = () => Bun.sleep(0);
+const TIMBER = "/work/timber";
+const FEATURE = "/work/timber-worktrees/feat-github-issue-lookup";
+const API_SERVER = "/work/api-server";
+const MISSING = "/work/api-server-worktrees/old-removed-folder";
+
+async function startedStore(engine = createMockEngine()) {
+	const store = createAppStore(engine, () => () => {});
+	store.start();
+	await settle();
+	return { store, engine };
+}
+
+async function withEditor(command: string, terminal = false) {
+	const started = await startedStore();
+	await started.store.savePreferences({ editor: { command, terminal } });
+	return started;
+}
+
+const render = (store: ReturnType<typeof createAppStore>) => renderToStaticMarkup(<App store={store} />);
+
+/** The opening tags of every element with this class name. */
+const tagsOf = (markup: string, className: string) => markup.match(new RegExp(`<[a-z0-9]+ [^>]*class="${className}"[^>]*>`, "g")) ?? [];
+
+/** The opening tag of the editor control beside the row of the worktree at `path`. */
+function rowEditor(markup: string, path: string): string {
+	const row = markup.indexOf(`title="${path}"`);
+	if (row < 0) throw new Error(`No row for ${path}`);
+	const tag = /<button [^>]*class="icon-button row-editor"[^>]*>/.exec(markup.slice(row));
+	if (!tag) throw new Error(`No editor control after the row for ${path}`);
+	return tag[0];
+}
+
+describe("the control for a worktree", () => {
+	test("with no editor set, it is offered and says it opens Settings", () => {
+		const action = describeEditorAction(null, { path: FEATURE, pathExists: true }, false);
+		expect(action).toEqual({ available: true, opensSettings: true, command: null, tooltip: `Open in editor. ${NO_EDITOR_HINT}`, reason: null });
+	});
+
+	test("with an editor set, its tooltip is the exact command", () => {
+		const action = describeEditorAction({ command: "code", terminal: false }, { path: "/work/my repo", pathExists: true }, false);
+		expect(action).toMatchObject({ available: true, opensSettings: false, command: "code '/work/my repo'", tooltip: "Open in editor: code '/work/my repo'" });
+	});
+
+	test("a terminal editor, or a folder that is missing, is unavailable with the reason", () => {
+		expect(describeEditorAction({ command: "nvim", terminal: true }, { path: FEATURE, pathExists: true }, false))
+			.toMatchObject({ available: false, reason: TERMINAL_EDITOR_REASON, tooltip: `Open in editor: nvim ${FEATURE}. ${TERMINAL_EDITOR_REASON}` });
+		expect(describeEditorAction({ command: "code", terminal: false }, { path: MISSING, pathExists: false }, false))
+			.toMatchObject({ available: false, reason: FOLDER_MISSING_REASON });
+	});
+
+	test("while the editor starts, it cannot be pressed again", () => {
+		expect(describeEditorAction({ command: "code", terminal: false }, { path: FEATURE, pathExists: true }, true)).toMatchObject({ available: false, reason: null });
+	});
+});
+
+describe("Open in editor in the window", () => {
+	test("each row has the control beside it, not inside it, and the rows are still the rows", async () => {
+		const { store } = await withEditor("code");
+		const markup = render(store);
+		expect(tagsOf(markup, "icon-button row-editor").length).toBe(7);
+		expect(markup.match(/class="row( selected)?"/g)?.length).toBe(7);
+		// The row is a button, and a button cannot hold another.
+		expect(markup).not.toMatch(/<button [^>]*class="row[^"]*"[^>]*>(?:(?!<\/button>).)*<button/);
+		expect(rowEditor(markup, FEATURE)).toContain(`title="Open in editor: code ${FEATURE}"`);
+		expect(rowEditor(markup, FEATURE)).toContain('aria-label="Open in editor: feat/github-issue-lookup"');
+		expect(rowEditor(markup, FEATURE)).not.toContain("disabled");
+	});
+
+	test("the workspace header has it too, for the selected worktree", async () => {
+		const { store } = await withEditor("zed --new");
+		const [header] = tagsOf(render(store), "button workspace-editor");
+		expect(header).toContain(`title="Open in editor: zed --new ${TIMBER}"`);
+		expect(header).not.toContain("disabled");
+	});
+
+	test("a row whose folder is missing has it disabled, with the reason", async () => {
+		const { store } = await withEditor("code");
+		const tag = rowEditor(render(store), MISSING);
+		expect(tag).toContain("disabled");
+		expect(tag).toContain(FOLDER_MISSING_REASON);
+	});
+
+	test("with a terminal editor it is disabled with the reason, in the header in words", async () => {
+		const { store } = await withEditor("nvim", true);
+		const markup = render(store);
+		expect(rowEditor(markup, FEATURE)).toContain("disabled");
+		const [header] = tagsOf(markup, "button workspace-editor");
+		expect(header).toContain("disabled");
+		expect(markup).toContain(`<span class="workspace-done-note">${TERMINAL_EDITOR_REASON}</span>`);
+	});
+
+	test("with no editor set, pressing it opens Settings at Editor and starts nothing", async () => {
+		const { store, engine } = await startedStore();
+		expect(rowEditor(render(store), FEATURE)).toContain('aria-haspopup="dialog"');
+		expect(await store.openInEditor({ repository: TIMBER, worktree: FEATURE })).toBeNull();
+		expect(store.getState().dialog).toEqual({ kind: "settings", section: "editor" });
+		expect(engine.launchedEditors()).toEqual([]);
+		expect(render(store)).toMatch(/class="settings-nav-item selected" aria-current="page"[^>]*>Editor</);
+	});
+
+	test("a started editor is a toast, and the command was the saved one with the worktree's path", async () => {
+		const { store, engine } = await withEditor("code -n");
+		const result = await store.openInEditor({ repository: TIMBER, worktree: FEATURE });
+		expect(result).toEqual({ outcome: "opened", command: `code -n ${FEATURE}` });
+		expect(engine.launchedEditors()).toEqual([{ request: { repository: TIMBER, worktree: FEATURE }, command: `code -n ${FEATURE}` }]);
+		expect(store.getState().toasts.map(toast => toast.text)).toEqual(["Opened feat/github-issue-lookup in the editor"]);
+		expect(store.getState().editorProblem).toBeNull();
+	});
+
+	test("a missing executable is a note that names the command, until dismissed, and is not a toast", async () => {
+		const { store, engine } = await withEditor("code");
+		engine.endEditorLaunches("not-found");
+		await store.openInEditor({ repository: TIMBER, worktree: FEATURE });
+		expect(store.getState().toasts).toEqual([]);
+		const markup = render(store);
+		expect(markup).toContain("Could not open feat/github-issue-lookup in the editor");
+		expect(markup).toContain("&quot;code&quot; was not found on the PATH the app was started with");
+		expect(markup).toContain(`<pre class="dialog-command" aria-label="Editor command">code ${FEATURE}</pre>`);
+		store.dismissEditorProblem();
+		expect(render(store)).not.toContain("editor-problem");
+	});
+
+	test("an editor that stops right away is a note, and the next one that starts puts it away", async () => {
+		const { store, engine } = await withEditor("code");
+		engine.endEditorLaunches("fails");
+		await store.openInEditor({ repository: TIMBER, worktree: FEATURE });
+		expect(store.getState().editorProblem).toMatchObject({ kind: "failed", worktree: FEATURE, command: `code ${FEATURE}` });
+		engine.endEditorLaunches("opens");
+		await store.openInEditor({ repository: TIMBER, worktree: FEATURE });
+		expect(store.getState().editorProblem).toBeNull();
+	});
+
+	test("a worktree that is no longer listed is refused, and an engine that does not answer is a failure", async () => {
+		const { store } = await withEditor("code");
+		await store.openInEditor({ repository: TIMBER, worktree: "/work/elsewhere" });
+		expect(store.getState().editorProblem).toMatchObject({ kind: "not-listed", command: null });
+
+		const engine = createMockEngine();
+		const broken: Engine = { ...engine, openInEditor: async () => { throw new Error("connection lost"); } };
+		const second = await startedStore(broken as typeof engine);
+		await second.store.savePreferences({ editor: { command: "code", terminal: false } });
+		await second.store.openInEditor({ repository: TIMBER, worktree: FEATURE });
+		expect(second.store.getState().editorProblem).toMatchObject({ kind: "failed", message: "The app did not hear whether the editor started: connection lost" });
+	});
+
+	test("a terminal editor asked for anyway starts nothing and says why", async () => {
+		const { store, engine } = await withEditor("nvim", true);
+		const result = await store.openInEditor({ repository: TIMBER, worktree: FEATURE });
+		expect(result).toMatchObject({ outcome: "terminal-editor", command: `nvim ${FEATURE}` });
+		expect(engine.launchedEditors()).toEqual([]);
+		expect(render(store)).toContain("Cannot open feat/github-issue-lookup in a terminal editor yet");
+	});
+
+	test("one at a time per worktree", async () => {
+		const { store, engine } = await withEditor("code");
+		const both = [store.openInEditor({ repository: TIMBER, worktree: FEATURE }), store.openInEditor({ repository: TIMBER, worktree: FEATURE })];
+		expect(rowEditor(render(store), FEATURE)).toContain("disabled");
+		expect(await both[1]).toBeNull();
+		await both[0];
+		expect(engine.launchedEditors().length).toBe(1);
+	});
+
+	test("New and Open never start an editor: only this action does", async () => {
+		const { store, engine } = await withEditor("code");
+		await store.newWorktree({ repository: TIMBER, name: "feat/login", base: null });
+		await store.openWorktree({ repository: TIMBER, selector: "chore/update-deps", setup: false });
+		expect(store.getState().repositories[0]!.worktrees.length).toBe(sampleRepositories[0]!.worktrees.length + 2);
+		expect(engine.launchedEditors()).toEqual([]);
+		// The commands themselves pass --no-editor to Timber: see tests/worktree-commands-parse.test.ts.
+	});
+});
+
+describe("the Editor section of Settings", () => {
+	const none = draftOf(null);
+
+	test("a preset fills the command, None empties it, and Other keeps it to edit", () => {
+		const zed = chooseEditor(none, "zed");
+		expect(zed).toEqual({ choice: "zed", command: "zed", terminal: false });
+		expect(chooseEditor(zed, "neovim")).toEqual({ choice: "neovim", command: "nvim", terminal: true });
+		expect(chooseEditor(zed, "other")).toEqual({ choice: "other", command: "zed", terminal: false });
+		expect(chooseEditor(zed, "none")).toEqual(none);
+	});
+
+	test("typing decides the choice from what was typed", () => {
+		expect(editEditor(none, { command: "code" }).choice).toBe("vscode");
+		expect(editEditor(none, { command: "code --wait" }).choice).toBe("other");
+		expect(editEditor(chooseEditor(none, "neovim"), { terminal: false }).choice).toBe("other");
+		expect(editEditor(chooseEditor(none, "zed"), { command: "  " }).choice).toBe("none");
+		expect(draftOf({ command: "nvim", terminal: true }).choice).toBe("neovim");
+	});
+
+	test("the model shows the exact command for an example folder, and Save only for a change that can be read", () => {
+		const code = editorDraftModel(chooseEditor(none, "vscode"), null);
+		expect(code).toEqual({ setting: { command: "code", terminal: false }, error: null, example: `code '${EXAMPLE_WORKTREE}'`, canSave: true });
+		expect(editorDraftModel(chooseEditor(none, "vscode"), { command: "code", terminal: false }).canSave).toBe(false);
+		const broken = editorDraftModel(editEditor(none, { command: `code "x` }), null);
+		expect(broken).toMatchObject({ error: "The double quote at character 6 is never closed.", canSave: false, example: null });
+		expect(editorDraftModel(editEditor(none, { command: `"" x` }), null).canSave).toBe(false);
+		expect(editorDraftModel(none, { command: "code", terminal: false })).toEqual({ setting: null, error: null, example: null, canSave: true });
+		expect(editorDraftModel(none, null).canSave).toBe(false);
+	});
+
+	const view = (props: Partial<EditorSectionViewProps>) => renderToStaticMarkup(
+		<EditorSectionView draft={none} saved={null} save={{ state: "idle" }} onChoose={() => {}} onEdit={() => {}} onSave={() => {}} {...props} />,
+	);
+
+	test("draws the presets, the command, and the example command", () => {
+		const markup = view({ draft: chooseEditor(none, "vscode") });
+		for (const label of ["None", "VS Code", "Zed", "Neovim", "Other command"]) expect(markup).toContain(`<span class="check-text">${label}</span>`);
+		expect(markup).toContain(`<input type="radio" name="editor-choice" checked="" value="vscode"/>`);
+		expect(markup).toContain('value="code"');
+		expect(markup).toContain(`<pre class="dialog-command" aria-label="Example command">code &#x27;${EXAMPLE_WORKTREE}&#x27;</pre>`);
+		expect(markup).toMatch(/<button type="submit" class="button primary">Save<\/button>/);
+	});
+
+	test("an unreadable command says why, and Save is disabled", () => {
+		const markup = view({ draft: editEditor(none, { command: `code "x` }) });
+		expect(markup).toContain("This command cannot be read");
+		expect(markup).toContain('aria-invalid="true"');
+		expect(markup).toMatch(/<button type="submit" class="button primary" disabled="">Save<\/button>/);
+	});
+
+	test("Neovim says it needs terminal sessions", () => {
+		const markup = view({ draft: chooseEditor(none, "neovim") });
+		expect(markup).toContain(TERMINAL_EDITOR_REASON);
+		expect(markup).toContain(`nvim &#x27;${EXAMPLE_WORKTREE}&#x27;`);
+	});
+
+	test("is listed in Settings and saves through the preferences", async () => {
+		const { store, engine } = await startedStore();
+		store.openDialog({ kind: "settings", section: "editor" });
+		const markup = render(store);
+		expect(markup).toMatch(/class="settings-nav-item"[^>]*>Layout</);
+		expect(markup).toMatch(/class="settings-nav-item selected" aria-current="page"[^>]*>Editor</);
+		expect(markup).toContain('<h3 id="');
+		expect(markup).toMatch(/class="settings-section-title">Editor</);
+		await store.savePreferences({ editor: { command: "zed", terminal: false } });
+		expect(await engine.loadPreferences()).toEqual({ sidebarSide: "left", editor: { command: "zed", terminal: false } });
+	});
+});
+
+describe("the mock engine", () => {
+	test("acts out each ending, and refuses an unknown one", async () => {
+		const engine = createMockEngine();
+		expect(await engine.openInEditor({ repository: TIMBER, worktree: FEATURE })).toEqual({ outcome: "not-configured" });
+		await engine.savePreferences({ editor: { command: "code", terminal: false } });
+		expect((await engine.openInEditor({ repository: TIMBER, worktree: FEATURE })).outcome).toBe("opened");
+		engine.endEditorLaunches("not-found");
+		expect(await engine.openInEditor({ repository: TIMBER, worktree: FEATURE })).toMatchObject({ outcome: "not-found", executable: "code" });
+		engine.endEditorLaunches("fails");
+		expect((await engine.openInEditor({ repository: TIMBER, worktree: FEATURE })).outcome).toBe("failed");
+		expect((await engine.openInEditor({ repository: API_SERVER, worktree: MISSING })).outcome).toBe("not-listed");
+		expect(() => engine.endEditorLaunches("explodes" as never)).toThrow("Unknown ending: explodes");
+	});
+});

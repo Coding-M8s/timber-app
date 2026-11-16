@@ -1,5 +1,5 @@
 import type { Layout } from "./layout";
-import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenWorktreeRequest, RemoveRepositoryResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
+import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
 import type { Preferences } from "./preferences";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "./timber-done";
 
@@ -106,4 +106,12 @@ export interface Engine {
 	 * Saved answers with every preference as it now is. Safe to call again.
 	 */
 	savePreferences(change: Partial<Preferences>): Promise<SavePreferencesResult>;
+	/**
+	 * Open a worktree of a repository in the list in the editor from the
+	 * preferences, started detached so it outlives the app. The command comes
+	 * only from the saved setting, with the worktree's path as one argument
+	 * (`editorCommand` in ./editor.ts). Nothing else ever starts an editor:
+	 * New and Open pass `--no-editor` to Timber.
+	 */
+	openInEditor(request: OpenInEditorRequest): Promise<OpenInEditorResult>;
 }

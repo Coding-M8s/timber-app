@@ -3,6 +3,7 @@ import { REMOVE_REPOSITORY_HINT, TIMBER_LIST_FAILURE_TITLE, describeListNotice, 
 import { SETTINGS_LABEL, describeLayoutProblem, describeRepository } from "../shell";
 import { useAppState, useStore } from "../store/react";
 import { isRunning } from "../store/state";
+import { OpenInEditorIconButton } from "./OpenInEditor";
 import { SIDEBAR_ID } from "./SidebarResizer";
 import { WorktreeRow } from "./WorktreeRow";
 
@@ -128,6 +129,7 @@ export function Sidebar() {
 												worktree={worktree}
 												selected={worktree.id === selectedId}
 												onSelect={() => store.select(worktree.id)}
+												actions={<OpenInEditorIconButton repository={repository.path} worktree={worktree} />}
 											/>
 										</li>
 									))}
