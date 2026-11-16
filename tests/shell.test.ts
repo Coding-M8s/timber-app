@@ -89,6 +89,28 @@ describe("the layout in the store", () => {
 		expect(store.getState().layoutProblem).toBeNull();
 	});
 
+	test("saving an untouched layout while its read is pending preserves the saved preferences", async () => {
+		const engine = createMockEngine();
+		const saved = { sidebarWidth: 400, collapsed: [API_SERVER] };
+		await engine.saveLayout(saved);
+		const load = engine.loadLayout;
+		let answer!: (layout: Layout) => void;
+		engine.loadLayout = () => new Promise(resolve => { answer = resolve; });
+		const store = createAppStore(engine);
+		store.start();
+
+		// The resize handle asks to save on blur and key up, even without a resize.
+		await store.saveLayout();
+		answer(saved);
+		await settle();
+		expect(store.getState().layout).toEqual(saved);
+		expect(await load()).toEqual(saved);
+
+		store.resizeSidebar(350);
+		await store.saveLayout();
+		expect(await load()).toEqual({ sidebarWidth: 350, collapsed: [API_SERVER] });
+	});
+
 	test("collapsing a group is saved at once, and a restarted store has it", async () => {
 		const { engine, saves } = notingEngine();
 		const store = await startedStore(engine);
