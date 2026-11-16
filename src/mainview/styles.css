@@ -835,6 +835,123 @@ pre:focus-visible {
 	margin-top: 0;
 }
 
+/* Settings: the sections down the side, the one that shows beside them. */
+.settings-dialog {
+	width: min(680px, calc(100% - 32px));
+}
+
+.settings-head {
+	padding: 14px 14px 12px 18px;
+	border-bottom: 1px solid var(--line);
+}
+
+.settings-head .button {
+	margin-top: 0;
+}
+
+.settings-body {
+	display: flex;
+	min-height: 280px;
+}
+
+.settings-nav {
+	flex: none;
+	width: 160px;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 10px 8px;
+	border-right: 1px solid var(--line);
+}
+
+.settings-nav-item {
+	padding: 6px 10px;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--text-2);
+	font-size: 12.5px;
+	text-align: left;
+}
+
+.settings-nav-item:hover {
+	background: var(--fill-hover);
+}
+
+.settings-nav-item.selected {
+	background: var(--fill-selected);
+	color: var(--text);
+}
+
+.settings-panel {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.settings-section {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	padding: 16px 18px;
+}
+
+.settings-section-title {
+	margin: 0;
+	font-size: 13.5px;
+	font-weight: 600;
+}
+
+.settings-section-text {
+	margin: -6px 0 0;
+	font-size: 12px;
+	color: var(--text-3);
+}
+
+.settings-choice {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+.settings-choice legend {
+	margin-bottom: 6px;
+	padding: 0;
+}
+
+.settings-section-foot {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 10px;
+}
+
+.settings-section-foot .button {
+	margin-top: 0;
+}
+
+.settings-section-status {
+	margin: 0;
+	font-size: 12px;
+	color: var(--text-2);
+}
+
+@media (max-width: 560px) {
+	.settings-body {
+		flex-direction: column;
+	}
+
+	.settings-nav {
+		width: auto;
+		flex-direction: row;
+		flex-wrap: wrap;
+		border-right: 0;
+		border-bottom: 1px solid var(--line);
+	}
+}
+
 /* A failed Timber command, reported the same way everywhere. */
 .failure {
 	display: flex;
@@ -1119,6 +1236,12 @@ pre:focus-visible {
 		max-width: none;
 		max-height: 45%;
 		border-bottom: 1px solid var(--line);
+	}
+
+	/* With the sidebar on the right it comes after the workspace, so stacked it sits below it. */
+	.body.sidebar-right .sidebar {
+		border-top: 1px solid var(--line);
+		border-bottom: 0;
 	}
 
 	/* Stacked, the sidebar is as wide as the window, so there is no edge to drag. */

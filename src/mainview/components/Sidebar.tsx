@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { REMOVE_REPOSITORY_HINT, TIMBER_LIST_FAILURE_TITLE, describeListNotice, describeReloadError, worktreeLabel } from "../format";
-import { SETTINGS_HINT, describeLayoutProblem, describeRepository } from "../shell";
+import { SETTINGS_LABEL, describeLayoutProblem, describeRepository } from "../shell";
 import { useAppState, useStore } from "../store/react";
 import { isRunning } from "../store/state";
 import { SIDEBAR_ID } from "./SidebarResizer";
@@ -183,8 +183,14 @@ export function Sidebar() {
 						<button type="button" className="text-button" onClick={() => store.dismissLayoutProblem()}>Dismiss</button>
 					</div>
 				)}
-				{/* Settings is not built yet, so its button is disabled and says so. */}
-				<button type="button" className="icon-button sidebar-settings" aria-label={SETTINGS_HINT} title={SETTINGS_HINT} disabled>
+				<button
+					type="button"
+					className="icon-button sidebar-settings"
+					aria-label={SETTINGS_LABEL}
+					title={SETTINGS_LABEL}
+					aria-haspopup="dialog"
+					onClick={() => store.openDialog({ kind: "settings" })}
+				>
 					<svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
 						<circle cx="8" cy="8" r="4.3" />
 						<circle cx="8" cy="8" r="1.5" />

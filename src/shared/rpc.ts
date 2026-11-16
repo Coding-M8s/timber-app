@@ -1,6 +1,7 @@
 import type { RPCSchema } from "electrobun/view";
 import type { Layout } from "./layout";
-import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenWorktreeRequest, RemoveRepositoryResult, Repository, SaveLayoutResult, TimberStatus, WorktreeCommandResult } from "./model";
+import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenWorktreeRequest, RemoveRepositoryResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
+import type { Preferences } from "./preferences";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "./timber-done";
 
 /**
@@ -25,6 +26,8 @@ export type AppRPC = {
 			openWorktree: { params: OpenWorktreeRequest; response: WorktreeCommandResult };
 			loadLayout: { params: {}; response: Layout };
 			saveLayout: { params: { layout: Layout }; response: SaveLayoutResult };
+			loadPreferences: { params: {}; response: Preferences };
+			savePreferences: { params: { change: Partial<Preferences> }; response: SavePreferencesResult };
 			previewDone: { params: DonePreviewRequest; response: DonePreviewResult };
 			/** Answers only when Timber has ended. Scripts that run before deletion take as long as they take, so the caller must not time it out. */
 			applyDone: { params: DoneApplyRequest; response: DoneApplyResult };

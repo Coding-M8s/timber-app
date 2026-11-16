@@ -1,6 +1,7 @@
 import type { Engine } from "../../shared/engine";
 import { type Layout, clampSidebarWidth, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
-import type { BranchSuggestion, NewWorktreeRequest, OpenWorktreeRequest, ReportedWorktree, TimberStatus, WorktreeCommandResult } from "../../shared/model";
+import type { BranchSuggestion, NewWorktreeRequest, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "../../shared/model";
+import type { Preferences } from "../../shared/preferences";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "../../shared/timber-done";
 import { describeAdded, describeRemoved, folderName } from "../format";
 import { mergeOverlapping } from "./merge";
@@ -56,6 +57,13 @@ export interface AppStore {
 	saveLayout(): Promise<void>;
 	/** Put away the note about the layout. */
 	dismissLayoutProblem(): void;
+	/**
+	 * Save the preferences that `change` names, keeping the others. What is on
+	 * screen follows only once the engine says it saved, so a failed save
+	 * changes nothing. Never throws: an engine that could not answer is a
+	 * failed save with the reason.
+	 */
+	savePreferences(change: Partial<Preferences>): Promise<SavePreferencesResult>;
 	/** Show one of the views of the selected worktree. */
 	showTab(tab: WorkspaceTab): void;
 	/**
@@ -235,6 +243,36 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		if (state.layoutProblem) update({ layoutProblem: null });
 	});
 
+	/*
+	 * Preferences change on screen only from an engine's answer. A save that
+	 * worked carries every preference as saved, which is newer than a first
+	 * read that answers after it, so that read is then dropped.
+	 */
+	let preferencesSaved = false;
+
+	async function loadPreferences(): Promise<void> {
+		try {
+			const preferences = await engine.loadPreferences();
+			if (!preferencesSaved) update({ preferences });
+		} catch (error) {
+			if (!preferencesSaved) update({ preferencesProblem: messageOf(error) });
+		}
+	}
+
+	async function savePreferences(change: Partial<Preferences>): Promise<SavePreferencesResult> {
+		let result: SavePreferencesResult;
+		try {
+			result = await engine.savePreferences(change);
+		} catch (error) {
+			result = { outcome: "failed", message: messageOf(error) };
+		}
+		if (result.outcome === "saved") {
+			preferencesSaved = true;
+			update({ preferences: result.preferences, preferencesProblem: null });
+		}
+		return result;
+	}
+
 	function findTimber(look: () => Promise<TimberStatus>): Promise<void> {
 		const wasReady = timberReady(state);
 		return track({ kind: "find-timber" }, async () => {
@@ -379,6 +417,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				if (state.repositories.some(repository => repository.path === path)) void reloadOne(path);
 			});
 			void loadLayout();
+			void loadPreferences();
 			void findTimber(() => engine.timberStatus());
 			return stop;
 		},
@@ -414,6 +453,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		dismissLayoutProblem() {
 			if (state.layoutProblem) update({ layoutProblem: null });
 		},
+		savePreferences,
 		showTab(tab) {
 			if (tab !== state.tab) update({ tab });
 		},

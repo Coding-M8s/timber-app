@@ -79,11 +79,12 @@ describe("sidebar", () => {
 		expect(settings).toBeLessThan(markup.indexOf("</aside>"));
 	});
 
-	test("the Settings cog is disabled and says it is not built yet", async () => {
+	test("the Settings cog works and is named Settings", async () => {
 		const { store } = await startedStore();
 		const button = tagOf(render(store), "icon-button sidebar-settings");
-		expect(button).toContain("disabled");
-		expect(button).toContain('title="Settings. Not built yet."');
+		expect(button).not.toContain("disabled");
+		expect(button).toContain('aria-label="Settings"');
+		expect(button).toContain('aria-haspopup="dialog"');
 	});
 
 	test("a collapsed group hides its rows, says so, and is still collapsed after a restart", async () => {

@@ -1,3 +1,5 @@
+import type { Preferences } from "./preferences";
+
 /**
  * Whether a usable Timber is installed. Everything that runs Timber depends on
  * this being "ready".
@@ -106,6 +108,11 @@ export type RemoveRepositoryResult =
 /** What came of asking to remember the layout. A failure never changes what is on screen. */
 export type SaveLayoutResult =
 	| { outcome: "saved" }
+	| { outcome: "failed"; message: string };
+
+/** How saving a change to the preferences ended. Saved carries every preference as saved, not only the changed ones. */
+export type SavePreferencesResult =
+	| { outcome: "saved"; preferences: Preferences }
 	| { outcome: "failed"; message: string };
 
 /**

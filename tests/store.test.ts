@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Engine } from "../src/shared/engine";
 import { defaultLayout } from "../src/shared/layout";
+import { defaultPreferences } from "../src/shared/preferences";
 import type { AddRepositoryResult, RemoveRepositoryResult, Repository, TimberStatus, WorktreeCommandResult } from "../src/shared/model";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "../src/shared/timber-done";
 import { createMockEngine, sampleChanges, samplePickableRepository, sampleRepositories, sampleTimberStatuses, sampleUnavailableRepository } from "../src/mainview/engine/mock";
@@ -99,6 +100,8 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		},
 		loadLayout: async () => defaultLayout(),
 		saveLayout: async () => ({ outcome: "saved" }),
+		loadPreferences: async () => defaultPreferences(),
+		savePreferences: async change => ({ outcome: "saved", preferences: { ...defaultPreferences(), ...change } }),
 	};
 	const push = (path: string) => {
 		for (const listener of [...listeners]) listener(path);
