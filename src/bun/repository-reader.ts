@@ -32,7 +32,13 @@ export interface RepositoryReader {
 	reload(path: string): Promise<Repository | null>;
 }
 
-function syncOf(listed: ListedWorktree, branches: Map<string, SyncState> | null): SyncState | null {
+/**
+ * The upstream state of one listed worktree. `branches` is what Git said
+ * about every branch, or null when it did not answer. Null on a detached
+ * HEAD, and on a branch whose state is not known. The interface tells the two
+ * apart by the branch, and says "sync unknown" for the second.
+ */
+export function syncOf(listed: Pick<ListedWorktree, "branch" | "head">, branches: Map<string, SyncState> | null): SyncState | null {
 	if (listed.branch === null || branches === null) return null;
 	// A branch with no commit yet has no ref to ask about, and cannot have been published.
 	return branches.get(listed.branch) ?? (listed.head === null ? { kind: "unpublished" } : null);

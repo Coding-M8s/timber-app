@@ -33,7 +33,10 @@ function worktree(repository: string, branch: string, overrides: SampleOverrides
 	return { ...sample, id: worktreeId(`/work/${repository}/.git`, { path, canonicalPath }), canonicalPath, detached: sample.branch === null };
 }
 
-/** Sample data covering every state the sidebar can show. Used in the browser build and in tests. */
+/**
+ * Sample data for the browser build and for tests. Together with
+ * `sampleStatesRepository` it covers every state a row can show.
+ */
 export const sampleRepositories: Repository[] = [
 	{
 		path: "/work/timber",
@@ -78,6 +81,45 @@ export const sampleRepositories: Repository[] = [
 	},
 ];
 
+/**
+ * A repository with the row states the two above do not have: a detached
+ * HEAD, a locked worktree, a prunable one whose folder is still there, a
+ * status Timber could not read, an upstream state Git could not read, and a
+ * row with everything at once. The browser build lists it; most tests do not.
+ */
+export const sampleStatesRepository: Repository = {
+	path: "/work/billing",
+	name: "billing",
+	available: true,
+	failure: null,
+	worktrees: [
+		worktree("billing", "main", { primary: true }),
+		worktree("billing", "review-build", {
+			branch: null,
+			head: "4f9c2ab81d3e56f7a0b1c2d3e4f5a6b7c8d9e0f1",
+			sync: null,
+		}),
+		worktree("billing", "release/2.4", { locked: true }),
+		worktree("billing", "chore/moved-folder", {
+			prunable: true,
+			changes: { kind: "unknown", reason: "Path no longer identifies this Git worktree" },
+		}),
+		worktree("billing", "fix/unreadable", {
+			changes: { kind: "unknown", reason: "Cannot inspect worktree; check directory access" },
+			sync: { kind: "tracking", upstream: "origin/fix/unreadable", ahead: 1, behind: 0 },
+		}),
+		worktree("billing", "feat/invoices", {
+			changes: sampleChanges(2, 0),
+			sync: null,
+		}),
+		worktree("billing", "feat/tax-rules", {
+			locked: true,
+			changes: sampleChanges(12, 5),
+			sync: { kind: "tracking", upstream: "origin/feat/tax-rules", ahead: 1, behind: 14 },
+		}),
+	],
+};
+
 /** A saved repository whose folder is gone. The browser build lists it; most tests do not. */
 export const sampleUnavailableRepository: Repository = {
 	path: "/work/old-prototype",
@@ -86,6 +128,9 @@ export const sampleUnavailableRepository: Repository = {
 	failure: null,
 	worktrees: [],
 };
+
+/** What `bun run dev:web` lists: every row state, and a repository that is unavailable. */
+export const browserSampleRepositories: Repository[] = [...sampleRepositories, sampleStatesRepository, sampleUnavailableRepository];
 
 /** A repository on the pretend disk that is not in the list yet. The mock's folder picker chooses it by default. */
 export const samplePickableRepository: Repository = {

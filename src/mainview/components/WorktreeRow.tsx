@@ -1,5 +1,6 @@
-import type { SyncState, Worktree } from "../../shared/model";
-import { describeWorktreeDetail, describeWorktreeState, worktreeLabel } from "../format";
+import { useId } from "react";
+import type { Worktree } from "../../shared/model";
+import { type RowMarker, type RowMarkerKind, describeRow, describeRowMarkers, describeWorktreeKind, worktreeLabel } from "../format";
 
 function Arrow({ direction }: { direction: "up" | "down" }) {
 	return (
@@ -9,15 +10,34 @@ function Arrow({ direction }: { direction: "up" | "down" }) {
 	);
 }
 
-/** Arrows and counts against the upstream, in the spirit of the VS Code status bar. */
-function SyncBadge({ sync }: { sync: SyncState }) {
-	if (sync.kind === "unpublished") return <span className="sync-note">local only</span>;
-	if (sync.kind === "gone") return <span className="sync-note">upstream gone</span>;
+/** How each marker looks. Every color comes with a text or a shape, so none carries meaning alone. */
+const markerClass: Record<RowMarkerKind, string> = {
+	"behind": "sync behind",
+	"ahead": "sync ahead",
+	"local-only": "sync-note",
+	"upstream-gone": "sync-note",
+	"sync-unknown": "sync-note",
+	"detached": "row-flag",
+	"folder-missing": "row-flag",
+	"status-unknown": "row-flag",
+	"locked": "row-flag",
+	"prunable": "row-flag",
+	"modified": "count modified",
+	"untracked": "count untracked",
+};
+
+/**
+ * One marker. Its tooltip shows on hover. The row is a button, so a marker
+ * cannot take focus or a role of its own: it is hidden from assistive
+ * technology, which gets every marker's sentence as the row's description.
+ */
+function Marker({ marker }: { marker: RowMarker }) {
 	return (
-		<>
-			{sync.behind > 0 && <span className="sync behind"><Arrow direction="down" />{sync.behind}</span>}
-			{sync.ahead > 0 && <span className="sync ahead"><Arrow direction="up" />{sync.ahead}</span>}
-		</>
+		<span className={markerClass[marker.kind]} title={marker.tooltip} aria-hidden="true">
+			{marker.kind === "behind" && <Arrow direction="down" />}
+			{marker.kind === "ahead" && <Arrow direction="up" />}
+			{marker.text}
+		</span>
 	);
 }
 
@@ -27,27 +47,31 @@ interface WorktreeRowProps {
 	onSelect: () => void;
 }
 
+/** One worktree in the sidebar. What it is marked with comes from `describeRowMarkers`; this only draws it. */
 export function WorktreeRow({ worktree, selected, onSelect }: WorktreeRowProps) {
-	const { changes, sync } = worktree;
-	const modified = changes.kind === "known" ? changes.modified.length : 0;
-	const untracked = changes.kind === "known" ? changes.untracked.length : 0;
+	const descriptionId = useId();
+	const markers = describeRowMarkers(worktree);
+	const at = (place: RowMarker["place"]) => markers.filter(marker => marker.place === place).map(marker => <Marker key={marker.kind} marker={marker} />);
+	const flags = at("state");
 	return (
 		<button
 			type="button"
 			className={selected ? "row selected" : "row"}
 			aria-current={selected}
-			title={describeWorktreeDetail(worktree)}
+			aria-describedby={markers.length > 0 ? descriptionId : undefined}
+			title={worktree.path}
 			onClick={onSelect}
 		>
 			<span className="row-line">
 				<span className="row-name">{worktreeLabel(worktree)}</span>
-				{sync && <SyncBadge sync={sync} />}
+				{at("branch")}
 			</span>
 			<span className="row-line row-meta">
-				<span className="row-sub">{describeWorktreeState(worktree)}</span>
-				{modified > 0 && <span className="count modified">{modified}M</span>}
-				{untracked > 0 && <span className="count untracked">{untracked}U</span>}
+				<span className="row-sub">{describeWorktreeKind(worktree)}</span>
+				{flags.length > 0 && <span className="row-flags">{flags}</span>}
+				{at("changes")}
 			</span>
+			{markers.length > 0 && <span id={descriptionId} className="row-description" hidden>{describeRow(markers)}</span>}
 		</button>
 	);
 }

@@ -58,6 +58,17 @@ describe("readBranchSync", () => {
 		});
 	});
 
+	test("counts the same commits as git rev-list for every tracking branch", async () => {
+		const branches = await readBranchSync(join(primary, ".git"));
+		const tracking = [...branches!].filter(([, sync]) => sync.kind === "tracking");
+		expect(tracking.map(([branch]) => branch).sort()).toEqual(["ahead", "behind", "both", "main", "zażółć"]);
+		for (const [branch, sync] of tracking) {
+			// Left of the three dots is the branch, right is its upstream: commits only here, then commits only there.
+			const [ahead, behind] = git(primary, "rev-list", "--left-right", "--count", `${branch}...${branch}@{upstream}`).trim().split("\t").map(Number);
+			expect(sync).toMatchObject({ ahead: ahead!, behind: behind! });
+		}
+	});
+
 	test("answers null where there is no repository", async () => {
 		expect(await readBranchSync(join(root, "does-not-exist", ".git"))).toBeNull();
 	});

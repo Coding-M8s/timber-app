@@ -420,16 +420,39 @@ pre:focus-visible {
 }
 
 .row-meta {
+	/* When the words below wrap, everything else stays on their first line. */
+	align-items: baseline;
 	font-size: 12px;
 	color: var(--text-3);
 }
 
 .row-sub {
+	flex: none;
+}
+
+/* With nothing between them, the change counts still sit at the far end. */
+.row-sub + .count {
+	margin-left: auto;
+}
+
+/* What is unusual about the worktree, in words. They wrap instead of being cut off. */
+.row-flags {
 	flex: 1 1 0;
 	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0 6px;
+}
+
+.row-flag {
+	color: var(--text-2);
 	white-space: nowrap;
+}
+
+.row-flag::before {
+	content: "\00b7";
+	margin-right: 6px;
+	color: var(--text-3);
 }
 
 .sync,
@@ -457,6 +480,7 @@ pre:focus-visible {
 	flex: none;
 	font-size: 11px;
 	color: var(--text-3);
+	white-space: nowrap;
 }
 
 .count.modified {

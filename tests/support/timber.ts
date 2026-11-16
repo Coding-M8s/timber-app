@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { findTimber } from "../../src/bun/timber";
 
@@ -48,6 +48,26 @@ export function git(cwd: string, ...args: string[]): string {
 	});
 	if (result.exitCode !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr.toString()}`);
 	return result.stdout.toString();
+}
+
+/**
+ * Every file under `folder` with its size and time of last change, and what
+ * Git says about the repository. Equal before and after means that nothing in
+ * between changed a file, a ref, or the index.
+ */
+export function fingerprint(folder: string): string {
+	const files: string[] = [];
+	const walk = (directory: string) => {
+		for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+			const path = join(directory, entry.name);
+			if (entry.isDirectory()) walk(path);
+			else files.push(`${path} ${statSync(path).size} ${statSync(path).mtimeMs}`);
+		}
+	};
+	walk(folder);
+	// Without optional locks, so that looking does not itself refresh the index file.
+	const run = (...args: string[]) => Bun.spawnSync(["git", "-C", folder, ...args], { env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } }).stdout.toString();
+	return [...files, run("for-each-ref"), run("worktree", "list", "--porcelain"), run("status", "--porcelain"), run("ls-files", "--stage")].join("\n");
 }
 
 /**

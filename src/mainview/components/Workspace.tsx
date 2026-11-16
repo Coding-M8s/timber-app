@@ -1,4 +1,4 @@
-import { describeChanges, describeSync, worktreeLabel } from "../format";
+import { describeChanges, describeWorktreeSync, worktreeLabel } from "../format";
 import { useAppState, useStore } from "../store/react";
 import { isRunning, selectedWorktree } from "../store/state";
 
@@ -28,12 +28,13 @@ export function Workspace() {
 
 	const { worktree } = selection;
 	const changes = describeChanges(worktree);
+	const sync = describeWorktreeSync(worktree);
 	return (
 		<main className="workspace">
 			<header className="workspace-header">
 				<h1 className="workspace-title">{worktreeLabel(worktree)}</h1>
 				<div className="workspace-meta">
-					{worktree.sync && <span>{describeSync(worktree.sync)}</span>}
+					{sync && <span>{sync}</span>}
 					<span>{changes}</span>
 					<span className="path">{worktree.path}</span>
 				</div>

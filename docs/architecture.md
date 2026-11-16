@@ -88,6 +88,29 @@ The sidebar shows exactly the worktrees Timber lists, in Timber's order
   or local only. One read-only `git for-each-ref` per repository, run against
   the common Git directory from the record, gives it for every branch
   (`readBranchSync` in `src/bun/git-engine.ts`). A detached HEAD has none.
+  A branch Git did not answer about has none either, and its row says "sync
+  unknown" instead of looking up to date, and so does the workspace header.
+  The counts are as of the last fetch, because the app does not fetch yet.
+- **Row markers.** `describeRowMarkers` in `src/mainview/format.ts` is pure
+  and turns one worktree into the markers its row shows, each with a kind, a
+  short text, and a sentence in plain words. `WorktreeRow` only draws them.
+  Beside the branch: a down arrow and an up arrow with counts, "local only",
+  "upstream gone", or "sync unknown". Below it: "detached HEAD", "folder
+  missing" or "status unknown", "locked", and "prunable". At the end: the
+  counts, such as `3M` and `1U`. A clean worktree that is level with its
+  upstream has no markers, and a status or upstream state that could not be
+  read always has one, so an empty row never means "not known".
+- **What the counts count.** They are the lengths of Timber's `modified` and
+  `untracked` lists. `M` is one for each entry `git status` shows for a
+  tracked file, staged or not: modified, added, deleted, renamed (once, under
+  the new name), or in conflict. `U` counts untracked files one by one, as
+  `git status --untracked-files=all` does, so a new folder with two files is
+  `2U` where plain `git status` shows one line. Ignored files are left out.
+- **Tooltips.** Each marker carries its sentence as a tooltip. A row is one
+  button, so a marker cannot take focus or a role of its own. The markers are
+  hidden from assistive technology, and the button is described
+  (`aria-describedby`) by all of their sentences in a row. Its name stays the
+  branch and the kind of checkout.
 - **Failures.** A repository that Git can read but Timber could not list
   comes back with `failure` set to the diagnostic and no worktrees. The store
   keeps the worktrees it listed last, and the sidebar shows the diagnostic
@@ -461,8 +484,33 @@ Run for error and result feedback (issue 5), Linux x64 under WSL with Bun
   still there after 4.5 seconds and gone after 5.4. The window was not
   inspected by eye in this run.
 
+Run for branch status in rows (issue 10), Linux x64 under WSL with Bun 1.4.2,
+Git 2.43, and Timber 0.1.1:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 302 tests passed and 1 was skipped (it only runs in CI). They
+  cover the markers for each state, the rendered row with its tooltips, name,
+  and description, and the installed Timber on a temporary repository with a
+  remote. There the row's counts are compared with `git status --porcelain`
+  for staged, unstaged, added, deleted, renamed, and untracked files, with
+  spaces and non-ASCII characters in file names (11 and 5), and ahead and
+  behind with `git rev-list --left-right --count` for branches that are
+  ahead, behind, both, and level. A branch that was never pushed shows "local
+  only", one whose upstream was deleted shows "upstream gone", and the clean
+  primary checkout shows no markers. Every file, ref, and index is the same
+  after reading as before.
+- The same `bun test` with no Timber on PATH: 266 passed and 38 were skipped.
+- `bun run build:web`, then the built interface in headless Chrome 133,
+  driven by a temporary script (not committed): the 14 sample rows showed
+  every marker, and screenshots of the sidebar were looked at. Chrome's
+  accessibility tree gave each row button the branch and kind of checkout as
+  its name and its markers' sentences as its description, and no marker as a
+  node of its own.
+
 Not run yet:
 
+- Branch status rows in the desktop window, and a row read out by a screen
+  reader. Tooltips were checked as `title` attributes, not seen on hover.
 - The helper from inside the running desktop app. Nothing calls it yet.
 - A toast after adding or removing a repository in the desktop window. Only
   the sample dialog's toast was run there.
