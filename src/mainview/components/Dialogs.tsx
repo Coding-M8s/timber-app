@@ -23,6 +23,7 @@ export function Dialogs() {
 			// A key per worktree, so a dialog for another one starts from nothing.
 			return <DoneDialog key={`${dialog.repository}\n${dialog.worktree}`} request={dialog} />;
 		case "settings":
-			return <SettingsDialog initialSection={dialog.section ?? SETTINGS_SECTIONS[0]} />;
+			// A key per section asked for, so asking for another one while Settings is open opens it there.
+			return <SettingsDialog key={dialog.section ?? ""} initialSection={dialog.section ?? SETTINGS_SECTIONS[0]} />;
 	}
 }

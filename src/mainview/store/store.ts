@@ -249,6 +249,9 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	 * read that answers after it, so that read is then dropped.
 	 */
 	let preferencesSaved = false;
+	// Saves take a ticket when they ask, so an older answer that arrives last never replaces a newer one.
+	let lastPreferenceTicket = 0;
+	let shownPreferenceTicket = 0;
 
 	async function loadPreferences(): Promise<void> {
 		try {
@@ -260,13 +263,15 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	}
 
 	async function savePreferences(change: Partial<Preferences>): Promise<SavePreferencesResult> {
+		const ticket = ++lastPreferenceTicket;
 		let result: SavePreferencesResult;
 		try {
 			result = await engine.savePreferences(change);
 		} catch (error) {
 			result = { outcome: "failed", message: messageOf(error) };
 		}
-		if (result.outcome === "saved") {
+		if (result.outcome === "saved" && ticket > shownPreferenceTicket) {
+			shownPreferenceTicket = ticket;
 			preferencesSaved = true;
 			update({ preferences: result.preferences, preferencesProblem: null });
 		}

@@ -1,4 +1,4 @@
-import { type ReactNode, type SubmitEvent, useId, useState } from "react";
+import { type ReactNode, type SubmitEvent, createContext, useContext, useEffect, useId, useRef, useState } from "react";
 import type { Preferences } from "../../../shared/preferences";
 import { useStore } from "../../store/react";
 
@@ -9,6 +9,9 @@ export type SectionSave =
 	| { state: "saved" }
 	| { state: "failed"; message: string };
 
+/** How a section tells the dialog that it is saving, so the dialog keeps itself open until the answer is in. */
+export const SettingsSavingContext = createContext<{ reportSaving(started: boolean): void }>({ reportSaving: () => {} });
+
 /**
  * Saving one section's preferences through the store: only the preferences
  * the section names, so it never undoes another section's. The store changes
@@ -16,13 +19,25 @@ export type SectionSave =
  */
 export function useSectionSave() {
 	const store = useStore();
+	const { reportSaving } = useContext(SettingsSavingContext);
 	const [save, setSave] = useState<SectionSave>({ state: "idle" });
+	// A ref, not the state: a second Enter can arrive before the next render.
+	const running = useRef(false);
+
 	const run = async (change: Partial<Preferences>): Promise<boolean> => {
-		if (save.state === "saving") return false;
+		if (running.current) return false;
+		running.current = true;
+		// Told at once, not after a render, so an Escape right after Save cannot close the dialog in between.
+		reportSaving(true);
 		setSave({ state: "saving" });
-		const result = await store.savePreferences(change);
-		setSave(result.outcome === "saved" ? { state: "saved" } : { state: "failed", message: result.message });
-		return result.outcome === "saved";
+		try {
+			const result = await store.savePreferences(change);
+			setSave(result.outcome === "saved" ? { state: "saved" } : { state: "failed", message: result.message });
+			return result.outcome === "saved";
+		} finally {
+			running.current = false;
+			reportSaving(false);
+		}
 	};
 	// Choosing something new puts the last outcome away, so "Saved" never stands beside an unsaved choice.
 	const reset = () => {
@@ -45,13 +60,27 @@ interface SettingsSectionProps {
 /** One section of the Settings dialog: its fields, and a Save of its own, as the design asks. */
 export function SettingsSection({ title, description, save, canSave, onSave, children }: SettingsSectionProps) {
 	const titleId = useId();
+	const form = useRef<HTMLFormElement>(null);
+	const saveButton = useRef<HTMLButtonElement>(null);
 	const saving = save.state === "saving";
+	const blocked = saving || !canSave;
+
+	// The fields are disabled while saving, which takes focus away from the one in use.
+	// When the save ends and focus was lost that way, give it to Save, which stays focusable.
+	const wasSaving = useRef(false);
+	useEffect(() => {
+		const ended = wasSaving.current && !saving;
+		wasSaving.current = saving;
+		const element = form.current;
+		if (ended && element && !element.contains(document.activeElement)) saveButton.current?.focus();
+	}, [saving]);
+
 	const submit = (event: SubmitEvent<HTMLFormElement>) => {
 		event.preventDefault();
-		if (!saving && canSave) onSave();
+		if (!blocked) onSave();
 	};
 	return (
-		<form className="settings-section" aria-labelledby={titleId} aria-busy={saving} onSubmit={submit}>
+		<form ref={form} className="settings-section" aria-labelledby={titleId} aria-busy={saving} onSubmit={submit}>
 			<h3 id={titleId} className="settings-section-title">{title}</h3>
 			<p className="settings-section-text">{description}</p>
 			<fieldset className="dialog-fields" disabled={saving}>{children}</fieldset>
@@ -64,7 +93,8 @@ export function SettingsSection({ title, description, save, canSave, onSave, chi
 			)}
 			<div className="settings-section-foot">
 				<p className="settings-section-status" role="status">{save.state === "saved" ? "Saved" : ""}</p>
-				<button type="submit" className="button primary" disabled={saving || !canSave}>
+				{/* Marked, not disabled, so a keyboard user who just saved keeps focus here. */}
+				<button ref={saveButton} type="submit" className="button primary" aria-disabled={blocked}>
 					{saving ? "Saving" : "Save"}
 				</button>
 			</div>

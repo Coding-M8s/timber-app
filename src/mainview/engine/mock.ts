@@ -485,7 +485,9 @@ export function createMockEngine(
 		loadPreferences: async () => structuredClone(preferences),
 		async savePreferences(change) {
 			if (preferencesFailure !== null) return { outcome: "failed", message: preferencesFailure };
-			preferences = applyPreferenceChange(preferences, structuredClone(change));
+			const { preferences: next, unreadable } = applyPreferenceChange(preferences, structuredClone(change));
+			if (unreadable.length > 0) return { outcome: "failed", message: `Nothing was saved, because these settings could not be read: ${unreadable.join(", ")}.` };
+			preferences = next;
 			return { outcome: "saved", preferences: structuredClone(preferences) };
 		},
 		failPreferenceSaves(message) {

@@ -501,7 +501,9 @@ pure functions in `src/mainview/shell.ts`.
   window has no control for it. On the right the body is drawn workspace,
   edge, sidebar, in that order in the page itself, not by CSS, so Tab reaches
   the parts in the order they are seen. Each part keeps its key, so moving
-  the sidebar keeps what it holds, such as the filter. On the right the edge
+  the sidebar keeps its React state, such as the filter. The browser still
+  moves the parts in the page, which resets their scroll position, and
+  would reload a frame inside one. On the right the edge
   follows the pointer the other way, and the arrow pointing at the workspace
   widens the sidebar (`sidebarWidthAfterKey` and `sidebarWidthAfterDrag` in
   `shell.ts`). Home and End still mean the narrowest and the widest. In the
@@ -540,7 +542,13 @@ Settings dialog and kept by the app. They are never Timber's configuration.
   `SettingsHolder` as the repository list and the layout
   (`src/bun/preferences.ts`). A file without it is valid and means the
   defaults. A part that cannot be read falls back to its default and never
-  makes the file count as damaged.
+  makes the file count as damaged. A part this version does not know is left
+  out, so it is lost on the next save, for example after going back to an
+  older build.
+- **One table.** Every preference is one entry in `PREFERENCE_PARTS`, which
+  says how it is read, compared, and written. Reading the file, merging a
+  change, comparing, and writing all go through it, so a new preference
+  cannot be left out of one of them.
 - **Kept apart from the layout.** The layout is saved whole and often,
   starting from the defaults when the person changes it before it was read.
   Preferences change only when a section is saved, so they are not part of it.
@@ -548,17 +556,26 @@ Settings dialog and kept by the app. They are never Timber's configuration.
   changes. The main process merges them with what was saved last, in turn
   with every other change to the file, so one section's Save never undoes
   another's. The answer carries every preference as saved, and the store
-  shows what the engine answered, never what it asked for. A failed save
-  changes nothing on screen.
+  shows what the engine answered, never what it asked for. A change with a
+  part that cannot be read saves nothing and is a failure that names it. A
+  failed save changes nothing on screen. Each save takes a ticket, so an
+  older answer that arrives last never replaces a newer one.
 - **The dialog.** `src/mainview/components/SettingsDialog.tsx`, opened by the
   cog with `{ kind: "settings" }`, or at one section with `section`. The
   sections are listed down the side, in the order of `SETTINGS_SECTIONS`
-  (`src/mainview/store/state.ts`), and each is one entry in `SECTION_VIEWS`.
+  (`src/mainview/store/state.ts`), named in `SETTINGS_SECTION_LABELS`
+  (`shell.ts`), and each is one entry in `SECTION_VIEWS`. Focus starts on the
+  section that shows. Every section stays mounted and only the chosen one
+  shows, so what was typed in one is still there after looking at another.
   Each section is a `SettingsSection` with a Save of its own, as the design
-  asks. Save is disabled until something differs from what is saved. What
-  is applied changes when the save worked, without a restart. A failure stays
-  in the section with the reason and what was chosen, ready to save again.
-  Nothing in the dialog runs Timber, so it has no command footer.
+  asks. Save is marked unavailable, not disabled, until something differs
+  from what is saved, so focus stays on it after a save. What is applied
+  changes when the save worked, without a restart. While a section saves,
+  Close, Escape, and the other sections do nothing, so its answer is never
+  lost. A failure stays in the section with the reason and what was chosen,
+  ready to save again. Saved preferences that could not be read on start are
+  reported at the top of the dialog. Nothing in the dialog runs Timber, so it
+  has no command footer.
 - **Sections today.** Layout: the side of the sidebar, left by default.
 
 In `bun run dev:web`, `timberMock.failPreferenceSaves("disk full")` makes
@@ -984,7 +1001,7 @@ The installed Timber was 0.1.0-dev.0, older than required, so the tests that
 run Timber were skipped:
 
 - `bun run typecheck` and `bun run typecheck:desktop`: no errors.
-- `bun test`: 567 tests passed, 80 were skipped, none failed. The new ones
+- `bun test`: 572 tests passed, 80 were skipped, none failed. The new ones
   cover reading, merging, and writing preferences, an older settings file,
   a damaged preferences part, saving preferences against a real temporary
   settings file at the same time as adding a real temporary repository and
@@ -1005,6 +1022,12 @@ run Timber were skipped:
   right. At 600 pixels wide the workspace was on top and the sidebar below
   it, with nothing scrolling sideways. The console had no errors.
   Screenshots of each of these were looked at.
+- After review, the same page with saving made to take 1.5 seconds by a
+  script in the page: Settings opened with focus on Layout; Tab, the down
+  arrow, and Enter chose Right and saved; Escape right after did not close
+  the dialog, Close was disabled, and Save read "Saving". When the save
+  ended, focus was on Save, the status said "Saved", and the sidebar was on
+  the right. Escape then closed the dialog.
 
 Not run yet:
 

@@ -854,6 +854,16 @@ pre:focus-visible {
 	min-height: 280px;
 }
 
+.settings-problem {
+	margin: 12px 18px 0;
+}
+
+.button.primary[aria-disabled="true"] {
+	background: var(--fill-hover);
+	color: var(--text-3);
+	cursor: default;
+}
+
 .settings-nav {
 	flex: none;
 	width: 160px;

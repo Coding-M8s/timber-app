@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { Engine } from "../src/shared/engine";
 import { DEFAULT_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, defaultLayout } from "../src/shared/layout";
 import type { Layout } from "../src/shared/layout";
-import type { SaveLayoutResult } from "../src/shared/model";
+import type { SaveLayoutResult, SavePreferencesResult } from "../src/shared/model";
 import { type Preferences, defaultPreferences } from "../src/shared/preferences";
 import { createMockEngine } from "../src/mainview/engine/mock";
 import { SIDEBAR_KEY_STEP, describeLayoutProblem, describeRepository, sidebarWidthAfterDrag, sidebarWidthAfterKey, tabAfterKey } from "../src/mainview/shell";
@@ -369,6 +369,29 @@ describe("the preferences in the store", () => {
 		expect(store.getState().preferencesProblem).toBe("permission denied");
 		await store.savePreferences({ sidebarSide: "right" });
 		expect(store.getState().preferencesProblem).toBeNull();
+	});
+
+	test("an older save that answers after a newer one never replaces it on screen", async () => {
+		const engine = createMockEngine();
+		const answers: ((result: SavePreferencesResult) => void)[] = [];
+		engine.savePreferences = () => new Promise(resolve => {
+			answers.push(resolve);
+		});
+		const store = await startedStore(engine);
+		const first = store.savePreferences({ sidebarSide: "left" });
+		const second = store.savePreferences({ sidebarSide: "right" });
+		answers[1]!({ outcome: "saved", preferences: { sidebarSide: "right" } });
+		await second;
+		answers[0]!({ outcome: "saved", preferences: { sidebarSide: "left" } });
+		await first;
+		expect(store.getState().preferences).toEqual({ sidebarSide: "right" });
+	});
+
+	test("a change the engine cannot read is a failed save", async () => {
+		const store = await startedStore();
+		const result = await store.savePreferences({ sidebarSide: "top" as "left" });
+		expect(result.outcome).toBe("failed");
+		expect(store.getState().preferences).toEqual(defaultPreferences());
 	});
 
 	test("saving the side leaves the layout alone", async () => {

@@ -7,7 +7,7 @@ import { createSavedPreferences } from "../src/bun/preferences";
 import { createRepositoryList } from "../src/bun/repository-list";
 import type { RepositoryReader } from "../src/bun/repository-reader";
 import { createSettingsHolder } from "../src/bun/settings";
-import { applyPreferenceChange, defaultPreferences, readPreferences, samePreferences } from "../src/shared/preferences";
+import { PREFERENCE_PARTS, applyPreferenceChange, defaultPreferences, readPreferences, samePreferences, writePreferences } from "../src/shared/preferences";
 import { parseSettings, serializeSettings } from "../src/shared/settings";
 import { git } from "./support/timber";
 
@@ -34,15 +34,27 @@ describe("readPreferences", () => {
 describe("applyPreferenceChange", () => {
 	test("replaces only what the change names", () => {
 		const saved = { sidebarSide: "right" as const };
-		expect(applyPreferenceChange(saved, {})).toEqual(saved);
-		expect(applyPreferenceChange(saved, { sidebarSide: "left" })).toEqual({ sidebarSide: "left" });
+		expect(applyPreferenceChange(saved, {})).toEqual({ preferences: saved, unreadable: [] });
+		expect(applyPreferenceChange(saved, { sidebarSide: undefined })).toEqual({ preferences: saved, unreadable: [] });
+		expect(applyPreferenceChange(saved, { sidebarSide: "left" })).toEqual({ preferences: { sidebarSide: "left" }, unreadable: [] });
 	});
 
-	test("leaves out a part of the change it cannot read", () => {
+	test("keeps a part of the change it cannot read as it was, and names it", () => {
 		const saved = { sidebarSide: "right" as const };
-		expect(applyPreferenceChange(saved, { sidebarSide: "middle" })).toEqual(saved);
-		expect(applyPreferenceChange(saved, null)).toEqual(saved);
-		expect(applyPreferenceChange(saved, "left")).toEqual(saved);
+		expect(applyPreferenceChange(saved, { sidebarSide: "middle" })).toEqual({ preferences: saved, unreadable: ["sidebarSide"] });
+		expect(applyPreferenceChange(saved, { sidebarSide: null })).toEqual({ preferences: saved, unreadable: ["sidebarSide"] });
+		// Something that is not a change at all names nothing.
+		expect(applyPreferenceChange(saved, null)).toEqual({ preferences: saved, unreadable: [] });
+		expect(applyPreferenceChange(saved, "left")).toEqual({ preferences: saved, unreadable: [] });
+	});
+
+	test("every preference in the table is read, compared, and written", () => {
+		const changed = { sidebarSide: "right" as const };
+		for (const key of Object.keys(PREFERENCE_PARTS) as (keyof typeof PREFERENCE_PARTS)[]) {
+			expect(key in defaultPreferences()).toBe(true);
+			expect(samePreferences(defaultPreferences(), { ...defaultPreferences(), [key]: changed[key] })).toBe(false);
+			expect(readPreferences(writePreferences(changed))[key]).toEqual(changed[key]);
+		}
 	});
 
 	test("never changes what it was given", () => {
@@ -133,12 +145,14 @@ describe("the saved preferences in the main process", () => {
 		expect(await appOn().preferences.load()).toEqual({ sidebarSide: "right" });
 	});
 
-	test("check what the interface sent, and save only what they can read", async () => {
+	test("check what the interface sent, and refuse a change they cannot read without saving any of it", async () => {
 		const { preferences } = appOn();
 		await preferences.save({ sidebarSide: "right" });
+		const before = readFileSync(settingsFile, "utf8");
 		const result = await preferences.save({ sidebarSide: "top" as "left" });
-		expect(result).toEqual({ outcome: "saved", preferences: { sidebarSide: "right" } });
-		expect(onDisk().preferences).toEqual({ sidebarSide: "right" });
+		expect(result).toEqual({ outcome: "failed", message: "Nothing was saved, because these settings could not be read: sidebarSide." });
+		expect(readFileSync(settingsFile, "utf8")).toBe(before);
+		expect(await preferences.load()).toEqual({ sidebarSide: "right" });
 	});
 
 	test("saving them and changing the layout and the repository list never lose each other's part", async () => {

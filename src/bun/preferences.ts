@@ -8,8 +8,9 @@ export interface SavedPreferences {
 	load(): Promise<Preferences>;
 	/**
 	 * Save the preferences that `change` names, on top of what was saved last,
-	 * leaving every other part of the settings as it is. A failure is an
-	 * answer, not an error, so the interface carries on.
+	 * leaving every other part of the settings as it is. A change with a part
+	 * that cannot be read saves nothing. A failure is an answer, not an error,
+	 * so the interface carries on.
 	 */
 	save(change: Partial<Preferences>): Promise<SavePreferencesResult>;
 }
@@ -29,7 +30,10 @@ export function createSavedPreferences(settings: SettingsHolder): SavedPreferenc
 				const current = await settings.current();
 				const saved = current.preferences ?? defaultPreferences();
 				// What the interface sent is checked like anything else that comes from outside.
-				const next = applyPreferenceChange(saved, change);
+				const { preferences: next, unreadable } = applyPreferenceChange(saved, change);
+				if (unreadable.length > 0) {
+					return { outcome: "failed", message: `Nothing was saved, because these settings could not be read: ${unreadable.join(", ")}.` };
+				}
 				if (current.preferences && samePreferences(saved, next)) return { outcome: "saved", preferences: next };
 				try {
 					await settings.save({ ...current, preferences: next });

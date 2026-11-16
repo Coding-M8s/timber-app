@@ -13,41 +13,86 @@ export interface Preferences {
 	sidebarSide: SidebarSide;
 }
 
-export function defaultPreferences(): Preferences {
-	return { sidebarSide: "left" };
+/** How one preference is read from outside, compared, and written to the settings file. */
+interface PreferencePart<Value> {
+	/** The value as the default when nothing was saved. */
+	fallback(): Value;
+	/** The value, or undefined when what came from outside cannot be read. */
+	read(value: unknown): Value | undefined;
+	same(one: Value, other: Value): boolean;
+	/** The value as it goes into the settings file. */
+	write(value: Value): unknown;
 }
+
+/**
+ * Every preference, once. Reading, merging, comparing, and writing all go
+ * through this table, so a preference added here cannot be left out of any of
+ * them, and the type makes leaving it out of the table an error.
+ */
+export const PREFERENCE_PARTS: { [Key in keyof Preferences]: PreferencePart<Preferences[Key]> } = {
+	sidebarSide: {
+		fallback: () => "left",
+		read: value => SIDEBAR_SIDES.includes(value as SidebarSide) ? value as SidebarSide : undefined,
+		same: (one, other) => one === other,
+		write: value => value,
+	},
+};
+
+const PREFERENCE_KEYS = Object.keys(PREFERENCE_PARTS) as (keyof Preferences)[];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isSidebarSide(value: unknown): value is SidebarSide {
-	return SIDEBAR_SIDES.includes(value as SidebarSide);
+/** One preference, typed by its key, for the loops below. */
+function partOf<Key extends keyof Preferences>(key: Key): PreferencePart<Preferences[Key]> {
+	return PREFERENCE_PARTS[key];
+}
+
+export function defaultPreferences(): Preferences {
+	const preferences = {} as Record<keyof Preferences, unknown>;
+	for (const key of PREFERENCE_KEYS) preferences[key] = partOf(key).fallback();
+	return preferences as Preferences;
 }
 
 /**
  * Read preferences from a value that came from outside, such as the settings
  * file. Like the layout, they are a convenience, so this never fails: each
  * part that is missing or unreadable falls back to its default, and the rest
- * is kept.
+ * is kept. Parts this version of the app does not know are left out, so they
+ * are lost on the next save, for example after going back to an older build.
  */
 export function readPreferences(value: unknown): Preferences {
-	return applyPreferenceChange(defaultPreferences(), value);
+	return applyPreferenceChange(defaultPreferences(), value).preferences;
 }
 
 /**
  * The preferences with only the parts that a change names replaced. Each
  * section of the Settings dialog saves its own parts, so one section's Save
- * never undoes another's. A part of the change that cannot be read is left
- * out, never saved.
+ * never undoes another's. A named part that cannot be read is left as it
+ * was and is listed in `unreadable`, so a save can refuse it instead of
+ * claiming it was saved.
  */
-export function applyPreferenceChange(preferences: Preferences, change: unknown): Preferences {
-	const next = { ...preferences };
-	if (!isRecord(change)) return next;
-	if (isSidebarSide(change.sidebarSide)) next.sidebarSide = change.sidebarSide;
-	return next;
+export function applyPreferenceChange(preferences: Preferences, change: unknown): { preferences: Preferences; unreadable: (keyof Preferences)[] } {
+	const next = { ...preferences } as Record<keyof Preferences, unknown>;
+	const unreadable: (keyof Preferences)[] = [];
+	if (!isRecord(change)) return { preferences: next as Preferences, unreadable };
+	for (const key of PREFERENCE_KEYS) {
+		if (!Object.hasOwn(change, key) || change[key] === undefined) continue;
+		const value = partOf(key).read(change[key]);
+		if (value === undefined) unreadable.push(key);
+		else next[key] = value;
+	}
+	return { preferences: next as Preferences, unreadable };
 }
 
 export function samePreferences(one: Preferences, other: Preferences): boolean {
-	return one.sidebarSide === other.sidebarSide;
+	return PREFERENCE_KEYS.every(key => partOf(key).same(one[key], other[key]));
+}
+
+/** The preferences as they go into the settings file. */
+export function writePreferences(preferences: Preferences): Record<string, unknown> {
+	const written: Record<string, unknown> = {};
+	for (const key of PREFERENCE_KEYS) written[key] = partOf(key).write(preferences[key]);
+	return written;
 }

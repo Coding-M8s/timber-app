@@ -1,5 +1,5 @@
 import { type Layout, readLayout } from "./layout";
-import { type Preferences, readPreferences } from "./preferences";
+import { type Preferences, readPreferences, writePreferences } from "./preferences";
 
 /**
  * What the app remembers between runs. Parsing and formatting are pure; the
@@ -86,6 +86,6 @@ export function parseSettings(text: string): Settings | null {
 export function serializeSettings(settings: Settings): string {
 	const repositories = settings.repositories.map(({ path, commonDir }) => ({ path, commonDir }));
 	const layout = settings.layout && { sidebarWidth: settings.layout.sidebarWidth, collapsed: [...settings.layout.collapsed] };
-	const preferences = settings.preferences && { sidebarSide: settings.preferences.sidebarSide };
+	const preferences = settings.preferences && writePreferences(settings.preferences);
 	return `${JSON.stringify({ version: SETTINGS_VERSION, repositories, ...(layout ? { layout } : {}), ...(preferences ? { preferences } : {}) }, null, "\t")}\n`;
 }

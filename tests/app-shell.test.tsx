@@ -349,10 +349,32 @@ describe("settings dialog", () => {
 		expect(markup).toContain('<input type="radio" name="sidebar-side" value="right"/>');
 	});
 
-	test("Save is disabled while nothing differs from what is saved", async () => {
+	test("Save is marked unavailable while nothing differs from what is saved, and stays focusable", async () => {
 		const { store } = await startedStore();
 		store.openDialog({ kind: "settings", section: "layout" });
-		expect(render(store)).toMatch(/<button type="submit" class="button primary" disabled="">Save<\/button>/);
+		expect(render(store)).toContain('<button type="submit" class="button primary" aria-disabled="true">Save</button>');
+	});
+
+	test("each section is a panel named by its entry in the list, and only the chosen one shows", async () => {
+		const { store } = await startedStore();
+		store.openDialog({ kind: "settings" });
+		const markup = render(store);
+		const nav = /<button type="button" id="([^"]+)" class="settings-nav-item selected" aria-current="page" aria-controls="([^"]+)"/.exec(markup);
+		expect(nav).not.toBeNull();
+		expect(markup).toContain(`<div class="settings-panel" id="${nav![2]}" aria-labelledby="${nav![1]}">`);
+		expect(markup).not.toMatch(/class="settings-panel"[^>]*hidden=""/);
+	});
+
+	test("says when the saved settings could not be read", async () => {
+		const engine = createMockEngine();
+		engine.loadPreferences = async () => {
+			throw new Error("permission denied");
+		};
+		const { store } = await startedStore(engine);
+		store.openDialog({ kind: "settings" });
+		const markup = render(store);
+		expect(markup).toContain("Could not read the saved settings");
+		expect(markup).toContain("permission denied");
 	});
 
 	test("shows what is saved, and like every dialog waits for Timber", async () => {
