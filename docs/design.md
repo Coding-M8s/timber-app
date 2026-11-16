@@ -38,6 +38,13 @@ change them here first when they change.
 ## Dialogs
 
 - Every dialog that runs Timber shows the exact command in its footer.
+- While the command runs, the dialog shows progress, its controls are
+  disabled, and it cannot be closed or submitted again.
+- A command that worked closes the dialog and leaves a toast, such as
+  "Worktree created", which disappears on its own.
+- A command that failed keeps the dialog open with Timber's diagnostic, so the
+  person can correct and retry. What the command printed sits in a details
+  area that starts closed.
 - **New or open:** a name or sentence becomes a branch; pick the start point.
 - **Rebase:** pick the base. A worktree with uncommitted changes is refused,
   as Timber does.

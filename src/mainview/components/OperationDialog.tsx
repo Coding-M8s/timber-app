@@ -1,0 +1,84 @@
+import { type ReactNode, type SubmitEvent, useEffect, useId, useRef } from "react";
+import type { SubmissionState } from "../store/submission";
+import { TimberFailureDetails } from "./TimberFailureDetails";
+
+interface OperationDialogProps {
+	title: string;
+	/** The exact Timber command the dialog is about to run, shown before it runs. */
+	command: string;
+	/** The state of the dialog's submission (see `useSubmission`). */
+	submission: SubmissionState;
+	/** On the submit button, for example "Create worktree". */
+	submitLabel: string;
+	/** Beside the progress bar while the command runs, for example "Creating the worktree". */
+	runningLabel: string;
+	/** Above a failure, for example "Could not create the worktree". */
+	failureTitle: string;
+	/** False while the fields do not make a command that can run. */
+	canSubmit?: boolean;
+	onSubmit: () => void;
+	/** Asked for by Cancel and Escape. Never while the command runs. */
+	onClose: () => void;
+	/** The fields. They are disabled as a group while the command runs. */
+	children: ReactNode;
+}
+
+/**
+ * The frame every dialog that runs a Timber command shares, so they all
+ * behave the same. While the command runs, the fields and buttons are
+ * disabled, progress is shown, and the dialog cannot be closed or submitted
+ * again. A failure is shown in the dialog, which stays open for a correction
+ * and a retry.
+ */
+export function OperationDialog(props: OperationDialogProps) {
+	const { title, command, submission, submitLabel, runningLabel, failureTitle, canSubmit = true, onSubmit, onClose, children } = props;
+	const { running, failure } = submission;
+	const dialog = useRef<HTMLDialogElement>(null);
+	const titleId = useId();
+
+	// Opened as a modal, so the rest of the window is inert and focus stays inside.
+	useEffect(() => {
+		const element = dialog.current;
+		if (element && !element.open) element.showModal();
+		return () => element?.close();
+	}, []);
+
+	const submit = (event: SubmitEvent<HTMLFormElement>) => {
+		event.preventDefault();
+		if (!running && canSubmit) onSubmit();
+	};
+
+	return (
+		<dialog
+			ref={dialog}
+			className="dialog"
+			aria-labelledby={titleId}
+			onCancel={event => {
+				// Escape asks to close. The dialog decides, and never while the command runs.
+				event.preventDefault();
+				if (!running) onClose();
+			}}
+		>
+			<form className="dialog-form" aria-busy={running} onSubmit={submit}>
+				<h2 id={titleId} className="dialog-title">{title}</h2>
+				<fieldset className="dialog-fields" disabled={running}>{children}</fieldset>
+				{failure && <TimberFailureDetails title={failureTitle} failure={failure} />}
+				{running && (
+					<div className="dialog-progress">
+						<div className="progress" role="progressbar" aria-label={runningLabel} />
+						<p className="dialog-progress-text" role="status">{runningLabel}</p>
+					</div>
+				)}
+				<footer className="dialog-foot">
+					<pre className="dialog-command" aria-label="Command that will run">{command}</pre>
+					<div className="dialog-buttons">
+						<button type="button" className="button quiet" disabled={running} onClick={onClose}>Cancel</button>
+						<button type="submit" className="button primary" disabled={running || !canSubmit}>
+							{running ? "Running" : submitLabel}
+						</button>
+					</div>
+				</footer>
+			</form>
+		</dialog>
+	);
+}

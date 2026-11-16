@@ -1,4 +1,4 @@
-import { StrictMode } from "react";
+import { type ReactNode, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { createEngine } from "./engine";
@@ -7,13 +7,24 @@ import "./styles.css";
 
 const root = createRoot(document.getElementById("root")!);
 
-createEngine().then(
-	engine => {
+/**
+ * In a browser, ?feedback=demo adds a sample dialog that acts out a Timber
+ * command, for working on toasts, failures, and the running state. The
+ * desktop app never loads it.
+ */
+async function sampleDialog(): Promise<ReactNode> {
+	if ("__electrobunWebviewId" in window || new URLSearchParams(location.search).get("feedback") !== "demo") return null;
+	const { FeedbackDemo } = await import("./components/FeedbackDemo");
+	return <FeedbackDemo />;
+}
+
+Promise.all([createEngine(), sampleDialog()]).then(
+	([engine, sample]) => {
 		const store = createAppStore(engine);
 		store.start();
 		root.render(
 			<StrictMode>
-				<App store={store} />
+				<App store={store}>{sample}</App>
 			</StrictMode>,
 		);
 	},

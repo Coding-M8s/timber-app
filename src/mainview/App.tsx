@@ -1,6 +1,8 @@
 import { Sidebar } from "./components/Sidebar";
 import { TimberNotice } from "./components/TimberNotice";
+import type { ReactNode } from "react";
 import { TitleBar } from "./components/TitleBar";
+import { Toasts } from "./components/Toasts";
 import { Workspace } from "./components/Workspace";
 import { StoreProvider, useAppState, useStore } from "./store/react";
 import { isRunning, timberReady } from "./store/state";
@@ -37,13 +39,19 @@ function Body() {
 	);
 }
 
-/** Every part below reads the one store it is given. See docs/architecture.md. */
-export function App({ store }: { store: AppStore }) {
+/**
+ * Every part below reads the one store it is given. See docs/architecture.md.
+ * `children` sit over the window, inside the store: the browser build uses
+ * that for its sample dialog.
+ */
+export function App({ store, children }: { store: AppStore; children?: ReactNode }) {
 	return (
 		<StoreProvider store={store}>
 			<div className="app">
 				<TitleBar />
 				<Body />
+				<Toasts />
+				{children}
 			</div>
 		</StoreProvider>
 	);

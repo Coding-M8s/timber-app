@@ -36,14 +36,14 @@ export type TimberListing =
 	| { ok: true; repository: ListedRepository; worktrees: ListedWorktree[] }
 	| { ok: false; message: string };
 
-type Fields = Record<string, unknown>;
+export type Fields = Record<string, unknown>;
 
-function isFields(value: unknown): value is Fields {
+export function isFields(value: unknown): value is Fields {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 const isText = (value: unknown): value is string => typeof value === "string";
-const isTextOrNull = (value: unknown): value is string | null => value === null || typeof value === "string";
+export const isTextOrNull = (value: unknown): value is string | null => value === null || typeof value === "string";
 const isTextList = (value: unknown): value is string[] => Array.isArray(value) && value.every(isText);
 
 /** `locked` and `prunable` are null, or an object holding an optional reason. */
@@ -61,8 +61,8 @@ function readChanges(value: unknown): WorktreeChanges | null {
 	return null;
 }
 
-/** Null when the value is not a version 1 `WorktreeRecord`. Fields this app does not use are ignored. */
-function readWorktree(value: unknown): ListedWorktree | null {
+/** Null when the value is not a version 1 `WorktreeRecord`. Fields this app does not use are ignored. Result files carry the same record. */
+export function readWorktree(value: unknown): ListedWorktree | null {
 	if (!isFields(value)) return null;
 	const { path, canonicalPath, branch, head, isPrimary, detached, pathExists } = value;
 	const locked = readFlag(value.locked);
@@ -74,7 +74,7 @@ function readWorktree(value: unknown): ListedWorktree | null {
 	return { path, canonicalPath, branch, head, primary: isPrimary, detached, locked, prunable, pathExists, changes };
 }
 
-function readRepository(value: unknown): ListedRepository | null {
+export function readRepository(value: unknown): ListedRepository | null {
 	if (!isFields(value)) return null;
 	const { commonGitDir, primaryWorktreeRoot } = value;
 	if (!isText(commonGitDir) || commonGitDir === "" || !isText(primaryWorktreeRoot) || primaryWorktreeRoot === "") return null;

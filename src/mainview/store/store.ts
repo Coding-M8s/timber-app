@@ -1,7 +1,8 @@
 import type { Engine } from "../../shared/engine";
 import type { TimberStatus } from "../../shared/model";
+import { describeAdded, describeRemoved, folderName } from "../format";
 import { mergeOverlapping } from "./merge";
-import { type AppState, type Operation, initialState, keepLastGood, reconcileSelection, selectionFor, selectionForRepository, timberReady } from "./state";
+import { type AppState, type Operation, TOAST_MILLISECONDS, initialState, keepLastGood, reconcileSelection, selectionFor, selectionForRepository, timberReady } from "./state";
 
 /**
  * The single holder of what the interface shows: Timber's status, the
@@ -35,19 +36,46 @@ export interface AppStore {
 	dismissNotice(): void;
 	/** Select a worktree by its identity (`Worktree.id`). One that no repository has is ignored. */
 	select(worktreeId: string): void;
+	/** Say briefly that an operation worked. The toast disappears on its own. */
+	showToast(text: string): void;
+	/** Put a toast away before its time is up. */
+	dismissToast(id: number): void;
 }
+
+/** Run `task` after `milliseconds`. Returns a function that calls it off. */
+export type Schedule = (task: () => void, milliseconds: number) => () => void;
+
+const scheduleWithTimer: Schedule = (task, milliseconds) => {
+	const timer = setTimeout(task, milliseconds);
+	return () => clearTimeout(timer);
+};
 
 function messageOf(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
-export function createAppStore(engine: Engine): AppStore {
+/** `schedule` is how the store waits before it takes a toast away. Tests pass their own clock. */
+export function createAppStore(engine: Engine, schedule: Schedule = scheduleWithTimer): AppStore {
 	let state = initialState;
 	const listeners = new Set<() => void>();
+	let lastToast = 0;
+	const toastTimers = new Map<number, () => void>();
 
 	function update(change: Partial<AppState>): void {
 		state = { ...state, ...change };
 		for (const listener of [...listeners]) listener();
+	}
+
+	function dismissToast(id: number): void {
+		toastTimers.get(id)?.();
+		toastTimers.delete(id);
+		if (state.toasts.some(toast => toast.id === id)) update({ toasts: state.toasts.filter(toast => toast.id !== id) });
+	}
+
+	function showToast(text: string): void {
+		const id = ++lastToast;
+		update({ toasts: [...state.toasts, { id, text }] });
+		toastTimers.set(id, schedule(() => dismissToast(id), TOAST_MILLISECONDS));
 	}
 
 	async function track(operation: Operation, task: () => Promise<void>): Promise<void> {
@@ -145,6 +173,7 @@ export function createAppStore(engine: Engine): AppStore {
 						// Read the list again instead of patching it, so it is whatever the engine saved.
 						await reloadAll("all");
 						selectRepository(result.repository.path);
+						showToast(describeAdded(result.repository.name));
 						return;
 					case "already-listed":
 						update({ notice: { kind: "already-listed", repository: result.repository } });
@@ -169,12 +198,14 @@ export function createAppStore(engine: Engine): AppStore {
 	function removeRepository(path: string): Promise<void> {
 		if (state.operations.some(operation => operation.kind === "remove-repository" && operation.repository === path)) return Promise.resolve();
 		return track({ kind: "remove-repository", repository: path }, async () => {
+			const name = state.repositories.find(repository => repository.path === path)?.name ?? null;
 			try {
 				const result = await engine.removeRepository(path);
 				switch (result.outcome) {
 					case "removed":
 						update({ notice: null });
 						await reloadAll("all");
+						showToast(describeRemoved(name ?? folderName(path)));
 						return;
 					case "overridden":
 						update({ notice: { kind: "overridden" } });
@@ -215,5 +246,7 @@ export function createAppStore(engine: Engine): AppStore {
 			const selection = selectionFor(state.repositories, worktreeId);
 			if (selection && selection.worktree !== state.selection?.worktree) update({ selection });
 		},
+		showToast,
+		dismissToast,
 	};
 }
