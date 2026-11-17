@@ -75,15 +75,16 @@ Without a usable Timber the app shows install guidance instead; see
 | `bun run typecheck:desktop` | Type check against the real Electrobun SDK |
 | `bun run build:web` | Build the interface only |
 | `bun run build` | Build the desktop app |
+| `bun run icons` | Remake the [app icons](docs/architecture.md#app-identity) from the logo (needs ImageMagick) |
 
 ## Linux build
 
 `bun run build` makes an installer, not an app that runs in place. Running
 `build/stable-linux-x64/Timber/bin/launcher` installs without asking: the app
-to `~/.local/share/com.codingm8s.timber/stable/`, a menu entry to
+to `~/.local/share/com.codingm8s.timber-app/stable/`, a menu entry to
 `~/.local/share/applications/Timber.desktop`, and a shortcut to
 `~/Desktop/Timber.desktop` (Electrobun has no way to skip it yet).
-`~/.local/share/com.codingm8s.timber/stable/uninstall --quiet` removes the app
+`~/.local/share/com.codingm8s.timber-app/stable/uninstall --quiet` removes the app
 and both entries. Details in [installing the Linux build](docs/architecture.md#installing-the-linux-build).
 
 ## More

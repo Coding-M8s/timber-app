@@ -1,0 +1,11 @@
+Timber logo and app icons
+
+Copyright (c) 2026 Coding-M8s. All rights reserved.
+
+The Timber logo, and the app icons made from it, are not covered by the MIT
+license that covers the source code of this app. They may not be copied,
+changed, or used to name or promote another product without written
+permission from Coding-M8s.
+
+Showing the logo unchanged to refer to Timber itself, for example in an
+article or a list of tools, is welcome.

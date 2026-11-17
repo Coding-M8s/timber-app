@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import Electrobun, { BrowserView, BrowserWindow, Updater, Utils } from "electrobun/main";
+import { APP_NAME, APP_VERSION } from "../shared/app-info";
 import { type ForcePushMarks, withForcePushes } from "../shared/git-fetch";
 import type { Repository } from "../shared/model";
 import type { AppRPC } from "../shared/rpc";
@@ -168,6 +169,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 	maxRequestTime: 15_000,
 	handlers: {
 		requests: {
+			appInfo: () => ({ version: APP_VERSION }),
 			timberStatus: () => timber.current(),
 			recheckTimber: () => timber.refresh(),
 			listRepositories: async () => {
@@ -269,7 +271,7 @@ function guardQuit(event: unknown): void {
 Electrobun.events.on("before-quit", guardQuit);
 
 const mainWindow = new BrowserWindow({
-	title: "Timber",
+	title: APP_NAME,
 	url: await mainViewUrl(),
 	frame: { width: 1280, height: 820, x: 120, y: 80 },
 	rpc,

@@ -982,6 +982,9 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			void loadLayout();
 			void loadPreferences();
 			void findTimber(() => engine.timberStatus());
+			engine.appInfo().then(info => update({ appVersion: info.version }), () => {
+				// About says the version is not known.
+			});
 			// Sessions outlive the window, for example when it reloads. Changes heard meanwhile are newer than this answer.
 			const settle = (listed: readonly TerminalSession[]) => {
 				let terminals = listed;

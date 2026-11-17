@@ -10,6 +10,7 @@ import {
 } from "../../shared/timber-done";
 import type { FetchFailureKind, FetchResult, ForcePushSeen, RepositoryFetch } from "../../shared/git-fetch";
 import { failureOf, readTimberResult } from "../../shared/timber-result";
+import { APP_VERSION } from "../../shared/app-info";
 import { REQUIRED_TIMBER_VERSION } from "../../shared/timber-version";
 import { type CommandEnding, actOutNew, actOutOpen, isCommandEnding } from "./mock-commands";
 import { type MockFileChange, derivedFileChanges, diffMockFileChange, listMockFileChanges } from "./mock-file-changes";
@@ -615,6 +616,7 @@ export function createMockEngine(
 		...terminals,
 		...timberConfig,
 		...workflows,
+		appInfo: async () => ({ version: APP_VERSION }),
 		timberStatus: look,
 		recheckTimber: look,
 		listRepositories: () => read(() => current.map(asRead)),

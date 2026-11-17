@@ -1,3 +1,4 @@
+import type { AppInfo } from "./app-info";
 import type { Attention } from "./attention";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "./git-fetch";
 import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffResult } from "./file-changes";
@@ -17,6 +18,8 @@ import type { WorkflowList } from "./workflows";
  * Grow it one capability at a time, and keep every method safe to call again.
  */
 export interface Engine {
+	/** What the app says about itself: its version, for About. */
+	appInfo(): Promise<AppInfo>;
 	/** Whether a usable Timber is installed, as of the last look. */
 	timberStatus(): Promise<TimberStatus>;
 	/** Look for Timber again, for example after the person installed it. */

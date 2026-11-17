@@ -104,7 +104,7 @@ export type DialogRequest =
 	| { kind: "settings"; section?: SettingsSection };
 
 /** The sections of the Settings dialog, in the order they are listed. */
-export const SETTINGS_SECTIONS = ["layout", "editor", "agents", "fetch", "machine", "repository"] as const;
+export const SETTINGS_SECTIONS = ["layout", "editor", "agents", "fetch", "about", "machine", "repository"] as const;
 export type SettingsSection = typeof SETTINGS_SECTIONS[number];
 
 /** The views of the selected worktree, in the order of their tabs. */
@@ -167,6 +167,8 @@ export interface AppState {
 	preferences: Preferences;
 	/** Why the saved preferences could not be read on start. Null once a save worked. */
 	preferencesProblem: string | null;
+	/** The app's own version, for About. Null until the engine has answered. */
+	appVersion: string | null;
 	/** Why the last "Open in editor" opened nothing. Null once one worked, or after the person dismissed it. */
 	editorProblem: EditorProblem | null;
 	/**
@@ -215,6 +217,7 @@ export const initialState: AppState = {
 	layoutProblem: null,
 	preferences: defaultPreferences(),
 	preferencesProblem: null,
+	appVersion: null,
 	editorProblem: null,
 	terminals: [],
 	shownSessions: {},
