@@ -27,6 +27,33 @@ src/bun        Bun main process: the window, Git queries, terminal sessions,
 `bun run dev:web` runs the interface alone in a browser against the mock
 engine. That loop needs no desktop toolchain and is the default for UI work.
 
+### Desktop development commands
+
+Three commands run the desktop app from source. They differ in what is left
+when the window closes, and that is deliberate.
+
+- **`bun run start`** builds the interface once and runs the app. Closing
+  the window ends the app and the command.
+- **`bun run dev`** builds the interface once and runs `electrobun dev
+  --watch`. Closing the window ends the app, but the watcher keeps running,
+  and a later change to a watched file (such as `src/bun/index.ts`) rebuilds
+  and relaunches the app with a new window. The watcher prints nothing when
+  the app exits, so the terminal looks idle. Stop it with Ctrl+C. This is
+  kept because it is how a watch loop is expected to behave, and because
+  `electrobun dev` has no option to end with the app: its usage lists only
+  `--env`, `--watch`, and the `--inspect` flags.
+- **`bun run dev:hmr`** runs the Vite dev server and `bun run start` side by
+  side. Nothing relaunches the app there, so when either of them ends, the
+  other is stopped too (`concurrently --kill-others`; only the app ending
+  first was run). Closing the window ends the whole command. It succeeds
+  when the one that ended first, usually the app, exited with 0
+  (`--success first`).
+
+With a terminal session running, closing the window first asks "Quit
+Timber?", so the app and the command stay until Quit.
+
+What each of the three leaves behind was observed on Linux only.
+
 ### Two type checks
 
 `bun run typecheck` is the everyday check. It needs no toolchain and applies
@@ -2296,6 +2323,31 @@ and `TIMBER_APP_REPOS` naming this repository:
 - Not run: any other compositor or distribution, a real X11 login session,
   and anything that removes the `setenv` (such as an `LD_PRELOAD` shim),
   since the rest of the wrapper needs X11 anyway.
+
+Run for what the desktop development commands leave behind (issue 65),
+Pop!_OS 24.04 LTS x64 in the COSMIC Wayland session, Bun 1.4.2, Electrobun
+2.0.6. The window was closed by sending it a close request over X11
+(`WM_DELETE_WINDOW`), as for issue 13, with no terminal session open:
+
+- `bun run typecheck`: no errors.
+- `bun test`: 1098 tests, 1097 passed and 1 skipped.
+- `bun run dev`: the app logged `[stopEventLoop] Initiating clean event loop
+  exit` and ended; `hutch-engine electrobun dev --watch` and its parents kept
+  running, and printed nothing. Touching `src/bun/index.ts` then printed
+  "Change detected, rebuilding..." and launched the app again. SIGINT to the
+  command's process group, as Ctrl+C sends it, ended every process.
+- `bun run dev:hmr` before the change: `bun run start exited with code 0`,
+  and Vite kept serving on port 5173 under `concurrently`.
+- `bun run dev:hmr` with `--kill-others --success first`: after the app
+  exited, `concurrently` sent SIGTERM to Vite, the command exited with 0,
+  no process of it was left, and port 5173 was free.
+- The same `bun run dev:hmr` with the window open, and SIGINT to its process
+  group: both sides ended, the command exited with 0, no process of it was
+  left, and port 5173 was free.
+- Not run: how the watcher stops the app for a rebuild (by which signal, if
+  any), a failing Vite server stopping the app under `dev:hmr` (a test with
+  the port taken on 127.0.0.1 did not make Vite fail), and any of these
+  commands on Windows or macOS.
 
 Not run yet:
 
