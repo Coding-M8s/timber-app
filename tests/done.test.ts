@@ -8,6 +8,7 @@ import { createRepositoryReader } from "../src/bun/repository-reader";
 import { runTimberWithResultFile } from "../src/bun/timber-run";
 import type { Repository, TimberStatus } from "../src/shared/model";
 import { DEFAULT_DONE_OPTIONS, type DoneOptions, doneApplyArguments } from "../src/shared/timber-done";
+import { APPROVAL_FILE_PLACEHOLDER } from "../src/shared/timber-result";
 import { type StandInRun, git, realTimber, recordedDone, standInResultTimber } from "./support/timber";
 
 const ready = (path: string): TimberStatus => ({ state: "ready", path, version: "0.1.1" });
@@ -339,7 +340,7 @@ describe.skipIf(realTimber === null)("with the installed Timber, on real reposit
 				executable: realTimber!,
 				command: "done",
 				arguments: (resultFile, approvalFile) => doneApplyArguments(approvalFile, resultFile, path),
-				approval: new TextEncoder().encode(JSON.stringify(record)),
+				input: { bytes: new TextEncoder().encode(JSON.stringify(record)), shownAs: APPROVAL_FILE_PLACEHOLDER },
 				folder: primary,
 				environment,
 				temporaryRoot: scratch,

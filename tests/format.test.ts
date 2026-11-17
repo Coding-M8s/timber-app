@@ -215,7 +215,7 @@ describe("describeTimberProblem", () => {
 	test("says Timber is not installed and which version is needed", () => {
 		const problem = describeTimberProblem({ state: "not-found", override: null })!;
 		expect(problem.title).toBe("Timber is not installed");
-		expect(problem.text).toContain("0.1.1 or newer");
+		expect(problem.text).toContain("0.1.2 or newer");
 		expect(problem.action).toBe("Install it with:");
 	});
 

@@ -5,7 +5,7 @@ import type { Layout } from "./layout";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
 import type { Preferences } from "./preferences";
 import type { OpenTerminalRequest, OpenTerminalResult, TerminalChange, TerminalOutput, TerminalSession, TerminalSnapshot } from "./terminal";
-import type { IntegrationStatuses, TimberSettings } from "./timber-config";
+import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "./timber-config";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "./timber-done";
 
 /**
@@ -149,21 +149,30 @@ export interface Engine {
 	 */
 	savePreferences(change: Partial<Preferences>): Promise<SavePreferencesResult>;
 	/**
-	 * Timber's own settings, read from its files and never written: the
-	 * machine defaults from Timber's global `config.toml`, and with
-	 * `repository`, the path of a primary checkout in the list, that
-	 * repository's `.timber.toml`. A missing file is "missing" and a broken
-	 * one an error, never empty defaults. Arguments and scripts are counted,
-	 * never shown (see ./timber-config.ts). Read-only and safe to call again.
+	 * Timber's own settings for one scope, read by `timber __app-config read`:
+	 * the machine defaults, or with `repository`, the path of a primary
+	 * checkout in the list, that repository's `.timber.toml`. Timber reads the
+	 * file; the app never does. Says which logins are saved, never what they
+	 * are. Read-only and safe to call again.
 	 */
-	readTimberSettings(repository: string | null): Promise<TimberSettings>;
+	readTimberSettings(request: TimberSettingsRequest): Promise<TimberSettingsReadResult>;
 	/**
-	 * Whether Timber can reach GitHub, Jira, and Linear, found without reading
-	 * a credential: environment variables that are set, credential files that
-	 * are there, and the exit code of `gh auth status`. Read-only and safe to
-	 * call again.
+	 * Save one scope's settings with `timber __app-config apply`, which
+	 * validates them, refuses when the file changed since the read named by
+	 * `revision`, keeps settings the app does not edit, and writes the file
+	 * and any login itself. The command is `settingsApplyArguments` in
+	 * ./timber-config.ts, so the interface can show it first. Logins travel in
+	 * a private input file only. Runs once and is never retried here: read
+	 * again after every outcome.
 	 */
-	readTimberIntegrations(): Promise<IntegrationStatuses>;
+	saveTimberSettings(request: TimberSettingsSaveRequest): Promise<TimberSettingsSaveResult>;
+	/**
+	 * Check that Timber can sign in to GitHub, Jira, or Linear with `timber
+	 * __app-config check`, using the drafted settings and any login typed but
+	 * not saved. Saves nothing, whatever the answer. The command is
+	 * `connectionCheckArguments` in ./timber-config.ts.
+	 */
+	checkTimberConnection(request: TimberConnectionCheckRequest): Promise<TimberConnectionCheckResult>;
 	/**
 	 * Open a worktree of a repository in the list in the editor from the
 	 * preferences, started detached so it outlives the app. The command comes

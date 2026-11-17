@@ -15,19 +15,18 @@ coding agents, such as Claude Code and Codex, in the Workspace tab, one chip
 each, started from the "+" menu (tested on Linux only; not supported on
 Windows yet). Settings, Agents lists the agents. The Changes tab lists a
 worktree's staged, unstaged, and untracked files and shows the diff of each,
-read-only. Settings also shows Timber's own settings for the machine and
-each repository, read-only, with a button that runs `timber setup` in a
-session to change them. The app fetches each repository in the background
-(Settings, Fetching) or on "Fetch now", updating only remote-tracking
-branches, and marks branches whose upstream moved, was force-pushed, or was
-deleted. Rebasing worktrees, comparing against the base, and saving Timber's
-settings from the app are designed but not built.
+read-only. Settings also edits Timber's own settings for the machine and
+each repository, saved and checked by Timber itself. The app fetches each
+repository in the background (Settings, Fetching) or on "Fetch now",
+updating only remote-tracking branches, and marks branches whose upstream
+moved, was force-pushed, or was deleted. Rebasing worktrees and comparing
+against the base are designed but not built.
 See the [architecture](docs/architecture.md) and [design](docs/design.md) notes.
 
 ## Quick start
 
 You need Git, Bun 1.4.2, and for the desktop app
-[Timber](https://github.com/Coding-M8s/timber#quick-start) 0.1.1 or newer on
+[Timber](https://github.com/Coding-M8s/timber#quick-start) 0.1.2 or newer on
 your PATH.
 
 ```bash

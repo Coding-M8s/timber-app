@@ -1,319 +1,366 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createTimberConfigReader, readTimberConfigFile } from "../src/bun/timber-config";
-import { describeIntegration, rowSourceNote, timberSettingRows } from "../src/mainview/timber-settings-format";
-import { type TimberConfigFile, displayText, machineConfigPath, readTimberConfig, timberSetupArguments } from "../src/shared/timber-config";
-import { describeTimberCommand } from "../src/shared/timber-result";
+import { dirname, join } from "node:path";
+import { createTimberSettings } from "../src/bun/timber-settings";
+import type { TimberStatus } from "../src/shared/model";
+import {
+	type TimberSettingsSaveRequest, checkConnectionRequest, checkSaveRequest, invalidFieldPath, invalidFieldsAt, readConnectionCheck, readSettingsOutput,
+	readTimberValues, settingsInput, shownApplyArguments, shownCheckArguments,
+} from "../src/shared/timber-config";
+import { describeTimberCommand, readTimberResult } from "../src/shared/timber-result";
+import { fingerprint, git, realTimber, recordedConfig, standInResultTimber, standInTimber } from "./support/timber";
 
-const parse = (text: string) => Bun.TOML.parse(text);
-const read = (source: string | null) => readTimberConfig("/repo/.timber.toml", source, parse);
-const SECRET = "ghp_SuperSecretToken123";
+const SECRET = "lin_api_SuperSecretKey123";
+const JIRA_SECRET = "atl_SuperSecretToken456";
+const REVISION = "a".repeat(64);
 
-/** A file like the one `timber setup` writes, with a secret where a careless person might put one. */
-const FULL = `
-# Timber settings.
-default_tracker = "jira"
-base_branch = "main"
-remote = "origin"
-worktree_dir = "../worktrees"
-
-[editor]
-command = "code"
-args = ["--new-window"]
-enabled = true
-
-[agent]
-command = "claude"
-args = ["--api-key", "${SECRET}"]
-enabled = false
-wait_for_setup = true
-
-[hooks]
-post_create = ["bun install", "export TOKEN=${SECRET}"]
-pre_delete = ["echo bye"]
-
-[workflows.review]
-description = "Review a pull request"
-post_create = ["gh pr checkout"]
-
-[workflows.legacy]
-
-[jira]
-site_url = "https://example.atlassian.net"
-cloud_id = "00000000-0000-4000-8000-000000000000"
-
-[arena.agents.fast]
-tool = "codex"
-command = "codex"
-args = ["--token", "${SECRET}"]
-`;
-
-describe("reading one of Timber's files", () => {
-	test("shows every value Timber's setup screen shows, commands without their arguments and scripts as counts", () => {
-		const file = read(FULL);
-		expect(file).toEqual({
-			state: "read",
-			path: "/repo/.timber.toml",
-			unknown: [],
-			values: {
-				defaultTracker: "jira",
-				baseBranch: "main",
-				remote: "origin",
-				worktreeDir: "../worktrees",
-				editor: { command: "code", argumentCount: 1, enabled: true, integration: null },
-				agent: { command: "claude", argumentCount: 2, enabled: false, waitForSetup: true },
-				hooks: { setupScripts: 2, preDoneScripts: 1 },
-				workflows: [
-					{ name: "review", off: false, description: "Review a pull request", setupScripts: 1 },
-					{ name: "legacy", off: false, description: null, setupScripts: 0 },
-				],
-				jira: { siteUrl: "https://example.atlassian.net", cloudId: true },
-				arena: [{ name: "fast", off: false }],
+describe("what Timber's settings commands print", () => {
+	test("a read gives the scope's values, what applies after inheritance, the file, and only whether logins are saved", () => {
+		const machine = readSettingsOutput(recordedConfig.reads.machine, "machine");
+		expect(machine).toEqual({
+			ok: true,
+			value: {
+				scope: "machine",
+				path: "/work/xdg/timber/config.toml",
+				exists: true,
+				tracked: false,
+				revision: "222f601cc704ea0c5d41d925ec0fc5d049ca1f1f58e2f54bbc3cbd1602573218",
+				values: { agent: { command: "claude", args: [], enabled: true } },
+				effective: { agent: { command: "claude", args: [], enabled: true } },
+				credentials: { jira: { configured: false, state: "none", environmentOverride: false }, linear: { state: "none", environmentOverride: false } },
 			},
 		});
+		const repository = readSettingsOutput(recordedConfig.reads.repository, "repository");
+		if (!repository.ok) throw new Error(repository.message);
+		// A script that spans lines is kept whole, and a named workflow is kept to send back unchanged.
+		expect(repository.value.values.hooks).toEqual({ post_create: ["bun install", "echo 'one\ntwo'"] });
+		expect(repository.value.values.workflows).toEqual({ review: { description: "Review a pull request", post_create: ["gh pr checkout"] } });
+		expect(repository.value.effective.agent).toEqual({ command: "claude", args: [], enabled: true });
 	});
 
-	test("never carries a secret from arguments, scripts, or keys it does not know", () => {
-		const file = read(`${FULL}\n[mystery]\ntoken = "${SECRET}"\n`);
-		expect(file.state).toBe("read");
-		expect(JSON.stringify(file)).not.toContain(SECRET);
-		expect(file).toMatchObject({ unknown: ["mystery"] });
-		const rows = timberSettingRows((file as Extract<TimberConfigFile, { state: "read" }>).values, "repository", null);
-		expect(JSON.stringify(rows)).not.toContain(SECRET);
+	test("a read for another scope, of another version, or with a shape this app does not know is not used", () => {
+		expect(readSettingsOutput(recordedConfig.reads.machine, "repository")).toMatchObject({ ok: false, message: expect.stringContaining("another scope") });
+		expect(readSettingsOutput(recordedConfig.reads.machine.replace('"schemaVersion":1', '"schemaVersion":2'), "machine")).toMatchObject({ ok: false });
+		expect(readSettingsOutput("not json", "machine")).toMatchObject({ ok: false });
+		expect(readSettingsOutput(recordedConfig.reads.machine.replace('"args":[]', '"args":"--flag"'), "machine")).toMatchObject({ ok: false });
+		// Keys the app does not edit may be anything: they go back as they came.
+		expect(readTimberValues({ arena: { agents: { fast: false } }, future_key: [1, 2] })).toEqual({ arena: { agents: { fast: false } }, future_key: [1, 2] });
 	});
 
-	test("keeps features turned off apart from features not set", () => {
-		const file = read(`editor = false\nagent = false\nhooks = false\nworkflows = false\njira = false\narena = false\n`);
-		expect(file).toMatchObject({
-			state: "read",
-			values: { editor: false, agent: false, hooks: false, workflows: false, jira: false, arena: false },
-		});
-		expect(read("")).toEqual({ state: "read", path: "/repo/.timber.toml", values: {}, unknown: [] });
+	test("each result of a save is read from Timber's record", () => {
+		const saved = readTimberResult("config", recordedConfig.results.saved, 0);
+		expect(saved).toMatchObject({ outcome: "succeeded", record: { fields: { config: { result: "saved", revision: expect.stringMatching(/^[a-f0-9]{64}$/) } } } });
+		const invalid = readTimberResult("config", recordedConfig.results.invalid, 1);
+		expect(invalid).toMatchObject({ outcome: "failed", record: { fields: { config: { result: "invalid", invalidFields: ["base_branch is invalid", "hooks.post_create.1 is invalid", "editor.command is invalid", "jira.site_url is invalid"] } } } });
+		expect(readTimberResult("config", recordedConfig.results.conflict, 1)).toMatchObject({ outcome: "failed", record: { fields: { config: { result: "conflict" } } } });
+		expect(readTimberResult("config", recordedConfig.results.refused, 1)).toMatchObject({ outcome: "failed", record: { fields: { config: { result: "refused" } } } });
 	});
 
-	test("a file that is not there is missing, never empty defaults", () => {
-		expect(read(null)).toEqual({ state: "missing", path: "/repo/.timber.toml" });
+	test("a check says whether the login was accepted, and is used only for the integration asked about", () => {
+		expect(readConnectionCheck(recordedConfig.checks.github, "github")).toEqual({ ok: true, value: { integration: "github", ok: true, source: "github-cli", account: "sample-user", diagnostic: null } });
+		expect(readConnectionCheck(recordedConfig.checks.linearRejected, "linear")).toMatchObject({ ok: true, value: { ok: false, source: "draft", diagnostic: expect.stringContaining("Linear authentication failed") } });
+		expect(readConnectionCheck(recordedConfig.checks.jiraNoSite, "jira")).toMatchObject({ ok: true, value: { ok: false, source: null } });
+		expect(readConnectionCheck(recordedConfig.checks.github, "jira")).toMatchObject({ ok: false });
 	});
 
-	test("a file that is not TOML is an error, never with the parser's words or the file's text", () => {
-		const file = read(`base_branch = "main\ntoken = "${SECRET}"\n`);
-		expect(file).toMatchObject({ state: "error", message: expect.stringMatching(/^It is not valid TOML\./), problems: [] });
-		expect(JSON.stringify(file)).not.toContain(SECRET);
-		const quoting = readTimberConfig("/x", "a", () => {
-			throw new Error(`bad near ${SECRET}`);
-		});
-		expect(JSON.stringify(quoting)).not.toContain(SECRET);
+	test("the commands are shown exactly, with stand-ins for the private files and no login in them", () => {
+		expect(describeTimberCommand(shownApplyArguments("repository", false))).toBe("timber __app-config apply --scope repository --input-file <settings draft> --result-file <temporary file>");
+		expect(describeTimberCommand(shownApplyArguments("repository", true))).toBe("timber __app-config apply --scope repository --edit-tracked --input-file <settings draft> --result-file <temporary file>");
+		expect(describeTimberCommand(shownApplyArguments("machine", false))).toBe("timber __app-config apply --scope global --input-file <settings draft> --result-file <temporary file>");
+		expect(describeTimberCommand(shownCheckArguments("jira", "machine"))).toBe("timber __app-config check jira --scope global --input-file <settings draft>");
 	});
 
-	test("a value Timber cannot use makes the whole file an error that names each key, as it does for Timber", () => {
-		const file = read(`default_tracker = "trello"\nbase_branch = " "\neditor = true\n[agent]\nargs = ["x"]\n[hooks]\npost_create = "make"\n[jira]\ncloud_id = "x"\n`);
-		expect(file).toEqual({
-			state: "error",
-			path: "/repo/.timber.toml",
-			message: "Timber cannot use these settings.",
-			problems: ["default_tracker is invalid", "base_branch is invalid", "editor is invalid", "agent.command is invalid", "hooks.post_create is invalid", "jira.site_url is invalid"],
-		});
+	test("the input file holds the draft and the logins, and leaves out what is not given", () => {
+		expect(JSON.parse(settingsInput(REVISION, { remote: "origin" }, undefined))).toEqual({ schemaVersion: 1, revision: REVISION, values: { remote: "origin" } });
+		expect(JSON.parse(settingsInput(null, {}, { linear: null }))).toEqual({ schemaVersion: 1, revision: null, values: {}, credentials: { linear: null } });
+		expect(JSON.parse(settingsInput(undefined, {}, {}))).toEqual({ schemaVersion: 1, values: {} });
+		expect(JSON.parse(settingsInput(null, { remote: "origin", workflows: { review: false }, arena: false, future_key: 1 }, undefined)).values).toEqual({ remote: "origin", future_key: 1 });
 	});
 
-	test("text from the file is made safe to show", () => {
-		expect(displayText("main\u001b[31m\nred")).toBe("main\uFFFD[31m\uFFFDred");
-		expect(displayText("x".repeat(300))).toHaveLength(200);
-		expect(read(`base_branch = "a\\u0007b"`)).toMatchObject({ values: { baseBranch: "a\uFFFDb" } });
-	});
-});
-
-describe("where Timber's machine settings are", () => {
-	test("as Timber finds them: an absolute XDG_CONFIG_HOME, else .config in the home folder", () => {
-		expect(machineConfigPath({ XDG_CONFIG_HOME: "/xdg", HOME: "/home/sam" }, "linux", "/fallback")).toBe("/xdg/timber/config.toml");
-		expect(machineConfigPath({ XDG_CONFIG_HOME: "relative", HOME: "/home/sam" }, "linux", "/fallback")).toBe("/home/sam/.config/timber/config.toml");
-		expect(machineConfigPath({}, "darwin", "/Users/sam")).toBe("/Users/sam/.config/timber/config.toml");
-		expect(machineConfigPath({ USERPROFILE: "C:\\Users\\sam" }, "win32", null)).toBe("C:\\Users\\sam\\.config\\timber\\config.toml");
-		expect(machineConfigPath({}, "linux", null)).toBeNull();
-	});
-
-	test("setup is run as timber setup, with --global for the machine", () => {
-		expect(describeTimberCommand(timberSetupArguments("repository"))).toBe("timber setup");
-		expect(describeTimberCommand(timberSetupArguments("machine"))).toBe("timber setup --global");
-	});
-});
-
-describe("the words for Timber's settings", () => {
-	test("a repository's value it does not set falls back to the machine's, then to Timber's default", () => {
-		const rows = timberSettingRows({ baseBranch: "develop", hooks: { setupScripts: 1, preDoneScripts: null } }, "repository", {
-			agent: { command: "claude", argumentCount: 0, enabled: true, waitForSetup: null },
-			remote: "upstream",
-			editor: false,
-		});
-		const byKey = Object.fromEntries(rows.map(row => [row.key, row]));
-		expect(byKey.base_branch).toMatchObject({ value: "develop", source: "file", mono: true });
-		expect(byKey.hooks).toMatchObject({ value: "1 script", source: "file" });
-		expect(byKey.pre_delete).toMatchObject({ value: "None", source: "default" });
-		expect(byKey.agent).toMatchObject({ value: "claude (starts by itself)", source: "machine" });
-		expect(byKey.remote).toMatchObject({ value: "upstream", source: "machine" });
-		expect(byKey.editor).toMatchObject({ value: "Off", source: "machine", mono: false });
-		expect(byKey.worktree_dir).toMatchObject({ value: "A folder beside the repository", source: "default" });
-		expect(rowSourceNote(byKey.agent!)).toBe("From the machine defaults");
-		expect(rowSourceNote(byKey.base_branch!)).toBeNull();
+	test("a request from the window that does not fit is refused without quoting it", () => {
+		const good: TimberSettingsSaveRequest = { scope: "repository", repository: "/work/sample", revision: REVISION, values: {}, editTracked: false };
+		expect(checkSaveRequest(good)).toBeNull();
+		expect(checkSaveRequest({ ...good, scope: "everything" })).not.toBeNull();
+		expect(checkSaveRequest({ ...good, repository: null })).not.toBeNull();
+		expect(checkSaveRequest({ ...good, scope: "machine" })).not.toBeNull();
+		expect(checkSaveRequest({ ...good, revision: "../../etc/passwd" })).not.toBeNull();
+		expect(checkSaveRequest({ ...good, credentials: { github: { token: SECRET } } })).not.toBeNull();
+		const extra = checkSaveRequest({ ...good, credentials: { linear: { token: SECRET, extra: SECRET } } });
+		expect(extra).not.toBeNull();
+		expect(extra).not.toContain(SECRET);
+		expect(checkConnectionRequest({ scope: "machine", repository: null, integration: "gitlab", values: {} })).not.toBeNull();
+		expect(checkConnectionRequest({ scope: "machine", repository: null, integration: "linear", values: {}, credentials: { linear: { token: SECRET } } })).toBeNull();
 	});
 
-	test("the machine's file never falls back to itself", () => {
-		const rows = timberSettingRows({}, "machine", { remote: "upstream" });
-		expect(rows.every(row => row.source === "default")).toBe(true);
-	});
-
-	test("say how each integration is configured, never with a value", () => {
-		expect(describeIntegration("github", { state: "configured", source: "github-cli" }).text).toBe("Configured: signed in with the GitHub CLI");
-		expect(describeIntegration("jira", { state: "configured", source: "environment" }).text).toContain("JIRA_EMAIL and JIRA_API_TOKEN are set");
-		expect(describeIntegration("linear", { state: "configured", source: "saved" }).text).toBe("Configured: credentials saved by timber setup");
-		expect(describeIntegration("linear", { state: "not-configured" })).toEqual({ configured: false, text: "Not configured" });
+	test("Timber's messages are put at the field they name", () => {
+		expect(invalidFieldPath("hooks.post_create.1 is invalid")).toBe("hooks.post_create.1");
+		expect(invalidFieldPath("credentials.jira needs a configured Jira site")).toBe("credentials.jira");
+		expect(invalidFieldPath("<root> is invalid")).toBeNull();
+		const messages = ["hooks.post_create.1 is invalid", "editor.command is invalid", "hooks is invalid", "base_branch is invalid"];
+		expect(invalidFieldsAt(messages, "hooks")).toEqual(["hooks.post_create.1 is invalid", "hooks is invalid"]);
+		expect(invalidFieldsAt(messages, "hooks.post_create.1")).toEqual(["hooks.post_create.1 is invalid"]);
+		expect(invalidFieldsAt(messages, "base")).toEqual([]);
 	});
 });
 
-describe("reading Timber's files from disk", () => {
+describe("running Timber's settings commands", () => {
 	let root: string;
-	let xdg: string;
 	let repository: string;
-	let empty: string;
+	let temporary: string;
+	let home: string;
+	let count = 0;
+	const ready = (path: string): TimberStatus => ({ state: "ready", path, version: "0.1.2" });
 
 	beforeAll(() => {
-		root = realpathSync(mkdtempSync(join(tmpdir(), "timber-app-config-")));
-		xdg = join(root, "xdg");
-		repository = join(root, "my repo");
-		empty = join(root, "empty repo");
-		mkdirSync(join(xdg, "timber", "credentials"), { recursive: true });
+		root = realpathSync(mkdtempSync(join(tmpdir(), "timber-app-settings-")));
+		repository = join(root, "my repo zażółć");
 		mkdirSync(repository);
-		mkdirSync(empty);
-		writeFileSync(join(xdg, "timber", "config.toml"), `editor = false\n[agent]\ncommand = "claude"\nenabled = true\n`);
-		writeFileSync(join(repository, ".timber.toml"), FULL);
+		writeFileSync(join(repository, "tracked.txt"), "one\n");
+		temporary = join(root, "temporary");
+		mkdirSync(temporary);
+		home = join(root, "home");
+		mkdirSync(home);
+	});
+	afterEach(() => {
+		// Whatever happened, no input file, no result file, and no folder for them is left behind, and nothing was put in the repository.
+		expect(readdirSync(temporary)).toEqual([]);
+		expect(readdirSync(repository)).toEqual(["tracked.txt"]);
+	});
+	afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+	const service = (path: string, listed = true) => createTimberSettings({
+		timber: async () => ready(path),
+		isListed: async candidate => listed && candidate === repository,
+		temporaryRoot: temporary,
+		machineFolder: home,
 	});
 
-	afterAll(() => {
-		rmSync(root, { recursive: true, force: true });
+	test("read: answers what Timber printed, run in the repository, with the exact command", async () => {
+		const timber = standInTimber(root, `read-${++count}`, recordedConfig.reads.repository, 0);
+		const result = await service(timber.path).read({ scope: "repository", repository });
+		expect(result).toMatchObject({ outcome: "read", command: "timber __app-config read --scope repository", settings: { scope: "repository", path: "/work/sample/.timber.toml" } });
+		expect(readFileSync(join(timber.folder, "arguments"), "utf8").trim()).toBe("__app-config read --scope repository");
+		expect(realpathSync(readFileSync(join(timber.folder, "cwd"), "utf8").trim())).toBe(repository);
 	});
 
-	const listed = (path: string) => path === repository || path === empty;
-	const reader = (environment: Record<string, string | undefined> = {}, githubStatus?: () => Promise<number>) => createTimberConfigReader({
-		isListed: async path => listed(path),
-		environment: { XDG_CONFIG_HOME: xdg, HOME: root, PATH: "", ...environment },
-		platform: "linux",
-		home: root,
-		...(githubStatus ? { githubStatus } : {}),
+	test("read: the machine scope runs outside any repository", async () => {
+		const timber = standInTimber(root, `read-${++count}`, recordedConfig.reads.machine, 0);
+		const result = await service(timber.path).read({ scope: "machine", repository: null });
+		expect(result).toMatchObject({ outcome: "read", command: "timber __app-config read --scope global" });
+		expect(realpathSync(readFileSync(join(timber.folder, "cwd"), "utf8").trim())).toBe(home);
 	});
 
-	/** Every file under the folder with its bytes and modification time, to show reading changed nothing. */
-	function snapshot(folder: string): Record<string, string> {
-		const all: Record<string, string> = {};
-		for (const entry of readdirSync(folder, { recursive: true, withFileTypes: true })) {
-			const path = join(entry.parentPath, entry.name);
-			const info = statSync(path);
-			all[path] = entry.isFile() ? `${info.mtimeMs}:${readFileSync(path, "base64")}` : `${info.mtimeMs}`;
+	test("read: Timber's one line on standard error is the reason it could not read", async () => {
+		const timber = standInResultTimber(root, `read-${++count}`, { result: null, stderr: "error: Invalid TOML in /work/sample/.timber.toml\n", exitCode: 1 });
+		const result = await service(timber.path).read({ scope: "repository", repository });
+		expect(result).toEqual({ outcome: "failed", failure: { command: "timber __app-config read --scope repository", diagnostic: "Invalid TOML in /work/sample/.timber.toml", output: null } });
+	});
+
+	test("nothing runs for a repository the app does not list, a request that does not fit, or without a usable Timber", async () => {
+		const timber = standInResultTimber(root, `never-${++count}`, { result: recordedConfig.results.saved });
+		const unlisted = await service(timber.path, false).save({ scope: "repository", repository, revision: null, values: {}, editTracked: false });
+		expect(unlisted).toMatchObject({ outcome: "failed", failure: { command: null, diagnostic: expect.stringContaining("not a repository in this app's list") } });
+		const odd = await service(timber.path).save({ scope: "repository", repository, revision: "nope", values: {}, editTracked: false });
+		expect(odd).toMatchObject({ outcome: "failed", failure: { command: null } });
+		const missing = createTimberSettings({ timber: async () => ({ state: "not-found", override: null }), isListed: async () => true, temporaryRoot: temporary });
+		expect(await missing.read({ scope: "machine", repository: null })).toMatchObject({ outcome: "failed", failure: { command: null } });
+		expect(() => timber.notes()).toThrow();
+	});
+
+	test("save: the draft and the login go in a private input file, never in the arguments, and the file is gone afterwards", async () => {
+		const timber = standInResultTimber(root, `save-${++count}`, { result: recordedConfig.results.saved });
+		const values = { base_branch: "develop", workflows: { review: { post_create: ["gh pr checkout"] } } };
+		const result = await service(timber.path).save({
+			scope: "repository", repository, revision: REVISION, values, editTracked: false,
+			credentials: { linear: { token: SECRET }, jira: { email: "sam@example.invalid", token: JIRA_SECRET } },
+		});
+		expect(result).toEqual({
+			outcome: "saved",
+			command: "timber __app-config apply --scope repository --input-file <settings draft> --result-file <temporary file>",
+			revision: "52441784169784f4e58405d1d51e5979b4cc3552f4e87ef5c4aa8dc5af13e679",
+			credentials: { jira: "unchanged", linear: "unchanged" },
+		});
+		const notes = timber.notes();
+		expect(notes.arguments).toEqual(["__app-config", "apply", "--scope", "repository", "--input-file", notes.inputFile!, "--result-file", notes.resultFile!]);
+		expect(notes.arguments.join(" ")).not.toContain(SECRET);
+		expect(notes.arguments.join(" ")).not.toContain(JIRA_SECRET);
+		// Named workflows are left for Timber to carry over from the file as it is.
+		expect(JSON.parse(notes.input!)).toEqual({ schemaVersion: 1, revision: REVISION, values: { base_branch: "develop" }, credentials: { linear: { token: SECRET }, jira: { email: "sam@example.invalid", token: JIRA_SECRET } } });
+		if (process.platform !== "win32") {
+			expect(notes.inputMode).toBe(0o600);
+			expect(notes.folderMode).toBe(0o700);
 		}
-		return all;
-	}
+		expect(dirname(dirname(notes.inputFile!))).toBe(temporary);
+		expect(JSON.stringify(result)).not.toContain(SECRET);
+	});
 
-	test("values match the files on disk, and reading changes nothing", async () => {
-		const before = snapshot(root);
-		const settings = await reader().read(repository);
-		expect(settings.machine).toEqual({
-			state: "read",
-			path: join(xdg, "timber", "config.toml"),
-			values: { editor: false, agent: { command: "claude", argumentCount: 0, enabled: true, waitForSetup: null } },
-			unknown: [],
+	test("save: the tracked file is changed only when the person said so", async () => {
+		const timber = standInResultTimber(root, `save-${++count}`, { result: recordedConfig.results.saved });
+		const result = await service(timber.path).save({ scope: "repository", repository, revision: REVISION, values: {}, editTracked: true });
+		expect(result).toMatchObject({ outcome: "saved", command: expect.stringContaining("--edit-tracked") });
+		expect(timber.notes().arguments).toContain("--edit-tracked");
+	});
+
+	test("save: invalid fields, a conflict, and a refusal each come back as themselves, with Timber's diagnostic", async () => {
+		const run = async (result: string) => {
+			const timber = standInResultTimber(root, `save-${++count}`, { result, exitCode: 1, stderr: "error: something\n" });
+			return service(timber.path).save({ scope: "repository", repository, revision: REVISION, values: {}, editTracked: false });
+		};
+		expect(await run(recordedConfig.results.invalid)).toMatchObject({
+			outcome: "invalid",
+			invalidFields: ["base_branch is invalid", "hooks.post_create.1 is invalid", "editor.command is invalid", "jira.site_url is invalid"],
+			failure: { diagnostic: expect.stringContaining("Nothing was saved") },
 		});
-		expect(settings.repository).toMatchObject({ state: "read", path: join(repository, ".timber.toml"), values: { baseBranch: "main", remote: "origin" } });
-		expect(JSON.stringify(settings)).not.toContain(SECRET);
-		expect(snapshot(root)).toEqual(before);
+		expect(await run(recordedConfig.results.conflict)).toMatchObject({ outcome: "conflict", failure: { diagnostic: expect.stringContaining("changed since they were read") } });
+		expect(await run(recordedConfig.results.refused)).toMatchObject({ outcome: "refused", failure: { diagnostic: expect.stringContaining("is tracked by Git") } });
 	});
 
-	test("a repository with no .timber.toml is not configured", async () => {
-		expect((await reader().read(empty)).repository).toEqual({ state: "missing", path: join(empty, ".timber.toml") });
+	test("save: a missing or mismatched result is a failure that says the outcome is unknown", async () => {
+		const none = standInResultTimber(root, `save-${++count}`, { result: null, exitCode: 1 });
+		expect(await service(none.path).save({ scope: "repository", repository, revision: null, values: {}, editTracked: false })).toMatchObject({ outcome: "failed", failure: { diagnostic: expect.stringContaining("unknown") } });
+		const otherScope = standInResultTimber(root, `save-${++count}`, { result: recordedConfig.results.saved });
+		expect(await service(otherScope.path).save({ scope: "machine", repository: null, revision: null, values: {}, editTracked: false })).toMatchObject({ outcome: "failed", failure: { diagnostic: expect.stringContaining("unknown") } });
 	});
 
-	test("without a repository only the machine's file is read", async () => {
-		expect((await reader().read(null)).repository).toBeNull();
-	});
-
-	test("a folder that is not a repository in the app's list is refused and not read", async () => {
-		const outside = join(root, "outside");
-		mkdirSync(outside, { recursive: true });
-		writeFileSync(join(outside, ".timber.toml"), `base_branch = "main"\n`);
-		expect((await reader().read(outside)).repository).toMatchObject({ state: "error", message: `${outside} is not a repository in this app's list.` });
-	});
-
-	test("a machine without the file is not configured, never empty defaults", async () => {
-		const settings = await reader({ XDG_CONFIG_HOME: join(root, "nowhere") }).read(null);
-		expect(settings.machine).toEqual({ state: "missing", path: join(root, "nowhere", "timber", "config.toml") });
-	});
-
-	test("a malformed, a too large, a folder, and a binary file each give an error", async () => {
-		const bad = join(root, "bad.toml");
-		writeFileSync(bad, `editor = [\n`);
-		expect(await readTimberConfigFile(bad)).toMatchObject({ state: "error", message: expect.stringContaining("not valid TOML") });
-		writeFileSync(bad, `# ${"x".repeat(300 * 1024)}\n`);
-		expect(await readTimberConfigFile(bad)).toMatchObject({ state: "error", message: expect.stringContaining("too large") });
-		writeFileSync(bad, new Uint8Array([0xff, 0xfe, 0x00]));
-		expect(await readTimberConfigFile(bad)).toMatchObject({ state: "error", message: "It is not UTF-8 text." });
-		expect(await readTimberConfigFile(root)).toMatchObject({ state: "error", message: "It is a folder, not a file." });
-	});
-
-	test.skipIf(process.platform === "win32" || process.getuid?.() === 0)("a file the app may not read gives an error", async () => {
-		const locked = join(root, "locked.toml");
-		writeFileSync(locked, `base_branch = "main"\n`);
-		chmodSync(locked, 0o000);
-		try {
-			expect(await readTimberConfigFile(locked)).toMatchObject({ state: "error", message: "The app is not allowed to read it." });
-		} finally {
-			chmodSync(locked, 0o600);
-		}
-	});
-
-	describe("integrations", () => {
-		test("say whether each one is configured without reading a credential file", async () => {
-			const jira = join(xdg, "timber", "credentials", "jira.json");
-			writeFileSync(jira, `{"token":"${SECRET}"}`);
-			// Not even the app may read it: the answer can only come from its being there.
-			if (process.platform !== "win32") chmodSync(jira, 0o000);
-			try {
-				const statuses = await reader().integrations();
-				expect(statuses).toEqual({
-					github: { state: "unknown", reason: "The GitHub CLI (gh) is not on the PATH the app was started with." },
-					jira: { state: "configured", source: "saved" },
-					linear: { state: "not-configured" },
-				});
-				expect(JSON.stringify(statuses)).not.toContain(SECRET);
-			} finally {
-				chmodSync(jira, 0o600);
-				rmSync(jira);
-			}
+	test("check: the draft goes in a private input file, and a rejected login is an answer, not a failure", async () => {
+		const timber = standInResultTimber(root, `check-${++count}`, { result: null, stdout: recordedConfig.checks.linearRejected, exitCode: 1 });
+		const result = await service(timber.path).check({ scope: "machine", repository: null, integration: "linear", values: {}, credentials: { linear: { token: SECRET } } });
+		expect(result).toEqual({
+			outcome: "checked",
+			command: "timber __app-config check linear --scope global --input-file <settings draft>",
+			check: { integration: "linear", ok: false, source: "draft", account: null, diagnostic: "Linear authentication failed; check LINEAR_API_KEY or run timber setup." },
 		});
+		const notes = timber.notes();
+		expect(notes.arguments).toEqual(["__app-config", "check", "linear", "--scope", "global", "--input-file", notes.inputFile!]);
+		expect(JSON.parse(notes.input!)).toEqual({ schemaVersion: 1, values: {}, credentials: { linear: { token: SECRET } } });
+		if (process.platform !== "win32") expect(notes.inputMode).toBe(0o600);
+	});
 
-		test("environment variables count when they are set, and their values are never kept", async () => {
-			const statuses = await reader({ GH_TOKEN: SECRET, JIRA_EMAIL: "sam@example.invalid", JIRA_API_TOKEN: SECRET, LINEAR_API_KEY: SECRET }).integrations();
-			expect(statuses).toEqual({
-				github: { state: "configured", source: "environment" },
-				jira: { state: "configured", source: "environment" },
-				linear: { state: "configured", source: "environment" },
-			});
-			// Jira needs both, as Timber does.
-			expect((await reader({ JIRA_API_TOKEN: SECRET }).integrations()).jira).toEqual({ state: "not-configured" });
-		});
+	test("check: an answer for another integration, or none, is a failure", async () => {
+		const other = standInResultTimber(root, `check-${++count}`, { result: null, stdout: recordedConfig.checks.github, exitCode: 0 });
+		expect(await service(other.path).check({ scope: "machine", repository: null, integration: "jira", values: {} })).toMatchObject({ outcome: "failed" });
+		const silent = standInResultTimber(root, `check-${++count}`, { result: null, stderr: "error: Check one of: github, linear, jira.\n", exitCode: 1 });
+		expect(await service(silent.path).check({ scope: "machine", repository: null, integration: "jira", values: {} })).toMatchObject({ outcome: "failed", failure: { diagnostic: "Check one of: github, linear, jira." } });
+	});
+});
 
-		test.skipIf(process.platform === "win32")("GitHub is configured when gh auth status exits with 0", async () => {
-			const bin = join(root, "bin");
-			mkdirSync(bin, { recursive: true });
-			writeFileSync(join(bin, "gh"), "#!/bin/sh\nexit 1\n");
-			chmodSync(join(bin, "gh"), 0o755);
-			const asked: number[] = [];
-			const signedIn = await reader({ PATH: bin }, async () => {
-				asked.push(1);
-				return 0;
-			}).integrations();
-			expect(signedIn.github).toEqual({ state: "configured", source: "github-cli" });
-			// The real gh stand-in exits with 1: not signed in.
-			expect((await reader({ PATH: bin }).integrations()).github).toEqual({ state: "not-configured" });
-			expect(asked).toHaveLength(1);
-		});
+describe.skipIf(realTimber === null || process.platform === "win32")("with the real Timber", () => {
+	let root: string;
+	let repository: string;
+	let xdg: string;
+	let environment: Record<string, string | undefined>;
+	let temporary: string;
+
+	beforeAll(() => {
+		root = realpathSync(mkdtempSync(join(tmpdir(), "timber-app-real-settings-")));
+		xdg = join(root, "config");
+		// Timber refuses a credential store in a folder others can write to, so the folders are private whatever the umask.
+		mkdirSync(join(xdg, "timber"), { recursive: true, mode: 0o700 });
+		writeFileSync(join(xdg, "timber", "config.toml"), "[agent]\ncommand = \"claude\"\nenabled = true\n");
+		temporary = join(root, "temporary");
+		mkdirSync(temporary);
+		mkdirSync(join(root, "home"));
+		repository = join(root, "sample");
+		mkdirSync(repository);
+		git(repository, "init", "-q", "-b", "main");
+		writeFileSync(join(repository, "README.md"), "sample\n");
+		git(repository, "add", "README.md");
+		git(repository, "commit", "-q", "-m", "init");
+		writeFileSync(join(repository, ".timber.toml"), [
+			'base_branch = "main"',
+			"[hooks]",
+			'post_create = ["bun install", "echo \'one\\ntwo\'"]',
+			"[workflows.review]",
+			'description = "Review a pull request"',
+			'post_create = ["gh pr checkout"]',
+			"",
+		].join("\n"));
+		const { JIRA_EMAIL: _email, JIRA_API_TOKEN: _token, LINEAR_API_KEY: _key, ...rest } = process.env;
+		environment = { ...rest, XDG_CONFIG_HOME: xdg, CI: "1" };
+	});
+	afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+	const service = () => createTimberSettings({
+		timber: async () => ({ state: "ready", path: realTimber!, version: "0.1.2" }),
+		isListed: async candidate => candidate === repository,
+		environment,
+		temporaryRoot: temporary,
+		machineFolder: join(root, "home"),
+	});
+	const readRepository = async () => {
+		const result = await service().read({ scope: "repository", repository });
+		if (result.outcome !== "read") throw new Error(result.failure.diagnostic);
+		return result.settings;
+	};
+
+	test("reading leaves every file, ref, and the index as they were", async () => {
+		const before = fingerprint(repository);
+		const settings = await readRepository();
+		expect(settings.values.base_branch).toBe("main");
+		expect(settings.effective.agent).toEqual({ command: "claude", args: [], enabled: true });
+		expect(fingerprint(repository)).toBe(before);
+	});
+
+	test("saving one group writes what Timber's setup writes and keeps named workflows and the other settings", async () => {
+		const settings = await readRepository();
+		const result = await service().save({ scope: "repository", repository, revision: settings.revision, values: { ...settings.values, remote: "upstream" }, editTracked: false });
+		expect(result).toMatchObject({ outcome: "saved" });
+		const file = readFileSync(join(repository, ".timber.toml"), "utf8");
+		// Setup's renderer writes this header, so the file is the one setup would write.
+		expect(file).toStartWith("# Timber settings. Keep credentials in the private user store or environment, never this file.\n");
+		const after = await readRepository();
+		expect(after.values).toEqual({ ...settings.values, remote: "upstream" });
+		expect(after.values.workflows).toEqual({ review: { description: "Review a pull request", post_create: ["gh pr checkout"] } });
+		expect(after.revision).toBe(result.outcome === "saved" ? result.revision : "");
+		// Timber hid the file from Git status with its local exclusion, as setup does.
+		expect(git(repository, "status", "--porcelain")).toBe("");
+	});
+
+	test("an invalid value is refused at the field it names, and nothing is written", async () => {
+		const settings = await readRepository();
+		const before = readFileSync(join(repository, ".timber.toml"), "utf8");
+		const result = await service().save({ scope: "repository", repository, revision: settings.revision, values: { ...settings.values, editor: { command: " ", args: [], enabled: false } }, editTracked: false });
+		expect(result).toMatchObject({ outcome: "invalid", invalidFields: ["editor.command is invalid"] });
+		expect(readFileSync(join(repository, ".timber.toml"), "utf8")).toBe(before);
+	});
+
+	test("a change made outside the app between read and save is refused, and the outside change stays", async () => {
+		const settings = await readRepository();
+		// At the top, so the key is not inside a table.
+		const outside = `worktree_dir = "../elsewhere"\n${readFileSync(join(repository, ".timber.toml"), "utf8")}`;
+		writeFileSync(join(repository, ".timber.toml"), outside);
+		const result = await service().save({ scope: "repository", repository, revision: settings.revision, values: { ...settings.values, remote: "origin" }, editTracked: false });
+		expect(result).toMatchObject({ outcome: "conflict" });
+		expect(readFileSync(join(repository, ".timber.toml"), "utf8")).toBe(outside);
+	});
+
+	test("a change to named workflows made outside the app is a conflict, not a refused field", async () => {
+		const settings = await readRepository();
+		const path = join(repository, ".timber.toml");
+		const outside = readFileSync(path, "utf8").replace("Review a pull request", "Review a change");
+		writeFileSync(path, outside);
+		const result = await service().save({ scope: "repository", repository, revision: settings.revision, values: { ...settings.values, remote: "elsewhere" }, editTracked: false });
+		expect(result).toMatchObject({ outcome: "conflict" });
+		expect(readFileSync(path, "utf8")).toBe(outside);
+	});
+
+	test("a login is saved only in Timber's private store, and never comes back in a result, a read, or the settings file", async () => {
+		const read = await service().read({ scope: "machine", repository: null });
+		if (read.outcome !== "read") throw new Error(read.failure.diagnostic);
+		const result = await service().save({ scope: "machine", repository: null, revision: read.settings.revision, values: read.settings.values, credentials: { linear: { token: SECRET } }, editTracked: false });
+		expect(result).toMatchObject({ outcome: "saved", credentials: { linear: "saved", jira: "unchanged" } });
+		expect(JSON.stringify(result)).not.toContain(SECRET);
+		const again = await service().read({ scope: "machine", repository: null });
+		expect(again).toMatchObject({ outcome: "read", settings: { credentials: { linear: { state: "saved" } } } });
+		expect(JSON.stringify(again)).not.toContain(SECRET);
+		expect(readFileSync(join(xdg, "timber", "config.toml"), "utf8")).not.toContain(SECRET);
+	});
+
+	test("a check reports a safe failure and saves nothing", async () => {
+		const before = fingerprint(xdg);
+		const result = await service().check({ scope: "machine", repository: null, integration: "jira", values: {} });
+		expect(result).toMatchObject({ outcome: "checked", check: { integration: "jira", ok: false, diagnostic: expect.any(String) } });
+		expect(fingerprint(xdg)).toBe(before);
 	});
 });

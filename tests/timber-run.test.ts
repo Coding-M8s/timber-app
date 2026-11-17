@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { runTimberWithResultFile } from "../src/bun/timber-run";
 import { OUTPUT_LIMIT_BYTES } from "../src/shared/captured-output";
+import { APPROVAL_FILE_PLACEHOLDER } from "../src/shared/timber-result";
 import { type StandInRun, git, realTimber, recordedResult, standInResultTimber } from "./support/timber";
 
 let root: string;
@@ -70,7 +71,7 @@ describe("runTimberWithResultFile", () => {
 			executable: timber.path,
 			command: "new",
 			arguments: (resultFile, approvalFile) => ["__ide-done", "apply", "--approval-file", approvalFile, "--result-file", resultFile, "--", "/work/sample-worktrees/feat x"],
-			approval,
+			input: { bytes: approval, shownAs: APPROVAL_FILE_PLACEHOLDER },
 			folder: repository,
 			temporaryRoot: temporary,
 		});
