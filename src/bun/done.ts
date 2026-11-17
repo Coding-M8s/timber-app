@@ -5,7 +5,7 @@ import {
 	type DoneApplyRequest, type DoneApplyResult, type DonePreviewRequest, type DonePreviewResult,
 	describeDonePreview, doneApplyArguments, donePreviewArguments, previewMatchesOptions, readDonePreview,
 } from "../shared/timber-done";
-import { failureOf } from "../shared/timber-result";
+import { APPROVAL_FILE_PLACEHOLDER, failureOf } from "../shared/timber-result";
 import { describeTimberStatus } from "./timber";
 import { runTimberWithResultFile } from "./timber-run";
 
@@ -177,7 +177,7 @@ export function createDone(dependencies: DoneDependencies): Done {
 			executable: located.executable,
 			command: "done",
 			arguments: (resultFile, approvalFile) => doneApplyArguments(approvalFile, resultFile, approved.path),
-			approval: approved.bytes,
+			input: { bytes: approved.bytes, shownAs: APPROVAL_FILE_PLACEHOLDER },
 			folder: request.repository,
 			environment,
 			...(temporaryRoot === undefined ? {} : { temporaryRoot }),

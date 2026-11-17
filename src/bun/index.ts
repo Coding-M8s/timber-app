@@ -23,7 +23,7 @@ import { createRefreshPolicy } from "./refresh-policy";
 import { type WatchTarget, createRepositoryWatcher } from "./repository-watcher";
 import { createWorktreeStamps } from "./worktree-stamp";
 import { createTerminalSessions } from "./terminals";
-import { createTimberConfigReader } from "./timber-config";
+import { createTimberSettings } from "./timber-settings";
 import { createWorktreeCommands } from "./worktree-commands";
 
 const DEV_SERVER_URL = "http://localhost:5173";
@@ -128,8 +128,8 @@ void watchRepositories();
 
 const done = createDone({ timber: () => timber.current(), findRepository: path => repositories.find(path) });
 const fileChanges = createFileChanges({ findRepository: path => repositories.find(path) });
-// Reads Timber's settings files only, never credentials, and never writes (see ./timber-config.ts).
-const timberConfig = createTimberConfigReader({ isListed: path => repositories.includes(path) });
+// Timber reads and writes its own settings and logins. The app never opens those files (see ./timber-settings.ts).
+const timberSettings = createTimberSettings({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
 const editor = createEditorLauncher({ preferences: () => preferences.load(), findRepository: path => repositories.find(path) });
 
 /** Report to the window. It may not be connected yet, or be reloading; its first load reads everything anyway. */
@@ -202,8 +202,10 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			},
 			// Starts the editor from the saved setting only. The request names the worktree, never the command (see ./editor.ts).
 			openInEditor: request => editor.open(request),
-			readTimberSettings: ({ repository }) => timberConfig.read(repository),
-			readTimberIntegrations: () => timberConfig.integrations(),
+			readTimberSettings: request => timberSettings.read(request),
+			// A save request can hold a login typed in Settings: never log it, or what Timber printed (see ./timber-settings.ts).
+			saveTimberSettings: request => timberSettings.save(request),
+			checkTimberConnection: request => timberSettings.check(request),
 			previewDone: request => done.preview(request),
 			// Removes a worktree. Only ever with a preview that `previewDone` handed out (see ./done.ts).
 			applyDone: request => done.apply(request),

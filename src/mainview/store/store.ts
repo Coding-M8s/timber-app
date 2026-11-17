@@ -7,7 +7,7 @@ import { type Layout, clampSidebarWidth, dismissSetup, forgetRepository, sameLay
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberStatus, Worktree, WorktreeCommandResult } from "../../shared/model";
 import type { Preferences } from "../../shared/preferences";
 import { type OpenTerminalRequest, type TerminalChange, type TerminalSession, TIMBER_SETUP_SESSION_NAME } from "../../shared/terminal";
-import type { IntegrationStatuses, TimberConfigScope, TimberSettings } from "../../shared/timber-config";
+import type { TimberConfigScope, TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "../../shared/timber-config";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "../../shared/timber-done";
 import { type Draw, createTerminalFeed } from "../terminal-feed";
 import { describeOrphanTerminal } from "../terminal-format";
@@ -126,21 +126,19 @@ export interface AppStore {
 	 */
 	listBranches(repository: string): Promise<BranchSuggestion[] | null>;
 	/**
-	 * Timber's settings files, for the Settings dialog: the machine's, and the
-	 * repository's when its primary checkout is given. Read-only. Never
-	 * throws: an engine that could not answer is the reason, as text.
+	 * Timber's settings for one scope, for the Settings dialog, read by
+	 * Timber. Read-only. Never throws: an engine that could not answer is a
+	 * failed read with the reason.
 	 */
-	readTimberSettings(repository: string | null): Promise<TimberSettings | string>;
-	/** Whether Timber can reach GitHub, Jira, and Linear. Read-only. Never throws, as above. */
-	readTimberIntegrations(): Promise<IntegrationStatuses | string>;
+	readTimberSettings(request: TimberSettingsRequest): Promise<TimberSettingsReadResult>;
 	/**
-	 * Close Settings and start `timber setup` for one of Timber's files in a
-	 * session, where `timberSetupTarget` (state.ts) says, with that worktree
-	 * selected and its session showing. `repository` is the primary checkout
-	 * whose settings show, for repository setup. Never throws: why it did not
-	 * start shows in `terminalProblem`.
+	 * Save one scope's settings through Timber. Runs once and is never retried.
+	 * Never throws: an engine that could not answer is a failure that says
+	 * what came of the save is unknown.
 	 */
-	runTimberSetup(scope: TimberConfigScope, repository: string | null): Promise<void>;
+	saveTimberSettings(request: TimberSettingsSaveRequest): Promise<TimberSettingsSaveResult>;
+	/** Check a login through Timber, saving nothing. Never throws, as above. */
+	checkTimberConnection(request: TimberConnectionCheckRequest): Promise<TimberConnectionCheckResult>;
 	/** Open a dialog over the window, in place of the one that is open. */
 	openDialog(request: DialogRequest): void;
 	closeDialog(): void;
@@ -838,6 +836,11 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		return true;
 	}
 
+	/**
+	 * Start `timber setup` for one of Timber's files in a session, where
+	 * `timberSetupTarget` (state.ts) says, with that worktree selected and its
+	 * session showing. Why it did not start shows in `terminalProblem`.
+	 */
 	async function runTimberSetup(scope: TimberConfigScope, repository: string | null): Promise<void> {
 		const target = timberSetupTarget(state, scope, repository);
 		if (!target.ok) return;
@@ -1051,21 +1054,27 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		},
 		readChanges,
 		selectChangedFile,
-		async readTimberSettings(repository) {
+		async readTimberSettings(request) {
 			try {
-				return await engine.readTimberSettings(repository);
+				return await engine.readTimberSettings(request);
 			} catch (error) {
-				return `The app did not hear back: ${messageOf(error)}`;
+				return { outcome: "failed", failure: { command: null, diagnostic: `The app did not hear back: ${messageOf(error)}`, output: null } };
 			}
 		},
-		async readTimberIntegrations() {
+		async saveTimberSettings(request) {
 			try {
-				return await engine.readTimberIntegrations();
+				return await engine.saveTimberSettings(request);
 			} catch (error) {
-				return `The app did not hear back: ${messageOf(error)}`;
+				return { outcome: "failed", failure: { command: null, diagnostic: `The app did not hear back, so whether the settings were saved is unknown: ${messageOf(error)}. Read them again before saving.`, output: null } };
 			}
 		},
-		runTimberSetup,
+		async checkTimberConnection(request) {
+			try {
+				return await engine.checkTimberConnection(request);
+			} catch (error) {
+				return { outcome: "failed", failure: { command: null, diagnostic: `The app did not hear back: ${messageOf(error)}`, output: null } };
+			}
+		},
 		openDialog(request) {
 			update({ dialog: request });
 		},

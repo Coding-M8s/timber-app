@@ -37,6 +37,38 @@ export const recordedResult = {
 };
 
 const doneFixture = (name: string) => readFileSync(join(doneFixtures, name), "utf8");
+const configFixture = (name: string) => readFileSync(join(import.meta.dir, "..", "fixtures", "timber-config", name), "utf8");
+
+/**
+ * What `timber __app-config` of Timber's main branch (built as 0.1.2) printed
+ * and wrote on Linux, exactly as it was, except that the temporary folder it
+ * ran in is written `/work` and the GitHub login is written `sample-user`.
+ * The machine file sets an agent. The repository `/work/sample` sets a
+ * starting branch, two setup scripts (the second spans two lines), and a
+ * named workflow.
+ *
+ * - `reads`: standard output of `read` for each scope.
+ * - `results`: result files of `apply` in the repository: `saved`, `invalid`
+ *   (a blank branch, an empty script, an empty editor command, and a Jira
+ *   site that is not HTTPS), `conflict` (the same draft applied again with
+ *   the old revision), and `refused` (the file is tracked by Git).
+ * - `checks`: standard output of `check`: GitHub accepted through the GitHub
+ *   CLI, Jira with no site anywhere, and Linear with a made-up key.
+ */
+export const recordedConfig = {
+	reads: { machine: configFixture("read-machine.json"), repository: configFixture("read-repository.json") },
+	results: {
+		saved: configFixture("result-saved.json"),
+		invalid: configFixture("result-invalid.json"),
+		conflict: configFixture("result-conflict.json"),
+		refused: configFixture("result-refused.json"),
+	},
+	checks: {
+		github: configFixture("check-github-accepted.json"),
+		jiraNoSite: configFixture("check-jira-no-site.json"),
+		linearRejected: configFixture("check-linear-rejected.json"),
+	},
+};
 
 /**
  * What `timber __ide-done` of Timber 0.1.1 printed and wrote on Linux, exactly
@@ -168,6 +200,12 @@ export interface StandInNotes {
 	approval: string | null;
 	/** Permission bits of the approval file, or null. */
 	approvalMode: number | null;
+	/** The path it was given after `--input-file`, or null. */
+	inputFile: string | null;
+	/** What that file held when the stand-in ran, as text. Null when there was no file. */
+	input: string | null;
+	/** Permission bits of the input file, or null. */
+	inputMode: number | null;
 }
 
 const STAND_IN_SCRIPT = `
@@ -189,8 +227,18 @@ try {
 		approvalMode = statSync(approvalFile).mode & 0o777;
 	}
 } catch {}
+const inputAt = given.indexOf("--input-file");
+const inputFile = inputAt === -1 ? null : given[inputAt + 1] ?? null;
+let input = null;
+let inputMode = null;
+try {
+	if (inputFile !== null) {
+		input = readFileSync(inputFile, "utf8");
+		inputMode = statSync(inputFile).mode & 0o777;
+	}
+} catch {}
 writeFileSync(join(__dirname, "notes.json"), JSON.stringify({
-	arguments: given, cwd: process.cwd(), resultFile, folderMode, approvalFile, approval, approvalMode,
+	arguments: given, cwd: process.cwd(), resultFile, folderMode, approvalFile, approval, approvalMode, inputFile, input, inputMode,
 	resultFileExisted: resultFile !== null && existsSync(resultFile),
 }));
 if (run.result !== null && resultFile !== null) writeFileSync(resultFile, run.result, { flag: "wx", mode: 0o600 });

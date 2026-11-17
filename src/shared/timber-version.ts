@@ -1,5 +1,5 @@
-/** The first Timber release with the machine interface the app builds on. */
-export const REQUIRED_TIMBER_VERSION = "0.1.1";
+/** The first Timber release with the machine interface the app builds on, including `timber __app-config` for Settings. */
+export const REQUIRED_TIMBER_VERSION = "0.1.2";
 
 /** Development override: names the Timber executable to use instead of the one on PATH. */
 export const TIMBER_OVERRIDE_VARIABLE = "TIMBER_APP_TIMBER_PATH";

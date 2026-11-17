@@ -74,9 +74,13 @@ change them here first when they change.
   pre-done scripts, starting branch, remote, worktree folder, and layout.
   Presets where they help, but every value is editable free-form, and every
   section has Save.
-  Until the app can save Timber's own settings, they are shown read-only in
-  a Machine and a Repository section, each with the file it read and a "Run
-  timber setup" button that shows its command first.
+  Timber's own settings are edited in a Machine and a Repository section,
+  in groups (editor, coding assistant, branch and remote and folder,
+  scripts, issue tracking) that each have their own Save and show the exact
+  Timber command it runs. Timber validates and writes; its messages show at
+  the field they name. A tracked `.timber.toml` is changed only when the
+  person ticks the box for that save. Issue tracking has "Test connection"
+  for GitHub, Jira, and Linear.
 
 ## Look
 

@@ -75,9 +75,12 @@ export function createDesktopEngine(): Engine {
 		savePreferences: change => rpc.request.savePreferences({ change }),
 		// The main process reads the list first, and waits a moment to hear whether the editor stopped right away.
 		openInEditor: request => rpc.request.openInEditor(request, { maxRequestTime: 60_000 }),
-		readTimberSettings: repository => rpc.request.readTimberSettings({ repository }),
-		// `gh auth status` may take up to ten seconds.
-		readTimberIntegrations: () => rpc.request.readTimberIntegrations({}, { maxRequestTime: 30_000 }),
+		// The main process stops a stuck read after 30 seconds.
+		readTimberSettings: request => rpc.request.readTimberSettings(request, { maxRequestTime: 60_000 }),
+		// Timber may wait on its lock, so a save takes as long as it takes.
+		saveTimberSettings: request => rpc.request.saveTimberSettings(request, { maxRequestTime: Infinity }),
+		// The main process stops a stuck check after 30 seconds.
+		checkTimberConnection: request => rpc.request.checkTimberConnection(request, { maxRequestTime: 60_000 }),
 		// The main process reads the list first, then Git, which it stops after 20 seconds.
 		readFileChanges: request => rpc.request.readFileChanges(request, { maxRequestTime: 60_000 }),
 		readFileDiff: request => rpc.request.readFileDiff(request, { maxRequestTime: 60_000 }),

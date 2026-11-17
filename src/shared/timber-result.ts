@@ -8,7 +8,7 @@ import { type Fields, type ListedRepository, type ListedWorktree, SUPPORTED_SCHE
  */
 
 /** The Timber commands that write a result file. */
-export type ResultCommand = "new" | "open" | "done" | "rebase";
+export type ResultCommand = "new" | "open" | "done" | "rebase" | "config";
 
 /** Stands for the result file wherever a command is shown. The real path is a fresh temporary file. */
 export const RESULT_FILE_PLACEHOLDER = "<temporary file>";
@@ -20,7 +20,14 @@ export const RESULT_FILE_PLACEHOLDER = "<temporary file>";
  */
 export const APPROVAL_FILE_PLACEHOLDER = "<approved preview>";
 
-const PLACEHOLDERS: readonly string[] = [RESULT_FILE_PLACEHOLDER, APPROVAL_FILE_PLACEHOLDER];
+/**
+ * Stands for the input file of `timber __app-config` wherever that command is
+ * shown. The real file is a private temporary one that holds the settings
+ * draft, and any login typed, so it is never shown or logged.
+ */
+export const SETTINGS_DRAFT_PLACEHOLDER = "<settings draft>";
+
+const PLACEHOLDERS: readonly string[] = [RESULT_FILE_PLACEHOLDER, APPROVAL_FILE_PLACEHOLDER, SETTINGS_DRAFT_PLACEHOLDER];
 
 /** A record that passed every check. */
 export interface ResultRecord {

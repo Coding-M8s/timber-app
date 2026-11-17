@@ -608,7 +608,7 @@ export function createMockEngine(
 		const worktree = timberFailures.has(path) ? undefined : repository?.worktrees.find(candidate => candidate.path === worktreePath);
 		return worktree && worktree.pathExists ? worktree : null;
 	}, () => preferences.agents, () => typeof timber === "function" ? timber() : timber, saveSetup);
-	const timberConfig = createMockTimberConfig(path => current.some(repository => repository.path === path));
+	const timberConfig = createMockTimberConfig(path => current.some(repository => repository.path === path), () => typeof timber === "function" ? timber() : timber);
 	return {
 		...terminals,
 		...timberConfig,

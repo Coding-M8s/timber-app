@@ -31,9 +31,9 @@ const SECTION_VIEWS: Record<SettingsSection, ComponentType> = {
  * sections cannot be switched, so its answer is never lost.
  *
  * Under "Timber", the Machine and Repository sections show Timber's own
- * settings, read from its files each time the dialog opens, and never
- * change them. Their "Run timber setup" closes the dialog and starts the
- * command, shown first, in a terminal session.
+ * settings, read through Timber each time the dialog opens, in groups that
+ * each save through Timber with their own Save. The app never writes
+ * Timber's files itself.
  */
 export function SettingsDialog({ initialSection }: { initialSection: SettingsSection }) {
 	const store = useStore();
