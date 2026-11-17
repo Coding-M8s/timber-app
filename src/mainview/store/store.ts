@@ -4,7 +4,7 @@ import type { Engine } from "../../shared/engine";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "../../shared/git-fetch";
 import { type FileChangeTarget, type FileChangesResult, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
 import { type Layout, clampSidebarWidth, dismissSetup, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
-import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "../../shared/model";
+import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberStatus, Worktree, WorktreeCommandResult } from "../../shared/model";
 import type { Preferences } from "../../shared/preferences";
 import { type OpenTerminalRequest, type TerminalChange, type TerminalSession, TIMBER_SETUP_SESSION_NAME } from "../../shared/terminal";
 import type { IntegrationStatuses, TimberConfigScope, TimberSettings } from "../../shared/timber-config";
@@ -159,13 +159,22 @@ export interface AppStore {
 	applyDone(request: DoneApplyRequest): Promise<DoneApplyResult>;
 	/**
 	 * Start another session in a worktree, the shell or the agent that
-	 * `request.agent` names, and choose its chip. This is the only way an
-	 * agent starts: New and Open never start one. The session shows in
+	 * `request.agent` names, and choose its chip. Every agent starts through
+	 * here: `newWorktree` and `openWorktree` never start one. The session shows in
 	 * `terminals`; why none started shows in `terminalProblem`, with the
 	 * command that failed. One request at a time per worktree, so a double
 	 * click starts one. Never throws.
 	 */
 	openTerminal(request: OpenTerminalRequest): Promise<void>;
+	/**
+	 * Start an agent from the saved Settings, by name, in a worktree the New
+	 * worktree dialog created, as `openTerminal` does: select the worktree and
+	 * show the Workspace tab, where its session or why it did not start shows.
+	 * The worktree is looked up as `newWorktree` selects it. Answers at once,
+	 * without waiting for the session: false when the list does not have the
+	 * worktree, and then nothing starts. Never throws.
+	 */
+	startAgentIn(repository: string, worktree: ReportedWorktree, agent: string): boolean;
 	/**
 	 * Choose the chip of a session in its worktree, so its pane shows. The
 	 * other sessions keep running. Nothing happens for a session that is gone.
@@ -696,11 +705,15 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	}
 
 	/** Select the worktree a Timber command reported, when the list that was just read has it. */
-	function selectReported(repositoryPath: string, reported: ReportedWorktree): void {
+	/** The listed worktree Timber reported. By identity first: the registered path stands in when Timber could verify the folder in only one of the two reads. */
+	function listedReported(repositoryPath: string, reported: ReportedWorktree): Worktree | undefined {
 		const repository = state.repositories.find(candidate => candidate.path === repositoryPath);
-		// By identity first. The registered path stands in when Timber could verify the folder in only one of the two reads.
-		const worktree = repository?.worktrees.find(candidate => candidate.id === reported.id)
+		return repository?.worktrees.find(candidate => candidate.id === reported.id)
 			?? repository?.worktrees.find(candidate => candidate.path === reported.path);
+	}
+
+	function selectReported(repositoryPath: string, reported: ReportedWorktree): void {
+		const worktree = listedReported(repositoryPath, reported);
 		if (worktree) select(worktree.id);
 	}
 
@@ -812,6 +825,17 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const selection = selectionFor(state.repositories, session.worktree);
 		if (selection) select(session.worktree);
 		update({ tab: "workspace", shownSessions: { ...state.shownSessions, [session.worktree]: session.id } });
+	}
+
+	function startAgentIn(repositoryPath: string, reported: ReportedWorktree, agent: string): boolean {
+		const worktree = listedReported(repositoryPath, reported);
+		// Not in the list, for example because reading it again failed: there is no pane to start in.
+		if (!worktree) return false;
+		update({ tab: "workspace" });
+		select(worktree.id);
+		// The pane gives the session its real size once it shows.
+		void openTerminal({ repository: repositoryPath, worktree: worktree.path, cols: 80, rows: 24, agent });
+		return true;
 	}
 
 	async function runTimberSetup(scope: TimberConfigScope, repository: string | null): Promise<void> {
@@ -1051,6 +1075,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		previewDone,
 		applyDone,
 		openTerminal,
+		startAgentIn,
 		showSession,
 		stepSession,
 		renameTerminal,

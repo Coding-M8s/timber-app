@@ -1,12 +1,43 @@
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
+import type { AgentSetting } from "../../shared/agent";
 import type { Repository } from "../../shared/model";
-import { useStore, useSubmission } from "../store/react";
+import { useAppState, useStore, useSubmission } from "../store/react";
 import type { SubmissionState } from "../store/submission";
 import { OperationDialog } from "./OperationDialog";
 import { ModeSwitch } from "./worktree-modes/ModeSwitch";
+import { agentFollowUp } from "./worktree-modes/agent-choice";
+import { createWorktreeDialogController, pickOfOption } from "./worktree-modes/dialog-controller";
 import { useExistingBranchMode } from "./worktree-modes/existing-branch";
 import type { WorktreeDialogMode } from "./worktree-modes/mode";
 import { useNewBranchMode } from "./worktree-modes/new-branch";
+
+interface AgentFieldProps {
+	/** The agents saved in Settings, Agents, in menu order. */
+	agents: readonly AgentSetting[];
+	/** The agent that will start, or null for None. */
+	chosen: AgentSetting | null;
+	onPick: (pick: string | null) => void;
+}
+
+/** The Agent field, shared by every mode: each saved agent, then None. */
+export function AgentField({ agents, chosen, onPick }: AgentFieldProps) {
+	return (
+		<label className="field">
+			<span className="field-label">Agent</span>
+			<select className="field-input" name="agent" value={chosen?.name ?? ""} onChange={event => onPick(pickOfOption(event.target.value))}>
+				{agents.map(agent => <option key={agent.name} value={agent.name}>{agent.name}</option>)}
+				<option value="">None</option>
+			</select>
+			<span className="field-hint">
+				{agents.length === 0
+					? "No agents are set up. Add one in Settings, Agents."
+					: chosen === null
+						? "No agent starts. Start one later from the worktree."
+						: "Starts in the worktree once this dialog has created it, never in one that was already there."}
+			</span>
+		</label>
+	);
+}
 
 interface WorktreeDialogFrameProps {
 	repository: Repository;
@@ -14,7 +45,12 @@ interface WorktreeDialogFrameProps {
 	/** The position of the mode on screen in `modes`. */
 	selected: number;
 	submission: SubmissionState;
+	/** The agents saved in Settings, Agents. */
+	agents: readonly AgentSetting[];
+	/** The agent that will start after a worktree is created, or null for None. */
+	agent: AgentSetting | null;
 	onSelect: (index: number) => void;
+	onPickAgent: (pick: string | null) => void;
 	/** Run the mode on screen. */
 	onSubmit: (mode: WorktreeDialogMode) => void;
 	onClose: () => void;
@@ -22,9 +58,11 @@ interface WorktreeDialogFrameProps {
 
 /**
  * The worktree dialog as a drawing of its modes: one `OperationDialog` for
- * whichever mode is selected. The switch shows only when there is a choice.
+ * whichever mode is selected, with the Agent field under the mode's own
+ * fields. The switch shows only when there is a choice.
  */
-export function WorktreeDialogFrame({ repository, modes, selected, submission, onSelect, onSubmit, onClose }: WorktreeDialogFrameProps) {
+export function WorktreeDialogFrame(props: WorktreeDialogFrameProps) {
+	const { repository, modes, selected, submission, agents, agent, onSelect, onPickAgent, onSubmit, onClose } = props;
 	const mode = modes[selected] ?? modes[0];
 	if (!mode) return null;
 	return (
@@ -34,6 +72,7 @@ export function WorktreeDialogFrame({ repository, modes, selected, submission, o
 				<ModeSwitch labels={modes.map(candidate => candidate.label)} selected={modes.indexOf(mode)} disabled={submission.running} onSelect={onSelect} />
 			)}
 			command={mode.command}
+			followUp={agentFollowUp(agent, mode.agentStart)}
 			submission={submission}
 			submitLabel={mode.submitLabel}
 			runningLabel={mode.runningLabel}
@@ -43,32 +82,36 @@ export function WorktreeDialogFrame({ repository, modes, selected, submission, o
 			onClose={onClose}
 		>
 			{mode.fields}
+			<AgentField agents={agents} chosen={agent} onPick={onPickAgent} />
 		</OperationDialog>
 	);
 }
 
 /**
- * The dialog behind the "+" of a repository. It owns the one submission and
- * which mode is selected; each mode brings its fields, its command, and what
- * running it means. Add a mode by adding its hook to `modes`.
+ * The dialog behind the "+" of a repository. Its controller
+ * (./worktree-modes/dialog-controller.ts) owns which mode is selected and the
+ * agent to start, which all modes share, and runs the one submission. Each
+ * mode brings its fields, its command, and what running it means. Add a mode
+ * by adding its hook to `modes`.
  */
 export function NewWorktreeDialog({ repository }: { repository: Repository }) {
 	const store = useStore();
 	const { submission, state } = useSubmission(() => store.closeDialog());
 	const modes = [useNewBranchMode(repository, submission), useExistingBranchMode(repository, submission)];
-	const [selected, setSelected] = useState(0);
+	const [controller] = useState(() => createWorktreeDialogController(store, repository.path, submission));
+	const { selected } = useSyncExternalStore(controller.subscribe, controller.getState, controller.getState);
+	const { agents } = useAppState().preferences;
 	return (
 		<WorktreeDialogFrame
 			repository={repository}
 			modes={modes}
 			selected={selected}
 			submission={state}
-			onSelect={index => {
-				if (state.running) return;
-				setSelected(index);
-				submission.clearFailure();
-			}}
-			onSubmit={mode => void submission.submit(() => mode.run())}
+			agents={agents}
+			agent={controller.agent()}
+			onSelect={controller.select}
+			onPickAgent={controller.pickAgent}
+			onSubmit={mode => void controller.submit(mode)}
 			onClose={() => store.closeDialog()}
 		/>
 	);

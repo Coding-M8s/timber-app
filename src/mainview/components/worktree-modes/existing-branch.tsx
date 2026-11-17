@@ -47,6 +47,8 @@ export function existingBranchMode(form: ExistingBranchForm, state: ExistingBran
 		failureTitle: kept
 			? kept.created ? "The worktree was created, but setup failed" : "The worktree was opened, but setup failed"
 			: "Could not open the worktree",
+		// Only Timber knows whether the text names a worktree that is already there. One kept from a failed run is known.
+		agentStart: kept ? (kept.created ? "always" : "never") : "if-created",
 		run: form.run,
 	};
 }

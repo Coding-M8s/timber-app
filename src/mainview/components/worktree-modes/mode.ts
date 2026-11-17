@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { SubmissionOutcome } from "../../store/submission";
+import type { AgentStart, ModeRun } from "./agent-choice";
 
 /**
  * One way the worktree dialog can make a worktree, for example from a new
@@ -16,5 +16,8 @@ export interface WorktreeDialogMode {
 	submitLabel: string;
 	runningLabel: string;
 	failureTitle: string;
-	run(): Promise<SubmissionOutcome>;
+	/** Whether the picked agent starts after the next run works (see ./agent-choice.ts). */
+	agentStart: AgentStart;
+	/** Run the command the footer shows. The frame starts the picked agent in the worktree it reports as created. */
+	run(): Promise<ModeRun>;
 }

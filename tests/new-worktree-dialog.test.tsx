@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { WorktreeDialogFrame } from "../src/mainview/components/NewWorktreeDialog";
 import { ModeSwitch } from "../src/mainview/components/worktree-modes/ModeSwitch";
+import { createWorktreeDialogController } from "../src/mainview/components/worktree-modes/dialog-controller";
 import type { WorktreeDialogMode } from "../src/mainview/components/worktree-modes/mode";
 import { newBranchMode } from "../src/mainview/components/worktree-modes/new-branch";
 import { createNewBranchModel } from "../src/mainview/components/worktree-modes/new-branch-model";
@@ -43,11 +44,18 @@ async function openedDialog(engine = createMockEngine()) {
 	});
 	const model = createNewBranchModel(store, TIMBER);
 	const mode = () => newBranchMode(model, model.getState(), repository, submission);
+	// The wiring NewWorktreeDialog.tsx uses: the agent pick and the submit that starts the agent.
+	const controller = createWorktreeDialogController(store, TIMBER, submission);
 	return {
-		store, engine, asked, model, submission, mode,
-		submit: () => submission.submit(() => mode().run()),
+		store, engine, asked, model, submission, mode, controller,
+		pickAgent: controller.pickAgent,
+		submit: () => controller.submit(mode()),
 		render: () => renderToStaticMarkup(
-			<WorktreeDialogFrame repository={repository} modes={[mode()]} selected={0} submission={submission.getState()} onSelect={() => {}} onSubmit={() => {}} onClose={() => {}} />,
+			<WorktreeDialogFrame
+				repository={repository} modes={[mode()]} selected={0} submission={submission.getState()}
+				agents={store.getState().preferences.agents} agent={controller.agent()}
+				onSelect={controller.select} onPickAgent={controller.pickAgent} onSubmit={mode => void controller.submit(mode)} onClose={() => {}}
+			/>,
 		),
 		branches: () => store.getState().repositories.find(candidate => candidate.path === TIMBER)!.worktrees.map(worktree => worktree.branch),
 		toasts: () => store.getState().toasts.map(toast => toast.text),
@@ -91,15 +99,16 @@ describe("the + on a repository", () => {
 });
 
 describe("the New branch form", () => {
-	test("has a name and an optional start point, and nothing that belongs to other tickets", async () => {
+	test("has a name, an optional start point, and the agent, and nothing that belongs to other tickets", async () => {
 		const { render } = await openedDialog();
 		const markup = render();
 		expect(markup).toMatch(/<span class="field-label">Name<\/span><input class="field-input" placeholder="Fix login bug"[^>]* name="name" value=""\/>/);
 		expect(markup).toMatch(/<span class="field-label">Start from<\/span><input class="field-input" placeholder="Timber&#x27;s configured base"[^>]* name="base" value=""\/>/);
 		expect(markup.match(/<input /g)?.length).toBe(2);
 		expect(markup).toContain(">Cancel</button>");
-		// No repository field, no launcher checkboxes, and with one mode no switch.
-		expect(markup).not.toContain("<select");
+		// The one select is the agent. No repository field, no editor checkbox, and with one mode no switch.
+		expect(markup.match(/<select /g)?.length).toBe(1);
+		expect(markup).toContain('<select class="field-input" name="agent">');
 		expect(markup).not.toContain('type="checkbox"');
 		expect(markup).not.toContain("radiogroup");
 	});
@@ -357,12 +366,13 @@ describe("the mode switch", () => {
 		submitLabel: `Run ${label}`,
 		runningLabel: "Running",
 		failureTitle: "Failed",
-		run: async () => ({ ok: true, toast: "Done" }),
+		agentStart: "always",
+		run: async () => ({ outcome: { ok: true, toast: "Done" }, created: null }),
 	});
 	const modes = [fake("New branch"), fake("Existing branch")];
 	const repository = sampleRepositories[0]!;
 	const frame = (selected: number, running = false, shown = modes) => renderToStaticMarkup(
-		<WorktreeDialogFrame repository={repository} modes={shown} selected={selected} submission={{ running, failure: null }} onSelect={() => {}} onSubmit={() => {}} onClose={() => {}} />,
+		<WorktreeDialogFrame repository={repository} modes={shown} selected={selected} submission={{ running, failure: null }} agents={[]} agent={null} onSelect={() => {}} onPickAgent={() => {}} onSubmit={() => {}} onClose={() => {}} />,
 	);
 
 	test("is a group of radio buttons, one per mode, with the selected one checked", () => {

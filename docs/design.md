@@ -62,7 +62,9 @@ change them here first when they change.
   One dialog, opened from the "+" of a repository and named after it, with a
   switch between "New branch" and "Existing branch". When the worktree was
   created but its setup failed, the dialog says so and offers "Open with
-  setup" instead of creating again.
+  setup" instead of creating again. An Agent field, the first saved agent
+  by default or None, starts that agent in the worktree once the dialog has
+  created it, and the footer shows its command under Timber's.
 - **Rebase:** pick the base. A worktree with uncommitted changes is refused,
   as Timber does.
 - **Done:** a clean, published worktree gets a summary of what is removed,

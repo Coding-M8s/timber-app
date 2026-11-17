@@ -32,6 +32,12 @@ interface OperationDialogProps {
 	cancelLabel?: string;
 	/** Shown right below a failure, for what the person should know next. */
 	failureNote?: ReactNode;
+	/**
+	 * What the app itself starts once the command worked, such as an agent,
+	 * shown under the command with a note saying when. Not part of the
+	 * command: it is never joined to it as one line.
+	 */
+	followUp?: { note: string; command: string } | null;
 	/** The fields. They are disabled as a group while the command runs. */
 	children: ReactNode;
 }
@@ -45,7 +51,7 @@ interface OperationDialogProps {
  */
 export function OperationDialog(props: OperationDialogProps) {
 	const { title, headerAside, command, submission, submitLabel, runningLabel, failureTitle, canSubmit = true, onSubmit, onClose, children } = props;
-	const { destructive = false, cancelLabel = "Cancel", failureNote } = props;
+	const { destructive = false, cancelLabel = "Cancel", failureNote, followUp } = props;
 	const { running, failure } = submission;
 	const dialog = useRef<HTMLDialogElement>(null);
 	const cancel = useRef<HTMLButtonElement>(null);
@@ -100,6 +106,12 @@ export function OperationDialog(props: OperationDialogProps) {
 				)}
 				<footer className="dialog-foot">
 					<pre className="dialog-command" aria-label="Command that will run">{command}</pre>
+					{followUp && (
+						<>
+							<p className="dialog-note">{followUp.note}</p>
+							<pre className="dialog-command" aria-label="Command that will start next">{followUp.command}</pre>
+						</>
+					)}
 					<div className="dialog-buttons">
 						<button ref={cancel} type="button" className="button quiet" disabled={running} autoFocus={destructive} onClick={onClose}>{cancelLabel}</button>
 						{destructive ? (
