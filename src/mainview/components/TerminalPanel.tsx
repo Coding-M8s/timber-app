@@ -40,7 +40,7 @@ const RESIZE_MILLISECONDS = 50;
 const isMac = () => typeof navigator !== "undefined" && /Mac/.test(navigator.platform);
 
 /** Roughly how many cells fit in an element, for 13 pixel text at 1.2 line height. 80 by 24 when it has no size. */
-function estimateTerminalSize(element: HTMLElement | null): { cols: number; rows: number } {
+export function estimateTerminalSize(element: HTMLElement | null): { cols: number; rows: number } {
 	const width = element?.clientWidth ?? 0;
 	const height = element?.clientHeight ?? 0;
 	if (width === 0 || height === 0) return { cols: 80, rows: 24 };

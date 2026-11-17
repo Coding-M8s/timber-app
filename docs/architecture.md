@@ -77,7 +77,9 @@ Timber's safety logic must exist once. The app follows two rules:
    The worktree list is `timber ls --json`. New, open, rebase, and done run
    the `timber` command, and the interface shows the command before it runs.
    Creating a worktree and opening an existing branch are built (see
-   [creating and opening worktrees](#creating-and-opening-worktrees)).
+   [creating and opening worktrees](#creating-and-opening-worktrees)), and
+   so is an interim rebase that runs in a session (see
+   [rebasing a worktree](#rebasing-a-worktree-interim)).
 2. **Git is asked directly only for read-only status that Timber does not
    report.** Today that is which repository a folder belongs to, how each
    branch stands against its upstream, which branches there are to offer
@@ -161,7 +163,9 @@ The sidebar shows exactly the worktrees Timber lists, in Timber's order
 ### Commands that report through a result file
 
 New, open, done, rebase, and saving Timber's settings (`config`) say how they ended in a result file, not on
-standard output. One helper runs all of them, so no dialog reads a result its
+standard output. The app does not use rebase's result file yet: until Timber
+has a machine interface for it, rebase runs in a session instead (see
+[below](#rebasing-a-worktree-interim)). One helper runs all of them, so no dialog reads a result its
 own way: `runTimberWithResultFile` in `src/bun/timber-run.ts`. Creating and
 opening worktrees use it (see [below](#creating-and-opening-worktrees)), and
 so does the Done dialog (see [removing a worktree](#removing-a-worktree)).
@@ -1242,6 +1246,51 @@ typed and knows `pwd`, `clear`, and `exit`. `timberMock.requestQuit()` acts
 out quitting, `timberMock.endTerminal(id, code)` a shell that exits by
 itself, and `timberMock.failTerminals({ outcome: "unsupported", message })`
 a terminal that cannot start (`null` to undo).
+
+## Rebasing a worktree (interim)
+
+Until Timber has a machine interface for rebase
+(Coding-M8s/timber#134), the Rebase dialog runs `timber rebase` in a new
+Timber session in the worktree, so the person sees what Timber prints. The
+structured version replaces this one.
+
+- **Entry.** The Rebase control in the workspace header opens the dialog
+  for the selected worktree (`src/mainview/components/RebaseDialog.tsx`).
+  It is disabled when the worktree's folder is missing.
+- **Onto.** A `BranchField` over the `listBranches` capability, which takes
+  any typed ref. Timber reads a plain name as a branch on a remote, so a
+  local branch is offered as `refs/heads/<name>`, and a remote-tracking one
+  as `<remote>/<branch>` (`rebaseBases` in `src/shared/rebase-command.ts`).
+  The spaces around the text are left off. Empty means the base Timber saved
+  for the worktree, and no `--base` is passed.
+- **One source for the command.** `rebaseArguments` builds
+  `rebase [--base <ref>] -- <registered path>`. The footer words it from that
+  function, and the main process runs Timber from the same one, so the
+  command shown is the command that runs.
+- **Running.** The store's `startRebase` asks `openTerminal` with
+  `timberRebase: { onto }`, as Settings asks for `timber setup` with
+  `timberSetup`. The request names only the base, never the command. The
+  main process runs nothing while Timber is not ready, acts only on a
+  repository in the app's list and a path Timber lists for it right now,
+  whose folder is there, and starts the Timber that was found in a session
+  of kind `timber` named "Rebase", beside any sessions the worktree has (see
+  [terminal sessions](#terminal-sessions)).
+- **No verdict.** The app never reads what Timber prints and never says
+  whether the rebase worked. The toast says only that it started; the pane
+  shows Timber's output and the exit status every session shows. When the
+  list shows modified or untracked files, the dialog says beforehand that
+  Timber refuses such a worktree, but it does not block: Timber decides.
+- **Conflicts.** When the rebase stops on conflicts, Timber prints the
+  commands to continue or abort and exits with code 1, so the session ends.
+  The person resolves them in a terminal session in the worktree with
+  `git rebase --continue` or `--abort`. The list follows what they do there,
+  as it follows any change in the worktree (see
+  [watching for changes](#watching-for-changes)).
+- **Afterwards.** When a Timber session stops, setup or rebase, the store
+  reads every repository again, whatever the exit code.
+- **In the browser.** The mock engine prints the command and exits with 0.
+  `timberMock.endRebases(code)` chooses the exit code of later rebases, and
+  `null` leaves them running until `timberMock.endTerminal(id, code)`.
 
 ## Agent sessions
 
@@ -2759,6 +2808,38 @@ installed on the machine: `fc-list | grep -ic geist` printed 0.
   and About in the desktop window. Nothing on Windows or under WSLg, so the
   Windows icon, the typeface there, and the installer's name on Windows are
   unchecked. Nothing on macOS, where the iconset has never been compiled.
+
+Run for the interim rebase (issue 17), Linux x64 (Fedora 44) with Bun 1.4.2
+and Timber 0.1.2, after rebasing it onto several sessions per worktree:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 1197 tests passed, 1 was skipped, none failed. The ones in
+  `tests/rebase.test.ts` run a stand-in Timber in a folder with a space in a
+  pseudo terminal in a temporary repository: it gets exactly the arguments
+  the dialog words, in the worktree's folder, and its exit code 3 is what the
+  session reports; no base passes no `--base`; a worktree with a shell gets
+  the rebase in a session beside it; nothing runs while Timber is not ready,
+  for an unlisted worktree or repository, for a request of the wrong shape,
+  together with setup, or on Windows. One runs the installed Timber, which
+  rebased the worktree onto `refs/heads/main` with exit code 0 and left it
+  clean. `tests/rebase-dialog.test.tsx` covers the store (the session, the
+  Workspace tab, a read of the list only once the process ended, a worktree
+  with a shell, a refusal, an engine that does not answer) and the rendered
+  dialog.
+- `bun run start` in a headless sway session with XWayland, driven by X11
+  test input, with a temporary repository whose two worktrees were behind
+  `main`. On `feat/demo`, with a shell already open, the dialog offered the
+  three local branches as `refs/heads/...`, typing narrowed the list and
+  changed the footer, and submitting `refs/heads/main` started a "Rebase"
+  chip beside the shell; Timber printed "Rebase completed (or already up to
+  date)." and exited with code 0, and `git log` showed the branch on top of
+  `main`. On `feat/conflict`, Timber stopped on a conflict in `README.md` and
+  exited with code 1, and the list showed the detached HEAD and one modified
+  file. A terminal from the "+" menu ran `git rebase --abort`, after which
+  the branch was back on its old tip, clean, and the list showed it so
+  without a refresh. Screenshots were looked at.
+- Not run: a remote base, which needs a remote to fetch from, and the
+  dialog on macOS or Windows.
 
 Not run yet:
 

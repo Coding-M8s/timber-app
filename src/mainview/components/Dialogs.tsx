@@ -2,6 +2,7 @@ import { useAppState } from "../store/react";
 import { SETTINGS_SECTIONS, timberReady } from "../store/state";
 import { DoneDialog } from "./DoneDialog";
 import { NewWorktreeDialog } from "./NewWorktreeDialog";
+import { RebaseDialog } from "./RebaseDialog";
 import { SettingsDialog } from "./SettingsDialog";
 
 /**
@@ -22,6 +23,8 @@ export function Dialogs() {
 		case "done-worktree":
 			// A key per worktree, so a dialog for another one starts from nothing.
 			return <DoneDialog key={`${dialog.repository}\n${dialog.worktree}`} request={dialog} />;
+		case "rebase-worktree":
+			return <RebaseDialog key={`${dialog.repository}\n${dialog.worktree}`} request={dialog} />;
 		case "settings":
 			// A key per section asked for, so asking for another one while Settings is open opens it there.
 			return <SettingsDialog key={dialog.section ?? ""} initialSection={dialog.section ?? SETTINGS_SECTIONS[0]} />;

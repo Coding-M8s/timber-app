@@ -4,9 +4,10 @@ import { describeCommandLine } from "../shared/command-line";
 import type { TimberStatus } from "../shared/model";
 import {
 	type OpenTerminalRequest, type OpenTerminalResult, type Scrollback, type TerminalChange, type TerminalOutput, type TerminalSession,
-	type TerminalSnapshot, TERMINAL_UNSUPPORTED_REASON, TIMBER_SETUP_SESSION_NAME, clampTerminalSize, cleanSessionName, createScrollback, defaultSessionName, pickShell,
+	type TerminalSnapshot, TERMINAL_UNSUPPORTED_REASON, TIMBER_REBASE_SESSION_NAME, TIMBER_SETUP_SESSION_NAME, clampTerminalSize, cleanSessionName, createScrollback, defaultSessionName, pickShell,
 } from "../shared/terminal";
-import { TIMBER_CONFIG_SCOPES, type TimberConfigScope, timberSetupArguments } from "../shared/timber-config";
+import { rebaseArguments } from "../shared/rebase-command";
+import { TIMBER_CONFIG_SCOPES, timberSetupArguments } from "../shared/timber-config";
 import { findExecutable } from "./find-executable";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
 import { sessionMembers, signalEach, signalGroup } from "./process-session";
@@ -156,6 +157,10 @@ function signalSession(live: Live, signal: NodeJS.Signals): void {
  * - A Timber setup session runs `timber setup`, or `timber setup --global`,
  *   with the Timber the app found, in the worktree's folder. The request
  *   names only which file, never the command.
+ * - A Timber rebase session runs `timber rebase [--base <ref>] -- <path>`
+ *   for the worktree, with the Timber the app found, in its folder
+ *   (`rebaseArguments` in ../shared/rebase-command.ts). The request names
+ *   only the base. What Timber prints is never read.
  * - Only a worktree Timber lists, in a repository in the app's list, with its
  *   folder there, gets one. Each request starts another, beside the ones the
  *   worktree has, named after the shell or the agent ("Terminal",
@@ -205,10 +210,10 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		| { ok: true; kind: TerminalSession["kind"]; base: string; argv: string[]; command: string }
 		| { ok: false; result: OpenTerminalResult };
 
-	function startOf(agent: AgentSetting | null, setup: { scope: TimberConfigScope; timber: string } | null): Start {
-		if (setup !== null) {
-			const argv = [setup.timber, ...timberSetupArguments(setup.scope)];
-			return { ok: true, kind: "timber", base: TIMBER_SETUP_SESSION_NAME, argv, command: describeCommandLine(argv) };
+	function startOf(agent: AgentSetting | null, run: TimberRun | null): Start {
+		if (run !== null) {
+			const argv = [run.timber, ...run.arguments];
+			return { ok: true, kind: "timber", base: run.name, argv, command: describeCommandLine(argv) };
 		}
 		if (agent === null) {
 			const shell = pickShell(environment, isExecutable);
@@ -230,6 +235,14 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		return { ok: true, kind: "agent", base: agent.name, argv, command: describeCommandLine(argv) };
 	}
 
+	/** A Timber command to run in place of the shell: setup or rebase, with the Timber the app found. */
+	interface TimberRun {
+		timber: string;
+		arguments: string[];
+		name: string;
+		what: string;
+	}
+
 	async function open(request: OpenTerminalRequest): Promise<OpenTerminalResult> {
 		if (platform === "win32") return { outcome: "unsupported", message: TERMINAL_UNSUPPORTED_REASON };
 		// An agent is looked up first: a request for one never falls back to a shell.
@@ -245,24 +258,32 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			agent = findAgent(saved, request.agent);
 			if (agent === null) return { outcome: "not-configured", message: `No agent called "${request.agent}" is set in Settings, Agents. Nothing was started.` };
 		}
-		// Setup runs the Timber the app found, and only that one.
-		let setup: { scope: TimberConfigScope; timber: string } | null = null;
-		if (request.timberSetup !== undefined) {
-			if (agent !== null || !TIMBER_CONFIG_SCOPES.includes(request.timberSetup)) return { outcome: "failed", message: "The request for Timber setup cannot be read. Nothing was started." };
+		// Setup and rebase run the Timber the app found, and only that one.
+		let run: TimberRun | null = null;
+		if (request.timberSetup !== undefined || request.timberRebase !== undefined) {
+			const setup = request.timberSetup;
+			const rebase = request.timberRebase;
+			const readable = agent === null && (setup === undefined) !== (rebase === undefined)
+				&& (setup === undefined || TIMBER_CONFIG_SCOPES.includes(setup))
+				&& (rebase === undefined || (typeof rebase === "object" && rebase !== null && (rebase.onto === null || (typeof rebase.onto === "string" && rebase.onto !== ""))));
+			const what = rebase !== undefined ? "the rebase" : "setup";
+			if (!readable) return { outcome: "failed", message: `The request for Timber ${rebase !== undefined ? "rebase" : "setup"} cannot be read. Nothing was started.` };
 			let status: TimberStatus;
 			try {
 				status = await timber();
 			} catch (error) {
 				return { outcome: "failed", message: `Could not find Timber: ${messageOf(error)}. Nothing was started.` };
 			}
-			if (status.state !== "ready") return { outcome: "not-configured", message: "No usable Timber was found, so setup cannot start. Nothing was started." };
-			setup = { scope: request.timberSetup, timber: status.path };
+			if (status.state !== "ready") return { outcome: "not-configured", message: `No usable Timber was found, so ${what} cannot start. Nothing was started.` };
+			run = setup !== undefined
+				? { timber: status.path, arguments: timberSetupArguments(setup), name: TIMBER_SETUP_SESSION_NAME, what: "Timber setup" }
+				: { timber: status.path, arguments: rebaseArguments({ worktree: request.worktree, onto: rebase!.onto }), name: TIMBER_REBASE_SESSION_NAME, what: "The rebase" };
 		}
-		const consequence = agent ? `${agent.name} was not started.` : setup ? "Timber setup was not started." : "No terminal was started.";
+		const consequence = agent ? `${agent.name} was not started.` : run ? `${run.what} was not started.` : "No terminal was started.";
 		const listed = await findListedWorktree(findRepository, request.repository, request.worktree, consequence);
 		if (!listed.ok) return { outcome: "not-listed", message: listed.message };
 		// From here to the new session being kept nothing waits, so two sessions that start at once get different names.
-		const start = startOf(agent, setup);
+		const start = startOf(agent, run);
 		if (!start.ok) return start.result;
 		const name = defaultSessionName(start.base, inWorktree(listed.worktree.id).map(live => live.session.name));
 

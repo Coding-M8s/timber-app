@@ -4,8 +4,9 @@ import type { Engine } from "../../shared/engine";
 import type { TimberStatus, Worktree } from "../../shared/model";
 import {
 	type OpenTerminalResult, type Scrollback, type TerminalChange, type TerminalOutput, type TerminalSession, cleanSessionName, createScrollback,
-	defaultSessionName, isWebLink, TIMBER_SETUP_SESSION_NAME,
+	defaultSessionName, isWebLink, TIMBER_REBASE_SESSION_NAME, TIMBER_SETUP_SESSION_NAME,
 } from "../../shared/terminal";
+import { rebaseArguments } from "../../shared/rebase-command";
 import { TIMBER_CONFIG_SCOPES, type TimberConfigScope, timberSetupArguments } from "../../shared/timber-config";
 
 /** The part of the engine about terminals, and how they are acted out. */
@@ -37,6 +38,8 @@ export interface TerminalControls {
 	openedLinks(): string[];
 	/** The last part of a session the window said it drew. */
 	drawnUpTo(id: string): number;
+	/** Make every later pretend `timber rebase` end by itself with this exit code (0 at first), or keep running when null. */
+	endRebases(exitCode: number | null): void;
 }
 
 interface Acted {
@@ -48,6 +51,8 @@ interface Acted {
 	drawn: number;
 	/** Which settings a pretend `timber setup` saves. Null for any other session. */
 	setup: TimberConfigScope | null;
+	/** A pretend `timber rebase`, which takes no input. */
+	rebase: boolean;
 }
 
 const SETUP_QUESTION = "Save Timber settings? Type save, cancel, or exit: ";
@@ -79,6 +84,7 @@ export function createMockTerminals(
 	let failing: Exclude<OpenTerminalResult, { outcome: "opened" }> | null = null;
 	let missing: readonly string[] = [];
 	let confirmed = false;
+	let rebaseExit: number | null = 0;
 	let clipboard = "";
 	const links: string[] = [];
 
@@ -169,13 +175,21 @@ export function createMockTerminals(
 			}
 			let setup: string[] | null = null;
 			if (request.timberSetup !== undefined) {
-				if (agent !== null || !TIMBER_CONFIG_SCOPES.includes(request.timberSetup)) return { outcome: "failed", message: "The request for Timber setup cannot be read. Nothing was started." };
+				if (agent !== null || request.timberRebase !== undefined || !TIMBER_CONFIG_SCOPES.includes(request.timberSetup)) return { outcome: "failed", message: "The request for Timber setup cannot be read. Nothing was started." };
 				const status = timber();
 				if (status.state !== "ready") return { outcome: "not-configured", message: "No usable Timber was found, so setup cannot start. Nothing was started." };
 				setup = [status.path, ...timberSetupArguments(request.timberSetup)];
 			}
+			const rebase = request.timberRebase;
+			if (rebase !== undefined) {
+				const onto = rebase?.onto;
+				if (agent !== null || (onto !== null && (typeof onto !== "string" || onto === ""))) return { outcome: "failed", message: "The request for Timber rebase cannot be read. Nothing was started." };
+				const status = timber();
+				if (status.state !== "ready") return { outcome: "not-configured", message: "No usable Timber was found, so the rebase cannot start. Nothing was started." };
+				setup = [status.path, ...rebaseArguments({ worktree: request.worktree, onto })];
+			}
 			const worktree = findWorktree(request.repository, request.worktree);
-			const notStarted = agent ? `${agent.name} was not started.` : setup ? "Timber setup was not started." : "No terminal was started.";
+			const notStarted = agent ? `${agent.name} was not started.` : rebase !== undefined ? "The rebase was not started." : setup ? "Timber setup was not started." : "No terminal was started.";
 			if (!worktree) return { outcome: "not-listed", message: `Timber lists no worktree at ${request.worktree} in ${request.repository}. ${notStarted} Refresh the list.` };
 			let shell = "/bin/mock-shell";
 			let args: string[] = [];
@@ -206,7 +220,7 @@ export function createMockTerminals(
 			const session: TerminalSession = {
 				id: `mock-terminal-${++lastId}`,
 				kind: agent ? "agent" : setup ? "timber" : "terminal",
-				name: defaultSessionName(agent ? agent.name : setup ? TIMBER_SETUP_SESSION_NAME : "Terminal", taken),
+				name: defaultSessionName(agent ? agent.name : rebase !== undefined ? TIMBER_REBASE_SESSION_NAME : setup ? TIMBER_SETUP_SESSION_NAME : "Terminal", taken),
 				repository: request.repository,
 				worktree: worktree.id,
 				path: worktree.path,
@@ -216,10 +230,17 @@ export function createMockTerminals(
 			};
 			const acted: Acted = {
 				session, scrollback: createScrollback(), line: "", typed: "", size: { cols: request.cols, rows: request.rows }, drawn: 0,
-				setup: setup ? request.timberSetup! : null,
+				setup: setup && rebase === undefined ? request.timberSetup! : null,
+				rebase: rebase !== undefined,
 			};
 			sessions.set(session.id, acted);
 			announce({ id: session.id, session });
+			if (acted.rebase) {
+				print(acted, `A pretend timber rebase in ${session.path}, started as ${session.command}. Nothing runs in the browser.\r\n`);
+				const exitCode = rebaseExit;
+				if (exitCode !== null) later(() => end(acted, exitCode));
+				return { outcome: "opened", session: structuredClone(session) };
+			}
 			const greeting = setup
 				? `A pretend ${session.name} in ${session.path}, started as ${session.command}. Nothing runs in the browser.\r\n`
 				: agent
@@ -244,9 +265,13 @@ export function createMockTerminals(
 			if (acted) acted.drawn = Math.max(acted.drawn, seq);
 		},
 		drawnUpTo: id => sessions.get(id)?.drawn ?? 0,
+		endRebases(exitCode) {
+			rebaseExit = exitCode;
+		},
 		writeTerminal(id, data) {
 			const acted = sessions.get(id);
-			if (acted && acted.session.state.kind === "running") type(acted, data);
+			// A pretend rebase reads nothing, as Timber reads nothing from the terminal while it rebases.
+			if (acted && acted.session.state.kind === "running" && !acted.rebase) type(acted, data);
 		},
 		resizeTerminal(id, cols, rows) {
 			const acted = sessions.get(id);

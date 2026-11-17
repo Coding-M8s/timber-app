@@ -19,8 +19,9 @@ read-only. Settings also edits Timber's own settings for the machine and
 each repository, saved and checked by Timber itself. The app fetches each
 repository in the background (Settings, Fetching) or on "Fetch now",
 updating only remote-tracking branches, and marks branches whose upstream
-moved, was force-pushed, or was deleted. Rebasing worktrees and comparing
-against the base are designed but not built.
+moved, was force-pushed, or was deleted. Rebase, in the workspace header,
+runs `timber rebase` in a new session after showing the command. Comparing
+against the base is designed but not built.
 See the [architecture](docs/architecture.md) and [design](docs/design.md) notes.
 
 ## Quick start

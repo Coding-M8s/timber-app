@@ -1,5 +1,6 @@
 import type { KeyboardEvent } from "react";
 import { DONE_PRIMARY_NOTE } from "../done-format";
+import { REBASE_CONTROL_TITLE, REBASE_FOLDER_MISSING } from "../rebase-format";
 import { describeChanges, describeWorktreeSync, worktreeLabel } from "../format";
 import { TAB_LABELS, tabAfterKey } from "../shell";
 import { useAppState, useStore } from "../store/react";
@@ -66,6 +67,16 @@ export function Workspace() {
 				</div>
 				<div className="workspace-done">
 					<OpenInEditorButton repository={repository.path} worktree={worktree} />
+					{/* Opens the Rebase dialog, which shows the command. Nothing runs before its own button. */}
+					<button
+						type="button"
+						className="button"
+						disabled={!worktree.pathExists}
+						title={worktree.pathExists ? REBASE_CONTROL_TITLE : REBASE_FOLDER_MISSING}
+						onClick={() => store.openDialog({ kind: "rebase-worktree", repository: repository.path, worktree: worktree.id })}
+					>
+						Rebase
+					</button>
 					{/* Opens the Done dialog, which asks Timber for a preview. Nothing is removed before its Remove button. */}
 					<button
 						type="button"
