@@ -1307,6 +1307,53 @@ was never set up. A Timber setup session there asks one question: `save`
 acts out saving the settings, the repository's or with `--global` the
 machine's, and `cancel` or `exit` acts out cancelling.
 
+## Installing the Linux build
+
+`bun run build` does not produce an app that runs in place. Its output in
+`build/stable-linux-x64/Timber/` is an installer: Electrobun's self-extractor
+in `bin/launcher`, the app as a compressed archive in `Resources/`, and the
+menu entry template `Timber.desktop`. `artifacts/` holds the same installer
+packed as `linux-x64-Timber-Setup.tar.gz`, plus the update bundles. To run
+the app from the checkout without installing it, use `bun run dev`.
+
+Running `bin/launcher` installs without asking. With Electrobun 2.0.6 it
+writes, under the user's home folder (with `XDG_DATA_HOME` set, that folder
+replaces `~/.local/share` below; the desktop shortcut stays in `~/Desktop`):
+
+- `~/.local/share/com.codingm8s.timber/stable/app/`: the app itself. The
+  folder name is `app.identifier` and the channel from `electrobun.config.ts`.
+  The identifier is a placeholder (see [open decisions](#open-decisions)),
+  and changing it installs to a new folder and leaves the old one behind.
+- `~/.local/share/com.codingm8s.timber/stable/uninstall`, with
+  `.electrobun-uninstall.json` beside it recording the entries below, and a
+  `self-extraction/` folder of install state.
+- `~/.local/share/applications/Timber.desktop`: the menu entry. The
+  installer also refreshes `mimeinfo.cache` in that folder.
+- `~/Desktop/Timber.desktop`: a copy of the menu entry as a desktop
+  shortcut. The installer then asks `gio` to mark it trusted, which some
+  desktops do not support.
+
+Both entries point at the installed launcher. They have no `Icon=` line, so
+menus show a generic icon, and their `Comment=` repeats the name. The icon
+belongs to the app's identity, issue 27. A trial build for issue 62 showed
+the settings that fix both: with `build.linux.icon` set, the build copies
+that PNG to `app/Resources/appIcon.png` and both entries get its absolute
+path as `Icon=`, and `app.description` becomes `Comment=`.
+
+**The desktop shortcut.** Electrobun 2.0.6 has no setting to skip it, and
+neither does the configuration of 2.0.7-beta.24, the latest on 2026-11-16.
+The extractor makes it when `~/Desktop` exists, and skips it when that
+folder is missing. It looks only at `~/Desktop` and ignores
+`XDG_DESKTOP_DIR`, so a desktop folder under another name gets no shortcut.
+Deleting the shortcut is safe, but running the installer again puts it back.
+Whether an update does too was not tried. The shortcut is accepted for now,
+and is listed under
+[open decisions](#open-decisions) to look at again before a first release.
+
+**Removing it.** `~/.local/share/com.codingm8s.timber/stable/uninstall
+--quiet` removes the app folder, both entries, and the install records.
+It was run only with `--quiet`.
+
 ## Display server on Linux
 
 The window is an X11 window on every Linux session, and on Wayland it runs
@@ -1363,6 +1410,11 @@ See the issue 63 run under [what has been verified](#what-has-been-verified).
 - **Rebase backups.** The design shows them, but Timber does not create backup
   branches today. Either Timber gains that, or the app creates them.
 - **Application identifier.** `electrobun.config.ts` holds a placeholder.
+  It also names the Linux install folder.
+- **Linux desktop shortcut.** Electrobun's installer adds one to `~/Desktop`
+  without asking, and offers no way to turn that off (see
+  [installing the Linux build](#installing-the-linux-build)). Accepted for
+  now. Revisit before a first release.
 - **Fonts.** The design uses Geist. The app should bundle it instead of
   falling back to system fonts.
 
@@ -2348,6 +2400,45 @@ Pop!_OS 24.04 LTS x64 in the COSMIC Wayland session, Bun 1.4.2, Electrobun
   any), a failing Vite server stopping the app under `dev:hmr` (a test with
   the port taken on 127.0.0.1 did not make Vite fail), and any of these
   commands on Windows or macOS.
+
+Run for the Linux install (issue 62), Linux x64 (Pop!_OS 24.04 LTS, natively,
+COSMIC on Wayland) with Bun 1.4.2 and Electrobun 2.0.6. Every install ran
+the built launcher with `env -i PATH=/usr/bin:/bin HOME=<temporary folder>`,
+so nothing was written to the real home folder. Each install log ended at
+"Installation completed successfully!" with no sign of the app starting:
+
+- `bun run build` with the configuration as committed, then an install:
+  the menu entry and the shortcut were both installed, the menu entry had
+  no `Icon=` line and `Comment=Timber`, and `desktop-file-validate` warned
+  that `Comment` looked the same as `Name`.
+- `bun run build` on trial, with `build.linux.icon` set to
+  `src/mainview/assets/logo.png` and `app.description` set: completed. The
+  build had `Resources/appIcon.png`, and the installed menu entry and
+  desktop shortcut both had `Icon=` set to its absolute path and the
+  description as `Comment=`. `desktop-file-validate` on both: no output,
+  exit 0. Neither setting is committed; the icon is left to issue 27.
+- The installs below used the trial build.
+- Install with `~/Desktop` present: the app folder, the menu entry, and the
+  shortcut, as described in
+  [installing the Linux build](#installing-the-linux-build).
+- Shortcut deleted, launcher run again: the shortcut came back.
+- No `~/Desktop`: only the menu entry. With `XDG_DESKTOP_DIR` set to
+  `~/Schreibtisch`, in `~/.config/user-dirs.dirs` and in the environment:
+  still only `~/Desktop` was used, and nothing went to `~/Schreibtisch`.
+- `XDG_DATA_HOME` set to another folder: the app, `uninstall`, and the menu
+  entry went there, and the shortcut still went to `~/Desktop`.
+- Electrobun's configuration type at tag `v2.0.7-beta.24`, read with
+  `gh api` on 2026-11-16: no setting for the desktop shortcut.
+- `uninstall --quiet`: exit 0, and the app folder, both entries, and the
+  icon file were gone.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 1097 tests passed and 1 was skipped.
+- `grep -rn $'\u2014' src tests docs README.md electrobun.config.ts`: nothing.
+- Not run: the icon seen in a real menu, dock, or window title bar, an
+  install into a real home folder with a display, and so whether the app
+  starts after installing, an update over an earlier install, the
+  uninstaller without `--quiet` in a session that can ask, and anything on
+  Windows or macOS.
 
 Not run yet:
 
