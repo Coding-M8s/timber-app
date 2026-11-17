@@ -302,10 +302,9 @@ keeps what was typed in each mode, and is not possible while a command runs.
   runs like every other command. The dialog does not suggest creating again.
 - What setup scripts printed is in the failure's details area and is never
   read by the app.
-- Left out of the agreed mock on purpose: the checkboxes that start an agent
-  or an editor, which are later tickets and would go against `--no-editor
-  --no-agent`, and a line predicting the branch and the folder, which only
-  Timber can know.
+- Left out of the agreed mock on purpose: the checkbox that starts an editor,
+  which is a later ticket and would go against `--no-editor`, and a line
+  predicting the branch and the folder, which only Timber can know.
 
 "Existing branch" is the second mode: `timber open` for a branch, a ticket
 key, or a worktree path, with an optional "Rerun setup" that adds `--setup`.
@@ -330,6 +329,39 @@ key, or a worktree path, with an optional "Rerun setup" that adds `--setup`.
   failed, is reported as that, with the worktree selected in the list. The
   fields change to its exact path with "Rerun setup" ticked, so the next run
   the person starts cannot create anything.
+
+Both modes share an **Agent** field under their own fields: the agents from
+Settings, Agents, in menu order, the first one picked, then None. With no
+saved agents it offers only None and points to Settings. Timber still runs
+with `--no-agent`. The app starts the picked agent itself
+(`src/mainview/components/worktree-modes/agent-choice.ts`).
+
+- **When it starts.** Only after a run worked and the worktree is one this
+  dialog created: `timber new` that worked, `timber open` that Timber says
+  created the worktree, or "Open with setup" (or Existing branch run again
+  with "Rerun setup" on the kept path) that finished setup in a worktree an
+  earlier run of this dialog created. A failed run starts nothing, and a
+  worktree that was already there never gets an agent. A run in between
+  that names no worktree, such as a refusal, does not forget that the
+  dialog created it; an edit to the Existing branch fields does.
+- **How it starts.** Each mode's `run` reports the worktree it created, and
+  `runWithAgent` hands it to the store's `startAgentIn` without waiting. The
+  dialog's controller (`worktree-modes/dialog-controller.ts`) holds the
+  selected mode and the pick, takes the agent as picked when the person
+  submits, and runs the submission; the component only draws it, so the
+  tests drive the same wiring. That
+  selects the worktree, shows the Workspace tab, and calls `openTerminal`
+  with the agent's name, so the main process takes the command from the
+  saved Settings, never from the dialog. The session starts at 80 by 24 and
+  the pane fits it once it shows. An agent that cannot start is shown in the
+  worktree's pane as for the "+" menu, never as a failure of the dialog: the
+  worktree stays, and the toast still says it was created. When the list
+  does not have the worktree, for example because reading it again failed,
+  there is no pane, so nothing starts and the toast says so.
+- **The footer.** Under the Timber command, a note and the agent's command on
+  a line of their own ("Command that will start next"), never joined to the
+  Timber command. Existing branch says "if this creates a worktree", because
+  only Timber knows whether the text names one that is already there.
 
 ### Finding Timber
 
@@ -1164,8 +1196,11 @@ prints, which is handled as any terminal's output.
   process takes the command from the saved preferences only, never from the
   request. A name that is not saved starts nothing, not even a shell. The
   session's `shell` is the executable as found and `command` the whole line,
-  shown in the session bar's tooltip. Only the "+" menu and the buttons of a
-  worktree with no session start an agent; New and Open never do.
+  shown in the session bar's tooltip. The "+" menu, the buttons of a
+  worktree with no session, and the Agent field of the New worktree dialog
+  start an agent, all through `openTerminal`. Timber's `new` and `open`
+  never do: they always run with `--no-agent` (see
+  [creating and opening worktrees](#creating-and-opening-worktrees)).
 - **When it cannot start.** An executable that is not found starts nothing
   and keeps no session, so the other sessions are not touched. The pane
   shows why, with the command that failed, until it is dismissed or a session
@@ -2130,6 +2165,34 @@ Wayland) with Bun 1.4.2, Git 2.43, and Timber 0.1.1:
   ("terminal prompts disabled") without asking.
 - Not run: a credential helper or agent that shows its own prompt, a click
   in the desktop window itself, and anything on Windows or macOS.
+
+Run for starting an agent from the New worktree dialog (issue 53), Linux
+x64 (Pop!_OS 24.04, natively) with Bun 1.4.2 and Git 2.43:
+
+- `bun run typecheck`: no errors. `bun run typecheck:desktop` was not run.
+- `bun test`: 1097 tests passed and 1 was skipped (1074 before this
+  change). `tests/new-worktree-agent.test.tsx` covers, on the mock engine,
+  each acceptance item of the ticket: creating with an agent leaves the new
+  worktree selected with that agent's session running on the Workspace tab;
+  None starts nothing; a failed setup starts nothing, twice, and the "Open
+  with setup" that works starts the agent with `timber new` asked once; an
+  existing worktree opened starts nothing; and an executable that is not
+  found leaves the pane's note and the worktree. Also Existing branch
+  creating a worktree, setup finishing in a worktree it created (after two
+  failures, and after a refusal and a missing result in between, a test
+  that fails with that fix taken out), one that was already there, an edit
+  in between, a list that cannot be read again, the field, and the footer.
+  The tests submit through the dialog's controller, the wiring the
+  component uses: with the agent start taken out of it, 8 tests failed.
+- `bun run build:web`: built.
+- `bun run dev:web` in the browser pane, by eye: the Agent field showed
+  Claude Code picked, and the footer showed `claude` under the Timber
+  command. Creating `feat/agent-demo` closed the dialog, selected the new
+  worktree, showed the toast, and the Workspace tab showed a running
+  Claude Code session.
+- `grep -rn $'\u2014' src tests docs README.md`: nothing.
+- Not run: the desktop app, and so a real agent executable started this way
+  through the RPC bridge; and anything on Windows or macOS.
 
 Not run yet:
 

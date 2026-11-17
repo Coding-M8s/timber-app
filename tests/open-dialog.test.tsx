@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { BranchField, SHOWN_BRANCHES, matchBranches, stepActive } from "../src/mainview/components/BranchField";
 import { WorktreeDialogFrame } from "../src/mainview/components/NewWorktreeDialog";
+import { createWorktreeDialogController } from "../src/mainview/components/worktree-modes/dialog-controller";
 import { existingBranchMode } from "../src/mainview/components/worktree-modes/existing-branch";
 import { canOpen, createExistingBranchForm, describeOpened, openRequest } from "../src/mainview/components/worktree-modes/existing-branch-form";
 import { newBranchMode } from "../src/mainview/components/worktree-modes/new-branch";
@@ -75,21 +76,22 @@ async function openedDialog(engine: MockEngine = createMockEngine()) {
 		newBranchMode(model, model.getState(), repository, submission),
 		existingBranchMode(form, form.getState(), TIMBER, submission.getState().running),
 	];
-	let selected = 1;
-	/** Switch modes as the frame does: never while a command runs, and the failure on screen goes. */
-	const select = (index: number) => {
-		if (submission.getState().running) return;
-		selected = index;
-		submission.clearFailure();
-	};
-	const mode = () => modes()[selected]!;
+	// The wiring NewWorktreeDialog.tsx uses: the mode switch, the agent pick, and the submit that starts the agent.
+	const controller = createWorktreeDialogController(store, TIMBER, submission);
+	controller.select(1);
+	const { select, pickAgent } = controller;
+	const mode = () => modes()[controller.getState().selected]!;
 	const render = () => renderToStaticMarkup(
-		<WorktreeDialogFrame repository={repository} modes={modes()} selected={selected} submission={submission.getState()} onSelect={select} onSubmit={() => {}} onClose={() => {}} />,
+		<WorktreeDialogFrame
+			repository={repository} modes={modes()} selected={controller.getState().selected} submission={submission.getState()}
+			agents={store.getState().preferences.agents} agent={controller.agent()}
+			onSelect={select} onPickAgent={pickAgent} onSubmit={mode => void controller.submit(mode)} onClose={() => {}}
+		/>,
 	);
-	const submit = () => submission.submit(() => mode().run());
+	const submit = () => controller.submit(mode());
 	const toasts = () => store.getState().toasts.map(toast => toast.text);
 	const timberRows = () => store.getState().repositories.find(repository => repository.path === TIMBER)!.worktrees.length;
-	return { engine, store, submission, form, model, mode, render, select, submit, calls, reloads, toasts, timberRows };
+	return { engine, store, submission, form, model, mode, render, select, pickAgent, submit, calls, reloads, toasts, timberRows };
 }
 
 describe("the Existing branch fields", () => {
@@ -331,7 +333,8 @@ describe("a failure in the dialog", () => {
 		expect(calls.at(-1)).toEqual({ repository: TIMBER, selector: SPARE, setup: true });
 		expect(calls.length).toBe(2);
 		expect(timberRows()).toBe(5);
-		expect(toasts()).toEqual(["Opened chore/update-deps. Its worktree was already there."]);
+		// This dialog created it, so the toast says setup finished rather than that it was already there.
+		expect(toasts()).toEqual(["Setup finished in chore/update-deps"]);
 		expect(store.getState().dialog).toBeNull();
 	});
 

@@ -4,6 +4,7 @@ import { newWorktreeArguments, openWorktreeArguments } from "../../../shared/wor
 import { folderName } from "../../format";
 import type { AppStore } from "../../store/store";
 import type { SubmissionOutcome } from "../../store/submission";
+import type { ModeRun } from "./agent-choice";
 
 /**
  * The "New branch" mode without its markup: the fields, the command they
@@ -119,9 +120,11 @@ export interface NewBranchModel {
 	/**
 	 * Run the command the footer shows: `timber new` from the form, or
 	 * `timber open --setup` once the worktree exists. Once per call, and never
-	 * again by itself.
+	 * again by itself. A run that worked reports the worktree as created:
+	 * either `timber new` made it, or this mode made it and setup has now
+	 * finished.
 	 */
-	run(): Promise<SubmissionOutcome>;
+	run(): Promise<ModeRun>;
 }
 
 type Actions = Pick<AppStore, "newWorktree" | "openWorktree">;
@@ -151,13 +154,17 @@ export function createNewBranchModel(store: Actions, repository: string): NewBra
 		async run() {
 			const { step } = state;
 			if (step.kind === "setup") {
-				const outcome = afterSetup(await store.openWorktree(setupRequest(repository, step.worktree)));
+				const result = await store.openWorktree(setupRequest(repository, step.worktree));
+				const outcome = afterSetup(result);
 				if (!outcome.ok) update({ step: { ...step, attempts: step.attempts + 1 } });
-				return outcome;
+				// Timber reports `created: false` here, because the worktree was already there. This mode made it.
+				return { outcome, created: result.outcome === "succeeded" ? result.worktree : null };
 			}
-			const { outcome, setup } = afterNew(await store.newWorktree(newWorktreeRequest(repository, state.fields)));
+			const result = await store.newWorktree(newWorktreeRequest(repository, state.fields));
+			const { outcome, setup } = afterNew(result);
 			if (setup) update({ step: { kind: "setup", worktree: setup, attempts: 0 } });
-			return outcome;
+			// `timber new` that worked made the worktree. Its `created` is not needed: false does not prove nothing was made.
+			return { outcome, created: result.outcome === "succeeded" ? result.worktree : null };
 		},
 	};
 }

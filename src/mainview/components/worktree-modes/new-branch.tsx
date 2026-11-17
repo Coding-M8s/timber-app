@@ -9,10 +9,11 @@ import { type NewBranchModel, type NewBranchState, canCreate, createNewBranchMod
  * The "New branch" mode drawn from its model (see ./new-branch-model.ts).
  * A plain function, so every state can be rendered in a test.
  *
- * Two things in the agreed mock are left out on purpose. The launcher
- * checkboxes belong to later tickets, and this dialog always runs Timber
- * with --no-editor --no-agent. A line predicting the branch and folder would
- * mean guessing what Timber resolves, which only Timber knows.
+ * Timber always runs with --no-editor --no-agent. The Agent field belongs to
+ * the frame (../NewWorktreeDialog.tsx), which starts the picked agent itself
+ * once this mode reports a worktree it created. Two things in the agreed mock
+ * are left out on purpose: the editor checkbox, and a line predicting the
+ * branch and folder, which would mean guessing what only Timber knows.
  */
 export function newBranchMode(
 	model: NewBranchModel,
@@ -30,6 +31,8 @@ export function newBranchMode(
 		command: shownCommand(repository.path, state),
 		canSubmit: step.kind === "setup" || canCreate(fields),
 		...describeStep(step),
+		// `timber new` creates the worktree when it works, and "Open with setup" finishes one this mode created.
+		agentStart: "always",
 		run: () => model.run(),
 		fields: step.kind === "form"
 			? (
