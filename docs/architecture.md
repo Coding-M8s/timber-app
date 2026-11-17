@@ -2194,6 +2194,63 @@ x64 (Pop!_OS 24.04, natively) with Bun 1.4.2 and Git 2.43:
 - Not run: the desktop app, and so a real agent executable started this way
   through the RPC bridge; and anything on Windows or macOS.
 
+Run for the desktop app on Linux (issue 28), Pop!_OS 24.04 LTS x64,
+natively, kernel 7.2.15, COSMIC on Wayland, with Bun 1.4.2 (the
+Electrobun toolchain brings its own Bun 1.4.4), Git 2.43.0, Timber 0.1.1,
+Electrobun 2.0.6, and from the distribution `libwebkit2gtk-4.1-0` and
+`libjavascriptcoregtk-4.1-0` 2.52.6, `libgtk-3-0t64` 3.24.41,
+`libayatana-appindicator3-1` 0.5.93, and `librsvg2-2` 2.58.0 (the list
+WSLg needed, see issue 1 above):
+
+- `bun install --frozen-lockfile`, `bun run typecheck`, and `bun run
+  typecheck:desktop`: no errors.
+- `bun test`: 1074 tests passed and 1 was skipped, and 1097 with 1
+  skipped after rebasing onto the issue 53 change. The type checks were
+  run again there, with no errors.
+- `bun run build`: completed, with `build/stable-linux-x64/Timber`.
+  Its `bin/launcher` is an installer, not the app: run once, it copied the
+  app to `~/.local/share/com.codingm8s.timber/stable/app`, added
+  `Timber.desktop` to `~/.local/share/applications` and to `~/Desktop`, and
+  exited with 0. The installed `app/bin/launcher` then starts the app.
+- The installed app in the COSMIC Wayland session: the window opened, found
+  Timber, and listed the 14 worktrees of this repository with their
+  markers, seen by eye in a screenshot. The window was an X11 window
+  (found with `xwininfo` on the session's XWayland display), so the app
+  runs through XWayland, not as a native Wayland client. The log has one
+  `X11 Error: GLXBadWindow (code 168)` on start; nothing on screen was
+  wrong. No clicks were sent to this window in this run (an earlier run
+  found that XTest clicks do not reach it under COSMIC, see issue 25
+  above), so terminals, the folder picker, and editor launching were
+  checked in Xephyr only.
+- The same installed app in a nested X server, `Xephyr :2` with no window
+  manager, started with `DISPLAY=:2`, no `WAYLAND_DISPLAY`,
+  `XDG_SESSION_TYPE=x11`, and its own `XDG_CONFIG_HOME`. Clicks and keys
+  were sent with XTest and checked in screenshots:
+  - With `TIMBER_APP_REPOS` naming this repository, the window listed its
+    14 worktrees. Open terminal started bash in the primary checkout, and
+    `echo` printed back. Closing the window asked "Quit Timber?", and Quit
+    exited with 0.
+  - With an empty settings file, "Add repository" opened GTK's own file
+    chooser, an "Open File" window of the app's own process on the
+    Xephyr display. Typing the repository's path and Select added
+    it, showed "Added timber-app", and saved it with its common directory.
+  - Open in editor, with a stand-in shell script as the editor, ran it in
+    the worktree's folder with the folder as its one argument and showed
+    the toast. VS Code and Zed were not started.
+  - The log had `libEGL warning: DRI3 error: Could not get DRI3 device`
+    and `X11 Error: GLXBadWindow (code 170)`; the window drew normally.
+- `bun run dev` in the same Xephyr: the window opened and listed the
+  worktrees. Touching `src/bun/index.ts` rebuilt and relaunched it. Closing
+  the window leaves the watcher running until it is stopped.
+- `bun run dev:hmr` in the same Xephyr: Vite served on port 5173, the
+  window connected to it, and touching `src/mainview/styles.css` was a hot
+  update (`hot updated: /styles.css` in the webview's console).
+- Not run: a real X11 login session (this machine has none, only
+  Xephyr), a native Wayland window, `GDK_BACKEND=wayland`, GNOME, KDE, or
+  any other distribution, and an NVIDIA GPU. The system packages were
+  already installed, so which of them a clean system needs was not tested.
+  The `typecheck-desktop` CI job was added and has not run yet.
+
 Not run yet:
 
 - Saving settings through `timber setup` inside the app. Setup was started
@@ -2244,4 +2301,6 @@ Not run yet:
   sent over X11 instead (see above).
 - Copying with Ctrl+Shift+C and opening a link with Ctrl+click in the
   desktop window. Both were checked as functions only.
-- A native Linux desktop session, on Wayland or X11. Only WSLg has been run.
+- A real X11 login session, and a native Wayland window. Linux was run in a
+  COSMIC Wayland session through XWayland, in Xephyr, and under WSLg (see
+  issue 28 above).

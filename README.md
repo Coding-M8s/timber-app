@@ -44,7 +44,18 @@ For the desktop app:
 bun run dev
 ```
 
-The first run downloads the Electrobun toolchain into `.hutch/`. Use "Add
+On Linux the desktop app uses the system WebKitGTK 4.1 and GTK 3. It was
+run on Pop!_OS 24.04 with these installed (the smallest set a clean system
+needs is not tested yet):
+
+```bash
+sudo apt install libgtk-3-0t64 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 librsvg2-2
+```
+
+See [what has been verified](docs/architecture.md#what-has-been-verified).
+
+The first run downloads the Electrobun toolchain into `~/.hutch/` and the
+SDK into the project's `.hutch/`. Use "Add
 repository" in the sidebar to pick a repository folder; the app remembers the
 list, see [saved repository list](docs/architecture.md#saved-repository-list).
 Without a usable Timber the app shows install guidance instead; see
