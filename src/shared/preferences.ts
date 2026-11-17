@@ -5,6 +5,7 @@
  */
 import { AGENT_PRESETS, type AgentSetting, readAgentSettings, sameAgentSettings, writeAgentSettings } from "./agent";
 import { type EditorSetting, readEditorSetting, sameEditorSetting, writeEditorSetting } from "./editor";
+import { type FetchSetting, defaultFetchSetting, readFetchSetting, salvageFetchSetting, sameFetchSetting, writeFetchSetting } from "./fetch-setting";
 
 /** The sides of the window the sidebar can be on. */
 export const SIDEBAR_SIDES = ["left", "right"] as const;
@@ -22,6 +23,8 @@ export interface Preferences {
 	 * back, and the next save of the Agents section writes them.
 	 */
 	agents: readonly AgentSetting[];
+	/** Whether and how often the app fetches every repository in the background. */
+	fetch: FetchSetting;
 }
 
 /** How one preference is read from outside, compared, and written to the settings file. */
@@ -33,6 +36,12 @@ interface PreferencePart<Value> {
 	same(one: Value, other: Value): boolean;
 	/** The value as it goes into the settings file. */
 	write(value: Value): unknown;
+	/**
+	 * What to keep of a saved value that `read` refuses, instead of the
+	 * default, or undefined for the default. Only for reading the settings
+	 * file: a change that cannot be read is always refused.
+	 */
+	salvage?(value: unknown): Value | undefined;
 }
 
 /**
@@ -59,6 +68,13 @@ export const PREFERENCE_PARTS: { [Key in keyof Preferences]: PreferencePart<Pref
 		same: sameAgentSettings,
 		write: writeAgentSettings,
 	},
+	fetch: {
+		fallback: defaultFetchSetting,
+		read: readFetchSetting,
+		same: sameFetchSetting,
+		write: writeFetchSetting,
+		salvage: salvageFetchSetting,
+	},
 };
 
 const PREFERENCE_KEYS = Object.keys(PREFERENCE_PARTS) as (keyof Preferences)[];
@@ -81,12 +97,18 @@ export function defaultPreferences(): Preferences {
 /**
  * Read preferences from a value that came from outside, such as the settings
  * file. Like the layout, they are a convenience, so this never fails: each
- * part that is missing or unreadable falls back to its default, and the rest
- * is kept. Parts this version of the app does not know are left out, so they
+ * part that is missing or unreadable falls back to its default, or to what
+ * its `salvage` keeps of it, and the rest is kept. Parts this version of the app does not know are left out, so they
  * are lost on the next save, for example after going back to an older build.
  */
 export function readPreferences(value: unknown): Preferences {
-	return applyPreferenceChange(defaultPreferences(), value).preferences;
+	const { preferences, unreadable } = applyPreferenceChange(defaultPreferences(), value);
+	const read = preferences as Record<keyof Preferences, unknown>;
+	for (const key of unreadable) {
+		const salvaged = partOf(key).salvage?.((value as Record<string, unknown>)[key]);
+		if (salvaged !== undefined) read[key] = salvaged;
+	}
+	return preferences;
 }
 
 /**

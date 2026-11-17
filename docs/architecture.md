@@ -12,7 +12,7 @@ src/mainview   React interface, runs in the webview
 src/shared     Engine contract, data model, typed bridge, pure parsers
       |
 src/bun        Bun main process: the window, Git queries, terminal sessions,
-               watching for changes
+               watching for changes, fetching
 ```
 
 - **Interface (`src/mainview`).** React with plain CSS. It never touches Git,
@@ -59,6 +59,12 @@ Timber's safety logic must exist once. The app follows two rules:
    worktree for the background check (see
    [watching for changes](#watching-for-changes)). Git is invoked as an
    executable plus an argument array.
+
+One thing is not read-only and does not go through Timber: **fetching** (see
+[fetching](#fetching)). It writes only remote-tracking refs (`refs/remotes/`),
+which Timber neither owns nor checks, and never a local branch, a tag, the
+index, or a working tree. Timber has no fetch of its own to call. Everything
+else that writes still goes through Timber.
 
 Timber itself rules out GUI work, a daemon, and a local API inside its own
 repository. That is why this is a separate repository, and why the app's
@@ -502,9 +508,113 @@ repository through the path described [above](#shared-state-and-live-updates).
   otherwise wake the watcher again. The check also turns `core.fsmonitor`
   off, so a background read never starts a monitor from the repository's
   configuration.
-- **Not done here.** No fetch: ahead and behind counts are still as of the
-  person's last fetch. An already open diff updates when the status of the
-  worktree changes or the window gets the focus back.
+- **Not done here.** Fetching, which moves ahead and behind counts, is
+  described [next](#fetching). An already open diff updates when the status
+  of the worktree changes or the window gets the focus back.
+
+## Fetching
+
+Ahead and behind counts, "upstream gone", and "force-pushed" are only as
+good as the last fetch. So the app fetches every repository in the list, in
+the background and when asked, without anyone fetching by hand. This is the
+one place where the app writes to a repository without Timber, and it
+writes only remote-tracking refs.
+
+- **When (`src/bun/fetcher.ts`).** Each repository is fetched about 10
+  seconds after the app starts or the repository is added, 5 seconds apart
+  from the next, then once per interval from the end of the last fetch. The
+  interval is the Fetching section of Settings (`fetch` in the preferences,
+  `src/shared/fetch-setting.ts`): 5 minutes unless something else is saved,
+  any whole number of minutes from 1 to 1440, and background fetching can be
+  turned off. Nothing is fetched in the background until the preferences
+  were read, and with background fetching off nothing reaches the network
+  until Fetch now. While the window is hidden, background fetches wait, and
+  what came due runs once it shows again (the `attend` message says so).
+- **One at a time.** A repository is fetched once at a time: Fetch now while
+  a fetch runs waits for that one. At most two repositories are fetched at
+  the same time.
+- **After a failure** the next background fetch waits twice as long each
+  time (10, 20, 40 minutes from a 5 minute interval), up to an hour, or up to
+  the interval when that is longer. The first fetch that works puts it back.
+  So being offline costs one quick failure now and then, never rapid
+  retries.
+- **What is fetched.** Only remotes that some local branch tracks, read from
+  `git for-each-ref refs/heads` with each branch's upstream, so a remote
+  nobody tracks never fails a fetch. Each is fetched with its own refspecs
+  from `remote.<name>.fetch`, keeping only those that write `refs/remotes/`
+  (and negative ones). They are given on the command line with an empty
+  `--refmap`, so a refspec that would write a local branch or a tag is never
+  used, configured or not. The command is `git --git-dir <common dir> -c
+  credential.interactive=false fetch --prune --no-prune-tags --no-tags
+  --no-write-fetch-head --recurse-submodules=no --no-auto-gc --refmap= --
+  <remote> <refspecs>`. `--prune` removes only remote-tracking refs whose
+  branch is gone from the remote, which is how "upstream gone" shows. It
+  never pulls, merges, rebases, or touches a local branch, a tag, the index,
+  the stash, or a working tree, and it writes no `FETCH_HEAD`, so a fetch
+  that brings nothing new changes no file the watcher hears.
+- **Never asking (`src/bun/fetch-git.ts`).** Git runs in a session of its
+  own with nothing on standard input, so neither Git nor SSH has a terminal
+  to ask on, with `GIT_TERMINAL_PROMPT=0`, `GIT_ASKPASS`, `SSH_ASKPASS`
+  empty, `SSH_ASKPASS_REQUIRE=never`, and `GCM_INTERACTIVE=never`. When
+  neither the environment nor the repository's `core.sshCommand` names an
+  SSH command, SSH runs with `BatchMode=yes` and a 20 second connect limit.
+  Stored credentials still work: credential helpers, and SSH keys without a
+  passphrase or held by an agent. What a helper or an agent shows on its own
+  (a keyring to unlock, a key to touch, an agent asking to approve a key) is
+  up to it and cannot be turned off from here. An HTTP transfer that stalls
+  for 30 seconds is given up, and a fetch is stopped after 10 minutes:
+  asked to stop first, so it can remove its lock files, and killed 5
+  seconds later. Quitting the app stops a running fetch the same way. Once
+  Git has ended, what it printed is read for at most 2 more seconds, so a
+  process it started in a session of its own cannot hold the fetch open.
+- **Failures.** What Git printed is read as offline (the remote cannot be
+  reached), authentication (credentials missing or refused), or failed
+  (`readFetchFailure` in `src/shared/git-fetch.ts`), with any password in a
+  link taken out. It shows as a quiet grey word beside the repository's
+  name, "offline", "sign-in needed", or "fetch failed", with the reason in
+  its tooltip. Never a dialog. It is shown, never logged, and the next fetch
+  that works takes it away.
+- **Force-pushed.** Before and after each fetch the app reads every
+  remote-tracking ref. When the upstream of a local branch moved, `git
+  merge-base --is-ancestor` asks whether its previous commit is an ancestor
+  of the new one. When it is not, the branch is marked force-pushed. The
+  window gets the mark on the branch's sync state (`forcePushed` in
+  `SyncState`), and the row says "force-pushed" in red, with words. The mark
+  stays until the person has seen it: its worktree was selected while the
+  window showed and had the focus, and then the selection moved on. A mark
+  that arrives on the selected worktree stays until the selection moves on.
+  The interface then sends `forcePushSeen` with the mark's time, so a newer
+  rewrite stays marked. A mark also goes when it is no longer true: the
+  branch is gone, tracks another upstream, its upstream is gone, the
+  branch is level with its upstream, or the branch moved since the rewrite
+  (a pull, a reset, a rebase) and is no longer behind. The mark keeps the commit the branch was at, so a rewind
+  (the upstream reset to an older commit, which leaves the branch ahead
+  and not behind) stays marked: pushing would bring back what was dropped.
+  A read forgets a mark only when it is the same mark (same time) that was
+  there before the read began, so a fetch that marks a branch while a
+  slower read runs is never undone by it. A repository that leaves the
+  list while its fetch runs keeps no marks from that fetch, and one added
+  again waits for it, so it is still fetched once at a time. A fetch that
+  waits its turn behind two others does not run when its repository left
+  the list meanwhile, nor, unless the person asked for it, when background
+  fetching was turned off. A fetch of several remotes also stops before
+  its next remote once its repository left the list, and a background
+  fetch nobody asked for stops the same way once background fetching was
+  turned off. One cut short like this does not count as a fetch that
+  worked. Marks are kept in the settings file (`forcePushes`,
+  `src/bun/force-pushes.ts`), so a restart keeps the ones nobody saw.
+  Only fetches by the app are compared, so a person's own `push --force`
+  is not marked, unless it lands while the app's fetch is on the network:
+  the comparison cannot tell who moved the ref. Such a mark goes as soon
+  as the branch is level with its upstream, which a push leaves it.
+- **Reporting.** A fetch that moved a remote-tracking ref, or a mark, reports
+  its repository through the refresh policy, so the window reloads it as for
+  any other change, and a hidden window catches up when it returns. The
+  watcher usually hears the same refs move; the store merges the two
+  reloads. Where fetching stands (running, when it last worked, and the
+  latest failure) goes to the window directly as `fetchChanged`, without a
+  reload. "Fetch now" on a repository's header runs a fetch whether or not
+  background fetching is on; one that worked says so in a toast.
 
 ## Reporting outcomes
 
@@ -540,6 +650,11 @@ In `bun run dev:web` the browser console has `timberMock` for acting out the
 main process: `timberMock.setRepositories(list)`,
 `timberMock.announceChange("/work/timber")`, `timberMock.attention()` (what
 the interface last said through `attend`; the mock watches nothing),
+`timberMock.endFetches("offline")` (or `"authentication"`, `"failed"`, and
+`"fetches"` again) to choose how Fetch now ends (the mock fetches nothing in
+the background), `timberMock.forcePush("/work/timber", "main")` to act out a
+fetch that found that branch's upstream rewritten, and
+`timberMock.seenForcePushes()` for what the interface said was seen,
 `timberMock.failReads("Git is busy")` (pass `null` to let reads work again),
 `timberMock.failTimber("/work/timber", "Not a Git repository: /work/timber")`
 to make Timber fail on one repository (`null` again to undo), and `timberMock.pickFolder("/some/folder")` to choose what "Add repository"
@@ -625,7 +740,9 @@ Settings dialog and kept by the app. They are never Timber's configuration.
   `SettingsHolder` as the repository list and the layout
   (`src/bun/preferences.ts`). A file without it is valid and means the
   defaults. A part that cannot be read falls back to its default and never
-  makes the file count as damaged. A part this version does not know is left
+  makes the file count as damaged. The Fetching part keeps a readable
+  "background fetching off" even when its interval cannot be read, so a
+  file that says off never turns fetching on. A part this version does not know is left
   out, so it is lost on the next save, for example after going back to an
   older build.
 - **One table.** Every preference is one entry in `PREFERENCE_PARTS`, which
@@ -663,8 +780,10 @@ Settings dialog and kept by the app. They are never Timber's configuration.
   Editor: the editor that "Open in editor" starts (see
   [opening a worktree in an editor](#opening-a-worktree-in-an-editor)).
   Agents: the coding agents the "+" menu starts (see
-  [agent sessions](#agent-sessions)). Under a "Timber" heading, Machine and
-  Repository show Timber's own settings, read-only (see
+  [agent sessions](#agent-sessions)). Fetching: whether the app fetches in
+  the background and how often (see [fetching](#fetching)). Under a
+  "Timber" heading, Machine and Repository show Timber's own settings,
+  read-only (see
   [Timber's settings](#timbers-settings-in-the-settings-dialog)).
 
 In `bun run dev:web`, `timberMock.failPreferenceSaves("disk full")` makes
@@ -1145,9 +1264,11 @@ machine's, and `cancel` or `exit` acts out cancelling.
    agents, and Timber's settings, read-only with `timber setup` to change
    them. Saving Timber's settings from the app is a follow-up.
 6. **Background refresh.** File watching per worktree and periodic fetch.
-   Detecting a force-push needs a fetch and the remote-tracking reflog.
-   Watching the Git metadata and checking the selected worktree are built
-   (see [watching for changes](#watching-for-changes)); fetching is not.
+   Built: watching the Git metadata and checking the selected worktree (see
+   [watching for changes](#watching-for-changes)), and fetching with
+   force-push detection, which compares the remote-tracking refs before and
+   after each fetch instead of reading their reflogs (see
+   [fetching](#fetching)).
 
 ## Open decisions
 
@@ -1924,6 +2045,91 @@ Timber 0.1.1, after rebasing onto Timber's settings in Settings from `main`:
   prompt; Set up Timber opened a Timber setup session in its primary
   checkout; answering `save` ended it with exit code 0 and the prompt went
   away.
+
+Run for fetching (issue 25), Linux x64 (Pop!_OS 24.04, natively, COSMIC on
+Wayland) with Bun 1.4.2, Git 2.43, and Timber 0.1.1:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 1074 tests passed and 1 was skipped, after merging `main`
+  with the Timber settings change (998 before the merge, 923 before this
+  change).
+  New tests cover,
+  against real temporary repositories with a bare remote and two clones: a
+  push from the other clone showing as behind, a force-push marked (and an
+  ordinary push not), a deleted remote branch showing as gone with its local
+  branch kept and its mark dropped, local branches, tags (also with
+  `fetch.pruneTags` set and a local-only tag), HEAD, the index, the stash,
+  and both working trees left as they were while a mirror refspec is
+  configured, no `FETCH_HEAD`, a fetch that brings nothing new waking no
+  watcher, a remote no branch tracks not fetched, an unreachable remote
+  failing as offline at once, and a remote that asks for credentials
+  failing as authentication without asking. With a stand-in clock and Git:
+  nothing fetched before the preferences are read or with background
+  fetching off, the first fetches 10 and 15 seconds in, the interval, the
+  wait while hidden, one fetch per repository and two at once, the
+  backoff (10, 20, 40, 60, 60 minutes from 5), never sooner than a long
+  interval, the exact fetch command, and stopping. Also the setting, the
+  marks in the settings file, the store, the sidebar, and the row.
+- The next three desktop runs were made before the review fixes
+  (the mark keeping the branch's commit and going once level, marks judged
+  by their time, a repository removed or switched off while its fetch waits
+  or runs, a background fetch stopping before its next remote, the slot
+  hand-off, the runner not waiting on a stray process's
+  pipes, and keeping "off" when the interval cannot be read). Those were
+  run in the tests only.
+- `bun run start` with `XDG_CONFIG_HOME` set to a temporary folder whose
+  settings listed one temporary clone with three tracked branches and the
+  interval at 1 minute, with temporary log lines in the main process for
+  each fetch status, each read, and each `forcePushSeen` (not committed).
+  Before start, the other clone pushed to main and deleted the remote
+  branch of `doomed`. The first background fetch ran 10 seconds after the
+  list loaded, and the reload after it read main 2 behind and `doomed`
+  gone. A real force-push to `feature` made while the app ran was read as
+  `forcePushed` after the next fetch, one minute later, and the mark was
+  still in the settings file on the next start. Three fetches ran in 150
+  seconds. Local branches, tags, and the status of both worktrees were the
+  same afterwards, and there was no `FETCH_HEAD`.
+- The same with the remote's URL changed to `https://127.0.0.1:9/`: one
+  fetch failed as offline 10 seconds in, and no other was tried in the 100
+  seconds the app ran. Nothing asked for anything.
+- The same with background fetching off, under `strace -f -e
+  trace=execve`, after the other clone force-pushed a commit made on the
+  repository's first commit to `main` (a real rewrite of `origin/main`):
+  of 74 Git runs in 60 seconds, none was a fetch.
+- After the review fixes, `bun run start` again on the same temporary
+  repositories, with the window captured by its X11 id (`xwininfo`, then
+  `import -window`): seen by eye, `main` showed a red "force-pushed" with
+  2 to pull and the header said "origin/main was rewritten: 0 ahead, 2
+  behind" (the force-push to `main` from the run above, fetched now that
+  background fetching was on again), `doomed` showed "upstream gone", and
+  `feature` 1 behind and 1 ahead. A mark saved by the earlier build, without the branch's commit,
+  was dropped on reading, as designed. Clicks sent through XTest did not
+  reach the window under COSMIC, so a click in the desktop window was not
+  tried.
+- `bun run dev:web` in the browser pane, by eye and by clicking: Fetch now
+  shows on hovering a repository's header; with
+  `timberMock.endFetches("offline")` a click left the grey "offline" beside
+  the name and no dialog; a working fetch then showed the toast "Fetched
+  timber" and took the marker away; after `timberMock.forcePush`, the row
+  showed the red "force-pushed", which stayed while the worktree was
+  selected and went once another worktree was clicked, and
+  `timberMock.seenForcePushes()` held that mark's time; Settings listed
+  Fetching after Agents with its switch and interval.
+- CI (`.github/workflows/ci.yml`, Ubuntu 24.04 with Git 2.56.1) first
+  failed the test of a remote that wants a password: Git 2.56 says
+  "unable to get password from user" where 2.43 says "terminal prompts
+  disabled". That wording is now read as authentication, and both CI
+  runs pass.
+- With real credentials, through `createFetcher` and `createGitRunner`
+  from a script against a fresh clone of this private repository, with
+  `origin/main` moved back three commits first: over SSH (the person's
+  key, no SSH command configured, so batch mode) the fetch worked in 0.7
+  seconds, moved `origin/main` back, reported the change, and left local
+  branches and tags as they were. With the remote changed to HTTPS and
+  nothing stored for it, it failed in 0.24 seconds as authentication
+  ("terminal prompts disabled") without asking.
+- Not run: a credential helper or agent that shows its own prompt, a click
+  in the desktop window itself, and anything on Windows or macOS.
 
 Not run yet:
 

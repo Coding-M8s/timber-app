@@ -28,9 +28,12 @@ export async function createEngine(): Promise<Engine> {
 	// For Open in editor: timberMock.endEditorLaunches("not-found") or ("fails").
 	// For the Changes tab: timberMock.failFileChanges("Git is busy"), or timberMock.setFileChanges(path, files).
 	// For agent sessions: timberMock.missingExecutables(["codex"]) acts out an agent that is not on the PATH.
+	// For fetching: timberMock.endFetches("offline"), ("authentication"), or ("failed") chooses how Fetch now ends,
+	// and timberMock.forcePush("/work/timber", "main") acts out a fetch that found a rewritten upstream.
 	// The billing worktree feat/tax-rules shows every kind of change.
-	// A removal takes a moment here, so the running state can be seen.
+	// A removal and a fetch take a moment here, so the running state can be seen.
 	engine.setDoneDelay(900);
+	engine.setFetchDelay(900);
 	Object.assign(window, { timberMock: engine });
 	return engine;
 }

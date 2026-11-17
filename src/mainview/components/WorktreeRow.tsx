@@ -17,6 +17,7 @@ const markerClass: Record<RowMarkerKind, string> = {
 	"ahead": "sync ahead",
 	"local-only": "sync-note",
 	"upstream-gone": "sync-note",
+	"force-pushed": "sync-note rewritten",
 	"sync-unknown": "sync-note",
 	"detached": "row-flag",
 	"folder-missing": "row-flag",

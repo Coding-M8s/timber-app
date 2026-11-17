@@ -1,5 +1,6 @@
 import { Electroview } from "electrobun/view";
 import type { Engine } from "../../shared/engine";
+import type { RepositoryFetch } from "../../shared/git-fetch";
 import type { AppRPC } from "../../shared/rpc";
 import type { TerminalChange, TerminalOutput } from "../../shared/terminal";
 
@@ -24,6 +25,7 @@ export function createDesktopEngine(): Engine {
 	const terminalOutput = listeners<TerminalOutput>();
 	const terminalChanges = listeners<TerminalChange>();
 	const quitRequests = listeners<number>();
+	const fetches = listeners<RepositoryFetch>();
 	const rpc = Electroview.defineRPC<AppRPC>({
 		maxRequestTime: 15_000,
 		handlers: {
@@ -39,6 +41,7 @@ export function createDesktopEngine(): Engine {
 				repositoryChanged: ({ path }) => changes.call(path),
 				terminalOutput: output => terminalOutput.call(output),
 				terminalChanged: change => terminalChanges.call(change),
+				fetchChanged: status => fetches.call(status),
 			},
 		},
 	});
@@ -61,6 +64,11 @@ export function createDesktopEngine(): Engine {
 		applyDone: request => rpc.request.applyDone(request, { maxRequestTime: Infinity }),
 		onRepositoryChanged: changes.add,
 		attend: attention => rpc.send.attend(attention),
+		fetchStatuses: () => rpc.request.fetchStatuses({}),
+		// A large fetch takes as long as it takes; the main process stops one after ten minutes.
+		fetchNow: repository => rpc.request.fetchNow({ repository }, { maxRequestTime: Infinity }),
+		onFetchChanged: fetches.add,
+		forcePushSeen: seen => rpc.send.forcePushSeen(seen),
 		loadLayout: () => rpc.request.loadLayout({}),
 		saveLayout: layout => rpc.request.saveLayout({ layout }),
 		loadPreferences: () => rpc.request.loadPreferences({}),
