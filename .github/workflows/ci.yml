@@ -20,7 +20,7 @@ jobs:
       # The tests that list real repositories run the real Timber.
       - name: Install Timber
         env:
-          TIMBER_VERSION: v0.1.1
+          TIMBER_VERSION: v0.1.2
         run: |
           curl -fsSL "https://github.com/Coding-M8s/timber/releases/download/$TIMBER_VERSION/install.sh" | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
