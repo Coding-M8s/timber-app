@@ -68,8 +68,9 @@ Without a usable Timber the app shows install guidance instead; see
 | Command | What it does |
 | --- | --- |
 | `bun run dev:web` | Interface in a browser, sample data, hot reload |
-| `bun run dev` | Desktop app, rebuilt and relaunched on change |
-| `bun run dev:hmr` | Desktop app with interface hot reload |
+| `bun run start` | Desktop app, built once; ends when the window closes |
+| `bun run dev` | Desktop app, rebuilt and relaunched on change. [Keeps watching](docs/architecture.md#desktop-development-commands) after the window closes (Ctrl+C stops it) |
+| `bun run dev:hmr` | Desktop app with interface hot reload; ends when the window closes |
 | `bun test` | Unit tests, including Git tests in temporary repositories. The ones that list real repositories need Timber and are skipped without it |
 | `bun run typecheck` | Type check without the Electrobun toolchain |
 | `bun run typecheck:desktop` | Type check against the real Electrobun SDK |

@@ -18,7 +18,7 @@
     "hmr": "electrobun prepare && vite --port 5173 --strictPort",
     "start": "electrobun prepare && vite build && electrobun dev",
     "dev": "electrobun prepare && vite build && electrobun dev --watch",
-    "dev:hmr": "concurrently \"bun run hmr\" \"bun run start\"",
+    "dev:hmr": "concurrently --kill-others --success first \"bun run hmr\" \"bun run start\"",
     "typecheck:desktop": "electrobun prepare && tsc --noEmit -p tsconfig.desktop.json",
     "build": "electrobun prepare && vite build && electrobun build --env=stable",
     "build:canary": "electrobun prepare && vite build && electrobun build --env=canary"
