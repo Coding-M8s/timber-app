@@ -2,6 +2,7 @@ import { type ComponentType, useCallback, useEffect, useId, useMemo, useRef, use
 import { SETTINGS_SECTION_LABELS, TIMBER_SETTINGS_SECTIONS } from "../shell";
 import { useAppState, useStore } from "../store/react";
 import { SETTINGS_SECTIONS, type SettingsSection } from "../store/state";
+import { AboutSection } from "./settings/AboutSection";
 import { AgentsSection } from "./settings/AgentsSection";
 import { EditorSection } from "./settings/EditorSection";
 import { FetchSection } from "./settings/FetchSection";
@@ -19,6 +20,7 @@ const SECTION_VIEWS: Record<SettingsSection, ComponentType> = {
 	editor: EditorSection,
 	agents: AgentsSection,
 	fetch: FetchSection,
+	about: AboutSection,
 	machine: MachineSection,
 	repository: RepositorySection,
 };

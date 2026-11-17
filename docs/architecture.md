@@ -1360,6 +1360,47 @@ was never set up. A Timber setup session there asks one question: `save`
 acts out saving the settings, the repository's or with `--global` the
 machine's, and `cancel` or `exit` acts out cancelling.
 
+## App identity
+
+What the built app is called, how it is told apart, and what it looks like.
+None of it should have to change after a first release.
+
+- **Name.** "Timber" everywhere a person sees it: the window title, the
+  taskbar, the menu entry, and the installer (`linux-x64-Timber-Setup.tar.gz`).
+  It is `APP_NAME` in `src/shared/app-info.ts`.
+- **Identifier.** `com.codingm8s.timber-app`, which is `APP_IDENTIFIER` in
+  the same file. It is final. It names the folder the app installs to on
+  Linux (see [installing the Linux build](#installing-the-linux-build)) and
+  is what an update is matched by, so changing it would leave every install
+  behind in its old folder. The app's own settings do not depend on it:
+  they live in a folder named `timber-app` (see `src/bun/settings.ts`).
+- **Version.** Written once, in `package.json`. `APP_VERSION` reads it from
+  there, the build stamps it into the app through `electrobun.config.ts`,
+  and the `Engine` contract answers it as `appInfo()`. The import is a
+  default import on purpose: Electrobun 2.0.6 does not run its configuration
+  as Bun would, and with a named import from JSON it stamped its own default,
+  0.1.0, without a word.
+- **About.** A section of the Settings dialog, among the app's own sections.
+  It shows the app's version and the Timber in use, with the path it was
+  found at, or says that Timber is missing, too old, or could not be looked
+  for (`src/mainview/about-format.ts`). It also names the licenses below.
+- **Icons.** `icons/` holds them, all made from
+  `src/mainview/assets/logo.png` by `bun run icons`
+  (`scripts/make-icons.ts`, which needs ImageMagick 7): `icon.png` at 512
+  pixels for Linux, `icon.ico` with seven sizes from 16 to 256 for Windows,
+  and `icon.iconset` with the ten pictures macOS asks for. The logo is 256
+  pixels square, so everything above that is scaled up and looks soft. A
+  larger logo and another run sharpen them.
+- **Fonts.** Geist and Geist Mono are built in, as one variable WOFF2 file
+  each in `src/mainview/assets/fonts/`, taken from version 1.9.2 of the
+  `geist` package on npm. `styles.css` declares them with `@font-face`, and
+  Vite copies them into the build, so text looks the same on every platform
+  and nothing is fetched from the network.
+- **Licenses.** `licenses/` holds the SIL Open Font License of the fonts
+  and the notice for the logo, which is copyright Coding-M8s with all rights
+  reserved and is not covered by the MIT license of the code. The build
+  copies the folder into the app, to `Resources/app/licenses`.
+
 ## Installing the Linux build
 
 `bun run build` does not produce an app that runs in place. Its output in
@@ -1373,11 +1414,13 @@ Running `bin/launcher` installs without asking. With Electrobun 2.0.6 it
 writes, under the user's home folder (with `XDG_DATA_HOME` set, that folder
 replaces `~/.local/share` below; the desktop shortcut stays in `~/Desktop`):
 
-- `~/.local/share/com.codingm8s.timber/stable/app/`: the app itself. The
+- `~/.local/share/com.codingm8s.timber-app/stable/app/`: the app itself. The
   folder name is `app.identifier` and the channel from `electrobun.config.ts`.
-  The identifier is a placeholder (see [open decisions](#open-decisions)),
-  and changing it installs to a new folder and leaves the old one behind.
-- `~/.local/share/com.codingm8s.timber/stable/uninstall`, with
+  The identifier is final (see [app identity](#app-identity)): changing it
+  would install to a new folder and leave the old one behind. A build from
+  before issue 27 installed to `com.codingm8s.timber`, and its own
+  `uninstall` removes it.
+- `~/.local/share/com.codingm8s.timber-app/stable/uninstall`, with
   `.electrobun-uninstall.json` beside it recording the entries below, and a
   `self-extraction/` folder of install state.
 - `~/.local/share/applications/Timber.desktop`: the menu entry. The
@@ -1386,12 +1429,9 @@ replaces `~/.local/share` below; the desktop shortcut stays in `~/Desktop`):
   shortcut. The installer then asks `gio` to mark it trusted, which some
   desktops do not support.
 
-Both entries point at the installed launcher. They have no `Icon=` line, so
-menus show a generic icon, and their `Comment=` repeats the name. The icon
-belongs to the app's identity, issue 27. A trial build for issue 62 showed
-the settings that fix both: with `build.linux.icon` set, the build copies
-that PNG to `app/Resources/appIcon.png` and both entries get its absolute
-path as `Icon=`, and `app.description` becomes `Comment=`.
+Both entries point at the installed launcher. The build copies
+`icons/icon.png` to `app/Resources/appIcon.png`, and both entries name it by
+its absolute path as `Icon=`. Their `Comment=` is `app.description`.
 
 **The desktop shortcut.** Electrobun 2.0.6 has no setting to skip it, and
 neither does the configuration of 2.0.7-beta.24, the latest on 2026-11-16.
@@ -1403,7 +1443,7 @@ Whether an update does too was not tried. The shortcut is accepted for now,
 and is listed under
 [open decisions](#open-decisions) to look at again before a first release.
 
-**Removing it.** `~/.local/share/com.codingm8s.timber/stable/uninstall
+**Removing it.** `~/.local/share/com.codingm8s.timber-app/stable/uninstall
 --quiet` removes the app folder, both entries, and the install records.
 It was run only with `--quiet`.
 
@@ -1471,14 +1511,13 @@ See the issue 63 run under [what has been verified](#what-has-been-verified).
   together.
 - **Rebase backups.** The design shows them, but Timber does not create backup
   branches today. Either Timber gains that, or the app creates them.
-- **Application identifier.** `electrobun.config.ts` holds a placeholder.
-  It also names the Linux install folder.
 - **Linux desktop shortcut.** Electrobun's installer adds one to `~/Desktop`
   without asking, and offers no way to turn that off (see
   [installing the Linux build](#installing-the-linux-build)). Accepted for
   now. Revisit before a first release.
-- **Fonts.** The design uses Geist. The app should bundle it instead of
-  falling back to system fonts.
+- **A sharper logo.** The icons above 256 pixels are scaled up from a
+  256 pixel logo (see [app identity](#app-identity)). They need a larger or
+  vector original before a first release on macOS.
 
 ## What has been verified
 
@@ -2682,6 +2721,44 @@ released yet), named with `TIMBER_APP_TIMBER_PATH`:
   passed, 1 skipped, and the same 1 failed. With the installed Timber 0.1.1:
   1022 passed, 93 skipped, the same 1 failed. Nothing was run in a window
   this time.
+
+Run for the app's identity (issue 27), Linux x64 (Omarchy, Arch Linux) with
+Bun 1.4.4, Electrobun 2.0.6, Timber 0.1.2, and ImageMagick 7. Geist was not
+installed on the machine: `fc-list | grep -ic geist` printed 0.
+
+- `bun run icons`: wrote `icons/icon.png` at 512 by 512, `icons/icon.ico`
+  with 16, 24, 32, 48, 64, 128, and 256, and the ten pictures of
+  `icons/icon.iconset`, from 16 to 1024 pixels.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 1121 tests passed, 1 was skipped, and 1 failed. The failure
+  is "closing a session ends everything it started" in
+  `tests/terminals.test.ts`, which timed out on this machine. It is not
+  part of this change, which touches no terminal code.
+- `bun run build`: completed. Vite put `Geist-Variable` and
+  `GeistMono-Variable` WOFF2 files in `dist/assets`, and
+  `artifacts/stable-linux-x64-update.json` named the identifier
+  `com.codingm8s.timber-app` and the version 0.0.1, as in `package.json`.
+- The same build with `version` taken from `package.json` by a named
+  import: the update record said 0.1.0. With a default import, or with the
+  version written out: 0.0.1.
+- The built launcher run with `env -i PATH=/usr/bin:/bin HOME=<temporary
+  folder>`: it installed to `~/.local/share/com.codingm8s.timber-app/stable`.
+  `app/Resources/appIcon.png` was the 512 pixel icon, and
+  `app/Resources/app/licenses` held `geist-fonts-OFL.txt` and
+  `timber-logo.txt`. The menu entry had `Name=Timber`, the description as
+  `Comment=`, and `Icon=` set to that icon. `desktop-file-validate` on it:
+  no output, exit 0.
+- The built interface from `vite preview` in headless Chromium, with every
+  host but localhost made unresolvable: `document.fonts` listed Geist and
+  Geist Mono as loaded, every request went to localhost, the page title was
+  Timber, and Settings, About showed the app at 0.0.1 and the sample Timber
+  at 0.1.2 with its path. A screenshot showed the text set in Geist.
+- `grep -rn $'\u2014' src tests docs scripts licenses README.md
+  electrobun.config.ts`: nothing.
+- Not run: the icon seen in a real window, taskbar, or launcher on Linux,
+  and About in the desktop window. Nothing on Windows or under WSLg, so the
+  Windows icon, the typeface there, and the installer's name on Windows are
+  unchecked. Nothing on macOS, where the iconset has never been compiled.
 
 Not run yet:
 

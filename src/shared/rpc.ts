@@ -1,4 +1,5 @@
 import type { RPCSchema } from "electrobun/view";
+import type { AppInfo } from "./app-info";
 import type { Attention } from "./attention";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "./git-fetch";
 import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffResult } from "./file-changes";
@@ -18,6 +19,7 @@ import type { WorkflowList } from "./workflows";
 export type AppRPC = {
 	bun: RPCSchema<{
 		requests: {
+			appInfo: { params: {}; response: AppInfo };
 			timberStatus: { params: {}; response: TimberStatus };
 			recheckTimber: { params: {}; response: TimberStatus };
 			listRepositories: { params: {}; response: Repository[] };
