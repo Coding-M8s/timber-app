@@ -17,8 +17,11 @@ Windows yet). Settings, Agents lists the agents. The Changes tab lists a
 worktree's staged, unstaged, and untracked files and shows the diff of each,
 read-only. Settings also shows Timber's own settings for the machine and
 each repository, read-only, with a button that runs `timber setup` in a
-session to change them. Rebasing worktrees, comparing against the base, and
-saving Timber's settings from the app are designed but not built.
+session to change them. The app fetches each repository in the background
+(Settings, Fetching) or on "Fetch now", updating only remote-tracking
+branches, and marks branches whose upstream moved, was force-pushed, or was
+deleted. Rebasing worktrees, comparing against the base, and saving Timber's
+settings from the app are designed but not built.
 See the [architecture](docs/architecture.md) and [design](docs/design.md) notes.
 
 ## Quick start

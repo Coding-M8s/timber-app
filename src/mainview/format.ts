@@ -110,6 +110,7 @@ export function worktreeLabel(worktree: Worktree): string {
 export function describeSync(sync: SyncState): string {
 	if (sync.kind === "unpublished") return "Not published yet";
 	if (sync.kind === "gone") return `Upstream ${sync.upstream} was deleted`;
+	if (sync.forcePushed) return `${sync.upstream} was rewritten: ${sync.ahead} ahead, ${sync.behind} behind`;
 	if (sync.ahead > 0 && sync.behind > 0) return `${sync.ahead} ahead, ${sync.behind} behind ${sync.upstream}`;
 	if (sync.ahead > 0) return `${sync.ahead} to push to ${sync.upstream}`;
 	if (sync.behind > 0) return `${sync.behind} to pull from ${sync.upstream}`;
@@ -147,6 +148,7 @@ export type RowMarkerKind =
 	| "ahead"
 	| "local-only"
 	| "upstream-gone"
+	| "force-pushed"
 	| "sync-unknown"
 	| "detached"
 	| "folder-missing"
@@ -182,6 +184,10 @@ function syncMarkers(worktree: Worktree): RowMarker[] {
 	if (sync.kind === "unpublished") return [marker("local-only", "local only", "This branch has no upstream. It has not been published.")];
 	if (sync.kind === "gone") return [marker("upstream-gone", "upstream gone", `The upstream branch ${sync.upstream} no longer exists, as of the last fetch.`)];
 	const markers: RowMarker[] = [];
+	// First: a rewritten upstream changes what pulling or pushing would do.
+	if (sync.forcePushed) {
+		markers.push(marker("force-pushed", "force-pushed", `The upstream branch ${sync.upstream} was rewritten, for example by a force-push: commits that were on it are no longer there. Look before you pull or push. This goes once you have selected this worktree and moved on.`));
+	}
 	if (sync.behind > 0) markers.push(marker("behind", String(sync.behind), `${counted(sync.behind, "commit")} to pull from ${sync.upstream}, as of the last fetch.`));
 	if (sync.ahead > 0) markers.push(marker("ahead", String(sync.ahead), `${counted(sync.ahead, "commit")} to push to ${sync.upstream}, as of the last fetch.`));
 	return markers;

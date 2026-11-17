@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useId, useState } from "react";
+import { describeFetchAction, describeFetchMarker } from "../fetch-format";
 import { REMOVE_REPOSITORY_HINT, TIMBER_LIST_FAILURE_TITLE, describeListNotice, describeReloadError, worktreeLabel } from "../format";
 import { SETTINGS_LABEL, describeLayoutProblem, describeRepository } from "../shell";
 import { useAppState, useStore } from "../store/react";
@@ -18,10 +19,13 @@ export function Sidebar() {
 	const adding = isRunning(state, "add-repository");
 	const removing = (path: string) => state.operations.some(operation => operation.kind === "remove-repository" && operation.repository === path);
 	const [filter, setFilter] = useState("");
+	const idBase = useId();
 	// Which groups are collapsed is part of the layout the store holds, so it is remembered between runs.
 	const { collapsed } = state.layout;
 	const layoutProblem = state.layoutProblem && describeLayoutProblem(state.layoutProblem);
 	const query = filter.trim().toLowerCase();
+	const now = Date.now();
+	const fetchAsked = (path: string) => state.operations.some(operation => operation.kind === "fetch-repository" && operation.repository === path);
 
 	const groups = repositories.map(repository => ({
 		repository,
@@ -65,9 +69,14 @@ export function Sidebar() {
 			)}
 
 			<div className="groups">
-				{groups.map(({ repository, matches }) => {
+				{groups.map(({ repository, matches }, index) => {
 					// While filtering, a group opens exactly when it has a match.
 					const open = query ? matches.length > 0 : !collapsed.includes(repository.path);
+					const fetch = state.fetches[repository.path];
+					const fetching = fetch?.fetching === true || fetchAsked(repository.path);
+					const fetchMarker = repository.available ? describeFetchMarker(fetch, now) : null;
+					const fetchMarkerId = `${idBase}-fetch-${index}`;
+					const fetchLabel = describeFetchAction(repository.name, fetching ? { repository: repository.path, fetching: true, lastFetched: null, failure: null } : fetch, now);
 					return (
 						<section key={repository.path} className="group" aria-label={repository.name}>
 							<div className={repository.available ? "group-head" : "group-head unavailable"}>
@@ -75,6 +84,7 @@ export function Sidebar() {
 									type="button"
 									className="group-header"
 									aria-expanded={open}
+									aria-describedby={fetchMarker ? fetchMarkerId : undefined}
 									title={describeRepository(repository)}
 									onClick={() => store.toggleGroup(repository.path)}
 								>
@@ -82,10 +92,33 @@ export function Sidebar() {
 										<path d="M3.5 2 6.5 5 3.5 8" />
 									</svg>
 									<span className="group-name">{repository.name}</span>
+									{fetchMarker && (
+										// Quiet: a word beside the name, never a dialog. Its sentences are the button's description.
+										<span className="group-flag fetch-failed" title={fetchMarker.tooltip} aria-hidden="true">{fetchMarker.text}</span>
+									)}
 									{repository.available
 										? <span className="group-count">{repository.worktrees.length}</span>
 										: <span className="group-flag">unavailable</span>}
 								</button>
+								{fetchMarker && <span id={fetchMarkerId} hidden>{fetchMarker.tooltip}</span>}
+								{repository.available && (
+									<button
+										type="button"
+										className={fetching ? "icon-button group-fetch fetching" : "icon-button group-fetch"}
+										aria-label={fetchLabel}
+										title={fetchLabel}
+										aria-busy={fetching}
+										aria-disabled={fetching}
+										onClick={() => {
+											if (!fetching) void store.fetchNow(repository.path);
+										}}
+									>
+										<svg aria-hidden="true" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+											<path d="M8 2v8M4.5 6.5 8 10l3.5-3.5" />
+											<path d="M2.5 11v2.5h11V11" />
+										</svg>
+									</button>
+								)}
 								{repository.available && (
 									<button
 										type="button"

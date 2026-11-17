@@ -1,5 +1,6 @@
 import type { RPCSchema } from "electrobun/view";
 import type { Attention } from "./attention";
+import type { FetchResult, ForcePushSeen, RepositoryFetch } from "./git-fetch";
 import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffResult } from "./file-changes";
 import type { Layout } from "./layout";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
@@ -50,6 +51,9 @@ export type AppRPC = {
 			writeClipboard: { params: { text: string }; response: void };
 			readClipboard: { params: {}; response: string | null };
 			openLink: { params: { url: string }; response: boolean };
+			fetchStatuses: { params: {}; response: RepositoryFetch[] };
+			/** Answers only when the fetch has ended, which can take minutes, so the caller must not time it out. */
+			fetchNow: { params: { repository: string }; response: FetchResult };
 		};
 		messages: {
 			/** Typed or pasted text for a session. */
@@ -59,6 +63,8 @@ export type AppRPC = {
 			terminalDrawn: { id: string; seq: number };
 			/** How the window is, and which worktree is selected (see `Engine.attend`). */
 			attend: Attention;
+			/** The person saw a branch marked force-pushed (see `Engine.forcePushSeen`). */
+			forcePushSeen: ForcePushSeen;
 		};
 	}>;
 	webview: RPCSchema<{
@@ -72,6 +78,8 @@ export type AppRPC = {
 			/** Part of what a session printed. */
 			terminalOutput: TerminalOutput;
 			terminalChanged: TerminalChange;
+			/** Where fetching stands for a repository. */
+			fetchChanged: RepositoryFetch;
 		};
 	}>;
 };
