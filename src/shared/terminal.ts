@@ -62,6 +62,13 @@ export interface OpenTerminalRequest {
 	 * Not together with `agent`.
 	 */
 	timberSetup?: TimberConfigScope;
+	/**
+	 * Start `timber rebase` for this worktree instead of the shell, onto the
+	 * given base, or the one Timber saved when `onto` is null
+	 * (`rebaseArguments` in ./rebase-command.ts). The main process runs the
+	 * Timber it found. Not together with `agent` or `timberSetup`.
+	 */
+	timberRebase?: { onto: string | null };
 }
 
 export type OpenTerminalResult =
@@ -122,6 +129,9 @@ const KIND_NAMES: Record<SessionKind, string> = { terminal: "Terminal", agent: "
 
 /** What a `timber setup` session is called. */
 export const TIMBER_SETUP_SESSION_NAME = "Timber setup";
+
+/** What a `timber rebase` session is called. */
+export const TIMBER_REBASE_SESSION_NAME = "Rebase";
 
 /** What a kind of session is called, such as "Terminal". */
 export function sessionKindName(kind: SessionKind): string {

@@ -6,6 +6,7 @@ import { type FileChangeTarget, type FileChangesResult, type FileDiffResult, sam
 import { type Layout, clampSidebarWidth, dismissSetup, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberStatus, Worktree, WorktreeCommandResult } from "../../shared/model";
 import type { Preferences } from "../../shared/preferences";
+import type { StartRebaseRequest, StartRebaseResult } from "../../shared/rebase-command";
 import { type OpenTerminalRequest, type TerminalChange, type TerminalSession, TIMBER_SETUP_SESSION_NAME } from "../../shared/terminal";
 import type { TimberConfigScope, TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "../../shared/timber-config";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "../../shared/timber-done";
@@ -164,6 +165,14 @@ export interface AppStore {
 	 * click starts one. Never throws.
 	 */
 	openTerminal(request: OpenTerminalRequest): Promise<void>;
+	/**
+	 * Start `timber rebase` in a new Timber session in a worktree, beside its
+	 * other sessions. The engine is asked once. A session that started shows,
+	 * in the Workspace tab, and when it stops the repositories are read again,
+	 * as for any Timber session. Nothing here says how the rebase went. Never
+	 * throws.
+	 */
+	startRebase(request: StartRebaseRequest): Promise<StartRebaseResult>;
 	/**
 	 * Start an agent from the saved Settings, by name, in a worktree the New
 	 * worktree dialog created, as `openTerminal` does: select the worktree and
@@ -818,6 +827,30 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		});
 	}
 
+	async function startRebase(request: StartRebaseRequest): Promise<StartRebaseResult> {
+		const { repository, worktree, onto, cols, rows } = request;
+		let result;
+		try {
+			result = await engine.openTerminal({ repository, worktree, cols, rows, timberRebase: { onto } });
+		} catch (error) {
+			return {
+				outcome: "unknown",
+				message: `The app did not hear whether the rebase started: ${messageOf(error)}. Look at the worktree's sessions before trying again.`,
+			};
+		}
+		if (result.outcome !== "opened") return { outcome: "not-run", message: result.message };
+		const { session } = result;
+		// The engine reports the session as it changes, and may have reported it ended before this answer: that report is newer.
+		const known = state.terminals.some(candidate => candidate.id === session.id);
+		update({
+			terminals: known ? state.terminals : withTerminal(state.terminals, session.id, session),
+			shownSessions: { ...state.shownSessions, [session.worktree]: session.id },
+			unseenSessions: state.unseenSessions.filter(id => id !== session.id),
+			tab: "workspace",
+		});
+		return { outcome: "started", session };
+	}
+
 	/** Show a session: select its worktree, choose its chip, and show the Workspace tab. */
 	function reveal(session: TerminalSession): void {
 		const selection = selectionFor(state.repositories, session.worktree);
@@ -1087,6 +1120,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		previewDone,
 		applyDone,
 		openTerminal,
+		startRebase,
 		startAgentIn,
 		showSession,
 		stepSession,

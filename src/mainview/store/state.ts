@@ -100,6 +100,8 @@ export type DialogRequest =
 	| { kind: "new-worktree"; repository: string }
 	/** Remove a worktree. `repository` is the path of the primary checkout, `worktree` is `Worktree.id`. */
 	| { kind: "done-worktree"; repository: string; worktree: string }
+	/** Rebase a worktree with Timber, in a new session. Named as for Done. */
+	| { kind: "rebase-worktree"; repository: string; worktree: string }
 	/** The app's settings, open at one section, or at the first when none is named. */
 	| { kind: "settings"; section?: SettingsSection };
 
