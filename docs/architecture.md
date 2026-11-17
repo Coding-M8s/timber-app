@@ -2438,6 +2438,86 @@ and `TIMBER_APP_REPOS` naming this repository:
   and anything that removes the `setenv` (such as an `LD_PRELOAD` shim),
   since the rest of the wrapper needs X11 anyway.
 
+Run for the desktop app on a second Linux system (issue 28), Omarchy
+4.0.0 alpha (the `omarchy-dev` package, `4.0.0.r7955.g15d240a`,
+Arch based) x64, Hyprland 0.57.2 on Wayland (`XDG_SESSION_TYPE=wayland`,
+`WAYLAND_DISPLAY=wayland-1`, XWayland 24.1.15 on `DISPLAY=:0`), monitors at
+scale 1, with Bun 1.4.4, Git 2.56.1, Timber 0.1.2, and Electrobun 2.0.6, at
+commit `43e9c49`. The machine has Intel Arc and NVIDIA RTX 4050 graphics
+(driver 615.78.08). `/bin/sh` is bash. Each launch had its own
+`XDG_CONFIG_HOME`, and `TIMBER_APP_REPOS` naming this repository unless
+said otherwise:
+
+- `pacman -Q`: `gtk3` 3.24.52, `webkit2gtk-4.1` 2.54.2,
+  `libayatana-appindicator` 0.6.1, and `librsvg` 2.63.4 were already
+  installed, so which of them a clean system needs was not tested.
+- `bun install`: 54 packages installed. `bun run typecheck` and `bun run
+  typecheck:desktop`: no errors.
+- `bun test`: 1104 passed, 1 skipped, and 1 failed, the same one in four
+  runs: "closing a session ends everything it started, even what ignores a
+  hang-up" in `tests/terminals.test.ts` waited for four processes and found
+  three. Its `sh -c 'trap "" HUP; sleep 301'` leaves a shell and a sleep
+  where `sh` is dash; bash replaces itself with the sleep (seen with `ps`).
+  With `; :` added after the sleep the test passed three times, and the
+  whole suite was 1105 passed, 1 skipped, 0 failed.
+- `bun run start`: the window opened. `hyprctl -j clients` listed it with
+  class `Timber-dev` and `xwayland: true`, and a screenshot (`grim`) showed
+  this repository and its worktrees.
+- `bun run build`: completed, with `build/stable-linux-x64/Timber`.
+- The built launcher, run in the real home folder with a display: exit 0.
+  It wrote the app to `~/.local/share/com.codingm8s.timber/stable/`, the
+  menu entry, and `~/Desktop/Timber.desktop`, and then started the installed
+  app, which showed "No repository yet". The menu entry had no `Icon=`, and
+  `desktop-file-validate` gave the same `Comment` warning as in issue 62.
+- Input to the window: XTest clicks (`xdotool`) did not reach it, as under
+  COSMIC, and neither did a mouse button sent with Hyprland's
+  `send_shortcut`. Real clicks did: the pointer was moved with `hyprctl`
+  and the button pressed through `ydotool` (uinput). Keys sent with
+  `send_shortcut` to the window arrived. The steps below used these.
+- Terminals: Open terminal started bash in the primary checkout, and `echo
+  hi42` printed back. Closing the window then asked "Quit Timber?"; Quit
+  ended the app (`[stopEventLoop] Initiating clean event loop exit`) and the
+  session's bash.
+- Open in editor with no editor saved opened Settings on Editor. With the
+  Zed choice saved it failed with "zed" not found: Arch installs Zed as
+  `zeditor`. The message was right but printed the whole PATH, about 20
+  lines here. With VS Code saved, a VS Code window opened on the worktree's
+  folder.
+- "Add repository" was refused while `TIMBER_APP_REPOS` was set, with the
+  note saying so. Without it, the chooser was not GTK's own: Omarchy sets
+  `GTK_USE_PORTAL=1` and its portal runs `folio chooser`, a Wayland window
+  of another process that opens on the focused workspace. Select returned
+  the folder the chooser was showing, the home folder, and the app answered
+  "Not a Git repository". Going into a folder in that chooser could not be
+  done with sent input, so adding a real repository this way was not run.
+- `X11 Error: GLXBadWindow (code 170)` was in the log once on every start
+  (issue 64). In six starts of the installed app, the three with
+  `WEBKIT_DISABLE_DMABUF_RENDERER=1` had no such line and the three without
+  had one; the window drew the same by eye. One start each with
+  `WEBKIT_DISABLE_COMPOSITING_MODE=1`, `LIBGL_ALWAYS_SOFTWARE=1`, and
+  `__GLX_VENDOR_LIBRARY_NAME=mesa` still had it.
+- `nvidia-smi` listed no process on the NVIDIA card while the app ran, and
+  the app had both Mesa and NVIDIA libraries loaded. Which card drew the
+  window was not established, so this is not a run on an NVIDIA GPU.
+- `bun run dev`: closing the window ended the app and left `electrobun dev
+  --watch` running, as documented. Touching `src/bun/index.ts` printed
+  "Change detected" and opened the window again. SIGINT to the process
+  group ended every process.
+- `bun run dev:hmr`, run twice: the window connected to Vite on port 5173,
+  and after the window closed nothing of the command was left and the port
+  was free. The first run logged 13 lines of `The request id ... is outside
+  of Vite serving allow list` for files of another checkout of this
+  repository; the second run had none and drew normally. The cause was not
+  established (the dev app's web data folder is shared between checkouts
+  and was older than this run).
+- `uninstall --quiet`: exit 0. The app folder and both entries were gone;
+  `~/.local/share/com.codingm8s.timber/stable/WebKit`, 20K of web data the
+  app had written, was left.
+- Not run: adding a real repository through the chooser, `timber setup`,
+  starting an agent, the Changes tab, Zed and Neovim as editors, fractional
+  scaling, a hot update under `dev:hmr`, and the menu entry started from a
+  launcher.
+
 Run for what the desktop development commands leave behind (issue 65),
 Pop!_OS 24.04 LTS x64 in the COSMIC Wayland session, Bun 1.4.2, Electrobun
 2.0.6. The window was closed by sending it a close request over X11
@@ -2657,4 +2737,6 @@ Not run yet:
   through XWayland, in Xephyr, and under WSLg (see issue 28 above). A native
   Wayland window is not possible with Electrobun 2.0.6 (see issue 63 above
   and [display server on Linux](#display-server-on-linux)).
-- A Wayland session other than COSMIC, such as GNOME or KDE.
+- A Wayland session other than COSMIC and Hyprland, such as GNOME or KDE.
+- An NVIDIA GPU known to be drawing the window, and adding a repository
+  through a portal file chooser (see the Omarchy run above).

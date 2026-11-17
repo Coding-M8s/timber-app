@@ -279,8 +279,10 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 		await run(session.id, "echo leader:$$", /leader:\d+/);
 		const leader = Number(/leader:(\d+)/.exec(printed(session.id))![1]);
 		await run(session.id, "sleep 300 & echo started", "started\r\n");
-		// In front, a program that ignores SIGHUP, as some do.
-		sessions.write(session.id, "sh -c 'trap \"\" HUP; sleep 301'\r");
+		// In front, a program that ignores SIGHUP, as some do. The ":" after
+		// the sleep keeps a sh that is bash (Arch) from replacing itself with
+		// the sleep, which would leave three processes where four are counted.
+		sessions.write(session.id, "sh -c 'trap \"\" HUP; sleep 301; :'\r");
 		let members: number[] = [];
 		expect(await until(() => (members = sessionMembers(leader) ?? []).length >= 4)).toBe(true);
 		await sessions.close(session.id);
