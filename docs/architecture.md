@@ -1938,6 +1938,35 @@ X11 display, `gdk_x11_*` calls).
 
 See the issue 63 run under [what has been verified](#what-has-been-verified).
 
+### The GLXBadWindow line at start
+
+Each start seen so far on Linux (Pop!_OS 24.04, XWayland and Xephyr) logs
+one `X11 Error: GLXBadWindow`, code 168 under XWayland and 170 in Xephyr.
+It is harmless, and the app does nothing about it. The two codes are the
+same error: GLXBadWindow is GLX error 12, and the GLX error base was 156
+on XWayland and 158 in Xephyr.
+
+- While Electrobun creates the web view, WebKitGTK disposes a GTK widget,
+  and GTK destroys its X window. Later, from the main loop, GTK frees a
+  window's GL drawable with `glXDestroyWindow` inside an error trap it
+  ignores. Most likely that drawable belonged to the destroyed window (not
+  traced), so the X server answers GLXBadWindow.
+- GTK's trap drops that late error only while GDK's own X error handler is
+  installed. Electrobun's `initializeGTK()` replaces it right after
+  `gtk_init` with one that prints every error except BadWindow and
+  BadDrawable and then carries on, so the trapped error is printed.
+- Nothing else follows from it: the request was a cleanup that GTK
+  expects may fail, the window draws, and clicks and keys worked in the
+  issue 28 Xephyr run with the line present.
+- Not done in the app: putting GDK's handler back through Bun FFI would make
+  any other X error end the app, since GDK's handler exits on errors no
+  trap expects, and `GDK_SYNCHRONIZE=1` (which hides the line) makes every
+  X request a round trip.
+
+This covers only this line, a GLXBadWindow from `X_GLXDestroyWindow`. Any
+other `X11 Error:` line is not explained by it. See the issue 64 run under
+[what has been verified](#what-has-been-verified).
+
 ## Milestones
 
 1. **Sidebar, read-only (this scaffold).** Repositories and the worktrees
@@ -2889,10 +2918,12 @@ WSLg needed, see issue 1 above):
   (found with `xwininfo` on the session's XWayland display), so the app
   runs through XWayland, not as a native Wayland client. The log has one
   `X11 Error: GLXBadWindow (code 168)` on start; nothing on screen was
-  wrong. No clicks were sent to this window in this run (an earlier run
-  found that XTest clicks do not reach it under COSMIC, see issue 25
-  above), so terminals, the folder picker, and editor launching were
-  checked in Xephyr only.
+  wrong (explained by issue 64, see
+  [the GLXBadWindow line at start](#the-glxbadwindow-line-at-start)).
+  No clicks were sent to this window in this run (an earlier run found
+  that XTest clicks do not reach it under COSMIC, see issue 25 above), so
+  terminals, the folder picker, and editor launching were checked in
+  Xephyr only.
 - The same installed app in a nested X server, `Xephyr :2` with no window
   manager, started with `DISPLAY=:2`, no `WAYLAND_DISPLAY`,
   `XDG_SESSION_TYPE=x11`, and its own `XDG_CONFIG_HOME`. Clicks and keys
@@ -2910,6 +2941,8 @@ WSLg needed, see issue 1 above):
     the toast. VS Code and Zed were not started.
   - The log had `libEGL warning: DRI3 error: Could not get DRI3 device`
     and `X11 Error: GLXBadWindow (code 170)`; the window drew normally.
+    The second line is harmless, see
+    [the GLXBadWindow line at start](#the-glxbadwindow-line-at-start).
 - `bun run dev` in the same Xephyr: the window opened and listed the
   worktrees. Touching `src/bun/index.ts` rebuilt and relaunched it. Closing
   the window leaves the watcher running until it is stopped.
@@ -3214,6 +3247,61 @@ natively) with Bun 1.4.2 and Git 2.43.0:
 
 Not run for issue 51: the desktop window and the RPC bridge. Nothing in the
 interface asks for workflows yet.
+
+Run for the GLXBadWindow line at start (issue 64), Pop!_OS 24.04 LTS x64,
+natively, COSMIC on Wayland, with Electrobun 2.0.6, GTK 3.24.41
+(`libgtk-3-0t64`), WebKitGTK 2.52.6, libX11 1.8.7, Mesa 26.1.6, Xwayland
+24.1.13, and Xephyr 21.1.12. Each launch was `bunx electrobun dev` (the dev
+build) with `WAYLAND_DISPLAY` unset, `XDG_SESSION_TYPE=x11`, its own
+`XDG_CONFIG_HOME`, `TIMBER_APP_REPOS` naming this repository, and `DISPLAY`
+set to XWayland (`:1`) or to `Xephyr :3`, stopped with SIGINT after 25 to
+30 seconds. Some launches had an `LD_PRELOAD` wrapper around
+`XSetErrorHandler` and `XDestroyWindow`, written for this run and kept out
+of the repository, that printed the request serial and backtrace of each
+`XDestroyWindow` and, for each error, the serial and backtrace of the
+nearest GDK error trap before it. An earlier version of the wrapper
+printed the backtrace of the error handler itself:
+
+- `objdump -d` of the dev build's `libNativeWrapper.so` (the same file as
+  the Electrobun 2.0.6 toolchain's): `initializeGTK()` calls `gtk_init`,
+  then `XSetErrorHandler(x11_error_handler)`. The handler skips BadWindow
+  and BadDrawable, prints `X11 Error: %s (code %d)`, and returns 0. The
+  source of `nativeWrapper.cpp` at `v2.0.6`, `v2.0.7-beta.24`, and `main`,
+  read with `gh api` on 2026-11-16, has the same handler and call.
+- GTK 3.24.41 source (`gdk/x11/gdkmain-x11.c`, `gdkdisplay-x11.c`): an
+  error trap installs GDK's handler on push and puts the previous handler
+  back on pop. `gdk_x11_display_error_trap_pop_ignored` does not wait for
+  the server, and late errors are dropped by serial only in GDK's handler.
+  GDK's handler ends the process on an error no trap expects (`g_error`
+  in debug builds, otherwise `_exit(1)`).
+- `xdpyinfo -queryExtensions`: GLX opcode 149 and error base 156 on `:1`,
+  opcode 150 and error base 158 on `:3`.
+- With the wrapper in Xephyr: WebKitGTK, called from Electrobun's
+  `WebKitWebViewImpl` constructor through `g_object_new`, ran
+  `g_object_run_dispose` on a widget, which reached `gtk_widget_unrealize`,
+  `gdk_window_destroy`, and `XDestroyWindow` at serial 332. Later, from
+  the GTK main loop, `g_object_unref` of a GdkWindow cleared its data and
+  pushed a GDK error trap at serial 351, followed by `XDestroyWindow` of
+  another window at 355. The error was code 170, request 150 minor 32
+  (`X_GLXDestroyWindow`), serial 351, read by `XPending` after the trap
+  had popped, and Electrobun's handler printed it. That the GLX drawable
+  belonged to the window destroyed at 332 is consistent with this, and was
+  not traced.
+- With the wrapper on `:1`: the same order, with `XDestroyWindow` at serial
+  318 under the same WebKitGTK frames, the trap at 334, and the error code
+  168, request 149 minor 32, serial 334.
+- Without the wrapper, one launch each on `:1` and on `:3`: one
+  `X11 Error: GLXBadWindow` line (`grep -c "X11 Error"`). With
+  `GDK_SYNCHRONIZE=1`, one launch each: none, consistent with the error
+  arriving while the trap is pushed.
+- A screenshot of `:3` taken with `import -window root` after the line was
+  logged: the sidebar showed this repository with a count of 18 worktrees,
+  and the window drew normally.
+- Not run: the installed build (the issue 28 run above logged the same
+  line from it; its `libNativeWrapper.so` was not compared here), the CEF
+  wrapper, a real X11 login session, an NVIDIA GPU,
+  `WEBKIT_DISABLE_COMPOSITING_MODE`, and which WebKitGTK function creates
+  and disposes the widget. Not reported upstream to Electrobun.
 
 Not run yet:
 
