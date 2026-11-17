@@ -52,6 +52,8 @@ needs is not tested yet):
 sudo apt install libgtk-3-0t64 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 librsvg2-2
 ```
 
+The window is always an X11 window, so a Wayland session needs XWayland; see
+[display server on Linux](docs/architecture.md#display-server-on-linux).
 See [what has been verified](docs/architecture.md#what-has-been-verified).
 
 The first run downloads the Electrobun toolchain into `~/.hutch/` and the

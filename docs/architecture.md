@@ -1280,6 +1280,28 @@ was never set up. A Timber setup session there asks one question: `save`
 acts out saving the settings, the repository's or with `--global` the
 machine's, and `cancel` or `exit` acts out cancelling.
 
+## Display server on Linux
+
+The window is an X11 window on every Linux session, and on Wayland it runs
+through XWayland. This comes from Electrobun, not from this app: the native
+wrapper's `initializeGTK()` calls `setenv("GDK_BACKEND", "x11", 1)` just
+before `gtk_init`, with overwrite on. The rest of the wrapper is built on
+X11 too (`XInitThreads`, its own X11 windows, global shortcuts through an
+X11 display, `gdk_x11_*` calls).
+
+- `GDK_BACKEND=wayland` is not honoured. It is replaced before GTK reads it.
+- XWayland is a requirement on Wayland. Without an X display the app stops
+  with `cannot open display` and exit code 1. There is no Wayland fallback.
+- Electrobun 2.0.6 and the 2.0.7 betas behave the same, both the WebKitGTK
+  and the CEF wrapper. A native Wayland window needs a change upstream,
+  tracked in
+  [blackboardsh/electrobun#568](https://github.com/blackboardsh/electrobun/issues/568).
+  Reports there say XWayland costs sharpness with fractional scaling and
+  smooth resizing at high resolutions and refresh rates. Neither was seen
+  here, and neither was looked for.
+
+See the issue 63 run under [what has been verified](#what-has-been-verified).
+
 ## Milestones
 
 1. **Sidebar, read-only (this scaffold).** Repositories and the worktrees
@@ -2251,6 +2273,30 @@ WSLg needed, see issue 1 above):
   already installed, so which of them a clean system needs was not tested.
   The `typecheck-desktop` CI job was added and has not run yet.
 
+Run for the display server on Linux (issue 63), the same Pop!_OS 24.04 LTS
+x64 machine, COSMIC on Wayland (`XDG_SESSION_TYPE=wayland`,
+`WAYLAND_DISPLAY=wayland-1`, XWayland on `DISPLAY=:1`), with the dev build
+from `bun run dev`. Its `libNativeWrapper.so` is byte for byte the one in
+the Electrobun 2.0.6 toolchain. Each launch had its own `XDG_CONFIG_HOME`
+and `TIMBER_APP_REPOS` naming this repository:
+
+- `objdump -d` of `libNativeWrapper.so` and `libNativeWrapper_cef.so`:
+  both `initializeGTK()` functions call `ensureXlibThreadSupport`, then
+  `setenv("GDK_BACKEND", "x11", 1)`, then `gtk_init`. The strings
+  `wayland` and `WAYLAND_DISPLAY` are read only by the screen capture
+  code. The source of `v2.0.7-beta.24` still has the same `setenv`.
+- Default environment: the window was an X11 window on `:1`
+  (`xwininfo -root -tree`).
+- `GDK_BACKEND=wayland`: with no Timber window on `:1` before the launch,
+  the window again appeared there as an X11 window, and its `_NET_WM_PID`
+  (`xprop`) was the app's `bun` process. The variable was not honoured.
+- `GDK_BACKEND=wayland` with `DISPLAY` unset (`env -u DISPLAY`): the log
+  had `Gtk-WARNING **: cannot open display:` and `Child process exited with
+  code: 1`. No window opened.
+- Not run: any other compositor or distribution, a real X11 login session,
+  and anything that removes the `setenv` (such as an `LD_PRELOAD` shim),
+  since the rest of the wrapper needs X11 anyway.
+
 Not run yet:
 
 - Saving settings through `timber setup` inside the app. Setup was started
@@ -2301,6 +2347,8 @@ Not run yet:
   sent over X11 instead (see above).
 - Copying with Ctrl+Shift+C and opening a link with Ctrl+click in the
   desktop window. Both were checked as functions only.
-- A real X11 login session, and a native Wayland window. Linux was run in a
-  COSMIC Wayland session through XWayland, in Xephyr, and under WSLg (see
-  issue 28 above).
+- A real X11 login session. Linux was run in a COSMIC Wayland session
+  through XWayland, in Xephyr, and under WSLg (see issue 28 above). A native
+  Wayland window is not possible with Electrobun 2.0.6 (see issue 63 above
+  and [display server on Linux](#display-server-on-linux)).
+- A Wayland session other than COSMIC, such as GNOME or KDE.
