@@ -11,6 +11,19 @@ import { type StandInRun, git, realTimber, recordedResult, standInResultTimber }
 
 const ready = (path: string): TimberStatus => ({ state: "ready", path, version: "0.1.1" });
 
+/** How long to watch for a detached editor that should not start. */
+const editorStartWait = 500;
+
+/** Poll until `done` holds or the time runs out, and say whether it held. */
+async function eventually(done: () => boolean, milliseconds = 5000): Promise<boolean> {
+	const end = Date.now() + milliseconds;
+	while (!done()) {
+		if (Date.now() >= end) return false;
+		await Bun.sleep(20);
+	}
+	return true;
+}
+
 describe("createWorktreeCommands, with a stand-in Timber", () => {
 	let root: string;
 	let repository: string;
@@ -348,11 +361,13 @@ describe.skipIf(realTimber === null)("createWorktreeCommands, with the installed
 
 		const result = await commandsFor(primary).create({ repository: primary, name: "feat/quiet", base: null });
 		expect(result.outcome).toBe("succeeded");
+		// Timber starts an editor detached and returns once it has spawned, so give a late start time to show.
+		await Bun.sleep(editorStartWait);
 		expect(existsSync(marker)).toBe(false);
 
 		// The same configuration does start the editor for a plain command, so the check above means something.
 		expect(inTerminal(primary, "new", "feat/loud").exitCode).toBe(0);
-		expect(existsSync(marker)).toBe(true);
+		expect(await eventually(() => existsSync(marker))).toBe(true);
 	});
 });
 
