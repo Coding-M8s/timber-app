@@ -1955,7 +1955,8 @@ are the same error: GLXBadWindow is GLX error 12, and the code is the X
 server's GLX error base plus 12. The base was 156 on Pop!_OS's XWayland and
 158 in Xephyr, and Omarchy's XWayland logged 170 (a base of 158, not read
 with `xdpyinfo` there), so the code follows the server, not whether it is
-XWayland or Xephyr.
+XWayland or Xephyr. The issue 66 runs fit this: 168 under Xwayland 23.2,
+and 170 under Xwayland 24.1 and under Xorg.
 
 - While Electrobun creates the web view, WebKitGTK disposes a GTK widget,
   and GTK destroys its X window. Later, from the main loop, GTK frees a
@@ -3813,6 +3814,110 @@ windows at the same place; the screenshot does not tell which one drew.
   not to start it); terminals, the folder picker, and editors; fonts other
   than the bundled ones; other Debian-based or Fedora versions.
 
+Run for GNOME, KDE, and a real X11 login session (issue 66), on 2026-11-18
+with the installer built at commit `36a61ce` and copied into each guest
+with `scp`, Timber 0.1.2, and Git from each distribution. Each system was a QEMU/KVM virtual machine on the Pop!_OS
+host (4 CPUs, 6 GB, `virtio-vga`, no display of its own), made from the
+distribution's cloud image with a desktop added, and logged in by its
+display manager's automatic login. Rendering was Mesa's llvmpipe, so no GPU
+drew anything. Input was a USB tablet and keyboard emulated by QEMU and
+driven through its QMP socket, which the guest sees as a mouse and keyboard
+(unlike XTest, see issue 28 above). Screenshots came from QMP too. In each
+session the installer ran as the user (`systemd-run --user`), and the app
+was then started from the desktop's own menu; its environment had no
+`GTK_USE_PORTAL`. A test repository had a primary checkout and two linked
+worktrees, one with a modified file.
+
+- Ubuntu 24.04.5 with `ubuntu-desktop-minimal` (GNOME Shell 46.0, GDM
+  46.2, Xwayland 23.2.6), Wayland session (`loginctl`: `Type=wayland`):
+  - The desktop package already brought `libwebkit2gtk-4.1-0` 2.52.6 and
+    `libayatana-appindicator3-1` 0.5.93.
+  - The app grid showed Timber with its icon; clicking it opened the window
+    under XWayland, and the dock showed the same icon. A search typed right
+    after opening the overview found nothing; the grid was used instead.
+  - "Add repository" opened GTK's own "Open File" chooser, a window of the
+    app's process. Choosing the linked worktree `demo-feature-two` added the
+    repository `demo` with all three worktrees and the modified file.
+  - Open terminal started bash in the primary checkout; typed `echo
+    hello-$((40+2)) && pwd && echo $XDG_SESSION_TYPE` printed `hello-42`,
+    the folder, and `wayland`.
+  - Open in editor with no editor saved opened Settings, Editor. "Other
+    command" `nautilus --new-window` was saved, and Open in editor then ran
+    it with the worktree's folder, and Files opened there.
+  - The title bar's close button asked "Quit Timber?", and Quit ended the
+    app.
+- The same machine logged in to "Ubuntu on Xorg", a real X11 session
+  (`Type=x11`, `Xorg` on vt2, no Xwayland, `xserver-xorg-core` 21.1.12):
+  the app started from the grid and listed the saved repository, the
+  terminal printed `x11`, the chooser added a second, plain repository,
+  Open in editor started Files on it, and Quit ended the app. The journal
+  had `DRI3 error` and `X11 Error: GLXBadWindow (code 170)` once (see
+  [the GLXBadWindow line at start](#the-glxbadwindow-line-at-start)).
+- Ubuntu 24.04.5 with `kde-plasma-desktop` and `plasma-workspace-wayland`
+  (Plasma 5.27.12, KWin 5.27.11, SDDM 0.20.0; not the `kubuntu-desktop`
+  package), Wayland session (`Type=wayland`, Xwayland on `:1`):
+  - The desktop did not bring the app's libraries; the README's `sudo apt
+    install libwebkit2gtk-4.1-0 libayatana-appindicator3-1` did.
+  - The menu's search found Timber with its icon and description. The
+    window's title bar showed a generic X icon, the task bar the app's.
+  - In the chooser, Ctrl+L and the typed path of `demo-feature-one` added
+    the repository with its three worktrees.
+  - The terminal printed `wayland`. "Other command" `kate` opened Kate on
+    the worktree's folder as a project. Quit ended the app. The journal had
+    `GLXBadWindow (code 168)` once.
+- The same machine's Plasma X11 session (`Type=x11`, Xorg): the app started
+  from the menu and listed the saved repository, the terminal printed
+  `x11`, Open in editor ran `kate` with a worktree's folder, and Quit ended
+  the app. The chooser was not run there.
+- Fedora 43 with the `kde-desktop-environment` group (Plasma 6.7.5, KWin
+  6.7.5, SDDM 0.21.0, Xwayland 24.1.14), Wayland session (`Type=wayland`,
+  `Desktop=KDE`), SELinux enforcing:
+  - The desktop did not bring the app's libraries; `dnf install
+    webkit2gtk4.1 libayatana-appindicator-gtk3` did (2.54.2 and 0.6.0).
+  - The launcher's search found Timber with its icon; the window opened
+    under XWayland with the app's icon in its title bar. The app found
+    Timber; the session's PATH had `~/.local/bin`.
+  - The chooser was GTK's own; double-clicking `projects` and choosing
+    `demo` added the repository with its three worktrees.
+  - The terminal printed `wayland`. With VS Code 1.147.0 installed from
+    Microsoft's repository and chosen in Settings, Open in editor ran `code`
+    with the worktree's folder, and a VS Code window opened.
+  - Quit ended the app with `[stopEventLoop] Initiating clean event loop
+    exit`. The log had `GLXBadWindow (code 170)` once.
+- The installer exited 0 on both Ubuntu machines (on Fedora it was not
+  waited for, and its log ended "Installation completed successfully."),
+  and each run wrote the menu entry and `~/Desktop/Timber.desktop`. On KDE it printed `gio: Setting attribute
+  metadata::trusted not supported`. The app the installer starts by itself
+  ended with the `systemd-run` unit, so it was not used.
+- On both Ubuntu machines, installing the desktop over the cloud image's
+  network setup left the network without IPv4 until `netplan apply`. That
+  belongs to the cloud image, not to the app.
+- Typed input in the terminal appeared about two seconds late under
+  llvmpipe. Clicks did not.
+- Not run: real hardware or an NVIDIA GPU, a login typed at the greeter
+  instead of automatic login, the `kubuntu-desktop` and Fedora KDE spin
+  installs, fractional scaling, the portal chooser
+  (`GTK_USE_PORTAL=1`), Zed and Neovim, starting an agent, and the Changes
+  tab.
+
+Run for the same issue on real hardware by a person, the Pop!_OS 24.04
+machine of the issue 28 run, in its COSMIC session, with the same build
+and display scale 100%. The person installed it with
+`build/stable-linux-x64/Timber/bin/launcher` and followed these steps,
+clicking and typing themselves, and reported that every step worked:
+
+- Started from the COSMIC launcher, the window opened and found Timber.
+- "Add repository" opened COSMIC's own file chooser, not GTK's, so it went
+  through the desktop portal. Choosing a repository in it added the
+  repository and listed its worktrees.
+- Open terminal, and the same typed `echo` line printed back.
+- Open in editor, first with no editor saved (Settings, Editor), then with
+  their editor chosen, which opened on the worktree's folder.
+- The window's close button asked "Quit Timber?", and Quit ended the app.
+- Nothing looked wrong to them.
+- Not recorded: which editor, the GPU and driver, the versions, and the
+  log. Not run: fractional scaling.
+
 Not run yet:
 
 - Saving or checking from inside the desktop window, and over the RPC
@@ -3850,8 +3955,8 @@ Not run yet:
 - A toast after adding or removing a repository in the desktop window. Only
   the sample dialog's toast was run there.
 - The stand-in executables of the helper's tests on Windows.
-- Open in editor from the desktop window, and through the RPC bridge. VS
-  Code was started only from the main process module, and Zed not at all.
+- Open in editor with Zed. VS Code, Kate, and Files as an "Other command"
+  were started from the desktop window in issue 66.
 - Launching an editor on Windows or macOS. On Windows batch files are
   refused for now, and the stand-in editors of the tests are shell scripts.
 - Anything on macOS, terminals included.
@@ -3859,15 +3964,14 @@ Not run yet:
   differently. It was run only on Linux.
 - Terminals on Windows, where `Bun.Terminal` does not exist: they answer
   that they are not supported, and that answer was only acted out on Linux.
-- A click on the window's close button by a person. The same request was
-  sent over X11 instead (see above).
 - Copying with Ctrl+Shift+C and opening a link with Ctrl+click in the
   desktop window. Both were checked as functions only.
-- A real X11 login session. Linux was run in a COSMIC Wayland session
-  through XWayland, in Xephyr, and under WSLg (see issue 28 above). A native
-  Wayland window is not possible with Electrobun 2.0.6 (see issue 63 above
-  and [display server on Linux](#display-server-on-linux)).
-- A Wayland session other than COSMIC and Hyprland, such as GNOME or KDE.
+- A real X11 login session, and GNOME and KDE, on real hardware. They
+  were run in virtual machines only (see issue 66 above); on real hardware
+  only COSMIC was run by a person. A native Wayland window is not possible
+  with Electrobun 2.0.6 (see issue 63 above and
+  [display server on Linux](#display-server-on-linux)).
 - An NVIDIA GPU known to be drawing the window.
-- A portal file chooser other than Files on Omarchy, and Files on the real
-  desktop rather than a nested Hyprland (see issue 75 above).
+- A portal file chooser other than Files on Omarchy and COSMIC's on Pop!_OS,
+  and Files on the real desktop rather than a nested Hyprland (see issues 75
+  and 66 above).
