@@ -2983,7 +2983,8 @@ WSLg needed, see issue 1 above):
 - Not run: a real X11 login session (this machine has none, only
   Xephyr), a native Wayland window, `GDK_BACKEND=wayland`, GNOME, KDE, or
   any other distribution, and an NVIDIA GPU. The system packages were
-  already installed, so which of them a clean system needs was not tested.
+  already installed, so which of them a clean system needs was not tested
+  (tested later, see issue 67).
   The `typecheck-desktop` CI job was added and has not run yet.
 
 Run for the display server on Linux (issue 63), the same Pop!_OS 24.04 LTS
@@ -3022,7 +3023,8 @@ said otherwise:
 
 - `pacman -Q`: `gtk3` 3.24.52, `webkit2gtk-4.1` 2.54.2,
   `libayatana-appindicator` 0.6.1, and `librsvg` 2.63.4 were already
-  installed, so which of them a clean system needs was not tested.
+  installed, so which of them a clean system needs was not tested (tested
+  later, see issue 67).
 - `bun install`: 54 packages installed. `bun run typecheck` and `bun run
   typecheck:desktop`: no errors.
 - `bun test`: 1104 passed, 1 skipped, and 1 failed, the same one in four
@@ -3752,6 +3754,64 @@ Linux) with Bun 1.4.4 and Timber 0.1.2:
     and the controls still fit on one row.
 - Not run: many chips at a narrow width, a light theme in the desktop
   window, Windows, and macOS.
+
+Run for the system packages a clean Linux needs (issue 67), on Pop!_OS
+24.04 LTS x64 with Docker 29.10, Bun 1.4.2, and Electrobun 2.0.6, at commit
+`36a61ce`. `bun run build` made the installer. Each run used a fresh
+container from the distribution's official image, with only the packages
+named below added, and ran the installer as a non-root user with
+`--shm-size=1g`. The display was `Xvfb :99` in a second container sharing
+`/tmp/.X11-unix`, so Xvfb's own libraries were not in the app's container.
+"Starts" means the installed app's window was listed by `xwininfo -root
+-tree` after 20 seconds and a screenshot showed the interface drawn, here
+"Timber is not installed", since no Timber or Git was installed. The
+installer starts the app itself when it is done, and the script started the
+installed launcher once more, so every run that started listed two Timber
+windows at the same place; the screenshot does not tell which one drew.
+
+- `readelf -d` of the build: `libNativeWrapper.so` needs
+  `libwebkit2gtk-4.1.so.0`, `libjavascriptcoregtk-4.1.so.0`,
+  `libsoup-3.0.so.0`, `libayatana-appindicator3.so.1`, `libgtk-3.so.0`, and
+  GLib, GDK, cairo, and gdk-pixbuf, plus `libstdc++`, `libgcc_s`, and the
+  bundled `libasar.so`. `launcher`, `bun`, and `libElectrobunCore.so` need
+  only glibc's libraries. No file needs librsvg, and zstd is bundled
+  (`bin/zig-zstd`).
+- `ubuntu:24.04` as it comes (92 packages): the installer exited 0 (it
+  noted it could not update the desktop database), and the app exited 1
+  with "Linux desktop runtime libraries are missing", the eleven libraries
+  of the list above, and
+  Electrobun's suggestion `libgtk-3-0 libwebkit2gtk-4.1-0
+  libayatana-appindicator3-1 librsvg2-2`, which is where the earlier README
+  list came from.
+- `apt-get install libwebkit2gtk-4.1-0 libayatana-appindicator3-1`, with
+  recommended packages (373 packages after): started.
+- The same with `--no-install-recommends` (315 packages): started, and the
+  screenshot was the same.
+- The versions, from `dpkg-query`, `rpm -q`, and `pacman -Q` in fresh
+  containers that ran the same install commands the same day (not the
+  containers above): on Ubuntu `libwebkit2gtk-4.1-0` and
+  `libjavascriptcoregtk-4.1-0` 2.52.6, `libayatana-appindicator3-1` 0.5.93,
+  and `libgtk-3-0t64` 3.24.41 either way; `librsvg2-2` 2.58.0 only with
+  recommended packages. On Fedora and Arch librsvg came as a dependency
+  (2.61.5 and 2.63.4), so there it was not left out.
+- Only `libwebkit2gtk-4.1-0`: the app exited 1 naming
+  `libayatana-appindicator3.so.1`. Only `libayatana-appindicator3-1`: it
+  exited 1 naming the WebKitGTK, JavaScriptCore, and libsoup libraries.
+- `fedora:43`, `dnf install webkit2gtk4.1 libayatana-appindicator-gtk3`
+  (webkit2gtk4.1 2.54.2, libayatana-appindicator-gtk3 0.6.0, gtk3
+  3.24.52): started, with weak dependencies (488 packages) and with
+  `--setopt=install_weak_deps=False` (298 packages). Electrobun's
+  suggestion for Fedora names `libappindicator-gtk3`, which is not the
+  Ayatana library the wrapper links; that was not run.
+- `archlinux:latest`, `pacman -Sy webkit2gtk-4.1 libayatana-appindicator`
+  (2.54.2 and 0.6.1, gtk3 3.24.52, 262 packages): started.
+- Every run that started logged `DRI3 error: Could not get DRI3 device`
+  (Xvfb has no DRI3) and one `X11 Error: GLXBadWindow (code 170)`, see
+  [the GLXBadWindow line at start](#the-glxbadwindow-line-at-start).
+- Not run: a full desktop install or a VM, where these packages are often
+  there already; Git, Timber, and listing worktrees (needed to use the app,
+  not to start it); terminals, the folder picker, and editors; fonts other
+  than the bundled ones; other Debian-based or Fedora versions.
 
 Not run yet:
 
