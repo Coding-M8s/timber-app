@@ -1,4 +1,5 @@
 import { type ReactNode, StrictMode } from "react";
+import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { defaultPreferences } from "../shared/preferences";
@@ -33,16 +34,36 @@ async function themedEngine() {
 	return engine;
 }
 
+/** How long the window waits for the built-in fonts before it shows with whatever is there. */
+const FONT_WAIT_MILLISECONDS = 500;
+
+/**
+ * Resolves once the first render has been laid out and its fonts are in,
+ * or after a short wait for the fonts. The fonts are built in, so this is
+ * quick; without it, text in them would be blank for a moment, as they use
+ * `font-display: block`. Never rejects.
+ */
+function drawn(): Promise<void> {
+	const fonts = document.fonts?.ready.then(() => {}, () => {}) ?? Promise.resolve();
+	const fontsOrWait = Promise.race([fonts, new Promise<void>(resolve => setTimeout(resolve, FONT_WAIT_MILLISECONDS))]);
+	// A task after the render, so the browser has laid it out first.
+	return fontsOrWait.then(() => new Promise<void>(resolve => setTimeout(resolve, 0)));
+}
+
 Promise.all([themedEngine(), sampleDialog()]).then(
 	([engine, sample]) => {
 		const store = createAppStore(engine);
 		store.start();
 		followWindowState(window => store.windowChanged(window));
-		root.render(
-			<StrictMode>
-				<App store={store}>{sample}</App>
-			</StrictMode>,
+		// Rendered at once, not when React gets to it, so the window is told it can show only once there is something to see.
+		flushSync(() =>
+			root.render(
+				<StrictMode>
+					<App store={store}>{sample}</App>
+				</StrictMode>,
+			),
 		);
+		void drawn().then(() => engine.windowReady());
 	},
 	(error: unknown) => {
 		applySavedTheme(defaultPreferences().theme);

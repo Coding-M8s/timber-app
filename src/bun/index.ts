@@ -33,6 +33,7 @@ import { themePreload } from "./theme-preload";
 import { createTimberSettings } from "./timber-settings";
 import { createUninstaller } from "./uninstall";
 import { createWindowMemory } from "./window-memory";
+import { createWindowReveal } from "./window-reveal";
 import { createWorktreeCommands } from "./worktree-commands";
 import { createWorkflowReader } from "./workflows";
 
@@ -279,6 +280,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 				refreshPolicy.attend(attention);
 				fetcher.setVisible(attention.visible);
 			},
+			windowReady: () => windowReveal.ready(),
 			forcePushSeen: ({ repository, branch, at }) => {
 				if (fetcher.acknowledge(repository, branch, at)) refreshPolicy.changed(repository);
 			},
@@ -336,10 +338,16 @@ const mainWindow = new BrowserWindow({
 	title: APP_NAME,
 	url: await mainViewUrl(),
 	preload: themePreload(themeStyleSheet(startingPreferences.theme, availableThemes(startingPreferences.customThemes))),
+	// Shown once the interface has drawn itself in the saved theme (see ./window-reveal.ts).
+	hidden: true,
 	frame: fitWindowFrame(savedWindow?.frame ?? DEFAULT_WINDOW_FRAME, displayAreas()),
 	rpc,
 });
 if (savedWindow?.maximized) mainWindow.maximize();
+const windowReveal = createWindowReveal(by => {
+	mainWindow.show();
+	if (by === "fallback") console.warn("The interface did not say it was drawn, so the window was shown anyway.");
+});
 mainWindow.on("resize", () => windowMemory.changed());
 mainWindow.on("move", () => windowMemory.changed());
 

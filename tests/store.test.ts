@@ -112,6 +112,7 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 			applies.push({ path: request.path, request, resolve, reject });
 		}),
 		attend: () => {},
+		windowReady: () => {},
 		// Fetching has its own tests in fetch-store.test.ts.
 		fetchStatuses: async () => [],
 		fetchNow: async repository => ({ outcome: "not-listed", message: `${repository} is not listed.` }),
