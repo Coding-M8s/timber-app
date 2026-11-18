@@ -1628,8 +1628,7 @@ what Timber prints. The entry and the Onto field are as above.
   function, and the main process runs Timber from the same one, so the
   command shown is the command that runs.
 - **Running.** The store's `startRebase` asks `openTerminal` with
-  `timberRebase: { onto }`, as Settings asks for `timber setup` with
-  `timberSetup`. The request names only the base, never the command. The
+  `timberRebase: { onto }`. The request names only the base, never the command. The
   main process runs nothing while Timber is not ready, acts only on a
   repository in the app's list and a path Timber lists for it right now,
   whose folder is there, and starts the Timber that was found in a session
@@ -1727,47 +1726,46 @@ surprise, and never insists on it.
   tabs, for a selected worktree of a repository whose setup is `none` and
   whose prompt was not dismissed (`showsSetupPrompt` in
   `src/shared/timber-setup.ts`): one sentence that Timber's defaults work
-  and setup is optional, the command it runs, `timber setup`, "Set up
-  Timber", and "Not now". It is an offer, styled as one, never as an error.
-- **Set up Timber.** Timber's guided `timber setup` for the repository
-  (`timberSetup` in `OpenTerminalRequest`, with the `repository` scope): a
-  session of kind `timber`, named "Timber setup", in the repository's
-  primary checkout, which becomes selected, with the Workspace tab showing.
-  The main process runs the Timber it found, never a command from the
-  request. Settings does not start setup: it saves through Timber's
-  settings commands (see
-  [Timber's settings](#timbers-settings-in-the-settings-dialog)). A primary checkout whose folder is missing disables the
-  button, and the prompt says why (`timberSetupTarget`). When the session
-  cannot start, for example without a usable Timber or on Windows, that
-  worktree's sessions say why, as for any session. While a Timber setup
-  session of the repository runs, the button reads "Show setup" and shows
-  that session instead of starting another.
-- **When it goes.** `timber setup` ends with exit code 0 whether it saved or
-  was cancelled, and what it writes, `.timber.toml` or the machine defaults
-  and an entry in Git's `info/exclude`, is something the watcher ignores. So
-  when a Timber setup session ends or is closed while it runs, the store
-  reads every repository again, since machine defaults set up all of them at once, and
-  the prompt goes once `setup` is no longer `none`. A setup that ended while
-  the window was reloading counts too, once the sessions are listed.
-  Settings saved some other way, such as from a terminal outside the app,
-  show on the next read, for example when the window gets the focus back.
+  and setup is optional, "Set up Timber", and "Not now". It is an offer, styled as one, never as an error.
+- **Set up Timber (`SetupWizardDialog.tsx`).** The setup wizard for the
+  repository (`set-up-timber` in `DialogRequest`), never a terminal
+  session. It asks what `timber setup` asks, one step at a time: where to
+  save, the repository's `.timber.toml` or, as `timber setup --global`
+  does, the machine defaults; then the editor, the coding assistant, the
+  branch and remote and folder, the scripts, and issue tracking, with the
+  same fields and presets as Settings > Repository; then a last step that
+  lists the choices in words (`describeChoices` in
+  `src/mainview/setup-wizard-format.ts`) and shows the exact save command.
+  The chosen scope is read through Timber when chosen, and what was typed
+  carries over between the scopes. Save sends every group at once on top of
+  what was read (`wizardSaveRequest`, `valuesWithAll`), through the same
+  `saveTimberSettings` as Settings, with the revision it read, so invalid
+  fields, a conflict, a tracked `.timber.toml`, and failures behave as they
+  do there. Timber's messages about a field send the wizard back to the step
+  that draws it (`firstStepOf`). The button waits until Timber is ready,
+  since the wizard reads and saves through it.
+- **When it goes.** Once a save went through, the store reads the
+  repository again, or every repository for the machine defaults, before
+  the wizard closes (`saveTimberSettings` in the store), so the prompt goes
+  at once, without waiting for the window's focus. Timber writes the file
+  even when every choice was left alone, so that counts as set up too.
+  Cancel, Escape, or a repository that leaves the list saves nothing, and
+  the prompt stays. Settings saved some other way, such as from a terminal
+  outside the app, show on the next read, for example when the window gets
+  the focus back.
 - **Not now.** Remembered per repository in the saved layout
   (`setupDismissed`), so the prompt stays away after a restart, and
   forgotten when the repository leaves the list. Nothing else changes: the
   worktrees, terminals, and Timber commands work as before. There is no way
-  back to the prompt in the app yet; `timber setup` in a terminal still sets
-  the repository up.
+  back to the prompt in the app yet; Settings > Repository, or
+  `timber setup` in a terminal, still sets the repository up.
 - **The empty state.** With no repository in the list, the workspace says
   so and makes "Add repository" the first step, mentioning that a repository
   new to Timber gets the offer to set it up.
-- **Later.** Settings can be saved through Timber now, so a step-by-step
-  wizard in the app can replace the terminal session, with the same
-  choices. It is not built.
-
 In `bun run dev:web` the mock engine's folder picker adds `docs-site`, which
-was never set up. A Timber setup session there asks one question: `save`
-acts out saving the settings, the repository's or with `--global` the
-machine's, and `cancel` or `exit` acts out cancelling.
+was never set up. Its setup wizard reads and saves through the mock's
+Timber settings, and a save there sets it up: with the repository scope it
+alone, with the machine defaults every repository without settings.
 
 ## App identity
 

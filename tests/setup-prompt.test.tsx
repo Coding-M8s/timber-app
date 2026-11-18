@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
-import { createMockEngine, samplePickableRepository, sampleRepositories, sampleStatesRepository, sampleTimberStatuses } from "../src/mainview/engine/mock";
+import { createMockEngine, samplePickableRepository, sampleRepositories, sampleStatesRepository } from "../src/mainview/engine/mock";
+import { wizardSaveRequest } from "../src/mainview/setup-wizard-format";
 import { selectedWorktree } from "../src/mainview/store/state";
 import { createAppStore } from "../src/mainview/store/store";
-import { TERMINAL_UNSUPPORTED_REASON, TIMBER_SETUP_SESSION_NAME } from "../src/shared/terminal";
+import { draftsOf } from "../src/mainview/timber-settings-format";
+import type { TimberConfigScope } from "../src/shared/timber-config";
 
 const settle = async () => {
 	for (let round = 0; round < 8; round += 1) await Bun.sleep(0);
@@ -14,6 +16,7 @@ const DOCS = samplePickableRepository.path;
 const DOCS_MAIN = samplePickableRepository.worktrees[0]!;
 const DOCS_FEATURE = samplePickableRepository.worktrees[1]!;
 const PROMPT = "docs-site is not set up for Timber yet";
+const WIZARD = "Set up Timber for docs-site";
 
 type Store = ReturnType<typeof createAppStore>;
 const render = (store: Store) => renderToStaticMarkup(<App store={store} />);
@@ -33,19 +36,27 @@ async function withNewRepository(engine = createMockEngine()) {
 	return started;
 }
 
-const setUp = (store: Store) => store.setUpRepository(DOCS);
-const setupSessions = (store: Store) => store.getState().terminals.filter(session => session.kind === "timber");
+const setUp = (store: Store) => store.openDialog({ kind: "set-up-timber", repository: DOCS });
 const docs = (store: Store) => store.getState().repositories.find(repository => repository.path === DOCS)!;
 
+/** What the wizard's last step saves, with the fields as read, or changed by `edit`. */
+async function saveFromWizard(store: Store, scope: TimberConfigScope, edit: (drafts: ReturnType<typeof draftsOf>) => void = () => {}) {
+	const read = await store.readTimberSettings({ scope, repository: scope === "repository" ? DOCS : null });
+	if (read.outcome !== "read") throw new Error(`Not read: ${JSON.stringify(read)}`);
+	const drafts = draftsOf(read.settings.values);
+	edit(drafts);
+	return store.saveTimberSettings(wizardSaveRequest(scope, DOCS, read.settings, drafts, false));
+}
+
 describe("a repository that was never set up for Timber", () => {
-	test("shows the setup prompt with the command it runs, not an error, and its worktrees as usual", async () => {
+	test("shows the setup prompt, not an error, and its worktrees as usual", async () => {
 		const { store } = await withNewRepository();
 		expect(selectedWorktree(store.getState())?.repository.path).toBe(DOCS);
 		const markup = render(store);
 		expect(markup).toContain(PROMPT);
 		expect(markup).toMatch(/class="button"[^>]*>Set up Timber</);
 		expect(markup).toContain("Not now");
-		expect(markup).toContain('<code class="setup-prompt-command">timber setup</code>');
+		expect(markup).not.toContain("timber setup");
 		expect(markup).not.toContain('role="alert"');
 		expect(markup).toContain(DOCS_FEATURE.path);
 	});
@@ -68,149 +79,76 @@ describe("a repository that was never set up for Timber", () => {
 });
 
 describe("Set up Timber", () => {
-	test("starts timber setup for the right repository in its primary checkout, and shows it", async () => {
+	test("opens the setup wizard for the right repository, and starts no terminal session", async () => {
 		const { store } = await withNewRepository();
-		store.showTab("changes");
-		await setUp(store);
-		const [session] = setupSessions(store);
-		expect(session).toMatchObject({
-			kind: "timber", name: TIMBER_SETUP_SESSION_NAME, repository: DOCS, worktree: DOCS_MAIN.id, path: DOCS_MAIN.path, command: `${sampleTimberStatuses.ready.path} setup`,
-		});
-		expect(store.getState().tab).toBe("workspace");
-		expect(store.getState().shownSessions[DOCS_MAIN.id]).toBe(session!.id);
-		await settle();
+		store.select(DOCS_FEATURE.id);
+		setUp(store);
+		expect(store.getState().dialog).toEqual({ kind: "set-up-timber", repository: DOCS });
 		const markup = render(store);
-		// While it runs, the prompt stays, and its button shows that session again instead of starting another.
-		expect(markup).toContain(PROMPT);
-		expect(markup).toContain("Show setup");
+		expect(markup).toContain(WIZARD);
+		expect(markup).toContain("Step 1 of 7: Where to save");
+		await settle();
+		expect(store.getState().terminals).toEqual([]);
+		expect(store.getState().operations.some(operation => operation.kind === "open-terminal")).toBe(false);
 	});
 
-	test("the prompt disappears once setup saved the settings", async () => {
-		const { engine, store } = await withNewRepository();
-		await setUp(store);
-		const [session] = setupSessions(store);
-		engine.writeTerminal(session!.id, "save\r");
-		await settle();
-		expect(store.getState().terminals.find(candidate => candidate.id === session!.id)?.state).toEqual({ kind: "exited", exitCode: 0, signal: null });
+	test("the wizard needs a repository that is listed and there", async () => {
+		const { store } = await withNewRepository();
+		store.openDialog({ kind: "set-up-timber", repository: "/work/not-listed" });
+		expect(render(store)).not.toContain("Set up Timber for");
+	});
+
+	test("saving through Timber puts the prompt away at once, without the window getting the focus back", async () => {
+		const { store } = await withNewRepository();
+		setUp(store);
+		const saved = await saveFromWizard(store, "repository", drafts => {
+			drafts.editor = { ...drafts.editor, mode: "set", command: "zed", args: ["--new"] };
+			drafts.git = { ...drafts.git, base_branch: "main" };
+		});
+		expect(saved.outcome).toBe("saved");
+		// Read again by the save itself: no windowChanged, no refresh.
 		expect(docs(store).setup).toBe("repository");
+		store.closeDialog();
+		expect(render(store)).not.toContain(PROMPT);
+		const again = await store.readTimberSettings({ scope: "repository", repository: DOCS });
+		expect(again.outcome === "read" && again.settings.values).toMatchObject({ editor: { command: "zed", args: ["--new"] }, base_branch: "main" });
+	});
+
+	test("with every choice left alone, saving still sets the repository up, as Timber writes the file", async () => {
+		const { store } = await withNewRepository();
+		expect((await saveFromWizard(store, "repository")).outcome).toBe("saved");
+		expect(docs(store).setup).toBe("repository");
+	});
+
+	test("machine defaults, as timber setup --global saves them, set the repository up too", async () => {
+		const { store } = await withNewRepository();
+		expect((await saveFromWizard(store, "machine")).outcome).toBe("saved");
+		expect(docs(store).setup).toBe("machine");
 		expect(render(store)).not.toContain(PROMPT);
 	});
 
-	test("a cancelled setup ends the same way, so the prompt stays until there are settings", async () => {
-		const { engine, store } = await withNewRepository();
-		await setUp(store);
-		const [session] = setupSessions(store);
-		engine.writeTerminal(session!.id, "cancel\r");
+	test("cancelling saves nothing and leaves the prompt in place", async () => {
+		const { store } = await withNewRepository();
+		setUp(store);
+		store.closeDialog();
 		await settle();
-		expect(store.getState().terminals.find(candidate => candidate.id === session!.id)?.state.kind).toBe("exited");
+		expect(store.getState().dialog).toBeNull();
 		expect(docs(store).setup).toBe("none");
+		const read = await store.readTimberSettings({ scope: "repository", repository: DOCS });
+		expect(read.outcome === "read" && read.settings.exists).toBe(false);
 		const markup = render(store);
 		expect(markup).toContain(PROMPT);
 		expect(markup).toMatch(/class="button"[^>]*>Set up Timber</);
 	});
 
-	test("closing a running setup reads the repository again too", async () => {
-		const { engine, store } = await withNewRepository();
-		await setUp(store);
-		const [session] = setupSessions(store);
-		// Settings saved some other way while it ran, such as from a terminal outside the app.
-		engine.setRepositories(store.getState().repositories.map(repository => repository.path === DOCS ? { ...repository, setup: "repository" } : repository));
-		await store.closeTerminal(session!.id);
-		await settle();
-		expect(docs(store).setup).toBe("repository");
-	});
-
-	test("from a linked worktree, setup runs in the primary checkout of the repository it belongs to, as in Settings", async () => {
+	test("a save Timber refuses keeps the prompt", async () => {
 		const { store } = await withNewRepository();
-		store.select(DOCS_FEATURE.id);
-		expect(render(store)).toContain(PROMPT);
-		await setUp(store);
-		expect(setupSessions(store)).toMatchObject([{ repository: DOCS, worktree: DOCS_MAIN.id, path: DOCS_MAIN.path }]);
-		expect(selectedWorktree(store.getState())?.worktree.id).toBe(DOCS_MAIN.id);
-	});
-
-	test("while setup runs, asking again shows that session and starts no other", async () => {
-		const { store } = await withNewRepository();
-		await setUp(store);
-		const [first] = setupSessions(store);
-		store.select(DOCS_FEATURE.id);
-		store.showTab("changes");
-		await setUp(store);
-		expect(setupSessions(store)).toHaveLength(1);
-		expect(selectedWorktree(store.getState())?.worktree.id).toBe(DOCS_MAIN.id);
-		expect(store.getState().tab).toBe("workspace");
-		expect(store.getState().shownSessions[DOCS_MAIN.id]).toBe(first!.id);
-	});
-
-	test("when setup cannot start, its worktree's sessions say why with the command, and the repository stays usable", async () => {
-		const { engine, store } = await withNewRepository();
-		engine.failTerminals({ outcome: "not-found", command: "timber setup", executable: "timber", message: "Timber was not found on PATH. Nothing was started." });
-		await setUp(store);
-		expect(setupSessions(store)).toEqual([]);
-		expect(store.getState().terminalProblem).toMatchObject({ worktree: DOCS_MAIN.id, message: "Timber was not found on PATH. Nothing was started.", command: "timber setup" });
-		const markup = render(store);
-		expect(markup).toContain("Timber was not found on PATH. Nothing was started.");
-		expect(markup).toContain(PROMPT);
-		engine.failTerminals(null);
-		await setUp(store);
-		expect(setupSessions(store)).toHaveLength(1);
-	});
-
-	test("a primary checkout whose folder is missing cannot run setup, and the prompt says why", async () => {
-		const missing = { ...samplePickableRepository, worktrees: [{ ...DOCS_MAIN, pathExists: false }, DOCS_FEATURE] };
-		const engine = createMockEngine();
-		const { store } = await startedStore(engine);
-		engine.setRepositories([...sampleRepositories, missing]);
-		await store.refresh();
-		store.select(DOCS_FEATURE.id);
-		const markup = render(store);
-		expect(markup).toContain(PROMPT);
-		expect(markup).toMatch(/class="button" disabled=""[^>]*>Set up Timber</);
-		expect(markup).toContain("Setup runs in the primary checkout of docs-site");
-	});
-});
-
-describe("a setup that ends while the window is away", () => {
-	test("ending before the sessions were listed again still reads the repositories again", async () => {
-		const engine = createMockEngine();
-		const { store } = await withNewRepository(engine);
-		await setUp(store);
-		const [session] = setupSessions(store);
-
-		// The window reloads: a new store reads the repositories, while its list of sessions has not answered yet.
-		let answer: () => void = () => {};
-		const held = new Promise<void>(resolve => {
-			answer = resolve;
+		const refused = await saveFromWizard(store, "repository", drafts => {
+			drafts.git = { ...drafts.git, base_branch: " " };
 		});
-		const listTerminals = engine.listTerminals;
-		const reloaded = createAppStore({ ...engine, listTerminals: async () => {
-			await held;
-			return listTerminals();
-		} }, () => () => {});
-		reloaded.start();
-		await settle();
-		reloaded.select(DOCS_MAIN.id);
-		expect(render(reloaded)).toContain(PROMPT);
-
-		// Setup saves and ends meanwhile, and only then do the sessions answer.
-		engine.writeTerminal(session!.id, "save\r");
-		await settle();
-		answer();
-		await settle();
-		expect(reloaded.getState().repositories.find(repository => repository.path === DOCS)?.setup).toBe("repository");
-		expect(render(reloaded)).not.toContain(PROMPT);
-	});
-});
-
-describe("on an operating system without terminals", () => {
-	test("the sessions say why, and the repository stays usable", async () => {
-		const { engine, store } = await withNewRepository();
-		engine.failTerminals({ outcome: "unsupported", message: TERMINAL_UNSUPPORTED_REASON });
-		await setUp(store);
-		expect(store.getState().terminalProblem).toMatchObject({ worktree: DOCS_MAIN.id, message: TERMINAL_UNSUPPORTED_REASON });
-		const markup = render(store);
-		expect(markup).toContain(TERMINAL_UNSUPPORTED_REASON);
-		expect(markup).toContain(DOCS_FEATURE.path);
+		expect(refused).toMatchObject({ outcome: "invalid", invalidFields: ["base_branch is invalid"] });
+		expect(docs(store).setup).toBe("none");
+		expect(render(store)).toContain(PROMPT);
 	});
 });
 

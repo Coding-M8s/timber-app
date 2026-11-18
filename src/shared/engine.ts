@@ -267,10 +267,9 @@ export interface Engine {
 	 * the saved preferences starts instead, its command taken from there only
 	 * (`agentCommand` in ./agent.ts). An agent that is not saved, or whose
 	 * executable is not found, starts nothing and keeps no session. Nothing
-	 * else starts an agent: New and Open never do. With `timberSetup`,
-	 * `timber setup` starts instead, with the Timber that was found
-	 * (`timberSetupArguments` in ./timber-config.ts), and nothing starts while
-	 * Timber is not ready.
+	 * else starts an agent: New and Open never do. With `timberRebase`,
+	 * `timber rebase` starts instead, with the Timber that was found, and
+	 * nothing starts while Timber is not ready.
 	 */
 	openTerminal(request: OpenTerminalRequest): Promise<OpenTerminalResult>;
 	/**

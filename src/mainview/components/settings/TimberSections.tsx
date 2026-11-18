@@ -8,7 +8,7 @@ import { describeTimberCommand } from "../../../shared/timber-result";
 import { useAppState, useStore } from "../../store/react";
 import {
 	type GitDraft, type GroupDrafts, type LauncherDraft, type LauncherPreset, type Mode, type ScriptsDraft, type TimberGroup, type TrackingDraft,
-	AGENT_PRESETS, EDITOR_PRESETS, INTEGRATION_LABELS, TIMBER_GROUPS, TIMBER_GROUP_TITLES, TRACKER_CHOICES, credentialsToCheck, credentialsToSave,
+	AGENT_PRESETS, DRAWN_PATHS, EDITOR_PRESETS, INTEGRATION_LABELS, TIMBER_GROUPS, TIMBER_GROUP_TITLES, TRACKER_CHOICES, credentialsToCheck, credentialsToSave,
 	describeCheck, describeJiraLogin, describeLinearLogin, draftsOf, fieldMessage, groupChanged, groupMessages, inheritLabel, jiraDefault,
 	machineDefault, placeholderFor, trackerPlaceholder, valuesWith, withPreset,
 } from "../../timber-settings-format";
@@ -34,7 +34,7 @@ const IDLE: GroupOutcome = { state: "idle" };
  * when asked. The last answer stays on screen while reading again, and an
  * older answer that arrives after a newer request is dropped.
  */
-function useTimberRead(request: TimberSettingsRequest | null, key: string): [{ result: TimberSettingsReadResult | null; reading: boolean }, () => Promise<void>] {
+export function useTimberRead(request: TimberSettingsRequest | null, key: string): [{ result: TimberSettingsReadResult | null; reading: boolean }, () => Promise<void>] {
 	const store = useStore();
 	const [state, setState] = useState<{ result: TimberSettingsReadResult | null; reading: boolean }>({ result: null, reading: request !== null });
 	const ticket = useRef(0);
@@ -369,14 +369,6 @@ export function TrackingFields({ draft, onChange, scope, machine, messages, cred
 	);
 }
 
-/** Messages that no field of the group drew. */
-const DRAWN_PATHS: Record<TimberGroup, readonly string[]> = {
-	editor: ["editor.command", "editor.args", "editor.enabled", "editor.integration"],
-	agent: ["agent.command", "agent.args", "agent.enabled", "agent.wait_for_setup"],
-	git: ["base_branch", "remote", "worktree_dir"],
-	scripts: ["hooks.post_create", "hooks.pre_delete"],
-	tracking: ["default_tracker", "jira.site_url", "jira.cloud_id", "credentials.jira", "credentials.linear"],
-};
 
 export interface TimberGroupFormProps {
 	group: TimberGroup;
@@ -389,6 +381,40 @@ export interface TimberGroupFormProps {
 	onSave: () => void;
 	onReadAgain: () => void;
 	children: ReactNode;
+}
+
+/**
+ * What came of a save that did not work, as Settings and the setup wizard
+ * show it. `rest` holds Timber's messages that no field on screen shows.
+ */
+export function SaveOutcomeNotes({ outcome, rest, onReadAgain, marked = "The fields it named are marked above." }: {
+	outcome: GroupOutcome;
+	rest: readonly string[];
+	onReadAgain: () => void;
+	/** Where the fields Timber named are marked, for when no message is left over. */
+	marked?: string;
+}) {
+	return (
+		<>
+			{outcome.state === "invalid" && (
+				<div className="sidebar-error" role="alert">
+					<p className="sidebar-error-title">Timber refused these settings</p>
+					<p className="sidebar-error-text">{rest.length > 0 ? rest.join("; ") : marked}</p>
+					<p className="sidebar-error-text">Nothing was saved. What you typed is still here to correct.</p>
+				</div>
+			)}
+			{outcome.state === "conflict" && (
+				<div className="sidebar-error" role="alert">
+					<p className="sidebar-error-title">These settings changed outside the app</p>
+					<p className="sidebar-error-text">{outcome.failure.diagnostic}</p>
+					<p className="sidebar-error-text">Read them again, check your changes, which are kept, against what is there now, then save again.</p>
+					<div><button type="button" className="button quiet" onClick={onReadAgain}>Read again</button></div>
+				</div>
+			)}
+			{outcome.state === "refused" && <TimberFailureDetails title="Timber did not save" failure={outcome.failure} />}
+			{outcome.state === "failed" && <TimberFailureDetails title="Could not save" failure={outcome.failure} />}
+		</>
+	);
 }
 
 /** One group of Timber's settings: its fields, what came of the last save, the exact command, and its own Save. */
@@ -405,23 +431,7 @@ export function TimberGroupForm({ group, scope, outcome, canSave, blocked, editT
 		<form className="timber-group" aria-labelledby={titleId} aria-busy={saving} onSubmit={submit}>
 			<h4 id={titleId} className="timber-block-title">{TIMBER_GROUP_TITLES[group]}</h4>
 			<fieldset className="dialog-fields" disabled={saving}>{children}</fieldset>
-			{outcome.state === "invalid" && (
-				<div className="sidebar-error" role="alert">
-					<p className="sidebar-error-title">Timber refused these settings</p>
-					<p className="sidebar-error-text">{rest.length > 0 ? rest.join("; ") : "The fields it named are marked above."}</p>
-					<p className="sidebar-error-text">Nothing was saved. What you typed is still here to correct.</p>
-				</div>
-			)}
-			{outcome.state === "conflict" && (
-				<div className="sidebar-error" role="alert">
-					<p className="sidebar-error-title">These settings changed outside the app</p>
-					<p className="sidebar-error-text">{outcome.failure.diagnostic}</p>
-					<p className="sidebar-error-text">Read them again, check your changes, which are kept, against what is there now, then save again.</p>
-					<div><button type="button" className="button quiet" onClick={onReadAgain}>Read again</button></div>
-				</div>
-			)}
-			{outcome.state === "refused" && <TimberFailureDetails title="Timber did not save" failure={outcome.failure} />}
-			{outcome.state === "failed" && <TimberFailureDetails title="Could not save" failure={outcome.failure} />}
+			<SaveOutcomeNotes outcome={outcome} rest={rest} onReadAgain={onReadAgain} />
 			<div className="field">
 				<span className="field-label">Save runs</span>
 				<pre className="dialog-command" aria-label={`${TIMBER_GROUP_TITLES[group]} save command`}>{describeTimberCommand(shownApplyArguments(scope, editTracked))}</pre>

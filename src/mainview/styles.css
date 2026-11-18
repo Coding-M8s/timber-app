@@ -2392,16 +2392,38 @@ pre:focus-visible {
 	color: var(--text-3);
 }
 
-.setup-prompt-command {
-	font-family: var(--font-mono);
-	font-size: 11.5px;
-	color: var(--text-2);
-}
-
 .setup-prompt-actions {
 	flex: none;
 	display: flex;
 	gap: 6px;
+}
+
+/* The setup wizard: one step of Timber's settings at a time, then a last look before the one save. */
+.setup-wizard {
+	width: min(600px, calc(100% - 32px));
+}
+
+.wizard-step {
+	margin: -6px 0 0;
+	font-size: 12px;
+	color: var(--text-3);
+}
+
+.wizard-summary {
+	margin: 0;
+	display: grid;
+	grid-template-columns: max-content minmax(0, 1fr);
+	gap: 6px 14px;
+	font-size: 12.5px;
+}
+
+.wizard-summary dt {
+	color: var(--text-2);
+}
+
+.wizard-summary dd {
+	margin: 0;
+	overflow-wrap: anywhere;
 }
 
 .field-input.mono {

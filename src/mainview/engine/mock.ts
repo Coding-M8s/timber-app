@@ -646,11 +646,11 @@ export function createMockEngine(
 		return structuredClone(result);
 	};
 	/**
-	 * A pretend setup that saves: the repository's own settings, as `timber
-	 * setup` writes its `.timber.toml`, or the machine defaults, which every
-	 * repository with none of its own then has.
+	 * A save through Timber's settings commands sets a repository up: the
+	 * repository's own settings, as Timber writes its `.timber.toml`, or the
+	 * machine defaults, which every repository with none of its own then has.
 	 */
-	const saveSetup = (scope: TimberConfigScope, path: string) => {
+	const saveSetup = (scope: TimberConfigScope, path: string | null) => {
 		const saved = (repository: Repository): Repository =>
 			scope === "repository" ? (repository.path === path ? { ...repository, setup: "repository" } : repository)
 				: repository.setup === "none" ? { ...repository, setup: "machine" } : repository;
@@ -662,8 +662,8 @@ export function createMockEngine(
 		const repository = current.find(candidate => candidate.path === path && candidate.available);
 		const worktree = timberFailures.has(path) ? undefined : repository?.worktrees.find(candidate => candidate.path === worktreePath);
 		return worktree && worktree.pathExists ? worktree : null;
-	}, () => preferences.agents, () => typeof timber === "function" ? timber() : timber, saveSetup);
-	const timberConfig = createMockTimberConfig(path => current.some(repository => repository.path === path), () => typeof timber === "function" ? timber() : timber);
+	}, () => preferences.agents, () => typeof timber === "function" ? timber() : timber);
+	const timberConfig = createMockTimberConfig(path => current.some(repository => repository.path === path), () => typeof timber === "function" ? timber() : timber, saveSetup);
 	const workflows = createMockWorkflows(path => current.some(repository => repository.path === path), () => typeof timber === "function" ? timber() : timber);
 	return {
 		...terminals,

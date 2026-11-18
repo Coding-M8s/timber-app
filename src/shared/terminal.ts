@@ -4,7 +4,6 @@
  * interface only draws what it prints and passes on what is typed.
  */
 
-import type { TimberConfigScope } from "./timber-config";
 
 /** Whether a session's process still runs, or how it ended. */
 export type TerminalState =
@@ -14,8 +13,8 @@ export type TerminalState =
 
 /**
  * What a session runs: the person's shell, a coding agent from Settings,
- * which starts the agent's command instead of the shell, or `timber setup`
- * from Settings, which changes Timber's own settings.
+ * which starts the agent's command instead of the shell, or a Timber
+ * command such as `timber rebase`.
  */
 export const SESSION_KINDS = ["terminal", "agent", "timber"] as const;
 export type SessionKind = typeof SESSION_KINDS[number];
@@ -56,17 +55,10 @@ export interface OpenTerminalRequest {
 	 */
 	agent?: string;
 	/**
-	 * Start `timber setup` instead of the shell: for the repository's
-	 * settings, or with `--global` for the machine's (`timberSetupArguments`
-	 * in ./timber-config.ts). The main process runs the Timber it found.
-	 * Not together with `agent`.
-	 */
-	timberSetup?: TimberConfigScope;
-	/**
 	 * Start `timber rebase` for this worktree instead of the shell, onto the
 	 * given base, or the one Timber saved when `onto` is null
 	 * (`rebaseArguments` in ./rebase-command.ts). The main process runs the
-	 * Timber it found. Not together with `agent` or `timberSetup`.
+	 * Timber it found. Not together with `agent`.
 	 */
 	timberRebase?: { onto: string | null };
 }
@@ -126,9 +118,6 @@ export const TERMINAL_UNSUPPORTED_REASON =
 export const SESSION_NAME_LIMIT = 40;
 
 const KIND_NAMES: Record<SessionKind, string> = { terminal: "Terminal", agent: "Agent", timber: "Timber" };
-
-/** What a `timber setup` session is called. */
-export const TIMBER_SETUP_SESSION_NAME = "Timber setup";
 
 /** What a `timber rebase` session is called. */
 export const TIMBER_REBASE_SESSION_NAME = "Rebase";

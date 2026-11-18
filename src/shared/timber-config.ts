@@ -22,11 +22,6 @@ export type TimberConfigScope = typeof TIMBER_CONFIG_SCOPES[number];
 /** The file a repository keeps its Timber settings in, in its primary checkout. */
 export const REPOSITORY_CONFIG_FILE = ".timber.toml";
 
-/** The arguments after `timber` that start setup for one file. Shown before it runs, and run from the same list. */
-export function timberSetupArguments(scope: TimberConfigScope): string[] {
-	return scope === "machine" ? ["setup", "--global"] : ["setup"];
-}
-
 /**
  * The path of Timber's machine file, found as Timber finds it: under
  * `XDG_CONFIG_HOME` when that is a full path, otherwise under `.config` in
