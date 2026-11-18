@@ -12,6 +12,7 @@ import {
 import type { FetchFailureKind, FetchResult, ForcePushSeen, RepositoryFetch } from "../../shared/git-fetch";
 import { failureOf, readTimberResult } from "../../shared/timber-result";
 import { APP_VERSION } from "../../shared/app-info";
+import { type AvailableUninstallPlan, UNINSTALL_ARGUMENTS, type UninstallRequest } from "../../shared/uninstall";
 import { REQUIRED_TIMBER_VERSION } from "../../shared/timber-version";
 import { type CommandEnding, actOutNew, actOutOpen, isCommandEnding } from "./mock-commands";
 import { type MockFileChange, derivedFileChanges, diffMockFileChange, listMockFileChanges } from "./mock-file-changes";
@@ -292,6 +293,14 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	 * with an error).
 	 */
 	endEditorLaunches(ending: EditorEnding): void;
+	/**
+	 * Decide how uninstalling goes from now on: it works, it works but the
+	 * settings cannot be deleted, the uninstaller fails, or this copy was
+	 * never installed. Nothing is removed and the mock never quits.
+	 */
+	endUninstalls(ending: UninstallEnding): void;
+	/** Every uninstall the mock acted out, oldest first. */
+	uninstallRequests(): UninstallRequest[];
 	/** Every editor the mock acted out starting, oldest first. */
 	launchedEditors(): { request: OpenInEditorRequest; command: string }[];
 	/**
@@ -334,6 +343,22 @@ const MOCK_FETCH_FAILURES: Record<FetchFailureKind, string> = {
 
 export const EDITOR_ENDINGS = ["opens", "not-found", "fails"] as const;
 export type EditorEnding = typeof EDITOR_ENDINGS[number];
+
+export const UNINSTALL_ENDINGS = ["uninstalls", "keeps-settings", "fails", "unavailable"] as const;
+export type UninstallEnding = typeof UNINSTALL_ENDINGS[number];
+
+/** An installed copy, as the main process would describe it. */
+export const sampleUninstallPlan: AvailableUninstallPlan = {
+	available: true,
+	command: ["/home/sam/.local/share/com.codingm8s.timber-app/stable/uninstall", ...UNINSTALL_ARGUMENTS],
+	removes: [
+		"/home/sam/.local/share/com.codingm8s.timber-app/stable",
+		"/home/sam/.cache/com.codingm8s.timber-app/stable",
+		"/home/sam/.local/share/applications/Timber.desktop",
+		"/home/sam/Desktop/Timber.desktop",
+	],
+	settingsFolder: "/home/sam/.config/timber-app",
+};
 
 export interface MockEngineOptions {
 	/** How long an acted `timber new` or `timber open` takes. None by default; the browser build waits, so the running state shows. */
@@ -518,6 +543,9 @@ export function createMockEngine(
 
 	// "Open in editor", acted out with the same checks as the main process, and nothing started.
 	let editorEnding: EditorEnding = "opens";
+	let uninstallEnding: UninstallEnding = "uninstalls";
+	const uninstalls: UninstallRequest[] = [];
+	const NOT_INSTALLED = "This copy of the app was not installed, so there is nothing to uninstall. It runs from /home/sam/timber-app.";
 	const launches: { request: OpenInEditorRequest; command: string }[] = [];
 	const openInEditor = (request: OpenInEditorRequest): OpenInEditorResult => {
 		const { editor } = preferences;
@@ -684,6 +712,20 @@ export function createMockEngine(
 			editorEnding = next;
 		},
 		launchedEditors: () => structuredClone(launches),
+		uninstallPlan: async () => uninstallEnding === "unavailable" ? { available: false, reason: NOT_INSTALLED } : structuredClone(sampleUninstallPlan),
+		async uninstall(request) {
+			if (uninstallEnding === "unavailable") return { outcome: "unavailable", message: NOT_INSTALLED };
+			if (uninstallEnding === "fails") return { outcome: "failed", message: "The uninstaller ended with exit code 1: error: InvalidUninstallManifest" };
+			uninstalls.push(structuredClone(request));
+			const kept = uninstallEnding === "keeps-settings" && request.forgetSettings;
+			return { outcome: "uninstalled", settingsProblem: kept ? `EACCES: permission denied, unlink '${sampleUninstallPlan.settingsFolder}/settings.json'` : null };
+		},
+		endUninstalls(next) {
+			// Called from the browser console too, where nothing checks the word.
+			if (!UNINSTALL_ENDINGS.includes(next)) throw new Error(`Unknown ending: ${String(next)}`);
+			uninstallEnding = next;
+		},
+		uninstallRequests: () => structuredClone(uninstalls),
 		async readFileChanges(request) {
 			const listed = listedForChanges(request.repository, request.worktree);
 			if (!listed.ok) return { outcome: listed.outcome, message: listed.message };

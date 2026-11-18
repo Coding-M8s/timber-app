@@ -26,6 +26,7 @@ export async function createEngine(): Promise<Engine> {
 	// For the Done dialog: timberMock.setChanges(path, { modified: ["a.ts"] }),
 	// timberMock.expirePreviewsAfter(5000), and timberMock.failBranchDeletion(true).
 	// For Open in editor: timberMock.endEditorLaunches("not-found") or ("fails").
+	// For Uninstall in About: timberMock.endUninstalls("fails"), ("keeps-settings"), or ("unavailable").
 	// For the Changes tab: timberMock.failFileChanges("Git is busy"), or timberMock.setFileChanges(path, files).
 	// For agent sessions: timberMock.missingExecutables(["codex"]) acts out an agent that is not on the PATH.
 	// For fetching: timberMock.endFetches("offline"), ("authentication"), or ("failed") chooses how Fetch now ends,

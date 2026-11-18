@@ -1,4 +1,5 @@
 import { homedir } from "node:os";
+import { dirname } from "node:path";
 import Electrobun, { BrowserView, BrowserWindow, Updater, Utils } from "electrobun/main";
 import { APP_NAME, APP_VERSION } from "../shared/app-info";
 import { type ForcePushMarks, withForcePushes } from "../shared/git-fetch";
@@ -25,6 +26,7 @@ import { type WatchTarget, createRepositoryWatcher } from "./repository-watcher"
 import { createWorktreeStamps } from "./worktree-stamp";
 import { createTerminalSessions } from "./terminals";
 import { createTimberSettings } from "./timber-settings";
+import { createUninstaller } from "./uninstall";
 import { createWorktreeCommands } from "./worktree-commands";
 import { createWorkflowReader } from "./workflows";
 
@@ -165,6 +167,14 @@ const quitGuard = createQuitGuard({
 	quit: () => Utils.quit(),
 });
 
+// Runs the uninstaller the installer left beside the app, and nothing else (see ./uninstall.ts).
+const uninstaller = createUninstaller({
+	settingsFolder: dirname(settingsFile),
+	forgetSettings: () => settings.discard(),
+	// The person agreed to quit when they agreed to uninstall, so the terminals end without another question.
+	quit: () => void quitGuard.confirm(),
+});
+
 const rpc = BrowserView.defineRPC<AppRPC>({
 	maxRequestTime: 15_000,
 	handlers: {
@@ -233,6 +243,9 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			fetchStatuses: async () => fetcher.statuses(),
 			// Writes only remote-tracking refs, and never asks for credentials (see ./fetcher.ts).
 			fetchNow: ({ repository }) => fetcher.fetchNow(repository),
+			uninstallPlan: () => uninstaller.plan(),
+			// Removes the app, and its settings only when asked. Then the app quits (see ./uninstall.ts).
+			uninstall: request => uninstaller.uninstall(request),
 		},
 		messages: {
 			writeTerminal: ({ id, data }) => terminals.write(id, data),

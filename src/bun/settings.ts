@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { copyFile, mkdir, open, readFile, rename, rm } from "node:fs/promises";
+import { copyFile, mkdir, open, readFile, readdir, rename, rm, rmdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, posix, win32 } from "node:path";
+import { basename, dirname, join, posix, win32 } from "node:path";
 import { type Settings, emptySettings, parseSettings, serializeSettings } from "../shared/settings";
 
 type Environment = Record<string, string | undefined>;
@@ -88,6 +88,33 @@ export async function writeSettings(file: string, settings: Settings): Promise<v
 }
 
 /**
+ * Delete the settings: the file, a copy kept of a damaged one, and any
+ * temporary file a save left behind. The folder goes too when nothing else
+ * is in it. Anything else in the folder is not the app's and stays.
+ */
+export async function removeSettings(file: string): Promise<void> {
+	const folder = dirname(file);
+	const name = basename(file);
+	let entries: string[];
+	try {
+		entries = await readdir(folder);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+		throw error;
+	}
+	for (const entry of entries) {
+		const ours = entry === name || entry === `${name}.damaged` || (entry.startsWith(`${name}.`) && entry.endsWith(".tmp"));
+		if (ours) await rm(join(folder, entry), { force: true });
+	}
+	try {
+		await rmdir(folder);
+	} catch (error) {
+		const code = (error as NodeJS.ErrnoException).code;
+		if (code !== "ENOTEMPTY" && code !== "EEXIST" && code !== "ENOENT") throw error;
+	}
+}
+
+/**
  * The one holder of the settings file in the main process. Everything that
  * saves a part of the settings goes through it, so the repository list and
  * the layout cannot save over each other.
@@ -101,22 +128,35 @@ export interface SettingsHolder {
 	save(next: Settings): Promise<void>;
 	/** Run a change after every change asked for before it, so that each one builds on what the last one saved. */
 	inTurn<Result>(task: () => Promise<Result>): Promise<Result>;
+	/**
+	 * Delete the settings, after every change asked for before, and refuse
+	 * every save from then on. For uninstalling: nothing may write the file
+	 * back before the app quits.
+	 */
+	discard(): Promise<void>;
 }
 
 export function createSettingsHolder(file: string, warn: (message: string) => void = console.warn): SettingsHolder {
 	let saved: Promise<Settings> | null = null;
 	let last: Promise<unknown> = Promise.resolve();
+	let discarded = false;
+	function inTurn<Result>(task: () => Promise<Result>): Promise<Result> {
+		const run = last.then(task);
+		last = run.catch(() => {});
+		return run;
+	}
 	return {
 		file,
 		current: () => saved ??= readSettings(file, warn),
 		async save(next) {
+			if (discarded) throw new Error("The settings were deleted with the app, so nothing is saved any more.");
 			await writeSettings(file, next);
 			saved = Promise.resolve(next);
 		},
-		inTurn(task) {
-			const run = last.then(task);
-			last = run.catch(() => {});
-			return run;
-		},
+		inTurn,
+		discard: () => inTurn(async () => {
+			discarded = true;
+			await removeSettings(file);
+		}),
 	};
 }

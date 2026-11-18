@@ -103,5 +103,8 @@ export function createDesktopEngine(): Engine {
 		writeClipboard: text => rpc.request.writeClipboard({ text }),
 		readClipboard: () => rpc.request.readClipboard({}),
 		openLink: url => rpc.request.openLink({ url }),
+		uninstallPlan: () => rpc.request.uninstallPlan({}),
+		// The main process stops a stuck uninstaller after a minute.
+		uninstall: request => rpc.request.uninstall(request, { maxRequestTime: 120_000 }),
 	};
 }

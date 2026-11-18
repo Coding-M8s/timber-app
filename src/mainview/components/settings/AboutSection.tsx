@@ -1,10 +1,11 @@
-import { useId } from "react";
+import { type ReactNode, useId } from "react";
 import { type AboutRow, aboutRows } from "../../about-format";
 import logoUrl from "../../assets/logo.png";
 import { useAppState } from "../../store/react";
+import { UninstallPanel } from "./UninstallPanel";
 
-/** The About section as drawn from its data, so it can be tested without a window. */
-export function AboutSectionView({ rows }: { rows: readonly AboutRow[] }) {
+/** The About section as drawn from its data, so it can be tested without a window. `uninstall` is what shows under Uninstall. */
+export function AboutSectionView({ rows, uninstall }: { rows: readonly AboutRow[]; uninstall?: ReactNode }) {
 	const titleId = useId();
 	return (
 		<section className="settings-section" aria-labelledby={titleId}>
@@ -31,12 +32,18 @@ export function AboutSectionView({ rows }: { rows: readonly AboutRow[] }) {
 				The Timber logo is copyright Coding-M8s, all rights reserved. The license of the app's code does not cover it.
 			</p>
 			<p className="about-text">The full texts are in the licenses folder inside the installed app.</p>
+			{uninstall !== undefined && (
+				<>
+					<h4 className="about-subtitle">Uninstall</h4>
+					{uninstall}
+				</>
+			)}
 		</section>
 	);
 }
 
-/** The app's version, the Timber in use, and the licenses of what the app bundles. Nothing here is saved. */
+/** The app's version, the Timber in use, the licenses of what the app bundles, and uninstalling. Nothing here is saved. */
 export function AboutSection() {
 	const state = useAppState();
-	return <AboutSectionView rows={aboutRows(state.appVersion, state.timber)} />;
+	return <AboutSectionView rows={aboutRows(state.appVersion, state.timber)} uninstall={<UninstallPanel />} />;
 }

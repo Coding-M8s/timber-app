@@ -81,6 +81,10 @@ change them here first when they change.
   the field they name. A tracked `.timber.toml` is changed only when the
   person ticks the box for that save. Issue tracking has "Test connection"
   for GitHub, Jira, and Linear.
+- **Uninstall:** at the end of Settings, About. The first button only shows
+  what would be removed and the command; "Uninstall and quit" is the
+  dangerous one, and Cancel has the focus. The saved repository list stays
+  unless a box is ticked. Repositories and worktrees are never touched.
 
 ## Look
 
