@@ -5,7 +5,9 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import type { AppStore } from "./store/store";
+import { TERMINAL_LINE_HEIGHT, type TerminalAppearance, terminalFontStack } from "../shared/terminal-appearance";
 import { TERMINAL_MINIMUM_CONTRAST, terminalColors, watchTerminalColors } from "./terminal-colors";
+import { terminalAppearance, watchTerminalAppearance } from "./terminal-look";
 import { clipboardKey, leftInAlternateScreen, opensLink, sessionChipId, sessionKey } from "./terminal-format";
 
 /**
@@ -31,29 +33,34 @@ const views = new Map<string, TerminalView>();
 
 const isMac = () => typeof navigator !== "undefined" && /Mac/.test(navigator.platform);
 
-/** A design token from the stylesheet, such as `--bg-pane`. */
-function token(name: string, fallback: string): string {
-	const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-	return value === "" ? fallback : value;
-}
-
-const FONT_SIZE = 13;
-/** How long the first terminal waits for its font before it opens with whatever is there. */
+/** How long a terminal waits for its font before it draws with whatever is there. */
 const FONT_WAIT_MILLISECONDS = 1500;
-
-const fontFamily = () => token("--font-terminal", "ui-monospace, monospace");
 
 /**
  * Resolves once the terminal's font is loaded, or after a short wait. xterm
  * measures a cell when it opens: measured with a stand-in font, every cell is
  * the wrong width and the text looks cut. Never rejects.
  */
-export function terminalFontReady(): Promise<void> {
+export function terminalFontReady(appearance: TerminalAppearance = terminalAppearance()): Promise<void> {
 	const fonts = typeof document === "undefined" ? undefined : document.fonts;
 	if (!fonts) return Promise.resolve();
-	const family = fontFamily();
-	const loaded = Promise.all([fonts.load(`${FONT_SIZE}px ${family}`), fonts.load(`600 ${FONT_SIZE}px ${family}`)]).then(() => {}, () => {});
+	const family = terminalFontStack(appearance.fontFamily);
+	const size = appearance.fontSize;
+	const loaded = Promise.all([fonts.load(`${size}px ${family}`), fonts.load(`600 ${size}px ${family}`)]).then(() => {}, () => {});
 	return Promise.race([loaded, new Promise<void>(resolve => setTimeout(resolve, FONT_WAIT_MILLISECONDS))]);
+}
+
+/**
+ * The xterm options for an appearance. A bar stays a bar while the terminal
+ * does not have focus, and a block becomes its outline.
+ */
+function appearanceOptions(appearance: TerminalAppearance) {
+	return {
+		fontFamily: terminalFontStack(appearance.fontFamily),
+		fontSize: appearance.fontSize,
+		cursorStyle: appearance.cursor,
+		cursorInactiveStyle: appearance.cursor === "bar" ? "bar" as const : "outline" as const,
+	};
 }
 
 /** Off once the window showed it cannot draw with WebGL, so no later terminal tries again. */
@@ -63,13 +70,11 @@ function createView(store: AppStore, id: string): TerminalView {
 	const host = document.createElement("div");
 	host.className = "terminal-host";
 	const terminal = new Terminal({
-		fontFamily: fontFamily(),
-		fontSize: FONT_SIZE,
+		...appearanceOptions(terminalAppearance()),
 		fontWeight: "400",
 		fontWeightBold: "600",
-		lineHeight: 1.2,
+		lineHeight: TERMINAL_LINE_HEIGHT,
 		cursorBlink: true,
-		cursorInactiveStyle: "outline",
 		scrollback: 10000,
 		// A glyph from a stand-in font, such as a prompt's icon, is scaled into its cell instead of being cut at the edge.
 		rescaleOverlappingGlyphs: true,
@@ -154,6 +159,16 @@ function createView(store: AppStore, id: string): TerminalView {
 	const stopColors = watchTerminalColors(colors => {
 		terminal.options.theme = { ...colors };
 	});
+	// A new font or size changes the cells, so the terminal fits again once the font is there, and the session hears its new size.
+	let disposed = false;
+	const stopAppearance = watchTerminalAppearance(appearance => {
+		void terminalFontReady(appearance).then(() => {
+			// A later change that came in meanwhile is the one to draw.
+			if (disposed || appearance !== terminalAppearance()) return;
+			Object.assign(terminal.options, appearanceOptions(appearance));
+			view.fit();
+		});
+	});
 	const stopWatching = store.watchTerminal(id, (draw, done) => {
 		const replay = first;
 		first = false;
@@ -169,7 +184,7 @@ function createView(store: AppStore, id: string): TerminalView {
 		});
 	});
 
-	return {
+	const view: TerminalView = {
 		attach(container) {
 			container.appendChild(host);
 			// xterm measures its font when it opens, so it opens the first time it is on screen.
@@ -197,13 +212,16 @@ function createView(store: AppStore, id: string): TerminalView {
 			terminal.options.cursorBlink = enabled;
 		},
 		dispose() {
+			disposed = true;
 			stopWatching();
 			stopColors();
+			stopAppearance();
 			drawWithElements();
 			terminal.dispose();
 			host.remove();
 		},
 	};
+	return view;
 }
 
 /** The view of a session, made the first time it is asked for. */

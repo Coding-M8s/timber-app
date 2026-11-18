@@ -1389,8 +1389,8 @@ shows, and coming back shows it as it was.
   context away, elements draw instead. The first terminal waits for its
   font, at most 1.5 seconds, because xterm measures its cells when it opens.
   Wide characters such as emoji take two cells, as today's programs count
-  them. The font is `--font-terminal`: Geist Mono, then the Nerd Font symbol
-  fonts when they are installed, for the icons prompts print. Each session's drawn terminal lives
+  them. The font, the text size, and the cursor come from Settings,
+  Terminal (see "Terminal appearance" below). Each session's drawn terminal lives
   outside React for as long as the session does; a pane borrows it while it
   shows, so its scrollback and screen survive switching worktrees. A pane
   that shows for the first time draws what the main process kept, then
@@ -1401,6 +1401,25 @@ shows, and coming back shows it as it was.
   has rested for 50 ms, never while a drag moves. A pane takes the keyboard
   only when nothing else has it, so moving through the sidebar keeps it
   there.
+- **Terminal appearance.** The `terminal`
+  preference holds a font family, a text size, and a cursor shape
+  (`src/shared/terminal-appearance.ts`, pure). The family is one name as
+  typed, empty for the built-in Geist Mono. A name with quotes, commas,
+  semicolons, backslashes, or braces is refused, because it would end the
+  name in CSS. The font stack puts it first, then Geist Mono, then the Nerd
+  Font symbol fonts when they are installed, for the icons prompts print. So
+  a family that is not installed draws as Geist Mono. Settings tells that
+  from the width of a text drawn in a canvas with the family and with two
+  generic families as stand-ins, and says so under the field. The size is
+  10 to 24 pixels: a size outside is clamped and rounded, and in the
+  settings file a size that is not a number reads as 13. The cursor is a
+  block, as before, or a thin bar. Both blink while the terminal takes
+  input; without focus a block is drawn as its outline and a bar stays a
+  bar. A save changes every open terminal at once
+  (`src/mainview/terminal-look.ts`): it waits for the new font as the first
+  terminal does, sets xterm's options, and fits again, so the session hears
+  its new columns and rows. Before a terminal is drawn, its size is
+  estimated from the chosen text size (`estimateTerminalCells`).
 - **Chips.** Above the pane, one chip per session of the selected worktree,
   in the order they started, with the kind, the name, a filled blue dot
   while it runs, a hollow dot and its exit code once it ended, and a ring

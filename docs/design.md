@@ -89,6 +89,10 @@ change them here first when they change.
   the field they name. A tracked `.timber.toml` is changed only when the
   person ticks the box for that save. Issue tracking has "Test connection"
   for GitHub, Jira, and Linear.
+- **Terminal:** a Settings section for the terminal's font, as a name to
+  type with Geist Mono as the default, its text size, and the cursor, a
+  block or a thin bar. A font that is not installed gets a note under the
+  field that terminals use Geist Mono.
 - **Theme:** a Settings section with a card for each theme, a small
   picture of the app drawn in it. Choosing one shows it at once; Close
   without Save goes back to the saved one. Below the cards, "Your themes"

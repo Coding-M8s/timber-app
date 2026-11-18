@@ -1,3 +1,4 @@
+import { defaultTerminalAppearance } from "../src/shared/terminal-appearance";
 import { AGENT_PRESETS } from "../src/shared/agent";
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -278,7 +279,7 @@ describe("the Editor section of Settings", () => {
 		expect(markup).toContain('<h3 id="');
 		expect(markup).toMatch(/class="settings-section-title">Editor</);
 		await store.savePreferences({ editor: { command: "zed", terminal: false } });
-		expect(await engine.loadPreferences()).toEqual({ sidebarSide: "left", editor: { command: "zed", terminal: false }, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [] });
+		expect(await engine.loadPreferences()).toEqual({ sidebarSide: "left", editor: { command: "zed", terminal: false }, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance() });
 	});
 });
 

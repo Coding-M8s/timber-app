@@ -5,6 +5,7 @@ import { App } from "./App";
 import { defaultPreferences } from "../shared/preferences";
 import { createEngine } from "./engine";
 import { createAppStore } from "./store/store";
+import { setTerminalAppearance } from "./terminal-look";
 import { applySavedTheme } from "./theme-apply";
 import { followWindowState } from "./window-state";
 import "./styles.css";
@@ -31,6 +32,8 @@ async function themedEngine() {
 	const engine = await createEngine();
 	const preferences = await engine.loadPreferences().catch(() => defaultPreferences());
 	applySavedTheme(preferences.theme, preferences.customThemes);
+	// Before the first terminal opens, so it measures its cells in the saved font.
+	setTerminalAppearance(preferences.terminal);
 	return engine;
 }
 

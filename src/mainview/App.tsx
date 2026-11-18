@@ -13,6 +13,7 @@ import { Workspace } from "./components/Workspace";
 import { StoreProvider, useAppState, useStore } from "./store/react";
 import { isRunning, timberReady } from "./store/state";
 import type { AppStore } from "./store/store";
+import { setTerminalAppearance } from "./terminal-look";
 import { applySavedTheme } from "./theme-apply";
 import { zoomKey } from "./zoom-keys";
 
@@ -70,6 +71,13 @@ function ThemeKeeper() {
 	return null;
 }
 
+/** Keeps every terminal in the saved font, size, and cursor. Open terminals follow a save at once. */
+function TerminalLookKeeper() {
+	const { terminal } = useAppState().preferences;
+	useEffect(() => setTerminalAppearance(terminal), [terminal]);
+	return null;
+}
+
 /**
  * The zoom keys, anywhere in the window. The window hears them first, before
  * a terminal or a field, so they always zoom and never reach the program in
@@ -110,6 +118,7 @@ export function App({ store, children }: { store: AppStore; children?: ReactNode
 				<QuitDialog />
 				<TerminalViewKeeper />
 				<ThemeKeeper />
+				<TerminalLookKeeper />
 				<ZoomKeys />
 			</div>
 		</StoreProvider>
