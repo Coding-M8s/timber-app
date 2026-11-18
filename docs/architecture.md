@@ -900,7 +900,8 @@ Settings dialog and kept by the app. They are never Timber's configuration.
   reported at the top of the dialog. Nothing in the dialog runs Timber, so it
   has no command footer.
 - **Sections today.** Layout: the side of the sidebar, left by default, and
-  the zoom (see [interface zoom](#interface-zoom)).
+  the zoom (see [interface zoom](#interface-zoom)). Theme: the colors (see
+  [themes](#themes)).
   Editor: the editor that "Open in editor" starts (see
   [opening a worktree in an editor](#opening-a-worktree-in-an-editor)).
   Agents: the coding agents the "+" menu starts (see
@@ -950,6 +951,75 @@ milliseconds (`null` for ten minutes again);
 `timberMock.failBranchDeletion(true)` acts out a partial failure, in which
 the worktree leaves the list and the branch is not deleted; and
 `timberMock.setDoneDelay(3000)` sets how long a removal takes.
+
+## Themes
+
+Every color of the window, the terminals included, comes from a theme, and
+the `theme` preference says which.
+
+- **A theme is data.** `Theme` in `src/shared/theme.ts`: an id, a name, an
+  appearance (dark or light), the interface's colors (`UI_COLOR_PROPERTIES`,
+  each with the CSS custom property the stylesheet uses for it), and the
+  terminal's (`TERMINAL_COLORS`, named as xterm.js names them: background,
+  text, cursor, selection, scrollbar, and the sixteen ANSI colors). A color
+  is hex or `rgb()`/`rgba()` text (`src/shared/color.ts`). `readTheme` never
+  fails: a part that is missing or cannot be read comes from Timber Dark or
+  Timber Light, by the theme's appearance, and is named in `replaced`, for
+  an import to refuse the file.
+- **Built in.** `src/shared/builtin-themes.ts`: Timber Dark (the colors the
+  app was designed in, and the default), Timber Light, Catppuccin Mocha,
+  Gruvbox Dark, Nord, Solarized Dark, and Solarized Light. A palette gives
+  the surfaces, text, and meaning colors and the sixteen ANSI colors; the
+  see-through fills and shadows, the diff backgrounds, and the terminal's
+  selection follow from them. Where a palette's own color was under the
+  contrast minimum, a nearby shade is used. Their notices are in
+  `licenses/theme-palettes.txt`.
+- **The choice.** `ThemeChoice`: `{ mode: "fixed", theme }`, or
+  `{ mode: "system", light, dark }` to follow the system's setting. It is the
+  `theme` preference, saved like any other (see
+  [preferences](#preferences-and-the-settings-dialog)), so the Engine
+  contract did not change. An id that names no theme, as from a later
+  version, is kept, and means Timber Dark or Timber Light for its slot.
+- **On the page.** `themeStyleSheet` turns a choice into one stylesheet that
+  sets every custom property and `color-scheme` on `:root`. Following the
+  system is a `prefers-color-scheme` media query in it, so the page changes
+  with the system by itself. It lives in one style element,
+  `THEME_STYLE_ID`. `styles.css` sets only the fonts on `:root` and uses no
+  color of its own; a test holds it to that and checks that every custom
+  property it uses is defined.
+- **Before the first paint.** The main process reads the saved preferences
+  before it opens the window and gives the window a `preload` script
+  (`src/bun/theme-preload.ts`) with the stylesheet in it. Electrobun runs it
+  at the start of every page load, before the page's own stylesheet, so the
+  first frame is already in the saved theme. In a browser, `main.tsx` reads
+  the preferences and applies the theme before React renders.
+- **Keeping it.** `src/mainview/theme-apply.ts` holds the saved choice and,
+  while Settings shows one, an unsaved one, and writes the style element
+  only when the one to show changes. `ThemeKeeper` in `App.tsx` applies the
+  saved choice when it changes, but never the store's default from before
+  it read the preferences, which would flash.
+- **Terminals.** Their colors come from script, so `theme-apply` resolves
+  the choice against `matchMedia("(prefers-color-scheme: dark)")`, and
+  listens for it to change, and hands the colors to
+  `src/mainview/terminal-colors.ts`. Each terminal view watches that and
+  sets xterm's `options.theme`, which redraws at once and keeps the session,
+  its screen, and its scrollback. It is a module of its own so that applying
+  a theme does not load xterm, which loads only once a terminal shows.
+- **Contrast.** `contrastWarnings` measures each text color (4.5:1) and
+  meaning color (3:1, focus included) on every surface, and the terminal's
+  text on its background, as WCAG 2 does, laying see-through colors over
+  the app's background first. The sixteen ANSI colors are the programs' and
+  are not checked. Every built-in theme passes; the theme maker (a later
+  ticket) shows the warnings.
+- **Settings, Theme.** `src/mainview/components/settings/ThemeSection.tsx`:
+  "One theme" or "Follow the system's light or dark setting", and a card per
+  theme with a small picture of a sidebar, a diff, and terminal colors,
+  drawn by setting the theme's custom properties on the picture itself.
+  Following the system shows two sets of cards, the slot's own appearance
+  first. Switching between the two keeps the theme in use
+  (`src/mainview/theme-format.ts`). A choice shows at once; Save keeps it,
+  and leaving Settings without saving goes back.
+- **The mock engine** keeps the theme like any preference, in memory.
 
 ## Timber's settings in the Settings dialog
 
@@ -1307,8 +1377,9 @@ shows, and coming back shows it as it was.
   parser writes it out, as the one argument of `xdg-open` on Linux or `open`
   on macOS, never through a shell, because it is whatever a program printed.
   Elsewhere nothing opens yet. The bar above the
-  terminal says so. Fonts and colors come from the design tokens; the ANSI
-  colors are muted to sit on the dark surface.
+  terminal says so. Fonts come from the stylesheet and colors from the
+  theme, the sixteen ANSI colors included, and an open terminal takes a new
+  theme at once (see [themes](#themes)).
 - **Ending.** Closing a session hangs up its terminal and sends SIGHUP to
   every process in the shell's session, waits until all of them ended or two
   seconds passed, kills what is still there, and answers once the shell has
@@ -1632,8 +1703,9 @@ None of it should have to change after a first release.
   `geist` package on npm. `styles.css` declares them with `@font-face`, and
   Vite copies them into the build, so text looks the same on every platform
   and nothing is fetched from the network.
-- **Licenses.** `licenses/` holds the SIL Open Font License of the fonts
-  and the notice for the logo, which is copyright Coding-M8s with all rights
+- **Licenses.** `licenses/` holds the SIL Open Font License of the fonts,
+  the notices of the palettes that built-in themes use, and the notice for
+  the logo, which is copyright Coding-M8s with all rights
   reserved and is not covered by the MIT license of the code. The build
   copies the folder into the app, to `Resources/app/licenses`.
 
@@ -3331,6 +3403,42 @@ through XWayland) with Bun 1.4.4:
 - Not run: a terminal that was already open while the zoom changed, a
   display that scales X11 windows itself (where 100% is already right),
   Windows, and macOS, where `setPageZoom` was not tried at all.
+
+Run for themes (issue 83, the picker and the built-in themes), Linux x64
+(Omarchy, Arch Linux) with Bun 1.4.4 and Timber 0.1.2:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 1420 tests passed, 1 was skipped, none failed. The theme tests
+  cover reading colors and themes, the contrast check, every built-in theme
+  passing it, the choice as a preference, the stylesheet, the preload script
+  run against a stand-in page, and that `styles.css` has no color of its
+  own. The Settings test draws the Theme section with each theme's card.
+- `bun run build:web`: built, with xterm still in its own chunk.
+- `bun run start` on a virtual X server (`Xvfb :5`, no window manager,
+  no `WAYLAND_DISPLAY`), with its own `XDG_CONFIG_HOME` holding this
+  repository and a saved theme, driven by `xdotool` clicks and looked at in
+  screenshots:
+  - Saved Solarized Light: the window and a new terminal were drawn in it.
+    A loop that printed the six ANSI colors showed them.
+  - Settings, Theme showed seven cards, Solarized Light chosen. Choosing
+    Nord redrew the window and the open terminal at once. Close without
+    Save went back to Solarized Light, the terminal too, with its output
+    still there. Nord and Save, then Close: the window stayed Nord, the
+    terminal kept its session and its scrollback, and the file held
+    `{ "mode": "fixed", "theme": "nord" }`.
+  - First paint: a pixel of the sidebar read every few milliseconds from
+    the moment the window appeared. With Timber Light saved it went from the
+    window's own grey, through one white frame, to Timber Light's surface;
+    with Nord saved, from the grey and one white frame to Nord's. Neither
+    showed Timber Dark. The grey and the white come before any page content
+    and do not depend on the theme.
+  - Following the system, light Timber Light and dark Nord: started plainly
+    the window was Timber Light, and with `GTK_THEME=Adwaita:dark` it was
+    Nord, so WebKitGTK passes GTK's dark setting to
+    `prefers-color-scheme`.
+- Not run: the system's setting changing while the app is open, the
+  desktop under a real Wayland or X11 session for this change, the window's
+  own background before the first frame, Windows, and macOS.
 
 Not run yet:
 

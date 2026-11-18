@@ -1,8 +1,10 @@
 import { type ReactNode, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { defaultPreferences } from "../shared/preferences";
 import { createEngine } from "./engine";
 import { createAppStore } from "./store/store";
+import { applySavedTheme } from "./theme-apply";
 import { followWindowState } from "./window-state";
 import "./styles.css";
 
@@ -19,7 +21,19 @@ async function sampleDialog(): Promise<ReactNode> {
 	return <FeedbackDemo />;
 }
 
-Promise.all([createEngine(), sampleDialog()]).then(
+/**
+ * The engine, with the saved theme applied before anything is drawn. The
+ * desktop app has it already, from the main process; this is what puts it on
+ * the page in a browser. A theme that cannot be read leaves the default.
+ */
+async function themedEngine() {
+	const engine = await createEngine();
+	const preferences = await engine.loadPreferences().catch(() => defaultPreferences());
+	applySavedTheme(preferences.theme);
+	return engine;
+}
+
+Promise.all([themedEngine(), sampleDialog()]).then(
 	([engine, sample]) => {
 		const store = createAppStore(engine);
 		store.start();
@@ -30,5 +44,8 @@ Promise.all([createEngine(), sampleDialog()]).then(
 			</StrictMode>,
 		);
 	},
-	(error: unknown) => root.render(<p className="fatal">Timber could not start: {String(error)}</p>),
+	(error: unknown) => {
+		applySavedTheme(defaultPreferences().theme);
+		root.render(<p className="fatal">Timber could not start: {String(error)}</p>);
+	},
 );

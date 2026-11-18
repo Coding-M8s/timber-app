@@ -3,7 +3,8 @@ import { QuitDialog } from "./components/QuitDialog";
 import { Sidebar } from "./components/Sidebar";
 import { SidebarResizer } from "./components/SidebarResizer";
 import { TimberNotice } from "./components/TimberNotice";
-import type { CSSProperties, ReactNode } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useRef } from "react";
+import { sameThemeChoice } from "../shared/theme";
 import { TitleBar } from "./components/TitleBar";
 import { TerminalViewKeeper } from "./components/TerminalPanel";
 import { Toasts } from "./components/Toasts";
@@ -11,6 +12,7 @@ import { Workspace } from "./components/Workspace";
 import { StoreProvider, useAppState, useStore } from "./store/react";
 import { isRunning, timberReady } from "./store/state";
 import type { AppStore } from "./store/store";
+import { applySavedTheme } from "./theme-apply";
 
 function Body() {
 	const store = useStore();
@@ -49,6 +51,23 @@ function Body() {
 }
 
 /**
+ * Keeps the page and its terminals in the saved theme as it changes: once the
+ * store has read it, and after a save. The first value is the store's default
+ * from before it read anything, and is never applied, because the saved theme
+ * is on the page already (main.tsx) and the default would flash.
+ */
+function ThemeKeeper() {
+	const choice = useAppState().preferences.theme;
+	const shown = useRef(choice);
+	useEffect(() => {
+		if (sameThemeChoice(shown.current, choice)) return;
+		shown.current = choice;
+		applySavedTheme(choice);
+	}, [choice]);
+	return null;
+}
+
+/**
  * Every part below reads the one store it is given. See docs/architecture.md.
  * `children` sit over the window, inside the store: the browser build uses
  * that for its sample dialog.
@@ -65,6 +84,7 @@ export function App({ store, children }: { store: AppStore; children?: ReactNode
 				{/* Over any other dialog: the app is about to quit. */}
 				<QuitDialog />
 				<TerminalViewKeeper />
+				<ThemeKeeper />
 			</div>
 		</StoreProvider>
 	);

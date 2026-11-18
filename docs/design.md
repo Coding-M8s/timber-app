@@ -89,6 +89,10 @@ change them here first when they change.
   the field they name. A tracked `.timber.toml` is changed only when the
   person ticks the box for that save. Issue tracking has "Test connection"
   for GitHub, Jira, and Linear.
+- **Theme:** a Settings section with a card for each theme, a small
+  picture of the app drawn in it. Choosing one shows it at once; Close
+  without Save goes back to the saved one. Making, importing, and exporting
+  themes is a later ticket.
 - **Uninstall:** at the end of Settings, About. The first button only shows
   what would be removed and the command; "Uninstall and quit" is the
   dangerous one, and Cancel has the focus. The saved repository list stays
@@ -100,5 +104,14 @@ Dark, neutral surfaces with hairline dividers instead of boxed cards. One
 typeface for the interface and a monospace face only for terminals, diffs,
 paths, and commands. Color carries meaning only: amber for incoming commits,
 blue for outgoing commits and running agents, yellow and green for file
-changes, red for destructive or rewritten state and for errors. The tokens
-live at the top of `src/mainview/styles.css`.
+changes, red for destructive or rewritten state and for errors.
+
+Every color is a theme's. Timber Dark is the look above and the default;
+Timber Light and a few well known palettes come with the app. A theme keeps
+the meanings: each has its own incoming, outgoing, change, and error colors,
+and every built-in theme passes the contrast check (text 4.5:1, meaning
+colors 3:1, on every surface). Settings, Theme picks one theme, or one for
+the system's light setting and one for its dark setting. A theme shows as
+soon as it is chosen, terminals included, and Save keeps it. The colors live
+in `src/shared/builtin-themes.ts`; `src/mainview/styles.css` has none of its
+own.

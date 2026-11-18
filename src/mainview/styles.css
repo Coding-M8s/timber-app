@@ -19,30 +19,17 @@
 	font-display: block;
 }
 
-/* Design tokens. They mirror the agreed prototype; see docs/design.md. */
+/*
+ * Fonts. The colors are a theme's (src/shared/theme.ts): the main process
+ * gives the page the saved theme's stylesheet before it is first drawn, and
+ * the interface keeps it up to date. See docs/architecture.md, "Themes".
+ * Every color below is one of the theme's custom properties.
+ */
 :root {
-	--bg-app: #0e0e10;
-	--bg-main: #131316;
-	--bg-pane: #0c0c0e;
-	--line: #1f1f23;
-	--fill-hover: rgba(255, 255, 255, 0.06);
-	--fill-selected: rgba(255, 255, 255, 0.08);
-	--text: #ececef;
-	--text-2: #a1a1aa;
-	--text-3: #8a8a94;
-	--behind: #e8a857;
-	--ahead: #6ea8fe;
-	--modified: #e2c08d;
-	--untracked: #73c991;
-	--error: #f08b80;
-	--focus: #e8a857;
-	--diff-added: rgba(115, 201, 145, 0.12);
-	--diff-removed: rgba(240, 139, 128, 0.12);
 	--font-ui: "Geist", "Segoe UI", system-ui, sans-serif;
 	--font-mono: "Geist Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
 	/* Terminals: icon fonts follow, for the symbols prompts and agents print that Geist Mono does not have. */
 	--font-terminal: "Geist Mono", "Symbols Nerd Font Mono", "Symbols Nerd Font", ui-monospace, "Cascadia Code", Consolas, monospace;
-	color-scheme: dark;
 }
 
 * {
@@ -160,7 +147,7 @@ pre:focus-visible {
 	padding: 0 9px;
 	border: 0;
 	border-radius: 7px;
-	background: rgba(255, 255, 255, 0.04);
+	background: var(--fill-field);
 	font-size: 12.5px;
 }
 
@@ -665,7 +652,7 @@ pre:focus-visible {
 }
 
 .button:hover {
-	background: rgba(255, 255, 255, 0.12);
+	background: var(--fill-strong);
 }
 
 .button:disabled {
@@ -688,7 +675,7 @@ pre:focus-visible {
 }
 
 .button.primary:hover {
-	background: #ffffff;
+	background: var(--primary-hover);
 }
 
 .button.quiet:disabled,
@@ -716,10 +703,10 @@ pre:focus-visible {
 	align-items: center;
 	gap: 9px;
 	padding: 6px 6px 6px 12px;
-	border: 1px solid rgba(255, 255, 255, 0.1);
+	border: 1px solid var(--line-raised);
 	border-radius: 9px;
-	background: #1c1c20;
-	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+	background: var(--bg-raised);
+	box-shadow: 0 8px 24px var(--shadow);
 	pointer-events: auto;
 	animation: toast-in 0.16s ease-out;
 }
@@ -751,16 +738,16 @@ pre:focus-visible {
 	width: min(520px, calc(100% - 32px));
 	max-height: calc(100% - 48px);
 	padding: 0;
-	border: 1px solid rgba(255, 255, 255, 0.1);
+	border: 1px solid var(--line-raised);
 	border-radius: 12px;
 	background: var(--bg-main);
 	color: var(--text);
-	box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+	box-shadow: 0 24px 64px var(--shadow-strong);
 	overflow-y: auto;
 }
 
 .dialog::backdrop {
-	background: rgba(0, 0, 0, 0.55);
+	background: var(--scrim);
 }
 
 .dialog-form {
@@ -978,6 +965,155 @@ pre:focus-visible {
 .settings-choice legend {
 	margin-bottom: 6px;
 	padding: 0;
+}
+
+/* Settings, Theme: each theme as a card with a small picture of the app drawn in it. */
+.theme-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+	gap: 10px;
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+.theme-grid legend {
+	margin-bottom: 6px;
+	padding: 0;
+}
+
+.theme-card {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 6px;
+	border-radius: 9px;
+	cursor: pointer;
+}
+
+.theme-card:hover {
+	background: var(--fill-hover);
+}
+
+.theme-card.chosen {
+	background: var(--fill-selected);
+}
+
+/* The radio button is there for the keyboard and screen readers; the card shows the choice. */
+.theme-card-input {
+	position: absolute;
+	opacity: 0;
+	pointer-events: none;
+}
+
+.theme-card:has(.theme-card-input:focus-visible) {
+	outline: 2px solid var(--focus);
+	outline-offset: 1px;
+}
+
+.theme-card-name {
+	font-size: 12px;
+	color: var(--text-2);
+}
+
+.theme-card.chosen .theme-card-name {
+	color: var(--text);
+	font-weight: 500;
+}
+
+.theme-preview {
+	display: flex;
+	height: 72px;
+	overflow: hidden;
+	border: 1px solid var(--line-raised);
+	border-radius: 7px;
+	background: var(--bg-main);
+}
+
+.theme-card.chosen .theme-preview {
+	border-color: var(--focus);
+}
+
+.theme-preview-sidebar {
+	display: flex;
+	flex: 0 0 38%;
+	flex-direction: column;
+	gap: 3px;
+	padding: 6px 4px;
+	border-right: 1px solid var(--line);
+	background: var(--bg-app);
+}
+
+.theme-preview-row {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 3px 4px;
+	border-radius: 3px;
+}
+
+.theme-preview-row.selected {
+	background: var(--fill-selected);
+}
+
+.theme-preview-text {
+	flex: 1;
+	height: 3px;
+	border-radius: 2px;
+	background: var(--text);
+}
+
+.theme-preview-text.faint {
+	background: var(--text-3);
+}
+
+.theme-preview-dot {
+	flex: none;
+	width: 5px;
+	height: 5px;
+	border-radius: 50%;
+}
+
+.theme-preview-main {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 3px;
+	padding: 6px;
+	min-width: 0;
+}
+
+.theme-preview-line {
+	height: 6px;
+	border-radius: 2px;
+	background: var(--fill-selected);
+}
+
+.theme-preview-line.added {
+	background: var(--diff-added);
+	box-shadow: inset 2px 0 var(--untracked);
+}
+
+.theme-preview-line.removed {
+	background: var(--diff-removed);
+	box-shadow: inset 2px 0 var(--error);
+}
+
+.theme-preview-terminal {
+	display: flex;
+	flex: 1;
+	align-items: flex-end;
+	gap: 2px;
+	margin-top: 2px;
+	padding: 4px;
+	border-radius: 3px;
+}
+
+.theme-preview-swatch {
+	flex: 1;
+	height: 5px;
+	border-radius: 1px;
 }
 
 .settings-section-foot {
@@ -1441,7 +1577,7 @@ pre:focus-visible {
 	display: flex;
 	gap: 2px;
 	padding: 0 8px;
-	border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+	border-bottom: 1px solid var(--line);
 }
 
 .tab {
@@ -1634,7 +1770,7 @@ pre:focus-visible {
 }
 
 .button.danger:hover {
-	background: #f6a399;
+	background: var(--error-hover);
 }
 
 .button.danger:disabled {
@@ -2405,7 +2541,7 @@ pre:focus-visible {
 	border: 1px solid var(--line);
 	border-radius: 6px;
 	background: var(--bg-main);
-	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+	box-shadow: 0 8px 24px var(--shadow);
 }
 
 .session-menu.end {

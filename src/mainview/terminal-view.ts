@@ -2,9 +2,10 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { type ITheme, Terminal } from "@xterm/xterm";
+import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import type { AppStore } from "./store/store";
+import { terminalColors, watchTerminalColors } from "./terminal-colors";
 import { clipboardKey, leftInAlternateScreen, opensLink, sessionChipId, sessionKey } from "./terminal-format";
 
 /**
@@ -58,41 +59,6 @@ export function terminalFontReady(): Promise<void> {
 /** Off once the window showed it cannot draw with WebGL, so no later terminal tries again. */
 let webglWorks = true;
 
-/**
- * The terminal's colors. Background, text, and selection follow the design
- * tokens. The sixteen ANSI colors are the programs' own, kept muted so they
- * sit on the dark surface.
- */
-function theme(): ITheme {
-	return {
-		background: token("--bg-pane", "#0c0c0e"),
-		foreground: token("--text", "#ececef"),
-		cursor: token("--text", "#ececef"),
-		cursorAccent: token("--bg-pane", "#0c0c0e"),
-		selectionBackground: "rgba(110, 168, 254, 0.32)",
-		selectionInactiveBackground: "rgba(255, 255, 255, 0.14)",
-		scrollbarSliderBackground: "rgba(255, 255, 255, 0.10)",
-		scrollbarSliderHoverBackground: "rgba(255, 255, 255, 0.18)",
-		scrollbarSliderActiveBackground: "rgba(255, 255, 255, 0.26)",
-		black: "#1f1f23",
-		red: "#f08b80",
-		green: "#73c991",
-		yellow: "#e2c08d",
-		blue: "#6ea8fe",
-		magenta: "#c79bf2",
-		cyan: "#6ccfd8",
-		white: "#a1a1aa",
-		brightBlack: "#5c5c66",
-		brightRed: "#ffa79d",
-		brightGreen: "#93deac",
-		brightYellow: "#f0d4a6",
-		brightBlue: "#94c0ff",
-		brightMagenta: "#dab8f7",
-		brightCyan: "#93e2e9",
-		brightWhite: "#ececef",
-	};
-}
-
 function createView(store: AppStore, id: string): TerminalView {
 	const host = document.createElement("div");
 	host.className = "terminal-host";
@@ -109,7 +75,8 @@ function createView(store: AppStore, id: string): TerminalView {
 		rescaleOverlappingGlyphs: true,
 		// The width table below is a proposed part of xterm's API.
 		allowProposedApi: true,
-		theme: theme(),
+		// The theme's, and they follow it: xterm redraws at once, keeping the screen and the scrollback.
+		theme: { ...terminalColors() },
 		// Links that programs mark (OSC 8) open as plain ones do, never inside the app's own window.
 		linkHandler: {
 			activate: (event, uri) => {
@@ -183,6 +150,9 @@ function createView(store: AppStore, id: string): TerminalView {
 		webgl?.dispose();
 		webgl = null;
 	};
+	const stopColors = watchTerminalColors(colors => {
+		terminal.options.theme = { ...colors };
+	});
 	const stopWatching = store.watchTerminal(id, (draw, done) => {
 		const replay = first;
 		first = false;
@@ -227,6 +197,7 @@ function createView(store: AppStore, id: string): TerminalView {
 		},
 		dispose() {
 			stopWatching();
+			stopColors();
 			drawWithElements();
 			terminal.dispose();
 			host.remove();

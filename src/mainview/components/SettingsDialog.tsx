@@ -9,6 +9,7 @@ import { FetchSection } from "./settings/FetchSection";
 import { LayoutSection } from "./settings/LayoutSection";
 import { SettingsSavingContext } from "./settings/SettingsSection";
 import { MachineSection, RepositorySection } from "./settings/TimberSections";
+import { ThemeSection } from "./settings/ThemeSection";
 
 /**
  * What each section of the Settings dialog draws. A new section is an entry
@@ -17,6 +18,7 @@ import { MachineSection, RepositorySection } from "./settings/TimberSections";
  */
 const SECTION_VIEWS: Record<SettingsSection, ComponentType> = {
 	layout: LayoutSection,
+	theme: ThemeSection,
 	editor: EditorSection,
 	agents: AgentsSection,
 	fetch: FetchSection,

@@ -15,6 +15,7 @@ export const SETTINGS_LABEL = "Settings";
 /** The names of the Settings dialog's sections, as listed down its side. */
 export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
 	layout: "Layout",
+	theme: "Theme",
 	editor: "Editor",
 	agents: "Agents",
 	fetch: "Fetching",
