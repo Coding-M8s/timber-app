@@ -516,7 +516,7 @@ with `--no-agent`. The app starts the picked agent itself
   there is no pane, so nothing starts and the toast says so.
 - **The footer.** Under the Timber command, a note and a command on a line of
   their own for each session that follows ("Command that will start next"),
-  never joined to the Timber command: setup first, with `<new worktree>` for
+  never joined to the Timber command: setup first, with `<worktree>` for
   the path until Timber has made it, then the agent (`followUps`). Setup says
   "if Timber left setup scripts to run", and Existing branch says "if this
   creates a worktree", because only Timber knows.
