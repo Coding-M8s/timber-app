@@ -368,6 +368,18 @@ describe("settings dialog", () => {
 		expect(markup).toContain('<input type="radio" name="sidebar-side" value="right"/>');
 	});
 
+	test("Layout offers the zoom, with the saved one chosen", async () => {
+		const { store } = await startedStore();
+		store.openDialog({ kind: "settings" });
+		const markup = render(store);
+		expect(markup).toMatch(/<label class="field-label" for="[^"]+">Zoom<\/label>/);
+		expect(markup).toMatch(/<option value="1" selected="">100%<\/option>/);
+		expect(markup).toContain('<option value="1.6">160%</option>');
+		await store.savePreferences({ zoom: 1.6 });
+		expect(render(store)).toMatch(/<option value="1.6" selected="">160%<\/option>/);
+		expect(render(store)).not.toMatch(/<option value="1" selected="">/);
+	});
+
 	test("Save is marked unavailable while nothing differs from what is saved, and stays focusable", async () => {
 		const { store } = await startedStore();
 		store.openDialog({ kind: "settings", section: "layout" });

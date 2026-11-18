@@ -205,7 +205,10 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			loadPreferences: () => preferences.load(),
 			savePreferences: async ({ change }) => {
 				const result = await preferences.save(change);
-				if (result.outcome === "saved") fetcher.configure(result.preferences.fetch);
+				if (result.outcome === "saved") {
+					fetcher.configure(result.preferences.fetch);
+					applyZoom(result.preferences.zoom);
+				}
 				return result;
 			},
 			// Starts the editor from the saved setting only. The request names the worktree, never the command (see ./editor.ts).
@@ -304,6 +307,16 @@ const mainWindow = new BrowserWindow({
 if (savedWindow?.maximized) mainWindow.maximize();
 mainWindow.on("resize", () => windowMemory.changed());
 mainWindow.on("move", () => windowMemory.changed());
+
+/** Draw the interface at this zoom (see docs/architecture.md, "Interface zoom"). The window stays usable when it fails. */
+function applyZoom(zoom: number): void {
+	try {
+		mainWindow.setPageZoom(zoom);
+	} catch (error) {
+		console.warn(`Could not set the zoom: ${error instanceof Error ? error.message : String(error)}`);
+	}
+}
+void preferences.load().then(saved => applyZoom(saved.zoom), () => {});
 // Closing the last window quits the app, so it asks the same question first.
 mainWindow.on("will-close", event => {
 	if (!quitGuard.mayQuit()) (event as Veto).response = { allow: false };
