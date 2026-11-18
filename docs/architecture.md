@@ -991,7 +991,8 @@ Open always pass `--no-editor` to Timber (see
   folder with spaces. Save is disabled while the command cannot be read, and
   while Other is chosen with nothing typed: only None removes the editor. A
   known terminal editor (`nvim`, `vim`, `vi`, `hx`, `nano`, `micro`, `emacs
-  -nw`) without "Runs in a terminal" gets a warning.
+  -nw`) without "Runs in a terminal" gets a warning. A command that starts
+  with `zed` gets a note that `zeditor` is tried too (see Starting).
 - **The command.** `splitCommandLine` (`src/shared/command-line.ts`) splits
   the setting without a shell: spaces, tabs, line breaks, and no-break
   spaces separate words, single or double quotes group them, a backslash is
@@ -1016,6 +1017,13 @@ Open always pass `--no-editor` to Timber (see
   there.
 - **Starting.** The executable is looked for on the PATH the app was started
   with (`Bun.which`), or taken as a full path. A relative path is refused.
+  Zed is installed as `zeditor` by some Linux packages, Arch's among them, so
+  a command that starts with the name `zed` is looked for under that name
+  first and then as `zeditor` (`otherExecutableNames` in
+  `src/shared/editor.ts`, passed to `findExecutable` in
+  `src/bun/find-executable.ts`). The saved setting stays `zed`. The tooltip
+  shows the command as set, and the toast or failure after a start shows the
+  name that ran. A full path is never swapped for another name.
   It is started with `Bun.spawn` as an executable plus arguments, in the
   worktree's folder, detached in a session of its own, with no standard input
   or output, and then let go (`unref`). So closing the app does not close the
@@ -1026,8 +1034,11 @@ Open always pass `--no-editor` to Timber (see
   Code's `code` is one, and launching on Windows is not tested yet.
 - **Answers.** Opened, not configured, a terminal editor, not listed, not
   found, or failed (`OpenInEditorResult` in `src/shared/model.ts`). Not found
-  names the command and the PATH the app was started with. A change to PATH
-  needs a restart, as for Timber.
+  names the command, every name that was looked for, and the PATH the app
+  was started with. A PATH can hold dozens of folders, so the message names
+  the first three and counts the rest (`src/shared/search-path.ts`), as it
+  does for an agent that is not found. A change to PATH needs a restart, as
+  for Timber.
 - **In the window.** The control sits beside each worktree row, not inside
   it, because the row is itself a button. It shows when the row is pointed at,
   reached by keyboard, or selected, and the row then keeps room for it, so it

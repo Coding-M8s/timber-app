@@ -1,5 +1,8 @@
 import { splitCommandLine } from "../shared/command-line";
-import { EDITOR_PRESETS, type EditorPreset, type EditorSetting, TERMINAL_EDITOR_REASON, describeEditorCommand, editorTarget, presetOf, sameEditorSetting } from "../shared/editor";
+import {
+	EDITOR_PRESETS, type EditorPreset, type EditorSetting, TERMINAL_EDITOR_REASON, describeEditorCommand, describeOtherExecutableNames, editorTarget, presetOf,
+	sameEditorSetting,
+} from "../shared/editor";
 import type { Worktree } from "../shared/model";
 import type { EditorProblem } from "./store/state";
 
@@ -128,13 +131,15 @@ export interface EditorDraftModel {
 	hint: string | null;
 	/** A command that can be saved but will likely not work as meant, or null. */
 	warning: string | null;
+	/** The other names the executable is looked for under when it is not on the PATH, in words, or null. */
+	note: string | null;
 	/** The exact command for `EXAMPLE_WORKTREE`, or null when there is none. */
 	example: string | null;
 	canSave: boolean;
 }
 
 export function editorDraftModel(draft: EditorDraft, saved: EditorSetting | null): EditorDraftModel {
-	const none = { setting: null, error: null, hint: null, warning: null, example: null };
+	const none = { setting: null, error: null, hint: null, warning: null, note: null, example: null };
 	if (draft.choice === "none") return { ...none, canSave: saved !== null };
 	const command = draft.command.trim();
 	if (command === "") return { ...none, hint: "Type a command, or choose None for no editor.", canSave: false };
@@ -146,5 +151,6 @@ export function editorDraftModel(draft: EditorDraft, saved: EditorSetting | null
 	const warning = terminalEditor === null
 		? null
 		: `${terminalEditor} runs in a terminal. Without "Runs in a terminal" it would be started with no terminal to show it in.`;
-	return { setting, error: null, hint: null, warning, example: describeEditorCommand(setting, EXAMPLE_WORKTREE), canSave: !sameEditorSetting(setting, saved) };
+	const note = describeOtherExecutableNames(reading.words[0] ?? "");
+	return { setting, error: null, hint: null, warning, note, example: describeEditorCommand(setting, EXAMPLE_WORKTREE), canSave: !sameEditorSetting(setting, saved) };
 }

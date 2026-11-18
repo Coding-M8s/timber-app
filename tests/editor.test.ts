@@ -1,6 +1,9 @@
 import { AGENT_PRESETS } from "../src/shared/agent";
 import { describe, expect, test } from "bun:test";
-import { EDITOR_PRESETS, describeEditorCommand, editorCommand, presetOf, readEditorSetting, sameEditorSetting, writeEditorSetting } from "../src/shared/editor";
+import {
+	EDITOR_PRESETS, describeEditorCommand, describeOtherExecutableNames, editorCommand, otherExecutableNames, presetOf, readEditorSetting, sameEditorSetting,
+	writeEditorSetting,
+} from "../src/shared/editor";
 import { applyPreferenceChange, defaultPreferences, readPreferences, samePreferences } from "../src/shared/preferences";
 import { parseSettings, serializeSettings } from "../src/shared/settings";
 import { defaultFetchSetting } from "../src/shared/fetch-setting";
@@ -66,6 +69,18 @@ describe("presets", () => {
 		expect(presetOf({ command: "nvim", terminal: false })).toBeNull();
 		expect(presetOf({ command: "code --new-window", terminal: false })).toBeNull();
 		expect(presetOf(null)).toBeNull();
+	});
+});
+
+describe("other names of an executable", () => {
+	test("zed is also looked for as zeditor, and nothing else has another name", () => {
+		expect(otherExecutableNames("zed")).toEqual(["zeditor"]);
+		for (const executable of ["code", "nvim", "zeditor", "Zed", "/usr/bin/zed", "", "constructor", "toString", "__proto__"]) expect(otherExecutableNames(executable)).toEqual([]);
+	});
+
+	test("every preset that has other names is said so in words", () => {
+		expect(describeOtherExecutableNames("zed")).toContain('"zeditor" is tried');
+		expect(describeOtherExecutableNames("code")).toBeNull();
 	});
 });
 

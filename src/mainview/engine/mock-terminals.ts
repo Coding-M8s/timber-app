@@ -7,6 +7,7 @@ import {
 	defaultSessionName, isWebLink, TIMBER_REBASE_SESSION_NAME, TIMBER_SETUP_SESSION_NAME,
 } from "../../shared/terminal";
 import { rebaseArguments } from "../../shared/rebase-command";
+import { notFoundOnPath } from "../../shared/search-path";
 import { TIMBER_CONFIG_SCOPES, type TimberConfigScope, timberSetupArguments } from "../../shared/timber-config";
 
 /** The part of the engine about terminals, and how they are acted out. */
@@ -209,7 +210,7 @@ export function createMockTerminals(
 						outcome: "not-found",
 						command,
 						executable: built.executable,
-						message: `Could not start ${agent.name}. "${built.executable}" was not found on the PATH the app was started with: ${MOCK_PATH}. A change to PATH needs a restart of the app, or use the full path in Settings, Agents.`,
+						message: `Could not start ${agent.name}. ${notFoundOnPath([built.executable], MOCK_PATH, ":")} A change to PATH needs a restart of the app, or use the full path in Settings, Agents.`,
 					};
 				}
 				shell = built.executable.startsWith("/") ? built.executable : `/usr/local/bin/${built.executable}`;

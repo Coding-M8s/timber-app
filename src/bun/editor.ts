@@ -1,6 +1,6 @@
 import { statSync } from "node:fs";
 import { describeCommandLine } from "../shared/command-line";
-import { TERMINAL_EDITOR_REASON, editorCommand, editorTarget } from "../shared/editor";
+import { TERMINAL_EDITOR_REASON, editorCommand, editorTarget, otherExecutableNames } from "../shared/editor";
 import type { OpenInEditorRequest, OpenInEditorResult } from "../shared/model";
 import type { Preferences } from "../shared/preferences";
 import { findExecutable } from "./find-executable";
@@ -74,7 +74,9 @@ async function earlyExit(child: Bun.Subprocess, milliseconds: number): Promise<{
  * - Only a worktree that Timber lists, in a repository in the app's list, and
  *   whose folder is there, is opened. A file is opened in place of the folder
  *   when the request names one inside the worktree that is there.
- * - The executable is looked for on the PATH the app was started with. A
+ * - The executable is looked for on the PATH the app was started with, and
+ *   then under its other names (`otherExecutableNames`), such as `zeditor`
+ *   for `zed`. The answer shows the command with the name that ran. A
  *   full path works too. A relative path is refused, because what it means
  *   would depend on the folder.
  * - The editor is started detached, in its own session, with no standard
@@ -103,17 +105,19 @@ export function createEditorLauncher(dependencies: EditorDependencies): EditorLa
 
 		const built = editorCommand(editor, target.path);
 		if (!built.ok) return { outcome: "failed", command: null, message: `${built.message} Change it in Settings, Editor.` };
-		const command = describeCommandLine([built.executable, ...built.arguments]);
-		if (editor.terminal) return { outcome: "terminal-editor", command, message: TERMINAL_EDITOR_REASON };
+		const asSet = describeCommandLine([built.executable, ...built.arguments]);
+		if (editor.terminal) return { outcome: "terminal-editor", command: asSet, message: TERMINAL_EDITOR_REASON };
 
 		const { executable } = built;
-		const lookup = findExecutable(executable, environment.PATH ?? "", { what: "the editor", command: "The editor command", section: "Settings, Editor" });
+		const lookup = findExecutable(executable, environment.PATH ?? "", { what: "the editor", command: "The editor command", section: "Settings, Editor" }, otherExecutableNames(executable));
 		if (!lookup.ok) {
 			return lookup.reason === "relative"
-				? { outcome: "failed", command, message: lookup.message }
-				: { outcome: "not-found", command, executable, message: lookup.message };
+				? { outcome: "failed", command: asSet, message: lookup.message }
+				: { outcome: "not-found", command: asSet, executable, message: lookup.message };
 		}
 		const resolved = lookup.path;
+		// From here on the command names the executable that was found, which may be another name of the one in the setting.
+		const command = describeCommandLine([lookup.executable, ...built.arguments]);
 
 		if (platform === "win32" && WINDOWS_BATCH.test(resolved)) {
 			return {

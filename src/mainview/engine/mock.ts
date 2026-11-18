@@ -3,7 +3,8 @@ import type { Engine } from "../../shared/engine";
 import { type Layout, defaultLayout, forgetRepository, readLayout } from "../../shared/layout";
 import { type AddRepositoryResult, type BranchSuggestion, type OpenInEditorRequest, type OpenInEditorResult, type Repository, type SyncState, type TimberStatus, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
 import { describeCommandLine } from "../../shared/command-line";
-import { TERMINAL_EDITOR_REASON, editorCommand, editorTarget } from "../../shared/editor";
+import { TERMINAL_EDITOR_REASON, editorCommand, editorTarget, otherExecutableNames } from "../../shared/editor";
+import { notFoundOnPath } from "../../shared/search-path";
 import { type Preferences, applyPreferenceChange, defaultPreferences } from "../../shared/preferences";
 import {
 	type DoneApplyResult, type DoneOptions, type DonePreviewResult, DONE_PREVIEW_MINUTES, describeDoneApply, describeDonePreview, readDonePreview,
@@ -14,7 +15,7 @@ import { APP_VERSION } from "../../shared/app-info";
 import { REQUIRED_TIMBER_VERSION } from "../../shared/timber-version";
 import { type CommandEnding, actOutNew, actOutOpen, isCommandEnding } from "./mock-commands";
 import { type MockFileChange, derivedFileChanges, diffMockFileChange, listMockFileChanges } from "./mock-file-changes";
-import { type TerminalControls, createMockTerminals } from "./mock-terminals";
+import { MOCK_PATH, type TerminalControls, createMockTerminals } from "./mock-terminals";
 import { type TimberConfigControls, createMockTimberConfig } from "./mock-timber-config";
 import type { TimberConfigScope } from "../../shared/timber-config";
 import { type WorkflowControls, createMockWorkflows } from "./mock-workflows";
@@ -539,7 +540,7 @@ export function createMockEngine(
 			case "not-found":
 				return {
 					outcome: "not-found", command, executable: built.executable,
-					message: `Could not start the editor. "${built.executable}" was not found on the PATH the app was started with: /usr/local/bin:/usr/bin:/bin. A change to PATH needs a restart of the app, or use the full path in Settings, Editor.`,
+					message: `Could not start the editor. ${notFoundOnPath([built.executable, ...otherExecutableNames(built.executable)], MOCK_PATH, ":")} A change to PATH needs a restart of the app, or use the full path in Settings, Editor.`,
 				};
 			case "fails":
 				return { outcome: "failed", command, message: "The editor exited with code 1 right after it started. Try the command in a terminal to see why." };
