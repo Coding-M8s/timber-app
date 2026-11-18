@@ -6,6 +6,7 @@ import { openWebLink } from "../src/bun/open-link";
 import { sessionMembers, sessionOfStat } from "../src/bun/process-session";
 import { type TerminalDependencies, type TerminalSessions, createTerminalSessions } from "../src/bun/terminals";
 import type { Repository } from "../src/shared/model";
+import { describeSearchPath } from "../src/shared/search-path";
 import type { TerminalChange, TerminalOutput } from "../src/shared/terminal";
 
 const posix = process.platform !== "win32";
@@ -458,7 +459,7 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 				outcome: "not-found",
 				command: "no-such-agent --flag",
 				executable: "no-such-agent",
-				message: `Could not start Missing. "no-such-agent" was not found on the PATH the app was started with: ${join(root, "agent bin")}:${process.env.PATH}. A change to PATH needs a restart of the app, or use the full path in Settings, Agents.`,
+				message: `Could not start Missing. "no-such-agent" was not found on the PATH the app was started with: ${describeSearchPath(`${join(root, "agent bin")}:${process.env.PATH}`, ":")}. A change to PATH needs a restart of the app, or use the full path in Settings, Agents.`,
 			});
 			expect(sessions.list()).toEqual(before);
 			expect(changes.length).toBe(changesBefore);

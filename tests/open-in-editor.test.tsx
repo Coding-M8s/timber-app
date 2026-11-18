@@ -198,12 +198,12 @@ describe("the Editor section of Settings", () => {
 
 	test("the model shows the exact command for an example folder, and Save only for a change that can be read", () => {
 		const code = editorDraftModel(chooseEditor(none, "vscode"), null);
-		expect(code).toEqual({ setting: { command: "code", terminal: false }, error: null, hint: null, warning: null, example: `code '${EXAMPLE_WORKTREE}'`, canSave: true });
+		expect(code).toEqual({ setting: { command: "code", terminal: false }, error: null, hint: null, warning: null, note: null, example: `code '${EXAMPLE_WORKTREE}'`, canSave: true });
 		expect(editorDraftModel(chooseEditor(none, "vscode"), { command: "code", terminal: false }).canSave).toBe(false);
 		const broken = editorDraftModel(editEditor(none, { command: `code "x` }), null);
 		expect(broken).toMatchObject({ error: "The double quote at character 6 is never closed.", canSave: false, example: null });
 		expect(editorDraftModel(editEditor(none, { command: `"" x` }), null).canSave).toBe(false);
-		expect(editorDraftModel(none, { command: "code", terminal: false })).toEqual({ setting: null, error: null, hint: null, warning: null, example: null, canSave: true });
+		expect(editorDraftModel(none, { command: "code", terminal: false })).toEqual({ setting: null, error: null, hint: null, warning: null, note: null, example: null, canSave: true });
 		expect(editorDraftModel(none, null).canSave).toBe(false);
 	});
 
@@ -223,6 +223,15 @@ describe("the Editor section of Settings", () => {
 			expect(editorDraftModel(editEditor(none, { command, terminal: true }), null).warning).toBeNull();
 		}
 		for (const command of ["code", "emacs", "zed", "vimdiff-free-editor"]) expect(editorDraftModel(editEditor(none, { command }), null).warning).toBeNull();
+	});
+
+	test("Zed says that zeditor is tried where zed is not on the PATH, however the command came to start with zed", () => {
+		const note = 'Where "zed" is not on the PATH, "zeditor" is tried, the name some Linux packages install it under. The command that ran is shown once the editor is started.';
+		expect(editorDraftModel(chooseEditor(none, "zed"), null)).toMatchObject({ setting: { command: "zed", terminal: false }, note, example: `zed '${EXAMPLE_WORKTREE}'`, canSave: true });
+		expect(editorDraftModel(editEditor(none, { command: "zed --new" }), null).note).toBe(note);
+		for (const command of ["code", "zeditor", "/usr/bin/zed", "nvim", "constructor"]) expect(editorDraftModel(editEditor(none, { command }), null).note).toBeNull();
+		// With "Runs in a terminal" nothing is started from here, so nothing is tried.
+		expect(editorDraftModel(editEditor(none, { command: "zed", terminal: true }), null).note).toBeNull();
 	});
 
 	const view = (props: Partial<EditorSectionViewProps>) => renderToStaticMarkup(
@@ -248,6 +257,8 @@ describe("the Editor section of Settings", () => {
 	test("draws the hint and the warning", () => {
 		expect(view({ draft: chooseEditor(none, "other") })).toContain("Type a command, or choose None for no editor.");
 		expect(view({ draft: editEditor(none, { command: "vim" }) })).toContain("This looks like a terminal editor");
+		expect(view({ draft: chooseEditor(none, "zed") })).toContain('<p class="dialog-note">Where &quot;zed&quot; is not on the PATH, &quot;zeditor&quot; is tried,');
+		expect(view({ draft: chooseEditor(none, "vscode") })).not.toContain("is tried");
 	});
 
 	test("Neovim says it is not started from here yet", () => {
@@ -277,6 +288,9 @@ describe("the mock engine", () => {
 		expect((await engine.openInEditor({ repository: TIMBER, worktree: FEATURE })).outcome).toBe("opened");
 		engine.endEditorLaunches("not-found");
 		expect(await engine.openInEditor({ repository: TIMBER, worktree: FEATURE })).toMatchObject({ outcome: "not-found", executable: "code" });
+		await engine.savePreferences({ editor: { command: "zed", terminal: false } });
+		const missing = await engine.openInEditor({ repository: TIMBER, worktree: FEATURE });
+		expect(missing.outcome === "not-found" && missing.message).toBe('Could not start the editor. Neither "zed" nor "zeditor" was found on the PATH the app was started with: /usr/local/bin:/usr/bin:/bin. A change to PATH needs a restart of the app, or use the full path in Settings, Editor.');
 		engine.endEditorLaunches("fails");
 		expect((await engine.openInEditor({ repository: TIMBER, worktree: FEATURE })).outcome).toBe("failed");
 		expect((await engine.openInEditor({ repository: API_SERVER, worktree: MISSING })).outcome).toBe("not-listed");

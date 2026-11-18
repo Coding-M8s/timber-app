@@ -154,10 +154,97 @@ describe.skipIf(windows)("opening a worktree in an editor, with stand-in editors
 			executable: "no-such-editor",
 			message: `Could not start the editor. "no-such-editor" was not found on the PATH the app was started with: ${bin}:/usr/bin:/bin. A change to PATH needs a restart of the app, or use the full path in Settings, Editor.`,
 		});
+		const long = [bin, ...Array.from({ length: 22 }, (_, index) => join(root, `tools ${index}`, "bin"))].join(":");
+		const crowded = await launcher({ command: "no-such-editor", terminal: false }, listed([worktree]), { environment: { PATH: long } }).open(request());
+		expect(crowded.outcome === "not-found" && crowded.message).toBe(
+			`Could not start the editor. "no-such-editor" was not found on the PATH the app was started with: ${bin}:${join(root, "tools 0", "bin")}:${join(root, "tools 1", "bin")} and 20 more folders. A change to PATH needs a restart of the app, or use the full path in Settings, Editor.`,
+		);
 		const empty = await launcher({ command: "code", terminal: false }, listed([worktree]), { environment: { HOME: root } }).open(request());
 		expect(empty.outcome === "not-found" && empty.message).toContain("the PATH the app was started with: (empty).");
 		const absolute = await launcher({ command: `"${join(bin, "missing")}"`, terminal: false }).open(request());
 		expect(absolute.outcome === "not-found" && absolute.message).toBe(`Could not start the editor. There is no executable file at ${join(bin, "missing")}.`);
+	});
+
+	/**
+	 * A folder to use as the whole PATH, holding stand-ins with these names.
+	 * Each writes its own path and then its arguments, a line each, to a file
+	 * beside it, with nothing but what the shell has built in, so it needs no
+	 * other folder on the PATH. The machine's own `zed` or `zeditor` is never
+	 * found, because its folder is not on this PATH.
+	 */
+	function folderWith(names: string[]) {
+		const folder = join(root, `named ${++count}`);
+		mkdirSync(folder);
+		for (const name of names) {
+			writeFileSync(join(folder, name), `#!/bin/sh\nprintf '%s\\n' "$0" "$@" > "$0.calls"\n`);
+			chmodSync(join(folder, name), 0o755);
+		}
+		const record = (name: string) => join(folder, `${name}.calls`);
+		return {
+			folder,
+			ran: (name: string) => existsSync(record(name)),
+			/** The path it was started as, then its arguments. */
+			calls: async (name: string, lines: number) => {
+				const read = () => (existsSync(record(name)) ? readFileSync(record(name), "utf8").split("\n").slice(0, -1) : []);
+				expect(await until(() => read().length === lines)).toBe(true);
+				return read();
+			},
+		};
+	}
+
+	const zed: EditorSetting = { command: "zed", terminal: false };
+
+	test("the Zed choice starts zeditor where Zed is installed under that name, and shows the command that ran", async () => {
+		const installed = folderWith(["zeditor"]);
+		const result = await launcher(zed, listed([worktree]), { environment: { PATH: installed.folder } }).open(request());
+		expect(result).toEqual({ outcome: "opened", command: `zeditor '${worktree}'` });
+		expect(await installed.calls("zeditor", 2)).toEqual([join(installed.folder, "zeditor"), worktree]);
+	});
+
+	test("the other name keeps the arguments and the place of {path}, and works for a file", async () => {
+		const installed = folderWith(["zeditor"]);
+		writeFileSync(join(worktree, "notes.md"), "notes\n");
+		const result = await launcher({ command: "zed --new {path} --wait", terminal: false }, listed([worktree]), { environment: { PATH: installed.folder } }).open({ ...request(), file: "notes.md" });
+		expect(result).toEqual({ outcome: "opened", command: `zeditor --new '${join(worktree, "notes.md")}' --wait` });
+		expect(await installed.calls("zeditor", 4)).toEqual([join(installed.folder, "zeditor"), "--new", join(worktree, "notes.md"), "--wait"]);
+	});
+
+	test("zed itself is preferred where both names are installed, also in a later folder of the PATH", async () => {
+		const both = folderWith(["zed", "zeditor"]);
+		const result = await launcher(zed, listed([worktree]), { environment: { PATH: both.folder } }).open(request());
+		expect(result).toEqual({ outcome: "opened", command: `zed '${worktree}'` });
+		expect(await both.calls("zed", 2)).toEqual([join(both.folder, "zed"), worktree]);
+
+		const first = folderWith(["zeditor"]);
+		const second = folderWith(["zed"]);
+		const split = await launcher(zed, listed([worktree]), { environment: { PATH: `${first.folder}:${second.folder}` } }).open(request());
+		expect(split).toEqual({ outcome: "opened", command: `zed '${worktree}'` });
+		expect(await second.calls("zed", 2)).toEqual([join(second.folder, "zed"), worktree]);
+		await Bun.sleep(100);
+		expect(both.ran("zeditor")).toBe(false);
+		expect(first.ran("zeditor")).toBe(false);
+	});
+
+	test("with neither name installed, the answer names both and keeps the command as it is set", async () => {
+		const bare = folderWith([]);
+		const result = await launcher({ command: "zed --new", terminal: false }, listed([worktree]), { environment: { PATH: bare.folder } }).open(request());
+		expect(result).toEqual({
+			outcome: "not-found",
+			command: `zed --new '${worktree}'`,
+			executable: "zed",
+			message: `Could not start the editor. Neither "zed" nor "zeditor" was found on the PATH the app was started with: ${bare.folder}. A change to PATH needs a restart of the app, or use the full path in Settings, Editor.`,
+		});
+	});
+
+	test("only the name zed has another name: a full path to zed, and any other command, are taken as they are", async () => {
+		const installed = folderWith(["zeditor", "zed-preview"]);
+		const environment = { PATH: installed.folder };
+		const absolute = await launcher({ command: `"${join(installed.folder, "zed")}"`, terminal: false }, listed([worktree]), { environment }).open(request());
+		expect(absolute.outcome === "not-found" && absolute.message).toBe(`Could not start the editor. There is no executable file at ${join(installed.folder, "zed")}.`);
+		const other = await launcher({ command: "code", terminal: false }, listed([worktree]), { environment }).open(request());
+		expect(other.outcome === "not-found" && other.message).toContain('"code" was not found on the PATH');
+		await Bun.sleep(100);
+		expect(installed.ran("zeditor")).toBe(false);
 	});
 
 	test("a relative path is refused, because its meaning would depend on the folder", async () => {

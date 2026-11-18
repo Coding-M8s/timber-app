@@ -37,6 +37,30 @@ export const EDITOR_PRESETS: readonly EditorPreset[] = [
 	{ id: "neovim", label: "Neovim", setting: { command: "nvim", terminal: true } },
 ];
 
+/**
+ * Other names an editor's executable is installed under, by the name its
+ * command usually starts with. Arch's package installs Zed as `zeditor`.
+ */
+const OTHER_EXECUTABLE_NAMES: Readonly<Record<string, readonly string[]>> = {
+	zed: ["zeditor"],
+};
+
+/**
+ * The other names to look for when `executable` is not on the PATH, in order.
+ * Empty for most commands, and for a path, which names one file.
+ */
+export function otherExecutableNames(executable: string): readonly string[] {
+	return Object.hasOwn(OTHER_EXECUTABLE_NAMES, executable) ? OTHER_EXECUTABLE_NAMES[executable]! : [];
+}
+
+/** What to say in Settings about a command whose executable has other names, or null. */
+export function describeOtherExecutableNames(executable: string): string | null {
+	const names = otherExecutableNames(executable);
+	if (names.length === 0) return null;
+	const quoted = names.map(name => `"${name}"`).join(", then ");
+	return `Where "${executable}" is not on the PATH, ${quoted} is tried, the name some Linux packages install it under. The command that ran is shown once the editor is started.`;
+}
+
 /** The preset that a setting is, or null for any other command. Spaces around the command do not count. */
 export function presetOf(setting: EditorSetting | null): EditorPreset | null {
 	if (setting === null) return null;
