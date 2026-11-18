@@ -45,13 +45,25 @@ For the desktop app:
 bun run dev
 ```
 
-On Linux the desktop app uses the system WebKitGTK 4.1 and GTK 3. It was
-run on Pop!_OS 24.04 with these installed (the smallest set a clean system
-needs is not tested yet):
+On Linux the desktop app uses the system WebKitGTK 4.1 and GTK 3, and links
+the Ayatana app indicator library. In clean Ubuntu 24.04, Fedora 43, and
+Arch containers these two packages were enough; the package manager brings
+GTK 3 and the rest with them:
 
 ```bash
-sudo apt install libgtk-3-0t64 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 librsvg2-2
+# Ubuntu 24.04 (other Debian-based systems were not tested)
+sudo apt install libwebkit2gtk-4.1-0 libayatana-appindicator3-1
+# Fedora
+sudo dnf install webkit2gtk4.1 libayatana-appindicator-gtk3
+# Arch
+sudo pacman -S webkit2gtk-4.1 libayatana-appindicator
 ```
+
+When a library is missing, the app names it and suggests a longer list
+(`libgtk-3-0 ... librsvg2-2`). That message comes from Electrobun; the list
+above is the one tested. Its Fedora line names `libappindicator-gtk3`, which
+is not the library the app links; use `libayatana-appindicator-gtk3`. Git
+and Timber are needed too, but not to start the window.
 
 The window is always an X11 window, so a Wayland session needs XWayland; see
 [display server on Linux](docs/architecture.md#display-server-on-linux).
