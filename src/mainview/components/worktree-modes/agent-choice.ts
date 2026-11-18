@@ -1,6 +1,6 @@
 import { type AgentSetting, describeAgentCommand, findAgent } from "../../../shared/agent";
 import type { ReportedWorktree } from "../../../shared/model";
-import { NEW_WORKTREE_PLACEHOLDER, describeTimberCommand } from "../../../shared/timber-result";
+import { WORKTREE_PLACEHOLDER, describeTimberCommand } from "../../../shared/timber-result";
 import { worktreeSetupArguments } from "../../../shared/worktree-commands";
 import type { AppStore } from "../../store/store";
 import type { SubmissionOutcome } from "../../store/submission";
@@ -48,6 +48,8 @@ export interface ModeRun {
 	setup: ReportedWorktree | null;
 	/** The workflow the run passed, which the setup session passes again: Timber does not remember it. Null or left out for none. */
 	workflow?: string | null;
+	/** The toast once the sessions have started, in place of the outcome's, which must not claim they did. */
+	startedToast?: string;
 }
 
 /** A line of the footer under the Timber command: what it says, and the command that starts. */
@@ -65,7 +67,7 @@ export type SetupStart = "always" | "if-skipped" | "never";
 
 /** The setup session's command, worded for the footer: with the worktree's path when it is known, and the workflow, if any. */
 export function setupCommand(worktree: string | null, workflow: string | null = null): string {
-	return describeTimberCommand(worktreeSetupArguments(worktree ?? NEW_WORKTREE_PLACEHOLDER, workflow ?? undefined));
+	return describeTimberCommand(worktreeSetupArguments(worktree ?? WORKTREE_PLACEHOLDER, workflow ?? undefined));
 }
 
 /** The notes and commands shown under the Timber command, in the order they start: setup, then the agent. */
@@ -82,7 +84,9 @@ export function followUps(agent: AgentSetting | null, start: AgentStart, setup: 
 	if (agent !== null && start !== "never") {
 		const where = start === "always" ? "in the new worktree" : "in it, if this creates a worktree";
 		lines.push({
-			note: setup === "never" ? `Then starts ${agent.name} ${where}:` : `And starts ${agent.name} beside setup, ${where}:`,
+			note: setup === "never" ? `Then starts ${agent.name} ${where}:`
+				: setup === "always" ? `And starts ${agent.name} beside setup, ${where}:`
+				: `And starts ${agent.name} ${where}, without waiting for setup:`,
 			command: describeAgentCommand(agent) ?? agent.command,
 		});
 	}
@@ -103,13 +107,15 @@ export async function runAndStart(
 	run: () => Promise<ModeRun>,
 	agent: AgentSetting | null,
 ): Promise<SubmissionOutcome> {
-	const { outcome, created, setup, workflow = null } = await run();
+	const { outcome, created, setup, workflow = null, startedToast } = await run();
 	if (!outcome.ok) return outcome;
 	const startsAgent = created !== null && agent !== null;
 	const worktree = setup ?? (startsAgent ? created : null);
 	if (worktree === null) return outcome;
 	// Setup and the agent start in the same worktree: the one the run reported.
-	if (store.startSessionsIn(repository, worktree, { setup: setup !== null, ...(workflow === null ? {} : { workflow }), agent: startsAgent ? agent.name : null })) return outcome;
+	if (store.startSessionsIn(repository, worktree, { setup: setup !== null, ...(workflow === null ? {} : { workflow }), agent: startsAgent ? agent.name : null })) {
+		return startedToast === undefined ? outcome : { ok: true, toast: startedToast };
+	}
 	const missed = [setup !== null ? "Setup" : null, startsAgent ? agent.name : null].filter(name => name !== null).join(" and ");
 	return { ok: true, toast: `${outcome.toast}. ${missed} did not start: the worktree is not in the list yet. Refresh, then start it from the worktree.` };
 }

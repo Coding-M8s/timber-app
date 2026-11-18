@@ -39,10 +39,10 @@ export const APPROVAL_FILE_PLACEHOLDER = "<approved preview>";
  */
 export const SETTINGS_DRAFT_PLACEHOLDER = "<settings draft>";
 
-/** Shown in place of a worktree's path before Timber has made it, so the path is not known yet. */
-export const NEW_WORKTREE_PLACEHOLDER = "<new worktree>";
+/** Shown in place of a worktree's path before Timber has answered, so the path is not known yet. */
+export const WORKTREE_PLACEHOLDER = "<worktree>";
 
-const PLACEHOLDERS: readonly string[] = [RESULT_FILE_PLACEHOLDER, APPROVAL_FILE_PLACEHOLDER, SETTINGS_DRAFT_PLACEHOLDER, NEW_WORKTREE_PLACEHOLDER];
+const PLACEHOLDERS: readonly string[] = [RESULT_FILE_PLACEHOLDER, APPROVAL_FILE_PLACEHOLDER, SETTINGS_DRAFT_PLACEHOLDER, WORKTREE_PLACEHOLDER];
 
 /** A record that passed every check. */
 export interface ResultRecord {

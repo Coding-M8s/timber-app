@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { WorktreeDialogFrame } from "../src/mainview/components/NewWorktreeDialog";
-import { chosenAgent, followUps } from "../src/mainview/components/worktree-modes/agent-choice";
+import { chosenAgent, followUps, runAndStart } from "../src/mainview/components/worktree-modes/agent-choice";
 import { createWorktreeDialogController, pickOfOption } from "../src/mainview/components/worktree-modes/dialog-controller";
 import { existingBranchMode } from "../src/mainview/components/worktree-modes/existing-branch";
 import { createExistingBranchForm } from "../src/mainview/components/worktree-modes/existing-branch-form";
@@ -91,8 +91,9 @@ describe("the agent to start", () => {
 
 	test("is shown under the Timber command as its own line, after setup, worded for when it starts", () => {
 		const codex = { name: "Codex", command: `codex --model "big one"` };
-		const setup = { note: "Then, if Timber left setup scripts to run, runs them in a terminal in the worktree, without waiting for them:", command: "timber open --setup --no-editor --no-agent -- <new worktree>" };
-		expect(followUps(codex, "always", "if-skipped")).toEqual([setup, { note: "And starts Codex beside setup, in the new worktree:", command: "codex --model 'big one'" }]);
+		const setup = { note: "Then, if Timber left setup scripts to run, runs them in a terminal in the worktree, without waiting for them:", command: "timber open --setup --no-editor --no-agent -- <worktree>" };
+		expect(followUps(codex, "always", "if-skipped")).toEqual([setup, { note: "And starts Codex in the new worktree, without waiting for setup:", command: "codex --model 'big one'" }]);
+		expect(followUps(codex, "always", "always")[1]?.note).toBe("And starts Codex beside setup, in the new worktree:");
 		expect(followUps(codex, "if-created", "never")).toEqual([{ note: "Then starts Codex in it, if this creates a worktree:", command: "codex --model 'big one'" }]);
 		expect(followUps(codex, "never", "if-skipped")).toEqual([setup]);
 		expect(followUps(null, "always", "never")).toEqual([]);
@@ -113,7 +114,7 @@ describe("the dialog's wiring", () => {
 		const { store } = await openedDialog();
 		const markup = renderToStaticMarkup(<App store={store} />);
 		expect(markup).toContain('<select class="field-input" name="agent"><option value="Claude Code" selected="">Claude Code</option>');
-		expect(markup).toContain('<p class="dialog-note">And starts Claude Code beside setup, in the new worktree:</p><pre class="dialog-command" aria-label="Command that will start next">claude</pre>');
+		expect(markup).toContain('<p class="dialog-note">And starts Claude Code in the new worktree, without waiting for setup:</p><pre class="dialog-command" aria-label="Command that will start next">claude</pre>');
 	});
 
 	test("reads the empty option as None and any other as the agent's name", () => {
@@ -167,10 +168,10 @@ describe("the Agent field", () => {
 		model.edit({ name: "feat/login" });
 		const created = render();
 		expect(created).toContain('<pre class="dialog-command" aria-label="Command that will run">timber new --no-setup --result-file &lt;temporary file&gt; --no-editor --no-agent -- feat/login</pre>'
-			+ '<p class="dialog-note">Then, if Timber left setup scripts to run, runs them in a terminal in the worktree, without waiting for them:</p><pre class="dialog-command" aria-label="Command that will start next">timber open --setup --no-editor --no-agent -- &lt;new worktree&gt;</pre>'
-			+ '<p class="dialog-note">And starts Claude Code beside setup, in the new worktree:</p><pre class="dialog-command" aria-label="Command that will start next">claude</pre>');
+			+ '<p class="dialog-note">Then, if Timber left setup scripts to run, runs them in a terminal in the worktree, without waiting for them:</p><pre class="dialog-command" aria-label="Command that will start next">timber open --setup --no-editor --no-agent -- &lt;worktree&gt;</pre>'
+			+ '<p class="dialog-note">And starts Claude Code in the new worktree, without waiting for setup:</p><pre class="dialog-command" aria-label="Command that will start next">claude</pre>');
 		select(1);
-		expect(render()).toContain('<p class="dialog-note">And starts Claude Code beside setup, in it, if this creates a worktree:</p>');
+		expect(render()).toContain('<p class="dialog-note">And starts Claude Code in it, if this creates a worktree, without waiting for setup:</p>');
 	});
 
 	test("with None picked, shows no agent command", async () => {
@@ -271,6 +272,27 @@ describe("creating a worktree with an agent picked", () => {
 		expect(store.getState().terminalProblem).toMatchObject({ worktree: worktree.id, agent: "Claude Code", command: "claude" });
 		expect(store.getState().dialog).toBeNull();
 		expect(store.getState().toasts.map(toast => toast.text)).toEqual(["Created worktree feat/login"]);
+	});
+
+	test("setup that cannot start stays reported after the agent beside it starts", async () => {
+		const { engine, store, model, submit, sessions, selected } = await openedDialog();
+		const { openTerminal } = engine;
+		engine.openTerminal = async request => request.timberWorktreeSetup ? { outcome: "failed", message: "Setup could not start." } : openTerminal(request);
+		model.edit({ name: "feat/login" });
+		expect(await submit()).toBe(true);
+		expect(sessions().map(session => session.name)).toEqual(["Claude Code"]);
+		expect(store.getState().terminalProblem).toMatchObject({ worktree: selected()!.id, agent: "Setup", message: "Setup could not start." });
+	});
+
+	test("the toast says setup started only once its session did", async () => {
+		const worktree = { id: "id", path: "/work/timber-worktrees/feat-login", branch: "feat/login" };
+		const run = async () => ({ outcome: { ok: true as const, toast: "Opened feat/login" }, created: worktree, setup: worktree, startedToast: "Setup started in feat/login" });
+		const agent = { name: "Codex", command: "codex" };
+		expect(await runAndStart({ startSessionsIn: () => true }, TIMBER, run, agent)).toEqual({ ok: true, toast: "Setup started in feat/login" });
+		expect(await runAndStart({ startSessionsIn: () => false }, TIMBER, run, agent)).toEqual({
+			ok: true,
+			toast: "Opened feat/login. Setup and Codex did not start: the worktree is not in the list yet. Refresh, then start it from the worktree.",
+		});
 	});
 
 	test("when the list cannot be read again, starts nothing and the toast says so", async () => {

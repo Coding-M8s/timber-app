@@ -151,7 +151,7 @@ describe("the Existing branch fields", () => {
 		// Rerun setup does not change what Timber runs: setup follows in a session of its own, shown below it.
 		form.setSetup(true);
 		expect(mode().command).toBe("timber open --no-setup --result-file <temporary file> --no-editor --no-agent -- feat/github-issue-lookup");
-		expect(render()).toContain(`<p class="dialog-note">Then runs setup in a terminal in the worktree, without waiting for it:</p><pre class="dialog-command" aria-label="Command that will start next">${escaped("timber open --setup --no-editor --no-agent -- <new worktree>")}</pre>`);
+		expect(render()).toContain(`<p class="dialog-note">Then runs setup in a terminal in the worktree, without waiting for it:</p><pre class="dialog-command" aria-label="Command that will start next">${escaped("timber open --setup --no-editor --no-agent -- <worktree>")}</pre>`);
 		form.setSelector("--two words");
 		const command = "timber open --no-setup --result-file <temporary file> --no-editor --no-agent -- '--two words'";
 		expect(mode().command).toBe(command);

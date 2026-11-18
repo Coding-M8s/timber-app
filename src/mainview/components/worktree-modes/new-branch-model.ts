@@ -158,7 +158,7 @@ export function createNewBranchModel(store: Actions, repository: string): NewBra
 			const { step } = state;
 			if (step.kind === "setup") {
 				const label = reportedLabel(step.worktree);
-				return { outcome: { ok: true, toast: `Setup started in ${label}` }, created: step.worktree, setup: step.worktree, workflow: step.workflow };
+				return { outcome: { ok: true, toast: `Opened ${label}` }, created: step.worktree, setup: step.worktree, workflow: step.workflow, startedToast: `Setup started in ${label}` };
 			}
 			const result = await store.newWorktree(newWorktreeRequest(repository, state.fields, workflow));
 			const { run, kept } = afterNew(result);

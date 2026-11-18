@@ -150,8 +150,10 @@ export function createExistingBranchForm(
 			const created = result.created || finishing;
 			if (result.outcome === "succeeded") {
 				const setup = result.setupSkipped || state.setup ? result.worktree : null;
-				const toast = created && !result.created && setup ? `Setup started in ${reportedLabel(result.worktree)}` : describeOpened(result.worktree, result.created);
-				return { outcome: { ok: true, toast }, created: created ? result.worktree : null, setup, workflow };
+				const toast = describeOpened(result.worktree, result.created);
+				// Finishing a worktree this dialog created: the toast says setup started, once it has.
+				const startedToast = created && !result.created && setup ? `Setup started in ${reportedLabel(result.worktree)}` : undefined;
+				return { outcome: { ok: true, toast }, created: created ? result.worktree : null, setup, workflow, ...(startedToast === undefined ? {} : { startedToast }) };
 			}
 			// The command may have made a branch, and the dialog stays open.
 			void readBranches();

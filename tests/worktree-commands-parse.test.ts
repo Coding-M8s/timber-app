@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { worktreeId } from "../src/shared/model";
-import { NEW_WORKTREE_PLACEHOLDER, RESULT_FILE_PLACEHOLDER, type ResultCommand, type TimberRun, describeTimberCommand, readTimberResult } from "../src/shared/timber-result";
+import { WORKTREE_PLACEHOLDER, RESULT_FILE_PLACEHOLDER, type ResultCommand, type TimberRun, describeTimberCommand, readTimberResult } from "../src/shared/timber-result";
 import { newWorktreeArguments, openWorktreeArguments, worktreeCommandResult, worktreeSetupArguments } from "../src/shared/worktree-commands";
 import { recordedResult } from "./support/timber";
 
@@ -74,8 +74,8 @@ describe("worktreeSetupArguments", () => {
 	test("runs every setup script in the exact path, given as one argument after --, with no launcher and no result file", () => {
 		expect(worktreeSetupArguments("/work/sample-worktrees/-x feature"))
 			.toEqual(["open", "--setup", "--no-editor", "--no-agent", "--", "/work/sample-worktrees/-x feature"]);
-		expect(describeTimberCommand(worktreeSetupArguments(NEW_WORKTREE_PLACEHOLDER)))
-			.toBe("timber open --setup --no-editor --no-agent -- <new worktree>");
+		expect(describeTimberCommand(worktreeSetupArguments(WORKTREE_PLACEHOLDER)))
+			.toBe("timber open --setup --no-editor --no-agent -- <worktree>");
 	});
 });
 

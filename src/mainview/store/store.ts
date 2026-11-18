@@ -1239,7 +1239,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 						// The new session shows. What it printed while this answer was on its way counts as seen.
 						shownSessions: { ...state.shownSessions, [session.worktree]: session.id },
 						unseenSessions: state.unseenSessions.filter(id => id !== session.id),
-						terminalProblem: state.terminalProblem?.worktree === key ? null : state.terminalProblem,
+						// Setup that did not start stays reported while the agent beside it starts: only another setup answers it.
+						terminalProblem: state.terminalProblem?.worktree === key && (state.terminalProblem.agent !== WORKTREE_SETUP_SESSION_NAME || request.timberWorktreeSetup !== undefined) ? null : state.terminalProblem,
 					});
 					return;
 				}
