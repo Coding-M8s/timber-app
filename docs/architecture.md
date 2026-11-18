@@ -3676,6 +3676,43 @@ Linux) with Bun 1.4.4:
   (Xvfb has no window manager), a dark GTK theme, where the grey is dark,
   Windows, and macOS.
 
+Run for adding a repository through a portal file chooser (issue 75),
+Linux x64, Omarchy 4.0.0 alpha (`omarchy-dev` `4.0.0.r8031.ge6aec97`),
+Hyprland 0.57.2, `xdg-desktop-portal` 1.22.1, and Files (`folio`) 0.6.1 as
+the portal's file chooser, with Bun 1.4.4 and Git 2.56.1. The app was the
+dev build already in `build/dev-linux-x64`, not rebuilt for this run, with
+its own `XDG_CONFIG_HOME` and no `TIMBER_APP_REPOS`:
+
+- Set up so that no input reached the real desktop: under
+  `dbus-run-session`, a nested Hyprland with its own Wayland socket and
+  `/usr/lib/xdg-desktop-portal` started on that bus, with
+  `GTK_USE_PORTAL=1` and `XDG_CURRENT_DESKTOP=Hyprland`. The app ran on
+  `Xvfb :75` on the same bus and was clicked with `xdotool`. Keys went to
+  the chooser with `wtype` on the nested socket, and screenshots were taken
+  with `grim` and `import`. The nested Hyprland draws only while its window
+  is shown, so that window was put on a headless output of the real session
+  (`hyprctl output create headless`), which was removed after.
+- Keys from `wtype` and Hyprland's `send_shortcut` did not reach the app's
+  window when it ran on the nested Hyprland's XWayland, so the app was moved
+  to Xvfb, where `xdotool` clicks did.
+- "Add repository" opened `folio-chooser`, titled "Open File", in the home
+  folder. Ctrl+L and a typed path went into the folder, and Ctrl+Enter
+  answered. With 0.5.0 (issue 28 above) going into a folder could not be
+  done with sent input.
+- A repository's primary checkout: "Added alpha", its two worktrees listed,
+  and the settings file had its path and common directory.
+- A folder inside its linked worktree: "alpha is already in the list. That
+  folder belongs to it, so nothing was added." A folder that is not in a
+  repository: "Not a Git repository" with its path. The settings file was
+  byte for byte the same after both.
+- Cancel with Escape, and again by closing the chooser window through the
+  nested Hyprland: no notice, the list and settings file unchanged, the
+  button back to "Add repository", and selecting the other worktree worked.
+- The fixture's worktrees, refs, and files were the same after the run.
+- Not run: Folio's Cancel and Select buttons clicked with a pointer, the
+  chooser on the real desktop, so where it opens next to the app was not
+  seen, and GNOME's and KDE's portal choosers.
+
 Not run yet:
 
 - Saving or checking from inside the desktop window, and over the RPC
@@ -3731,5 +3768,6 @@ Not run yet:
   Wayland window is not possible with Electrobun 2.0.6 (see issue 63 above
   and [display server on Linux](#display-server-on-linux)).
 - A Wayland session other than COSMIC and Hyprland, such as GNOME or KDE.
-- An NVIDIA GPU known to be drawing the window, and adding a repository
-  through a portal file chooser (see the Omarchy run above).
+- An NVIDIA GPU known to be drawing the window.
+- A portal file chooser other than Files on Omarchy, and Files on the real
+  desktop rather than a nested Hyprland (see issue 75 above).
