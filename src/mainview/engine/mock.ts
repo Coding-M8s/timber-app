@@ -248,6 +248,8 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	setRepositories(repositories: Repository[]): void;
 	/** Report that a repository changed, as the main process would. */
 	announceChange(path: string): void;
+	/** How many times the interface said it had drawn itself through `windowReady`. */
+	readyCalls(): number;
 	/** What the interface last said through `attend`, or null before it said anything. */
 	attention(): Attention | null;
 	/** Make every later read of repositories fail with this message, or pass null to let them work again. */
@@ -435,6 +437,7 @@ export function createMockEngine(
 	const listeners = new Set<(path: string) => void>();
 	// The mock watches nothing: changes are acted out with `announceChange`. It only keeps what it was told.
 	let attended: Attention | null = null;
+	let ready = 0;
 
 	// Fetching, acted out: Fetch now only, ended as `fetchEnding` says. Nothing reaches a network.
 	const fetches = new Map<string, RepositoryFetch>();
@@ -704,6 +707,11 @@ export function createMockEngine(
 			if (doneDelay > 0) await new Promise(resolve => setTimeout(resolve, doneDelay));
 			return structuredClone(applyDone(repository, path, preview));
 		},
+		// A browser shows the page itself, so this only counts.
+		windowReady() {
+			ready += 1;
+		},
+		readyCalls: () => ready,
 		attend(attention) {
 			attended = attention;
 		},

@@ -120,6 +120,12 @@ export interface Engine {
 	 */
 	attend(attention: Attention): void;
 	/**
+	 * The interface has drawn itself for the first time, in the saved theme.
+	 * The window is hidden until then, so nothing is seen before the theme's
+	 * colors. Nothing comes back, and later calls do nothing.
+	 */
+	windowReady(): void;
+	/**
 	 * Where fetching stands for each repository in the list: whether a fetch
 	 * runs, when one last worked, and why the latest one failed. The machine
 	 * fetches every repository in the background on the interval from the

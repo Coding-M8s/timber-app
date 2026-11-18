@@ -86,6 +86,8 @@ export type AppRPC = {
 			attend: Attention;
 			/** The person saw a branch marked force-pushed (see `Engine.forcePushSeen`). */
 			forcePushSeen: ForcePushSeen;
+			/** The interface has drawn itself, so the window can show (see `Engine.windowReady`). */
+			windowReady: {};
 		};
 	}>;
 	webview: RPCSchema<{

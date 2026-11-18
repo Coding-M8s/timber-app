@@ -993,6 +993,17 @@ the `theme` preference says which.
   at the start of every page load, before the page's own stylesheet, so the
   first frame is already in the saved theme. In a browser, `main.tsx` reads
   the preferences and applies the theme before React renders.
+- **Showing the window.** The window is made hidden. `main.tsx` renders the
+  first time at once (`flushSync`), waits for the built-in fonts (at most
+  half a second) and one task, and calls `windowReady` on the `Engine`,
+  which shows the window (`src/bun/window-reveal.ts`). Until then nothing
+  is on screen, so the webview's white background and the empty page are
+  never seen. If the word never comes, as when the page failed to load, the
+  window shows anyway after four seconds and the log says so. What is left
+  is GTK's own window background for one or two frames as the window
+  appears, before WebKit draws: Electrobun 2.0.6 sets neither a window's
+  background color nor a webview's, apart from making them transparent.
+  The mock engine counts the word; a browser shows the page itself.
 - **Keeping it.** `src/mainview/theme-apply.ts` holds the saved choice and,
   while Settings shows one, an unsaved one, and writes the style element
   only when the one to show changes. `ThemeKeeper` in `App.tsx` applies the
@@ -3515,6 +3526,25 @@ Linux x64 (Omarchy, Arch Linux) with Bun 1.4.4 and Timber 0.1.2:
     of the real session, so it opened on the real desktop, not on Xvfb. The
     run went on under `dbus-run-session` with `GTK_USE_PORTAL=0`.
 - Not run: the portal's dialog driven to the end, Windows, and macOS.
+
+Run for the startup flash (follows issue 83), Linux x64 (Omarchy, Arch
+Linux) with Bun 1.4.4:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 1450 tests passed, 1 was skipped, none failed.
+  `tests/window-reveal.test.ts` covers showing once on the word, the
+  fallback, and a late word after it.
+- The dev build on `Xvfb :5` under `dbus-run-session`, with Nord saved: a
+  sampler read one pixel of the sidebar through `XGetImage` as fast as it
+  could from before the launch, three launches each. On `main`: GTK's grey
+  `#f6f5f4` for about 250 ms, white `#ffffff` for 20 to 50 ms, then Nord's
+  `#2a2f3a`, its `#272c36`, and `#2a2f3a` again as the empty page filled,
+  in Nord at 0.63 to 0.68 s. With the window shown on the word: grey for 35
+  to 50 ms, no white and no change after, in Nord at 0.63 to 0.67 s. The
+  log never said the window was shown by the fallback.
+- Not run: the fallback in the desktop window, a saved maximized window
+  (Xvfb has no window manager), a dark GTK theme, where the grey is dark,
+  Windows, and macOS.
 
 Not run yet:
 

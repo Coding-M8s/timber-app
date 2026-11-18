@@ -67,6 +67,7 @@ export function createDesktopEngine(): Engine {
 		applyDone: request => rpc.request.applyDone(request, { maxRequestTime: Infinity }),
 		onRepositoryChanged: changes.add,
 		attend: attention => rpc.send.attend(attention),
+		windowReady: () => rpc.send.windowReady({}),
 		fetchStatuses: () => rpc.request.fetchStatuses({}),
 		// A large fetch takes as long as it takes; the main process stops one after ten minutes.
 		fetchNow: repository => rpc.request.fetchNow({ repository }, { maxRequestTime: Infinity }),
