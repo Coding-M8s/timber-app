@@ -3,7 +3,7 @@ import type { MouseEvent, ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { Sidebar } from "../src/mainview/components/Sidebar";
-import { createMockEngine, sampleRepositories, sampleTimberStatuses, sampleUnavailableRepository } from "../src/mainview/engine/mock";
+import { createMockEngine, sampleRepositories, sampleStatesRepository, sampleTimberStatuses, sampleUnavailableRepository } from "../src/mainview/engine/mock";
 import { StoreProvider } from "../src/mainview/store/react";
 import { createAppStore } from "../src/mainview/store/store";
 
@@ -200,6 +200,22 @@ describe("workspace", () => {
 		expect(markup).toMatch(/class="titlebar-branch" title="feat\/github-issue-lookup">/);
 		expect(markup).toMatch(/class="path">\/work\/timber-worktrees\/feat-github-issue-lookup</);
 		expect(markup).toContain("3 modified, 1 untracked");
+		// The header names the base Timber saved for the worktree.
+		expect(markup).toContain('<span title="Timber rebases this worktree onto origin/main, the base saved for it.">Base origin/main</span>');
+	});
+
+	test("the header says no saved base, warns about metadata Timber cannot use, and shows nothing on a Timber that reports none", async () => {
+		const { store } = await startedStore(createMockEngine([...sampleRepositories, sampleStatesRepository]));
+		const headerOf = (branch: string) => {
+			store.select(sampleStatesRepository.worktrees.find(worktree => worktree.branch === branch)!.id);
+			const markup = render(store);
+			return markup.slice(markup.indexOf('<div class="workspace-meta">'), markup.indexOf('<div class="workspace-done">'));
+		};
+		expect(headerOf("main")).toContain('<span title="Timber has no base saved for this worktree.">No saved base</span>');
+		expect(headerOf("feat/invoices")).toMatch(/<span class="saved-base-warning" title="Timber found a saved base for this worktree but cannot use it: [^"]+">Base unknown<\/span>/);
+		const older = headerOf("release/2.4");
+		expect(older).toContain("/work/billing-worktrees/release-2.4");
+		expect(older.toLowerCase()).not.toContain("base");
 	});
 
 	test("has a tab list with Workspace showing, and only that tab is a tab stop", async () => {
@@ -350,6 +366,18 @@ describe("settings dialog", () => {
 		expect(markup).toMatch(/class="settings-nav-item selected" aria-current="page"[^>]*>Layout</);
 		expect(markup).toContain('<input type="radio" name="sidebar-side" checked="" value="left"/>');
 		expect(markup).toContain('<input type="radio" name="sidebar-side" value="right"/>');
+	});
+
+	test("Layout offers the zoom, with the saved one chosen", async () => {
+		const { store } = await startedStore();
+		store.openDialog({ kind: "settings" });
+		const markup = render(store);
+		expect(markup).toMatch(/<label class="field-label" for="[^"]+">Zoom<\/label>/);
+		expect(markup).toMatch(/<option value="1" selected="">100%<\/option>/);
+		expect(markup).toContain('<option value="1.6">160%</option>');
+		await store.savePreferences({ zoom: 1.6 });
+		expect(render(store)).toMatch(/<option value="1.6" selected="">160%<\/option>/);
+		expect(render(store)).not.toMatch(/<option value="1" selected="">/);
 	});
 
 	test("Save is marked unavailable while nothing differs from what is saved, and stays focusable", async () => {

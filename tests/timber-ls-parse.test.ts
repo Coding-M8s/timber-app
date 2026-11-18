@@ -51,6 +51,7 @@ describe("a recorded successful listing", () => {
 			prunable: false,
 			pathExists: true,
 			changes: { kind: "known", modified: [], untracked: [] },
+			base: null,
 		});
 		expect(listing.worktrees.filter(worktree => worktree.primary).length).toBe(1);
 	});
@@ -105,7 +106,7 @@ describe("a recorded successful listing", () => {
 	test("ignores fields that a later Timber adds within version 1", () => {
 		const text = altered(record => {
 			record.later = { anything: true };
-			for (const worktree of record.worktrees) worktree.base = { kind: "unassigned" };
+			for (const worktree of record.worktrees) worktree.later = { kind: "anything" };
 		});
 		expect(listed(readTimberListing(text, 0)).worktrees).toEqual(listing.worktrees);
 	});
@@ -176,6 +177,53 @@ describe("a failed listing is an error, never a list", () => {
 		for (const damage of breaks) {
 			const text = altered(record => damage(record.worktrees[4]));
 			expect(messageOf(readTimberListing(text, 0))).toContain("worktree 5 of 7 is not a worktree record");
+		}
+	});
+});
+
+describe("the saved base", () => {
+	const bases = (text: string) => Object.fromEntries(listed(readTimberListing(text, 0)).worktrees.map(worktree => [worktree.branch, worktree.base]));
+	const withBase = (base: unknown) => altered(record => {
+		record.worktrees[1].base = base;
+	});
+
+	test("a recorded listing of Timber 0.1.2 gives every worktree its base: assigned, unassigned, or invalid with the reason", () => {
+		expect(bases(recorded.withBases)).toEqual({
+			"main": { kind: "unassigned" },
+			"feat/based": { kind: "assigned", ref: "refs/remotes/origin/main" },
+			"feat/local": { kind: "assigned", ref: "refs/heads/main" },
+			"feat/broken": { kind: "invalid", reason: "malformed" },
+			"plain": { kind: "unassigned" },
+			"gone": { kind: "invalid", reason: "stale" },
+			"swapped": { kind: "invalid", reason: "stale" },
+		});
+	});
+
+	test("invalid metadata never hides the worktree's row", () => {
+		expect(listed(readTimberListing(recorded.withBases, 0)).worktrees.length).toBe(7);
+	});
+
+	test("a record from a Timber before the field has no base at all, and the list is still read", () => {
+		expect(recorded.succeeded).not.toContain('"base"');
+		const listing = listed(readTimberListing(recorded.succeeded, 0));
+		expect(listing.worktrees.length).toBe(7);
+		expect(listing.worktrees.every(worktree => worktree.base === null)).toBe(true);
+	});
+
+	test("every reason for invalid metadata is kept", () => {
+		for (const reason of ["malformed", "stale", "unreadable"] as const) {
+			expect(listed(readTimberListing(withBase({ kind: "invalid", reason }), 0)).worktrees[1]!.base).toEqual({ kind: "invalid", reason });
+		}
+	});
+
+	test("the ref is kept exactly as saved", () => {
+		expect(listed(readTimberListing(withBase({ kind: "assigned", ref: "refs/remotes/fork/feat/zażółć x" }), 0)).worktrees[1]!.base)
+			.toEqual({ kind: "assigned", ref: "refs/remotes/fork/feat/zażółć x" });
+	});
+
+	test("a base field the contract does not describe refuses the list, so no base is ever guessed", () => {
+		for (const base of [null, "origin/main", [], {}, { kind: "assigned" }, { kind: "assigned", ref: "" }, { kind: "assigned", ref: 7 }, { kind: "invalid" }, { kind: "invalid", reason: "odd" }, { kind: "inferred", ref: "refs/heads/main" }]) {
+			expect(messageOf(readTimberListing(withBase(base), 0))).toContain("worktree 2 of 7 is not a worktree record");
 		}
 	});
 });

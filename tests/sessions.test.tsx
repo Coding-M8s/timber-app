@@ -245,7 +245,7 @@ describe("several sessions in one worktree", () => {
 
 	test("the sidebar row says how many sessions run, and nothing when none do", async () => {
 		const { store, one, two, three } = await withThreeSessions();
-		const row = (markup: string) => markup.slice(markup.indexOf(`title="${FEATURE}"`), markup.indexOf("</li>", markup.indexOf(`title="${FEATURE}"`)));
+		const row = (markup: string) => markup.slice(markup.indexOf(`title="${FEATURE} (`), markup.indexOf("</li>", markup.indexOf(`title="${FEATURE} (`)));
 		expect(row(render(store))).toContain('<span class="row-sessions" title="3 sessions running" aria-hidden="true"><span class="row-sessions-dot"></span>3</span>');
 		expect(row(render(store))).toContain("3 sessions running.</span>");
 		await store.closeTerminal(one.id);

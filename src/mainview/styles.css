@@ -569,6 +569,11 @@ pre:focus-visible {
 	color: var(--text-3);
 }
 
+/* Saved base metadata Timber cannot use. The words say so; the color only marks it. */
+.saved-base-warning {
+	color: var(--error);
+}
+
 .path {
 	font-family: var(--font-mono);
 	font-size: 11.5px;
@@ -2677,4 +2682,24 @@ pre:focus-visible {
 		flex-direction: column;
 		align-items: stretch;
 	}
+}
+
+/* Rebase dialog (issue 18): the files a rebase stopped on, as Git names them. */
+.rebase-conflicts {
+	margin: 0;
+	padding: 8px 10px 8px 28px;
+	max-height: 180px;
+	border: 1px solid var(--line);
+	border-radius: 7px;
+	background: var(--bg-pane);
+	font-family: var(--font-mono);
+	font-size: 11.5px;
+	overflow-y: auto;
+	overflow-wrap: anywhere;
+}
+
+/* The Git commands in the conflicts view stay on one line each, so `--continue` never breaks at its dashes. */
+.rebase-advice code {
+	font-family: var(--font-mono);
+	white-space: nowrap;
 }

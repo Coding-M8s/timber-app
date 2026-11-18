@@ -203,6 +203,8 @@ describe.skipIf(realTimber === null)("branch status with the installed Timber, o
 		expect(shown(at(repository, "kept"))).toEqual(["local only", "locked"]);
 		expect(shown(at(repository, "gone"))).toEqual(["local only", "folder missing"]);
 		expect(describeRowMarkers(at(repository, "gone"))[1]!.tooltip).toBe(`The folder is missing: ${tree("gone")}. Its status is unknown.`);
+		// Timber calls the base of a folder it could not verify stale. The row says "folder missing" once, not that twice.
+		expect(at(repository, "gone").base).toEqual({ kind: "invalid", reason: "stale" });
 	});
 
 	test("reading the status leaves every file, ref, and index untouched", async () => {

@@ -38,6 +38,25 @@ export type WorktreeChanges =
 	| { kind: "known"; modified: string[]; untracked: string[] }
 	| { kind: "unknown"; reason: string };
 
+/**
+ * The base Timber saved for a worktree: what `timber rebase` rebases it onto
+ * and `timber done` checks it against. Timber reads it offline, so an
+ * assigned ref is a saved choice, not proof that the ref still exists.
+ */
+export type SavedBase =
+	/** The canonical ref exactly as saved: `refs/remotes/<remote>/<branch>` or `refs/heads/<branch>`. */
+	| { kind: "assigned"; ref: string }
+	/** Nothing is saved, as for the primary checkout or a worktree added with plain Git. */
+	| { kind: "unassigned" }
+	/**
+	 * Saved metadata exists and Timber cannot use it: not in the expected form
+	 * ("malformed"), not matching this worktree ("stale"), or not readable
+	 * ("unreadable"). The base is unknown then, never "none".
+	 */
+	| { kind: "invalid"; reason: SavedBaseProblem };
+
+export type SavedBaseProblem = "malformed" | "stale" | "unreadable";
+
 /** One worktree, as `timber ls --json` lists it. */
 export interface Worktree {
 	/**
@@ -62,6 +81,11 @@ export interface Worktree {
 	/** False when the folder was missing when Timber looked. */
 	pathExists: boolean;
 	changes: WorktreeChanges;
+	/**
+	 * The base Timber saved for the worktree. Null when Timber's record does
+	 * not say, as with a Timber from before the field. Never inferred.
+	 */
+	base: SavedBase | null;
 	/**
 	 * How the branch stands against its upstream, read from Git because Timber
 	 * does not report it. Null on a detached HEAD, or when Git could not say.

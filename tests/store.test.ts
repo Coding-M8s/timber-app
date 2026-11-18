@@ -100,6 +100,8 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		openWorktree: request => new Promise((resolve, reject) => {
 			commands.push({ kind: "open", request, path: request.repository, resolve, reject });
 		}),
+		// Rebasing through a result file has its own tests in rebase-result.test.tsx.
+		rebaseWorktree: async () => ({ outcome: "failed", ran: false, failure: { command: null, diagnostic: "Not acted out here.", output: null } }),
 		previewDone: request => new Promise((resolve, reject) => {
 			previews.push({ path: request.path, request, resolve, reject });
 		}),

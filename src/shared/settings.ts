@@ -1,6 +1,7 @@
 import { type ForcePushMarks, readForcePushMarks } from "./git-fetch";
 import { type Layout, readLayout } from "./layout";
 import { type Preferences, readPreferences, writePreferences } from "./preferences";
+import { type SavedWindow, readSavedWindow } from "./window-frame";
 
 /**
  * What the app remembers between runs. Parsing and formatting are pure; the
@@ -34,6 +35,11 @@ export interface Settings {
 	 * repository, so the marks outlive a restart. Absent when there are none.
 	 */
 	forcePushes?: ForcePushMarks;
+	/**
+	 * Where the window was and how large. Absent until the window is first
+	 * moved or resized, and in files written before the app remembered it.
+	 */
+	window?: SavedWindow;
 }
 
 export const SETTINGS_VERSION = 1;
@@ -58,9 +64,9 @@ function readRepository(value: unknown): SavedRepository | null {
  * this version, or holding an entry that is not a saved repository. A damaged
  * file is never half-read, so a later save cannot quietly drop part of it.
  *
- * The layout, the preferences, and the force-push marks are the exception,
+ * The layout, the preferences, the force-push marks, and the window are the exception,
  * because they are only a convenience: a part that cannot be read falls back to the defaults (see
- * `readLayout` and `readPreferences`) and never costs the repository list.
+ * `readLayout`, `readPreferences`, and `readSavedWindow`) and never costs the repository list.
  */
 export function parseSettings(text: string): Settings | null {
 	let value: unknown;
@@ -89,6 +95,8 @@ export function parseSettings(text: string): Settings | null {
 		const forcePushes = readForcePushMarks(value.forcePushes);
 		if (Object.keys(forcePushes).length > 0) settings.forcePushes = forcePushes;
 	}
+	const window = readSavedWindow(value.window);
+	if (window) settings.window = window;
 	return settings;
 }
 
@@ -102,11 +110,13 @@ export function serializeSettings(settings: Settings): string {
 	};
 	const preferences = settings.preferences && writePreferences(settings.preferences);
 	const forcePushes = settings.forcePushes && Object.keys(settings.forcePushes).length > 0 ? readForcePushMarks(settings.forcePushes) : null;
+	const window = settings.window && readSavedWindow(settings.window);
 	return `${JSON.stringify({
 		version: SETTINGS_VERSION,
 		repositories,
 		...(layout ? { layout } : {}),
 		...(preferences ? { preferences } : {}),
 		...(forcePushes ? { forcePushes } : {}),
+		...(window ? { window: { frame: { x: window.frame.x, y: window.frame.y, width: window.frame.width, height: window.frame.height }, maximized: window.maximized } } : {}),
 	}, null, "\t")}\n`;
 }

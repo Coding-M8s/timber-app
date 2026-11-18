@@ -11,6 +11,7 @@ import type { StartRebaseRequest, StartRebaseResult } from "../../shared/rebase-
 import { type OpenTerminalRequest, type TerminalChange, type TerminalSession, TIMBER_SETUP_SESSION_NAME } from "../../shared/terminal";
 import type { TimberConfigScope, TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "../../shared/timber-config";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "../../shared/timber-done";
+import type { RebaseRequest, RebaseResult } from "../../shared/timber-rebase";
 import { type Draw, createTerminalFeed } from "../terminal-feed";
 import { describeOrphanTerminal } from "../terminal-format";
 import { listedOrder } from "../changes-format";
@@ -174,6 +175,23 @@ export interface AppStore {
 	 * throws.
 	 */
 	startRebase(request: StartRebaseRequest): Promise<StartRebaseResult>;
+	/**
+	 * Rebase a worktree with `timber rebase --result-file` and answer how it
+	 * ended (see `RebaseResult`). The engine is asked once, and never again by
+	 * itself. The repository is read again before this answers, whatever the
+	 * outcome, even when the engine did not answer, because a rebase that
+	 * stopped or failed can have changed the branch. Never throws: an engine
+	 * that does not answer is a failure that says what it did is unknown. A
+	 * rebase that stopped on conflicts is left as Git left it.
+	 */
+	rebaseWorktree(request: RebaseRequest): Promise<RebaseResult>;
+	/**
+	 * Start a plain shell session in a worktree and show it: select the
+	 * worktree and show the Workspace tab, as `startAgentIn` does for an agent.
+	 * Used to resolve a rebase that stopped on conflicts. Not in the list:
+	 * nothing starts. Never throws.
+	 */
+	openTerminalIn(repository: string, worktreePath: string): void;
 	/**
 	 * Start an agent from the saved Settings, by name, in a worktree the New
 	 * worktree dialog created, as `openTerminal` does: select the worktree and
@@ -856,6 +874,28 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		return { outcome: "started", session };
 	}
 
+	async function rebaseWorktree(request: RebaseRequest): Promise<RebaseResult> {
+		let result: RebaseResult;
+		try {
+			result = await engine.rebaseWorktree(request);
+		} catch (error) {
+			const diagnostic = `The app did not hear how the rebase ended: ${messageOf(error)}. The engine did not answer, so what it did is unknown. Check the worktree before trying again.`;
+			result = { outcome: "failed", ran: true, failure: { command: null, diagnostic, output: null } };
+		} finally {
+			await reloadOne(request.repository);
+		}
+		return result;
+	}
+
+	function openTerminalIn(repositoryPath: string, worktreePath: string): void {
+		const worktree = state.repositories.find(repository => repository.path === repositoryPath)?.worktrees.find(candidate => candidate.path === worktreePath);
+		if (!worktree) return;
+		update({ tab: "workspace" });
+		select(worktree.id);
+		// The pane gives the session its real size once it shows.
+		void openTerminal({ repository: repositoryPath, worktree: worktree.path, cols: 80, rows: 24 });
+	}
+
 	/** Show a session: select its worktree, choose its chip, and show the Workspace tab. */
 	function reveal(session: TerminalSession): void {
 		const selection = selectionFor(state.repositories, session.worktree);
@@ -1127,6 +1167,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		openTerminal,
 		startRebase,
 		startAgentIn,
+		rebaseWorktree,
+		openTerminalIn,
 		showSession,
 		stepSession,
 		renameTerminal,

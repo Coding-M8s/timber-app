@@ -1,10 +1,11 @@
 import { homedir } from "node:os";
 import { dirname } from "node:path";
-import Electrobun, { BrowserView, BrowserWindow, Updater, Utils } from "electrobun/main";
+import Electrobun, { BrowserView, BrowserWindow, Screen, Updater, Utils } from "electrobun/main";
 import { APP_NAME, APP_VERSION } from "../shared/app-info";
 import { type ForcePushMarks, withForcePushes } from "../shared/git-fetch";
 import type { Repository } from "../shared/model";
 import type { AppRPC } from "../shared/rpc";
+import { DEFAULT_WINDOW_FRAME, type WindowFrame, fitWindowFrame } from "../shared/window-frame";
 import { repositoryChanges } from "./changes";
 import { createDone } from "./done";
 import { createEditorLauncher } from "./editor";
@@ -27,6 +28,7 @@ import { createWorktreeStamps } from "./worktree-stamp";
 import { createTerminalSessions } from "./terminals";
 import { createTimberSettings } from "./timber-settings";
 import { createUninstaller } from "./uninstall";
+import { createWindowMemory } from "./window-memory";
 import { createWorktreeCommands } from "./worktree-commands";
 import { createWorkflowReader } from "./workflows";
 
@@ -67,7 +69,7 @@ const settings = createSettingsHolder(settingsFile);
 const repositories = createRepositoryList({ settingsFile, settings, pickFolder, reader: createRepositoryReader(() => timber.current()) });
 const layout = createSavedLayout(settings);
 const preferences = createSavedPreferences(settings);
-const worktrees = createWorktreeCommands({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
+const worktrees = createWorktreeCommands({ timber: () => timber.current(), isListed: path => repositories.includes(path), findRepository: path => repositories.find(path) });
 
 /*
  * Background refresh (see docs/architecture.md, "Watching for changes"). The watcher hears changes to the Git
@@ -207,12 +209,16 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			// What these answer holds what the command printed, which is private: never log it.
 			newWorktree: request => worktrees.create(request),
 			openWorktree: request => worktrees.open(request),
+			rebaseWorktree: request => worktrees.rebase(request),
 			loadLayout: () => layout.load(),
 			saveLayout: ({ layout: next }) => layout.save(next),
 			loadPreferences: () => preferences.load(),
 			savePreferences: async ({ change }) => {
 				const result = await preferences.save(change);
-				if (result.outcome === "saved") fetcher.configure(result.preferences.fetch);
+				if (result.outcome === "saved") {
+					fetcher.configure(result.preferences.fetch);
+					applyZoom(result.preferences.zoom);
+				}
 				return result;
 			},
 			// Starts the editor from the saved setting only. The request names the worktree, never the command (see ./editor.ts).
@@ -277,18 +283,53 @@ function guardQuit(event: unknown): void {
 		watcher.stop();
 		// Asks a running Git to stop, so it can remove its lock files before the app goes.
 		fetcher.stop();
+		// A resize from just before quitting is still waiting to be saved.
+		void windowMemory.flush();
 		return;
 	}
 	(event as Veto).response = { allow: false };
 }
 Electrobun.events.on("before-quit", guardQuit);
 
+/** The usable area of each display, the primary one first. Empty when the displays cannot be read. */
+function displayAreas(): WindowFrame[] {
+	try {
+		const displays = [...Screen.getAllDisplays()].sort((one, other) => Number(other.isPrimary) - Number(one.isPrimary));
+		return displays.map(display => display.workArea.width > 0 && display.workArea.height > 0 ? display.workArea : display.bounds);
+	} catch {
+		return [];
+	}
+}
+
+/*
+ * The window opens where it was and as large as it was (see docs/architecture.md, "The saved window"). It is read
+ * again once it has been still after a move or a resize, and that is saved.
+ */
+const windowMemory = createWindowMemory({
+	settings,
+	read: () => ({ frame: mainWindow.getFrame(), maximized: mainWindow.isMaximized(), fullScreen: mainWindow.isFullScreen() }),
+});
+const savedWindow = await windowMemory.load();
+
 const mainWindow = new BrowserWindow({
 	title: APP_NAME,
 	url: await mainViewUrl(),
-	frame: { width: 1280, height: 820, x: 120, y: 80 },
+	frame: fitWindowFrame(savedWindow?.frame ?? DEFAULT_WINDOW_FRAME, displayAreas()),
 	rpc,
 });
+if (savedWindow?.maximized) mainWindow.maximize();
+mainWindow.on("resize", () => windowMemory.changed());
+mainWindow.on("move", () => windowMemory.changed());
+
+/** Draw the interface at this zoom (see docs/architecture.md, "Interface zoom"). The window stays usable when it fails. */
+function applyZoom(zoom: number): void {
+	try {
+		mainWindow.setPageZoom(zoom);
+	} catch (error) {
+		console.warn(`Could not set the zoom: ${error instanceof Error ? error.message : String(error)}`);
+	}
+}
+void preferences.load().then(saved => applyZoom(saved.zoom), () => {});
 // Closing the last window quits the app, so it asks the same question first.
 mainWindow.on("will-close", event => {
 	if (!quitGuard.mayQuit()) (event as Veto).response = { allow: false };

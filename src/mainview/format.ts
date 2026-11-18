@@ -1,6 +1,7 @@
 import type { CapturedOutput, Repository, SyncState, TimberStatus, Worktree } from "../shared/model";
 import { TIMBER_LS_COMMAND } from "../shared/timber-ls";
 import { REQUIRED_TIMBER_VERSION, TIMBER_OVERRIDE_VARIABLE } from "../shared/timber-version";
+import { SAVED_BASE_UNKNOWN, describeInvalidBase } from "./base-format";
 import type { ListNotice } from "./store/state";
 
 /** The command Timber's own quick start gives for installing and for updating. */
@@ -155,6 +156,7 @@ export type RowMarkerKind =
 	| "status-unknown"
 	| "locked"
 	| "prunable"
+	| "base-unknown"
 	| "modified"
 	| "untracked";
 
@@ -220,6 +222,10 @@ export function describeRowMarkers(worktree: Worktree): RowMarker[] {
 	if (worktree.prunable && worktree.pathExists) {
 		state("prunable", "prunable", "Prunable: Git considers the record of this worktree stale, and git worktree prune would remove the record.");
 	}
+	// Only unusable metadata is marked: it is a warning. A saved base, or none, is in the row's tooltip.
+	// Timber calls the base stale whenever it could not verify the worktree, and the marker for that already says so.
+	const { base } = worktree;
+	if (base?.kind === "invalid" && !(base.reason === "stale" && changes.kind === "unknown")) state("base-unknown", SAVED_BASE_UNKNOWN, describeInvalidBase(base.reason));
 
 	if (changes.kind === "known") {
 		const modified = changes.modified.length;

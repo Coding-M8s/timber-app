@@ -38,7 +38,8 @@ const tagsOf = (markup: string, className: string) => markup.match(new RegExp(`<
 
 /** The opening tag of the editor control beside the row of the worktree at `path`. */
 function rowEditor(markup: string, path: string): string {
-	const row = markup.indexOf(`title="${path}"`);
+	// The row's tooltip starts with its path. The saved base may follow it.
+	const row = [`title="${path}"`, `title="${path} (`].map(start => markup.indexOf(start)).find(at => at >= 0) ?? -1;
 	if (row < 0) throw new Error(`No row for ${path}`);
 	const tag = /<button [^>]*class="icon-button row-editor"[^>]*>/.exec(markup.slice(row));
 	if (!tag) throw new Error(`No editor control after the row for ${path}`);
@@ -276,7 +277,7 @@ describe("the Editor section of Settings", () => {
 		expect(markup).toContain('<h3 id="');
 		expect(markup).toMatch(/class="settings-section-title">Editor</);
 		await store.savePreferences({ editor: { command: "zed", terminal: false } });
-		expect(await engine.loadPreferences()).toEqual({ sidebarSide: "left", editor: { command: "zed", terminal: false }, agents: AGENT_PRESETS, fetch: defaultFetchSetting() });
+		expect(await engine.loadPreferences()).toEqual({ sidebarSide: "left", editor: { command: "zed", terminal: false }, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1 });
 	});
 });
 

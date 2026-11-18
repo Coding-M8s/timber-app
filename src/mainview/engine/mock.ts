@@ -1,7 +1,7 @@
 import type { Attention } from "../../shared/attention";
 import type { Engine } from "../../shared/engine";
 import { type Layout, defaultLayout, forgetRepository, readLayout } from "../../shared/layout";
-import { type AddRepositoryResult, type BranchSuggestion, type OpenInEditorRequest, type OpenInEditorResult, type Repository, type SyncState, type TimberStatus, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
+import { type AddRepositoryResult, type BranchSuggestion, type OpenInEditorRequest, type OpenInEditorResult, type Repository, type SavedBase, type SyncState, type TimberStatus, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
 import { describeCommandLine } from "../../shared/command-line";
 import { TERMINAL_EDITOR_REASON, editorCommand, editorTarget, otherExecutableNames } from "../../shared/editor";
 import { notFoundOnPath } from "../../shared/search-path";
@@ -10,11 +10,13 @@ import {
 	type DoneApplyResult, type DoneOptions, type DonePreviewResult, DONE_PREVIEW_MINUTES, describeDoneApply, describeDonePreview, readDonePreview,
 } from "../../shared/timber-done";
 import type { FetchFailureKind, FetchResult, ForcePushSeen, RepositoryFetch } from "../../shared/git-fetch";
+import type { RebaseResult } from "../../shared/timber-rebase";
 import { failureOf, readTimberResult } from "../../shared/timber-result";
 import { APP_VERSION } from "../../shared/app-info";
 import { type AvailableUninstallPlan, UNINSTALL_ARGUMENTS, type UninstallRequest } from "../../shared/uninstall";
 import { REQUIRED_TIMBER_VERSION } from "../../shared/timber-version";
 import { type CommandEnding, actOutNew, actOutOpen, isCommandEnding } from "./mock-commands";
+import { type RebaseEnding, actOutRebase, isRebaseEnding } from "./mock-rebase";
 import { type MockFileChange, derivedFileChanges, diffMockFileChange, listMockFileChanges } from "./mock-file-changes";
 import { MOCK_PATH, type TerminalControls, createMockTerminals } from "./mock-terminals";
 import { type TimberConfigControls, createMockTimberConfig } from "./mock-timber-config";
@@ -44,6 +46,8 @@ function worktree(repository: string, branch: string, overrides: SampleOverrides
 		prunable: false,
 		pathExists: true,
 		changes: sampleChanges(0, 0),
+		// As Timber does: the primary checkout has no saved base, and a worktree made with `timber new` has one.
+		base: (primary ? { kind: "unassigned" } : { kind: "assigned", ref: "refs/remotes/origin/main" }) as SavedBase | null,
 		sync: inSync(branch) as SyncState | null,
 		...overrides,
 	};
@@ -77,6 +81,8 @@ export const sampleRepositories: Repository[] = [
 			}),
 			worktree("timber", "spike/new-idea", {
 				changes: sampleChanges(0, 2),
+				// Based on a local branch, which Timber saves by its full ref.
+				base: { kind: "assigned", ref: "refs/heads/main" },
 				sync: { kind: "unpublished" },
 			}),
 		],
@@ -90,6 +96,8 @@ export const sampleRepositories: Repository[] = [
 		worktrees: [
 			worktree("api-server", "main", { primary: true }),
 			worktree("api-server", "feat/rate-limit-headers", {
+				// Added with plain Git, so Timber saved no base for it.
+				base: { kind: "unassigned" },
 				sync: { kind: "gone", upstream: "origin/feat/rate-limit-headers" },
 			}),
 			worktree("api-server", "old/removed-folder", {
@@ -105,8 +113,9 @@ export const sampleRepositories: Repository[] = [
 /**
  * A repository with the row states the two above do not have: a detached
  * HEAD, a locked worktree, a prunable one whose folder is still there, a
- * status Timber could not read, an upstream state Git could not read, and a
- * row with everything at once. The browser build lists it; most tests do not.
+ * status Timber could not read, an upstream state Git could not read, saved
+ * base metadata Timber cannot use, a record with no base at all, and a row
+ * with everything at once. The browser build lists it; most tests do not.
  */
 export const sampleStatesRepository: Repository = {
 	path: "/work/billing",
@@ -122,7 +131,8 @@ export const sampleStatesRepository: Repository = {
 			head: "4f9c2ab81d3e56f7a0b1c2d3e4f5a6b7c8d9e0f1",
 			sync: null,
 		}),
-		worktree("billing", "release/2.4", { locked: true }),
+		// A record without the field, as from a Timber before it: no base is shown.
+		worktree("billing", "release/2.4", { locked: true, base: null }),
 		worktree("billing", "chore/moved-folder", {
 			prunable: true,
 			changes: { kind: "unknown", reason: "Path no longer identifies this Git worktree" },
@@ -133,6 +143,7 @@ export const sampleStatesRepository: Repository = {
 		}),
 		worktree("billing", "feat/invoices", {
 			changes: sampleChanges(2, 0),
+			base: { kind: "invalid", reason: "stale" },
 			sync: null,
 		}),
 		worktree("billing", "feat/tax-rules", {
@@ -257,6 +268,13 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	 * ./mock-commands.ts for what each one acts out.
 	 */
 	endCommands(ending: CommandEnding): void;
+	/**
+	 * Decide how `timber rebase --result-file` ends from now on: "rebased"
+	 * (the start), "up-to-date", "conflicts", "refused", "failed", "no-result",
+	 * or "unsupported". A worktree with modified or untracked files is refused
+	 * whatever the ending. See ./mock-rebase.ts for what each one acts out.
+	 */
+	endRebaseResults(ending: RebaseEnding): void;
 	/**
 	 * Decide what the branch list of one repository answers from now on: these
 	 * branches, or null for a list that cannot be read. Until then it answers
@@ -603,6 +621,7 @@ export function createMockEngine(
 		return structuredClone(result());
 	};
 	let ending: CommandEnding = "succeeds";
+	let rebaseEnding: RebaseEnding = "rebased";
 	const branchLists = new Map<string, BranchSuggestion[] | null>();
 	const listedBranches = (repository: Repository) =>
 		branchLists.has(repository.path) ? branchLists.get(repository.path)! : branchesOf(repository);
@@ -661,6 +680,19 @@ export function createMockEngine(
 		},
 		newWorktree: request => command(request.repository, repository => actOutNew(repository, request, ending)),
 		openWorktree: request => command(request.repository, repository => actOutOpen(repository, request, ending, listedBranches(repository) ?? [])),
+		async rebaseWorktree(request) {
+			const refuse = (diagnostic: string): RebaseResult => ({ outcome: "failed", ran: false, failure: { command: null, diagnostic: `${diagnostic} Nothing was run.`, output: null } });
+			if (commandMilliseconds > 0) await new Promise(resolve => setTimeout(resolve, commandMilliseconds));
+			// As the main process does: a repository from the list, a worktree it lists with its folder there, then a Timber that is ready.
+			const repository = current.find(candidate => candidate.path === request.repository && candidate.available);
+			if (!repository) return refuse(`${request.repository} is not a repository in the app's list.`);
+			const worktree = timberFailures.has(repository.path) ? undefined : repository.worktrees.find(candidate => candidate.path === request.worktree);
+			if (!worktree) return refuse(`Timber lists no worktree at ${request.worktree} in ${request.repository}. Refresh the list.`);
+			if (!worktree.pathExists) return refuse(`The folder ${worktree.path} is missing.`);
+			const status = await look();
+			if (status.state !== "ready") return refuse("Timber is not ready.");
+			return structuredClone(actOutRebase(repository, worktree, request, rebaseEnding, status));
+		},
 		listBranches: path => read(() => {
 			const found = current.find(repository => repository.path === path && repository.available);
 			return found ? listedBranches(found) : null;
@@ -681,6 +713,11 @@ export function createMockEngine(
 			// Called from the browser console too, where nothing checks the word.
 			if (!isCommandEnding(next)) throw new Error(`Unknown ending: ${String(next)}`);
 			ending = next;
+		},
+		endRebaseResults(next) {
+			// Called from the browser console too, where nothing checks the word.
+			if (!isRebaseEnding(next)) throw new Error(`Unknown ending: ${String(next)}`);
+			rebaseEnding = next;
 		},
 		setBranches(path, branches) {
 			branchLists.set(path, branches);

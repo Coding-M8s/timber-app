@@ -5,6 +5,7 @@ import { findTimber } from "../../src/bun/timber";
 const windows = process.platform === "win32";
 const fixtures = join(import.meta.dir, "..", "fixtures", "timber-ls");
 const resultFixtures = join(import.meta.dir, "..", "fixtures", "timber-result");
+const rebaseFixtures = join(import.meta.dir, "..", "fixtures", "timber-rebase");
 const doneFixtures = join(import.meta.dir, "..", "fixtures", "timber-done");
 
 /**
@@ -16,9 +17,18 @@ const doneFixtures = join(import.meta.dir, "..", "fixtures", "timber-done");
  *   missing, a locked one, one whose folder was replaced by a plain folder,
  *   and one with spaces and non-ASCII characters in its path and branch.
  * - `failed` is the record for a folder outside any repository (exit code 1).
+ *
+ * `withBases` is from Timber 0.1.2, the first release that reports each
+ * worktree's saved `base`. It lists a primary checkout (no saved base) and
+ * six linked worktrees: `feat/based` made with `timber new --base
+ * origin/main`, `feat/local` with `--base refs/heads/main`, `feat/broken`
+ * whose saved `base.json` was overwritten with text that is not JSON, `plain`
+ * added with plain Git, and `gone` and `swapped` as above, which Timber
+ * could not verify and so reports as stale.
  */
 export const recorded = {
 	succeeded: readFileSync(join(fixtures, "succeeded.json"), "utf8"),
+	withBases: readFileSync(join(fixtures, "with-bases.json"), "utf8"),
 	failed: readFileSync(join(fixtures, "failed.json"), "utf8"),
 };
 
@@ -34,6 +44,33 @@ export const recorded = {
 export const recordedResult = {
 	succeeded: readFileSync(join(resultFixtures, "succeeded.json"), "utf8"),
 	failed: readFileSync(join(resultFixtures, "failed.json"), "utf8"),
+};
+
+/**
+ * Result files recorded from `timber rebase --result-file` of Timber 0.1.2 on
+ * Linux, exactly as written, except that the temporary folder it ran in is
+ * written `/work`. Each ran in a new repository `/work/sample` with its
+ * linked worktree `/work/sample-worktrees/feat`, with a fixed test identity.
+ *
+ * - `rebased`: `feat` was rebased onto `refs/heads/main`, which had a new
+ *   commit (exit code 0).
+ * - `upToDate`: `feat` already contained `refs/heads/main` (exit code 0).
+ * - `conflicts`: both branches changed `a.txt` and `my file.txt`, so Git paused
+ *   the rebase on those two files (exit code 1).
+ * - `refused`: the worktree had an untracked file, so Timber refused before
+ *   it did anything (exit code 1).
+ * - `failedHook`: a `pre-rebase` hook rejected the rebase. The base was known
+ *   and not saved (exit code 1).
+ * - `failedFetch`: the base was `refs/remotes/origin/x` and `origin` could not
+ *   be reached, so there was no base at all (exit code 1).
+ */
+export const recordedRebase = {
+	rebased: readFileSync(join(rebaseFixtures, "rebased.json"), "utf8"),
+	upToDate: readFileSync(join(rebaseFixtures, "up-to-date.json"), "utf8"),
+	conflicts: readFileSync(join(rebaseFixtures, "conflicts.json"), "utf8"),
+	refused: readFileSync(join(rebaseFixtures, "refused.json"), "utf8"),
+	failedHook: readFileSync(join(rebaseFixtures, "failed-hook.json"), "utf8"),
+	failedFetch: readFileSync(join(rebaseFixtures, "failed-fetch.json"), "utf8"),
 };
 
 const doneFixture = (name: string) => readFileSync(join(doneFixtures, name), "utf8");

@@ -78,8 +78,8 @@ Timber's safety logic must exist once. The app follows two rules:
    the `timber` command, and the interface shows the command before it runs.
    Creating a worktree and opening an existing branch are built (see
    [creating and opening worktrees](#creating-and-opening-worktrees)), and
-   so is an interim rebase that runs in a session (see
-   [rebasing a worktree](#rebasing-a-worktree-interim)).
+   so is rebasing, which reads Timber's result file (see
+   [rebasing a worktree](#rebasing-a-worktree)).
 2. **Git is asked directly only for read-only status that Timber does not
    report.** Today that is which repository a folder belongs to, how each
    branch stands against its upstream, which branches there are to offer
@@ -117,9 +117,25 @@ The sidebar shows exactly the worktrees Timber lists, in Timber's order
   app does not use, or that a later Timber adds within version 1, are ignored.
 - **Mapping.** Each `WorktreeRecord` becomes a `Worktree` in
   `src/shared/model.ts`: branch, detached, primary, locked, prunable, whether
-  the folder exists, and the changes, which are either known with their
-  modified and untracked paths or unknown with Timber's reason. Ignored files
-  are left out.
+  the folder exists, the changes, which are either known with their
+  modified and untracked paths or unknown with Timber's reason, and the
+  saved base (below). Ignored files are left out.
+- **Saved base.** The record's `base` field becomes `Worktree.base`, a
+  `SavedBase`: assigned with the canonical ref exactly as Timber saved it,
+  unassigned, or invalid with Timber's reason (malformed, stale, or
+  unreadable). A record without the field, as from a Timber before it, reads
+  as null and the app shows no base at all. A field of any other shape
+  refuses the list like any unreadable record. The app never infers a base
+  from branches or history, and never checks that the saved ref still
+  exists: Timber reads it offline, so it is a saved choice. Its words come
+  from `src/mainview/base-format.ts`, which is pure. A base is worded in the
+  form Timber takes for `--base` and prints in its own list
+  (`savedBaseSelector` in `src/shared/rebase-command.ts`):
+  `refs/remotes/origin/main` as `origin/main`, and a local branch by its
+  full ref, `refs/heads/main`. The row's tooltip is its path followed by
+  "(Base origin/main)", "(No saved base)", or "(Base unknown)". The workspace
+  header shows the same words after the changes, with the whole sentence as a
+  tooltip, and "Base unknown" in the error color.
 - **Identity.** A worktree's `id` is the common Git directory plus its
   canonical path, and the selection holds that, not a path or a branch.
   Timber gives a canonical path only for a folder it verified. For a missing
@@ -138,7 +154,10 @@ The sidebar shows exactly the worktrees Timber lists, in Timber's order
   short text, and a sentence in plain words. `WorktreeRow` only draws them.
   Beside the branch: a down arrow and an up arrow with counts, "local only",
   "upstream gone", or "sync unknown". Below it: "detached HEAD", "folder
-  missing" or "status unknown", "locked", and "prunable". At the end: the
+  missing" or "status unknown", "locked", "prunable", and "base unknown" for
+  saved base metadata Timber cannot use. Timber calls the base stale
+  whenever it could not verify the worktree, so a row that already says
+  "folder missing" or "status unknown" is not marked again for that. At the end: the
   counts, such as `3M` and `1U`. A clean worktree that is level with its
   upstream has no markers, and a status or upstream state that could not be
   read always has one, so an empty row never means "not known".
@@ -163,12 +182,13 @@ The sidebar shows exactly the worktrees Timber lists, in Timber's order
 ### Commands that report through a result file
 
 New, open, done, rebase, and saving Timber's settings (`config`) say how they ended in a result file, not on
-standard output. The app does not use rebase's result file yet: until Timber
-has a machine interface for it, rebase runs in a session instead (see
-[below](#rebasing-a-worktree-interim)). One helper runs all of them, so no dialog reads a result its
+standard output. One helper runs all of them, so no dialog reads a result its
 own way: `runTimberWithResultFile` in `src/bun/timber-run.ts`. Creating and
 opening worktrees use it (see [below](#creating-and-opening-worktrees)), and
-so does the Done dialog (see [removing a worktree](#removing-a-worktree)).
+so do the Done dialog (see [removing a worktree](#removing-a-worktree)) and
+the Rebase dialog (see [rebasing a worktree](#rebasing-a-worktree)), which
+needs a Timber that writes the result file for rebase and falls back to a
+session on an older one.
 
 - **The file.** Each run gets a fresh file name in a new folder that only
   this user can open, made in the system's temporary folder. Timber creates
@@ -731,6 +751,12 @@ was typed and lists them), `"setup-fails"` (the worktree is created, then the se
 script fails), or `"no-result"` (exit code 0 and no result file). A name whose
 branch is already checked out is refused whatever the ending, and so is text
 for `timber open` that matches no worktree and no listed branch.
+`timberMock.endRebaseResults(ending)` chooses how `timber rebase` ends from
+then on: `"rebased"` (the start), `"up-to-date"`, `"conflicts"` (two sample
+paths, one with a space), `"refused"`, `"failed"`, `"no-result"` (exit code 1
+and no result file), or `"unsupported"` (a Timber too old to report). A
+worktree with modified or untracked files is refused whatever the ending, as
+Timber does, and a mock Timber older than 0.1.2 is unsupported.
 `timberMock.setBranches("/work/timber", list)` replaces the branches offered
 for picking (`null` acts out a list that cannot be read).
 `timberMock.failLayoutSaves("disk full")` makes saving the layout fail
@@ -795,6 +821,38 @@ pure functions in `src/mainview/shell.ts`.
   why, until it is dismissed or the next save works. It is not a toast, and
   repeated failures do not add more notes.
 
+## The saved window
+
+The window opens where it was and as large as it was when the app last ran.
+This is the main process alone: the interface has no part in it, so it is
+not in the `Engine` contract.
+
+- **Where.** The `window` part of the settings file (`SavedWindow` in
+  `src/shared/window-frame.ts`): the frame of the window in its normal state
+  and whether it was maximized. A file without it is valid and means the
+  default window, 1280 by 820. A part that cannot be read, or a size below
+  480 by 320, also means the default and never makes the file count as
+  damaged.
+- **When it is saved.** Electrobun reports every move and resize. The window
+  is read once it has been still for 400 milliseconds, never while it is
+  dragged, and again when the app quits (`src/bun/window-memory.ts`). It
+  saves through the same `SettingsHolder` as everything else, and a save
+  that fails is only a warning in the log.
+- **Maximized and full screen.** Both report the frame they fill, so the
+  frame from before is kept, and the window goes back to the chosen size
+  when it leaves that state in a later run. Maximized is remembered and
+  asked for again on start. Full screen is not.
+- **Displays change.** Before the window opens, the saved frame is moved,
+  and shrunk when it has to be, until it lies within the usable area of the
+  display that shows most of it (`fitWindowFrame`). A window saved on a
+  display that is gone opens on the primary one.
+- **No creep.** A window can land a pixel or two away from the frame it was
+  opened with, as it does through XWayland with a fractional scale. A change
+  of two units or less in every part is not remembered, so the window does
+  not move a little further with every run.
+- **Tiling.** A tiling window manager sizes the window itself. The app then
+  remembers that size, and asking for it on the next start changes nothing.
+
 ## Preferences and the Settings dialog
 
 The app's own settings, such as the side of the sidebar, are chosen in the
@@ -841,7 +899,8 @@ Settings dialog and kept by the app. They are never Timber's configuration.
   ready to save again. Saved preferences that could not be read on start are
   reported at the top of the dialog. Nothing in the dialog runs Timber, so it
   has no command footer.
-- **Sections today.** Layout: the side of the sidebar, left by default.
+- **Sections today.** Layout: the side of the sidebar, left by default, and
+  the zoom (see [interface zoom](#interface-zoom)).
   Editor: the editor that "Open in editor" starts (see
   [opening a worktree in an editor](#opening-a-worktree-in-an-editor)).
   Agents: the coding agents the "+" menu starts (see
@@ -853,6 +912,34 @@ Settings dialog and kept by the app. They are never Timber's configuration.
 
 In `bun run dev:web`, `timberMock.failPreferenceSaves("disk full")` makes
 saving preferences fail (`null` again to undo).
+
+## Interface zoom
+
+How large everything in the window is drawn, as the `zoom` preference
+(`src/shared/zoom.ts`): 1 is the size the window system gives, and it is the
+default.
+
+- **Why.** The window is an X11 window (see
+  [display server on Linux](#display-server-on-linux)). On Wayland, where a
+  compositor leaves the scaling of X11 windows to the app, as Hyprland does
+  with `xwayland:force_zero_scaling`, the only scale the app is told is
+  `GDK_SCALE`, a whole number. At a monitor scale of 1.6 that is 1 or 2,
+  never 1.6, and the interface is drawn too small or too large. The app
+  cannot read the real scale from inside XWayland, so the person sets it.
+- **Choosing.** Settings, Layout has a Zoom list from 75% to 300%, with
+  160% among them. The preference itself takes any number from 0.5 to 3, to
+  two decimals. A saved zoom that is not in the list, as after editing the
+  file by hand, is offered too. One that cannot be read means 100%.
+- **Applying.** The main process sets the page zoom of the window's webview
+  (`setPageZoom`) on start and after every save of the preferences, so a
+  change shows as soon as it is saved. The window keeps its size: at a
+  higher zoom less fits in it.
+- **Not zoomed.** What the system draws for the page: the open list of a
+  select and tooltips keep their own size.
+- **The mock engine** saves the zoom like any preference and draws nothing
+  differently, because a browser has its own zoom.
+- **Without the setting.** Starting the app with `GDK_DPI_SCALE=1.6` in its
+  environment has the same effect, and the two multiply.
 
 For the Done dialog, with a worktree's path:
 `timberMock.setChanges(path, { modified: ["a.ts"], untracked: ["b.ts"], ignored: ["dist/"] })`
@@ -1270,12 +1357,13 @@ out quitting, `timberMock.endTerminal(id, code)` a shell that exits by
 itself, and `timberMock.failTerminals({ outcome: "unsupported", message })`
 a terminal that cannot start (`null` to undo).
 
-## Rebasing a worktree (interim)
+## Rebasing a worktree
 
-Until Timber has a machine interface for rebase
-(Coding-M8s/timber#134), the Rebase dialog runs `timber rebase` in a new
-Timber session in the worktree, so the person sees what Timber prints. The
-structured version replaces this one.
+The Rebase dialog runs `timber rebase --result-file` and reads the record,
+so it says how the rebase really ended: rebased, already up to date, stopped
+on conflicts, refused, or failed. Timber 0.1.2 is the first release that
+writes this record (`REBASE_RESULT_TIMBER_VERSION` in
+`src/shared/timber-version.ts`).
 
 - **Entry.** The Rebase control in the workspace header opens the dialog
   for the selected worktree (`src/mainview/components/RebaseDialog.tsx`).
@@ -1284,8 +1372,82 @@ structured version replaces this one.
   any typed ref. Timber reads a plain name as a branch on a remote, so a
   local branch is offered as `refs/heads/<name>`, and a remote-tracking one
   as `<remote>/<branch>` (`rebaseBases` in `src/shared/rebase-command.ts`).
-  The spaces around the text are left off. Empty means the base Timber saved
-  for the worktree, and no `--base` is passed.
+  The spaces around the text are left off. Empty passes no `--base`, and
+  Timber chooses, starting with the base it saved for the worktree.
+- **Starting from the saved base.** The field starts as the worktree's saved
+  base in that same form (`initialOnto`), as the list had it when the dialog
+  opened, and a line above the field says so. Only a base Timber reported as
+  assigned is filled in. A worktree with no saved base says "No saved base",
+  invalid metadata shows Timber's reason as a warning, and both leave the
+  field empty, as does a Timber that reports no base, for which the dialog
+  says nothing. What the person types after that stays.
+- **One source for the command.** `rebaseResultArguments` in
+  `src/shared/timber-rebase.ts` builds
+  `rebase [--base <ref>] --result-file <path> -- <registered path>`. The
+  footer words it from that function with the result file shown as a
+  placeholder, and the main process runs Timber from the same one, so the
+  command shown is the command that runs.
+- **Running and checks.** The store's `rebaseWorktree` asks the engine's
+  `rebaseWorktree` once. In the main process, `WorktreeCommands.rebase` in
+  `src/bun/worktree-commands.ts` runs in the same per-repository turn as
+  `timber new` and `timber open`. Before it runs anything it checks that the
+  request is complete (only text becomes an argument), that the repository is
+  in the app's list and readable, that Timber lists a worktree at exactly
+  that path right now and its folder is there (`findListedWorktree`), and
+  that Timber is ready. Each refusal is a failure with `ran: false` whose
+  message ends by saying nothing was run. Then it runs `timber rebase` in the
+  repository's primary checkout through `runTimberWithResultFile`, and
+  `readRebaseResult` reads the record. Nothing is retried, and what Timber
+  printed is never logged.
+- **Reading the record.** `readTimberResult` has already checked the common
+  fields and that the outcome goes with the exit code. `readRebaseResult`
+  then checks the `rebase` object strictly: a known `result`, text or null
+  for `base`, `baseCommit`, and `originalTip`, a list of paths for
+  `conflicts`, and a boolean `baseSaved`. The result must go with Timber's
+  outcome (rebased and up to date succeeded, the others failed), the list is
+  empty unless the result is conflicts and not empty for it, and a record
+  that names another worktree is not used. Anything else is a failure that
+  says what the rebase did is unknown and keeps what Timber printed. The
+  record's `base` is a canonical ref, and the dialog says it as a person
+  does (`shortBase`: `origin/main`, `main`).
+- **Outcomes.** Rebased and up to date close the dialog with a toast that
+  names the base. A refusal stays in the dialog with Timber's diagnostic and
+  says nothing was changed. A failure stays with Timber's diagnostic and
+  says the list was read again and the branch should be checked before
+  trying again: a failed rebase can leave the branch changed, so it never
+  says that nothing changed. A request the app refused before running
+  anything says so, and an older Timber is explained in the dialog.
+  `presentRebase` in `src/mainview/rebase-format.ts` maps each answer to what
+  the dialog does, and is tested without a window.
+- **Conflicts.** The dialog switches to a list of every conflicted file,
+  what Timber printed in a details area, and the way out: Git paused the
+  rebase and it was left exactly as Git left it. The app runs no Git command
+  on conflicts, so the pause stays until the person runs `git rebase
+  --continue` or `git rebase --abort` themselves. "Open a terminal here"
+  starts a plain shell session in the worktree (the store's `openTerminalIn`,
+  as `startAgentIn` does for an agent) and closes the dialog.
+- **Afterwards.** The store reads the repository again before it answers,
+  whatever the outcome, even when the engine does not answer.
+- **The version gate.** The dialog uses the result file when the Timber found
+  is ready and `supportsRebaseResult(version)` holds. The main process checks
+  the same thing and answers `unsupported` without running anything. An older
+  Timber gets the interim dialog below.
+- **In the browser.** The mock engine acts out Timber and writes the record
+  Timber would, which is read by the same code. `timberMock.endRebaseResults`
+  chooses the ending (see [reporting outcomes](#reporting-outcomes)).
+- **Tests.** `tests/fixtures/timber-rebase` holds result files recorded from
+  Timber 0.1.2 for each outcome (rebased, up to date, conflicts with a file
+  name that has a space, refused, and two failures), and
+  `tests/timber-rebase-parse.test.ts` maps each one. With the installed
+  Timber, `tests/worktree-rebase.test.ts` checks that a conflict leaves Git's
+  paused rebase in place and that a refusal changes nothing.
+
+### On an older Timber
+
+A Timber older than 0.1.2 has no result file for rebase, so the dialog runs
+`timber rebase` in a new Timber session in the worktree, so the person sees
+what Timber prints. The entry and the Onto field are as above.
+
 - **One source for the command.** `rebaseArguments` builds
   `rebase [--base <ref>] -- <registered path>`. The footer words it from that
   function, and the main process runs Timber from the same one, so the
@@ -1597,7 +1759,8 @@ knowing a path and two arguments.
   and leftover temporary files, and the folder when nothing else is in it
   (`removeSettings` in `src/bun/settings.ts`). From then on the settings
   holder refuses every save, so nothing writes the file back before the
-  app quits. A failed uninstaller leaves the settings alone.
+  app quits: the window's size, for one, is saved on quit. A failed
+  uninstaller leaves the settings alone.
 - **Then the app quits.** Agreeing to uninstall is agreeing to quit: every
   terminal ends without the usual question, and the confirmation says how
   many run. When the settings were to go and could not, the app stays open
@@ -1632,6 +1795,9 @@ X11 display, `gdk_x11_*` calls).
   Reports there say XWayland costs sharpness with fractional scaling and
   smooth resizing at high resolutions and refresh rates. Neither was seen
   here, and neither was looked for.
+- Where the compositor leaves scaling to X11 windows, a fractional monitor
+  scale does not reach the app, and everything is drawn too small. The zoom
+  in Settings makes up for it (see [interface zoom](#interface-zoom)).
 
 See the issue 63 run under [what has been verified](#what-has-been-verified).
 
@@ -2770,7 +2936,8 @@ Hyprland's `send_shortcut` dispatcher, and pictures of it were taken with
 `grim`:
 
 - `bun run typecheck` and `bun run typecheck:desktop`: no errors.
-- `bun test`: 1256 tests, 1255 passed and 1 skipped.
+- `bun test`: 1256 tests, 1255 passed and 1 skipped. With main merged in
+  at `543b346`: 1395 tests, 1394 passed and 1 skipped.
 - `bun run build`: completed.
 - `uninstall --quiet --delete-data` by hand while the installed app was
   open: exit 0. The files were gone and the app kept running; ended with
@@ -2789,6 +2956,9 @@ Hyprland's `send_shortcut` dispatcher, and pictures of it were taken with
   gained the settings folder and the note under the box changed. After
   "Uninstall and quit" the app was gone as above, and so was
   `~/.config/timber-app`. `~/.config` itself stayed.
+- The same once more on a build with main merged in at `543b346`, where
+  the app saves the window's size when it quits and had already written it
+  to `settings.json`: the same result, and nothing wrote the settings back.
 - In the first of the two, the folder chooser had been opened once by
   mistake and closed with Escape. GTK left its own files in that home
   (`~/.config/gtk-3.0`, `~/.local/share/recently-used.xbel`,
@@ -3035,6 +3205,132 @@ and Timber 0.1.2, after rebasing it onto several sessions per worktree:
   without a refresh. Screenshots were looked at.
 - Not run: a remote base, which needs a remote to fetch from, and the
   dialog on macOS or Windows.
+
+Run for showing each worktree's saved base (issue 19), Linux x64 (Omarchy,
+Arch Linux) with Bun 1.4.4, Git 2.56.1, and Timber 0.1.2:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 1246 tests passed, 1 was skipped, none failed.
+  `tests/saved-base.test.ts` runs the installed Timber in a temporary
+  repository with a remote: worktrees made with `timber new --base
+  origin/main` and `--base refs/heads/main` list those bases, the primary
+  checkout and a worktree added with plain Git list none, a worktree whose
+  saved `base.json` was overwritten lists as invalid (malformed) and stays in
+  the list, and two reads leave every file, ref, and index as they were.
+  `tests/timber-ls-parse.test.ts` reads a listing recorded from that Timber
+  (`tests/fixtures/timber-ls/with-bases.json`) and the older recording
+  without the field, which still lists all seven worktrees with no base.
+- `bun run build:web`, served with `vite preview` and driven in headless
+  Chromium with the sample data: the row tooltips and the header read "Base
+  origin/main", "Base refs/heads/main", "No saved base", "Base unknown" (also
+  a "base unknown" marker on the row), and nothing for the worktree whose
+  record has no base. The Rebase dialog opened with `origin/main` in Onto
+  and `timber rebase --base origin/main -- <path>` in the footer, and with
+  an empty Onto and no `--base` for the invalid base and for the record
+  without one. Screenshots of the header and the dialog were looked at.
+- Not run: the desktop window, a Timber older than 0.1.2 (the missing field
+  was read from a recording of 0.1.1 only), and anything on macOS or
+  Windows.
+
+Run for the saved window, Linux x64 (Omarchy, Arch Linux, Hyprland 0.57.2
+at a monitor scale of 1.6, through XWayland) with Bun 1.4.4:
+
+- `bun test tests/window-frame.test.ts tests/window-memory.test.ts
+  tests/settings-parse.test.ts`: all passed. They cover reading a saved
+  window, what is remembered while maximized and full screen, fitting a
+  frame to the displays, and saving against a real temporary settings file
+  next to the layout.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- The dev build (`bunx vite build`, `bunx electrobun build`, then
+  `build/dev-linux-x64/Timber-dev/bin/launcher`) with `XDG_CONFIG_HOME` on a
+  temporary folder, as a floating window through a temporary Hyprland
+  window rule. The window was resized and moved with `xdotool` and closed
+  through Hyprland. The first run opened at 1280 by 819. After a resize to
+  1500 by 900 the file held that frame (as 1502 by 899) within about a
+  second, and three more runs each opened at 1502 by 899. Before the two
+  unit slack the position moved left by one or two pixels on every run
+  (699, 697, 696); with it the file stayed at 696 over two more runs. A file
+  edited to a frame 4000 wide at x 5000 opened at x 0, 3200 wide, which is
+  the display.
+- Not run: a maximized window. Hyprland did not maximize the floating
+  window when asked, so the app saw it as not maximized and saved that. Not
+  run either: a window manager with title bars, where the frame read back
+  may differ from the frame asked for by more than the slack, any second
+  display, and Windows and macOS.
+
+Run for rebasing through Timber's result file (issue 18), Linux x64
+(Fedora 44) with Bun 1.4.2, Git 2.56.1, and Timber 0.1.2:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 1270 tests passed, 1 was skipped, none failed, in two runs in
+  a row, and 1343, 1, and none after rebasing onto the saved base (issue
+  19), whose dialog tests now expect the result file in the footer. Before
+  that, the test that rebases with the installed Timber failed
+  on this machine: the test empties Git's global configuration, and Git then
+  had no committer for the rebased commits and could not guess one from the
+  host name. The test now gives Timber's Git an identity, as the `git`
+  helper of the tests does.
+- The records in `tests/fixtures/timber-rebase` were written by the
+  installed Timber 0.1.2 in temporary repositories: rebased and up to date
+  (exit code 0), and conflicts in two files, one with a space in its name,
+  a refusal over an untracked file, a `pre-rebase` hook that exits with 1,
+  and a fetch from a missing remote (each exit code 1). Each matched the
+  contract. `tests/worktree-rebase.test.ts` runs the installed Timber: a
+  conflict leaves Git's `rebase-merge` folder and the unmerged file in
+  place, and a refusal leaves files and refs as they were.
+- `bun run dev:web` in headless Chromium against the mock engine, with
+  every ending of `timberMock.endRebaseResults`: the toasts for rebased and
+  up to date, Timber's reason with "Nothing was changed." for a refusal,
+  the failure words for failed and no result, the words for an older
+  Timber, the refusal of a worktree with changes whatever the ending, and
+  the conflicts view, whose "Open a terminal here" started a shell in that
+  worktree on the Workspace tab. The footer followed the Onto field.
+- `bun run start` in a headless sway session with XWayland, driven by X11
+  test input, with its own `XDG_CONFIG_HOME` and a temporary repository
+  whose four worktrees were behind `main`, in conflict with it, holding an
+  untracked file, and level with it. `feat/demo` onto `refs/heads/main`
+  closed with "Rebased feat/demo onto main", and `git log` showed it on top
+  of `main`; again with an empty Onto (the saved base) it closed with
+  "feat/demo is already up to date with main". `feat/dirty` stayed open
+  with Timber's refusal, and its HEAD, status, and refs were the same
+  afterwards. `feat/conflict` showed both conflicted files, and Git had
+  `rebase-merge` with `AA` and `UU` entries. This run found that the title
+  named the detached HEAD the list showed after the pause, that
+  `git rebase --continue` broke at its dashes, and that the focus went back
+  to the Rebase control instead of the new terminal, so a typed space
+  opened the dialog again. All three were fixed and run again: the title
+  names `feat/conflict`, and `git rebase --abort` typed straight after
+  "Open a terminal here" went to the terminal and put the branch back on
+  its old tip, which the list showed without a refresh. Screenshots were
+  looked at.
+- Not run: a remote base that was fetched, and the dialog on macOS or
+  Windows.
+
+Run for the interface zoom, Linux x64 (Omarchy, Arch Linux, Hyprland 0.57.2
+at a monitor scale of 1.6 with `xwayland:force_zero_scaling`, `GDK_SCALE=1`,
+through XWayland) with Bun 1.4.4:
+
+- `bun test`, `bun run typecheck`, and `bun run typecheck:desktop`: see the
+  pull request for the counts. The tests cover reading a zoom, the list
+  Settings offers, the preference in the table of preferences, and the
+  Layout section as drawn.
+- The cause, with the dev build pointed at a small page that reported its
+  own measurements, in a window Hyprland counted as 992 wide: a device
+  pixel ratio of 1 and a width of 1587, so nothing was scaled. With
+  `GDK_DPI_SCALE=1.6` the ratio was 1.6 and the width 991. With
+  `GDK_SCALE=2` the ratio was 2 and the width 794.
+- The setting, same page, with the zoom written into a temporary settings
+  file: 1 gave a ratio of 1 and a width of 1587, 1.6 gave 1.6 and 991, and
+  2 gave 2 and 793.
+- The real interface in the dev build at a saved zoom of 1.6, looked at in
+  screenshots: the sidebar, the workspace, and the Settings dialog were
+  drawn larger and whole, and Zoom showed 160%. Choosing 200% and pressing
+  Save (clicks sent with `xdotool`) redrew the window larger at once, the
+  file then held 2, and a terminal opened after that drew its prompt sharp
+  at that size. The open list of the select and a tooltip stayed small.
+- Not run: a terminal that was already open while the zoom changed, a
+  display that scales X11 windows itself (where 100% is already right),
+  Windows, and macOS, where `setPageZoom` was not tried at all.
 
 Not run yet:
 

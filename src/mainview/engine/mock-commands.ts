@@ -67,7 +67,13 @@ function branchFor(name: string): string {
 const ambiguousDiagnostic = (input: string) =>
 	`Input "${input}" matches 2 targets. Did you mean one of these exact branches or paths?\n  fork/${input}\n  origin/${input}`;
 
-function newWorktreeIn(repository: Repository, branch: string, sync: Worktree["sync"] = { kind: "unpublished" }): Worktree {
+/** The base the pretend Timber saves for a new worktree: the one asked for, or `origin/main`, as a canonical ref. */
+function savedBaseFor(base: string | null): Worktree["base"] {
+	const chosen = base ?? "origin/main";
+	return { kind: "assigned", ref: chosen.startsWith("refs/") ? chosen : `refs/remotes/${chosen}` };
+}
+
+function newWorktreeIn(repository: Repository, branch: string, base: Worktree["base"], sync: Worktree["sync"] = { kind: "unpublished" }): Worktree {
 	const path = `${repository.path}-worktrees/${branch.replaceAll("/", "-")}`;
 	return {
 		id: worktreeId(`${repository.path}/.git`, { path, canonicalPath: path }),
@@ -81,6 +87,7 @@ function newWorktreeIn(repository: Repository, branch: string, sync: Worktree["s
 		prunable: false,
 		pathExists: true,
 		changes: { kind: "known", modified: [], untracked: [] },
+		base,
 		sync,
 	};
 }
@@ -100,7 +107,7 @@ export function actOutNew(repository: Repository, request: NewWorktreeRequest, e
 	if (ending === "refused") return refused(`Base branch ${request.base ?? "main"} is missing or ambiguous. Select an exact branch.`);
 	if (ending === "ambiguous") return refused(ambiguousDiagnostic(request.name));
 
-	const created = newWorktreeIn(repository, branch);
+	const created = newWorktreeIn(repository, branch, savedBaseFor(request.base));
 	const fields = { materialized: true, worktree: worktreeRecord(created) };
 	const printed = `Created ${branch} at ${created.path}\n`;
 	switch (ending) {
@@ -151,7 +158,8 @@ export function actOutOpen(
 	if (!branch || ending === "refused") return refused(`No existing branch or worktree matches "${selector}". Check the exact branch or absolute worktree path.`);
 	// A remote-tracking branch becomes a local branch that follows it. A new worktree always gets its setup.
 	const name = branch.kind === "remote" ? selector.slice(selector.indexOf("/") + 1) : selector;
-	const created = newWorktreeIn(repository, name, branch.kind === "remote" ? { kind: "tracking", upstream: selector, ahead: 0, behind: 0 } : { kind: "unpublished" });
+	// As Timber does: opening a branch saves no base.
+	const created = newWorktreeIn(repository, name, { kind: "unassigned" }, branch.kind === "remote" ? { kind: "tracking", upstream: selector, ahead: 0, behind: 0 } : { kind: "unpublished" });
 	const fields = { materialized: true, worktree: worktreeRecord(created) };
 	const printed = `Created worktree at ${created.path}\n`;
 	switch (ending) {

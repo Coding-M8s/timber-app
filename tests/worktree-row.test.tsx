@@ -17,12 +17,14 @@ const clean: Worktree = {
 	prunable: false,
 	pathExists: true,
 	changes: { kind: "known", modified: [], untracked: [] },
+	base: null,
 	sync: { kind: "tracking", upstream: "origin/feat/x", ahead: 0, behind: 0 },
 };
 const busy: Worktree = {
 	...clean,
 	locked: true,
 	changes: { kind: "known", modified: ["a.ts", "b.ts", "c.ts"], untracked: ["new.ts"] },
+	base: null,
 	sync: { kind: "tracking", upstream: "origin/feat/x", ahead: 2, behind: 14 },
 };
 
@@ -60,6 +62,21 @@ describe("WorktreeRow", () => {
 		expect(markup).not.toContain("row-flags");
 		expect(nameOf(markup)).toBe("feat/x Worktree");
 		expect(markup).toContain('title="/work/app-worktrees/feat-x"');
+	});
+
+	test("the tooltip adds the saved base to the path, and nothing when Timber reported none", () => {
+		expect(render({ ...clean, base: { kind: "assigned", ref: "refs/remotes/origin/main" } })).toContain('title="/work/app-worktrees/feat-x (Base origin/main)"');
+		expect(render({ ...clean, base: { kind: "unassigned" } })).toContain('title="/work/app-worktrees/feat-x (No saved base)"');
+		expect(render({ ...clean, base: null })).toContain('title="/work/app-worktrees/feat-x"');
+	});
+
+	test("saved base metadata Timber cannot use is a marker on the row, and in what the row tells assistive technology", () => {
+		const markup = render({ ...clean, base: { kind: "invalid", reason: "unreadable" } });
+		expect(markup).toContain('title="/work/app-worktrees/feat-x (Base unknown)"');
+		expect(markersIn(markup)).toEqual([
+			{ className: "row-flag", title: "Timber found a saved base for this worktree but cannot use it: it could not be read. The base is not known, and the app does not guess one.", text: "base unknown" },
+		]);
+		expect(markup).toContain("does not guess one.</span>");
 	});
 
 	test("every marker shows its short text and carries its sentence as a tooltip", () => {

@@ -22,7 +22,10 @@ change them here first when they change.
   repository's name ("offline", "sign-in needed", "fetch failed") with the
   reason in its tooltip. Never a dialog, and never a prompt for credentials.
 - Each row shows the branch, its state against the remote, running agents, and
-  uncommitted changes.
+  uncommitted changes. Its tooltip gives the path and the base Timber saved
+  for the worktree, or "No saved base". Saved base metadata Timber cannot use
+  is a warning, "base unknown", never a guess. A Timber that reports no base
+  gets none shown.
 - Branch state follows VS Code conventions: a down arrow with a count for
   commits to pull, an up arrow for commits to push, "force-pushed" when the
   remote branch was rewritten, "upstream gone" when it was deleted, and "local
@@ -39,6 +42,8 @@ change them here first when they change.
 - A worktree holds any number of sessions: agents such as codex and claude,
   and terminals. Each session has a chip that shows or hides its pane; a hidden
   session keeps running. Closing an agent pane stops the agent.
+- The header names the worktree's saved base beside its sync state and
+  changes, in the same words as the row's tooltip.
 - Changes compares against the base, the last commit, or a rebase backup.
 - A repository that was never set up for Timber shows a quiet prompt above
   the tabs: Timber's defaults work, setup is optional, the command
@@ -65,8 +70,11 @@ change them here first when they change.
   setup" instead of creating again. An Agent field, the first saved agent
   by default or None, starts that agent in the worktree once the dialog has
   created it, and the footer shows its command under Timber's.
-- **Rebase:** pick the base. A worktree with uncommitted changes is refused,
-  as Timber does.
+- **Rebase:** pick the base. The picker starts from the base Timber saved for
+  the worktree. A worktree with uncommitted changes is refused, as Timber
+  does. The dialog says how the rebase ended. One that stops on conflicts
+  lists the files and offers a terminal in the worktree, leaving the rebase
+  paused for the person to finish or abort.
 - **Done:** a clean, published worktree gets a summary of what is removed,
   including ignored files. One with unsaved work gets "Delete anyway?" with
   Keep as the default.
