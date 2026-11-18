@@ -24,7 +24,7 @@ function LiveSessionsWarning({ running }: { running: number }) {
 	return <p className="done-warning" role="note">{describeDoneSessionsWarning(running)}</p>;
 }
 
-function FileList({ title, tone, files }: { title: string; tone: "modified" | "untracked" | "ignored"; files: readonly string[] }) {
+function FileList({ title, tone, files }: { title: string; tone: "modified" | "untracked"; files: readonly string[] }) {
 	if (files.length === 0) return null;
 	return (
 		<div className="done-files">
@@ -162,7 +162,6 @@ export function DoneDialogView(props: DoneDialogViewProps) {
 									</>
 								)}
 								<p className="done-line">{describeIgnoredEffect(ready)}</p>
-								{ready.options.discardIgnored && <FileList title="Ignored" tone="ignored" files={ready.ignored} />}
 								<p className="done-line">{describeBranchEffect(ready)}</p>
 								{commits && <p className="done-warning">{commits}</p>}
 								<p className="done-line">{DONE_REMOTE_NOTE}</p>

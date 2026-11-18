@@ -33,7 +33,7 @@ export interface DoneDependencies {
 
 /** Removing a worktree: the main process side of the Done dialog. */
 export interface Done {
-	/** Run `timber __ide-done preview` and keep what it printed. Read-only. */
+	/** Run `timber __ide-done preview` and keep its approval for later. Read-only. */
 	preview(request: DonePreviewRequest): Promise<DonePreviewResult>;
 	/** Run `timber __ide-done apply` with one kept preview as the approval. A preview is used up by one call. */
 	apply(request: DoneApplyRequest): Promise<DoneApplyResult>;
@@ -41,7 +41,7 @@ export interface Done {
 
 /** A preview waiting for the person's answer. */
 interface HeldPreview {
-	/** Exactly the bytes Timber printed on standard output. Never changed, never logged. */
+	/** The encoded approval from Timber's preview. Never logged. */
 	bytes: Uint8Array;
 	repository: string;
 	path: string;
@@ -61,10 +61,10 @@ function messageOf(error: unknown): string {
  * - Timber's safety rules are not repeated here. Whether a worktree may be
  *   removed, and what is lost, is Timber's answer: the preview says it, and
  *   the removal is refused by Timber when anything changed since.
- * - What the preview printed is kept here, in the main process, and the
- *   interface only gets a name for it. On Remove those same bytes become the
- *   approval file, so the interface cannot alter what is approved, and the
- *   name ties the approval to the one preview the person was shown.
+ * - The approval stays in the main process. The interface gets a name for
+ *   it, tying Remove to the preview the person was shown. The approval file
+ *   holds the fields checked by Timber, so file lists never count toward
+ *   Timber's approval-file size limit.
  * - Nothing is ever retried, and nothing that a command printed is logged.
  */
 export function createDone(dependencies: DoneDependencies): Done {
@@ -108,7 +108,7 @@ export function createDone(dependencies: DoneDependencies): Done {
 		if ("refused" in located) return failed({ command: null, diagnostic: located.refused, output: null });
 
 		// Standard output is the preview. Standard error is Timber's diagnostic when it refuses.
-		let bytes: Uint8Array;
+		let printed: string;
 		let exitCode: number | null;
 		let stopped: boolean;
 		const errors = createOutputCapture();
@@ -124,8 +124,7 @@ export function createDone(dependencies: DoneDependencies): Done {
 			const collect = async (stream: ReadableStream<Uint8Array>) => {
 				for await (const chunk of stream) errors.add(chunk);
 			};
-			const [printed] = await Promise.all([new Response(child.stdout).arrayBuffer(), collect(child.stderr), child.exited]);
-			bytes = new Uint8Array(printed);
+			[printed] = await Promise.all([new Response(child.stdout).text(), collect(child.stderr), child.exited]);
 			exitCode = child.exitCode;
 			stopped = child.signalCode !== null;
 		} catch (error) {
@@ -143,7 +142,7 @@ export function createDone(dependencies: DoneDependencies): Done {
 			return failed({ command: shown, diagnostic: `The preview exited with code ${exitCode} and gave no preview. The details below show what it printed. Nothing was removed.`, output });
 		}
 
-		const reading = readDonePreview(new TextDecoder().decode(bytes));
+		const reading = readDonePreview(printed);
 		if (!reading.ok) return failed({ command: shown, diagnostic: reading.message, output: null });
 		// The preview must answer the question that was asked, or it is not shown and cannot be approved.
 		if (reading.preview.worktree.path !== path || reading.preview.repository.primaryWorktreeRoot !== repository) {
@@ -153,7 +152,8 @@ export function createDone(dependencies: DoneDependencies): Done {
 			return failed({ command: shown, diagnostic: "Timber answered with a preview for other options than the ones asked for. It was not used.", output: null });
 		}
 
-		const id = hold({ bytes, repository, path, expiresAt: reading.preview.expiresAt });
+		const bytes = new TextEncoder().encode(JSON.stringify(reading.approval));
+		const id = hold({ bytes, repository, path, expiresAt: reading.approval.expiresAt });
 		return { outcome: "previewed", id, preview: reading.preview };
 	}
 

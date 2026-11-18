@@ -252,7 +252,7 @@ decides, both when it previews and again when it removes.
   for it at that moment. That registered path, verbatim, goes after `--`.
   Neither runs while Timber is not ready.
 - **What is shown.** The exact folder and branch, every modified and
-  untracked file, the ignored paths and how far the removal reaches for them,
+  untracked file, the count of ignored paths and how far removal reaches for them,
   whether the local branch is deleted or kept, that nothing on a remote is
   touched, both commands, and until when the preview holds. The preview says
   nothing about commits, and the removal deletes a branch whose commits are
@@ -269,15 +269,13 @@ decides, both when it previews and again when it removes.
   newer one (`src/mainview/store/done-session.ts`). Remove is possible only
   for a preview that is on screen, is for the options on screen, and has not
   expired.
-- **Where the preview is kept.** In the main process. The interface gets the
-  parsed preview to show and a name for it, never the text. On Remove it sends
-  the name back, and the main process writes the bytes Timber printed,
-  unchanged, to the approval file. So the interface cannot alter what is
-  approved, and the name ties the approval to the one preview that was on
-  screen. Timber itself compares only the snapshot, the expiry, the target,
-  and the options, so an approval sent back by the interface could have had
-  its file list rewritten unnoticed. A name is used up by one call, whatever
-  came of it, and at most 16 previews are kept.
+- **Where the approval is kept.** In the main process. The interface gets the
+  parsed preview and a name for it. On Remove it sends the name back, and the
+  main process writes the version, snapshot, expiry, repository and worktree
+  identity, and options from Timber's preview to the private approval file.
+  File lists can exceed Timber's 1 MiB approval-file limit and are used only
+  for the preview. The interface cannot alter the approval, and each name is
+  used up by one call. At most 16 approvals are kept.
 - **Remove.** `timber __ide-done apply --approval-file <approved preview>
   --result-file <temporary file> -- <same path>` through the helper above,
   with no time limit, because scripts that run before deletion take as long

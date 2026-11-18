@@ -130,10 +130,11 @@ describe("the Done dialog, for a worktree with content that would be lost", () =
 		for (const file of ["new name.txt", "staged.txt", "tracked.txt", "notes zażółć.txt", "src/deep/new.ts"]) expect(markup).toContain(`<li>${file}</li>`);
 	});
 
-	test("lists ignored content and says how far the removal reaches", () => {
+	test("summarizes ignored content and how far removal reaches", () => {
 		expect(markup).toContain("2 ignored paths are deleted with the folder. Removing covers every ignored file in the folder");
-		expect(markup).toContain('<p class="done-files-title ignored">Ignored (2)</p>');
-		expect(markup).toContain("<li>build/app.js</li><li>debug.log</li>");
+		expect(markup).not.toContain('aria-label="Ignored files"');
+		expect(markup).not.toContain("build/app.js");
+		expect(markup).not.toContain("debug.log");
 	});
 
 	test("file names are shown as text, never as markup", () => {
