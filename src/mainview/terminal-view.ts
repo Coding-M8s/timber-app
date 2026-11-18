@@ -5,7 +5,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import type { AppStore } from "./store/store";
-import { terminalColors, watchTerminalColors } from "./terminal-colors";
+import { TERMINAL_MINIMUM_CONTRAST, terminalColors, watchTerminalColors } from "./terminal-colors";
 import { clipboardKey, leftInAlternateScreen, opensLink, sessionChipId, sessionKey } from "./terminal-format";
 
 /**
@@ -77,6 +77,7 @@ function createView(store: AppStore, id: string): TerminalView {
 		allowProposedApi: true,
 		// The theme's, and they follow it: xterm redraws at once, keeping the screen and the scrollback.
 		theme: { ...terminalColors() },
+		minimumContrastRatio: TERMINAL_MINIMUM_CONTRAST,
 		// Links that programs mark (OSC 8) open as plain ones do, never inside the app's own window.
 		linkHandler: {
 			activate: (event, uri) => {

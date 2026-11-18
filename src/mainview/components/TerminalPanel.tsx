@@ -43,7 +43,7 @@ export function estimateTerminalSize(element: HTMLElement | null): { cols: numbe
 	const width = element?.clientWidth ?? 0;
 	const height = element?.clientHeight ?? 0;
 	if (width === 0 || height === 0) return { cols: 80, rows: 24 };
-	// The session bar takes about 34 pixels above the terminal.
+	// The row of chips and the terminal's padding take about 50 pixels.
 	return { cols: Math.max(20, Math.floor((width - 16) / 7.8)), rows: Math.max(5, Math.floor((height - 50) / 15.6)) };
 }
 
@@ -122,14 +122,41 @@ interface SessionProps {
 	session: TerminalSession;
 	/** Its chip is a rename field right now, so the panel is named by the session instead. */
 	renaming: boolean;
+}
+
+interface SessionControlsProps {
+	session: TerminalSession;
 	onRename: () => void;
 }
 
-/** The shown session: its state and controls above its terminal. It is the panel of its chip. */
-function Session({ session, renaming, onRename }: SessionProps) {
+/**
+ * The shown session's shell, state, Rename, and Close, at the right end of
+ * the row of chips, so the terminal below gets the whole height of the pane.
+ */
+function SessionControls({ session, onRename }: SessionControlsProps) {
+	const store = useStore();
+	return (
+		<div className="session-controls">
+			<span className="session-shell" title={session.command}>{shellName(session.shell)}</span>
+			<span className="session-state" role="status">{describeTerminalState(session)}</span>
+			<button type="button" className="text-button" title={`Rename ${session.name} (F2 on its chip)`} onClick={onRename}>Rename</button>
+			<button
+				type="button"
+				className="icon-button session-close"
+				aria-label={closeTerminalLabel(session)}
+				title={closeTerminalLabel(session)}
+				onClick={() => void store.closeTerminal(session.id)}
+			>
+				<span aria-hidden="true">×</span>
+			</button>
+		</div>
+	);
+}
+
+/** The shown session's terminal, and a note once it ended. It is the panel of its chip. */
+function Session({ session, renaming }: SessionProps) {
 	const store = useStore();
 	const running = session.state.kind === "running";
-	const state = describeTerminalState(session);
 	return (
 		<section
 			className={session.kind === "agent" ? "session agent" : "session"}
@@ -138,24 +165,10 @@ function Session({ session, renaming, onRename }: SessionProps) {
 			aria-labelledby={renaming ? undefined : sessionChipId(session.id)}
 			aria-label={renaming ? session.name : undefined}
 		>
-			<div className="session-bar">
-				<span className="session-shell" title={session.command}>{shellName(session.shell)}</span>
-				<span className="session-state" role="status">{state}</span>
-				<button type="button" className="text-button" title={`Rename ${session.name} (F2 on its chip)`} onClick={onRename}>Rename</button>
-				<button
-					type="button"
-					className="icon-button session-close"
-					aria-label={closeTerminalLabel(session)}
-					title={closeTerminalLabel(session)}
-					onClick={() => void store.closeTerminal(session.id)}
-				>
-					<span aria-hidden="true">×</span>
-				</button>
-			</div>
 			<TerminalScreen session={session} />
 			{!running && (
 				<div className="session-ended">
-					<p className="session-ended-text">{state}. What it printed stays above until it is dismissed.</p>
+					<p className="session-ended-text">{describeTerminalState(session)}. What it printed stays above until it is dismissed.</p>
 					<button type="button" className="button" onClick={() => void store.closeTerminal(session.id)}>Dismiss</button>
 				</div>
 			)}
@@ -221,7 +234,7 @@ interface ChipProps {
 /**
  * One session's chip: a tab of the sessions tablist. The close control sits
  * beside the tab, not inside it, and is for the pointer; on the keyboard,
- * Delete closes and F2 renames, and the session bar has both as buttons.
+ * Delete closes and F2 renames, and the row of chips has both as buttons.
  */
 function Chip({ session, selected, unseen, ids, shownId, closing, closingIds, onRename }: ChipProps) {
 	const store = useStore();
@@ -540,9 +553,10 @@ export function TerminalPanel({ repository, worktree }: { repository: Repository
 					)}
 				</div>
 				<SessionMenu items={sessionMenuItems(agents)} disabled={starting || missing} title={newTitle} onStart={start} onSetUp={setUpAgents} />
+				<SessionControls session={shown} onRename={() => setRenaming(shown.id)} />
 			</div>
 			<TerminalProblemNote worktree={worktree} />
-			<Session key={shown.id} session={shown} renaming={renaming === shown.id} onRename={() => setRenaming(shown.id)} />
+			<Session key={shown.id} session={shown} renaming={renaming === shown.id} />
 		</div>
 	);
 }

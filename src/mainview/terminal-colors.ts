@@ -8,6 +8,15 @@ import type { Theme } from "../shared/theme";
  */
 export type TerminalColors = Theme["terminal"];
 
+/**
+ * The least contrast, as WCAG 2 measures it, of a terminal's text on its
+ * cell's background: AA for text. Where a program's color is fainter, as the
+ * grey agents print often is, xterm draws a lighter or darker shade of it, so
+ * each color keeps its hue. xterm halves the minimum for dim text, which it
+ * draws faint on purpose, and leaves box and block characters as they are.
+ */
+export const TERMINAL_MINIMUM_CONTRAST = 4.5;
+
 let colors: TerminalColors = DEFAULT_DARK_THEME.terminal;
 const listeners = new Set<(colors: TerminalColors) => void>();
 

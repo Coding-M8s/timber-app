@@ -258,6 +258,13 @@ describe("the Workspace tab", () => {
 	test("a running session shows its chip, state, and a close control, and no shortcut hint", async () => {
 		const { store } = await withTerminal();
 		const markup = render(store);
+		// The controls share the row of chips, so no bar of their own takes height above the terminal.
+		const stripAt = markup.indexOf('class="session-strip"');
+		const strip = markup.slice(stripAt, markup.indexOf(`id="session-panel"`, stripAt));
+		expect(strip).toContain('class="session-controls"');
+		expect(strip).toContain('role="status">Running</span>');
+		expect(strip).toContain(">Rename</button>");
+		expect(markup).not.toContain("session-bar");
 		expect(markup).toContain('class="session-chip selected running"');
 		expect(markup).toContain("mock-shell");
 		expect(markup).toContain('role="status">Running</span>');

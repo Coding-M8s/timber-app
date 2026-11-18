@@ -2386,13 +2386,15 @@ pre:focus-visible {
 	flex-direction: column;
 }
 
-.session-bar {
+/* The shown session's shell, state, Rename, and Close, at the right end of the chips. */
+.session-controls {
+	flex: 1 1 0;
+	min-width: 0;
 	display: flex;
 	align-items: center;
+	justify-content: flex-end;
 	gap: 10px;
-	min-height: 34px;
-	padding: 2px 6px 2px 12px;
-	border-bottom: 1px solid var(--line);
+	padding-left: 12px;
 	font-size: 12px;
 	color: var(--text-3);
 }
@@ -2550,7 +2552,7 @@ pre:focus-visible {
 }
 
 .session-state {
-	flex: 1 1 auto;
+	flex: 0 1 auto;
 	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
