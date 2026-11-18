@@ -3,7 +3,7 @@ import type { Attention } from "./attention";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "./git-fetch";
 import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffResult } from "./file-changes";
 import type { Layout } from "./layout";
-import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
+import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
 import type { Preferences } from "./preferences";
 import type { Theme } from "./theme";
 import type { ExportThemeResult, ImportThemeResult } from "./theme-file";
@@ -47,6 +47,15 @@ export interface Engine {
 	 * folder.
 	 */
 	removeRepository(path: string): Promise<RemoveRepositoryResult>;
+	/**
+	 * Save the order of the repositories in the list, each named by the path of
+	 * its primary checkout, so `listRepositories` answers in that order from
+	 * now on, after a restart too. A listed repository the order leaves out
+	 * keeps its place after the ones it names, and a path that is not listed
+	 * is skipped. This only changes the app's saved list, never anything in a
+	 * repository or its folder.
+	 */
+	reorderRepositories(order: string[]): Promise<ReorderRepositoriesResult>;
 	/**
 	 * Read one repository again, named by the path of its primary checkout.
 	 * Null when Git could not read it there. As in `listRepositories`, a

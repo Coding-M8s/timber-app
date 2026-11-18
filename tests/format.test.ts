@@ -290,6 +290,8 @@ describe("describeListNotice", () => {
 			.toEqual({ title: "Could not add the repository", text: "disk full", problem: true });
 		expect(describeListNotice({ kind: "failed", action: "remove", message: "disk full" }, []).title)
 			.toBe("Could not remove the repository");
+		expect(describeListNotice({ kind: "failed", action: "reorder", message: "disk full" }, []))
+			.toEqual({ title: "Could not save the order of the repositories", text: "disk full", problem: true });
 	});
 });
 

@@ -79,15 +79,15 @@ export interface ReloadError {
 }
 
 /**
- * Why the latest attempt to add or remove a repository left the list as it
- * was. Paths, not names: the interface words it (see format.ts).
+ * Why the latest attempt to add, remove, or reorder repositories left the
+ * list as it was. Paths, not names: the interface words it (see format.ts).
  */
 export type ListNotice =
 	| { kind: "already-listed"; repository: string }
 	| { kind: "not-a-repository"; folder: string }
 	/** The list comes from the development override. */
 	| { kind: "overridden" }
-	| { kind: "failed"; action: "add" | "remove"; message: string };
+	| { kind: "failed"; action: "add" | "remove" | "reorder"; message: string };
 
 /** A short note that an operation worked. It disappears on its own. */
 export interface Toast {

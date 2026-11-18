@@ -2,6 +2,7 @@ import type { Attention } from "../../shared/attention";
 import type { Engine } from "../../shared/engine";
 import { type Layout, defaultLayout, forgetRepository, readLayout } from "../../shared/layout";
 import { type AddRepositoryResult, type BranchSuggestion, type OpenInEditorRequest, type OpenInEditorResult, type Repository, type SavedBase, type SyncState, type TimberStatus, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
+import { applyOrder } from "../../shared/repository-order";
 import { describeCommandLine } from "../../shared/command-line";
 import { TERMINAL_EDITOR_REASON, editorCommand, editorTarget, otherExecutableNames } from "../../shared/editor";
 import { notFoundOnPath } from "../../shared/search-path";
@@ -682,6 +683,10 @@ export function createMockEngine(
 			current = current.filter(repository => repository.path !== path);
 			layout = forgetRepository(layout, path);
 			return { outcome: "removed" };
+		},
+		async reorderRepositories(order) {
+			current = applyOrder(current, order);
+			return { outcome: "saved" };
 		},
 		newWorktree: request => command(request.repository, repository => actOutNew(repository, request, ending)),
 		openWorktree: request => command(request.repository, repository => actOutOpen(repository, request, ending, listedBranches(repository) ?? [])),

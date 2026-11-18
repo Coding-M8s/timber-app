@@ -468,14 +468,22 @@ The app keeps its own list of repositories, so it is the same after a restart.
   selects it and says so.
 - **Removing.** Remove only takes the entry out of the settings file. No Git
   command runs and nothing in the repository or its folder is touched.
+- **Order.** The sidebar shows the repositories in the order of the entries
+  in the file, which starts as the order they were added. Moving a group
+  (`Engine.reorderRepositories`) rewrites that order and nothing else; an
+  order that changes nothing writes nothing. The store shows the move at once
+  and keeps it over a list read that answers while the save runs. Moves save
+  one after another, and a move overtaken by a later one is not saved on its
+  own. A save that fails reads the list again, so the saved order comes back,
+  and says why. No Git command runs.
 - **Unavailable.** A saved repository that Git cannot read at its saved path,
   because the folder is missing or is no longer a primary checkout, stays in
   the list marked unavailable, with Remove offered. It comes back on the next
   refresh once the folder does.
 - **Development override.** When `TIMBER_APP_REPOS` is set (paths separated by
   `;` on Windows or `:` elsewhere), the app shows those repositories instead
-  and leaves the saved list alone. Add and Remove then explain that the
-  variable is set. Paths in it that are not repositories are skipped.
+  and leaves the saved list alone. Add, Remove, and moving a group then
+  explain that the variable is set. Paths in it that are not repositories are skipped.
   A repository in it that Timber cannot list is shown under the given folder.
 
 ## Shared state and live updates

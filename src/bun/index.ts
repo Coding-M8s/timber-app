@@ -216,6 +216,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 				await watchRepositories();
 				return result;
 			},
+			reorderRepositories: ({ order }) => repositories.reorder(order),
 			loadRepository: async ({ path }) => {
 				const marks = fetcher.marks(path);
 				const repository = await repositories.reload(path);
