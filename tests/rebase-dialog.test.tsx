@@ -92,6 +92,7 @@ describe("rebasing from the store", () => {
 
 describe("the Rebase dialog", () => {
 	const props = (change: Partial<RebaseDialogViewProps> = {}): RebaseDialogViewProps => ({
+		structured: false,
 		worktree: feature,
 		path: FEATURE,
 		bases: [{ selector: "refs/heads/main", kind: "local" }, { selector: "origin/main", kind: "remote" }],
@@ -144,6 +145,16 @@ describe("the Rebase dialog", () => {
 		store.openDialog({ kind: "rebase-worktree", repository: TIMBER, worktree: feature.id });
 		await settle();
 		const markup = renderToStaticMarkup(<App store={store} />);
+		// The mock's Timber is new enough to report the result, so this is the dialog for a result file (see rebase-result.test.tsx).
+		expect(markup).toContain("Rebase</button>");
+		expect(markup).toContain(`timber rebase --base origin/main --result-file &lt;temporary file&gt; -- ${FEATURE}`);
+	});
+
+	test("with a Timber too old to report the result, the workspace header opens the interim dialog", async () => {
+		const { store } = await startedStore(createMockEngine(sampleRepositories, { state: "ready", path: "/usr/bin/timber", version: "0.1.1" }));
+		store.openDialog({ kind: "rebase-worktree", repository: TIMBER, worktree: feature.id });
+		await settle();
+		const markup = renderToStaticMarkup(<App store={store} />);
 		expect(markup).toContain("Rebase in terminal");
 		// The sample worktree has origin/main saved, so the dialog starts from it.
 		expect(feature.base).toEqual({ kind: "assigned", ref: "refs/remotes/origin/main" });
@@ -169,7 +180,7 @@ describe("the Rebase dialog", () => {
 		const local = await opened("/work/timber-worktrees/spike-new-idea");
 		expect(local.worktree.base).toEqual({ kind: "assigned", ref: "refs/heads/main" });
 		expect(ontoValue(local.markup)).toBe("refs/heads/main");
-		expect(local.markup).toContain("timber rebase --base refs/heads/main -- /work/timber-worktrees/spike-new-idea");
+		expect(local.markup).toContain("timber rebase --base refs/heads/main --result-file &lt;temporary file&gt; -- /work/timber-worktrees/spike-new-idea");
 	});
 
 	test("a worktree with no saved base says so, starts empty, and passes no base", async () => {
@@ -177,7 +188,7 @@ describe("the Rebase dialog", () => {
 		expect(worktree.base).toEqual({ kind: "unassigned" });
 		expect(ontoValue(markup)).toBe("");
 		expect(markup).toContain("No saved base");
-		expect(markup).toContain("timber rebase -- /work/timber<");
+		expect(markup).toContain("timber rebase --result-file &lt;temporary file&gt; -- /work/timber<");
 	});
 
 	test("invalid metadata is a warning, and no base is filled in or guessed", () => {

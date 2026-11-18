@@ -10,10 +10,12 @@ import {
 	type DoneApplyResult, type DoneOptions, type DonePreviewResult, DONE_PREVIEW_MINUTES, describeDoneApply, describeDonePreview, readDonePreview,
 } from "../../shared/timber-done";
 import type { FetchFailureKind, FetchResult, ForcePushSeen, RepositoryFetch } from "../../shared/git-fetch";
+import type { RebaseResult } from "../../shared/timber-rebase";
 import { failureOf, readTimberResult } from "../../shared/timber-result";
 import { APP_VERSION } from "../../shared/app-info";
 import { REQUIRED_TIMBER_VERSION } from "../../shared/timber-version";
 import { type CommandEnding, actOutNew, actOutOpen, isCommandEnding } from "./mock-commands";
+import { type RebaseEnding, actOutRebase, isRebaseEnding } from "./mock-rebase";
 import { type MockFileChange, derivedFileChanges, diffMockFileChange, listMockFileChanges } from "./mock-file-changes";
 import { MOCK_PATH, type TerminalControls, createMockTerminals } from "./mock-terminals";
 import { type TimberConfigControls, createMockTimberConfig } from "./mock-timber-config";
@@ -265,6 +267,13 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	 * ./mock-commands.ts for what each one acts out.
 	 */
 	endCommands(ending: CommandEnding): void;
+	/**
+	 * Decide how `timber rebase --result-file` ends from now on: "rebased"
+	 * (the start), "up-to-date", "conflicts", "refused", "failed", "no-result",
+	 * or "unsupported". A worktree with modified or untracked files is refused
+	 * whatever the ending. See ./mock-rebase.ts for what each one acts out.
+	 */
+	endRebaseResults(ending: RebaseEnding): void;
 	/**
 	 * Decide what the branch list of one repository answers from now on: these
 	 * branches, or null for a list that cannot be read. Until then it answers
@@ -584,6 +593,7 @@ export function createMockEngine(
 		return structuredClone(result());
 	};
 	let ending: CommandEnding = "succeeds";
+	let rebaseEnding: RebaseEnding = "rebased";
 	const branchLists = new Map<string, BranchSuggestion[] | null>();
 	const listedBranches = (repository: Repository) =>
 		branchLists.has(repository.path) ? branchLists.get(repository.path)! : branchesOf(repository);
@@ -642,6 +652,19 @@ export function createMockEngine(
 		},
 		newWorktree: request => command(request.repository, repository => actOutNew(repository, request, ending)),
 		openWorktree: request => command(request.repository, repository => actOutOpen(repository, request, ending, listedBranches(repository) ?? [])),
+		async rebaseWorktree(request) {
+			const refuse = (diagnostic: string): RebaseResult => ({ outcome: "failed", ran: false, failure: { command: null, diagnostic: `${diagnostic} Nothing was run.`, output: null } });
+			if (commandMilliseconds > 0) await new Promise(resolve => setTimeout(resolve, commandMilliseconds));
+			// As the main process does: a repository from the list, a worktree it lists with its folder there, then a Timber that is ready.
+			const repository = current.find(candidate => candidate.path === request.repository && candidate.available);
+			if (!repository) return refuse(`${request.repository} is not a repository in the app's list.`);
+			const worktree = timberFailures.has(repository.path) ? undefined : repository.worktrees.find(candidate => candidate.path === request.worktree);
+			if (!worktree) return refuse(`Timber lists no worktree at ${request.worktree} in ${request.repository}. Refresh the list.`);
+			if (!worktree.pathExists) return refuse(`The folder ${worktree.path} is missing.`);
+			const status = await look();
+			if (status.state !== "ready") return refuse("Timber is not ready.");
+			return structuredClone(actOutRebase(repository, worktree, request, rebaseEnding, status));
+		},
 		listBranches: path => read(() => {
 			const found = current.find(repository => repository.path === path && repository.available);
 			return found ? listedBranches(found) : null;
@@ -662,6 +685,11 @@ export function createMockEngine(
 			// Called from the browser console too, where nothing checks the word.
 			if (!isCommandEnding(next)) throw new Error(`Unknown ending: ${String(next)}`);
 			ending = next;
+		},
+		endRebaseResults(next) {
+			// Called from the browser console too, where nothing checks the word.
+			if (!isRebaseEnding(next)) throw new Error(`Unknown ending: ${String(next)}`);
+			rebaseEnding = next;
 		},
 		setBranches(path, branches) {
 			branchLists.set(path, branches);

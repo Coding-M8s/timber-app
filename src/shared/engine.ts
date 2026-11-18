@@ -7,6 +7,7 @@ import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInE
 import type { Preferences } from "./preferences";
 import type { OpenTerminalRequest, OpenTerminalResult, TerminalChange, TerminalOutput, TerminalSession, TerminalSnapshot } from "./terminal";
 import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "./timber-config";
+import type { RebaseRequest, RebaseResult } from "./timber-rebase";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "./timber-done";
 import type { WorkflowList } from "./workflows";
 
@@ -70,6 +71,18 @@ export interface Engine {
 	 * never retried here. Read the list after every outcome.
 	 */
 	openWorktree(request: OpenWorktreeRequest): Promise<WorktreeCommandResult>;
+	/**
+	 * Rebase a worktree by running `timber rebase --result-file` in a
+	 * repository from the list, and answer how it ended as Timber's record says:
+	 * rebased, already up to date, stopped on conflicts, refused, or failed.
+	 * The command is `rebaseResultArguments` in ./timber-rebase.ts, so the
+	 * interface can show it before asking. It runs once and is never retried
+	 * here. A rebase that stopped on conflicts is left exactly as Git left it:
+	 * the engine runs no Git command to abort or continue it. An answer of
+	 * `unsupported` means Timber is too old to report through a result file and
+	 * nothing ran. Read the list after every outcome.
+	 */
+	rebaseWorktree(request: RebaseRequest): Promise<RebaseResult>;
 	/**
 	 * Ask Timber what removing a worktree would do, with `timber __ide-done
 	 * preview`. Read-only and safe to call again: nothing is removed and no

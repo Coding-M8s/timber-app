@@ -46,6 +46,7 @@ describe("createWorktreeCommands, with a stand-in Timber", () => {
 		const timber = standInResultTimber(root, `stand-in-${++count}`, run);
 		const commands = createWorktreeCommands({
 			timber: async () => options.status ?? ready(timber.path),
+			findRepository: async () => null,
 			isListed: async path => (options.listed ?? true) && path === repository,
 			temporaryRoot: temporary,
 		});
@@ -128,6 +129,7 @@ describe("createWorktreeCommands, with a stand-in Timber", () => {
 	test("a list that cannot be read is a failure, not an exception", async () => {
 		const commands = createWorktreeCommands({
 			timber: async () => ready("/nowhere/timber"),
+			findRepository: async () => null,
 			isListed: async () => {
 				throw new Error("settings are unreadable");
 			},
@@ -175,6 +177,7 @@ describe("createWorktreeCommands, with a stand-in Timber", () => {
 		let asked = 0;
 		const commands = createWorktreeCommands({
 			timber: async () => ({ state: "not-found", override: null }),
+			findRepository: async () => null,
 			isListed: async path => {
 				const turn = `${path === repository ? "same" : "other"}-${++asked}`;
 				order.push(`start ${turn}`);
@@ -244,6 +247,7 @@ describe.skipIf(realTimber === null)("createWorktreeCommands, with the installed
 
 	const commandsFor = (...listed: string[]) => createWorktreeCommands({
 		timber: async () => ready(realTimber!),
+		findRepository: async () => null,
 		isListed: async path => listed.includes(path),
 		environment,
 		temporaryRoot: scratch,
@@ -434,6 +438,7 @@ describe.skipIf(realTimber === null)("timber open, with the installed Timber on 
 
 		commands = createWorktreeCommands({
 			timber: async () => ready(realTimber!),
+			findRepository: async () => null,
 			isListed: async path => path === primary,
 			environment,
 			temporaryRoot: scratch,

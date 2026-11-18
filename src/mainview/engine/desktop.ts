@@ -59,6 +59,8 @@ export function createDesktopEngine(): Engine {
 		// Setup scripts take as long as they take.
 		newWorktree: request => rpc.request.newWorktree(request, { maxRequestTime: Infinity }),
 		openWorktree: request => rpc.request.openWorktree(request, { maxRequestTime: Infinity }),
+		// A fetch and Git hooks take as long as they take.
+		rebaseWorktree: request => rpc.request.rebaseWorktree(request, { maxRequestTime: Infinity }),
 		// The main process reads the list first, and stops a stuck preview after 30 seconds.
 		previewDone: request => rpc.request.previewDone(request, { maxRequestTime: 60_000 }),
 		// Scripts that run before deletion take as long as they take.

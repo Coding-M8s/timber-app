@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
+	REBASE_RESULT_TIMBER_VERSION,
 	REQUIRED_TIMBER_VERSION,
 	compareTimberVersions,
 	parseTimberVersion,
 	readVersionOutput,
 	satisfiesTimberVersion,
+	supportsRebaseResult,
 } from "../src/shared/timber-version";
 
 const compare = (left: string, right: string) => Math.sign(compareTimberVersions(parseTimberVersion(left)!, parseTimberVersion(right)!));
@@ -72,5 +74,20 @@ describe("readVersionOutput", () => {
 		expect(readVersionOutput("")).toBeNull();
 		expect(readVersionOutput("usage: timber [options]\n")).toBeNull();
 		expect(readVersionOutput("error\n0.1.1\n")).toBeNull();
+	});
+});
+
+describe("supportsRebaseResult", () => {
+	test("is true from the first Timber with a result file for rebase", () => {
+		expect(REBASE_RESULT_TIMBER_VERSION).toBe("0.1.2");
+		expect(supportsRebaseResult("0.1.1")).toBe(false);
+		expect(supportsRebaseResult("0.1.2")).toBe(true);
+		expect(supportsRebaseResult("v0.2.0")).toBe(true);
+	});
+
+	test("a pre-release of that version, and text that is no version, does not", () => {
+		expect(supportsRebaseResult("0.1.2-beta.1")).toBe(false);
+		expect(supportsRebaseResult("garbage")).toBe(false);
+		expect(supportsRebaseResult("")).toBe(false);
 	});
 });

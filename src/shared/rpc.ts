@@ -4,6 +4,7 @@ import type { Attention } from "./attention";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "./git-fetch";
 import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffResult } from "./file-changes";
 import type { Layout } from "./layout";
+import type { RebaseRequest, RebaseResult } from "./timber-rebase";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
 import type { Preferences } from "./preferences";
 import type { OpenTerminalRequest, OpenTerminalResult, TerminalChange, TerminalOutput, TerminalSession, TerminalSnapshot } from "./terminal";
@@ -32,6 +33,8 @@ export type AppRPC = {
 			newWorktree: { params: NewWorktreeRequest; response: WorktreeCommandResult };
 			/** As `newWorktree`: no time limit. */
 			openWorktree: { params: OpenWorktreeRequest; response: WorktreeCommandResult };
+			/** As `newWorktree`: Git hooks and a fetch take as long as they take, so the caller must not time it out. */
+			rebaseWorktree: { params: RebaseRequest; response: RebaseResult };
 			loadLayout: { params: {}; response: Layout };
 			saveLayout: { params: { layout: Layout }; response: SaveLayoutResult };
 			loadPreferences: { params: {}; response: Preferences };
