@@ -1407,8 +1407,12 @@ shows, and coming back shows it as it was.
   leaves the alternate screen on, the size is changed for a moment and the
   program draws itself again. The pane's size goes to the shell after it
   has rested for 50 ms, never while a drag moves. A pane takes the keyboard
-  only when nothing else has it, so moving through the sidebar keeps it
-  there.
+  when nothing else has it, or when it was asked for
+  (`src/mainview/terminal-focus.ts`): choosing its worktree's row by click,
+  Enter, or Space, choosing its chip, or a session the app started there,
+  such as the agent of a new worktree after its dialog closed. Moving
+  through the sidebar with Tab keeps the keyboard there. A worktree with no
+  session to show, and none starting, forgets the wish.
 - **Terminal appearance.** The `terminal`
   preference holds a font family, a text size, and a cursor shape
   (`src/shared/terminal-appearance.ts`, pure). The family is one name as
