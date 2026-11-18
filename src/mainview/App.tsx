@@ -14,6 +14,7 @@ import { StoreProvider, useAppState, useStore } from "./store/react";
 import { isRunning, timberReady } from "./store/state";
 import type { AppStore } from "./store/store";
 import { applySavedTheme } from "./theme-apply";
+import { zoomKey } from "./zoom-keys";
 
 function Body() {
 	const store = useStore();
@@ -70,6 +71,28 @@ function ThemeKeeper() {
 }
 
 /**
+ * The zoom keys, anywhere in the window. The window hears them first, before
+ * a terminal or a field, so they always zoom and never reach the program in
+ * a terminal. See docs/architecture.md, "Interface zoom".
+ */
+function ZoomKeys() {
+	const store = useStore();
+	useEffect(() => {
+		const mac = /Mac/.test(navigator.platform);
+		const onKey = (event: KeyboardEvent) => {
+			const step = zoomKey(event, mac);
+			if (step === null) return;
+			event.preventDefault();
+			event.stopPropagation();
+			void store.changeZoom(step);
+		};
+		window.addEventListener("keydown", onKey, { capture: true });
+		return () => window.removeEventListener("keydown", onKey, { capture: true });
+	}, [store]);
+	return null;
+}
+
+/**
  * Every part below reads the one store it is given. See docs/architecture.md.
  * `children` sit over the window, inside the store: the browser build uses
  * that for its sample dialog.
@@ -87,6 +110,7 @@ export function App({ store, children }: { store: AppStore; children?: ReactNode
 				<QuitDialog />
 				<TerminalViewKeeper />
 				<ThemeKeeper />
+				<ZoomKeys />
 			</div>
 		</StoreProvider>
 	);

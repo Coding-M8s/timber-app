@@ -7,6 +7,7 @@ import { type FileChangeTarget, type FileChangesResult, type FileDiffResult, sam
 import { type Layout, clampSidebarWidth, dismissSetup, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberStatus, Worktree, WorktreeCommandResult } from "../../shared/model";
 import type { Preferences } from "../../shared/preferences";
+import { type ZoomStep, stepZoom, zoomLabel } from "../../shared/zoom";
 import type { Theme } from "../../shared/theme";
 import type { ExportThemeResult, ImportThemeResult } from "../../shared/theme-file";
 import type { StartRebaseRequest, StartRebaseResult } from "../../shared/rebase-command";
@@ -93,6 +94,14 @@ export interface AppStore {
 	 * failed save with the reason.
 	 */
 	savePreferences(change: Partial<Preferences>): Promise<SavePreferencesResult>;
+	/**
+	 * Zoom one step in or out, or back to 100%, from the keyboard, and save it
+	 * as the zoom preference. Steps taken before a save answers count from
+	 * the zoom they asked for, so quick presses add up. A toast says the zoom,
+	 * also at either end, where it stays. A failed save changes nothing.
+	 * Never throws.
+	 */
+	changeZoom(step: ZoomStep): Promise<void>;
 	/**
 	 * Open a worktree in the editor from the preferences. With no usable
 	 * editor set, this opens Settings at Editor instead and asks nothing of
@@ -511,6 +520,32 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			update({ preferences: result.preferences, preferencesProblem: null });
 		}
 		return result;
+	}
+
+	/** The zoom the latest key asked for, until its save answers. */
+	let zoomAim: number | null = null;
+	let zoomTicket = 0;
+	let zoomToast = 0;
+
+	/** One toast for the zoom: a new one takes the place of the last, so quick presses do not pile up. */
+	function showZoom(zoom: number): void {
+		dismissToast(zoomToast);
+		showToast(`Zoom ${zoomLabel(zoom)}`);
+		zoomToast = lastToast;
+	}
+
+	async function changeZoom(step: ZoomStep): Promise<void> {
+		const from = zoomAim ?? state.preferences.zoom;
+		const zoom = stepZoom(from, step);
+		if (zoom === from) {
+			showZoom(zoom);
+			return;
+		}
+		zoomAim = zoom;
+		const ticket = ++zoomTicket;
+		const result = await savePreferences({ zoom });
+		if (ticket === zoomTicket) zoomAim = null;
+		if (result.outcome === "saved") showZoom(zoom);
 	}
 
 	/*
@@ -1132,6 +1167,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			if (state.layoutProblem) update({ layoutProblem: null });
 		},
 		savePreferences,
+		changeZoom,
 		openInEditor,
 		dismissEditorProblem() {
 			if (state.editorProblem) update({ editorProblem: null });
