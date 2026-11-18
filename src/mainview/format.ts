@@ -67,8 +67,14 @@ export const describeRemoved = (name: string) => `Removed ${name} from the list`
 /** What Remove does, said wherever it is offered. */
 export const REMOVE_REPOSITORY_HINT = "Removes it from this list only. Nothing on disk is changed.";
 
+const FAILED_LIST_TITLES = {
+	add: "Could not add the repository",
+	remove: "Could not remove the repository",
+	reorder: "Could not save the order of the repositories",
+} as const;
+
 /**
- * What to tell the person when adding or removing a repository left the list
+ * What to tell the person when adding, removing, or reordering left the list
  * as it was. `problem` is false when nothing went wrong.
  */
 export function describeListNotice(
@@ -89,12 +95,12 @@ export function describeListNotice(
 		case "overridden":
 			return {
 				title: "The list comes from TIMBER_APP_REPOS",
-				text: "That variable is set, so the app shows its repositories and leaves the saved list alone. Unset it to add or remove repositories here.",
+				text: "That variable is set, so the app shows its repositories and leaves the saved list alone. Unset it to add, remove, or reorder repositories here.",
 				problem: true,
 			};
 		case "failed":
 			return {
-				title: notice.action === "add" ? "Could not add the repository" : "Could not remove the repository",
+				title: FAILED_LIST_TITLES[notice.action],
 				text: notice.message,
 				problem: true,
 			};

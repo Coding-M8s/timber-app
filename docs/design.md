@@ -14,6 +14,9 @@ change them here first when they change.
 
 - Worktrees are grouped under collapsible repository headers. Selecting a
   worktree in another repository switches to it.
+- Drag a repository header to move its group; a line shows where it will
+  land. Alt+Up and Alt+Down move a focused header one place. The order is
+  remembered between runs.
 - Each repository header has a control to create a worktree in it and a
   "Fetch now" control, and an "Add repository" control sits below the list.
 - The app fetches every repository in the background, on an interval from

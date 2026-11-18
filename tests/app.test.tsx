@@ -202,3 +202,26 @@ describe("App", () => {
 		expect(markup).toContain("Looking for Timber");
 	});
 });
+
+describe("repository headers", () => {
+	test("say how to move them, and show the order the store holds", async () => {
+		const { store } = await startedStore();
+		let markup = renderToStaticMarkup(<App store={store} />);
+		expect(markup).toContain('aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"');
+		expect(markup).toContain("Drag to reorder, or press Alt+Up or Alt+Down.");
+		expect(markup.indexOf('aria-label="timber"')).toBeLessThan(markup.indexOf('aria-label="api-server"'));
+
+		await store.moveRepository("/work/api-server", 0);
+		markup = renderToStaticMarkup(<App store={store} />);
+		expect(markup.indexOf('aria-label="api-server"')).toBeLessThan(markup.indexOf('aria-label="timber"'));
+	});
+
+	test("with one repository, offer no move", async () => {
+		const store = createAppStore(createMockEngine([sampleRepositories[0]!]));
+		store.start();
+		await Bun.sleep(0);
+		const markup = renderToStaticMarkup(<App store={store} />);
+		expect(markup).not.toContain("aria-keyshortcuts=\"Alt+ArrowUp");
+		expect(markup).not.toContain("Drag to reorder");
+	});
+});

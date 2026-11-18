@@ -6,7 +6,7 @@ import { createMockWorkflows } from "../src/mainview/engine/mock-workflows";
 import type { Engine } from "../src/shared/engine";
 import { defaultLayout } from "../src/shared/layout";
 import { defaultPreferences } from "../src/shared/preferences";
-import type { AddRepositoryResult, RemoveRepositoryResult, Repository, TimberStatus, WorktreeCommandResult } from "../src/shared/model";
+import type { AddRepositoryResult, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, TimberStatus, WorktreeCommandResult } from "../src/shared/model";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "../src/shared/timber-done";
 import { createMockEngine, sampleChanges, samplePickableRepository, sampleRepositories, sampleTimberStatuses, sampleUnavailableRepository } from "../src/mainview/engine/mock";
 import { isRunning, selectedWorktree } from "../src/mainview/store/state";
@@ -66,6 +66,7 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 	const loads: Pending<Repository | null>[] = [];
 	const adds: Pending<AddRepositoryResult>[] = [];
 	const removes: Pending<RemoveRepositoryResult>[] = [];
+	const reorders: (Pending<ReorderRepositoriesResult> & { order: string[] })[] = [];
 	const commands: (Pending<WorktreeCommandResult> & { kind: "new" | "open"; request: object })[] = [];
 	const previews: (Pending<DonePreviewResult> & { request: DonePreviewRequest })[] = [];
 	const applies: (Pending<DoneApplyResult> & { request: DoneApplyRequest })[] = [];
@@ -95,6 +96,9 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		}),
 		removeRepository: path => new Promise((resolve, reject) => {
 			removes.push({ path, resolve, reject });
+		}),
+		reorderRepositories: order => new Promise((resolve, reject) => {
+			reorders.push({ path: null, order, resolve, reject });
 		}),
 		listBranches: async () => null,
 		newWorktree: request => new Promise((resolve, reject) => {
@@ -134,7 +138,7 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 	const push = (path: string) => {
 		for (const listener of [...listeners]) listener(path);
 	};
-	return { engine, lists, loads, adds, removes, commands, previews, applies, push, listeners };
+	return { engine, lists, loads, adds, removes, reorders, commands, previews, applies, push, listeners };
 }
 
 /** A store on a manual engine, started and past its first load of the sample data. */
@@ -661,6 +665,102 @@ describe("removing a repository", () => {
 		removes.shift()!.reject(new Error("bridge closed"));
 		await third;
 		expect(store.getState().notice).toEqual({ kind: "failed", action: "remove", message: "bridge closed" });
+	});
+});
+
+describe("moving a repository", () => {
+	const paths = (store: { getState(): { repositories: readonly { path: string }[] } }) => store.getState().repositories.map(repository => repository.path);
+
+	test("shows the new order at once, saves it, and a restart keeps it", async () => {
+		const engine = createMockEngine();
+		const store = createAppStore(engine);
+		store.start();
+		await settle();
+		const selection = store.getState().selection;
+
+		const moving = store.moveRepository(API_SERVER, 0);
+		expect(paths(store)).toEqual([API_SERVER, TIMBER]);
+		await moving;
+		expect(paths(store)).toEqual([API_SERVER, TIMBER]);
+		expect(store.getState().selection).toEqual(selection);
+		expect(store.getState().notice).toBeNull();
+
+		const again = createAppStore(engine);
+		again.start();
+		await settle();
+		expect(paths(again)).toEqual([API_SERVER, TIMBER]);
+	});
+
+	test("a move to where it already is, or of a repository not in the list, asks nothing", async () => {
+		const { store, reorders } = await loadedStore();
+		await store.moveRepository(TIMBER, 0);
+		await store.moveRepository("/work/never-listed", 1);
+		expect(reorders).toEqual([]);
+		expect(paths(store)).toEqual([TIMBER, API_SERVER]);
+	});
+
+	test("a list read while the save runs keeps the new order", async () => {
+		const { store, reorders, lists } = await loadedStore();
+		const moving = store.moveRepository(TIMBER, 1);
+		await settle();
+		const refreshing = store.refresh();
+		await settle();
+		lists.shift()!.resolve(structuredClone(sampleRepositories));
+		await refreshing;
+		expect(paths(store)).toEqual([API_SERVER, TIMBER]);
+		reorders.shift()!.resolve({ outcome: "saved" });
+		await moving;
+		expect(paths(store)).toEqual([API_SERVER, TIMBER]);
+	});
+
+	test("saves one move after another, and only the last order when moves overlap", async () => {
+		const { store, reorders } = await loadedStore();
+		const first = store.moveRepository(TIMBER, 1);
+		await settle();
+		// The second move waits for the first save, and is overtaken by the third before its turn comes.
+		const second = store.moveRepository(TIMBER, 0);
+		const third = store.moveRepository(API_SERVER, 0);
+		expect(reorders.map(pending => pending.order)).toEqual([[API_SERVER, TIMBER]]);
+		reorders.shift()!.resolve({ outcome: "saved" });
+		await settle();
+		expect(reorders.map(pending => pending.order)).toEqual([[API_SERVER, TIMBER]]);
+		reorders.shift()!.resolve({ outcome: "saved" });
+		await Promise.all([first, second, third]);
+		expect(reorders).toEqual([]);
+		expect(paths(store)).toEqual([API_SERVER, TIMBER]);
+	});
+
+	test("a save that fails puts the saved order back and says why", async () => {
+		const { store, reorders, lists } = await loadedStore();
+		const moving = store.moveRepository(TIMBER, 1);
+		await settle();
+		reorders.shift()!.resolve({ outcome: "failed", message: "read-only file system" });
+		await settle();
+		expect(store.getState().notice).toEqual({ kind: "failed", action: "reorder", message: "read-only file system" });
+		lists.shift()!.resolve(structuredClone(sampleRepositories));
+		await moving;
+		expect(paths(store)).toEqual([TIMBER, API_SERVER]);
+
+		const thrown = store.moveRepository(TIMBER, 1);
+		await settle();
+		reorders.shift()!.reject(new Error("bridge closed"));
+		await settle();
+		lists.shift()!.resolve(structuredClone(sampleRepositories));
+		await thrown;
+		expect(store.getState().notice).toEqual({ kind: "failed", action: "reorder", message: "bridge closed" });
+		expect(paths(store)).toEqual([TIMBER, API_SERVER]);
+	});
+
+	test("with the override, the order goes back and the notice says why", async () => {
+		const { store, reorders, lists } = await loadedStore();
+		const moving = store.moveRepository(API_SERVER, 0);
+		await settle();
+		reorders.shift()!.resolve({ outcome: "overridden" });
+		await settle();
+		lists.shift()!.resolve(structuredClone(sampleRepositories));
+		await moving;
+		expect(store.getState().notice).toEqual({ kind: "overridden" });
+		expect(paths(store)).toEqual([TIMBER, API_SERVER]);
 	});
 });
 

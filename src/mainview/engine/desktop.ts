@@ -54,6 +54,7 @@ export function createDesktopEngine(): Engine {
 		// The folder picker stays open for as long as the person likes.
 		addRepository: () => rpc.request.addRepository({}, { maxRequestTime: Infinity }),
 		removeRepository: path => rpc.request.removeRepository({ path }),
+		reorderRepositories: order => rpc.request.reorderRepositories({ order }),
 		loadRepository: path => rpc.request.loadRepository({ path }),
 		listBranches: repository => rpc.request.listBranches({ repository }),
 		// Setup scripts take as long as they take.

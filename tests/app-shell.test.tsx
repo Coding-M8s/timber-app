@@ -300,7 +300,7 @@ describe("very long names", () => {
 		expect(markup).toContain(`class="titlebar-repo" title="${longRepository}">${longRepository}<`);
 		expect(markup).toContain(`class="titlebar-branch" title="${longBranch}">${longBranch}<`);
 		expect(markup).toContain(`class="workspace-title" title="${longBranch}">${longBranch}<`);
-		expect(tagOf(markup, "group-header")).toContain(`title="${longRepository} (${TIMBER})"`);
+		expect(tagOf(markup, "group-header")).toContain(`title="${longRepository} (${TIMBER}). Drag to reorder, or press Alt+Up or Alt+Down."`);
 	});
 });
 

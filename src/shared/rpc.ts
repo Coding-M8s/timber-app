@@ -5,7 +5,7 @@ import type { FetchResult, ForcePushSeen, RepositoryFetch } from "./git-fetch";
 import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffResult } from "./file-changes";
 import type { Layout } from "./layout";
 import type { RebaseRequest, RebaseResult } from "./timber-rebase";
-import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
+import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
 import type { Preferences } from "./preferences";
 import type { Theme } from "./theme";
 import type { ExportThemeResult, ImportThemeResult } from "./theme-file";
@@ -30,6 +30,7 @@ export type AppRPC = {
 			/** Answers only when the folder picker closes, so the caller must not time it out. */
 			addRepository: { params: {}; response: AddRepositoryResult };
 			removeRepository: { params: { path: string }; response: RemoveRepositoryResult };
+			reorderRepositories: { params: { order: string[] }; response: ReorderRepositoriesResult };
 			loadRepository: { params: { path: string }; response: Repository | null };
 			listBranches: { params: { repository: string }; response: BranchSuggestion[] | null };
 			/** Answers only when Timber and its setup scripts have ended, so the caller must not time it out. */

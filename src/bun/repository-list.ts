@@ -1,5 +1,6 @@
 import { basename } from "node:path";
-import type { AddRepositoryResult, RemoveRepositoryResult, Repository } from "../shared/model";
+import type { AddRepositoryResult, RemoveRepositoryResult, ReorderRepositoriesResult, Repository } from "../shared/model";
+import { applyOrder, sameOrder } from "../shared/repository-order";
 import { forgetRepository } from "../shared/layout";
 import type { Settings } from "../shared/settings";
 import { commonDirectory, overrideRepositoryPaths } from "./git-engine";
@@ -38,6 +39,8 @@ export interface RepositoryList {
 	addFolder(folder: string): Promise<AddRepositoryResult>;
 	/** Forget a repository, named by the path of its primary checkout. Safe to call again. */
 	remove(path: string): Promise<RemoveRepositoryResult>;
+	/** Save the list in the order `order` names, by primary checkout. See `Engine.reorderRepositories`. */
+	reorder(order: readonly string[]): Promise<ReorderRepositoriesResult>;
 	/** Read one repository again, named by the path of its primary checkout. See `RepositoryReader.reload`. */
 	reload(path: string): Promise<Repository | null>;
 	/** Whether `path` is the primary checkout of a repository in the list. Commands that change a repository run only in these. */
@@ -162,6 +165,22 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 				return commonDir === null ? null : { path, commonDir };
 			}));
 			return targets.filter(target => target !== null);
+		},
+
+		reorder(order) {
+			if (overridden()) return Promise.resolve({ outcome: "overridden" });
+			return inTurn(async () => {
+				const current = await settings();
+				const repositories = applyOrder(current.repositories, order);
+				// Already in that order: nothing to write.
+				if (sameOrder(repositories, current.repositories)) return { outcome: "saved" };
+				try {
+					await save({ ...current, repositories });
+				} catch (error) {
+					return { outcome: "failed", message: `Could not save settings to ${settingsFile}: ${messageOf(error)}` };
+				}
+				return { outcome: "saved" };
+			});
 		},
 
 		remove(path) {

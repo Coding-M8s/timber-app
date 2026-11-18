@@ -152,6 +152,12 @@ export type RemoveRepositoryResult =
 	| { outcome: "overridden" }
 	| { outcome: "failed"; message: string };
 
+/** What came of asking to save a new order of the repositories. Nothing on disk changes but the app's settings. */
+export type ReorderRepositoriesResult =
+	| { outcome: "saved" }
+	| { outcome: "overridden" }
+	| { outcome: "failed"; message: string };
+
 /** What came of asking to remember the layout. A failure never changes what is on screen. */
 export type SaveLayoutResult =
 	| { outcome: "saved" }

@@ -7,6 +7,7 @@ import { type FileChangeTarget, type FileChangesResult, type FileDiffResult, sam
 import { type Layout, clampSidebarWidth, dismissSetup, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberStatus, Worktree, WorktreeCommandResult } from "../../shared/model";
 import type { Preferences } from "../../shared/preferences";
+import { applyOrder, moveInOrder } from "../../shared/repository-order";
 import { type ZoomStep, stepZoom, zoomLabel } from "../../shared/zoom";
 import type { Theme } from "../../shared/theme";
 import type { ExportThemeResult, ImportThemeResult } from "../../shared/theme-file";
@@ -65,6 +66,13 @@ export interface AppStore {
 	addRepository(): Promise<void>;
 	/** Forget a repository in the app. Nothing on disk changes. */
 	removeRepository(path: string): Promise<void>;
+	/**
+	 * Move a repository to `index` in the list, counted without it, and save
+	 * the new order. The list shows it at once; a save that fails puts the
+	 * saved order back and says why in `notice`. Nothing on disk changes but
+	 * the app's settings.
+	 */
+	moveRepository(path: string, index: number): Promise<void>;
 	/** Put away the note about the latest add or remove. */
 	dismissNotice(): void;
 	/** Select a worktree by its identity (`Worktree.id`). One that no repository has is ignored. */
@@ -394,6 +402,11 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	 */
 	let lastTicket = 0;
 	let listTicket = 0;
+	// The order the person moved the repositories into, until the engine has saved it, so a list read meanwhile keeps it.
+	let pendingOrder: string[] | null = null;
+	let orderTicket = 0;
+	// Saves run one after another, so the last move is the one saved last.
+	let orderSaves: Promise<void> = Promise.resolve();
 	const repositoryTickets = new Map<string, number>();
 
 	const reloadAll = mergeOverlapping<"all">(() => track({ kind: "reload-all" }, async () => {
@@ -401,11 +414,12 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		try {
 			const listed = await engine.listRepositories();
 			// A repository that was reloaded on its own after this list was asked for keeps that newer data.
-			const repositories = listed.map(repository => {
+			const read = listed.map(repository => {
 				const current = state.repositories.find(candidate => candidate.path === repository.path);
 				const newer = (repositoryTickets.get(repository.path) ?? 0) > ticket;
 				return (newer && current) || keepLastGood(current, repository);
 			});
+			const repositories = pendingOrder ? applyOrder(read, pendingOrder) : read;
 			listTicket = ticket;
 			update({
 				repositories,
@@ -768,6 +782,37 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				update({ notice: { kind: "failed", action: "remove", message: messageOf(error) } });
 			}
 		});
+	}
+
+	function moveRepository(path: string, index: number): Promise<void> {
+		const before = state.repositories.map(repository => repository.path);
+		const order = moveInOrder(before, path, index);
+		if (order.every((candidate, at) => candidate === before[at])) return Promise.resolve();
+		const ticket = ++orderTicket;
+		pendingOrder = order;
+		update({ notice: null, repositories: applyOrder(state.repositories, order) });
+
+		const save = async () => {
+			// A later move is already on screen and will save itself.
+			if (ticket !== orderTicket) return;
+			let failure: AppState["notice"] = null;
+			try {
+				const result = await engine.reorderRepositories(order);
+				if (result.outcome === "overridden") failure = { kind: "overridden" };
+				if (result.outcome === "failed") failure = { kind: "failed", action: "reorder", message: result.message };
+			} catch (error) {
+				failure = { kind: "failed", action: "reorder", message: messageOf(error) };
+			}
+			if (ticket !== orderTicket) return;
+			pendingOrder = null;
+			if (failure) {
+				update({ notice: failure });
+				// Read the list again, so it shows the order that is saved.
+				await reloadAll("all");
+			}
+		};
+		orderSaves = orderSaves.then(save);
+		return orderSaves;
 	}
 
 	function select(worktreeId: string): void {
@@ -1139,6 +1184,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		fetchNow,
 		addRepository,
 		removeRepository,
+		moveRepository,
 		dismissNotice() {
 			if (state.notice) update({ notice: null });
 		},

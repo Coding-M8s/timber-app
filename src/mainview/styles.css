@@ -242,6 +242,45 @@ pre:focus-visible {
 	background: var(--fill-hover);
 }
 
+/* Moving a group: the dragged one fades, and a line shows where it will land. */
+.group.dragging {
+	opacity: 0.5;
+}
+
+.group.dragging .group-header {
+	cursor: grabbing;
+}
+
+.group.drop-before,
+.group.drop-after {
+	position: relative;
+}
+
+.group.drop-before::before,
+.group.drop-after::after {
+	content: "";
+	position: absolute;
+	left: 4px;
+	right: 4px;
+	height: 2px;
+	border-radius: 1px;
+	background: var(--focus);
+	pointer-events: none;
+}
+
+/* In the middle of the gap between groups. The list scrolls, so the first line stays inside it. */
+.group.drop-before::before {
+	top: -5px;
+}
+
+.group.drop-before:first-child::before {
+	top: 0;
+}
+
+.group.drop-after::after {
+	bottom: -5px;
+}
+
 .group-head {
 	display: flex;
 	align-items: center;

@@ -1,7 +1,8 @@
-import { useId, useState } from "react";
+import { type PointerEvent, useId, useRef, useState } from "react";
 import { describeFetchAction, describeFetchMarker } from "../fetch-format";
 import { REMOVE_REPOSITORY_HINT, TIMBER_LIST_FAILURE_TITLE, describeListNotice, describeReloadError, worktreeLabel } from "../format";
 import { SETTINGS_LABEL, describeLayoutProblem, describeRepository } from "../shell";
+import { DRAG_THRESHOLD, MOVE_REPOSITORY_HINT, MOVE_REPOSITORY_SHORTCUTS, dropIndex, moveStep } from "../repository-drag";
 import { useAppState, useStore } from "../store/react";
 import { isRunning, runningSessionCount } from "../store/state";
 import { OpenInEditorIconButton } from "./OpenInEditor";
@@ -26,6 +27,70 @@ export function Sidebar() {
 	const query = filter.trim().toLowerCase();
 	const now = Date.now();
 	const fetchAsked = (path: string) => state.operations.some(operation => operation.kind === "fetch-repository" && operation.repository === path);
+
+	// A press on a header that has not moved far enough to be a drag yet, or the drag it became.
+	const press = useRef<{ path: string; pointerId: number; startY: number; dragging: boolean } | null>(null);
+	const [drag, setDrag] = useState<{ path: string; index: number } | null>(null);
+	// The click that ends a drag must not also open or close the group.
+	const dragEnded = useRef(false);
+	const groupElements = useRef(new Map<string, HTMLElement>());
+	const headerButtons = useRef(new Map<string, HTMLButtonElement>());
+
+	const othersThan = (path: string) => repositories.filter(repository => repository.path !== path);
+	const indexAt = (path: string, y: number) => dropIndex(othersThan(path).map(repository => {
+		const box = groupElements.current.get(repository.path)?.getBoundingClientRect();
+		return box ? box.top + box.height / 2 : Number.NEGATIVE_INFINITY;
+	}), y);
+
+	function onHeaderPointerDown(path: string, event: PointerEvent<HTMLButtonElement>) {
+		if (event.button !== 0 || repositories.length < 2) return;
+		press.current = { path, pointerId: event.pointerId, startY: event.clientY, dragging: false };
+	}
+
+	function onHeaderPointerMove(event: PointerEvent<HTMLButtonElement>) {
+		const current = press.current;
+		if (!current || current.pointerId !== event.pointerId) return;
+		if (!current.dragging) {
+			if (Math.abs(event.clientY - current.startY) < DRAG_THRESHOLD) return;
+			current.dragging = true;
+			event.currentTarget.setPointerCapture(event.pointerId);
+		}
+		const index = indexAt(current.path, event.clientY);
+		if (drag?.path !== current.path || drag.index !== index) setDrag({ path: current.path, index });
+	}
+
+	function onHeaderPointerUp(event: PointerEvent<HTMLButtonElement>) {
+		const current = press.current;
+		if (!current || current.pointerId !== event.pointerId) return;
+		press.current = null;
+		setDrag(null);
+		if (!current.dragging) return;
+		dragEnded.current = true;
+		void store.moveRepository(current.path, indexAt(current.path, event.clientY));
+	}
+
+	function onHeaderPointerCancel() {
+		press.current = null;
+		setDrag(null);
+	}
+
+	function moveByKey(path: string, index: number, step: -1 | 1) {
+		const target = index + step;
+		if (target < 0 || target >= repositories.length) return;
+		void store.moveRepository(path, target);
+		// The header was moved in the page, so give it the focus back.
+		requestAnimationFrame(() => headerButtons.current.get(path)?.focus());
+	}
+
+	// Where the line that shows the drop goes: above the group the dragged one would land before, or below the last.
+	const dropMark = (() => {
+		if (!drag) return null;
+		const others = othersThan(drag.path);
+		if (drag.index === repositories.findIndex(repository => repository.path === drag.path)) return null;
+		return drag.index < others.length
+			? { path: others[drag.index]!.path, side: "before" as const }
+			: { path: others[others.length - 1]!.path, side: "after" as const };
+	})();
 
 	const groups = repositories.map(repository => ({
 		repository,
@@ -78,15 +143,48 @@ export function Sidebar() {
 					const fetchMarkerId = `${idBase}-fetch-${index}`;
 					const fetchLabel = describeFetchAction(repository.name, fetching ? { repository: repository.path, fetching: true, lastFetched: null, failure: null } : fetch, now);
 					return (
-						<section key={repository.path} className="group" aria-label={repository.name}>
+						<section
+							key={repository.path}
+							ref={element => {
+								if (element) groupElements.current.set(repository.path, element);
+								else groupElements.current.delete(repository.path);
+							}}
+							className={[
+								"group",
+								drag?.path === repository.path ? "dragging" : "",
+								dropMark?.path === repository.path ? `drop-${dropMark.side}` : "",
+							].filter(Boolean).join(" ")}
+							aria-label={repository.name}
+						>
 							<div className={repository.available ? "group-head" : "group-head unavailable"}>
 								<button
 									type="button"
 									className="group-header"
 									aria-expanded={open}
 									aria-describedby={fetchMarker ? fetchMarkerId : undefined}
-									title={describeRepository(repository)}
-									onClick={() => store.toggleGroup(repository.path)}
+									aria-keyshortcuts={repositories.length > 1 ? MOVE_REPOSITORY_SHORTCUTS : undefined}
+									title={repositories.length > 1 ? `${describeRepository(repository)}. ${MOVE_REPOSITORY_HINT}` : describeRepository(repository)}
+									ref={element => {
+										if (element) headerButtons.current.set(repository.path, element);
+										else headerButtons.current.delete(repository.path);
+									}}
+									onPointerDown={event => onHeaderPointerDown(repository.path, event)}
+									onPointerMove={onHeaderPointerMove}
+									onPointerUp={onHeaderPointerUp}
+									onPointerCancel={onHeaderPointerCancel}
+									onKeyDown={event => {
+										const step = moveStep(event);
+										if (step === 0) return;
+										event.preventDefault();
+										moveByKey(repository.path, index, step);
+									}}
+									onClick={() => {
+										if (dragEnded.current) {
+											dragEnded.current = false;
+											return;
+										}
+										store.toggleGroup(repository.path);
+									}}
 								>
 									<svg className={open ? "chevron open" : "chevron"} aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
 										<path d="M3.5 2 6.5 5 3.5 8" />

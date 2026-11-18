@@ -207,6 +207,57 @@ describe.skipIf(realTimber === null)("removing", () => {
 	});
 });
 
+describe.skipIf(realTimber === null)("reordering", () => {
+	test("saves the new order, which a restart keeps, and changes nothing on disk", async () => {
+		const list = listOn();
+		await list.addFolder(primary);
+		await list.addFolder(other);
+		const before = [fingerprint(primary), fingerprint(linked), fingerprint(other)];
+
+		expect(await list.reorder([other, primary])).toEqual({ outcome: "saved" });
+		expect(await names(list)).toEqual(["other", "sample"]);
+		expect(await names(listOn())).toEqual(["other", "sample"]);
+		expect((await list.watchTargets()).map(target => target.path)).toEqual([other, primary]);
+
+		expect([fingerprint(primary), fingerprint(linked), fingerprint(other)]).toEqual(before);
+	});
+
+	test("keeps a repository the order leaves out, and skips a path that is not listed", async () => {
+		const list = listOn();
+		await list.addFolder(primary);
+		await list.addFolder(other);
+		expect(await list.reorder(["/never/listed", other])).toEqual({ outcome: "saved" });
+		expect(await names(listOn())).toEqual(["other", "sample"]);
+		expect(await list.reorder([])).toEqual({ outcome: "saved" });
+		expect(await names(listOn())).toEqual(["other", "sample"]);
+	});
+
+	test("an order that changes nothing writes nothing", async () => {
+		const list = listOn();
+		await list.addFolder(primary);
+		await list.addFolder(other);
+		const saved = statSync(settingsFile).mtimeMs;
+		const text = readFileSync(settingsFile, "utf8");
+		expect(await list.reorder([primary, other])).toEqual({ outcome: "saved" });
+		expect(readFileSync(settingsFile, "utf8")).toBe(text);
+		expect(statSync(settingsFile).mtimeMs).toBe(saved);
+	});
+
+	test("a save that fails is reported, and the order stays as it was", async () => {
+		const list = listOn();
+		await list.addFolder(primary);
+		await list.addFolder(other);
+		// The settings folder can no longer be written, because a file is in its place.
+		const folder = join(settingsFile, "..");
+		renameSync(folder, `${folder}-moved`);
+		writeFileSync(folder, "in the way");
+		const result = await list.reorder([other, primary]);
+		expect(result.outcome).toBe("failed");
+		expect(result.outcome === "failed" && result.message).toContain("Could not save settings to");
+		expect(await names(list)).toEqual(["sample", "other"]);
+	});
+});
+
 describe.skipIf(realTimber === null)("a saved repository whose folder is missing", () => {
 	test("stays in the list, marked unavailable, comes back with its folder, and can be removed", async () => {
 		const moving = join(root, `moving-${cases}`);
@@ -296,7 +347,7 @@ describe.skipIf(realTimber === null)("finding a repository of the list", () => {
 });
 
 describe.skipIf(realTimber === null)("the TIMBER_APP_REPOS override", () => {
-	test("replaces the saved list without changing it, and refuses add and remove", async () => {
+	test("replaces the saved list without changing it, and refuses add, remove, and reorder", async () => {
 		await listOn().addFolder(other);
 		const savedText = readFileSync(settingsFile, "utf8");
 
@@ -306,6 +357,7 @@ describe.skipIf(realTimber === null)("the TIMBER_APP_REPOS override", () => {
 		expect(await overridden.add()).toEqual({ outcome: "overridden" });
 		expect(await overridden.addFolder(primary)).toEqual({ outcome: "overridden" });
 		expect(await overridden.remove(primary)).toEqual({ outcome: "overridden" });
+		expect(await overridden.reorder([primary])).toEqual({ outcome: "overridden" });
 		expect(readFileSync(settingsFile, "utf8")).toBe(savedText);
 
 		// Without the override the saved list is back.
