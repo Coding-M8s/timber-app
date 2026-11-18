@@ -4,6 +4,7 @@ import { Sidebar } from "./components/Sidebar";
 import { SidebarResizer } from "./components/SidebarResizer";
 import { TimberNotice } from "./components/TimberNotice";
 import { type CSSProperties, type ReactNode, useEffect, useRef } from "react";
+import { sameCustomThemes } from "../shared/custom-themes";
 import { sameThemeChoice } from "../shared/theme";
 import { TitleBar } from "./components/TitleBar";
 import { TerminalViewKeeper } from "./components/TerminalPanel";
@@ -52,18 +53,19 @@ function Body() {
 
 /**
  * Keeps the page and its terminals in the saved theme as it changes: once the
- * store has read it, and after a save. The first value is the store's default
- * from before it read anything, and is never applied, because the saved theme
- * is on the page already (main.tsx) and the default would flash.
+ * store has read it, and after a save, of the choice or of a custom theme.
+ * The first value is the store's default from before it read anything, and
+ * is never applied, because the saved theme is on the page already
+ * (main.tsx) and the default would flash.
  */
 function ThemeKeeper() {
-	const choice = useAppState().preferences.theme;
-	const shown = useRef(choice);
+	const { theme: choice, customThemes } = useAppState().preferences;
+	const shown = useRef({ choice, customThemes });
 	useEffect(() => {
-		if (sameThemeChoice(shown.current, choice)) return;
-		shown.current = choice;
-		applySavedTheme(choice);
-	}, [choice]);
+		if (sameThemeChoice(shown.current.choice, choice) && sameCustomThemes(shown.current.customThemes, customThemes)) return;
+		shown.current = { choice, customThemes };
+		applySavedTheme(choice, customThemes);
+	}, [choice, customThemes]);
 	return null;
 }
 

@@ -1005,12 +1005,13 @@ the `theme` preference says which.
   sets xterm's `options.theme`, which redraws at once and keeps the session,
   its screen, and its scrollback. It is a module of its own so that applying
   a theme does not load xterm, which loads only once a terminal shows.
-- **Contrast.** `contrastWarnings` measures each text color (4.5:1) and
-  meaning color (3:1, focus included) on every surface, and the terminal's
-  text on its background, as WCAG 2 does, laying see-through colors over
-  the app's background first. The sixteen ANSI colors are the programs' and
-  are not checked. Every built-in theme passes; the theme maker (a later
-  ticket) shows the warnings.
+- **Contrast.** `contrastWarnings` measures each text color and meaning
+  color (focus included) on every surface, and the terminal's text on its
+  background, as WCAG 2 does, laying see-through colors over the app's
+  background first. The minimums are WCAG AA (text 4.5:1, meaning colors
+  3:1) unless the maker asks for AAA (7:1 and 4.5:1). The sixteen ANSI
+  colors are the programs' and are not checked. Every built-in theme passes
+  AA.
 - **Settings, Theme.** `src/mainview/components/settings/ThemeSection.tsx`:
   "One theme" or "Follow the system's light or dark setting", and a card per
   theme with a small picture of a sidebar, a diff, and terminal colors,
@@ -1019,7 +1020,47 @@ the `theme` preference says which.
   first. Switching between the two keeps the theme in use
   (`src/mainview/theme-format.ts`). A choice shows at once; Save keeps it,
   and leaving Settings without saving goes back.
-- **The mock engine** keeps the theme like any preference, in memory.
+- **Custom themes.** The `customThemes` preference
+  (`src/shared/custom-themes.ts`), up to 50, listed after the built-in
+  ones. Each id starts with `custom-` and comes from the name, so it can
+  never be a built-in one's, and stays the same through a rename. Names are
+  kept apart, ignoring case. A save from the interface must hold every
+  theme whole, or nothing is saved. In the settings file, a theme whose id,
+  name, or appearance cannot be read is left out, and a color that cannot
+  be read comes from Timber Dark or Timber Light. "Your themes" in the
+  Theme section edits, exports, and deletes them; each of those saves at
+  once, apart from the section's Save. Deleting a theme that is in use
+  puts the app's own theme of that slot in its place, in the same save.
+- **The maker.** `ThemeMaker.tsx`, in the Theme section's place, in a
+  dialog widened to 1080 pixels. It holds a draft with each color as typed
+  (`ThemeDraft`, `draftModel` in `theme-format.ts`), so a color can be
+  half typed: the previews keep the color it started from until the text is
+  a color, and Save waits. The color picker takes six hex digits, so a
+  see-through color keeps its alpha when one is picked. The previews are
+  `ThemeSamples.tsx`: the interface drawn with the draft's custom
+  properties, and a real xterm.js terminal showing the mock shell's
+  `sample` (`src/mainview/terminal-sample.ts`), loaded only once the maker
+  shows (`terminal-sample-view.ts`), whose colors follow through
+  `options.theme`. Contrast warnings never block a save.
+- **Theme files.** `src/shared/theme-file.ts`: JSON with `"format":
+  "timber-theme"`, `"version": 1`, the name, the appearance, and every
+  color, but no id. Reading is strict: a file over 64 KB, one that is not
+  JSON, of another format or a later version, or with any part missing or
+  not a color is refused with the reason, and the reason names the colors.
+  `exportTheme` and `importTheme` are on the `Engine` contract. The main
+  process (`src/bun/theme-files.ts`) asks with the system's dialog,
+  Electrobun's `openFileDialog`, which has no save dialog: Export picks a
+  folder and writes a new file named after the theme, `-2` and up when the
+  name is taken, opened with `wx` so nothing is ever written over. Import
+  picks one file and only reads it. An imported theme gets a new id and,
+  when its name is taken, "Name 2"; it is saved at once and shown, and Save
+  makes it the theme in use. Neither saves the preferences by itself.
+- **The mock engine** keeps the theme and custom themes like any
+  preference, in memory (`src/mainview/engine/mock-theme-files.ts`).
+  Export downloads the file in a browser, and Import opens the browser's
+  file picker. `timberMock.setThemeImport(text)` gives the next Import a
+  file's text (null for a closed picker), and `timberMock.exportedThemes()`
+  lists what Export wrote.
 
 ## Timber's settings in the Settings dialog
 
@@ -3439,6 +3480,41 @@ Run for themes (issue 83, the picker and the built-in themes), Linux x64
 - Not run: the system's setting changing while the app is open, the
   desktop under a real Wayland or X11 session for this change, the window's
   own background before the first frame, Windows, and macOS.
+
+Run for themes (issue 83, the maker, custom themes, and theme files),
+Linux x64 (Omarchy, Arch Linux) with Bun 1.4.4 and Timber 0.1.2:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 1447 tests passed, 1 was skipped, none failed.
+  `tests/theme-files.test.ts` covers custom themes read strictly and
+  salvaged from the file, ids and names, the file format and every
+  refusal, the main process's Export and Import in temporary folders (a
+  file that is there is never written over, a missing folder writes
+  nothing, reading changes nothing), the saved preferences refusing a broken
+  theme without touching the file, the mock, and the maker's model.
+  `tests/theme-maker.test.tsx` draws the maker.
+- `bun run build:web`: built, with xterm still loaded only on demand.
+- `bun run start` on `Xvfb :5` with its own `XDG_CONFIG_HOME`, driven by
+  `xdotool` and checked in screenshots:
+  - New theme from Nord opened the maker in the wider dialog. Making faint
+    text `#4c566a` listed four warnings with their ratios and marked the
+    row; the sidebar color and the name changed both previews as typed.
+    Enter saved it: the file held `custom-plum` named Plum, in use, and the
+    window was drawn in it. After a restart it was drawn in it from the
+    first frame.
+  - Export picked a folder in GTK's own dialog and wrote
+    `plum.timber-theme.json`. Delete asked first, saying it was in use, and
+    the save put Timber Dark back and emptied the list.
+  - Import of a file with only a format, a version, and a name was refused
+    with the reasons, and the file was unchanged. Import of the exported
+    file added Plum and showed it, with Save offered.
+  - Edit renamed it to Plum Night, keeping its id. In the maker, changing
+    the terminal's red redrew the sample terminal at once; Cancel left the
+    file as it was.
+  - On this machine the file dialog first went through the desktop portal
+    of the real session, so it opened on the real desktop, not on Xvfb. The
+    run went on under `dbus-run-session` with `GTK_USE_PORTAL=0`.
+- Not run: the portal's dialog driven to the end, Windows, and macOS.
 
 Not run yet:
 

@@ -1,4 +1,4 @@
-import { THEME_STYLE_ID, type ThemeChoice, availableThemes, defaultThemeChoice, resolveTheme, sameThemeChoice, themeStyleSheet } from "../shared/theme";
+import { THEME_STYLE_ID, type Theme, type ThemeChoice, availableThemes, defaultThemeChoice, resolveTheme, themeStyleSheet } from "../shared/theme";
 import { setTerminalColors } from "./terminal-colors";
 
 /*
@@ -10,9 +10,11 @@ import { setTerminalColors } from "./terminal-colors";
 const SYSTEM_DARK = "(prefers-color-scheme: dark)";
 
 let saved: ThemeChoice = defaultThemeChoice();
+/** Every theme there is: the built-in ones and the saved custom ones. */
+let themes: readonly Theme[] = availableThemes();
 /** What Settings shows while a theme is chosen but not saved yet. */
 let preview: ThemeChoice | null = null;
-let applied: ThemeChoice | null = null;
+let written: string | null = null;
 let listening = false;
 
 function systemIsDark(): boolean {
@@ -30,15 +32,16 @@ function styleElement(): HTMLStyleElement {
 
 /** The terminals take their colors from script, so they follow the system's setting from here. */
 function colorTerminals(): void {
-	setTerminalColors(resolveTheme(preview ?? saved, systemIsDark()).terminal);
+	setTerminalColors(resolveTheme(preview ?? saved, systemIsDark(), themes).terminal);
 }
 
 function apply(): void {
 	if (typeof document === "undefined") return;
-	const choice = preview ?? saved;
-	if (applied === null || !sameThemeChoice(applied, choice)) {
-		styleElement().textContent = themeStyleSheet(choice, availableThemes());
-		applied = choice;
+	const sheet = themeStyleSheet(preview ?? saved, themes);
+	// Written only when it changes, so the page is not restyled for nothing.
+	if (sheet !== written) {
+		styleElement().textContent = sheet;
+		written = sheet;
 	}
 	colorTerminals();
 	if (!listening && typeof matchMedia === "function") {
@@ -47,9 +50,10 @@ function apply(): void {
 	}
 }
 
-/** Draw the app in the saved choice, unless Settings is showing another. */
-export function applySavedTheme(choice: ThemeChoice): void {
+/** Draw the app in the saved choice, with the saved custom themes, unless Settings is showing another choice. */
+export function applySavedTheme(choice: ThemeChoice, custom: readonly Theme[] = []): void {
 	saved = choice;
+	themes = availableThemes(custom);
 	apply();
 }
 

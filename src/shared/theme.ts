@@ -201,9 +201,22 @@ export function writeThemeChoice(choice: ThemeChoice): unknown {
 	return { ...choice };
 }
 
-/** Every theme that can be chosen. Built in only, for now. */
-export function availableThemes(): readonly Theme[] {
-	return BUILT_IN_THEMES;
+/** Every theme that can be chosen: the built-in ones, then the person's own. */
+export function availableThemes(custom: readonly Theme[] = []): readonly Theme[] {
+	return custom.length === 0 ? BUILT_IN_THEMES : [...BUILT_IN_THEMES, ...custom];
+}
+
+/** A theme as it goes into a file, with its colors always in the same order. */
+export function writeTheme(theme: Theme): Theme {
+	const ui = {} as Record<UiColor, string>;
+	for (const key of UI_COLORS) ui[key] = theme.ui[key];
+	const terminal = {} as Record<TerminalColor, string>;
+	for (const key of TERMINAL_COLORS) terminal[key] = theme.terminal[key];
+	return { id: theme.id, name: theme.name, appearance: theme.appearance, ui, terminal };
+}
+
+export function sameTheme(one: Theme, other: Theme): boolean {
+	return JSON.stringify(writeTheme(one)) === JSON.stringify(writeTheme(other));
 }
 
 /** The app's own theme of an appearance: Timber Dark or Timber Light. */

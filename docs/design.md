@@ -91,8 +91,19 @@ change them here first when they change.
   for GitHub, Jira, and Linear.
 - **Theme:** a Settings section with a card for each theme, a small
   picture of the app drawn in it. Choosing one shows it at once; Close
-  without Save goes back to the saved one. Making, importing, and exporting
-  themes is a later ticket.
+  without Save goes back to the saved one. Below the cards, "Your themes"
+  lists the person's own with Edit, Export, and Delete, and a theme to
+  start a new one from. Delete asks first, in place, and says when the
+  theme is in use. Import a theme file adds it and shows it; a file that is
+  not a whole theme is refused with the reason and changes nothing.
+- **Theme maker:** the Theme section's place while a theme is made or
+  changed, in a wider dialog. Name, dark or light, and every color, each
+  with a picker and its text, which also takes `rgba()`. Previews of the
+  sidebar, a diff, buttons, a toast, and a real terminal showing the mock
+  shell's `sample` follow every change. The contrast check, at WCAG AA or
+  AAA, lists the colors too close to their surfaces and marks their rows;
+  it warns and never blocks. Save adds a new theme and uses it; Cancel
+  leaves everything as it was.
 - **Uninstall:** at the end of Settings, About. The first button only shows
   what would be removed and the command; "Uninstall and quit" is the
   dangerous one, and Cancel has the focus. The saved repository list stays

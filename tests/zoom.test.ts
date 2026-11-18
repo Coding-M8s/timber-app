@@ -52,7 +52,7 @@ describe("the zoom preference", () => {
 	});
 
 	test("a change that cannot be read is refused, not saved as something else", () => {
-		const saved = { ...defaultPreferences(), zoom: 1.6, theme: defaultThemeChoice() };
+		const saved = { ...defaultPreferences(), zoom: 1.6, theme: defaultThemeChoice(), customThemes: [] };
 		expect(applyPreferenceChange(saved, { zoom: 1.25 })).toEqual({ preferences: { ...saved, zoom: 1.25 }, unreadable: [] });
 		expect(applyPreferenceChange(saved, { zoom: 12 })).toEqual({ preferences: saved, unreadable: ["zoom"] });
 	});

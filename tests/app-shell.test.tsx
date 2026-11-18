@@ -6,7 +6,7 @@ import { Sidebar } from "../src/mainview/components/Sidebar";
 import { createMockEngine, sampleRepositories, sampleStatesRepository, sampleTimberStatuses, sampleUnavailableRepository } from "../src/mainview/engine/mock";
 import { StoreProvider } from "../src/mainview/store/react";
 import { createAppStore } from "../src/mainview/store/store";
-import { defaultThemeChoice } from "../src/shared/theme";
+import { defaultThemeChoice, findTheme } from "../src/shared/theme";
 
 const settle = () => Bun.sleep(0);
 const TIMBER = "/work/timber";
@@ -393,6 +393,24 @@ describe("settings dialog", () => {
 		expect(following.match(/class="theme-preview"/g)).toHaveLength(14);
 	});
 
+	test("Theme lists your own themes after the built-in ones, with Edit, Export, and Delete for each", async () => {
+		const { store } = await startedStore();
+		store.openDialog({ kind: "settings", section: "theme" });
+		expect(render(store)).toContain("None yet. Make one from any theme, or import a theme file someone shared.");
+		const mine = { ...findTheme("nord"), id: "custom-mine", name: "Mine" };
+		await store.savePreferences({ customThemes: [mine], theme: { mode: "fixed", theme: "custom-mine" } });
+		const markup = render(store);
+		expect(markup.match(/class="theme-preview"/g)).toHaveLength(8);
+		expect(markup).toMatch(/<span class="theme-card-name">Mine<\/span>/);
+		expect(markup).toMatch(/checked="" value="custom-mine"/);
+		expect(markup).toContain('<span class="custom-theme-name">Mine<span class="custom-theme-tag">In use</span></span>');
+		for (const action of ["Edit Mine", "Export Mine", "Delete Mine"]) expect(markup).toContain(`aria-label="${action}"`);
+		expect(markup).toContain(">New theme</button>");
+		expect(markup).toContain(">Import a theme file</button>");
+		// The theme to start from is the one in use.
+		expect(markup).toMatch(/<option value="custom-mine" selected="">Mine<\/option>/);
+	});
+
 	test("Layout offers the zoom, with the saved one chosen", async () => {
 		const { store } = await startedStore();
 		store.openDialog({ kind: "settings" });
@@ -400,7 +418,7 @@ describe("settings dialog", () => {
 		expect(markup).toMatch(/<label class="field-label" for="[^"]+">Zoom<\/label>/);
 		expect(markup).toMatch(/<option value="1" selected="">100%<\/option>/);
 		expect(markup).toContain('<option value="1.6">160%</option>');
-		await store.savePreferences({ zoom: 1.6, theme: defaultThemeChoice() });
+		await store.savePreferences({ zoom: 1.6, theme: defaultThemeChoice(), customThemes: [] });
 		expect(render(store)).toMatch(/<option value="1.6" selected="">160%<\/option>/);
 		expect(render(store)).not.toMatch(/<option value="1" selected="">/);
 	});
