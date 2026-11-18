@@ -72,7 +72,9 @@ change them here first when they change.
   created it, and the footer shows its command under Timber's.
 - **Rebase:** pick the base. The picker starts from the base Timber saved for
   the worktree. A worktree with uncommitted changes is refused, as Timber
-  does.
+  does. The dialog says how the rebase ended. One that stops on conflicts
+  lists the files and offers a terminal in the worktree, leaving the rebase
+  paused for the person to finish or abort.
 - **Done:** a clean, published worktree gets a summary of what is removed,
   including ignored files. One with unsaved work gets "Delete anyway?" with
   Keep as the default.

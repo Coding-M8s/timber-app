@@ -67,7 +67,7 @@ const settings = createSettingsHolder(settingsFile);
 const repositories = createRepositoryList({ settingsFile, settings, pickFolder, reader: createRepositoryReader(() => timber.current()) });
 const layout = createSavedLayout(settings);
 const preferences = createSavedPreferences(settings);
-const worktrees = createWorktreeCommands({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
+const worktrees = createWorktreeCommands({ timber: () => timber.current(), isListed: path => repositories.includes(path), findRepository: path => repositories.find(path) });
 
 /*
  * Background refresh (see docs/architecture.md, "Watching for changes"). The watcher hears changes to the Git
@@ -199,6 +199,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			// What these answer holds what the command printed, which is private: never log it.
 			newWorktree: request => worktrees.create(request),
 			openWorktree: request => worktrees.open(request),
+			rebaseWorktree: request => worktrees.rebase(request),
 			loadLayout: () => layout.load(),
 			saveLayout: ({ layout: next }) => layout.save(next),
 			loadPreferences: () => preferences.load(),
