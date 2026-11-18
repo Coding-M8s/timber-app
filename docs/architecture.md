@@ -1032,7 +1032,10 @@ the `theme` preference says which.
   background, as WCAG 2 does, laying see-through colors over the app's
   background first. The minimums are WCAG AA (text 4.5:1, meaning colors
   3:1) unless the maker asks for AAA (7:1 and 4.5:1). The sixteen ANSI
-  colors are the programs' and are not checked. Every built-in theme passes
+  colors are the programs' and are not checked: terminals raise any that
+  are too faint as they draw them (see [terminal sessions](#terminal-sessions)). Timber
+  Dark's greys are the interface's own, `text2` for white and `text3` for
+  bright black, and need no raising. Every built-in theme passes
   AA.
 - **Settings, Theme.** `src/mainview/components/settings/ThemeSection.tsx`:
   "One theme" or "Follow the system's light or dark setting", and a card per
@@ -1412,7 +1415,9 @@ shows, and coming back shows it as it was.
   session and puts the keyboard in its terminal. Delete closes the session
   on the focused chip and F2 renames it, as for closable tabs; a double
   click renames too. The close control on a chip is for the pointer; on the
-  keyboard the session bar has Rename and Close. In the rename field Enter
+  keyboard there are Rename and Close at the right end of the row of chips,
+  after the shown session's shell and state. They share the row so that no
+  bar of their own takes height from the terminal. In the rename field Enter
   and leaving the field save, and Escape keeps the name. Closing the chip
   that shows shows the one after it, or else the one before, skipping any
   that are being closed. A chip being closed is dimmed until its processes
@@ -1441,7 +1446,13 @@ shows, and coming back shows it as it was.
   on macOS, never through a shell, because it is whatever a program printed.
   Elsewhere nothing opens yet. Fonts come from the stylesheet and colors from the
   theme, the sixteen ANSI colors included, and an open terminal takes a new
-  theme at once (see [themes](#themes)).
+  theme at once (see [themes](#themes)). Text is drawn at a contrast of at
+  least 4.5:1 with its cell's background (`TERMINAL_MINIMUM_CONTRAST` in
+  `src/mainview/terminal-colors.ts`, xterm's `minimumContrastRatio`): where
+  a program's color is fainter, such as the grey agents print, xterm draws a
+  lighter or darker shade of the same hue. xterm halves the minimum for dim
+  text, which it draws faint on purpose, and leaves box and block
+  characters alone.
 - **Ending.** Closing a session hangs up its terminal and sends SIGHUP to
   every process in the shell's session, waits until all of them ended or two
   seconds passed, kills what is still there, and answers once the shell has
@@ -1641,7 +1652,7 @@ prints, which is handled as any terminal's output.
   process takes the command from the saved preferences only, never from the
   request. A name that is not saved starts nothing, not even a shell. The
   session's `shell` is the executable as found and `command` the whole line,
-  shown in the session bar's tooltip. The "+" menu, the buttons of a
+  shown in the tooltip of the shell's name beside the chips. The "+" menu, the buttons of a
   worktree with no session, and the Agent field of the New worktree dialog
   start an agent, all through `openTerminal`. Timber's `new` and `open`
   never do: they always run with `--no-agent` (see
@@ -3710,6 +3721,37 @@ its own `XDG_CONFIG_HOME` and no `TIMBER_APP_REPOS`:
 - Not run: Folio's Cancel and Select buttons clicked with a pointer, the
   chooser on the real desktop, so where it opens next to the app was not
   seen, and GNOME's and KDE's portal choosers.
+
+Run for the terminal pane's polish (issue 82), Linux x64 (Omarchy, Arch
+Linux) with Bun 1.4.4 and Timber 0.1.2:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 1463 tests passed, 1 was skipped, none failed. They cover the
+  shell, state, Rename, and Close in the row of chips with no bar of their
+  own, Timber Dark's greys at the minimum contrast on the pane, and both
+  terminals, the theme maker's sample included, setting the minimum.
+- `bun run build:web`: built.
+- Measured with `contrastRatio` before the change: Timber Dark's bright
+  black (`#5c5c66`) was 2.96:1 on the pane and its black 1.19:1. Under
+  4.5:1 in the other built-in themes: black in every dark theme, bright
+  black in Catppuccin Mocha, Nord, and Solarized Dark, red in Gruvbox Dark,
+  Nord, and Solarized Dark, Gruvbox Dark's blue and magenta, Solarized
+  Dark's magenta, Timber Light's bright green, magenta, and cyan, and most
+  of Solarized Light. Those palettes stay as they are; the minimum raises
+  them as they are drawn.
+- `bun run start` on `Xvfb :82` under `dbus-run-session`, with its own
+  `XDG_CONFIG_HOME` and a temporary repository, driven by `xdotool` and
+  checked in screenshots:
+  - At 1280 by 820, the chip, "+", and at the right bash, Running, Rename,
+    and Close shared one row, and the terminal began right under it.
+  - `printf` of bright black, dim, white, black, and the sixteen colors:
+    each was readable and kept its hue; black was drawn as a grey.
+  - After `exit`, at 760 by 520: the chip showed `exit 0`, the row "Exited
+    with code 0", and the ended note fit on two lines beside Dismiss.
+  - At 640 by 520, where the sidebar stacks above the workspace, two chips
+    and the controls still fit on one row.
+- Not run: many chips at a narrow width, a light theme in the desktop
+  window, Windows, and macOS.
 
 Not run yet:
 

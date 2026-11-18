@@ -1,6 +1,7 @@
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { type ITheme, Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
+import { TERMINAL_MINIMUM_CONTRAST } from "./terminal-colors";
 import { terminalSample } from "./terminal-sample";
 
 /**
@@ -26,6 +27,7 @@ export function createSampleTerminal(host: HTMLElement, colors: ITheme): SampleT
 		cursorInactiveStyle: "none",
 		allowProposedApi: true,
 		theme: { ...colors },
+		minimumContrastRatio: TERMINAL_MINIMUM_CONTRAST,
 	});
 	terminal.loadAddon(new Unicode11Addon());
 	terminal.unicode.activeVersion = "11";

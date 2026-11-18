@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { themePreload } from "../src/bun/theme-preload";
-import { setTerminalColors, terminalColors, watchTerminalColors } from "../src/mainview/terminal-colors";
+import { TERMINAL_MINIMUM_CONTRAST, setTerminalColors, terminalColors, watchTerminalColors } from "../src/mainview/terminal-colors";
 import { switchThemeMode, themesFor } from "../src/mainview/theme-format";
 import { BUILT_IN_THEMES, DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME } from "../src/shared/builtin-themes";
 import { contrastRatio, parseColor, readColor, withAlpha } from "../src/shared/color";
@@ -285,5 +285,20 @@ describe("the terminals' colors", () => {
 		setTerminalColors(DEFAULT_DARK_THEME.terminal);
 		expect(heard).toEqual([DEFAULT_LIGHT_THEME.terminal.background]);
 		expect(terminalColors()).toBe(DEFAULT_DARK_THEME.terminal);
+	});
+
+	test("Timber Dark's greys are the interface's own, and readable on the pane without help", () => {
+		const terminal = DEFAULT_DARK_THEME.terminal;
+		expect(terminal.white).toBe(DEFAULT_DARK_THEME.ui.text2);
+		expect(terminal.brightBlack).toBe(DEFAULT_DARK_THEME.ui.text3);
+		for (const grey of [terminal.white, terminal.brightBlack]) expect(contrastRatio(grey, terminal.background)).toBeGreaterThanOrEqual(TERMINAL_MINIMUM_CONTRAST);
+	});
+
+	test("every terminal, the theme maker's sample included, draws text at the minimum contrast", () => {
+		expect(TERMINAL_MINIMUM_CONTRAST).toBe(4.5);
+		for (const file of ["terminal-view.ts", "terminal-sample-view.ts"]) {
+			const source = readFileSync(join(import.meta.dir, "../src/mainview", file), "utf8");
+			expect(source).toContain("minimumContrastRatio: TERMINAL_MINIMUM_CONTRAST");
+		}
 	});
 });

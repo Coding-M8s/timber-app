@@ -225,7 +225,7 @@ describe("several sessions in one worktree", () => {
 		expect(markup).toContain(`role="tabpanel" id="session-panel" aria-labelledby="session-chip-${three.id}"`);
 		expect(markup.match(/class="terminal-screen"/g)).toHaveLength(1);
 		expect(markup).toContain('aria-label="New session" aria-haspopup="menu" aria-expanded="false"');
-		// The chip's close control is for the pointer, out of the tab order; the keyboard has Delete and the session bar's Close.
+		// The chip's close control is for the pointer, out of the tab order; the keyboard has Delete and the Close beside the chips.
 		expect(markup).toMatch(/<button type="button" class="session-chip-close" tabindex="-1" aria-label="Close Terminal 3 and end its processes"/);
 		expect(markup).toContain(">Rename</button>");
 		store.showSession(one.id);

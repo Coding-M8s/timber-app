@@ -113,7 +113,7 @@ export const DEFAULT_DARK_THEME: Theme = theme("timber-dark", "Timber Dark", "da
 	errorHover: "#f6a399",
 	ansi: [
 		"#1f1f23", "#f08b80", "#73c991", "#e2c08d", "#6ea8fe", "#c79bf2", "#6ccfd8", "#a1a1aa",
-		"#5c5c66", "#ffa79d", "#93deac", "#f0d4a6", "#94c0ff", "#dab8f7", "#93e2e9", "#ececef",
+		"#8a8a94", "#ffa79d", "#93deac", "#f0d4a6", "#94c0ff", "#dab8f7", "#93e2e9", "#ececef",
 	],
 });
 
