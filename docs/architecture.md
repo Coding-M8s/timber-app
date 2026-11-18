@@ -117,9 +117,25 @@ The sidebar shows exactly the worktrees Timber lists, in Timber's order
   app does not use, or that a later Timber adds within version 1, are ignored.
 - **Mapping.** Each `WorktreeRecord` becomes a `Worktree` in
   `src/shared/model.ts`: branch, detached, primary, locked, prunable, whether
-  the folder exists, and the changes, which are either known with their
-  modified and untracked paths or unknown with Timber's reason. Ignored files
-  are left out.
+  the folder exists, the changes, which are either known with their
+  modified and untracked paths or unknown with Timber's reason, and the
+  saved base (below). Ignored files are left out.
+- **Saved base.** The record's `base` field becomes `Worktree.base`, a
+  `SavedBase`: assigned with the canonical ref exactly as Timber saved it,
+  unassigned, or invalid with Timber's reason (malformed, stale, or
+  unreadable). A record without the field, as from a Timber before it, reads
+  as null and the app shows no base at all. A field of any other shape
+  refuses the list like any unreadable record. The app never infers a base
+  from branches or history, and never checks that the saved ref still
+  exists: Timber reads it offline, so it is a saved choice. Its words come
+  from `src/mainview/base-format.ts`, which is pure. A base is worded in the
+  form Timber takes for `--base` and prints in its own list
+  (`savedBaseSelector` in `src/shared/rebase-command.ts`):
+  `refs/remotes/origin/main` as `origin/main`, and a local branch by its
+  full ref, `refs/heads/main`. The row's tooltip is its path followed by
+  "(Base origin/main)", "(No saved base)", or "(Base unknown)". The workspace
+  header shows the same words after the changes, with the whole sentence as a
+  tooltip, and "Base unknown" in the error color.
 - **Identity.** A worktree's `id` is the common Git directory plus its
   canonical path, and the selection holds that, not a path or a branch.
   Timber gives a canonical path only for a folder it verified. For a missing
@@ -138,7 +154,10 @@ The sidebar shows exactly the worktrees Timber lists, in Timber's order
   short text, and a sentence in plain words. `WorktreeRow` only draws them.
   Beside the branch: a down arrow and an up arrow with counts, "local only",
   "upstream gone", or "sync unknown". Below it: "detached HEAD", "folder
-  missing" or "status unknown", "locked", and "prunable". At the end: the
+  missing" or "status unknown", "locked", "prunable", and "base unknown" for
+  saved base metadata Timber cannot use. Timber calls the base stale
+  whenever it could not verify the worktree, so a row that already says
+  "folder missing" or "status unknown" is not marked again for that. At the end: the
   counts, such as `3M` and `1U`. A clean worktree that is level with its
   upstream has no markers, and a status or upstream state that could not be
   read always has one, so an empty row never means "not known".
@@ -1284,8 +1303,15 @@ structured version replaces this one.
   any typed ref. Timber reads a plain name as a branch on a remote, so a
   local branch is offered as `refs/heads/<name>`, and a remote-tracking one
   as `<remote>/<branch>` (`rebaseBases` in `src/shared/rebase-command.ts`).
-  The spaces around the text are left off. Empty means the base Timber saved
-  for the worktree, and no `--base` is passed.
+  The spaces around the text are left off. Empty passes no `--base`, and
+  Timber chooses, starting with the base it saved for the worktree.
+- **Starting from the saved base.** The field starts as the worktree's saved
+  base in that same form (`initialOnto`), as the list had it when the dialog
+  opened, and a line above the field says so. Only a base Timber reported as
+  assigned is filled in. A worktree with no saved base says "No saved base",
+  invalid metadata shows Timber's reason as a warning, and both leave the
+  field empty, as does a Timber that reports no base, for which the dialog
+  says nothing. What the person types after that stays.
 - **One source for the command.** `rebaseArguments` builds
   `rebase [--base <ref>] -- <registered path>`. The footer words it from that
   function, and the main process runs Timber from the same one, so the
@@ -2863,6 +2889,32 @@ and Timber 0.1.2, after rebasing it onto several sessions per worktree:
   without a refresh. Screenshots were looked at.
 - Not run: a remote base, which needs a remote to fetch from, and the
   dialog on macOS or Windows.
+
+Run for showing each worktree's saved base (issue 19), Linux x64 (Omarchy,
+Arch Linux) with Bun 1.4.4, Git 2.56.1, and Timber 0.1.2:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 1246 tests passed, 1 was skipped, none failed.
+  `tests/saved-base.test.ts` runs the installed Timber in a temporary
+  repository with a remote: worktrees made with `timber new --base
+  origin/main` and `--base refs/heads/main` list those bases, the primary
+  checkout and a worktree added with plain Git list none, a worktree whose
+  saved `base.json` was overwritten lists as invalid (malformed) and stays in
+  the list, and two reads leave every file, ref, and index as they were.
+  `tests/timber-ls-parse.test.ts` reads a listing recorded from that Timber
+  (`tests/fixtures/timber-ls/with-bases.json`) and the older recording
+  without the field, which still lists all seven worktrees with no base.
+- `bun run build:web`, served with `vite preview` and driven in headless
+  Chromium with the sample data: the row tooltips and the header read "Base
+  origin/main", "Base refs/heads/main", "No saved base", "Base unknown" (also
+  a "base unknown" marker on the row), and nothing for the worktree whose
+  record has no base. The Rebase dialog opened with `origin/main` in Onto
+  and `timber rebase --base origin/main -- <path>` in the footer, and with
+  an empty Onto and no `--base` for the invalid base and for the record
+  without one. Screenshots of the header and the dialog were looked at.
+- Not run: the desktop window, a Timber older than 0.1.2 (the missing field
+  was read from a recording of 0.1.1 only), and anything on macOS or
+  Windows.
 
 Not run yet:
 

@@ -1,7 +1,7 @@
 import type { Attention } from "../../shared/attention";
 import type { Engine } from "../../shared/engine";
 import { type Layout, defaultLayout, forgetRepository, readLayout } from "../../shared/layout";
-import { type AddRepositoryResult, type BranchSuggestion, type OpenInEditorRequest, type OpenInEditorResult, type Repository, type SyncState, type TimberStatus, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
+import { type AddRepositoryResult, type BranchSuggestion, type OpenInEditorRequest, type OpenInEditorResult, type Repository, type SavedBase, type SyncState, type TimberStatus, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
 import { describeCommandLine } from "../../shared/command-line";
 import { TERMINAL_EDITOR_REASON, editorCommand, editorTarget, otherExecutableNames } from "../../shared/editor";
 import { notFoundOnPath } from "../../shared/search-path";
@@ -43,6 +43,8 @@ function worktree(repository: string, branch: string, overrides: SampleOverrides
 		prunable: false,
 		pathExists: true,
 		changes: sampleChanges(0, 0),
+		// As Timber does: the primary checkout has no saved base, and a worktree made with `timber new` has one.
+		base: (primary ? { kind: "unassigned" } : { kind: "assigned", ref: "refs/remotes/origin/main" }) as SavedBase | null,
 		sync: inSync(branch) as SyncState | null,
 		...overrides,
 	};
@@ -76,6 +78,8 @@ export const sampleRepositories: Repository[] = [
 			}),
 			worktree("timber", "spike/new-idea", {
 				changes: sampleChanges(0, 2),
+				// Based on a local branch, which Timber saves by its full ref.
+				base: { kind: "assigned", ref: "refs/heads/main" },
 				sync: { kind: "unpublished" },
 			}),
 		],
@@ -89,6 +93,8 @@ export const sampleRepositories: Repository[] = [
 		worktrees: [
 			worktree("api-server", "main", { primary: true }),
 			worktree("api-server", "feat/rate-limit-headers", {
+				// Added with plain Git, so Timber saved no base for it.
+				base: { kind: "unassigned" },
 				sync: { kind: "gone", upstream: "origin/feat/rate-limit-headers" },
 			}),
 			worktree("api-server", "old/removed-folder", {
@@ -104,8 +110,9 @@ export const sampleRepositories: Repository[] = [
 /**
  * A repository with the row states the two above do not have: a detached
  * HEAD, a locked worktree, a prunable one whose folder is still there, a
- * status Timber could not read, an upstream state Git could not read, and a
- * row with everything at once. The browser build lists it; most tests do not.
+ * status Timber could not read, an upstream state Git could not read, saved
+ * base metadata Timber cannot use, a record with no base at all, and a row
+ * with everything at once. The browser build lists it; most tests do not.
  */
 export const sampleStatesRepository: Repository = {
 	path: "/work/billing",
@@ -121,7 +128,8 @@ export const sampleStatesRepository: Repository = {
 			head: "4f9c2ab81d3e56f7a0b1c2d3e4f5a6b7c8d9e0f1",
 			sync: null,
 		}),
-		worktree("billing", "release/2.4", { locked: true }),
+		// A record without the field, as from a Timber before it: no base is shown.
+		worktree("billing", "release/2.4", { locked: true, base: null }),
 		worktree("billing", "chore/moved-folder", {
 			prunable: true,
 			changes: { kind: "unknown", reason: "Path no longer identifies this Git worktree" },
@@ -132,6 +140,7 @@ export const sampleStatesRepository: Repository = {
 		}),
 		worktree("billing", "feat/invoices", {
 			changes: sampleChanges(2, 0),
+			base: { kind: "invalid", reason: "stale" },
 			sync: null,
 		}),
 		worktree("billing", "feat/tax-rules", {

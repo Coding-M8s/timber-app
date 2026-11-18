@@ -569,6 +569,11 @@ pre:focus-visible {
 	color: var(--text-3);
 }
 
+/* Saved base metadata Timber cannot use. The words say so; the color only marks it. */
+.saved-base-warning {
+	color: var(--error);
+}
+
 .path {
 	font-family: var(--font-mono);
 	font-size: 11.5px;

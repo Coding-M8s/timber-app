@@ -1,4 +1,4 @@
-import type { WorktreeChanges } from "./model";
+import type { SavedBase, WorktreeChanges } from "./model";
 
 /**
  * Reading `timber ls --json`, version 1 of Timber's machine interface
@@ -29,6 +29,8 @@ export interface ListedWorktree {
 	prunable: boolean;
 	pathExists: boolean;
 	changes: WorktreeChanges;
+	/** The saved base, or null when the record has no `base` field, as from a Timber before it. */
+	base: SavedBase | null;
 }
 
 /** A whole list, in Timber's order, or the reason there is none. Never part of a list. */
@@ -61,6 +63,23 @@ function readChanges(value: unknown): WorktreeChanges | null {
 	return null;
 }
 
+/**
+ * The `base` field of a record. A record without the field comes from a
+ * Timber before it, and reads as null: the app then shows no base. A field
+ * that is there must be one of the three kinds the contract names; anything
+ * else answers "unreadable", so that a base is never guessed.
+ */
+function readBase(value: unknown): SavedBase | null | "unreadable" {
+	if (value === undefined) return null;
+	if (!isFields(value)) return "unreadable";
+	if (value.kind === "assigned" && isText(value.ref) && value.ref !== "") return { kind: "assigned", ref: value.ref };
+	if (value.kind === "unassigned") return { kind: "unassigned" };
+	if (value.kind === "invalid" && (value.reason === "malformed" || value.reason === "stale" || value.reason === "unreadable")) {
+		return { kind: "invalid", reason: value.reason };
+	}
+	return "unreadable";
+}
+
 /** Null when the value is not a version 1 `WorktreeRecord`. Fields this app does not use are ignored. Result files carry the same record. */
 export function readWorktree(value: unknown): ListedWorktree | null {
 	if (!isFields(value)) return null;
@@ -70,8 +89,9 @@ export function readWorktree(value: unknown): ListedWorktree | null {
 	const changes = readChanges(value.status);
 	if (!isText(path) || path === "" || !isTextOrNull(canonicalPath) || !isTextOrNull(branch) || !isTextOrNull(head)) return null;
 	if (typeof isPrimary !== "boolean" || typeof detached !== "boolean" || typeof pathExists !== "boolean") return null;
-	if (locked === null || prunable === null || changes === null) return null;
-	return { path, canonicalPath, branch, head, primary: isPrimary, detached, locked, prunable, pathExists, changes };
+	const base = readBase(value.base);
+	if (locked === null || prunable === null || changes === null || base === "unreadable") return null;
+	return { path, canonicalPath, branch, head, primary: isPrimary, detached, locked, prunable, pathExists, changes, base };
 }
 
 export function readRepository(value: unknown): ListedRepository | null {

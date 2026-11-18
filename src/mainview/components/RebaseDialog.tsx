@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { BranchSuggestion, Worktree } from "../../shared/model";
-import { type StartRebaseRequest, ontoFromText, rebaseArguments, rebaseBases } from "../../shared/rebase-command";
+import { type StartRebaseRequest, initialOnto, ontoFromText, rebaseArguments, rebaseBases } from "../../shared/rebase-command";
 import { describeTimberCommand } from "../../shared/timber-result";
+import { describeRebaseBase } from "../base-format";
 import { worktreeLabel } from "../format";
 import { REBASE_DIRTY_NOTE, REBASE_ONTO_HINT, REBASE_REWRITES, REBASE_RUNS_IN_TERMINAL, describeRebaseStarted, hasLocalChanges } from "../rebase-format";
 import { useAppState, useStore, useSubmission } from "../store/react";
@@ -38,6 +39,7 @@ export interface RebaseDialogViewProps {
 export function RebaseDialogView(props: RebaseDialogViewProps) {
 	const { worktree, path, bases, onto, onOnto, submission, onSubmit, onClose } = props;
 	const label = worktree ? worktreeLabel(worktree) : path;
+	const savedBase = worktree ? describeRebaseBase(worktree.base) : null;
 	return (
 		<OperationDialog
 			title={worktree ? `Rebase ${label}` : `${label} is no longer in the list`}
@@ -54,6 +56,7 @@ export function RebaseDialogView(props: RebaseDialogViewProps) {
 			{worktree ? (
 				<>
 					<p className="dialog-note">{REBASE_RUNS_IN_TERMINAL}</p>
+					{savedBase && <p className={savedBase.warning ? "dialog-note saved-base-warning" : "dialog-note"} role={savedBase.warning ? "note" : undefined}>{savedBase.text}</p>}
 					<BranchField label="Onto" value={onto} branches={bases} disabled={submission.running} onChange={onOnto} />
 					<p className="dialog-note">{REBASE_ONTO_HINT}</p>
 					<p className="dialog-note">{REBASE_REWRITES}</p>
@@ -68,8 +71,9 @@ export function RebaseDialogView(props: RebaseDialogViewProps) {
 
 /**
  * The Rebase dialog for one worktree, opened from the workspace header. Its
- * Onto field offers the repository's local and remote branches in the form
- * Timber takes, and takes any typed ref. Submitting starts the command shown
+ * Onto field starts as the base Timber saved for the worktree, offers the
+ * repository's local and remote branches in the form Timber takes, and takes
+ * any typed ref. Submitting starts the command shown
  * in a new Timber session in the worktree and closes the dialog. The
  * session shows what Timber prints, and the store reads the repositories
  * again when it stops, as for any Timber session (../store/store.ts).
@@ -81,7 +85,8 @@ export function RebaseDialog({ request }: { request: Extract<DialogRequest, { ki
 	const worktree = repository?.worktrees.find(candidate => candidate.id === request.worktree) ?? null;
 	// The path the dialog opened for, so the footer still names it if the worktree leaves the list.
 	const [path] = useState(() => worktree?.path ?? "");
-	const [onto, setOnto] = useState("");
+	// Starts from the base Timber saved, as the list had it when the dialog opened. What is typed after that stays.
+	const [onto, setOnto] = useState(() => initialOnto(worktree?.base ?? null));
 	const [bases, setBases] = useState<BranchSuggestion[] | null | undefined>(undefined);
 	const { submission, state: submissionState } = useSubmission(() => store.closeDialog());
 
