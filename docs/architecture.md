@@ -5072,7 +5072,7 @@ build --compile`, behind a wrapper named by `TIMBER_APP_TIMBER_PATH` that
 answers `--version` with 0.1.3:
 
 - `bun run typecheck` and `bun run typecheck:desktop`: no errors.
-- `TIMBER_APP_TIMBER_PATH=<wrapper> bun test`: 1464 tests passed, 1 was
+- `TIMBER_APP_TIMBER_PATH=<wrapper> bun test`: 1471 tests passed, 1 was
   skipped, none failed. Against that Timber on temporary repositories:
   `timber new --no-setup` and `timber open --no-setup` created worktrees
   without running a configured script and reported `setupSkipped: true`,
@@ -5081,7 +5081,7 @@ answers `--version` with 0.1.3:
   --no-editor --no-agent -- <path>` in the worktree: a script's output
   showed in the session, it ran in the worktree's folder, and a failing
   script ended the session with exit code 1 and left the worktree.
-- `bun test` with the installed Timber 0.1.2: 1375 passed, 111 skipped,
+- `bun test` with the installed Timber 0.1.2: 1377 passed, 111 skipped,
   none failed. The tests that need a real Timber are skipped, because 0.1.2
   is now too old.
 - `bun run build:web`: built.
