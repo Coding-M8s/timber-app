@@ -35,6 +35,20 @@ change them here first when they change.
   only" when it was never published. "force-pushed" stays until the person
   has selected that worktree and moved on. Modified and untracked counts use
   the yellow `M` and green `U`.
+- A row whose branch has a pull request shows it with its state, on the
+  line under the branch: `#42` while open, or `#42 draft`, `#42 merged`,
+  `#42 closed`. An open or draft one adds its checks ("checks pass",
+  "checks fail", "checks running") and its review ("approved", "changes
+  requested", "review required"). Each word has its sentence as a tooltip.
+  They are grey, except failing checks and requested changes, which are red
+  with their words. A merged or closed one shows only its number and state,
+  so "merged" says the worktree can go. A branch with no pull request shows
+  nothing.
+- Pull requests that could not be read get a quiet grey word beside the
+  repository's name, once, as one lookup answers for all its branches:
+  "PRs offline", "PRs need sign-in", "not on GitHub", "PRs failed", or "PRs
+  unknown" when Timber's answer could not be read. The reason is in its
+  tooltip. Never a dialog, and never a prompt to sign in.
 - Rebase backups are listed below the worktrees with compare, restore, and
   delete.
 - Settings is a cogwheel at the bottom of the sidebar.
@@ -47,6 +61,9 @@ change them here first when they change.
   session keeps running. Closing an agent pane stops the agent.
 - The header names the worktree's saved base beside its sync state and
   changes, in the same words as the row's tooltip.
+- The header shows the worktree's pull request with the same words as its
+  row, and "Open pull request" opens it in the browser. When pull requests
+  could not be read, the header has the same quiet word as the repository.
 - Changes compares against the base, the last commit, or a rebase backup.
 - A repository that was never set up for Timber shows a quiet prompt above
   the tabs: Timber's defaults work, setup is optional, "Set up Timber", and

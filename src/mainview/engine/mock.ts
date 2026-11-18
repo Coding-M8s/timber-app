@@ -23,6 +23,7 @@ import { MOCK_PATH, type TerminalControls, createMockTerminals } from "./mock-te
 import { type TimberConfigControls, createMockTimberConfig } from "./mock-timber-config";
 import type { TimberConfigScope } from "../../shared/timber-config";
 import { type WorkflowControls, createMockWorkflows } from "./mock-workflows";
+import { type PullRequestControls, createMockPullRequests } from "./mock-pull-requests";
 import { type ThemeFileControls, createMockThemeFiles } from "./mock-theme-files";
 
 const inSync = (branch: string): SyncState => ({ kind: "tracking", upstream: `origin/${branch}`, ahead: 0, behind: 0 });
@@ -243,8 +244,8 @@ export const sampleTimberStatuses = {
 
 /** The mock engine, plus the controls a test or the browser build uses to act out changes. */
 /** The controls for terminals are in ./mock-terminals.ts. */
-/** The controls for Timber's settings are in ./mock-timber-config.ts, and for workflows in ./mock-workflows.ts. */
-export interface MockEngine extends Engine, TerminalControls, TimberConfigControls, WorkflowControls, ThemeFileControls {
+/** The controls for Timber's settings are in ./mock-timber-config.ts, for workflows in ./mock-workflows.ts, and for pull requests in ./mock-pull-requests.ts. */
+export interface MockEngine extends Engine, TerminalControls, TimberConfigControls, WorkflowControls, PullRequestControls, ThemeFileControls {
 	/** Replace the data, without telling the interface. */
 	setRepositories(repositories: Repository[]): void;
 	/** Report that a repository changed, as the main process would. */
@@ -665,11 +666,13 @@ export function createMockEngine(
 	}, () => preferences.agents, () => typeof timber === "function" ? timber() : timber);
 	const timberConfig = createMockTimberConfig(path => current.some(repository => repository.path === path), () => typeof timber === "function" ? timber() : timber, saveSetup);
 	const workflows = createMockWorkflows(path => current.some(repository => repository.path === path), () => typeof timber === "function" ? timber() : timber);
+	const pullRequests = createMockPullRequests(path => current.find(repository => repository.path === path && repository.available), () => typeof timber === "function" ? timber() : timber);
 	return {
 		...terminals,
 		...timberConfig,
 		...createMockThemeFiles(),
 		...workflows,
+		...pullRequests,
 		appInfo: async () => ({ version: APP_VERSION }),
 		timberStatus: look,
 		recheckTimber: look,

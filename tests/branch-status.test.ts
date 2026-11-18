@@ -211,7 +211,7 @@ describe.skipIf(realTimber === null)("branch status with the installed Timber, o
 		const folders = [primary, tree("changes"), tree("ahead"), tree("behind"), tree("both"), tree("deleted"), tree("moved"), tree("kept")];
 		const before = folders.map(fingerprint);
 		const repository = await read();
-		repository.worktrees.forEach(describeRowMarkers);
+		repository.worktrees.forEach(worktree => describeRowMarkers(worktree));
 		expect(folders.map(fingerprint)).toEqual(before);
 	});
 });

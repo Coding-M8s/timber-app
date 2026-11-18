@@ -1,5 +1,6 @@
 import { type ReactNode, useId } from "react";
 import type { Worktree } from "../../shared/model";
+import type { PullRequestEntry } from "../../shared/pull-requests";
 import { describeRowTitle } from "../base-format";
 import { type RowMarker, type RowMarkerKind, describeRow, describeRowMarkers, describeWorktreeKind, worktreeLabel } from "../format";
 import { describeRunningSessions } from "../terminal-format";
@@ -26,6 +27,13 @@ const markerClass: Record<RowMarkerKind, string> = {
 	"locked": "row-flag",
 	"prunable": "row-flag",
 	"base-unknown": "row-flag",
+	"pull-request": "row-flag pr",
+	"checks-passing": "row-flag pr",
+	"checks-failing": "row-flag pr failing",
+	"checks-pending": "row-flag pr",
+	"review-approved": "row-flag pr",
+	"review-changes": "row-flag pr failing",
+	"review-required": "row-flag pr",
 	"modified": "count modified",
 	"untracked": "count untracked",
 };
@@ -49,6 +57,8 @@ interface WorktreeRowProps {
 	worktree: Worktree;
 	selected: boolean;
 	onSelect: () => void;
+	/** The pull request Timber found for the worktree's branch, or null for none or not known. */
+	pullRequest?: PullRequestEntry | null;
 	/** How many sessions run in the worktree. Shown only when there are any. */
 	runningSessions?: number;
 	/**
@@ -59,13 +69,13 @@ interface WorktreeRowProps {
 }
 
 /** One worktree in the sidebar. What it is marked with comes from `describeRowMarkers`; this only draws it. */
-export function WorktreeRow({ worktree, selected, onSelect, runningSessions = 0, actions }: WorktreeRowProps) {
+export function WorktreeRow({ worktree, selected, onSelect, pullRequest = null, runningSessions = 0, actions }: WorktreeRowProps) {
 	const descriptionId = useId();
-	const markers = describeRowMarkers(worktree);
+	const markers = describeRowMarkers(worktree, pullRequest);
 	const sessions = runningSessions > 0 ? describeRunningSessions(runningSessions) : null;
 	const description = [describeRow(markers), sessions === null ? "" : `${sessions}.`].filter(Boolean).join(" ");
 	const at = (place: RowMarker["place"]) => markers.filter(marker => marker.place === place).map(marker => <Marker key={marker.kind} marker={marker} />);
-	const flags = at("state");
+	const flags = [...at("state"), ...at("pull-request")];
 	const row = (
 		<button
 			type="button"

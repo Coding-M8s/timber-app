@@ -1,5 +1,7 @@
 import { type PointerEvent, useId, useRef, useState } from "react";
 import { describeFetchAction, describeFetchMarker } from "../fetch-format";
+import { describeRepositoryPullRequestProblem } from "../pull-request-format";
+import { pullRequestOf } from "../../shared/pull-requests";
 import { REMOVE_REPOSITORY_HINT, TIMBER_LIST_FAILURE_TITLE, describeListNotice, describeReloadError, worktreeLabel } from "../format";
 import { SETTINGS_LABEL, describeLayoutProblem, describeRepository } from "../shell";
 import { DRAG_THRESHOLD, MOVE_REPOSITORY_HINT, MOVE_REPOSITORY_SHORTCUTS, dropIndex, moveStep } from "../repository-drag";
@@ -142,6 +144,10 @@ export function Sidebar() {
 					const fetching = fetch?.fetching === true || fetchAsked(repository.path);
 					const fetchMarker = repository.available ? describeFetchMarker(fetch, now) : null;
 					const fetchMarkerId = `${idBase}-fetch-${index}`;
+					const pullRequests = state.pullRequests[repository.path];
+					const pullProblem = repository.available ? describeRepositoryPullRequestProblem(pullRequests) : null;
+					const pullProblemId = `${idBase}-pulls-${index}`;
+					const describedBy = [fetchMarker ? fetchMarkerId : "", pullProblem ? pullProblemId : ""].filter(Boolean).join(" ");
 					const fetchLabel = describeFetchAction(repository.name, fetching ? { repository: repository.path, fetching: true, lastFetched: null, failure: null } : fetch, now);
 					return (
 						<section
@@ -162,7 +168,7 @@ export function Sidebar() {
 									type="button"
 									className="group-header"
 									aria-expanded={open}
-									aria-describedby={fetchMarker ? fetchMarkerId : undefined}
+									aria-describedby={describedBy === "" ? undefined : describedBy}
 									aria-keyshortcuts={repositories.length > 1 ? MOVE_REPOSITORY_SHORTCUTS : undefined}
 									title={repositories.length > 1 ? `${describeRepository(repository)}. ${MOVE_REPOSITORY_HINT}` : describeRepository(repository)}
 									ref={element => {
@@ -195,11 +201,16 @@ export function Sidebar() {
 										// Quiet: a word beside the name, never a dialog. Its sentences are the button's description.
 										<span className="group-flag fetch-failed" title={fetchMarker.tooltip} aria-hidden="true">{fetchMarker.text}</span>
 									)}
+									{pullProblem && (
+										// As quiet as a failed fetch: one lookup answers for the whole repository, so it is said here once.
+										<span className="group-flag pulls-failed" title={pullProblem.tooltip} aria-hidden="true">{pullProblem.text}</span>
+									)}
 									{repository.available
 										? <span className="group-count">{repository.worktrees.length}</span>
 										: <span className="group-flag">unavailable</span>}
 								</button>
 								{fetchMarker && <span id={fetchMarkerId} hidden>{fetchMarker.tooltip}</span>}
+								{pullProblem && <span id={pullProblemId} hidden>{pullProblem.tooltip}</span>}
 								{repository.available && (
 									<button
 										type="button"
@@ -265,6 +276,7 @@ export function Sidebar() {
 													if (state.tab === "workspace") wantTerminalFocus(worktree.id);
 													store.select(worktree.id);
 												}}
+												pullRequest={pullRequestOf(pullRequests, worktree.path)}
 												runningSessions={runningSessionCount(state, worktree.id)}
 												actions={<OpenInEditorIconButton repository={repository.path} worktree={worktree} />}
 											/>

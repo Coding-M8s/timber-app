@@ -5,6 +5,7 @@ import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffRe
 import type { Layout } from "./layout";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
 import type { Preferences } from "./preferences";
+import type { PullRequestList } from "./pull-requests";
 import type { Theme } from "./theme";
 import type { ExportThemeResult, ImportThemeResult } from "./theme-file";
 import type { OpenTerminalRequest, OpenTerminalResult, TerminalChange, TerminalOutput, TerminalSession, TerminalSnapshot } from "./terminal";
@@ -233,6 +234,17 @@ export interface Engine {
 	 * hold tokens: never log them. Read-only and safe to call again.
 	 */
 	listWorkflows(repository: string): Promise<WorkflowList>;
+	/**
+	 * The pull request of each worktree of a repository in the list, named by
+	 * the path of its primary checkout, read by `timber __app-pr` with
+	 * Timber's own GitHub login (./pull-requests.ts). The app holds no token
+	 * and never signs in. Each entry is found, none, or failed with a reason
+	 * (offline, sign-in needed, not on GitHub, failed). A record that cannot
+	 * be read is a failure with a message, never an empty answer. Titles are
+	 * text from GitHub: show them as text only. Read-only: no file or ref
+	 * changes, and nothing acts on a pull request. Safe to call again.
+	 */
+	readPullRequests(repository: string): Promise<PullRequestList>;
 	/**
 	 * Open a worktree of a repository in the list in the editor from the
 	 * preferences, started detached so it outlives the app. The command comes

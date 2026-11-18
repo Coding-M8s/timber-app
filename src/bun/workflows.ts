@@ -14,7 +14,7 @@ const RECORD_LIMIT_BYTES = 1024 * 1024;
  * The record is decoded untouched: cleaning it as text would change values
  * inside it, such as an agent's arguments.
  */
-function createRecordCapture(limit: number) {
+export function createRecordCapture(limit: number) {
 	const chunks: Uint8Array[] = [];
 	let size = 0;
 	let truncated = false;

@@ -7,6 +7,7 @@ import type { Layout } from "./layout";
 import type { RebaseRequest, RebaseResult } from "./timber-rebase";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
 import type { Preferences } from "./preferences";
+import type { PullRequestList } from "./pull-requests";
 import type { Theme } from "./theme";
 import type { ExportThemeResult, ImportThemeResult } from "./theme-file";
 import type { OpenTerminalRequest, OpenTerminalResult, TerminalChange, TerminalOutput, TerminalSession, TerminalSnapshot } from "./terminal";
@@ -56,6 +57,8 @@ export type AppRPC = {
 			checkTimberConnection: { params: TimberConnectionCheckRequest; response: TimberConnectionCheckResult };
 			/** The main process stops Timber after ten seconds, inside the default time limit. */
 			listWorkflows: { params: { repository: string }; response: WorkflowList };
+			/** The main process stops Timber after thirty seconds, so the caller allows longer. */
+			readPullRequests: { params: { repository: string }; response: PullRequestList };
 			previewDone: { params: DonePreviewRequest; response: DonePreviewResult };
 			/** Answers only when Timber has ended. Scripts that run before deletion take as long as they take, so the caller must not time it out. */
 			applyDone: { params: DoneApplyRequest; response: DoneApplyResult };
