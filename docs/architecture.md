@@ -814,6 +814,38 @@ pure functions in `src/mainview/shell.ts`.
   why, until it is dismissed or the next save works. It is not a toast, and
   repeated failures do not add more notes.
 
+## The saved window
+
+The window opens where it was and as large as it was when the app last ran.
+This is the main process alone: the interface has no part in it, so it is
+not in the `Engine` contract.
+
+- **Where.** The `window` part of the settings file (`SavedWindow` in
+  `src/shared/window-frame.ts`): the frame of the window in its normal state
+  and whether it was maximized. A file without it is valid and means the
+  default window, 1280 by 820. A part that cannot be read, or a size below
+  480 by 320, also means the default and never makes the file count as
+  damaged.
+- **When it is saved.** Electrobun reports every move and resize. The window
+  is read once it has been still for 400 milliseconds, never while it is
+  dragged, and again when the app quits (`src/bun/window-memory.ts`). It
+  saves through the same `SettingsHolder` as everything else, and a save
+  that fails is only a warning in the log.
+- **Maximized and full screen.** Both report the frame they fill, so the
+  frame from before is kept, and the window goes back to the chosen size
+  when it leaves that state in a later run. Maximized is remembered and
+  asked for again on start. Full screen is not.
+- **Displays change.** Before the window opens, the saved frame is moved,
+  and shrunk when it has to be, until it lies within the usable area of the
+  display that shows most of it (`fitWindowFrame`). A window saved on a
+  display that is gone opens on the primary one.
+- **No creep.** A window can land a pixel or two away from the frame it was
+  opened with, as it does through XWayland with a fractional scale. A change
+  of two units or less in every part is not remembered, so the window does
+  not move a little further with every run.
+- **Tiling.** A tiling window manager sizes the window itself. The app then
+  remembers that size, and asking for it on the next start changes nothing.
+
 ## Preferences and the Settings dialog
 
 The app's own settings, such as the side of the sidebar, are chosen in the
@@ -2915,6 +2947,32 @@ Arch Linux) with Bun 1.4.4, Git 2.56.1, and Timber 0.1.2:
 - Not run: the desktop window, a Timber older than 0.1.2 (the missing field
   was read from a recording of 0.1.1 only), and anything on macOS or
   Windows.
+
+Run for the saved window, Linux x64 (Omarchy, Arch Linux, Hyprland 0.57.2
+at a monitor scale of 1.6, through XWayland) with Bun 1.4.4:
+
+- `bun test tests/window-frame.test.ts tests/window-memory.test.ts
+  tests/settings-parse.test.ts`: all passed. They cover reading a saved
+  window, what is remembered while maximized and full screen, fitting a
+  frame to the displays, and saving against a real temporary settings file
+  next to the layout.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- The dev build (`bunx vite build`, `bunx electrobun build`, then
+  `build/dev-linux-x64/Timber-dev/bin/launcher`) with `XDG_CONFIG_HOME` on a
+  temporary folder, as a floating window through a temporary Hyprland
+  window rule. The window was resized and moved with `xdotool` and closed
+  through Hyprland. The first run opened at 1280 by 819. After a resize to
+  1500 by 900 the file held that frame (as 1502 by 899) within about a
+  second, and three more runs each opened at 1502 by 899. Before the two
+  unit slack the position moved left by one or two pixels on every run
+  (699, 697, 696); with it the file stayed at 696 over two more runs. A file
+  edited to a frame 4000 wide at x 5000 opened at x 0, 3200 wide, which is
+  the display.
+- Not run: a maximized window. Hyprland did not maximize the floating
+  window when asked, so the app saw it as not maximized and saved that. Not
+  run either: a window manager with title bars, where the frame read back
+  may differ from the frame asked for by more than the slack, any second
+  display, and Windows and macOS.
 
 Not run yet:
 

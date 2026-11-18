@@ -18,6 +18,22 @@ describe("serializeSettings and parseSettings", () => {
 	});
 });
 
+describe("the window part", () => {
+	const window = { frame: { x: 300, y: 200, width: 1500, height: 900 }, maximized: true };
+
+	test("round-trips next to the repositories", () => {
+		const settings = { repositories: [one], window };
+		expect(JSON.parse(serializeSettings(settings)).window).toEqual(window);
+		expect(parseSettings(serializeSettings(settings))).toEqual(settings);
+	});
+
+	test("is left out when it cannot be read, and never makes the file count as damaged", () => {
+		for (const damaged of [null, "wide", { frame: { x: 0, y: 0, width: 10, height: 10 } }]) {
+			expect(parseSettings(JSON.stringify({ version: 1, repositories: [one], window: damaged }))).toEqual({ repositories: [one] });
+		}
+	});
+});
+
 describe("parseSettings", () => {
 	test("reads a file without a repository list as empty", () => {
 		expect(parseSettings('{"version":1}')).toEqual({ repositories: [] });
