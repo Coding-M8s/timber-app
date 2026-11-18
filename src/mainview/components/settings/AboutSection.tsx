@@ -29,6 +29,9 @@ export function AboutSectionView({ rows, uninstall }: { rows: readonly AboutRow[
 				The app is set in Geist and Geist Mono, copyright Vercel in collaboration with basement.studio, used under the SIL Open Font License 1.1. Both typefaces are built in, so nothing is fetched from the network.
 			</p>
 			<p className="about-text">
+				The Catppuccin, Gruvbox, Nord, and Solarized themes use those palettes' colors under the MIT License, copyright their authors.
+			</p>
+			<p className="about-text">
 				The Timber logo is copyright Coding-M8s, all rights reserved. The license of the app's code does not cover it.
 			</p>
 			<p className="about-text">The full texts are in the licenses folder inside the installed app.</p>

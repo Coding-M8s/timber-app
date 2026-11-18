@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { applyPreferenceChange, defaultPreferences, readPreferences } from "../src/shared/preferences";
 import { ZOOM_CHOICES, readZoom, zoomChoices, zoomLabel } from "../src/shared/zoom";
+import { defaultThemeChoice } from "../src/shared/theme";
 
 describe("readZoom", () => {
 	test("reads a number within the limits, to two decimals", () => {
@@ -51,7 +52,7 @@ describe("the zoom preference", () => {
 	});
 
 	test("a change that cannot be read is refused, not saved as something else", () => {
-		const saved = { ...defaultPreferences(), zoom: 1.6 };
+		const saved = { ...defaultPreferences(), zoom: 1.6, theme: defaultThemeChoice() };
 		expect(applyPreferenceChange(saved, { zoom: 1.25 })).toEqual({ preferences: { ...saved, zoom: 1.25 }, unreadable: [] });
 		expect(applyPreferenceChange(saved, { zoom: 12 })).toEqual({ preferences: saved, unreadable: ["zoom"] });
 	});

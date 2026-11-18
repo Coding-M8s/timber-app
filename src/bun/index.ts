@@ -4,7 +4,9 @@ import Electrobun, { BrowserView, BrowserWindow, Screen, Updater, Utils } from "
 import { APP_NAME, APP_VERSION } from "../shared/app-info";
 import { type ForcePushMarks, withForcePushes } from "../shared/git-fetch";
 import type { Repository } from "../shared/model";
+import { defaultPreferences } from "../shared/preferences";
 import type { AppRPC } from "../shared/rpc";
+import { themeStyleSheet } from "../shared/theme";
 import { DEFAULT_WINDOW_FRAME, type WindowFrame, fitWindowFrame } from "../shared/window-frame";
 import { repositoryChanges } from "./changes";
 import { createDone } from "./done";
@@ -26,6 +28,7 @@ import { createRefreshPolicy } from "./refresh-policy";
 import { type WatchTarget, createRepositoryWatcher } from "./repository-watcher";
 import { createWorktreeStamps } from "./worktree-stamp";
 import { createTerminalSessions } from "./terminals";
+import { themePreload } from "./theme-preload";
 import { createTimberSettings } from "./timber-settings";
 import { createUninstaller } from "./uninstall";
 import { createWindowMemory } from "./window-memory";
@@ -311,9 +314,13 @@ const windowMemory = createWindowMemory({
 });
 const savedWindow = await windowMemory.load();
 
+/* The saved theme is on the page before it is first drawn (see docs/architecture.md, "Themes"). */
+const startingPreferences = await preferences.load().catch(() => defaultPreferences());
+
 const mainWindow = new BrowserWindow({
 	title: APP_NAME,
 	url: await mainViewUrl(),
+	preload: themePreload(themeStyleSheet(startingPreferences.theme)),
 	frame: fitWindowFrame(savedWindow?.frame ?? DEFAULT_WINDOW_FRAME, displayAreas()),
 	rpc,
 });
@@ -329,7 +336,7 @@ function applyZoom(zoom: number): void {
 		console.warn(`Could not set the zoom: ${error instanceof Error ? error.message : String(error)}`);
 	}
 }
-void preferences.load().then(saved => applyZoom(saved.zoom), () => {});
+applyZoom(startingPreferences.zoom);
 // Closing the last window quits the app, so it asks the same question first.
 mainWindow.on("will-close", event => {
 	if (!quitGuard.mayQuit()) (event as Veto).response = { allow: false };

@@ -6,6 +6,7 @@ import { Sidebar } from "../src/mainview/components/Sidebar";
 import { createMockEngine, sampleRepositories, sampleStatesRepository, sampleTimberStatuses, sampleUnavailableRepository } from "../src/mainview/engine/mock";
 import { StoreProvider } from "../src/mainview/store/react";
 import { createAppStore } from "../src/mainview/store/store";
+import { defaultThemeChoice } from "../src/shared/theme";
 
 const settle = () => Bun.sleep(0);
 const TIMBER = "/work/timber";
@@ -368,6 +369,30 @@ describe("settings dialog", () => {
 		expect(markup).toContain('<input type="radio" name="sidebar-side" value="right"/>');
 	});
 
+	test("Theme offers every built-in theme with a picture of it, the saved one chosen", async () => {
+		const { store } = await startedStore();
+		store.openDialog({ kind: "settings", section: "theme" });
+		const markup = render(store);
+		expect(markup).toContain(">Theme</button>");
+		expect(markup).toContain("One theme");
+		expect(markup).toContain("Follow the system&#x27;s light or dark setting");
+		for (const name of ["Timber Dark", "Timber Light", "Nord", "Gruvbox Dark", "Catppuccin Mocha", "Solarized Dark", "Solarized Light"]) {
+			expect(markup).toContain(`<span class="theme-card-name">${name}</span>`);
+		}
+		expect(markup.match(/class="theme-preview"/g)).toHaveLength(7);
+		// Each picture is drawn in its own theme's colors.
+		expect(markup).toMatch(/class="theme-preview" style="--bg-app:#2a2f3a;/);
+		expect(markup).toMatch(/<label class="theme-card chosen"><input class="theme-card-input" type="radio" name="[^"]+" checked="" value="timber-dark"\/>/);
+
+		await store.savePreferences({ theme: { mode: "system", light: "solarized-light", dark: "nord" } });
+		const following = render(store);
+		expect(following).toContain("When the system is light");
+		expect(following).toContain("When the system is dark");
+		expect(following).toMatch(/checked="" value="solarized-light"/);
+		expect(following).toMatch(/checked="" value="nord"/);
+		expect(following.match(/class="theme-preview"/g)).toHaveLength(14);
+	});
+
 	test("Layout offers the zoom, with the saved one chosen", async () => {
 		const { store } = await startedStore();
 		store.openDialog({ kind: "settings" });
@@ -375,7 +400,7 @@ describe("settings dialog", () => {
 		expect(markup).toMatch(/<label class="field-label" for="[^"]+">Zoom<\/label>/);
 		expect(markup).toMatch(/<option value="1" selected="">100%<\/option>/);
 		expect(markup).toContain('<option value="1.6">160%</option>');
-		await store.savePreferences({ zoom: 1.6 });
+		await store.savePreferences({ zoom: 1.6, theme: defaultThemeChoice() });
 		expect(render(store)).toMatch(/<option value="1.6" selected="">160%<\/option>/);
 		expect(render(store)).not.toMatch(/<option value="1" selected="">/);
 	});
@@ -394,7 +419,7 @@ describe("settings dialog", () => {
 		expect(nav).not.toBeNull();
 		expect(markup).toContain(`<div class="settings-panel" id="${nav![2]}" aria-labelledby="${nav![1]}">`);
 		// Every other section stays mounted, hidden, so what was typed in it survives a switch.
-		expect(markup.match(/class="settings-panel"[^>]*hidden=""/g)?.length).toBe(6);
+		expect(markup.match(/class="settings-panel"[^>]*hidden=""/g)?.length).toBe(7);
 		for (const section of ["editor", "agents", "fetch", "about", "machine", "repository"]) {
 			expect(markup).toMatch(new RegExp(`class="settings-panel" id="[^"]*-panel-${section}"[^>]*hidden=""`));
 		}

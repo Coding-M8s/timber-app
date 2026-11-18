@@ -7,6 +7,7 @@ import {
 import { applyPreferenceChange, defaultPreferences, readPreferences, samePreferences } from "../src/shared/preferences";
 import { parseSettings, serializeSettings } from "../src/shared/settings";
 import { defaultFetchSetting } from "../src/shared/fetch-setting";
+import { defaultThemeChoice } from "../src/shared/theme";
 
 const SPACED = "/work/my repo-worktrees/feat login";
 
@@ -104,7 +105,7 @@ describe("reading, writing, and comparing the editor setting on its own", () => 
 describe("the editor preference", () => {
 	test("is not set by default", () => {
 		expect(defaultPreferences().editor).toBeNull();
-		expect(readPreferences({ sidebarSide: "right" })).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1 });
+		expect(readPreferences({ sidebarSide: "right" })).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice() });
 	});
 
 	test("is read when it is a readable command and a terminal flag", () => {
@@ -113,21 +114,21 @@ describe("the editor preference", () => {
 
 	test("falls back to not set when it cannot be read, and keeps the other preferences", () => {
 		for (const editor of ["code", 3, [], {}, { command: "code" }, { command: 3, terminal: false }, { command: "code", terminal: "no" }, { command: "", terminal: false }, { command: `code "x`, terminal: false }]) {
-			expect(readPreferences({ sidebarSide: "right", editor })).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1 });
+			expect(readPreferences({ sidebarSide: "right", editor })).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice() });
 		}
 	});
 
 	test("a change sets it, clears it with null, leaves it alone when it does not name it, and reports it when it cannot be read", () => {
 		const set = applyPreferenceChange(defaultPreferences(), { editor: { command: "code", terminal: false } });
-		expect(set).toEqual({ preferences: { sidebarSide: "left", editor: { command: "code", terminal: false }, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1 }, unreadable: [] });
-		expect(applyPreferenceChange(set.preferences, { sidebarSide: "right" })).toEqual({ preferences: { sidebarSide: "right", editor: { command: "code", terminal: false }, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1 }, unreadable: [] });
+		expect(set).toEqual({ preferences: { sidebarSide: "left", editor: { command: "code", terminal: false }, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice() }, unreadable: [] });
+		expect(applyPreferenceChange(set.preferences, { sidebarSide: "right" })).toEqual({ preferences: { sidebarSide: "right", editor: { command: "code", terminal: false }, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice() }, unreadable: [] });
 		expect(applyPreferenceChange(set.preferences, { editor: { command: "  ", terminal: false } })).toEqual({ preferences: set.preferences, unreadable: ["editor"] });
 		expect(applyPreferenceChange(set.preferences, { editor: { command: `code "x`, terminal: false } })).toEqual({ preferences: set.preferences, unreadable: ["editor"] });
-		expect(applyPreferenceChange(set.preferences, { editor: null })).toEqual({ preferences: { sidebarSide: "left", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1 }, unreadable: [] });
+		expect(applyPreferenceChange(set.preferences, { editor: null })).toEqual({ preferences: { sidebarSide: "left", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice() }, unreadable: [] });
 	});
 
 	test("counts in comparing preferences", () => {
-		const one = { sidebarSide: "left" as const, editor: { command: "code", terminal: false }, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1 };
+		const one = { sidebarSide: "left" as const, editor: { command: "code", terminal: false }, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice() };
 		expect(samePreferences(one, { ...one, editor: { command: "code", terminal: false } })).toBe(true);
 		expect(samePreferences(one, { ...one, editor: { command: "code", terminal: true } })).toBe(false);
 		expect(samePreferences(one, { ...one, editor: null })).toBe(false);
@@ -136,13 +137,13 @@ describe("the editor preference", () => {
 
 	test("is saved in the settings file and read back, set or not", () => {
 		for (const editor of [null, { command: `"/opt/My Editor/edit" --folder={path}`, terminal: false }, { command: "nvim", terminal: true }]) {
-			const settings = { repositories: [], preferences: { sidebarSide: "left" as const, editor, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1 } };
+			const settings = { repositories: [], preferences: { sidebarSide: "left" as const, editor, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice() } };
 			expect(parseSettings(serializeSettings(settings))).toEqual(settings);
 		}
 	});
 
 	test("an unreadable editor in the file costs neither the file nor the other preferences", () => {
 		const text = JSON.stringify({ version: 1, repositories: [{ path: "/work/a", commonDir: "/work/a/.git" }], preferences: { sidebarSide: "right", editor: { command: 7 } } });
-		expect(parseSettings(text)).toEqual({ repositories: [{ path: "/work/a", commonDir: "/work/a/.git" }], preferences: { sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1 } });
+		expect(parseSettings(text)).toEqual({ repositories: [{ path: "/work/a", commonDir: "/work/a/.git" }], preferences: { sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice() } });
 	});
 });

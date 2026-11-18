@@ -5,6 +5,7 @@
  */
 import { AGENT_PRESETS, type AgentSetting, readAgentSettings, sameAgentSettings, writeAgentSettings } from "./agent";
 import { type EditorSetting, readEditorSetting, sameEditorSetting, writeEditorSetting } from "./editor";
+import { type ThemeChoice, defaultThemeChoice, readThemeChoice, sameThemeChoice, writeThemeChoice } from "./theme";
 import { DEFAULT_ZOOM, readZoom } from "./zoom";
 import { type FetchSetting, defaultFetchSetting, readFetchSetting, salvageFetchSetting, sameFetchSetting, writeFetchSetting } from "./fetch-setting";
 
@@ -28,6 +29,8 @@ export interface Preferences {
 	fetch: FetchSetting;
 	/** How large the interface is drawn, where 1 is the size the window system gives. */
 	zoom: number;
+	/** Which theme the app is drawn in, or one for each of the system's light and dark settings. */
+	theme: ThemeChoice;
 }
 
 /** How one preference is read from outside, compared, and written to the settings file. */
@@ -83,6 +86,12 @@ export const PREFERENCE_PARTS: { [Key in keyof Preferences]: PreferencePart<Pref
 		read: readZoom,
 		same: (one, other) => one === other,
 		write: value => value,
+	},
+	theme: {
+		fallback: defaultThemeChoice,
+		read: readThemeChoice,
+		same: sameThemeChoice,
+		write: writeThemeChoice,
 	},
 };
 

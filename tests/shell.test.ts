@@ -9,6 +9,7 @@ import { createMockEngine } from "../src/mainview/engine/mock";
 import { SIDEBAR_KEY_STEP, describeLayoutProblem, describeRepository, sidebarWidthAfterDrag, sidebarWidthAfterKey, tabAfterKey } from "../src/mainview/shell";
 import { createAppStore } from "../src/mainview/store/store";
 import { defaultFetchSetting } from "../src/shared/fetch-setting";
+import { defaultThemeChoice } from "../src/shared/theme";
 
 const settle = () => Bun.sleep(0);
 const TIMBER = "/work/timber";
@@ -318,15 +319,15 @@ describe("the preferences in the store", () => {
 		expect(store.getState().preferences).toEqual(defaultPreferences());
 		store.start();
 		await settle();
-		expect(store.getState().preferences).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1 });
+		expect(store.getState().preferences).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice() });
 	});
 
 	test("a save that worked shows at once, and a restarted store has it", async () => {
 		const engine = createMockEngine();
 		const store = await startedStore(engine);
-		expect(await store.savePreferences({ sidebarSide: "right" })).toEqual({ outcome: "saved", preferences: { sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1 } });
-		expect(store.getState().preferences).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1 });
-		expect((await startedStore(engine)).getState().preferences).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1 });
+		expect(await store.savePreferences({ sidebarSide: "right" })).toEqual({ outcome: "saved", preferences: { sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice() } });
+		expect(store.getState().preferences).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice() });
+		expect((await startedStore(engine)).getState().preferences).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice() });
 	});
 
 	test("a save that failed changes nothing on screen and answers with the reason", async () => {
@@ -356,9 +357,9 @@ describe("the preferences in the store", () => {
 		const store = createAppStore(engine);
 		store.start();
 		await store.savePreferences({ sidebarSide: "right" });
-		answer({ sidebarSide: "left", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1 });
+		answer({ sidebarSide: "left", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice() });
 		await settle();
-		expect(store.getState().preferences).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1 });
+		expect(store.getState().preferences).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice() });
 	});
 
 	test("preferences that cannot be read leave the defaults and a reason, until a save works", async () => {
@@ -382,11 +383,11 @@ describe("the preferences in the store", () => {
 		const store = await startedStore(engine);
 		const first = store.savePreferences({ sidebarSide: "left" });
 		const second = store.savePreferences({ sidebarSide: "right" });
-		answers[1]!({ outcome: "saved", preferences: { sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1 } });
+		answers[1]!({ outcome: "saved", preferences: { sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice() } });
 		await second;
-		answers[0]!({ outcome: "saved", preferences: { sidebarSide: "left", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1 } });
+		answers[0]!({ outcome: "saved", preferences: { sidebarSide: "left", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice() } });
 		await first;
-		expect(store.getState().preferences).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1 });
+		expect(store.getState().preferences).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice() });
 	});
 
 	test("a change the engine cannot read is a failed save", async () => {
