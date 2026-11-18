@@ -230,6 +230,8 @@ describe("the Editor section of Settings", () => {
 		expect(editorDraftModel(chooseEditor(none, "zed"), null)).toMatchObject({ setting: { command: "zed", terminal: false }, note, example: `zed '${EXAMPLE_WORKTREE}'`, canSave: true });
 		expect(editorDraftModel(editEditor(none, { command: "zed --new" }), null).note).toBe(note);
 		for (const command of ["code", "zeditor", "/usr/bin/zed", "nvim", "constructor"]) expect(editorDraftModel(editEditor(none, { command }), null).note).toBeNull();
+		// With "Runs in a terminal" nothing is started from here, so nothing is tried.
+		expect(editorDraftModel(editEditor(none, { command: "zed", terminal: true }), null).note).toBeNull();
 	});
 
 	const view = (props: Partial<EditorSectionViewProps>) => renderToStaticMarkup(

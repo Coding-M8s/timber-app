@@ -151,6 +151,7 @@ export function editorDraftModel(draft: EditorDraft, saved: EditorSetting | null
 	const warning = terminalEditor === null
 		? null
 		: `${terminalEditor} runs in a terminal. Without "Runs in a terminal" it would be started with no terminal to show it in.`;
-	const note = describeOtherExecutableNames(reading.words[0] ?? "");
+	// A terminal editor is not started from here, so no other name is tried for it.
+	const note = draft.terminal ? null : describeOtherExecutableNames(reading.words[0] ?? "");
 	return { setting, error: null, hint: null, warning, note, example: describeEditorCommand(setting, EXAMPLE_WORKTREE), canSave: !sameEditorSetting(setting, saved) };
 }

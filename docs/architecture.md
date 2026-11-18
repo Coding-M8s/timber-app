@@ -1023,7 +1023,9 @@ Open always pass `--no-editor` to Timber (see
   `src/shared/editor.ts`, passed to `findExecutable` in
   `src/bun/find-executable.ts`). The saved setting stays `zed`. The tooltip
   shows the command as set, and the toast or failure after a start shows the
-  name that ran. A full path is never swapped for another name.
+  name that ran. A full path is never swapped for another name. Where
+  another program named `zed` is on the PATH, such as the ZFS event daemon,
+  it is found first: set `zeditor` or a full path as the command there.
   It is started with `Bun.spawn` as an executable plus arguments, in the
   worktree's folder, detached in a session of its own, with no standard input
   or output, and then let go (`unref`). So closing the app does not close the

@@ -78,7 +78,7 @@ describe("other names of an executable", () => {
 		for (const executable of ["code", "nvim", "zeditor", "Zed", "/usr/bin/zed", "", "constructor", "toString", "__proto__"]) expect(otherExecutableNames(executable)).toEqual([]);
 	});
 
-	test("every preset that has other names is said so in words", () => {
+	test("a command with another name is said so in words, and one without is not", () => {
 		expect(describeOtherExecutableNames("zed")).toContain('"zeditor" is tried');
 		expect(describeOtherExecutableNames("code")).toBeNull();
 	});
