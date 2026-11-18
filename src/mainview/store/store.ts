@@ -17,7 +17,7 @@ import type { Theme } from "../../shared/theme";
 import type { ChooseSoundResult, SoundChoice, SoundOutcome } from "../../shared/sound-setting";
 import type { ExportThemeResult, ImportThemeResult } from "../../shared/theme-file";
 import type { StartRebaseRequest, StartRebaseResult } from "../../shared/rebase-command";
-import { type OpenTerminalRequest, type TerminalChange, type TerminalSession } from "../../shared/terminal";
+import { type OpenTerminalRequest, type TerminalChange, type TerminalSession, WORKTREE_SETUP_SESSION_NAME } from "../../shared/terminal";
 import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "../../shared/timber-config";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "../../shared/timber-done";
 import type { RebaseRequest, RebaseResult } from "../../shared/timber-rebase";
@@ -255,14 +255,18 @@ export interface AppStore {
 	 */
 	openTerminalIn(repository: string, worktreePath: string): void;
 	/**
-	 * Start an agent from the saved Settings, by name, in a worktree the New
-	 * worktree dialog created, as `openTerminal` does: select the worktree and
-	 * show the Workspace tab, where its session or why it did not start shows.
-	 * The worktree is looked up as `newWorktree` selects it. Answers at once,
-	 * without waiting for the session: false when the list does not have the
-	 * worktree, and then nothing starts. Never throws.
+	 * Start the sessions the New worktree dialog asks for in a worktree it
+	 * opened, as `openTerminal` does: select the worktree and show the
+	 * Workspace tab, where each session or why it did not start shows. With
+	 * `setup`, the worktree's setup scripts run first in a session of their
+	 * own (`timberWorktreeSetup`), with `workflow` when the worktree was made
+	 * with one. With `agent`, that agent from the saved
+	 * Settings starts beside it at once, without waiting for setup, and its
+	 * pane shows. The worktree is looked up as `newWorktree` selects it.
+	 * Answers at once, without waiting for the sessions: false when the list
+	 * does not have the worktree, and then nothing starts. Never throws.
 	 */
-	startAgentIn(repository: string, worktree: ReportedWorktree, agent: string): boolean;
+	startSessionsIn(repository: string, worktree: ReportedWorktree, sessions: { setup: boolean; workflow?: string; agent: string | null }): boolean;
 	/**
 	 * Choose the chip of a session in its worktree, so its pane shows. The
 	 * other sessions keep running. Nothing happens for a session that is gone.
@@ -1106,7 +1110,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			result = await ask();
 		} catch (error) {
 			const diagnostic = `The app did not hear how the command ended: ${messageOf(error)}. What it did is unknown, so check the list before trying again.`;
-			result = { outcome: "failed", failure: { command: null, diagnostic, output: null }, worktree: null, created: false };
+			result = { outcome: "failed", failure: { command: null, diagnostic, output: null }, worktree: null, created: false, setupSkipped: false };
 		}
 		await reloadOne(repository);
 		if (result.outcome !== "cancelled" && result.worktree) selectReported(repository, result.worktree);
@@ -1208,15 +1212,22 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		return worktree !== undefined && isBeingRemoved(state, repository, worktree.path);
 	}
 
+	/** The worktree a terminal request is tracked under: its identity when the list has it, or else its path. */
+	function terminalKey(request: Pick<OpenTerminalRequest, "repository" | "worktree">): string {
+		const repository = state.repositories.find(candidate => candidate.path === request.repository);
+		return repository?.worktrees.find(candidate => candidate.path === request.worktree)?.id ?? request.worktree;
+	}
+
+	/** The request for a session being answered in each worktree, by `terminalKey`. */
+	const askingTerminal = new Map<string, Promise<void>>();
+
 	async function openTerminal(request: OpenTerminalRequest): Promise<void> {
 		// Nothing new starts in a folder that is being deleted.
 		if (isBeingRemoved(state, request.repository, request.worktree)) return;
-		const repository = state.repositories.find(candidate => candidate.path === request.repository);
-		const worktree = repository?.worktrees.find(candidate => candidate.path === request.worktree);
-		const key = worktree?.id ?? request.worktree;
+		const key = terminalKey(request);
 		if (state.operations.some(operation => operation.kind === "open-terminal" && operation.worktree === key)) return;
-		const agent = request.agent ?? null;
-		await track({ kind: "open-terminal", worktree: key, agent }, async () => {
+		const agent = request.agent ?? (request.timberWorktreeSetup ? WORKTREE_SETUP_SESSION_NAME : null);
+		const asking = track({ kind: "open-terminal", worktree: key, agent }, async () => {
 			let message: string;
 			let command: string | null = null;
 			try {
@@ -1239,6 +1250,22 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			}
 			update({ terminalProblem: { worktree: key, agent, message, command } });
 		});
+		askingTerminal.set(key, asking);
+		try {
+			await asking;
+		} finally {
+			if (askingTerminal.get(key) === asking) askingTerminal.delete(key);
+		}
+	}
+
+	/**
+	 * `openTerminal`, after any request already being answered in that
+	 * worktree, instead of being dropped as a second click is: what the New
+	 * worktree dialog asks for must start even while another session starts.
+	 */
+	async function openTerminalInTurn(request: OpenTerminalRequest): Promise<void> {
+		for (let busy = askingTerminal.get(terminalKey(request)); busy !== undefined; busy = askingTerminal.get(terminalKey(request))) await busy;
+		await openTerminal(request);
 	}
 
 	async function startRebase(request: StartRebaseRequest): Promise<StartRebaseResult> {
@@ -1320,7 +1347,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		void openTerminal({ repository: repositoryPath, worktree: worktree.path, cols: 80, rows: 24 });
 	}
 
-	function startAgentIn(repositoryPath: string, reported: ReportedWorktree, agent: string): boolean {
+	function startSessionsIn(repositoryPath: string, reported: ReportedWorktree, sessions: { setup: boolean; workflow?: string; agent: string | null }): boolean {
 		const worktree = listedReported(repositoryPath, reported);
 		// Not in the list, for example because reading it again failed: there is no pane to start in.
 		if (!worktree) return false;
@@ -1328,8 +1355,13 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		wantTerminalFocus(worktree.id);
 		update({ tab: "workspace" });
 		select(worktree.id);
-		// The pane gives the session its real size once it shows.
-		void openTerminal({ repository: repositoryPath, worktree: worktree.path, cols: 80, rows: 24, agent });
+		// The pane gives each session its real size once it shows.
+		const request = { repository: repositoryPath, worktree: worktree.path, cols: 80, rows: 24 };
+		void (async () => {
+			// One request at a time per worktree, so the agent is asked for once the setup session is there. Setup keeps running.
+			if (sessions.setup) await openTerminalInTurn({ ...request, timberWorktreeSetup: sessions.workflow === undefined ? {} : { workflow: sessions.workflow } });
+			if (sessions.agent !== null) await openTerminalInTurn({ ...request, agent: sessions.agent });
+		})();
 		return true;
 	}
 
@@ -1597,7 +1629,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		dismissRemoval,
 		openTerminal,
 		startRebase,
-		startAgentIn,
+		startSessionsIn,
 		rebaseWorktree,
 		restoreBackup,
 		deleteBackup,

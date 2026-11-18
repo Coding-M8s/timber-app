@@ -1,4 +1,4 @@
-import { type ReactNode, type SubmitEvent, useEffect, useId, useRef } from "react";
+import { Fragment, type ReactNode, type SubmitEvent, useEffect, useId, useRef } from "react";
 import type { SubmissionState } from "../store/submission";
 import { TimberFailureDetails } from "./TimberFailureDetails";
 
@@ -40,11 +40,11 @@ interface OperationDialogProps {
 	/** Shown right below a failure, for what the person should know next. */
 	failureNote?: ReactNode;
 	/**
-	 * What the app itself starts once the command worked, such as an agent,
-	 * shown under the command with a note saying when. Not part of the
-	 * command: it is never joined to it as one line.
+	 * What the app itself starts once the command worked, such as setup and
+	 * an agent, in that order, each shown under the command with a note
+	 * saying when. Not part of the command: never joined to it as one line.
 	 */
-	followUp?: { note: string; command: string } | null;
+	followUps?: readonly { note: string; command: string }[];
 	/** The fields. They are disabled as a group while the command runs. */
 	children: ReactNode;
 }
@@ -58,7 +58,7 @@ interface OperationDialogProps {
  */
 export function OperationDialog(props: OperationDialogProps) {
 	const { title, headerAside, command, submission, submitLabel, runningLabel, failureTitle, canSubmit = true, onSubmit, onClose, children } = props;
-	const { destructive = false, cancelLabel = "Cancel", failureNote, followUp, closableWhileRunning = false } = props;
+	const { destructive = false, cancelLabel = "Cancel", failureNote, followUps = [], closableWhileRunning = false } = props;
 	const { running, failure } = submission;
 	const closable = !running || closableWhileRunning;
 	const dialog = useRef<HTMLDialogElement>(null);
@@ -122,12 +122,12 @@ export function OperationDialog(props: OperationDialogProps) {
 				)}
 				<footer className="dialog-foot">
 					<pre className="dialog-command" aria-label="Command that will run">{command}</pre>
-					{followUp && (
-						<>
+					{followUps.map(followUp => (
+						<Fragment key={followUp.command}>
 							<p className="dialog-note">{followUp.note}</p>
 							<pre className="dialog-command" aria-label="Command that will start next">{followUp.command}</pre>
-						</>
-					)}
+						</Fragment>
+					))}
 					<div className="dialog-buttons">
 						<button ref={cancel} type="button" className="button quiet" disabled={!closable} autoFocus={destructive} onClick={onClose}>{running && closableWhileRunning ? "Close" : cancelLabel}</button>
 						{destructive ? (

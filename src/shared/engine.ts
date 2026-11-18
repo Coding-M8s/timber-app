@@ -337,7 +337,9 @@ export interface Engine {
 	 * executable is not found, starts nothing and keeps no session. Nothing
 	 * else starts an agent: New and Open never do. With `timberRebase`,
 	 * `timber rebase` starts instead, with the Timber that was found, and
-	 * nothing starts while Timber is not ready.
+	 * nothing starts while Timber is not ready. With `timberWorktreeSetup`,
+	 * the worktree's setup scripts run with `timber open --setup` instead
+	 * (`worktreeSetupArguments` in ./worktree-commands.ts), the same way.
 	 */
 	openTerminal(request: OpenTerminalRequest): Promise<OpenTerminalResult>;
 	/**

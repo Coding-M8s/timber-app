@@ -5,11 +5,13 @@ import type { Engine } from "../../shared/engine";
 import type { TimberStatus, Worktree } from "../../shared/model";
 import {
 	type OpenTerminalResult, type Scrollback, type TerminalChange, type TerminalOutput, type TerminalSession, cleanSessionName, createScrollback,
-	defaultSessionName, isWebLink, type SessionNaming, sessionNameBase, TIMBER_REBASE_SESSION_NAME,
+	defaultSessionName, isWebLink, type SessionNaming, sessionNameBase, TIMBER_REBASE_SESSION_NAME, WORKTREE_SETUP_SESSION_NAME,
 } from "../../shared/terminal";
 import { PROBE_ANSWER, type StatusRecords, type StatusScanner, createStatusRecords, createStatusScanner } from "../../shared/program-status";
 import { rebaseArguments } from "../../shared/rebase-command";
 import { notFoundOnPath } from "../../shared/search-path";
+import { isWorkflowName } from "../../shared/workflows";
+import { worktreeSetupArguments } from "../../shared/worktree-commands";
 
 /** The part of the engine about terminals, and how they are acted out. */
 export type TerminalCapabilities = Pick<Engine,
@@ -51,6 +53,12 @@ export interface TerminalControls {
 	agentStatus(id: string, report: string): void;
 	/** What was written into a session as the answer to a probe, in order. */
 	probeAnswers(id: string): string[];
+	/**
+	 * Make every later pretend worktree setup (`timber open --setup`) end by
+	 * itself with this exit code (0 at first), or keep running when null. A
+	 * nonzero code prints a failing setup script first.
+	 */
+	endWorktreeSetups(exitCode: number | null): void;
 }
 
 interface Acted {
@@ -66,6 +74,9 @@ interface Acted {
 	records: StatusRecords;
 	answers: string[];
 }
+
+/** What a pretend setup script prints when it fails. */
+export const MOCK_SETUP_FAILURE = "bun install v1.4.2\r\nerror: lockfile had changes, but lockfile is frozen\r\nerror: Setup post_create step 1 failed (exit code 1).\r\n";
 
 /** The PATH the mock acts out looking on. */
 export const MOCK_PATH = "/usr/local/bin:/usr/bin:/bin";
@@ -94,6 +105,7 @@ export function createMockTerminals(
 	let missing: readonly string[] = [];
 	let confirmed = false;
 	let rebaseExit: number | null = 0;
+	let worktreeSetupExit: number | null = 0;
 	let clipboard = "";
 	const links: string[] = [];
 
@@ -179,6 +191,14 @@ export function createMockTerminals(
 				if (agent === null) return { outcome: "not-configured", message: `No agent called "${request.agent}" is set in Settings, Agents. Nothing was started.` };
 			}
 			let setup: string[] | null = null;
+			const worktreeSetup = request.timberWorktreeSetup;
+			if (worktreeSetup !== undefined) {
+				if (agent !== null || request.timberRebase !== undefined || typeof worktreeSetup !== "object" || worktreeSetup === null
+					|| (worktreeSetup.workflow !== undefined && !isWorkflowName(worktreeSetup.workflow))) return { outcome: "failed", message: "The request for Timber setup cannot be read. Nothing was started." };
+				const status = timber();
+				if (status.state !== "ready") return { outcome: "not-configured", message: "No usable Timber was found, so setup cannot start. Nothing was started." };
+				setup = [status.path, ...worktreeSetupArguments(request.worktree, worktreeSetup.workflow)];
+			}
 			const rebase = request.timberRebase;
 			if (rebase !== undefined) {
 				const onto = rebase?.onto;
@@ -188,7 +208,7 @@ export function createMockTerminals(
 				setup = [status.path, ...rebaseArguments({ worktree: request.worktree, onto })];
 			}
 			const worktree = findWorktree(request.repository, request.worktree);
-			const notStarted = agent ? `${agent.name} was not started.` : rebase !== undefined ? "The rebase was not started." : "No terminal was started.";
+			const notStarted = agent ? `${agent.name} was not started.` : rebase !== undefined ? "The rebase was not started." : worktreeSetup ? "Setup was not started." : "No terminal was started.";
 			if (!worktree) return { outcome: "not-listed", message: `Timber lists no worktree at ${request.worktree} in ${request.repository}. ${notStarted} Refresh the list.` };
 			let shell = "/bin/mock-shell";
 			let args: string[] = [];
@@ -220,7 +240,7 @@ export function createMockTerminals(
 				id: `mock-terminal-${++lastId}`,
 				kind: agent ? "agent" : setup ? "timber" : "terminal",
 				name: defaultSessionName(
-					rebase !== undefined ? TIMBER_REBASE_SESSION_NAME : sessionNameBase(sessionNaming(), agent ? agent.name : "Terminal", worktree.branch, agent !== null),
+					rebase !== undefined ? TIMBER_REBASE_SESSION_NAME : worktreeSetup ? WORKTREE_SETUP_SESSION_NAME : sessionNameBase(sessionNaming(), agent ? agent.name : "Terminal", worktree.branch, agent !== null),
 					taken,
 				),
 				repository: request.repository,
@@ -238,6 +258,12 @@ export function createMockTerminals(
 			};
 			sessions.set(session.id, acted);
 			announce({ id: session.id, session });
+			if (worktreeSetup) {
+				const exitCode = worktreeSetupExit;
+				print(acted, `A pretend setup in ${session.path}, started as ${session.command}. Nothing runs in the browser.\r\n${exitCode ? MOCK_SETUP_FAILURE : ""}`);
+				if (exitCode !== null) later(() => end(acted, exitCode));
+				return { outcome: "opened", session: structuredClone(session) };
+			}
 			if (acted.rebase) {
 				print(acted, `A pretend timber rebase in ${session.path}, started as ${session.command}. Nothing runs in the browser.\r\n`);
 				const exitCode = rebaseExit;
@@ -268,6 +294,9 @@ export function createMockTerminals(
 		drawnUpTo: id => sessions.get(id)?.drawn ?? 0,
 		endRebases(exitCode) {
 			rebaseExit = exitCode;
+		},
+		endWorktreeSetups(exitCode) {
+			worktreeSetupExit = exitCode;
 		},
 		writeTerminal(id, data) {
 			const acted = sessions.get(id);

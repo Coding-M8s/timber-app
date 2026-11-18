@@ -1,7 +1,7 @@
 import type { AgentSetting } from "../../../shared/agent";
 import type { AppStore } from "../../store/store";
 import type { Submission } from "../../store/submission";
-import { type AgentPick, chosenAgent, runWithAgent } from "./agent-choice";
+import { type AgentPick, chosenAgent, runAndStart } from "./agent-choice";
 import type { WorktreeDialogMode } from "./mode";
 import type { WorkflowOptions } from "./workflow-choice";
 
@@ -35,8 +35,8 @@ export interface WorktreeDialogController {
 	/** The agent that starts after a worktree is created, from the agents saved now. */
 	agent(): AgentSetting | null;
 	/**
-	 * Run a mode through the dialog's submission, then start the picked agent
-	 * in the worktree it reports as created (see `runWithAgent`). Answers as
+	 * Run a mode through the dialog's submission, then start setup and the
+	 * picked agent in the worktree it reports (see `runAndStart`). Answers as
 	 * `Submission.submit` does. After a run that failed, the workflows are
 	 * read again, as a workflow may have left the settings.
 	 */
@@ -50,7 +50,7 @@ export function pickOfOption(value: string): string | null {
 
 /** `repository` is the path of the primary checkout. */
 export function createWorktreeDialogController(
-	store: Pick<AppStore, "getState" | "startAgentIn" | "listWorkflows">,
+	store: Pick<AppStore, "getState" | "startSessionsIn" | "listWorkflows">,
 	repository: string,
 	submission: Pick<Submission, "getState" | "submit" | "clearFailure">,
 ): WorktreeDialogController {
@@ -90,7 +90,7 @@ export function createWorktreeDialogController(
 			if (submission.getState().running) return false;
 			// The agent as picked when the person submitted, not when the command ends.
 			const picked = agent();
-			const worked = await submission.submit(() => runWithAgent(store, repository, () => mode.run(), picked));
+			const worked = await submission.submit(() => runAndStart(store, repository, () => mode.run(), picked));
 			// Reading runs Timber, so the list is read again only when a failure may have come from the settings.
 			if (!worked) await readWorkflows();
 			return worked;

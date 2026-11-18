@@ -47,7 +47,7 @@ function messageOf(error: unknown): string {
 
 /** A failure from before any command ran. Nothing was changed. */
 function notRun(diagnostic: string): WorktreeCommandResult {
-	return { outcome: "failed", failure: { command: null, diagnostic: `${diagnostic} Nothing was run.`, output: null }, worktree: null, created: false };
+	return { outcome: "failed", failure: { command: null, diagnostic: `${diagnostic} Nothing was run.`, output: null }, worktree: null, created: false, setupSkipped: false };
 }
 
 /**
@@ -132,9 +132,9 @@ export function createWorktreeCommands(options: WorktreeCommandsOptions): Worktr
 			return run(repository, "new", resultFile => newWorktreeArguments({ repository, name, base, ...picked(workflow) }, resultFile));
 		},
 		open(request) {
-			const { repository, selector, setup, workflow } = request;
-			if (typeof selector !== "string" || typeof setup !== "boolean" || !isPickedWorkflow(workflow)) return incomplete("open");
-			return run(repository, "open", resultFile => openWorktreeArguments({ repository, selector, setup, ...picked(workflow) }, resultFile));
+			const { repository, selector, workflow } = request;
+			if (typeof selector !== "string" || !isPickedWorkflow(workflow)) return incomplete("open");
+			return run(repository, "open", resultFile => openWorktreeArguments({ repository, selector, ...picked(workflow) }, resultFile));
 		},
 	};
 }

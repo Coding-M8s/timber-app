@@ -13,7 +13,7 @@ import { createAppStore } from "../src/mainview/store/store";
 import { createSubmission } from "../src/mainview/store/submission";
 import type { NewWorktreeRequest, OpenWorktreeRequest } from "../src/shared/model";
 import { RESULT_FILE_PLACEHOLDER, describeTimberCommand } from "../src/shared/timber-result";
-import { newWorktreeArguments, openWorktreeArguments } from "../src/shared/worktree-commands";
+import { newWorktreeArguments } from "../src/shared/worktree-commands";
 
 const settle = () => Bun.sleep(0);
 const TIMBER = "/work/timber";
@@ -127,12 +127,12 @@ describe("the New branch form", () => {
 	test("shows the exact command in the footer as the fields change", async () => {
 		const { model, mode, render } = await openedDialog();
 		model.edit({ name: "  Fix login bug " });
-		expect(mode().command).toBe("timber new --result-file <temporary file> --no-editor --no-agent -- 'Fix login bug'");
+		expect(mode().command).toBe("timber new --no-setup --result-file <temporary file> --no-editor --no-agent -- 'Fix login bug'");
 		model.edit({ base: " origin/develop " });
-		expect(mode().command).toBe("timber new --base origin/develop --result-file <temporary file> --no-editor --no-agent -- 'Fix login bug'");
+		expect(mode().command).toBe("timber new --base origin/develop --no-setup --result-file <temporary file> --no-editor --no-agent -- 'Fix login bug'");
 		expect(render()).toContain(`<pre class="dialog-command" aria-label="Command that will run">${escaped(mode().command)}</pre>`);
 		model.edit({ name: "--editor" });
-		expect(mode().command).toBe("timber new --base origin/develop --result-file <temporary file> --no-editor --no-agent -- --editor");
+		expect(mode().command).toBe("timber new --base origin/develop --no-setup --result-file <temporary file> --no-editor --no-agent -- --editor");
 	});
 
 	test("editing a field puts an earlier failure away", async () => {
@@ -205,7 +205,7 @@ describe("creating a worktree", () => {
 		expect(markup).toContain('name="name" value="feat/login"');
 		expect(markup).toContain('name="base" value="shared"');
 		expect(markup).toContain('<button type="submit" class="button primary">Create worktree</button>');
-		expect(markup).not.toContain("Open with setup");
+		expect(markup).not.toContain("Run setup");
 	});
 
 	test("a name that is taken fails the same way, with Timber's guidance", async () => {
@@ -224,7 +224,7 @@ describe("creating a worktree", () => {
 		expect(store.getState().dialog).not.toBeNull();
 		expect(model.getState().step).toEqual({ kind: "form" });
 		expect(render()).toContain("timber new exited with code 0 and left no result, so what it did is unknown.");
-		expect(render()).not.toContain("Open with setup");
+		expect(render()).not.toContain("Run setup");
 		// Reading again shows what is really there, although the command did not say.
 		expect(branches()).toContain("feat/login");
 	});
@@ -243,32 +243,29 @@ describe("creating a worktree", () => {
 	});
 });
 
-describe("created, setup failed", () => {
-	async function afterSetupFailed() {
+describe("created, then Timber stopped before setup", () => {
+	async function afterStopped() {
 		const dialog = await openedDialog();
-		dialog.engine.endCommands("setup-fails");
+		dialog.engine.endCommands("stops-after-create");
 		dialog.model.edit({ name: "feat/login" });
 		expect(await dialog.submit()).toBe(false);
 		return dialog;
 	}
 
 	test("says so, lists and selects the worktree, and keeps the dialog open", async () => {
-		const { store, render, branches, toasts, model } = await afterSetupFailed();
+		const { store, render, branches, toasts, model } = await afterStopped();
 		expect(branches()).toContain("feat/login");
 		expect(selectedWorktree(store.getState())?.worktree.path).toBe(NEW_PATH);
 		expect(store.getState().dialog).not.toBeNull();
 		expect(toasts()).toEqual([]);
-		expect(model.getState().step).toMatchObject({ kind: "setup", attempts: 0, worktree: { path: NEW_PATH, branch: "feat/login" } });
+		expect(model.getState().step).toEqual({ kind: "setup", worktree: { id: expect.any(String), path: NEW_PATH, branch: "feat/login" }, workflow: null });
 
 		const markup = render();
-		expect(markup).toContain('<p class="failure-title">Created feat/login, setup failed</p>');
-		expect(markup).toContain("Setup post_create step 1 failed (exit code 1).");
-		expect(markup).toContain("feat/login was created and is in the list, but its setup did not finish.");
+		expect(markup).toContain('<p class="failure-title">Created feat/login, but Timber stopped before setup</p>');
+		expect(markup).toContain("Could not save the base association; created worktree retained at");
+		expect(markup).toContain("feat/login was created and is in the list, but Timber stopped before its setup.");
 		expect(markup).toContain(`<p class="dialog-outcome-text path">${NEW_PATH}</p>`);
 		expect(markup).toContain("Nothing is created again.");
-		// The setup script's output is in the details area, closed, exactly as printed.
-		expect(markup).toContain('<details class="failure-details"><summary>Details</summary>');
-		expect(markup).toContain("error: lockfile had changes, but lockfile is frozen\n");
 		// The form, and with it the offer to create, is gone.
 		expect(markup).not.toContain('name="name"');
 		expect(markup).not.toContain("Create worktree");
@@ -277,55 +274,55 @@ describe("created, setup failed", () => {
 		expect(app).toMatch(/class="row selected" aria-current="true"[^>]*>.*?feat\/login/);
 	});
 
-	test("offers Open with setup, and shows that exact command before it runs", async () => {
-		const { mode, render } = await afterSetupFailed();
-		expect(mode().submitLabel).toBe("Open with setup");
+	test("offers Run setup, and shows the setup command for that exact path before it runs", async () => {
+		const { mode, render } = await afterStopped();
+		expect(mode().submitLabel).toBe("Run setup");
 		expect(mode().canSubmit).toBe(true);
-		expect(mode().command).toBe(`timber open --setup --result-file <temporary file> --no-editor --no-agent -- ${NEW_PATH}`);
+		expect(mode().command).toBe(`timber open --setup --no-editor --no-agent -- ${NEW_PATH}`);
 		const markup = render();
 		expect(markup).toContain(`<pre class="dialog-command" aria-label="Command that will run">${escaped(mode().command)}</pre>`);
-		expect(markup).toContain('<button type="submit" class="button primary">Open with setup</button>');
+		expect(markup).toContain('<button type="submit" class="button primary">Run setup</button>');
 	});
 
-	test("Open with setup runs timber open on the reported path, once, and never timber new again", async () => {
-		const { store, engine, mode, submit, asked, toasts, branches } = await afterSetupFailed();
-		const shown = mode().command;
-		engine.endCommands("succeeds");
+	test("Run setup starts setup in a session in the reported worktree, closes the dialog, and never asks Timber again", async () => {
+		const { store, submit, asked, toasts, branches } = await afterStopped();
 		expect(await submit()).toBe(true);
-		expect(asked).toEqual([
-			{ kind: "new", repository: TIMBER, name: "feat/login", base: null },
-			{ kind: "open", repository: TIMBER, selector: NEW_PATH, setup: true },
-		]);
-		const { kind: _kind, ...request } = asked[1]!;
-		expect(describeTimberCommand(openWorktreeArguments(request as OpenWorktreeRequest, RESULT_FILE_PLACEHOLDER))).toBe(shown);
-		expect(toasts()).toEqual(["Setup finished in feat/login"]);
+		await settle();
+		expect(asked).toEqual([{ kind: "new", repository: TIMBER, name: "feat/login", base: null }]);
+		expect(toasts()).toEqual(["Setup started in feat/login"]);
 		expect(store.getState().dialog).toBeNull();
 		expect(branches().filter(branch => branch === "feat/login").length).toBe(1);
-		expect(selectedWorktree(store.getState())?.worktree.path).toBe(NEW_PATH);
-	});
-
-	test("setup that fails again stays in the dialog with the new diagnostic, still offering Open with setup", async () => {
-		const { store, model, mode, submit, render, asked } = await afterSetupFailed();
-		expect(await submit()).toBe(false);
-		expect(asked.map(command => command.kind)).toEqual(["new", "open"]);
-		expect(model.getState().step).toMatchObject({ kind: "setup", attempts: 1 });
-		expect(store.getState().dialog).not.toBeNull();
-		const markup = render();
-		expect(markup).toContain('<p class="failure-title">Setup did not finish</p>');
-		expect(markup).toContain(`<pre class="failure-command">${escaped(mode().command)}</pre>`);
-		expect(markup).toContain('<button type="submit" class="button primary">Open with setup</button>');
+		const selected = selectedWorktree(store.getState())!.worktree;
+		expect(selected.path).toBe(NEW_PATH);
+		expect(store.getState().terminals[0]).toMatchObject({ kind: "timber", name: "Setup", worktree: selected.id });
 	});
 
 	test("there is a plain way back to the form, which runs nothing", async () => {
-		const { model, mode, submission, render, asked } = await afterSetupFailed();
+		const { model, mode, submission, render, asked } = await afterStopped();
 		expect(render()).toContain('<button type="button" class="text-button">Back to the form</button>');
 		model.backToForm();
 		submission.clearFailure();
 		expect(model.getState()).toEqual({ fields: { name: "feat/login", base: "", workflow: null }, step: { kind: "form" } });
 		expect(mode().submitLabel).toBe("Create worktree");
-		expect(mode().command).toBe("timber new --result-file <temporary file> --no-editor --no-agent -- feat/login");
+		expect(mode().command).toBe("timber new --no-setup --result-file <temporary file> --no-editor --no-agent -- feat/login");
 		expect(render()).not.toContain('role="alert"');
 		expect(asked.length).toBe(1);
+	});
+});
+
+describe("setup after a worktree was created", () => {
+	test("runs in its own session and never holds the dialog: a script that fails shows there, and the worktree stays", async () => {
+		const { store, engine, model, submit, toasts } = await openedDialog();
+		engine.endCommands("setup-fails");
+		model.edit({ name: "feat/login" });
+		expect(await submit()).toBe(true);
+		await settle();
+		await settle();
+		expect(store.getState().dialog).toBeNull();
+		expect(toasts()).toEqual(["Created worktree feat/login"]);
+		const setup = store.getState().terminals.find(session => session.name === "Setup");
+		expect(setup?.state).toEqual({ kind: "exited", exitCode: 1, signal: null });
+		expect(selectedWorktree(store.getState())?.worktree.path).toBe(NEW_PATH);
 	});
 });
 
@@ -367,7 +364,10 @@ describe("the mode switch", () => {
 		runningLabel: "Running",
 		failureTitle: "Failed",
 		agentStart: "always",
-		run: async () => ({ outcome: { ok: true, toast: "Done" }, created: null }),
+		setupStart: "never",
+		worktree: null,
+		workflow: null,
+		run: async () => ({ outcome: { ok: true, toast: "Done" }, created: null, setup: null }),
 	});
 	const modes = [fake("New branch"), fake("Existing branch")];
 	const repository = sampleRepositories[0]!;

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { AgentStart, ModeRun } from "./agent-choice";
+import type { AgentStart, ModeRun, SetupStart } from "./agent-choice";
 
 /**
  * One way the worktree dialog can make a worktree, for example from a new
@@ -18,6 +18,12 @@ export interface WorktreeDialogMode {
 	failureTitle: string;
 	/** Whether the picked agent starts after the next run works (see ./agent-choice.ts). */
 	agentStart: AgentStart;
-	/** Run the command the footer shows. The frame starts the picked agent in the worktree it reports as created. */
+	/** Whether setup runs in a session after the next run works (see ./agent-choice.ts). */
+	setupStart: SetupStart;
+	/** The path of the worktree the next run opens, when it is known before it runs, for the footer. */
+	worktree: string | null;
+	/** The workflow the next run passes, or null for none. The setup session passes it again, so the footer shows it there too. */
+	workflow: string | null;
+	/** Run the command the footer shows. The frame starts setup and the picked agent in the worktree it reports. */
 	run(): Promise<ModeRun>;
 }

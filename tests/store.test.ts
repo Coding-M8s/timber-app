@@ -845,9 +845,9 @@ describe("creating and opening a worktree", () => {
 	}
 
 	const outcomes: [string, WorktreeCommandResult, boolean][] = [
-		["succeeded", { outcome: "succeeded", worktree: created, created: true }, true],
-		["created, but setup failed", { outcome: "failed", failure, worktree: created, created: true }, true],
-		["failed before creation", { outcome: "failed", failure, worktree: null, created: false }, false],
+		["succeeded", { outcome: "succeeded", worktree: created, created: true, setupSkipped: false }, true],
+		["created, but Timber stopped before setup", { outcome: "failed", failure, worktree: created, created: true, setupSkipped: false }, true],
+		["failed before creation", { outcome: "failed", failure, worktree: null, created: false, setupSkipped: false }, false],
 		["cancelled", { outcome: "cancelled" }, false],
 	];
 
@@ -897,7 +897,7 @@ describe("creating and opening a worktree", () => {
 		const { store, commands, loads } = await loadedStore();
 		const answer = store.newWorktree(request);
 		await settle();
-		commands[0]!.resolve({ outcome: "succeeded", worktree: created, created: true });
+		commands[0]!.resolve({ outcome: "succeeded", worktree: created, created: true, setupSkipped: false });
 		await settle();
 		loads.shift()!.resolve(structuredClone(repositoryIn(sampleRepositories, TIMBER)));
 		await answer;
@@ -908,7 +908,7 @@ describe("creating and opening a worktree", () => {
 		const { store, commands, loads } = await loadedStore();
 		const answer = store.newWorktree(request);
 		await settle();
-		commands[0]!.resolve({ outcome: "succeeded", worktree: created, created: true });
+		commands[0]!.resolve({ outcome: "succeeded", worktree: created, created: true, setupSkipped: false });
 		await settle();
 		loads.shift()!.reject(new Error("Git is busy"));
 		expect(await answer).toMatchObject({ outcome: "succeeded" });
@@ -917,11 +917,11 @@ describe("creating and opening a worktree", () => {
 
 	test("open: asks once with the request, reads the repository again, and selects the worktree", async () => {
 		const { store, commands, loads } = await loadedStore();
-		const open = { repository: TIMBER, selector: FEATURE, setup: true };
+		const open = { repository: TIMBER, selector: FEATURE };
 		const answer = store.openWorktree(open);
 		await settle();
 		expect(commands.map(command => [command.kind, command.request])).toEqual([["open", open]]);
-		const result: WorktreeCommandResult = { outcome: "failed", failure, worktree: { id: FEATURE_ID, path: FEATURE, branch: "feat/github-issue-lookup" }, created: false };
+		const result: WorktreeCommandResult = { outcome: "failed", failure, worktree: { id: FEATURE_ID, path: FEATURE, branch: "feat/github-issue-lookup" }, created: false, setupSkipped: false };
 		commands[0]!.resolve(result);
 		await settle();
 		expect(loads.map(load => load.path)).toEqual([TIMBER]);
@@ -933,10 +933,10 @@ describe("creating and opening a worktree", () => {
 
 	test("the reported worktree is found by its registered path when the list gives it another identity", async () => {
 		const { store, commands, loads } = await loadedStore();
-		const answer = store.openWorktree({ repository: TIMBER, selector: "feat/login", setup: false });
+		const answer = store.openWorktree({ repository: TIMBER, selector: "feat/login" });
 		await settle();
 		// Timber could not verify the folder when it wrote the record, and could when it listed.
-		commands[0]!.resolve({ outcome: "failed", failure, worktree: { ...created, id: `/work/timber/.git\0registered\0${NEW_PATH}` }, created: false });
+		commands[0]!.resolve({ outcome: "failed", failure, worktree: { ...created, id: `/work/timber/.git\0registered\0${NEW_PATH}` }, created: false, setupSkipped: false });
 		await settle();
 		loads.shift()!.resolve(withCreated());
 		await answer;
@@ -945,9 +945,9 @@ describe("creating and opening a worktree", () => {
 
 	test("a reported path that only another repository has is not selected", async () => {
 		const { store, commands, loads } = await loadedStore();
-		const answer = store.openWorktree({ repository: API_SERVER, selector: "x", setup: false });
+		const answer = store.openWorktree({ repository: API_SERVER, selector: "x" });
 		await settle();
-		commands[0]!.resolve({ outcome: "succeeded", worktree: { id: "unknown", path: FEATURE, branch: "feat/github-issue-lookup" }, created: false });
+		commands[0]!.resolve({ outcome: "succeeded", worktree: { id: "unknown", path: FEATURE, branch: "feat/github-issue-lookup" }, created: false, setupSkipped: false });
 		await settle();
 		loads.shift()!.resolve(structuredClone(repositoryIn(sampleRepositories, API_SERVER)));
 		await answer;

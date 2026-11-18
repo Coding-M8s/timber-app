@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { WorktreeDialogFrame } from "../src/mainview/components/NewWorktreeDialog";
-import { agentFollowUp, chosenAgent } from "../src/mainview/components/worktree-modes/agent-choice";
+import { chosenAgent, followUps } from "../src/mainview/components/worktree-modes/agent-choice";
 import { createWorktreeDialogController, pickOfOption } from "../src/mainview/components/worktree-modes/dialog-controller";
 import { existingBranchMode } from "../src/mainview/components/worktree-modes/existing-branch";
 import { createExistingBranchForm } from "../src/mainview/components/worktree-modes/existing-branch-form";
@@ -27,7 +27,7 @@ const SPARE_BRANCH = "chore/update-deps";
 /**
  * The New worktree dialog on the mock engine, wired as NewWorktreeDialog.tsx
  * wires it, without a window: one submission, both modes, the shared Agent
- * pick, and every run going through `runWithAgent`. `asked` holds every
+ * pick, and every run going through `runAndStart`. `asked` holds every
  * Timber command the engine got.
  */
 async function openedDialog(engine: MockEngine = createMockEngine()) {
@@ -70,6 +70,8 @@ async function openedDialog(engine: MockEngine = createMockEngine()) {
 		select: controller.select,
 		pickAgent: controller.pickAgent,
 		sessions: () => store.getState().terminals,
+		/** The session whose pane shows in the selected worktree. */
+		shown: () => store.getState().terminals.find(session => session.id === store.getState().shownSessions[selectedWorktree(store.getState())?.worktree.id ?? ""]),
 		selected: () => selectedWorktree(store.getState())?.worktree,
 	};
 }
@@ -87,14 +89,22 @@ describe("the agent to start", () => {
 		expect(chosenAgent([], "Codex")).toBeNull();
 	});
 
-	test("is shown under the Timber command as its own line, worded for when it starts", () => {
+	test("is shown under the Timber command as its own line, after setup, worded for when it starts", () => {
 		const codex = { name: "Codex", command: `codex --model "big one"` };
-		expect(agentFollowUp(codex, "always")).toEqual({ note: "Then starts Codex in the new worktree:", command: "codex --model 'big one'" });
-		expect(agentFollowUp(codex, "if-created")).toEqual({ note: "Then, if this creates a worktree, starts Codex in it:", command: "codex --model 'big one'" });
-		expect(agentFollowUp(codex, "never")).toBeNull();
-		expect(agentFollowUp(null, "always")).toBeNull();
+		const setup = { note: "Then, if Timber left setup scripts to run, runs them in a terminal in the worktree, without waiting for them:", command: "timber open --setup --no-editor --no-agent -- <new worktree>" };
+		expect(followUps(codex, "always", "if-skipped")).toEqual([setup, { note: "And starts Codex beside setup, in the new worktree:", command: "codex --model 'big one'" }]);
+		expect(followUps(codex, "if-created", "never")).toEqual([{ note: "Then starts Codex in it, if this creates a worktree:", command: "codex --model 'big one'" }]);
+		expect(followUps(codex, "never", "if-skipped")).toEqual([setup]);
+		expect(followUps(null, "always", "never")).toEqual([]);
 		// A command that cannot be read is shown as typed. The main process refuses it when it would start.
-		expect(agentFollowUp({ name: "Odd", command: `odd "open` }, "always")?.command).toBe(`odd "open`);
+		expect(followUps({ name: "Odd", command: `odd "open` }, "always", "never")[0]?.command).toBe(`odd "open`);
+	});
+
+	test("names the worktree's path in the setup command once it is known", () => {
+		expect(followUps(null, "never", "always", "/work/timber-worktrees/it's")).toEqual([{
+			note: "Then runs setup in a terminal in the worktree, without waiting for it:",
+			command: "timber open --setup --no-editor --no-agent -- '/work/timber-worktrees/it'\\''s'",
+		}]);
 	});
 });
 
@@ -103,7 +113,7 @@ describe("the dialog's wiring", () => {
 		const { store } = await openedDialog();
 		const markup = renderToStaticMarkup(<App store={store} />);
 		expect(markup).toContain('<select class="field-input" name="agent"><option value="Claude Code" selected="">Claude Code</option>');
-		expect(markup).toContain('<p class="dialog-note">Then starts Claude Code in the new worktree:</p><pre class="dialog-command" aria-label="Command that will start next">claude</pre>');
+		expect(markup).toContain('<p class="dialog-note">And starts Claude Code beside setup, in the new worktree:</p><pre class="dialog-command" aria-label="Command that will start next">claude</pre>');
 	});
 
 	test("reads the empty option as None and any other as the agent's name", () => {
@@ -138,8 +148,7 @@ describe("the dialog's wiring", () => {
 		controller.pickAgent(null);
 		expect(await running).toBe(true);
 		await settle();
-		expect(sessions()).toHaveLength(1);
-		expect(sessions()[0]).toMatchObject({ name: "Codex" });
+		expect(sessions().map(session => session.name)).toEqual(["Setup", "Codex"]);
 	});
 });
 
@@ -157,9 +166,11 @@ describe("the Agent field", () => {
 		const { render, model, select } = await openedDialog();
 		model.edit({ name: "feat/login" });
 		const created = render();
-		expect(created).toContain('<pre class="dialog-command" aria-label="Command that will run">timber new --result-file &lt;temporary file&gt; --no-editor --no-agent -- feat/login</pre><p class="dialog-note">Then starts Claude Code in the new worktree:</p><pre class="dialog-command" aria-label="Command that will start next">claude</pre>');
+		expect(created).toContain('<pre class="dialog-command" aria-label="Command that will run">timber new --no-setup --result-file &lt;temporary file&gt; --no-editor --no-agent -- feat/login</pre>'
+			+ '<p class="dialog-note">Then, if Timber left setup scripts to run, runs them in a terminal in the worktree, without waiting for them:</p><pre class="dialog-command" aria-label="Command that will start next">timber open --setup --no-editor --no-agent -- &lt;new worktree&gt;</pre>'
+			+ '<p class="dialog-note">And starts Claude Code beside setup, in the new worktree:</p><pre class="dialog-command" aria-label="Command that will start next">claude</pre>');
 		select(1);
-		expect(render()).toContain('<p class="dialog-note">Then, if this creates a worktree, starts Claude Code in it:</p>');
+		expect(render()).toContain('<p class="dialog-note">And starts Claude Code beside setup, in it, if this creates a worktree:</p>');
 	});
 
 	test("with None picked, shows no agent command", async () => {
@@ -167,7 +178,9 @@ describe("the Agent field", () => {
 		pickAgent(null);
 		const markup = render();
 		expect(markup).toContain('<option value="" selected="">None</option>');
-		expect(markup).not.toContain("Command that will start next");
+		// Only setup follows.
+		expect(markup.split("Command that will start next").length).toBe(2);
+		expect(markup).not.toContain(">claude</pre>");
 	});
 
 	test("with no saved agents, offers only None and says where to add one", async () => {
@@ -176,13 +189,15 @@ describe("the Agent field", () => {
 		const markup = render();
 		expect(markup).toContain('<select class="field-input" name="agent"><option value="" selected="">None</option></select>');
 		expect(markup).toContain("No agents are set up. Add one in Settings, Agents.");
-		expect(markup).not.toContain("Command that will start next");
+		expect(markup.split("Command that will start next").length).toBe(2);
 	});
 });
 
 describe("creating a worktree with an agent picked", () => {
-	test("leaves the new worktree selected with that agent's session running, on the Workspace tab", async () => {
-		const { store, model, submit, sessions, selected, pickAgent, asked } = await openedDialog();
+	test("leaves the new worktree selected with its setup and that agent running side by side, the agent showing", async () => {
+		const { engine, store, model, submit, sessions, selected, shown, pickAgent, asked } = await openedDialog();
+		// Setup that never ends: the agent still starts, and the dialog has closed.
+		engine.endWorktreeSetups(null);
 		store.showTab("changes");
 		pickAgent("Codex");
 		model.edit({ name: "feat/login" });
@@ -190,19 +205,24 @@ describe("creating a worktree with an agent picked", () => {
 		expect(asked).toEqual([{ kind: "new", repository: TIMBER, name: "feat/login", base: null }]);
 		const worktree = selected()!;
 		expect(worktree.branch).toBe("feat/login");
-		expect(sessions()).toHaveLength(1);
-		expect(sessions()[0]).toMatchObject({ kind: "agent", name: "Codex", worktree: worktree.id, path: worktree.path, state: { kind: "running" } });
+		expect(sessions()).toHaveLength(2);
+		expect(sessions()[0]).toMatchObject({
+			kind: "timber", name: "Setup", worktree: worktree.id, state: { kind: "running" },
+			command: `/home/sam/.local/bin/timber open --setup --no-editor --no-agent -- ${worktree.path}`,
+		});
+		expect(sessions()[1]).toMatchObject({ kind: "agent", name: "Codex", worktree: worktree.id, path: worktree.path, state: { kind: "running" } });
+		expect(shown()?.name).toBe("Codex");
 		expect(store.getState().tab).toBe("workspace");
 		expect(store.getState().dialog).toBeNull();
 	});
 
-	test("None starts no session", async () => {
+	test("None starts only setup", async () => {
 		const { model, submit, sessions, selected, pickAgent } = await openedDialog();
 		pickAgent(null);
 		model.edit({ name: "feat/login" });
 		expect(await submit()).toBe(true);
 		expect(selected()?.branch).toBe("feat/login");
-		expect(sessions()).toEqual([]);
+		expect(sessions().map(session => [session.kind, session.name])).toEqual([["timber", "Setup"]]);
 	});
 
 	test("a refused name starts nothing", async () => {
@@ -213,34 +233,41 @@ describe("creating a worktree with an agent picked", () => {
 		expect(sessions()).toEqual([]);
 	});
 
-	test("a failed setup starts no agent, and a later Open with setup that works does", async () => {
-		const { engine, model, submit, sessions, selected, asked } = await openedDialog();
+	test("a setup script that fails does so in its own session, and the agent runs anyway", async () => {
+		const { engine, model, submit, sessions } = await openedDialog();
 		engine.endCommands("setup-fails");
+		model.edit({ name: "feat/login" });
+		expect(await submit()).toBe(true);
+		await settle();
+		expect(sessions().map(session => [session.name, session.state])).toEqual([
+			["Setup", { kind: "exited", exitCode: 1, signal: null }],
+			["Claude Code", { kind: "running" }],
+		]);
+	});
+
+	test("when Timber stops before setup, Run setup starts setup and the agent without asking Timber again", async () => {
+		const { engine, model, submit, sessions, selected, asked, render } = await openedDialog();
+		engine.endCommands("stops-after-create");
 		model.edit({ name: "feat/login" });
 		expect(await submit()).toBe(false);
 		expect(model.getState().step.kind).toBe("setup");
 		expect(sessions()).toEqual([]);
+		const path = selected()!.path;
+		expect(render()).toContain(`<pre class="dialog-command" aria-label="Command that will run">timber open --setup --no-editor --no-agent -- ${path}</pre>`);
 
-		// Fails once more: still nothing.
-		expect(await submit()).toBe(false);
-		expect(sessions()).toEqual([]);
-
-		engine.endCommands("succeeds");
 		expect(await submit()).toBe(true);
-		expect(asked.filter(command => command.kind === "new")).toHaveLength(1);
-		expect(asked.at(-1)).toMatchObject({ kind: "open", setup: true });
-		expect(sessions()).toHaveLength(1);
-		expect(sessions()[0]).toMatchObject({ kind: "agent", name: "Claude Code", worktree: selected()!.id });
+		expect(asked).toHaveLength(1);
+		expect(sessions().map(session => session.name)).toEqual(["Setup", "Claude Code"]);
 	});
 
-	test("an agent whose executable is not found shows why in the pane and keeps the worktree", async () => {
+	test("an agent whose executable is not found shows why in the pane and keeps the worktree and its setup", async () => {
 		const { engine, store, model, submit, sessions, selected } = await openedDialog();
 		engine.missingExecutables(["claude"]);
 		model.edit({ name: "feat/login" });
 		expect(await submit()).toBe(true);
 		const worktree = selected()!;
 		expect(worktree.branch).toBe("feat/login");
-		expect(sessions()).toEqual([]);
+		expect(sessions().map(session => session.name)).toEqual(["Setup"]);
 		expect(store.getState().terminalProblem).toMatchObject({ worktree: worktree.id, agent: "Claude Code", command: "claude" });
 		expect(store.getState().dialog).toBeNull();
 		expect(store.getState().toasts.map(toast => toast.text)).toEqual(["Created worktree feat/login"]);
@@ -255,20 +282,19 @@ describe("creating a worktree with an agent picked", () => {
 		expect(await submit()).toBe(true);
 		expect(sessions()).toEqual([]);
 		expect(store.getState().toasts.map(toast => toast.text)).toEqual([
-			"Created worktree feat/login. Claude Code did not start: the worktree is not in the list yet. Refresh, then start it from the worktree.",
+			"Created worktree feat/login. Setup and Claude Code did not start: the worktree is not in the list yet. Refresh, then start it from the worktree.",
 		]);
 	});
 });
 
 describe("opening an existing branch with an agent picked", () => {
-	test("starts the agent when Timber created the worktree", async () => {
+	test("starts setup and the agent when Timber created the worktree", async () => {
 		const { form, submit, sessions, selected, select } = await openedDialog();
 		select(1);
 		form.setSelector(SPARE_BRANCH);
 		expect(await submit()).toBe(true);
 		expect(selected()?.branch).toBe(SPARE_BRANCH);
-		expect(sessions()).toHaveLength(1);
-		expect(sessions()[0]).toMatchObject({ kind: "agent", name: "Claude Code", worktree: selected()!.id });
+		expect(sessions().map(session => [session.name, session.worktree])).toEqual([["Setup", selected()!.id], ["Claude Code", selected()!.id]]);
 	});
 
 	test("starts nothing when the worktree was already there", async () => {
@@ -281,69 +307,52 @@ describe("opening an existing branch with an agent picked", () => {
 		expect(store.getState().toasts.map(toast => toast.text)).toEqual([`Opened ${FEATURE_BRANCH}. Its worktree was already there.`]);
 	});
 
-	test("starts the agent once setup finishes in a worktree it created, even after setup failed twice", async () => {
-		const { engine, form, submit, sessions, select, render } = await openedDialog();
+	test("Rerun setup on a worktree that was already there starts only setup, in that worktree", async () => {
+		const { form, submit, sessions, selected, select, render, asked } = await openedDialog();
 		select(1);
-		engine.endCommands("setup-fails");
-		form.setSelector(SPARE_BRANCH);
-		expect(await submit()).toBe(false);
-		expect(form.getState().kept?.created).toBe(true);
-		expect(render()).toContain('<p class="dialog-note">Then starts Claude Code in the new worktree:</p>');
-		expect(await submit()).toBe(false);
-		// The second failure still knows this dialog created it.
-		expect(form.getState().kept?.created).toBe(true);
-		expect(render()).toContain("The worktree was created, but setup failed");
-		expect(sessions()).toEqual([]);
-
-		engine.endCommands("succeeds");
-		expect(await submit()).toBe(true);
-		expect(sessions()).toHaveLength(1);
-	});
-
-	test("starts nothing after setup finishes in a worktree that was already there", async () => {
-		const { engine, form, submit, sessions, select, render } = await openedDialog();
-		select(1);
-		engine.endCommands("setup-fails");
 		form.setSelector(FEATURE_BRANCH);
 		form.setSetup(true);
-		expect(await submit()).toBe(false);
-		expect(form.getState().kept?.created).toBe(false);
-		expect(render()).not.toContain("Command that will start next");
-
-		engine.endCommands("succeeds");
+		expect(render()).toContain('<p class="dialog-note">Then runs setup in a terminal in the worktree, without waiting for it:</p>');
 		expect(await submit()).toBe(true);
-		expect(sessions()).toEqual([]);
+		expect(asked).toEqual([{ kind: "open", repository: TIMBER, selector: FEATURE_BRANCH }]);
+		expect(sessions().map(session => [session.name, session.worktree])).toEqual([["Setup", selected()!.id]]);
 	});
 
-	test("a run in between that names no worktree does not forget that the dialog created it", async () => {
+	test("after Timber stopped in a worktree it created, the next run starts setup and the agent, even after another failure", async () => {
 		const { engine, form, submit, sessions, select, render, store } = await openedDialog();
 		select(1);
-		engine.endCommands("setup-fails");
+		engine.endCommands("stops-after-create");
 		form.setSelector(SPARE_BRANCH);
 		expect(await submit()).toBe(false);
+		expect(form.getState().kept?.created).toBe(true);
+		expect(form.getState().setup).toBe(true);
+		expect(render()).toContain("The worktree was created, but Timber stopped before setup");
 		for (const ending of ["refused", "no-result"] as const) {
 			engine.endCommands(ending);
 			expect(await submit()).toBe(false);
+			// A run that names no worktree does not forget that the dialog created it.
 			expect(form.getState().kept?.created).toBe(true);
-			expect(render()).toContain('<p class="dialog-note">Then starts Claude Code in the new worktree:</p>');
+			expect(render()).toContain('<p class="dialog-note">And starts Claude Code beside setup, in the new worktree:</p>');
 		}
+		expect(sessions()).toEqual([]);
+
 		engine.endCommands("succeeds");
 		expect(await submit()).toBe(true);
-		expect(sessions()).toHaveLength(1);
-		expect(store.getState().toasts.map(toast => toast.text)).toEqual([`Setup finished in ${SPARE_BRANCH}`]);
+		expect(sessions().map(session => session.name)).toEqual(["Setup", "Claude Code"]);
+		expect(store.getState().toasts.map(toast => toast.text)).toEqual([`Setup started in ${SPARE_BRANCH}`]);
 	});
 
-	test("an edit after a created worktree's failed setup puts away what the dialog knew", async () => {
+	test("an edit after Timber stopped in a worktree it created puts away what the dialog knew", async () => {
 		const { engine, form, submit, sessions, select } = await openedDialog();
 		select(1);
-		engine.endCommands("setup-fails");
+		engine.endCommands("stops-after-create");
 		form.setSelector(SPARE_BRANCH);
 		expect(await submit()).toBe(false);
 		const path = form.getState().selector;
-		// Typed again, the same text now names a worktree that is already there.
+		// Typed again, the same text now names a worktree that is already there. Rerun setup is still ticked.
 		form.setSelector(path);
 		engine.endCommands("succeeds");
 		expect(await submit()).toBe(true);
-		expect(sessions()).toEqual([]);
+		expect(sessions().map(session => session.name)).toEqual(["Setup"]);
 	});
 });

@@ -228,7 +228,7 @@ describe("agent sessions in the store", () => {
 	test("New and Open never start an agent, or any session", async () => {
 		const { store } = await startedStore();
 		await store.newWorktree({ repository: TIMBER, name: "agents later", base: null });
-		await store.openWorktree({ repository: TIMBER, selector: FEATURE, setup: false });
+		await store.openWorktree({ repository: TIMBER, selector: FEATURE });
 		await settle();
 		expect(store.getState().terminals).toEqual([]);
 	});

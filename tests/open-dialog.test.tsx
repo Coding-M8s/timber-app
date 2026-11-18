@@ -147,11 +147,13 @@ describe("the Existing branch fields", () => {
 	test("the footer shows the exact command, and it follows the fields", async () => {
 		const { form, mode, render } = await openedDialog();
 		form.setSelector("feat/github-issue-lookup");
-		expect(mode().command).toBe("timber open --result-file <temporary file> --no-editor --no-agent -- feat/github-issue-lookup");
+		expect(mode().command).toBe("timber open --no-setup --result-file <temporary file> --no-editor --no-agent -- feat/github-issue-lookup");
+		// Rerun setup does not change what Timber runs: setup follows in a session of its own, shown below it.
 		form.setSetup(true);
-		expect(mode().command).toBe("timber open --setup --result-file <temporary file> --no-editor --no-agent -- feat/github-issue-lookup");
+		expect(mode().command).toBe("timber open --no-setup --result-file <temporary file> --no-editor --no-agent -- feat/github-issue-lookup");
+		expect(render()).toContain(`<p class="dialog-note">Then runs setup in a terminal in the worktree, without waiting for it:</p><pre class="dialog-command" aria-label="Command that will start next">${escaped("timber open --setup --no-editor --no-agent -- <new worktree>")}</pre>`);
 		form.setSelector("--two words");
-		const command = "timber open --setup --result-file <temporary file> --no-editor --no-agent -- '--two words'";
+		const command = "timber open --no-setup --result-file <temporary file> --no-editor --no-agent -- '--two words'";
 		expect(mode().command).toBe(command);
 		expect(render()).toContain(`<pre class="dialog-command" aria-label="Command that will run">${escaped(command)}</pre>`);
 		expect(render()).toMatch(/<input type="checkbox" checked=""\/>/);
@@ -165,14 +167,14 @@ describe("the Existing branch fields", () => {
 			const shown = mode().command;
 			await submit();
 			const sent = calls.at(-1)!;
-			expect(sent).toEqual({ repository: TIMBER, selector, setup });
+			expect(sent).toEqual({ repository: TIMBER, selector });
 			expect(describeTimberCommand(openWorktreeArguments(sent, RESULT_FILE_PLACEHOLDER))).toBe(shown);
 		}
 	});
 
 	test("the spaces around what was typed are left off, and nothing but spaces cannot be submitted", async () => {
-		expect(openRequest(TIMBER, { selector: "  feat/login\n", setup: false })).toEqual({ repository: TIMBER, selector: "feat/login", setup: false });
-		expect(openRequest(TIMBER, { selector: "two  words", setup: true })).toEqual({ repository: TIMBER, selector: "two  words", setup: true });
+		expect(openRequest(TIMBER, { selector: "  feat/login\n" })).toEqual({ repository: TIMBER, selector: "feat/login" });
+		expect(openRequest(TIMBER, { selector: "two  words" })).toEqual({ repository: TIMBER, selector: "two  words" });
 		expect(canOpen({ selector: "" })).toBe(false);
 		expect(canOpen({ selector: " \t " })).toBe(false);
 		expect(canOpen({ selector: " x " })).toBe(true);
@@ -182,7 +184,7 @@ describe("the Existing branch fields", () => {
 		expect(mode().canSubmit).toBe(false);
 		expect(render()).toContain('<button type="submit" class="button primary" disabled="">Open worktree</button>');
 		form.setSelector("  feat/github-issue-lookup ");
-		expect(mode().command).toBe("timber open --result-file <temporary file> --no-editor --no-agent -- feat/github-issue-lookup");
+		expect(mode().command).toBe("timber open --no-setup --result-file <temporary file> --no-editor --no-agent -- feat/github-issue-lookup");
 		// The field keeps what was typed. Only the request leaves the spaces off.
 		expect(form.getState().selector).toBe("  feat/github-issue-lookup ");
 	});
@@ -232,14 +234,16 @@ describe("opening from the dialog", () => {
 		expect(reloads).toEqual([TIMBER]);
 	});
 
-	test("Rerun setup asks Timber for --setup on the existing worktree", async () => {
-		const { form, submit, calls, timberRows } = await openedDialog();
+	test("Rerun setup opens the existing worktree without setup, then runs setup in a session there", async () => {
+		const { form, submit, calls, timberRows, store } = await openedDialog();
 		form.setSelector(FEATURE);
 		form.setSetup(true);
 		expect(await submit()).toBe(true);
-		expect(calls).toEqual([{ repository: TIMBER, selector: FEATURE, setup: true }]);
-		expect(openWorktreeArguments(calls[0]!, "/tmp/result.json")).toContain("--setup");
+		await settle();
+		expect(calls).toEqual([{ repository: TIMBER, selector: FEATURE }]);
+		expect(openWorktreeArguments(calls[0]!, "/tmp/result.json")).not.toContain("--setup");
 		expect(timberRows()).toBe(4);
+		expect(store.getState().terminals.map(session => [session.name, session.path])).toEqual([["Setup", FEATURE]]);
 	});
 
 	test("while the command runs the dialog shows progress, is disabled, and a second submit does nothing", async () => {
@@ -298,9 +302,9 @@ describe("a failure in the dialog", () => {
 		expect(calls.length).toBe(1);
 	});
 
-	test("setup that fails on a new worktree is reported as created, the worktree is selected, and nothing suggests starting over", async () => {
+	test("Timber stopping after it created the worktree is reported as created, the worktree is selected, and nothing suggests starting over", async () => {
 		const engine = createMockEngine();
-		engine.endCommands("setup-fails");
+		engine.endCommands("stops-after-create");
 		const { form, submit, render, mode, store, toasts, calls, timberRows } = await openedDialog(engine);
 		form.setSelector("chore/update-deps");
 		expect(await submit()).toBe(false);
@@ -313,43 +317,42 @@ describe("a failure in the dialog", () => {
 		expect(toasts()).toEqual([]);
 
 		const markup = render();
-		expect(markup).toContain('<p class="failure-title">The worktree was created, but setup failed</p>');
+		expect(markup).toContain('<p class="failure-title">The worktree was created, but Timber stopped before setup</p>');
 		expect(markup).not.toContain("Could not open the worktree");
-		expect(markup).toContain("Setup post_create step 1 failed (exit code 1).");
+		expect(markup).toContain("Could not save the base association; created worktree retained at");
 		expect(markup).toContain("chore/update-deps has its worktree, and it is selected in the list. Nothing needs to be created again.");
-		// What the setup step printed sits in the details area, which starts closed.
-		expect(markup).toContain('<details class="failure-details"><summary>Details</summary>');
-		expect(markup).not.toContain("<details open");
-		expect(markup).toContain("error: lockfile had changes, but lockfile is frozen");
 
 		// The fields now name exactly that worktree, with setup ticked. Nothing ran by itself.
 		expect(form.getState()).toMatchObject({ selector: SPARE, setup: true });
-		expect(mode().command).toBe(`timber open --setup --result-file <temporary file> --no-editor --no-agent -- ${SPARE}`);
+		expect(mode().command).toBe(`timber open --no-setup --result-file <temporary file> --no-editor --no-agent -- ${SPARE}`);
+		expect(render()).toContain(`${escaped(`timber open --setup --no-editor --no-agent -- ${SPARE}`)}</pre>`);
 		expect(calls.length).toBe(1);
+		expect(store.getState().terminals).toEqual([]);
 
-		// The person runs setup again once the cause is fixed: the same worktree, nothing new.
+		// The person opens it again: the same worktree, nothing new, and setup starts in its session.
 		engine.endCommands("succeeds");
 		expect(await submit()).toBe(true);
-		expect(calls.at(-1)).toEqual({ repository: TIMBER, selector: SPARE, setup: true });
+		await settle();
+		expect(calls.at(-1)).toEqual({ repository: TIMBER, selector: SPARE });
 		expect(calls.length).toBe(2);
 		expect(timberRows()).toBe(5);
-		// This dialog created it, so the toast says setup finished rather than that it was already there.
-		expect(toasts()).toEqual(["Setup finished in chore/update-deps"]);
+		// This dialog created it, so the toast says setup started rather than that it was already there.
+		expect(toasts()).toEqual(["Setup started in chore/update-deps"]);
 		expect(store.getState().dialog).toBeNull();
+		expect(store.getState().terminals.map(session => session.name)).toContain("Setup");
 	});
 
-	test("setup that fails on a worktree that was already there is reported as opened, not created", async () => {
+	test("setup that fails on a new worktree fails in its session, after the dialog closed", async () => {
 		const engine = createMockEngine();
 		engine.endCommands("setup-fails");
-		const { form, submit, render, store, timberRows } = await openedDialog(engine);
-		form.setSelector("feat/github-issue-lookup");
-		form.setSetup(true);
-		expect(await submit()).toBe(false);
-		const markup = render();
-		expect(markup).toContain('<p class="failure-title">The worktree was opened, but setup failed</p>');
-		expect(markup).toContain("feat/github-issue-lookup has its worktree");
-		expect(timberRows()).toBe(4);
-		expect(selectedWorktree(store.getState())?.worktree.path).toBe(FEATURE);
+		const { form, submit, store, toasts, timberRows } = await openedDialog(engine);
+		form.setSelector("chore/update-deps");
+		expect(await submit()).toBe(true);
+		await settle();
+		await settle();
+		expect(timberRows()).toBe(5);
+		expect(toasts()).toEqual(["Created worktree chore/update-deps"]);
+		expect(store.getState().terminals.find(session => session.name === "Setup")?.state).toEqual({ kind: "exited", exitCode: 1, signal: null });
 	});
 
 	test("a run that leaves no result is a failure that says what happened is unknown, and the list is read again", async () => {
@@ -382,7 +385,7 @@ describe("a failure in the dialog", () => {
 
 	test("editing a field puts the failure and its note away, ready for the corrected run", async () => {
 		const engine = createMockEngine();
-		engine.endCommands("setup-fails");
+		engine.endCommands("stops-after-create");
 		const { form, submit, render, submission } = await openedDialog(engine);
 		form.setSelector("chore/update-deps");
 		await submit();
@@ -396,7 +399,7 @@ describe("a failure in the dialog", () => {
 
 	test("after a failure the branches are read again, since the command may have made one", async () => {
 		const engine = createMockEngine();
-		engine.endCommands("setup-fails");
+		engine.endCommands("stops-after-create");
 		const { form, submit } = await openedDialog(engine);
 		form.setSelector("origin/feat/config-reload");
 		await submit();
@@ -451,7 +454,7 @@ describe("the two modes together", () => {
 
 		const existing = render();
 		expect(existing).toMatch(/class="mode-option selected"><input[^>]*checked=""\/><span class="mode-label">Existing branch/);
-		expect(existing).toContain(`>${escaped("timber open --setup --result-file <temporary file> --no-editor --no-agent -- feat/github-issue-lookup")}</pre>`);
+		expect(existing).toContain(`>${escaped("timber open --no-setup --result-file <temporary file> --no-editor --no-agent -- feat/github-issue-lookup")}</pre>`);
 		expect(existing).toContain(">Open worktree</button>");
 		expect(existing).toContain('role="combobox"');
 		expect(existing).not.toContain('name="name"');
@@ -459,7 +462,7 @@ describe("the two modes together", () => {
 		select(0);
 		const created = render();
 		expect(created).toMatch(/class="mode-option selected"><input[^>]*checked=""\/><span class="mode-label">New branch/);
-		expect(created).toContain(`>${escaped("timber new --base origin/main --result-file <temporary file> --no-editor --no-agent -- 'Fix login bug'")}</pre>`);
+		expect(created).toContain(`>${escaped("timber new --base origin/main --no-setup --result-file <temporary file> --no-editor --no-agent -- 'Fix login bug'")}</pre>`);
 		expect(created).toContain(">Create worktree</button>");
 		expect(created).toContain('value="Fix login bug"');
 		expect(created).not.toContain('role="combobox"');
@@ -502,19 +505,19 @@ describe("the two modes together", () => {
 		await first;
 	});
 
-	test("New branch at created, setup failed: Existing branch still works beside it, and the way back finds Open with setup", async () => {
+	test("New branch after Timber stopped: Existing branch still works beside it, and the way back finds Run setup", async () => {
 		const { engine, model, form, submit, render, select, mode, calls, store, toasts } = await openedDialog();
-		engine.endCommands("setup-fails");
+		engine.endCommands("stops-after-create");
 		select(0);
 		model.edit({ name: "feat/login" });
 		expect(await submit()).toBe(false);
-		expect(mode().submitLabel).toBe("Open with setup");
+		expect(mode().submitLabel).toBe("Run setup");
 
 		// Over to Existing branch: its own empty form and command, and no failure from the other mode.
 		select(1);
 		let markup = render();
 		expect(markup).not.toContain('role="alert"');
-		expect(markup).not.toContain("setup did not finish");
+		expect(markup).not.toContain("stopped before its setup");
 		expect(mode().submitLabel).toBe("Open worktree");
 		expect(mode().canSubmit).toBe(false);
 		// The branch that was just created is in the list to pick from once the list is read again.
@@ -524,9 +527,9 @@ describe("the two modes together", () => {
 		// Back: the worktree still exists, so the mode still offers setup and not another create.
 		select(0);
 		markup = render();
-		expect(mode().submitLabel).toBe("Open with setup");
-		expect(mode().command).toBe("timber open --setup --result-file <temporary file> --no-editor --no-agent -- /work/timber-worktrees/feat-login");
-		expect(markup).toContain("feat/login was created and is in the list, but its setup did not finish.");
+		expect(mode().submitLabel).toBe("Run setup");
+		expect(mode().command).toBe("timber open --setup --no-editor --no-agent -- /work/timber-worktrees/feat-login");
+		expect(markup).toContain("feat/login was created and is in the list, but Timber stopped before its setup.");
 		expect(markup).not.toContain('role="alert"');
 		expect(markup).not.toContain("Create worktree");
 
@@ -535,14 +538,14 @@ describe("the two modes together", () => {
 		select(1);
 		form.setSelector("feat/login");
 		expect(await submit()).toBe(true);
-		expect(calls).toEqual([{ repository: TIMBER, selector: "feat/login", setup: false }]);
+		expect(calls).toEqual([{ repository: TIMBER, selector: "feat/login" }]);
 		expect(toasts()).toEqual(["Opened feat/login. Its worktree was already there."]);
 		expect(store.getState().dialog).toBeNull();
 	});
 
-	test("Existing branch after a failed setup keeps its note and fields through a switch", async () => {
+	test("Existing branch after Timber stopped keeps its note and fields through a switch", async () => {
 		const engine = createMockEngine();
-		engine.endCommands("setup-fails");
+		engine.endCommands("stops-after-create");
 		const { form, submit, render, select, mode } = await openedDialog(engine);
 		form.setSelector("chore/update-deps");
 		expect(await submit()).toBe(false);
@@ -552,6 +555,6 @@ describe("the two modes together", () => {
 		expect(markup).not.toContain('role="alert"');
 		expect(markup).toContain("chore/update-deps has its worktree, and it is selected in the list.");
 		expect(form.getState()).toMatchObject({ selector: SPARE, setup: true });
-		expect(mode().command).toBe(`timber open --setup --result-file <temporary file> --no-editor --no-agent -- ${SPARE}`);
+		expect(mode().command).toBe(`timber open --no-setup --result-file <temporary file> --no-editor --no-agent -- ${SPARE}`);
 	});
 });

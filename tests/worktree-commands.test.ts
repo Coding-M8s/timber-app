@@ -6,7 +6,7 @@ import { readBranches } from "../src/bun/git-engine";
 import { listWorktrees } from "../src/bun/timber-ls";
 import { createWorktreeCommands } from "../src/bun/worktree-commands";
 import { type NewWorktreeRequest, type OpenWorktreeRequest, type TimberStatus, worktreeId } from "../src/shared/model";
-import { newWorktreeArguments, openWorktreeArguments } from "../src/shared/worktree-commands";
+import { newWorktreeArguments, openWorktreeArguments, worktreeSetupArguments } from "../src/shared/worktree-commands";
 import { type StandInRun, git, realTimber, recordedResult, standInResultTimber } from "./support/timber";
 
 const ready = (path: string): TimberStatus => ({ state: "ready", path, version: "0.1.1" });
@@ -65,7 +65,7 @@ describe("createWorktreeCommands, with a stand-in Timber", () => {
 	});
 
 	test("open: runs exactly the arguments the interface shows, in the repository", async () => {
-		const request = { repository, selector: "/work/sample-worktrees/feat-login", setup: true };
+		const request = { repository, selector: "/work/sample-worktrees/feat-login" };
 		const opened = JSON.stringify({ ...JSON.parse(recordedResult.succeeded), command: "open", materialized: false });
 		const { commands, timber } = commandsOn({ result: opened });
 		expect(await commands.open(request)).toMatchObject({ outcome: "succeeded", created: false, worktree: { path: request.selector } });
@@ -76,7 +76,7 @@ describe("createWorktreeCommands, with a stand-in Timber", () => {
 
 	test("a record for another command is not a result", async () => {
 		const { commands } = commandsOn({ result: recordedResult.succeeded });
-		expect(await commands.open({ repository, selector: "feat/login", setup: false })).toMatchObject({ outcome: "failed", worktree: null, created: false });
+		expect(await commands.open({ repository, selector: "feat/login" })).toMatchObject({ outcome: "failed", worktree: null, created: false });
 	});
 
 	test("exit code 0 without a result is a failure with what was printed", async () => {
@@ -86,7 +86,7 @@ describe("createWorktreeCommands, with a stand-in Timber", () => {
 			outcome: "failed",
 			worktree: null,
 			created: false,
-			failure: { command: "timber new --result-file <temporary file> --no-editor --no-agent -- feat/login", output: { text: "Created feat/login\n" } },
+			failure: { command: "timber new --no-setup --result-file <temporary file> --no-editor --no-agent -- feat/login", output: { text: "Created feat/login\n" } },
 		});
 	});
 
@@ -107,7 +107,7 @@ describe("createWorktreeCommands, with a stand-in Timber", () => {
 		const { commands, timber } = commandsOn({ result: recordedResult.succeeded }, { listed: false });
 		for (const result of [
 			await commands.create({ repository, name: "feat/login", base: null }),
-			await commands.open({ repository, selector: "feat/login", setup: true }),
+			await commands.open({ repository, selector: "feat/login" }),
 			await commandsOn({ result: recordedResult.succeeded }).commands.create({ repository: root, name: "feat/login", base: null }),
 		]) {
 			expect(result).toMatchObject({ outcome: "failed", worktree: null, created: false, failure: { command: null, output: null } });
@@ -141,9 +141,9 @@ describe("createWorktreeCommands, with a stand-in Timber", () => {
 	test("a request that is not complete is refused before anything runs, whatever came over the bridge", async () => {
 		const { commands, timber } = commandsOn({ result: recordedResult.succeeded });
 		const incomplete = [
-			await commands.open({ repository, selector: 7, setup: false } as unknown as OpenWorktreeRequest),
-			await commands.open({ repository, selector: "feat/login" } as unknown as OpenWorktreeRequest),
-			await commands.open({ selector: "feat/login", setup: false } as unknown as OpenWorktreeRequest),
+			await commands.open({ repository, selector: 7 } as unknown as OpenWorktreeRequest),
+			await commands.open({ repository } as unknown as OpenWorktreeRequest),
+			await commands.open({ selector: "feat/login" } as unknown as OpenWorktreeRequest),
 			await commands.create({ repository, name: ["--base", "x"], base: null } as unknown as NewWorktreeRequest),
 			await commands.create({ repository, name: "feat/login" } as unknown as NewWorktreeRequest),
 		];
@@ -154,6 +154,7 @@ describe("createWorktreeCommands, with a stand-in Timber", () => {
 				failure: { command: null, diagnostic: `The request for timber ${command} is not complete. Nothing was run.`, output: null },
 				worktree: null,
 				created: false,
+				setupSkipped: false,
 			});
 		}
 		expect(() => timber.notes()).toThrow();
@@ -181,7 +182,7 @@ describe("createWorktreeCommands, with a stand-in Timber", () => {
 		const opened = JSON.stringify({ ...JSON.parse(recordedResult.succeeded), command: "open", materialized: false });
 		for (const selector of ["--setup", " feat/login ", "-"]) {
 			const { commands, timber } = commandsOn({ result: opened });
-			await commands.open({ repository, selector, setup: false });
+			await commands.open({ repository, selector });
 			expect(timber.notes().arguments.slice(-2)).toEqual(["--", selector]);
 		}
 	});
@@ -205,7 +206,7 @@ describe("createWorktreeCommands, with a stand-in Timber", () => {
 			},
 		});
 		const first = commands.create({ repository, name: "one", base: null });
-		const second = commands.open({ repository, selector: "two", setup: false });
+		const second = commands.open({ repository, selector: "two" });
 		const elsewhere = commands.create({ repository: root, name: "three", base: null });
 		await elsewhere;
 		expect(order).toEqual(["start same-1", "start other-2", "end other-2"]);
@@ -218,7 +219,7 @@ describe("createWorktreeCommands, with a stand-in Timber", () => {
 		const spies = (["log", "info", "warn", "error", "debug"] as const).map(method => spyOn(console, method).mockImplementation(() => {}));
 		try {
 			await commandsOn({ result: recordedResult.failed, stdout: "TOKEN=private-value\n", stderr: "also private\n", exitCode: 1 }).commands.create({ repository, name: "x", base: null });
-			await commandsOn({ result: null, stdout: "TOKEN=private-value\n" }).commands.open({ repository, selector: "x", setup: true });
+			await commandsOn({ result: null, stdout: "TOKEN=private-value\n" }).commands.open({ repository, selector: "x" });
 			await commandsOn({ result: recordedResult.succeeded }, { listed: false }).commands.create({ repository, name: "x", base: null });
 			for (const spy of spies) expect(spy).not.toHaveBeenCalled();
 		} finally {
@@ -337,86 +338,62 @@ describe.skipIf(realTimber === null)("createWorktreeCommands, with the installed
 			worktree: null,
 			created: false,
 			failure: {
-				command: "timber new --base shared --result-file <temporary file> --no-editor --no-agent -- feat/ambiguous",
+				command: "timber new --base shared --no-setup --result-file <temporary file> --no-editor --no-agent -- feat/ambiguous",
 				diagnostic: "Base branch shared is missing or ambiguous. Select an exact branch.",
 			},
 		});
 		expect(git(primary, "worktree", "list", "--porcelain") + git(primary, "for-each-ref")).toBe(before);
 	});
 
-	test.skipIf(process.platform === "win32")("a setup script that fails after creation gives created plus failed, and Open with setup runs it again", async () => {
+	test.skipIf(process.platform === "win32")("setup scripts never run during timber new, and Timber says it left them for the app", async () => {
 		const primary = makeRepository();
 		const commands = commandsFor(primary);
-		const config = join(primary, ".timber.toml");
-		writeFileSync(config, '[hooks]\npost_create = ["echo from the hook; echo outcome succeeded >&2; echo ran >> ../hook-runs; exit 7"]\n');
+		writeFileSync(join(primary, ".timber.toml"), '[hooks]\npost_create = ["echo ran >> ../hook-runs; exit 7"]\n');
 
 		const result = await commands.create({ repository: primary, name: "feat/needs-setup", base: null });
-		expect(result).toMatchObject({ outcome: "failed", created: true, worktree: { branch: "feat/needs-setup" } });
-		if (result.outcome !== "failed" || !result.worktree) throw new Error("unreachable");
-		expect(result.failure.diagnostic).toContain("Setup post_create step 1 failed (exit code 7)");
-		// The hook's output is kept for the details area, whatever it says.
-		expect(result.failure.output?.text).toContain("from the hook\n");
-		expect(result.failure.output?.text).toContain("outcome succeeded\n");
-		// The worktree is there, so the list shows it.
+		expect(result).toMatchObject({ outcome: "succeeded", created: true, setupSkipped: true, worktree: { branch: "feat/needs-setup" } });
+		if (result.outcome !== "succeeded") throw new Error("unreachable");
+		// The worktree is there, so the list shows it, and the script did not run: the setup session runs it.
 		expect(listed(primary).map(worktree => worktree.branch)).toEqual(["feat/needs-setup"]);
-		// The script ran in the new worktree.
-		expect(existsSync(join(result.worktree.path, "..", "hook-runs"))).toBe(true);
-
-		// Still failing: the worktree is reported again, and nothing new was created.
-		const setup = { repository: primary, selector: result.worktree.path, setup: true };
-		const again = await commands.open(setup);
-		expect(again).toMatchObject({ outcome: "failed", created: false, worktree: { id: result.worktree.id, path: result.worktree.path } });
-		expect(again.outcome === "failed" && again.failure.command).toBe(`timber open --setup --result-file <temporary file> --no-editor --no-agent -- '${result.worktree.path}'`);
-
-		// Once the script works, the same command finishes setup in the same worktree.
-		writeFileSync(config, '[hooks]\npost_create = ["echo fixed > setup-done"]\n');
-		expect(await commands.open(setup)).toEqual({ outcome: "succeeded", worktree: result.worktree, created: false });
-		expect(existsSync(join(result.worktree.path, "setup-done"))).toBe(true);
-		expect(listed(primary).length).toBe(1);
+		expect(existsSync(join(result.worktree.path, "..", "hook-runs"))).toBe(false);
 		expect(readdirSync(scratch)).toEqual([]);
 	});
 
-	test.skipIf(process.platform === "win32")("a workflow runs its post_create scripts after the ordinary ones, and Open with setup repeats it", async () => {
+	test.skipIf(process.platform === "win32")("a workflow's post_create scripts wait for the setup session too, which runs them after the ordinary ones", async () => {
 		const primary = makeRepository();
 		const commands = commandsFor(primary);
 		const log = join(primary, "..", "setup-order");
 		const config = (workflowScript: string) => writeFileSync(join(primary, ".timber.toml"), [
-			"[hooks]",
-			`post_create = [${JSON.stringify(`echo ordinary >> ${JSON.stringify(log)}`)}]`,
 			"[workflows.review]",
 			'description = "Review a branch"',
 			`post_create = [${JSON.stringify(workflowScript)}]`,
 			"",
 		].join("\n"));
 
+		// Only the workflow has a setup script, and Timber still says it left setup for the app.
 		config(`echo workflow >> ${JSON.stringify(log)}`);
-		const plain = await commands.create({ repository: primary, name: "feat/plain", base: null });
-		expect(plain.outcome).toBe("succeeded");
-		expect(readFileSync(log, "utf8")).toBe("ordinary\n");
-
-		rmSync(log);
 		const picked = await commands.create({ repository: primary, name: "feat/review", base: null, workflow: "review" });
-		expect(picked).toMatchObject({ outcome: "succeeded", created: true, worktree: { branch: "feat/review" } });
-		expect(readFileSync(log, "utf8")).toBe("ordinary\nworkflow\n");
+		expect(picked).toMatchObject({ outcome: "succeeded", created: true, setupSkipped: true, worktree: { branch: "feat/review" } });
+		if (picked.outcome !== "succeeded") throw new Error("unreachable");
+		expect(existsSync(log)).toBe(false);
 
-		// A failing workflow script after creation: created, setup failed.
-		rmSync(log);
-		config(`echo workflow >> ${JSON.stringify(log)}; exit 3`);
-		const failed = await commands.create({ repository: primary, name: "feat/review-fails", base: null, workflow: "review" });
-		expect(failed).toMatchObject({ outcome: "failed", created: true, worktree: { branch: "feat/review-fails" } });
-		if (failed.outcome !== "failed" || !failed.worktree) throw new Error("unreachable");
-		expect(failed.failure.diagnostic).toContain("Setup workflow post_create step 2 failed (exit code 3)");
-		expect(failed.failure.diagnostic).toContain("timber open --setup --workflow review --");
-		expect(readFileSync(log, "utf8")).toBe("ordinary\nworkflow\n");
-
-		// Open with setup, with the same workflow, runs both again in that worktree, and creates nothing.
-		rmSync(log);
-		config(`echo workflow >> ${JSON.stringify(log)}`);
+		// The setup session's command, with the workflow passed again, runs the ordinary scripts and then the workflow's, and creates nothing.
+		writeFileSync(join(primary, ".timber.toml"), [
+			"[hooks]",
+			`post_create = [${JSON.stringify(`echo ordinary >> ${JSON.stringify(log)}`)}]`,
+			"[workflows.review]",
+			'description = "Review a branch"',
+			`post_create = [${JSON.stringify(`echo workflow >> ${JSON.stringify(log)}`)}]`,
+			"",
+		].join("\n"));
 		const worktrees = git(primary, "worktree", "list", "--porcelain");
-		const setup = { repository: primary, selector: failed.worktree.path, setup: true, workflow: "review" };
-		const again = await commands.open(setup);
-		expect(again).toEqual({ outcome: "succeeded", worktree: failed.worktree, created: false });
+		expect(inTerminal(picked.worktree.path, ...worktreeSetupArguments(picked.worktree.path, "review")).exitCode).toBe(0);
 		expect(readFileSync(log, "utf8")).toBe("ordinary\nworkflow\n");
+
+		// Without the workflow, Timber runs only the ordinary scripts: it does not remember the workflow.
+		rmSync(log);
+		expect(inTerminal(picked.worktree.path, ...worktreeSetupArguments(picked.worktree.path)).exitCode).toBe(0);
+		expect(readFileSync(log, "utf8")).toBe("ordinary\n");
 		expect(git(primary, "worktree", "list", "--porcelain")).toBe(worktrees);
 		expect(readdirSync(scratch)).toEqual([]);
 	});
@@ -433,12 +410,18 @@ describe.skipIf(realTimber === null)("createWorktreeCommands, with the installed
 			worktree: null,
 			created: false,
 			failure: {
-				command: "timber new --workflow review --result-file <temporary file> --no-editor --no-agent -- feat/removed",
+				command: "timber new --workflow review --no-setup --result-file <temporary file> --no-editor --no-agent -- feat/removed",
 				diagnostic: "Unknown workflow. Restore its definition or assign another configured workflow with --workflow <name>.",
 			},
 		});
 		expect(git(primary, "worktree", "list", "--porcelain") + git(primary, "for-each-ref")).toBe(before);
 		expect(readdirSync(scratch)).toEqual([]);
+	});
+
+	test("without setup scripts Timber leaves none for the app", async () => {
+		const primary = makeRepository();
+		const result = await commandsFor(primary).create({ repository: primary, name: "feat/no-hooks", base: null });
+		expect(result).toMatchObject({ outcome: "succeeded", created: true, setupSkipped: false });
 	});
 
 	test.skipIf(process.platform === "win32")("an editor configured in Timber does not start", async () => {
@@ -479,7 +462,7 @@ describe.skipIf(realTimber === null)("timber open, with the installed Timber on 
 		existsSync(join(work, "my sample-worktrees")) ? readdirSync(join(work, "my sample-worktrees")).sort().join("\n") : "",
 	].join("\n--\n");
 
-	const open = (selector: string, setup = false, repository = primary) => commands.open({ repository, selector, setup });
+	const open = (selector: string, repository = primary) => commands.open({ repository, selector });
 
 	/** The identity `timber ls --json` gives the worktree at `path` right now. */
 	async function listedId(path: string): Promise<string | undefined> {
@@ -510,7 +493,7 @@ describe.skipIf(realTimber === null)("timber open, with the installed Timber on 
 		}
 		git(primary, "push", "--set-upstream", "origin", "main");
 		// Local branches without a worktree, one branch that only origin has, and one that both remotes have.
-		for (const branch of ["feat/zażółć-login", "feat/reopened", "feat/with-setup", "feat/setup-fails"]) git(primary, "branch", branch, "main");
+		for (const branch of ["feat/zażółć-login", "feat/reopened", "feat/with-setup"]) git(primary, "branch", branch, "main");
 		git(primary, "push", "origin", "main:feat/remote-only", "main:twice");
 		git(primary, "push", "fork", "main:twice");
 		git(primary, "fetch", "--all");
@@ -565,42 +548,20 @@ describe.skipIf(realTimber === null)("timber open, with the installed Timber on 
 		expect(git(result.worktree.path, "rev-parse", "--abbrev-ref", "@{upstream}").trim()).toBe("origin/feat/remote-only");
 	});
 
-	test("Rerun setup runs the setup step again on an existing worktree, named by its absolute path", async () => {
-		setupHook("echo ran >> setup.log");
-		const created = await open("feat/with-setup");
-		expect(created).toMatchObject({ outcome: "succeeded", created: true });
-		if (created.outcome !== "succeeded") return;
-		const log = () => readFileSync(join(created.worktree.path, "setup.log"), "utf8");
-		// A new worktree always gets its setup.
-		expect(log()).toBe("ran\n");
-
-		// Opening it again leaves setup alone.
-		expect(await open("feat/with-setup")).toMatchObject({ outcome: "succeeded", created: false });
-		expect(log()).toBe("ran\n");
-
-		// "Open with setup": the exact path as the selector, with --setup.
-		const worktrees = git(primary, "worktree", "list", "--porcelain");
-		const rerun = await open(created.worktree.path, true);
-		expect(rerun).toEqual({ outcome: "succeeded", worktree: created.worktree, created: false });
-		expect(log()).toBe("ran\nran\n");
-		expect(git(primary, "worktree", "list", "--porcelain")).toBe(worktrees);
-	});
-
-	test("a setup step that fails reports the worktree, and its output is kept but never logged", async () => {
-		setupHook("echo TOKEN=private-value; exit 7");
+	test("setup scripts never run during timber open: Timber says it left them only when it created the worktree", async () => {
+		setupHook("echo TOKEN=private-value >> setup.log; exit 7");
 		const spies = (["log", "info", "warn", "error", "debug"] as const).map(method => spyOn(console, method).mockImplementation(() => {}));
 		try {
-			// On a worktree this run creates: it exists afterwards, and the result says it was created.
-			const created = await open("feat/setup-fails");
-			expect(created).toMatchObject({ outcome: "failed", created: true, worktree: { branch: "feat/setup-fails" } });
-			if (created.outcome !== "failed" || !created.worktree) throw new Error("Timber named no worktree");
-			expect(created.failure.diagnostic).toContain("Setup post_create step 1 failed (exit code 7)");
-			expect(created.failure.output?.text).toContain("TOKEN=private-value");
-			expect(git(primary, "worktree", "list", "--porcelain")).toContain(`worktree ${created.worktree.path}\n`);
+			const created = await open("feat/with-setup");
+			expect(created).toMatchObject({ outcome: "succeeded", created: true, setupSkipped: true });
+			if (created.outcome !== "succeeded") return;
+			expect(existsSync(join(created.worktree.path, "setup.log"))).toBe(false);
 
-			// On a worktree that was already there: the same worktree, not created.
-			const existing = await open(created.worktree.path, true);
-			expect(existing).toMatchObject({ outcome: "failed", created: false, worktree: created.worktree });
+			// Opening it again, by its exact path, creates nothing and leaves nothing to set up.
+			const before = fingerprint();
+			expect(await open(created.worktree.path)).toEqual({ outcome: "succeeded", worktree: created.worktree, created: false, setupSkipped: false });
+			expect(existsSync(join(created.worktree.path, "setup.log"))).toBe(false);
+			expect(fingerprint()).toBe(before);
 			for (const spy of spies) expect(spy).not.toHaveBeenCalled();
 		} finally {
 			for (const spy of spies) spy.mockRestore();
@@ -612,7 +573,7 @@ describe.skipIf(realTimber === null)("timber open, with the installed Timber on 
 		const result = await open("no/such-branch");
 		expect(result).toMatchObject({ outcome: "failed", worktree: null, created: false });
 		expect(result.outcome === "failed" && result.failure.diagnostic).toBe('No existing branch or worktree matches "no/such-branch". Check the exact branch or absolute worktree path.');
-		expect(result.outcome === "failed" && result.failure.command).toBe("timber open --result-file <temporary file> --no-editor --no-agent -- no/such-branch");
+		expect(result.outcome === "failed" && result.failure.command).toBe("timber open --no-setup --result-file <temporary file> --no-editor --no-agent -- no/such-branch");
 		expect(fingerprint()).toBe(before);
 	});
 
@@ -639,7 +600,7 @@ describe.skipIf(realTimber === null)("timber open, with the installed Timber on 
 	test("a repository that is not in the list is refused before Timber runs, and stays as it was", async () => {
 		const state = () => [git(outside, "for-each-ref"), git(outside, "worktree", "list", "--porcelain"), readdirSync(work).sort().join("\n")].join("\n--\n");
 		const before = state();
-		const result = await open("feat/elsewhere", false, outside);
+		const result = await open("feat/elsewhere", outside);
 		expect(result).toMatchObject({ outcome: "failed", failure: { command: null, diagnostic: `${outside} is not a repository in the app's list. Nothing was run.` }, worktree: null });
 		expect(state()).toBe(before);
 	});
