@@ -16,6 +16,7 @@ export const SETTINGS_LABEL = "Settings";
 export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
 	layout: "Layout",
 	theme: "Theme",
+	terminal: "Terminal",
 	editor: "Editor",
 	agents: "Agents",
 	fetch: "Fetching",

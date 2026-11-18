@@ -9,6 +9,7 @@ import { FetchSection } from "./settings/FetchSection";
 import { LayoutSection } from "./settings/LayoutSection";
 import { SettingsSavingContext } from "./settings/SettingsSection";
 import { MachineSection, RepositorySection } from "./settings/TimberSections";
+import { TerminalSection } from "./settings/TerminalSection";
 import { ThemeSection } from "./settings/ThemeSection";
 
 /**
@@ -19,6 +20,7 @@ import { ThemeSection } from "./settings/ThemeSection";
 const SECTION_VIEWS: Record<SettingsSection, ComponentType> = {
 	layout: LayoutSection,
 	theme: ThemeSection,
+	terminal: TerminalSection,
 	editor: EditorSection,
 	agents: AgentsSection,
 	fetch: FetchSection,

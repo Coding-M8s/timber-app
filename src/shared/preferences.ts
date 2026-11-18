@@ -9,6 +9,7 @@ import { readCustomThemes, salvageCustomThemes, sameCustomThemes, writeCustomThe
 import { type Theme, type ThemeChoice, defaultThemeChoice, readThemeChoice, sameThemeChoice, writeThemeChoice } from "./theme";
 import { DEFAULT_ZOOM, readZoom } from "./zoom";
 import { type FetchSetting, defaultFetchSetting, readFetchSetting, salvageFetchSetting, sameFetchSetting, writeFetchSetting } from "./fetch-setting";
+import { type TerminalAppearance, defaultTerminalAppearance, readTerminalAppearance, salvageTerminalAppearance, sameTerminalAppearance, writeTerminalAppearance } from "./terminal-appearance";
 
 /** The sides of the window the sidebar can be on. */
 export const SIDEBAR_SIDES = ["left", "right"] as const;
@@ -39,6 +40,12 @@ export interface Preferences {
 	 * theme's.
 	 */
 	customThemes: readonly Theme[];
+	/**
+	 * How terminals are drawn: the font family, the text size, and the
+	 * cursor's shape. A part of it in the file that cannot be read takes its
+	 * default, and a size outside the limits is clamped.
+	 */
+	terminal: TerminalAppearance;
 }
 
 /** How one preference is read from outside, compared, and written to the settings file. */
@@ -107,6 +114,13 @@ export const PREFERENCE_PARTS: { [Key in keyof Preferences]: PreferencePart<Pref
 		same: sameCustomThemes,
 		write: writeCustomThemes,
 		salvage: salvageCustomThemes,
+	},
+	terminal: {
+		fallback: defaultTerminalAppearance,
+		read: readTerminalAppearance,
+		same: sameTerminalAppearance,
+		write: writeTerminalAppearance,
+		salvage: salvageTerminalAppearance,
 	},
 };
 

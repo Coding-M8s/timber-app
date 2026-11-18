@@ -2,6 +2,8 @@ import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { type SessionMenuItem, describeSessionProblemTitle, describeStarting, menuIndexAfterKey, sessionMenuChoice, sessionMenuItems } from "../agent-format";
 import type { Repository, Worktree } from "../../shared/model";
 import { SESSION_NAME_LIMIT, type TerminalSession } from "../../shared/terminal";
+import { estimateTerminalCells } from "../../shared/terminal-appearance";
+import { terminalAppearance } from "../terminal-look";
 import { useAppState, useStore } from "../store/react";
 import { sessionsOf, shownSession } from "../store/state";
 import {
@@ -38,13 +40,9 @@ const focusSoon = (id: string) => void setTimeout(() => document.getElementById(
 /** How long a pane's size must rest before the terminal follows it. */
 const RESIZE_MILLISECONDS = 50;
 
-/** Roughly how many cells fit in an element, for 13 pixel text at 1.2 line height. 80 by 24 when it has no size. */
+/** Roughly how many cells fit in an element, at the text size chosen in Settings. 80 by 24 when it has no size. */
 export function estimateTerminalSize(element: HTMLElement | null): { cols: number; rows: number } {
-	const width = element?.clientWidth ?? 0;
-	const height = element?.clientHeight ?? 0;
-	if (width === 0 || height === 0) return { cols: 80, rows: 24 };
-	// The row of chips and the terminal's padding take about 50 pixels.
-	return { cols: Math.max(20, Math.floor((width - 16) / 7.8)), rows: Math.max(5, Math.floor((height - 50) / 15.6)) };
+	return estimateTerminalCells(element?.clientWidth ?? 0, element?.clientHeight ?? 0, terminalAppearance().fontSize);
 }
 
 export const FOLDER_MISSING_TERMINAL = "The worktree's folder is missing, so a terminal cannot start there.";
