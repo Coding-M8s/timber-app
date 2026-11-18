@@ -45,7 +45,7 @@ describe("rebasing from the store", () => {
 		const engine = createMockEngine();
 		engine.endRebases(null);
 		const { store } = await startedStore(engine);
-		// Any Timber session that stops reads the whole list again (see `setupStopped` in the store).
+		// Any Timber session that stops reads the whole list again (see `timberSessionStopped` in the store).
 		const reads: string[] = [];
 		const list = engine.listRepositories.bind(engine);
 		engine.listRepositories = () => {

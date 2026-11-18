@@ -9,6 +9,8 @@ import { type CheckOutcome, type GroupOutcome, GitFields, LauncherFields, SaveOu
 import { TimberFailureDetails } from "./TimberFailureDetails";
 
 const IDLE: GroupOutcome = { state: "idle" };
+/** How long the last step shows before Save acts, so a double click on Next cannot save unseen. */
+const SAVE_DELAY_MILLISECONDS = 500;
 const ALL_DRAWN = Object.values(DRAWN_PATHS).flat();
 
 /**
@@ -37,6 +39,11 @@ export function SetupWizardDialog({ repository }: { repository: Repository }) {
 	const [editTracked, setEditTracked] = useState(false);
 	// A ref, not the state: a second Enter or an Escape can arrive before the next render.
 	const saving = useRef(false);
+	// When the shown step last changed. A second click of a double click, or a held Enter, that walked
+	// onto the last step must not save before the command there could be seen.
+	const stepShownAt = useRef(0);
+	const stepTitle = useRef<HTMLParagraphElement>(null);
+	const firstRender = useRef(true);
 
 	const [read, readAgain] = useTimberRead({ scope, repository: scope === "repository" ? repository.path : null }, scope);
 	const [machineRead] = useTimberRead(scope === "repository" ? { scope: "machine", repository: null } : null, scope);
@@ -47,6 +54,16 @@ export function SetupWizardDialog({ repository }: { repository: Repository }) {
 		if (element && !element.open) element.showModal();
 		return () => element?.close();
 	}, []);
+
+	// Each step takes the focus on its title, so Enter held on Next stops there, and a screen reader hears the step.
+	useEffect(() => {
+		stepShownAt.current = performance.now();
+		if (firstRender.current) {
+			firstRender.current = false;
+			return;
+		}
+		stepTitle.current?.focus();
+	}, [step]);
 
 	const close = () => {
 		if (!saving.current) store.closeDialog();
@@ -115,8 +132,8 @@ export function SetupWizardDialog({ repository }: { repository: Repository }) {
 	const submit = (event: SubmitEvent<HTMLFormElement>) => {
 		event.preventDefault();
 		if (busy || settings === null) return;
-		if (step === "review") void save();
-		else setStep(WIZARD_STEPS[index + 1]!);
+		if (step !== "review") setStep(WIZARD_STEPS[index + 1]!);
+		else if (performance.now() - stepShownAt.current >= SAVE_DELAY_MILLISECONDS) void save();
 	};
 
 	const groupProps = <Group extends TimberGroup>(group: Group) => ({
@@ -127,12 +144,33 @@ export function SetupWizardDialog({ repository }: { repository: Repository }) {
 		messages,
 	});
 
+	const scopeChoice = (
+		<fieldset className="settings-choice">
+			<legend className="field-label">Save these settings for</legend>
+			{(["repository", "machine"] as const).map(candidate => (
+				<label key={candidate} className="check">
+					<input type="radio" name={`${titleId}-scope`} value={candidate} checked={scope === candidate} onChange={() => chooseScope(candidate)} />
+					<span className="check-text">
+						{describeScope(candidate, repository.name)}
+						<span className="check-hint">
+							{candidate === "repository"
+								? `In ${REPOSITORY_CONFIG_FILE} in its primary checkout. The machine defaults fill in what it leaves alone.`
+								: "As machine defaults, as timber setup --global saves them. A repository's own settings take their place."}
+						</span>
+					</span>
+				</label>
+			))}
+		</fieldset>
+	);
+
 	let body;
 	if (result === null) {
 		body = <p className="settings-section-text" role="status">Reading</p>;
 	} else if (result.outcome === "failed") {
 		body = (
 			<>
+				{/* The other scope stays a choice, so a file Timber cannot read does not hold the wizard on it. */}
+				{step === "scope" && scopeChoice}
 				<TimberFailureDetails title="Could not read these settings" failure={result.failure} />
 				<p className="dialog-note">Nothing can be set up here until Timber can read them. A file Timber cannot read is fixed in an editor.</p>
 				<div><button type="button" className="button quiet" disabled={read.reading} onClick={() => void readAgain()}>{read.reading ? "Reading" : "Read again"}</button></div>
@@ -145,22 +183,7 @@ export function SetupWizardDialog({ repository }: { repository: Repository }) {
 					Everything works with Timber's defaults. These steps set your editor, coding assistant, starting branch, setup scripts, and issue tracking.
 					Each one can be left as it is. Nothing is saved until the last step.
 				</p>
-				<fieldset className="settings-choice">
-					<legend className="field-label">Save these settings for</legend>
-					{(["repository", "machine"] as const).map(candidate => (
-						<label key={candidate} className="check">
-							<input type="radio" name={`${titleId}-scope`} value={candidate} checked={scope === candidate} onChange={() => chooseScope(candidate)} />
-							<span className="check-text">
-								{describeScope(candidate, repository.name)}
-								<span className="check-hint">
-									{candidate === "repository"
-										? `In ${REPOSITORY_CONFIG_FILE} in its primary checkout. The machine defaults fill in what it leaves alone.`
-										: "As machine defaults, as timber setup --global saves them. A repository's own settings take their place."}
-								</span>
-							</span>
-						</label>
-					))}
-				</fieldset>
+				{scopeChoice}
 				<p className="settings-section-text">
 					{settings!.exists ? <>Changes <span className="mono">{settings!.path}</span>.</> : <>Creates <span className="mono">{settings!.path}</span>.</>}
 				</p>
@@ -221,7 +244,7 @@ export function SetupWizardDialog({ repository }: { repository: Repository }) {
 				<header className="dialog-head">
 					<h2 id={titleId} className="dialog-title">Set up Timber for {repository.name}</h2>
 				</header>
-				<p id={stepTitleId} className="wizard-step" aria-live="polite">
+				<p id={stepTitleId} ref={stepTitle} tabIndex={-1} className="wizard-step" aria-live="polite">
 					Step {index + 1} of {WIZARD_STEPS.length}: {WIZARD_STEP_TITLES[step]}
 				</p>
 				<fieldset className="dialog-fields" disabled={busy}>{body}</fieldset>

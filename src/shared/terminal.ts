@@ -4,7 +4,6 @@
  * interface only draws what it prints and passes on what is typed.
  */
 
-
 /** Whether a session's process still runs, or how it ended. */
 export type TerminalState =
 	| { kind: "running" }

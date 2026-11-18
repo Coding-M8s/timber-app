@@ -3375,8 +3375,8 @@ printed the backtrace of the error handler itself:
 
 Not run yet:
 
-- Saving settings through `timber setup` inside the app. Setup was started
-  and cancelled only.
+- The setup wizard and the agent's keyboard focus in the desktop app. Both
+  were run in the browser build only (see below).
 - The GitHub integration with a signed-in `gh` in the desktop app. Only a
   stand-in for its exit code was used.
 - Timber's settings on macOS or Windows, including where the machine file
@@ -3946,6 +3946,31 @@ clicking and typing themselves, and reported that every step worked:
 - Nothing looked wrong to them.
 - Not recorded: which editor, the GPU and driver, the versions, and the
   log. Not run: fractional scaling.
+
+Run for the setup wizard (issue 95) and the agent's keyboard focus, Linux
+x64 with Bun 1.4.2, Git 2.43.0, Timber 0.1.2, and headless Google Chrome
+151 driven over the DevTools protocol against `bun run dev:web`, with real
+pointer clicks and typed text:
+
+- `bun run typecheck`: no errors. `bun test`: every test passed.
+- `timber __app-config apply --scope repository` with empty values, in a new
+  temporary repository: exit code 0, and Timber wrote `.timber.toml`, so a
+  save with every choice left alone sets a repository up.
+- Add repository, then Set up Timber on `docs-site`: the wizard opened at
+  "Step 1 of 7: Where to save". The Zed preset filled the editor; the last
+  step listed "zed --new" and showed
+  `timber __app-config apply --scope repository --input-file <settings draft> --result-file <temporary file>`.
+  Save closed the wizard and the prompt was gone, with no focus change.
+- Cancel left the prompt. "Every repository on this machine" showed the
+  machine file and `--scope global`; saving it removed the prompt too.
+- A click on a worktree row with an agent running, on another row and
+  back, and on the row already selected, put the focus in the terminal
+  (`xterm-helper-textarea`). New worktree with Claude Code as its agent
+  closed the dialog, selected the new worktree, and put the focus in its
+  agent's terminal.
+- No console errors.
+- Not run: the desktop window, where the order of the dialog closing and
+  the session showing may differ from the browser build.
 
 Not run yet:
 
