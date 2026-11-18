@@ -3,11 +3,12 @@ import type { AppStore } from "../../store/store";
 import type { Submission } from "../../store/submission";
 import { type AgentPick, chosenAgent, runWithAgent } from "./agent-choice";
 import type { WorktreeDialogMode } from "./mode";
+import type { WorkflowOptions } from "./workflow-choice";
 
 /**
  * What the New worktree dialog does between its modes and its one
- * submission, without React: which mode shows, which agent is picked, and
- * how a run starts that agent. ../NewWorktreeDialog.tsx only draws this, so
+ * submission, without React: which mode shows, which agent is picked, the
+ * workflows every mode offers, and how a run starts that agent. ../NewWorktreeDialog.tsx only draws this, so
  * tests drive the same wiring the window uses.
  */
 
@@ -16,6 +17,8 @@ export interface WorktreeDialogChoices {
 	selected: number;
 	/** The Agent field as the person left it. */
 	pick: AgentPick;
+	/** The repository's workflows for the modes' Workflow fields: undefined until read. */
+	workflows: WorkflowOptions;
 }
 
 export interface WorktreeDialogController {
@@ -26,6 +29,8 @@ export interface WorktreeDialogController {
 	select(index: number): void;
 	/** Pick an agent by name, or null for None. */
 	pickAgent(pick: string | null): void;
+	/** Read the repository's workflows. Only the latest read counts. Never throws. */
+	readWorkflows(): Promise<void>;
 	/** The agent that starts after a worktree is created, from the agents saved now. */
 	agent(): AgentSetting | null;
 	/**
@@ -43,12 +48,13 @@ export function pickOfOption(value: string): string | null {
 
 /** `repository` is the path of the primary checkout. */
 export function createWorktreeDialogController(
-	store: Pick<AppStore, "getState" | "startAgentIn">,
+	store: Pick<AppStore, "getState" | "startAgentIn" | "listWorkflows">,
 	repository: string,
 	submission: Pick<Submission, "getState" | "submit" | "clearFailure">,
 ): WorktreeDialogController {
-	let state: WorktreeDialogChoices = { selected: 0, pick: undefined };
+	let state: WorktreeDialogChoices = { selected: 0, pick: undefined, workflows: undefined };
 	const listeners = new Set<() => void>();
+	let latestRead = 0;
 
 	function update(change: Partial<WorktreeDialogChoices>): void {
 		state = { ...state, ...change };
@@ -69,6 +75,11 @@ export function createWorktreeDialogController(
 			submission.clearFailure();
 		},
 		pickAgent: pick => update({ pick }),
+		async readWorkflows() {
+			const read = ++latestRead;
+			const workflows = await store.listWorkflows(repository);
+			if (read === latestRead) update({ workflows });
+		},
 		agent,
 		submit(mode) {
 			// The agent as picked when the person submitted, not when the command ends.

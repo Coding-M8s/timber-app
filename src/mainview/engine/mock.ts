@@ -729,7 +729,7 @@ export function createMockEngine(
 	});
 	terminals.onTerminalChanged(change => alerts.changed(change));
 	const timberConfig = createMockTimberConfig(path => current.some(repository => repository.path === path), () => typeof timber === "function" ? timber() : timber, saveSetup);
-	const workflows = createMockWorkflows(path => current.some(repository => repository.path === path), () => typeof timber === "function" ? timber() : timber);
+	const { workflowNames, ...workflows } = createMockWorkflows(path => current.some(repository => repository.path === path), () => typeof timber === "function" ? timber() : timber);
 	const pullRequests = createMockPullRequests(path => current.find(repository => repository.path === path && repository.available), () => typeof timber === "function" ? timber() : timber);
 	const issues = createMockIssues(path => current.find(repository => repository.path === path && repository.available), () => typeof timber === "function" ? timber() : timber);
 	const backups = createMockBackups({
@@ -783,8 +783,8 @@ export function createMockEngine(
 			current = applyOrder(current, order);
 			return { outcome: "saved" };
 		},
-		newWorktree: request => command(request.repository, repository => actOutNew(repository, request, ending)),
-		openWorktree: request => command(request.repository, repository => actOutOpen(repository, request, ending, listedBranches(repository) ?? [])),
+		newWorktree: request => command(request.repository, repository => actOutNew(repository, request, ending, workflowNames(repository.path))),
+		openWorktree: request => command(request.repository, repository => actOutOpen(repository, request, ending, listedBranches(repository) ?? [], workflowNames(repository.path))),
 		async rebaseWorktree(request) {
 			const refuse = (diagnostic: string): RebaseResult => ({ outcome: "failed", ran: false, failure: { command: null, diagnostic: `${diagnostic} Nothing was run.`, output: null } });
 			if (commandMilliseconds > 0) await new Promise(resolve => setTimeout(resolve, commandMilliseconds));

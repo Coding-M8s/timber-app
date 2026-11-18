@@ -10,19 +10,22 @@ import type { ResultRecord, TimberRun } from "./timber-result";
  * Options come first, then `--`, then the person's text as one argument, so
  * text that starts with a dash is never read as an option. Both commands
  * always pass `--no-editor --no-agent`: the app never lets Timber start a
- * launcher, and Timber requires both beside `--result-file`.
+ * launcher, and Timber requires both beside `--result-file`. A picked
+ * workflow is `--workflow <name>`, among the options.
  */
+
+const workflowArguments = (workflow: string | undefined): string[] => (workflow === undefined ? [] : ["--workflow", workflow]);
 
 /** Everything after `timber` for creating a worktree. `resultFile` is put in as it is. */
 export function newWorktreeArguments(request: NewWorktreeRequest, resultFile: string): string[] {
 	const base = request.base === null ? [] : ["--base", request.base];
-	return ["new", ...base, "--result-file", resultFile, "--no-editor", "--no-agent", "--", request.name];
+	return ["new", ...base, ...workflowArguments(request.workflow), "--result-file", resultFile, "--no-editor", "--no-agent", "--", request.name];
 }
 
 /** Everything after `timber` for opening a worktree. `resultFile` is put in as it is. */
 export function openWorktreeArguments(request: OpenWorktreeRequest, resultFile: string): string[] {
 	const setup = request.setup ? ["--setup"] : [];
-	return ["open", ...setup, "--result-file", resultFile, "--no-editor", "--no-agent", "--", request.selector];
+	return ["open", ...setup, ...workflowArguments(request.workflow), "--result-file", resultFile, "--no-editor", "--no-agent", "--", request.selector];
 }
 
 /** The worktree in a record, or null when the record names none or does not say which repository it is in. */

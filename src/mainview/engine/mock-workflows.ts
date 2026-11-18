@@ -14,6 +14,12 @@ export interface WorkflowControls {
 	setWorkflows(repository: string, list: WorkflowList | null): void;
 }
 
+/** What the pretend `timber new` and `timber open` know of, for refusing a workflow as Timber does. */
+export interface WorkflowNames {
+	/** The names of the workflows a repository has now. None when its list is a failure, as Timber then cannot read its settings. */
+	workflowNames(repository: string): string[];
+}
+
 /** Sample workflows, one for each kind of agent: a command, none, and not set. */
 export const sampleWorkflows: Workflow[] = [
 	{ name: "review", description: "Check out a pull request to review", agent: { kind: "command", command: "claude", args: ["--permission-mode", "plan"] } },
@@ -33,19 +39,24 @@ export const sampleWorkflowLists: Readonly<Record<string, WorkflowList>> = {
  * tests. As the main process does, a repository must be in the list and
  * Timber must be ready, with the main process's words for when it is not.
  */
-export function createMockWorkflows(isListed: (path: string) => boolean, timber: () => TimberStatus): WorkflowCapabilities & WorkflowControls {
+export function createMockWorkflows(isListed: (path: string) => boolean, timber: () => TimberStatus): WorkflowCapabilities & WorkflowControls & WorkflowNames {
 	const chosen = new Map<string, WorkflowList>();
+	const answer = (repository: string): WorkflowList => chosen.get(repository) ?? sampleWorkflowLists[repository] ?? { ok: true, workflows: [] };
 	return {
 		async listWorkflows(repository) {
 			if (!isListed(repository)) return { ok: false, message: `${repository} is not a repository in the app's list.` };
 			const status = timber();
 			if (status.state === "not-found") return { ok: false, message: "Timber was not found on PATH." };
 			if (status.state === "too-old") return { ok: false, message: `Timber ${status.found} at ${status.path} is older than the required ${status.required}.` };
-			return structuredClone(chosen.get(repository) ?? sampleWorkflowLists[repository] ?? { ok: true, workflows: [] });
+			return structuredClone(answer(repository));
 		},
 		setWorkflows(repository, list) {
 			if (list === null) chosen.delete(repository);
 			else chosen.set(repository, structuredClone(list));
+		},
+		workflowNames(repository) {
+			const list = answer(repository);
+			return list.ok ? list.workflows.map(workflow => workflow.name) : [];
 		},
 	};
 }

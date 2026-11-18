@@ -192,7 +192,7 @@ describe("creating a worktree", () => {
 		expect(store.getState().selection).toEqual(selected);
 		expect(toasts()).toEqual([]);
 		expect(asked.length).toBe(1);
-		expect(model.getState()).toEqual({ fields: { name: "feat/login", base: "shared" }, step: { kind: "form" } });
+		expect(model.getState()).toEqual({ fields: { name: "feat/login", base: "shared", workflow: null }, step: { kind: "form" } });
 
 		const markup = render();
 		expect(markup).toContain('role="alert"');
@@ -321,7 +321,7 @@ describe("created, setup failed", () => {
 		expect(render()).toContain('<button type="button" class="text-button">Back to the form</button>');
 		model.backToForm();
 		submission.clearFailure();
-		expect(model.getState()).toEqual({ fields: { name: "feat/login", base: "" }, step: { kind: "form" } });
+		expect(model.getState()).toEqual({ fields: { name: "feat/login", base: "", workflow: null }, step: { kind: "form" } });
 		expect(mode().submitLabel).toBe("Create worktree");
 		expect(mode().command).toBe("timber new --result-file <temporary file> --no-editor --no-agent -- feat/login");
 		expect(render()).not.toContain('role="alert"');

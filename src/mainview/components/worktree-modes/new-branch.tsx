@@ -4,6 +4,7 @@ import { useStore } from "../../store/react";
 import type { Submission } from "../../store/submission";
 import type { WorktreeDialogMode } from "./mode";
 import { type NewBranchModel, type NewBranchState, canCreate, createNewBranchModel, describeStep, reportedLabel, shownCommand } from "./new-branch-model";
+import { WorkflowField, type WorkflowOptions, chosenWorkflow } from "./workflow-choice";
 
 /**
  * The "New branch" mode drawn from its model (see ./new-branch-model.ts).
@@ -19,21 +20,24 @@ export function newBranchMode(
 	model: NewBranchModel,
 	state: NewBranchState,
 	repository: Repository,
-	submission: Pick<Submission, "clearFailure">,
+	submission: Pick<Submission, "clearFailure" | "getState">,
+	workflows: WorkflowOptions = undefined,
 ): WorktreeDialogMode {
 	const { fields, step } = state;
 	const edit = (change: Partial<NewBranchState["fields"]>) => {
 		model.edit(change);
 		submission.clearFailure();
 	};
+	// The command and the run take the same workflow, so the footer shows what runs.
+	const workflow = chosenWorkflow(workflows, fields.workflow);
 	return {
 		label: "New branch",
-		command: shownCommand(repository.path, state),
+		command: shownCommand(repository.path, state, workflow),
 		canSubmit: step.kind === "setup" || canCreate(fields),
 		...describeStep(step),
 		// `timber new` creates the worktree when it works, and "Open with setup" finishes one this mode created.
 		agentStart: "always",
-		run: () => model.run(),
+		run: () => model.run(workflow),
 		fields: step.kind === "form"
 			? (
 				<>
@@ -64,6 +68,7 @@ export function newBranchMode(
 						/>
 						<span className="field-hint">Optional. A branch to start from instead.</span>
 					</label>
+					<WorkflowField options={workflows} chosen={workflow} disabled={submission.getState().running} onPick={pick => edit({ workflow: pick })} />
 				</>
 			)
 			: (
@@ -73,7 +78,8 @@ export function newBranchMode(
 					</p>
 					<p className="dialog-outcome-text path">{step.worktree.path}</p>
 					<p className="dialog-outcome-text">
-						Open with setup runs every setup script again in that worktree, from the first one. Nothing is created again.
+						Open with setup runs every setup script again in that worktree, from the first one
+						{step.workflow === null ? "" : `, with the ${step.workflow} workflow`}. Nothing is created again.
 					</p>
 					<button
 						type="button"
@@ -91,9 +97,9 @@ export function newBranchMode(
 }
 
 /** The mode for creating a worktree on a new branch with `timber new`, in `repository`. */
-export function useNewBranchMode(repository: Repository, submission: Submission): WorktreeDialogMode {
+export function useNewBranchMode(repository: Repository, submission: Submission, workflows: WorkflowOptions): WorktreeDialogMode {
 	const store = useStore();
 	const [model] = useState(() => createNewBranchModel(store, repository.path));
 	const state = useSyncExternalStore(model.subscribe, model.getState, model.getState);
-	return newBranchMode(model, state, repository, submission);
+	return newBranchMode(model, state, repository, submission, workflows);
 }
