@@ -16,7 +16,7 @@ export const RESULT_FILE_PLACEHOLDER = "<temporary file>";
 /**
  * Stands for the approval file of `timber __ide-done apply` wherever that
  * command is shown. The real file is a private temporary one that holds the
- * preview Timber printed, unchanged.
+ * approval fields from Timber's preview.
  */
 export const APPROVAL_FILE_PLACEHOLDER = "<approved preview>";
 

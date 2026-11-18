@@ -445,9 +445,9 @@ describe("with a stand-in for Timber", () => {
 		};
 	}
 
-	test("the approval file holds exactly the bytes Timber printed, in a private folder outside the repository", async () => {
-		// Not how Timber formats it, to show that nothing is parsed and written again.
-		const printed = `${JSON.stringify(JSON.parse(here(recordedDone.previews.dirty)), null, 3)}  \n\n`;
+	test("the private approval file holds only the fields Timber needs to validate the preview", async () => {
+		const record = JSON.parse(here(recordedDone.previews.dirty));
+		const printed = JSON.stringify(record);
 		const { timber, preview, apply } = standIn({ result: here(recordedDone.results.removed), stdout: printed });
 
 		const result = await preview();
@@ -459,7 +459,14 @@ describe("with a stand-in for Timber", () => {
 
 		expect(await apply(result.outcome === "previewed" ? result.id : "")).toEqual({ outcome: "removed" });
 		const notes = timber.notes();
-		expect(Buffer.from(notes.approval!, "base64").toString("utf8")).toBe(printed);
+		expect(JSON.parse(Buffer.from(notes.approval!, "base64").toString("utf8"))).toEqual({
+			schemaVersion: 1,
+			snapshot: record.snapshot,
+			expiresAt: record.expiresAt,
+			repository: record.repository,
+			worktree: { path: worktree, canonicalPath: record.worktree.canonicalPath },
+			options: record.options,
+		});
 		expect(notes.arguments).toEqual(doneApplyArguments(notes.approvalFile!, notes.resultFile!, worktree));
 		expect(dirname(notes.approvalFile!)).toBe(dirname(notes.resultFile!));
 		expect(dirname(dirname(notes.approvalFile!))).toBe(scratch);

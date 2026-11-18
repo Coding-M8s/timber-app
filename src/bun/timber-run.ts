@@ -18,8 +18,7 @@ export interface TimberRunRequest {
 	 */
 	arguments: (resultFile: string, inputFile: string) => string[];
 	/**
-	 * A file Timber reads, such as the preview the person approved for
-	 * `timber __ide-done apply`, exactly the bytes Timber printed, or the
+	 * A file Timber reads, such as the approval for `timber __ide-done apply`, or the
 	 * settings draft for `timber __app-config apply`, which can hold
 	 * credentials. It is written unchanged to a new file that only this user
 	 * can read, beside the result file in the same private folder, before

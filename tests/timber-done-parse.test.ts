@@ -116,8 +116,10 @@ describe("readDonePreview, on anything else", () => {
 		expect(message(changed(previews.clean, { expiresAt: "soon" }))).toContain("when it expires");
 		expect(message(changed(previews.clean, { expiresAt: 1.5 }))).toContain("when it expires");
 		expect(message(changed(previews.clean, { repository: null }))).toContain("which repository");
+		expect(without(value => delete value.repository.currentWorktreeRoot)).toContain("which repository");
 		expect(message(changed(previews.clean, { worktree: null }))).toContain("not a worktree record");
 		expect(without(value => delete value.worktree.path)).toContain("not a worktree record");
+		expect(without(value => { value.worktree.canonicalPath = null; })).toContain("not a worktree record");
 		expect(without(value => { value.worktree.status = { kind: "unknown", reason: "Worktree path is missing" }; })).toContain("does not list the files");
 		expect(without(value => delete value.worktree.status.ignored)).toContain("ignored files");
 		expect(without(value => { value.worktree.status.ignored = [1]; })).toContain("ignored files");

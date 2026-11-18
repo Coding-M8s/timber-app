@@ -77,8 +77,18 @@ export interface DonePreview {
 	};
 }
 
+/** The fields Timber's version 1 apply command reads from an approval file. */
+interface DoneApproval {
+	schemaVersion: typeof SUPPORTED_SCHEMA_VERSION;
+	snapshot: string;
+	expiresAt: number;
+	repository: ListedRepository & { currentWorktreeRoot: string };
+	worktree: { path: string; canonicalPath: string };
+	options: { keepBranch: boolean; discardIgnored: boolean; base?: string };
+}
+
 export type DonePreviewReading =
-	| { ok: true; preview: DonePreview }
+	| { ok: true; preview: DonePreview; approval: DoneApproval }
 	| { ok: false; message: string };
 
 const PREVIEW_NAME = "timber __ide-done preview";
@@ -113,10 +123,13 @@ export function readDonePreview(stdout: string): DonePreviewReading {
 	const { snapshot, expiresAt, options } = record;
 	if (typeof snapshot !== "string" || !SNAPSHOT.test(snapshot)) return unreadable("it has no snapshot");
 	if (typeof expiresAt !== "number" || !Number.isSafeInteger(expiresAt) || expiresAt < 0) return unreadable("it does not say when it expires");
-	const repository = readRepository(record.repository);
-	if (!repository) return unreadable("it does not say which repository it is for");
+	const repositoryRecord = record.repository;
+	const repository = readRepository(repositoryRecord);
+	if (!repository || !isFields(repositoryRecord) || typeof repositoryRecord.currentWorktreeRoot !== "string" || repositoryRecord.currentWorktreeRoot === "") {
+		return unreadable("it does not say which repository it is for");
+	}
 	const worktree = readWorktree(record.worktree);
-	if (!worktree) return unreadable("its worktree is not a worktree record");
+	if (!worktree || !worktree.canonicalPath) return unreadable("its worktree is not a worktree record");
 	if (worktree.changes.kind !== "known") return unreadable("it does not list the files in the worktree");
 	// `readWorktree` has checked that the status is an object.
 	const ignored = (record.worktree as { status: { ignored?: unknown } }).status.ignored;
@@ -125,11 +138,21 @@ export function readDonePreview(stdout: string): DonePreviewReading {
 	if (!isFields(options) || typeof options.keepBranch !== "boolean" || typeof options.discardIgnored !== "boolean") return unreadable("it does not say which options it is for");
 	if (options.base !== undefined && typeof options.base !== "string") return unreadable("its base is not text");
 
+	const approvalOptions = {
+		keepBranch: options.keepBranch, discardIgnored: options.discardIgnored,
+		...(options.base === undefined ? {} : { base: options.base }),
+	};
 	return {
 		ok: true,
 		preview: {
 			snapshot, expiresAt, repository, worktree, ignored,
-			options: { keepBranch: options.keepBranch, discardIgnored: options.discardIgnored, base: options.base ?? null },
+			options: { ...approvalOptions, base: options.base ?? null },
+		},
+		approval: {
+			schemaVersion: SUPPORTED_SCHEMA_VERSION, snapshot, expiresAt,
+			repository: { ...repository, currentWorktreeRoot: repositoryRecord.currentWorktreeRoot },
+			worktree: { path: worktree.path, canonicalPath: worktree.canonicalPath },
+			options: approvalOptions,
 		},
 	};
 }
@@ -152,7 +175,7 @@ export interface DonePreviewRequest {
 
 /**
  * The answer to a preview request. The interface gets the preview to show and
- * a name for it. The text Timber printed stays with the engine, so the
+ * a name for it. The approval stays with the engine, so the
  * interface cannot change what is later approved: it can only name a preview.
  */
 export type DonePreviewResult =
