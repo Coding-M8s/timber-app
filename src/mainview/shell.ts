@@ -36,6 +36,7 @@ export const SIDEBAR_SIDE_LABELS: Record<SidebarSide, string> = {
 export const TAB_LABELS: Record<WorkspaceTab, string> = {
 	workspace: "Workspace",
 	changes: "Changes",
+	"pull-request": "Pull request",
 };
 
 /**

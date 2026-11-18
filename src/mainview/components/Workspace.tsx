@@ -9,6 +9,7 @@ import { TAB_LABELS, tabAfterKey } from "../shell";
 import { useAppState, useStore } from "../store/react";
 import { WORKSPACE_TABS, type WorkspaceTab, isRunning, selectedWorktree } from "../store/state";
 import { ChangesPanel } from "./ChangesPanel";
+import { PullRequestPanel } from "./PullRequestPanel";
 import { EditorProblemNote, OpenInEditorButton } from "./OpenInEditor";
 import { SetupPrompt } from "./SetupPrompt";
 import { TerminalPanel } from "./TerminalPanel";
@@ -133,15 +134,11 @@ export function Workspace() {
 					</button>
 				))}
 			</div>
-			{state.tab === "workspace" ? (
-				<div className="tabpanel workspace-panel" role="tabpanel" id={PANEL_ID} aria-labelledby={tabId(state.tab)}>
-					<TerminalPanel repository={repository} worktree={worktree} />
-				</div>
-			) : (
-				<div className="tabpanel workspace-panel" role="tabpanel" id={PANEL_ID} aria-labelledby={tabId(state.tab)}>
-					<ChangesPanel repository={repository} worktree={worktree} />
-				</div>
-			)}
+			<div className="tabpanel workspace-panel" role="tabpanel" id={PANEL_ID} aria-labelledby={tabId(state.tab)}>
+				{state.tab === "workspace" && <TerminalPanel repository={repository} worktree={worktree} />}
+				{state.tab === "changes" && <ChangesPanel repository={repository} worktree={worktree} />}
+				{state.tab === "pull-request" && <PullRequestPanel repository={repository} worktree={worktree} />}
+			</div>
 		</main>
 	);
 }

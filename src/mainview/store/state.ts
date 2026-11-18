@@ -112,7 +112,7 @@ export const SETTINGS_SECTIONS = ["layout", "theme", "terminal", "editor", "agen
 export type SettingsSection = typeof SETTINGS_SECTIONS[number];
 
 /** The views of the selected worktree, in the order of their tabs. */
-export const WORKSPACE_TABS = ["workspace", "changes"] as const;
+export const WORKSPACE_TABS = ["workspace", "changes", "pull-request"] as const;
 export type WorkspaceTab = typeof WORKSPACE_TABS[number];
 
 /** Why the layout could not be read on start, or could not be saved. What is on screen stays as it is. */

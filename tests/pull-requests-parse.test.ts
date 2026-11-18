@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { type PullRequestEntry, type PullRequestList, pullRequestOf, readPullRequestList } from "../src/shared/pull-requests";
+import { type PullRequestEntry, type PullRequestList, descriptionText, pullRequestOf, readPullRequestList } from "../src/shared/pull-requests";
 
 /**
  * `offline`, `sign-in-needed` (a token GitHub refused), `no-login`,
@@ -18,8 +18,20 @@ const ok = (list: PullRequestList): PullRequestEntry[] => {
 	return list.worktrees;
 };
 
+describe("descriptionText", () => {
+	test("keeps lines and tabs, makes Windows line endings one break, and replaces other control characters", () => {
+		expect(descriptionText("  One\r\nTwo\rThree\n\tindented\u0007\u001b[31m  ")).toBe("One\nTwo\nThree\n\tindented\uFFFD\uFFFD[31m");
+		expect(descriptionText("a\u2028b")).toBe("a\uFFFDb");
+	});
+
+	test("cuts a long description short with an ellipsis", () => {
+		expect(descriptionText("abcdef", 4)).toBe("abc\u2026");
+		expect(descriptionText("abcd", 4)).toBe("abcd");
+	});
+});
+
 describe("readPullRequestList", () => {
-	test("reads each state, the checks by status, and the review decision, and drops the description", () => {
+	test("reads each state, the checks by status, and the review decision, each run, and the description as text", () => {
 		const entries = ok(readPullRequestList(fixture("found.json"), "", 0));
 		expect(entries.map(entry => [entry.path, entry.outcome])).toEqual([
 			["/work/sample", "none"],
@@ -41,8 +53,20 @@ describe("readPullRequestList", () => {
 				state: "open",
 				baseBranch: "main",
 				// A skipped run counts as none of these.
-				checks: { summary: "passing", passing: 2, failing: 0, pending: 0 },
+				checks: {
+					summary: "passing",
+					passing: 2,
+					failing: 0,
+					pending: 0,
+					runs: [
+						{ name: "test", status: "passing", url: "https://github.com/example/sample/actions/runs/1" },
+						{ name: "lint", status: "passing", url: "https://github.com/example/sample/actions/runs/2" },
+						{ name: "docs", status: "skipped", url: "https://github.com/example/sample/actions/runs/3" },
+					],
+				},
 				review: "approved",
+				// Markup stays text: nothing here is ever rendered as markup.
+				description: "Closes #11.\n\n<b>Markup</b> stays text.",
 			},
 		});
 		const pulls = entries.flatMap(entry => entry.outcome === "found" ? [entry.pullRequest] : []);
@@ -53,10 +77,31 @@ describe("readPullRequestList", () => {
 			[9, "merged", "passing", "none"],
 			[7, "closed", "none", "none"],
 		]);
-		expect(pulls[1]!.checks).toEqual({ summary: "failing", passing: 1, failing: 1, pending: 1 });
+		expect(pulls[1]!.checks).toMatchObject({ summary: "failing", passing: 1, failing: 1, pending: 1 });
+		// A status with no link keeps none.
+		expect(pulls[1]!.checks.runs.at(-1)).toEqual({ name: "legacy status", status: "pending", url: null });
+		expect(pulls[4]!.checks.runs).toEqual([]);
+		expect(pulls[1]!.description).toBe("");
 		// Text from GitHub is trimmed, and a control character cannot reach the screen.
 		expect(pulls[2]!.title).toBe("Work in progress�");
-		expect(JSON.stringify(entries)).not.toContain("Markup");
+	});
+
+	test("a check link that is not https is not offered, and a run that is not one refuses the list", () => {
+		const record = JSON.parse(fixture("found.json"));
+		record.worktrees[1].pullRequest.checks.runs[0].url = "javascript:alert(1)";
+		record.worktrees[1].pullRequest.checks.runs[1].url = "http://ci.example/run/2";
+		const entries = ok(readPullRequestList(JSON.stringify(record), "", 0));
+		const pull = entries[1]!.outcome === "found" ? entries[1]!.pullRequest : null;
+		expect(pull?.checks.runs.slice(0, 2).map(run => run.url)).toEqual([null, null]);
+
+		record.worktrees[1].pullRequest.checks.runs[0].url = 7;
+		expect(readPullRequestList(JSON.stringify(record), "", 0).ok).toBe(false);
+	});
+
+	test("a pull request without a description as text refuses the list", () => {
+		const record = JSON.parse(fixture("found.json"));
+		delete record.worktrees[1].pullRequest.description;
+		expect(readPullRequestList(JSON.stringify(record), "", 0).ok).toBe(false);
 	});
 
 	test("a detached HEAD has no pull request and no branch", () => {

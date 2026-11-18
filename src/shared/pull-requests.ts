@@ -8,8 +8,7 @@ import { displayText, readDiagnostic } from "./workflows";
  * (see src/bun/pull-requests.ts).
  *
  * Timber reads GitHub with its own login, so the app never holds a token.
- * Only what the interface shows is kept: the description and the list of
- * check runs are dropped here.
+ * Timber reports no reviewers, only the review decision.
  */
 export const APP_PR_ARGUMENTS = ["__app-pr"] as const;
 export const APP_PR_COMMAND = `timber ${APP_PR_ARGUMENTS.join(" ")}`;
@@ -19,6 +18,8 @@ export type PullRequestState = "open" | "draft" | "merged" | "closed";
 /** GitHub's combined state of the checks on the head commit. `none` means none were reported. */
 export type ChecksSummary = "passing" | "failing" | "pending" | "none";
 /** GitHub's review decision. `none` means the repository asks for no review decision on it. */
+/** How one check run or commit status ended, or that it has not yet. */
+export type CheckRunStatus = "passing" | "failing" | "pending" | "skipped";
 export type ReviewDecision = "approved" | "changes-requested" | "review-required" | "none";
 /**
  * Why Timber could not look pull requests up. One lookup answers for the
@@ -29,6 +30,15 @@ export type ReviewDecision = "approved" | "changes-requested" | "review-required
  * - `failed`: anything else, such as denied access or a rate limit.
  */
 export type PullRequestFailureReason = "offline" | "sign-in-needed" | "not-github" | "failed";
+
+/** One check run or commit status on the pull request's head commit. */
+export interface CheckRun {
+	/** Text from GitHub, made safe to show. */
+	name: string;
+	status: CheckRunStatus;
+	/** An `https` link to the run, or null when there is none to follow. */
+	url: string | null;
+}
 
 /** One pull request, as much of it as the interface shows. */
 export interface PullRequest {
@@ -46,8 +56,12 @@ export interface PullRequest {
 		passing: number;
 		failing: number;
 		pending: number;
+		/** Each one, in Timber's order. */
+		runs: CheckRun[];
 	};
 	review: ReviewDecision;
+	/** The body as written, made safe to show as plain text: line breaks and tabs kept, other control characters replaced. Never trusted markup. May be empty. */
+	description: string;
 }
 
 /** What Timber found for one worktree, named by its Git-registered path, as in `timber ls --json`. */
@@ -64,12 +78,14 @@ export type PullRequestList =
 
 const STATES: readonly PullRequestState[] = ["open", "draft", "merged", "closed"];
 const SUMMARIES: readonly ChecksSummary[] = ["passing", "failing", "pending", "none"];
-const RUN_STATUSES = ["passing", "failing", "pending", "skipped"] as const;
+const RUN_STATUSES: readonly CheckRunStatus[] = ["passing", "failing", "pending", "skipped"];
 const REVIEWS: readonly ReviewDecision[] = ["approved", "changes-requested", "review-required", "none"];
 const REASONS: readonly PullRequestFailureReason[] = ["offline", "sign-in-needed", "not-github", "failed"];
 
 /** How much of a diagnostic is passed on. */
 const DIAGNOSTIC_LIMIT = 300;
+/** How much of a description is passed on, in characters. GitHub allows 65536. */
+const DESCRIPTION_LIMIT = 20000;
 
 const oneOf = <Value extends string>(values: readonly Value[], value: unknown): value is Value => typeof value === "string" && (values as readonly string[]).includes(value);
 
@@ -86,27 +102,45 @@ function readLink(value: unknown): string | null {
 	}
 }
 
+/**
+ * A description as plain text that keeps its lines: Windows line endings
+ * become one break, and every control character other than a line break or
+ * a tab is replaced, as in any other text from GitHub. Pure.
+ */
+export function descriptionText(value: string, limit = DESCRIPTION_LIMIT): string {
+	const clean = value
+		.replace(/\r\n?/g, "\n")
+		.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u2028\u2029]/g, "\uFFFD")
+		.trim();
+	const characters = Array.from(clean);
+	return characters.length > limit ? `${characters.slice(0, limit - 1).join("")}\u2026` : clean;
+}
+
 function readChecks(value: unknown): PullRequest["checks"] | null {
 	if (!isFields(value) || !oneOf(SUMMARIES, value.summary) || !Array.isArray(value.runs)) return null;
 	const counts = { passing: 0, failing: 0, pending: 0, skipped: 0 };
+	const runs: CheckRun[] = [];
 	for (const run of value.runs) {
 		if (!isFields(run) || typeof run.name !== "string" || !oneOf(RUN_STATUSES, run.status)) return null;
+		if (run.url !== null && typeof run.url !== "string") return null;
 		counts[run.status] += 1;
+		// A link that is not https, which a commit status may set to anything, is not offered.
+		runs.push({ name: displayText(run.name.trim()), status: run.status, url: readLink(run.url) });
 	}
-	return { summary: value.summary, passing: counts.passing, failing: counts.failing, pending: counts.pending };
+	return { summary: value.summary, passing: counts.passing, failing: counts.failing, pending: counts.pending, runs };
 }
 
 /** Null when the value is not one pull request. Fields this app does not use are ignored. */
 function readPullRequest(value: unknown): PullRequest | null {
 	if (!isFields(value)) return null;
-	const { number, title, state, baseBranch, review } = value;
+	const { number, title, state, baseBranch, review, description } = value;
 	if (typeof number !== "number" || !Number.isSafeInteger(number) || number < 1) return null;
 	const url = readLink(value.url);
-	if (url === null || typeof title !== "string" || typeof baseBranch !== "string") return null;
+	if (url === null || typeof title !== "string" || typeof baseBranch !== "string" || typeof description !== "string") return null;
 	if (!oneOf(STATES, state) || !oneOf(REVIEWS, review)) return null;
 	const checks = readChecks(value.checks);
 	if (checks === null) return null;
-	return { number, url, title: displayText(title.trim()), state, baseBranch: displayText(baseBranch), checks, review };
+	return { number, url, title: displayText(title.trim()), state, baseBranch: displayText(baseBranch), checks, review, description: descriptionText(description) };
 }
 
 /** Null when the value is not one entry, or its fields do not agree with its outcome. */

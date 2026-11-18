@@ -20,8 +20,9 @@ const pull = (fields: Partial<PullRequest> = {}): PullRequest => ({
 	title: "Look up GitHub issues",
 	state: "open",
 	baseBranch: "main",
-	checks: { summary: "passing", passing: 3, failing: 0, pending: 0 },
+	checks: { summary: "passing", passing: 3, failing: 0, pending: 0, runs: [] },
 	review: "review-required",
+	description: "",
 	...fields,
 });
 const found = (fields: Partial<PullRequest> = {}): PullRequestEntry => ({ path: LOOKUP, branch: "feat/github-issue-lookup", outcome: "found", pullRequest: pull(fields) });
@@ -31,20 +32,20 @@ const shown = (entry: PullRequestEntry | null) => describePullRequestMarkers(ent
 describe("pull request markers", () => {
 	test("give the number and state, then the checks and the review while it is open or a draft", () => {
 		expect(shown(found())).toEqual(["#42", "checks pass", "review required"]);
-		expect(shown(found({ state: "draft", checks: { summary: "pending", passing: 1, failing: 0, pending: 2 } }))).toEqual(["#42 draft", "checks running", "review required"]);
-		expect(shown(found({ checks: { summary: "failing", passing: 2, failing: 1, pending: 0 }, review: "changes-requested" }))).toEqual(["#42", "checks fail", "changes requested"]);
+		expect(shown(found({ state: "draft", checks: { summary: "pending", passing: 1, failing: 0, pending: 2, runs: [] } }))).toEqual(["#42 draft", "checks running", "review required"]);
+		expect(shown(found({ checks: { summary: "failing", passing: 2, failing: 1, pending: 0, runs: [] }, review: "changes-requested" }))).toEqual(["#42", "checks fail", "changes requested"]);
 		expect(shown(found({ review: "approved" }))).toEqual(["#42", "checks pass", "approved"]);
 		// No checks and no review decision are not marked.
-		expect(shown(found({ checks: { summary: "none", passing: 0, failing: 0, pending: 0 }, review: "none" }))).toEqual(["#42"]);
+		expect(shown(found({ checks: { summary: "none", passing: 0, failing: 0, pending: 0, runs: [] }, review: "none" }))).toEqual(["#42"]);
 	});
 
 	test("a merged or closed pull request has only its number and state", () => {
 		expect(shown(found({ state: "merged", review: "approved" }))).toEqual(["#42 merged"]);
-		expect(shown(found({ state: "closed", checks: { summary: "failing", passing: 0, failing: 1, pending: 0 } }))).toEqual(["#42 closed"]);
+		expect(shown(found({ state: "closed", checks: { summary: "failing", passing: 0, failing: 1, pending: 0, runs: [] } }))).toEqual(["#42 closed"]);
 	});
 
 	test("each has a whole sentence for its tooltip", () => {
-		expect(describePullRequestMarkers(found({ checks: { summary: "failing", passing: 2, failing: 1, pending: 1 }, review: "changes-requested" })).map(marker => marker.tooltip)).toEqual([
+		expect(describePullRequestMarkers(found({ checks: { summary: "failing", passing: 2, failing: 1, pending: 1, runs: [] }, review: "changes-requested" })).map(marker => marker.tooltip)).toEqual([
 			"Pull request #42 into main is open: Look up GitHub issues.",
 			"Checks fail on pull request #42: 1 failing, 1 pending, 2 passing.",
 			"A reviewer asked for changes on pull request #42.",
@@ -75,7 +76,7 @@ describe("pull request markers", () => {
 
 	test("the row draws them with their tooltips, red only with words, and gives every sentence to assistive technology", () => {
 		const worktree = sampleRepositories[0]!.worktrees[1]!;
-		const markup = renderToStaticMarkup(<WorktreeRow worktree={worktree} selected={false} onSelect={() => {}} pullRequest={found({ checks: { summary: "failing", passing: 0, failing: 1, pending: 0 } })} />);
+		const markup = renderToStaticMarkup(<WorktreeRow worktree={worktree} selected={false} onSelect={() => {}} pullRequest={found({ checks: { summary: "failing", passing: 0, failing: 1, pending: 0, runs: [] } })} />);
 		expect(markup).toContain('<span class="row-flag pr" title="Pull request #42 into main is open: Look up GitHub issues." aria-hidden="true">#42</span>');
 		expect(markup).toContain('<span class="row-flag pr failing" title="Checks fail on pull request #42: 1 failing." aria-hidden="true">checks fail</span>');
 		expect(markup).toContain('hidden="">2 commits to push to origin/feat/github-issue-lookup, as of the last fetch. Pull request #42 into main is open: Look up GitHub issues. Checks fail on pull request #42: 1 failing. Pull request #42 needs an approving review before it can merge. 3 files');
