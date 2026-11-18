@@ -162,7 +162,6 @@ describe.skipIf(!posix)("rebasing in a terminal session", () => {
 		const wrong = { repository, worktree, onto: 7, cols: 80, rows: 24 } as unknown as Parameters<typeof rebase.start>[0];
 		expect((await rebase.start(wrong)).outcome).toBe("failed");
 		expect((await rebase.start({ repository, worktree, onto: "", cols: 80, rows: 24 })).outcome).toBe("failed");
-		expect((await sessions.open({ repository, worktree, cols: 80, rows: 24, timberRebase: { onto: null }, timberSetup: "repository" })).outcome).toBe("failed");
 		await Bun.sleep(100);
 		expect(existsSync(record)).toBe(false);
 		expect(sessions.list()).toEqual([]);

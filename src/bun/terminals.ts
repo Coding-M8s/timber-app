@@ -4,10 +4,9 @@ import { describeCommandLine } from "../shared/command-line";
 import type { TimberStatus } from "../shared/model";
 import {
 	type OpenTerminalRequest, type OpenTerminalResult, type Scrollback, type TerminalChange, type TerminalOutput, type TerminalSession,
-	type TerminalSnapshot, TERMINAL_UNSUPPORTED_REASON, TIMBER_REBASE_SESSION_NAME, TIMBER_SETUP_SESSION_NAME, clampTerminalSize, cleanSessionName, createScrollback, defaultSessionName, pickShell,
+	type TerminalSnapshot, TERMINAL_UNSUPPORTED_REASON, TIMBER_REBASE_SESSION_NAME, clampTerminalSize, cleanSessionName, createScrollback, defaultSessionName, pickShell,
 } from "../shared/terminal";
 import { rebaseArguments } from "../shared/rebase-command";
-import { TIMBER_CONFIG_SCOPES, timberSetupArguments } from "../shared/timber-config";
 import { findExecutable } from "./find-executable";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
 import { sessionMembers, signalEach, signalGroup } from "./process-session";
@@ -36,7 +35,7 @@ export interface TerminalDependencies {
 	 * here, never from the interface. None when left out.
 	 */
 	agents?: () => Promise<readonly AgentSetting[]>;
-	/** Where Timber is, for `timber setup` sessions. Setup never starts while it is not ready. */
+	/** Where Timber is, for `timber rebase` sessions. A rebase never starts while it is not ready. */
 	timber?: () => Promise<TimberStatus>;
 	/** Hears every part of output, in order per session. */
 	onOutput: (output: TerminalOutput) => void;
@@ -154,9 +153,6 @@ function signalSession(live: Live, signal: NodeJS.Signals): void {
  *   app's PATH. A request names the agent, never the command. An agent whose
  *   executable is not there starts nothing, and no session is kept. What an
  *   agent prints is handled as any terminal's output and never read.
- * - A Timber setup session runs `timber setup`, or `timber setup --global`,
- *   with the Timber the app found, in the worktree's folder. The request
- *   names only which file, never the command.
  * - A Timber rebase session runs `timber rebase [--base <ref>] -- <path>`
  *   for the worktree, with the Timber the app found, in its folder
  *   (`rebaseArguments` in ../shared/rebase-command.ts). The request names
@@ -235,7 +231,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		return { ok: true, kind: "agent", base: agent.name, argv, command: describeCommandLine(argv) };
 	}
 
-	/** A Timber command to run in place of the shell: setup or rebase, with the Timber the app found. */
+	/** A Timber command to run in place of the shell: a rebase, with the Timber the app found. */
 	interface TimberRun {
 		timber: string;
 		arguments: string[];
@@ -258,26 +254,21 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			agent = findAgent(saved, request.agent);
 			if (agent === null) return { outcome: "not-configured", message: `No agent called "${request.agent}" is set in Settings, Agents. Nothing was started.` };
 		}
-		// Setup and rebase run the Timber the app found, and only that one.
+		// A rebase runs the Timber the app found, and only that one.
 		let run: TimberRun | null = null;
-		if (request.timberSetup !== undefined || request.timberRebase !== undefined) {
-			const setup = request.timberSetup;
+		if (request.timberRebase !== undefined) {
 			const rebase = request.timberRebase;
-			const readable = agent === null && (setup === undefined) !== (rebase === undefined)
-				&& (setup === undefined || TIMBER_CONFIG_SCOPES.includes(setup))
-				&& (rebase === undefined || (typeof rebase === "object" && rebase !== null && (rebase.onto === null || (typeof rebase.onto === "string" && rebase.onto !== ""))));
-			const what = rebase !== undefined ? "the rebase" : "setup";
-			if (!readable) return { outcome: "failed", message: `The request for Timber ${rebase !== undefined ? "rebase" : "setup"} cannot be read. Nothing was started.` };
+			const readable = agent === null
+				&& typeof rebase === "object" && rebase !== null && (rebase.onto === null || (typeof rebase.onto === "string" && rebase.onto !== ""));
+			if (!readable) return { outcome: "failed", message: "The request for Timber rebase cannot be read. Nothing was started." };
 			let status: TimberStatus;
 			try {
 				status = await timber();
 			} catch (error) {
 				return { outcome: "failed", message: `Could not find Timber: ${messageOf(error)}. Nothing was started.` };
 			}
-			if (status.state !== "ready") return { outcome: "not-configured", message: `No usable Timber was found, so ${what} cannot start. Nothing was started.` };
-			run = setup !== undefined
-				? { timber: status.path, arguments: timberSetupArguments(setup), name: TIMBER_SETUP_SESSION_NAME, what: "Timber setup" }
-				: { timber: status.path, arguments: rebaseArguments({ worktree: request.worktree, onto: rebase!.onto }), name: TIMBER_REBASE_SESSION_NAME, what: "The rebase" };
+			if (status.state !== "ready") return { outcome: "not-configured", message: "No usable Timber was found, so the rebase cannot start. Nothing was started." };
+			run = { timber: status.path, arguments: rebaseArguments({ worktree: request.worktree, onto: rebase.onto }), name: TIMBER_REBASE_SESSION_NAME, what: "The rebase" };
 		}
 		const consequence = agent ? `${agent.name} was not started.` : run ? `${run.what} was not started.` : "No terminal was started.";
 		const listed = await findListedWorktree(findRepository, request.repository, request.worktree, consequence);

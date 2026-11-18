@@ -171,7 +171,7 @@ const terminals = createTerminalSessions({
 	findRepository: path => repositories.find(path),
 	// An agent's command comes from the saved preferences only (see ./terminals.ts).
 	agents: async () => (await preferences.load()).agents,
-	// `timber setup` runs the Timber that was found, never a command from the window.
+	// `timber rebase` runs the Timber that was found, never a command from the window.
 	timber: () => timber.current(),
 	onOutput: output => tell("terminal output", () => rpc.send.terminalOutput(output)),
 	onChange: change => tell("a terminal change", () => rpc.send.terminalChanged(change)),
@@ -256,7 +256,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			readFileChanges: request => fileChanges.read(request),
 			readFileDiff: request => fileChanges.diff(request),
 			listTerminals: () => terminals.list(),
-			// Starts a shell, an agent from the saved Settings, or timber setup, only in a worktree Timber lists (see ./terminals.ts).
+			// Starts a shell, an agent from the saved Settings, or timber rebase, only in a worktree Timber lists (see ./terminals.ts).
 			openTerminal: request => terminals.open(request),
 			readTerminal: ({ id }) => terminals.read(id),
 			renameTerminal: ({ id, name }) => terminals.rename(id, name),

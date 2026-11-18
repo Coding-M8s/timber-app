@@ -4,6 +4,7 @@ import { DoneDialog } from "./DoneDialog";
 import { NewWorktreeDialog } from "./NewWorktreeDialog";
 import { RebaseDialog } from "./RebaseDialog";
 import { SettingsDialog } from "./SettingsDialog";
+import { SetupWizardDialog } from "./SetupWizardDialog";
 
 /**
  * The dialog the store says is open (`state.dialog`), over the window. One
@@ -28,5 +29,10 @@ export function Dialogs() {
 		case "settings":
 			// A key per section asked for, so asking for another one while Settings is open opens it there.
 			return <SettingsDialog key={dialog.section ?? ""} initialSection={dialog.section ?? SETTINGS_SECTIONS[0]} />;
+		case "set-up-timber": {
+			// Timber reads and saves the repository's settings in its folder, so it has to be listed and there.
+			const repository = state.repositories.find(candidate => candidate.path === dialog.repository && candidate.available);
+			return repository ? <SetupWizardDialog key={repository.path} repository={repository} /> : null;
+		}
 	}
 }

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRepositoryReader } from "../src/bun/repository-reader";
 import { readSetupState } from "../src/bun/setup-state";
-import { createTerminalSessions } from "../src/bun/terminals";
+import { createTimberSettings } from "../src/bun/timber-settings";
 import { REPOSITORY_CONFIG_FILE } from "../src/shared/timber-config";
 import { fingerprint, git, realTimber } from "./support/timber";
 
@@ -120,40 +120,30 @@ describe.skipIf(realTimber === null)("with the installed Timber, the repository 
 	});
 });
 
-describe.skipIf(realTimber === null || process.platform === "win32")("a setup session that saves, read back through the main process", () => {
-	test("the repository reads as set up once the session ended, and not before", async () => {
-		// A stand-in for Timber's guided setup: it saves the repository's settings when told to, as `timber setup` does.
-		const bin = join(root, "setup bin");
-		mkdirSync(bin, { recursive: true });
-		const setup = join(bin, "timber");
-		writeFileSync(setup, `#!/bin/sh\necho "setup $*"\nread line\nif [ "$line" = save ]; then printf '# saved\\n' > "${REPOSITORY_CONFIG_FILE}"; fi\n`);
-		chmodSync(setup, 0o755);
-
+describe.skipIf(realTimber === null || process.platform === "win32")("a save through Timber's settings commands, read back through the main process", () => {
+	test("the repository reads as set up once the setup wizard's save went through, even with nothing chosen", async () => {
 		const env = { ...process.env, ...environment() };
-		const reader = createRepositoryReader(async () => ({ state: "ready", path: realTimber!, version: "0.1.1" }), env);
-		const ended: string[] = [];
-		const sessions = createTerminalSessions({
-			findRepository: path => path === primary ? reader.reload(path) : Promise.resolve(null),
-			timber: async () => ({ state: "ready", path: setup, version: "0.1.1" }),
-			onOutput: () => {},
-			onChange: change => {
-				if (change.session?.state.kind === "exited") ended.push(change.id);
-			},
-			environment: { PATH: process.env.PATH, HOME: home, LANG: "C.UTF-8" },
+		const reader = createRepositoryReader(async () => ({ state: "ready", path: realTimber!, version: "0.1.2" }), env);
+		const temporary = mkdtempSync(join(tmpdir(), "timber-setup-save-"));
+		const settings = createTimberSettings({
+			timber: async () => ({ state: "ready", path: realTimber!, version: "0.1.2" }),
+			isListed: async candidate => candidate === primary,
+			environment: env,
+			temporaryRoot: temporary,
+			machineFolder: home,
 		});
 		try {
 			expect((await reader.reload(primary))?.setup).toBe("none");
-			const result = await sessions.open({ repository: primary, worktree: primary, cols: 80, rows: 24, timberSetup: "repository" });
-			if (result.outcome !== "opened") throw new Error(`Not opened: ${JSON.stringify(result)}`);
+			const read = await settings.read({ scope: "repository", repository: primary });
+			if (read.outcome !== "read") throw new Error(`Not read: ${JSON.stringify(read)}`);
 			expect((await reader.reload(primary))?.setup).toBe("none");
-			sessions.write(result.session.id, "save\r");
-			const deadline = Date.now() + 5000;
-			while (!ended.includes(result.session.id) && Date.now() < deadline) await Bun.sleep(20);
-			expect(ended).toContain(result.session.id);
+			// Every choice left as it is: Timber still writes the file, so setup counts as done.
+			const saved = await settings.save({ scope: "repository", repository: primary, revision: read.settings.revision, values: {}, editTracked: false });
+			expect(saved.outcome).toBe("saved");
 			expect((await reader.reload(primary))?.setup).toBe("repository");
 		} finally {
-			sessions.killAll();
 			rmSync(join(primary, REPOSITORY_CONFIG_FILE), { force: true });
+			rmSync(temporary, { recursive: true, force: true });
 		}
 	});
 });

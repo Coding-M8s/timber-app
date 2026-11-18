@@ -12,8 +12,8 @@ import { type ZoomStep, stepZoom, zoomLabel } from "../../shared/zoom";
 import type { Theme } from "../../shared/theme";
 import type { ExportThemeResult, ImportThemeResult } from "../../shared/theme-file";
 import type { StartRebaseRequest, StartRebaseResult } from "../../shared/rebase-command";
-import { type OpenTerminalRequest, type TerminalChange, type TerminalSession, TIMBER_SETUP_SESSION_NAME } from "../../shared/terminal";
-import type { TimberConfigScope, TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "../../shared/timber-config";
+import { type OpenTerminalRequest, type TerminalChange, type TerminalSession } from "../../shared/terminal";
+import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "../../shared/timber-config";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "../../shared/timber-done";
 import type { RebaseRequest, RebaseResult } from "../../shared/timber-rebase";
 import { type Draw, createTerminalFeed } from "../terminal-feed";
@@ -24,7 +24,7 @@ import { describeAdded, describeRemoved, folderName, worktreeLabel } from "../fo
 import { describeFetched } from "../fetch-format";
 import { wantTerminalFocus } from "../terminal-focus";
 import { mergeOverlapping } from "./merge";
-import { type AppState, type ChangesView, type DialogRequest, type Operation, type WorkspaceTab, TOAST_MILLISECONDS, initialState, keepLastGood, reconcileSelection, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, timberReady, timberSetupTarget, withTerminal, withoutSession } from "./state";
+import { type AppState, type ChangesView, type DialogRequest, type Operation, type WorkspaceTab, TOAST_MILLISECONDS, initialState, keepLastGood, reconcileSelection, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, timberReady, withTerminal, withoutSession } from "./state";
 
 /**
  * The single holder of what the interface shows: Timber's status, the
@@ -156,6 +156,8 @@ export interface AppStore {
 	readTimberSettings(request: TimberSettingsRequest): Promise<TimberSettingsReadResult>;
 	/**
 	 * Save one scope's settings through Timber. Runs once and is never retried.
+	 * Once saved, the repository, or with machine defaults every repository,
+	 * is read again before this answers, so a setup prompt goes at once.
 	 * Never throws: an engine that could not answer is a failure that says
 	 * what came of the save is unknown.
 	 */
@@ -257,19 +259,9 @@ export interface AppStore {
 	openLink(url: string): Promise<void>;
 	dismissTerminalProblem(): void;
 	/**
-	 * The setup prompt's "Set up Timber": `runTimberSetup` for the
-	 * repository's own settings, named by the path of its primary checkout.
-	 * While a Timber setup session of that repository still runs, that one
-	 * shows instead, because Timber sets up one repository once at a time.
-	 * Whenever a Timber setup session ends or is closed, every repository is
-	 * read again, since machine defaults set up all of them, so the prompt
-	 * goes once settings were saved. Never throws.
-	 */
-	setUpRepository(repository: string): Promise<void>;
-	/**
 	 * Put away the setup prompt of a repository, named by the path of its
 	 * primary checkout, and remember that for the next run. The repository
-	 * works as before; setup stays possible with `timber setup`.
+	 * works as before; Settings > Repository, or `timber setup` in a terminal, still sets it up.
 	 */
 	dismissSetup(repository: string): void;
 	/** Write a theme to a file in a folder the person picks. A failure to ask is a failed answer. */
@@ -911,7 +903,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const worktree = repository?.worktrees.find(candidate => candidate.path === request.worktree);
 		const key = worktree?.id ?? request.worktree;
 		if (state.operations.some(operation => operation.kind === "open-terminal" && operation.worktree === key)) return;
-		const agent = request.agent ?? (request.timberSetup !== undefined ? TIMBER_SETUP_SESSION_NAME : null);
+		const agent = request.agent ?? null;
 		await track({ kind: "open-terminal", worktree: key, agent }, async () => {
 			let message: string;
 			let command: string | null = null;
@@ -985,13 +977,6 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		void openTerminal({ repository: repositoryPath, worktree: worktree.path, cols: 80, rows: 24 });
 	}
 
-	/** Show a session: select its worktree, choose its chip, and show the Workspace tab. */
-	function reveal(session: TerminalSession): void {
-		const selection = selectionFor(state.repositories, session.worktree);
-		if (selection) select(session.worktree);
-		update({ tab: "workspace", shownSessions: { ...state.shownSessions, [session.worktree]: session.id } });
-	}
-
 	function startAgentIn(repositoryPath: string, reported: ReportedWorktree, agent: string): boolean {
 		const worktree = listedReported(repositoryPath, reported);
 		// Not in the list, for example because reading it again failed: there is no pane to start in.
@@ -1006,31 +991,11 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	}
 
 	/**
-	 * Start `timber setup` for one of Timber's files in a session, where
-	 * `timberSetupTarget` (state.ts) says, with that worktree selected and its
-	 * session showing. Why it did not start shows in `terminalProblem`.
+	 * Whether this change stops a Timber session, such as a rebase, given the
+	 * sessions known before it: the session ended, or it was closed while it
+	 * ran. What it did shows only in the repositories, never in how it ended.
 	 */
-	async function runTimberSetup(scope: TimberConfigScope, repository: string | null): Promise<void> {
-		const target = timberSetupTarget(state, scope, repository);
-		if (!target.ok) return;
-		update({ dialog: null, tab: "workspace" });
-		select(target.worktree.id);
-		// The pane gives the session its real size once it shows.
-		await openTerminal({ repository: target.repository, worktree: target.worktree.path, cols: 80, rows: 24, timberSetup: scope });
-	}
-
-	async function setUpRepository(repository: string): Promise<void> {
-		const running = state.terminals.find(session => session.kind === "timber" && session.repository === repository && session.state.kind === "running");
-		if (running) return reveal(running);
-		await runTimberSetup("repository", repository);
-	}
-
-	/**
-	 * Whether this change stops a setup session, given the sessions known
-	 * before it: the session ended, or it was closed while it ran. Whether
-	 * setup saved shows only in the settings, never in how it ended.
-	 */
-	function setupStopped(known: readonly TerminalSession[], change: TerminalChange): boolean {
+	function timberSessionStopped(known: readonly TerminalSession[], change: TerminalChange): boolean {
 		const before = known.find(session => session.id === change.id);
 		const session = change.session ?? before;
 		if (session?.kind !== "timber" || before?.state.kind === "exited") return false;
@@ -1118,11 +1083,11 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				engine.onTerminalChanged(change => {
 					// Until the first list answers, changes wait, and are applied on top of it.
 					if (heard !== null) return void heard.push(change);
-					const stopped = setupStopped(state.terminals, change);
+					const stopped = timberSessionStopped(state.terminals, change);
 					if (change.session) update({ terminals: withTerminal(state.terminals, change.id, change.session) });
 					else update(withoutSession(state, change.id));
-					// Setup only ever writes settings, which nothing watches. Read again to see whether it saved. Machine
-					// defaults set up every repository, so every one is read.
+					// What a Timber session such as a rebase changed shows in the repositories. Read them all again,
+					// since how it ended does not say which ones it touched.
 					if (stopped) void reloadAll("all");
 				}),
 				engine.onTerminalOutput(part => {
@@ -1166,7 +1131,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				}
 				heard = null;
 				update({ terminals, unseenSessions: state.unseenSessions.filter(id => terminals.some(session => session.id === id)) });
-				// A setup that stopped before the sessions were listed may have saved after the repositories were read.
+				// A Timber session that stopped before the sessions were listed may have changed things after the repositories were read.
 				if (stopped) void reloadAll("all");
 			};
 			engine.listTerminals().then(settle, () => settle(state.terminals));
@@ -1236,11 +1201,19 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			}
 		},
 		async saveTimberSettings(request) {
+			let result: TimberSettingsSaveResult;
 			try {
-				return await engine.saveTimberSettings(request);
+				result = await engine.saveTimberSettings(request);
 			} catch (error) {
 				return { outcome: "failed", failure: { command: null, diagnostic: `The app did not hear back, so whether the settings were saved is unknown: ${messageOf(error)}. Read them again before saving.`, output: null } };
 			}
+			// Nothing watches Timber's files, so read again what the save may have set up: one repository,
+			// or with machine defaults every one. The setup prompt then goes without waiting for the window's focus.
+			if (result.outcome === "saved") {
+				if (request.scope === "repository" && request.repository !== null) await reloadOne(request.repository);
+				else await reloadAll("all");
+			}
+			return result;
 		},
 		async checkTimberConnection(request) {
 			try {
@@ -1293,7 +1266,6 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		dismissTerminalProblem() {
 			if (state.terminalProblem) update({ terminalProblem: null });
 		},
-		setUpRepository,
 		dismissSetup(repository) {
 			changeLayout(dismissSetup(state.layout, repository));
 			void saveLayout("layout");

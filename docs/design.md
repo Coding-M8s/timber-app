@@ -49,10 +49,13 @@ change them here first when they change.
   changes, in the same words as the row's tooltip.
 - Changes compares against the base, the last commit, or a rebase backup.
 - A repository that was never set up for Timber shows a quiet prompt above
-  the tabs: Timber's defaults work, setup is optional, the command
-  `timber setup`, "Set up Timber", and "Not now". The button runs Timber's
-  guided setup in a session of its primary checkout, until an in-app wizard
-  replaces it. The prompt goes once settings exist or it is dismissed.
+  the tabs: Timber's defaults work, setup is optional, "Set up Timber", and
+  "Not now". The button opens the setup wizard: the choices of
+  `timber setup`, one step at a time (where to save, editor, coding
+  assistant, branch and remote and folder, scripts, issue tracking), and a
+  last step that lists them and shows the exact save command before Save.
+  It saves once, through Timber, as Settings > Repository does. Cancel
+  saves nothing. The prompt goes once settings exist or it is dismissed.
 - With no repository yet, the workspace makes "Add repository" the first
   step.
 

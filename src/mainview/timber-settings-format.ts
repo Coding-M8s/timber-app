@@ -123,6 +123,15 @@ export function draftsOf(values: TimberValues): GroupDrafts {
 	};
 }
 
+/** The fields each group draws, by the path Timber names them with. Messages about other paths show for the whole group. */
+export const DRAWN_PATHS: Record<TimberGroup, readonly string[]> = {
+	editor: ["editor.command", "editor.args", "editor.enabled", "editor.integration"],
+	agent: ["agent.command", "agent.args", "agent.enabled", "agent.wait_for_setup"],
+	git: ["base_branch", "remote", "worktree_dir"],
+	scripts: ["hooks.post_create", "hooks.pre_delete"],
+	tracking: ["default_tracker", "jira.site_url", "jira.cloud_id", "credentials.jira", "credentials.linear"],
+};
+
 /** Set or remove one key, leaving every other as it was. */
 function put(values: TimberValues, key: string, value: unknown): void {
 	if (value === undefined) delete values[key];
@@ -172,6 +181,11 @@ export function valuesWith<Group extends TimberGroup>(group: Group, draft: Group
 		}
 	}
 	return next;
+}
+
+/** The scope's settings with every group's fields in place of its keys, for one save of them all. Other keys are kept as read. */
+export function valuesWithAll(drafts: GroupDrafts, values: TimberValues): TimberValues {
+	return TIMBER_GROUPS.reduce((next, group) => valuesWith(group, drafts[group], next), values);
 }
 
 /**

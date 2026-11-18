@@ -86,8 +86,13 @@ const same = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.st
  * stale, a few of Timber's checks, a tracked file that needs the person's
  * say-so, and logins that are only ever said to be saved. `isListed` says
  * whether a path is a repository in the list, as the main process checks.
+ * `onSaved` hears each save, so the repositories can say they are set up.
  */
-export function createMockTimberConfig(isListed: (path: string) => boolean, timber: () => TimberStatus = () => ({ state: "ready", path: "/home/sam/.local/bin/timber", version: "0.1.2" })): TimberConfigCapabilities & TimberConfigControls {
+export function createMockTimberConfig(
+	isListed: (path: string) => boolean,
+	timber: () => TimberStatus = () => ({ state: "ready", path: "/home/sam/.local/bin/timber", version: "0.1.2" }),
+	onSaved: (scope: TimberConfigScope, repository: string | null) => void = () => {},
+): TimberConfigCapabilities & TimberConfigControls {
 	const files = new Map<string, { values: TimberValues | null; version: number }>();
 	const broken = new Map<string, string | null>();
 	const credentials: { jira: CredentialState; linear: CredentialState } = { jira: "none", linear: "saved" };
@@ -185,6 +190,7 @@ export function createMockTimberConfig(isListed: (path: string) => boolean, timb
 			const values = structuredClone(draft!);
 			for (const kept of PRESERVED_KEYS) if (saved[kept] !== undefined) values[kept] = structuredClone(saved[kept]);
 			files.set(key, { values, version: file.version + 1 });
+			onSaved(request.scope, request.repository);
 			return { outcome: "saved", command, revision: revisionOf(key), credentials: changes };
 		},
 		async checkTimberConnection(request) {

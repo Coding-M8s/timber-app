@@ -10,7 +10,7 @@ export interface Layout {
 	/**
 	 * The repositories whose setup prompt the person dismissed with "Not now",
 	 * each named by the path of its primary checkout. Setup stays possible
-	 * with `timber setup` in a terminal.
+	 * in Settings > Repository, or with `timber setup` in a terminal.
 	 */
 	setupDismissed: string[];
 }

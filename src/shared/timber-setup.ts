@@ -1,18 +1,10 @@
-import { describeCommandLine } from "./command-line";
 import type { Repository } from "./model";
-import { timberSetupArguments } from "./timber-config";
 
 /**
  * First-run setup of a repository: the pure rules of the setup prompt.
- *
- * Until settings can be saved through Timber from the app, "Set up Timber"
- * runs Timber's own guided `timber setup` for the repository in a terminal
- * session (`timberSetup` in `OpenTerminalRequest`). The main process builds
- * that command from the Timber it found, never from a request.
+ * "Set up Timber" opens the setup wizard, which saves through Timber's
+ * settings commands as Settings > Repository does.
  */
-
-/** What the setup prompt shows before anything runs. */
-export const SETUP_COMMAND = describeCommandLine(["timber", ...timberSetupArguments("repository")]);
 
 /**
  * Whether to offer setup for a repository: only one that is there, that

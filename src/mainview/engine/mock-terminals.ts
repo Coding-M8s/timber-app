@@ -5,11 +5,10 @@ import type { Engine } from "../../shared/engine";
 import type { TimberStatus, Worktree } from "../../shared/model";
 import {
 	type OpenTerminalResult, type Scrollback, type TerminalChange, type TerminalOutput, type TerminalSession, cleanSessionName, createScrollback,
-	defaultSessionName, isWebLink, TIMBER_REBASE_SESSION_NAME, TIMBER_SETUP_SESSION_NAME,
+	defaultSessionName, isWebLink, TIMBER_REBASE_SESSION_NAME,
 } from "../../shared/terminal";
 import { rebaseArguments } from "../../shared/rebase-command";
 import { notFoundOnPath } from "../../shared/search-path";
-import { TIMBER_CONFIG_SCOPES, type TimberConfigScope, timberSetupArguments } from "../../shared/timber-config";
 
 /** The part of the engine about terminals, and how they are acted out. */
 export type TerminalCapabilities = Pick<Engine,
@@ -51,13 +50,9 @@ interface Acted {
 	typed: string;
 	size: { cols: number; rows: number };
 	drawn: number;
-	/** Which settings a pretend `timber setup` saves. Null for any other session. */
-	setup: TimberConfigScope | null;
 	/** A pretend `timber rebase`, which takes no input. */
 	rebase: boolean;
 }
-
-const SETUP_QUESTION = "Save Timber settings? Type save, cancel, or exit: ";
 
 /** The PATH the mock acts out looking on. */
 export const MOCK_PATH = "/usr/local/bin:/usr/bin:/bin";
@@ -66,17 +61,14 @@ export const MOCK_PATH = "/usr/local/bin:/usr/bin:/bin";
  * Terminals acted out in memory, for the browser build and tests. Each one is
  * a pretend shell that echoes what is typed and knows `pwd`, `clear`, and
  * `exit`. An agent session is the same pretend program, started from the
- * agents that `agents` answers, as the saved preferences. A Timber setup
- * session is a pretend `timber setup` that asks one question: `save` acts
- * out saving through `saveSetup`, and `cancel` or `exit` acts out
- * cancelling; each ends it with exit code 0, as Timber does. Output arrives
+ * agents that `agents` answers, as the saved preferences. A Timber rebase
+ * session is a pretend `timber rebase` that takes no input. Output arrives
  * a moment later, as it would over the bridge.
  */
 export function createMockTerminals(
 	findWorktree: (repository: string, path: string) => Worktree | null,
 	agents: () => readonly AgentSetting[] = () => [],
 	timber: () => TimberStatus = () => ({ state: "not-found", override: null }),
-	saveSetup: (scope: TimberConfigScope, repository: string) => void = () => {},
 ): TerminalCapabilities & TerminalControls {
 	const sessions = new Map<string, Acted>();
 	const output = new Set<(output: TerminalOutput) => void>();
@@ -92,8 +84,7 @@ export function createMockTerminals(
 
 	const later = (task: () => void) => void Promise.resolve().then(task);
 	const live = () => [...sessions.values()].filter(acted => acted.session.state.kind === "running").length;
-	const prompt = (acted: Acted) => acted.setup !== null ? SETUP_QUESTION
-		: acted.session.kind !== "terminal" ? "\x1b[35m>\x1b[0m " : `\x1b[32m${acted.session.path.split("/").at(-1)}\x1b[0m $ `;
+	const prompt = (acted: Acted) => acted.session.kind !== "terminal" ? "\x1b[35m>\x1b[0m " : `\x1b[32m${acted.session.path.split("/").at(-1)}\x1b[0m $ `;
 
 	function print(acted: Acted, data: string): void {
 		const seq = acted.scrollback.append(data);
@@ -116,23 +107,7 @@ export function createMockTerminals(
 		announce({ id: acted.session.id, session: acted.session });
 	}
 
-	/** A line typed into a pretend `timber setup`. */
-	function answerSetup(acted: Acted, scope: TimberConfigScope, answer: string): void {
-		if (answer === "save") {
-			saveSetup(scope, acted.session.repository);
-			print(acted, "\r\nSaved.\r\n");
-			end(acted, 0);
-		} else if (answer === "cancel" || answer === "exit") {
-			// Timber ends a cancelled setup with exit code 0 too, so how it ended never says whether it saved.
-			print(acted, "\r\nCancelled.\r\n");
-			end(acted, 0);
-		} else {
-			print(acted, `\r\n${prompt(acted)}`);
-		}
-	}
-
 	function run(acted: Acted, command: string): void {
-		if (acted.setup !== null) return answerSetup(acted, acted.setup, command.trim());
 		const [name] = command.trim().split(/\s+/);
 		if (name === "exit") {
 			print(acted, "\r\n");
@@ -177,12 +152,6 @@ export function createMockTerminals(
 				if (agent === null) return { outcome: "not-configured", message: `No agent called "${request.agent}" is set in Settings, Agents. Nothing was started.` };
 			}
 			let setup: string[] | null = null;
-			if (request.timberSetup !== undefined) {
-				if (agent !== null || request.timberRebase !== undefined || !TIMBER_CONFIG_SCOPES.includes(request.timberSetup)) return { outcome: "failed", message: "The request for Timber setup cannot be read. Nothing was started." };
-				const status = timber();
-				if (status.state !== "ready") return { outcome: "not-configured", message: "No usable Timber was found, so setup cannot start. Nothing was started." };
-				setup = [status.path, ...timberSetupArguments(request.timberSetup)];
-			}
 			const rebase = request.timberRebase;
 			if (rebase !== undefined) {
 				const onto = rebase?.onto;
@@ -192,7 +161,7 @@ export function createMockTerminals(
 				setup = [status.path, ...rebaseArguments({ worktree: request.worktree, onto })];
 			}
 			const worktree = findWorktree(request.repository, request.worktree);
-			const notStarted = agent ? `${agent.name} was not started.` : rebase !== undefined ? "The rebase was not started." : setup ? "Timber setup was not started." : "No terminal was started.";
+			const notStarted = agent ? `${agent.name} was not started.` : rebase !== undefined ? "The rebase was not started." : "No terminal was started.";
 			if (!worktree) return { outcome: "not-listed", message: `Timber lists no worktree at ${request.worktree} in ${request.repository}. ${notStarted} Refresh the list.` };
 			let shell = "/bin/mock-shell";
 			let args: string[] = [];
@@ -223,7 +192,7 @@ export function createMockTerminals(
 			const session: TerminalSession = {
 				id: `mock-terminal-${++lastId}`,
 				kind: agent ? "agent" : setup ? "timber" : "terminal",
-				name: defaultSessionName(agent ? agent.name : rebase !== undefined ? TIMBER_REBASE_SESSION_NAME : setup ? TIMBER_SETUP_SESSION_NAME : "Terminal", taken),
+				name: defaultSessionName(agent ? agent.name : rebase !== undefined ? TIMBER_REBASE_SESSION_NAME : "Terminal", taken),
 				repository: request.repository,
 				worktree: worktree.id,
 				path: worktree.path,
@@ -233,7 +202,6 @@ export function createMockTerminals(
 			};
 			const acted: Acted = {
 				session, scrollback: createScrollback(), line: "", typed: "", size: { cols: request.cols, rows: request.rows }, drawn: 0,
-				setup: setup && rebase === undefined ? request.timberSetup! : null,
 				rebase: rebase !== undefined,
 			};
 			sessions.set(session.id, acted);
@@ -244,9 +212,7 @@ export function createMockTerminals(
 				if (exitCode !== null) later(() => end(acted, exitCode));
 				return { outcome: "opened", session: structuredClone(session) };
 			}
-			const greeting = setup
-				? `A pretend ${session.name} in ${session.path}, started as ${session.command}. Nothing runs in the browser.\r\n`
-				: agent
+			const greeting = agent
 				? `A pretend ${session.name} in ${session.path}, started as ${session.command}. Nothing runs in the browser. Try exit.\r\n`
 				: `A pretend shell in ${session.path}. Try pwd, clear, or exit.\r\n`;
 			print(acted, `${greeting}${prompt(acted)}`);
