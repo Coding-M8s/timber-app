@@ -5,6 +5,7 @@
  */
 import { AGENT_PRESETS, type AgentSetting, readAgentSettings, sameAgentSettings, writeAgentSettings } from "./agent";
 import { type EditorSetting, readEditorSetting, sameEditorSetting, writeEditorSetting } from "./editor";
+import { DEFAULT_ZOOM, readZoom } from "./zoom";
 import { type FetchSetting, defaultFetchSetting, readFetchSetting, salvageFetchSetting, sameFetchSetting, writeFetchSetting } from "./fetch-setting";
 
 /** The sides of the window the sidebar can be on. */
@@ -25,6 +26,8 @@ export interface Preferences {
 	agents: readonly AgentSetting[];
 	/** Whether and how often the app fetches every repository in the background. */
 	fetch: FetchSetting;
+	/** How large the interface is drawn, where 1 is the size the window system gives. */
+	zoom: number;
 }
 
 /** How one preference is read from outside, compared, and written to the settings file. */
@@ -74,6 +77,12 @@ export const PREFERENCE_PARTS: { [Key in keyof Preferences]: PreferencePart<Pref
 		same: sameFetchSetting,
 		write: writeFetchSetting,
 		salvage: salvageFetchSetting,
+	},
+	zoom: {
+		fallback: () => DEFAULT_ZOOM,
+		read: readZoom,
+		same: (one, other) => one === other,
+		write: value => value,
 	},
 };
 

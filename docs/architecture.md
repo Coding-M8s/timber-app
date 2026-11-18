@@ -899,7 +899,8 @@ Settings dialog and kept by the app. They are never Timber's configuration.
   ready to save again. Saved preferences that could not be read on start are
   reported at the top of the dialog. Nothing in the dialog runs Timber, so it
   has no command footer.
-- **Sections today.** Layout: the side of the sidebar, left by default.
+- **Sections today.** Layout: the side of the sidebar, left by default, and
+  the zoom (see [interface zoom](#interface-zoom)).
   Editor: the editor that "Open in editor" starts (see
   [opening a worktree in an editor](#opening-a-worktree-in-an-editor)).
   Agents: the coding agents the "+" menu starts (see
@@ -911,6 +912,34 @@ Settings dialog and kept by the app. They are never Timber's configuration.
 
 In `bun run dev:web`, `timberMock.failPreferenceSaves("disk full")` makes
 saving preferences fail (`null` again to undo).
+
+## Interface zoom
+
+How large everything in the window is drawn, as the `zoom` preference
+(`src/shared/zoom.ts`): 1 is the size the window system gives, and it is the
+default.
+
+- **Why.** The window is an X11 window (see
+  [display server on Linux](#display-server-on-linux)). On Wayland, where a
+  compositor leaves the scaling of X11 windows to the app, as Hyprland does
+  with `xwayland:force_zero_scaling`, the only scale the app is told is
+  `GDK_SCALE`, a whole number. At a monitor scale of 1.6 that is 1 or 2,
+  never 1.6, and the interface is drawn too small or too large. The app
+  cannot read the real scale from inside XWayland, so the person sets it.
+- **Choosing.** Settings, Layout has a Zoom list from 75% to 300%, with
+  160% among them. The preference itself takes any number from 0.5 to 3, to
+  two decimals. A saved zoom that is not in the list, as after editing the
+  file by hand, is offered too. One that cannot be read means 100%.
+- **Applying.** The main process sets the page zoom of the window's webview
+  (`setPageZoom`) on start and after every save of the preferences, so a
+  change shows as soon as it is saved. The window keeps its size: at a
+  higher zoom less fits in it.
+- **Not zoomed.** What the system draws for the page: the open list of a
+  select and tooltips keep their own size.
+- **The mock engine** saves the zoom like any preference and draws nothing
+  differently, because a browser has its own zoom.
+- **Without the setting.** Starting the app with `GDK_DPI_SCALE=1.6` in its
+  environment has the same effect, and the two multiply.
 
 For the Done dialog, with a worktree's path:
 `timberMock.setChanges(path, { modified: ["a.ts"], untracked: ["b.ts"], ignored: ["dist/"] })`
@@ -1671,6 +1700,9 @@ X11 display, `gdk_x11_*` calls).
   Reports there say XWayland costs sharpness with fractional scaling and
   smooth resizing at high resolutions and refresh rates. Neither was seen
   here, and neither was looked for.
+- Where the compositor leaves scaling to X11 windows, a fractional monitor
+  scale does not reach the app, and everything is drawn too small. The zoom
+  in Settings makes up for it (see [interface zoom](#interface-zoom)).
 
 See the issue 63 run under [what has been verified](#what-has-been-verified).
 
@@ -3096,6 +3128,32 @@ Run for rebasing through Timber's result file (issue 18), Linux x64
   looked at.
 - Not run: a remote base that was fetched, and the dialog on macOS or
   Windows.
+
+Run for the interface zoom, Linux x64 (Omarchy, Arch Linux, Hyprland 0.57.2
+at a monitor scale of 1.6 with `xwayland:force_zero_scaling`, `GDK_SCALE=1`,
+through XWayland) with Bun 1.4.4:
+
+- `bun test`, `bun run typecheck`, and `bun run typecheck:desktop`: see the
+  pull request for the counts. The tests cover reading a zoom, the list
+  Settings offers, the preference in the table of preferences, and the
+  Layout section as drawn.
+- The cause, with the dev build pointed at a small page that reported its
+  own measurements, in a window Hyprland counted as 992 wide: a device
+  pixel ratio of 1 and a width of 1587, so nothing was scaled. With
+  `GDK_DPI_SCALE=1.6` the ratio was 1.6 and the width 991. With
+  `GDK_SCALE=2` the ratio was 2 and the width 794.
+- The setting, same page, with the zoom written into a temporary settings
+  file: 1 gave a ratio of 1 and a width of 1587, 1.6 gave 1.6 and 991, and
+  2 gave 2 and 793.
+- The real interface in the dev build at a saved zoom of 1.6, looked at in
+  screenshots: the sidebar, the workspace, and the Settings dialog were
+  drawn larger and whole, and Zoom showed 160%. Choosing 200% and pressing
+  Save (clicks sent with `xdotool`) redrew the window larger at once, the
+  file then held 2, and a terminal opened after that drew its prompt sharp
+  at that size. The open list of the select and a tooltip stayed small.
+- Not run: a terminal that was already open while the zoom changed, a
+  display that scales X11 windows itself (where 100% is already right),
+  Windows, and macOS, where `setPageZoom` was not tried at all.
 
 Not run yet:
 
