@@ -24,8 +24,8 @@ change them here first when they change.
   without stored credentials, shows a quiet grey word beside the
   repository's name ("offline", "sign-in needed", "fetch failed") with the
   reason in its tooltip. Never a dialog, and never a prompt for credentials.
-- Each row shows the branch, its state against the remote, running agents, and
-  uncommitted changes. Its tooltip gives the path and the base Timber saved
+- Each row shows the branch, its state against the remote, each agent with
+  its state, other running sessions as a count, and uncommitted changes. Its tooltip gives the path and the base Timber saved
   for the worktree, or "No saved base". Saved base metadata Timber cannot use
   is a warning, "base unknown", never a guess. A Timber that reports no base
   gets none shown.
@@ -49,6 +49,20 @@ change them here first when they change.
   "PRs offline", "PRs need sign-in", "not on GitHub", "PRs failed", or "PRs
   unknown" when Timber's answer could not be read. The reason is in its
   tooltip. Never a dialog, and never a prompt to sign in.
+- An agent's state comes from the Program Status Protocol (OSC 7501) it
+  writes to its terminal: Working, Needs you (approval, question, or
+  sign-in), Done, Idle, Error, Stopped, or crashed with its code. Each has
+  its own shape as well as its color; Needs you is a diamond, or a raised
+  hand when the agent asks a question. A thin rounded outline in the state's
+  color holds the shape and the agent's initial; the tooltip names the
+  agent. Claude Code and Codex show their makers' official marks there
+  instead of letters (Claude's spark, OpenAI's mark), and on their chip. An agent that reports nothing shows as running.
+- A collapsed repository header sums up its agents, such as "1 needs you, 2
+  working", Needs you first. An expanded one adds nothing.
+- When an agent needs you, is done, reports an error, or crashes in a
+  worktree that is not on screen, a desktop notification says so; clicking
+  it shows that session. Never for the worktree on screen in a focused
+  window. Settings, Notifications turns them off.
 - Rebase backups are listed below the worktrees with compare, restore, and
   delete.
 - Settings is a cogwheel at the bottom of the sidebar.
@@ -58,7 +72,9 @@ change them here first when they change.
 - Three tabs: Workspace (panes), Changes (diff), and Pull request.
 - A worktree holds any number of sessions: agents such as codex and claude,
   and terminals. Each session has a chip that shows or hides its pane; a hidden
-  session keeps running. Closing an agent pane stops the agent.
+  session keeps running. Closing an agent pane stops the agent. An agent's
+  chip shows its state as on the sidebar, with its message, such as "approve
+  Write: src/a.ts", in the tooltip.
 - The header names the worktree's saved base beside its sync state and
   changes, in the same words as the row's tooltip.
 - The header shows the worktree's pull request with the same words as its
@@ -112,7 +128,7 @@ change them here first when they change.
 - **Done:** a clean, published worktree gets a summary of what is removed,
   including ignored files. One with unsaved work gets "Delete anyway?" with
   Keep as the default.
-- **Settings:** sections for editor, agents, fetching, Jira, setup scripts,
+- **Settings:** sections for editor, agents, notifications, fetching, Jira, setup scripts,
   pre-done scripts, starting branch, remote, worktree folder, and layout.
   Presets where they help, but every value is editable free-form, and every
   section has Save.
@@ -151,9 +167,12 @@ change them here first when they change.
 
 Dark, neutral surfaces with hairline dividers instead of boxed cards. One
 typeface for the interface and a monospace face only for terminals, diffs,
-paths, and commands. Color carries meaning only: amber for incoming commits,
-blue for outgoing commits and running agents, yellow and green for file
-changes, red for destructive or rewritten state and for errors.
+paths, and commands. Color carries meaning only: amber for incoming commits
+and for an agent that needs you, blue for outgoing commits and running or
+working agents, yellow and green for file changes (green also for an agent
+that is done), red for destructive or rewritten state, for errors, and for a
+crashed agent. The one color not from a theme is Claude's own orange in its
+spark, which is part of its mark.
 
 Every color is a theme's. Timber Dark is the look above and the default;
 Timber Light and a few well known palettes come with the app. A theme keeps

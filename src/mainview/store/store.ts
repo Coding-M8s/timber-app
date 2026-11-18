@@ -230,6 +230,13 @@ export interface AppStore {
 	 */
 	showSession(id: string): void;
 	/**
+	 * Bring a session to the person, as a click on its desktop notification
+	 * does: select its worktree, show the Workspace tab and its chip, and ask
+	 * its terminal to take the keyboard (see ../terminal-focus.ts). Nothing happens for
+	 * a session that is gone.
+	 */
+	revealSession(id: string): void;
+	/**
 	 * Show the session `step` chips away from this one in its worktree,
 	 * wrapping around, for the keys that switch sessions from a terminal.
 	 */
@@ -1062,6 +1069,14 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		update({ shownSessions: { ...state.shownSessions, [session.worktree]: id } });
 	}
 
+	function revealSession(id: string): void {
+		const session = state.terminals.find(candidate => candidate.id === id);
+		const selection = session && selectionFor(state.repositories, session.worktree);
+		if (!session || !selection) return;
+		wantTerminalFocus(session.worktree);
+		update({ selection, tab: "workspace", shownSessions: { ...state.shownSessions, [session.worktree]: id } });
+	}
+
 	function stepSession(id: string, step: 1 | -1): void {
 		const session = state.terminals.find(candidate => candidate.id === id);
 		if (!session) return;
@@ -1138,6 +1153,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 					if (state.terminals.some(session => session.id === part.id)) update({ unseenSessions: [...state.unseenSessions, part.id] });
 				}),
 				engine.onQuitRequested(live => update({ quitRequest: live })),
+				engine.onShowSession(id => revealSession(id)),
 				engine.onFetchChanged(status => {
 					heardFetches.add(status.repository);
 					showFetch(status);
@@ -1277,6 +1293,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		rebaseWorktree,
 		openTerminalIn,
 		showSession,
+		revealSession,
 		stepSession,
 		renameTerminal,
 		closeTerminal,

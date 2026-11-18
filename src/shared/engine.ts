@@ -126,7 +126,9 @@ export interface Engine {
 	 * while the window shows, catching up once when it shows again, and for
 	 * the selected worktree's repository when the focus comes back. Nothing
 	 * comes back. Safe to call with the same value again. Background fetches
-	 * also wait while the window is hidden (see `fetchNow`).
+	 * also wait while the window is hidden (see `fetchNow`), and a session's
+	 * desktop notification is held back while its worktree is the selected
+	 * one in a focused window that shows (see `onShowSession`).
 	 */
 	attend(attention: Attention): void;
 	/**
@@ -315,6 +317,16 @@ export interface Engine {
 	onTerminalOutput(listener: (output: TerminalOutput) => void): () => void;
 	/** Hear when a session starts, ends, or is gone. Returns a function that stops listening. */
 	onTerminalChanged(listener: (change: TerminalChange) => void): () => void;
+	/**
+	 * Hear when the person clicked the desktop notification of a session,
+	 * such as one for an agent that needs them: the window came forward, and
+	 * the listener gets the session's id, to select its worktree and show it.
+	 * The machine sends a notification when a session's status moves to
+	 * Needs you, Done, Error, or crashed while its worktree is not on screen
+	 * in a focused window (see `attend` and ./status-notices.ts), unless
+	 * `statusNotifications` is off. Returns a function that stops listening.
+	 */
+	onShowSession(listener: (id: string) => void): () => void;
 	/**
 	 * Hear when the app was asked to quit, or its window to close, while
 	 * terminals run. Nothing quits until `confirmQuit`. The listener gets how

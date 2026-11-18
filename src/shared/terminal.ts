@@ -4,6 +4,8 @@
  * interface only draws what it prints and passes on what is typed.
  */
 
+import type { ProgramStatus } from "./program-status";
+
 /** Whether a session's process still runs, or how it ended. */
 export type TerminalState =
 	| { kind: "running" }
@@ -36,6 +38,13 @@ export interface TerminalSession {
 	/** What was started, as one line for showing, such as `/usr/bin/zsh` or `/usr/local/bin/codex --full-auto`. */
 	command: string;
 	state: TerminalState;
+	/**
+	 * What the program in the session last reported about itself through the
+	 * Program Status Protocol (OSC 7501), as its root record, or null when it
+	 * reported nothing or its record ended (see ./program-status.ts). Any
+	 * session can have one, agent or shell.
+	 */
+	status: ProgramStatus | null;
 }
 
 /** Start another session in a worktree. Named as for "Open in editor". */

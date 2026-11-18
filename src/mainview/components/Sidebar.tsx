@@ -6,7 +6,8 @@ import { REMOVE_REPOSITORY_HINT, TIMBER_LIST_FAILURE_TITLE, describeListNotice, 
 import { SETTINGS_LABEL, describeLayoutProblem, describeRepository } from "../shell";
 import { DRAG_THRESHOLD, MOVE_REPOSITORY_HINT, MOVE_REPOSITORY_SHORTCUTS, dropIndex, moveStep } from "../repository-drag";
 import { useAppState, useStore } from "../store/react";
-import { isRunning, runningSessionCount } from "../store/state";
+import { hasStatusMark, mostUrgent, shownStatus, summarizeStatuses } from "../../shared/session-status";
+import { isRunning, sessionsOf } from "../store/state";
 import { OpenInEditorIconButton } from "./OpenInEditor";
 import { wantTerminalFocus } from "../terminal-focus";
 import { SIDEBAR_ID } from "./SidebarResizer";
@@ -147,7 +148,13 @@ export function Sidebar() {
 					const pullRequests = state.pullRequests[repository.path];
 					const pullProblem = repository.available ? describeRepositoryPullRequestProblem(pullRequests) : null;
 					const pullProblemId = `${idBase}-pulls-${index}`;
-					const describedBy = [fetchMarker ? fetchMarkerId : "", pullProblem ? pullProblemId : ""].filter(Boolean).join(" ");
+					// Only while the group is collapsed, its agents' states are summed up beside its name, Needs you first.
+					const statuses = open ? [] : state.terminals
+						.filter(session => session.repository === repository.path && hasStatusMark(session))
+						.map(shownStatus);
+					const summary = summarizeStatuses(statuses);
+					const summaryId = `${idBase}-summary-${index}`;
+					const describedBy = [fetchMarker ? fetchMarkerId : "", pullProblem ? pullProblemId : "", summary ? summaryId : ""].filter(Boolean).join(" ");
 					const fetchLabel = describeFetchAction(repository.name, fetching ? { repository: repository.path, fetching: true, lastFetched: null, failure: null } : fetch, now);
 					return (
 						<section
@@ -197,6 +204,10 @@ export function Sidebar() {
 										<path d="M3.5 2 6.5 5 3.5 8" />
 									</svg>
 									<span className="group-name">{repository.name}</span>
+									{summary && (
+										// Its words are the button's description too.
+										<span className={`group-status status-${mostUrgent(statuses)}`} aria-hidden="true">{summary}</span>
+									)}
 									{fetchMarker && (
 										// Quiet: a word beside the name, never a dialog. Its sentences are the button's description.
 										<span className="group-flag fetch-failed" title={fetchMarker.tooltip} aria-hidden="true">{fetchMarker.text}</span>
@@ -211,6 +222,7 @@ export function Sidebar() {
 								</button>
 								{fetchMarker && <span id={fetchMarkerId} hidden>{fetchMarker.tooltip}</span>}
 								{pullProblem && <span id={pullProblemId} hidden>{pullProblem.tooltip}</span>}
+								{summary && <span id={summaryId} hidden>{`Agents: ${summary}.`}</span>}
 								{repository.available && (
 									<button
 										type="button"
@@ -277,7 +289,7 @@ export function Sidebar() {
 													store.select(worktree.id);
 												}}
 												pullRequest={pullRequestOf(pullRequests, worktree.path)}
-												runningSessions={runningSessionCount(state, worktree.id)}
+												sessions={sessionsOf(state, worktree.id)}
 												actions={<OpenInEditorIconButton repository={repository.path} worktree={worktree} />}
 											/>
 										</li>

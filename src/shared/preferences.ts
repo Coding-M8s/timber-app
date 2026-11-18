@@ -46,6 +46,12 @@ export interface Preferences {
 	 * default, and a size outside the limits is clamped.
 	 */
 	terminal: TerminalAppearance;
+	/**
+	 * Whether a desktop notification says when an agent needs the person, is
+	 * done, reports an error, or crashed, in a worktree that is not on screen.
+	 * On by default.
+	 */
+	statusNotifications: boolean;
 }
 
 /** How one preference is read from outside, compared, and written to the settings file. */
@@ -121,6 +127,12 @@ export const PREFERENCE_PARTS: { [Key in keyof Preferences]: PreferencePart<Pref
 		same: sameTerminalAppearance,
 		write: writeTerminalAppearance,
 		salvage: salvageTerminalAppearance,
+	},
+	statusNotifications: {
+		fallback: () => true,
+		read: value => typeof value === "boolean" ? value : undefined,
+		same: (one, other) => one === other,
+		write: value => value,
 	},
 };
 

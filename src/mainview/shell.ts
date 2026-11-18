@@ -19,6 +19,7 @@ export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
 	terminal: "Terminal",
 	editor: "Editor",
 	agents: "Agents",
+	notifications: "Notifications",
 	fetch: "Fetching",
 	about: "About",
 	machine: "Machine",

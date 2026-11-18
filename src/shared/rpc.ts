@@ -105,6 +105,8 @@ export type AppRPC = {
 			/** Part of what a session printed. */
 			terminalOutput: TerminalOutput;
 			terminalChanged: TerminalChange;
+			/** The person clicked the desktop notification of a session: show it. */
+			showSession: { id: string };
 			/** Where fetching stands for a repository. */
 			fetchChanged: RepositoryFetch;
 		};
