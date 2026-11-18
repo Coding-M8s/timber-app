@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { applyPreferenceChange, defaultPreferences, readPreferences } from "../src/shared/preferences";
-import { ZOOM_CHOICES, readZoom, zoomChoices, zoomLabel } from "../src/shared/zoom";
+import { createMockEngine } from "../src/mainview/engine/mock";
+import { createAppStore } from "../src/mainview/store/store";
+import { zoomKey } from "../src/mainview/zoom-keys";
+import type { Preferences } from "../src/shared/preferences";
+import { ZOOM_CHOICES, readZoom, stepZoom, zoomChoices, zoomLabel } from "../src/shared/zoom";
 import { defaultThemeChoice } from "../src/shared/theme";
 
 describe("readZoom", () => {
@@ -55,5 +59,125 @@ describe("the zoom preference", () => {
 		const saved = { ...defaultPreferences(), zoom: 1.6, theme: defaultThemeChoice(), customThemes: [] };
 		expect(applyPreferenceChange(saved, { zoom: 1.25 })).toEqual({ preferences: { ...saved, zoom: 1.25 }, unreadable: [] });
 		expect(applyPreferenceChange(saved, { zoom: 12 })).toEqual({ preferences: saved, unreadable: ["zoom"] });
+	});
+});
+
+describe("stepZoom", () => {
+	test("steps through the zooms Settings offers, both ways", () => {
+		expect(stepZoom(1, "in")).toBe(1.1);
+		expect(stepZoom(1.1, "in")).toBe(1.25);
+		expect(stepZoom(1.5, "in")).toBe(1.6);
+		expect(stepZoom(1, "out")).toBe(0.9);
+		expect(stepZoom(0.9, "out")).toBe(0.75);
+		for (const zoom of ZOOM_CHOICES) expect(zoomChoices(1)).toContain(stepZoom(zoom, "in"));
+	});
+
+	test("a zoom between two choices goes to the nearest one that way", () => {
+		expect(stepZoom(1.33, "in")).toBe(1.5);
+		expect(stepZoom(1.33, "out")).toBe(1.25);
+	});
+
+	test("stays at either end, and outside the list moves only toward it", () => {
+		expect(stepZoom(3, "in")).toBe(3);
+		expect(stepZoom(0.75, "out")).toBe(0.75);
+		expect(stepZoom(0.5, "out")).toBe(0.5);
+		expect(stepZoom(0.5, "in")).toBe(0.75);
+	});
+
+	test("reset is 100% from anywhere", () => {
+		for (const zoom of [0.5, 1, 1.33, 3]) expect(stepZoom(zoom, "reset")).toBe(1);
+	});
+});
+
+describe("zoomKey", () => {
+	const key = (key: string, more: Partial<KeyboardEvent> = {}) =>
+		({ type: "keydown", key, ctrlKey: false, metaKey: false, altKey: false, ...more }) as KeyboardEvent;
+	const ctrl = (name: string, more: Partial<KeyboardEvent> = {}) => key(name, { ctrlKey: true, ...more });
+	const cmd = (name: string, more: Partial<KeyboardEvent> = {}) => key(name, { metaKey: true, ...more });
+
+	test("Ctrl with plus, equals, minus, and 0 on Linux and Windows", () => {
+		expect(zoomKey(ctrl("+"), false)).toBe("in");
+		expect(zoomKey(ctrl("="), false)).toBe("in");
+		expect(zoomKey(ctrl("-"), false)).toBe("out");
+		expect(zoomKey(ctrl("0"), false)).toBe("reset");
+	});
+
+	test("Cmd on macOS, and not Ctrl there", () => {
+		expect(zoomKey(cmd("+"), true)).toBe("in");
+		expect(zoomKey(cmd("-"), true)).toBe("out");
+		expect(zoomKey(cmd("0"), true)).toBe("reset");
+		expect(zoomKey(ctrl("+"), true)).toBeNull();
+		expect(zoomKey(cmd("+"), false)).toBeNull();
+	});
+
+	test("leaves every other key alone, the underscore for undo in a terminal among them", () => {
+		expect(zoomKey(key("+"), false)).toBeNull();
+		expect(zoomKey(key("-"), false)).toBeNull();
+		expect(zoomKey(ctrl("_", { shiftKey: true }), false)).toBeNull();
+		expect(zoomKey(ctrl("+", { altKey: true }), false)).toBeNull();
+		expect(zoomKey(ctrl("+", { metaKey: true }), false)).toBeNull();
+		expect(zoomKey(ctrl("1"), false)).toBeNull();
+		expect(zoomKey(ctrl("+", { type: "keyup" }), false)).toBeNull();
+	});
+});
+
+describe("changeZoom", () => {
+	const settle = async () => {
+		for (let round = 0; round < 5; round += 1) await Bun.sleep(0);
+	};
+	async function startedStore(engine = createMockEngine()) {
+		const store = createAppStore(engine, () => () => {});
+		store.start();
+		await settle();
+		return { engine, store };
+	}
+
+	test("saves the next zoom as the preference and says it in one toast", async () => {
+		const { engine, store } = await startedStore();
+		await store.changeZoom("in");
+		expect(store.getState().preferences.zoom).toBe(1.1);
+		expect((await engine.loadPreferences()).zoom).toBe(1.1);
+		await store.changeZoom("in");
+		expect(store.getState().preferences.zoom).toBe(1.25);
+		expect(store.getState().toasts.map(toast => toast.text)).toEqual(["Zoom 125%"]);
+		await store.changeZoom("reset");
+		expect(store.getState().preferences.zoom).toBe(1);
+		expect(store.getState().toasts.map(toast => toast.text)).toEqual(["Zoom 100%"]);
+	});
+
+	test("quick presses add up before the saves answer", async () => {
+		const { store } = await startedStore();
+		await Promise.all([store.changeZoom("in"), store.changeZoom("in"), store.changeZoom("in")]);
+		expect(store.getState().preferences.zoom).toBe(1.5);
+		await store.changeZoom("out");
+		expect(store.getState().preferences.zoom).toBe(1.25);
+	});
+
+	test("at an end it stays, saves nothing, and still says the zoom", async () => {
+		const engine = createMockEngine();
+		const { store } = await startedStore(engine);
+		await store.savePreferences({ zoom: 3 });
+		let saves = 0;
+		const save = engine.savePreferences.bind(engine);
+		engine.savePreferences = (change: Partial<Preferences>) => {
+			saves += 1;
+			return save(change);
+		};
+		await store.changeZoom("in");
+		expect(saves).toBe(0);
+		expect(store.getState().preferences.zoom).toBe(3);
+		expect(store.getState().toasts.map(toast => toast.text)).toEqual(["Zoom 300%"]);
+	});
+
+	test("a failed save changes nothing and shows no toast", async () => {
+		const engine = createMockEngine();
+		const { store } = await startedStore(engine);
+		engine.failPreferenceSaves("disk full");
+		await store.changeZoom("in");
+		expect(store.getState().preferences.zoom).toBe(1);
+		expect(store.getState().toasts).toEqual([]);
+		engine.failPreferenceSaves(null);
+		await store.changeZoom("in");
+		expect(store.getState().preferences.zoom).toBe(1.1);
 	});
 });

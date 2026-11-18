@@ -27,3 +27,18 @@ export function zoomChoices(saved: number): number[] {
 	const choices = ZOOM_CHOICES.includes(saved) ? [...ZOOM_CHOICES] : [...ZOOM_CHOICES, saved];
 	return choices.sort((one, other) => one - other);
 }
+
+/** A change of zoom from the keyboard: one step larger, one step smaller, or back to 100%. */
+export type ZoomStep = "in" | "out" | "reset";
+
+/**
+ * The zoom one step from `zoom`: the next of the zooms Settings offers, in
+ * either direction, so the keyboard and the list always agree. A zoom
+ * between two of them, as after editing the file by hand, goes to the
+ * nearest one that way. At either end it stays.
+ */
+export function stepZoom(zoom: number, step: ZoomStep): number {
+	if (step === "reset") return DEFAULT_ZOOM;
+	if (step === "in") return ZOOM_CHOICES.find(choice => choice > zoom) ?? Math.max(zoom, ZOOM_CHOICES.at(-1)!);
+	return ZOOM_CHOICES.findLast(choice => choice < zoom) ?? Math.min(zoom, ZOOM_CHOICES[0]!);
+}

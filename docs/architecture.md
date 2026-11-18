@@ -931,6 +931,18 @@ default.
   160% among them. The preference itself takes any number from 0.5 to 3, to
   two decimals. A saved zoom that is not in the list, as after editing the
   file by hand, is offered too. One that cannot be read means 100%.
+- **Keys.** Ctrl and plus (or equals, on the same key) zooms in, Ctrl and
+  minus zooms out, and Ctrl and 0 goes back to 100%; on macOS Cmd instead of
+  Ctrl (`src/mainview/zoom-keys.ts`). A step is the next zoom of the
+  Settings list either way (`stepZoom`), so the keys and the list agree, and
+  a zoom between two of them goes to the nearest one that way. Each press
+  saves the preference as Settings does, and a toast says the new zoom; at
+  either end the zoom stays and the toast still says it. Quick presses add
+  up before their saves answer. A failed save changes nothing. The window
+  hears the keys before anything in it, so they zoom from inside a terminal
+  too and never reach its program; Ctrl+Shift+minus types an underscore and
+  still reaches it, for programs that read it as undo. The webview has no
+  zoom keys of its own, as a browser does.
 - **Applying.** The main process sets the page zoom of the window's webview
   (`setPageZoom`) on start and after every save of the preferences, so a
   change shows as soon as it is saved. The window keeps its size: at a
@@ -938,7 +950,8 @@ default.
 - **Not zoomed.** What the system draws for the page: the open list of a
   select and tooltips keep their own size.
 - **The mock engine** saves the zoom like any preference and draws nothing
-  differently, because a browser has its own zoom.
+  differently, because a browser has its own zoom. In `bun run dev:web` the
+  zoom keys save and show the toast, and the browser may zoom as well.
 - **Without the setting.** Starting the app with `GDK_DPI_SCALE=1.6` in its
   environment has the same effect, and the two multiply.
 
