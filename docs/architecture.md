@@ -1940,17 +1940,24 @@ See the issue 63 run under [what has been verified](#what-has-been-verified).
 
 ### The GLXBadWindow line at start
 
-Each start seen so far on Linux (Pop!_OS 24.04, XWayland and Xephyr) logs
-one `X11 Error: GLXBadWindow`, code 168 under XWayland and 170 in Xephyr.
-It is harmless, and the app does nothing about it. The two codes are the
-same error: GLXBadWindow is GLX error 12, and the GLX error base was 156
-on XWayland and 158 in Xephyr.
+Each start seen so far on Linux (Pop!_OS 24.04 under XWayland and Xephyr,
+and Omarchy under XWayland) logs one `X11 Error: GLXBadWindow`, with code
+168 or 170. It is harmless, and the app does nothing about it. The codes
+are the same error: GLXBadWindow is GLX error 12, and the code is the X
+server's GLX error base plus 12. The base was 156 on Pop!_OS's XWayland and
+158 in Xephyr, and Omarchy's XWayland logged 170 (a base of 158, not read
+with `xdpyinfo` there), so the code follows the server, not whether it is
+XWayland or Xephyr.
 
 - While Electrobun creates the web view, WebKitGTK disposes a GTK widget,
   and GTK destroys its X window. Later, from the main loop, GTK frees a
   window's GL drawable with `glXDestroyWindow` inside an error trap it
   ignores. Most likely that drawable belonged to the destroyed window (not
   traced), so the X server answers GLXBadWindow.
+- WebKitGTK's DMABUF renderer is the likely owner of that drawable. On
+  Omarchy, three starts with `WEBKIT_DISABLE_DMABUF_RENDERER=1` had no line
+  and three without had one (see the issue 28 run on Omarchy and the issue
+  64 run under [what has been verified](#what-has-been-verified)).
 - GTK's trap drops that late error only while GDK's own X error handler is
   installed. Electrobun's `initializeGTK()` replaces it right after
   `gtk_init` with one that prints every error except BadWindow and
@@ -1958,10 +1965,26 @@ on XWayland and 158 in Xephyr.
 - Nothing else follows from it: the request was a cleanup that GTK
   expects may fail, the window draws, and clicks and keys worked in the
   issue 28 Xephyr run with the line present.
-- Not done in the app: putting GDK's handler back through Bun FFI would make
-  any other X error end the app, since GDK's handler exits on errors no
-  trap expects, and `GDK_SYNCHRONIZE=1` (which hides the line) makes every
-  X request a round trip.
+- Not done in the app. There are three ways to hide the line, and none is
+  worth it. Putting GDK's handler back through Bun FFI would make any other
+  X error end the app, since GDK's handler exits on errors no trap expects.
+  `GDK_SYNCHRONIZE=1` makes every X request a round trip.
+  `WEBKIT_DISABLE_DMABUF_RENDERER=1` switches WebKitGTK to a slower drawing
+  path, and would have to be in the process environment before the web
+  view starts.
+- Reported upstream as
+  [blackboardsh/electrobun#618](https://github.com/blackboardsh/electrobun/issues/618),
+  with a fix proposed in
+  [blackboardsh/electrobun#619](https://github.com/blackboardsh/electrobun/pull/619):
+  the handler skips GLXBadWindow and GLXBadDrawable too, using the GLX
+  error base read once after `gtk_init`. Separately,
+  [blackboardsh/electrobun#593](https://github.com/blackboardsh/electrobun/pull/593)
+  would let WebKitGTK windows open natively on Wayland. With it there is no
+  X connection on a Wayland session, so the line would go away there and
+  stay only in a real X11 session.
+- Electrobun's contribution notes say outside pull requests may wait, or be
+  closed without explanation, so the line may stay for a while. Carrying
+  our own Electrobun build is not worth it for a harmless log line.
 
 This covers only this line, a GLXBadWindow from `X_GLXDestroyWindow`. Any
 other `X11 Error:` line is not explained by it. See the issue 64 run under
@@ -3036,7 +3059,8 @@ said otherwise:
   `WEBKIT_DISABLE_DMABUF_RENDERER=1` had no such line and the three without
   had one; the window drew the same by eye. One start each with
   `WEBKIT_DISABLE_COMPOSITING_MODE=1`, `LIBGL_ALWAYS_SOFTWARE=1`, and
-  `__GLX_VENDOR_LIBRARY_NAME=mesa` still had it.
+  `__GLX_VENDOR_LIBRARY_NAME=mesa` still had it. See
+  [the GLXBadWindow line at start](#the-glxbadwindow-line-at-start).
 - `nvidia-smi` listed no process on the NVIDIA card while the app ran, and
   the app had both Mesa and NVIDIA libraries loaded. Which card drew the
   window was not established, so this is not a run on an NVIDIA GPU.
@@ -3299,9 +3323,15 @@ printed the backtrace of the error handler itself:
   and the window drew normally.
 - Not run: the installed build (the issue 28 run above logged the same
   line from it; its `libNativeWrapper.so` was not compared here), the CEF
-  wrapper, a real X11 login session, an NVIDIA GPU,
-  `WEBKIT_DISABLE_COMPOSITING_MODE`, and which WebKitGTK function creates
-  and disposes the widget. Not reported upstream to Electrobun.
+  wrapper, a real X11 login session, an NVIDIA GPU, and which WebKitGTK
+  function creates and disposes the widget.
+  `WEBKIT_DISABLE_COMPOSITING_MODE=1` was tried in the issue 28 run on
+  Omarchy, and the line stayed; `WEBKIT_DISABLE_DMABUF_RENDERER=1` hid it
+  there.
+- Reported upstream as
+  [blackboardsh/electrobun#618](https://github.com/blackboardsh/electrobun/issues/618),
+  with a proposed fix in
+  [blackboardsh/electrobun#619](https://github.com/blackboardsh/electrobun/pull/619).
 
 Not run yet:
 
