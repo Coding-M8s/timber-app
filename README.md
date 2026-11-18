@@ -86,7 +86,11 @@ to `~/.local/share/com.codingm8s.timber-app/stable/`, a menu entry to
 `~/.local/share/applications/Timber.desktop`, and a shortcut to
 `~/Desktop/Timber.desktop` (Electrobun has no way to skip it yet).
 `~/.local/share/com.codingm8s.timber-app/stable/uninstall --quiet` removes the app
-and both entries. Details in [installing the Linux build](docs/architecture.md#installing-the-linux-build).
+and both entries. It leaves the web data and cache the app wrote while
+running, in `~/.local/share/com.codingm8s.timber-app/stable/WebKit` and
+`~/.cache/com.codingm8s.timber-app/stable`; `uninstall --quiet --delete-data`
+removes those too. The saved repository list in `~/.config/timber-app/`
+stays either way. Details in [installing the Linux build](docs/architecture.md#installing-the-linux-build).
 
 ## More
 

@@ -1517,7 +1517,45 @@ and is listed under
 
 **Removing it.** `~/.local/share/com.codingm8s.timber-app/stable/uninstall
 --quiet` removes the app folder, both entries, and the install records.
-It was run only with `--quiet`.
+It keeps what the app wrote while running, on purpose: in Electrobun's
+uninstaller `--quiet` means "App", the choice that keeps a person's data.
+Adding `--delete-data`, after `--quiet` and nowhere else, means "App and
+Data" and removes that too. Without arguments the uninstaller asks, with
+the same two choices and Cancel; that was not run.
+
+**What uninstalling leaves behind.** After `uninstall --quiet`, once the app
+has been started at least once:
+
+- `~/.local/share/com.codingm8s.timber-app/stable/WebKit`: the web data of
+  the window (a cookie store and storage folders, 16K to 20K after a short
+  run). The app keeps nothing of its own there.
+- `~/.cache/com.codingm8s.timber-app/stable`: the web cache (20K after a
+  short run).
+
+`uninstall --quiet --delete-data` removes both, together with the app. When
+the app is already gone and the uninstaller with it, delete the two folders
+by hand: `rm -r ~/.local/share/com.codingm8s.timber-app
+~/.cache/com.codingm8s.timber-app`. That also removes the same folders of
+the `dev` channel, which the development commands write.
+
+Neither way touches these, which belong to no install:
+
+- `~/.config/timber-app/`: the [saved repository list](#saved-repository-list)
+  and the app's other settings. It is not under a folder Electrobun manages,
+  so a later install finds the same repositories. Delete the folder to
+  forget them.
+- Timber's own configuration and state, and the caches of other tools the
+  app used (Mesa's shader cache, for one). They are not the app's.
+
+**The decision (issue 74).** Uninstalling keeps the web data unless asked,
+and the app does not change that. Electrobun 2.0.6 has no setting for what
+`--quiet` removes or for extra paths to clean, and says so in its
+"Uninstalling" guide; `--delete-data` is its answer, so nothing is asked of
+upstream. With `XDG_DATA_HOME`, `XDG_CACHE_HOME`, or `XDG_STATE_HOME` set at
+install time, the installer records them and the uninstaller removes from
+those folders; that was read in the guide and not run. Neither was the
+third folder `--delete-data` covers, for logs under `~/.local/state`, which
+this app never made.
 
 ## Display server on Linux
 
@@ -2628,6 +2666,45 @@ said otherwise:
   starting an agent, the Changes tab, Zed and Neovim as editors, fractional
   scaling, a hot update under `dev:hmr`, and the menu entry started from a
   launcher.
+
+Run for what uninstalling leaves behind (issue 74), Omarchy 4.0.0 alpha
+(`omarchy` 4.0.0.r7968.gc3c8acf, Arch based) x64, natively, Hyprland 0.57.2
+on Wayland with XWayland 24.1.15, Bun 1.4.4, Electrobun 2.0.6,
+`webkit2gtk-4.1` 2.54.2, Timber 0.1.2, on commit `b7e5058`. Every install
+and uninstall ran with `env -i PATH=/usr/bin:/bin HOME=<temporary folder>`,
+and the app was started with that HOME plus `DISPLAY=:0` and
+`XDG_RUNTIME_DIR`, so nothing was written to the real home folder:
+
+- `bun run build`: completed. The built `bin/launcher`: exit 0, ending at
+  "Installation completed successfully!".
+- The installed `app/bin/launcher`, left open for 12 seconds and then ended
+  with SIGTERM: it logged the settings path and "Timber 0.1.2 at" the real
+  Timber. It made `stable/WebKit` beside the app (16K) and
+  `~/.cache/com.codingm8s.timber-app/stable` (20K). It made no
+  `~/.config/timber-app`, as nothing was saved, and no folder for the app
+  under `~/.local/state`. Also new in that home, and not the app's own:
+  `~/.cache/mesa_shader_cache`, `~/.bun/install/cache`, and
+  `~/.local/state/timber/setup-hint-shown`.
+- `uninstall --quiet`: exit 0. The app folder, `self-extraction`,
+  `uninstall`, `.electrobun-uninstall.json`, and both entries were gone.
+  `stable/WebKit` and `~/.cache/com.codingm8s.timber-app/stable` were left.
+- The launcher run again over those leftovers: exit 0.
+- `uninstall --delete-data` and `uninstall --delete-data --quiet`: `error:
+  InvalidArguments`, exit 1, and the install was as before.
+- `uninstall --quiet --delete-data`: exit 0.
+  `~/.local/share/com.codingm8s.timber-app` and
+  `~/.cache/com.codingm8s.timber-app` were gone whole, and both entries.
+- Installed once more with a `~/.config/timber-app/settings.json` put there
+  by hand, then `uninstall --quiet --delete-data`: exit 0, and the settings
+  file was still there.
+- Electrobun's "Uninstalling" guide and `package/src/extractor/main.zig` at
+  tag `v2.0.6`, read with `gh api` on 2026-11-18: `--quiet` is "App",
+  `--delete-data` is accepted only after it, and there is no configuration
+  for uninstall paths.
+- `grep -rn $'\u2014' README.md docs`: nothing.
+- Not run: the uninstaller without arguments and its dialog, uninstalling
+  while the app is open, an install with the XDG folders set elsewhere, an
+  uninstall after an update, and anything on Windows or macOS.
 
 Run for what the desktop development commands leave behind (issue 65),
 Pop!_OS 24.04 LTS x64 in the COSMIC Wayland session, Bun 1.4.2, Electrobun
