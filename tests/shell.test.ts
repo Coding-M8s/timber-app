@@ -19,14 +19,17 @@ const API_SERVER = "/work/api-server";
 describe("tabAfterKey", () => {
 	test("the arrows step between the tabs and wrap around", () => {
 		expect(tabAfterKey("workspace", "ArrowRight")).toBe("changes");
-		expect(tabAfterKey("changes", "ArrowRight")).toBe("workspace");
-		expect(tabAfterKey("workspace", "ArrowLeft")).toBe("changes");
+		expect(tabAfterKey("changes", "ArrowRight")).toBe("pull-request");
+		expect(tabAfterKey("pull-request", "ArrowRight")).toBe("workspace");
+		expect(tabAfterKey("workspace", "ArrowLeft")).toBe("pull-request");
+		expect(tabAfterKey("pull-request", "ArrowLeft")).toBe("changes");
 		expect(tabAfterKey("changes", "ArrowLeft")).toBe("workspace");
 	});
 
 	test("Home and End go to the first and the last tab", () => {
 		expect(tabAfterKey("changes", "Home")).toBe("workspace");
-		expect(tabAfterKey("workspace", "End")).toBe("changes");
+		expect(tabAfterKey("pull-request", "Home")).toBe("workspace");
+		expect(tabAfterKey("workspace", "End")).toBe("pull-request");
 	});
 
 	test("any other key is left alone", () => {

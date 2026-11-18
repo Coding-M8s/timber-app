@@ -225,6 +225,7 @@ describe("workspace", () => {
 		expect(markup).toMatch(/<div class="tabs" role="tablist" aria-label="[^"]+">/);
 		expect(markup).toMatch(/<button type="button" role="tab" id="tab-workspace" class="tab selected" aria-selected="true" aria-controls="workspace-panel" tabindex="0">Workspace</);
 		expect(markup).toMatch(/<button type="button" role="tab" id="tab-changes" class="tab" aria-selected="false" aria-controls="workspace-panel" tabindex="-1">Changes</);
+		expect(markup).toMatch(/<button type="button" role="tab" id="tab-pull-request" class="tab" aria-selected="false" aria-controls="workspace-panel" tabindex="-1">Pull request</);
 		const panel = tagOf(markup, "tabpanel workspace-panel");
 		expect(panel).toContain('role="tabpanel"');
 		expect(panel).toContain('id="workspace-panel"');
@@ -268,11 +269,13 @@ describe("workspace", () => {
 			expect(press("ArrowRight")).toBe(true);
 			expect(store.getState().tab).toBe("changes");
 			expect(press("ArrowRight")).toBe(true);
+			expect(store.getState().tab).toBe("pull-request");
+			expect(press("ArrowRight")).toBe(true);
 			expect(store.getState().tab).toBe("workspace");
 			expect(press("End")).toBe(true);
-			expect(store.getState().tab).toBe("changes");
+			expect(store.getState().tab).toBe("pull-request");
 			expect(press("Tab")).toBe(false);
-			expect(store.getState().tab).toBe("changes");
+			expect(store.getState().tab).toBe("pull-request");
 		} finally {
 			Reflect.deleteProperty(globalThis, "document");
 		}

@@ -11,7 +11,7 @@ import type { RowMarker, RowMarkerKind } from "./format";
 export const OPEN_PULL_REQUEST = "Open pull request";
 
 /** End a text from elsewhere with a full stop, unless it already ends a sentence. */
-const asSentence = (text: string) => /[.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`;
+export const asSentence = (text: string) => /[.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`;
 
 function stateSentence(pull: PullRequest): string {
 	const { number, baseBranch } = pull;
@@ -92,6 +92,9 @@ const FAILURE_SENTENCES: Record<PullRequestFailureReason, string> = {
 	"not-github": "Pull requests are read from github.com only, and this repository's remote is not there.",
 	"failed": "Pull requests could not be read. The app tries again after the next fetch.",
 };
+
+/** Why pull requests could not be read, in a whole sentence for the person. */
+export const pullRequestFailureSentence = (reason: PullRequestFailureReason): string => FAILURE_SENTENCES[reason];
 
 function failureProblem(entry: Extract<PullRequestEntry, { outcome: "failed" }>): PullRequestProblem {
 	return { text: FAILURE_WORDS[entry.reason], tooltip: `${FAILURE_SENTENCES[entry.reason]} Timber says: ${asSentence(entry.diagnostic)}` };

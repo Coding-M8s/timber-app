@@ -1227,8 +1227,13 @@ there is one sign-in, Timber's, and the app holds no token.
   `sign-in-needed`, `not-github`, `failed`) and Timber's diagnostic. A found
   one keeps its number, its `https` link, its title (made safe to show), its
   state, its base branch, the summary of its checks with how many runs pass,
-  fail, and are pending, and its review decision. Its description and the
-  runs themselves are dropped. Fields the app does not use are ignored.
+  fail, and are pending, each run with its name, status, and link, its
+  review decision, and its description. A run's link is kept only when it
+  is `https`, since a commit status may point anywhere. The description
+  keeps its line breaks and tabs and is otherwise made safe like any text
+  from GitHub (`descriptionText`), cut at 20000 characters, and never
+  rendered as markup. Timber reports no reviewers, so the app has none to
+  show. Fields the app does not use are ignored.
 - **Never an empty answer by mistake.** Another exit code, output that is
   not one such record, another schema version, a repository Timber could
   not read (its `diagnostic`), or any entry that cannot be read fails the
@@ -1247,10 +1252,19 @@ there is one sign-in, Timber's, and the app holds no token.
   in the workspace header of a selected worktree in it, never on every row
   and never as a dialog. "Open pull request" in the workspace header goes
   through `openLink`, which opens only `http` and `https` links.
+- **The Pull request tab.** `PullRequestPanel` shows the selected
+  worktree's entry from the same answer, with its words from the pure
+  `describePullRequestTab` in `src/mainview/pull-request-tab-format.ts`:
+  the pull request, "No pull request yet", "Not read yet" before the first
+  answer, or why it could not be read. It reads the store only, so it
+  changes whenever the pull requests are read again, and it runs no
+  command. Its controls open links through `openLink`.
 
 In `bun run dev:web`, timber has an approved pull request and one with
 failing checks and requested changes, api-server a merged one, and billing
-a draft and a closed one. docs-site, once added, is not on GitHub.
+a draft and a closed one, with descriptions and check runs that show
+every status, a run without a link, and none at all. docs-site, once
+added, is not on GitHub.
 `timberMock.setPullRequests(path, list)` changes one (`null` for the
 sample).
 
@@ -4057,8 +4071,27 @@ Run for pull requests (issue 100), Linux x64 (Omarchy, Arch) with Bun
   with "checks fail" and "changes requested" in red; `#17 merged`; and
   `#5 closed`.
 
+Run for the Pull request tab (issue 101), Linux x64 (Omarchy, Arch) with
+Bun 1.4.4:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 1561 passed, 5 skipped, 0 failed.
+- `bun run build:web`: built.
+- `bun run dev:web` in headless Chromium, each worktree selected and the
+  Pull request tab clicked: #38 with "Changes requested" and "Checks fail"
+  in red, a failing run in red, and a status without a link and no Open;
+  #42 approved, with a skipped run and a description whose `<b>` shows as
+  text and whose blank lines are kept; the draft, merged, and closed ones,
+  the closed one with "No checks were reported for the head commit." and
+  "No description."; and "No pull request yet" for spike/new-idea. No
+  console errors.
+
 Not run yet:
 
+- The Pull request tab in the desktop window, a check's Open clicked
+  there, and a real pull request with its runs and description read by the
+  app's own code from GitHub. Offline, sign-in needed, and not on GitHub in
+  the tab were run in the tests only.
 - Saving or checking from inside the desktop window, and over the RPC
   bridge.
 - A Jira or Linear login check that succeeds. Only rejected and missing

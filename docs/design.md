@@ -55,7 +55,7 @@ change them here first when they change.
 
 ## Workspace
 
-- Two tabs: Workspace (panes) and Changes (diff).
+- Three tabs: Workspace (panes), Changes (diff), and Pull request.
 - A worktree holds any number of sessions: agents such as codex and claude,
   and terminals. Each session has a chip that shows or hides its pane; a hidden
   session keeps running. Closing an agent pane stops the agent.
@@ -64,6 +64,17 @@ change them here first when they change.
 - The header shows the worktree's pull request with the same words as its
   row, and "Open pull request" opens it in the browser. When pull requests
   could not be read, the header has the same quiet word as the repository.
+- The Pull request tab shows the worktree's pull request: its title, state,
+  number, and base, "Open in browser", then Review (the review decision in
+  a word and a sentence), Checks (a summary line, then each run with its
+  status and an Open link when it has one), and Description, as plain text
+  with its lines kept, never as markup. Hairlines part the sections.
+  Failing checks and requested changes are red with their words. Timber
+  reports no reviewers, so none are listed yet. It is read-only: it runs
+  no command, and only opens links. With no pull request it is a quiet
+  placeholder, "No pull request yet". Offline, sign-in needed, not on
+  GitHub, or an answer that could not be read is said in its place with
+  the reason, never as a dialog. It follows each new read.
 - Changes compares against the base, the last commit, or a rebase backup.
 - A repository that was never set up for Timber shows a quiet prompt above
   the tabs: Timber's defaults work, setup is optional, "Set up Timber", and

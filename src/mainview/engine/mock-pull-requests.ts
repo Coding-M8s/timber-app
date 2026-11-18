@@ -1,6 +1,6 @@
 import type { Engine } from "../../shared/engine";
 import type { Repository, TimberStatus } from "../../shared/model";
-import type { PullRequest, PullRequestEntry, PullRequestFailureReason, PullRequestList } from "../../shared/pull-requests";
+import type { CheckRun, PullRequest, PullRequestEntry, PullRequestFailureReason, PullRequestList } from "../../shared/pull-requests";
 
 /** The part of the engine about pull requests. */
 export type PullRequestCapabilities = Pick<Engine, "readPullRequests">;
@@ -15,27 +15,57 @@ export interface PullRequestControls {
 	pullRequestReads(repository: string): number;
 }
 
-const pullRequest = (number: number, branch: string, title: string, fields: Partial<PullRequest> = {}): PullRequest => ({
-	number,
-	url: `https://github.com/example/${branch.split("/")[0]}/pull/${number}`,
-	title,
-	state: "open",
-	baseBranch: "main",
-	checks: { summary: "passing", passing: 3, failing: 0, pending: 0 },
-	review: "review-required",
-	...fields,
+type SampleFields = Partial<Omit<PullRequest, "checks">> & { summary?: PullRequest["checks"]["summary"]; runs?: CheckRun[] };
+
+const run = (name: string, status: CheckRun["status"], link = true): CheckRun => ({
+	name,
+	status,
+	url: link ? `https://github.com/example/checks/${encodeURIComponent(name)}` : null,
 });
 
-/** Sample pull requests by branch, in the repository the browser build calls timber. */
+const SAMPLE_RUNS: CheckRun[] = [run("test", "passing"), run("lint", "passing"), run("typecheck", "passing")];
+
+/** A sample pull request. The check counts come from its runs, as the parser counts them. */
+const pullRequest = (number: number, branch: string, title: string, fields: SampleFields = {}): PullRequest => {
+	const { summary = "passing", runs = SAMPLE_RUNS, ...rest } = fields;
+	const count = (status: CheckRun["status"]) => runs.filter(candidate => candidate.status === status).length;
+	return {
+		number,
+		url: `https://github.com/example/${branch.split("/")[0]}/pull/${number}`,
+		title,
+		state: "open",
+		baseBranch: "main",
+		checks: { summary, passing: count("passing"), failing: count("failing"), pending: count("pending"), runs: structuredClone(runs) },
+		review: "review-required",
+		description: "",
+		...rest,
+	};
+};
+
+/** Sample pull requests by branch, in the repository the browser build calls timber, one in each state. */
 export const samplePullRequests: Readonly<Record<string, PullRequest>> = {
-	"feat/github-issue-lookup": pullRequest(42, "timber", "Look up GitHub issues by number", { review: "approved" }),
-	"fix/macos-portability": pullRequest(38, "timber", "Run on macOS without GNU tools", {
-		checks: { summary: "failing", passing: 2, failing: 1, pending: 0 },
-		review: "changes-requested",
+	"feat/github-issue-lookup": pullRequest(42, "timber", "Look up GitHub issues by number", {
+		review: "approved",
+		runs: [...SAMPLE_RUNS, run("docs", "skipped")],
+		description: "Adds `timber new github:<n>`, which names the branch after the issue.\n\nCloses #41.\n\n<b>Markup</b> from GitHub shows as text.",
 	}),
-	"feat/rate-limit-headers": pullRequest(17, "api-server", "Send rate limit headers", { state: "merged", review: "none" }),
-	"feat/invoices": pullRequest(8, "billing", "Draft invoices", { state: "draft", checks: { summary: "pending", passing: 1, failing: 0, pending: 2 } }),
-	"release/2.4": pullRequest(5, "billing", "Release 2.4", { state: "closed", checks: { summary: "none", passing: 0, failing: 0, pending: 0 }, review: "none" }),
+	"fix/macos-portability": pullRequest(38, "timber", "Run on macOS without GNU tools", {
+		summary: "failing",
+		runs: [run("test (ubuntu)", "passing"), run("test (macos)", "failing"), run("lint", "passing"), run("legacy status", "pending", false)],
+		review: "changes-requested",
+		description: "Replaces `sed -i` and `readlink -f`, which differ on macOS.",
+	}),
+	"feat/rate-limit-headers": pullRequest(17, "api-server", "Send rate limit headers", {
+		state: "merged",
+		review: "none",
+		description: "Sends `RateLimit-Remaining` and `RateLimit-Reset` on every answer.",
+	}),
+	"feat/invoices": pullRequest(8, "billing", "Draft invoices", {
+		state: "draft",
+		summary: "pending",
+		runs: [run("test", "passing"), run("build", "pending"), run("deploy preview", "pending")],
+	}),
+	"release/2.4": pullRequest(5, "billing", "Release 2.4", { state: "closed", summary: "none", runs: [], review: "none" }),
 };
 
 /** Sample failures by primary checkout: every branch in it gets the reason, as from Timber. */
