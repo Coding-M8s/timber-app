@@ -2,6 +2,7 @@ import type { NewWorktreeRequest, OpenWorktreeRequest, TimberStatus, WorktreeCom
 import type { ResultCommand } from "../shared/timber-result";
 import { type RebaseRequest, type RebaseResult, readRebaseResult, rebaseResultArguments } from "../shared/timber-rebase";
 import { REBASE_RESULT_TIMBER_VERSION, supportsRebaseResult } from "../shared/timber-version";
+import { isWorkflowName } from "../shared/workflows";
 import { newWorktreeArguments, openWorktreeArguments, worktreeCommandResult } from "../shared/worktree-commands";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
 import { type RepositoryTurns, createRepositoryTurns } from "./repository-turns";
@@ -84,6 +85,9 @@ export function createWorktreeCommands(options: WorktreeCommandsOptions): Worktr
 	}
 
 	// A request comes over the bridge, so its shape is checked and not assumed: only text ever becomes an argument.
+	// A workflow follows `--workflow`, so only a workflow name may pass: whether one by that name exists is Timber's to say.
+	const isPickedWorkflow = (workflow: unknown) => workflow === undefined || isWorkflowName(workflow);
+	const picked = (workflow: string | undefined) => (workflow === undefined ? {} : { workflow });
 	const incomplete = (command: ResultCommand) => Promise.resolve(notRun(`The request for timber ${command} is not complete.`));
 
 	/** A failure from before the rebase ran. Nothing was changed. */
@@ -123,14 +127,14 @@ export function createWorktreeCommands(options: WorktreeCommandsOptions): Worktr
 	return {
 		rebase,
 		create(request) {
-			const { repository, name, base } = request;
-			if (typeof name !== "string" || (base !== null && typeof base !== "string")) return incomplete("new");
-			return run(repository, "new", resultFile => newWorktreeArguments({ repository, name, base }, resultFile));
+			const { repository, name, base, workflow } = request;
+			if (typeof name !== "string" || (base !== null && typeof base !== "string") || !isPickedWorkflow(workflow)) return incomplete("new");
+			return run(repository, "new", resultFile => newWorktreeArguments({ repository, name, base, ...picked(workflow) }, resultFile));
 		},
 		open(request) {
-			const { repository, selector, setup } = request;
-			if (typeof selector !== "string" || typeof setup !== "boolean") return incomplete("open");
-			return run(repository, "open", resultFile => openWorktreeArguments({ repository, selector, setup }, resultFile));
+			const { repository, selector, setup, workflow } = request;
+			if (typeof selector !== "string" || typeof setup !== "boolean" || !isPickedWorkflow(workflow)) return incomplete("open");
+			return run(repository, "open", resultFile => openWorktreeArguments({ repository, selector, setup, ...picked(workflow) }, resultFile));
 		},
 	};
 }

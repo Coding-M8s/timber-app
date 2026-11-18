@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import type { AgentSetting } from "../../shared/agent";
 import type { Repository } from "../../shared/model";
 import { useAppState, useStore, useSubmission } from "../store/react";
@@ -97,9 +97,13 @@ export function WorktreeDialogFrame(props: WorktreeDialogFrameProps) {
 export function NewWorktreeDialog({ repository }: { repository: Repository }) {
 	const store = useStore();
 	const { submission, state } = useSubmission(() => store.closeDialog());
-	const modes = [useNewBranchMode(repository, submission), useExistingBranchMode(repository, submission)];
 	const [controller] = useState(() => createWorktreeDialogController(store, repository.path, submission));
-	const { selected } = useSyncExternalStore(controller.subscribe, controller.getState, controller.getState);
+	const { selected, workflows } = useSyncExternalStore(controller.subscribe, controller.getState, controller.getState);
+	// Read when the dialog opens, and again whenever the repository was read again, as the branches are.
+	useEffect(() => {
+		void controller.readWorkflows();
+	}, [controller, repository]);
+	const modes = [useNewBranchMode(repository, submission, workflows), useExistingBranchMode(repository, submission, workflows)];
 	const { agents } = useAppState().preferences;
 	return (
 		<WorktreeDialogFrame

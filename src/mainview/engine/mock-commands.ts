@@ -52,8 +52,11 @@ function stage(command: ResultCommand, repository: Repository, shown: string) {
 	};
 }
 
-const setupDiagnostic = (path: string) =>
-	`Setup post_create step 1 failed (exit code 1). The branch/worktree and setup files are retained at "${path}". Fix the hook or its prerequisites, then retry all setup steps with: timber open --setup -- '${path}'`;
+const setupDiagnostic = (path: string, workflow: string | undefined) =>
+	`Setup post_create step 1 failed (exit code 1). The branch/worktree and setup files are retained at "${path}". Fix the hook or its prerequisites, then retry all setup steps with: timber open --setup${workflow === undefined ? "" : ` --workflow ${workflow}`} -- '${path}'`;
+
+/** Timber's words for a workflow its settings do not have, word for word. */
+export const UNKNOWN_WORKFLOW_DIAGNOSTIC = "Unknown workflow. Restore its definition or assign another configured workflow with --workflow <name>.";
 
 const SETUP_OUTPUT = "bun install v1.4.2\nerror: lockfile had changes, but lockfile is frozen\n";
 
@@ -96,11 +99,18 @@ function newWorktreeIn(repository: Repository, branch: string, base: Worktree["b
 /**
  * Act out `timber new`. `created` is the worktree to add to the pretend
  * disk, or null when the command made none. A branch that is checked out
- * already is refused whatever the ending, as Timber does.
+ * already is refused whatever the ending, as Timber does, and so is a
+ * workflow that is not in `workflows`, the names the repository has.
  */
-export function actOutNew(repository: Repository, request: NewWorktreeRequest, ending: CommandEnding): { result: WorktreeCommandResult; created: Worktree | null } {
+export function actOutNew(
+	repository: Repository,
+	request: NewWorktreeRequest,
+	ending: CommandEnding,
+	workflows: readonly string[] = [],
+): { result: WorktreeCommandResult; created: Worktree | null } {
 	const acted = stage("new", repository, describeTimberCommand(newWorktreeArguments(request, RESULT_FILE_PLACEHOLDER)));
 	const refused = (diagnostic: string) => ({ result: acted.failed(diagnostic), created: null });
+	if (request.workflow !== undefined && !workflows.includes(request.workflow)) return refused(UNKNOWN_WORKFLOW_DIAGNOSTIC);
 	const branch = branchFor(request.name);
 	if (branch === "") return refused("Invalid branch name: branch name must not be blank.");
 	const existing = repository.worktrees.find(worktree => worktree.branch === branch);
@@ -115,7 +125,7 @@ export function actOutNew(repository: Repository, request: NewWorktreeRequest, e
 		case "succeeds":
 			return { result: acted.succeeded(fields, printed), created };
 		case "setup-fails":
-			return { result: acted.failed(setupDiagnostic(created.path), fields, printed + SETUP_OUTPUT), created };
+			return { result: acted.failed(setupDiagnostic(created.path, request.workflow), fields, printed + SETUP_OUTPUT), created };
 		case "no-result":
 			return { result: acted.noResult(printed), created };
 	}
@@ -125,17 +135,19 @@ export function actOutNew(repository: Repository, request: NewWorktreeRequest, e
  * Act out `timber open`. The pretend Timber knows a worktree by its branch or
  * its path, and a branch without a worktree by the name `branches` lists it
  * under. `created` is the worktree to add to the pretend disk, or null when
- * the command made none.
+ * the command made none. A workflow that is not in `workflows` is refused.
  */
 export function actOutOpen(
 	repository: Repository,
 	request: OpenWorktreeRequest,
 	ending: CommandEnding,
 	branches: readonly BranchSuggestion[] = [],
+	workflows: readonly string[] = [],
 ): { result: WorktreeCommandResult; created: Worktree | null } {
 	const acted = stage("open", repository, describeTimberCommand(openWorktreeArguments(request, RESULT_FILE_PLACEHOLDER)));
 	const { selector } = request;
 	const refused = (diagnostic: string) => ({ result: acted.failed(diagnostic), created: null });
+	if (request.workflow !== undefined && !workflows.includes(request.workflow)) return refused(UNKNOWN_WORKFLOW_DIAGNOSTIC);
 	if (ending === "ambiguous") return refused(ambiguousDiagnostic(selector));
 
 	const found = repository.worktrees.find(worktree => worktree.path === selector || worktree.branch === selector);
@@ -149,7 +161,7 @@ export function actOutOpen(
 				return refused(`Worktree ${found.path} is missing or unverifiable. Check it before opening it again.`);
 			case "setup-fails":
 				// Without --setup an existing worktree runs no setup, so there is nothing to fail.
-				return { result: request.setup ? acted.failed(setupDiagnostic(found.path), fields, SETUP_OUTPUT) : acted.succeeded(fields, printed), created: null };
+				return { result: request.setup ? acted.failed(setupDiagnostic(found.path, request.workflow), fields, SETUP_OUTPUT) : acted.succeeded(fields, printed), created: null };
 			case "no-result":
 				return { result: acted.noResult(printed), created: null };
 		}
@@ -167,7 +179,7 @@ export function actOutOpen(
 		case "succeeds":
 			return { result: acted.succeeded(fields, printed), created };
 		case "setup-fails":
-			return { result: acted.failed(setupDiagnostic(created.path), fields, printed + SETUP_OUTPUT), created };
+			return { result: acted.failed(setupDiagnostic(created.path, request.workflow), fields, printed + SETUP_OUTPUT), created };
 		case "no-result":
 			return { result: acted.noResult(printed), created };
 	}

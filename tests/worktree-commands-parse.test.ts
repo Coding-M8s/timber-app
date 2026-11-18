@@ -17,6 +17,16 @@ describe("newWorktreeArguments", () => {
 			.toEqual(["new", "--base", "origin/develop", "--result-file", "/tmp/r.json", "--no-editor", "--no-agent", "--", "feat/login"]);
 	});
 
+	test("a workflow goes in as the value of --workflow, among the options before --", () => {
+		expect(newWorktreeArguments({ repository: REPOSITORY, name: "feat/login", base: "develop", workflow: "review" }, "/tmp/r.json"))
+			.toEqual(["new", "--base", "develop", "--workflow", "review", "--result-file", "/tmp/r.json", "--no-editor", "--no-agent", "--", "feat/login"]);
+		expect(openWorktreeArguments({ repository: REPOSITORY, selector: "/work/w", setup: true, workflow: "review" }, "/tmp/r.json"))
+			.toEqual(["open", "--setup", "--workflow", "review", "--result-file", "/tmp/r.json", "--no-editor", "--no-agent", "--", "/work/w"]);
+		// None leaves the flag out.
+		expect(newWorktreeArguments({ repository: REPOSITORY, name: "x", base: null }, "/tmp/r.json")).not.toContain("--workflow");
+		expect(openWorktreeArguments({ repository: REPOSITORY, selector: "x", setup: false }, "/tmp/r.json")).not.toContain("--workflow");
+	});
+
 	test("text that looks like an option stays the name, after --", () => {
 		const given = newWorktreeArguments({ repository: REPOSITORY, name: "--editor", base: null }, "/tmp/r.json");
 		expect(given.at(-2)).toBe("--");

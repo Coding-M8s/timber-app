@@ -19,6 +19,11 @@ const DIAGNOSTIC_LIMIT = 300;
 /** Timber's rule for workflow names. A name becomes `--workflow <name>`, so nothing else may pass. */
 const WORKFLOW_NAME = /^[a-z][a-z0-9_-]*$/;
 
+/** Whether a value is text in the form of a workflow name, so it can follow `--workflow` and never read as an option. */
+export function isWorkflowName(value: unknown): value is string {
+	return typeof value === "string" && WORKFLOW_NAME.test(value);
+}
+
 /**
  * The agent a workflow starts. `command` is the executable and its
  * arguments exactly as Timber reports them; the arguments can hold tokens,

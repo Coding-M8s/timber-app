@@ -8,18 +8,28 @@ import { BranchField } from "../BranchField";
 import { type ExistingBranchForm, type ExistingBranchFormState, canOpen, createExistingBranchForm, openRequest } from "./existing-branch-form";
 import type { WorktreeDialogMode } from "./mode";
 import { reportedLabel } from "./new-branch-model";
+import { WorkflowField, type WorkflowOptions, chosenWorkflow } from "./workflow-choice";
 
 /**
  * The "Existing branch" mode as the dialog shows it, for one state of its
  * form. `repository` is the path of the primary checkout, and `running` is
  * true while the dialog's command runs.
  */
-export function existingBranchMode(form: ExistingBranchForm, state: ExistingBranchFormState, repository: string, running: boolean): WorktreeDialogMode {
+export function existingBranchMode(
+	form: ExistingBranchForm,
+	state: ExistingBranchFormState,
+	repository: string,
+	running: boolean,
+	workflows: WorkflowOptions = undefined,
+): WorktreeDialogMode {
 	const { selector, setup, branches, kept } = state;
+	// The command and the run take the same workflow, so the footer shows what runs.
+	const workflow = chosenWorkflow(workflows, state.workflow);
 
 	const fields = (
 		<>
 			<BranchField label="Branch, ticket, or worktree path" value={selector} branches={branches} disabled={running} onChange={form.setSelector} />
+			<WorkflowField options={workflows} chosen={workflow} disabled={running} onPick={form.setWorkflow} />
 			<label className="check">
 				<input type="checkbox" checked={setup} onChange={event => form.setSetup(event.target.checked)} />
 				<span className="check-text">
@@ -40,7 +50,7 @@ export function existingBranchMode(form: ExistingBranchForm, state: ExistingBran
 		label: "Existing branch",
 		fields,
 		// Worded from the same request that `run` sends, so the command shown is the command that runs.
-		command: describeTimberCommand(openWorktreeArguments(openRequest(repository, state), RESULT_FILE_PLACEHOLDER)),
+		command: describeTimberCommand(openWorktreeArguments(openRequest(repository, state, workflow), RESULT_FILE_PLACEHOLDER)),
 		canSubmit: canOpen(state),
 		submitLabel: "Open worktree",
 		runningLabel: "Opening the worktree",
@@ -49,7 +59,7 @@ export function existingBranchMode(form: ExistingBranchForm, state: ExistingBran
 			: "Could not open the worktree",
 		// Only Timber knows whether the text names a worktree that is already there. One kept from a failed run is known.
 		agentStart: kept ? (kept.created ? "always" : "never") : "if-created",
-		run: form.run,
+		run: () => form.run(workflow),
 	};
 }
 
@@ -59,7 +69,7 @@ export function existingBranchMode(form: ExistingBranchForm, state: ExistingBran
  * Timber without the spaces around it and otherwise as given, and Timber
  * alone decides what it means.
  */
-export function useExistingBranchMode(repository: Repository, submission: Submission): WorktreeDialogMode {
+export function useExistingBranchMode(repository: Repository, submission: Submission, workflows: WorkflowOptions): WorktreeDialogMode {
 	const store = useStore();
 	const [form] = useState(() => createExistingBranchForm(store, repository.path, submission));
 	const state = useSyncExternalStore(form.subscribe, form.getState, form.getState);
@@ -67,5 +77,5 @@ export function useExistingBranchMode(repository: Repository, submission: Submis
 	useEffect(() => {
 		void form.readBranches();
 	}, [form, repository]);
-	return existingBranchMode(form, state, repository.path, submission.getState().running);
+	return existingBranchMode(form, state, repository.path, submission.getState().running, workflows);
 }

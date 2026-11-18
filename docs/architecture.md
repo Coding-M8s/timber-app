@@ -362,9 +362,9 @@ capabilities of the `Engine` contract.
   the same function with the real result file, so the command shown is the
   command that runs.
 - **The arguments.** Options first, then `--`, then what the person typed as
-  one argument: `new [--base <ref>] --result-file <path> --no-editor
-  --no-agent -- <name>` and `open [--setup] --result-file <path> --no-editor
-  --no-agent -- <selector>`. Text that starts with a dash is therefore never
+  one argument: `new [--base <ref>] [--workflow <name>] --result-file <path>
+  --no-editor --no-agent -- <name>` and `open [--setup] [--workflow <name>]
+  --result-file <path> --no-editor --no-agent -- <selector>`. Text that starts with a dash is therefore never
   read as an option. Both launch flags are always passed, so an editor or an
   agent configured in Timber does not start.
 - **Running.** `src/bun/worktree-commands.ts` runs the command in the
@@ -373,7 +373,9 @@ capabilities of the `Engine` contract.
   repository in the app's list, runs nothing while Timber is not ready, runs the
   commands of one repository one after another, and never logs what a
   command printed or what it answered. It checks nothing about a name, a
-  base, or a folder: those rules are Timber's.
+  base, or a folder: those rules are Timber's. A workflow must have the form
+  of a workflow name, so it can never read as an option; whether one by that
+  name exists is Timber's to say.
 - **The answer.** A `WorktreeCommandResult` (`src/shared/model.ts`).
   Succeeded needs a checked record with exit code 0 that names a worktree.
   A failure says whether the worktree was created all the same
@@ -432,6 +434,28 @@ key, or a worktree path, with an optional "Rerun setup" that adds `--setup`.
   failed, is reported as that, with the worktree selected in the list. The
   fields change to its exact path with "Rerun setup" ticked, so the next run
   the person starts cannot create anything.
+
+Both modes have a **Workflow** field among their own fields, for the
+repository's [named workflows](#named-workflows): None first and by
+default, then each workflow in Timber's order with its description. A pick
+adds `--workflow <name>` to the command in the footer, so Timber runs that
+workflow's `post_create` scripts after the ordinary ones.
+(`worktree-modes/workflow-choice.tsx`.)
+
+- **The list.** The dialog's controller reads `listWorkflows` when the
+  dialog opens and again whenever the repository was read again. With no
+  workflows there is no field. When the list cannot be read, the field is
+  replaced by a short note with the reason, and creating without a
+  workflow still works. A pick the list no longer has passes none, so the
+  footer never shows a workflow the field does not.
+- **Open with setup.** Timber does not remember the workflow a worktree was
+  created with, so "Open with setup" after a failed New branch run passes
+  the workflow that run had, even when the list has changed since. In
+  Existing branch, the fields that name a kept worktree keep the pick too.
+- **A workflow that is gone.** Removed from the settings between listing and
+  creating, it fails with Timber's diagnostic shown as it is ("Unknown
+  workflow. ..."), and nothing is created.
+- **Its agent** is not started here. Timber still runs with `--no-agent`.
 
 Both modes share an **Agent** field under their own fields: the agents from
 Settings, Agents, in menu order, the first one picked, then None. With no

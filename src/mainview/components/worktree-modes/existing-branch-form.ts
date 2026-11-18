@@ -3,6 +3,7 @@ import { reportedLabel } from "./new-branch-model";
 import type { AppStore } from "../../store/store";
 import type { Submission } from "../../store/submission";
 import type { ModeRun } from "./agent-choice";
+import { workflowPart } from "./workflow-choice";
 
 /** A worktree that a failed run left behind or found, and whether that run created it. */
 export interface KeptWorktree {
@@ -15,6 +16,8 @@ export interface ExistingBranchFormState {
 	selector: string;
 	/** "Rerun setup". */
 	setup: boolean;
+	/** The Workflow field as picked, or null for None. What it passes depends on the list (see ./workflow-choice.tsx). */
+	workflow: string | null;
 	/** The branches to pick from. Undefined while they are read, null when they could not be read. */
 	branches: readonly BranchSuggestion[] | null | undefined;
 	/** Set after a run that failed although Timber reported a worktree, until the person edits a field. */
@@ -32,6 +35,7 @@ export interface ExistingBranchForm {
 	subscribe(listener: () => void): () => void;
 	setSelector(selector: string): void;
 	setSetup(setup: boolean): void;
+	setWorkflow(workflow: string | null): void;
 	/** Read the branches to pick from. Only the latest read counts. */
 	readBranches(): Promise<void>;
 	/**
@@ -39,9 +43,11 @@ export interface ExistingBranchForm {
 	 * is shown, never tried again. A run that worked reports the worktree as
 	 * created when Timber made it, or when it finishes the setup of a
 	 * worktree an earlier run of this form made. A worktree that was already
-	 * there is never reported as created.
+	 * there is never reported as created. `workflow` is the one the command
+	 * passes, or null for none. After a failure that kept a worktree, the
+	 * pick stays, so running setup again passes the same workflow.
 	 */
-	run(): Promise<ModeRun>;
+	run(workflow?: string | null): Promise<ModeRun>;
 }
 
 /** Whether two reports name the same worktree: by identity, or by the registered path. */
@@ -52,10 +58,10 @@ function sameReported(one: ReportedWorktree, other: ReportedWorktree): boolean {
 /**
  * The request the fields make: the selector without the spaces around it,
  * and otherwise exactly as given. The dialog words its command from this, and
- * `run` sends this.
+ * `run` sends this. `workflow` is the one the command passes, or null for none.
  */
-export function openRequest(repository: string, state: Pick<ExistingBranchFormState, "selector" | "setup">): OpenWorktreeRequest {
-	return { repository, selector: state.selector.trim(), setup: state.setup };
+export function openRequest(repository: string, state: Pick<ExistingBranchFormState, "selector" | "setup">, workflow: string | null = null): OpenWorktreeRequest {
+	return { repository, selector: state.selector.trim(), setup: state.setup, ...workflowPart(workflow) };
 }
 
 /** False while there is nothing to open. Timber judges everything else about the text. */
@@ -78,7 +84,7 @@ export function createExistingBranchForm(
 	repository: string,
 	submission: Pick<Submission, "clearFailure">,
 ): ExistingBranchForm {
-	let state: ExistingBranchFormState = { selector: "", setup: false, branches: undefined, kept: null };
+	let state: ExistingBranchFormState = { selector: "", setup: false, workflow: null, branches: undefined, kept: null };
 	const listeners = new Set<() => void>();
 	let latestRead = 0;
 	/** Counts edits, so a run can tell whether the fields changed while it ran. */
@@ -110,13 +116,14 @@ export function createExistingBranchForm(
 		},
 		setSelector: selector => edit({ selector }),
 		setSetup: setup => edit({ setup }),
+		setWorkflow: workflow => edit({ workflow }),
 		readBranches,
-		async run() {
+		async run(workflow = null) {
 			// An edit puts `kept` away, so it is set here only while the fields still name that worktree.
 			const before = state.kept;
 			const editsBefore = edits;
 			update({ kept: null });
-			const result = await store.openWorktree(openRequest(repository, state));
+			const result = await store.openWorktree(openRequest(repository, state, workflow));
 			// A run that names no worktree tells nothing new about the kept one. While the fields still name it, it stays kept.
 			const keepBefore = () => {
 				if (before !== null && edits === editsBefore) update({ kept: before });

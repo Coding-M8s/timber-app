@@ -20,6 +20,7 @@ import { type OpenTerminalRequest, type TerminalChange, type TerminalSession } f
 import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "../../shared/timber-config";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "../../shared/timber-done";
 import type { RebaseRequest, RebaseResult } from "../../shared/timber-rebase";
+import type { WorkflowList } from "../../shared/workflows";
 import { type Draw, createTerminalFeed } from "../terminal-feed";
 import { describeOrphanTerminal } from "../terminal-format";
 import { describeRemovalFailed } from "../done-format";
@@ -158,6 +159,12 @@ export interface AppStore {
 	 * not be read, which only means there is nothing to pick from.
 	 */
 	listBranches(repository: string): Promise<BranchSuggestion[] | null>;
+	/**
+	 * The named workflows Timber offers for a repository, to pick from when
+	 * creating a worktree. Never throws: an engine that could not answer is a
+	 * failure with the reason.
+	 */
+	listWorkflows(repository: string): Promise<WorkflowList>;
 	/**
 	 * Timber's settings for one scope, for the Settings dialog, read by
 	 * Timber. Read-only. Never throws: an engine that could not answer is a
@@ -1503,6 +1510,13 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				return await engine.listBranches(repository);
 			} catch {
 				return null;
+			}
+		},
+		async listWorkflows(repository) {
+			try {
+				return await engine.listWorkflows(repository);
+			} catch (error) {
+				return { ok: false, message: unheard("the workflows", error) };
 			}
 		},
 		toggleGroup(repository) {

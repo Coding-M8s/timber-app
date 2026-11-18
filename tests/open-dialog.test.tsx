@@ -468,7 +468,7 @@ describe("the two modes together", () => {
 		select(1);
 		expect(render()).toContain('value="feat/github-issue-lookup"');
 		expect(form.getState()).toMatchObject({ selector: "feat/github-issue-lookup", setup: true });
-		expect(model.getState().fields).toEqual({ name: "Fix login bug", base: "origin/main" });
+		expect(model.getState().fields).toEqual({ name: "Fix login bug", base: "origin/main", workflow: null });
 	});
 
 	test("switching puts a failure away, and it does not show up in the other mode", async () => {

@@ -252,6 +252,8 @@ export interface NewWorktreeRequest {
 	name: string;
 	/** The ref to start from, or null to let Timber pick its configured base. */
 	base: string | null;
+	/** A named workflow from `listWorkflows`, whose setup scripts run after the ordinary ones. Left out for none. */
+	workflow?: string;
 }
 
 /** What to open with `timber open`. */
@@ -262,6 +264,12 @@ export interface OpenWorktreeRequest {
 	selector: string;
 	/** Run the setup scripts again in a worktree that already exists. */
 	setup: boolean;
+	/**
+	 * A named workflow from `listWorkflows`. Left out for none. Timber does not
+	 * remember the workflow a worktree was created with, so running setup again
+	 * passes it again.
+	 */
+	workflow?: string;
 }
 
 /** The worktree a Timber command reported: enough to find it in the list and to name it to Timber again. */

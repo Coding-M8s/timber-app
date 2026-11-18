@@ -159,6 +159,24 @@ describe("createWorktreeCommands, with a stand-in Timber", () => {
 		expect(() => timber.notes()).toThrow();
 	});
 
+	test("a workflow that is not a workflow name is refused before anything runs, and a name runs as shown", async () => {
+		const { commands, timber } = commandsOn({ result: recordedResult.succeeded });
+		for (const workflow of ["--setup", "", "Review", "a b", 7, null, ["review"]]) {
+			const results = [
+				await commands.create({ repository, name: "feat/login", base: null, workflow } as unknown as NewWorktreeRequest),
+				await commands.open({ repository, selector: "feat/login", setup: true, workflow } as unknown as OpenWorktreeRequest),
+			];
+			for (const result of results) expect(result.outcome === "failed" && result.failure.diagnostic).toMatch(/^The request for timber (new|open) is not complete\. Nothing was run\.$/);
+		}
+		expect(() => timber.notes()).toThrow();
+
+		const request = { repository, name: "feat/login", base: null, workflow: "review" };
+		await commands.create(request);
+		const notes = timber.notes();
+		expect(notes.arguments).toEqual(newWorktreeArguments(request, notes.resultFile!));
+		expect(notes.arguments.slice(0, 3)).toEqual(["new", "--workflow", "review"]);
+	});
+
 	test("a selector that looks like an option, or has spaces around it, reaches Timber as one argument after the --", async () => {
 		const opened = JSON.stringify({ ...JSON.parse(recordedResult.succeeded), command: "open", materialized: false });
 		for (const selector of ["--setup", " feat/login ", "-"]) {
@@ -355,6 +373,71 @@ describe.skipIf(realTimber === null)("createWorktreeCommands, with the installed
 		expect(await commands.open(setup)).toEqual({ outcome: "succeeded", worktree: result.worktree, created: false });
 		expect(existsSync(join(result.worktree.path, "setup-done"))).toBe(true);
 		expect(listed(primary).length).toBe(1);
+		expect(readdirSync(scratch)).toEqual([]);
+	});
+
+	test.skipIf(process.platform === "win32")("a workflow runs its post_create scripts after the ordinary ones, and Open with setup repeats it", async () => {
+		const primary = makeRepository();
+		const commands = commandsFor(primary);
+		const log = join(primary, "..", "setup-order");
+		const config = (workflowScript: string) => writeFileSync(join(primary, ".timber.toml"), [
+			"[hooks]",
+			`post_create = [${JSON.stringify(`echo ordinary >> ${JSON.stringify(log)}`)}]`,
+			"[workflows.review]",
+			'description = "Review a branch"',
+			`post_create = [${JSON.stringify(workflowScript)}]`,
+			"",
+		].join("\n"));
+
+		config(`echo workflow >> ${JSON.stringify(log)}`);
+		const plain = await commands.create({ repository: primary, name: "feat/plain", base: null });
+		expect(plain.outcome).toBe("succeeded");
+		expect(readFileSync(log, "utf8")).toBe("ordinary\n");
+
+		rmSync(log);
+		const picked = await commands.create({ repository: primary, name: "feat/review", base: null, workflow: "review" });
+		expect(picked).toMatchObject({ outcome: "succeeded", created: true, worktree: { branch: "feat/review" } });
+		expect(readFileSync(log, "utf8")).toBe("ordinary\nworkflow\n");
+
+		// A failing workflow script after creation: created, setup failed.
+		rmSync(log);
+		config(`echo workflow >> ${JSON.stringify(log)}; exit 3`);
+		const failed = await commands.create({ repository: primary, name: "feat/review-fails", base: null, workflow: "review" });
+		expect(failed).toMatchObject({ outcome: "failed", created: true, worktree: { branch: "feat/review-fails" } });
+		if (failed.outcome !== "failed" || !failed.worktree) throw new Error("unreachable");
+		expect(failed.failure.diagnostic).toContain("Setup workflow post_create step 2 failed (exit code 3)");
+		expect(failed.failure.diagnostic).toContain("timber open --setup --workflow review --");
+		expect(readFileSync(log, "utf8")).toBe("ordinary\nworkflow\n");
+
+		// Open with setup, with the same workflow, runs both again in that worktree, and creates nothing.
+		rmSync(log);
+		config(`echo workflow >> ${JSON.stringify(log)}`);
+		const worktrees = git(primary, "worktree", "list", "--porcelain");
+		const setup = { repository: primary, selector: failed.worktree.path, setup: true, workflow: "review" };
+		const again = await commands.open(setup);
+		expect(again).toEqual({ outcome: "succeeded", worktree: failed.worktree, created: false });
+		expect(readFileSync(log, "utf8")).toBe("ordinary\nworkflow\n");
+		expect(git(primary, "worktree", "list", "--porcelain")).toBe(worktrees);
+		expect(readdirSync(scratch)).toEqual([]);
+	});
+
+	test("a workflow that is not in the settings fails with Timber's message and creates nothing", async () => {
+		const primary = makeRepository();
+		writeFileSync(join(primary, ".timber.toml"), '[workflows.review]\ndescription = "Review a branch"\n');
+		const before = git(primary, "worktree", "list", "--porcelain") + git(primary, "for-each-ref");
+		// As if the workflow was listed, then taken out of the settings before the person pressed Create.
+		writeFileSync(join(primary, ".timber.toml"), "");
+		const result = await commandsFor(primary).create({ repository: primary, name: "feat/removed", base: null, workflow: "review" });
+		expect(result).toMatchObject({
+			outcome: "failed",
+			worktree: null,
+			created: false,
+			failure: {
+				command: "timber new --workflow review --result-file <temporary file> --no-editor --no-agent -- feat/removed",
+				diagnostic: "Unknown workflow. Restore its definition or assign another configured workflow with --workflow <name>.",
+			},
+		});
+		expect(git(primary, "worktree", "list", "--porcelain") + git(primary, "for-each-ref")).toBe(before);
 		expect(readdirSync(scratch)).toEqual([]);
 	});
 
