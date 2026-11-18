@@ -44,13 +44,6 @@ export function sessionKey(event: Keys, mac: boolean): "previous" | "next" | "ch
 	return event.shiftKey && key.toLowerCase() === "s" ? "chips" : null;
 }
 
-/** The hint beside a session: how copy, paste, links, and moving between sessions work here. */
-export function terminalHint(mac: boolean): string {
-	return mac
-		? "Cmd+C copies, Cmd+V pastes, Cmd+click opens a link, Cmd+Shift+[ and ] switch sessions, Cmd+Shift+S goes to the chips"
-		: "Ctrl+Shift+C copies, Ctrl+Shift+V pastes, Ctrl+click opens a link, Ctrl+PageUp and PageDown switch sessions, Ctrl+Shift+S goes to the chips";
-}
-
 /**
  * The session a key on a focused chip moves to, from `current` among `ids`:
  * the arrows step and wrap around, Home and End jump to the first and the

@@ -255,13 +255,13 @@ describe("the Workspace tab", () => {
 		expect(render(started.store)).toMatch(/<button type="button" class="button" id="session-add" disabled=""[^>]*>Open terminal<\/button>/);
 	});
 
-	test("a running session shows its chip, state, hint, and a close control", async () => {
+	test("a running session shows its chip, state, and a close control, and no shortcut hint", async () => {
 		const { store } = await withTerminal();
 		const markup = render(store);
 		expect(markup).toContain('class="session-chip selected running"');
 		expect(markup).toContain("mock-shell");
 		expect(markup).toContain('role="status">Running</span>');
-		expect(markup).toContain("Ctrl+Shift+C copies");
+		expect(markup).not.toContain("session-hint");
 		expect(markup).toContain('aria-label="Close Terminal and end its processes"');
 		expect(markup).toContain('class="terminal-screen"');
 	});

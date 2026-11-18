@@ -1441,8 +1441,7 @@ shows, and coming back shows it as it was.
   browser (`openLink`, `src/bun/open-link.ts`). The link goes, as the URL
   parser writes it out, as the one argument of `xdg-open` on Linux or `open`
   on macOS, never through a shell, because it is whatever a program printed.
-  Elsewhere nothing opens yet. The bar above the
-  terminal says so. Fonts come from the stylesheet and colors from the
+  Elsewhere nothing opens yet. Fonts come from the stylesheet and colors from the
   theme, the sixteen ANSI colors included, and an open terminal takes a new
   theme at once (see [themes](#themes)).
 - **Ending.** Closing a session hangs up its terminal and sends SIGHUP to

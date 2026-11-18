@@ -5,7 +5,7 @@ import { SESSION_NAME_LIMIT, type TerminalSession } from "../../shared/terminal"
 import { useAppState, useStore } from "../store/react";
 import { sessionsOf, shownSession } from "../store/state";
 import {
-	chipAfterKey, chipCommand, closeTerminalLabel, describeSessionChip, describeTerminalState, sessionChipId, shellName, shortExit, terminalHint,
+	chipAfterKey, chipCommand, closeTerminalLabel, describeSessionChip, describeTerminalState, sessionChipId, shellName, shortExit,
 } from "../terminal-format";
 
 /** The drawn terminals load with xterm.js, the first time one shows, and stay loaded. */
@@ -37,8 +37,6 @@ const focusSoon = (id: string) => void setTimeout(() => document.getElementById(
 
 /** How long a pane's size must rest before the terminal follows it. */
 const RESIZE_MILLISECONDS = 50;
-
-const isMac = () => typeof navigator !== "undefined" && /Mac/.test(navigator.platform);
 
 /** Roughly how many cells fit in an element, for 13 pixel text at 1.2 line height. 80 by 24 when it has no size. */
 export function estimateTerminalSize(element: HTMLElement | null): { cols: number; rows: number } {
@@ -143,7 +141,6 @@ function Session({ session, renaming, onRename }: SessionProps) {
 			<div className="session-bar">
 				<span className="session-shell" title={session.command}>{shellName(session.shell)}</span>
 				<span className="session-state" role="status">{state}</span>
-				<span className="session-hint" title={terminalHint(isMac())}>{terminalHint(isMac())}</span>
 				<button type="button" className="text-button" title={`Rename ${session.name} (F2 on its chip)`} onClick={onRename}>Rename</button>
 				<button
 					type="button"

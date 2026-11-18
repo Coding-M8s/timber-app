@@ -2550,17 +2550,11 @@ pre:focus-visible {
 }
 
 .session-state {
-	flex: none;
-	white-space: nowrap;
-}
-
-.session-hint {
 	flex: 1 1 auto;
 	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-	text-align: right;
 }
 
 .session-close {
