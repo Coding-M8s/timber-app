@@ -59,6 +59,11 @@ sudo dnf install webkit2gtk4.1 libayatana-appindicator-gtk3
 sudo pacman -S webkit2gtk-4.1 libayatana-appindicator
 ```
 
+Optional: `notify-send` from libnotify 0.7.9 or later (`libnotify-bin` on
+Debian and Ubuntu, `libnotify` on Fedora and Arch) makes a desktop
+notification about an agent show its session when clicked. Without it the
+notification still shows. Not yet tested on any of these systems.
+
 When a library is missing, the app names it and suggests a longer list
 (`libgtk-3-0 ... librsvg2-2`). That message comes from Electrobun; the list
 above is the one tested. Its Fedora line names `libappindicator-gtk3`, which

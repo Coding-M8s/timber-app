@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import { dirname } from "node:path";
 import Electrobun, { BrowserView, BrowserWindow, Screen, Updater, Utils } from "electrobun/main";
 import { APP_NAME, APP_VERSION } from "../shared/app-info";
+import { type Attention, assumedAttention } from "../shared/attention";
 import { type ForcePushMarks, withForcePushes } from "../shared/git-fetch";
 import type { Repository } from "../shared/model";
 import { defaultPreferences } from "../shared/preferences";
@@ -29,6 +30,8 @@ import { createRefreshPolicy } from "./refresh-policy";
 import { type WatchTarget, createRepositoryWatcher } from "./repository-watcher";
 import { createWorktreeStamps } from "./worktree-stamp";
 import { createTerminalSessions } from "./terminals";
+import { createDesktopNotices } from "./desktop-notices";
+import { createStatusNotices } from "../shared/status-notices";
 import { createThemeFiles } from "./theme-files";
 import { themePreload } from "./theme-preload";
 import { createTimberSettings } from "./timber-settings";
@@ -169,6 +172,44 @@ function tell(what: string, send: () => void): void {
 	}
 }
 
+/*
+ * A session whose status moves to Needs you, Done, Error, or crashed gets a desktop notification when its worktree is
+ * not on screen in a focused window (see ../shared/status-notices.ts). A click brings the window forward and shows it.
+ */
+let attention: Attention = assumedAttention;
+const statusNotices = createStatusNotices();
+const desktopNotices = createDesktopNotices({
+	path: process.env.PATH ?? "",
+	fallback: notice => {
+		try {
+			Utils.showNotification({ title: notice.title, body: notice.body });
+		} catch (error) {
+			console.warn(`Could not show a notification: ${error instanceof Error ? error.message : String(error)}`);
+		}
+	},
+	onClick: id => {
+		try {
+			mainWindow.activate();
+		} catch {
+			// The session is still shown when the window cannot come forward.
+		}
+		tell("a session to show", () => rpc.send.showSession({ id }));
+	},
+});
+
+/** The saved setting, kept here so each change is decided at once, in the order the changes came. Read on start and after each save. */
+let notificationsEnabled = true;
+void preferences.load().then(saved => {
+	notificationsEnabled = saved.statusNotifications;
+}, () => {
+	// The default stays: on.
+});
+
+function weighNotice(change: Parameters<typeof statusNotices.changed>[0]): void {
+	const notice = statusNotices.changed(change, attention, notificationsEnabled, Date.now());
+	if (notice !== null) desktopNotices.show(notice);
+}
+
 // What a terminal prints is private, like what a command prints: it goes to the window and is never logged.
 const terminals = createTerminalSessions({
 	findRepository: path => repositories.find(path),
@@ -177,7 +218,10 @@ const terminals = createTerminalSessions({
 	// `timber rebase` runs the Timber that was found, never a command from the window.
 	timber: () => timber.current(),
 	onOutput: output => tell("terminal output", () => rpc.send.terminalOutput(output)),
-	onChange: change => tell("a terminal change", () => rpc.send.terminalChanged(change)),
+	onChange: change => {
+		tell("a terminal change", () => rpc.send.terminalChanged(change));
+		weighNotice(change);
+	},
 });
 
 const quitGuard = createQuitGuard({
@@ -239,6 +283,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 				if (result.outcome === "saved") {
 					fetcher.configure(result.preferences.fetch);
 					applyZoom(result.preferences.zoom);
+					notificationsEnabled = result.preferences.statusNotifications;
 				}
 				return result;
 			},
@@ -281,9 +326,10 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			writeTerminal: ({ id, data }) => terminals.write(id, data),
 			resizeTerminal: ({ id, cols, rows }) => terminals.resize(id, cols, rows),
 			terminalDrawn: ({ id, seq }) => terminals.drawn(id, seq),
-			attend: attention => {
-				refreshPolicy.attend(attention);
-				fetcher.setVisible(attention.visible);
+			attend: next => {
+				attention = next;
+				refreshPolicy.attend(next);
+				fetcher.setVisible(next.visible);
 			},
 			windowReady: () => windowReveal.ready(),
 			forcePushSeen: ({ repository, branch, at }) => {
@@ -304,6 +350,7 @@ function guardQuit(event: unknown): void {
 	if (quitGuard.mayQuit()) {
 		// The app goes away in a moment, so there is no time to wait for anything to end by itself.
 		terminals.killAll();
+		desktopNotices.stopAll();
 		refreshPolicy.stop();
 		watcher.stop();
 		// Asks a running Git to stop, so it can remove its lock files before the app goes.

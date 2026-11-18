@@ -26,6 +26,7 @@ export function createDesktopEngine(): Engine {
 	const terminalChanges = listeners<TerminalChange>();
 	const quitRequests = listeners<number>();
 	const fetches = listeners<RepositoryFetch>();
+	const shownSessions = listeners<string>();
 	const rpc = Electroview.defineRPC<AppRPC>({
 		maxRequestTime: 15_000,
 		handlers: {
@@ -41,6 +42,7 @@ export function createDesktopEngine(): Engine {
 				repositoryChanged: ({ path }) => changes.call(path),
 				terminalOutput: output => terminalOutput.call(output),
 				terminalChanged: change => terminalChanges.call(change),
+				showSession: ({ id }) => shownSessions.call(id),
 				fetchChanged: status => fetches.call(status),
 			},
 		},
@@ -106,6 +108,7 @@ export function createDesktopEngine(): Engine {
 		closeTerminal: id => rpc.request.closeTerminal({ id }),
 		onTerminalOutput: terminalOutput.add,
 		onTerminalChanged: terminalChanges.add,
+		onShowSession: shownSessions.add,
 		onQuitRequested: quitRequests.add,
 		// Ending every session can take a moment, and the app quits right after.
 		confirmQuit: () => rpc.request.confirmQuit({}, { maxRequestTime: 30_000 }),

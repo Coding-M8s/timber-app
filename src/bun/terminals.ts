@@ -6,6 +6,7 @@ import {
 	type OpenTerminalRequest, type OpenTerminalResult, type Scrollback, type TerminalChange, type TerminalOutput, type TerminalSession,
 	type TerminalSnapshot, TERMINAL_UNSUPPORTED_REASON, TIMBER_REBASE_SESSION_NAME, clampTerminalSize, cleanSessionName, createScrollback, defaultSessionName, pickShell,
 } from "../shared/terminal";
+import { PROBE_ANSWER, type StatusRecords, type StatusScanner, createStatusRecords, createStatusScanner } from "../shared/program-status";
 import { rebaseArguments } from "../shared/rebase-command";
 import { findExecutable } from "./find-executable";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
@@ -24,6 +25,8 @@ const PART_LIMIT = 64 * 1024;
  * cannot bury the window, and Ctrl+C still gets through.
  */
 const UNDRAWN_LIMIT = 1024 * 1024;
+/** The least time between two answers to the status probe of one session. */
+const PROBE_INTERVAL_MILLISECONDS = 100;
 /** After the shell ended, how long to wait for the last output still in the terminal. */
 const DRAIN_MILLISECONDS = 250;
 
@@ -100,6 +103,13 @@ interface Live {
 	 */
 	leftovers: number[] | null;
 	ended: Promise<void>;
+	/** Reads OSC 7501 reports, OSC 133 prompts, and full resets out of the output. */
+	scanner: StatusScanner;
+	records: StatusRecords;
+	/** When the last probe was answered. A flood of probes, such as from a file shown with `cat`, gets one answer at a time. */
+	probedAt: number;
+	/** The root record changed since the window was last told. Told with the next flush, so a stream of progress is one change per part. */
+	statusChanged: boolean;
 }
 
 function messageOf(error: unknown): string {
@@ -153,6 +163,12 @@ function signalSession(live: Live, signal: NodeJS.Signals): void {
  *   app's PATH. A request names the agent, never the command. An agent whose
  *   executable is not there starts nothing, and no session is kept. What an
  *   agent prints is handled as any terminal's output and never read.
+ * - Every session's output, shown or not, passes a scanner for the Program
+ *   Status Protocol (OSC 7501, see ../shared/program-status.ts) before it is
+ *   kept: a control sequence a program addresses to the terminal, like a
+ *   title or a bell, never text on screen. A probe is answered on the
+ *   session's input; a report sets the session's `status`. Nothing from a
+ *   report is run or echoed back, and the output goes on unchanged.
  * - A Timber rebase session runs `timber rebase [--base <ref>] -- <path>`
  *   for the worktree, with the Timber the app found, in its folder
  *   (`rebaseArguments` in ../shared/rebase-command.ts). The request names
@@ -186,9 +202,32 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		onOutput(output);
 	}
 
+	/**
+	 * Take in printed text: read the status sequences out of it, answer a
+	 * probe on the session's input, and keep the text to send. The text
+	 * itself is not changed.
+	 */
+	function take(live: Live, text: string): void {
+		for (const event of live.scanner.scan(text)) {
+			if (event.type === "probe") {
+				const now = Date.now();
+				if (live.session.state.kind === "running" && now - live.probedAt >= PROBE_INTERVAL_MILLISECONDS) {
+					live.probedAt = now;
+					live.process.terminal?.write(PROBE_ANSWER);
+				}
+			} else if (live.records.apply(event)) live.statusChanged = true;
+		}
+		live.pending += text;
+	}
+
 	function flush(live: Live): void {
 		if (live.flushTimer !== null) clearTimeout(live.flushTimer);
 		live.flushTimer = null;
+		if (live.statusChanged) {
+			live.statusChanged = false;
+			// A session closed meanwhile is already gone and stays gone.
+			if (sessions.get(live.session.id) === live) changed(live, { ...live.session, status: live.records.root() });
+		}
 		if (live.pending === "") return;
 		const data = live.pending;
 		live.pending = "";
@@ -297,7 +336,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 					name: "xterm-256color",
 					data: (_terminal, bytes) => {
 						if (!live) return;
-						live.pending += decoder.decode(bytes, { stream: true });
+						take(live, decoder.decode(bytes, { stream: true }));
 						if (live.pending.length >= PART_LIMIT) flush(live);
 						else live.flushTimer ??= setTimeout(() => flush(live!), flushMilliseconds);
 					},
@@ -318,6 +357,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			shell,
 			command: start.command,
 			state: { kind: "running" },
+			status: null,
 		};
 		const ended = child.exited.then(async () => {
 			// Output can still be on its way after the shell ended. A program left in the background can hold the terminal open, so do not wait for long.
@@ -327,13 +367,16 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			// What the shell left running is hung up on, as when a terminal closes. A program started with nohup goes on; closing the session ends it too.
 			signalSession(live, "SIGHUP");
 			live.leftovers = sessionMembers(child.pid) ?? [];
-			live.pending += decoder.decode();
+			take(live, decoder.decode());
+			// The exit is told in one change with the status: working and blocked end with the process.
+			live.records.exited();
+			live.statusChanged = false;
 			flush(live);
 			// A session closed meanwhile is already gone and stays gone.
 			if (sessions.get(session.id) !== live) return;
-			changed(live, { ...live.session, state: { kind: "exited", exitCode: child.exitCode, signal: child.signalCode } });
+			changed(live, { ...live.session, state: { kind: "exited", exitCode: child.exitCode, signal: child.signalCode }, status: live.records.root() });
 		});
-		live = { session, process: child, scrollback: createScrollback(), pending: "", flushTimer: null, undrawn: [], undrawnSize: 0, held: false, leftovers: null, ended };
+		live = { session, process: child, scrollback: createScrollback(), pending: "", flushTimer: null, undrawn: [], undrawnSize: 0, held: false, leftovers: null, ended, scanner: createStatusScanner(), records: createStatusRecords(), statusChanged: false, probedAt: Number.NEGATIVE_INFINITY };
 		sessions.set(session.id, live);
 		changed(live, session);
 		return { outcome: "opened", session: { ...session } };

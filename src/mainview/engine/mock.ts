@@ -1,4 +1,5 @@
-import type { Attention } from "../../shared/attention";
+import { type Attention, assumedAttention } from "../../shared/attention";
+import { type StatusNotice, createStatusNotices } from "../../shared/status-notices";
 import type { Engine } from "../../shared/engine";
 import { type Layout, defaultLayout, forgetRepository, readLayout } from "../../shared/layout";
 import { type AddRepositoryResult, type BranchSuggestion, type OpenInEditorRequest, type OpenInEditorResult, type Repository, type SavedBase, type SyncState, type TimberStatus, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
@@ -254,6 +255,10 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	readyCalls(): number;
 	/** What the interface last said through `attend`, or null before it said anything. */
 	attention(): Attention | null;
+	/** The desktop notifications the main process would have shown, oldest first, decided as it decides them. */
+	notices(): StatusNotice[];
+	/** Act out the person clicking the desktop notification of a session. */
+	clickNotice(session: string): void;
 	/** Make every later read of repositories fail with this message, or pass null to let them work again. */
 	failReads(message: string | null): void;
 	/**
@@ -440,6 +445,8 @@ export function createMockEngine(
 	// The mock watches nothing: changes are acted out with `announceChange`. It only keeps what it was told.
 	let attended: Attention | null = null;
 	let ready = 0;
+	const notices: StatusNotice[] = [];
+	const showSessionListeners = new Set<(id: string) => void>();
 
 	// Fetching, acted out: Fetch now only, ended as `fetchEnding` says. Nothing reaches a network.
 	const fetches = new Map<string, RepositoryFetch>();
@@ -664,6 +671,12 @@ export function createMockEngine(
 		const worktree = timberFailures.has(path) ? undefined : repository?.worktrees.find(candidate => candidate.path === worktreePath);
 		return worktree && worktree.pathExists ? worktree : null;
 	}, () => preferences.agents, () => typeof timber === "function" ? timber() : timber);
+	// As the main process does, every change is weighed for a desktop notification, which is only kept here.
+	const statusNotices = createStatusNotices();
+	terminals.onTerminalChanged(change => {
+		const notice = statusNotices.changed(change, attended ?? assumedAttention, preferences.statusNotifications, Date.now());
+		if (notice) notices.push(notice);
+	});
 	const timberConfig = createMockTimberConfig(path => current.some(repository => repository.path === path), () => typeof timber === "function" ? timber() : timber, saveSetup);
 	const workflows = createMockWorkflows(path => current.some(repository => repository.path === path), () => typeof timber === "function" ? timber() : timber);
 	const pullRequests = createMockPullRequests(path => current.find(repository => repository.path === path && repository.available), () => typeof timber === "function" ? timber() : timber);
@@ -826,6 +839,14 @@ export function createMockEngine(
 			picked = folder;
 		},
 		attention: () => attended,
+		notices: () => structuredClone(notices),
+		clickNotice(session) {
+			for (const listener of [...showSessionListeners]) listener(session);
+		},
+		onShowSession(listener) {
+			showSessionListeners.add(listener);
+			return () => void showSessionListeners.delete(listener);
+		},
 		announceChange: announce,
 		fetchStatuses: async () => current.filter(repository => repository.available).map(repository => structuredClone(fetchOf(repository.path))),
 		fetchNow(path) {

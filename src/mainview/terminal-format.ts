@@ -1,3 +1,4 @@
+import { type AgentBrand, type ShownStatus, agentBrand, describeSessionStatus, describeShownStatus, hasStatusMark, sessionInitials, shortMessage, shownStatus } from "../shared/session-status";
 import { type TerminalSession, describeTerminalExit, sessionKindName } from "../shared/terminal";
 
 export { describeQuitRequest } from "../shared/terminal";
@@ -84,8 +85,21 @@ export function shortExit(state: TerminalSession["state"]): string | null {
 	return state.signal ?? "ended";
 }
 
-/** The words for a session's state on its chip. */
-export function describeTerminalState(session: Pick<TerminalSession, "state">): string {
+/**
+ * The words for a session's state beside its chips. A session with a status
+ * mark says its status, such as "Needs you: approval"; another says whether
+ * it runs or how it ended.
+ */
+export function describeTerminalState(session: Pick<TerminalSession, "state"> & Partial<Pick<TerminalSession, "kind" | "status">>): string {
+	if (session.kind !== undefined && session.status !== undefined) {
+		const full = { kind: session.kind, state: session.state, status: session.status };
+		if (hasStatusMark(full)) {
+			const status = shownStatus(full);
+			// How it ended is said in the same words as for any session, so a crash names its code.
+			if (status.kind === "crashed" && session.state.kind === "exited") return `Crashed. ${describeTerminalExit(session.state)}`;
+			return describeShownStatus(status);
+		}
+	}
 	return session.state.kind === "running" ? "Running" : describeTerminalExit(session.state);
 }
 
@@ -104,11 +118,63 @@ export function closeTerminalLabel(session: Pick<TerminalSession, "state" | "nam
  * it ended, and whether it printed since it was last on screen. The same
  * words are the chip's tooltip.
  */
-export function describeSessionChip(session: Pick<TerminalSession, "kind" | "name" | "state" | "shell">, unseen: boolean): string {
+export function describeSessionChip(session: Pick<TerminalSession, "kind" | "name" | "state" | "shell"> & Partial<Pick<TerminalSession, "status">>, unseen: boolean): string {
 	const parts = [`${sessionKindName(session.kind)}, ${shellName(session.shell)}`];
-	if (session.state.kind === "exited") parts.push(describeTerminalExit(session.state));
+	const status = session.status === undefined ? null : { kind: session.kind, state: session.state, status: session.status };
+	if (status !== null && hasStatusMark(status) && session.state.kind === "running") {
+		// A running agent that never reported says nothing more, as before the protocol.
+		const shown = shownStatus(status);
+		if (shown.kind !== "unknown") parts.push(describeShownStatus(shown));
+		// What the program said, such as "approve Write: src/a.ts". It was cleaned up when it was read.
+		if (session.status?.message) parts.push(shortMessage(session.status.message));
+	} else if (status !== null && hasStatusMark(status) && shownStatus(status).kind === "crashed" && session.state.kind === "exited") {
+		parts.push(`Crashed. ${describeTerminalExit(session.state)}`);
+	} else if (session.state.kind === "exited") parts.push(describeTerminalExit(session.state));
 	if (unseen) parts.push("New output since you last looked");
 	return parts.join(". ");
+}
+
+/** One session with a status mark on a sidebar row: its initial, its status, and its name and status in words. */
+export interface RowSessionMark {
+	id: string;
+	/** Such as "C" for "Codex", or "Co" beside "Claude Code" (see `sessionInitials`). */
+	initial: string;
+	/** The agent's icon to show instead of `initial`, or null for letters. */
+	brand: AgentBrand | null;
+	status: ShownStatus;
+	/** Such as "Codex: Needs you: approval. approve Write: src/a.ts". */
+	words: string;
+}
+
+/**
+ * What a sidebar row shows of its worktree's sessions: a mark for each agent
+ * and each session whose program reported a status, in the order they
+ * started, a count of the other running sessions, and all of it as one
+ * sentence for the row's description.
+ */
+export function describeRowSessions(sessions: readonly TerminalSession[]): { marks: RowSessionMark[]; others: number; othersWords: string; sentence: string } {
+	const marked = sessions.filter(hasStatusMark);
+	const brands = marked.map(agentBrand);
+	// Only the sessions shown as letters need telling apart by them.
+	const lettered = marked.filter((_, index) => brands[index] === null);
+	const initials = sessionInitials(lettered.map(session => session.name));
+	const marks = marked.map((session, index) => ({
+		id: session.id,
+		initial: brands[index] === null ? initials[lettered.indexOf(session)]! : "",
+		brand: brands[index]!,
+		status: shownStatus(session),
+		words: describeSessionStatus(session),
+	}));
+	const others = sessions.filter(session => !hasStatusMark(session) && session.state.kind === "running").length;
+	const othersWords = others === 0 ? "" : marks.length > 0 ? describeOtherSessions(others) : describeRunningSessions(others);
+	const parts = marks.map(mark => `${mark.words}.`);
+	if (others > 0) parts.push(`${othersWords}.`);
+	return { marks, others, othersWords, sentence: parts.join(" ") };
+}
+
+/** The words for running sessions beside agents, such as "2 other sessions running". */
+export function describeOtherSessions(count: number): string {
+	return count === 1 ? "1 other session running" : `${count} other sessions running`;
 }
 
 /** The sidebar's words for how many sessions of a worktree run, such as "2 sessions running". */

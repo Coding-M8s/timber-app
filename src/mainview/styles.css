@@ -527,6 +527,111 @@ pre:focus-visible {
 	background: var(--ahead);
 }
 
+/* Running sessions with no status of their own, such as plain shells: a dot and a count. */
+.row-shells {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+}
+
+/* One agent: a thin rounded outline in its state's color, around the state's shape and the agent's mark or letters. */
+.row-agent {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	padding: 1px 3px 1px 2px;
+	border: 1px solid currentColor;
+	border-radius: 4px;
+	font-weight: 500;
+	line-height: 1;
+}
+
+/*
+ * The colors of the states, from the theme's meaning colors: blue while working
+ * or running, as for running agents; amber when it needs the person; green when
+ * done; red for an error or a crash; grey when idle or stopped. Every state also
+ * has its own shape (see StatusGlyph.tsx), so none is told by color alone.
+ */
+.status-working,
+.status-unknown {
+	color: var(--ahead);
+}
+
+.status-needs-you {
+	color: var(--behind);
+}
+
+.status-done {
+	color: var(--untracked);
+}
+
+.status-error,
+.status-crashed {
+	color: var(--error);
+}
+
+.status-idle,
+.status-stopped {
+	color: var(--text-3);
+}
+
+.status-glyph {
+	flex: none;
+	display: block;
+}
+
+/* An agent's official mark (see AgentIcon.tsx). */
+.agent-icon {
+	flex: none;
+	display: block;
+}
+
+/* On the row, the icon sits in a thin rounded outline in the state's color, beside the state's shape. */
+.row-agent .agent-icon {
+	color: var(--text);
+}
+
+.row-agent.branded {
+	gap: 3px;
+}
+
+/* On a chip, the icon takes the place of the agent's star, with the same outline in a quiet line color. */
+.session-kind.branded {
+	display: inline-flex;
+	padding: 1px;
+	border: 1px solid var(--line-raised);
+	border-radius: 4px;
+	color: var(--text);
+}
+
+/* The open ring turns while working, unless the person asked for less motion. */
+.status-glyph.status-working {
+	animation: status-turn 1.2s linear infinite;
+}
+
+@keyframes status-turn {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.status-glyph.status-working {
+		animation: none;
+	}
+}
+
+/* A collapsed repository's agents, summed up beside its name, such as "1 needs you, 2 working". */
+.group-status {
+	flex: 0 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-weight: 400;
+	font-size: 11px;
+}
+
 .count {
 	flex: none;
 	font-family: var(--font-mono);

@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openWebLink } from "../src/bun/open-link";
@@ -7,6 +7,7 @@ import { sessionMembers, sessionOfStat } from "../src/bun/process-session";
 import { type TerminalDependencies, type TerminalSessions, createTerminalSessions } from "../src/bun/terminals";
 import type { Repository } from "../src/shared/model";
 import { describeSearchPath } from "../src/shared/search-path";
+import { PROBE_ANSWER } from "../src/shared/program-status";
 import type { TerminalChange, TerminalOutput } from "../src/shared/terminal";
 
 const posix = process.platform !== "win32";
@@ -135,6 +136,60 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 		const seen = await until(matches);
 		if (!seen) throw new Error(`Did not see ${expected} after ${line}. Printed: ${JSON.stringify(printed(id))}`);
 	}
+
+	describe("the Program Status Protocol (OSC 7501)", () => {
+		const statusOf = (id: string) => changes.filter(change => change.id === id).at(-1)?.session?.status ?? null;
+
+		test("the probe is answered on the session's input, with exactly the states and kinds the app handles", async () => {
+			start();
+			const { session } = await opened();
+			const length = Buffer.byteLength(PROBE_ANSWER);
+			// Without canonical mode the answer, which has no line end, reaches the program at once.
+			await run(
+				session.id,
+				`stty -icanon -echo; printf '\\033]7501;?\\033\\\\'; answer=$(dd bs=1 count=${length} 2>/dev/null | od -An -tx1 | tr -d ' \\n'); stty icanon echo; echo "got:$answer:end"`,
+				/got:[0-9a-f]+:end/,
+			);
+			expect(printed(session.id)).toContain(`got:${Buffer.from(PROBE_ANSWER).toString("hex")}:end`);
+		});
+
+		test("reports set the session's status, a new prompt ends working, and done stays through the exit", async () => {
+			start();
+			const { session } = await opened();
+			await run(session.id, "printf '\\033]7501;state=working:progress=5\\007'; echo sent1", "sent1\r\n");
+			expect(await until(() => statusOf(session.id)?.state === "working")).toBe(true);
+			expect(statusOf(session.id)).toMatchObject({ state: "working", progress: 5 });
+			// What the program printed goes on to the window as it was.
+			expect(printed(session.id)).toContain("\x1b]7501;state=working:progress=5\x07");
+			await run(session.id, "printf '\\033]133;A\\007'; echo sent2", "sent2\r\n");
+			expect(await until(() => statusOf(session.id) === null)).toBe(true);
+			await run(session.id, "printf '\\033]7501;state=done\\033\\\\'; echo sent3", "sent3\r\n");
+			expect(await until(() => statusOf(session.id)?.state === "done")).toBe(true);
+			sessions.write(session.id, "exit 4\r");
+			expect(await until(() => changes.at(-1)?.session?.state.kind === "exited")).toBe(true);
+			expect(changes.at(-1)!.session).toMatchObject({ state: { kind: "exited", exitCode: 4 }, status: { state: "done" } });
+		});
+
+		test("working ends with the process, in the same change that says it exited", async () => {
+			start();
+			const { session } = await opened();
+			sessions.write(session.id, "printf '\\033]7501;state=blocked:kind=permission\\007'; exit 0\r");
+			expect(await until(() => changes.at(-1)?.session?.state.kind === "exited")).toBe(true);
+			expect(changes.at(-1)!.session!.status).toBeNull();
+			expect(changes.filter(change => change.session?.state.kind === "exited")).toHaveLength(1);
+		});
+
+		test("a report that breaks the rules changes nothing", async () => {
+			start();
+			const { session } = await opened();
+			await run(session.id, "printf '\\033]7501;state=idle\\007'; echo sent1", "sent1\r\n");
+			expect(await until(() => statusOf(session.id)?.state === "idle")).toBe(true);
+			// "line\nbreak" in base64: a control character in msg drops the whole report.
+			await run(session.id, "printf '\\033]7501;state=error:msg=bGluZQpicmVhaw==\\007'; echo sent2", "sent2\r\n");
+			await Bun.sleep(50);
+			expect(statusOf(session.id)?.state).toBe("idle");
+		});
+	});
 
 	test("a terminal opens in the worktree's folder, with the shell, and says so", async () => {
 		start();
@@ -423,6 +478,16 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 			await seen(session.id, `fake-claude in ${worktree} args\r\n`);
 			sessions.write(session.id, "hello\r");
 			await seen(session.id, "fake-claude got hello");
+		});
+
+		test("nothing is added to an agent's command, and no agent config file is written", async () => {
+			startWithAgents();
+			const before = readdirSync(root).sort();
+			const session = await openedAgent("Claude Code");
+			await seen(session.id, `fake-claude in ${worktree} args\r\n`);
+			// The status comes from what the agent writes to its terminal, so its command line and its home stay as they were.
+			expect(session.command).toBe(`'${join(root, "agent bin", "fake-claude")}'`);
+			expect(readdirSync(root).sort()).toEqual(before);
 		});
 
 		test("a custom command with arguments gets each argument as it was typed, with no shell", async () => {

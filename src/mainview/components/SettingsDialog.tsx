@@ -6,6 +6,7 @@ import { AboutSection } from "./settings/AboutSection";
 import { AgentsSection } from "./settings/AgentsSection";
 import { EditorSection } from "./settings/EditorSection";
 import { FetchSection } from "./settings/FetchSection";
+import { NotificationsSection } from "./settings/NotificationsSection";
 import { LayoutSection } from "./settings/LayoutSection";
 import { SettingsSavingContext } from "./settings/SettingsSection";
 import { MachineSection, RepositorySection } from "./settings/TimberSections";
@@ -23,6 +24,7 @@ const SECTION_VIEWS: Record<SettingsSection, ComponentType> = {
 	terminal: TerminalSection,
 	editor: EditorSection,
 	agents: AgentsSection,
+	notifications: NotificationsSection,
 	fetch: FetchSection,
 	about: AboutSection,
 	machine: MachineSection,

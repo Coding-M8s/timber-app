@@ -7,6 +7,7 @@ import {
 	type OpenTerminalResult, type Scrollback, type TerminalChange, type TerminalOutput, type TerminalSession, cleanSessionName, createScrollback,
 	defaultSessionName, isWebLink, TIMBER_REBASE_SESSION_NAME,
 } from "../../shared/terminal";
+import { PROBE_ANSWER, type StatusRecords, type StatusScanner, createStatusRecords, createStatusScanner } from "../../shared/program-status";
 import { rebaseArguments } from "../../shared/rebase-command";
 import { notFoundOnPath } from "../../shared/search-path";
 
@@ -41,6 +42,15 @@ export interface TerminalControls {
 	drawnUpTo(id: string): number;
 	/** Make every later pretend `timber rebase` end by itself with this exit code (0 at first), or keep running when null. */
 	endRebases(exitCode: number | null): void;
+	/**
+	 * Act out the program in a session reporting its status through OSC 7501:
+	 * `report` is what goes after `7501;`, such as
+	 * `state=blocked:kind=permission:msg=YXBwcm92ZQ==`, or `?` for the probe.
+	 * It is printed as the sequence and read as the main process reads it.
+	 */
+	agentStatus(id: string, report: string): void;
+	/** What was written into a session as the answer to a probe, in order. */
+	probeAnswers(id: string): string[];
 }
 
 interface Acted {
@@ -52,6 +62,9 @@ interface Acted {
 	drawn: number;
 	/** A pretend `timber rebase`, which takes no input. */
 	rebase: boolean;
+	scanner: StatusScanner;
+	records: StatusRecords;
+	answers: string[];
 }
 
 /** The PATH the mock acts out looking on. */
@@ -87,6 +100,17 @@ export function createMockTerminals(
 	const prompt = (acted: Acted) => acted.session.kind !== "terminal" ? "\x1b[35m>\x1b[0m " : `\x1b[32m${acted.session.path.split("/").at(-1)}\x1b[0m $ `;
 
 	function print(acted: Acted, data: string): void {
+		// What the program prints is read for status first, as the main process does.
+		let statusChanged = false;
+		for (const event of acted.scanner.scan(data)) {
+			if (event.type === "probe") {
+				if (acted.session.state.kind === "running") acted.answers.push(PROBE_ANSWER);
+			} else if (acted.records.apply(event)) statusChanged = true;
+		}
+		if (statusChanged && acted.session.state.kind === "running") {
+			acted.session = { ...acted.session, status: acted.records.root() };
+			announce({ id: acted.session.id, session: acted.session });
+		}
 		const seq = acted.scrollback.append(data);
 		const part = { id: acted.session.id, seq, data };
 		later(() => {
@@ -103,7 +127,8 @@ export function createMockTerminals(
 
 	function end(acted: Acted, exitCode: number): void {
 		if (acted.session.state.kind !== "running") return;
-		acted.session = { ...acted.session, state: { kind: "exited", exitCode, signal: null } };
+		acted.records.exited();
+		acted.session = { ...acted.session, state: { kind: "exited", exitCode, signal: null }, status: acted.records.root() };
 		announce({ id: acted.session.id, session: acted.session });
 	}
 
@@ -199,10 +224,12 @@ export function createMockTerminals(
 				shell,
 				command: describeCommandLine([shell, ...args]),
 				state: { kind: "running" },
+				status: null,
 			};
 			const acted: Acted = {
 				session, scrollback: createScrollback(), line: "", typed: "", size: { cols: request.cols, rows: request.rows }, drawn: 0,
 				rebase: rebase !== undefined,
+				scanner: createStatusScanner(), records: createStatusRecords(), answers: [],
 			};
 			sessions.set(session.id, acted);
 			announce({ id: session.id, session });
@@ -304,5 +331,10 @@ export function createMockTerminals(
 			missing = [...executables];
 		},
 		openedLinks: () => [...links],
+		agentStatus(id, report) {
+			const acted = sessions.get(id);
+			if (acted && acted.session.state.kind === "running") print(acted, `\x1b]7501;${report}\x1b\\`);
+		},
+		probeAnswers: id => [...(sessions.get(id)?.answers ?? [])],
 	};
 }

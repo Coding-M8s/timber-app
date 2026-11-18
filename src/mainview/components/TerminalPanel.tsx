@@ -3,6 +3,9 @@ import { type SessionMenuItem, describeSessionProblemTitle, describeStarting, me
 import type { Repository, Worktree } from "../../shared/model";
 import { SESSION_NAME_LIMIT, type TerminalSession } from "../../shared/terminal";
 import { estimateTerminalCells } from "../../shared/terminal-appearance";
+import { agentBrand, hasStatusMark, shownStatus } from "../../shared/session-status";
+import { AgentIcon } from "./AgentIcon";
+import { StatusGlyph } from "./StatusGlyph";
 import { terminalAppearance } from "../terminal-look";
 import { useAppState, useStore } from "../store/react";
 import { sessionsOf, shownSession } from "../store/state";
@@ -294,9 +297,14 @@ function Chip({ session, selected, unseen, ids, shownId, closing, closingIds, on
 				onDoubleClick={onRename}
 				onKeyDown={onKeyDown}
 			>
-				{/* A filled dot while it runs, a hollow one once it ended: the shape says it, not only the color. */}
-				<span className="session-dot" aria-hidden="true" />
-				<span className="session-kind" aria-hidden="true">{session.kind === "agent" ? "\u2726" : ">_"}</span>
+				{hasStatusMark(session)
+					// An agent's status, or a program's that reported one, as a shape and a color. The words are in its description.
+					? <StatusGlyph status={shownStatus(session)} />
+					// A filled dot while it runs, a hollow one once it ended: the shape says it, not only the color.
+					: <span className="session-dot" aria-hidden="true" />}
+				{agentBrand(session) !== null
+					? <span className="session-kind branded" aria-hidden="true"><AgentIcon brand={agentBrand(session)!} /></span>
+					: <span className="session-kind" aria-hidden="true">{session.kind === "agent" ? "\u2726" : ">_"}</span>}
 				<span className="session-name">{session.name}</span>
 				{exit !== null && <span className="session-exit" aria-hidden="true">{exit}</span>}
 				{unseen && <span className="session-unseen" aria-hidden="true" />}

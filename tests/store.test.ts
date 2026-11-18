@@ -77,6 +77,7 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		...createMockThemeFiles(),
 		// Terminals as the mock acts them out. Their own tests are in terminal-store.test.ts.
 		...createMockTerminals(() => null),
+		onShowSession: () => () => {},
 		// Timber's settings as the mock acts them out. Their own tests are in timber-settings.test.tsx.
 		...createMockTimberConfig(() => false),
 		// Workflows as the mock acts them out. Their own tests are in workflows.test.ts.

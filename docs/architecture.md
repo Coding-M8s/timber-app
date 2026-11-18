@@ -1528,9 +1528,16 @@ shows, and coming back shows it as it was.
   whenever it is on screen: its chip shows in the selected worktree while
   the Workspace tab shows. A program that keeps redrawing, such as a
   spinner, keeps its chip marked.
-- **The sidebar.** A worktree's row shows how many of its sessions run, in
-  blue with the count, and says so in the row's description, such as "2
-  sessions running". Exited sessions are not counted.
+- **The sidebar.** A worktree's row shows a mark for each agent session, and
+  for each other running session whose program reported a status (see
+  [agent status](#agent-status)), then the other running sessions in blue
+  with their count. The row's description says it in words, such as "Codex:
+  Needs you: approval. 1 other session running." Exited plain sessions are
+  not counted.
+- **Status.** Every session's output, shown or hidden, passes a scanner for
+  the Program Status Protocol before it is kept and sent, and a session
+  carries what its program last reported as `status`. The output goes on to
+  the window unchanged. See [agent status](#agent-status).
 - **Copy, paste, links.** Ctrl+Shift+C and Ctrl+Shift+V on Linux and
   Windows, Cmd+C and Cmd+V on macOS, through the system clipboard in the
   main process (`writeClipboard`, `readClipboard`), so Ctrl+C and Ctrl+V stay
@@ -1722,7 +1729,10 @@ A coding agent, such as Claude Code or Codex, runs in a session of a
 worktree beside its terminals. An agent session is a terminal session that
 starts the agent's command in the worktree's folder instead of the shell.
 The app only hosts it: it never reads, parses, or answers what an agent
-prints, which is handled as any terminal's output.
+prints on screen, which is handled as any terminal's output. The one thing
+it reads is the agent's status, which the agent addresses to the terminal
+as a control sequence, as it would a window title or a bell (see
+[agent status](#agent-status)).
 
 - **The setting.** `agents` in the preferences (`AgentSetting` in
   `src/shared/agent.ts`): a list of a name and a command, in menu order.
@@ -1764,6 +1774,121 @@ prints, which is handled as any terminal's output.
 In `bun run dev:web` the mock engine acts out an agent as the pretend shell,
 and `timberMock.missingExecutables(["codex"])` acts out an agent whose
 executable is not on the PATH (`[]` to undo).
+
+### Agent status
+
+Each agent's state shows on the sidebar row, on its chip, and on a collapsed
+repository header, from the **Program Status Protocol** (OSC 7501,
+[spec](https://www.superlogical.com/rex/docs/build/program-status)). A
+program writes it into its own terminal stream once the terminal says it
+supports it. Nothing is added to an agent's command, and no agent config
+file is written.
+
+**Why this is not reading agent output.** OSC 7501 is a terminal control
+sequence the program addresses to the terminal, like a title (OSC 0) or a
+bell, not text on screen; xterm.js draws nothing for it. The app reads only
+that sequence, OSC 133 `A` (a new shell prompt), and the full reset (RIS).
+What the agent prints on screen is still never read, parsed, or answered.
+
+- **Probe.** A program writes `ESC ] 7501 ; ? ESC \`. The main process
+  answers on the session's input, only while it runs, with
+  `ESC ] 7501 ; ?:states=idle,working,done,blocked,error:kinds=permission,question,auth ESC \`
+  (`PROBE_ANSWER` in `src/shared/program-status.ts`): exactly the states and
+  kinds the app handles. The spec leaves `clear` out of the list, since
+  every terminal that answers accepts it. xterm.js ignores 7501, so nothing
+  answers twice.
+- **Reports.** `ESC ] 7501 ; key=value:key=value` ended by `ESC \` or BEL.
+  `state` is required; `kind` counts only with `blocked`, `progress` (0 to
+  100) only with `working` or `blocked`; `app`, `id` (a record path such as
+  a subagent's), and base64 UTF-8 `title` and `msg` are optional. Malformed
+  pairs are skipped, unknown keys ignored, and a repeated key takes its last
+  value. Each report replaces its record; `clear` removes a record and its
+  children, or every record without an id.
+- **Where it is read.** `createStatusScanner` in
+  `src/shared/program-status.ts`, a pure state machine fed every part of
+  every session's output in `src/bun/terminals.ts`, hidden sessions
+  included, before the part is batched. It reads sequences split across
+  parts, the 8-bit OSC and ST that xterm.js also reads, and stops an OSC at
+  any other escape or at CAN or SUB, as xterm.js does. An OSC of another kind,
+  such as a clipboard write, is never kept.
+- **Limits and safety.** The spec's limits: 4096 bytes for the whole
+  sequence (the 8-bit OSC and ST count as their two UTF-8 bytes), keys of 16
+  bytes, `msg` 2048 bytes decoded, `title` 192, `app` 32, `id` 128 bytes in
+  segments of 32 and 8 deep, and 256 records per session, the one updated
+  longest ago going first. `app` and `id` segments hold only letters, digits,
+  and `_ . + -`; base64 is read with or without its padding. A report over a limit is
+  dropped whole, and so is one whose `msg` or `title` cannot be decoded or
+  holds a control character. Bidirectional overrides and other invisible
+  formatting characters are removed. A message is cut to 200 characters for
+  showing. Nothing from a report is run, logged, or echoed back. A
+  `notify-send` body escapes `&`, `<`, and `>` so it is never markup;
+  Electrobun's notification gets the text as it is, and whether its server
+  reads markup there is not known. On a server without body markup the
+  escapes may show as written. A flood of probes, such as from a file shown
+  with `cat`, gets at most one answer every 100 ms.
+- **Lifetime.** `working`, `blocked`, and `idle` end when the process exits
+  or a new shell prompt starts (OSC 133 `A`); `done` and `error` stay. The
+  spec lets a terminal drop `idle`, and dropping it means a program that idled
+  and quit leaves no mark on its shell. A full reset clears every record. A program that leaves `working` behind in a
+  shell with no OSC 133 prompt marks keeps it until the shell exits, as the
+  spec allows.
+- **To the window.** The root record goes out as `TerminalSession.status`
+  (state, kind, progress, app, title, and decoded message) through
+  `onTerminalChanged`, at most once per 4 ms output part, so a stream of
+  progress does not flood the window. The exit is told in the same change
+  as the status it leaves. Child records are kept and not shown yet.
+- **States as shown** (`shownStatus` in `src/shared/session-status.ts`).
+  The process exit is the source of truth: an exited session is Stopped
+  (code 0) or crashed (another code, or a signal, named), whatever its last
+  report said. A running one is Working (with its progress), Needs you (with
+  approval, question, or sign-in), Done, Idle, or Error, as reported. A
+  running agent that never reported, such as one too old for the protocol,
+  is shown as running, as before.
+- **Where it shows.** Every agent session, and any other running session
+  whose program reported a status, gets a mark. On the sidebar row it is a
+  thin rounded outline in its state's color, holding the state's shape and
+  the session's initial, or as many of its first letters as tell it apart
+  on that row; its name and state are the tooltip. Claude Code and Codex,
+  known by an agent session's executable (`claude`, `codex`) or a reported
+  `app` starting with either name (`agentBrand` in
+  `src/shared/session-status.ts`), show their makers' official marks instead
+  of letters (`AgentIcon.tsx`): Claude's spark in its own orange, and
+  OpenAI's mark in the text color. On its chip, the same mark in a quiet
+  outline takes the place of the agent star, and the same shape, with the decoded
+  message in the chip's tooltip and its state in words beside the chips. A
+  collapsed repository header sums up its agents, such as "1 needs you, 2
+  working", the most urgent first; an expanded one shows nothing extra.
+  Every mark is hidden from assistive technology, and the row's and the
+  header's descriptions say it in words.
+- **Desktop notifications.** When a marked session moves to Needs you, Done,
+  Error, or crashed, the main process sends one naming the session, the
+  worktree's folder, and the message or the state (`createStatusNotices` in
+  `src/shared/status-notices.ts`), unless its worktree is the selected one
+  in a window that shows and has the focus, as `attend` last said. At most
+  one per session and status every 10 seconds, as the spec asks, so Needs
+  you right after Done is still told. While Timber is not ready the window
+  names no selected worktree, so then nothing counts as on screen. Settings,
+  Notifications turns them off (`statusNotifications`, on by default). On
+  Linux, `notify-send` from libnotify 0.7.9 or later shows each one and
+  waits for a click (`src/bun/desktop-notices.ts`); a click brings the
+  window forward and sends `showSession`, and the store selects the
+  worktree, shows the Workspace tab and the session's chip, and asks for
+  its terminal to take the keyboard (`revealSession`, through
+  `src/mainview/terminal-focus.ts`). An open dialog stays open over
+  it. Without `notify-send`, with one
+  that fails, and on macOS, Electrobun's `Utils.showNotification` shows it,
+  and then a click does nothing: Electrobun 2.0.6 has no click callback. On
+  Wayland a window may not come forward without an activation token, which
+  `notify-send` does not hand over; the session is still shown.
+- **Not built.** Child records (subagents) beyond keeping them, and hooks
+  for agents that do not send OSC 7501, which can also carry the prompt and
+  the agent's reply.
+
+In `bun run dev:web`, `timberMock.agentStatus(id, "state=blocked:kind=permission:msg=YXBwcm92ZQ==")`
+acts out a report from the program in a session (`"?"` for the probe), read
+by the same scanner as in the main process. `timberMock.notices()` lists the
+desktop notifications the main process would have shown, and
+`timberMock.clickNotice(id)` acts out a click on one.
 
 ## First-run setup
 
@@ -4085,6 +4210,28 @@ Bun 1.4.4:
   the closed one with "No checks were reported for the head commit." and
   "No description."; and "No pull request yet" for spike/new-idea. No
   console errors.
+
+Run for agent status from the Program Status Protocol (issue 111), on
+2026-11-18, Pop!_OS 24.04 (COSMIC) on Linux x64 with Bun 1.4.2:
+
+- `bun test`: all tests passed, 1 skipped, including the scanner on split
+  parts, BEL and ST, malformed pairs, and oversized reports, and real pseudo
+  terminals in which `/bin/sh` printed a probe (answered on its input, read
+  back byte for byte with `dd`), reports, an OSC 133 prompt, and an exit.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- The real Claude Code 2.1.327 started through `createTerminalSessions` (the
+  main process's own module) in a new temporary repository, for 12 seconds,
+  from a scratch script: it sent one probe, got the answer, and reported
+  `state=blocked:app=claude-code:kind=permission` with the message "trust this
+  folder", which reached the session's `status`. No prompt was sent to it.
+- The real Codex CLI 0.169.0 the same way, also with stand-in answers to its
+  device attribute, cursor position, and color queries: in 12 seconds at its
+  first screen it sent neither a probe nor a report. Its executable holds
+  program status code, so it may report only once a turn runs; not known.
+- Not run: the desktop window with either agent (marks, chips, the
+  collapsed header, a notification and its click), a turn of either agent
+  from Working to Done, and `notify-send` with `--wait` and `--action`, which
+  is not installed on this machine.
 
 Not run yet:
 
