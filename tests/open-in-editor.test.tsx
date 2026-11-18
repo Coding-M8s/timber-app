@@ -38,7 +38,8 @@ const tagsOf = (markup: string, className: string) => markup.match(new RegExp(`<
 
 /** The opening tag of the editor control beside the row of the worktree at `path`. */
 function rowEditor(markup: string, path: string): string {
-	const row = markup.indexOf(`title="${path}"`);
+	// The row's tooltip starts with its path. The saved base may follow it.
+	const row = [`title="${path}"`, `title="${path} (`].map(start => markup.indexOf(start)).find(at => at >= 0) ?? -1;
 	if (row < 0) throw new Error(`No row for ${path}`);
 	const tag = /<button [^>]*class="icon-button row-editor"[^>]*>/.exec(markup.slice(row));
 	if (!tag) throw new Error(`No editor control after the row for ${path}`);

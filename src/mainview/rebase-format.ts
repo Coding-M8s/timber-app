@@ -11,7 +11,7 @@ export const REBASE_RUNS_IN_TERMINAL =
 
 /** Under the Onto field. */
 export const REBASE_ONTO_HINT =
-	"Leave it empty for the base Timber saved for this worktree. A base given here is saved by Timber for next time. A remote branch is fetched first; a local branch, refs/heads/<name>, is used as it is.";
+	"It starts as the base Timber saved for this worktree, when Timber reports one. Leave it empty to pass no base: Timber then chooses, starting with the saved one. A base given here is saved by Timber for next time. A remote branch is fetched first; a local branch, refs/heads/<name>, is used as it is.";
 
 /** Timber's own warning, before anything runs. */
 export const REBASE_REWRITES = "Rebasing rewrites the branch's commits, including ones already pushed.";

@@ -1,6 +1,7 @@
 import type { KeyboardEvent } from "react";
 import { DONE_PRIMARY_NOTE } from "../done-format";
 import { REBASE_CONTROL_TITLE, REBASE_FOLDER_MISSING } from "../rebase-format";
+import { describeSavedBase } from "../base-format";
 import { describeChanges, describeWorktreeSync, worktreeLabel } from "../format";
 import { TAB_LABELS, tabAfterKey } from "../shell";
 import { useAppState, useStore } from "../store/react";
@@ -46,6 +47,7 @@ export function Workspace() {
 	const label = worktreeLabel(worktree);
 	const changes = describeChanges(worktree);
 	const sync = describeWorktreeSync(worktree);
+	const base = describeSavedBase(worktree.base);
 
 	// As in any tab list: the arrows, Home, and End move between tabs, and the tab reached shows at once.
 	const onTabKey = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -63,6 +65,7 @@ export function Workspace() {
 				<div className="workspace-meta">
 					{sync && <span>{sync}</span>}
 					<span>{changes}</span>
+					{base && <span className={base.warning ? "saved-base-warning" : undefined} title={base.sentence}>{base.text}</span>}
 					<span className="path">{worktree.path}</span>
 				</div>
 				<div className="workspace-done">

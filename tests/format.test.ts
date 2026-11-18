@@ -15,6 +15,7 @@ const base: Worktree = {
 	prunable: false,
 	pathExists: true,
 	changes: { kind: "known", modified: [], untracked: [] },
+	base: null,
 	sync: { kind: "unpublished" },
 };
 const linked: Worktree = { ...base, primary: false };
@@ -192,7 +193,7 @@ describe("sample data", () => {
 		const worktrees = browserSampleRepositories.flatMap(repository => repository.worktrees);
 		const kinds = new Set(worktrees.flatMap(describeRowMarkers).map(marker => marker.kind));
 		expect([...kinds].sort()).toEqual([
-			"ahead", "behind", "detached", "folder-missing", "local-only", "locked", "modified", "prunable", "status-unknown", "sync-unknown", "untracked", "upstream-gone",
+			"ahead", "base-unknown", "behind", "detached", "folder-missing", "local-only", "locked", "modified", "prunable", "status-unknown", "sync-unknown", "untracked", "upstream-gone",
 		]);
 		expect(worktrees.some(worktree => describeRowMarkers(worktree).length === 0)).toBe(true);
 		expect(new Set(worktrees.map(worktree => worktree.id)).size).toBe(worktrees.length);
@@ -289,5 +290,30 @@ describe("describeListNotice", () => {
 			.toEqual({ title: "Could not add the repository", text: "disk full", problem: true });
 		expect(describeListNotice({ kind: "failed", action: "remove", message: "disk full" }, []).title)
 			.toBe("Could not remove the repository");
+	});
+});
+
+describe("the marker for a saved base Timber cannot use", () => {
+	const kinds = (worktree: Worktree) => describeRowMarkers(worktree).map(marker => marker.kind);
+
+	test("invalid metadata is marked, with the reason in its sentence", () => {
+		const marker = describeRowMarkers({ ...linked, base: { kind: "invalid", reason: "malformed" } }).find(candidate => candidate.kind === "base-unknown")!;
+		expect(marker).toMatchObject({ place: "state", text: "base unknown" });
+		expect(marker.tooltip).toContain("it is not in the form Timber expects");
+		expect(kinds({ ...linked, base: { kind: "invalid", reason: "stale" } })).toContain("base-unknown");
+		expect(kinds({ ...linked, base: { kind: "invalid", reason: "unreadable" } })).toContain("base-unknown");
+	});
+
+	test("a saved base, no saved base, and a Timber that reports none are not marked", () => {
+		expect(kinds({ ...linked, base: { kind: "assigned", ref: "refs/remotes/origin/main" } })).not.toContain("base-unknown");
+		expect(kinds({ ...linked, base: { kind: "unassigned" } })).not.toContain("base-unknown");
+		expect(kinds({ ...linked, base: null })).not.toContain("base-unknown");
+	});
+
+	test("a worktree Timber could not verify is marked for that once, not again for the stale base that follows from it", () => {
+		expect(kinds({ ...missing, base: { kind: "invalid", reason: "stale" } })).toEqual(["local-only", "folder-missing"]);
+		expect(kinds({ ...unread, base: { kind: "invalid", reason: "stale" } })).toEqual(["local-only", "status-unknown"]);
+		// Metadata that is itself broken is still said.
+		expect(kinds({ ...unread, base: { kind: "invalid", reason: "malformed" } })).toContain("base-unknown");
 	});
 });

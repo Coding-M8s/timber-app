@@ -28,6 +28,7 @@ describe("readDonePreview, on what Timber 0.1.1 printed", () => {
 				path: "/work/sample-worktrees/feat-clean", canonicalPath: "/work/sample-worktrees/feat-clean", branch: "feat/clean",
 				head: "55b48391fde512130fc1b1ba59c7a055efab623f", primary: false, detached: false, locked: false, prunable: false, pathExists: true,
 				changes: { kind: "known", modified: [], untracked: [] },
+				base: null,
 			},
 			ignored: [],
 			options: { keepBranch: false, discardIgnored: true, base: null },

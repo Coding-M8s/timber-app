@@ -1,5 +1,6 @@
 import { type ReactNode, useId } from "react";
 import type { Worktree } from "../../shared/model";
+import { describeRowTitle } from "../base-format";
 import { type RowMarker, type RowMarkerKind, describeRow, describeRowMarkers, describeWorktreeKind, worktreeLabel } from "../format";
 import { describeRunningSessions } from "../terminal-format";
 
@@ -24,6 +25,7 @@ const markerClass: Record<RowMarkerKind, string> = {
 	"status-unknown": "row-flag",
 	"locked": "row-flag",
 	"prunable": "row-flag",
+	"base-unknown": "row-flag",
 	"modified": "count modified",
 	"untracked": "count untracked",
 };
@@ -70,7 +72,7 @@ export function WorktreeRow({ worktree, selected, onSelect, runningSessions = 0,
 			className={selected ? "row selected" : "row"}
 			aria-current={selected}
 			aria-describedby={description !== "" ? descriptionId : undefined}
-			title={worktree.path}
+			title={describeRowTitle(worktree)}
 			onClick={onSelect}
 		>
 			<span className="row-line">
