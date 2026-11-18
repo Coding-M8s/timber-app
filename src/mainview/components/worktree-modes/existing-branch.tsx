@@ -35,13 +35,13 @@ export function existingBranchMode(
 				<input type="checkbox" checked={setup} onChange={event => form.setSetup(event.target.checked)} />
 				<span className="check-text">
 					<span>Rerun setup</span>
-					<span className="check-hint">Runs the setup steps again when the worktree already exists. A new worktree always gets them.</span>
+					<span className="check-hint">Runs the setup scripts in a terminal also when the worktree already exists. A new worktree always gets them.</span>
 				</span>
 			</label>
 			{kept && (
 				<p className="dialog-note" role="status">
 					{reportedLabel(kept.worktree)} has its worktree, and it is selected in the list. Nothing needs to be created again.
-					The fields now name that worktree with Rerun setup ticked: once the cause is fixed, submit to run setup again, or close this dialog.
+					The fields now name that worktree with Rerun setup ticked: once the cause is fixed, submit to open it and run setup in a terminal, or close this dialog.
 				</p>
 			)}
 		</>
@@ -56,10 +56,14 @@ export function existingBranchMode(
 		submitLabel: "Open worktree",
 		runningLabel: "Opening the worktree",
 		failureTitle: kept
-			? kept.created ? "The worktree was created, but setup failed" : "The worktree was opened, but setup failed"
+			? kept.created ? "The worktree was created, but Timber stopped before setup" : "The worktree was opened, but Timber did not finish"
 			: "Could not open the worktree",
 		// Only Timber knows whether the text names a worktree that is already there. One kept from a failed run is known.
 		agentStart: kept ? (kept.created ? "always" : "never") : "if-created",
+		// Ticked, setup runs whatever Timber says. Otherwise only Timber's answer says whether it left setup scripts.
+		setupStart: setup ? "always" : "if-skipped",
+		worktree: kept?.worktree.path ?? null,
+		workflow,
 		run: () => form.run(workflow),
 	};
 }

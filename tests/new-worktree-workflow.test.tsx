@@ -14,7 +14,7 @@ import { createAppStore } from "../src/mainview/store/store";
 import { createSubmission } from "../src/mainview/store/submission";
 import type { NewWorktreeRequest, OpenWorktreeRequest } from "../src/shared/model";
 import { RESULT_FILE_PLACEHOLDER, describeTimberCommand } from "../src/shared/timber-result";
-import { newWorktreeArguments, openWorktreeArguments } from "../src/shared/worktree-commands";
+import { newWorktreeArguments } from "../src/shared/worktree-commands";
 
 const settle = () => Bun.sleep(0);
 const TIMBER = "/work/timber";
@@ -126,7 +126,7 @@ describe("the Workflow field", () => {
 
 		// A pick left from before cannot reach the command.
 		model.edit({ name: "feat/login", workflow: "review" });
-		expect(mode().command).toBe("timber new --result-file <temporary file> --no-editor --no-agent -- feat/login");
+		expect(mode().command).toBe("timber new --no-setup --result-file <temporary file> --no-editor --no-agent -- feat/login");
 		expect(await submit()).toBe(true);
 		expect(asked).toEqual([{ kind: "new", repository: TIMBER, name: "feat/login", base: null }]);
 		expect(branches()).toContain("feat/login");
@@ -148,27 +148,29 @@ describe("the command in the footer", () => {
 	test("New branch: has --workflow <name> exactly when one is picked, before the --", async () => {
 		const { model, mode, render } = await openedDialog();
 		model.edit({ name: "feat/login" });
-		expect(mode().command).toBe("timber new --result-file <temporary file> --no-editor --no-agent -- feat/login");
+		expect(mode().command).toBe("timber new --no-setup --result-file <temporary file> --no-editor --no-agent -- feat/login");
 		model.edit({ workflow: "review" });
-		expect(mode().command).toBe("timber new --workflow review --result-file <temporary file> --no-editor --no-agent -- feat/login");
+		expect(mode().command).toBe("timber new --workflow review --no-setup --result-file <temporary file> --no-editor --no-agent -- feat/login");
 		expect(render()).toContain('<option value="review" selected="">');
 		expect(render()).toContain("Runs the setup scripts of review after the ordinary ones.");
 		model.edit({ base: "develop" });
-		expect(mode().command).toBe("timber new --base develop --workflow review --result-file <temporary file> --no-editor --no-agent -- feat/login");
+		expect(mode().command).toBe("timber new --base develop --workflow review --no-setup --result-file <temporary file> --no-editor --no-agent -- feat/login");
 		model.edit({ workflow: null });
-		expect(mode().command).toBe("timber new --base develop --result-file <temporary file> --no-editor --no-agent -- feat/login");
+		expect(mode().command).toBe("timber new --base develop --no-setup --result-file <temporary file> --no-editor --no-agent -- feat/login");
 	});
 
 	test("Existing branch: has --workflow <name> exactly when one is picked, before the --", async () => {
-		const { form, mode, controller } = await openedDialog();
+		const { form, mode, controller, render } = await openedDialog();
 		controller.select(1);
 		form.setSelector("feat/x");
-		expect(mode().command).toBe("timber open --result-file <temporary file> --no-editor --no-agent -- feat/x");
+		expect(mode().command).toBe("timber open --no-setup --result-file <temporary file> --no-editor --no-agent -- feat/x");
 		form.setWorkflow("triage");
 		form.setSetup(true);
-		expect(mode().command).toBe("timber open --setup --workflow triage --result-file <temporary file> --no-editor --no-agent -- feat/x");
+		expect(mode().command).toBe("timber open --workflow triage --no-setup --result-file <temporary file> --no-editor --no-agent -- feat/x");
+		// Ticked, the Setup session that follows passes the same workflow.
+		expect(render()).toContain("timber open --setup --workflow triage --no-editor --no-agent -- &lt;worktree&gt;");
 		form.setWorkflow(null);
-		expect(mode().command).toBe("timber open --setup --result-file <temporary file> --no-editor --no-agent -- feat/x");
+		expect(mode().command).toBe("timber open --no-setup --result-file <temporary file> --no-editor --no-agent -- feat/x");
 	});
 
 	test("the command shown is the command that runs", async () => {
@@ -182,40 +184,51 @@ describe("the command in the footer", () => {
 	});
 });
 
-describe("Open with setup after a failed workflow script", () => {
-	test("New branch: repeats --workflow <name>, because Timber does not remember it", async () => {
-		const { engine, model, mode, submit, asked, render } = await openedDialog();
-		engine.endCommands("setup-fails");
+/** The commands of the sessions started in the app, in the order they started. */
+async function sessionCommands(store: ReturnType<typeof createAppStore>): Promise<string[]> {
+	// The sessions start one after the other, without the dialog waiting for them.
+	await Bun.sleep(10);
+	return store.getState().terminals.map(session => session.command);
+}
+
+describe("the Setup session passes the workflow again, because Timber does not remember it", () => {
+	test("New branch: the footer shows it, and the Setup session runs with it", async () => {
+		const { model, mode, submit, store, render } = await openedDialog();
+		model.edit({ name: "feat/login", workflow: "review" });
+		expect(render()).toContain("timber open --setup --workflow review --no-editor --no-agent -- &lt;worktree&gt;");
+		expect(await submit()).toBe(true);
+		const [setup] = await sessionCommands(store);
+		expect(setup).toEndWith(`timber open --setup --workflow review --no-editor --no-agent -- ${NEW_PATH}`);
+		expect(mode().command).toContain("--workflow review --no-setup");
+	});
+
+	test("New branch without a workflow: the Setup session passes none", async () => {
+		const { model, submit, store } = await openedDialog();
+		model.edit({ name: "feat/login" });
+		expect(await submit()).toBe(true);
+		expect(await sessionCommands(store)).toEqual([expect.stringMatching(new RegExp(`timber open --setup --no-editor --no-agent -- ${NEW_PATH}$`))]);
+	});
+
+	test("New branch: Run setup after Timber stopped repeats the workflow of that run", async () => {
+		const { engine, model, mode, submit, asked, render, store } = await openedDialog();
+		engine.endCommands("stops-after-create");
 		model.edit({ name: "feat/login", workflow: "review" });
 		expect(await submit()).toBe(false);
 		expect(model.getState().step).toMatchObject({ kind: "setup", workflow: "review", worktree: { path: NEW_PATH } });
-		expect(mode().command).toBe(`timber open --setup --workflow review --result-file <temporary file> --no-editor --no-agent -- ${NEW_PATH}`);
-		expect(render()).toContain("from the first one, with the review workflow. Nothing is created again.");
-		// Timber's own advice names the same workflow.
-		expect(render()).toContain("retry all setup steps with: timber open --setup --workflow review --");
+		expect(mode().command).toBe(`timber open --setup --workflow review --no-editor --no-agent -- ${NEW_PATH}`);
+		expect(render()).toContain("Run setup runs every setup script in that worktree, with the review workflow, in a terminal of its own");
 
-		const shown = mode().command;
 		engine.endCommands("succeeds");
 		expect(await submit()).toBe(true);
-		expect(asked).toEqual([
-			{ kind: "new", repository: TIMBER, name: "feat/login", base: null, workflow: "review" },
-			{ kind: "open", repository: TIMBER, selector: NEW_PATH, setup: true, workflow: "review" },
-		]);
-		const { kind: _kind, ...request } = asked[1]!;
-		expect(describeTimberCommand(openWorktreeArguments(request as OpenWorktreeRequest, RESULT_FILE_PLACEHOLDER))).toBe(shown);
+		// Run setup asks Timber for nothing in the dialog: the session runs the command the footer showed.
+		expect(asked).toEqual([{ kind: "new", repository: TIMBER, name: "feat/login", base: null, workflow: "review" }]);
+		const [setup] = await sessionCommands(store);
+		expect(setup).toEndWith(`timber open --setup --workflow review --no-editor --no-agent -- ${NEW_PATH}`);
 	});
 
-	test("New branch without a workflow: Open with setup passes none", async () => {
-		const { engine, model, mode, submit } = await openedDialog();
-		engine.endCommands("setup-fails");
-		model.edit({ name: "feat/login" });
-		expect(await submit()).toBe(false);
-		expect(mode().command).toBe(`timber open --setup --result-file <temporary file> --no-editor --no-agent -- ${NEW_PATH}`);
-	});
-
-	test("New branch: the workflow of the failed run is kept, even when the list later loses it", async () => {
+	test("New branch: the workflow of the stopped run is kept, even when the list later loses it", async () => {
 		const { engine, model, mode, submit, controller } = await openedDialog();
-		engine.endCommands("setup-fails");
+		engine.endCommands("stops-after-create");
 		model.edit({ name: "feat/login", workflow: "review" });
 		expect(await submit()).toBe(false);
 		engine.setWorkflows(TIMBER, { ok: true, workflows: [] });
@@ -223,27 +236,29 @@ describe("Open with setup after a failed workflow script", () => {
 		expect(mode().command).toContain("--setup --workflow review --");
 	});
 
-	test("Existing branch: the kept worktree is opened with setup and the same workflow", async () => {
-		const { engine, form, mode, submit, asked, controller } = await openedDialog();
+	test("Existing branch: the kept worktree is opened with the same workflow, and its Setup session passes it", async () => {
+		const { engine, form, mode, submit, asked, controller, store } = await openedDialog();
 		controller.select(1);
 		await form.readBranches();
-		engine.endCommands("setup-fails");
+		engine.endCommands("stops-after-create");
 		form.setSelector("chore/update-deps");
 		form.setWorkflow("triage");
 		expect(await submit()).toBe(false);
 		const kept = form.getState().kept;
 		expect(kept).not.toBeNull();
-		expect(mode().command).toBe(`timber open --setup --workflow triage --result-file <temporary file> --no-editor --no-agent -- ${kept!.worktree.path}`);
+		expect(mode().command).toBe(`timber open --workflow triage --no-setup --result-file <temporary file> --no-editor --no-agent -- ${kept!.worktree.path}`);
 		engine.endCommands("succeeds");
 		expect(await submit()).toBe(true);
-		expect(asked.at(-1)).toEqual({ kind: "open", repository: TIMBER, selector: kept!.worktree.path, setup: true, workflow: "triage" });
+		expect(asked.at(-1)).toEqual({ kind: "open", repository: TIMBER, selector: kept!.worktree.path, workflow: "triage" });
+		const [setup] = await sessionCommands(store);
+		expect(setup).toEndWith(`timber open --setup --workflow triage --no-editor --no-agent -- ${kept!.worktree.path}`);
 	});
 
 	test("Existing branch: the kept worktree keeps its workflow, even when the list later loses it", async () => {
 		const { engine, form, mode, submit, controller, render } = await openedDialog();
 		controller.select(1);
 		await form.readBranches();
-		engine.endCommands("setup-fails");
+		engine.endCommands("stops-after-create");
 		form.setSelector("chore/update-deps");
 		form.setWorkflow("triage");
 		expect(await submit()).toBe(false);
@@ -252,18 +267,18 @@ describe("Open with setup after a failed workflow script", () => {
 
 		engine.setWorkflows(TIMBER, { ok: true, workflows: sampleWorkflows.filter(workflow => workflow.name !== "triage") });
 		await controller.readWorkflows();
-		expect(mode().command).toBe(`timber open --setup --workflow triage --result-file <temporary file> --no-editor --no-agent -- ${kept.worktree.path}`);
+		expect(mode().command).toBe(`timber open --workflow triage --no-setup --result-file <temporary file> --no-editor --no-agent -- ${kept.worktree.path}`);
 		// The field shows what runs, not None.
 		expect(render()).toContain('<option value="triage" selected="">triage: no longer listed</option>');
 
 		engine.setWorkflows(TIMBER, { ok: false, message: "Invalid TOML" });
 		await controller.readWorkflows();
-		expect(mode().command).toContain("--setup --workflow triage --");
+		expect(mode().command).toContain("--workflow triage --no-setup");
 		expect(render()).toContain("Workflows could not be read. Setup runs again with the triage workflow, as the failed run had. Invalid TOML");
 
 		// An edit lets the kept worktree go, and with it the kept workflow.
 		form.setSelector("chore/update-deps");
-		expect(mode().command).toBe("timber open --setup --result-file <temporary file> --no-editor --no-agent -- chore/update-deps");
+		expect(mode().command).toBe("timber open --no-setup --result-file <temporary file> --no-editor --no-agent -- chore/update-deps");
 	});
 });
 
@@ -301,6 +316,6 @@ describe("a workflow removed between listing and creating", () => {
 
 		// Read again after the failure, the field no longer offers it, and the next command passes none.
 		expect(render()).not.toContain('value="review"');
-		expect(render()).toContain("timber new --result-file &lt;temporary file&gt; --no-editor --no-agent -- feat/login");
+		expect(render()).toContain("timber new --no-setup --result-file &lt;temporary file&gt; --no-editor --no-agent -- feat/login");
 	});
 });

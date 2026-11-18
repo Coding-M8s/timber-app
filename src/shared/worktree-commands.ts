@@ -12,6 +12,12 @@ import type { ResultRecord, TimberRun } from "./timber-result";
  * always pass `--no-editor --no-agent`: the app never lets Timber start a
  * launcher, and Timber requires both beside `--result-file`. A picked
  * workflow is `--workflow <name>`, among the options.
+ *
+ * Both also pass `--no-setup`, so they answer as soon as the worktree exists
+ * and never wait for setup scripts. The app runs setup afterwards in a
+ * session in the worktree (`worktreeSetupArguments`), where it can be
+ * watched, and nothing in the window waits for it. Timber does not remember
+ * a worktree's workflow, so the setup session passes the picked one again.
  */
 
 const workflowArguments = (workflow: string | undefined): string[] => (workflow === undefined ? [] : ["--workflow", workflow]);
@@ -19,13 +25,22 @@ const workflowArguments = (workflow: string | undefined): string[] => (workflow 
 /** Everything after `timber` for creating a worktree. `resultFile` is put in as it is. */
 export function newWorktreeArguments(request: NewWorktreeRequest, resultFile: string): string[] {
 	const base = request.base === null ? [] : ["--base", request.base];
-	return ["new", ...base, ...workflowArguments(request.workflow), "--result-file", resultFile, "--no-editor", "--no-agent", "--", request.name];
+	return ["new", ...base, ...workflowArguments(request.workflow), "--no-setup", "--result-file", resultFile, "--no-editor", "--no-agent", "--", request.name];
 }
 
 /** Everything after `timber` for opening a worktree. `resultFile` is put in as it is. */
 export function openWorktreeArguments(request: OpenWorktreeRequest, resultFile: string): string[] {
-	const setup = request.setup ? ["--setup"] : [];
-	return ["open", ...setup, ...workflowArguments(request.workflow), "--result-file", resultFile, "--no-editor", "--no-agent", "--", request.selector];
+	return ["open", ...workflowArguments(request.workflow), "--no-setup", "--result-file", resultFile, "--no-editor", "--no-agent", "--", request.selector];
+}
+
+/**
+ * Everything after `timber` for running a worktree's setup scripts, in a
+ * session in that worktree: the picked workflow, whose scripts run after the
+ * ordinary ones, and the exact registered path as one argument. No result
+ * file, because the session shows how it went.
+ */
+export function worktreeSetupArguments(worktree: string, workflow?: string): string[] {
+	return ["open", "--setup", ...workflowArguments(workflow), "--no-editor", "--no-agent", "--", worktree];
 }
 
 /** The worktree in a record, or null when the record names none or does not say which repository it is in. */
@@ -43,11 +58,13 @@ function reportedWorktree(record: ResultRecord | null): ReportedWorktree | null 
 export function worktreeCommandResult(run: TimberRun): WorktreeCommandResult {
 	const { result } = run;
 	const worktree = reportedWorktree(result.record);
+	// Timber says so only when it skipped setup scripts that are configured.
+	const setupSkipped = result.record?.fields.setupSkipped === true;
 	switch (result.outcome) {
 		case "cancelled":
 			return { outcome: "cancelled" };
 		case "succeeded":
-			if (worktree) return { outcome: "succeeded", worktree, created: result.record.materialized };
+			if (worktree) return { outcome: "succeeded", worktree, created: result.record.materialized, setupSkipped };
 			return {
 				outcome: "failed",
 				failure: {
@@ -57,6 +74,7 @@ export function worktreeCommandResult(run: TimberRun): WorktreeCommandResult {
 				},
 				worktree: null,
 				created: result.record.materialized,
+				setupSkipped,
 			};
 		case "failed":
 			return {
@@ -64,6 +82,7 @@ export function worktreeCommandResult(run: TimberRun): WorktreeCommandResult {
 				failure: { command: run.command, diagnostic: result.diagnostic, output: run.output },
 				worktree,
 				created: result.record?.materialized ?? false,
+				setupSkipped,
 			};
 	}
 }

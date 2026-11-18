@@ -20,7 +20,7 @@ export interface KeptWorktree {
 export interface ExistingBranchFormState {
 	/** What to open, as typed or picked. Timber alone decides what it means. */
 	selector: string;
-	/** "Rerun setup". */
+	/** "Rerun setup": run setup in a session also when the worktree was already there. */
 	setup: boolean;
 	/** The Workflow field as picked, or null for None. What it passes depends on the list (see ./workflow-choice.tsx). */
 	workflow: string | null;
@@ -45,13 +45,15 @@ export interface ExistingBranchForm {
 	/** Read the branches to pick from. Only the latest read counts. */
 	readBranches(): Promise<void>;
 	/**
-	 * Run `timber open` with the fields as they are now. Runs once: a failure
-	 * is shown, never tried again. A run that worked reports the worktree as
-	 * created when Timber made it, or when it finishes the setup of a
+	 * Run `timber open --no-setup` with the fields as they are now. Runs
+	 * once: a failure is shown, never tried again. A run that worked reports
+	 * the worktree as created when Timber made it, or when it opens again a
 	 * worktree an earlier run of this form made. A worktree that was already
-	 * there is never reported as created. `workflow` is the one the command
-	 * passes, or null for none. A failure that kept a worktree keeps the
-	 * workflow with it (see `KeptWorktree`).
+	 * there is never reported as created. Setup is asked for when Timber
+	 * left setup scripts, or when "Rerun setup" is ticked. `workflow` is the
+	 * one the command passes, or null for none, and the setup session passes
+	 * it again. A failure that kept a worktree keeps the workflow with it (see
+	 * `KeptWorktree`).
 	 */
 	run(workflow?: string | null): Promise<ModeRun>;
 }
@@ -66,8 +68,8 @@ function sameReported(one: ReportedWorktree, other: ReportedWorktree): boolean {
  * and otherwise exactly as given. The dialog words its command from this, and
  * `run` sends this. `workflow` is the one the command passes, or null for none.
  */
-export function openRequest(repository: string, state: Pick<ExistingBranchFormState, "selector" | "setup">, workflow: string | null = null): OpenWorktreeRequest {
-	return { repository, selector: state.selector.trim(), setup: state.setup, ...workflowPart(workflow) };
+export function openRequest(repository: string, state: Pick<ExistingBranchFormState, "selector">, workflow: string | null = null): OpenWorktreeRequest {
+	return { repository, selector: state.selector.trim(), ...workflowPart(workflow) };
 }
 
 /** False while there is nothing to open. Timber judges everything else about the text. */
@@ -140,14 +142,16 @@ export function createExistingBranchForm(
 				return {
 					outcome: { ok: false, failure: { command: null, diagnostic: "timber open was cancelled before anything was changed.", output: null } },
 					created: null,
+					setup: null,
 				};
 			}
-			// Running setup again in a worktree an earlier run of this dialog created finishes that creation, though Timber now finds it there.
+			// Opening again a worktree an earlier run of this dialog created finishes that creation, though Timber now finds it there.
 			const finishing = before !== null && before.created && result.worktree !== null && sameReported(before.worktree, result.worktree);
 			const created = result.created || finishing;
 			if (result.outcome === "succeeded") {
-				const toast = created && !result.created ? `Setup finished in ${reportedLabel(result.worktree)}` : describeOpened(result.worktree, result.created);
-				return { outcome: { ok: true, toast }, created: created ? result.worktree : null };
+				const setup = result.setupSkipped || state.setup ? result.worktree : null;
+				const toast = created && !result.created && setup ? `Setup started in ${reportedLabel(result.worktree)}` : describeOpened(result.worktree, result.created);
+				return { outcome: { ok: true, toast }, created: created ? result.worktree : null, setup, workflow };
 			}
 			// The command may have made a branch, and the dialog stays open.
 			void readBranches();
@@ -157,7 +161,7 @@ export function createExistingBranchForm(
 			} else {
 				keepBefore();
 			}
-			return { outcome: { ok: false, failure: result.failure }, created: null };
+			return { outcome: { ok: false, failure: result.failure }, created: null, setup: null };
 		},
 	};
 }

@@ -14,7 +14,8 @@ export const commandEndings = {
 	"succeeds": "Timber does what was asked",
 	"refused": "Timber refuses before anything is created",
 	"ambiguous": "Timber finds several matches for what was typed, and lists them",
-	"setup-fails": "The setup script fails, after the worktree was created",
+	"stops-after-create": "Timber creates the worktree, then stops before setup",
+	"setup-fails": "Timber creates the worktree, and its setup script then fails in the setup terminal",
 	"no-result": "Timber exits with 0 but leaves no result",
 } as const;
 
@@ -52,13 +53,15 @@ function stage(command: ResultCommand, repository: Repository, shown: string) {
 	};
 }
 
-const setupDiagnostic = (path: string, workflow: string | undefined) =>
-	`Setup post_create step 1 failed (exit code 1). The branch/worktree and setup files are retained at "${path}". Fix the hook or its prerequisites, then retry all setup steps with: timber open --setup${workflow === undefined ? "" : ` --workflow ${workflow}`} -- '${path}'`;
+const stoppedDiagnostic = (path: string) =>
+	`Could not save the base association; created worktree retained at ${path}. Setup and launch have not run. Inspect its private Git metadata and permissions, then retry with:\ntimber rebase --base refs/remotes/origin/main -- '${path}'`;
 
 /** Timber's words for a workflow its settings do not have, word for word. */
 export const UNKNOWN_WORKFLOW_DIAGNOSTIC = "Unknown workflow. Restore its definition or assign another configured workflow with --workflow <name>.";
 
-const SETUP_OUTPUT = "bun install v1.4.4\nerror: lockfile had changes, but lockfile is frozen\n";
+/** What Timber prints when `--no-setup` skipped the pretend setup script every mock repository has. */
+const skippedNote = (path: string, workflow: string | undefined) =>
+	`Setup skipped (--no-setup). Run it with: timber open --setup${workflow === undefined ? "" : ` --workflow ${workflow}`} -- '${path}'\n`;
 
 /** The branch the mock makes of what was typed. The real Timber has its own rules. */
 function branchFor(name: string): string {
@@ -123,9 +126,11 @@ export function actOutNew(
 	const printed = `Created ${branch} at ${created.path}\n`;
 	switch (ending) {
 		case "succeeds":
-			return { result: acted.succeeded(fields, printed), created };
 		case "setup-fails":
-			return { result: acted.failed(setupDiagnostic(created.path, request.workflow), fields, printed + SETUP_OUTPUT), created };
+			// With --no-setup Timber answers before setup, which fails later, in its session.
+			return { result: acted.succeeded({ ...fields, setupSkipped: true }, printed + skippedNote(created.path, request.workflow)), created };
+		case "stops-after-create":
+			return { result: acted.failed(stoppedDiagnostic(created.path), fields, printed), created };
 		case "no-result":
 			return { result: acted.noResult(printed), created };
 	}
@@ -160,8 +165,9 @@ export function actOutOpen(
 			case "refused":
 				return refused(`Worktree ${found.path} is missing or unverifiable. Check it before opening it again.`);
 			case "setup-fails":
-				// Without --setup an existing worktree runs no setup, so there is nothing to fail.
-				return { result: request.setup ? acted.failed(setupDiagnostic(found.path, request.workflow), fields, SETUP_OUTPUT) : acted.succeeded(fields, printed), created: null };
+			case "stops-after-create":
+				// An existing worktree runs no setup and creates nothing, so there is nothing to fail.
+				return { result: acted.succeeded(fields, printed), created: null };
 			case "no-result":
 				return { result: acted.noResult(printed), created: null };
 		}
@@ -169,7 +175,7 @@ export function actOutOpen(
 
 	const branch = branches.find(candidate => candidate.selector === selector);
 	if (!branch || ending === "refused") return refused(`No existing branch or worktree matches "${selector}". Check the exact branch or absolute worktree path.`);
-	// A remote-tracking branch becomes a local branch that follows it. A new worktree always gets its setup.
+	// A remote-tracking branch becomes a local branch that follows it. A new worktree always leaves its setup to the app.
 	const name = branch.kind === "remote" ? selector.slice(selector.indexOf("/") + 1) : selector;
 	// As Timber does: opening a branch saves no base.
 	const created = newWorktreeIn(repository, name, { kind: "unassigned" }, branch.kind === "remote" ? { kind: "tracking", upstream: selector, ahead: 0, behind: 0 } : { kind: "unpublished" });
@@ -177,9 +183,10 @@ export function actOutOpen(
 	const printed = `Created worktree at ${created.path}\n`;
 	switch (ending) {
 		case "succeeds":
-			return { result: acted.succeeded(fields, printed), created };
 		case "setup-fails":
-			return { result: acted.failed(setupDiagnostic(created.path, request.workflow), fields, printed + SETUP_OUTPUT), created };
+			return { result: acted.succeeded({ ...fields, setupSkipped: true }, printed + skippedNote(created.path, request.workflow)), created };
+		case "stops-after-create":
+			return { result: acted.failed(stoppedDiagnostic(created.path), fields, printed), created };
 		case "no-result":
 			return { result: acted.noResult(printed), created };
 	}

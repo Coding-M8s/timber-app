@@ -5,7 +5,7 @@ import { useAppState, useStore, useSubmission } from "../store/react";
 import type { SubmissionState } from "../store/submission";
 import { OperationDialog } from "./OperationDialog";
 import { ModeSwitch } from "./worktree-modes/ModeSwitch";
-import { agentFollowUp } from "./worktree-modes/agent-choice";
+import { followUps } from "./worktree-modes/agent-choice";
 import { createWorktreeDialogController, pickOfOption } from "./worktree-modes/dialog-controller";
 import { useExistingBranchMode } from "./worktree-modes/existing-branch";
 import type { WorktreeDialogMode } from "./worktree-modes/mode";
@@ -72,7 +72,7 @@ export function WorktreeDialogFrame(props: WorktreeDialogFrameProps) {
 				<ModeSwitch labels={modes.map(candidate => candidate.label)} selected={modes.indexOf(mode)} disabled={submission.running} onSelect={onSelect} />
 			)}
 			command={mode.command}
-			followUp={agentFollowUp(agent, mode.agentStart)}
+			followUps={followUps(agent, mode.agentStart, mode.setupStart, mode.worktree, mode.workflow)}
 			submission={submission}
 			submitLabel={mode.submitLabel}
 			runningLabel={mode.runningLabel}

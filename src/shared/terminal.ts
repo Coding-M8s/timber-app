@@ -73,6 +73,14 @@ export interface OpenTerminalRequest {
 	 * Timber it found. Not together with `agent`.
 	 */
 	timberRebase?: { onto: string | null };
+	/**
+	 * Run this worktree's setup scripts with `timber open --setup` instead of
+	 * the shell (`worktreeSetupArguments` in ./worktree-commands.ts), with the
+	 * workflow the worktree was made with, if any: Timber does not remember it.
+	 * The main process runs the Timber it found. Not together with `agent` or
+	 * `timberRebase`.
+	 */
+	timberWorktreeSetup?: { workflow?: string };
 }
 
 export type OpenTerminalResult =
@@ -133,6 +141,9 @@ const KIND_NAMES: Record<SessionKind, string> = { terminal: "Terminal", agent: "
 
 /** What a `timber rebase` session is called. */
 export const TIMBER_REBASE_SESSION_NAME = "Rebase";
+
+/** The name of a session that runs a worktree's setup scripts. */
+export const WORKTREE_SETUP_SESSION_NAME = "Setup";
 
 /** What a kind of session is called, such as "Terminal". */
 export function sessionKindName(kind: SessionKind): string {

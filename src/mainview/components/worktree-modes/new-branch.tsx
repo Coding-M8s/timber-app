@@ -10,9 +10,9 @@ import { WorkflowField, type WorkflowOptions, chosenWorkflow } from "./workflow-
  * The "New branch" mode drawn from its model (see ./new-branch-model.ts).
  * A plain function, so every state can be rendered in a test.
  *
- * Timber always runs with --no-editor --no-agent. The Agent field belongs to
- * the frame (../NewWorktreeDialog.tsx), which starts the picked agent itself
- * once this mode reports a worktree it created. Two things in the agreed mock
+ * Timber always runs with --no-setup --no-editor --no-agent. The frame
+ * (../NewWorktreeDialog.tsx) owns the Agent field, and starts setup and the
+ * picked agent itself once this mode reports the worktree it created. Two things in the agreed mock
  * are left out on purpose: the editor checkbox, and a line predicting the
  * branch and folder, which would mean guessing what only Timber knows.
  */
@@ -35,8 +35,12 @@ export function newBranchMode(
 		command: shownCommand(repository.path, state, workflow),
 		canSubmit: step.kind === "setup" || canCreate(fields),
 		...describeStep(step),
-		// `timber new` creates the worktree when it works, and "Open with setup" finishes one this mode created.
+		// `timber new` creates the worktree when it works, and "Run setup" finishes one this mode created.
 		agentStart: "always",
+		// From the form, only Timber's answer says whether there are setup scripts. Once the worktree exists, setup is the command itself.
+		setupStart: step.kind === "form" ? "if-skipped" : "never",
+		worktree: step.kind === "form" ? null : step.worktree.path,
+		workflow: step.kind === "form" ? workflow : step.workflow,
 		run: () => model.run(workflow),
 		fields: step.kind === "form"
 			? (
@@ -74,12 +78,12 @@ export function newBranchMode(
 			: (
 				<div className="dialog-outcome">
 					<p className="dialog-outcome-text">
-						{reportedLabel(step.worktree)} was created and is in the list, but its setup did not finish.
+						{reportedLabel(step.worktree)} was created and is in the list, but Timber stopped before its setup.
 					</p>
 					<p className="dialog-outcome-text path">{step.worktree.path}</p>
 					<p className="dialog-outcome-text">
-						Open with setup runs every setup script again in that worktree, from the first one
-						{step.workflow === null ? "" : `, with the ${step.workflow} workflow`}. Nothing is created again.
+						Run setup runs every setup script in that worktree
+						{step.workflow === null ? "" : `, with the ${step.workflow} workflow`}, in a terminal of its own, and closes this dialog. Nothing is created again.
 					</p>
 					<button
 						type="button"

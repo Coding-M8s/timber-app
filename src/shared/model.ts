@@ -268,12 +268,10 @@ export interface OpenWorktreeRequest {
 	repository: string;
 	/** A branch, a ticket, or the exact registered path of a worktree (`Worktree.path`). */
 	selector: string;
-	/** Run the setup scripts again in a worktree that already exists. */
-	setup: boolean;
 	/**
 	 * A named workflow from `listWorkflows`. Left out for none. Timber does not
-	 * remember the workflow a worktree was created with, so running setup again
-	 * passes it again.
+	 * remember the workflow a worktree was created with, so the setup session
+	 * that follows passes it again.
 	 */
 	workflow?: string;
 }
@@ -298,10 +296,10 @@ export interface ReportedWorktree {
  * nothing about what exists, so read the list again.
  */
 export type WorktreeCommandResult =
-	| { outcome: "succeeded"; worktree: ReportedWorktree; created: boolean }
+	| { outcome: "succeeded"; worktree: ReportedWorktree; created: boolean; setupSkipped: boolean }
 	/** The person closed Timber's own chooser before anything was changed. */
 	| { outcome: "cancelled" }
-	| { outcome: "failed"; failure: TimberFailure; worktree: ReportedWorktree | null; created: boolean };
+	| { outcome: "failed"; failure: TimberFailure; worktree: ReportedWorktree | null; created: boolean; setupSkipped: boolean };
 
 /** A branch offered for picking wherever a branch is typed. Only a suggestion: any text may be typed instead. */
 export interface BranchSuggestion {

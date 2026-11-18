@@ -225,7 +225,7 @@ session on an older one.
   looks like success.
 - **Outcomes.** Succeeded and cancelled always come from a checked record. A
   failure carries Timber's diagnostic and the record when there is one, so a
-  dialog can tell "created, but setup failed" (`materialized`) from "nothing
+  dialog can tell "created, then stopped" (`materialized`) from "nothing
   happened". With no usable record, what the command did is unknown: the
   message says so, and the caller reads the list again and never retries by
   itself.
@@ -362,12 +362,26 @@ capabilities of the `Engine` contract.
   the same function with the real result file, so the command shown is the
   command that runs.
 - **The arguments.** Options first, then `--`, then what the person typed as
-  one argument: `new [--base <ref>] [--workflow <name>] --result-file <path>
-  --no-editor --no-agent -- <name>` and `open [--setup] [--workflow <name>]
-  --result-file <path> --no-editor --no-agent -- <selector>`. Text that
-  starts with a dash is therefore never read as an option. Both launch flags
-  are always passed, so an editor or an agent configured in Timber does not
-  start.
+  one argument: `new [--base <ref>] [--workflow <name>] --no-setup
+  --result-file <path> --no-editor --no-agent -- <name>` and `open
+  [--workflow <name>] --no-setup --result-file <path> --no-editor --no-agent
+  -- <selector>`. Text that starts with a dash is therefore never read as an
+  option. Both launch flags are always passed, so an editor or an agent
+  configured in Timber does not start.
+- **Setup never holds the window.** `--no-setup` makes Timber answer as soon
+  as the worktree exists, so the dialog never waits for setup scripts, however
+  long they take. When Timber skipped configured scripts, its record says
+  `setupSkipped: true` (`setupSkipped` in `WorktreeCommandResult`), also when
+  only the picked workflow has scripts, and the app runs them itself in a
+  "Setup" session in the worktree: `timber open --setup [--workflow <name>]
+  --no-editor --no-agent -- <exact path>` (`worktreeSetupArguments`,
+  `timberWorktreeSetup` in `OpenTerminalRequest`). Timber does not remember a
+  worktree's workflow, so the session passes the one the dialog ran with
+  again; without it, only the ordinary scripts would run. The main process
+  accepts only a workflow name there, as for `new` and `open`. The session
+  shows what the scripts print as they run, and how they ended. Without
+  configured scripts no session starts. Timber still runs the scripts, so its
+  rules for them stay Timber's.
 - **Running.** `src/bun/worktree-commands.ts` runs the command in the
   repository's primary checkout. It refuses a request whose parts are not
   the text and flags the command is built from, refuses a path that is not a
@@ -387,7 +401,8 @@ capabilities of the `Engine` contract.
   once, read that repository again after every outcome, including a request
   that threw, and select the reported worktree when the list has it, by its
   identity or else by its registered path in that repository. Nothing is
-  retried.
+  retried. Sessions start afterwards through `startSessionsIn`, never from
+  these two.
 
 The New worktree dialog (`src/mainview/components/NewWorktreeDialog.tsx`)
 opens from the "+" on a repository's header and names that repository in its
@@ -401,19 +416,24 @@ keeps what was typed in each mode, and is not possible while a command runs.
 
 - A failure before anything was created keeps the form open with Timber's
   diagnostic, for example for a name or a base that is ambiguous.
-- A failure after the worktree was created is reported as created, setup
-  failed. The worktree is in the list and selected, the form is replaced by
-  that news, and the dialog offers "Open with setup". That runs `timber open
-  --setup` on the exact path Timber reported, shown in the footer before it
-  runs like every other command. The dialog does not suggest creating again.
-- What setup scripts printed is in the failure's details area and is never
-  read by the app.
+- When the worktree was made, the dialog closes and setup follows in its
+  session, as above. A script that fails shows there, in the worktree, and
+  the worktree stays.
+- A failure after the worktree was created but before setup, such as a base
+  Timber could not save, is reported as created, then stopped before setup.
+  The worktree is in the list and selected, the form is replaced by that
+  news, and the dialog offers "Run setup". That starts the setup session on
+  the exact path Timber reported, whose command the footer shows first, and
+  closes the dialog; it runs nothing in the dialog. The dialog does not
+  suggest creating again.
 - Left out of the agreed mock on purpose: the checkbox that starts an editor,
   which is a later ticket and would go against `--no-editor`, and a line
   predicting the branch and the folder, which only Timber can know.
 
 "Existing branch" is the second mode: `timber open` for a branch, a ticket
-key, or a worktree path, with an optional "Rerun setup" that adds `--setup`.
+key, or a worktree path, with an optional "Rerun setup" that runs the setup
+session also when the worktree was already there. It does not change the
+Timber command, which always has `--no-setup`.
 
 - **The selector.** Typed, or picked from the list under the field. The
   spaces around it are left off, as for the name in "New branch", and nothing
@@ -431,10 +451,10 @@ key, or a worktree path, with an optional "Rerun setup" that adds `--setup`.
   the dialog opens and again whenever the repository was read again.
 - **A worktree that was already there** is selected, nothing is created, and
   the toast says it was opened.
-- **A failure that still names a worktree**, which is a setup step that
-  failed, is reported as that, with the worktree selected in the list. The
-  fields change to its exact path with "Rerun setup" ticked, so the next run
-  the person starts cannot create anything.
+- **A failure that still names a worktree** is reported as that, with the
+  worktree selected in the list. The fields change to its exact path with
+  "Rerun setup" ticked, so the next run the person starts cannot create
+  anything, and runs setup in its session.
 
 Both modes have a **Workflow** field among their own fields, for the
 repository's [named workflows](#named-workflows): None first and by
@@ -470,14 +490,18 @@ with `--no-agent`. The app starts the picked agent itself
 
 - **When it starts.** Only after a run worked and the worktree is one this
   dialog created: `timber new` that worked, `timber open` that Timber says
-  created the worktree, or "Open with setup" (or Existing branch run again
-  with "Rerun setup" on the kept path) that finished setup in a worktree an
-  earlier run of this dialog created. A failed run starts nothing, and a
+  created the worktree, or "Run setup" (or Existing branch run again on the
+  kept path) in a worktree an earlier run of this dialog created. It starts
+  beside the setup session at once and does not wait for setup: a script
+  that is still installing does not stop the person from writing a prompt. A failed run starts nothing, and a
   worktree that was already there never gets an agent. A run in between
   that names no worktree, such as a refusal, does not forget that the
   dialog created it; an edit to the Existing branch fields does.
-- **How it starts.** Each mode's `run` reports the worktree it created, and
-  `runWithAgent` hands it to the store's `startAgentIn` without waiting. The
+- **How it starts.** Each mode's `run` reports the worktree it created and
+  the one to set up, and `runAndStart` hands them to the store's
+  `startSessionsIn` without waiting. That asks for the setup session first,
+  then for the agent once the setup session is there (one request at a time
+  per worktree), and shows the agent's pane. The
   dialog's controller (`worktree-modes/dialog-controller.ts`) holds the
   selected mode and the pick, takes the agent as picked when the person
   submits, and runs the submission; the component only draws it, so the
@@ -490,10 +514,12 @@ with `--no-agent`. The app starts the picked agent itself
   worktree stays, and the toast still says it was created. When the list
   does not have the worktree, for example because reading it again failed,
   there is no pane, so nothing starts and the toast says so.
-- **The footer.** Under the Timber command, a note and the agent's command on
-  a line of their own ("Command that will start next"), never joined to the
-  Timber command. Existing branch says "if this creates a worktree", because
-  only Timber knows whether the text names one that is already there.
+- **The footer.** Under the Timber command, a note and a command on a line of
+  their own for each session that follows ("Command that will start next"),
+  never joined to the Timber command: setup first, with `<new worktree>` for
+  the path until Timber has made it, then the agent (`followUps`). Setup says
+  "if Timber left setup scripts to run", and Existing branch says "if this
+  creates a worktree", because only Timber knows.
 
 ### Finding Timber
 
@@ -875,8 +901,11 @@ picks (`null` acts out a closed picker).
 `timberMock.endCommands(ending)` chooses how `timber new` and `timber open`
 end from then on: `"succeeds"` (the start), `"refused"` (Timber refuses before
 anything is created), `"ambiguous"` (Timber finds several matches for what
-was typed and lists them), `"setup-fails"` (the worktree is created, then the setup
-script fails), or `"no-result"` (exit code 0 and no result file). A name whose
+was typed and lists them), `"stops-after-create"` (the worktree is created,
+then Timber stops before setup), `"setup-fails"` (the worktree is created,
+and its setup script then fails in the setup session), or `"no-result"`
+(exit code 0 and no result file). Every mock repository has a pretend setup
+script, so a worktree Timber creates always gets a setup session. A name whose
 branch is already checked out is refused whatever the ending, and so is text
 for `timber open` that matches no worktree and no listed branch.
 `timberMock.endRebaseResults(ending)` chooses how `timber rebase` ends from
@@ -1814,6 +1843,11 @@ shows, and coming back shows it as it was.
   `src/shared/terminal.ts`): control characters and runs of white space
   become one space, it is trimmed and cut to 40 characters, and a name with
   nothing left is refused. Names may repeat.
+- **Setup sessions.** A `timber` session named "Setup" runs a worktree's
+  setup scripts with `timber open --setup --no-editor --no-agent -- <path>`
+  (`timberWorktreeSetup`), started after the New worktree dialog opened the
+  worktree, so setup never holds the window (see
+  [creating and opening worktrees](#creating-and-opening-worktrees)).
 - **The contract.** `openTerminal`, `listTerminals`, `readTerminal`,
   `renameTerminal`, `writeTerminal`, `resizeTerminal`, `drawnTerminal`,
   `closeTerminal`, and the listeners `onTerminalOutput` and
@@ -2079,7 +2113,7 @@ writes this record (`REBASE_RESULT_TIMBER_VERSION` in
   on conflicts, so the pause stays until the person runs `git rebase
   --continue` or `git rebase --abort` themselves. "Open a terminal here"
   starts a plain shell session in the worktree (the store's `openTerminalIn`,
-  as `startAgentIn` does for an agent) and closes the dialog.
+  as `startSessionsIn` does for an agent) and closes the dialog.
 - **Afterwards.** The store reads the repository again before it answers,
   whatever the outcome, even when the engine does not answer.
 - **The version gate.** The dialog uses the result file when the Timber found
@@ -5030,3 +5064,28 @@ Not run yet:
 - A portal file chooser other than Files on Omarchy and COSMIC's on Pop!_OS,
   and Files on the real desktop rather than a nested Hyprland (see issues 75
   and 66 above).
+
+Run for setup in a terminal (issue 106), Linux x64 (Omarchy, Arch Linux)
+with Bun 1.4.4 and Git 2.56.1. No Timber release has `--no-setup` yet, so
+Timber ran from the branch of Coding-M8s/timber#158, compiled with `bun
+build --compile`, behind a wrapper named by `TIMBER_APP_TIMBER_PATH` that
+answers `--version` with 0.1.3:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `TIMBER_APP_TIMBER_PATH=<wrapper> bun test`: 1464 tests passed, 1 was
+  skipped, none failed. Against that Timber on temporary repositories:
+  `timber new --no-setup` and `timber open --no-setup` created worktrees
+  without running a configured script and reported `setupSkipped: true`,
+  without scripts reported none, and opening again left refs, worktrees,
+  and files unchanged. A "Setup" session ran `timber open --setup
+  --no-editor --no-agent -- <path>` in the worktree: a script's output
+  showed in the session, it ran in the worktree's folder, and a failing
+  script ended the session with exit code 1 and left the worktree.
+- `bun test` with the installed Timber 0.1.2: 1375 passed, 111 skipped,
+  none failed. The tests that need a real Timber are skipped, because 0.1.2
+  is now too old.
+- `bun run build:web`: built.
+- Not run: the desktop window, so the dialog closing while a long setup
+  runs, the Setup and agent sessions side by side, and the RPC bridge for
+  `timberWorktreeSetup` were seen only through the store and the mock
+  engine. Windows and macOS.

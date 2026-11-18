@@ -293,8 +293,9 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	pickFolder(folder: string | null): void;
 	/**
 	 * Decide how `timber new` and `timber open` end from now on: "succeeds"
-	 * (the start), "refused", "ambiguous", "setup-fails", or "no-result". See
-	 * ./mock-commands.ts for what each one acts out.
+	 * (the start), "refused", "ambiguous", "stops-after-create",
+	 * "setup-fails", or "no-result". See ./mock-commands.ts for what each one
+	 * acts out. "setup-fails" also makes the setup session that follows fail.
 	 */
 	endCommands(ending: CommandEnding): void;
 	/**
@@ -425,7 +426,7 @@ export interface MockEngineOptions {
 
 /** A command the mock did not act out, with the reason. */
 function notRun(diagnostic: string): WorktreeCommandResult {
-	return { outcome: "failed", failure: { command: null, diagnostic: `${diagnostic} Nothing was run.`, output: null }, worktree: null, created: false };
+	return { outcome: "failed", failure: { command: null, diagnostic: `${diagnostic} Nothing was run.`, output: null }, worktree: null, created: false, setupSkipped: false };
 }
 
 /** Timber's order: the primary checkout first, then by path. */
@@ -824,6 +825,8 @@ export function createMockEngine(
 			// Called from the browser console too, where nothing checks the word.
 			if (!isCommandEnding(next)) throw new Error(`Unknown ending: ${String(next)}`);
 			ending = next;
+			// Setup runs in its own session, so that is where "setup-fails" fails.
+			terminals.endWorktreeSetups(next === "setup-fails" ? 1 : 0);
 		},
 		endRebaseResults(next) {
 			// Called from the browser console too, where nothing checks the word.
