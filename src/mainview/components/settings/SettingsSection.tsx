@@ -54,11 +54,13 @@ interface SettingsSectionProps {
 	/** False while nothing differs from what is saved, or while what is chosen cannot be saved. */
 	canSave: boolean;
 	onSave: () => void;
+	/** Shown before Save, such as a Cancel. */
+	secondary?: ReactNode;
 	children: ReactNode;
 }
 
 /** One section of the Settings dialog: its fields, and a Save of its own, as the design asks. */
-export function SettingsSection({ title, description, save, canSave, onSave, children }: SettingsSectionProps) {
+export function SettingsSection({ title, description, save, canSave, onSave, secondary, children }: SettingsSectionProps) {
 	const titleId = useId();
 	const form = useRef<HTMLFormElement>(null);
 	const saveButton = useRef<HTMLButtonElement>(null);
@@ -93,6 +95,7 @@ export function SettingsSection({ title, description, save, canSave, onSave, chi
 			)}
 			<div className="settings-section-foot">
 				<p className="settings-section-status" role="status">{save.state === "saved" ? "Saved" : ""}</p>
+				{secondary}
 				{/* Marked, not disabled, so a keyboard user who just saved keeps focus here. */}
 				<button ref={saveButton} type="submit" className="button primary" aria-disabled={blocked}>
 					{saving ? "Saving" : "Save"}

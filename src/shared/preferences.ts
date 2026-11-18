@@ -5,7 +5,8 @@
  */
 import { AGENT_PRESETS, type AgentSetting, readAgentSettings, sameAgentSettings, writeAgentSettings } from "./agent";
 import { type EditorSetting, readEditorSetting, sameEditorSetting, writeEditorSetting } from "./editor";
-import { type ThemeChoice, defaultThemeChoice, readThemeChoice, sameThemeChoice, writeThemeChoice } from "./theme";
+import { readCustomThemes, salvageCustomThemes, sameCustomThemes, writeCustomThemes } from "./custom-themes";
+import { type Theme, type ThemeChoice, defaultThemeChoice, readThemeChoice, sameThemeChoice, writeThemeChoice } from "./theme";
 import { DEFAULT_ZOOM, readZoom } from "./zoom";
 import { type FetchSetting, defaultFetchSetting, readFetchSetting, salvageFetchSetting, sameFetchSetting, writeFetchSetting } from "./fetch-setting";
 
@@ -31,6 +32,13 @@ export interface Preferences {
 	zoom: number;
 	/** Which theme the app is drawn in, or one for each of the system's light and dark settings. */
 	theme: ThemeChoice;
+	/**
+	 * The themes the person made or imported, in the order Settings lists
+	 * them, after the built-in ones. Saved whole. One in the file that cannot
+	 * be read is left out, and a color that cannot be read takes the built-in
+	 * theme's.
+	 */
+	customThemes: readonly Theme[];
 }
 
 /** How one preference is read from outside, compared, and written to the settings file. */
@@ -92,6 +100,13 @@ export const PREFERENCE_PARTS: { [Key in keyof Preferences]: PreferencePart<Pref
 		read: readThemeChoice,
 		same: sameThemeChoice,
 		write: writeThemeChoice,
+	},
+	customThemes: {
+		fallback: () => [],
+		read: readCustomThemes,
+		same: sameCustomThemes,
+		write: writeCustomThemes,
+		salvage: salvageCustomThemes,
 	},
 };
 

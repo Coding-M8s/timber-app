@@ -29,7 +29,7 @@ async function sampleDialog(): Promise<ReactNode> {
 async function themedEngine() {
 	const engine = await createEngine();
 	const preferences = await engine.loadPreferences().catch(() => defaultPreferences());
-	applySavedTheme(preferences.theme);
+	applySavedTheme(preferences.theme, preferences.customThemes);
 	return engine;
 }
 

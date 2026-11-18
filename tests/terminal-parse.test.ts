@@ -185,7 +185,7 @@ describe("asking before quitting", () => {
 
 describe("the mock shell's sample", () => {
 	test("every row of the first box is as wide as the others, so its right edge is straight", async () => {
-		const { terminalSample } = await import("../src/mainview/engine/mock-terminals");
+		const { terminalSample } = await import("../src/mainview/terminal-sample");
 		const rows = terminalSample().split("\r\n").slice(0, 6);
 		expect(new Set(rows.map(row => [...row].length)).size).toBe(1);
 	});

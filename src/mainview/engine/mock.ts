@@ -22,6 +22,7 @@ import { MOCK_PATH, type TerminalControls, createMockTerminals } from "./mock-te
 import { type TimberConfigControls, createMockTimberConfig } from "./mock-timber-config";
 import type { TimberConfigScope } from "../../shared/timber-config";
 import { type WorkflowControls, createMockWorkflows } from "./mock-workflows";
+import { type ThemeFileControls, createMockThemeFiles } from "./mock-theme-files";
 
 const inSync = (branch: string): SyncState => ({ kind: "tracking", upstream: `origin/${branch}`, ahead: 0, behind: 0 });
 
@@ -242,7 +243,7 @@ export const sampleTimberStatuses = {
 /** The mock engine, plus the controls a test or the browser build uses to act out changes. */
 /** The controls for terminals are in ./mock-terminals.ts. */
 /** The controls for Timber's settings are in ./mock-timber-config.ts, and for workflows in ./mock-workflows.ts. */
-export interface MockEngine extends Engine, TerminalControls, TimberConfigControls, WorkflowControls {
+export interface MockEngine extends Engine, TerminalControls, TimberConfigControls, WorkflowControls, ThemeFileControls {
 	/** Replace the data, without telling the interface. */
 	setRepositories(repositories: Repository[]): void;
 	/** Report that a repository changed, as the main process would. */
@@ -663,6 +664,7 @@ export function createMockEngine(
 	return {
 		...terminals,
 		...timberConfig,
+		...createMockThemeFiles(),
 		...workflows,
 		appInfo: async () => ({ version: APP_VERSION }),
 		timberStatus: look,

@@ -6,7 +6,7 @@ import { type ForcePushMarks, withForcePushes } from "../shared/git-fetch";
 import type { Repository } from "../shared/model";
 import { defaultPreferences } from "../shared/preferences";
 import type { AppRPC } from "../shared/rpc";
-import { themeStyleSheet } from "../shared/theme";
+import { availableThemes, themeStyleSheet } from "../shared/theme";
 import { DEFAULT_WINDOW_FRAME, type WindowFrame, fitWindowFrame } from "../shared/window-frame";
 import { repositoryChanges } from "./changes";
 import { createDone } from "./done";
@@ -28,6 +28,7 @@ import { createRefreshPolicy } from "./refresh-policy";
 import { type WatchTarget, createRepositoryWatcher } from "./repository-watcher";
 import { createWorktreeStamps } from "./worktree-stamp";
 import { createTerminalSessions } from "./terminals";
+import { createThemeFiles } from "./theme-files";
 import { themePreload } from "./theme-preload";
 import { createTimberSettings } from "./timber-settings";
 import { createUninstaller } from "./uninstall";
@@ -65,6 +66,17 @@ async function pickFolder(): Promise<string | null> {
 	return folder || null;
 }
 
+/** The native file picker, for one file. Null when it was closed without a choice. */
+async function pickFile(): Promise<string | null> {
+	const [file] = await Utils.openFileDialog({
+		startingFolder: homedir(),
+		canChooseFiles: true,
+		canChooseDirectory: false,
+		allowsMultipleSelection: false,
+	});
+	return file || null;
+}
+
 const settingsFile = settingsFilePath();
 console.log(`Settings at ${settingsFile}`);
 // One holder for the file, so the repository list and the layout cannot save over each other.
@@ -72,6 +84,7 @@ const settings = createSettingsHolder(settingsFile);
 const repositories = createRepositoryList({ settingsFile, settings, pickFolder, reader: createRepositoryReader(() => timber.current()) });
 const layout = createSavedLayout(settings);
 const preferences = createSavedPreferences(settings);
+const themeFiles = createThemeFiles({ pickFolder, pickFile });
 const worktrees = createWorktreeCommands({ timber: () => timber.current(), isListed: path => repositories.includes(path), findRepository: path => repositories.find(path) });
 
 /*
@@ -224,6 +237,8 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 				}
 				return result;
 			},
+			exportTheme: ({ theme }) => themeFiles.exportTheme(theme),
+			importTheme: () => themeFiles.importTheme(),
 			// Starts the editor from the saved setting only. The request names the worktree, never the command (see ./editor.ts).
 			openInEditor: request => editor.open(request),
 			readTimberSettings: request => timberSettings.read(request),
@@ -320,7 +335,7 @@ const startingPreferences = await preferences.load().catch(() => defaultPreferen
 const mainWindow = new BrowserWindow({
 	title: APP_NAME,
 	url: await mainViewUrl(),
-	preload: themePreload(themeStyleSheet(startingPreferences.theme)),
+	preload: themePreload(themeStyleSheet(startingPreferences.theme, availableThemes(startingPreferences.customThemes))),
 	frame: fitWindowFrame(savedWindow?.frame ?? DEFAULT_WINDOW_FRAME, displayAreas()),
 	rpc,
 });

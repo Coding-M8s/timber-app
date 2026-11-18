@@ -5,6 +5,8 @@ import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffRe
 import type { Layout } from "./layout";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
 import type { Preferences } from "./preferences";
+import type { Theme } from "./theme";
+import type { ExportThemeResult, ImportThemeResult } from "./theme-file";
 import type { OpenTerminalRequest, OpenTerminalResult, TerminalChange, TerminalOutput, TerminalSession, TerminalSnapshot } from "./terminal";
 import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "./timber-config";
 import type { RebaseRequest, RebaseResult } from "./timber-rebase";
@@ -166,6 +168,20 @@ export interface Engine {
 	 * Saved answers with every preference as it now is. Safe to call again.
 	 */
 	savePreferences(change: Partial<Preferences>): Promise<SavePreferencesResult>;
+	/**
+	 * Write a theme to a new file, in a folder the person picks
+	 * (`themeFileText` and `themeFileName` in ./theme-file.ts). A theme that
+	 * cannot be read whole is not written, and a file that is there already is
+	 * never written over. Saves nothing in the preferences.
+	 */
+	exportTheme(theme: Theme): Promise<ExportThemeResult>;
+	/**
+	 * Read a theme from a file the person picks (`readThemeFile` in
+	 * ./theme-file.ts). A file that is not a whole theme is refused with the
+	 * reason. Saves nothing: adding the theme is a save of the preferences.
+	 * Read-only and safe to call again.
+	 */
+	importTheme(): Promise<ImportThemeResult>;
 	/**
 	 * Timber's own settings for one scope, read by `timber __app-config read`:
 	 * the machine defaults, or with `repository`, the path of a primary

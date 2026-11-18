@@ -7,6 +7,8 @@ import { type FileChangeTarget, type FileChangesResult, type FileDiffResult, sam
 import { type Layout, clampSidebarWidth, dismissSetup, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberStatus, Worktree, WorktreeCommandResult } from "../../shared/model";
 import type { Preferences } from "../../shared/preferences";
+import type { Theme } from "../../shared/theme";
+import type { ExportThemeResult, ImportThemeResult } from "../../shared/theme-file";
 import type { StartRebaseRequest, StartRebaseResult } from "../../shared/rebase-command";
 import { type OpenTerminalRequest, type TerminalChange, type TerminalSession, TIMBER_SETUP_SESSION_NAME } from "../../shared/terminal";
 import type { TimberConfigScope, TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "../../shared/timber-config";
@@ -252,6 +254,10 @@ export interface AppStore {
 	 * works as before; setup stays possible with `timber setup`.
 	 */
 	dismissSetup(repository: string): void;
+	/** Write a theme to a file in a folder the person picks. A failure to ask is a failed answer. */
+	exportTheme(theme: Theme): Promise<ExportThemeResult>;
+	/** Read a theme from a file the person picks. Saves nothing. A failure to ask is a refusal with the reason. */
+	importTheme(): Promise<ImportThemeResult>;
 	/** Whether this copy of the app can uninstall itself, and what that would do. A failed read says why in `reason`. */
 	uninstallPlan(): Promise<UninstallPlan>;
 	/** Remove the app from this computer. The app quits right after a good answer, unless the answer has something to tell. */
@@ -1204,6 +1210,20 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		dismissSetup(repository) {
 			changeLayout(dismissSetup(state.layout, repository));
 			void saveLayout("layout");
+		},
+		async exportTheme(theme) {
+			try {
+				return await engine.exportTheme(theme);
+			} catch (error) {
+				return { outcome: "failed", message: messageOf(error) };
+			}
+		},
+		async importTheme() {
+			try {
+				return await engine.importTheme();
+			} catch (error) {
+				return { outcome: "refused", file: "", reason: messageOf(error) };
+			}
 		},
 		async uninstallPlan() {
 			try {

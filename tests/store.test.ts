@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createMockThemeFiles } from "../src/mainview/engine/mock-theme-files";
 import { createMockTerminals } from "../src/mainview/engine/mock-terminals";
 import { createMockTimberConfig } from "../src/mainview/engine/mock-timber-config";
 import { createMockWorkflows } from "../src/mainview/engine/mock-workflows";
@@ -70,6 +71,8 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 	const applies: (Pending<DoneApplyResult> & { request: DoneApplyRequest })[] = [];
 	const listeners = new Set<(path: string) => void>();
 	const engine: Engine = {
+		// Theme files as the mock acts them out. Their own tests are in theme-files.test.ts.
+		...createMockThemeFiles(),
 		// Terminals as the mock acts them out. Their own tests are in terminal-store.test.ts.
 		...createMockTerminals(() => null),
 		// Timber's settings as the mock acts them out. Their own tests are in timber-settings.test.tsx.

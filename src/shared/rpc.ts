@@ -7,6 +7,8 @@ import type { Layout } from "./layout";
 import type { RebaseRequest, RebaseResult } from "./timber-rebase";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
 import type { Preferences } from "./preferences";
+import type { Theme } from "./theme";
+import type { ExportThemeResult, ImportThemeResult } from "./theme-file";
 import type { OpenTerminalRequest, OpenTerminalResult, TerminalChange, TerminalOutput, TerminalSession, TerminalSnapshot } from "./terminal";
 import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "./timber-config";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "./timber-done";
@@ -40,6 +42,10 @@ export type AppRPC = {
 			saveLayout: { params: { layout: Layout }; response: SaveLayoutResult };
 			loadPreferences: { params: {}; response: Preferences };
 			savePreferences: { params: { change: Partial<Preferences> }; response: SavePreferencesResult };
+			/** Waits for the person to pick a folder, so the caller must not time it out. */
+			exportTheme: { params: { theme: Theme }; response: ExportThemeResult };
+			/** Waits for the person to pick a file, so the caller must not time it out. */
+			importTheme: { params: {}; response: ImportThemeResult };
 			openInEditor: { params: OpenInEditorRequest; response: OpenInEditorResult };
 			/** Waits up to thirty seconds for Timber, so the caller allows longer. */
 			readTimberSettings: { params: TimberSettingsRequest; response: TimberSettingsReadResult };
