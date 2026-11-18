@@ -1,4 +1,5 @@
 import { type Attention, sameAttention } from "../../shared/attention";
+import type { UninstallPlan, UninstallRequest, UninstallResult } from "../../shared/uninstall";
 import { readableEditorSetting } from "../../shared/editor";
 import type { Engine } from "../../shared/engine";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "../../shared/git-fetch";
@@ -251,6 +252,10 @@ export interface AppStore {
 	 * works as before; setup stays possible with `timber setup`.
 	 */
 	dismissSetup(repository: string): void;
+	/** Whether this copy of the app can uninstall itself, and what that would do. A failed read says why in `reason`. */
+	uninstallPlan(): Promise<UninstallPlan>;
+	/** Remove the app from this computer. The app quits right after a good answer, unless the answer has something to tell. */
+	uninstall(request: UninstallRequest): Promise<UninstallResult>;
 	/** The person agreed to quit while terminals run. */
 	confirmQuit(): Promise<void>;
 	/** The person chose to keep the app open. */
@@ -1199,6 +1204,21 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		dismissSetup(repository) {
 			changeLayout(dismissSetup(state.layout, repository));
 			void saveLayout("layout");
+		},
+		async uninstallPlan() {
+			try {
+				return await engine.uninstallPlan();
+			} catch (error) {
+				return { available: false, reason: `Could not check whether this copy can be uninstalled: ${messageOf(error)}` };
+			}
+		},
+		async uninstall(request) {
+			try {
+				return await engine.uninstall(request);
+			} catch (error) {
+				// The uninstaller may have run all the same. The section says to look before trying again.
+				return { outcome: "failed", message: `No answer came back from the uninstaller: ${messageOf(error)}` };
+			}
 		},
 		async confirmQuit() {
 			update({ quitRequest: null });

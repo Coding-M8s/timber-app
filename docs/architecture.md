@@ -1618,6 +1618,8 @@ None of it should have to change after a first release.
   It shows the app's version and the Timber in use, with the path it was
   found at, or says that Timber is missing, too old, or could not be looked
   for (`src/mainview/about-format.ts`). It also names the licenses below.
+  It ends with Uninstall; see
+  [uninstalling from the app](#uninstalling-from-the-app).
 - **Icons.** `icons/` holds them, all made from
   `src/mainview/assets/logo.png` by `bun run icons`
   (`scripts/make-icons.ts`, which needs ImageMagick 7): `icon.png` at 512
@@ -1677,9 +1679,102 @@ Whether an update does too was not tried. The shortcut is accepted for now,
 and is listed under
 [open decisions](#open-decisions) to look at again before a first release.
 
-**Removing it.** `~/.local/share/com.codingm8s.timber-app/stable/uninstall
+**Removing it.** The easy way is Settings, About, Uninstall, which runs the
+uninstaller below with both arguments and then quits; see
+[uninstalling from the app](#uninstalling-from-the-app). The uninstaller
+also works by hand, which is the way when the app does not start.
+`~/.local/share/com.codingm8s.timber-app/stable/uninstall
 --quiet` removes the app folder, both entries, and the install records.
-It was run only with `--quiet`.
+It keeps what the app wrote while running, on purpose: in Electrobun's
+uninstaller `--quiet` means "App", the choice that keeps a person's data.
+Adding `--delete-data`, after `--quiet` and nowhere else, means "App and
+Data" and removes that too. Without arguments the uninstaller asks, with
+the same two choices and Cancel; that was not run.
+
+**What uninstalling leaves behind.** After `uninstall --quiet`, once the app
+has been started at least once:
+
+- `~/.local/share/com.codingm8s.timber-app/stable/WebKit`: the web data of
+  the window (a cookie store and storage folders, 16K to 20K after a short
+  run). The app keeps nothing of its own there.
+- `~/.cache/com.codingm8s.timber-app/stable`: the web cache (20K after a
+  short run).
+
+`uninstall --quiet --delete-data` removes both, together with the app. When
+the app is already gone and the uninstaller with it, delete the two folders
+by hand: `rm -r ~/.local/share/com.codingm8s.timber-app
+~/.cache/com.codingm8s.timber-app`. That also removes the same folders of
+the `dev` channel, which the development commands write.
+
+Neither way touches these, which belong to no install:
+
+- `~/.config/timber-app/`: the [saved repository list](#saved-repository-list)
+  and the app's other settings. It is not under a folder Electrobun manages,
+  so a later install finds the same repositories. Delete the folder to
+  forget them, or tick the box when uninstalling from the app.
+- Timber's own configuration and state, and the caches of other tools the
+  app used (Mesa's shader cache, for one). They are not the app's.
+
+**The decision (issue 74).** The app offers its own uninstall, which removes
+the web data and cache too, because nothing in them is worth keeping. What
+`uninstall --quiet` does by hand stays as Electrobun made it: Electrobun
+2.0.6 has no setting for what `--quiet` removes or for extra paths to clean,
+and says so in its "Uninstalling" guide; `--delete-data` is its answer, so
+nothing is asked of upstream. With `XDG_DATA_HOME`, `XDG_CACHE_HOME`, or `XDG_STATE_HOME` set at
+install time, the installer records them and the uninstaller removes from
+those folders; that was read in the guide and not run. Neither was the
+third folder `--delete-data` covers, for logs under `~/.local/state`, which
+this app never made.
+
+## Uninstalling from the app
+
+Settings, About ends with Uninstall, so removing the app does not take
+knowing a path and two arguments.
+
+- **The app removes nothing of the install itself.** Electrobun's installer
+  leaves an uninstaller beside the app, with a record of what it installed
+  (`.electrobun-uninstall.json`). The main process runs that uninstaller as
+  an executable plus the arguments `--quiet --delete-data`
+  (`src/bun/uninstall.ts`), never through a shell, and stops it after a
+  minute. So the app, both entries, the web data, and the cache go by
+  Electrobun's own rules.
+- **Two steps, and the command shows first.** "Uninstall Timber" removes
+  nothing. It opens, in place, the list of what is there to remove, the
+  command as it will run, and the two buttons, with focus on Cancel.
+  "Uninstall and quit" runs it. The Settings dialog cannot be closed while
+  it runs.
+- **The plan is read, not assumed.** `Engine.uninstallPlan()` answers the
+  uninstaller's command and the folders and files that exist now, taken
+  from the install record (`src/shared/uninstall.ts`). Reading it changes
+  nothing.
+- **Only an installed copy on Linux.** The app counts as installed when it
+  runs from `<folder>/app/bin/` with `uninstall` and a readable record in
+  that folder. A copy started with `bun run dev` or `bun run start` says it
+  was not installed and where it runs from, and has no button. Windows and
+  macOS say that this is built for Linux only so far.
+- **The settings are the app's own to delete.** The uninstaller does not
+  know `~/.config/timber-app/`. A box, off at first, asks to forget the
+  saved repository list and settings too. Then, after the uninstaller ended
+  well, the main process deletes the settings file, a kept damaged copy,
+  and leftover temporary files, and the folder when nothing else is in it
+  (`removeSettings` in `src/bun/settings.ts`). From then on the settings
+  holder refuses every save, so nothing writes the file back before the
+  app quits: the window's size, for one, is saved on quit. A failed
+  uninstaller leaves the settings alone.
+- **Then the app quits.** Agreeing to uninstall is agreeing to quit: every
+  terminal ends without the usual question, and the confirmation says how
+  many run. When the settings were to go and could not, the app stays open
+  to say so, names the folder, and offers Quit.
+- **A failure is shown.** An uninstaller that ends badly, or cannot start,
+  shows its exit code and what it printed, and the buttons work again.
+- **Never touched:** repositories, worktrees, Timber, and Timber's own
+  configuration. No Git or Timber command runs.
+- **In the browser build** the mock engine describes an installed copy and
+  acts the removal out without removing anything or quitting. In the
+  browser console, `timberMock.endUninstalls("fails")`, `("keeps-settings")`,
+  or `("unavailable")` acts out the other endings.
+
+See the issue 74 runs under [what has been verified](#what-has-been-verified).
 
 ## Display server on Linux
 
@@ -2793,6 +2888,88 @@ said otherwise:
   starting an agent, the Changes tab, Zed and Neovim as editors, fractional
   scaling, a hot update under `dev:hmr`, and the menu entry started from a
   launcher.
+
+Run for what uninstalling leaves behind (issue 74), Omarchy 4.0.0 alpha
+(`omarchy` 4.0.0.r7968.gc3c8acf, Arch based) x64, natively, Hyprland 0.57.2
+on Wayland with XWayland 24.1.15, Bun 1.4.4, Electrobun 2.0.6,
+`webkit2gtk-4.1` 2.54.2, Timber 0.1.2, on commit `b7e5058`. Every install
+and uninstall ran with `env -i PATH=/usr/bin:/bin HOME=<temporary folder>`,
+and the app was started with that HOME plus `DISPLAY=:0` and
+`XDG_RUNTIME_DIR`, so nothing was written to the real home folder:
+
+- `bun run build`: completed. The built `bin/launcher`: exit 0, ending at
+  "Installation completed successfully!".
+- The installed `app/bin/launcher`, left open for 12 seconds and then ended
+  with SIGTERM: it logged the settings path and "Timber 0.1.2 at" the real
+  Timber. It made `stable/WebKit` beside the app (16K) and
+  `~/.cache/com.codingm8s.timber-app/stable` (20K). It made no
+  `~/.config/timber-app`, as nothing was saved, and no folder for the app
+  under `~/.local/state`. Also new in that home, and not the app's own:
+  `~/.cache/mesa_shader_cache`, `~/.bun/install/cache`, and
+  `~/.local/state/timber/setup-hint-shown`.
+- `uninstall --quiet`: exit 0. The app folder, `self-extraction`,
+  `uninstall`, `.electrobun-uninstall.json`, and both entries were gone.
+  `stable/WebKit` and `~/.cache/com.codingm8s.timber-app/stable` were left.
+- The launcher run again over those leftovers: exit 0.
+- `uninstall --delete-data` and `uninstall --delete-data --quiet`: `error:
+  InvalidArguments`, exit 1, and the install was as before.
+- `uninstall --quiet --delete-data`: exit 0.
+  `~/.local/share/com.codingm8s.timber-app` and
+  `~/.cache/com.codingm8s.timber-app` were gone whole, and both entries.
+- Installed once more with a `~/.config/timber-app/settings.json` put there
+  by hand, then `uninstall --quiet --delete-data`: exit 0, and the settings
+  file was still there.
+- Electrobun's "Uninstalling" guide and `package/src/extractor/main.zig` at
+  tag `v2.0.6`, read with `gh api` on 2026-11-18: `--quiet` is "App",
+  `--delete-data` is accepted only after it, and there is no configuration
+  for uninstall paths.
+- `grep -rn $'\u2014' README.md docs`: nothing.
+- Not run: the uninstaller without arguments and its dialog, an install
+  with the XDG folders set elsewhere, an uninstall after an update, and
+  anything on Windows or macOS.
+
+Run for uninstalling from the app (issue 74), on the same machine and
+versions, with the changes of this issue on top of commit `b7e5058`. Installs
+ran as above, into a temporary home folder that also held a
+`~/.config/timber-app/settings.json`. The window took keys sent with
+Hyprland's `send_shortcut` dispatcher, and pictures of it were taken with
+`grim`:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 1256 tests, 1255 passed and 1 skipped. With main merged in
+  at `543b346`: 1395 tests, 1394 passed and 1 skipped.
+- `bun run build`: completed.
+- `uninstall --quiet --delete-data` by hand while the installed app was
+  open: exit 0. The files were gone and the app kept running; ended with
+  SIGTERM, it logged a clean exit and wrote nothing back.
+- Settings, About in the installed app: Uninstall showed its text and
+  "Uninstall Timber". Enter on it opened the confirmation with the four
+  places that were there (the install folder, the cache folder, the menu
+  entry, the desktop shortcut), the uninstaller's full path with `--quiet
+  --delete-data`, the box unticked, and focus on Cancel.
+- Tab and Enter on "Uninstall and quit", box unticked: within four seconds
+  the app had logged `[stopEventLoop] Initiating clean event loop exit`, no
+  process or window of it was left, `~/.local/share/com.codingm8s.timber-app`
+  and `~/.cache/com.codingm8s.timber-app` and both entries were gone, and
+  `settings.json` was as before.
+- A second install, with the box ticked by Shift+Tab and Space: the list
+  gained the settings folder and the note under the box changed. After
+  "Uninstall and quit" the app was gone as above, and so was
+  `~/.config/timber-app`. `~/.config` itself stayed.
+- The same once more on a build with main merged in at `543b346`, where
+  the app saves the window's size when it quits and had already written it
+  to `settings.json`: the same result, and nothing wrote the settings back.
+- In the first of the two, the folder chooser had been opened once by
+  mistake and closed with Escape. GTK left its own files in that home
+  (`~/.config/gtk-3.0`, `~/.local/share/recently-used.xbel`,
+  `~/.local/share/gvfs-metadata`, `~/.cache/glycin`). They are shared by
+  every GTK program and are not the app's to remove.
+- `grep -rn $'\u2014' src tests docs README.md electrobun.config.ts`: nothing.
+- Not run: uninstalling with a terminal open, a failing uninstaller and
+  settings that cannot be deleted in the real app (both are covered with
+  stand-ins in `tests/uninstall.test.ts`), the note in a copy started with
+  `bun run dev`, a pointer click on the buttons, and anything on Windows or
+  macOS.
 
 Run for what the desktop development commands leave behind (issue 65),
 Pop!_OS 24.04 LTS x64 in the COSMIC Wayland session, Bun 1.4.2, Electrobun

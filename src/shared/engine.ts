@@ -9,6 +9,7 @@ import type { OpenTerminalRequest, OpenTerminalResult, TerminalChange, TerminalO
 import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "./timber-config";
 import type { RebaseRequest, RebaseResult } from "./timber-rebase";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "./timber-done";
+import type { UninstallPlan, UninstallRequest, UninstallResult } from "./uninstall";
 import type { WorkflowList } from "./workflows";
 
 /**
@@ -290,4 +291,19 @@ export interface Engine {
 	 * `https` links are opened. Answers whether it was handed on.
 	 */
 	openLink(url: string): Promise<boolean>;
+	/**
+	 * Whether this copy of the app can uninstall itself, and what that would
+	 * do: the uninstaller's command, to show before it runs, and what it
+	 * removes. Only an installed copy can. Read-only and safe to call again.
+	 */
+	uninstallPlan(): Promise<UninstallPlan>;
+	/**
+	 * Remove the app from this computer by running the uninstaller that the
+	 * installer left beside it, with the command from `uninstallPlan`, and
+	 * then quit, ending every terminal without asking again. With
+	 * `forgetSettings` the app also deletes its own settings, once the
+	 * uninstaller has finished. Repositories, worktrees, and Timber are never
+	 * touched. Not safe to call again: after it worked there is no app.
+	 */
+	uninstall(request: UninstallRequest): Promise<UninstallResult>;
 }

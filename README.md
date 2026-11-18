@@ -16,7 +16,8 @@ each, started from the "+" menu (tested on Linux only; not supported on
 Windows yet). Settings, Agents lists the agents. The Changes tab lists a
 worktree's staged, unstaged, and untracked files and shows the diff of each,
 read-only. Settings also edits Timber's own settings for the machine and
-each repository, saved and checked by Timber itself. The app fetches each
+each repository, saved and checked by Timber itself. Settings, About can
+uninstall an installed copy (Linux only so far). The app fetches each
 repository in the background (Settings, Fetching) or on "Fetch now",
 updating only remote-tracking branches, and marks branches whose upstream
 moved, was force-pushed, or was deleted. Rebase, in the workspace header,
@@ -85,8 +86,15 @@ Without a usable Timber the app shows install guidance instead; see
 to `~/.local/share/com.codingm8s.timber-app/stable/`, a menu entry to
 `~/.local/share/applications/Timber.desktop`, and a shortcut to
 `~/Desktop/Timber.desktop` (Electrobun has no way to skip it yet).
-`~/.local/share/com.codingm8s.timber-app/stable/uninstall --quiet` removes the app
-and both entries. Details in [installing the Linux build](docs/architecture.md#installing-the-linux-build).
+Details in [installing the Linux build](docs/architecture.md#installing-the-linux-build).
+
+To remove it, use Settings, About, Uninstall: it shows what will go and the
+command, removes the app with its web data and cache, and quits. The saved
+repository list in `~/.config/timber-app/` stays unless you tick the box.
+When the app does not start, run
+`~/.local/share/com.codingm8s.timber-app/stable/uninstall --quiet --delete-data`
+(without `--delete-data` the web data and cache stay). See
+[uninstalling from the app](docs/architecture.md#uninstalling-from-the-app).
 
 ## More
 

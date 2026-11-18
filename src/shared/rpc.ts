@@ -10,6 +10,7 @@ import type { Preferences } from "./preferences";
 import type { OpenTerminalRequest, OpenTerminalResult, TerminalChange, TerminalOutput, TerminalSession, TerminalSnapshot } from "./terminal";
 import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "./timber-config";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "./timber-done";
+import type { UninstallPlan, UninstallRequest, UninstallResult } from "./uninstall";
 import type { WorkflowList } from "./workflows";
 
 /**
@@ -65,6 +66,9 @@ export type AppRPC = {
 			fetchStatuses: { params: {}; response: RepositoryFetch[] };
 			/** Answers only when the fetch has ended, which can take minutes, so the caller must not time it out. */
 			fetchNow: { params: { repository: string }; response: FetchResult };
+			uninstallPlan: { params: {}; response: UninstallPlan };
+			/** The main process stops a stuck uninstaller after a minute, so the caller allows longer. The app quits right after a good answer. */
+			uninstall: { params: UninstallRequest; response: UninstallResult };
 		};
 		messages: {
 			/** Typed or pasted text for a session. */

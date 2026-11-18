@@ -77,6 +77,8 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		// Workflows as the mock acts them out. Their own tests are in workflows.test.ts.
 		...createMockWorkflows(() => false, () => timber),
 		appInfo: async () => ({ version: "1.2.3" }),
+		uninstallPlan: async () => ({ available: false, reason: "Not installed." }),
+		uninstall: async () => ({ outcome: "unavailable", message: "Not installed." }),
 		timberStatus: async () => timber,
 		recheckTimber: async () => timber,
 		listRepositories: () => new Promise((resolve, reject) => {

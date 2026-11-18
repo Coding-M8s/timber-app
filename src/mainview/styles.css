@@ -1055,6 +1055,47 @@ pre:focus-visible {
 	color: var(--text-3);
 }
 
+/* Uninstalling, at the end of About: what goes, the command, and the two buttons. */
+.uninstall-confirm {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	margin-top: -4px;
+	padding: 12px;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+}
+
+.uninstall-confirm .about-text {
+	margin: 0;
+}
+
+.uninstall-list {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	margin: -6px 0 0;
+	padding: 0;
+	list-style: none;
+	font-size: 11.5px;
+	color: var(--text-2);
+	overflow-wrap: anywhere;
+}
+
+.uninstall-buttons {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+}
+
+.uninstall-buttons.start {
+	justify-content: flex-start;
+}
+
+.uninstall-buttons .button {
+	margin-top: 0;
+}
+
 /* Timber's own settings, shown read-only. */
 .timber-head {
 	display: flex;
