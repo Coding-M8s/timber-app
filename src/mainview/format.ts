@@ -1,7 +1,9 @@
 import type { CapturedOutput, Repository, SyncState, TimberStatus, Worktree } from "../shared/model";
+import type { PullRequestEntry } from "../shared/pull-requests";
 import { TIMBER_LS_COMMAND } from "../shared/timber-ls";
 import { REQUIRED_TIMBER_VERSION, TIMBER_OVERRIDE_VARIABLE } from "../shared/timber-version";
 import { SAVED_BASE_UNKNOWN, describeInvalidBase } from "./base-format";
+import { describePullRequestMarkers } from "./pull-request-format";
 import type { ListNotice } from "./store/state";
 
 /** The command Timber's own quick start gives for installing and for updating. */
@@ -163,14 +165,21 @@ export type RowMarkerKind =
 	| "locked"
 	| "prunable"
 	| "base-unknown"
+	| "pull-request"
+	| "checks-passing"
+	| "checks-failing"
+	| "checks-pending"
+	| "review-approved"
+	| "review-changes"
+	| "review-required"
 	| "modified"
 	| "untracked";
 
 /** One thing worth knowing about a worktree at a glance. */
 export interface RowMarker {
 	kind: RowMarkerKind;
-	/** Where in the row it sits: beside the branch name, on the line below it, or with the change counts. */
-	place: "branch" | "state" | "changes";
+	/** Where in the row it sits: beside the branch name, on the line below it, with the pull request after that, or with the change counts. */
+	place: "branch" | "state" | "pull-request" | "changes";
 	/** What the row shows. For "behind" and "ahead" this is the count alone, and the row draws the arrow. */
 	text: string;
 	/** A whole sentence in plain words, for the tooltip and for assistive technology. */
@@ -206,9 +215,11 @@ function syncMarkers(worktree: Worktree): RowMarker[] {
  * clean worktree on a branch that is level with its upstream has no markers.
  *
  * A status or an upstream state that could not be read always gets a marker
- * of its own, so a row without markers never means "not known".
+ * of its own, so a row without markers never means "not known". The pull
+ * request is the one Timber found for the worktree (`pullRequestOf`), and a
+ * branch with none gets no marker for it.
  */
-export function describeRowMarkers(worktree: Worktree): RowMarker[] {
+export function describeRowMarkers(worktree: Worktree, pullRequest: PullRequestEntry | null = null): RowMarker[] {
 	const { changes } = worktree;
 	const markers = syncMarkers(worktree);
 	const state = (kind: RowMarkerKind, text: string, tooltip: string) => void markers.push({ kind, place: "state", text, tooltip });
@@ -232,6 +243,7 @@ export function describeRowMarkers(worktree: Worktree): RowMarker[] {
 	// Timber calls the base stale whenever it could not verify the worktree, and the marker for that already says so.
 	const { base } = worktree;
 	if (base?.kind === "invalid" && !(base.reason === "stale" && changes.kind === "unknown")) state("base-unknown", SAVED_BASE_UNKNOWN, describeInvalidBase(base.reason));
+	markers.push(...describePullRequestMarkers(pullRequest));
 
 	if (changes.kind === "known") {
 		const modified = changes.modified.length;

@@ -79,7 +79,9 @@ Timber's safety logic must exist once. The app follows two rules:
    Creating a worktree and opening an existing branch are built (see
    [creating and opening worktrees](#creating-and-opening-worktrees)), and
    so is rebasing, which reads Timber's result file (see
-   [rebasing a worktree](#rebasing-a-worktree)).
+   [rebasing a worktree](#rebasing-a-worktree)). Pull requests come from
+   `timber __app-pr`, with Timber's GitHub login (see
+   [pull requests](#pull-requests)).
 2. **Git is asked directly only for read-only status that Timber does not
    report.** Today that is which repository a folder belongs to, how each
    branch stands against its upstream, which branches there are to offer
@@ -1203,6 +1205,55 @@ In `bun run dev:web` timber has a workflow of each agent kind, api-server
 has none, and billing's fails as its `.timber.toml` is malformed.
 `timberMock.setWorkflows(path, list)` changes one (`null` for the sample).
 
+## Pull requests
+
+Each row shows its branch's pull request, read from GitHub by Timber, so
+there is one sign-in, Timber's, and the app holds no token.
+
+- **Asking.** `readPullRequests` on the `Engine`, answered by
+  `src/bun/pull-requests.ts`. For a repository in the app's list only, and
+  only while Timber is ready, the main process runs `timber __app-pr` in its
+  primary checkout, as an executable plus an argument array, with standard
+  input closed and a limit of thirty seconds. Timber stops its own network
+  part after fifteen. One run answers for every worktree of the repository.
+  Timber reads the login it uses for `timber new github:<n>` (`GH_TOKEN`,
+  `GITHUB_TOKEN`, or the GitHub CLI's), never prompts, and changes no file
+  or ref. This needs a Timber with `__app-pr`, which is on Timber's main
+  branch and in no release yet. An older one answers "unknown command".
+- **Reading.** `readPullRequestList` in `src/shared/pull-requests.ts` is
+  pure. It accepts one version 1 record from a Timber that exited with 0, or
+  with 1 when a lookup failed, and only when the exit code agrees with the
+  entries. Each entry is found, none, or failed with a reason (`offline`,
+  `sign-in-needed`, `not-github`, `failed`) and Timber's diagnostic. A found
+  one keeps its number, its `https` link, its title (made safe to show), its
+  state, its base branch, the summary of its checks with how many runs pass,
+  fail, and are pending, and its review decision. Its description and the
+  runs themselves are dropped. Fields the app does not use are ignored.
+- **Never an empty answer by mistake.** Another exit code, output that is
+  not one such record, another schema version, a repository Timber could
+  not read (its `diagnostic`), or any entry that cannot be read fails the
+  whole answer, with a message. Nothing Timber printed is logged.
+- **When.** The interface (`src/mainview/store/store.ts`) reads a
+  repository's pull requests when it is first listed, and again each time a
+  fetch of it ends, worked or failed. So they follow the background fetch
+  interval, wait while the window is hidden as fetches do, and are read
+  again after Fetch now. With background fetching off, only Fetch now reads
+  them again. Reads of one repository never overlap, and a removed
+  repository's answer is forgotten.
+- **Showing.** `describeRowMarkers` takes the worktree's entry, found by its
+  Git-registered path (`pullRequestOf`), and adds the pull request's markers
+  from `src/mainview/pull-request-format.ts` after the row's state flags.
+  A failure is shown once, as a quiet word on the repository's header, and
+  in the workspace header of a selected worktree in it, never on every row
+  and never as a dialog. "Open pull request" in the workspace header goes
+  through `openLink`, which opens only `http` and `https` links.
+
+In `bun run dev:web`, timber has an approved pull request and one with
+failing checks and requested changes, api-server a merged one, and billing
+a draft and a closed one. docs-site, once added, is not on GitHub.
+`timberMock.setPullRequests(path, list)` changes one (`null` for the
+sample).
+
 ## Opening a worktree in an editor
 
 The app has no editor of its own. "Open in editor" starts the person's editor
@@ -2068,6 +2119,11 @@ other `X11 Error:` line is not explained by it. See the issue 64 run under
   `src/shared/timber-version.ts`, its test, the line in
   [Finding Timber](#finding-timber), the README, and `TIMBER_VERSION` in CI
   together.
+- **The Timber that pull requests need.** `__app-pr` is on Timber's main
+  branch only. With Timber 0.1.2 every repository says "PRs unknown", with
+  Timber's "unknown command" in the tooltip. The required version is not
+  raised for it, because nothing else depends on it; raise it with the next
+  Timber release, as for `listWorkflows` above.
 - **Rebase backups.** The design shows them, but Timber does not create backup
   branches today. Either Timber gains that, or the app creates them.
 - **Linux desktop shortcut.** Electrobun's installer adds one to `~/Desktop`
@@ -3972,6 +4028,35 @@ pointer clicks and typed text:
 - Not run: the desktop window, where the order of the dialog closing and
   the session showing may differ from the browser build.
 
+Run for pull requests (issue 100), Linux x64 (Omarchy, Arch) with Bun
+1.4.4, Git 2.56.1, the installed Timber 0.1.2, and Timber's main branch at
+`b2aad95` run from its source as `~/Projects/timber/src/index.ts`:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 1544 passed, 5 skipped, 0 failed. The two real Timber tests of
+  `tests/pull-requests.test.ts` are among the skipped, because the installed
+  Timber 0.1.2 has no `__app-pr`.
+- `TIMBER_APP_TIMBER_PATH=~/Projects/timber/src/index.ts bun test
+  tests/pull-requests.test.ts`: 15 passed, 0 failed, including both real
+  Timber tests: a temporary repository whose remote is not on GitHub, with a
+  linked worktree and a detached one, answered `not-github` for each branch
+  and `none` for the detached one, with the files, refs, index, and worktree
+  list of all three unchanged; and a folder outside any repository failed
+  with Timber's diagnostic.
+- The fixtures in `tests/fixtures/timber-app-pr` other than `found.json`
+  were recorded from that Timber in temporary repositories: offline (a
+  proxy that does not answer), a token GitHub refused, no login at all, a
+  remote not on GitHub, a folder outside any repository, and Timber 0.1.2's
+  "unknown command". `found.json` is written by hand in the same shape.
+- That Timber run by hand in a temporary clone of this private repository,
+  with worktrees on the branches of an open and a merged pull request and a
+  detached one: an open one with failing checks, a merged one with passing
+  checks, and `none` for `main` and the detached one.
+- `bun run build:web`, then the built interface in headless Chromium with
+  the sample data: the rows showed `#42`, "checks pass", "approved"; `#38`
+  with "checks fail" and "changes requested" in red; `#17 merged`; and
+  `#5 closed`.
+
 Not run yet:
 
 - Saving or checking from inside the desktop window, and over the RPC
@@ -4026,6 +4111,12 @@ Not run yet:
   with Electrobun 2.0.6 (see issue 63 above and
   [display server on Linux](#display-server-on-linux)).
 - An NVIDIA GPU known to be drawing the window.
+- Pull requests in the desktop window, and so `readPullRequests` over the
+  RPC bridge, "Open pull request" clicked, and the refresh after a real
+  background fetch. Only the main process module, the store, and static
+  markup were run, and no installed Timber release has `__app-pr` yet.
+- A found pull request read by the app's own code from GitHub. That was run
+  with Timber by hand only, and the tests use `found.json`.
 - A portal file chooser other than Files on Omarchy and COSMIC's on Pop!_OS,
   and Files on the real desktop rather than a nested Hyprland (see issues 75
   and 66 above).

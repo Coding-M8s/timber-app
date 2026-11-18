@@ -3,6 +3,8 @@ import { DONE_PRIMARY_NOTE } from "../done-format";
 import { REBASE_CONTROL_TITLE, REBASE_FOLDER_MISSING } from "../rebase-format";
 import { describeSavedBase } from "../base-format";
 import { describeChanges, describeWorktreeSync, worktreeLabel } from "../format";
+import { OPEN_PULL_REQUEST, describeOpenPullRequest, describePullRequestMarkers, describeWorktreePullRequestProblem } from "../pull-request-format";
+import { pullRequestOf } from "../../shared/pull-requests";
 import { TAB_LABELS, tabAfterKey } from "../shell";
 import { useAppState, useStore } from "../store/react";
 import { WORKSPACE_TABS, type WorkspaceTab, isRunning, selectedWorktree } from "../store/state";
@@ -48,6 +50,10 @@ export function Workspace() {
 	const changes = describeChanges(worktree);
 	const sync = describeWorktreeSync(worktree);
 	const base = describeSavedBase(worktree.base);
+	const pullRequests = state.pullRequests[repository.path];
+	const pullRequest = pullRequestOf(pullRequests, worktree.path);
+	const pullMarkers = describePullRequestMarkers(pullRequest);
+	const pullProblem = describeWorktreePullRequestProblem(pullRequests, pullRequest);
 
 	// As in any tab list: the arrows, Home, and End move between tabs, and the tab reached shows at once.
 	const onTabKey = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -66,10 +72,24 @@ export function Workspace() {
 					{sync && <span>{sync}</span>}
 					<span>{changes}</span>
 					{base && <span className={base.warning ? "saved-base-warning" : undefined} title={base.sentence}>{base.text}</span>}
+					{pullMarkers.length > 0 && (
+						// The same markers as the row, each with its sentence; the visible words are the short form.
+						<span className="workspace-pull" role="group" aria-label={pullMarkers.map(marker => marker.tooltip).join(" ")}>
+							{pullMarkers.map(marker => (
+								<span key={marker.kind} className={marker.kind === "checks-failing" || marker.kind === "review-changes" ? "pull-marker failing" : "pull-marker"} title={marker.tooltip} aria-hidden="true">{marker.text}</span>
+							))}
+						</span>
+					)}
+					{pullProblem && <span className="pull-problem" title={pullProblem.tooltip} aria-label={pullProblem.tooltip}>{pullProblem.text}</span>}
 					<span className="path">{worktree.path}</span>
 				</div>
 				<div className="workspace-done">
 					<OpenInEditorButton repository={repository.path} worktree={worktree} />
+					{pullRequest?.outcome === "found" && (
+						<button type="button" className="button" title={describeOpenPullRequest(pullRequest.pullRequest)} onClick={() => void store.openLink(pullRequest.pullRequest.url)}>
+							{OPEN_PULL_REQUEST}
+						</button>
+					)}
 					{/* Opens the Rebase dialog, which shows the command. Nothing runs before its own button. */}
 					<button
 						type="button"

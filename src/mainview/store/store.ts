@@ -7,6 +7,7 @@ import { type FileChangeTarget, type FileChangesResult, type FileDiffResult, sam
 import { type Layout, clampSidebarWidth, dismissSetup, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberStatus, Worktree, WorktreeCommandResult } from "../../shared/model";
 import type { Preferences } from "../../shared/preferences";
+import type { PullRequestList } from "../../shared/pull-requests";
 import { applyOrder, moveInOrder } from "../../shared/repository-order";
 import { type ZoomStep, stepZoom, zoomLabel } from "../../shared/zoom";
 import type { Theme } from "../../shared/theme";
@@ -421,10 +422,46 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				error: null,
 			});
 			endOrphanTerminals();
+			catchUpPullRequests();
 		} catch (error) {
 			update({ error: { repository: null, message: messageOf(error) } });
 		}
 	}));
+
+	/*
+	 * Pull requests come from GitHub through Timber, so they are read as often
+	 * as the repository is fetched: once when it is first listed, then each
+	 * time a fetch of it ends, in the background or after Fetch now. Reads of
+	 * one repository never overlap. Nothing is read while Timber is not ready,
+	 * as the Timber notice already says why.
+	 */
+	const readingPullRequests = new Set<string>();
+	const refreshPullRequests = mergeOverlapping<string>(async path => {
+		if (!timberReady(state) || !state.repositories.some(repository => repository.path === path && repository.available)) return;
+		let answer: PullRequestList;
+		readingPullRequests.add(path);
+		try {
+			answer = await engine.readPullRequests(path);
+		} catch (error) {
+			answer = { ok: false, message: `The app did not hear the answer: ${messageOf(error)}` };
+		} finally {
+			readingPullRequests.delete(path);
+		}
+		// A repository that left the list meanwhile keeps nothing.
+		if (!state.repositories.some(repository => repository.path === path)) return;
+		update({ pullRequests: { ...state.pullRequests, [path]: answer } });
+	});
+
+	/** Read the pull requests of every repository that has none yet, and forget those of one no longer listed. */
+	function catchUpPullRequests(): void {
+		const listed = new Set(state.repositories.map(repository => repository.path));
+		const kept = Object.fromEntries(Object.entries(state.pullRequests).filter(([path]) => listed.has(path)));
+		if (Object.keys(kept).length !== Object.keys(state.pullRequests).length) update({ pullRequests: kept });
+		for (const repository of state.repositories) {
+			// One that is being read for the first time is not asked again.
+			if (repository.available && !(repository.path in state.pullRequests) && !readingPullRequests.has(repository.path)) void refreshPullRequests(repository.path);
+		}
+	}
 
 	const reloadOne = mergeOverlapping<string>(path => track({ kind: "reload-repository", repository: path }, async () => {
 		const ticket = ++lastTicket;
@@ -665,7 +702,11 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	}
 
 	function showFetch(status: RepositoryFetch): void {
+		const before = state.fetches[status.repository];
 		update({ fetches: { ...state.fetches, [status.repository]: status } });
+		// A fetch that ended, well or not, is when pull requests are read again.
+		const ended = !status.fetching && (status.lastFetched !== (before?.lastFetched ?? null) || status.failure?.at !== before?.failure?.at);
+		if (ended) void refreshPullRequests(status.repository);
 	}
 
 	async function fetchNow(path: string): Promise<FetchResult | null> {

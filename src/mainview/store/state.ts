@@ -1,6 +1,7 @@
 import type { FileChange, FileChangeTarget, FileDiffResult } from "../../shared/file-changes";
 import { type Layout, defaultLayout } from "../../shared/layout";
 import type { RepositoryFetch } from "../../shared/git-fetch";
+import type { PullRequestList } from "../../shared/pull-requests";
 import type { Repository, TimberStatus, Worktree } from "../../shared/model";
 import { type Preferences, defaultPreferences } from "../../shared/preferences";
 import type { TerminalSession } from "../../shared/terminal";
@@ -205,6 +206,13 @@ export interface AppState {
 	 * has not been fetched since the app started.
 	 */
 	fetches: Readonly<Record<string, RepositoryFetch>>;
+	/**
+	 * Each worktree's pull request, by the path of its repository's primary
+	 * checkout, as `timber __app-pr` last answered. A repository missing here
+	 * was not read yet. Read when a repository is first listed and after each
+	 * fetch of it ends, so on the fetch interval and after Fetch now.
+	 */
+	pullRequests: Readonly<Record<string, PullRequestList>>;
 }
 
 export const initialState: AppState = {
@@ -231,6 +239,7 @@ export const initialState: AppState = {
 	changes: null,
 	dialog: null,
 	fetches: {},
+	pullRequests: {},
 };
 
 /** Nothing that depends on Timber is offered until a usable one is found. */

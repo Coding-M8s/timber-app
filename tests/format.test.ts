@@ -176,7 +176,7 @@ describe("describeRowMarkers", () => {
 	});
 
 	test("every marker has a short text and a whole sentence, and the row's description is all the sentences", () => {
-		const all = browserSampleRepositories.flatMap(repository => repository.worktrees).flatMap(describeRowMarkers);
+		const all = browserSampleRepositories.flatMap(repository => repository.worktrees).flatMap(worktree => describeRowMarkers(worktree));
 		expect(all.length).toBeGreaterThan(0);
 		for (const marker of all) {
 			expect(marker.text).not.toBe("");
@@ -191,7 +191,7 @@ describe("describeRowMarkers", () => {
 describe("sample data", () => {
 	test("the browser build shows every marker a row can have, and a row with none", () => {
 		const worktrees = browserSampleRepositories.flatMap(repository => repository.worktrees);
-		const kinds = new Set(worktrees.flatMap(describeRowMarkers).map(marker => marker.kind));
+		const kinds = new Set(worktrees.flatMap(worktree => describeRowMarkers(worktree)).map(marker => marker.kind));
 		expect([...kinds].sort()).toEqual([
 			"ahead", "base-unknown", "behind", "detached", "folder-missing", "local-only", "locked", "modified", "prunable", "status-unknown", "sync-unknown", "untracked", "upstream-gone",
 		]);

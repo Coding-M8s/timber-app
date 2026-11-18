@@ -3138,8 +3138,9 @@ pre:focus-visible {
 	}
 }
 
-/* Quiet: grey words beside the name, not the red of errors. */
-.group-flag.fetch-failed {
+/* Quiet: grey words beside the name, not the red of errors. Pull requests that could not be read are said the same way. */
+.group-flag.fetch-failed,
+.group-flag.pulls-failed {
 	color: var(--text-3);
 	font-size: 11px;
 }
@@ -3281,4 +3282,25 @@ pre:focus-visible {
 .rebase-advice code {
 	font-family: var(--font-mono);
 	white-space: nowrap;
+}
+
+/* Pull requests (issue 100): grey words, with red only for failing checks and requested changes, always with their words. */
+.row-flag.pr.failing,
+.pull-marker.failing {
+	color: var(--error);
+}
+
+.workspace-pull {
+	display: inline-flex;
+	flex-wrap: wrap;
+	gap: 0 8px;
+}
+
+.pull-marker {
+	color: var(--text-2);
+}
+
+/* Quiet, as a failed fetch is: never a dialog. */
+.pull-problem {
+	color: var(--text-3);
 }
