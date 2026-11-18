@@ -22,6 +22,7 @@ import { listedOrder } from "../changes-format";
 import { describeOpenedInEditor } from "../editor-format";
 import { describeAdded, describeRemoved, folderName, worktreeLabel } from "../format";
 import { describeFetched } from "../fetch-format";
+import { wantTerminalFocus } from "../terminal-focus";
 import { mergeOverlapping } from "./merge";
 import { type AppState, type ChangesView, type DialogRequest, type Operation, type WorkspaceTab, TOAST_MILLISECONDS, initialState, keepLastGood, reconcileSelection, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, timberReady, timberSetupTarget, withTerminal, withoutSession } from "./state";
 
@@ -976,6 +977,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	function openTerminalIn(repositoryPath: string, worktreePath: string): void {
 		const worktree = state.repositories.find(repository => repository.path === repositoryPath)?.worktrees.find(candidate => candidate.path === worktreePath);
 		if (!worktree) return;
+		// The person asked for this session, so it takes the keyboard once it shows, also from a dialog that just closed.
+		wantTerminalFocus(worktree.id);
 		update({ tab: "workspace" });
 		select(worktree.id);
 		// The pane gives the session its real size once it shows.
@@ -993,6 +996,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const worktree = listedReported(repositoryPath, reported);
 		// Not in the list, for example because reading it again failed: there is no pane to start in.
 		if (!worktree) return false;
+		// The person asked for this session, so it takes the keyboard once it shows, also from a dialog that just closed.
+		wantTerminalFocus(worktree.id);
 		update({ tab: "workspace" });
 		select(worktree.id);
 		// The pane gives the session its real size once it shows.

@@ -6,6 +6,7 @@ import { DRAG_THRESHOLD, MOVE_REPOSITORY_HINT, MOVE_REPOSITORY_SHORTCUTS, dropIn
 import { useAppState, useStore } from "../store/react";
 import { isRunning, runningSessionCount } from "../store/state";
 import { OpenInEditorIconButton } from "./OpenInEditor";
+import { wantTerminalFocus } from "../terminal-focus";
 import { SIDEBAR_ID } from "./SidebarResizer";
 import { WorktreeRow } from "./WorktreeRow";
 
@@ -259,7 +260,11 @@ export function Sidebar() {
 											<WorktreeRow
 												worktree={worktree}
 												selected={worktree.id === selectedId}
-												onSelect={() => store.select(worktree.id)}
+												onSelect={() => {
+													// Choosing a worktree, by click, Enter, or Space, puts the keyboard in its shown session, as a chip does.
+													if (state.tab === "workspace") wantTerminalFocus(worktree.id);
+													store.select(worktree.id);
+												}}
 												runningSessions={runningSessionCount(state, worktree.id)}
 												actions={<OpenInEditorIconButton repository={repository.path} worktree={worktree} />}
 											/>

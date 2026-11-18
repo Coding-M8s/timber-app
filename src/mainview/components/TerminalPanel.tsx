@@ -6,6 +6,7 @@ import { estimateTerminalCells } from "../../shared/terminal-appearance";
 import { terminalAppearance } from "../terminal-look";
 import { useAppState, useStore } from "../store/react";
 import { sessionsOf, shownSession } from "../store/state";
+import { dropTerminalFocus, onTerminalFocusWish, takeTerminalFocus, wantTerminalFocus } from "../terminal-focus";
 import {
 	chipAfterKey, chipCommand, closeTerminalLabel, describeSessionChip, describeTerminalState, sessionChipId, shellName, shortExit,
 } from "../terminal-format";
@@ -19,13 +20,6 @@ function loadViews(): Promise<Views> {
 	loading ??= import("../terminal-view").then(module => module.terminalFontReady().then(() => (views = module)));
 	return loading;
 }
-
-/**
- * The session whose terminal should take the keyboard once it shows, because
- * the person chose its chip by click, Enter, or Space. Arrow keys on the chips
- * only show a session; the focus stays on the chips.
- */
-let focusWhenShown: string | null = null;
 
 const SESSION_PANEL_ID = "session-panel";
 const ADD_SESSION_ID = "session-add";
@@ -77,13 +71,16 @@ function TerminalScreen({ session }: { session: TerminalSession }) {
 			const view = module.terminalView(store, session.id);
 			view.attach(container);
 			// Only take the keyboard when nothing else has it, such as right after a new session or a switch from inside a terminal,
-			// or when its chip was chosen to show it. Moving through the sidebar keeps it there, and arrows on the chips keep it on the chips.
+			// or when it was asked for (./terminal-focus.ts): a click on its chip or its worktree's row, or a session the app started there.
+			// Moving through the sidebar by keyboard keeps the keyboard there, and arrows on the chips keep it on the chips.
 			const active = document.activeElement;
-			const chosen = focusWhenShown === session.id;
-			// The wish is for this showing only. Left over, it would take the keyboard from the sidebar or the chips later.
-			focusWhenShown = null;
+			const chosen = takeTerminalFocus(session.worktree);
 			const free = active === null || active === document.body || active.id === ADD_SESSION_ID;
 			if (chosen || free) view.focus();
+			// Asked for while it shows, such as by a click on the row of the worktree already selected.
+			const stopListening = onTerminalFocusWish(() => {
+				if (takeTerminalFocus(session.worktree)) view.focus();
+			});
 			// The pane changes size with the window, the sidebar, and the header's notes. A drag would resize on every frame, so wait for it to rest.
 			let timer: ReturnType<typeof setTimeout> | undefined;
 			const observer = new ResizeObserver(() => {
@@ -92,6 +89,7 @@ function TerminalScreen({ session }: { session: TerminalSession }) {
 			});
 			observer.observe(container);
 			cleanup = () => {
+				stopListening();
 				clearTimeout(timer);
 				observer.disconnect();
 				view.detach();
@@ -289,7 +287,7 @@ function Chip({ session, selected, unseen, ids, shownId, closing, closingIds, on
 					// The chip that shows already has its terminal on screen: hand it the keyboard now.
 					if (selected) views?.terminalView(store, session.id).focus();
 					else {
-						focusWhenShown = session.id;
+						wantTerminalFocus(session.worktree);
 						store.showSession(session.id);
 					}
 				}}
@@ -487,6 +485,10 @@ export function TerminalPanel({ repository, worktree }: { repository: Repository
 	}, [worktree.id, sessions.length]);
 	const startingOperation = state.operations.find(operation => operation.kind === "open-terminal" && operation.worktree === worktree.id);
 	const starting = startingOperation !== undefined;
+	// Nothing shows here and nothing is starting, so no terminal will take the keyboard that was asked for.
+	useEffect(() => {
+		if (!shown && !starting) dropTerminalFocus(worktree.id);
+	}, [worktree.id, shown, starting]);
 	const startingAgent = startingOperation?.kind === "open-terminal" ? startingOperation.agent : undefined;
 	const missing = !worktree.pathExists;
 	const agents = state.preferences.agents;
