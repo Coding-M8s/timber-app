@@ -13,7 +13,8 @@ type Views = typeof import("../terminal-view");
 let views: Views | null = null;
 let loading: Promise<Views> | null = null;
 function loadViews(): Promise<Views> {
-	loading ??= import("../terminal-view").then(module => (views = module));
+	// The font is there before the first terminal opens, because xterm measures its cells with it.
+	loading ??= import("../terminal-view").then(module => module.terminalFontReady().then(() => (views = module)));
 	return loading;
 }
 
