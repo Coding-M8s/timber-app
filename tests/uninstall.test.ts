@@ -223,17 +223,12 @@ describe.skipIf(windows)("uninstalling, with a stand-in uninstaller in real fold
 	});
 
 	test("with the settings forgotten, they go after the uninstaller ended, and then the app quits", async () => {
-		// The uninstaller fails when the settings are already gone, so the order shows.
-		const made = install(`test -f "$HOME/.config/timber-app/settings.json" || exit 9`);
+		// The uninstaller fails when the settings are already gone, so the order shows. It finds them from where it is.
+		const made = install(`test -f "$(dirname "$0")/../../../../.config/timber-app/settings.json" || exit 9`);
 		writeFileSync(`${made.settingsFile}.damaged`, "{");
-		const previous = process.env.HOME;
-		process.env.HOME = made.home;
-		try {
-			const result = await createUninstaller(made.dependencies).uninstall({ forgetSettings: true });
-			expect(result).toEqual({ outcome: "uninstalled", settingsProblem: null });
-		} finally {
-			process.env.HOME = previous;
-		}
+		const result = await createUninstaller(made.dependencies).uninstall({ forgetSettings: true });
+		expect(result).toEqual({ outcome: "uninstalled", settingsProblem: null });
+		expect(made.forgotten).toHaveLength(1);
 		expect(existsSync(made.settingsFolder)).toBe(false);
 		await Bun.sleep(20);
 		expect(made.quits).toHaveLength(1);
