@@ -40,6 +40,8 @@
 	--diff-removed: rgba(240, 139, 128, 0.12);
 	--font-ui: "Geist", "Segoe UI", system-ui, sans-serif;
 	--font-mono: "Geist Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+	/* Terminals: icon fonts follow, for the symbols prompts and agents print that Geist Mono does not have. */
+	--font-terminal: "Geist Mono", "Symbols Nerd Font Mono", "Symbols Nerd Font", ui-monospace, "Cascadia Code", Consolas, monospace;
 	color-scheme: dark;
 }
 
@@ -2003,7 +2005,7 @@ pre:focus-visible {
 	position: relative;
 	flex: 1 1 auto;
 	min-height: 0;
-	padding: 6px 0 0 10px;
+	padding: 8px 4px 8px 12px;
 	overflow: hidden;
 }
 

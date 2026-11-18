@@ -1156,9 +1156,18 @@ shows, and coming back shows it as it was.
   the screen afresh. So a program that prints without end cannot bury the
   window, and Ctrl+C still gets through. What a terminal prints is private,
   like what a command prints: it is never logged.
-- **Drawing.** xterm.js 6.0.0 with the fit and web links addons, pinned
-  exactly, and loaded the first time a terminal shows
-  (`src/mainview/terminal-view.ts`). Each session's drawn terminal lives
+- **Drawing.** xterm.js 6.0.0 with the fit, web links, WebGL, and Unicode 11
+  addons, pinned exactly, and loaded the first time a terminal shows
+  (`src/mainview/terminal-view.ts`). The terminal on screen draws with
+  WebGL: it is faster than the elements xterm otherwise draws with, and it
+  draws lines and blocks itself, so boxes join with no gaps between rows.
+  Only the terminal on screen holds a WebGL context, because a window gets a
+  limited number of them. Where WebGL cannot start, or the system takes the
+  context away, elements draw instead. The first terminal waits for its
+  font, at most 1.5 seconds, because xterm measures its cells when it opens.
+  Wide characters such as emoji take two cells, as today's programs count
+  them. The font is `--font-terminal`: Geist Mono, then the Nerd Font symbol
+  fonts when they are installed, for the icons prompts print. Each session's drawn terminal lives
   outside React for as long as the session does; a pane borrows it while it
   shows, so its scrollback and screen survive switching worktrees. A pane
   that shows for the first time draws what the main process kept, then
@@ -1255,7 +1264,8 @@ shows, and coming back shows it as it was.
   sessions after a restart, and starting a terminal editor in a session.
 
 In `bun run dev:web` the mock engine acts out a shell that echoes what is
-typed and knows `pwd`, `clear`, and `exit`. `timberMock.requestQuit()` acts
+typed and knows `pwd`, `clear`, `exit`, and `sample`, which prints a box,
+the colors, and wide characters for looking at how a terminal draws. `timberMock.requestQuit()` acts
 out quitting, `timberMock.endTerminal(id, code)` a shell that exits by
 itself, and `timberMock.failTerminals({ outcome: "unsupported", message })`
 a terminal that cannot start (`null` to undo).

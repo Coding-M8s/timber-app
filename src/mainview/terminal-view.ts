@@ -1,5 +1,7 @@
 import { FitAddon } from "@xterm/addon-fit";
+import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { type ITheme, Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import type { AppStore } from "./store/store";
@@ -34,6 +36,28 @@ function token(name: string, fallback: string): string {
 	return value === "" ? fallback : value;
 }
 
+const FONT_SIZE = 13;
+/** How long the first terminal waits for its font before it opens with whatever is there. */
+const FONT_WAIT_MILLISECONDS = 1500;
+
+const fontFamily = () => token("--font-terminal", "ui-monospace, monospace");
+
+/**
+ * Resolves once the terminal's font is loaded, or after a short wait. xterm
+ * measures a cell when it opens: measured with a stand-in font, every cell is
+ * the wrong width and the text looks cut. Never rejects.
+ */
+export function terminalFontReady(): Promise<void> {
+	const fonts = typeof document === "undefined" ? undefined : document.fonts;
+	if (!fonts) return Promise.resolve();
+	const family = fontFamily();
+	const loaded = Promise.all([fonts.load(`${FONT_SIZE}px ${family}`), fonts.load(`600 ${FONT_SIZE}px ${family}`)]).then(() => {}, () => {});
+	return Promise.race([loaded, new Promise<void>(resolve => setTimeout(resolve, FONT_WAIT_MILLISECONDS))]);
+}
+
+/** Off once the window showed it cannot draw with WebGL, so no later terminal tries again. */
+let webglWorks = true;
+
 /**
  * The terminal's colors. Background, text, and selection follow the design
  * tokens. The sixteen ANSI colors are the programs' own, kept muted so they
@@ -45,7 +69,11 @@ function theme(): ITheme {
 		foreground: token("--text", "#ececef"),
 		cursor: token("--text", "#ececef"),
 		cursorAccent: token("--bg-pane", "#0c0c0e"),
-		selectionBackground: "rgba(255, 255, 255, 0.22)",
+		selectionBackground: "rgba(110, 168, 254, 0.32)",
+		selectionInactiveBackground: "rgba(255, 255, 255, 0.14)",
+		scrollbarSliderBackground: "rgba(255, 255, 255, 0.10)",
+		scrollbarSliderHoverBackground: "rgba(255, 255, 255, 0.18)",
+		scrollbarSliderActiveBackground: "rgba(255, 255, 255, 0.26)",
 		black: "#1f1f23",
 		red: "#f08b80",
 		green: "#73c991",
@@ -69,11 +97,18 @@ function createView(store: AppStore, id: string): TerminalView {
 	const host = document.createElement("div");
 	host.className = "terminal-host";
 	const terminal = new Terminal({
-		fontFamily: token("--font-mono", "ui-monospace, monospace"),
-		fontSize: 13,
+		fontFamily: fontFamily(),
+		fontSize: FONT_SIZE,
+		fontWeight: "400",
+		fontWeightBold: "600",
 		lineHeight: 1.2,
 		cursorBlink: true,
-		scrollback: 5000,
+		cursorInactiveStyle: "outline",
+		scrollback: 10000,
+		// A glyph from a stand-in font, such as a prompt's icon, is scaled into its cell instead of being cut at the edge.
+		rescaleOverlappingGlyphs: true,
+		// The width table below is a proposed part of xterm's API.
+		allowProposedApi: true,
 		theme: theme(),
 		// Links that programs mark (OSC 8) open as plain ones do, never inside the app's own window.
 		linkHandler: {
@@ -84,6 +119,9 @@ function createView(store: AppStore, id: string): TerminalView {
 	});
 	const fitAddon = new FitAddon();
 	terminal.loadAddon(fitAddon);
+	// Emoji and other wide characters take the two cells that today's programs count for them, so a full-screen program's columns line up.
+	terminal.loadAddon(new Unicode11Addon());
+	terminal.unicode.activeVersion = "11";
 	terminal.loadAddon(new WebLinksAddon((event, uri) => {
 		event.preventDefault();
 		if (opensLink(event, isMac())) void store.openLink(uri);
@@ -118,6 +156,33 @@ function createView(store: AppStore, id: string): TerminalView {
 	});
 	let opened = false;
 	let first = true;
+	/**
+	 * The WebGL drawing, held only while the terminal is on screen, because a
+	 * window gets a limited number of WebGL contexts. It draws faster than the
+	 * elements xterm falls back to, lands every cell on whole device pixels at
+	 * any display scale, and draws lines and blocks itself so boxes join with
+	 * no gaps between rows.
+	 */
+	let webgl: WebglAddon | null = null;
+	const drawWithWebgl = () => {
+		if (webgl !== null || !webglWorks) return;
+		try {
+			const addon = new WebglAddon();
+			// The system took the context away. Elements draw until the terminal shows again.
+			addon.onContextLoss(() => {
+				addon.dispose();
+				if (webgl === addon) webgl = null;
+			});
+			terminal.loadAddon(addon);
+			webgl = addon;
+		} catch {
+			webglWorks = false;
+		}
+	};
+	const drawWithElements = () => {
+		webgl?.dispose();
+		webgl = null;
+	};
 	const stopWatching = store.watchTerminal(id, (draw, done) => {
 		const replay = first;
 		first = false;
@@ -141,9 +206,11 @@ function createView(store: AppStore, id: string): TerminalView {
 				terminal.open(host);
 				opened = true;
 			}
+			drawWithWebgl();
 			this.fit();
 		},
 		detach() {
+			drawWithElements();
 			host.remove();
 		},
 		fit() {
@@ -160,6 +227,7 @@ function createView(store: AppStore, id: string): TerminalView {
 		},
 		dispose() {
 			stopWatching();
+			drawWithElements();
 			terminal.dispose();
 			host.remove();
 		},
