@@ -1,22 +1,27 @@
 import { useId, useState } from "react";
 import { DEFAULT_TERMINAL_FONT, MAX_TERMINAL_FONT_SIZE, MIN_TERMINAL_FONT_SIZE, TERMINAL_CURSORS, type TerminalAppearance } from "../../../shared/terminal-appearance";
 import { useAppState } from "../../store/react";
-import { TERMINAL_CURSOR_HINTS, TERMINAL_CURSOR_LABELS, type TerminalDraft, missingFontNote, terminalDraftModel, terminalDraftOf } from "../../terminal-appearance-format";
+import { SESSION_NAMINGS, type SessionNaming } from "../../../shared/terminal";
+import { SESSION_NAMING_HINTS, SESSION_NAMING_LABELS, TERMINAL_CURSOR_HINTS, TERMINAL_CURSOR_LABELS, type TerminalDraft, missingFontNote, terminalDraftModel, terminalDraftOf } from "../../terminal-appearance-format";
 import { terminalFontInstalled } from "../../terminal-look";
 import { type SectionSave, SettingsSection, useSectionSave } from "./SettingsSection";
 
 export interface TerminalSectionViewProps {
 	draft: TerminalDraft;
 	saved: TerminalAppearance;
+	/** How new sessions are named, as chosen, and as saved. */
+	naming: SessionNaming;
+	savedNaming: SessionNaming;
 	save: SectionSave;
 	/** Whether the typed font is on this computer. */
 	fontInstalled: boolean;
 	onEdit: (change: Partial<TerminalDraft>) => void;
+	onNaming: (naming: SessionNaming) => void;
 	onSave: () => void;
 }
 
 /** The Terminal section as drawn from its data, so it can be tested without a window. */
-export function TerminalSectionView({ draft, saved, save, fontInstalled, onEdit, onSave }: TerminalSectionViewProps) {
+export function TerminalSectionView({ draft, saved, naming, savedNaming, save, fontInstalled, onEdit, onNaming, onSave }: TerminalSectionViewProps) {
 	const fontId = useId();
 	const fontHintId = useId();
 	const sizeId = useId();
@@ -26,9 +31,9 @@ export function TerminalSectionView({ draft, saved, save, fontInstalled, onEdit,
 	return (
 		<SettingsSection
 			title="Terminal"
-			description="The font, the text size, and the cursor of every terminal. Open terminals change as soon as you save, and the app remembers them in its own settings file."
+			description="The font, the text size, and the cursor of every terminal, and how new sessions are named. Open terminals change their look as soon as you save, and keep their names. The app remembers these in its own settings file."
 			save={save}
-			canSave={model.canSave}
+			canSave={model.appearance !== null && (model.canSave || naming !== savedNaming)}
 			onSave={onSave}
 		>
 			<div className="field">
@@ -78,6 +83,18 @@ export function TerminalSectionView({ draft, saved, save, fontInstalled, onEdit,
 					</label>
 				))}
 			</fieldset>
+			<fieldset className="settings-choice">
+				<legend className="field-label">Name new sessions after</legend>
+				{SESSION_NAMINGS.map(option => (
+					<label key={option} className="check">
+						<input type="radio" name="session-naming" value={option} checked={naming === option} onChange={() => onNaming(option)} />
+						<span className="check-text">
+							{SESSION_NAMING_LABELS[option]}
+							<span className="check-hint">{SESSION_NAMING_HINTS[option]}</span>
+						</span>
+					</label>
+				))}
+			</fieldset>
 			{model.error !== null && (
 				<div className="sidebar-error" role="alert">
 					<p className="sidebar-error-title">These settings cannot be saved</p>
@@ -88,31 +105,45 @@ export function TerminalSectionView({ draft, saved, save, fontInstalled, onEdit,
 	);
 }
 
-/** The Terminal section of Settings: the font, the text size, and the cursor's shape, saved with its own Save. */
+/** The Terminal section of Settings: the font, the text size, the cursor's shape, and how new sessions are named, saved with its own Save. */
 export function TerminalSection() {
-	const saved = useAppState().preferences.terminal;
+	const preferences = useAppState().preferences;
+	const saved = preferences.terminal;
+	const savedNaming = preferences.sessionNames;
 	// Null follows what is saved, so the fields only ever differ from it by what the person did.
 	const [edited, setEdited] = useState<TerminalDraft | null>(null);
+	const [editedNaming, setEditedNaming] = useState<SessionNaming | null>(null);
 	const draft = edited ?? terminalDraftOf(saved);
+	const naming = editedNaming ?? savedNaming;
 	const { save, run, reset } = useSectionSave();
 
 	const onEdit = (change: Partial<TerminalDraft>) => {
 		setEdited({ ...draft, ...change });
 		reset();
 	};
+	const onNaming = (next: SessionNaming) => {
+		setEditedNaming(next);
+		reset();
+	};
 	const onSave = async () => {
 		const { appearance, canSave } = terminalDraftModel(draft, saved);
-		if (!canSave || appearance === null) return;
-		if (await run({ terminal: appearance })) setEdited(null);
+		if (appearance === null || (!canSave && naming === savedNaming)) return;
+		if (await run({ terminal: appearance, sessionNames: naming })) {
+			setEdited(null);
+			setEditedNaming(null);
+		}
 	};
 
 	return (
 		<TerminalSectionView
 			draft={draft}
 			saved={saved}
+			naming={naming}
+			savedNaming={savedNaming}
 			save={save}
 			fontInstalled={terminalFontInstalled(draft.fontFamily.trim())}
 			onEdit={onEdit}
+			onNaming={onNaming}
 			onSave={() => void onSave()}
 		/>
 	);

@@ -5,7 +5,7 @@ import type { Engine } from "../../shared/engine";
 import type { TimberStatus, Worktree } from "../../shared/model";
 import {
 	type OpenTerminalResult, type Scrollback, type TerminalChange, type TerminalOutput, type TerminalSession, cleanSessionName, createScrollback,
-	defaultSessionName, isWebLink, TIMBER_REBASE_SESSION_NAME,
+	defaultSessionName, isWebLink, type SessionNaming, sessionNameBase, TIMBER_REBASE_SESSION_NAME,
 } from "../../shared/terminal";
 import { PROBE_ANSWER, type StatusRecords, type StatusScanner, createStatusRecords, createStatusScanner } from "../../shared/program-status";
 import { rebaseArguments } from "../../shared/rebase-command";
@@ -75,13 +75,15 @@ export const MOCK_PATH = "/usr/local/bin:/usr/bin:/bin";
  * a pretend shell that echoes what is typed and knows `pwd`, `clear`, and
  * `exit`. An agent session is the same pretend program, started from the
  * agents that `agents` answers, as the saved preferences. A Timber rebase
- * session is a pretend `timber rebase` that takes no input. Output arrives
+ * session is a pretend `timber rebase` that takes no input. New sessions
+ * are named as `sessionNaming` answers, as the saved preferences. Output arrives
  * a moment later, as it would over the bridge.
  */
 export function createMockTerminals(
 	findWorktree: (repository: string, path: string) => Worktree | null,
 	agents: () => readonly AgentSetting[] = () => [],
 	timber: () => TimberStatus = () => ({ state: "not-found", override: null }),
+	sessionNaming: () => SessionNaming = () => "plain",
 ): TerminalCapabilities & TerminalControls {
 	const sessions = new Map<string, Acted>();
 	const output = new Set<(output: TerminalOutput) => void>();
@@ -217,7 +219,10 @@ export function createMockTerminals(
 			const session: TerminalSession = {
 				id: `mock-terminal-${++lastId}`,
 				kind: agent ? "agent" : setup ? "timber" : "terminal",
-				name: defaultSessionName(agent ? agent.name : rebase !== undefined ? TIMBER_REBASE_SESSION_NAME : "Terminal", taken),
+				name: defaultSessionName(
+					rebase !== undefined ? TIMBER_REBASE_SESSION_NAME : sessionNameBase(sessionNaming(), agent ? agent.name : "Terminal", worktree.branch, agent !== null),
+					taken,
+				),
 				repository: request.repository,
 				worktree: worktree.id,
 				path: worktree.path,

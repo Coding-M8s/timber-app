@@ -2,6 +2,7 @@ import {
 	DEFAULT_TERMINAL_FONT, MAX_TERMINAL_FONT_LENGTH, MAX_TERMINAL_FONT_SIZE, MIN_TERMINAL_FONT_SIZE, type TerminalAppearance, type TerminalCursor,
 	readTerminalFont, readTerminalFontSize, sameTerminalAppearance,
 } from "../shared/terminal-appearance";
+import type { SessionNaming } from "../shared/terminal";
 
 /**
  * The words and the rules of Settings, Terminal, apart from drawing it.
@@ -16,6 +17,18 @@ export const TERMINAL_CURSOR_LABELS: Record<TerminalCursor, string> = {
 export const TERMINAL_CURSOR_HINTS: Record<TerminalCursor, string> = {
 	block: "Fills the whole cell.",
 	bar: "A thin line before the cell.",
+};
+
+export const SESSION_NAMING_LABELS: Record<SessionNaming, string> = {
+	plain: "Terminal or the agent",
+	branch: "Branch",
+	issue: "Issue key",
+};
+
+export const SESSION_NAMING_HINTS: Record<SessionNaming, string> = {
+	plain: "Terminal, Terminal 2, Codex, and so on.",
+	branch: "The worktree's branch, such as feature-login or Codex: feature-login.",
+	issue: "The issue key in the branch, such as GH-122 or Codex: GH-122, or #122 for a branch that starts with a number. A branch with no key gives its name.",
 };
 
 /** What the fields hold, as typed. */

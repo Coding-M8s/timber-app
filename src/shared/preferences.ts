@@ -11,6 +11,7 @@ import { DEFAULT_ZOOM, readZoom } from "./zoom";
 import { type FetchSetting, defaultFetchSetting, readFetchSetting, salvageFetchSetting, sameFetchSetting, writeFetchSetting } from "./fetch-setting";
 import { type SoundChoice, defaultSoundChoice, readSoundChoice, sameSoundChoice, writeSoundChoice } from "./sound-setting";
 import { ALERT_STATES, type AlertState } from "./status-notices";
+import { type SessionNaming, readSessionNaming } from "./terminal";
 import { type TerminalAppearance, defaultTerminalAppearance, readTerminalAppearance, salvageTerminalAppearance, sameTerminalAppearance, writeTerminalAppearance } from "./terminal-appearance";
 
 /** The sides of the window the sidebar can be on. */
@@ -48,6 +49,13 @@ export interface Preferences {
 	 * default, and a size outside the limits is clamped.
 	 */
 	terminal: TerminalAppearance;
+	/**
+	 * How new terminal and agent sessions are named: after the shell or the
+	 * agent, after the worktree's branch, or after the issue key in the
+	 * branch (see `sessionNameBase` in ./terminal.ts). Plain by default.
+	 * Sessions already open keep their names.
+	 */
+	sessionNames: SessionNaming;
 	/**
 	 * Whether a desktop notification says when an agent needs the person, is
 	 * done, reports an error, or crashed, in a worktree that is not on screen.
@@ -155,6 +163,12 @@ export const PREFERENCE_PARTS: { [Key in keyof Preferences]: PreferencePart<Pref
 		same: sameTerminalAppearance,
 		write: writeTerminalAppearance,
 		salvage: salvageTerminalAppearance,
+	},
+	sessionNames: {
+		fallback: () => "plain",
+		read: readSessionNaming,
+		same: (one, other) => one === other,
+		write: value => value,
 	},
 	statusNotifications: {
 		fallback: () => true,

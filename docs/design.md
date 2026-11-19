@@ -179,7 +179,13 @@ change them here first when they change.
 - **Terminal:** a Settings section for the terminal's font, as a name to
   type with Geist Mono as the default, its text size, and the cursor, a
   block or a thin bar. A font that is not installed gets a note under the
-  field that terminals use Geist Mono.
+  field that terminals use Geist Mono. "Name new sessions after" chooses
+  how new terminal and agent sessions are named: "Terminal or the agent"
+  (the default), "Branch" (`feature-login`, `Codex: feature-login`), or
+  "Issue key" (`GH-122`, `Codex: GH-122`, `#122` for a branch that starts
+  with a number, or the branch when it has no key). It is saved with the section's Save and names only sessions opened
+  after it; open sessions keep their names, and any session can still be
+  renamed.
 - **Theme:** a Settings section with a card for each theme, a small
   picture of the app drawn in it. Choosing one shows it at once; Close
   without Save goes back to the saved one. Below the cards, "Your themes"

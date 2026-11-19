@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type TerminalSessions, createTerminalSessions } from "../src/bun/terminals";
+import { type TerminalDependencies, type TerminalSessions, createTerminalSessions } from "../src/bun/terminals";
 import type { Repository, TimberStatus } from "../src/shared/model";
 import { ontoFromText, rebaseArguments, rebaseBases } from "../src/shared/rebase-command";
 import { type OpenTerminalRequest, type TerminalChange, type TerminalOutput, TIMBER_REBASE_SESSION_NAME } from "../src/shared/terminal";
@@ -100,7 +100,7 @@ describe.skipIf(!posix)("rebasing in a terminal session", () => {
 		})),
 	});
 
-	function setUp(status: TimberStatus) {
+	function setUp(status: TimberStatus, sessionNaming?: TerminalDependencies["sessionNaming"]) {
 		outputs = [];
 		changes = [];
 		sessions = createTerminalSessions({
@@ -108,6 +108,7 @@ describe.skipIf(!posix)("rebasing in a terminal session", () => {
 			onOutput: output => outputs.push(output),
 			onChange: change => changes.push(change),
 			timber: async () => status,
+			...(sessionNaming ? { sessionNaming } : {}),
 			environment: { ...gitEnvironment, HOME: root, SHELL: "/bin/sh", PS1: "$ ", LANG: "C.UTF-8" },
 			closeMilliseconds: 500,
 		});
@@ -133,6 +134,14 @@ describe.skipIf(!posix)("rebasing in a terminal session", () => {
 		expect(exited(session.id)!.state).toEqual({ kind: "exited", exitCode: 3, signal: null });
 		expect(printed(session.id)).toContain("stand-in timber printed this");
 		expect(readFileSync(record, "utf8")).toBe(`${worktree}\nrebase\n--base\nrefs/heads/main\n--\n${worktree}\n`);
+	});
+
+	test("a rebase keeps its name when Settings names sessions after the branch", async () => {
+		const rebase = setUp(ready(standIn), async () => "branch");
+		const result = await rebase.start({ repository, worktree, onto: null, cols: 80, rows: 24 });
+		if (result.outcome !== "opened") throw new Error(JSON.stringify(result));
+		expect(result.session.name).toBe(TIMBER_REBASE_SESSION_NAME);
+		expect(await until(() => exited(result.session.id) !== null)).toBe(true);
 	});
 
 	test("with no base the saved one is used: no --base is passed", async () => {

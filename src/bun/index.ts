@@ -240,6 +240,7 @@ const terminals = createTerminalSessions({
 	findRepository: path => repositories.find(path),
 	// An agent's command comes from the saved preferences only (see ./terminals.ts).
 	agents: async () => (await preferences.load()).agents,
+	sessionNaming: async () => (await preferences.load()).sessionNames,
 	// `timber rebase` runs the Timber that was found, never a command from the window.
 	timber: () => timber.current(),
 	onOutput: output => tell("terminal output", () => rpc.send.terminalOutput(output)),

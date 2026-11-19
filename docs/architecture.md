@@ -1540,7 +1540,35 @@ shows, and coming back shows it as it was.
   "Terminal" or "Codex", then "Terminal 2" and on, the first name no
   session of that worktree has, exited ones included. It picks the name with
   no wait between reading the names and keeping the session, so two sessions
-  that start at once get different names. `renameTerminal` gives a session
+  that start at once get different names.
+- **Naming after the branch.** The `sessionNames` preference, set in
+  Settings, Terminal, is `plain` by default, which names sessions as above.
+  `branch` names a new terminal session after its worktree's branch, such
+  as `feature-login`, and an agent session `<agent>: <branch>`, such as
+  `Codex: feature-login`. `issue` uses the issue key in the branch
+  (`issueKeyOf`), the first of: a key that starts the branch or a part of it after a slash, in any case,
+  uppercased (`GH-122` from `gh-122-option-to-name-tab`, `PROJ-42` from
+  `feature/PROJ-42-login`); a key written in capitals later, after a
+  hyphen or an underscore (`PROJ-42` from `feature/login-PROJ-42`; only
+  capitals, so `fix-login-2` has none); a number that starts the branch or
+  a part of it, as `#122` (from `122-fix-login` or `fix/122-login`). A key
+  is letters and digits that start with a letter, a hyphen, and a number.
+  Neither a key nor a number may be followed by a dot, so `react-18.2.0`
+  has none, but `fix-2-typos` gives `FIX-2`. A branch with no key gives
+  its name. Both are numbered the same way when taken (`feature-login 2`, `Codex: GH-122 2`). A detached HEAD, which
+  has no branch, falls back to "Terminal" or the agent's name alone. The
+  branch comes from the listed worktree the request is checked against, so
+  naming adds no Git query. The name is cut to 40 characters from its end,
+  so an agent's name stays and its branch is cut first; an agent's name
+  that leaves fewer than 4 characters for the branch is used alone.
+  Format and control characters in the branch are dropped, so the name is
+  one `cleanSessionName` keeps (`sessionNameBase` in
+  `src/shared/terminal.ts`). The name is set once when the session opens:
+  a later change of branch or of the setting renames nothing. A
+  `timber rebase` session is always "Rebase", and does not read it. The
+  preference is read before the worktree is looked up, and one that cannot be read names
+  sessions as `plain`. The mock engine names its sessions the same way.
+- **Renaming.** `renameTerminal` gives a session
   another name, kept in the main process so it survives a reload of the
   window. A name is cleaned up first (`cleanSessionName` in
   `src/shared/terminal.ts`): control characters and runs of white space

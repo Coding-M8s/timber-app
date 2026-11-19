@@ -8,7 +8,7 @@ import { type TerminalDependencies, type TerminalSessions, createTerminalSession
 import type { Repository } from "../src/shared/model";
 import { describeSearchPath } from "../src/shared/search-path";
 import { PROBE_ANSWER } from "../src/shared/program-status";
-import type { TerminalChange, TerminalOutput } from "../src/shared/terminal";
+import type { SessionNaming, TerminalChange, TerminalOutput } from "../src/shared/terminal";
 
 const posix = process.platform !== "win32";
 const linux = process.platform === "linux";
@@ -468,6 +468,43 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 			const found = await until(() => printed(id).includes(text));
 			if (!found) throw new Error(`Did not see ${text}. Printed: ${JSON.stringify(printed(id))}`);
 		};
+
+		test("as Settings says, new sessions are named after the branch or its issue key, once, and a detached HEAD falls back", async () => {
+			let naming: SessionNaming = "branch";
+			let branch: string | null = "feat/login";
+			startWithAgents({
+				sessionNaming: async () => naming,
+				findRepository: async path => {
+					if (path !== repository) return null;
+					const repo = listed();
+					return { ...repo, worktrees: repo.worktrees.map(listedWorktree => listedWorktree.path === worktree ? { ...listedWorktree, branch, detached: branch === null } : listedWorktree) };
+				},
+			});
+			const [one, two] = await Promise.all([opened(), opened()]);
+			expect([one.session.name, two.session.name].sort()).toEqual(["feat/login", "feat/login 2"]);
+			expect((await openedAgent("Codex")).name).toBe("Codex: feat/login");
+			expect((await openedAgent("Codex")).name).toBe("Codex: feat/login 2");
+			// The primary checkout is on main.
+			expect((await opened(repository)).session.name).toBe("main");
+
+			naming = "issue";
+			branch = "gh-122-option-to-name-tab";
+			expect((await opened()).session.name).toBe("GH-122");
+			expect((await openedAgent("Claude Code")).name).toBe("Claude Code: GH-122");
+
+			branch = null;
+			expect((await opened()).session.name).toBe("Terminal");
+			expect((await openedAgent("Codex")).name).toBe("Codex");
+
+			// Sessions already open keep the names they got.
+			expect(sessions.list().slice(0, 4).map(session => session.name).sort()).toEqual(["Codex: feat/login", "Codex: feat/login 2", "feat/login", "feat/login 2"]);
+		});
+
+		test("a naming that cannot be read names sessions as always", async () => {
+			startWithAgents({ sessionNaming: async () => { throw new Error("unreadable"); } });
+			expect((await opened()).session.name).toBe("Terminal");
+			expect((await openedAgent("Codex")).name).toBe("Codex");
+		});
 
 		test("an agent starts its command in the worktree's folder, named after the agent, with the executable as found", async () => {
 			startWithAgents();

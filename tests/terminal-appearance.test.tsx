@@ -8,7 +8,7 @@ import { createSettingsHolder } from "../src/bun/settings";
 import { App } from "../src/mainview/App";
 import { TerminalSectionView, type TerminalSectionViewProps } from "../src/mainview/components/settings/TerminalSection";
 import { estimateTerminalSize } from "../src/mainview/components/TerminalPanel";
-import { createMockEngine } from "../src/mainview/engine/mock";
+import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { createAppStore } from "../src/mainview/store/store";
 import { missingFontNote, terminalDraftModel, terminalDraftOf } from "../src/mainview/terminal-appearance-format";
 import { setTerminalAppearance, terminalAppearance, watchTerminalAppearance } from "../src/mainview/terminal-look";
@@ -157,7 +157,7 @@ describe("the mock engine and the store", () => {
 describe("Settings, Terminal", () => {
 	const saved = defaultTerminalAppearance();
 	const view = (props: Partial<TerminalSectionViewProps>) => renderToStaticMarkup(
-		<TerminalSectionView draft={terminalDraftOf(saved)} saved={saved} save={{ state: "idle" }} fontInstalled onEdit={() => {}} onSave={() => {}} {...props} />,
+		<TerminalSectionView draft={terminalDraftOf(saved)} saved={saved} naming="plain" savedNaming="plain" save={{ state: "idle" }} fontInstalled onEdit={() => {}} onNaming={() => {}} onSave={() => {}} {...props} />,
 	);
 
 	test("can save only a change it can read, with the size clamped", () => {
@@ -191,6 +191,36 @@ describe("Settings, Terminal", () => {
 		expect(wrong).toContain("The text size is a number from 10 to 24.");
 	});
 
+	test("offers the three namings for new sessions, plain checked by default, and can save a changed one alone", () => {
+		const markup = view({});
+		expect(markup).toContain("Name new sessions after");
+		expect(markup).toContain("Terminal or the agent");
+		expect(markup).toContain("Branch");
+		expect(markup).toContain("Issue key");
+		expect(markup).toContain('checked="" value="plain"');
+		expect(markup).toContain('aria-disabled="true">Save</button>');
+		const changed = view({ naming: "issue" });
+		expect(changed).toContain('checked="" value="issue"');
+		expect(changed).not.toContain('aria-disabled="true">Save</button>');
+		// A field that cannot be read still stops the Save.
+		expect(view({ naming: "issue", draft: { ...terminalDraftOf(saved), fontSize: "big" } })).toContain('aria-disabled="true">Save</button>');
+	});
+
+	test("saves the naming with the section's Save, and new sessions take it", async () => {
+		const engine = createMockEngine();
+		const store = createAppStore(engine, () => () => {});
+		store.start();
+		await settle();
+		expect(store.getState().preferences.sessionNames).toBe("plain");
+		await store.savePreferences({ terminal: store.getState().preferences.terminal, sessionNames: "branch" });
+		expect(store.getState().preferences.sessionNames).toBe("branch");
+		expect((await engine.loadPreferences()).sessionNames).toBe("branch");
+		const [repository] = sampleRepositories;
+		const listed = repository!.worktrees.find(candidate => candidate.branch !== null && !candidate.primary)!;
+		await store.openTerminal({ repository: repository!.path, worktree: listed.path, cols: 80, rows: 24 });
+		expect((await engine.listTerminals()).map(session => session.name)).toEqual([listed.branch!]);
+	});
+
 	test("is a section of the Settings dialog", async () => {
 		const store = createAppStore(createMockEngine(), () => () => {});
 		store.start();
@@ -198,6 +228,6 @@ describe("Settings, Terminal", () => {
 		store.openDialog({ kind: "settings", section: "terminal" });
 		const markup = renderToStaticMarkup(<App store={store} />);
 		expect(markup).toContain(">Terminal</button>");
-		expect(markup).toContain("The font, the text size, and the cursor of every terminal.");
+		expect(markup).toContain("The font, the text size, and the cursor of every terminal, and how new sessions are named.");
 	});
 });
