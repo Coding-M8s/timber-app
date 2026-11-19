@@ -130,5 +130,8 @@ export function createDesktopEngine(): Engine {
 		uninstallPlan: () => rpc.request.uninstallPlan({}),
 		// The main process stops a stuck uninstaller after a minute.
 		uninstall: request => rpc.request.uninstall(request, { maxRequestTime: 120_000 }),
+		restartPlan: () => rpc.request.restartPlan({}),
+		// Ending every session can take a moment, like confirmQuit, and the app quits right after.
+		restart: () => rpc.request.restart({}, { maxRequestTime: 30_000 }),
 	};
 }

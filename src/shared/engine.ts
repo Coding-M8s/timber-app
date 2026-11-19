@@ -6,6 +6,7 @@ import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffRe
 import type { Layout } from "./layout";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
 import type { Preferences } from "./preferences";
+import type { RestartPlan, RestartResult } from "./restart";
 import type { IssueLookup, IssueRequest } from "./issues";
 import type { PullRequestList } from "./pull-requests";
 import type { Theme } from "./theme";
@@ -414,4 +415,17 @@ export interface Engine {
 	 * touched. Not safe to call again: after it worked there is no app.
 	 */
 	uninstall(request: UninstallRequest): Promise<UninstallResult>;
+	/**
+	 * Whether this copy of the app can restart itself, so that a saved
+	 * preference read only at start is used (see `restartNeededFor` in
+	 * ./preferences.ts). Read-only and safe to call again.
+	 */
+	restartPlan(): Promise<RestartPlan>;
+	/**
+	 * Quit, ending every terminal without asking again, and start the app
+	 * again with the same arguments and environment once it is gone. The
+	 * window asks first while terminals run. When it works, the answer may
+	 * never arrive, because the app is gone.
+	 */
+	restart(): Promise<RestartResult>;
 }

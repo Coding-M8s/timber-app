@@ -217,6 +217,11 @@ change them here first when they change.
   AAA, lists the colors too close to their surfaces and marks their rows;
   it warns and never blocks. Save adds a new theme and uses it; Cancel
   leaves everything as it was.
+- **Restart:** a setting the app reads only when it starts, such as the
+  DMA-BUF renderer, offers "Restart now" and "Later" under its section once
+  saved. Later changes nothing. While terminals run, Restart now asks first
+  and says how many end, with focus on Cancel. A copy that cannot restart
+  itself says why.
 - **Uninstall:** at the end of Settings, About. The first button only shows
   what would be removed and the command; "Uninstall and quit" is the
   dangerous one, and Cancel has the focus. The saved repository list stays

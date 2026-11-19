@@ -3841,3 +3841,29 @@ pre:focus-visible {
 	flex-direction: column;
 	gap: 4px;
 }
+
+/* Offering to restart after a section saved a setting the app reads when it starts. */
+.restart-prompt {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	padding: 12px;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+}
+
+.restart-prompt-text {
+	margin: 0;
+	font-size: 12px;
+	color: var(--text-2);
+}
+
+.restart-prompt-buttons {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+}
+
+.restart-prompt-buttons .button {
+	margin-top: 0;
+}

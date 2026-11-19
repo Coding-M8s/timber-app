@@ -1,12 +1,17 @@
 import { type ReactNode, type SubmitEvent, createContext, useContext, useEffect, useId, useRef, useState } from "react";
-import type { Preferences } from "../../../shared/preferences";
+import { type Preferences, restartNeededFor } from "../../../shared/preferences";
 import { useStore } from "../../store/react";
+import { RestartPrompt } from "./RestartPrompt";
 
-/** Where saving a section stands. A failure keeps what was chosen on screen, so Save can be tried again. */
+/**
+ * Where saving a section stands. A failure keeps what was chosen on screen,
+ * so Save can be tried again. `restart` says the save changed a preference
+ * the app reads only when it starts, so a restart is offered.
+ */
 export type SectionSave =
 	| { state: "idle" }
 	| { state: "saving" }
-	| { state: "saved" }
+	| { state: "saved"; restart: boolean }
 	| { state: "failed"; message: string };
 
 /** How a section tells the dialog that it is saving, so the dialog keeps itself open until the answer is in. */
@@ -32,7 +37,7 @@ export function useSectionSave() {
 		setSave({ state: "saving" });
 		try {
 			const result = await store.savePreferences(change);
-			setSave(result.outcome === "saved" ? { state: "saved" } : { state: "failed", message: result.message });
+			setSave(result.outcome === "saved" ? { state: "saved", restart: needsRestart(store.getState().preferencesAtStart, result.preferences, change) } : { state: "failed", message: result.message });
 			return result.outcome === "saved";
 		} finally {
 			running.current = false;
@@ -46,6 +51,16 @@ export function useSectionSave() {
 	return { save, run, reset };
 }
 
+/**
+ * Whether a save of `change` left a preference that this section named, and
+ * that the app reads only when it starts, different from what this run
+ * started with. Unknown start preferences offer nothing.
+ */
+export function needsRestart(atStart: Preferences | null, saved: Preferences, change: Partial<Preferences>): boolean {
+	if (atStart === null) return false;
+	return restartNeededFor(atStart, saved).some(key => change[key] !== undefined);
+}
+
 interface SettingsSectionProps {
 	title: string;
 	/** One or two sentences on what the section changes and where it is kept. */
@@ -56,11 +71,16 @@ interface SettingsSectionProps {
 	onSave: () => void;
 	/** Shown before Save, such as a Cancel. */
 	secondary?: ReactNode;
+	/**
+	 * False when a restart would not change what the saved preference does
+	 * here, so none is offered after a save that would otherwise offer one.
+	 */
+	offerRestart?: boolean;
 	children: ReactNode;
 }
 
 /** One section of the Settings dialog: its fields, and a Save of its own, as the design asks. */
-export function SettingsSection({ title, description, save, canSave, onSave, secondary, children }: SettingsSectionProps) {
+export function SettingsSection({ title, description, save, canSave, onSave, secondary, offerRestart = true, children }: SettingsSectionProps) {
 	const titleId = useId();
 	const form = useRef<HTMLFormElement>(null);
 	const saveButton = useRef<HTMLButtonElement>(null);
@@ -101,6 +121,7 @@ export function SettingsSection({ title, description, save, canSave, onSave, sec
 					{saving ? "Saving" : "Save"}
 				</button>
 			</div>
+			{save.state === "saved" && save.restart && offerRestart && <RestartPrompt />}
 		</form>
 	);
 }

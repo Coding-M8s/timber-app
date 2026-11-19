@@ -1,6 +1,6 @@
 import { useId, useState } from "react";
 import { DMABUF_CHOICES, type DmabufChoice } from "../../../shared/rendering";
-import { DMABUF_CHOICE_LABELS, describeRendering } from "../../rendering-format";
+import { DMABUF_CHOICE_LABELS, describeRendering, restartChangesRendering } from "../../rendering-format";
 import { useAppState } from "../../store/react";
 import { ModeSwitch } from "../worktree-modes/ModeSwitch";
 import { SettingsSection, useSectionSave } from "./SettingsSection";
@@ -30,6 +30,7 @@ export function RenderingSection() {
 			save={save}
 			canSave={choice !== saved}
 			onSave={() => void onSave()}
+			offerRestart={rendering === null || restartChangesRendering(rendering)}
 		>
 			<div className="settings-row">
 				<div className="settings-row-text">
