@@ -9,6 +9,8 @@ import { readCustomThemes, salvageCustomThemes, sameCustomThemes, writeCustomThe
 import { type Theme, type ThemeChoice, defaultThemeChoice, readThemeChoice, sameThemeChoice, writeThemeChoice } from "./theme";
 import { DEFAULT_ZOOM, readZoom } from "./zoom";
 import { type FetchSetting, defaultFetchSetting, readFetchSetting, salvageFetchSetting, sameFetchSetting, writeFetchSetting } from "./fetch-setting";
+import { type SoundChoice, defaultSoundChoice, readSoundChoice, sameSoundChoice, writeSoundChoice } from "./sound-setting";
+import { ALERT_STATES, type AlertState } from "./status-notices";
 import { type TerminalAppearance, defaultTerminalAppearance, readTerminalAppearance, salvageTerminalAppearance, sameTerminalAppearance, writeTerminalAppearance } from "./terminal-appearance";
 
 /** The sides of the window the sidebar can be on. */
@@ -52,7 +54,33 @@ export interface Preferences {
 	 * On by default.
 	 */
 	statusNotifications: boolean;
+	/** The statuses that get a desktop notification while `statusNotifications` is on. All four by default. */
+	notifyStates: readonly AlertState[];
+	/** The statuses that play a sound. None by default, so the app is quiet until asked. */
+	soundStates: readonly AlertState[];
+	/** The sound that plays: one that comes with the app, the system's, or a file the person chose. */
+	sound: SoundChoice;
 }
+
+/**
+ * A list of statuses, in Settings order, without repeats. Undefined when it
+ * is not a list or names a status the app does not know.
+ */
+export function readAlertStates(value: unknown): AlertState[] | undefined {
+	if (!Array.isArray(value) || !value.every(item => (ALERT_STATES as readonly unknown[]).includes(item))) return undefined;
+	return ALERT_STATES.filter(state => value.includes(state));
+}
+
+function sameAlertStates(one: readonly AlertState[], other: readonly AlertState[]): boolean {
+	return one.length === other.length && one.every(state => other.includes(state));
+}
+
+const alertStatesPart = (fallback: () => AlertState[]): PreferencePart<readonly AlertState[]> => ({
+	fallback,
+	read: readAlertStates,
+	same: sameAlertStates,
+	write: value => [...value],
+});
 
 /** How one preference is read from outside, compared, and written to the settings file. */
 interface PreferencePart<Value> {
@@ -133,6 +161,14 @@ export const PREFERENCE_PARTS: { [Key in keyof Preferences]: PreferencePart<Pref
 		read: value => typeof value === "boolean" ? value : undefined,
 		same: (one, other) => one === other,
 		write: value => value,
+	},
+	notifyStates: alertStatesPart(() => [...ALERT_STATES]),
+	soundStates: alertStatesPart(() => []),
+	sound: {
+		fallback: defaultSoundChoice,
+		read: readSoundChoice,
+		same: sameSoundChoice,
+		write: writeSoundChoice,
 	},
 };
 

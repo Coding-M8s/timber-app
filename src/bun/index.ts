@@ -1,11 +1,12 @@
 import { homedir } from "node:os";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import Electrobun, { BrowserView, BrowserWindow, Screen, Updater, Utils } from "electrobun/main";
 import { APP_NAME, APP_VERSION } from "../shared/app-info";
 import { type Attention, assumedAttention } from "../shared/attention";
 import { type ForcePushMarks, withForcePushes } from "../shared/git-fetch";
 import type { Repository } from "../shared/model";
-import { defaultPreferences } from "../shared/preferences";
+import { type Preferences, defaultPreferences } from "../shared/preferences";
+import { readSoundChoice } from "../shared/sound-setting";
 import type { AppRPC } from "../shared/rpc";
 import { availableThemes, themeStyleSheet } from "../shared/theme";
 import { DEFAULT_WINDOW_FRAME, type WindowFrame, fitWindowFrame } from "../shared/window-frame";
@@ -31,7 +32,10 @@ import { type WatchTarget, createRepositoryWatcher } from "./repository-watcher"
 import { createWorktreeStamps } from "./worktree-stamp";
 import { createTerminalSessions } from "./terminals";
 import { createDesktopNotices } from "./desktop-notices";
-import { createStatusNotices } from "../shared/status-notices";
+import { type AlertSettings, createAlertRunner } from "../shared/status-notices";
+import { sessionBusAddress } from "./dbus";
+import { connectNotificationServer } from "./notification-server";
+import { chooseSoundFile, createSoundPlayer } from "./sounds";
 import { createThemeFiles } from "./theme-files";
 import { themePreload } from "./theme-preload";
 import { createTimberSettings } from "./timber-settings";
@@ -173,13 +177,14 @@ function tell(what: string, send: () => void): void {
 }
 
 /*
- * A session whose status moves to Needs you, Done, Error, or crashed gets a desktop notification when its worktree is
- * not on screen in a focused window (see ../shared/status-notices.ts). A click brings the window forward and shows it.
+ * A session whose status moves to Needs you, Done, Error, or crashed gets a desktop notification and a sound, as
+ * Settings choose, when its worktree is not on screen in a focused window (see ../shared/status-notices.ts). A click
+ * brings the window forward and shows it. A notification that no longer holds is withdrawn.
  */
 let attention: Attention = assumedAttention;
-const statusNotices = createStatusNotices();
 const desktopNotices = createDesktopNotices({
 	path: process.env.PATH ?? "",
+	connect: () => connectNotificationServer(sessionBusAddress(process.env)),
 	fallback: notice => {
 		try {
 			Utils.showNotification({ title: notice.title, body: notice.body });
@@ -187,6 +192,7 @@ const desktopNotices = createDesktopNotices({
 			console.warn(`Could not show a notification: ${error instanceof Error ? error.message : String(error)}`);
 		}
 	},
+	// The activation token is not handed on: the window is an X11 one under XWayland (see docs/architecture.md).
 	onClick: id => {
 		try {
 			mainWindow.activate();
@@ -196,19 +202,36 @@ const desktopNotices = createDesktopNotices({
 		tell("a session to show", () => rpc.send.showSession({ id }));
 	},
 });
+// Sounds play here, not in the window, so they play while it is hidden. The sounds that come with the app are written
+// to the cache folder the first time they play.
+const sounds = createSoundPlayer({ path: process.env.PATH ?? "", cacheFolder: join(Utils.paths.userCache, "sounds") });
 
-/** The saved setting, kept here so each change is decided at once, in the order the changes came. Read on start and after each save. */
-let notificationsEnabled = true;
-void preferences.load().then(saved => {
-	notificationsEnabled = saved.statusNotifications;
-}, () => {
-	// The default stays: on.
-});
-
-function weighNotice(change: Parameters<typeof statusNotices.changed>[0]): void {
-	const notice = statusNotices.changed(change, attention, notificationsEnabled, Date.now());
-	if (notice !== null) desktopNotices.show(notice);
+/** The saved settings, kept here so each change is decided at once, in the order the changes came. Read on start and after each save. */
+let alertSettings: AlertSettings = settingsForAlerts(defaultPreferences());
+let alertSound = defaultPreferences().sound;
+function settingsForAlerts(saved: Preferences): AlertSettings {
+	return { notify: saved.statusNotifications, notifyStates: saved.notifyStates, soundStates: saved.soundStates };
 }
+const alerts = createAlertRunner({
+	attention: () => attention,
+	settings: () => alertSettings,
+	act: action => {
+		if (action.kind === "withdraw") desktopNotices.withdraw(action.session);
+		else if (action.kind === "show") desktopNotices.show(action.notice, { withSound: action.sound });
+		if ((action.kind === "show" && action.sound) || action.kind === "sound") {
+			// An automatic sound whose own file is gone plays the chime instead. The outcome is not logged: it may name the file.
+			void sounds.play(alertSound, { fallBackToChime: true });
+		}
+	},
+});
+function applyAlertPreferences(saved: Preferences): void {
+	alertSettings = settingsForAlerts(saved);
+	alertSound = saved.sound;
+	alerts.review();
+}
+void preferences.load().then(applyAlertPreferences, () => {
+	// The defaults stay: notifications on, no sound.
+});
 
 // What a terminal prints is private, like what a command prints: it goes to the window and is never logged.
 const terminals = createTerminalSessions({
@@ -220,7 +243,7 @@ const terminals = createTerminalSessions({
 	onOutput: output => tell("terminal output", () => rpc.send.terminalOutput(output)),
 	onChange: change => {
 		tell("a terminal change", () => rpc.send.terminalChanged(change));
-		weighNotice(change);
+		alerts.changed(change);
 	},
 });
 
@@ -283,12 +306,19 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 				if (result.outcome === "saved") {
 					fetcher.configure(result.preferences.fetch);
 					applyZoom(result.preferences.zoom);
-					notificationsEnabled = result.preferences.statusNotifications;
+					applyAlertPreferences(result.preferences);
 				}
 				return result;
 			},
 			exportTheme: ({ theme }) => themeFiles.exportTheme(theme),
 			importTheme: () => themeFiles.importTheme(),
+			// Answers the path the person picked, which is private: never log it.
+			chooseSoundFile: () => chooseSoundFile(pickFile),
+			// A preview from Settings. A custom path is checked again before it plays (see ./sounds.ts).
+			playSound: ({ choice }) => {
+				const read = readSoundChoice(choice);
+				return read === undefined ? Promise.resolve({ outcome: "missing" as const }) : sounds.play(read);
+			},
 			// Starts the editor from the saved setting only. The request names the worktree, never the command (see ./editor.ts).
 			openInEditor: request => editor.open(request),
 			readTimberSettings: request => timberSettings.read(request),
@@ -328,6 +358,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			terminalDrawn: ({ id, seq }) => terminals.drawn(id, seq),
 			attend: next => {
 				attention = next;
+				alerts.review();
 				refreshPolicy.attend(next);
 				fetcher.setVisible(next.visible);
 			},
@@ -350,7 +381,9 @@ function guardQuit(event: unknown): void {
 	if (quitGuard.mayQuit()) {
 		// The app goes away in a moment, so there is no time to wait for anything to end by itself.
 		terminals.killAll();
-		desktopNotices.stopAll();
+		alerts.stop();
+		void desktopNotices.stopAll();
+		sounds.stopAll();
 		refreshPolicy.stop();
 		watcher.stop();
 		// Asks a running Git to stop, so it can remove its lock files before the app goes.

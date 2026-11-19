@@ -59,10 +59,12 @@ sudo dnf install webkit2gtk4.1 libayatana-appindicator-gtk3
 sudo pacman -S webkit2gtk-4.1 libayatana-appindicator
 ```
 
-Optional: `notify-send` from libnotify 0.7.9 or later (`libnotify-bin` on
-Debian and Ubuntu, `libnotify` on Fedora and Arch) makes a desktop
-notification about an agent show its session when clicked. Without it the
-notification still shows. Not yet tested on any of these systems.
+Desktop notifications about agents go to the notification server on the
+session bus, and a click shows the session. Optional: `notify-send`
+(`libnotify-bin` on Debian and Ubuntu, `libnotify` on Fedora and Arch) shows
+them, without a click, when the bus cannot be reached. Sounds play through
+`pw-play` or `paplay`, or `aplay` for WAV files. Tested on Pop!_OS 24.04
+(COSMIC) only.
 
 When a library is missing, the app names it and suggests a longer list
 (`libgtk-3-0 ... librsvg2-2`). That message comes from Electrobun; the list

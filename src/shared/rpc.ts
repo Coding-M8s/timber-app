@@ -9,6 +9,7 @@ import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInE
 import type { Preferences } from "./preferences";
 import type { PullRequestList } from "./pull-requests";
 import type { Theme } from "./theme";
+import type { ChooseSoundResult, SoundChoice, SoundOutcome } from "./sound-setting";
 import type { ExportThemeResult, ImportThemeResult } from "./theme-file";
 import type { OpenTerminalRequest, OpenTerminalResult, TerminalChange, TerminalOutput, TerminalSession, TerminalSnapshot } from "./terminal";
 import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "./timber-config";
@@ -48,6 +49,8 @@ export type AppRPC = {
 			exportTheme: { params: { theme: Theme }; response: ExportThemeResult };
 			/** Waits for the person to pick a file, so the caller must not time it out. */
 			importTheme: { params: {}; response: ImportThemeResult };
+			chooseSoundFile: { params: {}; response: ChooseSoundResult };
+			playSound: { params: { choice: SoundChoice }; response: SoundOutcome };
 			openInEditor: { params: OpenInEditorRequest; response: OpenInEditorResult };
 			/** Waits up to thirty seconds for Timber, so the caller allows longer. */
 			readTimberSettings: { params: TimberSettingsRequest; response: TimberSettingsReadResult };
