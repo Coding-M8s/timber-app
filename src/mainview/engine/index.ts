@@ -11,11 +11,13 @@ export async function createEngine(): Promise<Engine> {
 		const { createDesktopEngine } = await import("./desktop");
 		return createDesktopEngine();
 	}
-	// In a browser, ?timber=not-found or ?timber=too-old shows the notice for that state.
+	// In a browser, ?timber=not-found or ?timber=too-old shows the notice for that state, and ?timber=newer-release the banner.
 	const state = new URLSearchParams(location.search).get("timber");
-	const timber = state !== null && Object.hasOwn(sampleTimberStatuses, state)
-		? sampleTimberStatuses[state as keyof typeof sampleTimberStatuses]
-		: sampleTimberStatuses.ready;
+	const timber = state === "newer-release"
+		? { ...sampleTimberStatuses.ready, newerRelease: "9.9.9" }
+		: state !== null && Object.hasOwn(sampleTimberStatuses, state)
+			? sampleTimberStatuses[state as keyof typeof sampleTimberStatuses]
+			: sampleTimberStatuses.ready;
 	// Acted commands take a moment here, so a dialog's running state can be seen.
 	const engine = createMockEngine(browserSampleRepositories, timber, { commandMilliseconds: 1200 });
 	// The browser console can act out what the main process would do, for example

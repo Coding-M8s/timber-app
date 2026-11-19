@@ -256,6 +256,8 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	setRepositories(repositories: Repository[]): void;
 	/** Report that a repository changed, as the main process would. */
 	announceChange(path: string): void;
+	/** Report that the Timber status changed on its own, as the main process does when a newer release comes out. */
+	announceTimberChange(): void;
 	/** How many times the interface said it had drawn itself through `windowReady`. */
 	readyCalls(): number;
 	/** What the interface last said through `attend`, or null before it said anything. */
@@ -472,6 +474,7 @@ export function createMockEngine(
 	// Fetching, acted out: Fetch now only, ended as `fetchEnding` says. Nothing reaches a network.
 	const fetches = new Map<string, RepositoryFetch>();
 	const fetchListeners = new Set<(status: RepositoryFetch) => void>();
+	const timberListeners = new Set<() => void>();
 	let fetchEnding: FetchEnding = "fetches";
 	let fetchDelay = 0;
 	const running = new Map<string, Promise<FetchResult>>();
@@ -744,6 +747,13 @@ export function createMockEngine(
 		appInfo: async () => ({ version: APP_VERSION, rendering: { applies: true, dmabuf: true, decidedBy: "auto", choice: "auto" } }),
 		timberStatus: look,
 		recheckTimber: look,
+		onTimberChanged(listener) {
+			timberListeners.add(listener);
+			return () => void timberListeners.delete(listener);
+		},
+		announceTimberChange() {
+			for (const listener of [...timberListeners]) listener();
+		},
 		listRepositories: () => read(() => current.map(asRead)),
 		loadRepository: path => read(() => {
 			const found = current.find(repository => repository.path === path && repository.available);

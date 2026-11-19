@@ -121,6 +121,8 @@ export type AppRPC = {
 			showSession: { id: string };
 			/** Where fetching stands for a repository. */
 			fetchChanged: RepositoryFetch;
+			/** The Timber status changed without being asked, for example a newer release came out. Ask `timberStatus` for it. */
+			timberChanged: {};
 		};
 	}>;
 };

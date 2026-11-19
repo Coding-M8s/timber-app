@@ -1,7 +1,7 @@
 import type { CapturedOutput, Repository, SyncState, TimberStatus, Worktree } from "../shared/model";
 import type { PullRequestEntry } from "../shared/pull-requests";
 import { TIMBER_LS_COMMAND } from "../shared/timber-ls";
-import { REQUIRED_TIMBER_VERSION, TIMBER_OVERRIDE_VARIABLE } from "../shared/timber-version";
+import { TIMBER_OVERRIDE_VARIABLE } from "../shared/timber-version";
 import { SAVED_BASE_UNKNOWN, describeInvalidBase } from "./base-format";
 import { describePullRequestMarkers } from "./pull-request-format";
 import type { ListNotice, RemovalStatus } from "./store/state";
@@ -23,11 +23,17 @@ export function describeTimberProblem(status: TimberStatus): TimberProblem | nul
 		case "ready":
 			return null;
 		case "too-old":
-			return {
-				title: "Timber is too old",
-				text: `Found Timber ${status.found} at ${status.path}. Timber app needs ${status.required} or newer.`,
-				action: "Update it with:",
-			};
+			return status.latestRelease
+				? {
+					title: "Update Timber",
+					text: `Found Timber ${status.found} at ${status.path}. Timber app needs the newest release, ${status.required}.`,
+					action: "Update it with:",
+				}
+				: {
+					title: "Timber is too old",
+					text: `Found Timber ${status.found} at ${status.path}. Timber app needs ${status.required} or newer.`,
+					action: "Update it with:",
+				};
 		case "not-found":
 			return status.override
 				? {
@@ -37,10 +43,19 @@ export function describeTimberProblem(status: TimberStatus): TimberProblem | nul
 				}
 				: {
 					title: "Timber is not installed",
-					text: `Timber app needs the timber command, version ${REQUIRED_TIMBER_VERSION} or newer, on your PATH.`,
+					text: "Timber app needs the timber command, the newest release, on your PATH.",
 					action: "Install it with:",
 				};
 	}
+}
+
+/**
+ * The banner while a newer Timber release is out than the one in use, or
+ * null when there is none. Timber keeps working until the app starts again.
+ */
+export function describeTimberUpdate(status: TimberStatus | null): string | null {
+	if (status?.state !== "ready" || status.newerRelease === undefined) return null;
+	return `Timber ${status.newerRelease} is out, and you have ${status.version}. Timber keeps working for now; from the next start, Timber app needs ${status.newerRelease}.`;
 }
 
 /**

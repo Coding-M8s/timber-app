@@ -96,6 +96,7 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		uninstall: async () => ({ outcome: "unavailable", message: "Not installed." }),
 		timberStatus: async () => timber,
 		recheckTimber: async () => timber,
+		onTimberChanged: () => () => {},
 		listRepositories: () => new Promise((resolve, reject) => {
 			lists.push({ path: null, resolve, reject });
 		}),

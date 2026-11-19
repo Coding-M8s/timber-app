@@ -3,6 +3,7 @@ import { QuitDialog } from "./components/QuitDialog";
 import { Sidebar } from "./components/Sidebar";
 import { SidebarResizer } from "./components/SidebarResizer";
 import { TimberNotice } from "./components/TimberNotice";
+import { TimberUpdateBanner } from "./components/TimberUpdateBanner";
 import { type CSSProperties, type ReactNode, useEffect, useRef } from "react";
 import { sameCustomThemes } from "../shared/custom-themes";
 import { sameThemeChoice } from "../shared/theme";
@@ -47,9 +48,12 @@ function Body() {
 	const parts = [<Sidebar key="sidebar" />, <SidebarResizer key="resizer" />, <Workspace key="workspace" />];
 	const right = state.preferences.sidebarSide === "right";
 	return (
-		<div className={right ? "body sidebar-right" : "body"} style={widths}>
-			{right ? parts.reverse() : parts}
-		</div>
+		<>
+			<TimberUpdateBanner />
+			<div className={right ? "body sidebar-right" : "body"} style={widths}>
+				{right ? parts.reverse() : parts}
+			</div>
+		</>
 	);
 }
 
