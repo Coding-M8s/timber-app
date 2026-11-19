@@ -214,10 +214,10 @@ describe("describeTimberProblem", () => {
 		expect(describeTimberProblem(sampleTimberStatuses.ready)).toBeNull();
 	});
 
-	test("says Timber is not installed and which version is needed", () => {
+	test("says Timber is not installed and that the newest release is needed", () => {
 		const problem = describeTimberProblem({ state: "not-found", override: null })!;
 		expect(problem.title).toBe("Timber is not installed");
-		expect(problem.text).toContain("0.1.2 or newer");
+		expect(problem.text).toBe("Timber app needs the timber command, the newest release, on your PATH.");
 		expect(problem.action).toBe("Install it with:");
 	});
 

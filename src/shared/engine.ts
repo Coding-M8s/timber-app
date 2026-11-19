@@ -32,6 +32,8 @@ export interface Engine {
 	timberStatus(): Promise<TimberStatus>;
 	/** Look for Timber again, for example after the person installed it. */
 	recheckTimber(): Promise<TimberStatus>;
+	/** Hear that the Timber status changed on its own, for example when a newer release came out. Returns a function that stops listening. */
+	onTimberChanged(listener: () => void): () => void;
 	/**
 	 * The saved repositories, each with exactly the worktrees Timber lists, in
 	 * Timber's order. One whose folder is missing is still listed, marked

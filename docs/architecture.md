@@ -473,10 +473,12 @@ Nothing that depends on Timber is offered until a usable one is found.
 - On start the main process resolves `timber` from PATH and runs
   `timber --version`, as an executable plus an argument array
   (`src/bun/timber.ts`). It logs the result.
-- The app requires Timber 0.1.2 or newer, the first release with the machine
-  interface, `__app-config`, and one-off workflows (0.1.1 had only the
-  first). The number and the comparison live in
-  `src/shared/timber-version.ts`. A pre-release sorts before its release.
+- The app requires the newest Timber release (see
+  [the newest Timber release is required](#the-newest-timber-release-is-required)),
+  and never less than 0.1.2, the first release with the machine interface,
+  `__app-config`, and one-off workflows (0.1.1 had only the first). The
+  number and the comparison live in `src/shared/timber-version.ts`. A
+  pre-release sorts before its release.
 - The `Engine` contract reports one of three states: ready (path and version),
   not found, or too old (found and required versions). An executable that
   fails, or does not print a version, counts as not found.
@@ -489,7 +491,38 @@ Nothing that depends on Timber is offered until a usable one is found.
   It takes precedence over PATH, and a broken value is reported instead of
   silently falling back.
 - In `bun run dev:web`, add `?timber=not-found` or `?timber=too-old` to the
-  address to see the notice.
+  address to see the notice, or `?timber=newer-release` to see the banner.
+
+### The newest Timber release is required
+
+A Timber older than the newest release may lack what the app uses, so the
+app requires the newest release (`src/bun/timber-release.ts`).
+
+- **Looking it up.** The main process sends a `HEAD` request to
+  `https://github.com/Coding-M8s/timber/releases/latest` without following
+  the redirect, and reads the version from the tag it points to. This needs
+  no login and is not counted against GitHub's API limit. Nothing about the
+  person or the machine is sent. Only a redirect to a release tag counts; a
+  pre-release, an error, or no answer within five seconds is a failed check.
+- **When.** On start, and every three hours while the app runs. The first
+  look for Timber waits at most two seconds for the lookup on start, so a
+  slow network never holds the window up.
+- **Saved.** A lookup that worked is saved in `timber-release.json` beside
+  the settings file, and stands in when a later lookup fails, for example
+  offline. A lookup always replaces the saved release, even with an older
+  one, so a withdrawn release cannot lock anyone out. With no release saved
+  and no answer, the built-in minimum is required.
+- **On start**, a Timber older than the newest release known gets the
+  full-window notice, "Update Timber", with the update command.
+- **While the app runs**, a release that comes out never takes Timber away
+  mid-task. The main process looks for Timber again and tells the window
+  (`timberChanged`), and the status stays ready with `newerRelease` set. The
+  window shows a banner above the sidebar and the workspace with the update
+  command and Check again. Terminals, agents, and Timber keep working until
+  the next start.
+- **The development override.** With `TIMBER_APP_TIMBER_PATH` set, only the
+  built-in minimum is required and there is no banner, because a local build
+  may carry any version number.
 
 ## Saved repository list
 

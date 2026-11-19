@@ -1432,6 +1432,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				}),
 				engine.onQuitRequested(live => update({ quitRequest: live })),
 				engine.onShowSession(id => revealSession(id)),
+				// A newer Timber release came out: ask for the status again, so the banner shows.
+				engine.onTimberChanged(() => void findTimber(() => engine.timberStatus())),
 				engine.onFetchChanged(status => {
 					heardFetches.add(status.repository);
 					showFetch(status);
