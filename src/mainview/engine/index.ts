@@ -26,7 +26,8 @@ export async function createEngine(): Promise<Engine> {
 	// For the Rebase dialog: timberMock.endRebaseResults("conflicts") chooses how timber rebase ends: "rebased", "up-to-date",
 	// "conflicts", "refused", "failed", "no-result", or "unsupported".
 	// For the Done dialog: timberMock.setChanges(path, { modified: ["a.ts"] }),
-	// timberMock.expirePreviewsAfter(5000), and timberMock.failBranchDeletion(true).
+	// timberMock.expirePreviewsAfter(5000), timberMock.failBranchDeletion(true), and
+	// timberMock.setDoneDelay(3000) to close the dialog while a removal runs.
 	// For Open in editor: timberMock.endEditorLaunches("not-found") or ("fails").
 	// For Uninstall in About: timberMock.endUninstalls("fails"), ("keeps-settings"), or ("unavailable").
 	// For the Changes tab: timberMock.failFileChanges("Git is busy"), or timberMock.setFileChanges(path, files).

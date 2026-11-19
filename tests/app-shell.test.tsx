@@ -32,7 +32,7 @@ function tagOf(markup: string, className: string): string {
 
 /** The markup of the sidebar group of one repository. */
 function groupOf(markup: string, name: string): string {
-	const match = new RegExp(`<section class="group" aria-label="${name}">.*?</section>`).exec(markup);
+	const match = new RegExp(`<section class="group" aria-label="${name}" data-repository="[^"]*">.*?</section>`).exec(markup);
 	if (!match) throw new Error(`No group for ${name}`);
 	return match[0];
 }

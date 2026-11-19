@@ -2,14 +2,20 @@ import { useId } from "react";
 import type { Worktree } from "../../shared/model";
 import { type EditorAction, OPEN_IN_EDITOR, describeEditorAction, describeEditorProblem } from "../editor-format";
 import { folderName, worktreeLabel } from "../format";
+import { BEING_REMOVED_REASON } from "../done-format";
 import { useAppState, useStore } from "../store/react";
+import { isBeingRemoved } from "../store/state";
 
 /** What "Open in editor" offers for one worktree of a repository, or one file in it, and what pressing it does. */
 export function useOpenInEditor(repository: string, worktree: Worktree, file?: string): { action: EditorAction; open: () => void } {
 	const store = useStore();
 	const state = useAppState();
 	const running = state.operations.some(operation => operation.kind === "open-in-editor" && operation.worktree === worktree.path);
-	const action = describeEditorAction(state.preferences.editor, worktree, running, file);
+	const described = describeEditorAction(state.preferences.editor, worktree, running, file);
+	// The row already says that Timber removes the worktree, so no reason shows beside the button.
+	const action = isBeingRemoved(state, repository, worktree.path)
+		? { ...described, available: false, opensSettings: false, tooltip: `${OPEN_IN_EDITOR}. ${BEING_REMOVED_REASON}`, reason: null }
+		: described;
 	return { action, open: () => void store.openInEditor(file === undefined ? { repository, worktree: worktree.path } : { repository, worktree: worktree.path, file }) };
 }
 

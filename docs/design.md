@@ -112,9 +112,10 @@ change them here first when they change.
 
 - Every dialog that runs Timber shows the exact command in its footer.
 - While the command runs, the dialog shows progress, its controls are
-  disabled, and it cannot be closed or submitted again.
-- A command that worked closes the dialog and leaves a toast, such as
-  "Worktree created", which disappears on its own.
+  disabled, and it cannot be submitted again. It cannot be closed either,
+  except for Done, whose removal goes on in the background.
+- A command that worked closes the dialog, if it is still open, and leaves a
+  toast, such as "Worktree created", which disappears on its own.
 - A command that failed keeps the dialog open with Timber's diagnostic, so the
   person can correct and retry. What the command printed sits in a details
   area that starts closed.
@@ -132,7 +133,10 @@ change them here first when they change.
   paused for the person to finish or abort.
 - **Done:** a clean, published worktree gets a summary of what is removed,
   including ignored files. One with unsaved work gets "Delete anyway?" with
-  Keep as the default.
+  Keep as the default. After Remove the dialog offers Close: the removal
+  goes on, the worktree's row says "removing" and its actions are off, and a
+  toast says how it ended. A failure stays on the row, or in the repository's
+  group once the worktree left the list, with Details to read it.
 - **Settings:** sections for editor, agents, notifications, fetching, Jira, setup scripts,
   pre-done scripts, starting branch, remote, worktree folder, and layout.
   Presets where they help, but every value is editable free-form, and every

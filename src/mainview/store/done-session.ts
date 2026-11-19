@@ -34,7 +34,14 @@ export interface DoneSessionDependencies {
 	/** The worktree's registered path. */
 	path: string;
 	preview(request: DonePreviewRequest): Promise<DonePreviewResult>;
-	apply(request: DoneApplyRequest): Promise<DoneApplyResult>;
+	/**
+	 * Run the removal, approving `request.preview`, which is `shown` on screen.
+	 * Null when it was not run, for example because a removal of the same
+	 * worktree runs already.
+	 */
+	apply(request: DoneApplyRequest, shown: DonePreview): Promise<DoneApplyResult | null>;
+	/** A removal failed before this session started, for example while its dialog was closed. */
+	attempted?: boolean;
 	/** Whether the worktree is in the list right now. Asked after a removal that failed. */
 	listed(): boolean;
 	/** How the session waits for a preview to expire. Tests pass their own clock. */
@@ -61,7 +68,10 @@ export interface DoneSession {
 	subscribe(listener: () => void): () => void;
 	/** Ask for the first preview. Also restarts a session that was stopped. */
 	start(): void;
-	/** The dialog is gone: answers that arrive from now on are dropped. */
+	/**
+	 * The dialog is gone: answers that arrive from now on are dropped, and a
+	 * removal that fails from now on asks for no new preview.
+	 */
 	stop(): void;
 	/** Change the options and ask for the preview that goes with them. */
 	setOptions(options: DoneOptions): void;
@@ -87,11 +97,12 @@ export function canRemove(state: DoneSessionState): boolean {
 
 export function createDoneSession(dependencies: DoneSessionDependencies): DoneSession {
 	const { repository, path, schedule = scheduleWithTimer, now = Date.now } = dependencies;
-	let state: DoneSessionState = { options: DEFAULT_DONE_OPTIONS, preview: { kind: "loading" }, attempted: false };
+	let state: DoneSessionState = { options: DEFAULT_DONE_OPTIONS, preview: { kind: "loading" }, attempted: dependencies.attempted ?? false };
 	const listeners = new Set<() => void>();
 	/** The ticket of the latest question. An answer to an earlier one is dropped. */
 	let ticket = 0;
 	let removing = false;
+	let stopped = false;
 	let cancelExpiry: (() => void) | null = null;
 
 	function update(change: Partial<DoneSessionState>): void {
@@ -138,8 +149,12 @@ export function createDoneSession(dependencies: DoneSessionDependencies): DoneSe
 			listeners.add(listener);
 			return () => void listeners.delete(listener);
 		},
-		start: ask,
+		start() {
+			stopped = false;
+			ask();
+		},
 		stop() {
+			stopped = true;
 			ticket++;
 			forgetExpiry();
 		},
@@ -160,15 +175,17 @@ export function createDoneSession(dependencies: DoneSessionDependencies): DoneSe
 				return null;
 			}
 			removing = true;
-			let result: DoneApplyResult;
+			let result: DoneApplyResult | null;
 			try {
-				result = await dependencies.apply({ repository, path, preview: shown.id });
+				result = await dependencies.apply({ repository, path, preview: shown.id }, shown.preview);
 			} catch (error) {
 				const diagnostic = `The removal did not answer, so what it did is unknown: ${error instanceof Error ? error.message : String(error)}`;
 				result = { outcome: "failed", ran: true, failure: { command: null, diagnostic, output: null } };
 			} finally {
 				removing = false;
 			}
+			// Nothing ran, so the preview on screen still holds.
+			if (result === null) return null;
 			if (result.outcome === "removed") {
 				ticket++;
 				forgetExpiry();
@@ -176,6 +193,8 @@ export function createDoneSession(dependencies: DoneSessionDependencies): DoneSe
 			}
 			// The preview is used up. Never try again with it: show the state as it is now and let the person decide.
 			state = { ...state, attempted: true };
+			// The dialog closed while the removal ran. A dialog opened again asks for its own preview.
+			if (stopped) return result;
 			if (dependencies.listed()) {
 				ask();
 			} else {

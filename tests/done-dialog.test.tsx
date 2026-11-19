@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { DoneDialogView, type DoneDialogViewProps } from "../src/mainview/components/DoneDialog";
-import { DONE_EXPIRED_NOTE, DONE_PRIMARY_NOTE, DONE_REMOTE_NOTE, describeBranchEffect, describeDone, describeIgnoredEffect, describeUnpublishedCommits, losesWork } from "../src/mainview/done-format";
+import { DONE_EXPIRED_NOTE, DONE_PRIMARY_NOTE, DONE_REMOTE_NOTE, describeBranchEffect, describeDone, describeIgnoredEffect, describeRemoving, describeUnpublishedCommits, losesWork } from "../src/mainview/done-format";
 import { createMockEngine, sampleRepositories, sampleTimberStatuses } from "../src/mainview/engine/mock";
 import { type DoneSessionDependencies, type DoneSessionState, canRemove, createDoneSession } from "../src/mainview/store/done-session";
 import { type Schedule, createAppStore } from "../src/mainview/store/store";
@@ -252,12 +252,14 @@ describe("the Done dialog, while there is no preview to approve", () => {
 });
 
 describe("the Done dialog, while and after the removal", () => {
-	test("while Timber runs: everything is disabled and progress shows", () => {
+	test("while Timber runs: the fields are disabled, progress shows, and only Close is offered", () => {
 		const markup = render(previews.dirty, { submission: { running: true, failure: null } });
 		expect(markup).toContain('<fieldset class="dialog-fields" disabled="">');
-		expect(markup).toContain('<button type="button" class="button quiet" disabled="" autofocus="">Keep</button>');
+		// The removal goes on in the background, so the dialog can close, and closing never stops it.
+		expect(markup).toContain('<button type="button" class="button quiet" autofocus="">Close</button>');
 		expect(markup).toContain('<button type="button" class="button danger" disabled="">Running</button>');
-		expect(markup).toContain('role="progressbar" aria-label="Removing feat/dirty"');
+		expect(markup).toContain(`role="progressbar" aria-label="${describeRemoving("feat/dirty").replace("'", "&#x27;")}"`);
+		expect(describeRemoving("feat/dirty")).toBe("Removing feat/dirty. Closing this dialog does not stop it: the worktree's row shows it until Timber finishes.");
 	});
 
 	test("when Timber refuses a changed worktree: its diagnostic, a new preview, and no second try by itself", () => {

@@ -4,7 +4,7 @@ import { TIMBER_LS_COMMAND } from "../shared/timber-ls";
 import { REQUIRED_TIMBER_VERSION, TIMBER_OVERRIDE_VARIABLE } from "../shared/timber-version";
 import { SAVED_BASE_UNKNOWN, describeInvalidBase } from "./base-format";
 import { describePullRequestMarkers } from "./pull-request-format";
-import type { ListNotice } from "./store/state";
+import type { ListNotice, RemovalStatus } from "./store/state";
 
 /** The command Timber's own quick start gives for installing and for updating. */
 export const TIMBER_INSTALL_COMMAND = "curl -fsSL https://github.com/Coding-M8s/timber/releases/latest/download/install.sh | sh";
@@ -159,6 +159,8 @@ export type RowMarkerKind =
 	| "upstream-gone"
 	| "force-pushed"
 	| "sync-unknown"
+	| "removing"
+	| "removal-failed"
 	| "detached"
 	| "folder-missing"
 	| "status-unknown"
@@ -217,12 +219,16 @@ function syncMarkers(worktree: Worktree): RowMarker[] {
  * A status or an upstream state that could not be read always gets a marker
  * of its own, so a row without markers never means "not known". The pull
  * request is the one Timber found for the worktree (`pullRequestOf`), and a
- * branch with none gets no marker for it.
+ * branch with none gets no marker for it. `removal` is where a removal of
+ * the worktree that Done started stands, said before anything else.
  */
-export function describeRowMarkers(worktree: Worktree, pullRequest: PullRequestEntry | null = null): RowMarker[] {
+export function describeRowMarkers(worktree: Worktree, pullRequest: PullRequestEntry | null = null, removal: RemovalStatus | null = null): RowMarker[] {
 	const { changes } = worktree;
 	const markers = syncMarkers(worktree);
 	const state = (kind: RowMarkerKind, text: string, tooltip: string) => void markers.push({ kind, place: "state", text, tooltip });
+
+	if (removal?.kind === "running") state("removing", "removing", "Timber is removing this worktree. Its actions are off until Timber finishes.");
+	if (removal?.kind === "failed") state("removal-failed", "removal failed", "Timber did not finish removing this worktree. Details shows what it said.");
 
 	if (worktree.branch === null) {
 		const where = worktree.head ? ` The folder is at commit ${worktree.head.slice(0, 7)}.` : "";

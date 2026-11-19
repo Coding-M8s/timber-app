@@ -294,6 +294,38 @@ decides, both when it previews and again when it removes.
   list, as after a partial failure, the dialog says so and offers only Close.
   The same holds when a worktree leaves the list for any other reason while
   its dialog is open.
+- **In the background.** Once Remove is pressed, the store owns the removal
+  (`removeWorktree` in `src/mainview/store/store.ts`), and the dialog can be
+  closed with Close or Escape while it runs: closing never stops it. Each
+  removal is a record in `removals` (`src/mainview/store/state.ts`), named by
+  the repository and the worktree's registered path, because the worktree's
+  identity can change while its folder is deleted. While it runs, the row says
+  "removing", and Done, Rebase, Open in editor, and new sessions are off for
+  that worktree. The store refuses them as well: Done and Rebase by not
+  opening their dialogs, the others by running nothing. Closing the dialog
+  would leave the keyboard nowhere, because the Done button is disabled, or
+  gone once the removal worked, so it goes to the first worktree row of the
+  repository's group, or to the group's header while it is collapsed
+  (`focusFirstWorktree` in `src/mainview/sidebar-focus.ts`). A second removal of the
+  same worktree runs nothing. Other worktrees, sessions, and dialogs keep
+  working, and removals of different worktrees run at the same time. Two real
+  `timber __ide-done apply` runs in one repository at once have not been
+  tested against Git's own locks; a clash would show as a normal failure.
+- **How it ends.** A removal that worked leaves a toast, and closes the Done
+  dialog of that worktree if it is still open, never another dialog. A
+  failure stays as a record until the person closes the Done dialog that
+  shows it: the row says "removal failed" with Details, which opens the Done
+  dialog with Timber's diagnostic and output. When the row does not show,
+  because the worktree left the list (as after a partial failure), the group
+  is collapsed, or the filter hides it, the failure shows in its repository's
+  group with Details and Dismiss, and a removal that runs shows there as
+  "Removing" and the worktree's name. Unless the
+  Done dialog of that worktree is open, a toast points at the failure as
+  well, with its own mark. A failure goes when its repository leaves the
+  list. One whose worktree leaves the list is kept as gone, and a gone one
+  goes when a worktree is listed at its path again. The
+  records live in the window only: reloading the window forgets them, while
+  Timber goes on in the main process.
 - **Live sessions.** When a terminal runs in the worktree, the dialog says
   that removing the worktree ends it (`LiveSessionsWarning` in
   `src/mainview/components/DoneDialog.tsx`). Once Timber says the worktree is
@@ -716,15 +748,18 @@ Every operation reports how it ended in the same way.
 - **Toasts.** An operation that worked says so in a toast, for example
   "Added docs-site". The store holds the toasts and takes each one away after
   five seconds (`showToast` in `src/mainview/store/store.ts`); it can also be
-  dismissed. Only successes are toasts. A failure stays where the person can
-  act on it.
+  dismissed. A failure stays where the person can act on it. A toast can at
+  most point there, with its own mark, as for a removal that failed in the
+  background (see [removing a worktree](#removing-a-worktree)).
 - **Dialogs.** Every dialog that runs a Timber command is an
   `OperationDialog` (`src/mainview/components`) driven by a submission
   (`src/mainview/store/submission.ts`, through `useSubmission`). The command
   is shown before it runs. While it runs, the fields and buttons are
   disabled, a progress bar shows, the dialog cannot be closed, and a second
   submission does nothing. When it worked, the dialog closes and the toast
-  shows. When it failed, the dialog stays open with the failure, ready for a
+  shows. Done is the exception: its removal is the store's
+  (`removeWorktree`), the dialog shows the store's record of it, and it can be
+  closed while the removal runs (`closableWhileRunning`). When it failed, the dialog stays open with the failure, ready for a
   correction and a retry.
 - **Failures.** A failed Timber command is always shown by
   `TimberFailureDetails`: the diagnostic, and a details area, closed at
@@ -971,7 +1006,8 @@ between preview and Remove, which the removal refuses;
 milliseconds (`null` for ten minutes again);
 `timberMock.failBranchDeletion(true)` acts out a partial failure, in which
 the worktree leaves the list and the branch is not deleted; and
-`timberMock.setDoneDelay(3000)` sets how long a removal takes.
+`timberMock.setDoneDelay(3000)` sets how long a removal takes, long enough
+to close the dialog, look at the row, and start a second removal.
 
 ## Themes
 

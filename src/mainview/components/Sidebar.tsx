@@ -7,7 +7,8 @@ import { SETTINGS_LABEL, describeLayoutProblem, describeRepository } from "../sh
 import { DRAG_THRESHOLD, MOVE_REPOSITORY_HINT, MOVE_REPOSITORY_SHORTCUTS, dropIndex, moveStep } from "../repository-drag";
 import { useAppState, useStore } from "../store/react";
 import { hasStatusMark, mostUrgent, shownStatus, summarizeStatuses } from "../../shared/session-status";
-import { isRunning, sessionsOf } from "../store/state";
+import { isRunning, removalAt, sessionsOf } from "../store/state";
+import { describeRemovalFailed } from "../done-format";
 import { OpenInEditorIconButton } from "./OpenInEditor";
 import { wantTerminalFocus } from "../terminal-focus";
 import { SIDEBAR_ID } from "./SidebarResizer";
@@ -39,6 +40,10 @@ export function Sidebar() {
 	const dragEnded = useRef(false);
 	const groupElements = useRef(new Map<string, HTMLElement>());
 	const headerButtons = useRef(new Map<string, HTMLButtonElement>());
+
+	/** The identity the list has now for the worktree at this path, which is what the Done dialog is opened with. */
+	const listedIdAt = (repositoryPath: string, path: string) =>
+		repositories.find(repository => repository.path === repositoryPath)?.worktrees.find(worktree => worktree.path === path)?.id ?? null;
 
 	const othersThan = (path: string) => repositories.filter(repository => repository.path !== path);
 	const indexAt = (path: string, y: number) => dropIndex(othersThan(path).map(repository => {
@@ -169,6 +174,7 @@ export function Sidebar() {
 								dropMark?.path === repository.path ? `drop-${dropMark.side}` : "",
 							].filter(Boolean).join(" ")}
 							aria-label={repository.name}
+							data-repository={repository.path}
 						>
 							<div className={repository.available ? "group-head" : "group-head unavailable"}>
 								<button
@@ -276,9 +282,40 @@ export function Sidebar() {
 									</p>
 								</div>
 							)}
+							{state.removals
+								// A removal whose row does not show, because the worktree left the list, the group is collapsed, or the filter
+								// hides it, is said here in its group instead. The toast that announced it points here.
+								.filter(removal => removal.repository === repository.path && !(open && repository.available && matches.some(worktree => worktree.path === removal.worktree.path)))
+								.map(removal => {
+									const label = worktreeLabel(removal.worktree);
+									if (removal.status.kind === "running") {
+										return <p key={removal.worktree.path} className="sidebar-note removal-running" title={removal.worktree.path}>Removing {label}</p>;
+									}
+									return (
+										<div key={removal.worktree.path} className="sidebar-error group-failure removal-failure">
+											<p className="sidebar-error-title">{describeRemovalFailed(label, false)}</p>
+											{removal.status.gone && <p className="sidebar-error-text">The worktree is no longer in the list. What is left of it, such as its branch, is what the list and Git show now.</p>}
+											<p className="sidebar-error-text path">{removal.worktree.path}</p>
+											<div className="removal-failure-actions">
+												<button
+													type="button"
+													className="text-button"
+													aria-haspopup="dialog"
+													aria-label={`Details: ${describeRemovalFailed(label, false)}`}
+													onClick={() => store.openDialog({ kind: "done-worktree", repository: repository.path, worktree: listedIdAt(repository.path, removal.worktree.path) ?? removal.worktree.id })}
+												>
+													Details
+												</button>
+												<button type="button" className="text-button" aria-label={`Dismiss: ${describeRemovalFailed(label, false)}`} onClick={() => store.dismissRemoval(repository.path, removal.worktree.path)}>Dismiss</button>
+											</div>
+										</div>
+									);
+								})}
 							{open && repository.available && (
 								<ul className="rows">
-									{matches.map(worktree => (
+									{matches.map(worktree => {
+										const removal = removalAt(state, repository.path, worktree.path);
+										return (
 										<li key={worktree.id}>
 											<WorktreeRow
 												worktree={worktree}
@@ -289,11 +326,29 @@ export function Sidebar() {
 													store.select(worktree.id);
 												}}
 												pullRequest={pullRequestOf(pullRequests, worktree.path)}
+												removal={removal?.status ?? null}
 												sessions={sessionsOf(state, worktree.id)}
-												actions={<OpenInEditorIconButton repository={repository.path} worktree={worktree} />}
+												actions={(
+													<>
+														{removal?.status.kind === "failed" && (
+															<button
+																type="button"
+																className="text-button row-removal-details"
+																aria-haspopup="dialog"
+																aria-label={`Details: ${describeRemovalFailed(worktreeLabel(worktree), false)}`}
+																title={`What Timber said when it did not finish removing ${worktreeLabel(worktree)}`}
+																onClick={() => store.openDialog({ kind: "done-worktree", repository: repository.path, worktree: worktree.id })}
+															>
+																Details
+															</button>
+														)}
+														<OpenInEditorIconButton repository={repository.path} worktree={worktree} />
+													</>
+												)}
 											/>
 										</li>
-									))}
+										);
+									})}
 								</ul>
 							)}
 							{open && !repository.available && (

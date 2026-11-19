@@ -1,5 +1,5 @@
 import type { KeyboardEvent } from "react";
-import { DONE_PRIMARY_NOTE } from "../done-format";
+import { BEING_REMOVED_REASON, DONE_PRIMARY_NOTE } from "../done-format";
 import { REBASE_CONTROL_TITLE, REBASE_FOLDER_MISSING } from "../rebase-format";
 import { describeSavedBase } from "../base-format";
 import { describeChanges, describeWorktreeSync, worktreeLabel } from "../format";
@@ -7,7 +7,7 @@ import { OPEN_PULL_REQUEST, describeOpenPullRequest, describePullRequestMarkers,
 import { pullRequestOf } from "../../shared/pull-requests";
 import { TAB_LABELS, tabAfterKey } from "../shell";
 import { useAppState, useStore } from "../store/react";
-import { WORKSPACE_TABS, type WorkspaceTab, isRunning, selectedWorktree } from "../store/state";
+import { WORKSPACE_TABS, type WorkspaceTab, isBeingRemoved, isRunning, selectedWorktree } from "../store/state";
 import { ChangesPanel } from "./ChangesPanel";
 import { PullRequestPanel } from "./PullRequestPanel";
 import { EditorProblemNote, OpenInEditorButton } from "./OpenInEditor";
@@ -55,6 +55,8 @@ export function Workspace() {
 	const pullRequest = pullRequestOf(pullRequests, worktree.path);
 	const pullMarkers = describePullRequestMarkers(pullRequest);
 	const pullProblem = describeWorktreePullRequestProblem(pullRequests, pullRequest);
+	// While Timber removes the worktree, nothing new starts in it.
+	const removing = isBeingRemoved(state, repository.path, worktree.path);
 
 	// As in any tab list: the arrows, Home, and End move between tabs, and the tab reached shows at once.
 	const onTabKey = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -95,8 +97,8 @@ export function Workspace() {
 					<button
 						type="button"
 						className="button"
-						disabled={!worktree.pathExists}
-						title={worktree.pathExists ? REBASE_CONTROL_TITLE : REBASE_FOLDER_MISSING}
+						disabled={!worktree.pathExists || removing}
+						title={removing ? BEING_REMOVED_REASON : worktree.pathExists ? REBASE_CONTROL_TITLE : REBASE_FOLDER_MISSING}
 						onClick={() => store.openDialog({ kind: "rebase-worktree", repository: repository.path, worktree: worktree.id })}
 					>
 						Rebase
@@ -105,13 +107,14 @@ export function Workspace() {
 					<button
 						type="button"
 						className="button"
-						disabled={worktree.primary}
-						title={worktree.primary ? DONE_PRIMARY_NOTE : "Remove this worktree, after a preview of what would be lost"}
+						disabled={worktree.primary || removing}
+						title={worktree.primary ? DONE_PRIMARY_NOTE : removing ? BEING_REMOVED_REASON : "Remove this worktree, after a preview of what would be lost"}
 						onClick={() => store.openDialog({ kind: "done-worktree", repository: repository.path, worktree: worktree.id })}
 					>
 						Done
 					</button>
 					{worktree.primary && <span className="workspace-done-note">{DONE_PRIMARY_NOTE}</span>}
+					{removing && <span className="workspace-done-note" role="status">{BEING_REMOVED_REASON}</span>}
 				</div>
 				<EditorProblemNote />
 			</header>

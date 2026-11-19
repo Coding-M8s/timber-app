@@ -20,13 +20,16 @@ import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreview
 import type { RebaseRequest, RebaseResult } from "../../shared/timber-rebase";
 import { type Draw, createTerminalFeed } from "../terminal-feed";
 import { describeOrphanTerminal } from "../terminal-format";
+import { describeRemovalFailed } from "../done-format";
 import { listedOrder } from "../changes-format";
 import { describeOpenedInEditor } from "../editor-format";
 import { describeAdded, describeRemoved, folderName, worktreeLabel } from "../format";
 import { describeFetched } from "../fetch-format";
 import { wantTerminalFocus } from "../terminal-focus";
 import { mergeOverlapping } from "./merge";
-import { type AppState, type ChangesView, type DialogRequest, type Operation, type WorkspaceTab, TOAST_MILLISECONDS, initialState, keepLastGood, reconcileSelection, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, timberReady, withTerminal, withoutSession } from "./state";
+import {
+	type AppState, type ChangesView, type DialogRequest, type Operation, type Removal, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood,
+	reconcileRemovals, removalAt, reconcileSelection, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, timberReady, withTerminal, withoutSession } from "./state";
 
 /**
  * The single holder of what the interface shows: Timber's status, the
@@ -80,8 +83,11 @@ export interface AppStore {
 	dismissNotice(): void;
 	/** Select a worktree by its identity (`Worktree.id`). One that no repository has is ignored. */
 	select(worktreeId: string): void;
-	/** Say briefly that an operation worked. The toast disappears on its own. */
-	showToast(text: string): void;
+	/**
+	 * Say briefly that an operation worked, or with `problem` that one failed
+	 * where the details are kept. The toast disappears on its own.
+	 */
+	showToast(text: string, problem?: boolean): void;
 	/** Put a toast away before its time is up. */
 	dismissToast(id: number): void;
 	/** Collapse or open the group of a repository, named by the path of its primary checkout, and remember it. */
@@ -182,6 +188,20 @@ export interface AppStore {
 	 * throws.
 	 */
 	applyDone(request: DoneApplyRequest): Promise<DoneApplyResult>;
+	/**
+	 * Remove a worktree in the background, approving one preview: `applyDone`,
+	 * kept in `removals` while it runs so the worktree's row says so and its
+	 * actions are off. Null, with nothing run, while a removal of that
+	 * worktree runs already. Removals of other worktrees run at the same time.
+	 *
+	 * When it worked, the record goes, a toast says so with `toast`, and the
+	 * Done dialog of that worktree closes if it is still open. When it failed,
+	 * the record stays as a failure until it is dismissed, and unless that
+	 * dialog is open a toast points at it. Never throws.
+	 */
+	removeWorktree(request: { repository: string; worktree: Worktree; preview: string; toast: string }): Promise<DoneApplyResult | null>;
+	/** Put away a failed removal, once the person has seen it. A running one stays. */
+	dismissRemoval(repository: string, path: string): void;
 	/**
 	 * Start another session in a worktree, the shell or the agent that
 	 * `request.agent` names, and choose its chip. Every agent starts through
@@ -368,6 +388,11 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 
 	function update(change: Partial<AppState>): void {
 		state = { ...state, ...change };
+		// A failed removal that no longer matches the list goes with the list change that ended it.
+		if (change.repositories && state.removals.length > 0) {
+			const removals = reconcileRemovals(state.repositories, state.removals);
+			if (removals !== state.removals) state = { ...state, removals };
+		}
 		// A session on screen is seen, whatever put it there: a chip, the selection, the tab, or a session that started or ended.
 		const onScreen = sessionOnScreen(state);
 		if (onScreen && state.unseenSessions.includes(onScreen.id)) {
@@ -384,9 +409,9 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		if (state.toasts.some(toast => toast.id === id)) update({ toasts: state.toasts.filter(toast => toast.id !== id) });
 	}
 
-	function showToast(text: string): void {
+	function showToast(text: string, problem = false): void {
 		const id = ++lastToast;
-		update({ toasts: [...state.toasts, { id, text }] });
+		update({ toasts: [...state.toasts, problem ? { id, text, problem } : { id, text }] });
 		toastTimers.set(id, schedule(() => dismissToast(id), TOAST_MILLISECONDS));
 	}
 
@@ -682,6 +707,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			return null;
 		}
 		if (state.operations.some(operation => operation.kind === "open-in-editor" && operation.worktree === request.worktree)) return null;
+		if (isBeingRemoved(state, request.repository, request.worktree)) return null;
 		const ask = async (): Promise<OpenInEditorResult> => {
 			try {
 				return await engine.openInEditor(request);
@@ -929,6 +955,41 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		}
 	}
 
+	/** Whether the open dialog is the Done dialog of the worktree at this path, which shows how its removal ends. */
+	function doneDialogShows(repository: string, worktree: Worktree): boolean {
+		const { dialog } = state;
+		if (dialog?.kind !== "done-worktree" || dialog.repository !== repository) return false;
+		if (dialog.worktree === worktree.id) return true;
+		const listed = state.repositories.find(candidate => candidate.path === repository)?.worktrees.find(candidate => candidate.id === dialog.worktree);
+		return listed?.path === worktree.path;
+	}
+
+	async function removeWorktree(request: { repository: string; worktree: Worktree; preview: string; toast: string }): Promise<DoneApplyResult | null> {
+		const { repository, worktree, preview, toast } = request;
+		const { path } = worktree;
+		if (isBeingRemoved(state, repository, path)) return null;
+		const others = (removals: readonly Removal[]) => removals.filter(removal => removal.repository !== repository || removal.worktree.path !== path);
+		update({ removals: [...others(state.removals), { repository, worktree, toast, status: { kind: "running" } }] });
+		const result = await applyDone({ repository, path, preview });
+		const watching = doneDialogShows(repository, worktree);
+		if (result.outcome === "removed") {
+			update({ removals: others(state.removals), dialog: watching ? null : state.dialog });
+			showToast(toast);
+			return result;
+		}
+		const listedRepository = state.repositories.find(candidate => candidate.path === repository);
+		const gone = !listedRepository?.worktrees.some(candidate => candidate.path === path);
+		// A repository that left the list meanwhile has nowhere to show the failure, so nothing is kept for it.
+		update({ removals: listedRepository ? [...others(state.removals), { repository, worktree, toast, status: { kind: "failed", failure: result.failure, gone } }] : others(state.removals) });
+		if (!watching) showToast(describeRemovalFailed(worktreeLabel(worktree), listedRepository !== undefined), true);
+		return result;
+	}
+
+	function dismissRemoval(repository: string, path: string): void {
+		const removal = removalAt(state, repository, path);
+		if (removal?.status.kind === "failed") update({ removals: state.removals.filter(candidate => candidate !== removal) });
+	}
+
 	/**
 	 * End the terminals of worktrees that a list read in full no longer has,
 	 * such as one removed from inside its own terminal, or of a repository
@@ -951,7 +1012,15 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		for (const [path, count] of ended) showToast(describeOrphanTerminal(path, count));
 	}
 
+	/** Whether Timber is removing the listed worktree with this identity. */
+	function removingId(repository: string, worktreeId: string): boolean {
+		const worktree = state.repositories.find(candidate => candidate.path === repository)?.worktrees.find(candidate => candidate.id === worktreeId);
+		return worktree !== undefined && isBeingRemoved(state, repository, worktree.path);
+	}
+
 	async function openTerminal(request: OpenTerminalRequest): Promise<void> {
+		// Nothing new starts in a folder that is being deleted.
+		if (isBeingRemoved(state, request.repository, request.worktree)) return;
 		const repository = state.repositories.find(candidate => candidate.path === request.repository);
 		const worktree = repository?.worktrees.find(candidate => candidate.path === request.worktree);
 		const key = worktree?.id ?? request.worktree;
@@ -1285,6 +1354,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			}
 		},
 		openDialog(request) {
+			// Neither Done nor Rebase starts on a worktree that Timber is removing.
+			if ((request.kind === "done-worktree" || request.kind === "rebase-worktree") && removingId(request.repository, request.worktree)) return;
 			update({ dialog: request });
 		},
 		closeDialog() {
@@ -1292,6 +1363,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		},
 		previewDone,
 		applyDone,
+		removeWorktree,
+		dismissRemoval,
 		openTerminal,
 		startRebase,
 		startAgentIn,
