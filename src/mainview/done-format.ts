@@ -81,3 +81,20 @@ export function describeExpiry(expiresAt: number): string {
 	const time = new Date(expiresAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 	return `Timber accepts this preview until ${time}.`;
 }
+
+/** Why a worktree's actions are off while Timber removes it. */
+export const BEING_REMOVED_REASON = "Timber is removing this worktree.";
+
+/** Beside the progress bar of the Done dialog: the removal goes on when the dialog closes. */
+export function describeRemoving(label: string): string {
+	return `Removing ${label}. Closing this dialog does not stop it: the worktree's row shows it until Timber finishes.`;
+}
+
+/**
+ * The toast after a removal that ran in the background and failed. It only
+ * points at the failure: the details stay in the sidebar, unless the
+ * repository left the list meanwhile.
+ */
+export function describeRemovalFailed(label: string, kept: boolean): string {
+	return kept ? `Timber did not finish removing ${label}. The sidebar shows what it said.` : `Timber did not finish removing ${label}.`;
+}

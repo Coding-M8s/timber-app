@@ -2,7 +2,7 @@ import type { FileChange, FileChangeTarget, FileDiffResult } from "../../shared/
 import { type Layout, defaultLayout } from "../../shared/layout";
 import type { RepositoryFetch } from "../../shared/git-fetch";
 import type { PullRequestList } from "../../shared/pull-requests";
-import type { Repository, TimberStatus, Worktree } from "../../shared/model";
+import type { Repository, TimberFailure, TimberStatus, Worktree } from "../../shared/model";
 import { type Preferences, defaultPreferences } from "../../shared/preferences";
 import type { TerminalSession } from "../../shared/terminal";
 
@@ -89,10 +89,42 @@ export type ListNotice =
 	| { kind: "overridden" }
 	| { kind: "failed"; action: "add" | "remove" | "reorder"; message: string };
 
-/** A short note that an operation worked. It disappears on its own. */
+/**
+ * A short note that an operation ended. It disappears on its own. Most say
+ * that something worked. A `problem` toast only points at a failure that
+ * stays where the person can act on it, such as a removal that ran in the
+ * background: the toast never holds the details itself.
+ */
 export interface Toast {
 	id: number;
 	text: string;
+	problem?: true;
+}
+
+/** Where a removal that Done started stands. */
+export type RemovalStatus =
+	| { kind: "running" }
+	/**
+	 * Timber did not finish. `gone` is true when the worktree had left the
+	 * list once the repository was read again, as after a partial failure in
+	 * which the folder was removed and the branch was not.
+	 */
+	| { kind: "failed"; failure: TimberFailure; gone: boolean };
+
+/**
+ * A removal of one worktree with `timber __ide-done apply`, which runs in the
+ * background once Remove is pressed. It is named by the repository and the
+ * worktree's registered path, which stay the same while the folder is being
+ * deleted (its identity does not).
+ */
+export interface Removal {
+	/** The path of the repository's primary checkout. */
+	repository: string;
+	/** The worktree as the list had it when Remove was pressed, so it can be named once it is gone. */
+	worktree: Worktree;
+	/** What the toast says when the removal worked. */
+	toast: string;
+	status: RemovalStatus;
 }
 
 /** The dialog open over the window. One at a time. */
@@ -154,8 +186,17 @@ export interface AppState {
 	error: ReloadError | null;
 	/** Null once an add or remove worked, or after the person dismissed it. */
 	notice: ListNotice | null;
-	/** Outcomes that worked, oldest first. Failures are never toasts: they stay where the person can act on them. */
+	/**
+	 * Outcomes, oldest first. A failure is never only a toast: it stays where
+	 * the person can act on it, and a toast can at most point there.
+	 */
 	toasts: readonly Toast[];
+	/**
+	 * Removals that run, and removals that failed and are not dismissed yet,
+	 * at most one per worktree. Kept in the window only: reloading it forgets
+	 * them, while Timber goes on in the main process.
+	 */
+	removals: readonly Removal[];
 	/**
 	 * The sidebar width, the collapsed repository groups, and the dismissed
 	 * setup prompts. The engine remembers them between runs; this is what is
@@ -224,6 +265,7 @@ export const initialState: AppState = {
 	error: null,
 	notice: null,
 	toasts: [],
+	removals: [],
 	layout: defaultLayout(),
 	layoutProblem: null,
 	preferences: defaultPreferences(),
@@ -366,4 +408,47 @@ export function withTerminal(terminals: readonly TerminalSession[], id: string, 
 	const index = terminals.findIndex(candidate => candidate.id === id);
 	if (index === -1) return [...terminals, session];
 	return terminals.map((candidate, at) => at === index ? session : candidate);
+}
+
+/** The removal of the worktree at this registered path in this repository, running or failed, or null. */
+export function removalAt(state: Pick<AppState, "removals">, repository: string, path: string): Removal | null {
+	return state.removals.find(removal => removal.repository === repository && removal.worktree.path === path) ?? null;
+}
+
+/** Whether Timber is removing the worktree at this registered path right now. Its actions are off meanwhile. */
+export function isBeingRemoved(state: Pick<AppState, "removals">, repository: string, path: string): boolean {
+	return removalAt(state, repository, path)?.status.kind === "running";
+}
+
+/**
+ * The removals that still mean something after the list changed. A failed
+ * one goes when its repository left the list. A failed one whose worktree
+ * left the list becomes gone, and a gone one goes when a worktree is listed
+ * at that path again, because that is another worktree. A running one
+ * always stays.
+ */
+export function reconcileRemovals(repositories: readonly Repository[], removals: readonly Removal[]): readonly Removal[] {
+	let changed = false;
+	const kept: Removal[] = [];
+	for (const removal of removals) {
+		const { status } = removal;
+		if (status.kind === "running") {
+			kept.push(removal);
+			continue;
+		}
+		const repository = repositories.find(candidate => candidate.path === removal.repository);
+		const listed = repository?.worktrees.some(worktree => worktree.path === removal.worktree.path) ?? false;
+		// A repository whose worktrees could not be read keeps its last list, so this is only about lists that were read.
+		if (!repository || (status.gone && listed)) {
+			changed = true;
+			continue;
+		}
+		if (!status.gone && !listed) {
+			changed = true;
+			kept.push({ ...removal, status: { ...status, gone: true } });
+			continue;
+		}
+		kept.push(removal);
+	}
+	return changed ? kept : removals;
 }

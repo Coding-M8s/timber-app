@@ -8,7 +8,8 @@ import { AgentIcon } from "./AgentIcon";
 import { StatusGlyph } from "./StatusGlyph";
 import { terminalAppearance } from "../terminal-look";
 import { useAppState, useStore } from "../store/react";
-import { sessionsOf, shownSession } from "../store/state";
+import { isBeingRemoved, sessionsOf, shownSession } from "../store/state";
+import { BEING_REMOVED_REASON } from "../done-format";
 import { dropTerminalFocus, onTerminalFocusWish, takeTerminalFocus, wantTerminalFocus } from "../terminal-focus";
 import {
 	chipAfterKey, chipCommand, closeTerminalLabel, describeSessionChip, describeTerminalState, sessionChipId, shellName, shortExit,
@@ -498,7 +499,8 @@ export function TerminalPanel({ repository, worktree }: { repository: Repository
 		if (!shown && !starting) dropTerminalFocus(worktree.id);
 	}, [worktree.id, shown, starting]);
 	const startingAgent = startingOperation?.kind === "open-terminal" ? startingOperation.agent : undefined;
-	const missing = !worktree.pathExists;
+	// Nothing starts in a folder that is missing, or that Timber is deleting.
+	const unavailable = !worktree.pathExists ? FOLDER_MISSING_TERMINAL : isBeingRemoved(state, repository.path, worktree.path) ? BEING_REMOVED_REASON : null;
 	const agents = state.preferences.agents;
 	// A guess at the pane's size, so the first prompt fits. The pane fits it exactly as soon as it shows.
 	const start = (agent: string | null = null) =>
@@ -513,7 +515,7 @@ export function TerminalPanel({ repository, worktree }: { repository: Repository
 					Start your shell or a coding agent in this worktree's folder. It keeps running while you look at other worktrees, until you close it or quit the app.
 				</p>
 				<div className="empty-actions">
-					<button type="button" className="button" id={ADD_SESSION_ID} disabled={starting || missing} title={missing ? FOLDER_MISSING_TERMINAL : worktree.path} onClick={() => start()}>
+					<button type="button" className="button" id={ADD_SESSION_ID} disabled={starting || unavailable !== null} title={unavailable !== null ? unavailable : worktree.path} onClick={() => start()}>
 						{startingAgent === null ? "Starting" : "Open terminal"}
 					</button>
 					{sessionMenuItems(agents).slice(1).map(item => (
@@ -521,8 +523,8 @@ export function TerminalPanel({ repository, worktree }: { repository: Repository
 							key={item.agent!}
 							type="button"
 							className="button quiet"
-							disabled={starting || missing}
-							title={missing ? FOLDER_MISSING_TERMINAL : `Start ${item.label}: ${item.detail}`}
+							disabled={starting || unavailable !== null}
+							title={unavailable !== null ? unavailable : `Start ${item.label}: ${item.detail}`}
 							onClick={() => start(item.agent)}
 						>
 							{startingAgent === item.agent ? `Starting ${item.label}` : `Start ${item.label}`}
@@ -530,14 +532,14 @@ export function TerminalPanel({ repository, worktree }: { repository: Repository
 					))}
 				</div>
 				<button type="button" className="text-button" onClick={setUpAgents}>{SET_UP_AGENTS}</button>
-				{missing && <p className="empty-text">{FOLDER_MISSING_TERMINAL}</p>}
+				{unavailable !== null && <p className="empty-text">{unavailable}</p>}
 				<TerminalProblemNote worktree={worktree} />
 			</div>
 		);
 	}
 
 	const ids = sessions.map(session => session.id);
-	const newTitle = missing ? FOLDER_MISSING_TERMINAL : startingAgent !== undefined ? describeStarting(startingAgent) : `New session in ${worktree.path}`;
+	const newTitle = unavailable !== null ? unavailable : startingAgent !== undefined ? describeStarting(startingAgent) : `New session in ${worktree.path}`;
 	return (
 		<div className="sessions" ref={panel}>
 			<div className="session-strip">
@@ -560,7 +562,7 @@ export function TerminalPanel({ repository, worktree }: { repository: Repository
 						),
 					)}
 				</div>
-				<SessionMenu items={sessionMenuItems(agents)} disabled={starting || missing} title={newTitle} onStart={start} onSetUp={setUpAgents} />
+				<SessionMenu items={sessionMenuItems(agents)} disabled={starting || unavailable !== null} title={newTitle} onStart={start} onSetUp={setUpAgents} />
 				<SessionControls session={shown} onRename={() => setRenaming(shown.id)} />
 			</div>
 			<TerminalProblemNote worktree={worktree} />

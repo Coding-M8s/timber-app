@@ -1,7 +1,8 @@
 import { useAppState, useStore } from "../store/react";
 
 /**
- * Short notes that an operation worked, in a corner of the window. Each goes
+ * Short notes that an operation ended, in a corner of the window. One that
+ * points at a failure has its own mark, never the check mark. Each goes
  * away on its own (the store times it) or when it is dismissed. The region is
  * always there, so a screen reader announces a toast when it arrives.
  */
@@ -11,9 +12,9 @@ export function Toasts() {
 	return (
 		<div className="toasts" aria-live="polite">
 			{toasts.map(toast => (
-				<div key={toast.id} className="toast">
+				<div key={toast.id} className={toast.problem ? "toast problem" : "toast"}>
 					<svg className="toast-mark" aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-						<path d="M2.5 6.5 5 9l4.5-6" />
+						{toast.problem ? <path d="M6 2v5M6 9.5v.5" /> : <path d="M2.5 6.5 5 9l4.5-6" />}
 					</svg>
 					<span className="toast-text">{toast.text}</span>
 					<button type="button" className="icon-button toast-dismiss" aria-label={`Dismiss: ${toast.text}`} onClick={() => store.dismissToast(toast.id)}>

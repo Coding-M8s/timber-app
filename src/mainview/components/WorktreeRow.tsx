@@ -2,6 +2,7 @@ import { type ReactNode, useId } from "react";
 import type { Worktree } from "../../shared/model";
 import type { PullRequestEntry } from "../../shared/pull-requests";
 import type { TerminalSession } from "../../shared/terminal";
+import type { RemovalStatus } from "../store/state";
 import { describeRowTitle } from "../base-format";
 import { type RowMarker, type RowMarkerKind, describeRow, describeRowMarkers, describeWorktreeKind, worktreeLabel } from "../format";
 import { type RowSessionMark, describeRowSessions } from "../terminal-format";
@@ -24,6 +25,8 @@ const markerClass: Record<RowMarkerKind, string> = {
 	"upstream-gone": "sync-note",
 	"force-pushed": "sync-note rewritten",
 	"sync-unknown": "sync-note",
+	"removing": "row-flag removing",
+	"removal-failed": "row-flag failing",
 	"detached": "row-flag",
 	"folder-missing": "row-flag",
 	"status-unknown": "row-flag",
@@ -77,6 +80,8 @@ interface WorktreeRowProps {
 	onSelect: () => void;
 	/** The pull request Timber found for the worktree's branch, or null for none or not known. */
 	pullRequest?: PullRequestEntry | null;
+	/** Where a removal of the worktree stands, or null when none runs or failed. */
+	removal?: RemovalStatus | null;
 	/**
 	 * The worktree's sessions, running or exited, in the order they started.
 	 * Each agent gets a mark with its state; other running sessions are a
@@ -91,9 +96,9 @@ interface WorktreeRowProps {
 }
 
 /** One worktree in the sidebar. What it is marked with comes from `describeRowMarkers`; this only draws it. */
-export function WorktreeRow({ worktree, selected, onSelect, pullRequest = null, sessions = [], actions }: WorktreeRowProps) {
+export function WorktreeRow({ worktree, selected, onSelect, pullRequest = null, removal = null, sessions = [], actions }: WorktreeRowProps) {
 	const descriptionId = useId();
-	const markers = describeRowMarkers(worktree, pullRequest);
+	const markers = describeRowMarkers(worktree, pullRequest, removal);
 	const running = describeRowSessions(sessions);
 	const description = [describeRow(markers), running.sentence].filter(Boolean).join(" ");
 	const at = (place: RowMarker["place"]) => markers.filter(marker => marker.place === place).map(marker => <Marker key={marker.kind} marker={marker} />);

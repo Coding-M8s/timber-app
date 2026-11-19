@@ -860,6 +860,11 @@ pre:focus-visible {
 	color: var(--untracked);
 }
 
+/* A toast that points at a failure: red, with its own mark. */
+.toast.problem .toast-mark {
+	color: var(--error);
+}
+
 .toast-text {
 	min-width: 0;
 	overflow-wrap: anywhere;
@@ -2440,6 +2445,17 @@ pre:focus-visible {
 	opacity: 1;
 }
 
+/* What Timber said about a removal that did not finish, beside the row's other controls. */
+.row-removal-details {
+	align-self: center;
+	margin: 0 4px 0 0;
+}
+
+.removal-failure-actions {
+	display: flex;
+	gap: 6px;
+}
+
 .row-editor {
 	width: 24px;
 	height: 24px;
@@ -3389,8 +3405,13 @@ pre:focus-visible {
 	white-space: nowrap;
 }
 
+/* Done in the background (issue 98): a removal that runs is said in blue, as for work that runs, one that failed in red, always with words. */
+.row-flag.removing {
+	color: var(--ahead);
+}
+
 /* Pull requests (issue 100): grey words, with red only for failing checks and requested changes, always with their words. */
-.row-flag.pr.failing,
+.row-flag.failing,
 .pull-marker.failing {
 	color: var(--error);
 }

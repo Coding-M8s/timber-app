@@ -1,16 +1,17 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Worktree } from "../../shared/model";
 import { type DoneOptions, describeDoneApply, describeDonePreview } from "../../shared/timber-done";
 import {
 	DONE_EXPIRED_NOTE, DONE_REMOTE_NOTE, describeBranchEffect, describeDone, describeExpiry, describeIgnoredEffect,
-	describeUnpublishedCommits, filesLost, losesWork,
+	describeRemoving, describeUnpublishedCommits, filesLost, losesWork,
 } from "../done-format";
 import { worktreeLabel } from "../format";
 import { describeDoneSessionsWarning } from "../terminal-format";
-import { useAppState, useStore, useSubmission } from "../store/react";
+import { useAppState, useStore } from "../store/react";
 import { type DoneSessionState, canRemove, createDoneSession } from "../store/done-session";
-import { type DialogRequest, runningSessionCount } from "../store/state";
-import type { SubmissionOutcome, SubmissionState } from "../store/submission";
+import { type DialogRequest, removalAt, runningSessionCount } from "../store/state";
+import type { SubmissionState } from "../store/submission";
+import { focusFirstWorktree, focusLost } from "../sidebar-focus";
 import { OperationDialog } from "./OperationDialog";
 import { TimberFailureDetails } from "./TimberFailureDetails";
 
@@ -92,11 +93,12 @@ export function DoneDialogView(props: DoneDialogViewProps) {
 			command={describeDoneApply(worktree.path)}
 			submission={submission}
 			submitLabel="Remove"
-			runningLabel={`Removing ${label}`}
+			runningLabel={describeRemoving(label)}
 			failureTitle={`Timber did not finish removing ${label}`}
 			failureNote={failureNote}
 			canSubmit={!gone && !basePending && canRemove(session)}
 			destructive
+			closableWhileRunning
 			cancelLabel={gone ? "Close" : lossy ? "Keep" : "Cancel"}
 			onSubmit={onRemove}
 			onClose={onClose}
@@ -183,25 +185,43 @@ export function DoneDialogView(props: DoneDialogViewProps) {
  * The Done dialog for one worktree. Opening it asks Timber for a preview,
  * which removes nothing. Remove approves exactly the preview on screen, once.
  *
+ * The removal itself belongs to the store (`removeWorktree`), so the dialog
+ * can close while it runs and the worktree's row shows it meanwhile. The
+ * dialog shows the store's record of that removal: running, or failed with
+ * Timber's diagnostic. Closing it puts a failure away.
+ *
  * The request names the worktree by identity. When it leaves the list while
- * the dialog is open, the dialog says so and offers nothing but Close.
+ * the dialog is open, the dialog says so and offers nothing but Close. A
+ * dialog opened for a removal that failed after the worktree left the list,
+ * as a partial failure does, names it as the record has it.
  */
 export function DoneDialog({ request }: { request: Extract<DialogRequest, { kind: "done-worktree" }> }) {
 	const store = useStore();
 	const state = useAppState();
 	const repository = state.repositories.find(candidate => candidate.path === request.repository);
 	const listed = repository?.worktrees.find(candidate => candidate.id === request.worktree) ?? null;
+	// The removal is named by the registered path, which stays while the worktree's identity can change.
+	const removal = listed
+		? removalAt(state, request.repository, listed.path)
+		: state.removals.find(candidate => candidate.repository === request.repository && candidate.worktree.id === request.worktree) ?? null;
 	// The worktree as it was last listed, so the dialog can still name it once it is gone.
-	const [seen, setSeen] = useState(listed);
+	const [seen, setSeen] = useState(listed ?? removal?.worktree ?? null);
 	if (listed && listed !== seen) setSeen(listed);
 	const worktree = listed ?? seen;
+	// What the removal is named by when Remove is pressed: the worktree as it is listed then.
+	const latest = useRef(worktree);
+	latest.current = worktree;
 
 	const [session] = useState(() => worktree && createDoneSession({
 		repository: request.repository,
 		path: worktree.path,
 		preview: store.previewDone,
-		apply: store.applyDone,
-		listed: () => store.getState().repositories.some(candidate => candidate.path === request.repository && candidate.worktrees.some(tree => tree.id === request.worktree)),
+		apply: (apply, shown) => {
+			const target = latest.current ?? worktree;
+			return store.removeWorktree({ repository: apply.repository, worktree: target, preview: apply.preview, toast: describeDone(worktreeLabel(target), shown) });
+		},
+		attempted: removal?.status.kind === "failed",
+		listed: () => store.getState().repositories.some(candidate => candidate.path === request.repository && candidate.worktrees.some(tree => tree.path === worktree.path)),
 	}));
 	const sessionState = useSyncExternalStore(
 		listener => session?.subscribe(listener) ?? (() => {}),
@@ -209,34 +229,44 @@ export function DoneDialog({ request }: { request: Extract<DialogRequest, { kind
 		() => session?.getState() ?? null,
 	);
 	const [baseDraft, setBaseDraft] = useState("");
-	const { submission, state: submissionState } = useSubmission(() => store.closeDialog());
+	// Whether the worktree was listed when the dialog opened. One that was not has nothing to preview.
+	const [listedAtOpen] = useState(listed !== null);
+
+	// Closing gives the keyboard back to the Done button that opened the dialog. While the removal runs that button is
+	// disabled, and once it worked the worktree is gone, so the keyboard would be nowhere: it goes to the first worktree
+	// of the repository instead. Checked once the dialog has closed and the browser has moved focus.
+	useEffect(() => () => {
+		setTimeout(() => {
+			if (focusLost(document.activeElement, document.body)) focusFirstWorktree(request.repository);
+		}, 0);
+	}, [request.repository]);
 
 	useEffect(() => {
-		// A dialog for a worktree that was never in the list has nothing to show.
+		// A dialog for a worktree that was never in the list, and has no removal on record, has nothing to show.
 		if (!session) return store.closeDialog();
+		if (!listedAtOpen) return;
 		session.start();
 		return () => session.stop();
-	}, [session, store]);
+	}, [session, store, listedAtOpen]);
 
 	if (!session || !sessionState || !worktree) return null;
 
-	const remove = () => void submission.submit(async (): Promise<SubmissionOutcome> => {
-		const shown = session.getState().preview;
-		const result = await session.remove();
-		if (result === null || shown.kind !== "ready") {
-			return { ok: false, failure: { command: null, diagnostic: "The preview on screen can no longer be approved. Nothing was run.", output: null } };
-		}
-		return result.outcome === "removed" ? { ok: true, toast: describeDone(worktreeLabel(worktree), shown.preview) } : { ok: false, failure: result.failure };
-	});
+	const running = removal?.status.kind === "running";
+	const submission: SubmissionState = { running, failure: removal?.status.kind === "failed" ? removal.status.failure : null };
+	const close = () => {
+		// The person has seen the failure, so it goes. A removal that runs goes on.
+		store.dismissRemoval(request.repository, worktree.path);
+		store.closeDialog();
+	};
 
 	return (
 		<DoneDialogView
 			repository={repository?.name ?? request.repository}
 			worktree={worktree}
-			gone={listed === null && !submissionState.running}
+			gone={listed === null && !running}
 			runningSessions={runningSessionCount(state, worktree.id)}
 			session={sessionState}
-			submission={submissionState}
+			submission={submission}
 			baseDraft={baseDraft}
 			onBaseDraft={setBaseDraft}
 			onBaseCommit={() => {
@@ -244,8 +274,8 @@ export function DoneDialog({ request }: { request: Extract<DialogRequest, { kind
 			}}
 			onOptions={options => session.setOptions(options)}
 			onRefresh={() => session.refresh()}
-			onRemove={remove}
-			onClose={() => store.closeDialog()}
+			onRemove={() => void session.remove()}
+			onClose={close}
 		/>
 	);
 }
