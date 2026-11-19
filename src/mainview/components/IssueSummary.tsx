@@ -1,10 +1,13 @@
 import type { Worktree } from "../../shared/model";
 import { type IssueDescription, TRACKER_NAMES, describeIssue } from "../issue-format";
-import { useAppState, useStore } from "../store/react";
+import type { AppState } from "../store/state";
+import { useStore } from "../store/react";
 
-/** The description of the selected worktree's issue, or null when it has none. */
-export function useIssue(worktree: Worktree): IssueDescription | null {
-	const state = useAppState();
+/**
+ * The description of a worktree's issue, or null when it has none. Not a
+ * hook, so a component may call it after an early return.
+ */
+export function issueOf(state: AppState, worktree: Worktree): IssueDescription | null {
 	return describeIssue(worktree.issue, state.issues[worktree.id]);
 }
 
