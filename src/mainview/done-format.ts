@@ -15,6 +15,9 @@ export const DONE_EXPIRED_NOTE = `This preview expired. Timber accepts a preview
 /** Why the Done control is not offered for a primary checkout. Timber refuses it as well. */
 export const DONE_PRIMARY_NOTE = "The primary checkout is never removed.";
 
+/** What the Done control does, as its tooltip, wherever it is offered. */
+export const DONE_CONTROL_TITLE = "Remove this worktree, after a preview of what would be lost";
+
 /** How many modified and untracked files the folder holds, all of which are deleted with it. */
 export function filesLost(preview: DonePreview): number {
 	const { changes } = preview.worktree;

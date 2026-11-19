@@ -1,4 +1,4 @@
-import { type ReactNode, useId } from "react";
+import { type KeyboardEvent, type MouseEvent, type ReactNode, useId, useRef, useState } from "react";
 import type { Worktree } from "../../shared/model";
 import type { PullRequestEntry } from "../../shared/pull-requests";
 import type { TerminalSession } from "../../shared/terminal";
@@ -6,8 +6,10 @@ import type { RemovalStatus } from "../store/state";
 import { describeRowTitle } from "../base-format";
 import { type RowMarker, type RowMarkerKind, describeRow, describeRowMarkers, describeWorktreeKind, worktreeLabel } from "../format";
 import { type RowSessionMark, describeRowSessions } from "../terminal-format";
+import { WORKTREE_MENU_SHORTCUTS, type WorktreeMenuItemId, describeWorktreeMenu, opensWorktreeMenu, worktreeMenuItems } from "../worktree-menu-format";
 import { AgentIcon } from "./AgentIcon";
 import { StatusGlyph } from "./StatusGlyph";
+import { WorktreeMenu } from "./WorktreeMenu";
 
 function Arrow({ direction }: { direction: "up" | "down" }) {
 	return (
@@ -93,11 +95,43 @@ interface WorktreeRowProps {
 	 * row is itself a button, so they sit next to it, not inside it.
 	 */
 	actions?: ReactNode;
+	/**
+	 * An entry of the row's menu was chosen, for this row's worktree whatever
+	 * is selected. The menu opens on a right-click anywhere on the row, or
+	 * with Shift+F10 or the context menu key on the focused row. Without it
+	 * the row has no menu. A disabled entry is never passed here.
+	 */
+	onMenuChoice?: (id: WorktreeMenuItemId) => void;
 }
 
 /** One worktree in the sidebar. What it is marked with comes from `describeRowMarkers`; this only draws it. */
-export function WorktreeRow({ worktree, selected, onSelect, pullRequest = null, removal = null, sessions = [], actions }: WorktreeRowProps) {
+export function WorktreeRow({ worktree, selected, onSelect, pullRequest = null, removal = null, sessions = [], actions, onMenuChoice }: WorktreeRowProps) {
 	const descriptionId = useId();
+	const button = useRef<HTMLButtonElement>(null);
+	// Where the open menu was asked to be, or null while it is closed.
+	const [menuAt, setMenuAt] = useState<{ left: number; top: number } | null>(null);
+	// A browser may follow Shift+F10 with a contextmenu event; the menu the key opened stays where it is.
+	// Chrome sends that event to the focused menu item, which stops it, so this guard is for WebKitGTK,
+	// the desktop window's engine. There the menu Shift+F10 opened was seen to stay under the row.
+	const openedByKey = useRef(false);
+	const closeMenu = (backToRow: boolean) => {
+		openedByKey.current = false;
+		setMenuAt(null);
+		if (backToRow) button.current?.focus();
+	};
+	const onContextMenu = (event: MouseEvent<HTMLElement>) => {
+		if (!onMenuChoice) return;
+		event.preventDefault();
+		if (openedByKey.current && menuAt !== null) return;
+		setMenuAt({ left: event.clientX, top: event.clientY });
+	};
+	const onRowKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+		if (!onMenuChoice || !opensWorktreeMenu(event)) return;
+		event.preventDefault();
+		const box = event.currentTarget.getBoundingClientRect();
+		openedByKey.current = true;
+		setMenuAt({ left: box.left, top: box.bottom });
+	};
 	const markers = describeRowMarkers(worktree, pullRequest, removal);
 	const running = describeRowSessions(sessions);
 	const description = [describeRow(markers), running.sentence].filter(Boolean).join(" ");
@@ -109,8 +143,11 @@ export function WorktreeRow({ worktree, selected, onSelect, pullRequest = null, 
 			className={selected ? "row selected" : "row"}
 			aria-current={selected}
 			aria-describedby={description !== "" ? descriptionId : undefined}
+			aria-keyshortcuts={onMenuChoice ? WORKTREE_MENU_SHORTCUTS : undefined}
 			title={describeRowTitle(worktree)}
+			ref={button}
 			onClick={onSelect}
+			onKeyDown={onRowKeyDown}
 		>
 			<span className="row-line">
 				<span className="row-name">{worktreeLabel(worktree)}</span>
@@ -136,11 +173,21 @@ export function WorktreeRow({ worktree, selected, onSelect, pullRequest = null, 
 			{description !== "" && <span id={descriptionId} className="row-description" hidden>{description}</span>}
 		</button>
 	);
-	if (actions === undefined) return row;
+	if (actions === undefined && !onMenuChoice) return row;
 	return (
-		<div className={selected ? "row-item selected" : "row-item"}>
+		// A right-click anywhere on the row, its actions included, opens its menu.
+		<div className={selected ? "row-item selected" : "row-item"} onContextMenu={onContextMenu}>
 			{row}
-			<span className="row-actions">{actions}</span>
+			{actions !== undefined && <span className="row-actions">{actions}</span>}
+			{menuAt !== null && onMenuChoice && (
+				<WorktreeMenu
+					label={describeWorktreeMenu(worktree)}
+					items={worktreeMenuItems(worktree, removal?.kind === "running")}
+					at={menuAt}
+					onClose={closeMenu}
+					onChoose={onMenuChoice}
+				/>
+			)}
 		</div>
 	);
 }

@@ -68,6 +68,14 @@ change them here first when they change.
   Settings, Notifications chooses which states notify, which play a sound,
   and the sound: one of three that come with the app, the system's, or a
   file of the person's own, with Play to hear it.
+- Right-clicking a worktree row, or Shift+F10 or the context menu key on a
+  focused row, opens a menu for that worktree, whichever one is selected.
+  It holds Done, which opens the same Done dialog as the workspace header.
+  For a primary checkout, or while Timber removes the worktree, Done is
+  disabled, and the menu says why. The arrows
+  move through the menu; Escape and Tab give the keyboard back to the row,
+  as do scrolling the list, resizing the window, and leaving it. A click
+  elsewhere puts the menu away.
 - Rebase backups are listed below the worktrees with compare, restore, and
   delete.
 - Settings is a cogwheel at the bottom of the sidebar.

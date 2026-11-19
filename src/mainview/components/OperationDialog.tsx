@@ -66,10 +66,17 @@ export function OperationDialog(props: OperationDialogProps) {
 	const titleId = useId();
 
 	// Opened as a modal, so the rest of the window is inert and focus stays inside.
+	// Closing gives the keyboard back to what opened it, such as a worktree row, when that is still there. The
+	// dialog is already out of the page when this runs, so the browser cannot do it and would leave it nowhere.
 	useEffect(() => {
 		const element = dialog.current;
+		const opener = document.activeElement;
 		if (element && !element.open) element.showModal();
-		return () => element?.close();
+		return () => {
+			element?.close();
+			const lost = document.activeElement === null || document.activeElement === document.body;
+			if (lost && opener instanceof HTMLElement && opener.isConnected) opener.focus();
+		};
 	}, []);
 
 	// Opening moves focus to the first control, and a run takes it away, because the buttons are disabled meanwhile.

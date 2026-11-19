@@ -236,8 +236,11 @@ itself what is safe to delete. It shows what the preview says, and Timber
 decides, both when it previews and again when it removes.
 
 - **Entry.** The Done control in the workspace header opens the dialog for
-  the selected worktree. For the primary checkout the control is disabled
-  with the reason. Timber refuses the primary checkout anyway, and the main
+  the selected worktree, and Done in a sidebar row's menu (right-click,
+  Shift+F10, or the context menu key) opens it for that row's worktree,
+  without selecting it (`worktreeMenuChoice` in
+  `src/mainview/worktree-menu-format.ts`). For the primary checkout, and
+  while Timber removes the worktree, both are disabled with the reason. Timber refuses the primary checkout anyway, and the main
   process does not rely on the interface's check.
 - **Preview.** Opening the dialog runs
   `timber __ide-done preview [--keep-branch] [--keep-ignored] [--base=<ref>] -- <registered path>`
@@ -760,7 +763,10 @@ Every operation reports how it ended in the same way.
   shows. Done is the exception: its removal is the store's
   (`removeWorktree`), the dialog shows the store's record of it, and it can be
   closed while the removal runs (`closableWhileRunning`). When it failed, the dialog stays open with the failure, ready for a
-  correction and a retry.
+  correction and a retry. Closing gives the keyboard back to the control
+  that opened the dialog, such as a worktree row, when it is still in the
+  window and enabled. When it is not, as after a removal, the Done dialog
+  puts it on the repository's first worktree row (`focusFirstWorktree`).
 - **Failures.** A failed Timber command is always shown by
   `TimberFailureDetails`: the diagnostic, and a details area, closed at
   first, with the command and what it printed. The data is `TimberFailure` in
@@ -4363,6 +4369,31 @@ Run for agent status from the Program Status Protocol (issue 111), on
   collapsed header, a notification and its click), a turn of either agent
   from Working to Done, and `notify-send` with `--wait` and `--action`, which
   is not installed on this machine.
+
+Run for Done from a worktree row's menu (issue 97), on 2026-11-18, Pop!_OS
+24.04 (COSMIC) on Linux x64 with Bun 1.4.2:
+
+- `bun test`: all tests passed, 5 skipped, including the menu's entries for a
+  linked worktree and a primary checkout, its keys, its placement inside the
+  window, and the Done dialog opened for a worktree that is not selected.
+- `bun run typecheck`: no errors.
+- `bun run dev:web` in headless Chrome, driven over the DevTools protocol
+  with real mouse and key input: a right-click on an unselected row, and on
+  its "Open in editor" button, opened its menu with Done focused. Escape
+  closed it and gave the keyboard back to the row. Shift+F10 and the context
+  menu key on the focused row opened it under the row, and a click elsewhere
+  closed it. Scrolling the sidebar's list closed it and gave the keyboard
+  back to the row. Enter and a click on Done opened the Done dialog for that row
+  while the primary checkout stayed selected, and closing the dialog gave
+  the keyboard back to the row. On a primary checkout Done was disabled with
+  "The primary checkout is never removed." under it, and Enter on it left
+  the menu open with no dialog. The menu on the last row stayed inside the
+  window.
+- In the desktop window, run by a person: Shift+F10 on a focused row opened
+  the menu under the row, and it stayed there.
+- Not run: the rest of the menu in the desktop window (right-click, the
+  context menu key, Done, a primary checkout), and
+  `bun run typecheck:desktop`.
 
 Not run yet:
 

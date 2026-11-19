@@ -13,6 +13,7 @@ import { OpenInEditorIconButton } from "./OpenInEditor";
 import { wantTerminalFocus } from "../terminal-focus";
 import { SIDEBAR_ID } from "./SidebarResizer";
 import { WorktreeRow } from "./WorktreeRow";
+import { worktreeMenuChoice } from "../worktree-menu-format";
 
 export function Sidebar() {
 	const store = useStore();
@@ -345,6 +346,11 @@ export function Sidebar() {
 														<OpenInEditorIconButton repository={repository.path} worktree={worktree} />
 													</>
 												)}
+												onMenuChoice={id => {
+													// For this row's worktree, not the selected one, and without selecting it.
+													const request = worktreeMenuChoice(repository.path, worktree, id, removal?.status.kind === "running");
+													if (request) store.openDialog(request);
+												}}
 											/>
 										</li>
 										);
