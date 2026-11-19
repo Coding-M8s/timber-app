@@ -25,7 +25,11 @@ export interface TerminalSession {
 	/** Made by the main process. Never reused while the app runs. */
 	id: string;
 	kind: SessionKind;
-	/** What its chip says, such as "Terminal 2". The person can rename it. */
+	/**
+	 * What its chip says, such as "Terminal 2", or "feature-login 2" when
+	 * Settings names new sessions after the branch. Set once when the session
+	 * opens. The person can rename it.
+	 */
 	name: string;
 	/** The path of the repository's primary checkout. */
 	repository: string;
@@ -152,6 +156,70 @@ export function defaultSessionName(base: string, taken: readonly string[]): stri
 	let number = 2;
 	while (names.has(numbered(number))) number += 1;
 	return numbered(number);
+}
+
+/**
+ * How a new terminal or agent session is named: "plain" after the shell or
+ * the agent ("Terminal", "Codex"), "branch" after the worktree's branch,
+ * "issue" after the issue key in the branch, such as GH-122, or the branch
+ * when it has none. Plain by default. A `timber rebase` session is always
+ * "Rebase".
+ */
+export const SESSION_NAMINGS = ["plain", "branch", "issue"] as const;
+export type SessionNaming = typeof SESSION_NAMINGS[number];
+
+/** The naming, or undefined when what came from outside is not one. */
+export function readSessionNaming(value: unknown): SessionNaming | undefined {
+	return (SESSION_NAMINGS as readonly unknown[]).includes(value) ? value as SessionNaming : undefined;
+}
+
+/**
+ * The issue key in a branch, or null when there is none. Looked for in this
+ * order, the first that matches:
+ *
+ * 1. A key that starts the branch or one of its parts after a slash, in any
+ *    case, uppercased: `gh-122-option-to-name-tab` gives GH-122, and
+ *    `feature/PROJ-42-login` gives PROJ-42.
+ * 2. A key written in capitals anywhere after a hyphen or an underscore:
+ *    `feature/login-PROJ-42` gives PROJ-42. Only capitals, so a branch such
+ *    as `fix-login-2` gives no key.
+ * 3. A number that starts the branch or one of its parts, as `#` and the
+ *    number: `122-fix-login` and `fix/122-login` give #122.
+ *
+ * A key is letters and digits that start with a letter, a hyphen, and a
+ * number. A key or a number is never followed by a dot, so a version such
+ * as `react-18.2.0` is not one.
+ */
+export function issueKeyOf(branch: string): string | null {
+	const start = /(?:^|\/)([A-Za-z][A-Za-z0-9]*-\d+)(?=$|[-_/])/.exec(branch);
+	if (start) return start[1]!.toUpperCase();
+	const capitals = /[-_]([A-Z][A-Z0-9]*-\d+)(?=$|[-_/])/.exec(branch);
+	if (capitals) return capitals[1]!;
+	const number = /(?:^|\/)(\d+)(?=$|[-_/])/.exec(branch);
+	return number ? `#${number[1]}` : null;
+}
+
+/** An agent's name needs room for this many characters of the branch, or it is used alone. */
+const LEAST_LABEL = 4;
+
+/**
+ * What a new session is called before it is numbered: `kindBase`, such as
+ * "Terminal" or the agent's name, under the "plain" naming, without a
+ * branch, or when the branch leaves nothing to show. Otherwise the branch
+ * or its issue key, after the agent's name and a colon for an agent, such
+ * as "Codex: feature-login". It is cut to `SESSION_NAME_LIMIT` from the
+ * end, so the branch is cut before the agent's name, and an agent's name
+ * that leaves too little room is used alone. The result is a name
+ * `cleanSessionName` keeps as it is. `defaultSessionName` numbers it.
+ */
+export function sessionNameBase(naming: SessionNaming, kindBase: string, branch: string | null, agent: boolean): string {
+	if (naming === "plain" || branch === null) return kindBase;
+	const raw = naming === "issue" ? issueKeyOf(branch) ?? branch : branch;
+	const label = raw.replace(/\p{Cf}+/gu, "").replace(/[\s\u0000-\u001f\u007f-\u009f]+/gu, " ").trim();
+	if (label === "") return kindBase;
+	const prefix = agent ? `${kindBase}: ` : "";
+	if (Array.from(prefix).length + LEAST_LABEL > SESSION_NAME_LIMIT) return kindBase;
+	return Array.from(`${prefix}${label}`).slice(0, SESSION_NAME_LIMIT).join("").trimEnd();
 }
 
 /**

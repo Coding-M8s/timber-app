@@ -3,8 +3,8 @@ import { type AgentSetting, agentCommand, findAgent } from "../shared/agent";
 import { describeCommandLine } from "../shared/command-line";
 import type { TimberStatus } from "../shared/model";
 import {
-	type OpenTerminalRequest, type OpenTerminalResult, type Scrollback, type TerminalChange, type TerminalOutput, type TerminalSession,
-	type TerminalSnapshot, TERMINAL_UNSUPPORTED_REASON, TIMBER_REBASE_SESSION_NAME, clampTerminalSize, cleanSessionName, createScrollback, defaultSessionName, pickShell,
+	type OpenTerminalRequest, type OpenTerminalResult, type Scrollback, type SessionNaming, type TerminalChange, type TerminalOutput, type TerminalSession,
+	type TerminalSnapshot, TERMINAL_UNSUPPORTED_REASON, TIMBER_REBASE_SESSION_NAME, clampTerminalSize, cleanSessionName, createScrollback, defaultSessionName, pickShell, sessionNameBase,
 } from "../shared/terminal";
 import { PROBE_ANSWER, type StatusRecords, type StatusScanner, createStatusRecords, createStatusScanner } from "../shared/program-status";
 import { rebaseArguments } from "../shared/rebase-command";
@@ -38,6 +38,11 @@ export interface TerminalDependencies {
 	 * here, never from the interface. None when left out.
 	 */
 	agents?: () => Promise<readonly AgentSetting[]>;
+	/**
+	 * How new terminal and agent sessions are named, as saved in Settings.
+	 * Plain when left out, or when it cannot be read.
+	 */
+	sessionNaming?: () => Promise<SessionNaming>;
 	/** Where Timber is, for `timber rebase` sessions. A rebase never starts while it is not ready. */
 	timber?: () => Promise<TimberStatus>;
 	/** Hears every part of output, in order per session. */
@@ -176,7 +181,9 @@ function signalSession(live: Live, signal: NodeJS.Signals): void {
  * - Only a worktree Timber lists, in a repository in the app's list, with its
  *   folder there, gets one. Each request starts another, beside the ones the
  *   worktree has, named after the shell or the agent ("Terminal",
- *   "Terminal 2", "Codex", ...).
+ *   "Terminal 2", "Codex", ...), or, as Settings says, after the worktree's
+ *   branch or its issue key ("feature-login", "Codex: GH-122"). A rebase
+ *   is always "Rebase". The name is set once, when the session opens.
  * - Output is kept, up to `SCROLLBACK_LIMIT`, so the interface can draw a
  *   session again, and is sent in numbered parts, never far ahead of what
  *   the window drew (`UNDRAWN_LIMIT`).
@@ -188,7 +195,7 @@ function signalSession(live: Live, signal: NodeJS.Signals): void {
  */
 export function createTerminalSessions(dependencies: TerminalDependencies): TerminalSessions {
 	const {
-		findRepository, onOutput, onChange, agents = async () => [], timber = async (): Promise<TimberStatus> => ({ state: "not-found", override: null }), environment = process.env, platform = process.platform,
+		findRepository, onOutput, onChange, agents = async () => [], sessionNaming = async (): Promise<SessionNaming> => "plain", timber = async (): Promise<TimberStatus> => ({ state: "not-found", override: null }), environment = process.env, platform = process.platform,
 		closeMilliseconds = CLOSE_MILLISECONDS, flushMilliseconds = FLUSH_MILLISECONDS, undrawnLimit = UNDRAWN_LIMIT,
 	} = dependencies;
 	const sessions = new Map<string, Live>();
@@ -309,13 +316,16 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			if (status.state !== "ready") return { outcome: "not-configured", message: "No usable Timber was found, so the rebase cannot start. Nothing was started." };
 			run = { timber: status.path, arguments: rebaseArguments({ worktree: request.worktree, onto: rebase.onto }), name: TIMBER_REBASE_SESSION_NAME, what: "The rebase" };
 		}
+		// Naming is a convenience: when it cannot be read, the session is named as it always was.
+		const naming = run === null ? await sessionNaming().catch((): SessionNaming => "plain") : "plain";
 		const consequence = agent ? `${agent.name} was not started.` : run ? `${run.what} was not started.` : "No terminal was started.";
 		const listed = await findListedWorktree(findRepository, request.repository, request.worktree, consequence);
 		if (!listed.ok) return { outcome: "not-listed", message: listed.message };
 		// From here to the new session being kept nothing waits, so two sessions that start at once get different names.
 		const start = startOf(agent, run);
 		if (!start.ok) return start.result;
-		const name = defaultSessionName(start.base, inWorktree(listed.worktree.id).map(live => live.session.name));
+		const base = run === null ? sessionNameBase(naming, start.base, listed.worktree.branch, agent !== null) : start.base;
+		const name = defaultSessionName(base, inWorktree(listed.worktree.id).map(live => live.session.name));
 
 		const shell = start.argv[0]!;
 		const { cols, rows } = clampTerminalSize(request.cols, request.rows);
