@@ -1102,6 +1102,24 @@ pre:focus-visible {
 	color: var(--text-3);
 }
 
+/* Settings: a setting with its label and hint on the left and a segmented choice on the right. */
+.settings-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 12px 14px;
+	border: 1px solid var(--line);
+	border-radius: 10px;
+}
+
+.settings-row-text {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-width: 0;
+}
+
 .settings-choice {
 	display: flex;
 	flex-direction: column;

@@ -740,7 +740,8 @@ export function createMockEngine(
 		...pullRequests,
 		...issues,
 		...backups,
-		appInfo: async () => ({ version: APP_VERSION }),
+		// As a Linux machine where Auto left the renderer on.
+		appInfo: async () => ({ version: APP_VERSION, rendering: { applies: true, dmabuf: true, decidedBy: "auto", choice: "auto" } }),
 		timberStatus: look,
 		recheckTimber: look,
 		listRepositories: () => read(() => current.map(asRead)),

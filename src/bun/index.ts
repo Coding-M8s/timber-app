@@ -1,3 +1,5 @@
+// First, before Electrobun loads: chooses how WebKitGTK draws (see webkit-rendering.ts).
+import { renderingAtStart } from "./webkit-rendering-setup";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import Electrobun, { BrowserView, BrowserWindow, Screen, Updater, Utils } from "electrobun/main";
@@ -277,7 +279,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 	maxRequestTime: 15_000,
 	handlers: {
 		requests: {
-			appInfo: () => ({ version: APP_VERSION }),
+			appInfo: () => ({ version: APP_VERSION, rendering: renderingAtStart }),
 			timberStatus: () => timber.current(),
 			recheckTimber: () => timber.refresh(),
 			listRepositories: async () => {

@@ -8,6 +8,7 @@ import type { PullRequestList } from "../../shared/pull-requests";
 import type { Repository, TimberFailure, TimberStatus, Worktree } from "../../shared/model";
 import { type Preferences, defaultPreferences } from "../../shared/preferences";
 import type { TerminalSession } from "../../shared/terminal";
+import type { RenderingStatus } from "../../shared/rendering";
 
 /** Null until the first look for Timber has answered. */
 export type TimberState =
@@ -150,7 +151,7 @@ export type DialogRequest =
 	| { kind: "set-up-timber"; repository: string };
 
 /** The sections of the Settings dialog, in the order they are listed. */
-export const SETTINGS_SECTIONS = ["layout", "theme", "terminal", "editor", "agents", "notifications", "fetch", "about", "machine", "repository"] as const;
+export const SETTINGS_SECTIONS = ["layout", "theme", "terminal", "rendering", "editor", "agents", "notifications", "fetch", "about", "machine", "repository"] as const;
 export type SettingsSection = typeof SETTINGS_SECTIONS[number];
 
 /** The views of the selected worktree, in the order of their tabs. */
@@ -224,6 +225,8 @@ export interface AppState {
 	preferencesProblem: string | null;
 	/** The app's own version, for About. Null until the engine has answered. */
 	appVersion: string | null;
+	/** What the app decided about WebKitGTK's renderer when it started. Null until the engine has answered. */
+	rendering: RenderingStatus | null;
 	/** Why the last "Open in editor" opened nothing. Null once one worked, or after the person dismissed it. */
 	editorProblem: EditorProblem | null;
 	/**
@@ -304,6 +307,7 @@ export const initialState: AppState = {
 	preferences: defaultPreferences(),
 	preferencesProblem: null,
 	appVersion: null,
+	rendering: null,
 	editorProblem: null,
 	terminals: [],
 	shownSessions: {},

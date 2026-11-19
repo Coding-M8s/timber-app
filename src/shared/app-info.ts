@@ -2,6 +2,7 @@
 // running it as Bun would, and a named import from JSON comes out empty there:
 // the build then stamps its own default version, 0.1.0, without a word.
 import manifest from "../../package.json";
+import type { RenderingStatus } from "./rendering";
 
 /** The name in the window title, the taskbar, the menu entry, and the installer. */
 export const APP_NAME = "Timber";
@@ -22,4 +23,6 @@ export const APP_VERSION: string = manifest.version;
 /** What the app says about itself, for About. */
 export interface AppInfo {
 	version: string;
+	/** What was decided about WebKitGTK's renderer when the app started. */
+	rendering: RenderingStatus;
 }

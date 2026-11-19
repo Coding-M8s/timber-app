@@ -1,3 +1,4 @@
+import { SETTINGS_SECTIONS } from "../src/mainview/store/state";
 import { describe, expect, test } from "bun:test";
 import type { MouseEvent, ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -440,7 +441,7 @@ describe("settings dialog", () => {
 		expect(nav).not.toBeNull();
 		expect(markup).toContain(`<div class="settings-panel" id="${nav![2]}" aria-labelledby="${nav![1]}">`);
 		// Every other section stays mounted, hidden, so what was typed in it survives a switch.
-		expect(markup.match(/class="settings-panel"[^>]*hidden=""/g)?.length).toBe(9);
+		expect(markup.match(/class="settings-panel"[^>]*hidden=""/g)?.length).toBe(SETTINGS_SECTIONS.length - 1);
 		for (const section of ["terminal", "editor", "agents", "fetch", "about", "machine", "repository"]) {
 			expect(markup).toMatch(new RegExp(`class="settings-panel" id="[^"]*-panel-${section}"[^>]*hidden=""`));
 		}

@@ -91,7 +91,7 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		...createMockIssues(() => undefined, () => timber),
 		// Backups as the mock acts them out. Their own tests are in backups.test.ts.
 		...createMockBackups({ listed: () => undefined, timber: () => timber, addWorktree: () => {}, delay: () => 0 }),
-		appInfo: async () => ({ version: "1.2.3" }),
+		appInfo: async () => ({ version: "1.2.3", rendering: { applies: false } }),
 		uninstallPlan: async () => ({ available: false, reason: "Not installed." }),
 		uninstall: async () => ({ outcome: "unavailable", message: "Not installed." }),
 		timberStatus: async () => timber,

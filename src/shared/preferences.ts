@@ -12,6 +12,7 @@ import { type FetchSetting, defaultFetchSetting, readFetchSetting, salvageFetchS
 import { type SoundChoice, defaultSoundChoice, readSoundChoice, sameSoundChoice, writeSoundChoice } from "./sound-setting";
 import { ALERT_STATES, type AlertState } from "./status-notices";
 import { type SessionNaming, readSessionNaming } from "./terminal";
+import { type DmabufChoice, readDmabufChoice } from "./rendering";
 import { type TerminalAppearance, defaultTerminalAppearance, readTerminalAppearance, salvageTerminalAppearance, sameTerminalAppearance, writeTerminalAppearance } from "./terminal-appearance";
 
 /** The sides of the window the sidebar can be on. */
@@ -68,6 +69,12 @@ export interface Preferences {
 	soundStates: readonly AlertState[];
 	/** The sound that plays: one that comes with the app, the system's, or a file the person chose. */
 	sound: SoundChoice;
+	/**
+	 * Whether WebKitGTK uses its DMA-BUF renderer on Linux: Auto decides by the
+	 * graphics found (see `autoDmabuf` in ./rendering.ts). Read once at start,
+	 * so a change takes effect the next time the app starts.
+	 */
+	dmabuf: DmabufChoice;
 }
 
 /**
@@ -183,6 +190,12 @@ export const PREFERENCE_PARTS: { [Key in keyof Preferences]: PreferencePart<Pref
 		read: readSoundChoice,
 		same: sameSoundChoice,
 		write: writeSoundChoice,
+	},
+	dmabuf: {
+		fallback: () => "auto",
+		read: readDmabufChoice,
+		same: (one, other) => one === other,
+		write: value => value,
 	},
 };
 
