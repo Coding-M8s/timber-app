@@ -172,13 +172,15 @@ describe("About", () => {
 
 	test("the store asks the engine for the app's version on start", async () => {
 		const engine = createMockEngine();
-		expect(await engine.appInfo()).toEqual({ version: APP_VERSION });
+		expect((await engine.appInfo()).version).toBe(APP_VERSION);
 		const store = createAppStore(engine);
 		expect(store.getState().appVersion).toBeNull();
+		expect(store.getState().rendering).toBeNull();
 		const stop = store.start();
 		await engine.appInfo();
 		await Promise.resolve();
 		expect(store.getState().appVersion).toBe(APP_VERSION);
+		expect(store.getState().rendering).toEqual((await engine.appInfo()).rendering);
 		stop();
 	});
 

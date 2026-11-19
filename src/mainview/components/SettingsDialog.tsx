@@ -9,6 +9,7 @@ import { FetchSection } from "./settings/FetchSection";
 import { NotificationsSection } from "./settings/NotificationsSection";
 import { LayoutSection } from "./settings/LayoutSection";
 import { SettingsSavingContext } from "./settings/SettingsSection";
+import { RenderingSection } from "./settings/RenderingSection";
 import { MachineSection, RepositorySection } from "./settings/TimberSections";
 import { TerminalSection } from "./settings/TerminalSection";
 import { ThemeSection } from "./settings/ThemeSection";
@@ -22,6 +23,7 @@ const SECTION_VIEWS: Record<SettingsSection, ComponentType> = {
 	layout: LayoutSection,
 	theme: ThemeSection,
 	terminal: TerminalSection,
+	rendering: RenderingSection,
 	editor: EditorSection,
 	agents: AgentsSection,
 	notifications: NotificationsSection,

@@ -8,6 +8,10 @@ interface ModeSwitchProps {
 	/** True while a command runs: the mode cannot change under it. */
 	disabled: boolean;
 	onSelect: (index: number) => void;
+	/** What the choice is about, for a screen reader. */
+	label?: string;
+	/** The id of a hint that says more about the choice. */
+	describedBy?: string;
 }
 
 /**
@@ -15,10 +19,10 @@ interface ModeSwitchProps {
  * buttons drawn as one segmented control, so Tab reaches it, the arrow keys
  * move the choice, and a screen reader hears one choice out of several.
  */
-export function ModeSwitch({ labels, selected, disabled, onSelect }: ModeSwitchProps) {
+export function ModeSwitch({ labels, selected, disabled, onSelect, label = "What to make the worktree from", describedBy }: ModeSwitchProps) {
 	const name = useId();
 	return (
-		<div className="mode-switch" role="radiogroup" aria-label="What to make the worktree from">
+		<div className="mode-switch" role="radiogroup" aria-label={label} aria-describedby={describedBy}>
 			{labels.map((label, index) => (
 				<label key={label} className={index === selected ? "mode-option selected" : "mode-option"}>
 					<input

@@ -2481,6 +2481,33 @@ X11 display, `gdk_x11_*` calls).
 
 See the issue 63 run under [what has been verified](#what-has-been-verified).
 
+### WebKitGTK's DMA-BUF renderer
+
+Settings, Rendering has a "DMA-BUF renderer" choice: Auto, On, or Off. It
+decides whether WebKitGTK hands frames to the window through DMA-BUF (its
+default) or copies them through shared memory, by setting
+`WEBKIT_DISABLE_DMABUF_RENDERER=1` for Off. Which is smoother depends on the
+machine: on one with Intel graphics only, DMA-BUF lagged and Off was smooth;
+on one with Intel and NVIDIA graphics, Off was choppy and DMA-BUF was smooth.
+
+- Auto turns it off only when every render node in `/sys/class/drm` is
+  Intel (vendor `0x8086`), and otherwise leaves WebKitGTK's default. That
+  rule comes from those two machines only (`autoDmabuf` in
+  `src/shared/rendering.ts`).
+- WebKitGTK reads the variable once, when it starts, so the main process
+  decides first thing: `src/bun/webkit-rendering-setup.ts` is the first
+  import of `src/bun/index.ts`. It reads the saved choice from the settings
+  file synchronously, and a missing or damaged file gives Auto.
+- The variable has to reach the C environment, where WebKitGTK calls
+  `getenv`. Bun keeps `process.env` apart from it, so
+  `src/bun/webkit-rendering.ts` calls libc `setenv` through `bun:ffi`.
+  WebKitGTK's web processes inherit it; terminals and agents the app starts
+  get `process.env`, so they do not.
+- A value of `WEBKIT_DISABLE_DMABUF_RENDERER` set before the app starts wins
+  over the setting, so either renderer can still be tried from a terminal.
+- `appInfo` reports what was decided for this run, and Settings says it and
+  asks for a restart after a change.
+
 ### The GLXBadWindow line at start
 
 Each start seen so far on Linux (Pop!_OS 24.04 under XWayland and Xephyr,
@@ -2513,9 +2540,9 @@ and 170 under Xwayland 24.1 and under Xorg.
   worth it. Putting GDK's handler back through Bun FFI would make any other
   X error end the app, since GDK's handler exits on errors no trap expects.
   `GDK_SYNCHRONIZE=1` makes every X request a round trip.
-  `WEBKIT_DISABLE_DMABUF_RENDERER=1` switches WebKitGTK to a slower drawing
-  path, and would have to be in the process environment before the web
-  view starts.
+  Turning the DMA-BUF renderer off hides it too, but that is chosen for
+  smoothness, not for this line (see
+  [WebKitGTK's DMA-BUF renderer](#webkitgtks-dma-buf-renderer)).
 - Reported upstream as
   [blackboardsh/electrobun#618](https://github.com/blackboardsh/electrobun/issues/618),
   with a fix proposed in

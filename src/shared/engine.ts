@@ -26,7 +26,7 @@ import type { WorkflowList } from "./workflows";
  * Grow it one capability at a time, and keep every method safe to call again.
  */
 export interface Engine {
-	/** What the app says about itself: its version, for About. */
+	/** What the app says about itself: its version, for About, and how WebKitGTK draws in this run, for Settings. */
 	appInfo(): Promise<AppInfo>;
 	/** Whether a usable Timber is installed, as of the last look. */
 	timberStatus(): Promise<TimberStatus>;
