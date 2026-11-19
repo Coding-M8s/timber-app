@@ -11,6 +11,7 @@ import type { PullRequestList } from "../../shared/pull-requests";
 import { applyOrder, moveInOrder } from "../../shared/repository-order";
 import { type ZoomStep, stepZoom, zoomLabel } from "../../shared/zoom";
 import type { Theme } from "../../shared/theme";
+import type { ChooseSoundResult, SoundChoice, SoundOutcome } from "../../shared/sound-setting";
 import type { ExportThemeResult, ImportThemeResult } from "../../shared/theme-file";
 import type { StartRebaseRequest, StartRebaseResult } from "../../shared/rebase-command";
 import { type OpenTerminalRequest, type TerminalChange, type TerminalSession } from "../../shared/terminal";
@@ -276,6 +277,10 @@ export interface AppStore {
 	exportTheme(theme: Theme): Promise<ExportThemeResult>;
 	/** Read a theme from a file the person picks. Saves nothing. A failure to ask is a refusal with the reason. */
 	importTheme(): Promise<ImportThemeResult>;
+	/** Ask for a sound file of the person's own. Saves nothing. A failure to ask is a refusal with the reason. */
+	chooseSoundFile(): Promise<ChooseSoundResult>;
+	/** Play a sound as a preview. A failure to ask counts as failed. */
+	playSound(choice: SoundChoice): Promise<SoundOutcome>;
 	/** Whether this copy of the app can uninstall itself, and what that would do. A failed read says why in `reason`. */
 	uninstallPlan(): Promise<UninstallPlan>;
 	/** Remove the app from this computer. The app quits right after a good answer, unless the answer has something to tell. */
@@ -1340,6 +1345,20 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				return await engine.importTheme();
 			} catch (error) {
 				return { outcome: "refused", file: "", reason: messageOf(error) };
+			}
+		},
+		async chooseSoundFile() {
+			try {
+				return await engine.chooseSoundFile();
+			} catch (error) {
+				return { outcome: "refused", message: messageOf(error) };
+			}
+		},
+		async playSound(choice) {
+			try {
+				return await engine.playSound(choice);
+			} catch {
+				return { outcome: "failed" };
 			}
 		},
 		async uninstallPlan() {

@@ -62,7 +62,12 @@ change them here first when they change.
 - When an agent needs you, is done, reports an error, or crashes in a
   worktree that is not on screen, a desktop notification says so; clicking
   it shows that session. Never for the worktree on screen in a focused
-  window. Settings, Notifications turns them off.
+  window. A session has at most one: its next one takes its place, and it
+  goes away once it no longer holds, such as when its worktree comes on
+  screen. A sound can say it too: off until a state is ticked for it.
+  Settings, Notifications chooses which states notify, which play a sound,
+  and the sound: one of three that come with the app, the system's, or a
+  file of the person's own, with Play to hear it.
 - Rebase backups are listed below the worktrees with compare, restore, and
   delete.
 - Settings is a cogwheel at the bottom of the sidebar.

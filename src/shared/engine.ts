@@ -7,6 +7,7 @@ import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInE
 import type { Preferences } from "./preferences";
 import type { PullRequestList } from "./pull-requests";
 import type { Theme } from "./theme";
+import type { ChooseSoundResult, SoundChoice, SoundOutcome } from "./sound-setting";
 import type { ExportThemeResult, ImportThemeResult } from "./theme-file";
 import type { OpenTerminalRequest, OpenTerminalResult, TerminalChange, TerminalOutput, TerminalSession, TerminalSnapshot } from "./terminal";
 import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "./timber-config";
@@ -201,6 +202,14 @@ export interface Engine {
 	 */
 	importTheme(): Promise<ImportThemeResult>;
 	/**
+	 * Ask the person for a sound file of their own, for Settings,
+	 * Notifications. Saves nothing: the path comes back to be saved with the
+	 * section. A file whose path or type the app cannot use is refused.
+	 */
+	chooseSoundFile(): Promise<ChooseSoundResult>;
+	/** Play a sound now, as a preview in Settings. Answers how it went, so Settings can say when it could not play. */
+	playSound(choice: SoundChoice): Promise<SoundOutcome>;
+	/**
 	 * Timber's own settings for one scope, read by `timber __app-config read`:
 	 * the machine defaults, or with `repository`, the path of a primary
 	 * checkout in the list, that repository's `.timber.toml`. Timber reads the
@@ -323,8 +332,9 @@ export interface Engine {
 	 * the listener gets the session's id, to select its worktree and show it.
 	 * The machine sends a notification when a session's status moves to
 	 * Needs you, Done, Error, or crashed while its worktree is not on screen
-	 * in a focused window (see `attend` and ./status-notices.ts), unless
-	 * `statusNotifications` is off. Returns a function that stops listening.
+	 * in a focused window (see `attend` and ./status-notices.ts), as
+	 * `statusNotifications` and `notifyStates` choose. Returns a function
+	 * that stops listening.
 	 */
 	onShowSession(listener: (id: string) => void): () => void;
 	/**

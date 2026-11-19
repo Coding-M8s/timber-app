@@ -3530,3 +3530,45 @@ pre:focus-visible {
 	flex: none;
 	margin-top: 0;
 }
+
+/* Settings, Notifications: a row for each state, with a Notify and a Sound box. */
+.alert-states {
+	display: grid;
+	grid-template-columns: minmax(8em, max-content) 4.5em 4.5em;
+	align-items: center;
+	gap: 6px 12px;
+}
+
+.alert-states legend {
+	grid-column: 1 / -1;
+}
+
+.alert-states-head {
+	color: var(--text-3);
+	font-size: 12px;
+}
+
+.alert-states-head:first-of-type {
+	grid-column: 2;
+}
+
+.alert-state {
+	display: contents;
+}
+
+.alert-state .check {
+	justify-self: start;
+}
+
+/* The sound picker with its Choose file and Play buttons beside it. */
+.sound-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+}
+
+.sound-row .field-input {
+	flex: 1 1 160px;
+	min-width: 0;
+}

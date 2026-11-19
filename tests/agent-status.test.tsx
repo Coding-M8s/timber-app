@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
-import { NotificationsSectionView } from "../src/mainview/components/settings/NotificationsSection";
+import { NotificationsSectionView, describeSoundOutcome, notificationsDraftOf, sameNotificationsDraft, toggleState } from "../src/mainview/components/settings/NotificationsSection";
+import { defaultPreferences } from "../src/shared/preferences";
 import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { sessionsOf } from "../src/mainview/store/state";
 import { takeTerminalFocus } from "../src/mainview/terminal-focus";
@@ -9,7 +10,6 @@ import { createAppStore } from "../src/mainview/store/store";
 import { describeRowSessions, describeSessionChip, describeTerminalState } from "../src/mainview/terminal-format";
 import { PROBE_ANSWER } from "../src/shared/program-status";
 import { type ShownStatus, agentBrand, describeShownStatus, hasStatusMark, mostUrgent, sessionInitials, shortMessage, shownStatus, summarizeStatuses } from "../src/shared/session-status";
-import { createStatusNotices, onScreen } from "../src/shared/status-notices";
 import type { TerminalSession } from "../src/shared/terminal";
 
 const settle = async () => {
@@ -215,58 +215,6 @@ describe("agent status in the app", () => {
 });
 
 describe("desktop notifications", () => {
-	const away = { visible: true, focused: true, selected: { repository: TIMBER, worktree: TIMBER } };
-	const here = { visible: true, focused: true, selected: { repository: TIMBER, worktree: FEATURE } };
-	const change = (more: Partial<TerminalSession> = {}) => ({ id: "s", session: session(more) });
-
-	test("one when an agent moves to Needs you, Done, Error, or crashed in a worktree not on screen", () => {
-		const notices = createStatusNotices(1000);
-		expect(notices.changed(change(), away, true, 0)).toBeNull();
-		expect(notices.changed(change({ status: status("working") }), away, true, 0)).toBeNull();
-		expect(notices.changed(change({ status: status("blocked", { kind: "permission", message: "approve Write: src/a.ts" }) }), away, true, 0))
-			.toEqual({ session: "s", title: "Codex needs you", body: "In feat-github-issue-lookup: approve Write: src/a.ts" });
-		expect(notices.changed(change({ status: status("done") }), away, true, 2000)).toEqual({ session: "s", title: "Codex is done", body: "In feat-github-issue-lookup: Done" });
-		expect(notices.changed(change({ status: status("error") }), away, true, 4000)?.title).toBe("Codex reported an error");
-		expect(notices.changed(change({ state: { kind: "exited", exitCode: 1, signal: null } }), away, true, 6000)).toEqual({ session: "s", title: "Codex crashed", body: "In feat-github-issue-lookup: Crashed, exit 1" });
-	});
-
-	test("none for the worktree on screen in a focused window, but one when the window is hidden or not focused", () => {
-		expect(onScreen(session(), here)).toBe(true);
-		expect(onScreen(session(), { ...here, focused: false })).toBe(false);
-		expect(onScreen(session(), { ...here, visible: false })).toBe(false);
-		expect(onScreen(session(), { ...here, selected: { repository: "/other", worktree: FEATURE } })).toBe(false);
-		const notices = createStatusNotices(0);
-		notices.changed(change({ status: status("working") }), here, true, 0);
-		expect(notices.changed(change({ status: status("done") }), here, true, 0)).toBeNull();
-		notices.changed(change({ status: status("working") }), here, true, 0);
-		expect(notices.changed(change({ status: status("done") }), { ...here, focused: false }, true, 0)).not.toBeNull();
-	});
-
-	test("none when turned off, none for the same state again, none for a stopped agent, and none for a plain shell", () => {
-		const notices = createStatusNotices(0);
-		notices.changed(change({ status: status("working") }), away, true, 0);
-		expect(notices.changed(change({ status: status("done") }), away, false, 0)).toBeNull();
-		expect(notices.changed(change({ status: status("done") }), away, true, 0)).toBeNull();
-		expect(notices.changed(change({ state: { kind: "exited", exitCode: 0, signal: null } }), away, true, 0)).toBeNull();
-		const shells = createStatusNotices(0);
-		shells.changed(change({ kind: "terminal" }), away, true, 0);
-		expect(shells.changed(change({ kind: "terminal", state: { kind: "exited", exitCode: 1, signal: null } }), away, true, 0)).toBeNull();
-	});
-
-	test("rate limited for each session and status, and Needs you right after Done still told", () => {
-		const notices = createStatusNotices(10_000);
-		notices.changed(change({ status: status("working") }), away, true, 0);
-		expect(notices.changed(change({ status: status("done") }), away, true, 0)).not.toBeNull();
-		notices.changed(change({ status: status("working") }), away, true, 1000);
-		expect(notices.changed(change({ status: status("done") }), away, true, 2000)).toBeNull();
-		expect(notices.changed(change({ status: status("blocked") }), away, true, 3000)).not.toBeNull();
-		notices.changed(change({ status: status("working") }), away, true, 10_500);
-		expect(notices.changed(change({ status: status("done") }), away, true, 11_000)).not.toBeNull();
-		const other = { id: "t", session: { ...session({ status: status("working") }), id: "t" } };
-		notices.changed(other, away, true, 11_000);
-		expect(notices.changed({ ...other, session: { ...other.session, status: status("done") } }, away, true, 11_000)).not.toBeNull();
-	});
-
 	test("the mock decides as the main process does, and a click selects the worktree and shows the session", async () => {
 		const { engine, store, agent, report } = await withAgent();
 		await report("state=working");
@@ -297,13 +245,98 @@ describe("desktop notifications", () => {
 		await report("state=done");
 		expect(engine.notices()).toEqual([]);
 	});
+
+	test("a session keeps one notification, replaced by its next one and withdrawn once its worktree is on screen", async () => {
+		const { engine, store, agent, report } = await withAgent();
+		await report("state=working");
+		await report("state=done");
+		await report(`state=blocked:kind=question:msg=${b64("which branch?")}`);
+		expect(engine.notices()).toEqual([{ session: agent.id, title: "Codex needs you", body: "In feat-github-issue-lookup: which branch?" }]);
+		store.select(featureId);
+		await settle();
+		expect(engine.notices()).toEqual([]);
+	});
+
+	test("a status the person moved past is withdrawn", async () => {
+		const { engine, report } = await withAgent();
+		await report("state=working");
+		await report("state=blocked");
+		expect(engine.notices()).toHaveLength(1);
+		await report("state=working");
+		expect(engine.notices()).toEqual([]);
+	});
+
+	test("sounds play only for the states chosen, never for the worktree on screen", async () => {
+		const { engine, store, agent, report } = await withAgent();
+		await report("state=working");
+		await report("state=done");
+		expect(engine.alertSounds()).toEqual([]);
+		expect((await store.savePreferences({ soundStates: ["needs-you"] })).outcome).toBe("saved");
+		await report("state=blocked");
+		expect(engine.alertSounds()).toEqual([agent.id]);
+		store.select(featureId);
+		await settle();
+		await report("state=working");
+		await report("state=error");
+		expect((await store.savePreferences({ soundStates: ["needs-you", "error"] })).outcome).toBe("saved");
+		await report("state=working");
+		await report("state=error");
+		expect(engine.alertSounds()).toEqual([agent.id]);
+	});
 });
 
 describe("the Notifications section of Settings", () => {
-	test("a box to turn notifications off, saved with its own Save", () => {
-		const save = { state: "idle" } as const;
-		const markup = renderToStaticMarkup(<NotificationsSectionView enabled={false} saved={true} save={save} onEdit={() => {}} onSave={() => {}} />);
-		expect(markup).toContain("Notify when an agent needs you or is done");
-		expect(markup).toMatch(/<input type="checkbox"\/>/);
+	const saved = notificationsDraftOf(defaultPreferences());
+	const view = (draft = saved, more: Partial<Parameters<typeof NotificationsSectionView>[0]> = {}) => renderToStaticMarkup(
+		<NotificationsSectionView draft={draft} saved={saved} save={{ state: "idle" }} problem={null} customPath={null} onEdit={() => {}} onChooseFile={() => {}} onPlay={() => {}} onSave={() => {}} {...more} />,
+	);
+
+	test("a main switch, a Notify and a Sound box for each state, and the sound with Play", () => {
+		const markup = view();
+		expect(markup).toContain("Show desktop notifications");
+		for (const state of ["Needs you", "Done", "Error", "Crashed"]) {
+			expect(markup).toContain(`aria-label="Notify: ${state}" checked=""`);
+			expect(markup).toMatch(new RegExp(`aria-label="Sound: ${state}"/>`));
+		}
+		expect(markup).toContain('<option value="bundled:chime" selected="">Chime</option>');
+		expect(markup).toContain('<option value="system">System sound</option>');
+		expect(markup).toContain(">Your own file...</option>");
+		expect(markup).toContain(">Play</button>");
+		expect(markup).toContain("Off until then.");
+		expect(markup).not.toContain("Choose file");
+	});
+
+	test("Notify boxes are off while notifications are, and the person's own file is named", () => {
+		const markup = view({ ...saved, statusNotifications: false, sound: { kind: "custom", path: "/home/me/sounds/bell.ogg" } }, { customPath: "/home/me/sounds/bell.ogg" });
+		expect(markup).toContain('aria-label="Notify: Done" disabled="" checked=""');
+		expect(markup).toContain('<option value="custom" selected="">Your own file: bell.ogg</option>');
+		expect(markup).toContain(">Choose file</button>");
+	});
+
+	test("a preview that could not play says why", () => {
+		expect(describeSoundOutcome({ outcome: "played" })).toBeNull();
+		expect(describeSoundOutcome({ outcome: "missing" })).toContain("not there any more");
+		expect(view(saved, { problem: "Nope." })).toContain('role="alert">Nope.</p>');
+	});
+
+	test("ticking keeps Settings order, and the draft compares as a set", () => {
+		expect(toggleState(["crashed"], "needs-you", true)).toEqual(["needs-you", "crashed"]);
+		expect(toggleState(["needs-you", "crashed"], "needs-you", false)).toEqual(["crashed"]);
+		expect(sameNotificationsDraft(saved, { ...saved, notifyStates: [...saved.notifyStates].reverse() })).toBe(true);
+		expect(sameNotificationsDraft(saved, { ...saved, sound: { kind: "system" } })).toBe(false);
+	});
+
+	test("the person's own file is chosen through the engine and saved with the section", async () => {
+		const engine = createMockEngine();
+		const store = createAppStore(engine, () => () => {});
+		expect(await store.chooseSoundFile()).toEqual({ outcome: "chosen", path: "/home/me/sounds/bell.ogg" });
+		engine.pickSoundFile("/home/me/notes.txt");
+		expect((await store.chooseSoundFile()).outcome).toBe("refused");
+		engine.pickSoundFile(null);
+		expect(await store.chooseSoundFile()).toEqual({ outcome: "cancelled" });
+		expect(await store.playSound({ kind: "system" })).toEqual({ outcome: "played" });
+		expect(engine.previewSounds()).toEqual([{ kind: "system" }]);
+		expect((await store.savePreferences({ sound: { kind: "custom", path: "/home/me/sounds/bell.ogg" } })).outcome).toBe("saved");
+		expect((await engine.loadPreferences()).sound).toEqual({ kind: "custom", path: "/home/me/sounds/bell.ogg" });
 	});
 });

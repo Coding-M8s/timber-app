@@ -1821,10 +1821,8 @@ What the agent prints on screen is still never read, parsed, or answered.
   holds a control character. Bidirectional overrides and other invisible
   formatting characters are removed. A message is cut to 200 characters for
   showing. Nothing from a report is run, logged, or echoed back. A
-  `notify-send` body escapes `&`, `<`, and `>` so it is never markup;
-  Electrobun's notification gets the text as it is, and whether its server
-  reads markup there is not known. On a server without body markup the
-  escapes may show as written. A flood of probes, such as from a file shown
+  notification body is never read as markup (see "Desktop notifications"
+  below). A flood of probes, such as from a file shown
   with `cat`, gets at most one answer every 100 ms.
 - **Lifetime.** `working`, `blocked`, and `idle` end when the process exits
   or a new shell prompt starts (OSC 133 `A`); `done` and `error` stay. The
@@ -1860,26 +1858,92 @@ What the agent prints on screen is still never read, parsed, or answered.
   working", the most urgent first; an expanded one shows nothing extra.
   Every mark is hidden from assistive technology, and the row's and the
   header's descriptions say it in words.
-- **Desktop notifications.** When a marked session moves to Needs you, Done,
-  Error, or crashed, the main process sends one naming the session, the
-  worktree's folder, and the message or the state (`createStatusNotices` in
-  `src/shared/status-notices.ts`), unless its worktree is the selected one
-  in a window that shows and has the focus, as `attend` last said. At most
-  one per session and status every 10 seconds, as the spec asks, so Needs
-  you right after Done is still told. While Timber is not ready the window
-  names no selected worktree, so then nothing counts as on screen. Settings,
-  Notifications turns them off (`statusNotifications`, on by default). On
-  Linux, `notify-send` from libnotify 0.7.9 or later shows each one and
-  waits for a click (`src/bun/desktop-notices.ts`); a click brings the
-  window forward and sends `showSession`, and the store selects the
-  worktree, shows the Workspace tab and the session's chip, and asks for
-  its terminal to take the keyboard (`revealSession`, through
-  `src/mainview/terminal-focus.ts`). An open dialog stays open over
-  it. Without `notify-send`, with one
-  that fails, and on macOS, Electrobun's `Utils.showNotification` shows it,
-  and then a click does nothing: Electrobun 2.0.6 has no click callback. On
-  Wayland a window may not come forward without an activation token, which
-  `notify-send` does not hand over; the session is still shown.
+- **Desktop notifications and sounds.** When a marked session moves to
+  Needs you, Done, Error, or crashed, the main process decides whether to
+  tell the person (`createStatusAlerts` and `createAlertRunner` in
+  `src/shared/status-notices.ts`; the mock engine runs the same runner).
+  Nothing is told for the worktree that is selected in a window that shows
+  and has the focus, as `attend` last said; while Timber is not ready the
+  window names no selected worktree, so then nothing counts as on screen.
+  - *Settings.* `statusNotifications` (on by default) is the main switch for
+    notifications, `notifyStates` the states that notify (all four by
+    default), `soundStates` the states that play a sound (none by default),
+    and `sound` the sound (`src/shared/sound-setting.ts`).
+  - *One per session.* A session's new notification takes the place of its
+    earlier one. It is withdrawn once it no longer holds: the session moved
+    to a state that is not told about, closed, or its worktree came on
+    screen, or Settings stopped notifying for its state.
+  - *Rate limit.* At most one alert per session and state every 10 seconds,
+    as the spec asks, so Needs you right after Done is still told. One
+    inside the interval waits, and goes out when the interval ends if the
+    session is still in that state, its worktree is still not on screen, and
+    Settings still ask for it. It says what the session says then.
+  - *Sounds.* A sound plays with its notification, or alone at the moment
+    the notification would have shown when only the sound is chosen for that
+    state, so it follows the same on-screen and rate-limit rules. The main
+    process plays it, never the window, so it plays while the window is
+    hidden (`src/bun/sounds.ts`): `pw-play`, `paplay`, or `aplay` (WAV only)
+    on Linux, `afplay` on macOS, and PowerShell's `SoundPlayer` (WAV only,
+    the path in an environment variable) on Windows, each as an executable
+    plus arguments. A Linux player that fails at once, such as `pw-play`
+    where the sound server is PulseAudio, gives way to the next one found.
+    One sound plays at a time: one asked for while another plays is lost,
+    not held. A sound still playing after 4 seconds is stopped, so a long
+    file cannot hold back the next. The three
+    that come with the app are tones the app makes itself
+    (`src/shared/tones.ts`), written to the cache folder the first time
+    they play, and again when the file went missing. The system's is the
+    freedesktop theme's `message-new-instant.oga` on Linux; when no player
+    found reads it, such as with only `aplay`, the first tone plays. A file of the person's own comes
+    from `chooseSoundFile`, the system's file dialog in the main process; a
+    path is kept only when it is absolute, short enough, free of control
+    characters, and ends in `.wav`, `.ogg`, `.oga`, `.flac`, `.mp3`, `.aiff`,
+    or `.aif`, and it must be a regular file when it plays. When it is gone,
+    an alert plays the first tone instead; Settings' Play (`playSound`) says
+    it is missing. The path is never logged.
+  - *Linux.* The main process talks to `org.freedesktop.Notifications` on
+    the session bus itself, with its own small D-Bus client over the bus's
+    Unix socket (`src/bun/dbus.ts`, `src/bun/notification-server.ts`).
+    `Notify` carries `replaces_id` for a session's earlier one, a `default`
+    action when the server lists `actions`, the hints `urgency` (normal),
+    `desktop-entry` (`Timber`), and `suppress-sound` when the app plays its
+    own sound. `CloseNotification` withdraws one. Only signals from the
+    bus name that owns the service count: `ActionInvoked` with `default`
+    brings the window forward and sends `showSession`, and the store selects
+    the worktree, shows the Workspace tab and the session's chip, and asks
+    for its terminal to take the keyboard (`revealSession`, through
+    `src/mainview/terminal-focus.ts`); an open dialog stays open over it.
+    `NotificationClosed` forgets the id. The operations for one session run
+    in order, since the server answers an id only later. A lost bus is
+    connected again on the next notification, and a server replaced by
+    another (`NameOwnerChanged`) has the ids it never gave forgotten; the
+    notifications from before stay on screen and can no longer be replaced,
+    withdrawn, or clicked. A `Notify` that gets no answer in 5 seconds is
+    not shown another way, since the server may still show it. On quitting
+    the app writes `CloseNotification` for each one it showed, before it
+    waits for anything. The bus address is `DBUS_SESSION_BUS_ADDRESS`, or
+    `bus` in `XDG_RUNTIME_DIR`. Without a bus, `notify-send` by argv shows
+    it, without a click, and the bus is tried again a minute later.
+  - *Markup.* The body is escaped (`&`, `<`, `>`) unless the server's
+    `GetCapabilities` answered without `body-markup`; a server that did not
+    answer is taken to read markup, so a wrong guess shows `&lt;` as
+    written, never markup. `notify-send` always gets it escaped. The title
+    is never markup by the spec.
+  - *Wayland.* The server sends `ActivationToken` before `ActionInvoked`,
+    and the app keeps it with the click. It is not handed on: Electrobun
+    2.0.6 starts GTK with `GDK_BACKEND=x11`, so the window is an X11 one
+    under XWayland, and GDK's Wayland token call does not apply to it. The
+    window comes forward through Electrobun's `activate`. On COSMIC it did,
+    behind another window, without the token (see "What has been
+    verified"); other compositors have not been tried.
+  - *macOS and Windows.* Electrobun's `Utils.showNotification` shows it with
+    the text as it is; whether anything there reads markup is not known.
+    It cannot answer a click, take the place of an earlier one, or be
+    withdrawn: Electrobun 2.0.6 has no way to. Neither system has been
+    tried.
+  - *Not told again.* A session that stays in a state, such as Needs you
+    for a second approval with a new message, gets no new notification, and
+    the one on screen keeps its first message.
 - **Not built.** Child records (subagents) beyond keeping them, and hooks
   for agents that do not send OSC 7501, which can also carry the prompt and
   the agent's reply.
@@ -1887,7 +1951,8 @@ What the agent prints on screen is still never read, parsed, or answered.
 In `bun run dev:web`, `timberMock.agentStatus(id, "state=blocked:kind=permission:msg=YXBwcm92ZQ==")`
 acts out a report from the program in a session (`"?"` for the probe), read
 by the same scanner as in the main process. `timberMock.notices()` lists the
-desktop notifications the main process would have shown, and
+desktop notifications the main process would have on screen,
+`timberMock.alertSounds()` the sessions a sound played for, and
 `timberMock.clickNotice(id)` acts out a click on one.
 
 ## First-run setup
@@ -4210,6 +4275,36 @@ Bun 1.4.4:
   the closed one with "No checks were reported for the head commit." and
   "No description."; and "No pull request yet" for spike/new-idea. No
   console errors.
+
+Run for desktop notifications and sounds (issue 119), on 2026-11-18,
+Pop!_OS 24.04 (COSMIC, `cosmic-notifications` 1.11.0, spec 1.2) on Linux
+x64 with Bun 1.4.2:
+
+- `bun test`: 1725 passed, 5 skipped, including the alert policy and its
+  runner, the D-Bus wire format with byte fixtures, a fake bus on a
+  temporary Unix socket, the notifications backend with a fake server, the
+  sound player with a fake spawn, and the Settings section.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- The app's own D-Bus client, from a scratch script outside the app,
+  against the real session bus: `GetCapabilities` listed `actions`,
+  `body-markup`, and `sound`, but not `activation-token`. A notification
+  with the body `In feat: <b>not bold</b> & plain` showed the tags as text,
+  nothing bold. A person clicked it: `ActivationToken` (32 characters) came
+  first, then `ActionInvoked` with `default`, and the click reached
+  `onClick` with its session and token, about 1.7 seconds after it showed.
+  No `notify-send` was involved. `CloseNotification` took one away;
+  COSMIC sent `NotificationClosed` twice for it, reasons 3 and 2.
+- The three tones that come with the app and the system sound played
+  through `pw-play`, from a scratch script with the real spawn; a missing
+  own file answered "missing", and a second sound while one played "busy".
+- The desktop window (`bun run start`), Wayland session: a shell in one
+  worktree ran `sleep 15; printf '\e]7501;state=working\e\\'; sleep 1;
+  printf '\e]7501;state=done\e\\'` while another worktree was selected and
+  another window was in front. The notification showed; a person clicked
+  it, and Timber came to the front and showed that worktree and its shell.
+- Not run: quitting with a notification on screen; other compositors
+  (GNOME, KDE); macOS and Windows (notifications and sounds); `afplay` and
+  PowerShell; an MP3 file.
 
 Run for agent status from the Program Status Protocol (issue 111), on
 2026-11-18, Pop!_OS 24.04 (COSMIC) on Linux x64 with Bun 1.4.2:

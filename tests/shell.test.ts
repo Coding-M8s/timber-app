@@ -323,15 +323,15 @@ describe("the preferences in the store", () => {
 		expect(store.getState().preferences).toEqual(defaultPreferences());
 		store.start();
 		await settle();
-		expect(store.getState().preferences).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), statusNotifications: true });
+		expect(store.getState().preferences).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), statusNotifications: true, notifyStates: ["needs-you", "done", "error", "crashed"] as const, soundStates: [] as const, sound: { kind: "bundled" as const, name: "chime" as const } });
 	});
 
 	test("a save that worked shows at once, and a restarted store has it", async () => {
 		const engine = createMockEngine();
 		const store = await startedStore(engine);
-		expect(await store.savePreferences({ sidebarSide: "right" })).toEqual({ outcome: "saved", preferences: { sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), statusNotifications: true } });
-		expect(store.getState().preferences).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), statusNotifications: true });
-		expect((await startedStore(engine)).getState().preferences).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), statusNotifications: true });
+		expect(await store.savePreferences({ sidebarSide: "right" })).toEqual({ outcome: "saved", preferences: { sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), statusNotifications: true, notifyStates: ["needs-you", "done", "error", "crashed"] as const, soundStates: [] as const, sound: { kind: "bundled" as const, name: "chime" as const } } });
+		expect(store.getState().preferences).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), statusNotifications: true, notifyStates: ["needs-you", "done", "error", "crashed"] as const, soundStates: [] as const, sound: { kind: "bundled" as const, name: "chime" as const } });
+		expect((await startedStore(engine)).getState().preferences).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), statusNotifications: true, notifyStates: ["needs-you", "done", "error", "crashed"] as const, soundStates: [] as const, sound: { kind: "bundled" as const, name: "chime" as const } });
 	});
 
 	test("a save that failed changes nothing on screen and answers with the reason", async () => {
@@ -361,9 +361,9 @@ describe("the preferences in the store", () => {
 		const store = createAppStore(engine);
 		store.start();
 		await store.savePreferences({ sidebarSide: "right" });
-		answer({ sidebarSide: "left", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), statusNotifications: true });
+		answer({ sidebarSide: "left", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), statusNotifications: true, notifyStates: ["needs-you", "done", "error", "crashed"] as const, soundStates: [] as const, sound: { kind: "bundled" as const, name: "chime" as const } });
 		await settle();
-		expect(store.getState().preferences).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), statusNotifications: true });
+		expect(store.getState().preferences).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), statusNotifications: true, notifyStates: ["needs-you", "done", "error", "crashed"] as const, soundStates: [] as const, sound: { kind: "bundled" as const, name: "chime" as const } });
 	});
 
 	test("preferences that cannot be read leave the defaults and a reason, until a save works", async () => {
@@ -387,11 +387,11 @@ describe("the preferences in the store", () => {
 		const store = await startedStore(engine);
 		const first = store.savePreferences({ sidebarSide: "left" });
 		const second = store.savePreferences({ sidebarSide: "right" });
-		answers[1]!({ outcome: "saved", preferences: { sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), statusNotifications: true } });
+		answers[1]!({ outcome: "saved", preferences: { sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), statusNotifications: true, notifyStates: ["needs-you", "done", "error", "crashed"] as const, soundStates: [] as const, sound: { kind: "bundled" as const, name: "chime" as const } } });
 		await second;
-		answers[0]!({ outcome: "saved", preferences: { sidebarSide: "left", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), statusNotifications: true } });
+		answers[0]!({ outcome: "saved", preferences: { sidebarSide: "left", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), statusNotifications: true, notifyStates: ["needs-you", "done", "error", "crashed"] as const, soundStates: [] as const, sound: { kind: "bundled" as const, name: "chime" as const } } });
 		await first;
-		expect(store.getState().preferences).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), statusNotifications: true });
+		expect(store.getState().preferences).toEqual({ sidebarSide: "right", editor: null, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), statusNotifications: true, notifyStates: ["needs-you", "done", "error", "crashed"] as const, soundStates: [] as const, sound: { kind: "bundled" as const, name: "chime" as const } });
 	});
 
 	test("a change the engine cannot read is a failed save", async () => {

@@ -83,6 +83,9 @@ export function createDesktopEngine(): Engine {
 		// Both wait for the person to pick in a file dialog.
 		exportTheme: theme => rpc.request.exportTheme({ theme }, { maxRequestTime: Infinity }),
 		importTheme: () => rpc.request.importTheme({}, { maxRequestTime: Infinity }),
+		// The person may take their time in the file dialog.
+		chooseSoundFile: () => rpc.request.chooseSoundFile({}, { maxRequestTime: Infinity }),
+		playSound: choice => rpc.request.playSound({ choice }),
 		// The main process reads the list first, and waits a moment to hear whether the editor stopped right away.
 		openInEditor: request => rpc.request.openInEditor(request, { maxRequestTime: 60_000 }),
 		// The main process stops a stuck read after 30 seconds.

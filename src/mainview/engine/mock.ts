@@ -1,5 +1,6 @@
 import { type Attention, assumedAttention } from "../../shared/attention";
-import { type StatusNotice, createStatusNotices } from "../../shared/status-notices";
+import { type AlertSettings, type StatusNotice, createAlertRunner } from "../../shared/status-notices";
+import { type ChooseSoundResult, type SoundChoice, type SoundOutcome, readSoundChoice } from "../../shared/sound-setting";
 import type { Engine } from "../../shared/engine";
 import { type Layout, defaultLayout, forgetRepository, readLayout } from "../../shared/layout";
 import { type AddRepositoryResult, type BranchSuggestion, type OpenInEditorRequest, type OpenInEditorResult, type Repository, type SavedBase, type SyncState, type TimberStatus, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
@@ -255,8 +256,20 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	readyCalls(): number;
 	/** What the interface last said through `attend`, or null before it said anything. */
 	attention(): Attention | null;
-	/** The desktop notifications the main process would have shown, oldest first, decided as it decides them. */
+	/**
+	 * The desktop notifications on screen as the main process would leave
+	 * them, decided as it decides them: one per session, in the order they
+	 * first showed, a newer one in its session's place, a withdrawn one gone.
+	 */
 	notices(): StatusNotice[];
+	/** The sessions an alert sound played for, oldest first. */
+	alertSounds(): string[];
+	/** The sounds Settings played as a preview, oldest first. */
+	previewSounds(): SoundChoice[];
+	/** What the next sound file dialog answers: a path, or null for Cancel. */
+	pickSoundFile(path: string | null): void;
+	/** What the next sound preview answers. */
+	endSoundPreviews(outcome: SoundOutcome["outcome"]): void;
 	/** Act out the person clicking the desktop notification of a session. */
 	clickNotice(session: string): void;
 	/** Make every later read of repositories fail with this message, or pass null to let them work again. */
@@ -446,6 +459,10 @@ export function createMockEngine(
 	let attended: Attention | null = null;
 	let ready = 0;
 	const notices: StatusNotice[] = [];
+	const alertSounds: string[] = [];
+	const previews: SoundChoice[] = [];
+	let pickedSound: string | null = "/home/me/sounds/bell.ogg";
+	let previewEnding: SoundOutcome["outcome"] = "played";
 	const showSessionListeners = new Set<(id: string) => void>();
 
 	// Fetching, acted out: Fetch now only, ended as `fetchEnding` says. Nothing reaches a network.
@@ -671,12 +688,25 @@ export function createMockEngine(
 		const worktree = timberFailures.has(path) ? undefined : repository?.worktrees.find(candidate => candidate.path === worktreePath);
 		return worktree && worktree.pathExists ? worktree : null;
 	}, () => preferences.agents, () => typeof timber === "function" ? timber() : timber);
-	// As the main process does, every change is weighed for a desktop notification, which is only kept here.
-	const statusNotices = createStatusNotices();
-	terminals.onTerminalChanged(change => {
-		const notice = statusNotices.changed(change, attended ?? assumedAttention, preferences.statusNotifications, Date.now());
-		if (notice) notices.push(notice);
+	// As the main process does, every change is weighed for a desktop notification and a sound, which are only kept here.
+	const alertSettings = (): AlertSettings => ({ notify: preferences.statusNotifications, notifyStates: preferences.notifyStates, soundStates: preferences.soundStates });
+	const alerts = createAlertRunner({
+		attention: () => attended ?? assumedAttention,
+		settings: alertSettings,
+		act: action => {
+			if (action.kind === "sound") alertSounds.push(action.session);
+			else if (action.kind === "withdraw") {
+				const at = notices.findIndex(notice => notice.session === action.session);
+				if (at !== -1) notices.splice(at, 1);
+			} else {
+				const at = notices.findIndex(notice => notice.session === action.notice.session);
+				if (at === -1) notices.push(action.notice);
+				else notices[at] = action.notice;
+				if (action.sound) alertSounds.push(action.notice.session);
+			}
+		},
 	});
+	terminals.onTerminalChanged(change => alerts.changed(change));
 	const timberConfig = createMockTimberConfig(path => current.some(repository => repository.path === path), () => typeof timber === "function" ? timber() : timber, saveSetup);
 	const workflows = createMockWorkflows(path => current.some(repository => repository.path === path), () => typeof timber === "function" ? timber() : timber);
 	const pullRequests = createMockPullRequests(path => current.find(repository => repository.path === path && repository.available), () => typeof timber === "function" ? timber() : timber);
@@ -735,6 +765,7 @@ export function createMockEngine(
 		readyCalls: () => ready,
 		attend(attention) {
 			attended = attention;
+			alerts.review();
 		},
 		onRepositoryChanged(listener) {
 			listeners.add(listener);
@@ -768,6 +799,7 @@ export function createMockEngine(
 			const { preferences: next, unreadable } = applyPreferenceChange(preferences, structuredClone(change));
 			if (unreadable.length > 0) return { outcome: "failed", message: `Nothing was saved, because these settings could not be read: ${unreadable.join(", ")}.` };
 			preferences = next;
+			alerts.review();
 			return { outcome: "saved", preferences: structuredClone(preferences) };
 		},
 		failPreferenceSaves(message) {
@@ -840,6 +872,24 @@ export function createMockEngine(
 		},
 		attention: () => attended,
 		notices: () => structuredClone(notices),
+		alertSounds: () => [...alertSounds],
+		previewSounds: () => structuredClone(previews),
+		pickSoundFile(path) {
+			pickedSound = path;
+		},
+		endSoundPreviews(outcome) {
+			previewEnding = outcome;
+		},
+		async chooseSoundFile(): Promise<ChooseSoundResult> {
+			if (pickedSound === null) return { outcome: "cancelled" };
+			// As the main process does: only a path the preference would accept.
+			const read = readSoundChoice({ kind: "custom", path: pickedSound });
+			return read?.kind === "custom" ? { outcome: "chosen", path: read.path } : { outcome: "refused", message: "The app cannot play that file. Choose a WAV, Ogg, FLAC, MP3, or AIFF file." };
+		},
+		async playSound(choice) {
+			previews.push(structuredClone(choice));
+			return { outcome: previewEnding };
+		},
 		clickNotice(session) {
 			for (const listener of [...showSessionListeners]) listener(session);
 		},
