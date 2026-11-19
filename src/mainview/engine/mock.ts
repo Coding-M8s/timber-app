@@ -3,7 +3,7 @@ import { type AlertSettings, type StatusNotice, createAlertRunner } from "../../
 import { type ChooseSoundResult, type SoundChoice, type SoundOutcome, readSoundChoice } from "../../shared/sound-setting";
 import type { Engine } from "../../shared/engine";
 import { type Layout, defaultLayout, forgetRepository, readLayout } from "../../shared/layout";
-import { type AddRepositoryResult, type BranchSuggestion, type OpenInEditorRequest, type OpenInEditorResult, type Repository, type SavedBase, type SyncState, type TimberStatus, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
+import { type AddRepositoryResult, type BranchSuggestion, type IssueLink, type OpenInEditorRequest, type OpenInEditorResult, type Repository, type SavedBase, type SyncState, type TimberStatus, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
 import { applyOrder } from "../../shared/repository-order";
 import { describeCommandLine } from "../../shared/command-line";
 import { TERMINAL_EDITOR_REASON, editorCommand, editorTarget, otherExecutableNames } from "../../shared/editor";
@@ -25,6 +25,7 @@ import { MOCK_PATH, type TerminalControls, createMockTerminals } from "./mock-te
 import { type TimberConfigControls, createMockTimberConfig } from "./mock-timber-config";
 import type { TimberConfigScope } from "../../shared/timber-config";
 import { type WorkflowControls, createMockWorkflows } from "./mock-workflows";
+import { type IssueControls, createMockIssues, sampleIssueLinks } from "./mock-issues";
 import { type PullRequestControls, createMockPullRequests } from "./mock-pull-requests";
 import { type ThemeFileControls, createMockThemeFiles } from "./mock-theme-files";
 
@@ -53,6 +54,8 @@ function worktree(repository: string, branch: string, overrides: SampleOverrides
 		changes: sampleChanges(0, 0),
 		// As Timber does: the primary checkout has no saved base, and a worktree made with `timber new` has one.
 		base: (primary ? { kind: "unassigned" } : { kind: "assigned", ref: "refs/remotes/origin/main" }) as SavedBase | null,
+		// Most sample worktrees were made from a branch name, so they have no issue.
+		issue: (sampleIssueLinks[`${repository} ${branch}`] ?? { kind: "none" }) as IssueLink | null,
 		sync: inSync(branch) as SyncState | null,
 		...overrides,
 	};
@@ -136,8 +139,8 @@ export const sampleStatesRepository: Repository = {
 			head: "4f9c2ab81d3e56f7a0b1c2d3e4f5a6b7c8d9e0f1",
 			sync: null,
 		}),
-		// A record without the field, as from a Timber before it: no base is shown.
-		worktree("billing", "release/2.4", { locked: true, base: null }),
+		// A record without the fields, as from a Timber before them: no base and no issue are shown.
+		worktree("billing", "release/2.4", { locked: true, base: null, issue: null }),
 		worktree("billing", "chore/moved-folder", {
 			prunable: true,
 			changes: { kind: "unknown", reason: "Path no longer identifies this Git worktree" },
@@ -247,7 +250,7 @@ export const sampleTimberStatuses = {
 /** The mock engine, plus the controls a test or the browser build uses to act out changes. */
 /** The controls for terminals are in ./mock-terminals.ts. */
 /** The controls for Timber's settings are in ./mock-timber-config.ts, for workflows in ./mock-workflows.ts, and for pull requests in ./mock-pull-requests.ts. */
-export interface MockEngine extends Engine, TerminalControls, TimberConfigControls, WorkflowControls, PullRequestControls, ThemeFileControls {
+export interface MockEngine extends Engine, TerminalControls, TimberConfigControls, WorkflowControls, PullRequestControls, IssueControls, ThemeFileControls {
 	/** Replace the data, without telling the interface. */
 	setRepositories(repositories: Repository[]): void;
 	/** Report that a repository changed, as the main process would. */
@@ -710,12 +713,14 @@ export function createMockEngine(
 	const timberConfig = createMockTimberConfig(path => current.some(repository => repository.path === path), () => typeof timber === "function" ? timber() : timber, saveSetup);
 	const workflows = createMockWorkflows(path => current.some(repository => repository.path === path), () => typeof timber === "function" ? timber() : timber);
 	const pullRequests = createMockPullRequests(path => current.find(repository => repository.path === path && repository.available), () => typeof timber === "function" ? timber() : timber);
+	const issues = createMockIssues(path => current.find(repository => repository.path === path && repository.available), () => typeof timber === "function" ? timber() : timber);
 	return {
 		...terminals,
 		...timberConfig,
 		...createMockThemeFiles(),
 		...workflows,
 		...pullRequests,
+		...issues,
 		appInfo: async () => ({ version: APP_VERSION }),
 		timberStatus: look,
 		recheckTimber: look,

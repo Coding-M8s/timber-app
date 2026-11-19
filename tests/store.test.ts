@@ -3,6 +3,7 @@ import { createMockThemeFiles } from "../src/mainview/engine/mock-theme-files";
 import { createMockTerminals } from "../src/mainview/engine/mock-terminals";
 import { createMockTimberConfig } from "../src/mainview/engine/mock-timber-config";
 import { createMockWorkflows } from "../src/mainview/engine/mock-workflows";
+import { createMockIssues } from "../src/mainview/engine/mock-issues";
 import { createMockPullRequests } from "../src/mainview/engine/mock-pull-requests";
 import type { Engine } from "../src/shared/engine";
 import { defaultLayout } from "../src/shared/layout";
@@ -86,6 +87,7 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		...createMockWorkflows(() => false, () => timber),
 		// Pull requests as the mock acts them out. Their own tests are in pull-requests.test.ts.
 		...createMockPullRequests(() => undefined, () => timber),
+		...createMockIssues(() => undefined, () => timber),
 		appInfo: async () => ({ version: "1.2.3" }),
 		uninstallPlan: async () => ({ available: false, reason: "Not installed." }),
 		uninstall: async () => ({ outcome: "unavailable", message: "Not installed." }),

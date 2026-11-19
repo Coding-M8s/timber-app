@@ -7,6 +7,7 @@ import { type FileChangeTarget, type FileChangesResult, type FileDiffResult, sam
 import { type Layout, clampSidebarWidth, dismissSetup, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberStatus, Worktree, WorktreeCommandResult } from "../../shared/model";
 import type { Preferences } from "../../shared/preferences";
+import type { IssueLookup } from "../../shared/issues";
 import type { PullRequestList } from "../../shared/pull-requests";
 import { applyOrder, moveInOrder } from "../../shared/repository-order";
 import { type ZoomStep, stepZoom, zoomLabel } from "../../shared/zoom";
@@ -386,8 +387,82 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		shownForcePush = { repository: selected.repository.path, worktree: selected.worktree.id, branch, at: sync.forcePushed.at };
 	}
 
+	/*
+	 * Linked issues come from trackers through Timber, one worktree per run,
+	 * so they are read as often as pull requests: when a worktree is first
+	 * listed with a link or its link changes, and for every linked worktree
+	 * of a repository each time a fetch of it ends. `dueIssues` holds the
+	 * worktree ids waiting for a read. The reads of one repository run one
+	 * after another, so a fetch never starts one tracker request per worktree
+	 * at once. Nothing is read while Timber is not ready.
+	 */
+	const dueIssues = new Set<string>();
+	const readingIssues = new Set<string>();
+	const linkedWorktrees = (repository: string) =>
+		state.repositories.find(candidate => candidate.path === repository && candidate.available)?.worktrees.filter(worktree => worktree.issue?.kind === "linked") ?? [];
+
+	const refreshIssues = mergeOverlapping<string>(async repository => {
+		for (;;) {
+			if (!timberReady(state)) return;
+			const next = linkedWorktrees(repository).find(worktree => dueIssues.has(worktree.id));
+			if (!next || next.issue?.kind !== "linked") return;
+			dueIssues.delete(next.id);
+			const { tracker, key } = next.issue;
+			let lookup: IssueLookup;
+			readingIssues.add(next.id);
+			try {
+				lookup = await engine.readIssue({ repository, worktree: next.path });
+			} catch (error) {
+				lookup = { ok: false, message: `The app did not hear the answer: ${messageOf(error)}` };
+			} finally {
+				readingIssues.delete(next.id);
+			}
+			// A worktree that left the list, or whose link changed meanwhile, keeps nothing from this read.
+			const now = linkedWorktrees(repository).find(worktree => worktree.id === next.id);
+			if (now?.issue?.kind !== "linked" || now.issue.tracker !== tracker || now.issue.key !== key) {
+				// The catch-up skipped it while this read ran, so a new link is read next.
+				if (now) dueIssues.add(now.id);
+				continue;
+			}
+			if (lookup.ok && lookup.outcome === "found" && (lookup.issue.tracker !== tracker || lookup.issue.key !== key)) {
+				lookup = { ok: false, message: `timber __app-issue answered about ${lookup.issue.tracker} ${lookup.issue.key}, not the saved ${tracker} ${key}.` };
+			}
+			update({ issues: { ...state.issues, [next.id]: { tracker, key, lookup } } });
+		}
+	});
+
+	/** Forget issues of worktrees no longer listed or linked the same way, and read those never read. */
+	function catchUpIssues(): void {
+		const linked = new Map(state.repositories.flatMap(repository => repository.available ? repository.worktrees : []).flatMap(worktree => worktree.issue?.kind === "linked" ? [[worktree.id, worktree.issue] as const] : []));
+		const kept = Object.fromEntries(Object.entries(state.issues).filter(([id, entry]) => {
+			const link = linked.get(id);
+			return link !== undefined && link.tracker === entry.tracker && link.key === entry.key;
+		}));
+		if (Object.keys(kept).length !== Object.keys(state.issues).length) state = { ...state, issues: kept };
+		for (const id of dueIssues) if (!linked.has(id)) dueIssues.delete(id);
+		if (!timberReady(state)) return;
+		for (const repository of state.repositories) {
+			if (!repository.available) continue;
+			let due = false;
+			for (const worktree of repository.worktrees) {
+				if (worktree.issue?.kind !== "linked") continue;
+				if (!(worktree.id in state.issues) && !readingIssues.has(worktree.id)) dueIssues.add(worktree.id);
+				if (dueIssues.has(worktree.id)) due = true;
+			}
+			if (due) void refreshIssues(repository.path);
+		}
+	}
+
+	/** Read every linked issue of a repository again. */
+	function issuesDue(repository: string): void {
+		for (const worktree of linkedWorktrees(repository)) dueIssues.add(worktree.id);
+		void refreshIssues(repository);
+	}
+
 	function update(change: Partial<AppState>): void {
 		state = { ...state, ...change };
+		// A change to the list, or to Timber, may bring links to read or take some away.
+		if (change.repositories || change.timber) catchUpIssues();
 		// A failed removal that no longer matches the list goes with the list change that ended it.
 		if (change.repositories && state.removals.length > 0) {
 			const removals = reconcileRemovals(state.repositories, state.removals);
@@ -744,7 +819,10 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		update({ fetches: { ...state.fetches, [status.repository]: status } });
 		// A fetch that ended, well or not, is when pull requests are read again.
 		const ended = !status.fetching && (status.lastFetched !== (before?.lastFetched ?? null) || status.failure?.at !== before?.failure?.at);
-		if (ended) void refreshPullRequests(status.repository);
+		if (ended) {
+			void refreshPullRequests(status.repository);
+			issuesDue(status.repository);
+		}
 	}
 
 	async function fetchNow(path: string): Promise<FetchResult | null> {

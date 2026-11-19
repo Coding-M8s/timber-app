@@ -67,7 +67,7 @@ describe("fetch words", () => {
 describe("the force-pushed marker", () => {
 	const row = (sync: Worktree["sync"]): Worktree => ({
 		id: "id", path: "/work/timber-worktrees/feat", canonicalPath: "/work/timber-worktrees/feat", branch: "feat", head: "a".repeat(40), primary: false,
-		detached: false, locked: false, prunable: false, pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, base: null, sync,
+		detached: false, locked: false, prunable: false, pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, base: null, issue: null, sync,
 	});
 	const rewritten = { kind: "tracking", upstream: "origin/feat", ahead: 1, behind: 2, forcePushed: { at: 5 } } as const;
 

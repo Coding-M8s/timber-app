@@ -52,6 +52,7 @@ describe("a recorded successful listing", () => {
 			pathExists: true,
 			changes: { kind: "known", modified: [], untracked: [] },
 			base: null,
+			issue: null,
 		});
 		expect(listing.worktrees.filter(worktree => worktree.primary).length).toBe(1);
 	});
@@ -224,6 +225,53 @@ describe("the saved base", () => {
 	test("a base field the contract does not describe refuses the list, so no base is ever guessed", () => {
 		for (const base of [null, "origin/main", [], {}, { kind: "assigned" }, { kind: "assigned", ref: "" }, { kind: "assigned", ref: 7 }, { kind: "invalid" }, { kind: "invalid", reason: "odd" }, { kind: "inferred", ref: "refs/heads/main" }]) {
 			expect(messageOf(readTimberListing(withBase(base), 0))).toContain("worktree 2 of 7 is not a worktree record");
+		}
+	});
+});
+
+describe("the saved issue link", () => {
+	const issues = (text: string) => Object.fromEntries(listed(readTimberListing(text, 0)).worktrees.map(worktree => [worktree.branch, worktree.issue]));
+	const withIssue = (issue: unknown) => altered(record => {
+		record.worktrees[1].issue = issue;
+	});
+
+	test("a recorded listing gives every worktree its issue: linked, none, or invalid with the reason", () => {
+		expect(issues(recorded.withIssues)).toEqual({
+			"main": { kind: "none" },
+			"plain": { kind: "none" },
+			"feat/jira": { kind: "linked", tracker: "jira", key: "PROJ-123", url: "https://example.atlassian.net/browse/PROJ-123" },
+			"feat/github": { kind: "linked", tracker: "github", key: "153", url: "https://github.com/example/sample/issues/153" },
+			"feat/linear": { kind: "linked", tracker: "linear", key: "ENG-12", url: "https://linear.app/example/issue/ENG-12/add-sign-in" },
+			"feat/broken": { kind: "invalid", reason: "malformed" },
+		});
+	});
+
+	test("a record from a Timber before the field has no issue at all, and the list is still read", () => {
+		expect(recorded.withBases).not.toContain('"issue"');
+		const listing = listed(readTimberListing(recorded.withBases, 0));
+		expect(listing.worktrees.length).toBe(7);
+		expect(listing.worktrees.every(worktree => worktree.issue === null)).toBe(true);
+	});
+
+	test("every reason for invalid metadata is kept", () => {
+		for (const reason of ["malformed", "stale", "unreadable"] as const) {
+			expect(listed(readTimberListing(withIssue({ kind: "invalid", reason }), 0)).worktrees[1]!.issue).toEqual({ kind: "invalid", reason });
+		}
+	});
+
+	test("an issue field the contract does not describe refuses the list, so no issue is ever guessed", () => {
+		const url = "https://example.atlassian.net/browse/PROJ-1";
+		for (const issue of [
+			null, "jira:PROJ-1", [], {}, { kind: "linked" },
+			{ kind: "linked", tracker: "asana", key: "PROJ-1", url },
+			{ kind: "linked", tracker: "jira", key: "", url },
+			{ kind: "linked", tracker: "jira", key: 1, url },
+			{ kind: "linked", tracker: "jira", key: "PROJ-1", url: "http://example.atlassian.net/browse/PROJ-1" },
+			{ kind: "linked", tracker: "jira", key: "PROJ-1", url: "not a link" },
+			{ kind: "linked", tracker: "jira", key: "PROJ-1" },
+			{ kind: "invalid" }, { kind: "invalid", reason: "odd" }, { kind: "guessed" },
+		]) {
+			expect(messageOf(readTimberListing(withIssue(issue), 0))).toContain("worktree 2 of 7 is not a worktree record");
 		}
 	});
 });

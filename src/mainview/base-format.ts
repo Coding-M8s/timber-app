@@ -47,10 +47,14 @@ export function describeSavedBase(base: SavedBase | null): SavedBaseDescription 
 	}
 }
 
-/** The tooltip of a worktree row: its path, and after it the saved base when Timber reported one. One line. */
-export function describeRowTitle(worktree: { path: string; base: SavedBase | null }): string {
+/**
+ * The tooltip of a worktree row: its path, after it the saved base when
+ * Timber reported one, then the linked issue's short form when there is one
+ * (see `issueTitlePart` in ./issue-format.ts). One line.
+ */
+export function describeRowTitle(worktree: { path: string; base: SavedBase | null }, issue: string | null = null): string {
 	const base = describeSavedBase(worktree.base);
-	return base === null ? worktree.path : `${worktree.path} (${base.text})`;
+	return [worktree.path, ...[base?.text, issue].filter(part => part != null).map(part => `(${part})`)].join(" ");
 }
 
 /** What the Rebase dialog says about the saved base, above its Onto field. Null when Timber did not report one. */

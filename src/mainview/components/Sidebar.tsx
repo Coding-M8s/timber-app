@@ -327,6 +327,7 @@ export function Sidebar() {
 													store.select(worktree.id);
 												}}
 												pullRequest={pullRequestOf(pullRequests, worktree.path)}
+												issue={state.issues[worktree.id]}
 												removal={removal?.status ?? null}
 												sessions={sessionsOf(state, worktree.id)}
 												actions={(

@@ -46,7 +46,7 @@ describe.skipIf(windows)("opening a worktree in an editor, with stand-in editors
 		setup: "repository",
 		worktrees: paths.map(path => ({
 			id: path, path, canonicalPath: path, branch: "feat/login", head: null, primary: false, detached: false, locked: false, prunable: false,
-			pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, base: null, sync: null,
+			pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, base: null, issue: null, sync: null,
 		})),
 	});
 

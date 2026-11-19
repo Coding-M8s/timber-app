@@ -5,6 +5,7 @@ import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffRe
 import type { Layout } from "./layout";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
 import type { Preferences } from "./preferences";
+import type { IssueLookup, IssueRequest } from "./issues";
 import type { PullRequestList } from "./pull-requests";
 import type { Theme } from "./theme";
 import type { ChooseSoundResult, SoundChoice, SoundOutcome } from "./sound-setting";
@@ -256,6 +257,17 @@ export interface Engine {
 	 * changes, and nothing acts on a pull request. Safe to call again.
 	 */
 	readPullRequests(repository: string): Promise<PullRequestList>;
+	/**
+	 * The live title and status of the issue linked to one worktree of a
+	 * repository in the list, read by `timber __app-issue` with Timber's own
+	 * tracker login (./issues.ts). The app holds no token and never signs in.
+	 * The answer is found, none, or failed with a reason (offline, sign-in
+	 * needed, not found, forbidden, failed). A record that cannot be read, or
+	 * that is about another worktree, is a failure with a message. Titles and
+	 * status names are text from the tracker: show them as text only.
+	 * Read-only: no file, ref, or issue changes. Safe to call again.
+	 */
+	readIssue(request: IssueRequest): Promise<IssueLookup>;
 	/**
 	 * Open a worktree of a repository in the list in the editor from the
 	 * preferences, started detached so it outlives the app. The command comes

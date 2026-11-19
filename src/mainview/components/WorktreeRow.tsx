@@ -2,8 +2,9 @@ import { type KeyboardEvent, type MouseEvent, type ReactNode, useId, useRef, use
 import type { Worktree } from "../../shared/model";
 import type { PullRequestEntry } from "../../shared/pull-requests";
 import type { TerminalSession } from "../../shared/terminal";
-import type { RemovalStatus } from "../store/state";
+import type { IssueEntry, RemovalStatus } from "../store/state";
 import { describeRowTitle } from "../base-format";
+import { describeIssue, issueTitlePart } from "../issue-format";
 import { type RowMarker, type RowMarkerKind, describeRow, describeRowMarkers, describeWorktreeKind, worktreeLabel } from "../format";
 import { type RowSessionMark, describeRowSessions } from "../terminal-format";
 import { WORKTREE_MENU_SHORTCUTS, type WorktreeMenuItemId, describeWorktreeMenu, opensWorktreeMenu, worktreeMenuItems } from "../worktree-menu-format";
@@ -82,6 +83,8 @@ interface WorktreeRowProps {
 	onSelect: () => void;
 	/** The pull request Timber found for the worktree's branch, or null for none or not known. */
 	pullRequest?: PullRequestEntry | null;
+	/** The store's last answer for the worktree's linked issue, if any. Its short form goes in the row's tooltip. */
+	issue?: IssueEntry | undefined;
 	/** Where a removal of the worktree stands, or null when none runs or failed. */
 	removal?: RemovalStatus | null;
 	/**
@@ -105,7 +108,7 @@ interface WorktreeRowProps {
 }
 
 /** One worktree in the sidebar. What it is marked with comes from `describeRowMarkers`; this only draws it. */
-export function WorktreeRow({ worktree, selected, onSelect, pullRequest = null, removal = null, sessions = [], actions, onMenuChoice }: WorktreeRowProps) {
+export function WorktreeRow({ worktree, selected, onSelect, pullRequest = null, issue, removal = null, sessions = [], actions, onMenuChoice }: WorktreeRowProps) {
 	const descriptionId = useId();
 	const button = useRef<HTMLButtonElement>(null);
 	// Where the open menu was asked to be, or null while it is closed.
@@ -133,6 +136,7 @@ export function WorktreeRow({ worktree, selected, onSelect, pullRequest = null, 
 		setMenuAt({ left: box.left, top: box.bottom });
 	};
 	const markers = describeRowMarkers(worktree, pullRequest, removal);
+	const linked = describeIssue(worktree.issue, issue);
 	const running = describeRowSessions(sessions);
 	const description = [describeRow(markers), running.sentence].filter(Boolean).join(" ");
 	const at = (place: RowMarker["place"]) => markers.filter(marker => marker.place === place).map(marker => <Marker key={marker.kind} marker={marker} />);
@@ -144,7 +148,7 @@ export function WorktreeRow({ worktree, selected, onSelect, pullRequest = null, 
 			aria-current={selected}
 			aria-describedby={description !== "" ? descriptionId : undefined}
 			aria-keyshortcuts={onMenuChoice ? WORKTREE_MENU_SHORTCUTS : undefined}
-			title={describeRowTitle(worktree)}
+			title={describeRowTitle(worktree, linked && issueTitlePart(linked))}
 			ref={button}
 			onClick={onSelect}
 			onKeyDown={onRowKeyDown}

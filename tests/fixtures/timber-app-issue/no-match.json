@@ -1,0 +1,1 @@
+{"schemaVersion":1,"repository":{"commonGitDir":"/work/sample/.git","primaryWorktreeRoot":"/work/sample","currentWorktreeRoot":"/work/sample"},"worktree":null,"outcome":"failed","issue":null,"reason":"failed","diagnostic":"No registered worktree matches that path or branch. Pass an absolute worktree path or an exact branch name from timber ls --json."}

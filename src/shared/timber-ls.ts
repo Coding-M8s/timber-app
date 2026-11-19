@@ -1,4 +1,4 @@
-import type { SavedBase, WorktreeChanges } from "./model";
+import type { IssueLink, IssueTracker, SavedBase, SavedBaseProblem, WorktreeChanges } from "./model";
 
 /**
  * Reading `timber ls --json`, version 1 of Timber's machine interface
@@ -31,6 +31,8 @@ export interface ListedWorktree {
 	changes: WorktreeChanges;
 	/** The saved base, or null when the record has no `base` field, as from a Timber before it. */
 	base: SavedBase | null;
+	/** The saved issue link, or null when the record has no `issue` field, as from a Timber before it. */
+	issue: IssueLink | null;
 }
 
 /** A whole list, in Timber's order, or the reason there is none. Never part of a list. */
@@ -80,6 +82,38 @@ function readBase(value: unknown): SavedBase | null | "unreadable" {
 	return "unreadable";
 }
 
+const PROBLEMS: readonly SavedBaseProblem[] = ["malformed", "stale", "unreadable"];
+export const ISSUE_TRACKERS: readonly IssueTracker[] = ["github", "jira", "linear"];
+const isOneOf = <Value extends string>(values: readonly Value[], value: unknown): value is Value => isText(value) && (values as readonly string[]).includes(value);
+
+/** True for an absolute `https` address, the only kind Timber saves for an issue. */
+export function isHttpsLink(value: unknown): value is string {
+	if (!isText(value)) return false;
+	try {
+		return new URL(value).protocol === "https:";
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * The `issue` field of a record, read as strictly as `base`. A record
+ * without the field comes from a Timber before it, and reads as null: the app
+ * then shows no issue. A field that is there must be one of the three kinds
+ * the contract names, with a known tracker and an `https` address; anything
+ * else answers "unreadable", so that an issue is never guessed. A tracker
+ * added to Timber later therefore makes an older app refuse the list.
+ */
+function readIssue(value: unknown): IssueLink | null | "unreadable" {
+	if (value === undefined) return null;
+	if (!isFields(value)) return "unreadable";
+	const { kind, tracker, key, url, reason } = value;
+	if (kind === "linked" && isOneOf(ISSUE_TRACKERS, tracker) && isText(key) && key.trim() !== "" && isHttpsLink(url)) return { kind, tracker, key, url };
+	if (kind === "none") return { kind };
+	if (kind === "invalid" && isOneOf(PROBLEMS, reason)) return { kind, reason };
+	return "unreadable";
+}
+
 /** Null when the value is not a version 1 `WorktreeRecord`. Fields this app does not use are ignored. Result files carry the same record. */
 export function readWorktree(value: unknown): ListedWorktree | null {
 	if (!isFields(value)) return null;
@@ -90,8 +124,9 @@ export function readWorktree(value: unknown): ListedWorktree | null {
 	if (!isText(path) || path === "" || !isTextOrNull(canonicalPath) || !isTextOrNull(branch) || !isTextOrNull(head)) return null;
 	if (typeof isPrimary !== "boolean" || typeof detached !== "boolean" || typeof pathExists !== "boolean") return null;
 	const base = readBase(value.base);
-	if (locked === null || prunable === null || changes === null || base === "unreadable") return null;
-	return { path, canonicalPath, branch, head, primary: isPrimary, detached, locked, prunable, pathExists, changes, base };
+	const issue = readIssue(value.issue);
+	if (locked === null || prunable === null || changes === null || base === "unreadable" || issue === "unreadable") return null;
+	return { path, canonicalPath, branch, head, primary: isPrimary, detached, locked, prunable, pathExists, changes, base, issue };
 }
 
 export function readRepository(value: unknown): ListedRepository | null {

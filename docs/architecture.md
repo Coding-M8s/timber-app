@@ -81,7 +81,9 @@ Timber's safety logic must exist once. The app follows two rules:
    so is rebasing, which reads Timber's result file (see
    [rebasing a worktree](#rebasing-a-worktree)). Pull requests come from
    `timber __app-pr`, with Timber's GitHub login (see
-   [pull requests](#pull-requests)).
+   [pull requests](#pull-requests)), and the live state of a worktree's
+   issue from `timber __app-issue`, with Timber's tracker logins (see
+   [linked issues](#linked-issues)).
 2. **Git is asked directly only for read-only status that Timber does not
    report.** Today that is which repository a folder belongs to, how each
    branch stands against its upstream, which branches there are to offer
@@ -138,6 +140,16 @@ The sidebar shows exactly the worktrees Timber lists, in Timber's order
   "(Base origin/main)", "(No saved base)", or "(Base unknown)". The workspace
   header shows the same words after the changes, with the whole sentence as a
   tooltip, and "Base unknown" in the error color.
+- **Saved issue link.** The record's `issue` field becomes `Worktree.issue`,
+  an `IssueLink`: linked with the tracker (`github`, `jira`, `linear`), the
+  key as saved, and the `https` address; none; or invalid with Timber's
+  reason. It is read as strictly as `base` (`readIssue` in
+  `src/shared/timber-ls.ts`): a record without the field, as from Timber
+  0.1.2, reads as null and no issue shows; any other shape, an unknown
+  tracker, or an address that is not `https` refuses the list. So a tracker
+  Timber adds later makes an older app refuse the list rather than guess.
+  Timber reads the link offline; its title and status come from
+  [linked issues](#linked-issues).
 - **Identity.** A worktree's `id` is the common Git directory plus its
   canonical path, and the selection holds that, not a path or a branch.
   Timber gives a canonical path only for a folder it verified. For a missing
@@ -1310,6 +1322,62 @@ added, is not on GitHub.
 `timberMock.setPullRequests(path, list)` changes one (`null` for the
 sample).
 
+## Linked issues
+
+A worktree made from a Jira, Linear, or GitHub issue shows that issue and
+where it stands, read by Timber with its own logins, so the app never reads
+a tracker login.
+
+- **The link.** `Worktree.issue` comes from `timber ls --json` (see
+  [the worktree list](#the-worktree-list)). Only a linked worktree is read.
+- **Asking.** `readIssue` on the `Engine`, answered by `src/bun/issues.ts`,
+  with a repository in the list and the worktree's Git-registered path. Only
+  while Timber is ready, and only for an absolute path, the main process
+  runs `timber __app-issue -- <path>` in the repository's primary checkout,
+  as an executable plus an argument array, the path after `--`, with
+  standard input closed and a limit of thirty seconds. Timber stops its own
+  network part after fifteen, never prompts, and changes no file, ref, or
+  issue. It refuses a path that is no registered worktree. This needs a
+  Timber with `__app-issue`, which is on Timber's main branch and in no
+  release yet. An older one answers "unknown command".
+- **Reading.** `readIssueRecord` in `src/shared/issues.ts` is pure. It
+  accepts one version 1 record whose outcome agrees with its fields and its
+  exit code (0 for found or none, 1 for failed) and whose worktree is the
+  one asked about. Found keeps the key, the `https` address, the title, the
+  tracker's status name (cut at 40 characters), its category (open, in
+  progress, closed), and the assignee, all made safe to show. Failed keeps
+  the reason (`offline`, `sign-in-needed`, `not-found`, `forbidden`,
+  `failed`) and Timber's diagnostic. Anything else is a failure with a
+  message. Nothing Timber printed is logged.
+- **When.** The store reads each linked worktree when it is first listed
+  with its link or the link changes, and every linked worktree of a
+  repository again each time a fetch of it ends, as for pull requests. The
+  reads of one repository run one after another, so a fetch never starts a
+  tracker request per worktree at once. An answer for a link that changed
+  meanwhile is dropped and the new link is read next, a found issue whose
+  tracker or key differs from the saved link is a failure, and a worktree no
+  longer linked keeps nothing. Answers live in `state.issues` by worktree
+  id. Since reads are one at a time and Timber allows a tracker fifteen
+  seconds, a tracker that hangs makes a repository with many linked
+  worktrees take minutes to go round; the earlier answers stay on screen
+  meanwhile.
+- **Showing.** `describeIssue` in `src/mainview/issue-format.ts` is pure and
+  gives the short form ("PROJ-123 · In Review", "#153 · Open"), a sentence
+  for the tooltip, the quiet word when the status could not be read, and
+  the link. The row's tooltip adds the short form after the base
+  (`describeRowTitle`). The workspace header shows it as a link that opens
+  the saved address through `openLink`. The Pull request tab shows an Issue
+  section above the pull request in every state (`IssueSection` in
+  `src/mainview/components/IssueSummary.tsx`). A failure is a quiet word and
+  a tooltip, never a dialog.
+
+In `bun run dev:web`, timber has a GitHub issue that is open and a Jira
+issue in review, api-server a Linear issue that is done, and billing a Jira
+issue that is offline, a Linear issue that needs sign-in, and link metadata
+Timber cannot use. docs-site, once added, has a GitHub issue that is not
+found. `timberMock.setIssue(worktreePath, lookup)` changes one
+(`null` for the sample).
+
 ## Opening a worktree in an editor
 
 The app has no editor of its own. "Open in editor" starts the person's editor
@@ -2370,6 +2438,10 @@ other `X11 Error:` line is not explained by it. See the issue 64 run under
   Timber's "unknown command" in the tooltip. The required version is not
   raised for it, because nothing else depends on it; raise it with the next
   Timber release, as for `listWorkflows` above.
+- **The Timber that linked issues need.** The `issue` field of `ls --json`
+  and `__app-issue` are on Timber's main branch only. With Timber 0.1.2 no
+  issue shows at all, since its records have no `issue` field. Raise the
+  required version with the next Timber release, as for pull requests.
 - **Rebase backups.** The design shows them, but Timber does not create backup
   branches today. Either Timber gains that, or the app creates them.
 - **Linux desktop shortcut.** Electrobun's installer adds one to `~/Desktop`
@@ -4394,6 +4466,37 @@ Run for Done from a worktree row's menu (issue 97), on 2026-11-18, Pop!_OS
 - Not run: the rest of the menu in the desktop window (right-click, the
   context menu key, Done, a primary checkout), and
   `bun run typecheck:desktop`.
+
+Run for linked issues (issue 103), on 2026-11-18, Pop!_OS 24.04 on Linux x64
+with Bun 1.4.2, the installed Timber 0.1.2, and Timber's main branch at
+`d2cb215` run from its source through a wrapper script
+(`exec bun ~/timber/src/index.ts "$@"`):
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: all passed, 8 skipped. The real Timber test of
+  `tests/issues.test.ts` is among the skipped, because Timber 0.1.2 has no
+  `__app-issue`.
+- `TIMBER_APP_TIMBER_PATH=<wrapper> bun test tests/issues.test.ts
+  tests/pull-requests.test.ts`: all passed, including the real Timber test:
+  a temporary repository with a worktree made from a branch name and one
+  with a Jira link written as Timber saves it; `ls --json` reported none and
+  the link, `__app-issue` answered `none` and `sign-in-needed` (no Jira
+  site), and the files, refs, index, and worktree list were unchanged. With
+  the same wrapper, four real Timber tests of `tests/workflows.test.ts` fail,
+  the same on the commit before this work, so not from it.
+- The fixtures in `tests/fixtures/timber-app-issue` and
+  `tests/fixtures/timber-ls/with-issues.json` were recorded from that Timber
+  with an empty home folder and no tracker tokens: none, found (the public
+  issue github.com/Coding-M8s/timber/issues/153 read without a login, its
+  assignee's login replaced), sign-in needed for Jira and Linear, not
+  found, offline (HTTPS_PROXY at a closed port), a malformed link, a path
+  that is no worktree, and Timber 0.1.2's "unknown command". Saving a link
+  needs a tracker lookup, so each `issue.json` was written by hand in
+  Timber's form and Timber read it back.
+- `bun run build:web`: built.
+- Not run: the desktop window and `readIssue` over the RPC bridge, the
+  header link clicked, `bun run dev:web` in a browser, and a found Jira or
+  Linear issue, which needs a login.
 
 Not run yet:
 

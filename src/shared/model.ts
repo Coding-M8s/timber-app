@@ -57,6 +57,22 @@ export type SavedBase =
 
 export type SavedBaseProblem = "malformed" | "stale" | "unreadable";
 
+/** A tracker an issue link can name. */
+export type IssueTracker = "github" | "jira" | "linear";
+
+/**
+ * The tracker issue Timber saved for a worktree: the one it was created from,
+ * or one attached later with `timber open --issue`. Timber reads it offline,
+ * so it carries no title or status; those come from `Engine.readIssue`.
+ */
+export type IssueLink =
+	/** `key` is the GitHub issue number as decimal text, or the Jira or Linear key. `url` is the `https` address Timber saved. */
+	| { kind: "linked"; tracker: IssueTracker; key: string; url: string }
+	/** Nothing is saved, as for the primary checkout or a worktree made from a branch name. */
+	| { kind: "none" }
+	/** Saved metadata exists and Timber cannot use it, with the same reasons as a saved base. The issue is unknown then, never "none". */
+	| { kind: "invalid"; reason: SavedBaseProblem };
+
 /** One worktree, as `timber ls --json` lists it. */
 export interface Worktree {
 	/**
@@ -86,6 +102,11 @@ export interface Worktree {
 	 * not say, as with a Timber from before the field. Never inferred.
 	 */
 	base: SavedBase | null;
+	/**
+	 * The issue Timber saved for the worktree. Null when Timber's record does
+	 * not say, as with a Timber from before the field: no issue is shown then.
+	 */
+	issue: IssueLink | null;
 	/**
 	 * How the branch stands against its upstream, read from Git because Timber
 	 * does not report it. Null on a detached HEAD, or when Git could not say.

@@ -9,6 +9,7 @@ import { TAB_LABELS, tabAfterKey } from "../shell";
 import { useAppState, useStore } from "../store/react";
 import { WORKSPACE_TABS, type WorkspaceTab, isBeingRemoved, isRunning, selectedWorktree } from "../store/state";
 import { ChangesPanel } from "./ChangesPanel";
+import { IssueHeaderLink, useIssue } from "./IssueSummary";
 import { PullRequestPanel } from "./PullRequestPanel";
 import { EditorProblemNote, OpenInEditorButton } from "./OpenInEditor";
 import { SetupPrompt } from "./SetupPrompt";
@@ -51,6 +52,7 @@ export function Workspace() {
 	const changes = describeChanges(worktree);
 	const sync = describeWorktreeSync(worktree);
 	const base = describeSavedBase(worktree.base);
+	const issue = useIssue(worktree);
 	const pullRequests = state.pullRequests[repository.path];
 	const pullRequest = pullRequestOf(pullRequests, worktree.path);
 	const pullMarkers = describePullRequestMarkers(pullRequest);
@@ -75,6 +77,7 @@ export function Workspace() {
 					{sync && <span>{sync}</span>}
 					<span>{changes}</span>
 					{base && <span className={base.warning ? "saved-base-warning" : undefined} title={base.sentence}>{base.text}</span>}
+					{issue && <IssueHeaderLink issue={issue} />}
 					{pullMarkers.length > 0 && (
 						// The same markers as the row, each with its sentence; the visible words are the short form.
 						<span className="workspace-pull" role="group" aria-label={pullMarkers.map(marker => marker.tooltip).join(" ")}>

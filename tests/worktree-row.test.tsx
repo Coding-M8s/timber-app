@@ -18,6 +18,7 @@ const clean: Worktree = {
 	pathExists: true,
 	changes: { kind: "known", modified: [], untracked: [] },
 	base: null,
+	issue: null,
 	sync: { kind: "tracking", upstream: "origin/feat/x", ahead: 0, behind: 0 },
 };
 const busy: Worktree = {
@@ -25,6 +26,7 @@ const busy: Worktree = {
 	locked: true,
 	changes: { kind: "known", modified: ["a.ts", "b.ts", "c.ts"], untracked: ["new.ts"] },
 	base: null,
+	issue: null,
 	sync: { kind: "tracking", upstream: "origin/feat/x", ahead: 2, behind: 14 },
 };
 
