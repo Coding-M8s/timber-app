@@ -2481,6 +2481,27 @@ X11 display, `gdk_x11_*` calls).
 
 See the issue 63 run under [what has been verified](#what-has-been-verified).
 
+### WebKitGTK's DMA-BUF renderer is off
+
+On Linux the app starts WebKitGTK with `WEBKIT_DISABLE_DMABUF_RENDERER=1`,
+unless that variable is already set, so `WEBKIT_DISABLE_DMABUF_RENDERER=0`
+turns the renderer back on. With the DMA-BUF renderer the interface lagged
+everywhere: on Pop!_OS 24.04 (COSMIC, XWayland, Intel Arc graphics on
+Meteor Lake, WebKitGTK 2.52.6, Mesa 26.1.6), a maximized window on a
+3440x1440 monitor at XWayland scale 1.5 drew 13 to 40 frames a second, with
+the slowest frames at 100 to 170 ms. Without it, the same window drew 57 to
+62 frames a second. A bare test page in WebKitGTK's MiniBrowser showed the
+same (37 to 55 against a steady 61), and Firefox under XWayland held 60, so
+the cost is in WebKitGTK's DMA-BUF path, not in the app or XWayland. Other
+machines were not tried.
+
+- The variable has to reach the C environment, where WebKitGTK calls
+  `getenv`. Bun keeps `process.env` apart from it, so
+  `src/bun/webkit-rendering.ts` calls libc `setenv` through `bun:ffi`, from
+  the first import of `src/bun/index.ts`, before Electrobun loads.
+- WebKitGTK's web processes inherit the variable. Terminals and agents the
+  app starts get `process.env`, so they do not.
+
 ### The GLXBadWindow line at start
 
 Each start seen so far on Linux (Pop!_OS 24.04 under XWayland and Xephyr,

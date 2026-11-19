@@ -1,3 +1,5 @@
+// First, before Electrobun loads: chooses how WebKitGTK draws (see webkit-rendering.ts).
+import "./webkit-rendering-setup";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import Electrobun, { BrowserView, BrowserWindow, Screen, Updater, Utils } from "electrobun/main";
