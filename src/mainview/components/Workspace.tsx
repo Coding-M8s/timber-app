@@ -1,5 +1,5 @@
 import type { KeyboardEvent } from "react";
-import { BEING_REMOVED_REASON, DONE_PRIMARY_NOTE } from "../done-format";
+import { BEING_REMOVED_REASON, DONE_CONTROL_TITLE, DONE_PRIMARY_NOTE } from "../done-format";
 import { REBASE_CONTROL_TITLE, REBASE_FOLDER_MISSING } from "../rebase-format";
 import { describeSavedBase } from "../base-format";
 import { describeChanges, describeWorktreeSync, worktreeLabel } from "../format";
@@ -108,7 +108,7 @@ export function Workspace() {
 						type="button"
 						className="button"
 						disabled={worktree.primary || removing}
-						title={worktree.primary ? DONE_PRIMARY_NOTE : removing ? BEING_REMOVED_REASON : "Remove this worktree, after a preview of what would be lost"}
+						title={worktree.primary ? DONE_PRIMARY_NOTE : removing ? BEING_REMOVED_REASON : DONE_CONTROL_TITLE}
 						onClick={() => store.openDialog({ kind: "done-worktree", repository: repository.path, worktree: worktree.id })}
 					>
 						Done

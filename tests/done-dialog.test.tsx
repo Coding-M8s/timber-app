@@ -12,6 +12,7 @@ import {
 	DEFAULT_DONE_OPTIONS, type DoneApplyRequest, type DoneApplyResult, type DoneOptions, type DonePreview, type DonePreviewRequest,
 	type DonePreviewResult, readDonePreview,
 } from "../src/shared/timber-done";
+import { worktreeMenuChoice } from "../src/mainview/worktree-menu-format";
 import { recordedDone } from "./support/timber";
 
 const settle = () => Bun.sleep(0);
@@ -709,6 +710,19 @@ describe("from the Done button to the list", () => {
 
 		store.closeDialog();
 		expect(renderToStaticMarkup(<App store={store} />)).not.toContain("<dialog");
+	});
+
+	test("Done in a row's menu opens the dialog for that row's worktree while another is selected, and keeps the selection", async () => {
+		const { store } = await startedStore();
+		const selected = store.getState().selection?.worktree;
+		expect(selected).not.toBe(sample(FEATURE).id);
+		const request = worktreeMenuChoice(TIMBER, sample(FEATURE), "done");
+		expect(request).toEqual({ kind: "done-worktree", repository: TIMBER, worktree: sample(FEATURE).id });
+		store.openDialog(request!);
+		const markup = renderToStaticMarkup(<App store={store} />);
+		expect(markup).toContain("<dialog");
+		expect(markup).toContain(`timber __ide-done preview -- ${FEATURE}`);
+		expect(store.getState().selection?.worktree).toBe(selected);
 	});
 
 	test("no dialog is shown while Timber is not ready", async () => {
