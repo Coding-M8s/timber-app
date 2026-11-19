@@ -1,4 +1,5 @@
 import type { AppInfo } from "./app-info";
+import type { BackupDeleteRequest, BackupDeleteResult, BackupList, BackupRestoreRequest, BackupRestoreResult } from "./backups";
 import type { Attention } from "./attention";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "./git-fetch";
 import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffResult } from "./file-changes";
@@ -268,6 +269,35 @@ export interface Engine {
 	 * Read-only: no file, ref, or issue changes. Safe to call again.
 	 */
 	readIssue(request: IssueRequest): Promise<IssueLookup>;
+	/**
+	 * Timber's recovery backups of a repository in the list, named by the path
+	 * of its primary checkout, read by `timber backup list --json`
+	 * (./backups.ts): the usable ones with whether each is protected, the
+	 * unfinished deletions, and what is not usable, each with Timber's reason.
+	 * `unsupported` when the Timber found has no such list. A record that
+	 * cannot be read is a failure with a message, never an empty list.
+	 * Branches and paths are the person's own text: show them as text only.
+	 * Read-only: no file or ref changes. Safe to call again.
+	 */
+	readBackups(repository: string): Promise<BackupList>;
+	/**
+	 * Restore a backup into a new worktree by running `timber backup restore
+	 * --result-file` in a repository from the list, on branch `recovery/<id>`
+	 * in the folder named, which must be a whole path. The command is
+	 * `backupRestoreArguments` in ./backups.ts, so the interface can show it
+	 * first. Timber never changes the backup or the worktree it came from. It
+	 * runs once and is never retried here. Read the list after every outcome.
+	 */
+	restoreBackup(request: BackupRestoreRequest): Promise<BackupRestoreResult>;
+	/**
+	 * Delete one backup with `timber __app-backup delete`, approving the
+	 * backup as the person saw it by its record's digest from `readBackups`.
+	 * Timber refuses, and deletes nothing, when the backup changed since, or
+	 * is protected. The command is `backupDeleteArguments` in ./backups.ts.
+	 * Runs once and is never retried here. Read the backups again after every
+	 * outcome.
+	 */
+	deleteBackup(request: BackupDeleteRequest): Promise<BackupDeleteResult>;
 	/**
 	 * Open a worktree of a repository in the list in the editor from the
 	 * preferences, started detached so it outlives the app. The command comes

@@ -83,7 +83,10 @@ Timber's safety logic must exist once. The app follows two rules:
    `timber __app-pr`, with Timber's GitHub login (see
    [pull requests](#pull-requests)), and the live state of a worktree's
    issue from `timber __app-issue`, with Timber's tracker logins (see
-   [linked issues](#linked-issues)).
+   [linked issues](#linked-issues)). Recovery backups are listed, restored,
+   and deleted with `timber backup list --json`, `timber backup restore`,
+   and `timber __app-backup delete` (see
+   [recovery backups](#recovery-backups)).
 2. **Git is asked directly only for read-only status that Timber does not
    report.** Today that is which repository a folder belongs to, how each
    branch stands against its upstream, which branches there are to offer
@@ -195,8 +198,9 @@ The sidebar shows exactly the worktrees Timber lists, in Timber's order
 
 ### Commands that report through a result file
 
-New, open, done, rebase, and saving Timber's settings (`config`) say how they ended in a result file, not on
-standard output. One helper runs all of them, so no dialog reads a result its
+New, open, done, rebase, saving Timber's settings (`config`), restoring a
+backup (`backup-restore`), and deleting one (`backup-delete`) say how they
+ended in a result file, not on standard output. One helper runs all of them, so no dialog reads a result its
 own way: `runTimberWithResultFile` in `src/bun/timber-run.ts`. Creating and
 opening worktrees use it (see [below](#creating-and-opening-worktrees)), and
 so do the Done dialog (see [removing a worktree](#removing-a-worktree)) and
@@ -1378,6 +1382,115 @@ Timber cannot use. docs-site, once added, has a GitHub issue that is not
 found. `timberMock.setIssue(worktreePath, lookup)` changes one
 (`null` for the sample).
 
+## Recovery backups
+
+Timber can keep a private backup of a worktree: its commit, pinned by a ref
+under `refs/timber/backups/`, and a copy of its files, ignored ones such as
+`.env` included, in the repository's Git directory. People make one with
+`timber backup create` in a terminal; Timber does not make them during a
+rebase yet. The sidebar lists them under each repository's worktrees, and
+restores or deletes one through Timber. Which backups are usable, which are
+protected, and whether one may be restored or deleted are Timber's rules,
+checked again by Timber right before it acts. The app repeats none of them.
+
+- **Asking.** `readBackups` on the `Engine`, answered by
+  `src/bun/backups.ts`. For a repository in the app's list only, and only
+  while Timber is ready, the main process runs `timber backup list --json` in
+  its primary checkout, as an executable plus an argument array, with
+  standard input closed and a limit of thirty seconds. It changes no file or
+  ref.
+- **Reading.** `readBackupList` in `src/shared/backups.ts` is pure. It
+  accepts one version 1 record whose exit code is the process's, with every
+  entry readable, and keeps the usable backups (ID, branch or detached,
+  commit, creation time as recorded, size, entry count, the worktree it came
+  from, the digest of its record, and whether Timber protects it, with the
+  reason), the unfinished deletions, and the entries that are not usable,
+  each with Timber's reason. Values are kept exactly: IDs and digests become
+  arguments, and paths are shown whole. `expiry` and fields the app does not
+  use are ignored. A failed record, another schema version, or anything that
+  cannot be read is a failure with a message, never an empty list.
+- **A Timber without the list.** Released Timber 0.1.2 has `backup create`
+  and `restore` but no list, and a build of Timber's main branch with the
+  list still calls itself 0.1.2, so the version cannot tell them apart. The
+  answer is `unsupported` only when Timber exited with 1, printed nothing,
+  and its standard error says `unknown command 'list'` or `unknown option
+  '--json'`, the words of the command line library Timber is built on. This
+  is the one place the app reads Timber's human output. A Timber with the
+  list always prints a record and leaves standard error empty, so a crash is
+  never taken for "no support". Replace this with a version check once a
+  Timber release has the list.
+- **When.** The interface (`src/mainview/store/store.ts`) reads a
+  repository's backups when it is first listed, on Refresh, when another
+  Timber is found, and right after the app restored or deleted one. Making
+  or deleting a backup changes a ref under `refs/timber/backups/`, which the
+  watcher reports as a change of the repository (see
+  [watching for changes](#watching-for-changes)), so they are read again
+  then too, at most once in 15 seconds per repository
+  (`BACKUP_READ_SPACING_MS`), with one more read at the end of that time
+  when a change came meanwhile: an agent at work changes a repository often,
+  and each list reads every backup's manifest. Changes inside backup storage
+  that touch no ref, such as an interrupted deletion, show at the next read.
+  A Timber without the list is asked again only on Refresh or when another
+  Timber is found. Reads of one repository never overlap, an answer from a
+  Timber that was replaced meanwhile is dropped and asked again, and a
+  removed repository's answer is forgotten.
+- **Showing.** `BackupsSection` in `src/mainview/components`, with its words
+  from the pure `src/mainview/backup-format.ts`, sits below an open
+  repository's rows. Each usable backup shows its branch, how long ago it
+  was made, and its size, with the rest in its tooltip, and Restore and
+  Delete. A protected one shows "protected" and Timber's reason, and has no
+  Delete. Unfinished deletions and entries that are not usable show
+  Timber's reason and point to `timber backup list` and `timber backup
+  done` in a terminal; the app offers nothing for them. The section says
+  that backups can hold copies of ignored files, as Timber asks. There is no
+  section when a repository has no backups, when they were not read yet,
+  when its Timber has no list, or while the worktree filter has text. A
+  list that could not be read is a quiet grey word on the repository's
+  header, "backups unknown", with the reason in its tooltip.
+- **Restore.** The Restore dialog (`src/mainview/components/BackupDialogs.tsx`)
+  shows the backup and a folder for the new worktree, by default beside the
+  primary checkout as `<name>-recovery-<id>` (`defaultRestoreFolder`), which
+  the person can change. It must be a whole path: Timber reads a relative one
+  from the primary checkout and would restore inside it. The dialog and the
+  main process both refuse one that is not; the main process also by its
+  own system's rules, so `C:\x` is refused on Linux. `timber backup restore
+  --result-file <path> -- <id> <folder>` (`backupRestoreArguments`) runs
+  through the result-file helper above, in the same turn as new, open, and
+  rebase of that repository (`src/bun/repository-turns.ts`). Timber makes
+  branch `recovery/<id>` in the new folder, never changes the backup or the
+  worktree it came from, and runs no hook, setup, editor, or agent. The
+  record (`readBackupRestoreResult`) says restored, refused, or partial; it
+  must be for the backup asked for. After every outcome the repository is
+  read again, and a restored worktree is selected. A partial restore can
+  leave an incomplete worktree in the list: the dialog says not to use it
+  and shows Timber's cleanup commands as text. The app never runs them, and
+  never selects that worktree.
+- **Delete.** The Delete dialog is destructive (Keep has the focus) and
+  shows the backup as the person chose it in the sidebar. That choice is
+  kept in the dialog request, so a later read cannot change what is asked
+  about. `timber __app-backup delete --id <id> --record-sha256 <digest>
+  --result-file <path>` (`backupDeleteArguments`), in the repository's
+  turn as for a restore, passes the digest of the
+  backup's record from that same list. Timber deletes only that backup, and
+  only when its record still has that digest and it is not protected;
+  otherwise it refuses and changes nothing. When the list read meanwhile no
+  longer has the backup as it was, before the dialog ran anything, it says
+  so and offers only Close. Once it ran the command, Timber's answer is
+  shown instead, whatever the list says, since Timber checks again on
+  every run. A partial deletion leaves the backup unrestorable: the dialog shows
+  what is left, Timber's manual commands as text, and "Delete again", which
+  runs the same command, as Timber's contract asks, and finishes it with
+  Timber's checks. The backups are read again after every outcome.
+- **Not here yet.** Comparing a worktree against a backup in the Changes
+  tab, and making a backup from the app.
+
+In `bun run dev:web`, timber has a usable backup, a protected one, one of a
+detached HEAD, an unfinished deletion, and an entry that is not usable;
+api-server has none; and billing acts out a Timber without the list.
+`timberMock.setBackups(path, list)` changes one (`null` for the sample),
+and `timberMock.endBackupCommands("refused")`, `("partial")`, or
+`("no-result")` chooses how a restore or delete ends.
+
 ## Opening a worktree in an editor
 
 The app has no editor of its own. "Open in editor" starts the person's editor
@@ -1465,7 +1578,7 @@ Open always pass `--no-editor` to Timber (see
 
 The Changes tab shows what changed in the selected worktree, as `git status`
 and `git diff` see it. It is read-only: nothing in it stages, discards, or
-commits. Comparing against the base or a rebase backup is a later step.
+commits. Comparing against the base or a backup is a later step.
 
 - **The capabilities.** `readFileChanges({ repository, worktree })` and
   `readFileDiff({ repository, worktree, file })` on the `Engine` contract.
@@ -2433,7 +2546,7 @@ other `X11 Error:` line is not explained by it. See the issue 64 run under
    [agent sessions](#agent-sessions)).
 3. **Timber actions.** New and open, rebase with a base picker, done with the
    safe and "delete anyway" confirmations.
-4. **Changes.** Diff against the base, the last commit, or a rebase backup.
+4. **Changes.** Diff against the base, the last commit, or a backup.
    The working tree against the index and the last commit is built (see
    [the Changes tab](#the-changes-tab)).
 5. **Settings.** Editor, agents, scripts, layout. Built: layout, editor,
@@ -2470,8 +2583,15 @@ other `X11 Error:` line is not explained by it. See the issue 64 run under
   and `__app-issue` are on Timber's main branch only. With Timber 0.1.2 no
   issue shows at all, since its records have no `issue` field. Raise the
   required version with the next Timber release, as for pull requests.
-- **Rebase backups.** The design shows them, but Timber does not create backup
-  branches today. Either Timber gains that, or the app creates them.
+- **The Timber that backups need.** `backup list --json`, `backup restore
+  --result-file`, and `__app-backup delete` are on Timber's main branch
+  only, which still calls itself 0.1.2. With released Timber 0.1.2 the
+  section never shows (see [recovery backups](#recovery-backups)). When a
+  Timber release has them, check for its version instead of reading the
+  "unknown command" text.
+- **Backups made by a rebase.** Timber makes backups only with `timber
+  backup create`. An assisted rebase that makes one first is planned in
+  Timber's issue 59. The section is called "Backups" until then.
 - **Linux desktop shortcut.** Electrobun's installer adds one to `~/Desktop`
   without asking, and offers no way to turn that off (see
   [installing the Linux build](#installing-the-linux-build)). Accepted for
@@ -3775,6 +3895,27 @@ printed the backtrace of the error handler itself:
   with a proposed fix in
   [blackboardsh/electrobun#619](https://github.com/blackboardsh/electrobun/pull/619).
 
+Run for the backups section (issue 20), Linux x64 (Pop!_OS) with Bun
+1.4.2, on 2026-11-19:
+
+- `bun test`: 1887 pass, 12 skip, 0 fail, with the installed Timber 0.1.2,
+  which has no backup list. Its test that the list is `unsupported` ran
+  against it.
+- `TIMBER_APP_TIMBER_PATH=<build of Timber main at 1e145a0> bun test
+  tests/backups.test.ts tests/backups-parse.test.ts
+  tests/backups-store.test.tsx`: 53 pass, 1 skip, 0 fail, including a real
+  repository where a backup with a changed file and an ignored `.env` was
+  listed without changing any file or ref, restored into a new worktree
+  with both, refused for a wrong digest, and deleted with no ref left.
+- With that build the whole suite has 4 failures in
+  `tests/workflows.test.ts`, which this issue does not touch: Timber's
+  main branch leaves `home`, `state`, or `data` folders after a settings
+  read.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+  `bun run build:web`: built.
+- The fixtures in `tests/fixtures/timber-backup` were recorded from that
+  build, as described in `tests/support/timber.ts`.
+
 Not run yet:
 
 - The setup wizard and the agent's keyboard focus in the desktop app. Both
@@ -4588,6 +4729,11 @@ Not run yet:
   RPC bridge, "Open pull request" clicked, and the refresh after a real
   background fetch. Only the main process module, the store, and static
   markup were run, and no installed Timber release has `__app-pr` yet.
+- The backups section and its dialogs in the desktop window, or in a
+  browser with `bun run dev:web`. Only the main process module, the store,
+  and static markup were run. No Timber release has the backup list yet.
+- A partial restore or delete from a real Timber. Their records in the
+  tests are recorded ones edited to that shape.
 - A found pull request read by the app's own code from GitHub. That was run
   with Timber by hand only, and the tests use `found.json`.
 - A portal file chooser other than Files on Omarchy and COSMIC's on Pop!_OS,

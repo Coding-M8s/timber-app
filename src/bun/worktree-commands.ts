@@ -4,6 +4,7 @@ import { type RebaseRequest, type RebaseResult, readRebaseResult, rebaseResultAr
 import { REBASE_RESULT_TIMBER_VERSION, supportsRebaseResult } from "../shared/timber-version";
 import { newWorktreeArguments, openWorktreeArguments, worktreeCommandResult } from "../shared/worktree-commands";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
+import { type RepositoryTurns, createRepositoryTurns } from "./repository-turns";
 import { describeTimberStatus } from "./timber";
 import { runTimberWithResultFile } from "./timber-run";
 
@@ -17,6 +18,8 @@ export interface WorktreeCommandsOptions {
 	environment?: Record<string, string | undefined>;
 	/** Where the private folder for the result file is made. The system's temporary folder by default. */
 	temporaryRoot?: string;
+	/** The turns shared with other commands that change a repository, such as restoring a backup. Its own by default. */
+	turns?: RepositoryTurns;
 }
 
 /**
@@ -55,15 +58,8 @@ export function createWorktreeCommands(options: WorktreeCommandsOptions): Worktr
 	const { timber, isListed, findRepository, environment, temporaryRoot } = options;
 
 	// Commands in one repository run one after another, so two of them never work on its worktrees at once.
-	const queues = new Map<string, Promise<unknown>>();
-	function inTurn<Result>(repository: string, task: () => Promise<Result>): Promise<Result> {
-		const run = (queues.get(repository) ?? Promise.resolve()).then(task);
-		const settled = run.catch(() => {}).then(() => {
-			if (queues.get(repository) === settled) queues.delete(repository);
-		});
-		queues.set(repository, settled);
-		return run;
-	}
+	const turns = options.turns ?? createRepositoryTurns();
+	const inTurn = <Result>(repository: string, task: () => Promise<Result>) => turns.inTurn(repository, task);
 
 	function run(repository: string, command: ResultCommand, timberArguments: (resultFile: string) => string[]): Promise<WorktreeCommandResult> {
 		// Before the queue, which is kept by repository: a request without one has no place in it.

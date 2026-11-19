@@ -2,7 +2,7 @@ import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 import { createOutputCapture } from "../shared/captured-output";
-import { RESULT_FILE_PLACEHOLDER, type ResultCommand, type TimberRun, describeTimberCommand, readTimberResult } from "../shared/timber-result";
+import { RESULT_FILE_PLACEHOLDER, type ResultCommand, type TimberRun, describeTimberCommand, readTimberResult, resultCommandName } from "../shared/timber-result";
 
 export interface TimberRunRequest {
 	/** The Timber executable found on start (see ./timber.ts). */
@@ -79,12 +79,12 @@ export async function runTimberWithResultFile(request: TimberRunRequest): Promis
 		// mkdtemp makes the folder with access for this user only (mode 0700).
 		privateFolder = await mkdtemp(join(request.temporaryRoot ?? tmpdir(), "timber-app-result-"));
 	} catch (error) {
-		return failed(`Could not make a temporary folder for the result of timber ${command}: ${messageOf(error)}. Nothing was run.`);
+		return failed(`Could not make a temporary folder for the result of ${resultCommandName(command)}: ${messageOf(error)}. Nothing was run.`);
 	}
 
 	try {
 		if (isInside(await resolved(folder), await resolved(privateFolder))) {
-			return failed(`The temporary folder ${privateFolder} is inside ${folder}, and the result of timber ${command} must stay outside the repository. Nothing was run.`);
+			return failed(`The temporary folder ${privateFolder} is inside ${folder}, and the result of ${resultCommandName(command)} must stay outside the repository. Nothing was run.`);
 		}
 		const resultFile = join(privateFolder, "result.json");
 		const inputFile = join(privateFolder, "input.json");
@@ -93,7 +93,7 @@ export async function runTimberWithResultFile(request: TimberRunRequest): Promis
 				// A new file that only this user can read. Only the path is ever logged, never what it holds.
 				await writeFile(inputFile, request.input.bytes, { flag: "wx", mode: 0o600 });
 			} catch (error) {
-				return failed(`Could not save the input file for timber ${command}: ${messageOf(error)}. Nothing was run.`);
+				return failed(`Could not save the input file for ${resultCommandName(command)}: ${messageOf(error)}. Nothing was run.`);
 			}
 		}
 
@@ -112,7 +112,7 @@ export async function runTimberWithResultFile(request: TimberRunRequest): Promis
 			await Promise.all([collect(child.stdout), collect(child.stderr), child.exited]);
 			exitCode = child.exitCode;
 		} catch (error) {
-			return failed(`Could not run timber ${command} in ${folder}: ${messageOf(error)}`);
+			return failed(`Could not run ${resultCommandName(command)} in ${folder}: ${messageOf(error)}`);
 		}
 
 		let text: string | null;

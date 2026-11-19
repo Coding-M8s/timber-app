@@ -41,6 +41,8 @@ export async function createEngine(): Promise<Engine> {
 	// outside the app (a save based on the earlier read is then a conflict), timberMock.breakTimberConfig(path, "Invalid TOML")
 	// a file Timber cannot read, and timberMock.setConnection(false) a login check that fails.
 	// For workflows: timberMock.setWorkflows("/work/timber", { ok: false, message: "..." }), or null for the sample.
+	// For backups: timberMock.setBackups("/work/timber", { state: "failed", message: "..." }), or null for the sample, and
+	// timberMock.endBackupCommands("refused"), ("partial"), or ("no-result") chooses how a restore or delete ends.
 	// The billing worktree feat/tax-rules shows every kind of change.
 	// A removal and a fetch take a moment here, so the running state can be seen.
 	engine.setDoneDelay(900);

@@ -27,6 +27,7 @@ import type { TimberConfigScope } from "../../shared/timber-config";
 import { type WorkflowControls, createMockWorkflows } from "./mock-workflows";
 import { type IssueControls, createMockIssues, sampleIssueLinks } from "./mock-issues";
 import { type PullRequestControls, createMockPullRequests } from "./mock-pull-requests";
+import { type BackupControls, createMockBackups } from "./mock-backups";
 import { type ThemeFileControls, createMockThemeFiles } from "./mock-theme-files";
 
 const inSync = (branch: string): SyncState => ({ kind: "tracking", upstream: `origin/${branch}`, ahead: 0, behind: 0 });
@@ -249,8 +250,8 @@ export const sampleTimberStatuses = {
 
 /** The mock engine, plus the controls a test or the browser build uses to act out changes. */
 /** The controls for terminals are in ./mock-terminals.ts. */
-/** The controls for Timber's settings are in ./mock-timber-config.ts, for workflows in ./mock-workflows.ts, and for pull requests in ./mock-pull-requests.ts. */
-export interface MockEngine extends Engine, TerminalControls, TimberConfigControls, WorkflowControls, PullRequestControls, IssueControls, ThemeFileControls {
+/** The controls for Timber's settings are in ./mock-timber-config.ts, for workflows in ./mock-workflows.ts, for pull requests in ./mock-pull-requests.ts, for issues in ./mock-issues.ts, and for backups in ./mock-backups.ts. */
+export interface MockEngine extends Engine, TerminalControls, TimberConfigControls, WorkflowControls, PullRequestControls, IssueControls, BackupControls, ThemeFileControls {
 	/** Replace the data, without telling the interface. */
 	setRepositories(repositories: Repository[]): void;
 	/** Report that a repository changed, as the main process would. */
@@ -714,6 +715,23 @@ export function createMockEngine(
 	const workflows = createMockWorkflows(path => current.some(repository => repository.path === path), () => typeof timber === "function" ? timber() : timber);
 	const pullRequests = createMockPullRequests(path => current.find(repository => repository.path === path && repository.available), () => typeof timber === "function" ? timber() : timber);
 	const issues = createMockIssues(path => current.find(repository => repository.path === path && repository.available), () => typeof timber === "function" ? timber() : timber);
+	const backups = createMockBackups({
+		listed: path => current.find(repository => repository.path === path && repository.available),
+		timber: () => typeof timber === "function" ? timber() : timber,
+		// As `git worktree add -b` would: the recovery worktree is listed from now on, in Timber's order.
+		addWorktree: (repositoryPath, path, branch) => {
+			current = current.map(repository => repository.path !== repositoryPath ? repository : {
+				...repository,
+				worktrees: inTimberOrder([...repository.worktrees, {
+					id: worktreeId(`${repositoryPath}/.git`, { path, canonicalPath: path }),
+					path, canonicalPath: path, branch, head: "1111111111111111111111111111111111111111",
+					primary: false, detached: false, locked: false, prunable: false, pathExists: true,
+					changes: { kind: "known", modified: [], untracked: [] }, base: { kind: "unassigned" }, sync: { kind: "unpublished" }, issue: null,
+				}]),
+			});
+		},
+		delay: () => options.commandMilliseconds ?? 0,
+	});
 	return {
 		...terminals,
 		...timberConfig,
@@ -721,6 +739,7 @@ export function createMockEngine(
 		...workflows,
 		...pullRequests,
 		...issues,
+		...backups,
 		appInfo: async () => ({ version: APP_VERSION }),
 		timberStatus: look,
 		recheckTimber: look,

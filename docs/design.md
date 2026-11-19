@@ -80,8 +80,15 @@ change them here first when they change.
   move through the menu; Escape and Tab give the keyboard back to the row,
   as do scrolling the list, resizing the window, and leaving it. A click
   elsewhere puts the menu away.
-- Rebase backups are listed below the worktrees with compare, restore, and
-  delete.
+- Timber's backups are listed below a repository's worktrees, under
+  "Backups", with their branch, how long ago they were made, and their
+  size. Each has Restore, and Delete unless Timber protects it, which says
+  "protected" and why. Unfinished deletions and entries that are not usable
+  show Timber's reason and offer nothing. The section says backups can hold
+  copies of ignored files such as `.env`. There is no section without
+  backups, with a Timber that cannot list them, or while the filter has
+  text. Backups that could not be read are a quiet grey word beside the
+  repository's name, "backups unknown". Compare comes later.
 - Settings is a cogwheel at the bottom of the sidebar.
 
 ## Workspace
@@ -124,7 +131,7 @@ change them here first when they change.
   assignee or "Unassigned", and "Open in browser". When the status could not
   be read it shows the key, the quiet word, and Timber's reason. Text from
   the tracker is plain text, never markup.
-- Changes compares against the base, the last commit, or a rebase backup.
+- Changes compares against the base, the last commit, or a backup (later).
 - A repository that was never set up for Timber shows a quiet prompt above
   the tabs: Timber's defaults work, setup is optional, "Set up Timber", and
   "Not now". The button opens the setup wizard: the choices of
@@ -159,6 +166,15 @@ change them here first when they change.
   does. The dialog says how the rebase ended. One that stops on conflicts
   lists the files and offers a terminal in the worktree, leaving the rebase
   paused for the person to finish or abort.
+- **Restore backup:** the backup's branch, age, source folder, and ID, and
+  the folder for the new worktree, by default beside the primary checkout.
+  Says that the branch is `recovery/<id>`, that changes come back unstaged
+  or untracked with ignored files, and that nothing runs. A partial restore
+  says what is left, not to use it, and shows Timber's cleanup commands as
+  text.
+- **Delete backup:** "Delete backup of <branch>?" with Keep as the default.
+  When the backup changed since it was chosen, only Close. A partial
+  deletion shows what is left and "Delete again".
 - **Done:** a clean, published worktree gets a summary of what is removed,
   including ignored files. One with unsaved work gets "Delete anyway?" with
   Keep as the default. After Remove the dialog offers Close: the removal

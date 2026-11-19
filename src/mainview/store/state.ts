@@ -3,6 +3,7 @@ import { type Layout, defaultLayout } from "../../shared/layout";
 import type { RepositoryFetch } from "../../shared/git-fetch";
 import type { IssueLookup } from "../../shared/issues";
 import type { IssueTracker } from "../../shared/model";
+import type { Backup, BackupList } from "../../shared/backups";
 import type { PullRequestList } from "../../shared/pull-requests";
 import type { Repository, TimberFailure, TimberStatus, Worktree } from "../../shared/model";
 import { type Preferences, defaultPreferences } from "../../shared/preferences";
@@ -136,6 +137,13 @@ export type DialogRequest =
 	| { kind: "done-worktree"; repository: string; worktree: string }
 	/** Rebase a worktree with Timber, in a new session. Named as for Done. */
 	| { kind: "rebase-worktree"; repository: string; worktree: string }
+	/**
+	 * Restore or delete one backup. `backup` is the backup as the person chose
+	 * it, kept as it was: a later read of the list never changes what the
+	 * dialog asks about. `repository` is the path of the primary checkout.
+	 */
+	| { kind: "restore-backup"; repository: string; backup: Backup }
+	| { kind: "delete-backup"; repository: string; backup: Backup }
 	/** The app's settings, open at one section, or at the first when none is named. */
 	| { kind: "settings"; section?: SettingsSection }
 	/** The setup wizard of a repository new to Timber, named by the path of its primary checkout. */
@@ -257,6 +265,14 @@ export interface AppState {
 	 */
 	pullRequests: Readonly<Record<string, PullRequestList>>;
 	/**
+	 * Timber's recovery backups, by the path of the repository's primary
+	 * checkout, as `timber backup list --json` last answered. A repository
+	 * missing here was not read yet. Read when a repository is first listed,
+	 * on Refresh, after a restore or delete, and after the repository changed,
+	 * at most once in `BACKUP_READ_SPACING_MS` for that.
+	 */
+	backups: Readonly<Record<string, BackupList>>;
+	/**
 	 * The live state of each linked issue, by worktree id, as `timber
 	 * __app-issue` last answered, with the saved link it was read for. A
 	 * worktree with a linked issue that is missing here was not read yet.
@@ -300,6 +316,7 @@ export const initialState: AppState = {
 	fetches: {},
 	pullRequests: {},
 	issues: {},
+	backups: {},
 };
 
 /** Nothing that depends on Timber is offered until a usable one is found. */

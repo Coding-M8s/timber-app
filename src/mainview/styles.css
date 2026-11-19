@@ -3297,7 +3297,8 @@ pre:focus-visible {
 
 /* Quiet: grey words beside the name, not the red of errors. Pull requests that could not be read are said the same way. */
 .group-flag.fetch-failed,
-.group-flag.pulls-failed {
+.group-flag.pulls-failed,
+.group-flag.backups-failed {
 	color: var(--text-3);
 	font-size: 11px;
 }
@@ -3675,4 +3676,119 @@ pre:focus-visible {
 .sound-row .field-input {
 	flex: 1 1 160px;
 	min-width: 0;
+}
+
+/* Backups sit below a repository's worktrees, quieter than its rows: hairline above, small grey words. */
+.backups {
+	margin: 4px 8px 6px 23px;
+	padding-top: 6px;
+	border-top: 1px solid var(--line);
+	font-size: 12px;
+}
+
+.backups-title {
+	margin: 0 0 4px;
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--text-3);
+}
+
+.backups-list {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.backup {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 6px;
+}
+
+.backup-text {
+	min-width: 0;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	column-gap: 6px;
+}
+
+.backup-branch {
+	color: var(--text-2);
+	overflow-wrap: anywhere;
+}
+
+.backup.quiet .backup-branch {
+	font-family: var(--font-mono);
+	font-size: 11px;
+	color: var(--text-3);
+}
+
+.backup-detail,
+.backup-flag {
+	font-size: 11px;
+	color: var(--text-3);
+}
+
+.backup-reason {
+	flex-basis: 100%;
+	font-size: 11px;
+	color: var(--text-3);
+	overflow-wrap: anywhere;
+}
+
+.backup-actions {
+	flex: none;
+	display: flex;
+	gap: 4px;
+}
+
+.backup-actions .text-button {
+	margin-top: 0;
+	padding: 1px 6px;
+	font-size: 11px;
+}
+
+/* Red only for its words while pointed at: deleting is destructive. */
+.text-button.danger:hover,
+.text-button.danger:focus-visible {
+	color: var(--error);
+}
+
+.backups-note {
+	margin: 6px 0 0;
+	font-size: 11px;
+	color: var(--text-3);
+}
+
+.backup-facts {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: 3px 12px;
+	margin: 0;
+	font-size: 12px;
+}
+
+.backup-facts dt {
+	color: var(--text-3);
+}
+
+.backup-facts dd {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+.backup-facts dd.mono {
+	font-family: var(--font-mono);
+	font-size: 11.5px;
+}
+
+.backup-remaining {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
 }

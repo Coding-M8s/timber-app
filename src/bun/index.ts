@@ -44,6 +44,8 @@ import { createUninstaller } from "./uninstall";
 import { createWindowMemory } from "./window-memory";
 import { createWindowReveal } from "./window-reveal";
 import { createWorktreeCommands } from "./worktree-commands";
+import { createBackupCommands } from "./backups";
+import { createRepositoryTurns } from "./repository-turns";
 import { createWorkflowReader } from "./workflows";
 
 const DEV_SERVER_URL = "http://localhost:5173";
@@ -95,7 +97,11 @@ const repositories = createRepositoryList({ settingsFile, settings, pickFolder, 
 const layout = createSavedLayout(settings);
 const preferences = createSavedPreferences(settings);
 const themeFiles = createThemeFiles({ pickFolder, pickFile });
-const worktrees = createWorktreeCommands({ timber: () => timber.current(), isListed: path => repositories.includes(path), findRepository: path => repositories.find(path) });
+// New, open, rebase, and restoring or deleting a backup run one at a time in each repository.
+const turns = createRepositoryTurns();
+const worktrees = createWorktreeCommands({ timber: () => timber.current(), isListed: path => repositories.includes(path), findRepository: path => repositories.find(path), turns });
+// Timber's recovery backups. Names and paths are the person's own, and what Timber printed is private: never log either (see ./backups.ts).
+const backups = createBackupCommands({ timber: () => timber.current(), isListed: path => repositories.includes(path), turns });
 
 /*
  * Background refresh (see docs/architecture.md, "Watching for changes"). The watcher hears changes to the Git
@@ -332,6 +338,11 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			listWorkflows: ({ repository }) => workflows.list(repository),
 			readPullRequests: ({ repository }) => pullRequests.read(repository),
 			readIssue: request => issues.read(request),
+			readBackups: ({ repository }) => backups.list(repository),
+			// Restores into a new folder and branch; Timber never changes the backup or its source (see ./backups.ts).
+			restoreBackup: request => backups.restore(request),
+			// Deletes one backup, only as the person confirmed it: Timber checks its digest first.
+			deleteBackup: request => backups.remove(request),
 			previewDone: request => done.preview(request),
 			// Removes a worktree. Only ever with a preview that `previewDone` handed out (see ./done.ts).
 			applyDone: request => done.apply(request),

@@ -1,6 +1,7 @@
 import type { RPCSchema } from "electrobun/view";
 import type { AppInfo } from "./app-info";
 import type { Attention } from "./attention";
+import type { BackupDeleteRequest, BackupDeleteResult, BackupList, BackupRestoreRequest, BackupRestoreResult } from "./backups";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "./git-fetch";
 import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffResult } from "./file-changes";
 import type { Layout } from "./layout";
@@ -64,6 +65,12 @@ export type AppRPC = {
 			/** The main process stops Timber after thirty seconds, so the caller allows longer. */
 			readPullRequests: { params: { repository: string }; response: PullRequestList };
 			readIssue: { params: IssueRequest; response: IssueLookup };
+			/** The main process stops Timber after thirty seconds, so the caller allows longer. */
+			readBackups: { params: { repository: string }; response: BackupList };
+			/** Answers only when Timber has ended, after it copied every file back, so the caller must not time it out. */
+			restoreBackup: { params: BackupRestoreRequest; response: BackupRestoreResult };
+			/** As `restoreBackup`: no time limit. */
+			deleteBackup: { params: BackupDeleteRequest; response: BackupDeleteResult };
 			previewDone: { params: DonePreviewRequest; response: DonePreviewResult };
 			/** Answers only when Timber has ended. Scripts that run before deletion take as long as they take, so the caller must not time it out. */
 			applyDone: { params: DoneApplyRequest; response: DoneApplyResult };
