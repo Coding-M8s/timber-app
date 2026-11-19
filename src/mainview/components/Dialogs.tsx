@@ -1,5 +1,6 @@
 import { useAppState } from "../store/react";
 import { SETTINGS_SECTIONS, timberReady } from "../store/state";
+import { DeleteBackupDialog, RestoreBackupDialog } from "./BackupDialogs";
 import { DoneDialog } from "./DoneDialog";
 import { NewWorktreeDialog } from "./NewWorktreeDialog";
 import { RebaseDialog } from "./RebaseDialog";
@@ -26,6 +27,14 @@ export function Dialogs() {
 			return <DoneDialog key={`${dialog.repository}\n${dialog.worktree}`} request={dialog} />;
 		case "rebase-worktree":
 			return <RebaseDialog key={`${dialog.repository}\n${dialog.worktree}`} request={dialog} />;
+		case "restore-backup":
+		case "delete-backup": {
+			// Timber runs in the repository's folder, so the repository has to be listed and there. A key per backup, so another one starts from nothing.
+			const repository = state.repositories.find(candidate => candidate.path === dialog.repository && candidate.available);
+			if (!repository) return null;
+			const key = `${dialog.repository}\n${dialog.backup.id}`;
+			return dialog.kind === "restore-backup" ? <RestoreBackupDialog key={key} request={dialog} /> : <DeleteBackupDialog key={key} request={dialog} />;
+		}
 		case "settings":
 			// A key per section asked for, so asking for another one while Settings is open opens it there.
 			return <SettingsDialog key={dialog.section ?? ""} initialSection={dialog.section ?? SETTINGS_SECTIONS[0]} />;

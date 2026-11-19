@@ -1,0 +1,1 @@
+{"schemaVersion":1,"command":"backup-delete","outcome":"succeeded","exitCode":0,"repository":{"commonGitDir":"/work/sample/.git","primaryWorktreeRoot":"/work/sample","currentWorktreeRoot":"/work/sample"},"worktree":null,"materialized":false,"diagnostic":null,"backupDelete":{"result":"deleted","id":"20261119T014822Z-5795186f","remaining":null,"cleanup":[]}}

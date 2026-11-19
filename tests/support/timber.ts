@@ -207,6 +207,38 @@ export const recordedDone = {
 	},
 };
 
+const backupFixture = (name: string) => readFileSync(join(import.meta.dir, "..", "fixtures", "timber-backup", name), "utf8");
+
+/**
+ * What Timber's main branch at 1e145a0 (built as 0.1.2, the first with
+ * `backup list --json`, `backup restore --result-file`, and `__app-backup
+ * delete`) printed and wrote on Linux, exactly, except that the temporary
+ * folder it ran in is written `/work`. Each ran in a new repository
+ * `/work/sample` with linked worktrees `/work/sample-worktrees/feat` and
+ * `/work/sample-worktrees/two words` (branch `fix/zażółć`), and a backup of
+ * each worktree and of `main`, made a second apart.
+ *
+ * - `list.usable`: the three backups, all usable (exit code 0).
+ * - `list.mixed`: after a rebase paused on a conflict in `two words`, which
+ *   protects its backup, a stray folder in backup storage, which is not
+ *   usable, and `main`'s backup renamed to `.deleting-<id>`, an unfinished
+ *   deletion (exit code 0).
+ * - `list.failed`: run outside any repository (exit code 1).
+ * - `restore.restored`: `feat`'s backup restored into `/work/sample-recovery <id>` (exit code 0).
+ * - `restore.refused`: the same again; the folder exists (exit code 1).
+ * - `delete.protected`: the protected backup (exit code 1).
+ * - `delete.changed`: `feat`'s backup with another backup's digest (exit code 1).
+ * - `delete.deleted`: `feat`'s backup with its own digest (exit code 0).
+ * - `unknownCommand`: standard error of `timber backup list --json` from the
+ *   released 0.1.2, which has no list (exit code 1, nothing on standard output).
+ */
+export const recordedBackup = {
+	list: { usable: backupFixture("list-usable.json"), mixed: backupFixture("list-mixed.json"), failed: backupFixture("list-failed.json") },
+	restore: { restored: backupFixture("restore-restored.json"), refused: backupFixture("restore-refused.json") },
+	delete: { protected: backupFixture("delete-protected.json"), changed: backupFixture("delete-changed.json"), deleted: backupFixture("delete-deleted.json") },
+	unknownCommand: backupFixture("unknown-command-0.1.2.stderr"),
+};
+
 /** The Timber installed on this machine, or null. Tests that need the real one are skipped without it. */
 const found = await findTimber();
 export const realTimber: string | null = found.state === "ready" ? found.path : null;

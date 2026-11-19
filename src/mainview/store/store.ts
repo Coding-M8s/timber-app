@@ -8,6 +8,7 @@ import { type Layout, clampSidebarWidth, dismissSetup, forgetRepository, sameLay
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberStatus, Worktree, WorktreeCommandResult } from "../../shared/model";
 import type { Preferences } from "../../shared/preferences";
 import type { IssueLookup } from "../../shared/issues";
+import type { BackupDeleteRequest, BackupDeleteResult, BackupList, BackupRestoreRequest, BackupRestoreResult } from "../../shared/backups";
 import type { PullRequestList } from "../../shared/pull-requests";
 import { applyOrder, moveInOrder } from "../../shared/repository-order";
 import { type ZoomStep, stepZoom, zoomLabel } from "../../shared/zoom";
@@ -231,6 +232,14 @@ export interface AppStore {
 	 */
 	rebaseWorktree(request: RebaseRequest): Promise<RebaseResult>;
 	/**
+	 * Restore a backup into a new worktree, once. The repository is read again
+	 * after every outcome, and a recovery worktree that is complete is
+	 * selected. One left behind by a partial restore is never selected.
+	 */
+	restoreBackup(request: BackupRestoreRequest): Promise<BackupRestoreResult>;
+	/** Delete one backup, once. Its repository's backups are read again after every outcome. */
+	deleteBackup(request: BackupDeleteRequest): Promise<BackupDeleteResult>;
+	/**
 	 * Start a plain shell session in a worktree and show it: select the
 	 * worktree and show the Workspace tab, as `startAgentIn` does for an agent.
 	 * Used to resolve a rebase that stopped on conflicts. Not in the list:
@@ -331,6 +340,14 @@ function messageOf(error: unknown): string {
 }
 
 /** `schedule` is how the store waits before it takes a toast away. Tests pass their own clock. */
+/**
+ * Changes to a repository come often while an agent works, and each read of
+ * its backups runs Timber over every backup. Reads asked for by such changes
+ * are at least this far apart for one repository, and the last one asked for
+ * meanwhile still happens.
+ */
+export const BACKUP_READ_SPACING_MS = 15_000;
+
 export function createAppStore(engine: Engine, schedule: Schedule = scheduleWithTimer): AppStore {
 	let state = initialState;
 	const listeners = new Set<() => void>();
@@ -535,6 +552,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			});
 			endOrphanTerminals();
 			catchUpPullRequests();
+			catchUpBackups();
 		} catch (error) {
 			update({ error: { repository: null, message: messageOf(error) } });
 		}
@@ -575,6 +593,75 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		}
 	}
 
+	/*
+	 * Backups are read from Timber, which reads its backup storage and each
+	 * backup's manifest. A new one, or a deletion, changes a ref, which the
+	 * watcher reports as a change of the repository. So they are read when a
+	 * repository is first listed, on Refresh, right after the app restored or
+	 * deleted one, and after a change of the repository, spaced out (see
+	 * `BACKUP_READ_SPACING_MS`). A Timber that has no backup list is asked
+	 * again only on Refresh or when another Timber is found. Reads of one
+	 * repository never overlap, and nothing is read while Timber is not ready.
+	 */
+	const readingBackups = new Set<string>();
+	// Goes up when another Timber is found, so an answer from the one before is dropped.
+	let backupGeneration = 0;
+	const refreshBackups = mergeOverlapping<string>(async path => {
+		if (!timberReady(state) || !state.repositories.some(repository => repository.path === path && repository.available)) return;
+		const generation = backupGeneration;
+		let answer: BackupList;
+		readingBackups.add(path);
+		try {
+			answer = await engine.readBackups(path);
+		} catch (error) {
+			answer = { state: "failed", message: `The app did not hear the answer: ${messageOf(error)}` };
+		} finally {
+			readingBackups.delete(path);
+		}
+		// A repository that left the list meanwhile keeps nothing.
+		if (!state.repositories.some(repository => repository.path === path)) return;
+		// Asked of a Timber that has since been replaced: ask the new one.
+		if (generation !== backupGeneration) return void refreshBackups(path);
+		update({ backups: { ...state.backups, [path]: answer } });
+	});
+
+	/** Repositories whose spacing is running, and whether a read was asked for meanwhile. */
+	const backupSpacing = new Map<string, { asked: boolean }>();
+	function requestBackups(path: string): void {
+		if (state.backups[path]?.state === "unsupported") return;
+		const spacing = backupSpacing.get(path);
+		if (spacing) {
+			spacing.asked = true;
+			return;
+		}
+		const started = { asked: false };
+		backupSpacing.set(path, started);
+		schedule(() => {
+			backupSpacing.delete(path);
+			if (started.asked) requestBackups(path);
+		}, BACKUP_READ_SPACING_MS);
+		void refreshBackups(path);
+	}
+
+	/** Read the backups of every repository that has none yet, and forget those of one no longer listed. */
+	function catchUpBackups(): void {
+		const listed = new Set(state.repositories.map(repository => repository.path));
+		const kept = Object.fromEntries(Object.entries(state.backups).filter(([path]) => listed.has(path)));
+		if (Object.keys(kept).length !== Object.keys(state.backups).length) update({ backups: kept });
+		for (const repository of state.repositories) {
+			if (repository.available && !(repository.path in state.backups) && !readingBackups.has(repository.path)) void refreshBackups(repository.path);
+		}
+	}
+
+	/** Refresh: every repository's backups, at once, also where Timber had no backup list. */
+	async function refresh(): Promise<void> {
+		await reloadAll("all");
+		for (const repository of state.repositories) {
+			// A read in progress may predate the press; a new one follows it.
+			if (repository.available) void refreshBackups(repository.path);
+		}
+	}
+
 	const reloadOne = mergeOverlapping<string>(path => track({ kind: "reload-repository", repository: path }, async () => {
 		const ticket = ++lastTicket;
 		// A full list asked for after this reload has already answered: it is the newer picture.
@@ -592,6 +679,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				error: state.error?.repository === path ? null : state.error,
 			});
 			endOrphanTerminals();
+			requestBackups(path);
 		} catch (error) {
 			if (stale()) return;
 			update({ error: { repository: path, message: messageOf(error) } });
@@ -856,13 +944,20 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 
 	function findTimber(look: () => Promise<TimberStatus>): Promise<void> {
 		const wasReady = timberReady(state);
+		const before = JSON.stringify(state.timber);
 		return track({ kind: "find-timber" }, async () => {
 			try {
 				update({ timber: { known: true, status: await look() } });
 			} catch (error) {
 				update({ timber: { known: false, message: messageOf(error) } });
 			}
+			// Another Timber may list backups where the last one could not, or answer otherwise: read them again.
+			if (JSON.stringify(state.timber) !== before) {
+				backupGeneration += 1;
+				if (Object.keys(state.backups).length > 0) update({ backups: {} });
+			}
 			if (timberReady(state) && !wasReady) void reloadAll("all");
+			else if (timberReady(state)) catchUpBackups();
 		});
 	}
 
@@ -1166,6 +1261,37 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		return result;
 	}
 
+	async function restoreBackup(request: BackupRestoreRequest): Promise<BackupRestoreResult> {
+		let result: BackupRestoreResult;
+		try {
+			result = await engine.restoreBackup(request);
+		} catch (error) {
+			const diagnostic = `The app did not hear how the restore ended: ${messageOf(error)}. What it did is unknown, so check the list before trying again.`;
+			result = { outcome: "failed", ran: true, failure: { command: null, diagnostic, output: null } };
+		}
+		// Even a restore that failed can leave a worktree behind.
+		await reloadOne(request.repository);
+		if (result.outcome === "restored") {
+			const restored = result.worktree;
+			const worktree = state.repositories.find(repository => repository.path === request.repository)?.worktrees.find(candidate => candidate.path === restored);
+			if (worktree) select(worktree.id);
+		}
+		return result;
+	}
+
+	async function deleteBackup(request: BackupDeleteRequest): Promise<BackupDeleteResult> {
+		let result: BackupDeleteResult;
+		try {
+			result = await engine.deleteBackup(request);
+		} catch (error) {
+			const diagnostic = `The app did not hear how the deletion ended: ${messageOf(error)}. What it did is unknown; the list of backups is read again.`;
+			result = { outcome: "failed", ran: true, failure: { command: null, diagnostic, output: null } };
+		}
+		// At once, not spaced out: the person is looking at the outcome.
+		await refreshBackups(request.repository);
+		return result;
+	}
+
 	function openTerminalIn(repositoryPath: string, worktreePath: string): void {
 		const worktree = state.repositories.find(repository => repository.path === repositoryPath)?.worktrees.find(candidate => candidate.path === worktreePath);
 		if (!worktree) return;
@@ -1358,7 +1484,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			noteForcePush();
 		},
 		retryTimber: () => findTimber(() => engine.recheckTimber()),
-		refresh: () => reloadAll("all"),
+		refresh,
 		reloadRepository: path => reloadOne(path),
 		fetchNow,
 		addRepository,
@@ -1447,6 +1573,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		startRebase,
 		startAgentIn,
 		rebaseWorktree,
+		restoreBackup,
+		deleteBackup,
 		openTerminalIn,
 		showSession,
 		revealSession,

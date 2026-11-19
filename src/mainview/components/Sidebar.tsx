@@ -1,4 +1,5 @@
 import { type PointerEvent, useId, useRef, useState } from "react";
+import { describeBackupsProblem } from "../backup-format";
 import { describeFetchAction, describeFetchMarker } from "../fetch-format";
 import { describeRepositoryPullRequestProblem } from "../pull-request-format";
 import { pullRequestOf } from "../../shared/pull-requests";
@@ -12,6 +13,7 @@ import { describeRemovalFailed } from "../done-format";
 import { OpenInEditorIconButton } from "./OpenInEditor";
 import { wantTerminalFocus } from "../terminal-focus";
 import { SIDEBAR_ID } from "./SidebarResizer";
+import { BackupsSection } from "./BackupsSection";
 import { WorktreeRow } from "./WorktreeRow";
 import { worktreeMenuChoice } from "../worktree-menu-format";
 
@@ -154,13 +156,15 @@ export function Sidebar() {
 					const pullRequests = state.pullRequests[repository.path];
 					const pullProblem = repository.available ? describeRepositoryPullRequestProblem(pullRequests) : null;
 					const pullProblemId = `${idBase}-pulls-${index}`;
+					const backupProblem = repository.available ? describeBackupsProblem(state.backups[repository.path]) : null;
+					const backupProblemId = `${idBase}-backups-${index}`;
 					// Only while the group is collapsed, its agents' states are summed up beside its name, Needs you first.
 					const statuses = open ? [] : state.terminals
 						.filter(session => session.repository === repository.path && hasStatusMark(session))
 						.map(shownStatus);
 					const summary = summarizeStatuses(statuses);
 					const summaryId = `${idBase}-summary-${index}`;
-					const describedBy = [fetchMarker ? fetchMarkerId : "", pullProblem ? pullProblemId : "", summary ? summaryId : ""].filter(Boolean).join(" ");
+					const describedBy = [fetchMarker ? fetchMarkerId : "", pullProblem ? pullProblemId : "", backupProblem ? backupProblemId : "", summary ? summaryId : ""].filter(Boolean).join(" ");
 					const fetchLabel = describeFetchAction(repository.name, fetching ? { repository: repository.path, fetching: true, lastFetched: null, failure: null } : fetch, now);
 					return (
 						<section
@@ -223,12 +227,17 @@ export function Sidebar() {
 										// As quiet as a failed fetch: one lookup answers for the whole repository, so it is said here once.
 										<span className="group-flag pulls-failed" title={pullProblem.tooltip} aria-hidden="true">{pullProblem.text}</span>
 									)}
+									{backupProblem && (
+										// As quiet as the others: one read answers for the whole repository.
+										<span className="group-flag backups-failed" title={backupProblem.tooltip} aria-hidden="true">{backupProblem.text}</span>
+									)}
 									{repository.available
 										? <span className="group-count">{repository.worktrees.length}</span>
 										: <span className="group-flag">unavailable</span>}
 								</button>
 								{fetchMarker && <span id={fetchMarkerId} hidden>{fetchMarker.tooltip}</span>}
 								{pullProblem && <span id={pullProblemId} hidden>{pullProblem.tooltip}</span>}
+								{backupProblem && <span id={backupProblemId} hidden>{backupProblem.tooltip}</span>}
 								{summary && <span id={summaryId} hidden>{`Agents: ${summary}.`}</span>}
 								{repository.available && (
 									<button
@@ -358,6 +367,8 @@ export function Sidebar() {
 									})}
 								</ul>
 							)}
+							{/* While a filter is typed, only worktrees are searched, so backups step aside. */}
+							{open && repository.available && query === "" && <BackupsSection repository={repository.path} list={state.backups[repository.path]} now={now} />}
 							{open && !repository.available && (
 								<div className="group-missing">
 									<p className="group-missing-text">The folder is missing, or it is no longer a Git repository.</p>

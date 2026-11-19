@@ -7,8 +7,20 @@ import { type Fields, type ListedRepository, type ListedWorktree, SUPPORTED_SCHE
  * process runs Timber and hands the file's text here (see src/bun/timber-run.ts).
  */
 
-/** The Timber commands that write a result file. */
-export type ResultCommand = "new" | "open" | "done" | "rebase" | "config";
+/** The Timber commands that write a result file, as each record names its command. */
+export type ResultCommand = "new" | "open" | "done" | "rebase" | "config" | "backup-restore" | "backup-delete";
+
+/** How a command is named in messages, as a person would type it. A record names some commands otherwise. */
+export function resultCommandName(command: ResultCommand): string {
+	switch (command) {
+		case "backup-restore":
+			return "timber backup restore";
+		case "backup-delete":
+			return "timber __app-backup delete";
+		default:
+			return `timber ${command}`;
+	}
+}
 
 /** Stands for the result file wherever a command is shown. The real path is a fresh temporary file. */
 export const RESULT_FILE_PLACEHOLDER = "<temporary file>";
@@ -88,7 +100,7 @@ function describeExit(exitCode: number | null): string {
  * empty, or malformed file is a failure whatever the process printed.
  */
 export function readTimberResult(command: ResultCommand, text: string | null, exitCode: number | null): TimberResult {
-	const name = `timber ${command}`;
+	const name = resultCommandName(command);
 	const failed = (diagnostic: string, record: ResultRecord | null = null): TimberResult => ({ outcome: "failed", diagnostic, record });
 	const noResult = (detail: string) => failed(
 		`${name} ${describeExit(exitCode)} and ${detail}, so what it did is unknown. The details below show what it printed.`,
