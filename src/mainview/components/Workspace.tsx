@@ -9,7 +9,7 @@ import { TAB_LABELS, tabAfterKey } from "../shell";
 import { useAppState, useStore } from "../store/react";
 import { WORKSPACE_TABS, type WorkspaceTab, isBeingRemoved, isRunning, selectedWorktree } from "../store/state";
 import { ChangesPanel } from "./ChangesPanel";
-import { IssueHeaderLink, useIssue } from "./IssueSummary";
+import { IssueHeaderLink, issueOf } from "./IssueSummary";
 import { PullRequestPanel } from "./PullRequestPanel";
 import { EditorProblemNote, OpenInEditorButton } from "./OpenInEditor";
 import { SetupPrompt } from "./SetupPrompt";
@@ -52,7 +52,7 @@ export function Workspace() {
 	const changes = describeChanges(worktree);
 	const sync = describeWorktreeSync(worktree);
 	const base = describeSavedBase(worktree.base);
-	const issue = useIssue(worktree);
+	const issue = issueOf(state, worktree);
 	const pullRequests = state.pullRequests[repository.path];
 	const pullRequest = pullRequestOf(pullRequests, worktree.path);
 	const pullMarkers = describePullRequestMarkers(pullRequest);

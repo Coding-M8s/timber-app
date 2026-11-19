@@ -2,7 +2,7 @@ import type { Repository, Worktree } from "../../shared/model";
 import { pullRequestOf } from "../../shared/pull-requests";
 import { NO_DESCRIPTION, OPEN_IN_BROWSER, RUN_STATUS_LABELS, describePullRequestTab } from "../pull-request-tab-format";
 import { useAppState, useStore } from "../store/react";
-import { IssueSection, useIssue } from "./IssueSummary";
+import { IssueSection, issueOf } from "./IssueSummary";
 
 /**
  * The Pull request tab: the selected worktree's pull request as Timber last
@@ -16,7 +16,7 @@ export function PullRequestPanel({ repository, worktree }: { repository: Reposit
 	const state = useAppState();
 	const list = state.pullRequests[repository.path];
 	const view = describePullRequestTab(list, pullRequestOf(list, worktree.path), worktree.branch);
-	const issue = useIssue(worktree);
+	const issue = issueOf(state, worktree);
 
 	if (view.kind !== "found") {
 		const note = (
