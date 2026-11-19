@@ -20,6 +20,7 @@ import { createFileChanges } from "./file-changes";
 import { readBranches } from "./git-engine";
 import { createSavedLayout } from "./layout";
 import { createSavedPreferences } from "./preferences";
+import { createIssueReader } from "./issues";
 import { createPullRequestReader } from "./pull-requests";
 import { createRepositoryList } from "./repository-list";
 import { createRepositoryReader } from "./repository-reader";
@@ -165,6 +166,7 @@ const timberSettings = createTimberSettings({ timber: () => timber.current(), is
 const workflows = createWorkflowReader({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
 // Runs Timber's pull request read, with Timber's own GitHub login. Nothing it prints is logged (see ./pull-requests.ts).
 const pullRequests = createPullRequestReader({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
+const issues = createIssueReader({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
 const editor = createEditorLauncher({ preferences: () => preferences.load(), findRepository: path => repositories.find(path) });
 
 /** Report to the window. It may not be connected yet, or be reloading; its first load reads everything anyway. */
@@ -328,6 +330,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			// An agent's arguments can hold tokens: never log the answer.
 			listWorkflows: ({ repository }) => workflows.list(repository),
 			readPullRequests: ({ repository }) => pullRequests.read(repository),
+			readIssue: request => issues.read(request),
 			previewDone: request => done.preview(request),
 			// Removes a worktree. Only ever with a preview that `previewDone` handed out (see ./done.ts).
 			applyDone: request => done.apply(request),

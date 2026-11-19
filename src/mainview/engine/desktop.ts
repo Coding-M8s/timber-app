@@ -97,6 +97,7 @@ export function createDesktopEngine(): Engine {
 		listWorkflows: repository => rpc.request.listWorkflows({ repository }),
 		// The main process stops a stuck read after 30 seconds.
 		readPullRequests: repository => rpc.request.readPullRequests({ repository }, { maxRequestTime: 60_000 }),
+		readIssue: request => rpc.request.readIssue(request, { maxRequestTime: 60_000 }),
 		// The main process reads the list first, then Git, which it stops after 20 seconds.
 		readFileChanges: request => rpc.request.readFileChanges(request, { maxRequestTime: 60_000 }),
 		readFileDiff: request => rpc.request.readFileDiff(request, { maxRequestTime: 60_000 }),

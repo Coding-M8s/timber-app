@@ -21,6 +21,7 @@ const linked: Worktree = {
 	pathExists: true,
 	changes: { kind: "known", modified: [], untracked: [] },
 	base: null,
+	issue: null,
 	sync: { kind: "tracking", upstream: "origin/feat/x", ahead: 0, behind: 0 },
 };
 const primary: Worktree = { ...linked, id: "/work/app/.git\0verified\0/work/app", path: "/work/app", canonicalPath: "/work/app", branch: "main", primary: true };

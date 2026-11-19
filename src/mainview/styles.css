@@ -3583,9 +3583,56 @@ pre:focus-visible {
 	overflow-wrap: anywhere;
 }
 
-.pull-tab-header .button {
+.pull-tab-header .button,
+.issue-section-body .button {
 	flex: none;
 	margin-top: 0;
+}
+
+/* The linked issue (issue 103): its key and the tracker's status name as a quiet link, color only beside the words. */
+.issue-link {
+	padding: 0;
+	border: 0;
+	background: none;
+	color: var(--text-2);
+	font: inherit;
+	text-decoration: underline;
+	text-decoration-color: var(--line);
+	text-underline-offset: 2px;
+	cursor: pointer;
+}
+
+.issue-link:hover,
+.issue-link:focus-visible {
+	color: var(--text);
+	text-decoration-color: currentColor;
+}
+
+.issue-link.in-progress {
+	color: var(--ahead);
+}
+
+.issue-section {
+	padding-top: 0;
+}
+
+.issue-section-body {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 16px;
+}
+
+.issue-section .quiet {
+	color: var(--text-3);
+}
+
+.pull-tab-header.after-issue {
+	padding-top: 14px;
+}
+
+.pull-tab .pull-tab-note {
+	padding-top: 24px;
 }
 
 /* Settings, Notifications: a row for each state, with a Notify and a Sound box. */

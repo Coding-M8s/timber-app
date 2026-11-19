@@ -96,7 +96,7 @@ describe.skipIf(!posix)("rebasing in a terminal session", () => {
 		setup: "repository",
 		worktrees: [repository, worktree].map((path, index) => ({
 			id: `id:${path}`, path, canonicalPath: path, branch: index === 0 ? "main" : "feat/login", head: null, primary: index === 0, detached: false,
-			locked: false, prunable: false, pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, base: null, sync: null,
+			locked: false, prunable: false, pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, base: null, issue: null, sync: null,
 		})),
 	});
 

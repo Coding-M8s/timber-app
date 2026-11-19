@@ -1,6 +1,8 @@
 import type { FileChange, FileChangeTarget, FileDiffResult } from "../../shared/file-changes";
 import { type Layout, defaultLayout } from "../../shared/layout";
 import type { RepositoryFetch } from "../../shared/git-fetch";
+import type { IssueLookup } from "../../shared/issues";
+import type { IssueTracker } from "../../shared/model";
 import type { PullRequestList } from "../../shared/pull-requests";
 import type { Repository, TimberFailure, TimberStatus, Worktree } from "../../shared/model";
 import { type Preferences, defaultPreferences } from "../../shared/preferences";
@@ -254,6 +256,21 @@ export interface AppState {
 	 * fetch of it ends, so on the fetch interval and after Fetch now.
 	 */
 	pullRequests: Readonly<Record<string, PullRequestList>>;
+	/**
+	 * The live state of each linked issue, by worktree id, as `timber
+	 * __app-issue` last answered, with the saved link it was read for. A
+	 * worktree with a linked issue that is missing here was not read yet.
+	 * Read when the worktree is first listed with the link or the link
+	 * changes, and again after each fetch of its repository ends.
+	 */
+	issues: Readonly<Record<string, IssueEntry>>;
+}
+
+/** What Timber answered for one worktree's linked issue, and which link it answered for. */
+export interface IssueEntry {
+	tracker: IssueTracker;
+	key: string;
+	lookup: IssueLookup;
 }
 
 export const initialState: AppState = {
@@ -282,6 +299,7 @@ export const initialState: AppState = {
 	dialog: null,
 	fetches: {},
 	pullRequests: {},
+	issues: {},
 };
 
 /** Nothing that depends on Timber is offered until a usable one is found. */

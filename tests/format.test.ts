@@ -16,6 +16,7 @@ const base: Worktree = {
 	pathExists: true,
 	changes: { kind: "known", modified: [], untracked: [] },
 	base: null,
+	issue: null,
 	sync: { kind: "unpublished" },
 };
 const linked: Worktree = { ...base, primary: false };

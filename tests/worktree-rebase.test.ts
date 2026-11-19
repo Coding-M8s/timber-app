@@ -39,7 +39,7 @@ describe("WorktreeCommands.rebase, with a stand-in Timber", () => {
 		path: repository, name: "my repo", available: true, failure: null, setup: "repository",
 		worktrees: paths.map(path => ({
 			id: path, path, canonicalPath: path, branch: "feat", head: null, primary: false, detached: false, locked: false, prunable: false,
-			pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, base: null, sync: null,
+			pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, base: null, issue: null, sync: null,
 		})),
 		...change,
 	});

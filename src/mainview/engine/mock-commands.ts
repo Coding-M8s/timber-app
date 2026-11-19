@@ -88,6 +88,7 @@ function newWorktreeIn(repository: Repository, branch: string, base: Worktree["b
 		pathExists: true,
 		changes: { kind: "known", modified: [], untracked: [] },
 		base,
+		issue: null,
 		sync,
 	};
 }

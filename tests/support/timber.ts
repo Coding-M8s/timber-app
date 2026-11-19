@@ -25,10 +25,19 @@ const doneFixtures = join(import.meta.dir, "..", "fixtures", "timber-done");
  * whose saved `base.json` was overwritten with text that is not JSON, `plain`
  * added with plain Git, and `gone` and `swapped` as above, which Timber
  * could not verify and so reports as stale.
+ *
+ * `withIssues` is from Timber's main branch after 0.1.2 (`bun
+ * src/index.ts ls --json`), the first that reports each worktree's saved
+ * `issue`. Saving a link needs a tracker lookup, so each `issue.json` was
+ * written by hand in the form Timber saves (src/git/issue-link.ts in Timber),
+ * and Timber read them back offline. It lists a primary checkout and
+ * `plain` (no link), `feat/jira`, `feat/github`, and `feat/linear` (linked),
+ * and `feat/broken`, whose `issue.json` is not JSON (invalid, malformed).
  */
 export const recorded = {
 	succeeded: readFileSync(join(fixtures, "succeeded.json"), "utf8"),
 	withBases: readFileSync(join(fixtures, "with-bases.json"), "utf8"),
+	withIssues: readFileSync(join(fixtures, "with-issues.json"), "utf8"),
 	failed: readFileSync(join(fixtures, "failed.json"), "utf8"),
 };
 

@@ -2,24 +2,33 @@ import type { Repository, Worktree } from "../../shared/model";
 import { pullRequestOf } from "../../shared/pull-requests";
 import { NO_DESCRIPTION, OPEN_IN_BROWSER, RUN_STATUS_LABELS, describePullRequestTab } from "../pull-request-tab-format";
 import { useAppState, useStore } from "../store/react";
+import { IssueSection, useIssue } from "./IssueSummary";
 
 /**
  * The Pull request tab: the selected worktree's pull request as Timber last
  * read it. Read-only. It runs no command; its only controls open links in
  * the browser, through the engine. It follows the store, so it changes
- * whenever the pull requests are read again.
+ * whenever the pull requests are read again. The worktree's linked issue,
+ * when it has one, shows above the pull request in every state.
  */
 export function PullRequestPanel({ repository, worktree }: { repository: Repository; worktree: Worktree }) {
 	const store = useStore();
 	const state = useAppState();
 	const list = state.pullRequests[repository.path];
 	const view = describePullRequestTab(list, pullRequestOf(list, worktree.path), worktree.branch);
+	const issue = useIssue(worktree);
 
 	if (view.kind !== "found") {
-		return (
+		const note = (
 			<div className={`empty pull-tab-note ${view.kind}`}>
 				<p className="empty-title">{view.title}</p>
 				<p className="empty-text">{view.text}</p>
+			</div>
+		);
+		return issue === null ? note : (
+			<div className="pull-tab">
+				<IssueSection issue={issue} />
+				{note}
 			</div>
 		);
 	}
@@ -27,7 +36,8 @@ export function PullRequestPanel({ repository, worktree }: { repository: Reposit
 	const pull = view.pullRequest;
 	return (
 		<div className="pull-tab">
-			<header className="pull-tab-header">
+			{issue && <IssueSection issue={issue} />}
+			<header className={issue ? "pull-tab-header after-issue" : "pull-tab-header"}>
 				<div className="pull-tab-heading">
 					<h2 className="pull-tab-title">{view.heading}</h2>
 					<p className="pull-tab-meta">

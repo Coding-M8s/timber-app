@@ -28,7 +28,11 @@ change them here first when they change.
   its state, other running sessions as a count, and uncommitted changes. Its tooltip gives the path and the base Timber saved
   for the worktree, or "No saved base". Saved base metadata Timber cannot use
   is a warning, "base unknown", never a guess. A Timber that reports no base
-  gets none shown.
+  gets none shown. A worktree made from an issue adds the issue's key and the
+  tracker's status to the tooltip, such as "(PROJ-123 · In Review)" or
+  "(#153 · Open)" for GitHub, or the key and a quiet reason, such as
+  "(PROJ-123, offline)", when the status could not be read. The row itself
+  shows nothing more: its lines are full.
 - Branch state follows VS Code conventions: a down arrow with a count for
   commits to pull, an up arrow for commits to push, "force-pushed" when the
   remote branch was rewritten, "upstream gone" when it was deleted, and "local
@@ -93,6 +97,17 @@ change them here first when they change.
 - The header shows the worktree's pull request with the same words as its
   row, and "Open pull request" opens it in the browser. When pull requests
   could not be read, the header has the same quiet word as the repository.
+- The header shows the issue the worktree belongs to, after the base, as a
+  quiet underlined link: "PROJ-123 · In Review", the key and the tracker's
+  own status name, which opens the issue in the browser. The full title,
+  status, and assignee are in its tooltip. An issue in progress is blue,
+  always with its words. When the status could not be read, the link is the
+  key from the saved link, with a quiet grey word beside it ("offline",
+  "sign-in needed", "issue not found", "no access", "issue not read") and
+  Timber's reason in the tooltip. Never a dialog, and never a prompt to sign
+  in. Link metadata Timber cannot use is a warning, "Issue unknown", with no
+  link. A worktree without a link, or a Timber that reports none, shows no
+  issue.
 - The Pull request tab shows the worktree's pull request: its title, state,
   number, and base, "Open in browser", then Review (the review decision in
   a word and a sentence), Checks (a summary line, then each run with its
@@ -104,6 +119,11 @@ change them here first when they change.
   placeholder, "No pull request yet". Offline, sign-in needed, not on
   GitHub, or an answer that could not be read is said in its place with
   the reason, never as a dialog. It follows each new read.
+- Above the pull request, in every state of the tab, an Issue section shows
+  the linked issue: its title, the tracker with the key and status, the
+  assignee or "Unassigned", and "Open in browser". When the status could not
+  be read it shows the key, the quiet word, and Timber's reason. Text from
+  the tracker is plain text, never markup.
 - Changes compares against the base, the last commit, or a rebase backup.
 - A repository that was never set up for Timber shows a quiet prompt above
   the tabs: Timber's defaults work, setup is optional, "Set up Timber", and
