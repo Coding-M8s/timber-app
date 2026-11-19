@@ -112,6 +112,12 @@ interface PreferencePart<Value> {
 	 * file: a change that cannot be read is always refused.
 	 */
 	salvage?(value: unknown): Value | undefined;
+	/**
+	 * True when the app reads the preference only as it starts, so a saved
+	 * change waits for a restart. Settings then offers to restart the app
+	 * (see `restartNeededFor`). This is the one place that says so.
+	 */
+	restart?: true;
 }
 
 /**
@@ -196,6 +202,8 @@ export const PREFERENCE_PARTS: { [Key in keyof Preferences]: PreferencePart<Pref
 		read: readDmabufChoice,
 		same: (one, other) => one === other,
 		write: value => value,
+		// WebKitGTK reads its variable once, before the window is made.
+		restart: true,
 	},
 };
 
@@ -262,4 +270,13 @@ export function writePreferences(preferences: Preferences): Record<string, unkno
 	const written: Record<string, unknown> = {};
 	for (const key of PREFERENCE_KEYS) written[key] = partOf(key).write(preferences[key]);
 	return written;
+}
+
+/**
+ * The preferences that are read only as the app starts and differ between
+ * `atStart`, what this run started with, and `saved`, what is saved now.
+ * Empty when nothing saved waits for a restart.
+ */
+export function restartNeededFor(atStart: Preferences, saved: Preferences): (keyof Preferences)[] {
+	return PREFERENCE_KEYS.filter(key => partOf(key).restart === true && !partOf(key).same(atStart[key], saved[key]));
 }

@@ -158,14 +158,15 @@ describe("asking before quitting", () => {
 
 	test("agreeing ends every terminal, then quits, and quitting then goes ahead", async () => {
 		const { quitGuard, calls } = guard();
-		await quitGuard.confirm();
+		expect(await quitGuard.confirm()).toBe(true);
 		expect(calls).toEqual(["end all", "quit"]);
 		expect(quitGuard.mayQuit()).toBe(true);
 	});
 
 	test("when something else keeps the app open, the next try asks again", async () => {
 		const { quitGuard, calls } = guard({ quits: false, ends: false });
-		await quitGuard.confirm();
+		// Answered, so a restart can stop its waiter rather than start a second app later.
+		expect(await quitGuard.confirm()).toBe(false);
 		expect(quitGuard.mayQuit()).toBe(false);
 		await Bun.sleep(0);
 		expect(calls).toEqual(["end all", "quit", "ask 1"]);

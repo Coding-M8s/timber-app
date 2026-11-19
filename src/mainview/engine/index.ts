@@ -32,6 +32,8 @@ export async function createEngine(): Promise<Engine> {
 	// timberMock.setDoneDelay(3000) to close the dialog while a removal runs.
 	// For Open in editor: timberMock.endEditorLaunches("not-found") or ("fails").
 	// For Uninstall in About: timberMock.endUninstalls("fails"), ("keeps-settings"), or ("unavailable").
+	// For Restart now after saving a setting read at start: timberMock.endRestarts("fails") or ("unavailable"), and
+	// timberMock.restartCount() counts the restarts acted out. Nothing quits.
 	// For the Changes tab: timberMock.failFileChanges("Git is busy"), or timberMock.setFileChanges(path, files).
 	// For themes: timberMock.setThemeImport(text) gives Import a file, and timberMock.exportedThemes() lists what Export wrote.
 	// For agent sessions: timberMock.missingExecutables(["codex"]) acts out an agent that is not on the PATH.

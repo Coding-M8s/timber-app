@@ -32,6 +32,7 @@ import { atMost, createReleaseWatcher, lookUpLatestRelease, releaseFilePath, tim
 import { TIMBER_OVERRIDE_VARIABLE } from "../shared/timber-version";
 import { openWebLink } from "./open-link";
 import { createQuitGuard } from "./quit-guard";
+import { createRestarter } from "./restart";
 import { createRefreshPolicy } from "./refresh-policy";
 import { type WatchTarget, createRepositoryWatcher } from "./repository-watcher";
 import { createWorktreeStamps } from "./worktree-stamp";
@@ -291,6 +292,9 @@ const uninstaller = createUninstaller({
 	quit: () => void quitGuard.confirm(),
 });
 
+// Starts the app again once it is gone, then quits (see ./restart.ts). The window asked first while terminals run.
+const restarter = createRestarter({ quit: () => quitGuard.confirm() });
+
 const rpc = BrowserView.defineRPC<AppRPC>({
 	maxRequestTime: 15_000,
 	handlers: {
@@ -373,7 +377,9 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			readTerminal: ({ id }) => terminals.read(id),
 			renameTerminal: ({ id, name }) => terminals.rename(id, name),
 			closeTerminal: ({ id }) => terminals.close(id),
-			confirmQuit: () => quitGuard.confirm(),
+			confirmQuit: async () => {
+				await quitGuard.confirm();
+			},
 			writeClipboard: ({ text }) => Utils.clipboardWriteText(text),
 			readClipboard: () => Utils.clipboardReadText(),
 			// Only web links, to the person's browser, never through a shell (see ./open-link.ts).
@@ -384,6 +390,9 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			uninstallPlan: () => uninstaller.plan(),
 			// Removes the app, and its settings only when asked. Then the app quits (see ./uninstall.ts).
 			uninstall: request => uninstaller.uninstall(request),
+			restartPlan: () => restarter.plan(),
+			// Quits, ending every terminal without asking again, and starts the same app again (see ./restart.ts).
+			restart: () => restarter.restart(),
 		},
 		messages: {
 			writeTerminal: ({ id, data }) => terminals.write(id, data),

@@ -94,6 +94,8 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		appInfo: async () => ({ version: "1.2.3", rendering: { applies: false } }),
 		uninstallPlan: async () => ({ available: false, reason: "Not installed." }),
 		uninstall: async () => ({ outcome: "unavailable", message: "Not installed." }),
+		restartPlan: async () => ({ available: false, reason: "Runs from source." }),
+		restart: async () => ({ outcome: "unavailable", message: "Runs from source." }),
 		timberStatus: async () => timber,
 		recheckTimber: async () => timber,
 		onTimberChanged: () => () => {},

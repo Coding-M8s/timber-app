@@ -24,3 +24,12 @@ export function describeRendering(status: RenderingStatus | null, saved: DmabufC
 	const pending = saved !== status.choice ? " Restart the app to use the saved choice." : " A change takes effect the next time the app starts.";
 	return `Now: ${now}, ${why}.${pending}`;
 }
+
+/**
+ * Whether restarting can change how the window is drawn: not where WebKitGTK
+ * is not used, and not while WEBKIT_DISABLE_DMABUF_RENDERER decides, since a
+ * restart keeps the same environment.
+ */
+export function restartChangesRendering(status: RenderingStatus): boolean {
+	return status.applies && status.decidedBy !== "variable";
+}

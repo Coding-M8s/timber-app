@@ -223,6 +223,14 @@ export interface AppState {
 	preferences: Preferences;
 	/** Why the saved preferences could not be read on start. Null once a save worked. */
 	preferencesProblem: string | null;
+	/**
+	 * The preferences as first read, which this run started with. A
+	 * preference read only at start keeps using this value until a restart
+	 * (see `restartNeededFor` in src/shared/preferences.ts). The defaults when
+	 * the read failed, as the main process falls back to them too. Null until
+	 * the first read answered.
+	 */
+	preferencesAtStart: Preferences | null;
 	/** The app's own version, for About. Null until the engine has answered. */
 	appVersion: string | null;
 	/** What the app decided about WebKitGTK's renderer when it started. Null until the engine has answered. */
@@ -306,6 +314,7 @@ export const initialState: AppState = {
 	layoutProblem: null,
 	preferences: defaultPreferences(),
 	preferencesProblem: null,
+	preferencesAtStart: null,
 	appVersion: null,
 	rendering: null,
 	editorProblem: null,

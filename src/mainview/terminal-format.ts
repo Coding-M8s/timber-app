@@ -3,6 +3,17 @@ import { type TerminalSession, describeTerminalExit, sessionKindName } from "../
 
 export { describeQuitRequest } from "../shared/terminal";
 
+/** A line for the terminals that end with the app, as when it quits to uninstall or restart, or null when none runs. */
+export function describeEndingTerminals(live: number): string | null {
+	if (live <= 0) return null;
+	return live === 1 ? "1 terminal is running and will be ended." : `${live} terminals are running and will be ended.`;
+}
+
+/** How many terminal and agent sessions still run, which end when the app quits. */
+export function liveTerminalCount(sessions: readonly TerminalSession[]): number {
+	return sessions.filter(session => session.state.kind === "running").length;
+}
+
 type Keys = Pick<KeyboardEvent, "type" | "key" | "ctrlKey" | "shiftKey" | "metaKey" | "altKey">;
 
 /**

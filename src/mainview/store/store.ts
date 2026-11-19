@@ -1,12 +1,13 @@
 import { type Attention, sameAttention } from "../../shared/attention";
 import type { UninstallPlan, UninstallRequest, UninstallResult } from "../../shared/uninstall";
+import type { RestartPlan, RestartResult } from "../../shared/restart";
 import { readableEditorSetting } from "../../shared/editor";
 import type { Engine } from "../../shared/engine";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "../../shared/git-fetch";
 import { type FileChangeTarget, type FileChangesResult, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
 import { type Layout, clampSidebarWidth, dismissSetup, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberStatus, Worktree, WorktreeCommandResult } from "../../shared/model";
-import type { Preferences } from "../../shared/preferences";
+import { type Preferences, defaultPreferences } from "../../shared/preferences";
 import type { IssueLookup } from "../../shared/issues";
 import type { BackupDeleteRequest, BackupDeleteResult, BackupList, BackupRestoreRequest, BackupRestoreResult } from "../../shared/backups";
 import type { PullRequestList } from "../../shared/pull-requests";
@@ -315,6 +316,15 @@ export interface AppStore {
 	uninstallPlan(): Promise<UninstallPlan>;
 	/** Remove the app from this computer. The app quits right after a good answer, unless the answer has something to tell. */
 	uninstall(request: UninstallRequest): Promise<UninstallResult>;
+	/** Whether this copy of the app can restart itself. A failed read says why in `reason`. Never throws. */
+	restartPlan(): Promise<RestartPlan>;
+	/**
+	 * Quit, ending every terminal, and start the app again. The window asks
+	 * first while terminals run. No answer may come back when it works, as
+	 * the app is gone; a lost answer that the window lives to see is a
+	 * failure. Never throws.
+	 */
+	restart(): Promise<RestartResult>;
 	/** The person agreed to quit while terminals run. */
 	confirmQuit(): Promise<void>;
 	/** The person chose to keep the app open. */
@@ -744,9 +754,9 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	async function loadPreferences(): Promise<void> {
 		try {
 			const preferences = await engine.loadPreferences();
-			if (!preferencesSaved) update({ preferences });
+			update(preferencesSaved ? { preferencesAtStart: preferences } : { preferences, preferencesAtStart: preferences });
 		} catch (error) {
-			if (!preferencesSaved) update({ preferencesProblem: messageOf(error) });
+			update(preferencesSaved ? { preferencesAtStart: defaultPreferences() } : { preferencesProblem: messageOf(error), preferencesAtStart: defaultPreferences() });
 		}
 	}
 
@@ -1655,6 +1665,21 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			} catch (error) {
 				// The uninstaller may have run all the same. The section says to look before trying again.
 				return { outcome: "failed", message: `No answer came back from the uninstaller: ${messageOf(error)}` };
+			}
+		},
+		async restartPlan() {
+			try {
+				return await engine.restartPlan();
+			} catch (error) {
+				return { available: false, reason: `Could not check whether the app can restart itself: ${messageOf(error)}` };
+			}
+		},
+		async restart() {
+			try {
+				return await engine.restart();
+			} catch (error) {
+				// When the restart worked the window is gone before this shows, so a lost answer seen here means the app is still open.
+				return { outcome: "failed", message: `No answer came back from the restart: ${messageOf(error)}. If the app is still open, quit it and start it again.` };
 			}
 		},
 		async confirmQuit() {

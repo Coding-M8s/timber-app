@@ -1,6 +1,7 @@
 import { useContext, useEffect, useRef, useState } from "react";
 import type { UninstallPlan } from "../../../shared/uninstall";
 import { useAppState, useStore } from "../../store/react";
+import { describeEndingTerminals, liveTerminalCount } from "../../terminal-format";
 import {
 	UNINSTALL_CHECKING,
 	UNINSTALL_DONE,
@@ -9,7 +10,6 @@ import {
 	UNINSTALL_NO_UNDO,
 	UNINSTALL_SUMMARY,
 	type UninstallRun,
-	describeEndingTerminals,
 	describeForgetHint,
 	describeUninstallCommand,
 	uninstallRemovals,
@@ -156,7 +156,7 @@ export function UninstallPanel() {
 			cancelled={cancelled}
 			forgetSettings={forgetSettings}
 			run={run}
-			liveTerminals={terminals.filter(session => session.state.kind === "running").length}
+			liveTerminals={liveTerminalCount(terminals)}
 			onStart={() => setConfirming(true)}
 			onCancel={() => {
 				setConfirming(false);

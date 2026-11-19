@@ -5,7 +5,8 @@ import { AboutSectionView } from "../src/mainview/components/settings/AboutSecti
 import { UninstallPanelView, type UninstallPanelViewProps } from "../src/mainview/components/settings/UninstallPanel";
 import { createMockEngine, sampleUninstallPlan } from "../src/mainview/engine/mock";
 import { createAppStore } from "../src/mainview/store/store";
-import { describeEndingTerminals, describeForgetHint, describeUninstallCommand, uninstallRemovals, uninstallRunOf } from "../src/mainview/uninstall-format";
+import { describeEndingTerminals } from "../src/mainview/terminal-format";
+import { describeForgetHint, describeUninstallCommand, uninstallRemovals, uninstallRunOf } from "../src/mainview/uninstall-format";
 
 const nothing = () => {};
 

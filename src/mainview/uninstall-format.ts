@@ -33,12 +33,6 @@ export function uninstallRemovals(plan: AvailableUninstallPlan, forget: boolean)
 	return forget ? [...plan.removes, plan.settingsFolder] : [...plan.removes];
 }
 
-/** A line for the terminals that end with the app, or null when none runs. */
-export function describeEndingTerminals(live: number): string | null {
-	if (live <= 0) return null;
-	return live === 1 ? "1 terminal is running and will be ended." : `${live} terminals are running and will be ended.`;
-}
-
 /** Where uninstalling stands after the engine answered. */
 export function uninstallRunOf(result: UninstallResult): UninstallRun {
 	if (result.outcome === "uninstalled") return { state: "done", settingsProblem: result.settingsProblem };
