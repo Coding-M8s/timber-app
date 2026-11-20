@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { type RepositoryListOptions, createRepositoryList } from "../src/bun/repository-list";
 import { createRepositoryReader } from "../src/bun/repository-reader";
-import { git, realTimber, recorded, standInTimber } from "./support/timber";
+import { fingerprint, git, makeRepository, realTimber, recorded, standInTimber } from "./support/timber";
 
 let root: string;
 let primary: string;
@@ -14,13 +14,6 @@ let plain: string;
 let settingsFile: string;
 let cases = 0;
 
-function makeRepository(path: string): void {
-	git(root, "init", "--initial-branch=main", path);
-	writeFileSync(join(path, "tracked.txt"), "one\n");
-	git(path, "add", "tracked.txt");
-	git(path, "commit", "-m", "Initial commit");
-}
-
 beforeAll(() => {
 	// Git reports real paths, so resolve the temporary folder once (it is a link on macOS).
 	root = realpathSync(mkdtempSync(join(tmpdir(), "timber-app-list-")));
@@ -28,12 +21,12 @@ beforeAll(() => {
 	linked = join(root, "sample-worktrees", "feat-x");
 	other = join(root, "other");
 	plain = join(root, "plain");
-	makeRepository(primary);
+	makeRepository(root, "sample");
 	git(primary, "worktree", "add", "-b", "feat/x", linked);
 	writeFileSync(join(linked, "tracked.txt"), "two\n");
 	writeFileSync(join(linked, "new.txt"), "new\n");
 	mkdirSync(join(primary, "nested", "deep"), { recursive: true });
-	makeRepository(other);
+	makeRepository(root, "other");
 	mkdirSync(plain);
 	writeFileSync(join(plain, "notes.txt"), "not a repository\n");
 });
@@ -59,22 +52,6 @@ function listOn(overrides: Partial<RepositoryListOptions> = {}) {
 		warn: () => {},
 		...overrides,
 	});
-}
-
-/** Every file under `folder` with its size and time of last change, and what Git says about the repository. */
-function fingerprint(folder: string): string {
-	const files: string[] = [];
-	const walk = (directory: string) => {
-		for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-			const path = join(directory, entry.name);
-			if (entry.isDirectory()) walk(path);
-			else files.push(`${path} ${statSync(path).size} ${statSync(path).mtimeMs}`);
-		}
-	};
-	walk(folder);
-	// Without optional locks, so that looking does not itself refresh the index file.
-	const run = (...args: string[]) => Bun.spawnSync(["git", "-C", folder, ...args], { env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } }).stdout.toString();
-	return [...files, run("for-each-ref"), run("worktree", "list", "--porcelain"), run("status", "--porcelain"), run("ls-files", "--stage")].join("\n");
 }
 
 const names = async (list: { list(): Promise<{ name: string }[]> }) => (await list.list()).map(repository => repository.name);
@@ -260,9 +237,8 @@ describe.skipIf(realTimber === null)("reordering", () => {
 
 describe.skipIf(realTimber === null)("a saved repository whose folder is missing", () => {
 	test("stays in the list, marked unavailable, comes back with its folder, and can be removed", async () => {
-		const moving = join(root, `moving-${cases}`);
+		const moving = makeRepository(root, `moving-${cases}`);
 		const away = `${moving}-away`;
-		makeRepository(moving);
 		const list = listOn();
 		await list.addFolder(other);
 		await list.addFolder(moving);
@@ -321,8 +297,7 @@ describe.skipIf(realTimber === null)("finding a repository of the list", () => {
 	});
 
 	test("a listed repository whose folder is gone is found as unavailable", async () => {
-		const gone = join(root, `gone-${cases}`);
-		makeRepository(gone);
+		const gone = makeRepository(root, `gone-${cases}`);
 		const list = listOn();
 		await list.addFolder(gone);
 		rmSync(gone, { recursive: true });

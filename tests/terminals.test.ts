@@ -9,18 +9,11 @@ import type { Repository } from "../src/shared/model";
 import { describeSearchPath } from "../src/shared/search-path";
 import { PROBE_ANSWER } from "../src/shared/program-status";
 import { type SessionNaming, type TerminalChange, type TerminalOutput, TERMINAL_UNSUPPORTED_REASON } from "../src/shared/terminal";
+import { until } from "./support/runtime";
+import { git } from "./support/timber";
 
 const posix = process.platform !== "win32";
 const linux = process.platform === "linux";
-
-async function until(check: () => boolean, milliseconds = 5000): Promise<boolean> {
-	const end = Date.now() + milliseconds;
-	while (Date.now() < end) {
-		if (check()) return true;
-		await Bun.sleep(20);
-	}
-	return check();
-}
 
 function alive(pid: number): boolean {
 	try {
@@ -29,12 +22,6 @@ function alive(pid: number): boolean {
 	} catch {
 		return false;
 	}
-}
-
-function git(cwd: string, ...args: string[]): string {
-	const run = Bun.spawnSync(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe", env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" } });
-	if (run.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${run.stderr.toString()}`);
-	return run.stdout.toString();
 }
 
 describe("reading a process's session", () => {

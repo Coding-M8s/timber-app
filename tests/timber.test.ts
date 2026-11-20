@@ -4,8 +4,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join, relative } from "node:path";
 import { createTimberLocator, describeTimberStatus, findTimber } from "../src/bun/timber";
 import type { TimberStatus } from "../src/shared/model";
-
-const windows = process.platform === "win32";
+import { windows } from "./support/runtime";
 
 /**
  * Put a real executable named `timber` in a new folder under `root`. It runs

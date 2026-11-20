@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type Done, createDone } from "../src/bun/done";
@@ -9,25 +9,7 @@ import { runTimberWithResultFile } from "../src/bun/timber-run";
 import type { Repository, TimberStatus } from "../src/shared/model";
 import { DEFAULT_DONE_OPTIONS, type DoneOptions, doneApplyArguments } from "../src/shared/timber-done";
 import { APPROVAL_FILE_PLACEHOLDER } from "../src/shared/timber-result";
-import { type StandInRun, git, realTimber, recordedDone, standInResultTimber } from "./support/timber";
-
-const ready = (path: string): TimberStatus => ({ state: "ready", path, version: "0.1.1" });
-
-/** Every file under `folder` with its size and time of last change, and what Git says about the repository. */
-function fingerprint(folder: string): string {
-	const files: string[] = [];
-	const walk = (directory: string) => {
-		for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-			const path = join(directory, entry.name);
-			if (entry.isDirectory()) walk(path);
-			else files.push(`${path} ${statSync(path).size} ${statSync(path).mtimeMs}`);
-		}
-	};
-	walk(folder);
-	// Without optional locks, so that looking does not itself refresh the index file.
-	const run = (...args: string[]) => Bun.spawnSync(["git", "-C", folder, ...args], { env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } }).stdout.toString();
-	return [...files, run("for-each-ref"), run("worktree", "list", "--porcelain"), run("status", "--porcelain"), run("ls-files", "--stage")].join("\n");
-}
+import { type StandInRun, fingerprint, git, isolatedEnvironment, makeRepository, ready, realTimber, recordedDone, standInResultTimber } from "./support/timber";
 
 /** What `git status --porcelain` shows for a worktree, with every untracked and ignored file on its own line. */
 function gitStatus(folder: string): { modified: string[]; untracked: string[]; ignored: string[] } {
@@ -70,18 +52,9 @@ describe.skipIf(realTimber === null)("with the installed Timber, on real reposit
 		scratch = join(work, "temporary");
 		mkdirSync(scratch);
 		// A home of its own, so Timber's first-use marker and any user configuration stay out of this.
-		const home = join(work, "home");
-		mkdirSync(home);
-		environment = { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: join(home, ".config"), XDG_STATE_HOME: join(home, ".local", "state"), GIT_CONFIG_GLOBAL: "", GIT_CONFIG_NOSYSTEM: "1" };
+		environment = isolatedEnvironment(work);
 
-		for (const repository of [primary, other]) {
-			git(work, "init", "--initial-branch=main", repository);
-			writeFileSync(join(repository, "tracked.txt"), "one\n");
-			writeFileSync(join(repository, "old name.txt"), "old\n");
-			writeFileSync(join(repository, ".gitignore"), "*.log\n");
-			git(repository, "add", ".");
-			git(repository, "commit", "-m", "Initial commit");
-		}
+		for (const name of ["my sample", "other"]) makeRepository(work, name, { "tracked.txt": "one\n", "old name.txt": "old\n", ".gitignore": "*.log\n" });
 		git(other, "worktree", "add", "-b", "feat/elsewhere", otherTree);
 
 		// The app's list holds the first repository only.

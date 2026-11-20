@@ -5,9 +5,8 @@ import { join } from "node:path";
 import { type DirectoryWatch, type WatchDirectory, type WatchTarget, createRepositoryWatcher } from "../src/bun/repository-watcher";
 import { createWorktreeStamps } from "../src/bun/worktree-stamp";
 import { manualClock } from "./support/clock";
+import { until, windows } from "./support/runtime";
 import { git } from "./support/timber";
-
-const windows = process.platform === "win32";
 
 /** Watches that the test fires by hand. A folder in `missing` cannot be watched, as if it were not there. */
 function fakeWatches() {
@@ -227,12 +226,6 @@ describe("createRepositoryWatcher with stand-in watches", () => {
 	});
 });
 
-/** Wait until `done` holds, or give up after `milliseconds`. Real file events take a moment to arrive. */
-async function eventually(done: () => boolean, milliseconds = 3000): Promise<void> {
-	const end = Date.now() + milliseconds;
-	while (!done() && Date.now() < end) await Bun.sleep(20);
-}
-
 describe.skipIf(windows)("createRepositoryWatcher against a real repository", () => {
 	let root: string;
 	let primary: string;
@@ -274,7 +267,7 @@ describe.skipIf(windows)("createRepositoryWatcher against a real repository", ()
 		await quiet();
 		changes.length = 0;
 		act();
-		await eventually(() => changes.length > 0);
+		await until(() => changes.length > 0, 3000);
 		await quiet();
 		return changes.length;
 	}

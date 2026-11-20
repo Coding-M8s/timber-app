@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { commonDirectory, overrideRepositoryPaths, readBranchSync, readBranches } from "../src/bun/git-engine";
-import { git } from "./support/timber";
+import { git, makeRepository } from "./support/timber";
 
 let root: string;
 let primary: string;
@@ -13,10 +13,7 @@ beforeAll(() => {
 	root = mkdtempSync(join(tmpdir(), "timber-app-"));
 	primary = join(root, "sample");
 	linked = join(root, "sample-worktrees", "feat-x");
-	git(root, "init", "--initial-branch=main", primary);
-	writeFileSync(join(primary, "tracked.txt"), "one\n");
-	git(primary, "add", "tracked.txt");
-	git(primary, "commit", "-m", "Initial commit");
+	makeRepository(root, "sample");
 	git(primary, "worktree", "add", "-b", "feat/x", linked);
 
 	// A remote with one branch in each state the sidebar shows.

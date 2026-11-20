@@ -4,9 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { WatchTarget } from "../src/bun/repository-watcher";
 import { createWorktreeStamps } from "../src/bun/worktree-stamp";
+import { windows } from "./support/runtime";
 import { fingerprint, git } from "./support/timber";
-
-const windows = process.platform === "win32";
 
 describe.skipIf(windows)("createWorktreeStamps against real repositories", () => {
 	let root: string;

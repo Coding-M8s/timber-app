@@ -7,6 +7,8 @@ import { startBunTerminal } from "../src/bun/pseudo-terminal";
 import type { Repository } from "../src/shared/model";
 import { PROBE_ANSWER } from "../src/shared/program-status";
 import type { TerminalChange, TerminalOutput } from "../src/shared/terminal";
+import { until, windows } from "./support/runtime";
+import { gitWith } from "./support/timber";
 
 /*
  * Terminal sessions on a real ConPTY. Most of these run cmd.exe, found
@@ -14,19 +16,9 @@ import type { TerminalChange, TerminalOutput } from "../src/shared/terminal";
  * is known and no profile runs.
  */
 
-const windows = process.platform === "win32";
 const SYSTEM_ROOT = process.env.SystemRoot ?? "C:\\Windows";
 const SYSTEM32 = join(SYSTEM_ROOT, "System32");
 const CMD = join(SYSTEM32, "cmd.exe");
-
-async function until(check: () => boolean | Promise<boolean>, milliseconds = 8000): Promise<boolean> {
-	const end = Date.now() + milliseconds;
-	while (Date.now() < end) {
-		if (await check()) return true;
-		await Bun.sleep(25);
-	}
-	return check();
-}
 
 function alive(pid: number): boolean {
 	try {
@@ -59,10 +51,8 @@ describe.if(windows)("terminal sessions on Windows, on a real ConPTY", () => {
 	let outputs: TerminalOutput[];
 	let changes: TerminalChange[];
 
-	function git(cwd: string, ...args: string[]): void {
-		const run = Bun.spawnSync(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe", env: { ...process.env, GIT_CONFIG_GLOBAL: join(root, "empty.gitconfig"), GIT_CONFIG_NOSYSTEM: "1" } });
-		if (run.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${run.stderr.toString()}`);
-	}
+	// An empty global config file, as this was run on Windows with, rather than the helper's empty path.
+	const git = (cwd: string, ...args: string[]) => gitWith({ GIT_CONFIG_GLOBAL: join(root, "empty.gitconfig") }, cwd, ...args);
 
 	beforeAll(() => {
 		root = realpathSync(mkdtempSync(join(tmpdir(), "timber-app-conpty-")));
@@ -124,7 +114,7 @@ describe.if(windows)("terminal sessions on Windows, on a real ConPTY", () => {
 
 	async function seen(id: string, expected: string | RegExp): Promise<void> {
 		const matches = () => typeof expected === "string" ? printed(id).includes(expected) : expected.test(printed(id));
-		if (!(await until(matches))) throw new Error(`Did not see ${expected}. Printed: ${JSON.stringify(printed(id))}`);
+		if (!(await until(matches, 8000))) throw new Error(`Did not see ${expected}. Printed: ${JSON.stringify(printed(id))}`);
 	}
 
 	async function run(id: string, line: string, expected: string | RegExp): Promise<void> {
@@ -154,7 +144,7 @@ describe.if(windows)("terminal sessions on Windows, on a real ConPTY", () => {
 		const session = await opened();
 		await seen(session.id, ">");
 		sessions.write(session.id, "exit 3\r");
-		const ended = await until(() => changes.some(change => change.id === session.id && change.session?.state.kind === "exited"));
+		const ended = await until(() => changes.some(change => change.id === session.id && change.session?.state.kind === "exited"), 8000);
 		expect(ended).toBe(true);
 		expect(sessions.list()[0]?.state).toEqual({ kind: "exited", exitCode: 3, signal: null });
 		expect(sessions.liveCount()).toBe(0);
@@ -178,7 +168,7 @@ describe.if(windows)("terminal sessions on Windows, on a real ConPTY", () => {
 			if (how === "close") await sessions.close(session.id);
 			else sessions.killAll();
 
-			expect(await until(() => [...shells, ...children].every(pid => !alive(pid)))).toBe(true);
+			expect(await until(() => [...shells, ...children].every(pid => !alive(pid)), 8000)).toBe(true);
 			expect(sessions.list()).toEqual([]);
 		});
 	}
@@ -189,7 +179,7 @@ describe.if(windows)("terminal sessions on Windows, on a real ConPTY", () => {
 		expect(session).toMatchObject({ kind: "agent", name: "Where", shell: join(SYSTEM32, "where.exe") });
 		// Windows paths ignore case, and where.exe prints the folder as the file system spells it.
 		const where = join(SYSTEM32, "where.exe").toLowerCase();
-		expect(await until(() => printed(session.id).toLowerCase().includes(where))).toBe(true);
+		expect(await until(() => printed(session.id).toLowerCase().includes(where), 8000)).toBe(true);
 	});
 
 	test("an agent whose executable is a batch file is refused, and nothing starts", async () => {
@@ -226,7 +216,7 @@ describe.if(windows)("terminal sessions on Windows, on a real ConPTY", () => {
 	}
 
 	const proberEnvironment = () => ({ ...cmdEnvironment(), PATH: `${dirname(process.execPath)};${SYSTEM32}` });
-	const statusDone = (id: string) => until(() => changes.some(change => change.id === id && change.session?.status?.state === "done"));
+	const statusDone = (id: string) => until(() => changes.some(change => change.id === id && change.session?.status?.state === "done"), 8000);
 	const hex = (text: string) => Buffer.from(text).toString("hex");
 
 	test("a program that probes and then asks for device attributes gets the probe's answer first, so its report sets the status", async () => {
@@ -253,7 +243,7 @@ describe.if(windows)("terminal sessions on Windows, on a real ConPTY", () => {
 		const started = Date.now();
 		const session = await opened({ agent: "Where" });
 		const where = join(SYSTEM32, "where.exe").toLowerCase();
-		expect(await until(() => printed(session.id).toLowerCase().includes(where))).toBe(true);
+		expect(await until(() => printed(session.id).toLowerCase().includes(where), 8000)).toBe(true);
 		// Unanswered, ConPTY holds the program back for 3 seconds.
 		expect(Date.now() - started).toBeLessThan(2000);
 		expect(printed(session.id)).not.toContain("\x1b[c");
@@ -272,10 +262,10 @@ describe.if(windows)("terminal sessions on Windows, on a real ConPTY", () => {
 		const status = () => sessions.list().find(listed => listed.id === session.id)?.status ?? null;
 		sessions.write(session.id, `Write-Host -NoNewline "$([char]27)]7501;state=working$([char]27)\\"; Write-Host sent1\r`);
 		await seen(session.id, "sent1");
-		expect(await until(() => status()?.state === "working")).toBe(true);
+		expect(await until(() => status()?.state === "working", 8000)).toBe(true);
 		sessions.write(session.id, `Write-Host -NoNewline "$([char]27)]7501;state=done$([char]7)"; Write-Host sent2\r`);
 		await seen(session.id, "sent2");
-		expect(await until(() => status()?.state === "done")).toBe(true);
+		expect(await until(() => status()?.state === "done", 8000)).toBe(true);
 		await sessions.close(session.id);
 	}, 20_000);
 });

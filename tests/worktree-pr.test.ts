@@ -8,9 +8,9 @@ import { createWorktreeCommands } from "../src/bun/worktree-commands";
 import type { Repository, TimberStatus } from "../src/shared/model";
 import { type CreatePullRequestRequest, prResultArguments } from "../src/shared/timber-pr";
 import { satisfiesTimberVersion } from "../src/shared/timber-version";
-import { type StandInRun, fingerprint, git, realTimber, recordedPr, standInResultTimber } from "./support/timber";
+import { type StandInRun, fingerprint, git, gitIdentity, isolatedEnvironment, makeRepository, readyAt, realTimber, recordedPr, standInResultTimber } from "./support/timber";
 
-const ready = (path: string, version = "0.1.3"): TimberStatus => ({ state: "ready", path, version });
+const ready = readyAt("0.1.3");
 
 describe("WorktreeCommands.pullRequest, with a stand-in Timber", () => {
 	let root: string;
@@ -145,19 +145,10 @@ describe.skipIf(!recentTimber)("WorktreeCommands.pullRequest and headSubject, wi
 		feat = join(work, "trees", "feat");
 		scratch = join(work, "temporary");
 		mkdirSync(scratch);
-		const home = join(work, "home");
-		mkdirSync(home);
 		// No login and no user configuration, so nothing here can reach GitHub with the developer's account.
-		const environment = {
-			...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: join(home, ".config"), XDG_STATE_HOME: join(home, ".local", "state"), GIT_CONFIG_GLOBAL: "", GIT_CONFIG_NOSYSTEM: "1",
-			GH_TOKEN: "", GITHUB_TOKEN: "", GH_CONFIG_DIR: join(home, "gh"),
-			GIT_AUTHOR_NAME: "Timber Test", GIT_AUTHOR_EMAIL: "test@example.invalid", GIT_COMMITTER_NAME: "Timber Test", GIT_COMMITTER_EMAIL: "test@example.invalid",
-		};
+		const environment = { ...isolatedEnvironment(work), GH_TOKEN: "", GITHUB_TOKEN: "", GH_CONFIG_DIR: join(work, "home", "gh"), ...gitIdentity };
 		git(work, "init", "--bare", "--initial-branch=main", remote);
-		git(work, "init", "--initial-branch=main", primary);
-		writeFileSync(join(primary, "a.txt"), "one\n");
-		git(primary, "add", ".");
-		git(primary, "commit", "-m", "Initial commit");
+		makeRepository(work, "my sample", { "a.txt": "one\n" });
 		// A remote on disk, which is not on github.com, so Timber refuses before it reads a login or pushes.
 		git(primary, "remote", "add", "origin", remote);
 		git(primary, "push", "origin", "main");

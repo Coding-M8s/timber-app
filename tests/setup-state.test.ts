@@ -6,7 +6,7 @@ import { createRepositoryReader } from "../src/bun/repository-reader";
 import { readSetupState } from "../src/bun/setup-state";
 import { createTimberSettings } from "../src/bun/timber-settings";
 import { REPOSITORY_CONFIG_FILE } from "../src/shared/timber-config";
-import { fingerprint, git, realTimber } from "./support/timber";
+import { fingerprint, git, makeRepository, realTimber } from "./support/timber";
 
 let root: string;
 let primary: string;
@@ -23,10 +23,7 @@ beforeAll(() => {
 	xdg = join(root, "xdg config");
 	mkdirSync(home);
 	mkdirSync(xdg);
-	git(root, "init", "--initial-branch=main", primary);
-	writeFileSync(join(primary, "README.md"), "hello\n");
-	git(primary, "add", "README.md");
-	git(primary, "commit", "-m", "Initial commit");
+	makeRepository(root, "never set up", { "README.md": "hello\n" });
 	git(primary, "worktree", "add", "-b", "feat/x", linked);
 });
 

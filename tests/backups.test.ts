@@ -4,11 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createBackupCommands, readBackups } from "../src/bun/backups";
 import { createRepositoryTurns } from "../src/bun/repository-turns";
-import type { TimberStatus } from "../src/shared/model";
-import { fingerprint, git, realTimber, recordedBackup, standInResultTimber, standInTimber } from "./support/timber";
+import { windows } from "./support/runtime";
+import { fingerprint, git, isolatedEnvironment, makeRepository, readyAt, realTimber, recordedBackup, standInResultTimber, standInTimber } from "./support/timber";
 
-const windows = process.platform === "win32";
-const ready = (path: string): TimberStatus => ({ state: "ready", path, version: "0.1.2" });
+const ready = readyAt("0.1.2");
 
 let root: string;
 let folder: string;
@@ -158,13 +157,8 @@ describe.skipIf(!hasBackupList(realTimber))("with an installed Timber that has b
 		work = realpathSync(mkdtempSync(join(tmpdir(), "timber-app-backups-real-")));
 		primary = join(work, "my sample");
 		feat = join(work, "trees", "feat");
-		const home = join(work, "home");
-		mkdirSync(home);
-		environment = { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: join(home, ".config"), XDG_STATE_HOME: join(home, ".local", "state"), GIT_CONFIG_GLOBAL: "", GIT_CONFIG_NOSYSTEM: "1" };
-		git(work, "init", "--initial-branch=main", primary);
-		writeFileSync(join(primary, "a.txt"), "one\n");
-		git(primary, "add", ".");
-		git(primary, "commit", "-m", "Initial commit");
+		environment = isolatedEnvironment(work);
+		makeRepository(work, "my sample", { "a.txt": "one\n" });
 		git(primary, "worktree", "add", "-b", "feat", feat);
 		// A synthetic secret, ignored, which a backup copies.
 		writeFileSync(join(feat, ".gitignore"), ".env\n");

@@ -6,8 +6,7 @@ import { createSettingsHolder, removeSettings } from "../src/bun/settings";
 import { type UninstallerDependencies, createUninstaller, installRootOf } from "../src/bun/uninstall";
 import { emptySettings } from "../src/shared/settings";
 import { UNINSTALL_ARGUMENTS, parseInstallRecord, uninstallTargets } from "../src/shared/uninstall";
-
-const windows = process.platform === "win32";
+import { windows } from "./support/runtime";
 
 /** The record Electrobun 2.0.6 wrote for an install on Linux, with the home folder changed. */
 const RECORDED = `{

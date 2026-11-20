@@ -7,7 +7,7 @@ import { createRepositoryList } from "../src/bun/repository-list";
 import type { RepositoryReader } from "../src/bun/repository-reader";
 import { createSettingsHolder, readSettings, writeSettings } from "../src/bun/settings";
 import { DEFAULT_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, defaultLayout } from "../src/shared/layout";
-import { git } from "./support/timber";
+import { git, makeRepository } from "./support/timber";
 
 let root: string;
 let primary: string;
@@ -15,19 +15,12 @@ let other: string;
 let settingsFile: string;
 let cases = 0;
 
-function makeRepository(path: string): void {
-	git(root, "init", "--initial-branch=main", path);
-	writeFileSync(join(path, "tracked.txt"), "one\n");
-	git(path, "add", "tracked.txt");
-	git(path, "commit", "-m", "Initial commit");
-}
-
 beforeAll(() => {
 	root = realpathSync(mkdtempSync(join(tmpdir(), "timber-app-layout-")));
 	primary = join(root, "sample");
 	other = join(root, "other");
-	makeRepository(primary);
-	makeRepository(other);
+	makeRepository(root, "sample");
+	makeRepository(root, "other");
 });
 
 beforeEach(() => {

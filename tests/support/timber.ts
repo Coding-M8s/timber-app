@@ -1,8 +1,8 @@
-import { chmodSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { findTimber } from "../../src/bun/timber";
-
-const windows = process.platform === "win32";
+import type { TimberStatus } from "../../src/shared/model";
+import { windows } from "./runtime";
 const fixtures = join(import.meta.dir, "..", "fixtures", "timber-ls");
 const resultFixtures = join(import.meta.dir, "..", "fixtures", "timber-result");
 const rebaseFixtures = join(import.meta.dir, "..", "fixtures", "timber-rebase");
@@ -272,14 +272,55 @@ export const realTimber: string | null = found.state === "ready" ? found.path : 
  * changes `.git` while a test compares it before and after.
  */
 export function git(cwd: string, ...args: string[]): string {
+	return gitWith({}, cwd, ...args);
+}
+
+/** `git`, with `env` added to its environment, for a test that needs other settings, such as another global config file. */
+export function gitWith(env: Record<string, string>, cwd: string, ...args: string[]): string {
 	const result = Bun.spawnSync(["git", "-C", cwd, "-c", "user.name=Timber Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false", "-c", "maintenance.auto=false", "-c", "gc.auto=0", ...args], {
 		stdout: "pipe",
 		stderr: "pipe",
-		env: { ...process.env, GIT_CONFIG_GLOBAL: "", GIT_CONFIG_NOSYSTEM: "1" },
+		env: { ...process.env, GIT_CONFIG_GLOBAL: "", GIT_CONFIG_NOSYSTEM: "1", ...env },
 	});
 	if (result.exitCode !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr.toString()}`);
 	return result.stdout.toString();
 }
+
+/**
+ * A new repository `root/name` on `main` with one commit, "Initial commit",
+ * of `files` (a path inside the repository and its text). Returns its path.
+ */
+export function makeRepository(root: string, name: string, files: Record<string, string> = { "tracked.txt": "one\n" }): string {
+	const path = join(root, name);
+	git(root, "init", "--initial-branch=main", path);
+	for (const [file, text] of Object.entries(files)) {
+		mkdirSync(dirname(join(path, file)), { recursive: true });
+		writeFileSync(join(path, file), text);
+	}
+	git(path, "add", ".");
+	git(path, "commit", "-m", "Initial commit");
+	return path;
+}
+
+/** The identity the `git` helper commits with, as environment variables, for Git run by something else, such as Timber. */
+export const gitIdentity = { GIT_AUTHOR_NAME: "Timber Test", GIT_AUTHOR_EMAIL: "test@example.invalid", GIT_COMMITTER_NAME: "Timber Test", GIT_COMMITTER_EMAIL: "test@example.invalid" };
+
+/**
+ * An environment for running the real Timber: this process's, with a new home
+ * `root/home` of its own and no user or system Git configuration, so Timber's
+ * first-use marker and any user configuration stay out of the test.
+ */
+export function isolatedEnvironment(root: string): Record<string, string | undefined> {
+	const home = join(root, "home");
+	mkdirSync(home);
+	return { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: join(home, ".config"), XDG_STATE_HOME: join(home, ".local", "state"), GIT_CONFIG_GLOBAL: "", GIT_CONFIG_NOSYSTEM: "1" };
+}
+
+/** A Timber of `version` found ready: `ready(path)`, or `ready(path, otherVersion)`. */
+export const readyAt = (version: string) => (path: string, at = version): TimberStatus => ({ state: "ready", path, version: at });
+
+/** Timber 0.1.1 found ready at `path`. */
+export const ready = readyAt("0.1.1");
 
 /**
  * Every file under `folder` with its size and time of last change, and what
@@ -406,11 +447,58 @@ export function standInResultTimber(root: string, name: string, run: StandInRun)
 	mkdirSync(folder, { recursive: true });
 	writeFileSync(join(folder, "run.json"), JSON.stringify(run));
 	writeFileSync(join(folder, "stand-in.cjs"), STAND_IN_SCRIPT);
+	const path = writeStandInLauncher(folder);
+	return { path, notes: () => JSON.parse(readFileSync(join(folder, "notes.json"), "utf8")) as StandInNotes };
+}
+
+/**
+ * Write `timber` (`timber.cmd` on Windows) in `folder`, which runs
+ * `stand-in.cjs` beside it on the same Bun that runs the tests, with the
+ * arguments it was given, and exits as that does. Returns its path.
+ */
+function writeStandInLauncher(folder: string): string {
 	const path = join(folder, windows ? "timber.cmd" : "timber");
-	// The stand-in runs on the same Bun that runs the tests.
 	writeFileSync(path, windows
 		? `@echo off\r\n"${process.execPath}" "%~dp0stand-in.cjs" %*\r\nexit /b %errorlevel%\r\n`
 		: `#!/bin/sh\nexec "${process.execPath}" "$(dirname "$0")/stand-in.cjs" "$@"\n`);
 	if (!windows) chmodSync(path, 0o755);
-	return { path, notes: () => JSON.parse(readFileSync(join(folder, "notes.json"), "utf8")) as StandInNotes };
+	return path;
+}
+
+/** What a stand-in Timber made with `standIn` does: print, wait, and exit as told, after reading standard input to its end. */
+export interface Act {
+	stdout?: string;
+	stderr?: string;
+	exitCode?: number;
+	/** Wait this long before printing, to act out a Timber that is stuck. */
+	waitMs?: number;
+}
+
+const ACT_SCRIPT = `
+const { readFileSync, writeFileSync } = require("node:fs");
+const { join } = require("node:path");
+const act = JSON.parse(readFileSync(join(__dirname, "act.json"), "utf8"));
+// Read standard input to its end. With input left open, this would never return.
+const input = readFileSync(0);
+writeFileSync(join(__dirname, "notes.json"), JSON.stringify({ arguments: process.argv.slice(2), cwd: process.cwd(), input: input.length }));
+setTimeout(() => {
+	if (act.stdout) writeFileSync(1, act.stdout);
+	if (act.stderr) writeFileSync(2, act.stderr);
+	process.exit(act.exitCode ?? 0);
+}, act.waitMs ?? 0);
+`;
+
+/**
+ * A real executable in a new folder `root/name` that acts out `act`, so the
+ * tests spawn an actual process, exactly as the app does. `notes` reads what
+ * it was given the latest time it ran, or null when it has not run.
+ */
+export function standIn(root: string, name: string, act: Act): { path: string; notes: () => { arguments: string[]; cwd: string; input: number } | null } {
+	const here = join(root, name);
+	mkdirSync(here, { recursive: true });
+	writeFileSync(join(here, "act.json"), JSON.stringify(act));
+	writeFileSync(join(here, "stand-in.cjs"), ACT_SCRIPT);
+	const path = writeStandInLauncher(here);
+	const notes = join(here, "notes.json");
+	return { path, notes: () => (existsSync(notes) ? JSON.parse(readFileSync(notes, "utf8")) : null) };
 }

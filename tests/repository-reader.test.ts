@@ -3,8 +3,8 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRepositoryReader, syncOf } from "../src/bun/repository-reader";
-import type { Repository, SyncState, TimberStatus } from "../src/shared/model";
-import { fingerprint, git, realTimber, recorded, standInTimber } from "./support/timber";
+import type { Repository, SyncState } from "../src/shared/model";
+import { fingerprint, git, makeRepository, ready, realTimber, recorded, standInTimber } from "./support/timber";
 
 let root: string;
 let primary: string;
@@ -21,10 +21,7 @@ beforeAll(() => {
 	plain = join(root, "plain");
 	mkdirSync(plain);
 
-	git(root, "init", "--initial-branch=main", primary);
-	writeFileSync(join(primary, "tracked.txt"), "one\n");
-	git(primary, "add", "tracked.txt");
-	git(primary, "commit", "-m", "Initial commit");
+	makeRepository(root, "my sample");
 
 	git(primary, "worktree", "add", "-b", "feat/x", tree("feat-x"));
 	writeFileSync(join(tree("feat-x"), "tracked.txt"), "two\n");
@@ -51,8 +48,6 @@ beforeAll(() => {
 afterAll(() => {
 	rmSync(root, { recursive: true, force: true });
 });
-
-const ready = (path: string): TimberStatus => ({ state: "ready", path, version: "0.1.1" });
 
 describe.skipIf(realTimber === null)("with the installed Timber, on a real repository", () => {
 	const reader = () => createRepositoryReader(async () => ready(realTimber!));

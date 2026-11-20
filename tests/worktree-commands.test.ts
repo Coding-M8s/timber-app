@@ -7,22 +7,11 @@ import { listWorktrees } from "../src/bun/timber-ls";
 import { createWorktreeCommands } from "../src/bun/worktree-commands";
 import { type NewWorktreeRequest, type OpenWorktreeRequest, type TimberStatus, worktreeId } from "../src/shared/model";
 import { newWorktreeArguments, openWorktreeArguments, worktreeSetupArguments } from "../src/shared/worktree-commands";
-import { type StandInRun, git, realTimber, recordedResult, standInResultTimber } from "./support/timber";
-
-const ready = (path: string): TimberStatus => ({ state: "ready", path, version: "0.1.1" });
+import { until } from "./support/runtime";
+import { type StandInRun, git, isolatedEnvironment, makeRepository, ready, realTimber, recordedResult, standInResultTimber } from "./support/timber";
 
 /** How long to watch for a detached editor that should not start. */
 const editorStartWait = 500;
-
-/** Poll until `done` holds or the time runs out, and say whether it held. */
-async function eventually(done: () => boolean, milliseconds = 5000): Promise<boolean> {
-	const end = Date.now() + milliseconds;
-	while (!done()) {
-		if (Date.now() >= end) return false;
-		await Bun.sleep(20);
-	}
-	return true;
-}
 
 describe("createWorktreeCommands, with a stand-in Timber", () => {
 	let root: string;
@@ -239,9 +228,7 @@ describe.skipIf(realTimber === null)("createWorktreeCommands, with the installed
 		scratch = join(work, "temporary");
 		mkdirSync(scratch);
 		// A home of its own, so Timber's first-use marker and any user configuration stay out of this.
-		const home = join(work, "home");
-		mkdirSync(home);
-		environment = { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: join(home, ".config"), XDG_STATE_HOME: join(home, ".local", "state"), GIT_CONFIG_GLOBAL: "", GIT_CONFIG_NOSYSTEM: "1" };
+		environment = isolatedEnvironment(work);
 	});
 
 	afterAll(() => {
@@ -249,14 +236,10 @@ describe.skipIf(realTimber === null)("createWorktreeCommands, with the installed
 	});
 
 	/** A fresh repository in a folder of its own, with a `develop` branch one commit ahead of `main`. */
-	function makeRepository(): string {
+	function freshRepository(): string {
 		const folder = join(work, `case-${++made}`);
 		mkdirSync(folder);
-		const primary = join(folder, "my sample");
-		git(folder, "init", "--initial-branch=main", primary);
-		writeFileSync(join(primary, "tracked.txt"), "one\n");
-		git(primary, "add", "tracked.txt");
-		git(primary, "commit", "-m", "Initial commit");
+		const primary = makeRepository(folder, "my sample");
 		git(primary, "switch", "-c", "develop");
 		writeFileSync(join(primary, "tracked.txt"), "two\n");
 		git(primary, "commit", "-am", "On develop");
@@ -290,8 +273,8 @@ describe.skipIf(realTimber === null)("createWorktreeCommands, with the installed
 	}
 
 	test("creates the same worktree and branch as the same command in a terminal", async () => {
-		const byApp = makeRepository();
-		const byHand = makeRepository();
+		const byApp = freshRepository();
+		const byHand = freshRepository();
 		const name = "Fix the zażółć login";
 
 		const result = await commandsFor(byApp).create({ repository: byApp, name, base: "develop" });
@@ -314,15 +297,15 @@ describe.skipIf(realTimber === null)("createWorktreeCommands, with the installed
 	});
 
 	test("refuses a repository that is not in the list, and creates nothing there", async () => {
-		const primary = makeRepository();
+		const primary = freshRepository();
 		const before = git(primary, "worktree", "list", "--porcelain") + git(primary, "for-each-ref");
-		const result = await commandsFor(makeRepository()).create({ repository: primary, name: "feat/unlisted", base: null });
+		const result = await commandsFor(freshRepository()).create({ repository: primary, name: "feat/unlisted", base: null });
 		expect(result).toMatchObject({ outcome: "failed", worktree: null, created: false, failure: { command: null } });
 		expect(git(primary, "worktree", "list", "--porcelain") + git(primary, "for-each-ref")).toBe(before);
 	});
 
 	test("a base that is ambiguous fails before creation with Timber's own guidance", async () => {
-		const primary = makeRepository();
+		const primary = freshRepository();
 		for (const remote of ["one", "two"]) {
 			const bare = join(primary, "..", `${remote}.git`);
 			git(work, "init", "--bare", bare);
@@ -346,7 +329,7 @@ describe.skipIf(realTimber === null)("createWorktreeCommands, with the installed
 	});
 
 	test.skipIf(process.platform === "win32")("setup scripts never run during timber new, and Timber says it left them for the app", async () => {
-		const primary = makeRepository();
+		const primary = freshRepository();
 		const commands = commandsFor(primary);
 		writeFileSync(join(primary, ".timber.toml"), '[hooks]\npost_create = ["echo ran >> ../hook-runs; exit 7"]\n');
 
@@ -360,7 +343,7 @@ describe.skipIf(realTimber === null)("createWorktreeCommands, with the installed
 	});
 
 	test.skipIf(process.platform === "win32")("a workflow's post_create scripts wait for the setup session too, which runs them after the ordinary ones", async () => {
-		const primary = makeRepository();
+		const primary = freshRepository();
 		const commands = commandsFor(primary);
 		const log = join(primary, "..", "setup-order");
 		const config = (workflowScript: string) => writeFileSync(join(primary, ".timber.toml"), [
@@ -399,7 +382,7 @@ describe.skipIf(realTimber === null)("createWorktreeCommands, with the installed
 	});
 
 	test("a workflow that is not in the settings fails with Timber's message and creates nothing", async () => {
-		const primary = makeRepository();
+		const primary = freshRepository();
 		writeFileSync(join(primary, ".timber.toml"), '[workflows.review]\ndescription = "Review a branch"\n');
 		const before = git(primary, "worktree", "list", "--porcelain") + git(primary, "for-each-ref");
 		// As if the workflow was listed, then taken out of the settings before the person pressed Create.
@@ -419,13 +402,13 @@ describe.skipIf(realTimber === null)("createWorktreeCommands, with the installed
 	});
 
 	test("without setup scripts Timber leaves none for the app", async () => {
-		const primary = makeRepository();
+		const primary = freshRepository();
 		const result = await commandsFor(primary).create({ repository: primary, name: "feat/no-hooks", base: null });
 		expect(result).toMatchObject({ outcome: "succeeded", created: true, setupSkipped: false });
 	});
 
 	test.skipIf(process.platform === "win32")("an editor configured in Timber does not start", async () => {
-		const primary = makeRepository();
+		const primary = freshRepository();
 		const marker = join(primary, "..", "editor-started");
 		writeFileSync(join(primary, ".timber.toml"), `[editor]\ncommand = "touch"\nargs = [${JSON.stringify(marker)}]\nenabled = true\n`);
 
@@ -437,7 +420,7 @@ describe.skipIf(realTimber === null)("createWorktreeCommands, with the installed
 
 		// The same configuration does start the editor for a plain command, so the check above means something.
 		expect(inTerminal(primary, "new", "feat/loud").exitCode).toBe(0);
-		expect(await eventually(() => existsSync(marker))).toBe(true);
+		expect(await until(() => existsSync(marker))).toBe(true);
 	});
 });
 
@@ -479,14 +462,9 @@ describe.skipIf(realTimber === null)("timber open, with the installed Timber on 
 		scratch = join(work, "temporary");
 		mkdirSync(scratch);
 		// A home of its own, so Timber's first-use marker and any user configuration stay out of this.
-		const home = join(work, "home");
-		mkdirSync(home);
-		environment = { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: join(home, ".config"), XDG_STATE_HOME: join(home, ".local", "state"), GIT_CONFIG_GLOBAL: "", GIT_CONFIG_NOSYSTEM: "1" };
+		environment = isolatedEnvironment(work);
 
-		git(work, "init", "--initial-branch=main", primary);
-		writeFileSync(join(primary, "tracked.txt"), "one\n");
-		git(primary, "add", "tracked.txt");
-		git(primary, "commit", "-m", "Initial commit");
+		makeRepository(work, "my sample");
 		for (const remote of ["origin", "fork"]) {
 			git(work, "init", "--bare", join(work, `${remote}.git`));
 			git(primary, "remote", "add", remote, join(work, `${remote}.git`));

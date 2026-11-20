@@ -1,15 +1,13 @@
 import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createWorkflowReader, readWorkflows } from "../src/bun/workflows";
 import { createMockEngine, sampleTimberStatuses } from "../src/mainview/engine/mock";
 import { sampleWorkflows } from "../src/mainview/engine/mock-workflows";
-import type { TimberStatus } from "../src/shared/model";
 import type { WorkflowList } from "../src/shared/workflows";
-import { fingerprint, git, realTimber, recordedAppConfig } from "./support/timber";
+import { fingerprint, git, ready, realTimber, recordedAppConfig, standIn } from "./support/timber";
 
-const windows = process.platform === "win32";
 const SECRET = "ghp_SuperSecretToken123";
 
 let root: string;
@@ -26,49 +24,10 @@ afterAll(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-/** What a stand-in Timber does: print, wait, and exit as told, after reading standard input to its end. */
-interface Act {
-	stdout?: string;
-	stderr?: string;
-	exitCode?: number;
-	/** Wait this long before printing, to act out a Timber that is stuck. */
-	waitMs?: number;
-}
-
-const STAND_IN = `
-const { readFileSync, writeFileSync } = require("node:fs");
-const { join } = require("node:path");
-const act = JSON.parse(readFileSync(join(__dirname, "act.json"), "utf8"));
-// Read standard input to its end. With input left open, this would never return.
-const input = readFileSync(0);
-writeFileSync(join(__dirname, "notes.json"), JSON.stringify({ arguments: process.argv.slice(2), cwd: process.cwd(), input: input.length }));
-setTimeout(() => {
-	if (act.stdout) writeFileSync(1, act.stdout);
-	if (act.stderr) writeFileSync(2, act.stderr);
-	process.exit(act.exitCode ?? 0);
-}, act.waitMs ?? 0);
-`;
-
-/** A real executable in a new folder, so the tests spawn an actual process, exactly as the app does. */
-function standIn(name: string, act: Act): { path: string; notes: () => { arguments: string[]; cwd: string; input: number } | null } {
-	const here = join(root, name);
-	mkdirSync(here, { recursive: true });
-	writeFileSync(join(here, "act.json"), JSON.stringify(act));
-	writeFileSync(join(here, "stand-in.cjs"), STAND_IN);
-	const path = join(here, windows ? "timber.cmd" : "timber");
-	writeFileSync(path, windows
-		? `@echo off\r\n"${process.execPath}" "%~dp0stand-in.cjs" %*\r\nexit /b %errorlevel%\r\n`
-		: `#!/bin/sh\nexec "${process.execPath}" "$(dirname "$0")/stand-in.cjs" "$@"\n`);
-	if (!windows) chmodSync(path, 0o755);
-	const notes = join(here, "notes.json");
-	return { path, notes: () => (existsSync(notes) ? JSON.parse(readFileSync(notes, "utf8")) : null) };
-}
-
-const ready = (path: string): TimberStatus => ({ state: "ready", path, version: "0.1.1" });
 
 describe("readWorkflows with a stand-in Timber", () => {
 	test("runs the settings read in the repository folder, with standard input closed, and reads the record", async () => {
-		const timber = standIn("merged", { stdout: recordedAppConfig.records.merged });
+		const timber = standIn(root, "merged", { stdout: recordedAppConfig.records.merged });
 		const list = await readWorkflows(timber.path, folder);
 		expect(list.ok && list.workflows.map(workflow => workflow.name)).toEqual(["triage", "explore", "ship"]);
 		const notes = timber.notes()!;
@@ -78,7 +37,7 @@ describe("readWorkflows with a stand-in Timber", () => {
 	});
 
 	test("a failure passes on Timber's diagnostic", async () => {
-		const timber = standIn("invalid", { stderr: recordedAppConfig.failures.invalidConfig, exitCode: 1 });
+		const timber = standIn(root, "invalid", { stderr: recordedAppConfig.failures.invalidConfig, exitCode: 1 });
 		expect(await readWorkflows(timber.path, folder)).toEqual({
 			ok: false,
 			message: "timber __app-config read --scope repository exited with code 1: Invalid config /work/sample/.timber.toml: workflows.review.agent is invalid",
@@ -86,7 +45,7 @@ describe("readWorkflows with a stand-in Timber", () => {
 	});
 
 	test("a Timber that takes too long is stopped, and that is a failure", async () => {
-		const timber = standIn("stuck", { stdout: recordedAppConfig.records.merged, waitMs: 5_000 });
+		const timber = standIn(root, "stuck", { stdout: recordedAppConfig.records.merged, waitMs: 5_000 });
 		const started = Date.now();
 		const list = await readWorkflows(timber.path, folder, process.env, 300);
 		expect(Date.now() - started).toBeLessThan(4_000);
@@ -94,7 +53,7 @@ describe("readWorkflows with a stand-in Timber", () => {
 	});
 
 	test("output far bigger than a record is not read", async () => {
-		const timber = standIn("huge", { stdout: `${recordedAppConfig.records.merged}${" ".repeat(2 * 1024 * 1024)}` });
+		const timber = standIn(root, "huge", { stdout: `${recordedAppConfig.records.merged}${" ".repeat(2 * 1024 * 1024)}` });
 		const list = await readWorkflows(timber.path, folder);
 		expect(list.ok).toBe(false);
 		expect(!list.ok && list.message).toContain("printed more than a settings record holds");
@@ -102,7 +61,7 @@ describe("readWorkflows with a stand-in Timber", () => {
 
 	test("arguments come through exactly, control characters included", async () => {
 		const record = recordedAppConfig.records.merged.replaceAll('"--full-auto"', '"a\\u007fb\\u0000c"');
-		const list = await readWorkflows(standIn("controls", { stdout: record }).path, folder);
+		const list = await readWorkflows(standIn(root, "controls", { stdout: record }).path, folder);
 		const ship = list.ok ? list.workflows.find(workflow => workflow.name === "ship") : null;
 		expect(ship?.agent).toEqual({ kind: "command", command: "codex", args: ["a\u007fb\u0000c"] });
 	});
@@ -118,14 +77,14 @@ describe("createWorkflowReader", () => {
 	const listed = (paths: string[]) => async (path: string) => paths.includes(path);
 
 	test("reads a repository from the list with the Timber that was found", async () => {
-		const timber = standIn("reader", { stdout: recordedAppConfig.records.inherited });
+		const timber = standIn(root, "reader", { stdout: recordedAppConfig.records.inherited });
 		const reader = createWorkflowReader({ timber: async () => ready(timber.path), isListed: listed([folder]) });
 		const list = await reader.list(folder);
 		expect(list.ok && list.workflows.length).toBe(3);
 	});
 
 	test("a repository that is not in the list is refused, and Timber is not run", async () => {
-		const timber = standIn("unlisted", { stdout: recordedAppConfig.records.inherited });
+		const timber = standIn(root, "unlisted", { stdout: recordedAppConfig.records.inherited });
 		const reader = createWorkflowReader({ timber: async () => ready(timber.path), isListed: listed([]) });
 		expect(await reader.list(folder)).toEqual({ ok: false, message: `${folder} is not a repository in the app's list.` });
 		expect(timber.notes()).toBeNull();
@@ -158,8 +117,8 @@ describe("nothing from the record is logged", () => {
 
 	test("neither a record with a token in an argument nor a diagnostic reaches the console", async () => {
 		const record = recordedAppConfig.records.merged.replaceAll('"--full-auto"', `"--token=${SECRET}"`);
-		const good = standIn("secret-record", { stdout: record, stderr: `warning: ${SECRET}\n` });
-		const bad = standIn("secret-failure", { stderr: `error: ${SECRET}\n`, exitCode: 1 });
+		const good = standIn(root, "secret-record", { stdout: record, stderr: `warning: ${SECRET}\n` });
+		const bad = standIn(root, "secret-failure", { stderr: `error: ${SECRET}\n`, exitCode: 1 });
 		for (const method of methods) spies.push(spyOn(console, method));
 		const reader = createWorkflowReader({ timber: async () => ready(good.path), isListed: async () => true });
 		const list = await reader.list(folder);
@@ -170,8 +129,8 @@ describe("nothing from the record is logged", () => {
 
 	test("nothing reaches the main process's own output either, by any route", () => {
 		const record = recordedAppConfig.records.merged.replaceAll('"--full-auto"', `"--token=${SECRET}"`);
-		const good = standIn("secret-child-record", { stdout: record, stderr: `warning: ${SECRET}\n` });
-		const bad = standIn("secret-child-failure", { stderr: `error: ${SECRET}\n`, exitCode: 1 });
+		const good = standIn(root, "secret-child-record", { stdout: record, stderr: `warning: ${SECRET}\n` });
+		const bad = standIn(root, "secret-child-failure", { stderr: `error: ${SECRET}\n`, exitCode: 1 });
 		const script = join(root, "read-in-a-child.ts");
 		writeFileSync(script, [
 			`import { createWorkflowReader, readWorkflows } from ${JSON.stringify(join(import.meta.dir, "..", "src", "bun", "workflows.ts"))};`,
