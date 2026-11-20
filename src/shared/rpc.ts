@@ -1,104 +1,104 @@
 import type { RPCSchema } from "electrobun/view";
-import type { AppInfo } from "./app-info";
 import type { Attention } from "./attention";
-import type { BackupDeleteRequest, BackupDeleteResult, BackupList, BackupRestoreRequest, BackupRestoreResult } from "./backups";
-import type { FetchResult, ForcePushSeen, RepositoryFetch } from "./git-fetch";
-import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffResult } from "./file-changes";
+import type { BackupDeleteRequest, BackupRestoreRequest } from "./backups";
+import type { Engine } from "./engine";
+import type { ForcePushSeen, RepositoryFetch } from "./git-fetch";
+import type { FileChangesRequest, FileDiffRequest } from "./file-changes";
 import type { Layout } from "./layout";
-import type { RebaseRequest, RebaseResult } from "./timber-rebase";
-import type { CreatePullRequestRequest, CreatePullRequestResult, HeadSubjectRequest } from "./timber-pr";
-import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
+import type { RebaseRequest } from "./timber-rebase";
+import type { CreatePullRequestRequest, HeadSubjectRequest } from "./timber-pr";
+import type { NewWorktreeRequest, OpenInEditorRequest, OpenWorktreeRequest } from "./model";
 import type { Preferences } from "./preferences";
-import type { RestartPlan, RestartResult } from "./restart";
-import type { IssueLookup, IssueRequest } from "./issues";
-import type { PullRequestList } from "./pull-requests";
+import type { IssueRequest } from "./issues";
 import type { Theme } from "./theme";
-import type { ChooseSoundResult, SoundChoice, SoundOutcome } from "./sound-setting";
-import type { ExportThemeResult, ImportThemeResult } from "./theme-file";
-import type { OpenTerminalRequest, OpenTerminalResult, TerminalChange, TerminalOutput, TerminalSession, TerminalSnapshot } from "./terminal";
-import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "./timber-config";
-import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "./timber-done";
-import type { UninstallPlan, UninstallRequest, UninstallResult } from "./uninstall";
-import type { WorkflowList } from "./workflows";
+import type { SoundChoice } from "./sound-setting";
+import type { OpenTerminalRequest, TerminalChange, TerminalOutput } from "./terminal";
+import type { TimberConnectionCheckRequest, TimberSettingsRequest, TimberSettingsSaveRequest } from "./timber-config";
+import type { DoneApplyRequest, DonePreviewRequest } from "./timber-done";
+import type { UninstallRequest } from "./uninstall";
+
+/** What the engine answers for a request, so the bridge and the contract cannot drift apart. */
+type Answer<Name extends keyof Engine> = Awaited<ReturnType<Engine[Name]>>;
 
 /**
  * The typed bridge between the Bun main process and the interface.
  * Types only: both sides import this file and it emits no runtime code.
- * Keep it in step with `Engine` in ./engine.ts.
+ * Each response is what `Engine` in ./engine.ts answers. Keep the requests
+ * and their params in step with it.
  */
 export type AppRPC = {
 	bun: RPCSchema<{
 		requests: {
-			appInfo: { params: {}; response: AppInfo };
-			timberStatus: { params: {}; response: TimberStatus };
-			recheckTimber: { params: {}; response: TimberStatus };
-			listRepositories: { params: {}; response: Repository[] };
+			appInfo: { params: {}; response: Answer<"appInfo"> };
+			timberStatus: { params: {}; response: Answer<"timberStatus"> };
+			recheckTimber: { params: {}; response: Answer<"recheckTimber"> };
+			listRepositories: { params: {}; response: Answer<"listRepositories"> };
 			/** Answers only when the folder picker closes, so the caller must not time it out. */
-			addRepository: { params: {}; response: AddRepositoryResult };
-			removeRepository: { params: { path: string }; response: RemoveRepositoryResult };
-			reorderRepositories: { params: { order: string[] }; response: ReorderRepositoriesResult };
-			loadRepository: { params: { path: string }; response: Repository | null };
-			listBranches: { params: { repository: string }; response: BranchSuggestion[] | null };
+			addRepository: { params: {}; response: Answer<"addRepository"> };
+			removeRepository: { params: { path: string }; response: Answer<"removeRepository"> };
+			reorderRepositories: { params: { order: string[] }; response: Answer<"reorderRepositories"> };
+			loadRepository: { params: { path: string }; response: Answer<"loadRepository"> };
+			listBranches: { params: { repository: string }; response: Answer<"listBranches"> };
 			/** Answers only when Timber and its setup scripts have ended, so the caller must not time it out. */
-			newWorktree: { params: NewWorktreeRequest; response: WorktreeCommandResult };
+			newWorktree: { params: NewWorktreeRequest; response: Answer<"newWorktree"> };
 			/** As `newWorktree`: no time limit. */
-			openWorktree: { params: OpenWorktreeRequest; response: WorktreeCommandResult };
+			openWorktree: { params: OpenWorktreeRequest; response: Answer<"openWorktree"> };
 			/** As `newWorktree`: Git hooks and a fetch take as long as they take, so the caller must not time it out. */
-			rebaseWorktree: { params: RebaseRequest; response: RebaseResult };
+			rebaseWorktree: { params: RebaseRequest; response: Answer<"rebaseWorktree"> };
 			/** As `newWorktree`: a push and GitHub take as long as they take, so the caller must not time it out. */
-			createPullRequest: { params: CreatePullRequestRequest; response: CreatePullRequestResult };
-			readHeadSubject: { params: HeadSubjectRequest; response: string | null };
-			loadLayout: { params: {}; response: Layout };
-			saveLayout: { params: { layout: Layout }; response: SaveLayoutResult };
-			loadPreferences: { params: {}; response: Preferences };
-			savePreferences: { params: { change: Partial<Preferences> }; response: SavePreferencesResult };
+			createPullRequest: { params: CreatePullRequestRequest; response: Answer<"createPullRequest"> };
+			readHeadSubject: { params: HeadSubjectRequest; response: Answer<"readHeadSubject"> };
+			loadLayout: { params: {}; response: Answer<"loadLayout"> };
+			saveLayout: { params: { layout: Layout }; response: Answer<"saveLayout"> };
+			loadPreferences: { params: {}; response: Answer<"loadPreferences"> };
+			savePreferences: { params: { change: Partial<Preferences> }; response: Answer<"savePreferences"> };
 			/** Waits for the person to pick a folder, so the caller must not time it out. */
-			exportTheme: { params: { theme: Theme }; response: ExportThemeResult };
+			exportTheme: { params: { theme: Theme }; response: Answer<"exportTheme"> };
 			/** Waits for the person to pick a file, so the caller must not time it out. */
-			importTheme: { params: {}; response: ImportThemeResult };
-			chooseSoundFile: { params: {}; response: ChooseSoundResult };
-			playSound: { params: { choice: SoundChoice }; response: SoundOutcome };
-			openInEditor: { params: OpenInEditorRequest; response: OpenInEditorResult };
+			importTheme: { params: {}; response: Answer<"importTheme"> };
+			chooseSoundFile: { params: {}; response: Answer<"chooseSoundFile"> };
+			playSound: { params: { choice: SoundChoice }; response: Answer<"playSound"> };
+			openInEditor: { params: OpenInEditorRequest; response: Answer<"openInEditor"> };
 			/** Waits up to thirty seconds for Timber, so the caller allows longer. */
-			readTimberSettings: { params: TimberSettingsRequest; response: TimberSettingsReadResult };
+			readTimberSettings: { params: TimberSettingsRequest; response: Answer<"readTimberSettings"> };
 			/** Answers only when Timber has ended. It holds a lock and may wait on it, so the caller must not time it out. */
-			saveTimberSettings: { params: TimberSettingsSaveRequest; response: TimberSettingsSaveResult };
+			saveTimberSettings: { params: TimberSettingsSaveRequest; response: Answer<"saveTimberSettings"> };
 			/** Waits up to thirty seconds for Timber's login check, so the caller allows longer. */
-			checkTimberConnection: { params: TimberConnectionCheckRequest; response: TimberConnectionCheckResult };
+			checkTimberConnection: { params: TimberConnectionCheckRequest; response: Answer<"checkTimberConnection"> };
 			/** The main process stops Timber after ten seconds, inside the default time limit. */
-			listWorkflows: { params: { repository: string }; response: WorkflowList };
+			listWorkflows: { params: { repository: string }; response: Answer<"listWorkflows"> };
 			/** The main process stops Timber after thirty seconds, so the caller allows longer. */
-			readPullRequests: { params: { repository: string }; response: PullRequestList };
-			readIssue: { params: IssueRequest; response: IssueLookup };
+			readPullRequests: { params: { repository: string }; response: Answer<"readPullRequests"> };
+			readIssue: { params: IssueRequest; response: Answer<"readIssue"> };
 			/** The main process stops Timber after thirty seconds, so the caller allows longer. */
-			readBackups: { params: { repository: string }; response: BackupList };
+			readBackups: { params: { repository: string }; response: Answer<"readBackups"> };
 			/** Answers only when Timber has ended, after it copied every file back, so the caller must not time it out. */
-			restoreBackup: { params: BackupRestoreRequest; response: BackupRestoreResult };
+			restoreBackup: { params: BackupRestoreRequest; response: Answer<"restoreBackup"> };
 			/** As `restoreBackup`: no time limit. */
-			deleteBackup: { params: BackupDeleteRequest; response: BackupDeleteResult };
-			previewDone: { params: DonePreviewRequest; response: DonePreviewResult };
+			deleteBackup: { params: BackupDeleteRequest; response: Answer<"deleteBackup"> };
+			previewDone: { params: DonePreviewRequest; response: Answer<"previewDone"> };
 			/** Answers only when Timber has ended. Scripts that run before deletion take as long as they take, so the caller must not time it out. */
-			applyDone: { params: DoneApplyRequest; response: DoneApplyResult };
-			readFileChanges: { params: FileChangesRequest; response: FileChangesResult };
-			readFileDiff: { params: FileDiffRequest; response: FileDiffResult };
-			listTerminals: { params: {}; response: TerminalSession[] };
-			openTerminal: { params: OpenTerminalRequest; response: OpenTerminalResult };
-			readTerminal: { params: { id: string }; response: TerminalSnapshot | null };
-			renameTerminal: { params: { id: string; name: string }; response: TerminalSession | null };
-			closeTerminal: { params: { id: string }; response: void };
-			confirmQuit: { params: {}; response: void };
-			writeClipboard: { params: { text: string }; response: void };
-			readClipboard: { params: {}; response: string | null };
-			openLink: { params: { url: string }; response: boolean };
-			fetchStatuses: { params: {}; response: RepositoryFetch[] };
+			applyDone: { params: DoneApplyRequest; response: Answer<"applyDone"> };
+			readFileChanges: { params: FileChangesRequest; response: Answer<"readFileChanges"> };
+			readFileDiff: { params: FileDiffRequest; response: Answer<"readFileDiff"> };
+			listTerminals: { params: {}; response: Answer<"listTerminals"> };
+			openTerminal: { params: OpenTerminalRequest; response: Answer<"openTerminal"> };
+			readTerminal: { params: { id: string }; response: Answer<"readTerminal"> };
+			renameTerminal: { params: { id: string; name: string }; response: Answer<"renameTerminal"> };
+			closeTerminal: { params: { id: string }; response: Answer<"closeTerminal"> };
+			confirmQuit: { params: {}; response: Answer<"confirmQuit"> };
+			writeClipboard: { params: { text: string }; response: Answer<"writeClipboard"> };
+			readClipboard: { params: {}; response: Answer<"readClipboard"> };
+			openLink: { params: { url: string }; response: Answer<"openLink"> };
+			fetchStatuses: { params: {}; response: Answer<"fetchStatuses"> };
 			/** Answers only when the fetch has ended, which can take minutes, so the caller must not time it out. */
-			fetchNow: { params: { repository: string }; response: FetchResult };
-			uninstallPlan: { params: {}; response: UninstallPlan };
+			fetchNow: { params: { repository: string }; response: Answer<"fetchNow"> };
+			uninstallPlan: { params: {}; response: Answer<"uninstallPlan"> };
 			/** The main process stops a stuck uninstaller after a minute, so the caller allows longer. The app quits right after a good answer. */
-			uninstall: { params: UninstallRequest; response: UninstallResult };
-			restartPlan: { params: {}; response: RestartPlan };
+			uninstall: { params: UninstallRequest; response: Answer<"uninstall"> };
+			restartPlan: { params: {}; response: Answer<"restartPlan"> };
 			/** Ending every session can take a moment, so the caller allows longer. When it works, the app quits before it answers. */
-			restart: { params: {}; response: RestartResult };
+			restart: { params: {}; response: Answer<"restart"> };
 		};
 		messages: {
 			/** Typed or pasted text for a session. */
