@@ -74,6 +74,14 @@ export interface OpenTerminalRequest {
 	 * The main process runs the Timber it found. Not together with `agent`.
 	 */
 	timberWorktreeSetup?: { workflow?: string };
+	/**
+	 * Start the agent of this arena attempt instead of the shell, with the
+	 * program, folder, and environment that `timber __app-arena launch` gives
+	 * for it (see ../shared/arenas.ts). The main process asks Timber; the
+	 * request never names a command. The worktree must be the attempt's own.
+	 * Not together with `agent` or `timberWorktreeSetup`.
+	 */
+	arenaAttempt?: { arena: string; attempt: string };
 }
 
 export type OpenTerminalResult =

@@ -1,5 +1,6 @@
 import { terminalSample } from "../terminal-sample";
 import { type AgentSetting, agentCommand, findAgent } from "../../shared/agent";
+import { type ArenaLaunch, isArenaName, isAttemptLabel } from "../../shared/arenas";
 import { describeCommandLine } from "../../shared/command-line";
 import type { Engine } from "../../shared/engine";
 import type { TimberStatus, Worktree } from "../../shared/model";
@@ -42,6 +43,8 @@ export interface TerminalControls {
 	openedLinks(): string[];
 	/** The last part of a session the window said it drew. */
 	drawnUpTo(id: string): number;
+	/** The names of the running sessions in any of these folders, as the main process checks before an arena pick. */
+	runningIn(paths: readonly string[]): string[];
 	/**
 	 * Act out the program in a session reporting its status through OSC 7501:
 	 * `report` is what goes after `7501;`, such as
@@ -98,6 +101,7 @@ export function createMockTerminals(
 	agents: () => readonly AgentSetting[] = () => [],
 	timber: () => TimberStatus = () => ({ state: "not-found", override: null }),
 	sessionNaming: () => SessionNaming = () => "plain",
+	arenaLaunch: (repository: string, worktree: string, arena: string, attempt: string) => ArenaLaunch = () => ({ outcome: "failed", message: "Arena attempts cannot start here. Nothing was started." }),
 ): TerminalCapabilities & TerminalControls {
 	const sessions = new Map<string, Acted>();
 	const output = new Set<(output: TerminalOutput) => void>();
@@ -188,6 +192,19 @@ export function createMockTerminals(
 		listTerminals: async () => [...sessions.values()].map(acted => structuredClone(acted.session)),
 		async openTerminal(request) {
 			if (failing) return structuredClone(failing);
+			// As the main process does: Timber says what an arena attempt runs, and the request never does.
+			let attempt: { label: string; argv: string[] } | null = null;
+			const wanted = request.arenaAttempt;
+			if (wanted !== undefined) {
+				if (request.agent !== undefined || request.timberWorktreeSetup !== undefined || !isArenaName(wanted.arena) || !isAttemptLabel(wanted.attempt)) {
+					return { outcome: "failed", message: "The request for an arena attempt cannot be read. Nothing was started." };
+				}
+				const launch = arenaLaunch(request.repository, request.worktree, wanted.arena, wanted.attempt);
+				if (launch.outcome === "failed") return { outcome: "failed", message: launch.message };
+				if (launch.outcome === "no-agent") return { outcome: "not-configured", message: `${wanted.attempt} is a manual attempt, so it has no agent to start. Open a terminal in it instead. Nothing was started.` };
+				if (launch.cwd !== request.worktree) return { outcome: "failed", message: `Timber gives ${launch.cwd} as the folder of ${wanted.attempt}, not ${request.worktree}. Nothing was started.` };
+				attempt = { label: wanted.attempt, argv: launch.argv };
+			}
 			let agent: AgentSetting | null = null;
 			if (request.agent !== undefined) {
 				if (typeof request.agent !== "string") return { outcome: "not-configured", message: "The request names no agent. Nothing was started." };
@@ -204,7 +221,7 @@ export function createMockTerminals(
 				setup = [status.path, ...worktreeSetupArguments(request.worktree, worktreeSetup.workflow)];
 			}
 			const worktree = findWorktree(request.repository, request.worktree);
-			const notStarted = agent ? `${agent.name} was not started.` : worktreeSetup ? "Setup was not started." : "No terminal was started.";
+			const notStarted = attempt ? `${attempt.label} was not started.` : agent ? `${agent.name} was not started.` : worktreeSetup ? "Setup was not started." : "No terminal was started.";
 			if (!worktree) return { outcome: "not-listed", message: `Timber lists no worktree at ${request.worktree} in ${request.repository}. ${notStarted} Refresh the list.` };
 			let shell = "/bin/mock-shell";
 			let args: string[] = [];
@@ -231,12 +248,17 @@ export function createMockTerminals(
 				args = built.arguments;
 			}
 			if (setup) [shell, ...args] = setup as [string, ...string[]];
+			if (attempt) {
+				const [program, ...rest] = attempt.argv as [string, ...string[]];
+				shell = program.startsWith("/") ? program : `/usr/local/bin/${program}`;
+				args = rest;
+			}
 			const taken = [...sessions.values()].filter(acted => acted.session.worktree === worktree.id).map(acted => acted.session.name);
 			const session: TerminalSession = {
 				id: `mock-terminal-${++lastId}`,
-				kind: agent ? "agent" : setup ? "timber" : "terminal",
+				kind: agent || attempt ? "agent" : setup ? "timber" : "terminal",
 				name: defaultSessionName(
-					worktreeSetup ? WORKTREE_SETUP_SESSION_NAME : sessionNameBase(sessionNaming(), agent ? agent.name : "Terminal", worktree.branch, agent !== null),
+					attempt ? attempt.label : worktreeSetup ? WORKTREE_SETUP_SESSION_NAME : sessionNameBase(sessionNaming(), agent ? agent.name : "Terminal", worktree.branch, agent !== null),
 					taken,
 				),
 				repository: request.repository,
@@ -259,7 +281,7 @@ export function createMockTerminals(
 				if (exitCode !== null) later(() => end(acted, exitCode));
 				return { outcome: "opened", session: structuredClone(session) };
 			}
-			const greeting = agent
+			const greeting = agent || attempt
 				? `A pretend ${session.name} in ${session.path}, started as ${session.command}. Nothing runs in the browser. Try exit.\r\n`
 				: `A pretend shell in ${session.path}. Try pwd, clear, or exit.\r\n`;
 			// A pretend agent asks for bracketed paste, as Claude Code and Codex do, so a pasted review keeps its line breaks.
@@ -282,6 +304,7 @@ export function createMockTerminals(
 			if (acted) acted.drawn = Math.max(acted.drawn, seq);
 		},
 		drawnUpTo: id => sessions.get(id)?.drawn ?? 0,
+		runningIn: paths => [...sessions.values()].filter(acted => acted.session.state.kind === "running" && paths.includes(acted.session.path)).map(acted => acted.session.name),
 		endWorktreeSetups(exitCode) {
 			worktreeSetupExit = exitCode;
 		},

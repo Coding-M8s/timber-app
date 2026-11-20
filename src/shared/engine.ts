@@ -1,4 +1,5 @@
 import type { AppInfo } from "./app-info";
+import type { ArenaInspection, ArenaList, ArenaPresetList, NewArenaRequest, NewArenaResult, PickArenaRequest, PickArenaResult } from "./arenas";
 import type { ChopList, ChopsRequest } from "./chops";
 import type { BackupDeleteRequest, BackupDeleteResult, BackupList, BackupRestoreRequest, BackupRestoreResult } from "./backups";
 import type { Attention } from "./attention";
@@ -335,6 +336,55 @@ export interface Engine {
 	 */
 	deleteBackup(request: BackupDeleteRequest): Promise<BackupDeleteResult>;
 	/**
+	 * The arenas of a repository in the list, named by the path of its
+	 * primary checkout, read by `timber __app-arena list` (./arenas.ts): each
+	 * arena with its base commit and its attempts, each attempt with its
+	 * label, tool, worktree, state, and whether Git still has it as Timber
+	 * created it. An arena Timber could not read is a failed entry beside the
+	 * others. `unsupported` when the Timber found has no arenas for apps. A
+	 * record that cannot be read is a failure with a message, never an empty
+	 * list. The task is never in it. Read-only: no file, ref, or record
+	 * changes. Safe to call again.
+	 */
+	listArenas(repository: string): Promise<ArenaList>;
+	/**
+	 * The saved arena presets of a repository in the list, by name and tool,
+	 * read with `timber __app-config read --scope repository`, merged by
+	 * Timber. Their commands stay with Timber and never reach the interface.
+	 * Read-only and safe to call again.
+	 */
+	listArenaPresets(repository: string): Promise<ArenaPresetList>;
+	/**
+	 * Compare an arena's attempts with `timber arena pick <arena> --inspect
+	 * --json`: for each, commits since the arena's base, committed and
+	 * uncommitted changes apart, and how many untracked files. Read-only:
+	 * Timber changes nothing. Safe to call again.
+	 */
+	inspectArena(request: { repository: string; arena: string }): Promise<ArenaInspection>;
+	/**
+	 * Create an arena by running `timber arena new ... --no-editor --no-agent
+	 * --result-file` in a repository from the list. The command is
+	 * `arenaNewArguments` in ./arenas.ts, so the interface can show it first.
+	 * The task goes to Timber in a private temporary file, never as an
+	 * argument, and is never logged. No agent starts here: start each
+	 * attempt's with `openTerminal` and `arenaAttempt`. It runs once and is
+	 * never retried here; a reserved arena keeps its name, so never create it
+	 * again. Read the list and the arenas after every outcome.
+	 */
+	newArena(request: NewArenaRequest): Promise<NewArenaResult>;
+	/**
+	 * Keep one attempt of an arena by running `timber arena pick <arena>
+	 * --winner <label> --result-file` in a repository from the list, which
+	 * removes the others, saving any work under a `refs/timber/arena/...` ref.
+	 * The command is `arenaPickArguments` in ./arenas.ts. Refused, and
+	 * nothing run, while any of the app's sessions runs in one of the arena's
+	 * attempts, as read from Timber right before: Timber cannot see those
+	 * sessions, and the app never stops one. The answer says what pick did to
+	 * each attempt, with Timber's reason for any it kept. Runs once and is
+	 * never retried here. Read the list and the arenas after every outcome.
+	 */
+	pickArena(request: PickArenaRequest): Promise<PickArenaResult>;
+	/**
 	 * Open a worktree of a repository in the list in the editor from the
 	 * preferences, started detached so it outlives the app. The command comes
 	 * only from the saved setting, with the worktree's path as one argument
@@ -398,7 +448,10 @@ export interface Engine {
 	 * else starts an agent: New and Open never do. With `timberWorktreeSetup`,
 	 * the worktree's setup scripts run with `timber open --setup` instead
 	 * (`worktreeSetupArguments` in ./worktree-commands.ts), with the Timber
-	 * that was found, and nothing starts while Timber is not ready.
+	 * that was found, and nothing starts while Timber is not ready. With
+	 * `arenaAttempt`, the attempt's agent starts with exactly the program,
+	 * folder, and environment `timber __app-arena launch` gives for it, in
+	 * the attempt's own worktree, and nothing starts for a manual attempt.
 	 */
 	openTerminal(request: OpenTerminalRequest): Promise<OpenTerminalResult>;
 	/**

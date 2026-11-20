@@ -675,6 +675,64 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 		function running(name: string): boolean {
 			return Bun.spawnSync(["pgrep", "-f", join(root, "agent bin", name)], { stdout: "pipe" }).exitCode === 0;
 		}
+
+		describe("arena attempts", () => {
+			const wanted = { arena: "demo", attempt: "codex-1" };
+			type Launch = Awaited<ReturnType<NonNullable<TerminalDependencies["arenaLaunch"]>>>;
+
+			function startWithLaunch(launch: Launch) {
+				const asked: unknown[] = [];
+				startWithAgents({
+					environment: { PATH: `${join(root, "agent bin")}:${process.env.PATH}`, HOME: root, SHELL: "/bin/sh", PS1: "$ ", LANG: "C.UTF-8", TIMBER_WORKFLOW: "inherited" },
+					arenaLaunch: async request => {
+						asked.push(request);
+						return launch;
+					},
+				});
+				return asked;
+			}
+
+			test("an attempt's agent starts with exactly the program, folder, and environment Timber gives, named after its label", async () => {
+				const asked = startWithLaunch({
+					outcome: "ready", argv: ["fake-arena-agent", "--task file", "/private/task.txt"], cwd: worktree,
+					environment: { TIMBER_ARENA: "demo", TIMBER_ATTEMPT: "codex-1" }, unset: ["TIMBER_WORKFLOW"],
+				});
+				// This pretend agent also prints what it got from the environment.
+				const script = join(root, "agent bin", "fake-arena-agent");
+				writeFileSync(script, `#!/bin/sh\nprintf 'fake-arena-agent in %s args' "$(pwd)"\nfor arg in "$@"; do printf ' [%s]' "$arg"; done\necho\necho "arena=$TIMBER_ARENA attempt=$TIMBER_ATTEMPT workflow=\${TIMBER_WORKFLOW-unset}"\nwhile read line; do echo "got $line"; done\n`);
+				chmodSync(script, 0o755);
+				const result = await sessions.open({ repository, worktree, cols: 80, rows: 24, arenaAttempt: wanted });
+				if (result.outcome !== "opened") throw new Error(JSON.stringify(result));
+				expect(asked).toEqual([{ repository, worktree, ...wanted }]);
+				expect(result.session).toMatchObject({ kind: "agent", name: "codex-1", path: worktree, shell: script });
+				await seen(result.session.id, "workflow=unset");
+				expect(printed(result.session.id)).toContain(`fake-arena-agent in ${worktree} args [--task file] [/private/task.txt]`);
+				expect(printed(result.session.id)).toContain("arena=demo attempt=codex-1 workflow=unset");
+			});
+
+			test("a manual attempt, Timber's refusal, or another folder starts nothing", async () => {
+				startWithLaunch({ outcome: "no-agent" });
+				expect(await sessions.open({ repository, worktree, cols: 80, rows: 24, arenaAttempt: wanted })).toMatchObject({ outcome: "not-configured", message: expect.stringContaining("manual attempt") });
+				startWithLaunch({ outcome: "failed", message: "No attempt. Nothing was started." });
+				expect(await sessions.open({ repository, worktree, cols: 80, rows: 24, arenaAttempt: wanted })).toEqual({ outcome: "failed", message: "No attempt. Nothing was started." });
+				startWithLaunch({ outcome: "ready", argv: ["fake-codex"], cwd: repository, environment: {}, unset: [] });
+				expect(await sessions.open({ repository, worktree, cols: 80, rows: 24, arenaAttempt: wanted })).toMatchObject({ outcome: "failed", message: expect.stringContaining(`not ${worktree}`) });
+				expect(sessions.list()).toEqual([]);
+			});
+
+			test("names that could read as options, or an attempt with another kind of session, are refused before Timber is asked", async () => {
+				const asked = startWithLaunch({ outcome: "no-agent" });
+				expect((await sessions.open({ repository, worktree, cols: 80, rows: 24, arenaAttempt: { arena: "--x", attempt: "codex-1" } })).outcome).toBe("failed");
+				expect((await sessions.open({ repository, worktree, cols: 80, rows: 24, arenaAttempt: wanted, agent: "Codex" })).outcome).toBe("failed");
+				expect(asked).toEqual([]);
+			});
+
+			test("an attempt goes only where a terminal may go", async () => {
+				startWithLaunch({ outcome: "ready", argv: ["fake-codex"], cwd: unlisted, environment: {}, unset: [] });
+				const result = await sessions.open({ repository, worktree: unlisted, cols: 80, rows: 24, arenaAttempt: wanted });
+				expect(result.outcome === "not-listed" && result.message).toContain("codex-1 was not started.");
+			});
+		});
 	});
 });
 

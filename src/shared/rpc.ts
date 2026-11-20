@@ -1,5 +1,6 @@
 import type { WorktreeHandoff } from "./handoff";
 import type { RPCSchema } from "electrobun/view";
+import type { NewArenaRequest, PickArenaRequest } from "./arenas";
 import type { ChopsRequest } from "./chops";
 import type { Attention } from "./attention";
 import type { BackupDeleteRequest, BackupRestoreRequest } from "./backups";
@@ -81,6 +82,16 @@ export type AppRPC = {
 			restoreBackup: { params: BackupRestoreRequest; response: Answer<"restoreBackup"> };
 			/** As `restoreBackup`: no time limit. */
 			deleteBackup: { params: BackupDeleteRequest; response: Answer<"deleteBackup"> };
+			/** The main process stops Timber after thirty seconds, so the caller allows longer. */
+			listArenas: { params: { repository: string }; response: Answer<"listArenas"> };
+			/** As `listArenas`. */
+			listArenaPresets: { params: { repository: string }; response: Answer<"listArenaPresets"> };
+			/** As `listArenas`. */
+			inspectArena: { params: { repository: string; arena: string }; response: Answer<"inspectArena"> };
+			/** Answers only when Timber and every attempt's setup have ended, so the caller must not time it out. */
+			newArena: { params: NewArenaRequest; response: Answer<"newArena"> };
+			/** Answers only when Timber has archived and removed the other attempts, so the caller must not time it out. */
+			pickArena: { params: PickArenaRequest; response: Answer<"pickArena"> };
 			previewDone: { params: DonePreviewRequest; response: Answer<"previewDone"> };
 			/** Answers only when Timber has ended. Scripts that run before deletion take as long as they take, so the caller must not time it out. */
 			applyDone: { params: DoneApplyRequest; response: Answer<"applyDone"> };
