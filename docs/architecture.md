@@ -2391,7 +2391,10 @@ None of it should have to change after a first release.
   pixels for Linux, `icon.ico` with seven sizes from 16 to 256 for Windows,
   and `icon.iconset` with the ten pictures macOS asks for. The logo is 256
   pixels square, so everything above that is scaled up and looks soft. A
-  larger logo and another run sharpen them.
+  larger logo and another run sharpen them. On Windows, Electrobun 2.0.6
+  gives the window no icon (its `setWindowIcon` is empty there), so the
+  main process loads the shipped `Resources\app.ico` and sets it on the
+  window with `WM_SETICON` (`src/bun/window-icon.ts`).
 - **Fonts.** Geist and Geist Mono are built in, as one variable WOFF2 file
   each in `src/mainview/assets/fonts/`, taken from version 1.9.2 of the
   `geist` package on npm. `styles.css` declares them with `@font-face`, and
@@ -4804,6 +4807,34 @@ XWayland) with Bun 1.4.5 and Electrobun 2.0.6:
 - Not run: the buttons clicked in the desktop window, the question while
   terminals run in the desktop window (only static markup and the store),
   the waiter giving up after 20 seconds, Windows and macOS.
+
+Run for the window icon on Windows, on 2026-11-19, Windows 11 Home x64
+(10.0.26200) with Bun 1.4.4, Git 2.50.1, Electrobun 2.0.6, and Timber 0.1.3
+(`timber-v0.1.3-windows-x64.exe` from the release, its SHA-256 checked
+against `SHA256SUMS-windows-x64`, in `%LOCALAPPDATA%\Programs\Timber` on the
+user PATH):
+
+- `bun install --frozen-lockfile`, `bun run typecheck`, and
+  `bun run typecheck:desktop`: no errors.
+- `bun test`: 1674 passed, 258 skipped, 54 failed, 4 errors between tests.
+  The failures were there before this change (1671 passed, 54 failed). They
+  are in tests that expect Linux: sounds, the repository watcher, Done,
+  restart, rebase, workflows, theme files, pull requests, issues, fetching,
+  and desktop notices. `tests/window-icon.test.ts` passed, including a real
+  window that got both icons and kept none from a missing file.
+- `bun run build`: completed, with `build\stable-win-x64\Timber-Setup.exe`.
+  The installer put the app in
+  `%LOCALAPPDATA%\com.codingm8s.timber-app\stable`.
+- The installed app before the change: the title bar showed Windows'
+  default icon. After it: the title bar and the taskbar showed the Timber
+  icon, and `WM_GETICON` answered a small and a big icon for the window.
+- The installed app first said "Timber is not installed". It had been
+  started by the installer from a shell whose PATH was older than the
+  Timber install, and Retry reads the same PATH again. Started with the
+  current user PATH, it found Timber 0.1.3 and showed "No repository yet".
+  `findTimber` with that PATH answered ready with
+  `%LOCALAPPDATA%\Programs\Timber\timber.exe` and 0.1.3.
+- Not run: adding a repository and the rest of the app on Windows.
 
 Not run yet:
 
