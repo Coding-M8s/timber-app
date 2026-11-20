@@ -2625,8 +2625,9 @@ What the built app is called, how it is told apart, and what it looks like.
 None of it should have to change after a first release.
 
 - **Name.** "Timber" everywhere a person sees it: the window title, the
-  taskbar, the menu entry, and the installer (`linux-x64-Timber-Setup.tar.gz`).
-  It is `APP_NAME` in `src/shared/app-info.ts`.
+  taskbar, the menu entry, and the installer (`linux-x64-Timber-Setup.tar.gz`
+  on Linux, `Timber-Setup.exe`, packed as `win-x64-Timber-Setup.zip`, on
+  Windows). It is `APP_NAME` in `src/shared/app-info.ts`.
 - **Identifier.** `com.codingm8s.timber-app`, which is `APP_IDENTIFIER` in
   the same file. It is final. It names the folder the app installs to on
   Linux (see [installing the Linux build](#installing-the-linux-build)) and
@@ -2976,7 +2977,8 @@ other `X11 Error:` line is not explained by it. See the issue 64 run under
   now. Revisit before a first release.
 - **A sharper logo.** The icons above 256 pixels are scaled up from a
   256 pixel logo (see [app identity](#app-identity)). They need a larger or
-  vector original before a first release on macOS.
+  vector original before a first release on macOS. Checking the app's
+  identity on macOS at all is issue 158.
 
 ## What has been verified
 
@@ -5318,3 +5320,45 @@ installed:
 - Not run: creating a real pull request on GitHub (the created, exists, and
   failed records are written by hand from the contract), the form in a
   browser or the desktop window, Windows, and macOS.
+
+Run for the app's identity on Windows and under WSLg (issue 27), on
+2026-11-20, Windows 11 Home x64 (10.0.26200) with Bun 1.4.4, Git 2.50.1,
+Electrobun 2.0.6, WebView2 157.0.4341.60, and Timber 0.1.3. Geist was not
+installed: neither `C:\Windows\Fonts` nor the user's fonts folder held a
+Geist file. The app was the build of 2026-11-19 installed with
+`Timber-Setup.exe` (app 0.0.1) to
+`%LOCALAPPDATA%\com.codingm8s.timber-app\stable`. The window and taskbar
+icons were seen in the window icon run above.
+
+- The installer made `Timber.lnk` in the Start menu's Programs folder and on
+  the desktop. Both point at `app\bin\launcher.exe` and take its first
+  icon. That icon, read with `System.Drawing.Icon.ExtractAssociatedIcon`,
+  and the one on `Timber-Setup.exe` were the Timber logo.
+- `app\Resources\app\licenses` held `geist-fonts-OFL.txt`,
+  `timber-logo.txt`, and `theme-palettes.txt`, and
+  `app\Resources\app\views\mainview\assets` the `Geist-Variable` and
+  `GeistMono-Variable` WOFF2 files. `Resources\version.json` named
+  `com.codingm8s.timber-app` and 0.0.1.
+- The installed app started with
+  `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` and
+  read over the DevTools protocol: the page was `views://mainview/index.html`
+  titled Timber, `document.fonts` listed Geist and Geist Mono as loaded, and
+  no resource came from anywhere but `views://`. `CSS.getPlatformFontsForNode`
+  answered Geist, a custom font, for the heading and body text, and Geist
+  Mono, a custom font, for the worktree path. The network was not turned
+  off, but no font could come from it.
+- Settings, About in the desktop window: "Timber app 0.0.1", "Timber 0.1.3"
+  with `%LOCALAPPDATA%\Programs\Timber\timber.exe`, and the licenses text.
+- Under WSLg (WSL 2.6.3, WSLg 1.0.71) on Ubuntu 24.04.5 with Bun 1.4.2 and
+  WebKitGTK 2.52.6, Geist not installed (`fc-list | grep -ic geist`: 0): a
+  fresh clone of main at `82a13fe`, `bun install --frozen-lockfile`, and
+  `bun --bun run start` (plain `bun run start` ran Vite on the system's
+  Node 18, which failed on `styleText` from `node:util`). The window opened
+  on "Timber is too old", for the Timber 0.1.1 installed there, with its text
+  in Geist and the update command in Geist Mono, seen in a capture of the
+  window from Windows next to the Windows window. The window frame drawn by
+  WSLg showed a generic icon. With `WEBKIT_INSPECTOR_HTTP_SERVER` set, the
+  inspector port took connections but answered nothing and the window did
+  not open, so the typeface there was judged by eye only.
+- Not run: the network turned off on Windows, and anything on macOS (issue
+  158).
