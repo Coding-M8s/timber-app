@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { WorktreeDialogFrame } from "../src/mainview/components/NewWorktreeDialog";
-import { chosenAgent, followUps, runAndStart } from "../src/mainview/components/worktree-modes/agent-choice";
+import { chosenAgent, followUps, plannedAgent, runAndStart, startingAgent } from "../src/mainview/components/worktree-modes/agent-choice";
 import { createWorktreeDialogController, pickOfOption } from "../src/mainview/components/worktree-modes/dialog-controller";
 import { existingBranchMode } from "../src/mainview/components/worktree-modes/existing-branch";
 import { createExistingBranchForm } from "../src/mainview/components/worktree-modes/existing-branch-form";
@@ -60,7 +60,7 @@ async function openedDialog(engine: MockEngine = createMockEngine()) {
 	const render = () => renderToStaticMarkup(
 		<WorktreeDialogFrame
 			repository={repository} modes={modes()} selected={controller.getState().selected} submission={submission.getState()}
-			agents={store.getState().preferences.agents} agent={controller.agent()}
+			agents={store.getState().preferences.agents} plan={controller.plan}
 			onSelect={controller.select} onPickAgent={controller.pickAgent} onSubmit={mode => void controller.submit(mode)} onClose={() => {}}
 		/>,
 	);
@@ -90,7 +90,7 @@ describe("the agent to start", () => {
 	});
 
 	test("is shown under the Timber command as its own line, after setup, worded for when it starts", () => {
-		const codex = { name: "Codex", command: `codex --model "big one"` };
+		const codex = startingAgent({ source: "pick", agent: { name: "Codex", command: `codex --model "big one"` } });
 		const setup = { note: "Then, if Timber left setup scripts to run, runs them in a terminal in the worktree, without waiting for them:", command: "timber open --setup --no-editor --no-agent -- <worktree>" };
 		expect(followUps(codex, "always", "if-skipped")).toEqual([setup, { note: "And starts Codex in the new worktree, without waiting for setup:", command: "codex --model 'big one'" }]);
 		expect(followUps(codex, "always", "always")[1]?.note).toBe("And starts Codex beside setup, in the new worktree:");
@@ -98,7 +98,7 @@ describe("the agent to start", () => {
 		expect(followUps(codex, "never", "if-skipped")).toEqual([setup]);
 		expect(followUps(null, "always", "never")).toEqual([]);
 		// A command that cannot be read is shown as typed. The main process refuses it when it would start.
-		expect(followUps({ name: "Odd", command: `odd "open` }, "always", "never")[0]?.command).toBe(`odd "open`);
+		expect(followUps(startingAgent({ source: "pick", agent: { name: "Odd", command: `odd "open` } }), "always", "never")[0]?.command).toBe(`odd "open`);
 	});
 
 	test("names the worktree's path in the setup command once it is known", () => {
@@ -106,6 +106,71 @@ describe("the agent to start", () => {
 			note: "Then runs setup in a terminal in the worktree, without waiting for it:",
 			command: "timber open --setup --no-editor --no-agent -- '/work/timber-worktrees/it'\\''s'",
 		}]);
+	});
+});
+
+describe("the agent a workflow sets", () => {
+	const WORKFLOWS = {
+		ok: true as const,
+		workflows: [
+			{ name: "review", description: null, agent: { kind: "command" as const, command: "claude", args: ["--permission-mode", "plan", "--note", "two words"] } },
+			{ name: "triage", description: null, agent: { kind: "none" as const } },
+			{ name: "explore", description: null, agent: { kind: "not-set" as const } },
+		],
+	};
+
+	test("a workflow with a command decides, and the pick does not count", () => {
+		expect(plannedAgent(AGENT_PRESETS, "Codex", WORKFLOWS, "review")).toEqual({
+			source: "workflow", workflow: "review", kind: "command", command: "claude --permission-mode plan --note 'two words'",
+		});
+	});
+
+	test("a workflow that turns the agent off decides too: no agent", () => {
+		expect(plannedAgent(AGENT_PRESETS, "Codex", WORKFLOWS, "triage")).toEqual({ source: "workflow", workflow: "triage", kind: "none" });
+	});
+
+	test("no workflow, or one that sets no agent, leaves it to the pick", () => {
+		expect(plannedAgent(AGENT_PRESETS, "Codex", WORKFLOWS, null)).toEqual({ source: "pick", agent: AGENT_PRESETS[1]! });
+		expect(plannedAgent(AGENT_PRESETS, "Codex", WORKFLOWS, "explore")).toEqual({ source: "pick", agent: AGENT_PRESETS[1]! });
+		expect(plannedAgent(AGENT_PRESETS, null, WORKFLOWS, "explore")).toEqual({ source: "pick", agent: null });
+		expect(plannedAgent(AGENT_PRESETS, "Codex", undefined, null)).toEqual({ source: "pick", agent: AGENT_PRESETS[1]! });
+	});
+
+	test("a workflow the list does not have, or any while there is no list, is unknown", () => {
+		expect(plannedAgent(AGENT_PRESETS, "Codex", WORKFLOWS, "gone")).toEqual({ source: "workflow", workflow: "gone", kind: "unknown" });
+		expect(plannedAgent(AGENT_PRESETS, "Codex", undefined, "review")).toEqual({ source: "workflow", workflow: "review", kind: "unknown" });
+		expect(plannedAgent(AGENT_PRESETS, "Codex", { ok: false, message: "no" }, "review")).toEqual({ source: "workflow", workflow: "review", kind: "unknown" });
+	});
+
+	test("each plan starts the agent it says, named by the request as a saved agent or a workflow", () => {
+		expect(startingAgent({ source: "pick", agent: { name: "Codex", command: `codex --model "big one"` } })).toEqual({
+			label: "Codex", command: "codex --model 'big one'", session: { kind: "saved", name: "Codex" },
+		});
+		expect(startingAgent({ source: "pick", agent: null })).toBeNull();
+		expect(startingAgent({ source: "workflow", workflow: "review", kind: "command", command: "claude --permission-mode plan" })).toEqual({
+			label: "the review workflow's agent", command: "claude --permission-mode plan", session: { kind: "workflow", workflow: "review" },
+		});
+		expect(startingAgent({ source: "workflow", workflow: "triage", kind: "none" })).toBeNull();
+		expect(startingAgent({ source: "workflow", workflow: "gone", kind: "unknown" })).toBeNull();
+	});
+
+	test("is shown under the Timber command with the workflow's command as Timber reports it", () => {
+		const agent = startingAgent(plannedAgent(AGENT_PRESETS, "Codex", WORKFLOWS, "review"));
+		expect(followUps(agent, "always", "always", null, "review")).toEqual([
+			{ note: "Then runs setup in a terminal in the worktree, without waiting for it:", command: "timber open --setup --workflow review --no-editor --no-agent -- <worktree>" },
+			{ note: "And starts the review workflow's agent beside setup, in the new worktree:", command: "claude --permission-mode plan --note 'two words'" },
+		]);
+		expect(followUps(agent, "if-created", "never")[0]?.note).toBe("Then starts the review workflow's agent in it, if this creates a worktree:");
+	});
+
+	test("the toast names what did not start, starting with a capital", async () => {
+		const worktree = { id: "id", path: "/work/timber-worktrees/feat-login", branch: "feat/login" };
+		const agent = startingAgent({ source: "workflow", workflow: "review", kind: "command", command: "claude" });
+		const run = async () => ({ outcome: { ok: true as const, toast: "Created worktree feat/login" }, created: worktree, setup: null });
+		expect(await runAndStart({ startSessionsIn: () => false }, TIMBER, run, agent)).toEqual({
+			ok: true,
+			toast: "Created worktree feat/login. The review workflow's agent did not start: the worktree is not in the list yet. Refresh, then start it from the worktree.",
+		});
 	});
 });
 
@@ -235,7 +300,7 @@ describe("creating a worktree with an agent picked", () => {
 		const before = sessions().length;
 		void store.openTerminal({ repository: TIMBER, worktree: worktree.path, cols: 80, rows: 24 });
 		await settle();
-		expect(store.startSessionsIn(TIMBER, { id: worktree.id, path: worktree.path, branch: worktree.branch }, { setup: true, workflow: "review", agent: "Codex" })).toBe(true);
+		expect(store.startSessionsIn(TIMBER, { id: worktree.id, path: worktree.path, branch: worktree.branch }, { setup: true, workflow: "review", agent: { kind: "saved", name: "Codex" } })).toBe(true);
 		await settle();
 		answer();
 		await settle();
@@ -313,7 +378,7 @@ describe("creating a worktree with an agent picked", () => {
 	test("the toast says setup started only once its session did", async () => {
 		const worktree = { id: "id", path: "/work/timber-worktrees/feat-login", branch: "feat/login" };
 		const run = async () => ({ outcome: { ok: true as const, toast: "Opened feat/login" }, created: worktree, setup: worktree, startedToast: "Setup started in feat/login" });
-		const agent = { name: "Codex", command: "codex" };
+		const agent = startingAgent({ source: "pick", agent: { name: "Codex", command: "codex" } });
 		expect(await runAndStart({ startSessionsIn: () => true }, TIMBER, run, agent)).toEqual({ ok: true, toast: "Setup started in feat/login" });
 		expect(await runAndStart({ startSessionsIn: () => false }, TIMBER, run, agent)).toEqual({
 			ok: true,

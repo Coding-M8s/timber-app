@@ -457,11 +457,16 @@ export interface Engine {
 	 * `rows` are the pane's size. With `agent`, the agent of that name from
 	 * the saved preferences starts instead, its command taken from there only
 	 * (`agentCommand` in ./agent.ts). An agent that is not saved, or whose
-	 * executable is not found, starts nothing and keeps no session. Nothing
-	 * else starts an agent: New and Open never do. With `timberWorktreeSetup`,
-	 * the worktree's setup scripts run with `timber open --setup` instead
-	 * (`worktreeSetupArguments` in ./worktree-commands.ts), with the Timber
-	 * that was found, and nothing starts while Timber is not ready. With
+	 * executable is not found, starts nothing and keeps no session. With
+	 * `workflowAgent`, the agent of that named workflow starts instead, its
+	 * command read again from Timber through the same read as
+	 * `listWorkflows`, never taken from the request. A workflow that is gone,
+	 * that cannot be read, or that sets no agent now starts nothing. Nothing
+	 * else starts an agent: Timber's New and Open never do. With
+	 * `timberWorktreeSetup`, the worktree's setup scripts run with
+	 * `timber open --setup` instead (`worktreeSetupArguments` in
+	 * ./worktree-commands.ts), with the Timber that was found, and nothing
+	 * starts while Timber is not ready. With
 	 * `arenaAttempt`, the attempt's agent starts with exactly the program,
 	 * folder, and environment `timber __app-arena launch` gives for it, in
 	 * the attempt's own worktree, and nothing starts for a manual attempt.

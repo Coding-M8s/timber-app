@@ -786,7 +786,9 @@ export function createMockEngine(
 		const repository = current.find(candidate => candidate.path === path && candidate.available);
 		const worktree = timberFailures.has(path) ? undefined : repository?.worktrees.find(candidate => candidate.path === worktreePath);
 		return worktree && worktree.pathExists ? worktree : null;
-	}, () => preferences.agents, () => typeof timber === "function" ? timber() : timber, () => preferences.sessionNames, (...asked) => arenas.arenaLaunch(...asked));
+	}, () => preferences.agents, () => typeof timber === "function" ? timber() : timber, () => preferences.sessionNames, (...asked) => arenas.arenaLaunch(...asked),
+	// Read when a workflow's agent starts, as the main process reads Timber's settings again then.
+	repository => workflows.listWorkflows(repository));
 	// As the main process does, every change is weighed for a desktop notification and a sound, which are only kept here.
 	const alertSettings = (): AlertSettings => ({ notify: preferences.statusNotifications, notifyStates: preferences.notifyStates, soundStates: preferences.soundStates });
 	const alerts = createAlertRunner({

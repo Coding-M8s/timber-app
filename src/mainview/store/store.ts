@@ -45,7 +45,7 @@ import { nextWaitingSession, withFinishedOrder, withWaitingOrder } from "../wait
 import { mergeOverlapping } from "./merge";
 import { keepEntries } from "./records";
 import {
-	type AppState, type ChangesView, type DialogRequest, type Operation, type PullRequestForm, type Removal, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood,
+	type AppState, type ChangesView, type DialogRequest, type Operation, type PullRequestForm, type Removal, type SessionAgent, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood,
 	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, timberReady, withTerminal, withoutSession } from "./state";
 
 /**
@@ -383,13 +383,14 @@ export interface AppStore {
 	 * Workspace tab, where each session or why it did not start shows. With
 	 * `setup`, the worktree's setup scripts run first in a session of their
 	 * own (`timberWorktreeSetup`), with `workflow` when the worktree was made
-	 * with one. With `agent`, that agent from the saved
-	 * Settings starts beside it at once, without waiting for setup, and its
-	 * pane shows. The worktree is looked up as `newWorktree` selects it.
+	 * with one. With `agent`, that agent starts beside it at once, without
+	 * waiting for setup, and its pane shows: one from the saved Settings by
+	 * name, or a workflow's agent (`workflowAgent`), which the main process
+	 * reads again from Timber. The worktree is looked up as `newWorktree` selects it.
 	 * Answers at once, without waiting for the sessions: false when the list
 	 * does not have the worktree, and then nothing starts. Never throws.
 	 */
-	startSessionsIn(repository: string, worktree: ReportedWorktree, sessions: { setup: boolean; workflow?: string; agent: string | null }): boolean;
+	startSessionsIn(repository: string, worktree: ReportedWorktree, sessions: { setup: boolean; workflow?: string; agent: SessionAgent | null }): boolean;
 	/**
 	 * Choose the chip of a session in its worktree, so its pane shows. The
 	 * other sessions keep running. Nothing happens for a session that is gone.
@@ -1652,7 +1653,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		if (isBeingRemoved(state, request.repository, request.worktree)) return;
 		const key = terminalKey(request);
 		if (state.operations.some(operation => operation.kind === "open-terminal" && operation.worktree === key)) return;
-		const agent = request.agent ?? (request.timberWorktreeSetup ? WORKTREE_SETUP_SESSION_NAME : null);
+		// What did not start, for the problem shown in the pane: the agent, the workflow whose agent it is, or setup.
+		const agent = request.agent ?? request.workflowAgent?.workflow ?? (request.timberWorktreeSetup ? WORKTREE_SETUP_SESSION_NAME : null);
 		const asking = track({ kind: "open-terminal", worktree: key, agent }, async () => {
 			let message: string;
 			let command: string | null = null;
@@ -1921,14 +1923,14 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		}
 		const agent = handoffAgent(handoff, state.preferences.agents);
 		if (agent !== null) {
-			startSessionsIn(handoff.repository, { id: worktree.id, path: worktree.path, branch: worktree.branch }, { setup: false, agent: agent.name });
+			startSessionsIn(handoff.repository, { id: worktree.id, path: worktree.path, branch: worktree.branch }, { setup: false, agent: { kind: "saved", name: agent.name } });
 			return;
 		}
 		openTerminalIn(handoff.repository, worktree.path);
 		if (handoff.agent) showToast(HANDOFF_NO_AGENT, true);
 	}
 
-	function startSessionsIn(repositoryPath: string, reported: ReportedWorktree, sessions: { setup: boolean; workflow?: string; agent: string | null }): boolean {
+	function startSessionsIn(repositoryPath: string, reported: ReportedWorktree, sessions: { setup: boolean; workflow?: string; agent: SessionAgent | null }): boolean {
 		const worktree = listedReported(repositoryPath, reported);
 		// Not in the list, for example because reading it again failed: there is no pane to start in.
 		if (!worktree) return false;
@@ -1941,7 +1943,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		void (async () => {
 			// One request at a time per worktree, so the agent is asked for once the setup session is there. Setup keeps running.
 			if (sessions.setup) await openTerminalInTurn({ ...request, timberWorktreeSetup: sessions.workflow === undefined ? {} : { workflow: sessions.workflow } });
-			if (sessions.agent !== null) await openTerminalInTurn({ ...request, agent: sessions.agent });
+			const agent = sessions.agent;
+			if (agent !== null) await openTerminalInTurn({ ...request, ...(agent.kind === "saved" ? { agent: agent.name } : { workflowAgent: { workflow: agent.workflow } }) });
 		})();
 		return true;
 	}

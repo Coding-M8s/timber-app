@@ -14,9 +14,9 @@ export type TerminalState =
 	| { kind: "exited"; exitCode: number | null; signal: string | null };
 
 /**
- * What a session runs: the person's shell, a coding agent from Settings,
- * which starts the agent's command instead of the shell, or a Timber
- * command such as `timber open --setup`.
+ * What a session runs: the person's shell, a coding agent from Settings or
+ * from a workflow, which starts the agent's command instead of the shell, or
+ * a Timber command such as `timber open --setup`.
  */
 export const SESSION_KINDS = ["terminal", "agent", "timber"] as const;
 export type SessionKind = typeof SESSION_KINDS[number];
@@ -79,9 +79,16 @@ export interface OpenTerminalRequest {
 	 * program, folder, and environment that `timber __app-arena launch` gives
 	 * for it (see ../shared/arenas.ts). The main process asks Timber; the
 	 * request never names a command. The worktree must be the attempt's own.
-	 * Not together with `agent` or `timberWorktreeSetup`.
+	 * Not together with `agent`, `timberWorktreeSetup`, or `workflowAgent`.
 	 */
 	arenaAttempt?: { arena: string; attempt: string };
+	/**
+	 * Start the agent of this named workflow instead of the shell. The main
+	 * process reads the workflow again from Timber and takes the command from
+	 * there only, never from the request. Not together with `agent`,
+	 * `timberWorktreeSetup`, or `arenaAttempt`.
+	 */
+	workflowAgent?: { workflow: string };
 }
 
 export type OpenTerminalResult =
@@ -90,7 +97,11 @@ export type OpenTerminalResult =
 	| { outcome: "not-listed"; message: string }
 	/** Terminals cannot run on this operating system yet. */
 	| { outcome: "unsupported"; message: string }
-	/** The saved Settings have no agent with the requested name, or Timber is not ready for setup. Nothing started, not even a shell. */
+	/**
+	 * The saved Settings have no agent with the requested name, Timber is not
+	 * ready for setup, or the requested workflow is gone or sets no agent now.
+	 * Nothing started, not even a shell.
+	 */
 	| { outcome: "not-configured"; message: string }
 	/** The agent's executable is not on the PATH, or not at the full path given. `command` is what would have run. */
 	| { outcome: "not-found"; command: string; executable: string; message: string }

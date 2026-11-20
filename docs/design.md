@@ -320,37 +320,11 @@ change them here first when they change.
   terminal and "Run setup" repeat it. With no workflows there is no field,
   and a list that cannot be read leaves a short note. An Agent field, the
   first saved agent by default or None, starts that agent beside setup,
-  without waiting for it, once the dialog has created the worktree. The
-  footer shows each command that follows under Timber's. The Name hint names
-  the issue forms Timber links, `github:123`, `jira:ENG-1`, and
-  `linear:ENG-1`; the app passes the name as typed, only trimming spaces
-  around it, and Timber alone decides whether it is an issue. In "New
-  branch", a Tracker field under Name shows when two or more trackers are set
-  up for the repository (GitHub with a GitHub remote, Jira with a site and a
-  login, Linear with a login) and lists only those. It starts on "Default
-  (GitHub)", named after Timber's default tracker, which passes the name
-  unchanged. Picking a tracker turns a Name with the shape of its issue
-  (`42`, `ENG-42`) into `github:42` or `jira:ENG-42` for this one creation,
-  shown in the footer before it runs; a sentence or branch name passes
-  unchanged, and Timber's default tracker never changes. Linear is listed
-  when its login is saved, but has not been tested with a real Linear
-  workspace. While a Name is typed in "New branch", close matches from the
-  tracker picked there (or Timber's default, or the only one set up) list
-  under it, once typing pauses: each with its key, title, and status, and
-  "Has a worktree" when one already exists for it. Timber matches key
-  prefixes such as `ENG-4` and title words such as `login`. Nothing is
-  highlighted until an arrow key moves there, so Enter on typed text still
-  creates; Enter or a click on a suggestion fills Name with `jira:ENG-42` or
-  `github:42`, and Timber still decides the branch. Escape closes the list
-  and leaves the dialog open. Typing never waits for the list. Offline,
-  sign-in needed, or a Timber without issue search shows no list, only a
-  quiet line under Name. The dialog opens with the keyboard in Name, so
-  typing at once fills it. Switching mode puts the keyboard in that mode's
-  first field, unless New branch is offering "Run setup", which has none; Shift+Tab goes
-  back to the switch, whose arrow keys change the mode. A run that failed
-  puts the keyboard back in Name, or on "Run setup" once the worktree
-  exists.
-- **Rebase:** pick the base. The picker starts from the base Timber saved for
+  without waiting for it, once the dialog has created the worktree. A
+  workflow that sets an agent, or turns it off, decides instead: the Agent
+  field follows it, locked, and says why. The footer shows each command
+  that follows under Timber's. The Name hint names
+@@REST@@- **Rebase:** pick the base. The picker starts from the base Timber saved for
   the worktree. A worktree with uncommitted changes is refused, as Timber
   does. The dialog says how the rebase ended. One that stops on conflicts
   lists the files and offers a terminal in the worktree, leaving the rebase

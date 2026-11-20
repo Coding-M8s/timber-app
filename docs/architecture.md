@@ -600,7 +600,15 @@ workflow's `post_create` scripts after the ordinary ones.
 - **A workflow that is gone.** Removed from the settings between listing and
   creating, it fails with Timber's diagnostic shown as it is ("Unknown
   workflow. ..."), and nothing is created.
-- **Its agent** is not started here. Timber still runs with `--no-agent`.
+- **Its agent** replaces the app's agent. Timber still runs with
+  `--no-agent`, and the app starts the agent itself, as below. A workflow
+  that sets a command (`agent = { command, args }`) starts that command in
+  place of the picked agent; one that turns the agent off
+  (`agent = false`) starts none; one that leaves the agent unset leaves
+  the pick as it was. While a workflow decides, the Agent field is locked
+  to what it decided and says why. A workflow the dialog cannot look up,
+  such as a kept one the list has lost, starts no agent, and the field
+  says its agent could not be read.
 
 Both modes share an **Agent** field under their own fields: the agents from
 Settings, Agents, in menu order, the first one picked, then None. With no
@@ -628,7 +636,13 @@ with `--no-agent`. The app starts the picked agent itself
   tests drive the same wiring. That
   selects the worktree, shows the Workspace tab, and calls `openTerminal`
   with the agent's name, so the main process takes the command from the
-  saved Settings, never from the dialog. The session starts at 80 by 24 and
+  saved Settings, never from the dialog, or, for a workflow's agent, with
+  `workflowAgent: { workflow }` only. The main process then reads the
+  workflow again from Timber, through the same read as `listWorkflows`,
+  and starts what it reports now: a changed command starts as changed, and
+  a workflow that is gone, that cannot be read, or that turns the agent off
+  or leaves it unset by then starts nothing, with the reason in the pane.
+  It never falls back to the picked agent. The session starts at 80 by 24 and
   the pane fits it once it shows. An agent that cannot start is shown in the
   worktree's pane as for the "+" menu, never as a failure of the dialog: the
   worktree stays, and the toast still says it was created. When the list
@@ -637,7 +651,9 @@ with `--no-agent`. The app starts the picked agent itself
 - **The footer.** Under the Timber command, a note and a command on a line of
   their own for each session that follows ("Command that will start next"),
   never joined to the Timber command: setup first, with `<worktree>` for
-  the path until Timber has made it, then the agent (`followUps`). Setup says
+  the path until Timber has made it, then the agent (`followUps`). A
+  workflow's agent shows its command as Timber reports it; the session
+  shows the executable as found on the PATH, as for any agent. Setup says
   "if Timber left setup scripts to run", and Existing branch says "if this
   creates a worktree", because only Timber knows.
 
@@ -1696,9 +1712,12 @@ New and Open can offer them, without parsing Timber's TOML for them.
   never a value; it is cleaned and cut at 300 characters, and never parsed
   for meaning. A Timber without `__app-config` answers "unknown command".
 - **Private.** Unlike the Settings rows, an agent's arguments are passed on
-  whole, because starting that agent needs them. They can hold tokens, so
-  neither the record, the list, nor Timber's diagnostic is ever logged, and
-  the interface must not show arguments without cleaning them.
+  whole, because starting that agent needs them: the New worktree dialog
+  starts a workflow's agent with them, shows them in its footer and the
+  locked Agent field, and the session shows them in its tooltip. They can
+  hold tokens, so neither the record, the list, Timber's diagnostic, nor
+  the command of a workflow's agent is ever logged, and the interface must
+  not show arguments without cleaning them.
 
 In `bun run dev:web` timber has a workflow of each agent kind, api-server
 has none, and billing's fails as its `.timber.toml` is malformed.
@@ -2562,8 +2581,9 @@ shows, and coming back shows it as it was.
   `src/bun/listed-worktree.ts`, shared with `src/bun/editor.ts`). Each
   `openTerminal` starts one more session beside the ones the worktree has.
 - **Kinds and names.** A session has a kind and a name. The kind is
-  `terminal` for the shell, or `agent` for a coding agent, which starts the
-  agent's command instead of the shell (see [agent sessions](#agent-sessions)).
+  `terminal` for the shell, or `agent` for a coding agent, from Settings or
+  from a workflow, which starts the agent's command instead of the shell
+  (see [agent sessions](#agent-sessions)).
   The main process names a new session after the shell or the agent,
   "Terminal" or "Codex", then "Terminal 2" and on, the first name no
   session of that worktree has, exited ones included. It picks the name with
@@ -2945,8 +2965,15 @@ as a control sequence, as it would a window title or a bell (see
   its full path here.
 - **Starting.** `openTerminal` with `agent` set to the agent's name. The main
   process takes the command from the saved preferences only, never from the
-  request. A name that is not saved starts nothing, not even a shell. The
-  session's `shell` is the executable as found and `command` the whole line,
+  request. A name that is not saved starts nothing, not even a shell. Or
+  `openTerminal` with `workflowAgent: { workflow }`, for the agent a named
+  workflow sets: the main process reads the workflow again from Timber and
+  starts its executable and arguments as Timber reports them, never split
+  again, found on the PATH as above. The session is named after the
+  workflow (`review`, or `review: GH-54` under the issue naming). A
+  workflow that is gone, cannot be read, or sets no agent now starts
+  nothing. Nothing about it is logged, as its arguments can hold tokens.
+  The session's `shell` is the executable as found and `command` the whole line,
   shown in the tooltip of the shell's name beside the chips. The "+" menu, the buttons of a
   worktree with no session, and the Agent field of the New worktree dialog
   start an agent, all through `openTerminal`. Timber's `new` and `open`

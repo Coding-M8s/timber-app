@@ -11,7 +11,7 @@ import {
 } from "../../shared/terminal";
 import { PROBE_ANSWER, type StatusRecords, type StatusScanner, createStatusRecords, createStatusScanner } from "../../shared/program-status";
 import { notFoundOnPath } from "../../shared/search-path";
-import { isWorkflowName } from "../../shared/workflows";
+import { type WorkflowList, isWorkflowName } from "../../shared/workflows";
 import { worktreeSetupArguments } from "../../shared/worktree-commands";
 
 /** The part of the engine about terminals, and how they are acted out. */
@@ -90,7 +90,9 @@ export const MOCK_PATH = "/usr/local/bin:/usr/bin:/bin";
  * Terminals acted out in memory, for the browser build and tests. Each one is
  * a pretend shell that echoes what is typed and knows `pwd`, `clear`, and
  * `exit`. An agent session is the same pretend program, started from the
- * agents that `agents` answers, as the saved preferences. New sessions
+ * agents that `agents` answers, as the saved preferences, or from the agent
+ * of a named workflow, read again from `workflows` as the main process reads
+ * Timber's settings. New sessions
  * are named as `sessionNaming` answers, as the saved preferences. Output arrives
  * a moment later, as it would over the bridge.
  */
@@ -100,6 +102,7 @@ export function createMockTerminals(
 	timber: () => TimberStatus = () => ({ state: "not-found", override: null }),
 	sessionNaming: () => SessionNaming = () => "plain",
 	arenaLaunch: (repository: string, worktree: string, arena: string, attempt: string) => ArenaLaunch = () => ({ outcome: "failed", message: "Arena attempts cannot start here. Nothing was started." }),
+	workflows: (repository: string) => Promise<WorkflowList> = async () => ({ ok: false, message: "Workflows cannot be read here." }),
 ): TerminalCapabilities & TerminalControls {
 	const sessions = new Map<string, Acted>();
 	const output = new Set<(output: TerminalOutput) => void>();
@@ -190,11 +193,18 @@ export function createMockTerminals(
 		listTerminals: async () => [...sessions.values()].map(acted => structuredClone(acted.session)),
 		async openTerminal(request) {
 			if (failing) return structuredClone(failing);
+			// As the main process does: only the workflow's name is read from the request.
+			const workflowAgent = request.workflowAgent;
+			if (workflowAgent !== undefined) {
+				const readable = typeof workflowAgent === "object" && workflowAgent !== null && isWorkflowName(workflowAgent.workflow)
+					&& request.agent === undefined && request.timberWorktreeSetup === undefined && request.arenaAttempt === undefined;
+				if (!readable) return { outcome: "failed", message: "The request for a workflow's agent cannot be read. Nothing was started." };
+			}
 			// As the main process does: Timber says what an arena attempt runs, and the request never does.
 			let attempt: { label: string; argv: string[] } | null = null;
 			const wanted = request.arenaAttempt;
 			if (wanted !== undefined) {
-				if (request.agent !== undefined || request.timberWorktreeSetup !== undefined || !isArenaName(wanted.arena) || !isAttemptLabel(wanted.attempt)) {
+				if (request.agent !== undefined || request.timberWorktreeSetup !== undefined || request.workflowAgent !== undefined || !isArenaName(wanted.arena) || !isAttemptLabel(wanted.attempt)) {
 					return { outcome: "failed", message: "The request for an arena attempt cannot be read. Nothing was started." };
 				}
 				const launch = arenaLaunch(request.repository, request.worktree, wanted.arena, wanted.attempt);
@@ -218,32 +228,51 @@ export function createMockTerminals(
 				if (status.state !== "ready") return { outcome: "not-configured", message: "No usable Timber was found, so setup cannot start. Nothing was started." };
 				setup = [status.path, ...worktreeSetupArguments(request.worktree, worktreeSetup.workflow)];
 			}
+			// The agent to start: from Settings, or what the workflow sets now, never what the window saw.
+			let launch: { name: string; executable: string; arguments: string[]; command: string; section: string } | null = null;
+			if (workflowAgent !== undefined) {
+				const name = workflowAgent.workflow;
+				const list = await workflows(request.repository).catch((error): WorkflowList => ({ ok: false, message: `${error instanceof Error ? error.message : String(error)}.` }));
+				if (!list.ok) return { outcome: "failed", message: `Could not read the agent of the ${name} workflow: ${list.message} Nothing was started.` };
+				const workflow = list.workflows.find(candidate => candidate.name === name);
+				if (workflow === undefined) return { outcome: "not-configured", message: `Timber lists no workflow called "${name}" for ${request.repository} now. Nothing was started.` };
+				if (workflow.agent.kind === "none") return { outcome: "not-configured", message: `The ${name} workflow now starts no agent (agent = false). Nothing was started.` };
+				if (workflow.agent.kind === "not-set") return { outcome: "not-configured", message: `The ${name} workflow no longer sets an agent. Nothing was started. Start one from the "+" menu.` };
+				launch = {
+					name, executable: workflow.agent.command, arguments: [...workflow.agent.args],
+					command: `The agent command of the ${name} workflow`, section: "Timber's settings",
+				};
+			}
 			const worktree = findWorktree(request.repository, request.worktree);
-			const notStarted = attempt ? `${attempt.label} was not started.` : agent ? `${agent.name} was not started.` : worktreeSetup ? "Setup was not started." : "No terminal was started.";
+			const notStarted = attempt ? `${attempt.label} was not started.` : agent ? `${agent.name} was not started.` : workflowAgent !== undefined ? `The agent of the ${workflowAgent.workflow} workflow was not started.` : worktreeSetup ? "Setup was not started." : "No terminal was started.";
 			if (!worktree) return { outcome: "not-listed", message: `Timber lists no worktree at ${request.worktree} in ${request.repository}. ${notStarted} Refresh the list.` };
 			let shell = "/bin/mock-shell";
 			let args: string[] = [];
 			if (agent) {
 				const built = agentCommand(agent);
 				if (!built.ok) return { outcome: "failed", message: `${built.message} Change it in Settings, Agents. Nothing was started.` };
-				const command = describeCommandLine([built.executable, ...built.arguments]);
-				if (!built.executable.startsWith("/") && /[\\/]/.test(built.executable)) {
+				launch = { name: agent.name, executable: built.executable, arguments: built.arguments, command: `The command of ${agent.name}`, section: "Settings, Agents" };
+			}
+			if (launch) {
+				const what = agent ? launch.name : `the agent of the ${launch.name} workflow`;
+				const command = describeCommandLine([launch.executable, ...launch.arguments]);
+				if (!launch.executable.startsWith("/") && /[\\/]/.test(launch.executable)) {
 					return {
 						outcome: "failed",
 						command,
-						message: `The command of ${agent.name} starts with the relative path ${built.executable}. Use a command found on the PATH, or a full path, in Settings, Agents.`,
+						message: `${launch.command} starts with the relative path ${launch.executable}. Use a command found on the PATH, or a full path, in ${launch.section}.`,
 					};
 				}
-				if (missing.includes(built.executable)) {
+				if (missing.includes(launch.executable)) {
 					return {
 						outcome: "not-found",
 						command,
-						executable: built.executable,
-						message: `Could not start ${agent.name}. ${notFoundOnPath([built.executable], MOCK_PATH, ":")} A change to PATH needs a restart of the app, or use the full path in Settings, Agents.`,
+						executable: launch.executable,
+						message: `Could not start ${what}. ${notFoundOnPath([launch.executable], MOCK_PATH, ":")} A change to PATH needs a restart of the app, or use the full path in ${launch.section}.`,
 					};
 				}
-				shell = built.executable.startsWith("/") ? built.executable : `/usr/local/bin/${built.executable}`;
-				args = built.arguments;
+				shell = launch.executable.startsWith("/") ? launch.executable : `/usr/local/bin/${launch.executable}`;
+				args = launch.arguments;
 			}
 			if (setup) [shell, ...args] = setup as [string, ...string[]];
 			if (attempt) {
@@ -254,9 +283,9 @@ export function createMockTerminals(
 			const taken = [...sessions.values()].filter(acted => acted.session.worktree === worktree.id).map(acted => acted.session.name);
 			const session: TerminalSession = {
 				id: `mock-terminal-${++lastId}`,
-				kind: agent || attempt ? "agent" : setup ? "timber" : "terminal",
+				kind: launch || attempt ? "agent" : setup ? "timber" : "terminal",
 				name: defaultSessionName(
-					attempt ? attempt.label : worktreeSetup ? WORKTREE_SETUP_SESSION_NAME : sessionNameBase(sessionNaming(), agent ? agent.name : "Terminal", worktree.branch, agent !== null),
+					attempt ? attempt.label : worktreeSetup ? WORKTREE_SETUP_SESSION_NAME : sessionNameBase(sessionNaming(), launch ? launch.name : "Terminal", worktree.branch, launch !== null),
 					taken,
 				),
 				repository: request.repository,
@@ -279,7 +308,7 @@ export function createMockTerminals(
 				if (exitCode !== null) later(() => end(acted, exitCode));
 				return { outcome: "opened", session: structuredClone(session) };
 			}
-			const greeting = agent || attempt
+			const greeting = launch || attempt
 				? `A pretend ${session.name} in ${session.path}, started as ${session.command}. Nothing runs in the browser. Try exit.\r\n`
 				: `A pretend shell in ${session.path}. Try pwd, clear, or exit.\r\n`;
 			// A pretend agent asks for bracketed paste, as Claude Code and Codex do, so a pasted review keeps its line breaks.

@@ -249,6 +249,18 @@ describe.if(windows)("terminal sessions on Windows, on a real ConPTY", () => {
 		expect(printed(session.id)).not.toContain("\x1b[c");
 	});
 
+	test("a workflow's agent whose executable is a batch file is refused the same way", async () => {
+		start({ workflows: async () => ({ ok: true, workflows: [{ name: "review", description: null, agent: { kind: "command", command: "batch-agent", args: ["--flag"] } }] }) });
+		const result = await sessions.open({ repository, worktree, cols: 80, rows: 24, workflowAgent: { workflow: "review" } });
+		const file = join(bin, "batch-agent.cmd");
+		expect(result).toEqual({
+			outcome: "failed",
+			command: `'${file}' --flag`,
+			message: `${file} is a batch file, which Windows runs through cmd.exe, so the app does not start review with it. Use review's own .exe, as a full path if needed, in Timber's settings. Nothing was started.`,
+		});
+		expect(sessions.list()).toEqual([]);
+	});
+
 	test("with the real environment the shell is PowerShell", async () => {
 		start({ environment: process.env });
 		const session = await opened();
