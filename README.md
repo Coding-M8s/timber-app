@@ -28,7 +28,7 @@ See the [architecture](docs/architecture.md) and [design](docs/design.md) notes.
 
 ## Quick start
 
-You need Git, Bun 1.4.2, and for the desktop app
+You need Git, Bun 1.4.4, and for the desktop app
 the newest [Timber](https://github.com/Coding-M8s/timber#quick-start) release
 on your PATH.
 

@@ -55,7 +55,7 @@ function stage(command: ResultCommand, repository: Repository, shown: string) {
 const setupDiagnostic = (path: string) =>
 	`Setup post_create step 1 failed (exit code 1). The branch/worktree and setup files are retained at "${path}". Fix the hook or its prerequisites, then retry all setup steps with: timber open --setup -- '${path}'`;
 
-const SETUP_OUTPUT = "bun install v1.4.2\nerror: lockfile had changes, but lockfile is frozen\n";
+const SETUP_OUTPUT = "bun install v1.4.4\nerror: lockfile had changes, but lockfile is frozen\n";
 
 /** The branch the mock makes of what was typed. The real Timber has its own rules. */
 function branchFor(name: string): string {
