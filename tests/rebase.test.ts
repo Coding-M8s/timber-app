@@ -177,7 +177,7 @@ describe.skipIf(!posix)("rebasing in a terminal session", () => {
 	});
 
 	test("where Bun has no pseudo terminal nothing starts", async () => {
-		const windows = createTerminalSessions({ findRepository: async () => listed(), onOutput: () => {}, onChange: () => {}, timber: async () => ready(standIn), platform: "win32", pseudoTerminals: false });
+		const windows = createTerminalSessions({ findRepository: async () => listed(), onOutput: () => {}, onChange: () => {}, timber: async () => ready(standIn), platform: "win32", startTerminal: null });
 		const result = await windows.open({ repository, worktree, cols: 80, rows: 24, timberRebase: { onto: null } });
 		expect(result.outcome).toBe("unsupported");
 	});

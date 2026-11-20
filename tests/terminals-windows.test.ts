@@ -1,9 +1,11 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { type TerminalDependencies, type TerminalSessions, createTerminalSessions } from "../src/bun/terminals";
+import { startBunTerminal } from "../src/bun/pseudo-terminal";
 import type { Repository } from "../src/shared/model";
+import { PROBE_ANSWER } from "../src/shared/program-status";
 import type { TerminalChange, TerminalOutput } from "../src/shared/terminal";
 
 /*
@@ -35,13 +37,17 @@ function alive(pid: number): boolean {
 	}
 }
 
-/** The ids of the processes whose parent is `pid`, read with Windows PowerShell. */
-async function childrenOf(pid: number): Promise<number[]> {
+/**
+ * Every process's parent, read once with Windows PowerShell, which takes about
+ * a second. `childrenOf` then lists the processes whose parent is `pid`.
+ */
+async function processTable(): Promise<{ childrenOf(pid: number): number[] }> {
 	const powershell = join(SYSTEM32, "WindowsPowerShell", "v1.0", "powershell.exe");
-	const run = Bun.spawn([powershell, "-NoLogo", "-NoProfile", "-Command", `(Get-CimInstance Win32_Process -Filter "ParentProcessId=${pid}").ProcessId`], { stdout: "pipe", stderr: "ignore" });
+	const run = Bun.spawn([powershell, "-NoLogo", "-NoProfile", "-Command", "Get-CimInstance Win32_Process | ForEach-Object { \"$($_.ProcessId) $($_.ParentProcessId)\" }"], { stdout: "pipe", stderr: "ignore" });
 	const text = await new Response(run.stdout).text();
 	await run.exited;
-	return text.split(/\s+/).filter(Boolean).map(Number);
+	const rows = text.split(/\r?\n/).map(line => line.trim().split(/\s+/).map(Number)).filter(row => row.length === 2);
+	return { childrenOf: pid => rows.filter(row => row[1] === pid).map(row => row[0]!) };
 }
 
 describe.if(windows)("terminal sessions on Windows, on a real ConPTY", () => {
@@ -162,10 +168,11 @@ describe.if(windows)("terminal sessions on Windows, on a real ConPTY", () => {
 			sessions.write(session.id, "ping -n 600 127.0.0.1\r");
 			await seen(session.id, "127.0.0.1");
 			// The shell is the test's child process that has a child of its own: the ping.
-			const shells: number[] = [];
-			for (const pid of await childrenOf(process.pid)) if ((await childrenOf(pid)).length > 0) shells.push(pid);
+			// With node-pty the pseudo console's OpenConsole.exe is the test's child too, with no children.
+			const table = await processTable();
+			const shells = table.childrenOf(process.pid).filter(pid => table.childrenOf(pid).length > 0);
 			expect(shells.length).toBe(1);
-			const children = await childrenOf(shells[0]!);
+			const children = table.childrenOf(shells[0]!);
 			expect(children.length).toBeGreaterThan(0);
 
 			if (how === "close") await sessions.close(session.id);
@@ -180,7 +187,9 @@ describe.if(windows)("terminal sessions on Windows, on a real ConPTY", () => {
 		start({ agents: async () => [{ name: "Where", command: "where.exe where.exe" }] });
 		const session = await opened({ agent: "Where" });
 		expect(session).toMatchObject({ kind: "agent", name: "Where", shell: join(SYSTEM32, "where.exe") });
-		await seen(session.id, join(SYSTEM32, "where.exe"));
+		// Windows paths ignore case, and where.exe prints the folder as the file system spells it.
+		const where = join(SYSTEM32, "where.exe").toLowerCase();
+		expect(await until(() => printed(session.id).toLowerCase().includes(where))).toBe(true);
 	});
 
 	test("an agent whose executable is a batch file is refused, and nothing starts", async () => {
@@ -194,6 +203,60 @@ describe.if(windows)("terminal sessions on Windows, on a real ConPTY", () => {
 		});
 		expect(sessions.list()).toEqual([]);
 		expect(printed("anything")).toBe("");
+	});
+
+	/**
+	 * A program in raw mode, as an agent reads its input. It probes, and with
+	 * `attributes` sends primary device attributes (`CSI c`) right after, as
+	 * Claude Code does, taking the reply to that as the end of the answers.
+	 * It prints what it read and reports `done`.
+	 */
+	function writeProber(attributes: boolean): string {
+		const prober = join(root, attributes ? "prober-da1.ts" : "prober.ts");
+		const until = attributes ? "/\\x1b\\[\\?[0-9;]*c/" : "/\\x1b\\\\/";
+		writeFileSync(prober, [
+			"process.stdin.setRawMode(true);",
+			"let read = '';",
+			"const end = (text) => { process.stdout.write(`got:${Buffer.from(text).toString('hex')}:end\\r\\n`); process.stdout.write('\\x1b]7501;state=done\\x1b\\\\'); setTimeout(() => process.exit(0), 200); };",
+			"const timer = setTimeout(() => end(read), 5000);",
+			`process.stdin.on('data', bytes => { read += bytes.toString(); const last = ${until}.exec(read); if (last) { clearTimeout(timer); process.stdin.pause(); end(read.slice(0, last.index + last[0].length)); } });`,
+			`process.stdout.write('\\x1b]7501;?\\x1b\\\\${attributes ? "\\x1b[c" : ""}');`,
+		].join("\n"));
+		return prober;
+	}
+
+	const proberEnvironment = () => ({ ...cmdEnvironment(), PATH: `${dirname(process.execPath)};${SYSTEM32}` });
+	const statusDone = (id: string) => until(() => changes.some(change => change.id === id && change.session?.status?.state === "done"));
+	const hex = (text: string) => Buffer.from(text).toString("hex");
+
+	test("a program that probes and then asks for device attributes gets the probe's answer first, so its report sets the status", async () => {
+		start({ agents: async () => [{ name: "Prober", command: `bun '${writeProber(true)}'` }], environment: proberEnvironment() });
+		const session = await opened({ agent: "Prober" });
+		// The program's query reaches the session's output, where the window answers it, after the app answered the probe.
+		await seen(session.id, "\x1b[c");
+		sessions.write(session.id, "\x1b[?1;2c");
+		await seen(session.id, /got:[0-9a-f]*:end/);
+		expect(printed(session.id)).toContain(`got:${hex(PROBE_ANSWER + "\x1b[?1;2c")}:end`);
+		expect(await statusDone(session.id)).toBe(true);
+	});
+
+	test("on Windows' own ConPTY, through Bun.Terminal, a program that probes reads the answer, sent as typed keys", async () => {
+		start({ agents: async () => [{ name: "Prober", command: `bun '${writeProber(false)}'` }], environment: proberEnvironment(), startTerminal: startBunTerminal });
+		const session = await opened({ agent: "Prober" });
+		await seen(session.id, /got:[0-9a-f]*:end/);
+		expect(printed(session.id)).toContain(`got:${hex(PROBE_ANSWER)}:end`);
+		expect(await statusDone(session.id)).toBe(true);
+	});
+
+	test("the pseudo console's own startup query is answered by the app and never shown, so a program starts at once", async () => {
+		start({ agents: async () => [{ name: "Where", command: "where.exe where.exe" }] });
+		const started = Date.now();
+		const session = await opened({ agent: "Where" });
+		const where = join(SYSTEM32, "where.exe").toLowerCase();
+		expect(await until(() => printed(session.id).toLowerCase().includes(where))).toBe(true);
+		// Unanswered, ConPTY holds the program back for 3 seconds.
+		expect(Date.now() - started).toBeLessThan(2000);
+		expect(printed(session.id)).not.toContain("\x1b[c");
 	});
 
 	test("with the real environment the shell is PowerShell", async () => {

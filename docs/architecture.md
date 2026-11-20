@@ -2129,9 +2129,28 @@ shows, and coming back shows it as it was.
   signal listeners never run. SIGKILL ends the app without
   asking; the terminals then hang up, which ends the shells and what runs
   in front, but not what ignores a hang-up.
-- **Windows.** Bun 1.4.4, the Bun the Windows build ships, has
-  `Bun.Terminal` there on top of ConPTY, and sessions use it as on Linux.
-  What differs (`src/bun/terminals.ts`):
+- **Windows.** Sessions run on ConPTY through node-pty 1.1.0, with the
+  `conpty.dll` and `OpenConsole.exe` it ships (ConPTY 1.23.251008001 from
+  Windows Terminal), not the ConPTY in Windows: that one drops the status
+  probe's answer and answers `CSI c` itself (see "Agent status"). What
+  differs (`src/bun/terminals.ts`, `src/bun/pseudo-terminal.ts`):
+  - *The pseudo terminal.* `startPseudoTerminal` picks node-pty on Windows,
+    with `useConptyDll`, and `Bun.Terminal` elsewhere. node-pty is required
+    at run time, only on Windows, and only when its prebuilt ConPTY for the
+    machine's architecture is there; otherwise Windows' own ConPTY through
+    `Bun.Terminal` (Bun 1.4.4 has it) runs the session, without agent status
+    for programs like Claude Code. Its install scripts are not run
+    (`"trustedDependencies": []` in package.json), so no install compiles
+    it; Windows uses its prebuilt files. The Windows build copies its
+    JavaScript and the prebuilt files for the build machine's architecture
+    beside the main process's bundle (`electrobun.config.ts`), about 2 MB.
+    Its license and ConPTY's are in `licenses/node-pty.txt`.
+  - *The startup query.* This ConPTY asks the terminal for `CSI c` when it
+    starts and holds the program back until it is answered, or for 3
+    seconds. The app answers that one itself (`createStartupQuery`), as
+    xterm.js would, and takes it out of the output, so a session the window
+    does not show starts at once and the window does not answer twice.
+    Every later `CSI c` is the program's, and the window answers it.
   - *The shell* is PowerShell 7 (`pwsh.exe`) when it is on the PATH, else
     Windows PowerShell, else `ComSpec`, else cmd.exe from the system folder
     (`pickWindowsShell` in `src/shared/terminal.ts`). `SHELL` is not read,
@@ -2152,8 +2171,11 @@ shows, and coming back shows it as it was.
     "Open in editor" does (`isWindowsBatch` in `src/bun/find-executable.ts`):
     cmd.exe would read `&`, `%`, and `^` in its arguments again. Claude
     Code's and Codex's own installers put a `.exe` on the PATH.
-  - Where Bun has no `Bun.Terminal` on Windows, `openTerminal` answers that
-    terminals are not supported there, and nothing starts.
+  - *The status probe's answer* goes in as win32-input-mode key events,
+    which both ConPTYs read (see "Agent status").
+  - Where there is neither node-pty nor `Bun.Terminal` on Windows,
+    `openTerminal` answers that terminals are not supported there, and
+    nothing starts.
   - Shell integration (OSC 133 prompts) is not set up for PowerShell, and
     the shell cannot be chosen in Settings yet.
 - **Not built.** Split views showing two sessions side by side, keeping
@@ -2359,6 +2381,23 @@ What the agent prints on screen is still never read, parsed, or answered.
   kinds the app handles. The spec leaves `clear` out of the list, since
   every terminal that answers accepts it. xterm.js ignores 7501, so nothing
   answers twice.
+- **On Windows** (issue 149). Reports arrive as on Linux: ConPTY passes OSC
+  7501 output through unchanged. Probes are answered as on Linux too, but
+  only because sessions run on the ConPTY that node-pty ships (see
+  "Terminals", Windows), not the one in Windows. Two things about Windows'
+  own ConPTY (Windows 11 build 26200) stop the answer:
+  - It reads the session's input as keys and drops an OSC written to it.
+    Since it turns on win32-input-mode (`ESC [ ? 9001 h`) when it starts,
+    the app writes the answer as one key press and release per character
+    (`asWin32KeyEvents` in `src/shared/win32-input.ts`), and the program
+    reads it byte for byte. node-pty's ConPTY reads it that way too.
+  - It answers primary device attributes (`CSI c`) itself, at once, and
+    does not pass the query on. A program that sends `CSI c` right after the
+    probe and takes its reply as "no answer", as the spec suggests, so gets
+    that reply before the app's answer. Claude Code 2.1.329 does this, and
+    on Windows' own ConPTY it reported nothing. node-pty's ConPTY passes the
+    query on, the window answers it after the probe's answer, and Claude
+    Code reports as on Linux.
 - **Reports.** `ESC ] 7501 ; key=value:key=value` ended by `ESC \` or BEL.
   `state` is required; `kind` counts only with `blocked`, `progress` (0 to
   100) only with `working` or `blocked`; `app`, `id` (a record path such as
@@ -2662,7 +2701,8 @@ None of it should have to change after a first release.
   Vite copies them into the build, so text looks the same on every platform
   and nothing is fetched from the network.
 - **Licenses.** `licenses/` holds the SIL Open Font License of the fonts,
-  the notices of the palettes that built-in themes use, and the notice for
+  the notices of the palettes that built-in themes use, the MIT licenses of
+  node-pty and of the ConPTY it ships (Windows only), and the notice for
   the logo, which is copyright Coding-M8s with all rights
   reserved and is not covered by the MIT license of the code. The build
   copies the folder into the app, to `Resources/app/licenses`.
@@ -5190,6 +5230,91 @@ build's `app\bin`), Git 2.50.1, Electrobun 2.0.6, and Timber 0.1.3:
   running, and quitting with sessions running. The tests cover them on a
   real ConPTY only.
 
+Run for agent status on Windows (issue 149), on 2026-11-20, on the same
+Windows 11 Home x64 machine (build 26200) with Bun 1.4.4 and Claude Code
+2.1.329 (`claude.exe`):
+
+- Before the change, scratch scripts: a Bun child in raw mode on ConPTY,
+  sent a short OSC 7501 answer by `terminal.write`, read nothing when it was
+  written as it is, and exactly the answer, once, when it was written as
+  win32-input-mode key presses only or as presses and releases. ConPTY
+  printed `ESC [ ? 9001 h` first in every run.
+- A child that printed `ESC [ > 0 q`, `ESC [ ? u`, the probe, and `ESC [ c`,
+  as Claude Code does, read ConPTY's own
+  `ESC [ ? 61 ; 6 ; 7 ; 21 ; 22 ; 23 ; 24 ; 28 ; 32 ; 42 c` before the
+  answer. `ESC [ c` never reached the output.
+- `claude.exe` read as text: its probe settles as "no reply to OSC 7501 ; ?"
+  once the reply to the `CSI c` it sends after its queries arrives. Before
+  it asks, its program status support starts as "not asked yet", or as off
+  with `CLAUDE_CODE_DISABLE_TERMINAL_TITLE`, as a background worker, or in a
+  terminal known to print unknown sequences. Only an answer turns it on.
+- With the answer sent as key events on Windows' own ConPTY, the real
+  Claude Code started through `createTerminalSessions` in a new temporary
+  repository, for 15 seconds, no prompt: one probe (`ESC ] 7501 ; ? BEL`),
+  its folder trust screen, and no report; the session's status stayed null.
+  The same with the answer also written before the probe. The late answer
+  did not show on its screen.
+- node-pty 1.1.0 (`npm install` in a scratch folder, with Node 24.13.1 and
+  then Bun) with `useConptyDll`, so ConPTY 1.23.251008001: the same child
+  as above. `ESC [ c` reached the output unanswered, and the child read the
+  answer, written as it is or as key events. Under Bun, in a Worker as the
+  app runs: `exit 3` gave exit code 3, a resize reached cmd.exe (`mode con`),
+  `kill()` ended cmd.exe and a `ping` in it, and the process quit once the
+  Worker ended. This ConPTY printed `ESC [ 1 t` and `ESC [ c` first and held
+  `where.exe` back 3 seconds when nothing answered, 20 ms when answered. A
+  resize right after starting worked once the query was answered.
+- The real Claude Code on that ConPTY from a Node script answering both
+  `CSI c` it saw: it reported
+  `state=blocked:app=claude-code:kind=permission` with "trust this folder".
+- `bun add node-pty@1.1.0` ran its install scripts. With
+  `"trustedDependencies": []` added, `rm -rf node_modules/node-pty` and
+  `bun install`: its install scripts were blocked, no `build` folder was
+  made, and it loaded its prebuilt files and ConPTY.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test tests/terminals-windows.test.ts tests/pseudo-terminal.test.ts`:
+  17 passed, six runs in a row, on a real ConPTY: the earlier tests, a
+  program that probes and then sends `CSI c` reading the probe's answer and
+  then the window's reply to `CSI c` (failed with `Bun.Terminal` in its
+  place), the same probe on Windows' own ConPTY through `Bun.Terminal` with
+  the answer as key events, and `where.exe` starting within 2 seconds with
+  the startup query not in the output. Before the close test listed
+  processes in one call, it timed out once.
+- The close and quit tests, 45 runs: once, after quitting, the shell had
+  ended and its `ping` still ran 4 seconds later, because the pseudo console
+  was closed before the process tree was killed, and taskkill follows the
+  tree only through a running shell. Quitting now kills first and then
+  closes: 30 runs in a row passed. Closing the pseudo console alone, 10
+  times from a scratch script, ended cmd.exe, its `ping`, and
+  `OpenConsole.exe` within 26 ms each time.
+- `bun test`: 1758 passed, 148 skipped, 78 failed, 17 errors. Without this
+  change on the same machine: 1747 passed, 78 failed, 15 errors. The failing
+  tests are the same apart from two that are flaky without this change too
+  (a real Timber saved bases test, and adding the same repository twice,
+  which passed once and failed once alone without it); none are terminal
+  tests. Rebased on `main` at `388ebee`: 1897 passed, 156 skipped, 80
+  failed, 17 errors, none in terminal tests; the Windows failures are
+  issue 163, and CI runs the tests on Windows without failing the run.
+- The real Claude Code 2.1.329 started through `createTerminalSessions` (the
+  main process's own module, with node-pty) in a new temporary repository,
+  for 15 seconds, no prompt, nothing answering `CSI c`: it reported
+  `blocked`, kind `permission`, app `claude-code`, message "trust this
+  folder", which reached the session's `status`, within 0.4 seconds.
+- `bun run build`: the stable build holds `node-pty`'s `lib`, `package.json`,
+  and `prebuilds/win32-x64` without debug symbols (1.9 MB) under
+  `Resources/app/bun/node_modules`, and `licenses/node-pty.txt`. The
+  bundled `index.js` requires `node-pty` at run time. From the unpacked
+  build, a script beside `index.js` resolved node-pty there and ran cmd.exe
+  on its ConPTY.
+- The build installed with `Timber-Setup.exe` and run by a person: Claude
+  Code opened in a new project reported its status in the app, and the
+  person reported it working.
+- CI on the pull request: the Linux `check` job passed, 2105 tests and none
+  failed, so the terminal tests on Linux ran through `startBunTerminal`.
+  The Windows job failed only in tests listed in issue 163, none of them
+  terminal tests.
+- Not run: notifications on Windows, a session the window does not show,
+  Codex, Windows on arm64, and macOS.
+
 Not run yet:
 
 - The Pull request tab in the desktop window, a check's Open clicked
@@ -5238,8 +5363,10 @@ Not run yet:
 - Anything on macOS, terminals included.
 - Watching for changes on Windows or macOS, where `fs.watch` works
   differently. It was run only on Linux.
-- Terminals on Windows with a Bun that has no `Bun.Terminal`: they answer
-  that they are not supported, and that answer was only acted out in tests.
+- Terminals on Windows with neither node-pty nor a Bun that has
+  `Bun.Terminal`: they answer that they are not supported, and that answer
+  was only acted out in tests. A Windows build without node-pty, falling
+  back to `Bun.Terminal`, was run only in tests.
 - Copying with Ctrl+Shift+C and opening a link with Ctrl+click in the
   desktop window. Both were checked as functions only.
 - A real X11 login session, and GNOME and KDE, on real hardware. They

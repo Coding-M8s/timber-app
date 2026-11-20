@@ -57,7 +57,7 @@ describe("terminal sessions where Bun has no pseudo terminal", () => {
 			onOutput: () => {},
 			onChange: () => {},
 			platform: "win32",
-			pseudoTerminals: false,
+			startTerminal: null,
 		});
 		const result = await sessions.open({ repository: "C:\\work\\repo", worktree: "C:\\work\\repo", cols: 80, rows: 24 });
 		expect(result).toEqual({ outcome: "unsupported", message: TERMINAL_UNSUPPORTED_REASON });

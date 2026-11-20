@@ -47,3 +47,21 @@ jobs:
           key: hutch-${{ runner.os }}-${{ hashFiles('bun.lock') }}
       - run: bun install --frozen-lockfile
       - run: bun run typecheck:desktop
+
+  # The tests on Windows, which is not the primary platform yet. Known
+  # failures there are tracked in issue 163, so this job reports them
+  # without failing the run: continue-on-error marks the job failed and keeps
+  # the run's result. Timber is not installed, so tests that need the real
+  # Timber are skipped or fail here.
+  test-windows:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun test
