@@ -8,6 +8,16 @@ export type ExecutableLookup =
 	| { ok: false; reason: "relative"; message: string }
 	| { ok: false; reason: "not-found"; message: string };
 
+/**
+ * Windows runs a `.cmd` or `.bat` file through cmd.exe, which reads `&`, `%`,
+ * and `^` in the arguments again, so a worktree path or an argument could
+ * change the command. Editors and agents are started only from their own
+ * executables there, as Timber's Windows guide asks.
+ */
+export function isWindowsBatch(path: string): boolean {
+	return /\.(cmd|bat)$/i.test(path);
+}
+
 /** Words for the messages: what is being started, and where in Settings its command is set. */
 export interface ExecutableWords {
 	/** Such as "the editor" or "Codex". */

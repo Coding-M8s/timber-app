@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createQuitGuard } from "../src/bun/quit-guard";
 import {
-	SCROLLBACK_LIMIT, clampTerminalSize, createScrollback, describeQuitRequest, describeTerminalExit, isWebLink, pickShell, webLink,
+	SCROLLBACK_LIMIT, clampTerminalSize, createScrollback, describeQuitRequest, describeTerminalExit, isWebLink, pickShell, pickWindowsShell, webLink,
 } from "../src/shared/terminal";
 import { createTerminalFeed } from "../src/mainview/terminal-feed";
 import { clipboardKey, closeTerminalLabel, describeTerminalState, leftInAlternateScreen, opensLink, shellName } from "../src/mainview/terminal-format";
@@ -23,6 +23,20 @@ describe("terminal rules", () => {
 		expect(pickShell({ SHELL: "zsh" }, executable)).toBe("/bin/sh");
 		expect(pickShell({ SHELL: "/usr/bin/fish" }, executable)).toBe("/bin/sh");
 		expect(pickShell({}, executable)).toBe("/bin/sh");
+	});
+
+	test("on Windows the shell is pwsh, else Windows PowerShell, else ComSpec, else cmd.exe from the system folder", () => {
+		const PWSH = "C:\\Program Files\\PowerShell\\7\\pwsh.exe";
+		const POWERSHELL = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+		const on = (...found: string[]) => (name: string) => found.find(path => path.toLowerCase().endsWith(`\\${name}`)) ?? null;
+		const exists = (path: string) => path === "D:\\Tools\\cmd.exe";
+		// SHELL is ignored: Git Bash sets it to a POSIX path.
+		expect(pickWindowsShell({ SHELL: "/usr/bin/bash" }, on(PWSH, POWERSHELL), exists)).toBe(PWSH);
+		expect(pickWindowsShell({}, on(POWERSHELL), exists)).toBe(POWERSHELL);
+		expect(pickWindowsShell({ ComSpec: "D:\\Tools\\cmd.exe" }, on(), exists)).toBe("D:\\Tools\\cmd.exe");
+		// A ComSpec that is not a full path, or not there, gives way to the system folder.
+		expect(pickWindowsShell({ ComSpec: "cmd.exe", SystemRoot: "E:\\Win" }, on(), exists)).toBe("E:\\Win\\System32\\cmd.exe");
+		expect(pickWindowsShell({ ComSpec: "C:\\gone\\cmd.exe" }, on(), exists)).toBe("C:\\Windows\\System32\\cmd.exe");
 	});
 
 	test("only http and https links are opened, as the URL parser writes them out", () => {

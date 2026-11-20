@@ -4,13 +4,14 @@ import { describeCommandLine } from "../shared/command-line";
 import type { TimberStatus } from "../shared/model";
 import {
 	type OpenTerminalRequest, type OpenTerminalResult, type Scrollback, type SessionNaming, type TerminalChange, type TerminalOutput, type TerminalSession,
-	type TerminalSnapshot, TERMINAL_UNSUPPORTED_REASON, TIMBER_REBASE_SESSION_NAME, clampTerminalSize, cleanSessionName, createScrollback, defaultSessionName, pickShell, sessionNameBase,
+	type TerminalSnapshot, TERMINAL_UNSUPPORTED_REASON, TIMBER_REBASE_SESSION_NAME, clampTerminalSize, cleanSessionName, createScrollback, defaultSessionName, pickShell, pickWindowsShell,
+	sessionNameBase,
 } from "../shared/terminal";
 import { PROBE_ANSWER, type StatusRecords, type StatusScanner, createStatusRecords, createStatusScanner } from "../shared/program-status";
 import { rebaseArguments } from "../shared/rebase-command";
-import { findExecutable } from "./find-executable";
+import { findExecutable, isWindowsBatch } from "./find-executable";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
-import { sessionMembers, signalEach, signalGroup } from "./process-session";
+import { killProcessTree, sessionMembers, signalEach, signalGroup } from "./process-session";
 
 /** How long a closed session's processes get to end after a hang-up, before they are killed. */
 const CLOSE_MILLISECONDS = 2000;
@@ -53,6 +54,12 @@ export interface TerminalDependencies {
 	environment?: Record<string, string | undefined>;
 	/** The operating system, as `process.platform` names it. Tests pass another. */
 	platform?: NodeJS.Platform;
+	/**
+	 * Whether this Bun offers pseudo terminals: always on Linux and macOS, and
+	 * on Windows where it has `Bun.Terminal` (ConPTY), as 1.4.4 does. Tests
+	 * pass false to see the refusal.
+	 */
+	pseudoTerminals?: boolean;
 	/** Tests change the waits and the limit. */
 	closeMilliseconds?: number;
 	flushMilliseconds?: number;
@@ -190,15 +197,34 @@ function signalSession(live: Live, signal: NodeJS.Signals): void {
  * - When the shell ends by itself, what it left running is hung up on, as a
  *   terminal does when it closes. The session stays, with how it ended,
  *   until it is closed.
- * - Pseudo terminals exist on Linux and macOS only, so on Windows nothing
- *   starts.
+ * - On Windows the pseudo terminal is ConPTY, through `Bun.Terminal`. The
+ *   shell is PowerShell (see `pickWindowsShell`). There are no sessions or
+ *   process groups to signal: closing the pseudo console hangs up everything
+ *   attached to it, and what still runs after the wait is ended with the
+ *   shell's whole process tree (`killProcessTree`). An agent whose executable
+ *   is a `.cmd` or `.bat` file is refused (see `isWindowsBatch`). Where Bun
+ *   has no pseudo terminal, nothing starts.
  */
 export function createTerminalSessions(dependencies: TerminalDependencies): TerminalSessions {
 	const {
 		findRepository, onOutput, onChange, agents = async () => [], sessionNaming = async (): Promise<SessionNaming> => "plain", timber = async (): Promise<TimberStatus> => ({ state: "not-found", override: null }), environment = process.env, platform = process.platform,
+		pseudoTerminals = platform !== "win32" || typeof Bun.Terminal === "function",
 		closeMilliseconds = CLOSE_MILLISECONDS, flushMilliseconds = FLUSH_MILLISECONDS, undrawnLimit = UNDRAWN_LIMIT,
 	} = dependencies;
+	const windows = platform === "win32";
 	const sessions = new Map<string, Live>();
+
+	/** Hang up on what runs in a session. On Windows closing the pseudo console does that, and there is nothing to signal. */
+	function hangUp(live: Live): void {
+		if (!windows) signalSession(live, "SIGHUP");
+	}
+
+	/** The shell a terminal session starts. */
+	function shellOf(): string {
+		if (!windows) return pickShell(environment, isExecutable);
+		const search = environment.PATH ?? environment.Path ?? "";
+		return pickWindowsShell(environment, name => Bun.which(name, { PATH: search }), isExecutable);
+	}
 
 	const inWorktree = (worktreeId: string) => [...sessions.values()].filter(live => live.session.worktree === worktreeId);
 
@@ -258,13 +284,13 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			return { ok: true, kind: "timber", base: run.name, argv, command: describeCommandLine(argv) };
 		}
 		if (agent === null) {
-			const shell = pickShell(environment, isExecutable);
+			const shell = shellOf();
 			return { ok: true, kind: "terminal", base: "Terminal", argv: [shell], command: describeCommandLine([shell]) };
 		}
 		const built = agentCommand(agent);
 		if (!built.ok) return { ok: false, result: { outcome: "failed", message: `${built.message} Change it in Settings, Agents. Nothing was started.` } };
 		const command = describeCommandLine([built.executable, ...built.arguments]);
-		const lookup = findExecutable(built.executable, environment.PATH ?? "", { what: agent.name, command: `The command of ${agent.name}`, section: "Settings, Agents" });
+		const lookup = findExecutable(built.executable, environment.PATH ?? environment.Path ?? "", { what: agent.name, command: `The command of ${agent.name}`, section: "Settings, Agents" });
 		if (!lookup.ok) {
 			return {
 				ok: false,
@@ -274,6 +300,16 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			};
 		}
 		const argv = [lookup.path, ...built.arguments];
+		if (windows && isWindowsBatch(lookup.path)) {
+			return {
+				ok: false,
+				result: {
+					outcome: "failed",
+					command: describeCommandLine(argv),
+					message: `${lookup.path} is a batch file, which Windows runs through cmd.exe, so the app does not start ${agent.name} with it. Use ${agent.name}'s own .exe, as a full path if needed, in Settings, Agents. Nothing was started.`,
+				},
+			};
+		}
 		return { ok: true, kind: "agent", base: agent.name, argv, command: describeCommandLine(argv) };
 	}
 
@@ -286,7 +322,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 	}
 
 	async function open(request: OpenTerminalRequest): Promise<OpenTerminalResult> {
-		if (platform === "win32") return { outcome: "unsupported", message: TERMINAL_UNSUPPORTED_REASON };
+		if (!pseudoTerminals) return { outcome: "unsupported", message: TERMINAL_UNSUPPORTED_REASON };
 		// An agent is looked up first: a request for one never falls back to a shell.
 		let agent: AgentSetting | null = null;
 		if (request.agent !== undefined) {
@@ -375,7 +411,8 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			child.terminal?.close();
 			if (!live) return;
 			// What the shell left running is hung up on, as when a terminal closes. A program started with nohup goes on; closing the session ends it too.
-			signalSession(live, "SIGHUP");
+			// On Windows closing the pseudo console above already hung up on what was attached to it.
+			hangUp(live);
 			live.leftovers = sessionMembers(child.pid) ?? [];
 			take(live, decoder.decode());
 			// The exit is told in one change with the status: working and blocked end with the process.
@@ -394,7 +431,10 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 
 	/** Kill the shell, if it still runs, and what is left in its session. */
 	function killLeftovers(live: Live): void {
-		signalSession(live, "SIGKILL");
+		// Windows has no session to signal. Its process tree is followed by parent ids, so it is reachable only while the shell runs.
+		if (windows) {
+			if (running(live.process)) killProcessTree(live.process.pid, environment);
+		} else signalSession(live, "SIGKILL");
 		if (running(live.process)) live.process.kill("SIGKILL");
 	}
 
@@ -407,8 +447,9 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		sessions.delete(id);
 		if (live.flushTimer !== null) clearTimeout(live.flushTimer);
 		// Hanging up the terminal sends SIGHUP to the shell and what runs in front; the rest of its session gets it too.
+		// On Windows it closes the pseudo console, and every process attached to it is told to close.
 		live.process.terminal?.close();
-		signalSession(live, "SIGHUP");
+		hangUp(live);
 		// Everything gets the same time to clean up, not only the shell.
 		const deadline = Date.now() + closeMilliseconds;
 		while (!settled(live) && Date.now() < deadline) await wait(Math.min(50, closeMilliseconds));
