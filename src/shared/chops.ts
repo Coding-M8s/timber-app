@@ -1,3 +1,4 @@
+import { isSafeLine, isSafeText } from "./safe-text";
 import { SESSION_NAME_LIMIT, cleanSessionName } from "./terminal";
 
 /**
@@ -80,17 +81,6 @@ export function sameChopName(one: string, other: string): boolean {
 	return folded(one) === folded(other);
 }
 
-/**
- * Line breaks and tabs only: every other control character (C0, DEL, C1),
- * every invisible format character (`\p{Cf}`: bidirectional overrides and
- * isolates, zero-width spaces, tag characters) except the zero-width joiner
- * that emoji are made with, the line and paragraph separators, and lone
- * surrogates. What a chop says must be what the person sees before it runs.
- */
-const FORBIDDEN_IN_TEXT = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u2028\u2029]|(?!\u200d)\p{Cf}/u;
-/** The same, and no line breaks or tabs either, for a one-line description. */
-const FORBIDDEN_IN_LINE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]|(?!\u200d)\p{Cf}/u;
-
 /** The text with Windows line endings made `\n`, as it is kept. */
 export function normalizeChopText(text: string): string {
 	return text.replace(/\r\n/g, "\n");
@@ -110,9 +100,9 @@ export function chopProblem(chop: Chop, others: readonly string[]): string | nul
 	if (chop.text.trim() === "") return chop.kind === "command" ? "Type the command." : "Type the prompt.";
 	if (chop.text.length > CHOP_TEXT_LIMIT) return `The text is longer than ${CHOP_TEXT_LIMIT} characters.`;
 	if (chop.text.includes("\r")) return "The text has a carriage return that is not part of a line break.";
-	if (FORBIDDEN_IN_TEXT.test(chop.text) || !chop.text.isWellFormed()) return "The text has a control or invisible character. Only line breaks and tabs are allowed.";
+	if (!isSafeText(chop.text)) return "The text has a control or invisible character. Only line breaks and tabs are allowed.";
 	if (chop.description.length > CHOP_DESCRIPTION_LIMIT) return `The description is longer than ${CHOP_DESCRIPTION_LIMIT} characters.`;
-	if (FORBIDDEN_IN_LINE.test(chop.description) || !chop.description.isWellFormed()) return "The description must be one line, with no control characters.";
+	if (!isSafeLine(chop.description)) return "The description must be one line, with no control characters.";
 	if (chop.kind === "command" && chop.agent !== null) return "Only a prompt goes to an agent. Remove the agent from this command.";
 	if (chop.agent !== null && cleanSessionName(chop.agent) !== chop.agent) return "The agent name is not one an agent can have.";
 	return null;

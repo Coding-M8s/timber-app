@@ -15,7 +15,7 @@ import type { PullRequestList } from "./pull-requests";
 import type { Theme } from "./theme";
 import type { ChooseSoundResult, SoundChoice, SoundOutcome } from "./sound-setting";
 import type { ExportThemeResult, ImportThemeResult } from "./theme-file";
-import type { OpenTerminalRequest, OpenTerminalResult, TerminalChange, TerminalOutput, TerminalSession, TerminalSnapshot } from "./terminal";
+import type { OpenTerminalRequest, OpenTerminalResult, PasteResult, TerminalChange, TerminalOutput, TerminalSession, TerminalSnapshot } from "./terminal";
 import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "./timber-config";
 import type { RebaseRequest, RebaseResult } from "./timber-rebase";
 import type { CreatePullRequestRequest, CreatePullRequestResult, HeadSubjectRequest } from "./timber-pr";
@@ -421,6 +421,18 @@ export interface Engine {
 	drawnTerminal(id: string, seq: number): void;
 	/** Pass what was typed or pasted on to a running session. Nothing comes back. */
 	writeTerminal(id: string, data: string): void;
+	/**
+	 * Paste text into a running agent session as one bracketed paste
+	 * (`bracketedPaste` in ./terminal.ts), as a person's paste would arrive,
+	 * so its line breaks stay part of the text and nothing is sent early. No
+	 * Enter follows: the text waits in the agent's input. Refused, and
+	 * nothing written, when the text has a control or invisible character
+	 * (`pasteProblem`), when the session is not an agent's, or when its
+	 * program has not asked for bracketed paste (mode 2004). Files are never
+	 * touched: only the session's input is written. Not safe to call again
+	 * blindly: each call pastes once more.
+	 */
+	pasteTerminal(id: string, text: string): Promise<PasteResult>;
 	/** Tell a running session the size of its pane. Nothing comes back. */
 	resizeTerminal(id: string, cols: number, rows: number): void;
 	/**

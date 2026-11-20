@@ -2185,6 +2185,85 @@ Comparing against a backup is a later step.
   makes reads fail (`null` to undo), and `timberMock.setFileChanges(path,
   files)` sets what a worktree lists.
 
+## Review notes
+
+Notes on lines of a diff in the Changes tab, sent to an agent as one
+message. The rules are pure, in `src/shared/review.ts`; the words and the
+choice of agent are in `src/mainview/review-format.ts`, and the views in
+`src/mainview/components/ReviewNotes.tsx`.
+
+- **A note.** One line, or a run of at most 30 lines of one hunk, of one
+  file (`FileChangeTarget`) in one comparison, with the lines as Git
+  printed them and the text written. Only lines with a number take a note
+  (`notableLine`). The text is kept with `\n` line breaks and no spaces at
+  its end, at most 10,000 characters, and like a chop's text holds only
+  line breaks, tabs, and visible characters (`isSafeText` in
+  `src/shared/safe-text.ts`, shared with chops).
+- **Where they live.** `reviews` in the window's store, by worktree
+  identity, in the order written. They are never saved, because they quote
+  the files: a reload or a quit drops them. A worktree that leaves the list
+  takes its notes (`forgetGoneReviews`, beside `forgetGoneForms`).
+- **The message** (`buildReviewMessage`). A title with the count, then per
+  note, a blank line apart: `path:line` or `path:first-last` with the
+  numbers of the file now, or the old numbers for lines that are only
+  removed, said so; each line as `> ` and Git's marker; then the note.
+  Paths and quoted lines are someone else's text: every control or
+  invisible character becomes U+FFFD (`cleanLine`), a Windows line ending
+  is dropped, and a line over 300 characters is cut with ` [cut]`. So
+  whatever a file holds, the message passes `pasteProblem` and cannot end
+  the paste early. The preview shows this string, and the same string is
+  pasted.
+- **Outdated** (`markOutdated`). When the diff of a noted file is read
+  again in the note's comparison, a note whose lines are not all there with
+  the same kind, numbers, and text is outdated, and stays so. A file that
+  is no longer changed there outdates its notes; a binary or too large
+  diff, or a failed read, changes nothing. This runs on every diff the tab
+  reads, and before the preview for every noted file (`prepareReview`), so
+  notes on files not on screen are checked too. An outdated note keeps its
+  old lines and is sent with them, marked. Lines are matched by their
+  numbers as well as their text, so lines that only moved, such as after
+  an edit above them, count as outdated, since the numbers sent would no
+  longer be right. A note is tied to its file's area: in Uncommitted, a
+  file that is staged after the note (an agent's `git add`) leaves the
+  unstaged area, its notes are outdated, and their file is no longer
+  listed there to show.
+- **Writing one.** The draft keeps the lines as they showed when chosen
+  (`chooseNoteLine`) and the text typed so far, so stretching it to a
+  range keeps the text and a diff read again meanwhile does not change
+  what the note quotes. A draft is not a note: choosing another file or
+  worktree drops it.
+- **Pasting** (`pasteTerminal` on the `Engine`). The main process takes
+  the text only for a running agent session, only when it passes
+  `pasteProblem` (not blank, at most 100,000 characters, no carriage
+  return, `isSafeText`), and only when the agent's program asked for
+  bracketed paste: every session's output passes a paste mode scanner
+  (`createPasteModeScanner` in `src/shared/terminal.ts`) beside the status
+  scanner, which reads `CSI ? ... h` and `l` with mode 2004 among any
+  others, across parts, and turns off on a full reset or when the program
+  ends. Then it writes `ESC [200~`, the text with each `\n` as `\r`, and
+  `ESC [201~` (`bracketedPaste`), as xterm.js pastes, and nothing after
+  it: no Enter. Otherwise nothing is written, and the answer says why
+  (`gone`, `not-agent`, `not-ready`, `refused`). The window's own
+  terminal view cannot do this, because a session's view exists only once
+  its pane showed.
+- **Sending** (`sendReview`). The dialog shows the message from
+  `prepareReview` and sends that string. Once pasted, the worktree's notes
+  are gone, the dialog closes, a toast says to press Enter in the agent,
+  and its session shows. Any other answer keeps the notes and the dialog,
+  with the reason. Copy review writes the same string to the clipboard and
+  keeps the notes.
+- **Trying it.** In `bun run dev:web`, start Claude Code or Codex in a
+  worktree with changes (the mock agent asks for bracketed paste), note
+  lines in the Changes tab, and Send review: the pretend agent shows the
+  text it was given. `timberMock.pastedInto(id)` lists what each session
+  was given, and `timberMock.printInto(id, "\x1b[?2004l")` turns its
+  bracketed paste off.
+- **Tried with a real agent:** Claude Code only, on Linux, in a bare
+  pseudo terminal outside the app (see [verification](verification.md)).
+  Codex and the app window are not tried. ConPTY on Windows is not tried:
+  whether it passes mode 2004 on and a raw `ESC [200~` through is not
+  known.
+
 ## Ports of a worktree
 
 The workspace header says which `localhost` ports belong to the selected
@@ -2316,7 +2395,8 @@ shows, and coming back shows it as it was.
   worktree, so setup never holds the window (see
   [creating and opening worktrees](#creating-and-opening-worktrees)).
 - **The contract.** `openTerminal`, `listTerminals`, `readTerminal`,
-  `renameTerminal`, `writeTerminal`, `resizeTerminal`, `drawnTerminal`,
+  `renameTerminal`, `writeTerminal`, `pasteTerminal` (see
+  [review notes](#review-notes)), `resizeTerminal`, `drawnTerminal`,
   `closeTerminal`, and the listeners `onTerminalOutput` and
   `onTerminalChanged` on the `Engine`.
   Typing, resizing, and saying what was drawn are RPC messages with no

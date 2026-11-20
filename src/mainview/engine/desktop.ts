@@ -127,6 +127,7 @@ export function createDesktopEngine(): Engine {
 		drawnTerminal: (id, seq) => rpc.send.terminalDrawn({ id, seq }),
 		writeTerminal: (id, data) => rpc.send.writeTerminal({ id, data }),
 		resizeTerminal: (id, cols, rows) => rpc.send.resizeTerminal({ id, cols, rows }),
+		pasteTerminal: (id, text) => rpc.request.pasteTerminal({ id, text }),
 		closeTerminal: id => rpc.request.closeTerminal({ id }),
 		onTerminalOutput: terminalOutput.add,
 		onTerminalChanged: terminalChanges.add,

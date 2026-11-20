@@ -8,7 +8,10 @@ import { type TerminalDependencies, type TerminalSessions, createTerminalSession
 import type { Repository } from "../src/shared/model";
 import { describeSearchPath } from "../src/shared/search-path";
 import { PROBE_ANSWER } from "../src/shared/program-status";
-import { type SessionNaming, type TerminalChange, type TerminalOutput, TERMINAL_UNSUPPORTED_REASON } from "../src/shared/terminal";
+import { PASTE_NOT_READY, type SessionNaming, type TerminalChange, type TerminalOutput, TERMINAL_UNSUPPORTED_REASON, bracketedPaste } from "../src/shared/terminal";
+
+/** A short review as it is pasted. */
+const PASTED = "Review notes\n\nsrc/a.ts:2\n> +x\nFix this.";
 import { until } from "./support/runtime";
 import { git } from "./support/timber";
 
@@ -451,6 +454,10 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 				writeFileSync(script, `#!/bin/sh\nprintf '${name} in %s args' "$(pwd)"\nfor arg in "$@"; do printf ' [%s]' "$arg"; done\necho\nwhile read line; do echo "${name} got $line"; done\n`);
 				chmodSync(script, 0o755);
 			}
+			// Asks for bracketed paste, as Claude Code and Codex do, then prints the bytes of the first paste it is given, in hex.
+			const paster = join(bin, "fake-paster");
+			writeFileSync(paster, `#!/bin/sh\nstty raw -echo\nprintf '\\033[?2004hpaster ready\\r\\n'\nhead -c "$1" | od -An -tx1 | tr -d ' \\n'\nprintf ' done\\r\\n'\nsleep 5\n`);
+			chmodSync(paster, 0o755);
 			return bin;
 		}
 
@@ -458,6 +465,7 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 			{ name: "Claude Code", command: "fake-claude" },
 			{ name: "Codex", command: `fake-codex --model "big one" --sandbox=workspace-write` },
 			{ name: "Missing", command: "no-such-agent --flag" },
+			{ name: "Paster", command: `fake-paster ${bracketedPaste(PASTED).length}` },
 		];
 
 		function startWithAgents(overrides: Partial<TerminalDependencies> = {}): TerminalSessions {
@@ -624,6 +632,43 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 			sessions.write(codex.id, "\x04");
 			expect(await until(() => sessions.list().find(session => session.id === codex.id)?.state.kind === "exited")).toBe(true);
 			expect(sessions.list()[0]!.state).toEqual({ kind: "exited", exitCode: 0, signal: null });
+		});
+
+		describe("pasting a review", () => {
+			test("goes as one bracketed paste, line breaks as carriage returns, and nothing else", async () => {
+				startWithAgents();
+				const paster = await openedAgent("Paster");
+				await seen(paster.id, "paster ready");
+				expect(sessions.paste(paster.id, PASTED)).toEqual({ outcome: "pasted" });
+				await seen(paster.id, " done");
+				const hex = Buffer.from(bracketedPaste(PASTED)).toString("hex");
+				expect(printed(paster.id)).toContain(`${hex} done`);
+				expect(bracketedPaste(PASTED)).toBe("\x1b[200~Review notes\r\rsrc/a.ts:2\r> +x\rFix this.\x1b[201~");
+			});
+
+			test("an agent that has not asked for bracketed paste gets nothing, so no line break can send it early", async () => {
+				startWithAgents();
+				const claude = await openedAgent("Claude Code");
+				await seen(claude.id, "fake-claude in");
+				expect(sessions.paste(claude.id, PASTED)).toEqual({ outcome: "not-ready", message: PASTE_NOT_READY });
+				sessions.write(claude.id, "after\n");
+				await seen(claude.id, "fake-claude got after");
+				expect(printed(claude.id)).not.toContain("got Review");
+			});
+
+			test("text that could end the paste early, a terminal, and a session that is gone get nothing", async () => {
+				startWithAgents();
+				const paster = await openedAgent("Paster");
+				await seen(paster.id, "paster ready");
+				expect(sessions.paste(paster.id, "a\x1b[201~b").outcome).toBe("refused");
+				expect(sessions.paste(paster.id, "  ").outcome).toBe("refused");
+				const opened = await sessions.open({ repository, worktree, cols: 80, rows: 24 });
+				if (opened.outcome !== "opened") throw new Error("No terminal");
+				expect(sessions.paste(opened.session.id, PASTED).outcome).toBe("not-agent");
+				await sessions.close(paster.id);
+				expect(sessions.paste(paster.id, PASTED).outcome).toBe("gone");
+				expect(sessions.paste("no-such-session", PASTED).outcome).toBe("gone");
+			});
 		});
 
 		/** Whether a pretend agent of this temporary folder still runs. */

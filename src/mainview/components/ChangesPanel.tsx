@@ -1,5 +1,7 @@
-import { type KeyboardEvent, useEffect, useId, useRef } from "react";
-import type { DiffSection, FileChange, FileChangeTarget, FileDiffResult } from "../../shared/file-changes";
+import { Fragment, type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import type { Comparison, DiffLine, DiffSection, FileChange, FileChangeTarget, FileDiffResult } from "../../shared/file-changes";
+import { type NoteDraft, type NotedLine, type ReviewNote, chooseNoteLine, notableLine } from "../../shared/review";
+import { InlineNote, NoteForm, ReviewList } from "./ReviewNotes";
 import { sameFileChange } from "../../shared/file-changes";
 import type { Repository, Worktree } from "../../shared/model";
 import {
@@ -83,32 +85,129 @@ function FileList({ view }: { view: ChangesView & { files: readonly FileChange[]
 	);
 }
 
-function Section({ section }: { section: DiffSection }) {
+/** What the diff of one file needs to take notes. */
+interface Noting {
+	worktree: string;
+	comparison: Comparison;
+	file: FileChangeTarget;
+	/** The kept notes on this file in this comparison. */
+	notes: readonly ReviewNote[];
+	draft: NoteDraft | null;
+	/** The first line that can take a note, the one tab stop among the line numbers; the arrows reach the others. */
+	tabStop: { section: number; hunk: number; line: number } | null;
+	/** A line number was chosen: start a note there, or with `extend`, stretch the note being written to it. */
+	choose(section: number, hunk: readonly DiffLine[], hunkIndex: number, line: number, extend: boolean): void;
+	/** What is typed in the note being written, kept with the draft so that stretching it keeps the text. */
+	type(text: string): void;
+	/** Put the draft away, and give the keyboard back to the line it ended on. */
+	close(): void;
+}
+
+/** Names a line number button, so the keyboard can be given back to it. */
+const lineTarget = (section: number, hunk: number, line: number) => `${section}-${hunk}-${line}`;
+
+const sameNotedLine = (noted: NotedLine, line: DiffLine) =>
+	noted.kind === line.kind && noted.text === line.text && noted.oldLine === line.oldLine && noted.newLine === line.newLine;
+
+/** Words for a line, to say what a note goes on. */
+function lineWords(line: DiffLine): string {
+	if (line.newLine !== null) return `line ${line.newLine}`;
+	return `removed line ${line.oldLine}`;
+}
+
+/** The next or previous line number button of the diff, for the arrows. */
+function stepLineTarget(from: HTMLElement, key: string): boolean {
+	if (key !== "ArrowDown" && key !== "ArrowUp") return false;
+	const all = [...(from.closest(".diff-body")?.querySelectorAll<HTMLButtonElement>(".diff-note-target") ?? [])];
+	const at = all.indexOf(from as HTMLButtonElement);
+	const next = all[at + (key === "ArrowDown" ? 1 : -1)];
+	next?.focus();
+	return true;
+}
+
+function Section({ section, index, noting }: { section: DiffSection; index: number; noting: Noting }) {
+	const store = useStore();
+	const { draft } = noting;
 	return (
 		<div className="diff-section">
 			{section.header.length > 0 && (
 				<div className="diff-header">
-					{section.header.map((line, index) => <div key={index}>{line}</div>)}
+					{section.header.map((line, lineIndex) => <div key={lineIndex}>{line}</div>)}
 				</div>
 			)}
-			{section.hunks.map((hunk, index) => (
-				<div key={index} className="diff-hunk">
-					<div className="diff-hunk-header">{hunk.header}</div>
-					{hunk.lines.map((line, lineIndex) => (
-						<div key={lineIndex} className={`diff-line ${line.kind}`}>
-							<span className="diff-number">{line.oldLine ?? ""}</span>
-							<span className="diff-number">{line.newLine ?? ""}</span>
-							<span className="diff-marker" aria-hidden="true">{line.kind === "added" ? "+" : line.kind === "removed" ? "-" : ""}</span>
-							<span className="diff-text">{line.text}</span>
-						</div>
-					))}
-				</div>
-			))}
+			{section.hunks.map((hunk, hunkIndex) => {
+				const drafting = draft !== null && draft.section === index && draft.hunk === hunkIndex;
+				const low = drafting ? Math.min(draft.anchor, draft.end) : -1;
+				const high = drafting ? Math.max(draft.anchor, draft.end) : -1;
+				return (
+					<div key={hunkIndex} className="diff-hunk">
+						<div className="diff-hunk-header">{hunk.header}</div>
+						{hunk.lines.map((line, lineIndex) => {
+							const notable = notableLine(line);
+							const stop = noting.tabStop;
+							const tabStop = stop !== null && stop.section === index && stop.hunk === hunkIndex && stop.line === lineIndex;
+							const here = noting.notes.filter(note => sameNotedLine(note.lines[note.lines.length - 1]!, line));
+							const chosen = drafting && lineIndex >= low && lineIndex <= high;
+							return (
+								<Fragment key={lineIndex}>
+									<div className={`diff-line ${line.kind}${chosen ? " noting" : ""}`}>
+										{notable ? (
+											<button
+												type="button"
+												className="diff-note-target"
+												tabIndex={tabStop ? 0 : -1}
+												data-line={lineTarget(index, hunkIndex, lineIndex)}
+												aria-label={`Add a note on ${lineWords(line)}`}
+												title="Add a note. Shift+click another line of this hunk for a range."
+												onClick={event => noting.choose(index, hunk.lines, hunkIndex, lineIndex, event.shiftKey)}
+												onKeyDown={event => {
+													if (stepLineTarget(event.currentTarget, event.key)) event.preventDefault();
+													else if (event.key === "Enter" && event.shiftKey) {
+														event.preventDefault();
+														noting.choose(index, hunk.lines, hunkIndex, lineIndex, true);
+													}
+												}}
+											>
+												<span className="diff-number">{line.oldLine ?? ""}</span>
+												<span className="diff-number">{line.newLine ?? ""}</span>
+											</button>
+										) : (
+											<>
+												<span className="diff-number">{line.oldLine ?? ""}</span>
+												<span className="diff-number">{line.newLine ?? ""}</span>
+											</>
+										)}
+										<span className="diff-marker" aria-hidden="true">{line.kind === "added" ? "+" : line.kind === "removed" ? "-" : ""}</span>
+										<span className="diff-text">{line.text}</span>
+									</div>
+									{here.map(note => <InlineNote key={note.id} worktree={noting.worktree} note={note} />)}
+									{drafting && lineIndex === high && (
+										<div className="diff-note">
+											<NoteForm
+												label={high > low ? `Note on ${high - low + 1} lines, ending at ${lineWords(line)}` : `Note on ${lineWords(line)}`}
+												initial={draft.text}
+												onChange={noting.type}
+												onSave={text => {
+													// The lines as they showed when chosen, even when the diff was read again since.
+													const problem = store.addReviewNote(noting.worktree, { comparison: noting.comparison, file: noting.file, lines: draft.lines, text });
+													if (problem === null) noting.close();
+													return problem;
+												}}
+												onCancel={noting.close}
+											/>
+										</div>
+									)}
+								</Fragment>
+							);
+						})}
+					</div>
+				);
+			})}
 		</div>
 	);
 }
 
-function DiffBody({ file, result, commit }: { file: FileChange; result: FileDiffResult | null; commit: string | null }) {
+function DiffBody({ file, result, commit, noting }: { file: FileChange; result: FileDiffResult | null; commit: string | null; noting: Noting }) {
 	if (result === null) return <p className="diff-reading" role="status">Reading the diff</p>;
 	if (result.outcome !== "read") {
 		return (
@@ -120,6 +219,15 @@ function DiffBody({ file, result, commit }: { file: FileChange; result: FileDiff
 	}
 	const shown = result.file ?? file;
 	const notice = describeDiffNotice(result.diff, shown, commit);
+	const sections = result.diff.kind === "text" ? result.diff.sections : [];
+	let tabStop: Noting["tabStop"] = null;
+	for (const [section, part] of sections.entries()) {
+		for (const [hunk, { lines }] of part.hunks.entries()) {
+			const line = lines.findIndex(notableLine);
+			if (line >= 0 && tabStop === null) tabStop = { section, hunk, line };
+		}
+	}
+	const withStop = { ...noting, tabStop };
 	return (
 		<>
 			{notice !== null && (
@@ -128,7 +236,7 @@ function DiffBody({ file, result, commit }: { file: FileChange; result: FileDiff
 					<p className="empty-text">{notice.text}</p>
 				</div>
 			)}
-			{result.diff.kind === "text" && result.diff.sections.map((section, index) => <Section key={index} section={section} />)}
+			{result.diff.kind === "text" && result.diff.sections.map((section, index) => <Section key={index} section={section} index={index} noting={withStop} />)}
 		</>
 	);
 }
@@ -152,7 +260,27 @@ function OpenFileButton({ repository, worktree, file }: { repository: string; wo
 
 /** The diff of the selected file, under a line that names it. */
 function DiffPane({ repository, worktree, view }: { repository: string; worktree: Worktree; view: ChangesView }) {
+	const store = useStore();
+	const state = useAppState();
+	const body = useRef<HTMLDivElement>(null);
+	const [draft, setDraft] = useState<NoteDraft | null>(null);
 	const selected = view.selected;
+	const inView = state.noteInView;
+
+	// A note chosen in the Review list comes into view once its file's diff shows.
+	useEffect(() => {
+		if (inView === null || inView.worktree !== worktree.id || view.diff === null) return;
+		const element = body.current?.querySelector<HTMLElement>(`[data-note-id="${CSS.escape(inView.id)}"]`);
+		// An outdated note whose lines left the diff has nowhere to show: the Review list said so.
+		if (!element) {
+			store.reviewNoteShown();
+			return;
+		}
+		element.scrollIntoView({ block: "center" });
+		element.focus();
+		store.reviewNoteShown();
+	}, [inView, view.diff, worktree.id, store]);
+
 	const file = selected === null ? undefined : view.files?.find(candidate => sameFileChange(candidate, selected));
 	if (!file) {
 		return (
@@ -163,6 +291,26 @@ function DiffPane({ repository, worktree, view }: { repository: string; worktree
 	}
 	// A deleted file is not on disk, so there is nothing to open.
 	const onDisk = file.kind !== "deleted";
+	const comparison = view.compared ?? "uncommitted";
+	const noting: Noting = {
+		worktree: worktree.id,
+		comparison,
+		file,
+		notes: (state.reviews[worktree.id] ?? []).filter(note => note.comparison === comparison && sameFileChange(note.file, file)),
+		draft: draft !== null && draft.key === fileKey(file) && draft.comparison === comparison ? draft : null,
+		tabStop: null,
+		choose(section, hunk, hunkIndex, line, extend) {
+			setDraft(chooseNoteLine(noting.draft, { key: fileKey(file), comparison, section, hunk: hunkIndex, line }, hunk, extend));
+		},
+		type: text => setDraft(current => current && { ...current, text }),
+		close() {
+			const ended = noting.draft;
+			setDraft(null);
+			if (ended === null) return;
+			// After the form is gone, the keyboard goes back to the line the note ended on.
+			setTimeout(() => body.current?.querySelector<HTMLElement>(`[data-line="${lineTarget(ended.section, ended.hunk, ended.end)}"]`)?.focus());
+		},
+	};
 	return (
 		<section className="changes-diff" aria-label={`Diff of ${file.path}`}>
 			<div className="diff-title">
@@ -174,8 +322,8 @@ function DiffPane({ repository, worktree, view }: { repository: string; worktree
 				<span className="diff-area">{describeFileArea(file)}</span>
 				{onDisk && <OpenFileButton repository={repository} worktree={worktree} file={file} />}
 			</div>
-			<div className="diff-body" tabIndex={0} aria-label={`Changes of ${file.path}`}>
-				<DiffBody file={file} result={view.diff} commit={view.compared === "base" && view.base?.usable ? view.base.commit : null} />
+			<div className="diff-body" ref={body} tabIndex={0} aria-label={`Changes of ${file.path}`}>
+				<DiffBody file={file} result={view.diff} commit={view.compared === "base" && view.base?.usable ? view.base.commit : null} noting={noting} />
 			</div>
 		</section>
 	);
@@ -259,6 +407,7 @@ export function ChangesPanel({ repository, worktree }: { repository: Repository;
 					)
 					: <FileList view={{ ...view, files }} />)}
 				{view?.more === true && <p className="changes-more">{MORE_FILES_NOTE}</p>}
+				<ReviewList worktree={worktree.id} />
 			</div>
 			{view !== null && <DiffPane repository={repository.path} worktree={worktree} view={view} />}
 		</div>

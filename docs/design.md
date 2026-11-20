@@ -181,6 +181,32 @@ change them here first when they change.
   history), Base is disabled, a quiet line under the switch gives the
   reason, and the tab shows Uncommitted. The choice is remembered for each
   worktree. Comparing with a backup comes later.
+- Review notes: in the Changes tab, clicking a line's numbers (or Enter on
+  them) starts a note on that line, in either comparison, and Shift+click
+  or Shift+Enter on another line of the same hunk makes it a range. A note
+  shows under its lines. Lines without numbers, such as Git's own notes or
+  a conflict's combined diff, and binary or very large files, take no
+  notes. Notes collect in a Review list under the files, with a count on
+  the Changes tab: each shows where it is (`path:line`) and its first line,
+  shows its lines when clicked, and has Edit and Delete. Discard asks
+  first. Nothing is sent while writing.
+- Send review opens a preview of the whole review as one message, exactly
+  as it will be pasted: each note as `path:line` (removed lines say they
+  use the old numbers), the quoted lines with Git's `+` and `-`, and the
+  note. Before the preview the noted files are read again, and a note
+  whose lines changed or left the diff is marked "outdated" and still sent
+  with its old lines. The dialog lists the worktree's running agents, the
+  only one picked, each with its state, and warns when the picked one is
+  waiting for an answer, which the paste would go into. Send pastes the
+  review into the agent's input as one bracketed paste, so line breaks do
+  not submit it, and presses no Enter: the toast says to press Enter there,
+  and the agent's pane shows. An agent that has not turned on bracketed
+  paste gets nothing, with the reason. Text already in the agent's input
+  stays in front of the review. With no agent running, Copy review puts
+  the same text on the clipboard. The notes stay with the worktree, also
+  while another one is selected, until sent or discarded, and go when the
+  worktree leaves the list. They live in the window only: a reload or a
+  quit drops them, since they quote the files. Files are never changed.
 - A repository that was never set up for Timber shows a quiet prompt above
   the tabs: Timber's defaults work, setup is optional, "Set up Timber", and
   "Not now". The button opens the setup wizard: the choices of
