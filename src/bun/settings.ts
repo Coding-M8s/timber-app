@@ -3,6 +3,7 @@ import { copyFile, mkdir, open, readFile, readdir, rename, rm, rmdir } from "nod
 import { homedir } from "node:os";
 import { basename, dirname, join, posix, win32 } from "node:path";
 import { type Settings, emptySettings, parseSettings, serializeSettings } from "../shared/settings";
+import { messageOf } from "../shared/error-message";
 
 type Environment = Record<string, string | undefined>;
 
@@ -31,10 +32,6 @@ export function settingsFilePath(
 	const configured = environment.XDG_CONFIG_HOME;
 	const base = configured && posix.isAbsolute(configured) ? configured : posix.join(home, ".config");
 	return posix.join(base, SETTINGS_FOLDER, SETTINGS_FILE);
-}
-
-function messageOf(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 /**

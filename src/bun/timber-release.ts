@@ -7,6 +7,7 @@ import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { TimberStatus } from "../shared/model";
 import { REQUIRED_TIMBER_VERSION, newerTimberVersion, parseTimberVersion, readReleaseLocation, satisfiesTimberVersion } from "../shared/timber-version";
+import { messageOf } from "../shared/error-message";
 
 /** GitHub redirects this to the tag of the newest release. Read without a login and without the API's rate limit. */
 export const LATEST_RELEASE_URL = "https://github.com/Coding-M8s/timber/releases/latest";
@@ -77,7 +78,7 @@ export function createReleaseWatcher(options: {
 			try {
 				await saveRelease(file, found, now());
 			} catch (error) {
-				warn(`Could not save the newest Timber release to ${file}: ${error instanceof Error ? error.message : String(error)}`);
+				warn(`Could not save the newest Timber release to ${file}: ${messageOf(error)}`);
 			}
 			return changed;
 		},

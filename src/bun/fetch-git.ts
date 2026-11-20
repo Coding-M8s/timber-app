@@ -3,6 +3,7 @@
  * runner of their own, and so the one place that reaches the network is easy
  * to read.
  */
+import { messageOf } from "../shared/error-message";
 
 /** What one run of Git ended with. `exitCode` is null when Git could not start or was stopped. */
 export interface GitRun {
@@ -137,7 +138,7 @@ export function createGitRunner(git = "git", environment: Record<string, string 
 		try {
 			child = Bun.spawn([git, ...args], { stdin: "ignore", stdout: "pipe", stderr: "pipe", env: { ...env, ...extra }, detached: true });
 		} catch (error) {
-			return { exitCode: null, stdout: "", stderr: `Could not start Git: ${error instanceof Error ? error.message : String(error)}`, timedOut: false };
+			return { exitCode: null, stdout: "", stderr: `Could not start Git: ${messageOf(error)}`, timedOut: false };
 		}
 		// The whole group: Git leads its own session, and an SSH it started would otherwise hold the pipes open.
 		const signalGroup = (name: "SIGTERM" | "SIGKILL") => {
@@ -174,7 +175,7 @@ export function createGitRunner(git = "git", environment: Record<string, string 
 			if (signal?.aborted) return { exitCode: null, stdout: "", stderr: "The app stopped Git.", timedOut: false };
 			return { exitCode: child.exitCode, stdout, stderr: stderr.slice(-STDERR_CHARACTERS), timedOut: false };
 		} catch (error) {
-			return { exitCode: null, stdout: "", stderr: error instanceof Error ? error.message : String(error), timedOut };
+			return { exitCode: null, stdout: "", stderr: messageOf(error), timedOut };
 		} finally {
 			clearTimeout(timer);
 			if (cancelKill !== null) clearTimeout(cancelKill);

@@ -4,6 +4,7 @@ import { APP_ISSUE_ARGUMENTS, APP_ISSUE_COMMAND, type IssueLookup, type IssueReq
 import type { TimberStatus } from "../shared/model";
 import { describeTimberStatus } from "./timber";
 import { createRecordCapture } from "./workflows";
+import { messageOf } from "../shared/error-message";
 
 /**
  * Timber stops its own network part after 15 seconds. Finding the worktree
@@ -27,10 +28,6 @@ export interface IssueReaderOptions {
 export interface IssueReader {
 	/** The linked issue of one worktree of a repository from the list. */
 	read(request: IssueRequest): Promise<IssueLookup>;
-}
-
-function messageOf(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 /**

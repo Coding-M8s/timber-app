@@ -6,6 +6,7 @@ import type { Preferences } from "../shared/preferences";
 import { findExecutable, isWindowsBatch } from "./find-executable";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
 import { signalName } from "./signal-name";
+import { messageOf } from "../shared/error-message";
 
 /**
  * How long to wait after starting an editor to hear whether it stopped right
@@ -30,10 +31,6 @@ export interface EditorDependencies {
 /** Opening a worktree in the person's own editor: the main process side of "Open in editor". */
 export interface EditorLauncher {
 	open(request: OpenInEditorRequest): Promise<OpenInEditorResult>;
-}
-
-function messageOf(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 function isFile(path: string): boolean {

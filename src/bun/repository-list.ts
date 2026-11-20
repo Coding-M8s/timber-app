@@ -7,6 +7,7 @@ import { commonDirectory, overrideRepositoryPaths } from "./git-engine";
 import { type RepositoryReader, failedRepository } from "./repository-reader";
 import type { WatchTarget } from "./repository-watcher";
 import { type SettingsHolder, createSettingsHolder } from "./settings";
+import { messageOf } from "../shared/error-message";
 
 export interface RepositoryListOptions {
 	/** The settings file that holds the list. */
@@ -58,10 +59,6 @@ export interface RepositoryList {
 	 * with the override, from the repositories it lists. Read-only.
 	 */
 	watchTargets(): Promise<WatchTarget[]>;
-}
-
-function messageOf(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 function unavailable(path: string): Repository {

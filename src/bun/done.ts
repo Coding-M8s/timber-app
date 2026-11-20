@@ -8,6 +8,7 @@ import {
 import { APPROVAL_FILE_PLACEHOLDER, failureOf } from "../shared/timber-result";
 import { describeTimberStatus } from "./timber";
 import { runTimberWithResultFile } from "./timber-run";
+import { messageOf } from "../shared/error-message";
 
 /** A preview only reads the repository, so anything this slow is stuck. */
 const PREVIEW_TIMEOUT_MS = 30_000;
@@ -46,10 +47,6 @@ interface HeldPreview {
 	repository: string;
 	path: string;
 	expiresAt: number;
-}
-
-function messageOf(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 /**

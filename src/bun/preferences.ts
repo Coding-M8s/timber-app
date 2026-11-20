@@ -1,6 +1,7 @@
 import type { SavePreferencesResult } from "../shared/model";
 import { type Preferences, applyPreferenceChange, defaultPreferences, samePreferences } from "../shared/preferences";
 import type { SettingsHolder } from "./settings";
+import { messageOf } from "../shared/error-message";
 
 /** The preferences part of the settings file: the app's own settings from the Settings dialog. */
 export interface SavedPreferences {
@@ -13,10 +14,6 @@ export interface SavedPreferences {
 	 * so the interface carries on.
 	 */
 	save(change: Partial<Preferences>): Promise<SavePreferencesResult>;
-}
-
-function messageOf(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 export function createSavedPreferences(settings: SettingsHolder): SavedPreferences {

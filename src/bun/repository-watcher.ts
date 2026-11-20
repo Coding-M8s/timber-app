@@ -1,6 +1,7 @@
 import { watch } from "node:fs";
 import { basename, join } from "node:path";
 import { type WatchedArea, isRelevantChange } from "../shared/git-watch";
+import { messageOf } from "../shared/error-message";
 
 /** A repository to watch: its primary checkout, which names it, and its common Git directory. */
 export interface WatchTarget {
@@ -85,10 +86,6 @@ function folderOf(commonDir: string, area: WatchedArea): string {
 function isMissing(error: unknown): boolean {
 	const code = (error as { code?: unknown } | null)?.code;
 	return code === "ENOENT" || code === "ENOTDIR";
-}
-
-function messageOf(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 interface Entry {

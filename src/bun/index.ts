@@ -55,6 +55,7 @@ import { createWorktreeCommands } from "./worktree-commands";
 import { createBackupCommands } from "./backups";
 import { createRepositoryTurns } from "./repository-turns";
 import { createWorkflowReader } from "./workflows";
+import { messageOf } from "../shared/error-message";
 
 const DEV_SERVER_URL = "http://localhost:5173";
 
@@ -154,7 +155,7 @@ const fetcher = createFetcher({
 // Nothing is fetched in the background until the preferences say whether to.
 void preferences.load().then(
 	saved => fetcher.configure(saved.fetch),
-	error => console.warn(`Could not read whether to fetch in the background, so nothing is fetched until Fetch now: ${error instanceof Error ? error.message : String(error)}`),
+	error => console.warn(`Could not read whether to fetch in the background, so nothing is fetched until Fetch now: ${messageOf(error)}`),
 );
 
 /**
@@ -179,7 +180,7 @@ function watchRepositories(): Promise<void> {
 			watcher.sync(watchTargets);
 			fetcher.sync(watchTargets);
 		} catch (error) {
-			console.warn(`Could not read which repositories to watch: ${error instanceof Error ? error.message : String(error)}`);
+			console.warn(`Could not read which repositories to watch: ${messageOf(error)}`);
 		}
 	});
 	return watchSync;
@@ -202,7 +203,7 @@ function tell(what: string, send: () => void): void {
 	try {
 		send();
 	} catch (error) {
-		console.warn(`Could not report ${what} to the window: ${error instanceof Error ? error.message : String(error)}`);
+		console.warn(`Could not report ${what} to the window: ${messageOf(error)}`);
 	}
 }
 
@@ -224,7 +225,7 @@ async function connectWindowsToasts() {
 		return await connectToastHost({ powershell, aumid: APP_IDENTIFIER, displayName: APP_NAME, iconFile: existsSync(icon) ? icon : null, onProblem: warn });
 	} catch (error) {
 		// Electrobun shows the notification instead; this is said at most once a minute (see ./desktop-notices.ts).
-		warn(`${error instanceof Error ? error.message : String(error)}. Using Electrobun's notification instead.`);
+		warn(`${messageOf(error)}. Using Electrobun's notification instead.`);
 		throw error;
 	}
 }
@@ -235,7 +236,7 @@ const desktopNotices = createDesktopNotices({
 		try {
 			Utils.showNotification({ title: notice.title, body: notice.body });
 		} catch (error) {
-			console.warn(`Could not show a notification: ${error instanceof Error ? error.message : String(error)}`);
+			console.warn(`Could not show a notification: ${messageOf(error)}`);
 		}
 	},
 	// The activation token is not handed on: the window is an X11 one under XWayland (see docs/architecture.md).
@@ -515,7 +516,7 @@ function applyZoom(zoom: number): void {
 	try {
 		mainWindow.setPageZoom(zoom);
 	} catch (error) {
-		console.warn(`Could not set the zoom: ${error instanceof Error ? error.message : String(error)}`);
+		console.warn(`Could not set the zoom: ${messageOf(error)}`);
 	}
 }
 applyZoom(startingPreferences.zoom);

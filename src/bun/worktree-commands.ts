@@ -9,6 +9,7 @@ import { type FindRepository, findListedWorktree } from "./listed-worktree";
 import { type RepositoryTurns, createRepositoryTurns } from "./repository-turns";
 import { describeTimberStatus } from "./timber";
 import { runTimberWithResultFile } from "./timber-run";
+import { messageOf } from "../shared/error-message";
 
 export interface WorktreeCommandsOptions {
 	/** Where Timber is, as of the last look (see ./timber.ts). */
@@ -49,10 +50,6 @@ export interface WorktreeCommands {
 	pullRequest(request: CreatePullRequestRequest): Promise<CreatePullRequestResult>;
 	/** The subject of the last commit of a worktree Timber lists, read from Git. Null when there is none or it cannot be read. */
 	headSubject(request: HeadSubjectRequest): Promise<string | null>;
-}
-
-function messageOf(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 /** A failure from before any command ran. Nothing was changed. */

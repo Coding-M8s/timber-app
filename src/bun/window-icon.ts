@@ -1,5 +1,6 @@
 import { FFIType, type Pointer, dlopen } from "bun:ffi";
 import { dirname, join } from "node:path";
+import { messageOf } from "../shared/error-message";
 
 /*
  * Electrobun 2.0.6 gives a window no icon on Windows: its `setWindowIcon` is
@@ -68,6 +69,6 @@ export function applyWindowIcon(window: Pointer | null, execPath = process.execP
 		const problem = setWindowIcon(window, windowIconFile(execPath));
 		if (problem !== null) console.warn(problem);
 	} catch (error) {
-		console.warn(`Could not set the window icon: ${error instanceof Error ? error.message : String(error)}`);
+		console.warn(`Could not set the window icon: ${messageOf(error)}`);
 	}
 }

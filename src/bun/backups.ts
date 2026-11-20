@@ -9,6 +9,7 @@ import { type RepositoryTurns, createRepositoryTurns } from "./repository-turns"
 import { describeTimberStatus } from "./timber";
 import { runTimberWithResultFile } from "./timber-run";
 import { createRecordCapture } from "./workflows";
+import { messageOf } from "../shared/error-message";
 
 /**
  * Timber reads its backup storage and each backup's manifest, which is
@@ -47,10 +48,6 @@ export interface BackupCommands {
 	restore(request: BackupRestoreRequest): Promise<BackupRestoreResult>;
 	/** `timber __app-backup delete`, in the repository's turn. */
 	remove(request: BackupDeleteRequest): Promise<BackupDeleteResult>;
-}
-
-function messageOf(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 /**

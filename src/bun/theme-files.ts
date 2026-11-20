@@ -8,6 +8,7 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { readTheme } from "../shared/theme";
 import { type ExportThemeResult, type ImportThemeResult, MAX_THEME_FILE_BYTES, readThemeFile, themeFileName, themeFileText } from "../shared/theme-file";
+import { messageOf } from "../shared/error-message";
 
 export interface ThemeFileOptions {
 	/** The system's folder picker. Null when it was closed without a choice. */
@@ -19,10 +20,6 @@ export interface ThemeFileOptions {
 export interface ThemeFiles {
 	exportTheme(theme: unknown): Promise<ExportThemeResult>;
 	importTheme(): Promise<ImportThemeResult>;
-}
-
-function messageOf(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 export function createThemeFiles({ pickFolder, pickFile }: ThemeFileOptions): ThemeFiles {

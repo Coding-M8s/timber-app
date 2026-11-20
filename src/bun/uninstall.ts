@@ -1,6 +1,7 @@
 import { lstat, readFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { UNINSTALL_ARGUMENTS, type UninstallPlan, type UninstallRequest, type UninstallResult, parseInstallRecord, uninstallTargets } from "../shared/uninstall";
+import { messageOf } from "../shared/error-message";
 
 /**
  * Uninstalling the app from inside the app.
@@ -49,10 +50,6 @@ export interface Uninstaller {
 	plan(): Promise<UninstallPlan>;
 	/** Run the uninstaller, forget the settings when asked, and quit. Runs at most once at a time. */
 	uninstall(request: UninstallRequest): Promise<UninstallResult>;
-}
-
-function messageOf(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 /** The folder of an install, given the executable that runs the app from it. Null when it does not run from an install. */

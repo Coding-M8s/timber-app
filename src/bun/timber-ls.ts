@@ -1,11 +1,8 @@
 import { TIMBER_LS_ARGUMENTS, TIMBER_LS_COMMAND, type TimberListing, readTimberListing } from "../shared/timber-ls";
+import { messageOf } from "../shared/error-message";
 
 /** Listing is offline and takes well under a second, so anything this slow is stuck. */
 const LIST_TIMEOUT_MS = 10_000;
-
-function messageOf(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
 
 /**
  * Run `timber ls --json` with `folder` as the working directory and read its
