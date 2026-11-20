@@ -1830,11 +1830,22 @@ version gate of its own.
   start a second one. The tab calls `startPullRequestForm` each time it
   shows the worktree. The first call starts the form: Title as the branch,
   then the last commit's subject once `readHeadSubject` answers, unless
-  something was typed first. A later call whose worktree has a new head
-  reads the subject again, under the same condition, so a form started
-  before the branch had a commit of its own does not keep the base's
-  subject. A form whose worktree left the list is forgotten when the list is
-  read again, so one made again at that path starts afresh. Base as `initialPullRequestBase` of the
+  something was typed first. `defaultPullRequestTitle` in
+  `src/mainview/pull-request-create-format.ts` puts the key of a saved Jira
+  or Linear link (`titleKeyOf`) first, as `PROJ-123: subject`, unless the
+  title already starts with that key in any case, maybe after one `[` or
+  `(`. A GitHub link, no link, or invalid metadata adds nothing, and the
+  app never guesses a key from the branch name. A later call whose worktree
+  has a new head reads the subject again, under the same condition, so a
+  form started before the branch had a commit of its own does not keep the
+  base's subject. A subject read for an older head is dropped, and a read
+  that answers null leaves the title as it is. A later call whose link
+  gives another key than the form's `titleKey`, because a link was
+  attached, changed, or removed, makes the title again at once from the
+  form's last read `subject`, under the same condition, without reading.
+  A read that answers later uses the form's key as it is then. A form
+  whose worktree left the list is forgotten when the list is read again,
+  so one made again at that path starts afresh. Base as `initialPullRequestBase` of the
   saved base, which gives `<remote>/<branch>` for a saved
   `refs/remotes/<remote>/<branch>` and nothing for a saved local branch,
   none, or invalid metadata, since `timber pr --base` refuses a local
@@ -1846,8 +1857,8 @@ version gate of its own.
   worktree Timber lists in a repository from the list (`findListedWorktree`)
   it runs `git -C <worktree> log -1 --format=%s HEAD --` without optional
   locks (`readHeadSubject` in `src/bun/git-engine.ts`), and answers null for
-  anything else, a branch with no commit, or an empty subject. It changes
-  nothing.
+  anything else, a branch with no commit, an empty subject, or when Git
+  could not answer. It changes nothing.
 - **One source for the command.** `prResultArguments` in
   `src/shared/timber-pr.ts` builds `pr --title <text> [--body <text>]
   [--base <ref>] [--draft] --result-file <path> -- <registered path>`. Each

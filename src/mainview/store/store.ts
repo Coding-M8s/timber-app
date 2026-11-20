@@ -27,7 +27,7 @@ import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberS
 import type { DoneApplyRequest, DoneApplyResult, DonePreview, DonePreviewRequest, DonePreviewResult } from "../../shared/timber-done";
 import type { RebaseRequest, RebaseResult } from "../../shared/timber-rebase";
 import { type CreatePullRequestResult, initialPullRequestBase, pullRequestBaseFromText } from "../../shared/timber-pr";
-import { type PullRequestFields, defaultPullRequestTitle, presentPullRequestCreation } from "../pull-request-create-format";
+import { type PullRequestFields, defaultPullRequestTitle, presentPullRequestCreation, pullRequestTitleWithKey, titleKeyOf } from "../pull-request-create-format";
 import type { WorkflowList } from "../../shared/workflows";
 import type { IssueTrackers } from "../../shared/issue-trackers";
 import { type Draw, createTerminalFeed } from "../terminal-feed";
@@ -1718,7 +1718,12 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		if (kept.length !== forms.length) update({ pullRequestForms: Object.fromEntries(kept) });
 	}
 
-	/** Put the last commit's subject in the title, unless the person typed one or Timber runs. Read for `head`, which a later commit replaces. */
+	/**
+	 * Put the last commit's subject in the title, with the form's issue key as
+	 * it is when the read answers, unless the person typed one or Timber runs.
+	 * Read for `head`, which a later commit replaces. No answer, which is also
+	 * what a failed read gives, leaves the title as it is.
+	 */
 	function readTitle(repository: string, worktree: Worktree): void {
 		void (async () => {
 			let subject: string | null;
@@ -1728,15 +1733,21 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				subject = null;
 			}
 			const now = state.pullRequestForms[worktree.id];
-			if (subject !== null && now && now.head === worktree.head && !now.titleEdited && !now.running) changeForm(worktree.id, { title: defaultPullRequestTitle(subject, worktree.branch) });
+			if (subject !== null && now && now.head === worktree.head && !now.titleEdited && !now.running) {
+				changeForm(worktree.id, { subject, title: pullRequestTitleWithKey(subject, worktree.branch, now.titleKey) });
+			}
 		})();
 	}
 
 	function startPullRequestForm(repository: string, worktree: Worktree): void {
 		const existing = state.pullRequestForms[worktree.id];
 		if (existing) {
-			// A new commit since the title was read: its subject is the better title, unless one was typed.
-			if (existing.head !== worktree.head && !existing.titleEdited && !existing.running) {
+			if (existing.titleEdited || existing.running) return;
+			// A link attached, changed, or removed: make the title again at once from the subject already read.
+			const key = titleKeyOf(worktree.issue);
+			if (existing.titleKey !== key) changeForm(worktree.id, { titleKey: key, title: pullRequestTitleWithKey(existing.subject, worktree.branch, key) });
+			// A new commit since the title was read: its subject is the better title.
+			if (existing.head !== worktree.head) {
 				changeForm(worktree.id, { head: worktree.head });
 				readTitle(repository, worktree);
 			}
@@ -1746,7 +1757,9 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			repository,
 			worktree: worktree.path,
 			head: worktree.head,
-			title: defaultPullRequestTitle(null, worktree.branch),
+			titleKey: titleKeyOf(worktree.issue),
+			subject: null,
+			title: defaultPullRequestTitle(null, worktree.branch, worktree.issue),
 			titleEdited: false,
 			body: "",
 			base: initialPullRequestBase(worktree.base),
