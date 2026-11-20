@@ -107,6 +107,7 @@ export function serializeSettings(settings: Settings): string {
 		sidebarWidth: settings.layout.sidebarWidth,
 		collapsed: [...settings.layout.collapsed],
 		setupDismissed: [...settings.layout.setupDismissed],
+		uncommittedChanges: [...settings.layout.uncommittedChanges],
 	};
 	const preferences = settings.preferences && writePreferences(settings.preferences);
 	const forcePushes = settings.forcePushes && Object.keys(settings.forcePushes).length > 0 ? readForcePushMarks(settings.forcePushes) : null;

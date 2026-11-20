@@ -2,15 +2,16 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import {
-	MORE_FILES_NOTE, describeDiffNotice, describeFileCounts, diffCommand, fileAfterKey, groupFileChanges, listedOrder, splitPath,
+	MORE_FILES_NOTE, baseUnavailable, describeComparison, describeDiffNotice, describeFileArea, describeFileCounts, describeNoChanges, diffCommand, fileAfterKey, groupFileChanges, listedOrder, splitPath,
 } from "../src/mainview/changes-format";
 import { FOLDER_MISSING_CHANGES } from "../src/mainview/components/ChangesPanel";
 import { browserSampleRepositories, createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
-import { GALLERY_WORKTREE, type MockFileChange, sampleNewFilePatch, samplePatch } from "../src/mainview/engine/mock-file-changes";
+import { GALLERY_WORKTREE, MOCK_BRANCH_POINT, type MockFileChange, sampleNewFilePatch, samplePatch } from "../src/mainview/engine/mock-file-changes";
 import { createAppStore } from "../src/mainview/store/store";
 import type { Engine } from "../src/shared/engine";
-import type { FileChange, FileChangesResult, FileDiffResult } from "../src/shared/file-changes";
+import type { Comparison, FileChange, FileChangesResult, FileDiffResult } from "../src/shared/file-changes";
 import type { Repository } from "../src/shared/model";
+import { defaultLayout } from "../src/shared/layout";
 
 const settle = () => Bun.sleep(0);
 const TIMBER = "/work/timber";
@@ -36,12 +37,19 @@ const render = (store: ReturnType<typeof createAppStore>) => renderToStaticMarku
 /** Text as React writes it into markup. */
 const escaped = (text: string) => text.replaceAll("&", "&amp;").replaceAll("'", "&#x27;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
+/** A mock engine on which FEATURE's Changes tab was set to Uncommitted, as a person would. */
+async function uncommittedEngine() {
+	const engine = createMockEngine();
+	await engine.saveLayout({ ...defaultLayout(), uncommittedChanges: [FEATURE.id] });
+	return engine;
+}
+
 const file = (area: FileChange["area"], kind: FileChange["kind"], path: string, previousPath: string | null = null): FileChange => ({ area, kind, path, previousPath });
 const mock = (change: FileChange, patch = samplePatch(change.path)): MockFileChange => ({ change, patch });
 
 describe("the store's Changes view", () => {
 	test("reads the files, selects the first one as listed, and reads its diff", async () => {
-		const engine = createMockEngine();
+		const engine = await uncommittedEngine();
 		engine.setFileChanges(FEATURE.path, [
 			mock(file("unstaged", "modified", "b.ts")),
 			mock(file("staged", "added", "a.ts"), sampleNewFilePatch("a.ts")),
@@ -57,7 +65,7 @@ describe("the store's Changes view", () => {
 	});
 
 	test("keeps the selected file across reads while it is listed, and moves to the first when it is gone", async () => {
-		const engine = createMockEngine();
+		const engine = await uncommittedEngine();
 		const a = mock(file("unstaged", "modified", "a.ts"));
 		const b = mock(file("unstaged", "modified", "b.ts"));
 		engine.setFileChanges(FEATURE.path, [a, b]);
@@ -84,7 +92,7 @@ describe("the store's Changes view", () => {
 	});
 
 	test("ignores a file that is not in the list", async () => {
-		const engine = createMockEngine();
+		const engine = await uncommittedEngine();
 		engine.setFileChanges(FEATURE.path, [mock(file("unstaged", "modified", "a.ts"))]);
 		const store = await started(engine);
 		await store.readChanges(TIMBER, FEATURE.id);
@@ -94,7 +102,7 @@ describe("the store's Changes view", () => {
 	});
 
 	test("a failed read keeps the last good list beside the reason, until a read works", async () => {
-		const engine = createMockEngine();
+		const engine = await uncommittedEngine();
 		engine.setFileChanges(FEATURE.path, [mock(file("unstaged", "modified", "a.ts"))]);
 		const store = await started(engine);
 		await store.readChanges(TIMBER, FEATURE.id);
@@ -131,9 +139,9 @@ describe("the store's Changes view", () => {
 		const first = store.readChanges(TIMBER, FEATURE.id);
 		const second = store.readChanges(TIMBER, FEATURE.id);
 		await settle();
-		pending[1]!({ outcome: "read", files: [file("unstaged", "modified", "new.ts")], more: false });
+		pending[1]!({ outcome: "read", files: [file("unstaged", "modified", "new.ts")], more: false, compared: "uncommitted", base: { usable: false, reason: "No base." } });
 		await settle();
-		pending[0]!({ outcome: "read", files: [file("unstaged", "modified", "old.ts")], more: false });
+		pending[0]!({ outcome: "read", files: [file("unstaged", "modified", "old.ts")], more: false, compared: "uncommitted", base: { usable: false, reason: "No base." } });
 		await first;
 		expect(store.getState().changes?.files?.map(entry => entry.path)).toEqual(["new.ts"]);
 
@@ -143,19 +151,21 @@ describe("the store's Changes view", () => {
 		diffs[0]!({ outcome: "read", file: file("unstaged", "modified", "new.ts"), diff: { kind: "binary" } });
 		await second;
 		expect(store.getState().changes).toMatchObject({ worktree: main.id, diff: null });
-		pending[2]!({ outcome: "read", files: [], more: false });
+		pending[2]!({ outcome: "read", files: [], more: false, compared: "uncommitted", base: { usable: false, reason: "No base." } });
 		await third;
 		expect(store.getState().changes).toMatchObject({ worktree: main.id, files: [] });
 	});
 });
 
 describe("the Changes tab", () => {
-	async function gallery() {
+	/** The gallery worktree's Changes tab, comparing as asked: Uncommitted unless a test says otherwise. */
+	async function gallery(compare: Comparison = "uncommitted") {
 		const store = await started();
 		const { repository, worktree } = find(store.getState().repositories, GALLERY_WORKTREE);
 		store.select(worktree.id);
 		store.showTab("changes");
 		await store.readChanges(repository.path, worktree.id);
+		await store.compareChanges(compare);
 		return store;
 	}
 
@@ -247,7 +257,7 @@ describe("the Changes tab", () => {
 	});
 
 	test("says when only some files are listed", async () => {
-		const engine = createMockEngine();
+		const engine = await uncommittedEngine();
 		engine.setFileChanges(FEATURE.path, Array.from({ length: 5001 }, (_, index) => mock(file("unstaged", "untracked", `n/${index}.ts`), sampleNewFilePatch(`n/${index}.ts`))));
 		const store = await started(engine);
 		store.select(FEATURE.id);
@@ -302,5 +312,104 @@ describe("words and keys of the Changes tab", () => {
 		expect(describeDiffNotice({ kind: "text", sections: [] }, modified)?.title).toBe("No line changes");
 		expect(describeDiffNotice({ kind: "too-large", lines: null }, modified)?.text).toBe("It is more than 512 KiB. Run git diff -- a.ts in a terminal to see it.");
 		expect(describeDiffNotice({ kind: "unchanged" }, modified)?.title).toBe("No longer changed");
+	});
+});
+
+describe("comparing with the base", () => {
+	const MAIN = sampleRepositories[0]!.worktrees[0]!;
+
+	test("a worktree with a saved base compares with it first, committed work included", async () => {
+		const engine = createMockEngine();
+		engine.setFileChanges(FEATURE.path, [
+			mock(file("base", "modified", "committed.ts")),
+			mock(file("staged", "added", "a.ts"), sampleNewFilePatch("a.ts")),
+			mock(file("unstaged", "modified", "a.ts")),
+			mock(file("unstaged", "untracked", "n.ts"), sampleNewFilePatch("n.ts")),
+		]);
+		const store = await started(engine);
+		await store.readChanges(TIMBER, FEATURE.id);
+		const view = store.getState().changes!;
+		expect(view.compared).toBe("base");
+		expect(view.base).toEqual({ usable: true, ref: "refs/remotes/origin/main", name: "origin/main", commit: MOCK_BRANCH_POINT });
+		expect(view.files?.map(entry => `${entry.area} ${entry.kind} ${entry.path}`)).toEqual(["base modified committed.ts", "base added a.ts", "untracked untracked n.ts"]);
+		expect(view.selected).toEqual({ area: "base", path: "committed.ts", previousPath: null });
+		expect(view.diff?.outcome === "read" && view.diff.file?.path).toBe("committed.ts");
+	});
+
+	test("choosing Uncommitted reads that list afresh, and is remembered for the worktree after a restart", async () => {
+		const engine = createMockEngine();
+		engine.setFileChanges(FEATURE.path, [mock(file("base", "modified", "committed.ts")), mock(file("unstaged", "modified", "b.ts"))]);
+		const store = await started(engine);
+		await store.readChanges(TIMBER, FEATURE.id);
+		await store.compareChanges("uncommitted");
+		expect(store.getState().changes).toMatchObject({ compared: "uncommitted", files: [file("unstaged", "modified", "b.ts")], selected: { path: "b.ts" } });
+		expect(store.getState().layout.uncommittedChanges).toEqual([FEATURE.id]);
+		await settle();
+		expect((await engine.loadLayout()).uncommittedChanges).toEqual([FEATURE.id]);
+
+		const again = await started(engine);
+		await again.readChanges(TIMBER, FEATURE.id);
+		expect(again.getState().changes?.compared).toBe("uncommitted");
+		// Another worktree keeps comparing with its base.
+		await again.compareChanges("base");
+		expect(again.getState().changes?.compared).toBe("base");
+		expect(again.getState().layout.uncommittedChanges).toEqual([]);
+	});
+
+	test("a worktree with no saved base shows Uncommitted, with Base disabled and the reason", async () => {
+		const store = await started();
+		store.select(MAIN.id);
+		store.showTab("changes");
+		await store.readChanges(TIMBER, MAIN.id);
+		expect(store.getState().changes).toMatchObject({ compared: "uncommitted", base: { usable: false, reason: "Timber has no base saved for this worktree." }, problem: null });
+		await store.compareChanges("base");
+		expect(store.getState().changes).toMatchObject({ compared: "uncommitted", problem: null });
+		const markup = render(store);
+		expect(markup).toContain("Base is not available: Timber has no base saved for this worktree.");
+		expect(markup).toMatch(/<input class="mode-radio" type="radio" disabled="" name="[^"]*"\/><span class="mode-label">Base<\/span>/);
+		expect(markup).toMatch(/<input class="mode-radio" type="radio" name="[^"]*" checked=""\/><span class="mode-label">Uncommitted<\/span>/);
+		expect(markup).toContain("This worktree matches its last commit.");
+	});
+
+	test("the gallery lists conflicts, changed, and untracked files, under a header that names the base and the branch point", async () => {
+		const store = await started();
+		const { repository, worktree } = find(store.getState().repositories, GALLERY_WORKTREE);
+		store.select(worktree.id);
+		store.showTab("changes");
+		await store.readChanges(repository.path, worktree.id);
+		const markup = render(store);
+		const titles = [...markup.matchAll(/<h2 class="change-group-title">([^<]+)<span class="change-group-count">(\d+)<\/span><\/h2>/g)].map(match => `${match[1]} ${match[2]}`);
+		expect(titles).toEqual(["Merge conflicts 1", "Changed 12", "Untracked 5"]);
+		expect(markup).toContain(`>origin/main @ ${MOCK_BRANCH_POINT.slice(0, 7)}</span>`);
+		expect(markup).toContain('aria-label="src/tax/report.ts, Modified, Changed"');
+		expect(markup).not.toContain("Base is not available");
+
+		await store.selectChangedFile(file("base", "modified", "src/generated/rows.ts"));
+		const large = render(store);
+		expect(large).toContain("Modified since the base");
+		expect(large).toContain(`Run git diff ${MOCK_BRANCH_POINT} -- src/generated/rows.ts in a terminal to see it.`);
+	});
+});
+
+describe("words of comparing with the base", () => {
+	const usable = { usable: true as const, ref: "refs/remotes/origin/main", name: "origin/main", commit: MOCK_BRANCH_POINT };
+
+	test("the header names the base and the branch point, or the last commit", () => {
+		expect(describeComparison("base", usable).text).toBe("origin/main @ a1b2c3d");
+		expect(describeComparison("uncommitted", usable).text).toBe("Last commit");
+		expect(describeComparison("base", { usable: false, reason: "No base." }).text).toBe("Last commit");
+		expect(baseUnavailable(usable)).toBeNull();
+		expect(baseUnavailable(null)).toBeNull();
+		expect(baseUnavailable({ usable: false, reason: "Timber has no base saved for this worktree." })).toBe("Base is not available: Timber has no base saved for this worktree.");
+	});
+
+	test("counts, commands, and the empty list speak of the base", () => {
+		expect(describeFileCounts([file("base", "modified", "a.ts"), file("untracked", "untracked", "n.ts"), file("conflicted", "conflicted", "c.ts")], false)).toBe("1 conflicted, 1 changed, 1 untracked");
+		expect(diffCommand(file("base", "renamed", "new.ts", "old.ts"), MOCK_BRANCH_POINT)).toBe(`git diff ${MOCK_BRANCH_POINT} -- old.ts new.ts`);
+		expect(diffCommand(file("untracked", "untracked", "n.ts"), MOCK_BRANCH_POINT)).toBe("git diff --no-index -- /dev/null n.ts");
+		expect(describeNoChanges("base", usable)).toBe("This branch matches origin/main at a1b2c3d, where it started. Nothing is untracked.");
+		expect(describeFileArea(file("base", "deleted", "a.ts"))).toBe("Deleted since the base");
+		expect(describeFileArea(file("untracked", "untracked", "a.ts"))).toBe("Untracked");
+		expect(describeFileArea(file("staged", "added", "a.ts"))).toBe("Added, staged");
 	});
 });

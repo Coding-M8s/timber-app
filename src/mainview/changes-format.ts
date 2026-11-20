@@ -1,19 +1,80 @@
 import { describeCommandLine } from "../shared/command-line";
-import { type ChangeArea, type ChangeKind, type FileChange, type FileChangeTarget, type FileDiff, MAX_DIFF_BYTES, MAX_DIFF_LINES, MAX_LISTED_FILES, sameFileChange } from "../shared/file-changes";
+import {
+	type BaseComparison, type ChangeArea, type ChangeKind, type Comparison, type FileChange, type FileChangeTarget, type FileDiff, MAX_DIFF_BYTES, MAX_DIFF_LINES, MAX_LISTED_FILES, sameFileChange,
+} from "../shared/file-changes";
 
 /**
  * Words and keyboard rules of the Changes tab. Pure, so they can be tested
  * without a window.
  */
 
-/** The groups of the list, in the order they show. Conflicts come first: they block a commit. */
-export const AREA_ORDER: readonly ChangeArea[] = ["conflicted", "staged", "unstaged"];
+/**
+ * The groups of the list, in the order they show. Conflicts come first: they
+ * block a commit. Comparing with the last commit lists staged and unstaged
+ * files, comparing with the base lists changed and untracked ones.
+ */
+export const AREA_ORDER: readonly ChangeArea[] = ["conflicted", "staged", "unstaged", "base", "untracked"];
 
 export const AREA_TITLES: Record<ChangeArea, string> = {
 	conflicted: "Merge conflicts",
 	staged: "Staged",
 	unstaged: "Unstaged",
+	base: "Changed",
+	untracked: "Untracked",
 };
+
+/** How the heading counts the files of each group, such as "2 staged". */
+const AREA_COUNTS: Record<ChangeArea, string> = {
+	conflicted: "conflicted",
+	staged: "staged",
+	unstaged: "unstaged",
+	base: "changed",
+	untracked: "untracked",
+};
+
+/** The choices of the "Compare with" switch, in order. */
+export const COMPARISONS: readonly Comparison[] = ["base", "uncommitted"];
+
+export const COMPARISON_LABELS: Record<Comparison, string> = {
+	base: "Base",
+	uncommitted: "Uncommitted",
+};
+
+/** A commit as the list's header and the commands show it. */
+export const shortCommit = (commit: string) => commit.slice(0, 7);
+
+/**
+ * What the list's header says is compared, such as `origin/main @ a1b2c3d`,
+ * with a sentence for its tooltip. `compared` is the comparison the files
+ * came from.
+ */
+export function describeComparison(compared: Comparison, base: BaseComparison | null): { text: string; title: string } {
+	if (compared === "base" && base?.usable) {
+		return {
+			text: `${base.name} @ ${shortCommit(base.commit)}`,
+			title: `Everything this branch changed since it left ${base.name} at ${shortCommit(base.commit)}, committed or not. Later commits on ${base.name} are left out.`,
+		};
+	}
+	return { text: "Last commit", title: "What changed since the last commit: staged, unstaged, and untracked files." };
+}
+
+/** Why Base cannot be chosen, or null when it can, or before the first read answered. */
+export function baseUnavailable(base: BaseComparison | null): string | null {
+	return base !== null && !base.usable ? `Base is not available: ${base.reason}` : null;
+}
+
+/** What the tab says when nothing changed. */
+export function describeNoChanges(compared: Comparison, base: BaseComparison | null): string {
+	if (compared === "base" && base?.usable) return `This branch matches ${base.name} at ${shortCommit(base.commit)}, where it started. Nothing is untracked.`;
+	return "This worktree matches its last commit. Nothing is staged or untracked.";
+}
+
+/** The words beside the diff's file name: the kind, and the group unless the kind already says it. */
+export function describeFileArea(file: Pick<FileChange, "area" | "kind">): string {
+	if (file.area === "conflicted" || file.area === "untracked") return KIND_LABELS[file.kind];
+	if (file.area === "base") return `${KIND_LABELS[file.kind]} since the base`;
+	return `${KIND_LABELS[file.kind]}, ${AREA_TITLES[file.area].toLowerCase()}`;
+}
 
 /** The letter beside a file, as Git and VS Code show it. */
 export const KIND_LETTERS: Record<ChangeKind, string> = {
@@ -64,7 +125,7 @@ export function splitPath(path: string): { name: string; folder: string } {
 /** What the list's heading says about the files, such as "2 staged, 5 unstaged". */
 export function describeFileCounts(files: readonly FileChange[], more: boolean): string {
 	if (files.length === 0) return "No changes";
-	const parts = groupFileChanges(files).map(group => `${group.files.length} ${group.area === "conflicted" ? "conflicted" : group.area}`);
+	const parts = groupFileChanges(files).map(group => `${group.files.length} ${AREA_COUNTS[group.area]}`);
 	return more ? `${parts.join(", ")}, and more` : parts.join(", ");
 }
 
@@ -88,15 +149,19 @@ export function fileAfterKey(order: readonly FileChange[], current: FileChangeTa
 	}
 }
 
-/** The Git command that shows the same diff in a terminal. Only for showing. */
-export function diffCommand(file: Pick<FileChange, "area" | "kind" | "path" | "previousPath">): string {
+/**
+ * The Git command that shows the same diff in a terminal. Only for showing.
+ * A file changed since the base needs the branch point, `commit`.
+ */
+export function diffCommand(file: Pick<FileChange, "area" | "kind" | "path" | "previousPath">, commit: string | null = null): string {
 	if (file.kind === "untracked") return describeCommandLine(["git", "diff", "--no-index", "--", "/dev/null", file.path]);
 	const paths = file.previousPath === null ? [file.path] : [file.previousPath, file.path];
-	return describeCommandLine(["git", "diff", ...(file.area === "staged" ? ["--cached"] : []), "--", ...paths]);
+	const against = file.area === "staged" ? ["--cached"] : file.area === "base" && commit !== null ? [commit] : [];
+	return describeCommandLine(["git", "diff", ...against, "--", ...paths]);
 }
 
-/** What shows in place of a diff that has no lines to draw. Null for a diff with lines. */
-export function describeDiffNotice(diff: FileDiff, file: FileChange): { title: string; text: string } | null {
+/** What shows in place of a diff that has no lines to draw. Null for a diff with lines. `commit` is the branch point, as for `diffCommand`. */
+export function describeDiffNotice(diff: FileDiff, file: FileChange, commit: string | null = null): { title: string; text: string } | null {
 	switch (diff.kind) {
 		case "binary":
 			return { title: "Binary file", text: "Git treats this file as binary, so there are no lines to compare. Open it in your editor to look at it." };
@@ -104,7 +169,7 @@ export function describeDiffNotice(diff: FileDiff, file: FileChange): { title: s
 			const size = diff.lines === null
 				? `more than ${Math.round(MAX_DIFF_BYTES / 1024)} KiB`
 				: `${diff.lines.toLocaleString("en-US")} lines, more than ${MAX_DIFF_LINES.toLocaleString("en-US")}`;
-			return { title: "This diff is too large to show", text: `It is ${size}. Run ${diffCommand(file)} in a terminal to see it.` };
+			return { title: "This diff is too large to show", text: `It is ${size}. Run ${diffCommand(file, commit)} in a terminal to see it.` };
 		}
 		case "unchanged":
 			return { title: "No longer changed", text: "This file has no changes here any more. The list updates with the worktree." };

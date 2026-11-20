@@ -1,3 +1,5 @@
+import type { Comparison } from "./file-changes";
+
 /**
  * How the person arranged the window: the part of the layout that is
  * remembered between runs. Everything here is pure.
@@ -13,6 +15,12 @@ export interface Layout {
 	 * in Settings > Repository, or with `timber setup` in a terminal.
 	 */
 	setupDismissed: string[];
+	/**
+	 * The worktrees, each named by its identity (`Worktree.id`), whose Changes
+	 * tab the person set to Uncommitted. Every other worktree compares with
+	 * its base when it can.
+	 */
+	uncommittedChanges: string[];
 }
 
 export const DEFAULT_SIDEBAR_WIDTH = 272;
@@ -20,7 +28,7 @@ export const MIN_SIDEBAR_WIDTH = 200;
 export const MAX_SIDEBAR_WIDTH = 480;
 
 export function defaultLayout(): Layout {
-	return { sidebarWidth: DEFAULT_SIDEBAR_WIDTH, collapsed: [], setupDismissed: [] };
+	return { sidebarWidth: DEFAULT_SIDEBAR_WIDTH, collapsed: [], setupDismissed: [], uncommittedChanges: [] };
 }
 
 /** A whole number of pixels within the limits. Anything that is not a number gives the default width. */
@@ -37,10 +45,11 @@ export function clampSidebarWidth(width: number): number {
 export function readLayout(value: unknown): Layout {
 	const layout = defaultLayout();
 	if (typeof value !== "object" || value === null || Array.isArray(value)) return layout;
-	const { sidebarWidth, collapsed, setupDismissed } = value as Record<string, unknown>;
+	const { sidebarWidth, collapsed, setupDismissed, uncommittedChanges } = value as Record<string, unknown>;
 	if (typeof sidebarWidth === "number") layout.sidebarWidth = clampSidebarWidth(sidebarWidth);
 	layout.collapsed = readPaths(collapsed);
 	layout.setupDismissed = readPaths(setupDismissed);
+	layout.uncommittedChanges = readPaths(uncommittedChanges);
 	return layout;
 }
 
@@ -60,7 +69,22 @@ const samePaths = (one: readonly string[], other: readonly string[]) =>
 export function sameLayout(one: Layout, other: Layout): boolean {
 	return one.sidebarWidth === other.sidebarWidth
 		&& samePaths(one.collapsed, other.collapsed)
-		&& samePaths(one.setupDismissed, other.setupDismissed);
+		&& samePaths(one.setupDismissed, other.setupDismissed)
+		&& samePaths(one.uncommittedChanges, other.uncommittedChanges);
+}
+
+/** What the Changes tab of a worktree asks to compare with: its base, unless the person chose Uncommitted there. */
+export function chosenComparison(layout: Layout, worktree: string): Comparison {
+	return layout.uncommittedChanges.includes(worktree) ? "uncommitted" : "base";
+}
+
+/** The layout with this comparison remembered for the worktree's Changes tab. */
+export function chooseComparison(layout: Layout, worktree: string, compare: Comparison): Layout {
+	if (chosenComparison(layout, worktree) === compare) return layout;
+	const uncommittedChanges = compare === "uncommitted"
+		? [...layout.uncommittedChanges, worktree]
+		: layout.uncommittedChanges.filter(id => id !== worktree);
+	return { ...layout, uncommittedChanges };
 }
 
 /** The layout with the group of this repository collapsed when it was open, and open when it was collapsed. */

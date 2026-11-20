@@ -1,10 +1,13 @@
-import { type KeyboardEvent, useEffect, useRef } from "react";
+import { type KeyboardEvent, useEffect, useId, useRef } from "react";
 import type { DiffSection, FileChange, FileChangeTarget, FileDiffResult } from "../../shared/file-changes";
 import { sameFileChange } from "../../shared/file-changes";
 import type { Repository, Worktree } from "../../shared/model";
 import {
-	AREA_TITLES, KIND_LABELS, KIND_LETTERS, MORE_FILES_NOTE, describeDiffNotice, describeFileCounts, fileAfterKey, groupFileChanges, kindTone, listedOrder, splitPath,
+	AREA_TITLES, COMPARISONS, COMPARISON_LABELS, KIND_LABELS, KIND_LETTERS, MORE_FILES_NOTE, baseUnavailable, describeComparison, describeDiffNotice, describeFileArea,
+	describeFileCounts, describeNoChanges, fileAfterKey, groupFileChanges, kindTone, listedOrder, splitPath,
 } from "../changes-format";
+import { chosenComparison } from "../../shared/layout";
+import { ModeSwitch } from "./worktree-modes/ModeSwitch";
 import { OPEN_IN_EDITOR } from "../editor-format";
 import { useAppState, useStore } from "../store/react";
 import { type ChangesView, isRunning } from "../store/state";
@@ -105,7 +108,7 @@ function Section({ section }: { section: DiffSection }) {
 	);
 }
 
-function DiffBody({ file, result }: { file: FileChange; result: FileDiffResult | null }) {
+function DiffBody({ file, result, commit }: { file: FileChange; result: FileDiffResult | null; commit: string | null }) {
 	if (result === null) return <p className="diff-reading" role="status">Reading the diff</p>;
 	if (result.outcome !== "read") {
 		return (
@@ -116,7 +119,7 @@ function DiffBody({ file, result }: { file: FileChange; result: FileDiffResult |
 		);
 	}
 	const shown = result.file ?? file;
-	const notice = describeDiffNotice(result.diff, shown);
+	const notice = describeDiffNotice(result.diff, shown, commit);
 	return (
 		<>
 			{notice !== null && (
@@ -168,11 +171,11 @@ function DiffPane({ repository, worktree, view }: { repository: string; worktree
 					{file.previousPath !== null && <span className="diff-previous">{file.previousPath} → </span>}
 					{file.path}
 				</span>
-				<span className="diff-area">{file.area === "conflicted" ? KIND_LABELS[file.kind] : `${KIND_LABELS[file.kind]}, ${AREA_TITLES[file.area].toLowerCase()}`}</span>
+				<span className="diff-area">{describeFileArea(file)}</span>
 				{onDisk && <OpenFileButton repository={repository} worktree={worktree} file={file} />}
 			</div>
 			<div className="diff-body" tabIndex={0} aria-label={`Changes of ${file.path}`}>
-				<DiffBody file={file} result={view.diff} />
+				<DiffBody file={file} result={view.diff} commit={view.compared === "base" && view.base?.usable ? view.base.commit : null} />
 			</div>
 		</section>
 	);
@@ -187,6 +190,7 @@ export function ChangesPanel({ repository, worktree }: { repository: Repository;
 	const store = useStore();
 	const state = useAppState();
 	const missing = !worktree.pathExists;
+	const baseNote = useId();
 
 	// `worktree` is a new object after every reload of its repository, so this follows the rest of the status.
 	useEffect(() => {
@@ -203,6 +207,10 @@ export function ChangesPanel({ repository, worktree }: { repository: Repository;
 	}
 
 	const view = state.changes?.worktree === worktree.id ? state.changes : null;
+	const compared = view?.compared ?? chosenComparison(state.layout, worktree.id);
+	const base = view?.base ?? null;
+	const unavailable = baseUnavailable(base);
+	const shown = describeComparison(compared, base);
 	const reading = state.operations.some(operation => operation.kind === "read-changes" && operation.worktree === worktree.id);
 	const reloading = isRunning(state, "reload-all") || state.operations.some(operation => operation.kind === "reload-repository" && operation.repository === repository.path);
 	const files = view?.files ?? null;
@@ -210,6 +218,20 @@ export function ChangesPanel({ repository, worktree }: { repository: Repository;
 	return (
 		<div className="changes">
 			<div className="changes-files">
+				<div className="changes-compare">
+					<span className="changes-compare-label" aria-hidden="true">Compare with</span>
+					<ModeSwitch
+						label="Compare with"
+						labels={COMPARISONS.map(choice => COMPARISON_LABELS[choice])}
+						selected={COMPARISONS.indexOf(compared)}
+						disabled={false}
+						unavailable={COMPARISONS.map(choice => choice === "base" && unavailable !== null)}
+						{...(unavailable === null ? {} : { describedBy: baseNote })}
+						onSelect={index => void store.compareChanges(COMPARISONS[index]!)}
+					/>
+					{view?.compared != null && <span className="changes-compared" title={shown.title}>{shown.text}</span>}
+				</div>
+				{unavailable !== null && <p className="changes-base-note" id={baseNote}>{unavailable}</p>}
 				<div className="changes-bar">
 					<span className="changes-count" role="status">{files === null ? "Reading changes" : describeFileCounts(files, view?.more ?? false)}</span>
 					<button
@@ -232,7 +254,7 @@ export function ChangesPanel({ repository, worktree }: { repository: Repository;
 					? (
 						<div className="changes-clean">
 							<p className="empty-title">No changes</p>
-							<p className="empty-text">This worktree matches its last commit. Nothing is staged or untracked.</p>
+							<p className="empty-text">{describeNoChanges(compared, base)}</p>
 						</div>
 					)
 					: <FileList view={{ ...view, files }} />)}

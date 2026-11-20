@@ -1,7 +1,7 @@
 import type { PullRequestCreationFailure, PullRequestFields, ReportedPullRequestView } from "../pull-request-create-format";
 import type { ChopList } from "../../shared/chops";
 import type { PortClash, PortsResult } from "../../shared/ports";
-import type { FileChange, FileChangeTarget, FileDiffResult } from "../../shared/file-changes";
+import type { BaseComparison, Comparison, FileChange, FileChangeTarget, FileDiffResult } from "../../shared/file-changes";
 import { type Layout, defaultLayout } from "../../shared/layout";
 import type { RepositoryFetch } from "../../shared/git-fetch";
 import type { IssueLookup } from "../../shared/issues";
@@ -77,6 +77,10 @@ export interface ChangesView {
 	files: readonly FileChange[] | null;
 	/** More files changed than are listed. */
 	more: boolean;
+	/** The comparison `files` come from, as the engine answered. Null until the first read answered. */
+	compared: Comparison | null;
+	/** Whether the worktree can be compared with its base, from the latest read that worked. */
+	base: BaseComparison | null;
 	/** Why the latest read failed. Null once one worked. */
 	problem: string | null;
 	selected: FileChangeTarget | null;

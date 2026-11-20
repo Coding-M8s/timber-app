@@ -5,14 +5,30 @@
  * the tests use them too.
  */
 
-/** Which comparison a change belongs to, as `git status` groups them. */
+import type { SavedBase } from "./model";
+
+/**
+ * What the Changes tab compares the worktree with:
+ *
+ * - "base": everything the branch changed since it left its saved base,
+ *   committed or not. The diff from `git merge-base <base> HEAD` to the files
+ *   on disk, so commits on the base after the branch point do not show.
+ * - "uncommitted": what `git status` lists, against the last commit.
+ */
+export type Comparison = "base" | "uncommitted";
+
+/** Which comparison a change belongs to. */
 export type ChangeArea =
 	/** Between the last commit and the index: `git diff --cached`. */
 	| "staged"
 	/** Between the index and the files on disk, untracked files included: `git diff`. */
 	| "unstaged"
 	/** A file with merge conflicts. Its diff is Git's combined diff. */
-	| "conflicted";
+	| "conflicted"
+	/** Comparing with the base: between the branch point and the files on disk, `git diff <commit>`. */
+	| "base"
+	/** Comparing with the base: a file Git does not track, listed on its own. */
+	| "untracked";
 
 export type ChangeKind = "modified" | "added" | "deleted" | "renamed" | "copied" | "type-changed" | "untracked" | "conflicted";
 
@@ -40,6 +56,8 @@ export interface FileChangesRequest {
 	repository: string;
 	/** The worktree's registered path, exactly as Timber lists it. */
 	worktree: string;
+	/** What to compare with. "base" falls back to "uncommitted" when the base cannot be used. */
+	compare: Comparison;
 }
 
 export interface FileDiffRequest extends FileChangesRequest {
@@ -55,9 +73,23 @@ export const MAX_DIFF_LINES = 5000;
 /** The status is read up to this many bytes, which holds far more than `MAX_LISTED_FILES` files. */
 export const MAX_STATUS_BYTES = 8 * 1024 * 1024;
 
+/**
+ * Whether the worktree can be compared with its base. The main process works
+ * it out from the base Timber saved, never from anything the window sent.
+ */
+export type BaseComparison =
+	/** `ref` as Timber saved it, `name` as the tab shows it (`baseName`), and `commit` the full hash of the branch point. */
+	| { usable: true; ref: string; name: string; commit: string }
+	/** No saved base, one Timber cannot use, a ref that is not there, or no shared history. `reason` says which. */
+	| { usable: false; reason: string };
+
 export type FileChangesResult =
-	/** `more` is true when there were more files than `MAX_LISTED_FILES`, and only the first are listed. */
-	| { outcome: "read"; files: FileChange[]; more: boolean }
+	/**
+	 * `more` is true when there were more files than `MAX_LISTED_FILES`, and
+	 * only the first are listed. `compared` is the comparison the files come
+	 * from: "uncommitted" when "base" was asked for and cannot be used.
+	 */
+	| { outcome: "read"; files: FileChange[]; more: boolean; compared: Comparison; base: BaseComparison }
 	/** The repository is not in the app's list, Timber does not list the worktree, or its folder is gone. */
 	| { outcome: "not-listed"; message: string }
 	| { outcome: "failed"; message: string };
@@ -126,19 +158,110 @@ export function statusArguments(paths: readonly string[] = []): string[] {
  */
 const PLAIN_DIFF = ["--no-color", "--no-ext-diff", "--no-textconv"];
 
+/** A full commit hash, as Git prints it: SHA-1 or SHA-256. */
+const COMMIT = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
+
+/** Whether a text is a full commit hash, safe to give Git as a revision. */
+export const isCommitHash = (text: string) => COMMIT.test(text);
+
 /**
  * The Git arguments that print the diff of one listed file, run in the
- * worktree. Exit code 1 means "there are differences" for `--no-index`.
+ * worktree. Exit code 1 means "there are differences" for `--no-index`. A
+ * file of the "base" area needs the branch point, `commit`.
  */
-export function diffArguments(file: FileChange): { args: string[]; differencesExit: boolean } {
+export function diffArguments(file: FileChange, commit: string | null = null): { args: string[]; differencesExit: boolean } {
 	if (file.kind === "untracked") {
 		// Not in the index, so Git compares it with nothing: every line is an addition.
 		return { args: ["diff", ...PLAIN_DIFF, "--no-index", "--", "/dev/null", file.path], differencesExit: true };
 	}
-	const area = file.area === "staged" ? ["--cached"] : [];
+	let area: string[] = [];
+	if (file.area === "staged") area = ["--cached"];
+	if (file.area === "base") {
+		if (commit === null || !isCommitHash(commit)) throw new Error("A diff with the base needs the full hash of the branch point.");
+		area = [commit];
+	}
 	const paths = file.previousPath === null ? [file.path] : [file.previousPath, file.path];
 	const detect = file.kind === "renamed" ? ["-M"] : file.kind === "copied" ? ["-C", "--find-copies-harder"] : [];
-	return { args: [...LITERAL, "diff", ...PLAIN_DIFF, ...area, ...detect, "--", ...paths], differencesExit: false };
+	const options = file.area === "base" ? [...detect, ...area] : [...area, ...detect];
+	return { args: [...LITERAL, "diff", ...PLAIN_DIFF, ...options, "--", ...paths], differencesExit: false };
+}
+
+/**
+ * The ref to compare with, from the base Timber saved, or why there is none.
+ * Only a canonical ref under `refs/` is taken, so it can never be read as an
+ * option.
+ */
+export function savedBaseRef(base: SavedBase | null): { ok: true; ref: string } | { ok: false; reason: string } {
+	if (base === null) return { ok: false, reason: "Timber did not report a base for this worktree." };
+	switch (base.kind) {
+		case "unassigned":
+			return { ok: false, reason: "Timber has no base saved for this worktree." };
+		case "invalid":
+			return { ok: false, reason: "Timber found a saved base for this worktree but cannot use it, so the base is not known." };
+		case "assigned":
+			if (!base.ref.startsWith("refs/") || base.ref.includes("\0") || /\s/.test(base.ref)) return { ok: false, reason: `The saved base ${base.ref} is not a ref Git can compare with.` };
+			return { ok: true, ref: base.ref };
+	}
+}
+
+/** A saved base as the Changes tab names it: `origin/main` for a remote branch, `main` for a local one, the ref itself otherwise. */
+export function baseName(ref: string): string {
+	for (const prefix of ["refs/remotes/", "refs/heads/"]) {
+		if (ref.startsWith(prefix) && ref.length > prefix.length) return ref.slice(prefix.length);
+	}
+	return ref;
+}
+
+/** Resolve a revision to a commit: prints its full hash, or nothing and exits 1 when there is no such commit. */
+export function commitArguments(revision: string): string[] {
+	return ["rev-parse", "--verify", "--quiet", "--end-of-options", `${revision}^{commit}`];
+}
+
+/** The files changed since the branch point `commit`, committed or not, as names and kinds. `paths` limits it to those files. */
+export function baseNamesArguments(commit: string, paths: readonly string[] = []): string[] {
+	return [...LITERAL, "diff", "--no-color", "--no-ext-diff", "--name-status", "-z", "-M", commit, "--", ...paths];
+}
+
+const NAME_KINDS: Record<string, ChangeKind> = { M: "modified", A: "added", D: "deleted", T: "type-changed", R: "renamed", C: "copied" };
+
+/**
+ * Parse `git diff --name-status -z` (see `baseNamesArguments`) into changes of
+ * the "base" area, in Git's order. A rename or copy carries a score and two
+ * paths, the original first. An unmerged entry ("U") is left out, since the
+ * status lists conflicts, and so is a letter not known here and a record
+ * that was cut short.
+ */
+export function parseNameStatus(output: string): FileChange[] {
+	const records = output.split("\0");
+	// Complete output ends with a NUL, which leaves an empty last record. Cut output leaves a partial one.
+	records.pop();
+	const files: FileChange[] = [];
+	for (let index = 0; index < records.length; index++) {
+		const letter = records[index]!.charAt(0);
+		const kind = NAME_KINDS[letter];
+		const moved = kind === "renamed" || kind === "copied";
+		const previous = moved ? records[++index] : null;
+		const path = records[++index];
+		if (!kind || path === undefined || path === "" || previous === "" || previous === undefined) continue;
+		files.push({ area: "base", kind, path, previousPath: moved ? previous : null });
+	}
+	return files;
+}
+
+/**
+ * The list when comparing with the base: conflicts as the status reports
+ * them, every other change since the branch point from the base diff, and
+ * untracked files from the status in an area of their own, so a file that
+ * was deleted from Git and is still on disk is listed once as each.
+ */
+export function sinceBase(status: readonly FileChange[], since: readonly FileChange[]): FileChange[] {
+	const conflicted = status.filter(file => file.area === "conflicted");
+	const conflictedPaths = new Set(conflicted.map(file => file.path));
+	return [
+		...conflicted,
+		...since.filter(file => !conflictedPaths.has(file.path)),
+		...status.filter(file => file.kind === "untracked").map(file => ({ ...file, area: "untracked" as const })),
+	];
 }
 
 const KINDS: Record<string, ChangeKind> = {

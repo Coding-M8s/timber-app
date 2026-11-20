@@ -5,9 +5,9 @@ import { readableEditorSetting } from "../../shared/editor";
 import type { Engine } from "../../shared/engine";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "../../shared/git-fetch";
 import type { ChopList } from "../../shared/chops";
-import { type FileChangeTarget, type FileChangesResult, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
+import { type Comparison, type FileChangeTarget, type FileChangesResult, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
 import type { PortsResult } from "../../shared/ports";
-import { type Layout, clampSidebarWidth, dismissSetup, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
+import { type Layout, chooseComparison, chosenComparison, clampSidebarWidth, dismissSetup, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberFailure, TimberStatus, Worktree, WorktreeCommandResult } from "../../shared/model";
 import { type Preferences, defaultPreferences } from "../../shared/preferences";
 import type { IssueLookup } from "../../shared/issues";
@@ -162,6 +162,12 @@ export interface AppStore {
 	readPorts(repository: string, worktreeId: string): Promise<void>;
 	/** Select a file of `changes` and read its diff. Never throws. */
 	selectChangedFile(file: FileChangeTarget): Promise<void>;
+	/**
+	 * Compare the worktree of `changes` with its base or with its last commit,
+	 * remember that for the worktree in the layout, and read the files again.
+	 * Never throws.
+	 */
+	compareChanges(compare: Comparison): Promise<void>;
 	/**
 	 * Create a worktree with `timber new`. Whatever comes of it, the
 	 * repository is read again before this answers, and the worktree Timber
@@ -885,7 +891,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		let answer!: FileDiffResult;
 		await track({ kind: "read-diff", worktree: view.worktree }, async () => {
 			try {
-				answer = await engine.readFileDiff({ repository: view.repository, worktree: worktreePath, file });
+				answer = await engine.readFileDiff({ repository: view.repository, worktree: worktreePath, compare: view.compared ?? "uncommitted", file });
 			} catch (error) {
 				answer = { outcome: "failed", message: unheard(`the changes of ${file.path}`, error) };
 			}
@@ -904,12 +910,13 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		if (!worktree) return;
 		const ticket = ++changesTicket;
 		if (state.changes?.worktree !== worktreeId || state.changes.repository !== repositoryPath) {
-			update({ changes: { repository: repositoryPath, worktree: worktreeId, files: null, more: false, problem: null, selected: null, diff: null } });
+			update({ changes: { repository: repositoryPath, worktree: worktreeId, files: null, more: false, compared: null, base: null, problem: null, selected: null, diff: null } });
 		}
+		const compare = chosenComparison(state.layout, worktreeId);
 		let answer!: FileChangesResult;
 		await track({ kind: "read-changes", worktree: worktreeId }, async () => {
 			try {
-				answer = await engine.readFileChanges({ repository: repositoryPath, worktree: worktree.path });
+				answer = await engine.readFileChanges({ repository: repositoryPath, worktree: worktree.path, compare });
 			} catch (error) {
 				answer = { outcome: "failed", message: unheard("the changed files", error) };
 			}
@@ -924,7 +931,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const chosen = kept ?? listedOrder(answer.files)[0] ?? null;
 		const selected = chosen && { area: chosen.area, path: chosen.path, previousPath: chosen.previousPath };
 		// The same file keeps its diff on screen until the new one answers, so it does not flicker.
-		const next: ChangesView = { ...view, files: answer.files, more: answer.more, problem: null, selected, diff: kept ? view.diff : null };
+		const sameComparison = view.compared === answer.compared;
+		const next: ChangesView = { ...view, files: answer.files, more: answer.more, compared: answer.compared, base: answer.base, problem: null, selected, diff: kept && sameComparison ? view.diff : null };
 		update({ changes: next });
 		if (selected) await readDiff(next, selected, worktree.path);
 	}
@@ -977,6 +985,20 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const next: ChangesView = { ...view, selected, diff: null };
 		update({ changes: next });
 		await readDiff(next, selected, worktree.path);
+	}
+
+	async function compareChanges(compare: Comparison): Promise<void> {
+		const view = state.changes;
+		if (!view) return;
+		const layout = chooseComparison(state.layout, view.worktree, compare);
+		if (layout !== state.layout) {
+			changeLayout(layout);
+			void saveLayout("layout");
+		}
+		if (view.compared === compare) return;
+		// The list of the other comparison is a different list: read it afresh, so nothing of the old one shows under the new header.
+		update({ changes: { ...view, files: null, more: false, compared: null, problem: null, selected: null, diff: null } });
+		await readChanges(view.repository, view.worktree);
 	}
 
 	async function openInEditor(request: OpenInEditorRequest): Promise<OpenInEditorResult | null> {
@@ -1748,6 +1770,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		readChops,
 		readPorts,
 		selectChangedFile,
+		compareChanges,
 		async readTimberSettings(request) {
 			try {
 				return await engine.readTimberSettings(request);

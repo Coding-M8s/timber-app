@@ -330,16 +330,22 @@ export interface Engine {
 	 */
 	openInEditor(request: OpenInEditorRequest): Promise<OpenInEditorResult>;
 	/**
-	 * The changed files of a worktree of a repository in the list, as `git
-	 * status` lists them: staged and unstaged apart, every untracked file on
-	 * its own. Read-only and safe to call again.
+	 * The changed files of a worktree of a repository in the list. Compared
+	 * with the base: every change since `git merge-base <base> HEAD`,
+	 * committed or not, with conflicts and untracked files apart, where the
+	 * base is the one Timber saved for the worktree. Uncommitted, or when the
+	 * base cannot be used: as `git status` lists them, staged and unstaged
+	 * apart. Every untracked file is listed on its own. The answer says which
+	 * comparison the files come from, and whether the base can be used or
+	 * why not. Read-only and safe to call again.
 	 */
 	readFileChanges(request: FileChangesRequest): Promise<FileChangesResult>;
 	/**
-	 * The diff of one file from `readFileChanges`: `git diff --cached` for a
-	 * staged change, `git diff` for an unstaged one, and the whole file as
-	 * added for an untracked one. A binary file or a very large diff comes
-	 * without its text. Read-only and safe to call again.
+	 * The diff of one file from `readFileChanges`, in the same comparison:
+	 * `git diff <branch point>` for a change since the base, `git diff
+	 * --cached` for a staged change, `git diff` for an unstaged one, and the
+	 * whole file as added for an untracked one. A binary file or a very large
+	 * diff comes without its text. Read-only and safe to call again.
 	 */
 	readFileDiff(request: FileDiffRequest): Promise<FileDiffResult>;
 	/**

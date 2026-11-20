@@ -2808,6 +2808,35 @@ pre:focus-visible {
 	margin-top: 0;
 }
 
+/* "Compare with" Base or Uncommitted, and what the list is compared with. */
+.changes-compare {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px 8px;
+	padding: 6px 8px 6px 12px;
+	border-bottom: 1px solid var(--line);
+	font-size: 12px;
+	color: var(--text-3);
+}
+
+.changes-compared {
+	min-width: 0;
+	overflow: hidden;
+	font-family: var(--font-mono);
+	color: var(--text-2);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.changes-base-note {
+	margin: 0;
+	padding: 6px 12px;
+	border-bottom: 1px solid var(--line);
+	font-size: 12px;
+	color: var(--text-3);
+}
+
 .changes-files > .sidebar-error {
 	margin: 8px;
 }
