@@ -1,7 +1,9 @@
 import type { NewWorktreeRequest, OpenWorktreeRequest, TimberStatus, WorktreeCommandResult } from "../shared/model";
 import type { ResultCommand } from "../shared/timber-result";
 import { type RebaseRequest, type RebaseResult, readRebaseResult, rebaseResultArguments } from "../shared/timber-rebase";
+import { type CreatePullRequestRequest, type CreatePullRequestResult, type HeadSubjectRequest, prResultArguments, readPrResult } from "../shared/timber-pr";
 import { REBASE_RESULT_TIMBER_VERSION, supportsRebaseResult } from "../shared/timber-version";
+import { readHeadSubject } from "./git-engine";
 import { isWorkflowName } from "../shared/workflows";
 import { newWorktreeArguments, openWorktreeArguments, worktreeCommandResult } from "../shared/worktree-commands";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
@@ -24,8 +26,9 @@ export interface WorktreeCommandsOptions {
 }
 
 /**
- * Creating, opening, and rebasing worktrees. All go through Timber, which owns every
- * rule about what may be created where: nothing here checks a name, a base,
+ * Creating, opening, and rebasing worktrees, and opening a pull request for
+ * one. All go through Timber, which owns every rule about what may be created
+ * where and what may be pushed: nothing here checks a name, a base, a title,
  * or a folder. Each call runs Timber once and never again by itself.
  */
 export interface WorktreeCommands {
@@ -39,6 +42,14 @@ export interface WorktreeCommands {
 	 * conflicts is left as Git left it: no Git command runs here.
 	 */
 	rebase(request: RebaseRequest): Promise<RebaseResult>;
+	/**
+	 * Run `timber pr --result-file` for a worktree Timber lists, in the same
+	 * turn as the other commands of its repository. Timber publishes the
+	 * branch and opens the pull request: nothing here pushes or calls GitHub.
+	 */
+	pullRequest(request: CreatePullRequestRequest): Promise<CreatePullRequestResult>;
+	/** The subject of the last commit of a worktree Timber lists, read from Git. Null when there is none or it cannot be read. */
+	headSubject(request: HeadSubjectRequest): Promise<string | null>;
 }
 
 function messageOf(error: unknown): string {
@@ -124,8 +135,54 @@ export function createWorktreeCommands(options: WorktreeCommandsOptions): Worktr
 		});
 	}
 
+	/** A failure from before `timber pr` ran. Nothing was pushed. */
+	const prNotRun = (diagnostic: string): CreatePullRequestResult => ({ outcome: "failed", ran: false, published: false, failure: { command: null, diagnostic, output: null } });
+
+	async function pullRequest(request: CreatePullRequestRequest): Promise<CreatePullRequestResult> {
+		const { repository, worktree, title, body, base, draft } = (request ?? {}) as Partial<CreatePullRequestRequest>;
+		// Only text becomes an argument: the request comes over the bridge.
+		if (typeof repository !== "string" || typeof worktree !== "string" || typeof title !== "string" || typeof body !== "string"
+			|| (base !== null && (typeof base !== "string" || base === "")) || typeof draft !== "boolean") {
+			return prNotRun("The request for timber pr is not complete. Nothing was run.");
+		}
+		return inTurn(repository, async () => {
+			try {
+				if (!await isListed(repository)) return prNotRun(`${repository} is not a repository in the app's list. Nothing was run.`);
+				const found = await findListedWorktree(findRepository, repository, worktree, "Nothing was run.");
+				if (!found.ok) return prNotRun(found.message);
+				const status = await timber();
+				if (status.state !== "ready") return prNotRun(`${describeTimberStatus(status)}. Nothing was run.`);
+				const run = await runTimberWithResultFile({
+					executable: status.path,
+					command: "pr",
+					arguments: resultFile => prResultArguments({ worktree, title, body, base, draft }, resultFile),
+					folder: repository,
+					...(environment ? { environment } : {}),
+					...(temporaryRoot === undefined ? {} : { temporaryRoot }),
+				});
+				return readPrResult(run, worktree);
+			} catch (error) {
+				return prNotRun(`Could not start timber pr: ${messageOf(error)}. Nothing was run.`);
+			}
+		});
+	}
+
+	async function headSubject(request: HeadSubjectRequest): Promise<string | null> {
+		const { repository, worktree } = (request ?? {}) as Partial<HeadSubjectRequest>;
+		if (typeof repository !== "string" || typeof worktree !== "string") return null;
+		try {
+			if (!await isListed(repository)) return null;
+			const found = await findListedWorktree(findRepository, repository, worktree, "");
+			return found.ok ? await readHeadSubject(found.worktree.path) : null;
+		} catch {
+			return null;
+		}
+	}
+
 	return {
 		rebase,
+		pullRequest,
+		headSubject,
 		create(request) {
 			const { repository, name, base, workflow } = request;
 			if (typeof name !== "string" || (base !== null && typeof base !== "string") || !isPickedWorkflow(workflow)) return incomplete("new");

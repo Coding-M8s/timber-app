@@ -67,6 +67,17 @@ export async function readBranches(folder: string): Promise<BranchSuggestion[] |
 }
 
 /**
+ * The subject line of the last commit in a worktree, or null when it has no
+ * commit or Git could not answer. `worktree` is the folder of a worktree
+ * Timber lists. A subject that is empty reads as null.
+ */
+export async function readHeadSubject(worktree: string): Promise<string | null> {
+	const output = await git(["-C", worktree, "log", "-1", "--format=%s", "HEAD", "--"]);
+	const subject = output?.replace(/\r?\n$/, "") ?? "";
+	return subject === "" ? null : subject;
+}
+
+/**
  * The development override for the repository list: the paths in
  * TIMBER_APP_REPOS, joined by the platform path separator. Null when it is
  * not set, and the app then uses its saved list.

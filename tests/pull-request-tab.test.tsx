@@ -208,11 +208,26 @@ describe("the Pull request tab", () => {
 		expect(showing(store, "/work/billing-worktrees/feat-invoices")).toContain("Some reviewers could not be read with Timber&#x27;s GitHub login");
 	});
 
-	test("a branch with no pull request gets a quiet placeholder", async () => {
+	test("a branch with no pull request gets the form for timber pr once it starts, and a quiet placeholder before", async () => {
 		const { store } = await startedStore();
-		const panel = showing(store, TIMBER);
-		expect(panel).toContain('<div class="empty pull-tab-note none"><p class="empty-title">No pull request yet</p><p class="empty-text">GitHub has no pull request for main.</p></div>');
-		expect(panel).not.toContain(OPEN_IN_BROWSER);
+		const before = showing(store, TIMBER);
+		expect(before).toContain('<div class="empty pull-tab-note none"><p class="empty-title">No pull request yet</p><p class="empty-text">GitHub has no pull request for main.</p></div>');
+		expect(before).not.toContain(OPEN_IN_BROWSER);
+		// The tab starts the form when it shows, which a static render does not run.
+		const main = store.getState().repositories[0]!.worktrees.find(worktree => worktree.path === TIMBER)!;
+		store.startPullRequestForm(TIMBER, main);
+		const after = showing(store, TIMBER);
+		expect(after).toContain(">Open a pull request</h2>");
+		expect(after).toContain('<pre class="dialog-command" aria-label="Command that will run">timber pr --title main --result-file &lt;temporary file&gt; -- /work/timber</pre>');
+		expect(after).not.toContain("No pull request yet");
+	});
+
+	test("a detached HEAD has no branch to open a pull request from, so it never gets the form", async () => {
+		const { store } = await startedStore(createMockEngine(browserSampleRepositories));
+		const panel = showing(store, "/work/billing-worktrees/review-build");
+		expect(panel).toContain("A detached HEAD has no branch, so it has no pull request.");
+		expect(panel).not.toContain("Open a pull request");
+		expect(Object.keys(store.getState().pullRequestForms)).toEqual([]);
 	});
 
 	test("a repository off GitHub says why in place, never in a dialog", async () => {

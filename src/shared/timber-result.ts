@@ -8,7 +8,7 @@ import { type Fields, type ListedRepository, type ListedWorktree, SUPPORTED_SCHE
  */
 
 /** The Timber commands that write a result file, as each record names its command. */
-export type ResultCommand = "new" | "open" | "done" | "rebase" | "config" | "backup-restore" | "backup-delete";
+export type ResultCommand = "new" | "open" | "done" | "rebase" | "pr" | "config" | "backup-restore" | "backup-delete";
 
 /** How a command is named in messages, as a person would type it. A record names some commands otherwise. */
 export function resultCommandName(command: ResultCommand): string {

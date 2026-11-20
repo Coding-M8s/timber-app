@@ -6,6 +6,7 @@ import type { FetchResult, ForcePushSeen, RepositoryFetch } from "./git-fetch";
 import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffResult } from "./file-changes";
 import type { Layout } from "./layout";
 import type { RebaseRequest, RebaseResult } from "./timber-rebase";
+import type { CreatePullRequestRequest, CreatePullRequestResult, HeadSubjectRequest } from "./timber-pr";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
 import type { Preferences } from "./preferences";
 import type { RestartPlan, RestartResult } from "./restart";
@@ -44,6 +45,9 @@ export type AppRPC = {
 			openWorktree: { params: OpenWorktreeRequest; response: WorktreeCommandResult };
 			/** As `newWorktree`: Git hooks and a fetch take as long as they take, so the caller must not time it out. */
 			rebaseWorktree: { params: RebaseRequest; response: RebaseResult };
+			/** As `newWorktree`: a push and GitHub take as long as they take, so the caller must not time it out. */
+			createPullRequest: { params: CreatePullRequestRequest; response: CreatePullRequestResult };
+			readHeadSubject: { params: HeadSubjectRequest; response: string | null };
 			loadLayout: { params: {}; response: Layout };
 			saveLayout: { params: { layout: Layout }; response: SaveLayoutResult };
 			loadPreferences: { params: {}; response: Preferences };

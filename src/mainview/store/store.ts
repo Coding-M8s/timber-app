@@ -21,6 +21,8 @@ import { type OpenTerminalRequest, type TerminalChange, type TerminalSession, WO
 import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "../../shared/timber-config";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "../../shared/timber-done";
 import type { RebaseRequest, RebaseResult } from "../../shared/timber-rebase";
+import { type CreatePullRequestResult, initialPullRequestBase, pullRequestBaseFromText } from "../../shared/timber-pr";
+import { type PullRequestFields, defaultPullRequestTitle, presentPullRequestCreation } from "../pull-request-create-format";
 import type { WorkflowList } from "../../shared/workflows";
 import { type Draw, createTerminalFeed } from "../terminal-feed";
 import { describeOrphanTerminal } from "../terminal-format";
@@ -32,7 +34,7 @@ import { describeFetched } from "../fetch-format";
 import { wantTerminalFocus } from "../terminal-focus";
 import { mergeOverlapping } from "./merge";
 import {
-	type AppState, type ChangesView, type DialogRequest, type Operation, type Removal, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood,
+	type AppState, type ChangesView, type DialogRequest, type Operation, type PullRequestForm, type Removal, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood,
 	reconcileRemovals, removalAt, reconcileSelection, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, timberReady, withTerminal, withoutSession } from "./state";
 
 /**
@@ -239,6 +241,24 @@ export interface AppStore {
 	 * rebase that stopped on conflicts is left as Git left it.
 	 */
 	rebaseWorktree(request: RebaseRequest): Promise<RebaseResult>;
+	/**
+	 * Start the Pull request tab's form for a worktree with no pull request
+	 * yet, once: the base starts as the saved one in the form Timber takes,
+	 * and the title as the branch until the last commit's subject is read,
+	 * unless the person typed one first. A form already started is kept.
+	 */
+	startPullRequestForm(repository: string, worktree: Worktree): void;
+	/** Change what is typed in a worktree's form, by worktree id. Ignored while it runs. Clears the last failure. */
+	editPullRequestForm(worktreeId: string, change: Partial<PullRequestFields>): void;
+	/**
+	 * Run `timber pr` for a worktree's form, once. While it runs, a second
+	 * call does nothing. The repository and its pull requests are read again
+	 * after every outcome that ran, since even a failure can come after the
+	 * push, so the tab shows a created pull request as soon as GitHub lists
+	 * it. Created: a toast. Already open: a note above it. Refused or failed:
+	 * the failure stays in the form for a retry. Never throws.
+	 */
+	createPullRequest(worktreeId: string): Promise<void>;
 	/**
 	 * Restore a backup into a new worktree, once. The repository is read again
 	 * after every outcome, and a recovery worktree that is complete is
@@ -1306,6 +1326,63 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		return result;
 	}
 
+	function changeForm(id: string, change: Partial<PullRequestForm>): void {
+		const form = state.pullRequestForms[id];
+		if (form) update({ pullRequestForms: { ...state.pullRequestForms, [id]: { ...form, ...change } } });
+	}
+
+	function startPullRequestForm(repository: string, worktree: Worktree): void {
+		if (state.pullRequestForms[worktree.id]) return;
+		const form: PullRequestForm = {
+			repository,
+			worktree: worktree.path,
+			title: defaultPullRequestTitle(null, worktree.branch),
+			titleEdited: false,
+			body: "",
+			base: initialPullRequestBase(worktree.base),
+			draft: false,
+			running: false,
+			failure: null,
+			reported: null,
+		};
+		update({ pullRequestForms: { ...state.pullRequestForms, [worktree.id]: form } });
+		void (async () => {
+			let subject: string | null;
+			try {
+				subject = await engine.readHeadSubject({ repository, worktree: worktree.path });
+			} catch {
+				subject = null;
+			}
+			const now = state.pullRequestForms[worktree.id];
+			if (subject !== null && now && !now.titleEdited && !now.running) changeForm(worktree.id, { title: defaultPullRequestTitle(subject, worktree.branch) });
+		})();
+	}
+
+	function editPullRequestForm(worktreeId: string, change: Partial<PullRequestFields>): void {
+		const form = state.pullRequestForms[worktreeId];
+		if (!form || form.running) return;
+		changeForm(worktreeId, { ...change, ...(change.title === undefined ? {} : { titleEdited: true }), failure: null });
+	}
+
+	async function createPullRequest(worktreeId: string): Promise<void> {
+		const form = state.pullRequestForms[worktreeId];
+		if (!form || form.running) return;
+		changeForm(worktreeId, { running: true, failure: null, reported: null });
+		const { repository, worktree, title, body, base, draft } = form;
+		let result: CreatePullRequestResult;
+		try {
+			result = await engine.createPullRequest({ repository, worktree, title, body, base: pullRequestBaseFromText(base), draft });
+		} catch (error) {
+			const diagnostic = `The app did not hear how timber pr ended: ${messageOf(error)}. The engine did not answer, so what it did is unknown.`;
+			result = { outcome: "failed", ran: true, published: null, failure: { command: null, diagnostic, output: null } };
+		}
+		// Even a failure can come after the push, or after GitHub opened the pull request.
+		if (result.outcome !== "failed" || result.ran) await Promise.all([reloadOne(repository), refreshPullRequests(repository)]);
+		const shown = presentPullRequestCreation(result);
+		changeForm(worktreeId, { running: false, failure: shown.failure, reported: shown.reported });
+		if (shown.toast) showToast(shown.toast);
+	}
+
 	async function restoreBackup(request: BackupRestoreRequest): Promise<BackupRestoreResult> {
 		let result: BackupRestoreResult;
 		try {
@@ -1632,6 +1709,9 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		startRebase,
 		startSessionsIn,
 		rebaseWorktree,
+		startPullRequestForm,
+		editPullRequestForm,
+		createPullRequest,
 		restoreBackup,
 		deleteBackup,
 		openTerminalIn,

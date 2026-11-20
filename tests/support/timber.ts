@@ -7,6 +7,7 @@ const fixtures = join(import.meta.dir, "..", "fixtures", "timber-ls");
 const resultFixtures = join(import.meta.dir, "..", "fixtures", "timber-result");
 const rebaseFixtures = join(import.meta.dir, "..", "fixtures", "timber-rebase");
 const doneFixtures = join(import.meta.dir, "..", "fixtures", "timber-done");
+const prFixture = (name: string) => readFileSync(join(import.meta.dir, "..", "fixtures", "timber-pr", name), "utf8");
 
 /**
  * Output recorded from `timber ls --json` of Timber 0.1.1 on Linux, exactly
@@ -80,6 +81,28 @@ export const recordedRebase = {
 	refused: readFileSync(join(rebaseFixtures, "refused.json"), "utf8"),
 	failedHook: readFileSync(join(rebaseFixtures, "failed-hook.json"), "utf8"),
 	failedFetch: readFileSync(join(rebaseFixtures, "failed-fetch.json"), "utf8"),
+};
+
+/**
+ * Result files of `timber pr --result-file` from Timber 0.1.3 on Linux, with
+ * the temporary folder it ran in written `/work`. Each is for the linked
+ * worktree `/work/sample-worktrees/feat` of `/work/sample`, made with `timber
+ * new --base origin/main`, whose `origin` is a bare repository on disk.
+ *
+ * - `refusedNotGithub` and `refusedNoTitle` were recorded: Timber refused
+ *   because `origin` is not on github.com, and because no title was given.
+ *   Nothing was pushed (exit code 1).
+ * - `created`, `exists`, `failedLogin`, and `failedAfterPush` were written by
+ *   hand from `refusedNotGithub` in the form docs/ide-contract.md in Timber
+ *   gives, because recording them would open a real pull request on GitHub.
+ */
+export const recordedPr = {
+	refusedNotGithub: prFixture("refused-not-github.json"),
+	refusedNoTitle: prFixture("refused-no-title.json"),
+	created: prFixture("created.json"),
+	exists: prFixture("exists.json"),
+	failedLogin: prFixture("failed-login.json"),
+	failedAfterPush: prFixture("failed-after-push.json"),
 };
 
 const doneFixture = (name: string) => readFileSync(join(doneFixtures, name), "utf8");

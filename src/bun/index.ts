@@ -330,6 +330,9 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			newWorktree: request => worktrees.create(request),
 			openWorktree: request => worktrees.open(request),
 			rebaseWorktree: request => worktrees.rebase(request),
+			createPullRequest: request => worktrees.pullRequest(request),
+			// Read-only Git, and only for a worktree Timber lists in a repository the app lists.
+			readHeadSubject: request => worktrees.headSubject(request),
 			loadLayout: () => layout.load(),
 			saveLayout: ({ layout: next }) => layout.save(next),
 			loadPreferences: () => preferences.load(),
