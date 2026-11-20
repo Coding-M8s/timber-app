@@ -3,10 +3,10 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Attention } from "../src/shared/attention";
-import type { Repository } from "../src/shared/model";
 import { PORTS_GAP_MILLISECONDS, type PortsResult } from "../src/shared/ports";
 import { createPorts } from "../src/bun/ports";
 import { sessionListeningPorts } from "../src/bun/session-ports";
+import { createWorktreePaths, parseWorktreePaths } from "../src/bun/worktree-paths";
 import type { SessionLeader } from "../src/bun/terminals";
 import { until, windows } from "./support/runtime";
 import { bunStandIn, fingerprint, git } from "./support/timber";
@@ -15,14 +15,6 @@ let root: string;
 let primary: string;
 let linked: string;
 let other: string;
-
-const listed = (): Repository => ({
-	path: primary, name: "shop", available: true, failure: null, setup: "repository",
-	worktrees: [primary, linked, other].map(path => ({
-		id: path, path, canonicalPath: path, branch: path === primary ? "main" : "feat/x", head: null, primary: path === primary, detached: false, locked: false, prunable: false,
-		pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, base: null, issue: null, sync: null,
-	})),
-});
 
 const shown: Attention = { visible: true, focused: true, selected: null };
 
@@ -62,7 +54,7 @@ function standInDocker(name: string): { path: string; folder: string; calls: () 
 
 function reader(options: { docker: string | null; attention?: () => Attention; now?: () => number; leaders?: () => SessionLeader[]; proc?: string; platform?: NodeJS.Platform }) {
 	return createPorts({
-		findRepository: async path => path === primary ? listed() : null,
+		listWorktrees: createWorktreePaths({ targets: () => [{ path: primary, commonDir: join(primary, ".git") }] }),
 		leaders: options.leaders ?? (() => []),
 		attention: options.attention ?? (() => shown),
 		docker: () => options.docker,
@@ -116,11 +108,18 @@ describe("reading a worktree's Docker ports", () => {
 		expect(fingerprint(primary)).toBe(before);
 	});
 
-	test("a worktree Timber does not list is refused, and Docker is not asked", async () => {
+	test("a worktree Git does not list, or a repository not in the list, is refused, and Docker is not asked", async () => {
 		const docker = standInDocker("docker-refused");
-		const result = await reader({ docker: docker.path }).read({ repository: primary, worktree: join(root, "elsewhere") });
-		expect(result.outcome).toBe("not-listed");
+		mkdirSync(join(root, "elsewhere"), { recursive: true });
+		const ports = reader({ docker: docker.path });
+		expect(await ports.read({ repository: primary, worktree: join(root, "elsewhere") })).toEqual({ outcome: "not-listed", message: `Git lists no worktree at ${join(root, "elsewhere")} in ${primary}. No ports were read. Refresh the list.` });
+		expect((await ports.read({ repository: linked, worktree: linked })).outcome).toBe("not-listed");
+		expect((await ports.read({ repository: primary, worktree: "shop" })).outcome).toBe("not-listed");
 		expect(docker.calls()).toEqual([]);
+	});
+
+	test("Git's worktree list, read without Timber", () => {
+		expect(parseWorktreePaths("worktree /w/a\0HEAD 0123\0branch refs/heads/main\0\0worktree /w/a b\0detached\0\0")).toEqual(["/w/a", "/w/a b"]);
 	});
 
 	test("no Docker, Docker stopped, and permission denied are each a quiet reason, with sessions still read", async () => {

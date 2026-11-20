@@ -22,6 +22,7 @@ import { createSavedForcePushes } from "./force-pushes";
 import { createChops } from "./chops";
 import { createFileChanges } from "./file-changes";
 import { createPorts } from "./ports";
+import { createWorktreePaths } from "./worktree-paths";
 import { readBranches } from "./git-engine";
 import { createSavedLayout } from "./layout";
 import { createSavedPreferences } from "./preferences";
@@ -298,7 +299,7 @@ const terminals = createTerminalSessions({
 		alerts.changed(change);
 	},
 });// Ports are read for the selected worktree on request only, never on a timer (see ./ports.ts).
-const ports = createPorts({ findRepository: path => repositories.find(path), leaders: () => terminals.leaders(), attention: () => attention });
+const ports = createPorts({ listWorktrees: createWorktreePaths({ targets: () => watchTargets }), leaders: () => terminals.leaders(), attention: () => attention });
 
 
 const quitGuard = createQuitGuard({

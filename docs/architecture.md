@@ -2045,9 +2045,11 @@ same port. It only reads.
 - **The capability.** `readPorts({ repository, worktree })` on the `Engine`
   contract. The types and pure parsers are in `src/shared/ports.ts`, the
   main process side is `src/bun/ports.ts`, and the process table is read
-  in `src/bun/session-ports.ts`. It acts only on a worktree Timber lists, in
-  a repository in the app's list, whose folder is there
-  (`findListedWorktree`).
+  in `src/bun/session-ports.ts`. It acts only on a worktree that `git
+  worktree list --porcelain -z` lists for a repository in the app's list,
+  whose folder is there (`src/bun/worktree-paths.ts`). Timber is not asked:
+  a read comes with every reload of the repository, and `timber ls` reads
+  the status of every worktree (issue 138).
 - **Docker.** `docker ps --all --no-trunc --filter
   label=com.docker.compose.project.working_dir --format {{.ID}}`, then
   `docker inspect` of those ids with a format that prints only the name,
@@ -2087,8 +2089,9 @@ same port. It only reads.
   nothing while the window is hidden (`attend`), answers `hidden`, and reads
   the same worktree at most once in 5 seconds (`PORTS_GAP_MILLISECONDS`):
   sooner requests get the last answer, and requests while a read runs share
-  it. One read is two Docker calls and one walk of `/proc`; against a
-  machine with 13 Compose containers it took about 30 ms.
+  it. One read is `git worktree list`, two Docker calls, and one walk of
+  `/proc`. On a Linux machine with 13 Compose containers and five
+  worktrees, 25 reads took 33 ms each at the median and 38 ms at most.
 - **In the store.** `ports` holds the last answer of each worktree read,
   by its path; `portClashes` the clashes of the latest read, which mark
   rows. A hidden answer changes nothing.
