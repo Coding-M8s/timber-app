@@ -113,6 +113,11 @@ describe("the New branch form", () => {
 		expect(markup).not.toContain("radiogroup");
 	});
 
+	test("the name's hint names the issue forms Timber links", async () => {
+		const { render } = await openedDialog();
+		expect(render()).toContain('<span class="field-hint">A branch name, a sentence, or an issue: github:123, jira:ENG-1, or linear:ENG-1. Timber decides the branch and the folder.</span>');
+	});
+
 	test("cannot be submitted without a name", async () => {
 		const { model, mode, render } = await openedDialog();
 		expect(mode().canSubmit).toBe(false);
@@ -160,6 +165,14 @@ describe("creating a worktree", () => {
 		const { kind: _kind, ...request } = asked[0]!;
 		// The main process builds its arguments with the same function, from this same request.
 		expect(describeTimberCommand(newWorktreeArguments(request as NewWorktreeRequest, RESULT_FILE_PLACEHOLDER))).toBe(shown);
+	});
+
+	test("a name in a form Timber does not link reaches Timber as typed", async () => {
+		const { model, mode, submit, asked } = await openedDialog();
+		model.edit({ name: "GH:153" });
+		expect(mode().command).toBe("timber new --no-setup --result-file <temporary file> --no-editor --no-agent -- GH:153");
+		await submit();
+		expect(asked).toEqual([{ kind: "new", repository: TIMBER, name: "GH:153", base: null }]);
 	});
 
 	test("success: the list has the new worktree, it is selected, the dialog closes, and a toast says so", async () => {

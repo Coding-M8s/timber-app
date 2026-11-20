@@ -188,7 +188,10 @@ change them here first when they change.
   and a list that cannot be read leaves a short note. An Agent field, the
   first saved agent by default or None, starts that agent beside setup,
   without waiting for it, once the dialog has created the worktree. The
-  footer shows each command that follows under Timber's.
+  footer shows each command that follows under Timber's. The Name hint names
+  the issue forms Timber links, `github:123`, `jira:ENG-1`, and
+  `linear:ENG-1`; the app passes the name without rewriting it, only trimming
+  spaces around it, and Timber alone decides whether it is an issue.
 - **Rebase:** pick the base. The picker starts from the base Timber saved for
   the worktree. A worktree with uncommitted changes is refused, as Timber
   does. The dialog says how the rebase ended. One that stops on conflicts
