@@ -3,6 +3,7 @@ import { isAbsolute, join } from "node:path";
 import type { AttendedWorktree } from "../shared/attention";
 import { parseStatus, statusArguments } from "../shared/file-changes";
 import { commonDirectory } from "./git-engine";
+import { readGit } from "./read-git";
 import type { WatchTarget } from "./repository-watcher";
 
 /** A status that takes longer than this is stopped, and the check counts as not answered. */
@@ -41,16 +42,8 @@ export function createWorktreeStamps(options: WorktreeStampOptions): ReadStamp {
 
 	async function status(folder: string): Promise<string | null> {
 		try {
-			const child = Bun.spawn([git, "-c", "core.fsmonitor=false", ...statusArguments()], {
-				cwd: folder,
-				stdin: "ignore",
-				stdout: "pipe",
-				stderr: "ignore",
-				env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C" },
-				timeout: timeoutMilliseconds,
-			});
-			const [text] = await Promise.all([new Response(child.stdout).text(), child.exited]);
-			return child.exitCode === 0 && child.signalCode === null ? text : null;
+			const answer = await readGit(["-c", "core.fsmonitor=false", ...statusArguments()], { git, cwd: folder, timeoutMs: timeoutMilliseconds });
+			return answer.started && answer.exitCode === 0 ? answer.stdout : null;
 		} catch {
 			return null;
 		}

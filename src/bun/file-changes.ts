@@ -4,6 +4,7 @@ import {
 } from "../shared/file-changes";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
 import { messageOf } from "../shared/error-message";
+import { readGit } from "./read-git";
 
 /** Git is stopped when it takes longer than this, so a stuck read cannot hold the tab forever. */
 const GIT_MILLISECONDS = 20_000;
@@ -31,44 +32,6 @@ export interface FileChanges {
 type GitRun = { ok: true; text: string; truncated: boolean } | { ok: false; message: string };
 
 /**
- * Read a stream up to `limit` bytes. Returns what was read and whether there
- * was more. `stops` gets a function that ends the reading early, for when
- * Git is stopped: a process Git started could otherwise hold the stream open.
- */
-async function readUpTo(stream: ReadableStream<Uint8Array>, limit: number, onOver: () => void, stops: (() => void)[]): Promise<{ bytes: Uint8Array; over: boolean }> {
-	const chunks: Uint8Array[] = [];
-	let size = 0;
-	let over = false;
-	const reader = stream.getReader();
-	stops.push(() => void reader.cancel().catch(() => {}));
-	try {
-		for (;;) {
-			const { done, value } = await reader.read();
-			if (done) break;
-			const room = limit - size;
-			if (value.byteLength > room) {
-				chunks.push(value.subarray(0, room));
-				size = limit;
-				over = true;
-				onOver();
-				break;
-			}
-			chunks.push(value);
-			size += value.byteLength;
-		}
-	} finally {
-		await reader.cancel().catch(() => {});
-	}
-	const bytes = new Uint8Array(size);
-	let offset = 0;
-	for (const chunk of chunks) {
-		bytes.set(chunk, offset);
-		offset += chunk.byteLength;
-	}
-	return { bytes, over };
-}
-
-/**
  * The changed files of a worktree and the diff of one, from Git.
  *
  * - Only a worktree that Timber lists, in a repository in the app's list, and
@@ -88,43 +51,16 @@ export function createFileChanges(dependencies: FileChangesDependencies): FileCh
 	const { findRepository, git = "git", timeoutMilliseconds = GIT_MILLISECONDS } = dependencies;
 
 	async function run(cwd: string, args: readonly string[], limit: number, okExits: readonly number[]): Promise<GitRun> {
-		let child: Bun.Subprocess<"ignore", "pipe", "pipe">;
-		try {
-			child = Bun.spawn([git, ...args], {
-				cwd,
-				stdin: "ignore",
-				stdout: "pipe",
-				stderr: "pipe",
-				// No index refresh, and Git's own words in English, which `readDiffOutput` reads ("Binary files ... differ").
-				env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C" },
-			});
-		} catch (error) {
-			return { ok: false, message: `Could not start Git: ${messageOf(error)}` };
+		// No index refresh, and Git's own words in English, which `readDiffOutput` reads ("Binary files ... differ").
+		const answer = await readGit(args, { git, cwd, timeoutMs: timeoutMilliseconds, limitBytes: limit, stderrBytes: STDERR_BYTES });
+		if (!answer.started) return { ok: false, message: `Could not start Git: ${messageOf(answer.error)}` };
+		if (answer.timedOut) return { ok: false, message: `Git took longer than ${timeoutMilliseconds / 1000} seconds and was stopped.` };
+		if (answer.truncated) return { ok: true, text: answer.stdout, truncated: true };
+		if (!okExits.includes(answer.exitCode ?? -1)) {
+			const said = answer.stderr.trim();
+			return { ok: false, message: said === "" ? `Git ended with exit code ${answer.exitCode ?? "unknown"}.` : said };
 		}
-		let timedOut = false;
-		const stops: (() => void)[] = [];
-		const timer = setTimeout(() => {
-			timedOut = true;
-			child.kill();
-			for (const stop of stops) stop();
-		}, timeoutMilliseconds);
-		try {
-			const [out, err] = await Promise.all([
-				readUpTo(child.stdout, limit, () => child.kill(), stops),
-				readUpTo(child.stderr, STDERR_BYTES, () => {}, stops),
-				child.exited,
-			]);
-			if (timedOut) return { ok: false, message: `Git took longer than ${timeoutMilliseconds / 1000} seconds and was stopped.` };
-			const text = new TextDecoder().decode(out.bytes);
-			if (out.over) return { ok: true, text, truncated: true };
-			if (!okExits.includes(child.exitCode ?? -1)) {
-				const said = new TextDecoder().decode(err.bytes).trim();
-				return { ok: false, message: said === "" ? `Git ended with exit code ${child.exitCode ?? "unknown"}.` : said };
-			}
-			return { ok: true, text, truncated: false };
-		} finally {
-			clearTimeout(timer);
-		}
+		return { ok: true, text: answer.stdout, truncated: false };
 	}
 
 	async function status(worktree: string, paths: readonly string[] = []): Promise<{ ok: true; files: FileChange[]; truncated: boolean } | { ok: false; message: string }> {
