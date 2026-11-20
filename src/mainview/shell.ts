@@ -8,8 +8,6 @@ import { type LayoutProblem, type SettingsSection, WORKSPACE_TABS, type Workspac
  * edge, and the tabs. Pure, so they can be tested without a window.
  */
 
-/** Said on controls whose feature is designed but not built, so they do not pretend to work. */
-export const PALETTE_HINT = "Command palette. Not built yet.";
 export const SETTINGS_LABEL = "Settings";
 
 /** The names of the Settings dialog's sections, as listed down its side. */

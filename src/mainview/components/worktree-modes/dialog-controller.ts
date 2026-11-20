@@ -53,8 +53,10 @@ export function createWorktreeDialogController(
 	store: Pick<AppStore, "getState" | "startSessionsIn" | "listWorkflows">,
 	repository: string,
 	submission: Pick<Submission, "getState" | "submit" | "clearFailure">,
+	/** The mode to start on, by position. The first unless given. */
+	selected = 0,
 ): WorktreeDialogController {
-	let state: WorktreeDialogChoices = { selected: 0, pick: undefined, workflows: undefined };
+	let state: WorktreeDialogChoices = { selected, pick: undefined, workflows: undefined };
 	const listeners = new Set<() => void>();
 	let latestRead = 0;
 

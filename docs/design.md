@@ -8,7 +8,7 @@ change them here first when they change.
 - One window: a sidebar of worktrees and, opposite it, the workspace for the
   selected worktree. Sidebar side (left or right) is a setting, not a button.
 - No built-in code editor. "Open in editor" launches the configured one.
-- A command palette searches every action and worktree.
+- A command palette (Ctrl+Shift+P, Cmd+Shift+P on macOS, or the title bar button) searches every action and worktree. It opens the same dialogs as the buttons, and shows an action that cannot run with the reason.
 
 ## Sidebar
 

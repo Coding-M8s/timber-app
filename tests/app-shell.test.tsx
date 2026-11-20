@@ -49,12 +49,12 @@ describe("title bar", () => {
 		expect(markup).toMatch(/class="titlebar-branch" title="main">main</);
 	});
 
-	test("the palette button is disabled and says it is not built yet", async () => {
+	test("the palette button is enabled and names its shortcut", async () => {
 		const { store } = await startedStore();
 		const button = tagOf(render(store), "icon-button titlebar-palette");
-		expect(button).toContain("disabled");
-		expect(button).toContain('title="Command palette. Not built yet."');
-		expect(button).toContain('aria-label="Command palette. Not built yet."');
+		expect(button).not.toContain("disabled");
+		expect(button).toMatch(/title="Command palette \((Ctrl|Cmd)\+Shift\+P\)"/);
+		expect(button).toMatch(/aria-label="Command palette \((Ctrl|Cmd)\+Shift\+P\)"/);
 	});
 
 	test("the breadcrumb follows the selection into another repository", async () => {

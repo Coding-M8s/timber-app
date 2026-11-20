@@ -1,4 +1,5 @@
 import { Dialogs } from "./components/Dialogs";
+import { PaletteShortcut } from "./components/PaletteShortcut";
 import { QuitDialog } from "./components/QuitDialog";
 import { Sidebar } from "./components/Sidebar";
 import { SidebarResizer } from "./components/SidebarResizer";
@@ -117,6 +118,7 @@ export function App({ store, children }: { store: AppStore; children?: ReactNode
 				<Body />
 				<Toasts />
 				<Dialogs />
+				<PaletteShortcut />
 				{children}
 				{/* Over any other dialog: the app is about to quit. */}
 				<QuitDialog />

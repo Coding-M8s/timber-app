@@ -133,7 +133,8 @@ export interface Removal {
 
 /** The dialog open over the window. One at a time. */
 export type DialogRequest =
-	| { kind: "new-worktree"; repository: string }
+	/** `mode` picks what the dialog starts on: a new branch unless it says "existing". */
+	| { kind: "new-worktree"; repository: string; mode?: "new" | "existing" }
 	/** Remove a worktree. `repository` is the path of the primary checkout, `worktree` is `Worktree.id`. */
 	| { kind: "done-worktree"; repository: string; worktree: string }
 	/** Rebase a worktree with Timber, in a new session. Named as for Done. */
@@ -147,6 +148,8 @@ export type DialogRequest =
 	| { kind: "delete-backup"; repository: string; backup: Backup }
 	/** The app's settings, open at one section, or at the first when none is named. */
 	| { kind: "settings"; section?: SettingsSection }
+	/** The command palette: every worktree and action, searched by typing. */
+	| { kind: "palette" }
 	/** The setup wizard of a repository new to Timber, named by the path of its primary checkout. */
 	| { kind: "set-up-timber"; repository: string };
 
