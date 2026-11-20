@@ -43,8 +43,8 @@ interface MockArenaOptions {
 	addWorktree: (repository: string, path: string, branch: string) => void;
 	/** Remove a worktree from the pretend disk, as pick would. */
 	removeWorktree: (repository: string, path: string) => void;
-	/** The names of the app's running sessions in these folders, as the main process checks before a pick. */
-	runningIn: (paths: readonly string[]) => string[];
+	/** End the app's sessions in these folders, as the main process does before a pick, and answer the names of those still running. */
+	endSessionsIn: (paths: readonly string[]) => Promise<string[]>;
 	/** How long a create or pick takes. */
 	delay: () => number;
 }
@@ -55,12 +55,12 @@ const PROGRAMS: Record<string, string> = { codex: "codex", claude: "claude", cur
 /**
  * Arenas acted out in memory, for the browser build and tests. As the main
  * process does, a repository must be in the list and Timber must be ready,
- * and pick is refused while a session runs in an attempt. Each create and
+ * and pick first ends the sessions in the attempts it removes. Each create and
  * pick is written as Timber's record and read with the same code as the real
  * one. The task is kept only for `lastArenaTask`, never in a record.
  */
 export function createMockArenas(options: MockArenaOptions): ArenaCapabilities & ArenaControls {
-	const { listed, timber, addWorktree, removeWorktree, runningIn, delay } = options;
+	const { listed, timber, addWorktree, removeWorktree, endSessionsIn, delay } = options;
 	const lists = new Map<string, ArenaList>();
 	const presets = new Map<string, ArenaPreset[]>();
 	let ending: ArenaEnding = "works";
@@ -185,10 +185,9 @@ export function createMockArenas(options: MockArenaOptions): ArenaCapabilities &
 			const list = listOf(repository);
 			const found = arenaOf(list, arena);
 			if (found === null || found.outcome !== "read") return { ...notRun(`Timber lists no arena called ${arena}.`), pick: null };
-			const running = runningIn(found.attempts.map(attempt => attempt.path));
-			if (running.length > 0) {
-				return { ...notRun(`A session still runs in this arena: ${running.join(", ")}. Pick removes the other attempts' worktrees, so end their sessions first. The app never stops them for you.`), pick: null };
-			}
+			if (!found.attempts.some(attempt => attempt.label === winner)) return { ...notRun(`Timber lists no attempt ${winner} in arena ${arena}.`), pick: null };
+			const running = await endSessionsIn(found.attempts.filter(attempt => attempt.label !== winner).map(attempt => attempt.path));
+			if (running.length > 0) return { ...notRun(`These sessions in the other attempts did not end: ${running.join(", ")}. Close them, then keep ${winner} again.`), pick: null };
 			await wait();
 			const command = describeTimberCommand(arenaPickArguments({ arena, winner }, RESULT_FILE_PLACEHOLDER));
 			const losers = found.attempts.filter(attempt => attempt.label !== winner && attempt.git === "ok");

@@ -376,10 +376,10 @@ export interface Engine {
 	 * Keep one attempt of an arena by running `timber arena pick <arena>
 	 * --winner <label> --result-file` in a repository from the list, which
 	 * removes the others, saving any work under a `refs/timber/arena/...` ref.
-	 * The command is `arenaPickArguments` in ./arenas.ts. Refused, and
-	 * nothing run, while any of the app's sessions runs in one of the arena's
-	 * attempts, as read from Timber right before: Timber cannot see those
-	 * sessions, and the app never stops one. The answer says what pick did to
+	 * The command is `arenaPickArguments` in ./arenas.ts. First the app's
+	 * sessions in the other attempts, as read from Timber right before, end:
+	 * Timber cannot see them, and pick removes their worktrees. The winner's
+	 * keep running. When one does not end, nothing is picked. The answer says what pick did to
 	 * each attempt, with Timber's reason for any it kept. Runs once and is
 	 * never retried here. Read the list and the arenas after every outcome.
 	 */

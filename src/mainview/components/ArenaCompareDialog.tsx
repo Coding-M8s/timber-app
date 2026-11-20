@@ -25,8 +25,10 @@ export interface ArenaCompareViewProps {
 	rows: readonly CompareRow[];
 	/** The attempt the person chose to keep, so the dialog asks to confirm the pick. */
 	choosing: string | null;
-	/** The app's sessions that still run in the arena's attempts, by name. Pick waits for none. */
-	running: readonly string[];
+	/** The app's sessions in the other attempts than the one chosen, by name, which the pick ends first. */
+	ending: readonly string[];
+	/** The app's sessions in the chosen attempt, by name, which keep running. */
+	keeping: readonly string[];
 	submission: { running: boolean; failure: TimberFailure | null };
 	onChoose: (label: string | null) => void;
 	onCompare: () => void;
@@ -38,9 +40,8 @@ export interface ArenaCompareViewProps {
 
 /** What the Compare dialog shows for a given state. It holds no state of its own. */
 export function ArenaCompareView(props: ArenaCompareViewProps) {
-	const { arena, inspection, rows, choosing, running, submission, onChoose, onCompare, onPick, onOpenChanges, onStartAgent, onClose } = props;
+	const { arena, inspection, rows, choosing, ending, keeping, submission, onChoose, onCompare, onPick, onOpenChanges, onStartAgent, onClose } = props;
 	const confirming = choosing !== null;
-	const blocked = running.length > 0;
 	const others = rows.filter(row => row.attempt.label !== choosing && !row.attempt.removed).map(row => row.attempt.label);
 	return (
 		<OperationDialog
@@ -48,9 +49,8 @@ export function ArenaCompareView(props: ArenaCompareViewProps) {
 			command={confirming ? pickCommandFor(arena, choosing) : arenaInspectCommand(arena)}
 			submission={submission}
 			submitLabel={confirming ? `Keep ${choosing}` : "Compare again"}
-			runningLabel={confirming ? `Keeping ${choosing} and removing the others` : "Comparing the attempts"}
+			runningLabel={confirming ? `Ending the other attempts' sessions, then keeping ${choosing}` : "Comparing the attempts"}
 			failureTitle={confirming ? "Timber did not finish the pick" : "Could not compare the attempts"}
-			canSubmit={!confirming || !blocked}
 			destructive={confirming}
 			cancelLabel="Close"
 			onSubmit={confirming ? onPick : onCompare}
@@ -121,7 +121,8 @@ export function ArenaCompareView(props: ArenaCompareViewProps) {
 				<div className="arena-confirm">
 					<p className="dialog-note">{PICK_NOTE}</p>
 					<p className="dialog-note">{others.length > 0 ? `Removed: ${others.join(", ")}.` : "No other attempt is left to remove."}</p>
-					{blocked && <p className="field-hint error" role="alert">{`A session still runs in this arena: ${running.join(", ")}. End it first; the app never stops one for you.`}</p>}
+					<p className="dialog-note">{ending.length > 0 ? `Ends these sessions first: ${ending.join(", ")}.` : "No session of the app is open in the other attempts."}</p>
+					{keeping.length > 0 && <p className="dialog-note">{`Keeps open: ${keeping.join(", ")}.`}</p>}
 					<button type="button" className="text-button" disabled={submission.running} onClick={() => onChoose(null)}>Back to the comparison</button>
 				</div>
 			)}
@@ -159,8 +160,12 @@ export function ArenaCompareDialog({ request }: { request: { repository: string;
 		const worktree = listed.find(candidate => candidate.path === attempt.path) ?? null;
 		return { attempt, worktree, sessions: worktree ? sessionsOf(state, worktree.id) : [], outcome: outcomes.find(outcome => outcome.label === attempt.label) ?? null };
 	});
-	const paths = attempts.map(attempt => attempt.path);
-	const running = state.terminals.filter(session => session.repository === repository && session.state.kind === "running" && paths.includes(session.path)).map(session => session.name);
+	// As the main process does: every session in the other attempts ends, and the chosen one's stay.
+	const chosenPath = attempts.find(attempt => attempt.label === choosing)?.path;
+	const otherPaths = attempts.filter(attempt => attempt.label !== choosing).map(attempt => attempt.path);
+	const inRepository = state.terminals.filter(session => session.repository === repository);
+	const ending = choosing === null ? [] : inRepository.filter(session => otherPaths.includes(session.path)).map(session => session.name);
+	const keeping = inRepository.filter(session => session.path === chosenPath).map(session => session.name);
 
 	const choose = (label: string | null) => {
 		setSubmission({ running: false, failure: null });
@@ -191,7 +196,8 @@ export function ArenaCompareDialog({ request }: { request: { repository: string;
 			inspection={inspection}
 			rows={rows}
 			choosing={choosing}
-			running={running}
+			ending={ending}
+			keeping={keeping}
 			submission={submission}
 			onChoose={choose}
 			onCompare={() => void compare()}

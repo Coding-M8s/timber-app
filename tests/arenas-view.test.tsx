@@ -184,7 +184,7 @@ describe("comparing and keeping an attempt", () => {
 	const props = (change: Partial<ArenaCompareViewProps> = {}): ArenaCompareViewProps => ({
 		arena: "demo",
 		inspection: { state: "inspected", arena: "demo", base: { ref: "refs/heads/main", commit: "abcdef0123456789" }, winner: null, attempts: [attempt("codex-1"), attempt("claude-1")] },
-		rows: [row("codex-1"), row("claude-1")], choosing: null, running: [], submission: { running: false, failure: null },
+		rows: [row("codex-1"), row("claude-1")], choosing: null, ending: [], keeping: [], submission: { running: false, failure: null },
 		onChoose() {}, onCompare() {}, onPick() {}, onOpenChanges() {}, onStartAgent() {}, onClose() {}, ...change,
 	});
 
@@ -199,14 +199,16 @@ describe("comparing and keeping an attempt", () => {
 		expect(markup.match(/>Start agent</g)).toHaveLength(2);
 	});
 
-	test("Keep this one shows the exact pick command before it runs, and is refused while a session runs in the arena", () => {
+	test("Keep this one shows the exact pick command and the sessions it ends and keeps before it runs, and running agents never block it", () => {
 		const confirming = renderToStaticMarkup(<ArenaCompareView {...props({ choosing: "codex-1" })} />);
 		expect(confirming).toContain('aria-label="Command that will run">timber arena pick demo --winner codex-1 --result-file &lt;temporary file&gt;</pre>');
 		expect(confirming).toContain("Removed: claude-1.");
 		expect(confirming).toMatch(/<button type="button" class="button danger">Keep codex-1<\/button>/);
-		const blocked = renderToStaticMarkup(<ArenaCompareView {...props({ choosing: "codex-1", running: ["codex-1"] })} />);
-		expect(blocked).toContain("A session still runs in this arena: codex-1. End it first; the app never stops one for you.");
-		expect(blocked).toMatch(/<button type="button" class="button danger" disabled="">Keep codex-1<\/button>/);
+		expect(confirming).toContain("No session of the app is open in the other attempts.");
+		const busy = renderToStaticMarkup(<ArenaCompareView {...props({ choosing: "codex-1", ending: ["claude-1", "Terminal 2"], keeping: ["codex-1"] })} />);
+		expect(busy).toContain("Ends these sessions first: claude-1, Terminal 2.");
+		expect(busy).toContain("Keeps open: codex-1.");
+		expect(busy).toMatch(/<button type="button" class="button danger">Keep codex-1<\/button>/);
 	});
 
 	test("reports what pick did on each row, Timber's reason for a kept one included", () => {
@@ -219,23 +221,20 @@ describe("comparing and keeping an attempt", () => {
 		expect(markup).not.toContain(">Keep this one<");
 	});
 
-	test("pick is refused while an attempt's agent runs, and the agent keeps running; once it ended, pick removes the others", async () => {
+	test("keeping one ends the other attempts' sessions first and keeps the chosen one's running, then removes the others", async () => {
 		const { store } = await startedStore();
 		await store.newArena({ repository: TIMBER, name: "demo", task: TASK, base: null, groups: [{ kind: "tool", tool: "codex", model: null, effort: null, runs: 2 }] });
 		await settle();
-		const agents = () => store.getState().terminals.filter(session => session.path.includes("arena-demo"));
-		expect(agents().map(session => session.state.kind)).toEqual(["running", "running"]);
-
-		const refused = await store.pickArena({ repository: TIMBER, arena: "demo", winner: "codex-1" });
-		expect(refused).toMatchObject({ outcome: "failed", ran: false, failure: { diagnostic: expect.stringContaining("A session still runs in this arena: codex-1, codex-2.") } });
+		const sessions = () => store.getState().terminals.filter(session => session.path.includes("arena-demo"));
+		expect(sessions().map(session => [session.name, session.state.kind])).toEqual([["codex-1", "running"], ["codex-2", "running"]]);
+		// A shell in the other attempt ends too, since its folder goes.
+		await store.openTerminal({ repository: TIMBER, worktree: "/work/timber-worktrees/arena-demo-codex-2", cols: 80, rows: 24 });
 		await settle();
-		expect(agents().map(session => session.state.kind)).toEqual(["running", "running"]);
-		expect(store.getState().repositories.find(repository => repository.path === TIMBER)!.worktrees.some(entry => entry.path.endsWith("arena-demo-codex-2"))).toBe(true);
 
-		for (const session of agents()) await store.closeTerminal(session.id);
 		const picked = await store.pickArena({ repository: TIMBER, arena: "demo", winner: "codex-1" });
 		await settle();
 		expect(picked).toMatchObject({ outcome: "picked", pick: { winner: "codex-1" } });
+		expect(sessions().map(session => [session.name, session.state.kind])).toEqual([["codex-1", "running"]]);
 		const paths = store.getState().repositories.find(repository => repository.path === TIMBER)!.worktrees.map(entry => entry.path);
 		expect(paths).toContain("/work/timber-worktrees/arena-demo-codex-1");
 		expect(paths).not.toContain("/work/timber-worktrees/arena-demo-codex-2");

@@ -131,12 +131,16 @@ const turns = createRepositoryTurns();
 const worktrees = createWorktreeCommands({ timber: () => timber.current(), isListed: path => repositories.includes(path), findRepository: path => repositories.find(path), turns });
 // Timber's recovery backups. Names and paths are the person's own, and what Timber printed is private: never log either (see ./backups.ts).
 const backups = createBackupCommands({ timber: () => timber.current(), isListed: path => repositories.includes(path), turns });
-// Arenas (see ./arenas.ts). The task and what Timber printed are private: never log either. Pick waits for no
-// session of the app's to run in an attempt, since Timber cannot see them, and the app never ends one for it.
+// Arenas (see ./arenas.ts). The task and what Timber printed are private: never log either. Before a pick, the
+// sessions in the attempts it removes end, since Timber cannot see them; the winner's keep running.
 const arenas = createArenaCommands({
 	timber: () => timber.current(),
 	isListed: path => repositories.includes(path),
-	runningIn: paths => terminals.list().filter(session => session.state.kind === "running" && paths.includes(session.path)).map(session => session.name),
+	endSessionsIn: async paths => {
+		const inThem = () => terminals.list().filter(session => paths.includes(session.path));
+		await Promise.all(inThem().map(session => terminals.close(session.id)));
+		return inThem().filter(session => session.state.kind === "running").map(session => session.name);
+	},
 	turns,
 });
 

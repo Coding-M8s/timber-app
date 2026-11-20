@@ -19,7 +19,7 @@ export const ARENA_BETA_NOTE = "Arenas are beta in Timber: the commands and what
 export const NEW_ARENA_NOTE = "Timber makes one worktree per attempt, all from the same commit. The task goes to Timber in a private file, never on the command line.";
 export const AGENTS_FOLLOW_UP = "Then, for each attempt, the app asks Timber what its agent runs, as below, and starts that in the attempt's own session. A manual attempt gets none.";
 export const LAUNCH_COMMAND = "timber __app-arena launch <arena> --attempt <label>";
-export const PICK_NOTE = "Pick keeps this attempt and removes the others. Timber saves the work of any it removes under a refs/timber/arena ref first.";
+export const PICK_NOTE = "Pick keeps this attempt and removes the others. The app first ends its sessions in the others, and keeps this one's open. Timber saves the work of any attempt it removes under a refs/timber/arena ref first.";
 
 /** Why New arena cannot be offered for a repository, or null when it can: only a Timber with no arenas for apps rules it out. */
 export function arenasUnavailable(list: ArenaList | undefined): string | null {
