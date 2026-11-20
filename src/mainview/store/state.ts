@@ -38,7 +38,7 @@ export type Operation =
 	| { kind: "remove-repository"; repository: string }
 	/** Starting the editor for a worktree, named by its registered path. */
 	| { kind: "open-in-editor"; worktree: string }
-	/** Starting a session in a worktree, named by its identity (`Worktree.id`): the shell, or the agent named. */
+	/** Starting a session in a worktree, named by its identity (`Worktree.id`): the shell, the agent named, or the workflow whose agent it is. */
 	| { kind: "open-terminal"; worktree: string; agent: string | null }
 	/** Ending a terminal session, named by its id. */
 	| { kind: "close-terminal"; session: string }
@@ -94,12 +94,19 @@ export interface ChangesView {
 export interface TerminalProblem {
 	/** The worktree's identity (`Worktree.id`). */
 	worktree: string;
-	/** The agent that did not start, by name, or null for the shell. */
+	/** The agent that did not start, by name, or the workflow whose agent it is, or null for the shell. */
 	agent: string | null;
 	message: string;
 	/** The command that failed, as one line, when it is known. */
 	command: string | null;
 }
+
+/**
+ * The agent a new worktree's sessions start: one saved in Settings, by name,
+ * or the agent of a named workflow, which the main process reads again from
+ * Timber when it starts.
+ */
+export type SessionAgent = { kind: "saved"; name: string } | { kind: "workflow"; workflow: string };
 
 /** Why the latest reload failed. `repository` is null when it was a reload of everything. */
 export interface ReloadError {

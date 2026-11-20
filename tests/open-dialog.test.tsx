@@ -84,7 +84,7 @@ async function openedDialog(engine: MockEngine = createMockEngine()) {
 	const render = () => renderToStaticMarkup(
 		<WorktreeDialogFrame
 			repository={repository} modes={modes()} selected={controller.getState().selected} submission={submission.getState()}
-			agents={store.getState().preferences.agents} agent={controller.agent()}
+			agents={store.getState().preferences.agents} plan={controller.plan}
 			onSelect={select} onPickAgent={pickAgent} onSubmit={mode => void controller.submit(mode)} onClose={() => {}}
 		/>,
 	);

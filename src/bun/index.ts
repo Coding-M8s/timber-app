@@ -349,6 +349,8 @@ const terminals = createTerminalSessions({
 	timber: () => timber.current(),
 	// An arena attempt's command comes from Timber only (see ./arenas.ts).
 	arenaLaunch: request => arenas.launch(request),
+	// A workflow's agent comes from Timber's settings as read now, never from the window. Never log it (see ./workflows.ts).
+	workflows: repository => workflows.list(repository),
 	onOutput: output => tell("terminal output", () => rpc.send.terminalOutput(output)),
 	onChange: change => {
 		tell("a terminal change", () => rpc.send.terminalChanged(change));

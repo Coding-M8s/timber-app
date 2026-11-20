@@ -5,7 +5,7 @@ import { useAppState, useStore, useSubmission } from "../store/react";
 import type { SubmissionState } from "../store/submission";
 import { OperationDialog } from "./OperationDialog";
 import { ModeSwitch } from "./worktree-modes/ModeSwitch";
-import { followUps } from "./worktree-modes/agent-choice";
+import { type AgentPlan, followUps, startingAgent } from "./worktree-modes/agent-choice";
 import { createWorktreeDialogController, pickOfOption } from "./worktree-modes/dialog-controller";
 import { useExistingBranchMode } from "./worktree-modes/existing-branch";
 import type { WorktreeDialogMode } from "./worktree-modes/mode";
@@ -14,13 +14,35 @@ import { useNewBranchMode } from "./worktree-modes/new-branch";
 interface AgentFieldProps {
 	/** The agents saved in Settings, Agents, in menu order. */
 	agents: readonly AgentSetting[];
-	/** The agent that will start, or null for None. */
-	chosen: AgentSetting | null;
+	/** Where the agent that will start comes from: the pick, or the workflow, which locks the field. */
+	plan: AgentPlan;
 	onPick: (pick: string | null) => void;
 }
 
-/** The Agent field, shared by every mode: each saved agent, then None. */
-export function AgentField({ agents, chosen, onPick }: AgentFieldProps) {
+/**
+ * The Agent field, shared by every mode: each saved agent, then None. When
+ * the picked workflow decides the agent, the field shows what it decided,
+ * locked, and says why.
+ */
+export function AgentField({ agents, plan, onPick }: AgentFieldProps) {
+	if (plan.source === "workflow") {
+		const { workflow } = plan;
+		const [option, hint] = plan.kind === "command"
+			? [plan.command, `Set by the ${workflow} workflow, so it cannot be changed here. It starts in place of the app's agents, once this dialog has created the worktree.`]
+			: plan.kind === "none"
+				? ["None (set by the workflow)", `The ${workflow} workflow turns the agent off, so none starts. It cannot be changed here.`]
+				: ["None", `The agent of the ${workflow} workflow could not be read, so none starts. Start one later from the worktree.`];
+		return (
+			<label className="field">
+				<span className="field-label">Agent</span>
+				<select className="field-input" name="agent" value="" disabled onChange={() => {}}>
+					<option value="">{option}</option>
+				</select>
+				<span className="field-hint">{hint}</span>
+			</label>
+		);
+	}
+	const chosen = plan.agent;
 	return (
 		<label className="field">
 			<span className="field-label">Agent</span>
@@ -47,8 +69,8 @@ interface WorktreeDialogFrameProps {
 	submission: SubmissionState;
 	/** The agents saved in Settings, Agents. */
 	agents: readonly AgentSetting[];
-	/** The agent that will start after a worktree is created, or null for None. */
-	agent: AgentSetting | null;
+	/** Where the agent that will start after a worktree is created comes from, for a run with the given workflow. */
+	plan: (workflow: string | null) => AgentPlan;
 	onSelect: (index: number) => void;
 	onPickAgent: (pick: string | null) => void;
 	/** Run the mode on screen. */
@@ -62,9 +84,10 @@ interface WorktreeDialogFrameProps {
  * fields. The switch shows only when there is a choice.
  */
 export function WorktreeDialogFrame(props: WorktreeDialogFrameProps) {
-	const { repository, modes, selected, submission, agents, agent, onSelect, onPickAgent, onSubmit, onClose } = props;
+	const { repository, modes, selected, submission, agents, onSelect, onPickAgent, onSubmit, onClose } = props;
 	const mode = modes[selected] ?? modes[0];
 	if (!mode) return null;
+	const plan = props.plan(mode.workflow);
 	return (
 		<OperationDialog
 			title={`New worktree in ${repository.name}`}
@@ -72,7 +95,7 @@ export function WorktreeDialogFrame(props: WorktreeDialogFrameProps) {
 				<ModeSwitch labels={modes.map(candidate => candidate.label)} selected={modes.indexOf(mode)} disabled={submission.running} onSelect={onSelect} />
 			)}
 			command={mode.command}
-			followUps={followUps(agent, mode.agentStart, mode.setupStart, mode.worktree, mode.workflow)}
+			followUps={followUps(startingAgent(plan), mode.agentStart, mode.setupStart, mode.worktree, mode.workflow)}
 			submission={submission}
 			submitLabel={mode.submitLabel}
 			runningLabel={mode.runningLabel}
@@ -83,7 +106,7 @@ export function WorktreeDialogFrame(props: WorktreeDialogFrameProps) {
 		>
 			{/* Keyed by mode, so a switch mounts the new mode's fields and its first field's autoFocus takes the keyboard. */}
 			<Fragment key={mode.label}>{mode.fields}</Fragment>
-			<AgentField agents={agents} chosen={agent} onPick={onPickAgent} />
+			<AgentField agents={agents} plan={plan} onPick={onPickAgent} />
 		</OperationDialog>
 	);
 }
@@ -114,7 +137,7 @@ export function NewWorktreeDialog({ repository, initialMode = "new" }: { reposit
 			selected={selected}
 			submission={state}
 			agents={agents}
-			agent={controller.agent()}
+			plan={controller.plan}
 			onSelect={controller.select}
 			onPickAgent={controller.pickAgent}
 			onSubmit={mode => void controller.submit(mode)}

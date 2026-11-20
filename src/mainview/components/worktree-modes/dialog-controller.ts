@@ -1,14 +1,14 @@
-import type { AgentSetting } from "../../../shared/agent";
 import type { AppStore } from "../../store/store";
 import type { Submission } from "../../store/submission";
-import { type AgentPick, chosenAgent, runAndStart } from "./agent-choice";
+import { type AgentPick, type AgentPlan, plannedAgent, runAndStart, startingAgent } from "./agent-choice";
 import type { WorktreeDialogMode } from "./mode";
 import type { WorkflowOptions } from "./workflow-choice";
 
 /**
  * What the New worktree dialog does between its modes and its one
  * submission, without React: which mode shows, which agent is picked, the
- * workflows every mode offers, and how a run starts that agent.
+ * workflows every mode offers, which agent a run starts, the picked one or
+ * the workflow's, and how it starts it.
  * ../NewWorktreeDialog.tsx only draws this, so tests drive the same wiring
  * the window uses.
  */
@@ -16,7 +16,7 @@ import type { WorkflowOptions } from "./workflow-choice";
 export interface WorktreeDialogChoices {
 	/** The position of the mode on screen. */
 	selected: number;
-	/** The Agent field as the person left it. */
+	/** The Agent field as the person left it. Kept while a workflow sets the field, so it is back once the workflow is not. */
 	pick: AgentPick;
 	/** The repository's workflows for the modes' Workflow fields: undefined until read. */
 	workflows: WorkflowOptions;
@@ -32,11 +32,15 @@ export interface WorktreeDialogController {
 	pickAgent(pick: string | null): void;
 	/** Read the repository's workflows. Only the latest read counts. Never throws. */
 	readWorkflows(): Promise<void>;
-	/** The agent that starts after a worktree is created, from the agents saved now. */
-	agent(): AgentSetting | null;
+	/**
+	 * Where the agent that starts after a worktree is created comes from, for
+	 * a run with `workflow` (null for none): the pick, from the agents saved
+	 * now, or the workflow, as the list read last says.
+	 */
+	plan(workflow: string | null): AgentPlan;
 	/**
 	 * Run a mode through the dialog's submission, then start setup and the
-	 * picked agent in the worktree it reports (see `runAndStart`). Answers as
+	 * agent its plan names in the worktree it reports (see `runAndStart`). Answers as
 	 * `Submission.submit` does. After a run that failed, the workflows are
 	 * read again, as a workflow may have left the settings.
 	 */
@@ -71,7 +75,7 @@ export function createWorktreeDialogController(
 		if (read === latestRead) update({ workflows });
 	}
 
-	const agent = () => chosenAgent(store.getState().preferences.agents, state.pick);
+	const plan = (workflow: string | null) => plannedAgent(store.getState().preferences.agents, state.pick, state.workflows, workflow);
 
 	return {
 		getState: () => state,
@@ -86,13 +90,13 @@ export function createWorktreeDialogController(
 		},
 		pickAgent: pick => update({ pick }),
 		readWorkflows,
-		agent,
+		plan,
 		async submit(mode) {
 			// A second submit while one runs does nothing, so it reads nothing either.
 			if (submission.getState().running) return false;
-			// The agent as picked when the person submitted, not when the command ends.
-			const picked = agent();
-			const worked = await submission.submit(() => runAndStart(store, repository, () => mode.run(), picked));
+			// The agent as planned when the person submitted, not when the command ends. The main process reads a workflow's agent again when it starts.
+			const starting = startingAgent(plan(mode.workflow));
+			const worked = await submission.submit(() => runAndStart(store, repository, () => mode.run(), starting));
 			// Reading runs Timber, so the list is read again only when a failure may have come from the settings.
 			if (!worked) await readWorkflows();
 			return worked;
