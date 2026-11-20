@@ -99,7 +99,7 @@ describe("the saved window", () => {
 
 	test("leaves every other part of the settings as it is, and they leave it", async () => {
 		const { memory, layout } = appOn({ window: normal() });
-		const arranged = { sidebarWidth: 344, collapsed: ["/work/sample"], setupDismissed: [], uncommittedChanges: [], issueLists: {} };
+		const arranged = { sidebarWidth: 344, collapsed: ["/work/sample"], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: ["g-work"] };
 		await Promise.all([layout.save(arranged), memory.flush()]);
 		expect(onDisk().layout).toEqual(arranged);
 		expect(onDisk().window).toEqual({ frame, maximized: false });

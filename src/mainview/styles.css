@@ -329,17 +329,156 @@ pre:focus-visible {
 	min-width: 0;
 }
 
-/* Remove stays out of the way until the header is pointed at or reached by keyboard. */
-.group-remove {
+/* More stays out of the way until the header is pointed at or reached by keyboard, or its menu is open. */
+.group-more,
+.repository-group-more {
 	width: 24px;
 	height: 24px;
 	opacity: 0;
 }
 
-.group-head:hover .group-remove,
-.group-head:focus-within .group-remove,
-.group-head.unavailable .group-remove {
+.group-head:hover .group-more,
+.group-head:focus-within .group-more,
+.group-head.unavailable .group-more,
+.group-more[aria-expanded="true"],
+.repository-group-head:hover .repository-group-more,
+.repository-group-head:focus-within .repository-group-more,
+.repository-group-more[aria-expanded="true"] {
 	opacity: 1;
+}
+
+/*
+ * Repository groups (issue 130): a header one step more prominent than a
+ * repository's, and its repositories indented under it. Moving a group uses
+ * the same marks as moving a repository.
+ */
+.repository-group {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	border-radius: 7px;
+}
+
+.repository-group-head {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+}
+
+.repository-group-header {
+	flex: 1 1 0;
+	min-width: 0;
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	height: 30px;
+	padding: 0 6px;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--text-2);
+	font-size: 12.5px;
+	font-weight: 700;
+	text-align: left;
+}
+
+.repository-group-header:hover {
+	background: var(--fill-hover);
+}
+
+.repository-group-name {
+	min-width: 0;
+	color: var(--text);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.repository-group-count {
+	flex: none;
+	font-weight: 400;
+	color: var(--text-3);
+}
+
+.repository-group-header .group-flag,
+.repository-group-header .group-status {
+	flex: none;
+}
+
+.repository-group-members {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding-left: 10px;
+}
+
+.repository-group-name-field {
+	flex: 1 1 0;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+}
+
+.repository-group-name-input {
+	height: 30px;
+	padding: 0 9px;
+	border: 0;
+	border-radius: 7px;
+	background: var(--fill-field);
+	font-size: 12.5px;
+}
+
+.repository-group-name-input::placeholder {
+	color: var(--text-3);
+}
+
+.repository-group-name-problem {
+	margin: 0 0 2px 2px;
+	font-size: 12px;
+	color: var(--error);
+}
+
+.repository-group.dragging {
+	opacity: 0.5;
+}
+
+.repository-group.dragging .repository-group-header {
+	cursor: grabbing;
+}
+
+.repository-group.drop-before,
+.repository-group.drop-after {
+	position: relative;
+}
+
+.repository-group.drop-before::before,
+.repository-group.drop-after::after {
+	content: "";
+	position: absolute;
+	left: 4px;
+	right: 4px;
+	height: 2px;
+	border-radius: 1px;
+	background: var(--focus);
+	pointer-events: none;
+}
+
+.repository-group.drop-before::before {
+	top: -5px;
+}
+
+.repository-group.drop-before:first-child::before {
+	top: 0;
+}
+
+.repository-group.drop-after::after {
+	bottom: -5px;
+}
+
+/* A repository dragged to the end of a group: the whole group is outlined, so a folded or empty one shows it too. */
+.repository-group.drop-into {
+	box-shadow: inset 0 0 0 2px var(--focus);
 }
 
 .group-head.unavailable .group-name {

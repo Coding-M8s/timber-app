@@ -28,6 +28,8 @@ export interface Layout {
 	 * current sprint.
 	 */
 	issueLists: Record<string, IssueList>;
+	/** The repository groups that are folded, each named by its id. */
+	collapsedGroups: string[];
 }
 
 export const DEFAULT_SIDEBAR_WIDTH = 272;
@@ -35,7 +37,7 @@ export const MIN_SIDEBAR_WIDTH = 200;
 export const MAX_SIDEBAR_WIDTH = 480;
 
 export function defaultLayout(): Layout {
-	return { sidebarWidth: DEFAULT_SIDEBAR_WIDTH, collapsed: [], setupDismissed: [], uncommittedChanges: [], issueLists: {} };
+	return { sidebarWidth: DEFAULT_SIDEBAR_WIDTH, collapsed: [], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] };
 }
 
 /** A whole number of pixels within the limits. Anything that is not a number gives the default width. */
@@ -52,12 +54,13 @@ export function clampSidebarWidth(width: number): number {
 export function readLayout(value: unknown): Layout {
 	const layout = defaultLayout();
 	if (typeof value !== "object" || value === null || Array.isArray(value)) return layout;
-	const { sidebarWidth, collapsed, setupDismissed, uncommittedChanges, issueLists } = value as Record<string, unknown>;
+	const { sidebarWidth, collapsed, setupDismissed, uncommittedChanges, issueLists, collapsedGroups } = value as Record<string, unknown>;
 	if (typeof sidebarWidth === "number") layout.sidebarWidth = clampSidebarWidth(sidebarWidth);
 	layout.collapsed = readPaths(collapsed);
 	layout.setupDismissed = readPaths(setupDismissed);
 	layout.uncommittedChanges = readPaths(uncommittedChanges);
 	layout.issueLists = readIssueLists(issueLists);
+	layout.collapsedGroups = readPaths(collapsedGroups);
 	return layout;
 }
 
@@ -74,7 +77,7 @@ function readIssueLists(value: unknown): Record<string, IssueList> {
 const sameIssueLists = (one: Readonly<Record<string, IssueList>>, other: Readonly<Record<string, IssueList>>) =>
 	Object.keys(one).length === Object.keys(other).length && Object.entries(one).every(([path, list]) => other[path] === list);
 
-/** The distinct non-empty paths of a list from outside. Anything else in it is left out. */
+/** The distinct non-empty paths (or group ids) of a list from outside. Anything else in it is left out. */
 function readPaths(value: unknown): string[] {
 	const paths: string[] = [];
 	if (!Array.isArray(value)) return paths;
@@ -92,7 +95,8 @@ export function sameLayout(one: Layout, other: Layout): boolean {
 		&& samePaths(one.collapsed, other.collapsed)
 		&& samePaths(one.setupDismissed, other.setupDismissed)
 		&& samePaths(one.uncommittedChanges, other.uncommittedChanges)
-		&& sameIssueLists(one.issueLists, other.issueLists);
+		&& sameIssueLists(one.issueLists, other.issueLists)
+		&& samePaths(one.collapsedGroups, other.collapsedGroups);
 }
 
 /** What the Changes tab of a worktree asks to compare with: its base, unless the person chose Uncommitted there. */
@@ -137,4 +141,18 @@ export function forgetRepository(layout: Layout, repository: string): Layout {
 		setupDismissed: layout.setupDismissed.filter(path => path !== repository),
 		issueLists,
 	};
+}
+
+/** The layout with this repository group folded when it was open, and open when it was folded. */
+export function toggleGroupCollapsed(layout: Layout, group: string): Layout {
+	const collapsedGroups = layout.collapsedGroups.includes(group)
+		? layout.collapsedGroups.filter(id => id !== group)
+		: [...layout.collapsedGroups, group];
+	return { ...layout, collapsedGroups };
+}
+
+/** The layout without anything remembered about this repository group, for when it is deleted. */
+export function forgetGroup(layout: Layout, group: string): Layout {
+	if (!layout.collapsedGroups.includes(group)) return layout;
+	return { ...layout, collapsedGroups: layout.collapsedGroups.filter(id => id !== group) };
 }

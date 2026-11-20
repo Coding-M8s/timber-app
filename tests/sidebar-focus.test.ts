@@ -39,6 +39,27 @@ describe("where the keyboard goes after the Done dialog closes", () => {
 		expect(focused).toEqual([]);
 	});
 
+	test("the header of the folded repository group that holds the repository, which is not drawn", () => {
+		const focused: string[] = [];
+		const root: FocusRoot = {
+			querySelectorAll: (selectors: string) => selectors === "[data-group]"
+				? [
+					{ dataset: { group: "g-personal" }, querySelector: () => ({ focus: () => void focused.push("Personal header") }) },
+					{ dataset: { group: "g-work" }, querySelector: (inner: string) => inner === ".repository-group-header" ? { focus: () => void focused.push("Work header") } : null },
+				]
+				: [{ dataset: { repository: "/work/api" }, querySelector: () => ({ focus: () => void focused.push("api") }) }],
+		};
+		expect(focusFirstWorktree("/work/timber", root, "g-work")).toBe(true);
+		expect(focused).toEqual(["Work header"]);
+	});
+
+	test("nowhere when the repository is not drawn and is in no group", () => {
+		const focused: string[] = [];
+		const root: FocusRoot = { querySelectorAll: () => [{ dataset: { group: "g-work" }, querySelector: () => ({ focus: () => void focused.push("Work header") }) }] };
+		expect(focusFirstWorktree("/work/timber", root)).toBe(false);
+		expect(focused).toEqual([]);
+	});
+
 	test("only when the keyboard is nowhere", () => {
 		const body = {} as Element;
 		expect(focusLost(null, body)).toBe(true);

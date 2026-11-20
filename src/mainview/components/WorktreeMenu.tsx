@@ -1,15 +1,18 @@
 import { type KeyboardEvent, type Ref, useEffect, useId, useLayoutEffect, useRef } from "react";
 import { type WorktreeMenuItem, type WorktreeMenuItemId, placeMenu, worktreeMenuKeyAction } from "../worktree-menu-format";
 
-export interface WorktreeMenuViewProps {
+/** An entry of a menu drawn here. A worktree's menu has `WorktreeMenuItem`s; a repository's menu has its own ids. */
+export type MenuEntry<Id extends string = WorktreeMenuItemId> = Omit<WorktreeMenuItem, "id"> & { id: Id };
+
+export interface WorktreeMenuViewProps<Id extends string = WorktreeMenuItemId> {
 	/** The menu's name, such as "Actions for feat-x". */
 	label: string;
-	items: readonly WorktreeMenuItem[];
+	items: readonly MenuEntry<Id>[];
 	/** Where the menu asked to be, in window pixels. It is moved inside the window once it is drawn. */
 	at: { left: number; top: number };
 	menuRef?: Ref<HTMLDivElement>;
 	idBase: string;
-	onChoose?: (id: WorktreeMenuItemId) => void;
+	onChoose?: (id: Id) => void;
 	onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void;
 }
 
@@ -19,7 +22,7 @@ export const worktreeMenuItemId = (idBase: string, index: number) => `${idBase}-
  * How a worktree row's menu looks. Stateless, so it can be drawn without a
  * window. A disabled entry stays focusable, as menus do, and says why under it.
  */
-export function WorktreeMenuView({ label, items, at, menuRef, idBase, onChoose, onKeyDown }: WorktreeMenuViewProps) {
+export function WorktreeMenuView<Id extends string = WorktreeMenuItemId>({ label, items, at, menuRef, idBase, onChoose, onKeyDown }: WorktreeMenuViewProps<Id>) {
 	return (
 		<div
 			ref={menuRef}
@@ -60,9 +63,9 @@ export function WorktreeMenuView({ label, items, at, menuRef, idBase, onChoose, 
 	);
 }
 
-interface WorktreeMenuProps {
+interface WorktreeMenuProps<Id extends string> {
 	label: string;
-	items: readonly WorktreeMenuItem[];
+	items: readonly MenuEntry<Id>[];
 	at: { left: number; top: number };
 	/**
 	 * Puts the menu away. `backToRow` gives the keyboard back to the row, as
@@ -71,7 +74,7 @@ interface WorktreeMenuProps {
 	 */
 	onClose: (backToRow: boolean) => void;
 	/** An enabled entry was chosen. The menu is already closed and the row has the keyboard. */
-	onChoose: (id: WorktreeMenuItemId) => void;
+	onChoose: (id: Id) => void;
 }
 
 /**
@@ -80,7 +83,7 @@ interface WorktreeMenuProps {
  * elsewhere, scrolling, resizing, or leaving the window put it away. A
  * disabled entry does nothing and leaves the menu open.
  */
-export function WorktreeMenu({ label, items, at, onClose, onChoose }: WorktreeMenuProps) {
+export function WorktreeMenu<Id extends string = WorktreeMenuItemId>({ label, items, at, onClose, onChoose }: WorktreeMenuProps<Id>) {
 	const idBase = useId();
 	const menu = useRef<HTMLDivElement>(null);
 	const close = useRef(onClose);
@@ -126,7 +129,7 @@ export function WorktreeMenu({ label, items, at, onClose, onChoose }: WorktreeMe
 		};
 	}, []);
 
-	const choose = (id: WorktreeMenuItemId) => {
+	const choose = (id: Id) => {
 		if (items.find(item => item.id === id)?.disabled !== false) return;
 		close.current(true);
 		onChoose(id);

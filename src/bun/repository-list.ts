@@ -1,8 +1,20 @@
 import { basename } from "node:path";
-import type { AddRepositoryResult, RemoveRepositoryResult, ReorderRepositoriesResult, Repository } from "../shared/model";
+import type { AddRepositoryResult, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, RepositoryGroupsResult } from "../shared/model";
 import { applyOrder, sameOrder } from "../shared/repository-order";
-import { forgetRepository } from "../shared/layout";
-import type { Settings } from "../shared/settings";
+import { forgetGroup, forgetRepository } from "../shared/layout";
+import {
+	type GroupChange,
+	type GroupedList,
+	type RepositoryGroups,
+	createGroupIn,
+	deleteGroupIn,
+	emptyGroups,
+	groupsOfList,
+	placeIn,
+	renameGroupIn,
+	reorderGroupsIn,
+} from "../shared/repository-groups";
+import type { SavedRepository, Settings } from "../shared/settings";
 import { commonDirectory, overrideRepositoryPaths } from "./git-engine";
 import { type RepositoryReader, failedRepository } from "./repository-reader";
 import type { WatchTarget } from "./repository-watcher";
@@ -68,7 +80,25 @@ export interface RepositoryList {
 	 * with the override, from the repositories it lists. Read-only.
 	 */
 	watchTargets(): Promise<WatchTarget[]>;
+	/** The saved groups. See `Engine.listRepositoryGroups`. */
+	listGroups(): Promise<RepositoryGroups>;
+	/** See `Engine.createRepositoryGroup`. */
+	createGroup(name: string, repository?: string): Promise<RepositoryGroupsResult>;
+	/** See `Engine.renameRepositoryGroup`. */
+	renameGroup(id: string, name: string): Promise<RepositoryGroupsResult>;
+	/** See `Engine.deleteRepositoryGroup`. */
+	deleteGroup(id: string): Promise<RepositoryGroupsResult>;
+	/** See `Engine.reorderRepositoryGroups`. */
+	reorderGroups(order: readonly string[]): Promise<RepositoryGroupsResult>;
+	/** See `Engine.placeRepository`. */
+	place(path: string, group: string | null, order?: readonly string[]): Promise<RepositoryGroupsResult>;
 }
+
+/** The saved list as grouping sees it. */
+const groupedList = (settings: Settings): GroupedList<SavedRepository> => ({ groups: settings.groups ?? [], repositories: settings.repositories });
+
+/** What the interface is told about the saved groups. */
+const groupsOf = (settings: Settings): RepositoryGroups => groupsOfList(groupedList(settings));
 
 function unavailable(path: string): Repository {
 	return { path, name: basename(path) || path, available: false, failure: null, setup: "unknown", worktrees: [] };
@@ -107,6 +137,28 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 				return { outcome: "failed", message: `Could not save settings to ${settingsFile}: ${messageOf(error)}` };
 			}
 			return { outcome: "added", repository };
+		});
+	}
+
+	/**
+	 * Run a change to the groups in turn with every other change to the file, and save once when it changes
+	 * anything. `change` builds what is saved, from the list as grouping sees it and the settings it came from.
+	 */
+	function changeGroups(change: (list: GroupedList<SavedRepository>) => GroupChange<SavedRepository>, also?: (next: Settings) => Settings): Promise<RepositoryGroupsResult> {
+		if (overridden()) return Promise.resolve({ outcome: "overridden" });
+		return inTurn(async () => {
+			const current = await settings();
+			const changed = change(groupedList(current));
+			if (changed.outcome === "unchanged") return { outcome: "saved", groups: groupsOf(current) };
+			if (changed.outcome !== "changed") return changed;
+			const grouped: Settings = { ...current, repositories: changed.next.repositories, groups: changed.next.groups };
+			const next = also ? also(grouped) : grouped;
+			try {
+				await save(next);
+			} catch (error) {
+				return { outcome: "failed", message: `Could not save settings to ${settingsFile}: ${messageOf(error)}` };
+			}
+			return { outcome: "saved", groups: groupsOf(next) };
 		});
 	}
 
@@ -196,6 +248,22 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 				return { outcome: "saved" };
 			});
 		},
+
+		async listGroups() {
+			if (overridden()) return emptyGroups();
+			return groupsOf(await settings());
+		},
+
+		createGroup: (name, repository) => changeGroups(list => createGroupIn(list, crypto.randomUUID(), name, repository)),
+
+		renameGroup: (id, name) => changeGroups(list => renameGroupIn(list, id, name)),
+
+		// Whether the group was folded is remembered by its id, so that goes in the same save.
+		deleteGroup: id => changeGroups(list => deleteGroupIn(list, id), next => next.layout ? { ...next, layout: forgetGroup(next.layout, id) } : next),
+
+		reorderGroups: order => changeGroups(list => reorderGroupsIn(list, order)),
+
+		place: (path, group, order) => changeGroups(list => placeIn(list, path, group, order)),
 
 		remove(path) {
 			if (overridden()) return Promise.resolve({ outcome: "overridden" });

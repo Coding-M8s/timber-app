@@ -1,6 +1,7 @@
 import { type ChopApprovals, readChopApprovals } from "./chops";
 import { type ForcePushMarks, readForcePushMarks } from "./git-fetch";
 import { type Layout, readLayout } from "./layout";
+import { type RepositoryGroup, readGroups } from "./repository-groups";
 import { type Preferences, readPreferences, writePreferences } from "./preferences";
 import { type SavedWindow, readSavedWindow } from "./window-frame";
 
@@ -17,10 +18,17 @@ export interface SavedRepository {
 	 * in the list.
 	 */
 	commonDir: string;
+	/** The id of the group it is shown in. Absent when it is not in a group. */
+	group?: string;
 }
 
 export interface Settings {
 	repositories: SavedRepository[];
+	/**
+	 * The groups the sidebar gathers repositories into, in the order shown.
+	 * Absent until the person makes one, and in files written before groups existed.
+	 */
+	groups?: RepositoryGroup[];
 	/**
 	 * How the window was arranged. Absent until the person first changes the
 	 * layout, and in files written before the app remembered it.
@@ -71,9 +79,10 @@ function readRepository(value: unknown): SavedRepository | null {
  * this version, or holding an entry that is not a saved repository. A damaged
  * file is never half-read, so a later save cannot quietly drop part of it.
  *
- * The layout, the preferences, the force-push marks, the window, and the chop approvals are the exception,
+ * The groups, the layout, the preferences, the force-push marks, the window, and the chop approvals are the exception,
  * because they are only a convenience: a part that cannot be read falls back to the defaults (see
- * `readLayout`, `readPreferences`, and `readSavedWindow`) and never costs the repository list.
+ * `readGroups`, `readLayout`, `readPreferences`, and `readSavedWindow`) and never costs the
+ * repository list. A repository's group that names no readable group is dropped, and the repository kept.
  */
 export function parseSettings(text: string): Settings | null {
 	let value: unknown;
@@ -86,16 +95,21 @@ export function parseSettings(text: string): Settings | null {
 	const listed = value.repositories ?? [];
 	if (!Array.isArray(listed)) return null;
 
+	const groups = readGroups(value.groups);
 	const repositories: SavedRepository[] = [];
 	for (const entry of listed) {
 		const repository = readRepository(entry);
 		if (!repository) return null;
 		// A file edited by hand may repeat a repository. Keep the first.
 		if (!repositories.some(known => known.path === repository.path || known.commonDir === repository.commonDir)) {
+			// A group that names none of the groups read is dropped, never the repository.
+			const { group } = entry as Record<string, unknown>;
+			if (typeof group === "string" && groups.some(known => known.id === group)) repository.group = group;
 			repositories.push(repository);
 		}
 	}
 	const settings: Settings = { repositories };
+	if (groups.length > 0) settings.groups = groups;
 	if (value.layout !== undefined) settings.layout = readLayout(value.layout);
 	if (value.preferences !== undefined) settings.preferences = readPreferences(value.preferences);
 	if (value.forcePushes !== undefined) {
@@ -111,13 +125,16 @@ export function parseSettings(text: string): Settings | null {
 
 /** The text of a settings file, readable and stable enough to edit by hand. */
 export function serializeSettings(settings: Settings): string {
-	const repositories = settings.repositories.map(({ path, commonDir }) => ({ path, commonDir }));
+	const repositories = settings.repositories.map(({ path, commonDir, group }) => ({ path, commonDir, ...(group === undefined ? {} : { group }) }));
+	const groups = settings.groups && settings.groups.length > 0 ? settings.groups.map(({ id, name }) => ({ id, name })) : null;
 	const layout = settings.layout && {
 		sidebarWidth: settings.layout.sidebarWidth,
 		collapsed: [...settings.layout.collapsed],
 		setupDismissed: [...settings.layout.setupDismissed],
 		uncommittedChanges: [...settings.layout.uncommittedChanges],
 		issueLists: { ...settings.layout.issueLists },
+		// Written only once a group is folded, so a file without groups stays as it was.
+		...(settings.layout.collapsedGroups.length > 0 ? { collapsedGroups: [...settings.layout.collapsedGroups] } : {}),
 	};
 	const preferences = settings.preferences && writePreferences(settings.preferences);
 	const forcePushes = settings.forcePushes && Object.keys(settings.forcePushes).length > 0 ? readForcePushMarks(settings.forcePushes) : null;
@@ -126,6 +143,7 @@ export function serializeSettings(settings: Settings): string {
 	return `${JSON.stringify({
 		version: SETTINGS_VERSION,
 		repositories,
+		...(groups ? { groups } : {}),
 		...(layout ? { layout } : {}),
 		...(preferences ? { preferences } : {}),
 		...(forcePushes ? { forcePushes } : {}),

@@ -3,6 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { createMockEngine, sampleChanges, sampleRepositories, sampleTimberStatuses, sampleUnavailableRepository } from "../src/mainview/engine/mock";
 import { createAppStore } from "../src/mainview/store/store";
+import { repositoryMenuItems } from "../src/mainview/repository-menu-format";
+import { chooseFromRepositoryMenu } from "../src/mainview/sidebar-groups";
 
 const settle = () => Bun.sleep(0);
 const FEATURE = "/work/timber-worktrees/feat-github-issue-lookup";
@@ -93,9 +95,18 @@ describe("App", () => {
 		const { store } = await startedStore();
 		const markup = renderToStaticMarkup(<App store={store} />);
 		expect(markup).toMatch(/class="add-repository"[^>]*>.*?Add repository/);
-		expect(markup).toContain('aria-label="Remove timber from the list"');
-		expect(markup).toContain('aria-label="Remove api-server from the list"');
-		expect(markup).toContain("Nothing on disk is changed.");
+		// Remove is in the menu each repository's More button opens.
+		expect(markup).toContain('aria-label="More for timber"');
+		expect(markup).toContain('aria-label="More for api-server"');
+		for (const path of ["/work/timber", "/work/api-server"]) {
+			const remove = repositoryMenuItems(store.getState().repositoryGroups, path).at(-1)!;
+			expect(remove.label).toBe("Remove from the list");
+			expect(remove.title).toContain("Nothing on disk is changed.");
+		}
+		chooseFromRepositoryMenu(store, "/work/api-server", { kind: "remove" }, () => {});
+		await settle();
+		await settle();
+		expect(renderToStaticMarkup(<App store={store} />)).not.toContain('aria-label="api-server"');
 	});
 
 	test("an added repository appears in the sidebar, selected", async () => {

@@ -237,9 +237,10 @@ export function DoneDialog({ request }: { request: Extract<DialogRequest, { kind
 	// of the repository instead. Checked once the dialog has closed and the browser has moved focus.
 	useEffect(() => () => {
 		setTimeout(() => {
-			if (focusLost(document.activeElement, document.body)) focusFirstWorktree(request.repository);
+			// In a folded repository group the repository is not drawn, so the group's header takes the keyboard.
+			if (focusLost(document.activeElement, document.body)) focusFirstWorktree(request.repository, undefined, store.getState().repositoryGroups.membership[request.repository]);
 		}, 0);
-	}, [request.repository]);
+	}, [request.repository, store]);
 
 	useEffect(() => {
 		// A dialog for a worktree that was never in the list, and has no removal on record, has nothing to show.

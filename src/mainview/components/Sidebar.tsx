@@ -1,35 +1,47 @@
-import { type PointerEvent, useId, useMemo, useRef, useState } from "react";
-import { describeBackupsProblem } from "../backup-format";
-import { describeFetchAction, describeFetchMarker } from "../fetch-format";
-import { describeRepositoryPullRequestProblem } from "../pull-request-format";
-import { pullRequestOf } from "../../shared/pull-requests";
-import { REMOVE_REPOSITORY_HINT, TIMBER_LIST_FAILURE_TITLE, describeListNotice, describeReloadError, worktreeLabel } from "../format";
-import { SETTINGS_LABEL, describeLayoutProblem, describeRepository } from "../shell";
-import { DRAG_THRESHOLD, MOVE_REPOSITORY_HINT, MOVE_REPOSITORY_SHORTCUTS, dropIndex, moveStep } from "../repository-drag";
+import { Fragment, type KeyboardEvent, type MouseEvent, type PointerEvent, useId, useMemo, useRef, useState } from "react";
+import { MOVE_GROUP_HINT, describeGroupNameProblem, describeListNotice, describeReloadError, worktreeLabel } from "../format";
+import { SETTINGS_LABEL, describeLayoutProblem } from "../shell";
+import { DRAG_THRESHOLD, MOVE_REPOSITORY_SHORTCUTS, dropIndex, dropPlace, moveStep } from "../repository-drag";
+import { describeGroupMenu, describeRepositoryMenu, groupMenuItems, repositoryMenuItems } from "../repository-menu-format";
+import { GROUP_NEEDS_LOOK_TITLE, arrangeSidebar, canDragRepositories, chooseFromRepositoryMenu, dropSlotsOf, groupNeedsLook, repositoryDropMark } from "../sidebar-groups";
+import { opensWorktreeMenu, repositoryMenuItems as cleanUpMenuItems } from "../worktree-menu-format";
+import { clashMarksOf } from "../ports-format";
 import { useAppState, useStore } from "../store/react";
+import { isRunning } from "../store/state";
 import { mostUrgent, summarizeStatuses } from "../../shared/session-status";
 import { unseenStatuses } from "../seen-status";
-import { isBeingRemoved, isRunning, removalAt, sessionsOf } from "../store/state";
-import { describeRemovalFailed } from "../done-format";
-import { clashMarksOf, describePortClash } from "../ports-format";
-import { cleanUpUnavailableReason, describeCleanUpButton, mergedCandidates } from "../clean-up-format";
-import { OpenInEditorIconButton } from "./OpenInEditor";
-import { wantTerminalFocus } from "../terminal-focus";
+import type { Repository, Worktree } from "../../shared/model";
 import { SIDEBAR_ID } from "./SidebarResizer";
-import { BackupsSection } from "./BackupsSection";
-import { WorktreeRow } from "./WorktreeRow";
-import { IssuesRow } from "./IssuesBoard";
-import { WORKTREE_MENU_SHORTCUTS, describeRepositoryMenu, opensWorktreeMenu, repositoryMenuChoice, repositoryMenuItems, worktreeMenuChoice } from "../worktree-menu-format";
-import { WorktreeMenu } from "./WorktreeMenu";
-import { ARENA_BETA_NOTE, BETA, describeArenaHeader, groupArenaRows, newMenuChoice, newMenuItems } from "../arena-format";
-import type { Worktree } from "../../shared/model";
+import { RepositorySection } from "./RepositorySection";
+import { RepositoryMenu } from "./RepositoryMenu";
+import { RepositoryGroupName } from "./RepositoryGroupName";
+
+/** The name field in the sidebar: for a new group, maybe with a repository to put in it, or to rename a group. */
+type Naming = { kind: "new"; repository?: string } | { kind: "rename"; id: string };
+
+/** An open menu: of a repository header, or of a group header, and where it was asked to be. */
+type OpenMenu = { kind: "repository"; path: string; at: { left: number; top: number } } | { kind: "group"; id: string; at: { left: number; top: number } };
+
+const MoreIcon = () => (
+	<svg aria-hidden="true" width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
+		<circle cx="3" cy="8" r="1.4" />
+		<circle cx="8" cy="8" r="1.4" />
+		<circle cx="13" cy="8" r="1.4" />
+	</svg>
+);
+
+/** Where a menu opened from the keyboard goes: under the control that has the keyboard. */
+const underneath = (element: Element) => {
+	const box = element.getBoundingClientRect();
+	return { left: box.left, top: box.bottom };
+};
 
 export function Sidebar() {
 	const store = useStore();
 	const state = useAppState();
 	// Rows that share a host port with another worktree get a warning (see ../ports-format.ts).
 	const clashMarks = useMemo(() => clashMarksOf(state.portClashes, state.repositories), [state.portClashes, state.repositories]);
-	const { repositories, loaded } = state;
+	const { repositories, loaded, repositoryGroups } = state;
 	// While an issues board shows, no worktree row is the one shown.
 	const selectedId = state.board === null ? state.selection?.worktree ?? null : null;
 	const refreshing = isRunning(state, "reload-all");
@@ -39,16 +51,20 @@ export function Sidebar() {
 	const removing = (path: string) => state.operations.some(operation => operation.kind === "remove-repository" && operation.repository === path);
 	const [filter, setFilter] = useState("");
 	const idBase = useId();
-	// Which groups are collapsed is part of the layout the store holds, so it is remembered between runs.
-	const { collapsed } = state.layout;
+	// Which repositories and groups are collapsed is part of the layout the store holds, so it is remembered between runs.
+	const { collapsed, collapsedGroups } = state.layout;
 	const layoutProblem = state.layoutProblem && describeLayoutProblem(state.layoutProblem);
 	const query = filter.trim().toLowerCase();
 	const now = Date.now();
 	const fetchAsked = (path: string) => state.operations.some(operation => operation.kind === "fetch-repository" && operation.repository === path);
+	const groupCount = repositoryGroups.groups.length;
 
 	// A press on a header that has not moved far enough to be a drag yet, or the drag it became.
 	const press = useRef<{ path: string; pointerId: number; startY: number; dragging: boolean } | null>(null);
-	const [drag, setDrag] = useState<{ path: string; index: number } | null>(null);
+	const [drag, setDrag] = useState<{ path: string; place: { group: string | null; before: string | null } } | null>(null);
+	// The same for a group header, which moves among the groups.
+	const groupPress = useRef<{ id: string; pointerId: number; startY: number; dragging: boolean } | null>(null);
+	const [groupDrag, setGroupDrag] = useState<{ id: string; index: number } | null>(null);
 	// The click that ends a drag must not also open or close the group.
 	const dragEnded = useRef(false);
 	const groupElements = useRef(new Map<string, HTMLElement>());
@@ -56,28 +72,82 @@ export function Sidebar() {
 	const [newMenu, setNewMenu] = useState<{ repository: string; at: { left: number; top: number } } | null>(null);
 	const newButtons = useRef(new Map<string, HTMLButtonElement>());
 	const headerButtons = useRef(new Map<string, HTMLButtonElement>());
-	// The open menu of a repository's header, and where it was asked to be. As for a row's menu, a contextmenu event that
-	// follows Shift+F10 in WebKitGTK leaves the menu the key opened where it is.
-	const [repositoryMenu, setRepositoryMenu] = useState<{ path: string; at: { left: number; top: number } } | null>(null);
-	const menuOpenedByKey = useRef(false);
-	const closeRepositoryMenu = (path: string, backToHeader: boolean) => {
-		menuOpenedByKey.current = false;
-		setRepositoryMenu(null);
-		if (backToHeader) headerButtons.current.get(path)?.focus();
+	const repositoryGroupElements = useRef(new Map<string, HTMLElement>());
+	const repositoryGroupHeads = useRef(new Map<string, HTMLElement>());
+	const repositoryGroupHeaders = useRef(new Map<string, HTMLButtonElement>());
+	const newGroupButton = useRef<HTMLButtonElement>(null);
+	const [naming, setNaming] = useState<Naming | null>(null);
+	const [menu, setMenu] = useState<OpenMenu | null>(null);
+	// A browser may follow Shift+F10 with a contextmenu event; the menu the key opened stays where it is (see WorktreeRow).
+	const menuByKey = useRef(false);
+
+	/**
+	 * A drag just ended. The click that follows it is swallowed, and only that one: a header that moved into or out of
+	 * a group is drawn anew, so its click may never come, and the next real click must not be lost instead.
+	 */
+	const endDrag = () => {
+		dragEnded.current = true;
+		setTimeout(() => {
+			dragEnded.current = false;
+		}, 0);
 	};
+
+	/** Give the keyboard to a control once the page has drawn it where it now is. */
+	const focusLater = (target: () => HTMLElement | null | undefined) => requestAnimationFrame(() => target()?.focus());
 
 	/** The identity the list has now for the worktree at this path, which is what the Done dialog is opened with. */
 	const listedIdAt = (repositoryPath: string, path: string) =>
 		repositories.find(repository => repository.path === repositoryPath)?.worktrees.find(worktree => worktree.path === path)?.id ?? null;
 
-	const othersThan = (path: string) => repositories.filter(repository => repository.path !== path);
-	const indexAt = (path: string, y: number) => dropIndex(othersThan(path).map(repository => {
-		const box = groupElements.current.get(repository.path)?.getBoundingClientRect();
-		return box ? box.top + box.height / 2 : Number.NEGATIVE_INFINITY;
-	}), y);
+	const rows: { repository: Repository; matches: Worktree[] }[] = repositories.map(repository => ({
+		repository,
+		matches: repository.worktrees.filter(worktree => !query || worktreeLabel(worktree).toLowerCase().includes(query)),
+	}));
+	const nothingMatches = query !== "" && rows.every(row => row.matches.length === 0);
+	const arranged = arrangeSidebar(rows, repositoryGroups, collapsedGroups, query);
+
+	const boxOf = (name: string) => {
+		const element = name.startsWith("group:") ? repositoryGroupHeads.current.get(name.slice("group:".length)) : groupElements.current.get(name);
+		return element?.getBoundingClientRect();
+	};
+	const placeAt = (path: string, y: number) => dropPlace(dropSlotsOf(arranged, path, boxOf), y);
+
+	function startNaming(next: Naming) {
+		store.clearGroupNameProblem();
+		setMenu(null);
+		setNaming(next);
+	}
+
+	/** Put the name field away, and give the keyboard back to where naming started. */
+	function stopNaming(focus: () => HTMLElement | null | undefined) {
+		const was = naming;
+		setNaming(null);
+		store.clearGroupNameProblem();
+		if (was) focusLater(focus);
+	}
+
+	const namingOpener = (was: Naming | null) => () => {
+		if (was?.kind === "rename") return repositoryGroupHeaders.current.get(was.id);
+		if (was?.kind === "new" && was.repository !== undefined) return headerButtons.current.get(was.repository);
+		return newGroupButton.current;
+	};
+
+	async function submitName(name: string) {
+		const was = naming;
+		if (!was) return;
+		const saved = was.kind === "new" ? await store.createGroup(name, was.repository) : await store.renameGroup(was.id, name);
+		// A name that is empty or taken keeps the field, with the reason under it.
+		if (!saved && store.getState().groupNameProblem) return;
+		if (saved && was.kind === "new") {
+			const made = store.getState().repositoryGroups.groups.at(-1)?.id;
+			stopNaming(() => (made === undefined ? newGroupButton.current : repositoryGroupHeaders.current.get(made)));
+			return;
+		}
+		stopNaming(namingOpener(was));
+	}
 
 	function onHeaderPointerDown(path: string, event: PointerEvent<HTMLButtonElement>) {
-		if (event.button !== 0 || repositories.length < 2) return;
+		if (event.button !== 0 || !canDragRepositories(repositories.length, groupCount)) return;
 		press.current = { path, pointerId: event.pointerId, startY: event.clientY, dragging: false };
 	}
 
@@ -89,8 +159,8 @@ export function Sidebar() {
 			current.dragging = true;
 			event.currentTarget.setPointerCapture(event.pointerId);
 		}
-		const index = indexAt(current.path, event.clientY);
-		if (drag?.path !== current.path || drag.index !== index) setDrag({ path: current.path, index });
+		const place = placeAt(current.path, event.clientY);
+		if (drag?.path !== current.path || drag.place.group !== place.group || drag.place.before !== place.before) setDrag({ path: current.path, place });
 	}
 
 	function onHeaderPointerUp(event: PointerEvent<HTMLButtonElement>) {
@@ -99,8 +169,9 @@ export function Sidebar() {
 		press.current = null;
 		setDrag(null);
 		if (!current.dragging) return;
-		dragEnded.current = true;
-		void store.moveRepository(current.path, indexAt(current.path, event.clientY));
+		endDrag();
+		const place = placeAt(current.path, event.clientY);
+		void store.placeRepository(current.path, place.group, place.before);
 	}
 
 	function onHeaderPointerCancel() {
@@ -108,29 +179,196 @@ export function Sidebar() {
 		setDrag(null);
 	}
 
-	function moveByKey(path: string, index: number, step: -1 | 1) {
-		const target = index + step;
-		if (target < 0 || target >= repositories.length) return;
-		void store.moveRepository(path, target);
+	function onRepositoryHeaderKeyDown(path: string, event: KeyboardEvent<HTMLButtonElement>) {
+		if (opensWorktreeMenu(event)) {
+			event.preventDefault();
+			menuByKey.current = true;
+			setMenu({ kind: "repository", path, at: underneath(event.currentTarget) });
+			return;
+		}
+		const step = moveStep(event);
+		if (step === 0) return;
+		event.preventDefault();
+		void store.stepRepository(path, step);
 		// The header was moved in the page, so give it the focus back.
-		requestAnimationFrame(() => headerButtons.current.get(path)?.focus());
+		focusLater(() => headerButtons.current.get(path));
 	}
 
-	// Where the line that shows the drop goes: above the group the dragged one would land before, or below the last.
-	const dropMark = (() => {
-		if (!drag) return null;
-		const others = othersThan(drag.path);
-		if (drag.index === repositories.findIndex(repository => repository.path === drag.path)) return null;
-		return drag.index < others.length
-			? { path: others[drag.index]!.path, side: "before" as const }
-			: { path: others[others.length - 1]!.path, side: "after" as const };
+	const otherGroups = (id: string) => repositoryGroups.groups.filter(group => group.id !== id);
+	const groupIndexAt = (id: string, y: number) => dropIndex(otherGroups(id).map(group => {
+		const box = repositoryGroupElements.current.get(group.id)?.getBoundingClientRect();
+		return box ? box.top + box.height / 2 : Number.NEGATIVE_INFINITY;
+	}), y);
+
+	function onGroupPointerDown(id: string, event: PointerEvent<HTMLButtonElement>) {
+		if (event.button !== 0 || groupCount < 2) return;
+		groupPress.current = { id, pointerId: event.pointerId, startY: event.clientY, dragging: false };
+	}
+
+	function onGroupPointerMove(event: PointerEvent<HTMLButtonElement>) {
+		const current = groupPress.current;
+		if (!current || current.pointerId !== event.pointerId) return;
+		if (!current.dragging) {
+			if (Math.abs(event.clientY - current.startY) < DRAG_THRESHOLD) return;
+			current.dragging = true;
+			event.currentTarget.setPointerCapture(event.pointerId);
+		}
+		const index = groupIndexAt(current.id, event.clientY);
+		if (groupDrag?.id !== current.id || groupDrag.index !== index) setGroupDrag({ id: current.id, index });
+	}
+
+	function onGroupPointerUp(event: PointerEvent<HTMLButtonElement>) {
+		const current = groupPress.current;
+		if (!current || current.pointerId !== event.pointerId) return;
+		groupPress.current = null;
+		setGroupDrag(null);
+		if (!current.dragging) return;
+		endDrag();
+		void store.moveGroup(current.id, groupIndexAt(current.id, event.clientY));
+	}
+
+	function onGroupPointerCancel() {
+		groupPress.current = null;
+		setGroupDrag(null);
+	}
+
+	function onGroupHeaderKeyDown(id: string, index: number, event: KeyboardEvent<HTMLButtonElement>) {
+		if (opensWorktreeMenu(event)) {
+			event.preventDefault();
+			menuByKey.current = true;
+			setMenu({ kind: "group", id, at: underneath(event.currentTarget) });
+			return;
+		}
+		const step = moveStep(event);
+		if (step === 0) return;
+		event.preventDefault();
+		const target = index + step;
+		if (target < 0 || target >= groupCount) return;
+		void store.moveGroup(id, target);
+		focusLater(() => repositoryGroupHeaders.current.get(id));
+	}
+
+	function openMenuAt(next: OpenMenu, event: MouseEvent<HTMLElement>) {
+		event.preventDefault();
+		if (menuByKey.current && menu !== null) return;
+		menuByKey.current = false;
+		setMenu(next);
+	}
+
+	function closeMenu(backToOpener: boolean) {
+		const was = menu;
+		menuByKey.current = false;
+		setMenu(null);
+		if (!backToOpener || !was) return;
+		if (was.kind === "repository") headerButtons.current.get(was.path)?.focus();
+		else repositoryGroupHeaders.current.get(was.id)?.focus();
+	}
+
+	// Where the line that shows a repository's drop goes. Nothing while it would land where it is.
+	const dropMark = drag ? repositoryDropMark(arranged, drag.path, drag.place) : null;
+
+	// The same for a group: above the group it would land before, or below the last.
+	const groupDropMark = (() => {
+		if (!groupDrag) return null;
+		const others = otherGroups(groupDrag.id);
+		if (groupDrag.index === repositoryGroups.groups.findIndex(group => group.id === groupDrag.id)) return null;
+		return groupDrag.index < others.length
+			? { id: others[groupDrag.index]!.id, side: "before" as const }
+			: { id: others[others.length - 1]!.id, side: "after" as const };
 	})();
 
-	const groups = repositories.map(repository => ({
-		repository,
-		matches: repository.worktrees.filter(worktree => !query || worktreeLabel(worktree).toLowerCase().includes(query)),
-	}));
-	const nothingMatches = query !== "" && groups.every(group => group.matches.length === 0);
+	const section = ({ repository, matches }: { repository: Repository; matches: Worktree[] }) => {
+		const index = repositories.indexOf(repository);
+		const open = query ? matches.length > 0 : !collapsed.includes(repository.path);
+		return (
+			<Fragment key={repository.path}>
+				{RepositorySection({
+					state, store, repository, matches, query, now, idBase, index, selectedId, open,
+					marks: [
+						drag?.path === repository.path ? "dragging" : "",
+						dropMark?.kind === "repository" && dropMark.path === repository.path ? `drop-${dropMark.side}` : "",
+					].filter(Boolean),
+					sectionRef: element => {
+						if (element) groupElements.current.set(repository.path, element);
+						else groupElements.current.delete(repository.path);
+					},
+					movable: repositories.length > 1,
+					header: {
+						ref: element => {
+							if (element) headerButtons.current.set(repository.path, element);
+							else headerButtons.current.delete(repository.path);
+						},
+						onPointerDown: event => onHeaderPointerDown(repository.path, event),
+						onPointerMove: onHeaderPointerMove,
+						onPointerUp: onHeaderPointerUp,
+						onPointerCancel: onHeaderPointerCancel,
+						onKeyDown: event => onRepositoryHeaderKeyDown(repository.path, event),
+						onClick: () => {
+							if (dragEnded.current) {
+								dragEnded.current = false;
+								return;
+							}
+							store.toggleGroup(repository.path);
+						},
+					},
+					fetchAsked: fetchAsked(repository.path),
+					clashMarks,
+					newMenuAt: newMenu?.repository === repository.path ? newMenu.at : null,
+					newButtonRef: element => {
+						if (element) newButtons.current.set(repository.path, element);
+						else newButtons.current.delete(repository.path);
+					},
+					onNewMenu: (at, backToButton) => {
+						setNewMenu(current => at === null ? null : current?.repository === repository.path ? null : { repository: repository.path, at });
+						if (backToButton) newButtons.current.get(repository.path)?.focus();
+					},
+					removing: removing(repository.path),
+					more: (
+						<button
+							type="button"
+							className="icon-button group-more"
+							aria-label={`More for ${repository.name}`}
+							title={`More for ${repository.name}`}
+							aria-haspopup="menu"
+							aria-expanded={menu?.kind === "repository" && menu.path === repository.path}
+							onClick={event => {
+								menuByKey.current = false;
+								setMenu({ kind: "repository", path: repository.path, at: underneath(event.currentTarget) });
+							}}
+						>
+							<MoreIcon />
+						</button>
+					),
+					onHeadContextMenu: event => openMenuAt({ kind: "repository", path: repository.path, at: { left: event.clientX, top: event.clientY } }, event),
+					listedIdAt: path => listedIdAt(repository.path, path),
+				})}
+				{menu?.kind === "repository" && menu.path === repository.path && (
+					<RepositoryMenu
+						label={describeRepositoryMenu(repository.name)}
+						items={repositoryMenuItems(repositoryGroups, repository.path, cleanUpMenuItems(repository, state.pullRequests[repository.path])[0])}
+						at={menu.at}
+						onClose={closeMenu}
+						onChoose={choice => {
+							chooseFromRepositoryMenu(store, repository.path, choice, path => startNaming({ kind: "new", repository: path }));
+							// Going into or out of a group moves the header in the page, so give it the focus back.
+							if (choice.kind === "place" || choice.kind === "take-out") focusLater(() => headerButtons.current.get(repository.path));
+						}}
+					/>
+				)}
+			</Fragment>
+		);
+	};
+
+	const nameField = (label: string, initial: string) => (
+		<RepositoryGroupName
+			label={label}
+			initial={initial}
+			problem={state.groupNameProblem && describeGroupNameProblem(state.groupNameProblem)}
+			onSubmit={name => void submitName(name)}
+			onCancel={() => stopNaming(namingOpener(naming))}
+			onEdit={() => store.clearGroupNameProblem()}
+		/>
+	);
 
 	return (
 		<aside id={SIDEBAR_ID} className="sidebar" aria-label="Worktrees">
@@ -156,6 +394,20 @@ export function Sidebar() {
 						<path d="M13 2.6v2.9h-2.9" />
 					</svg>
 				</button>
+				<button
+					ref={newGroupButton}
+					type="button"
+					className="icon-button new-group"
+					aria-label="New group"
+					title="New group"
+					disabled={naming?.kind === "new"}
+					onClick={() => startNaming({ kind: "new" })}
+				>
+					<svg aria-hidden="true" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+						<path d="M1.5 4.5v8h13v-7H8L6.5 3.5h-5z" />
+						<path d="M8 7.5v4M6 9.5h4" />
+					</svg>
+				</button>
 			</div>
 
 			{!loaded && !failure && <p className="sidebar-note">Reading worktrees</p>}
@@ -168,354 +420,120 @@ export function Sidebar() {
 			)}
 
 			<div className="groups">
-				{groups.map(({ repository, matches }, index) => {
-					// While filtering, a group opens exactly when it has a match.
-					const open = query ? matches.length > 0 : !collapsed.includes(repository.path);
-					const fetch = state.fetches[repository.path];
-					const fetching = fetch?.fetching === true || fetchAsked(repository.path);
-					const fetchMarker = repository.available ? describeFetchMarker(fetch, now) : null;
-					const fetchMarkerId = `${idBase}-fetch-${index}`;
-					const pullRequests = state.pullRequests[repository.path];
-					const pullProblem = repository.available ? describeRepositoryPullRequestProblem(pullRequests) : null;
-					// The merged worktrees Clean up merged would preview, less those a removal has taken already.
-					const cleanUpCount = cleanUpUnavailableReason(repository, pullRequests) === null
-						? mergedCandidates(repository, pullRequests).filter(worktree => !isBeingRemoved(state, repository.path, worktree.path)).length
-						: 0;
-					const pullProblemId = `${idBase}-pulls-${index}`;
-					const backupProblem = repository.available ? describeBackupsProblem(state.backups[repository.path]) : null;
-					const backupProblemId = `${idBase}-backups-${index}`;
-					// Only while the group is collapsed, its agents' states are summed up beside its name, Needs you first. Seen ones are left out.
-					// A session whose task needs you, or reported an error, counts as that (`alertStatus`), so it is as easy to see as the agent itself.
-					const statuses = open ? [] : unseenStatuses(state.terminals.filter(session => session.repository === repository.path), state.seenStatuses);
+				{arranged.loose.map(section)}
+				{arranged.grouped.map(({ group, items, open }, index) => {
+					const paths = items.map(row => row.repository.path);
+					const folded = !open;
+					// Only while the group is folded, what its repositories would show is summed up on its header. Seen ones are left out.
+					const statuses = folded ? unseenStatuses(state.terminals.filter(session => paths.includes(session.repository)), state.seenStatuses) : [];
 					const summary = summarizeStatuses(statuses);
-					const summaryId = `${idBase}-summary-${index}`;
-					const describedBy = [fetchMarker ? fetchMarkerId : "", pullProblem ? pullProblemId : "", backupProblem ? backupProblemId : "", summary ? summaryId : ""].filter(Boolean).join(" ");
-					const fetchLabel = describeFetchAction(repository.name, fetching ? { repository: repository.path, fetching: true, lastFetched: null, failure: null } : fetch, now);
+					const summaryId = `${idBase}-group-summary-${index}`;
+					const needsLook = folded && groupNeedsLook(state, paths);
+					const needsLookId = `${idBase}-group-check-${index}`;
+					const describedBy = [summary ? summaryId : "", needsLook ? needsLookId : ""].filter(Boolean).join(" ");
+					const renaming = naming?.kind === "rename" && naming.id === group.id;
 					return (
 						<section
-							key={repository.path}
+							key={group.id}
 							ref={element => {
-								if (element) groupElements.current.set(repository.path, element);
-								else groupElements.current.delete(repository.path);
+								if (element) repositoryGroupElements.current.set(group.id, element);
+								else repositoryGroupElements.current.delete(group.id);
 							}}
 							className={[
-								"group",
-								drag?.path === repository.path ? "dragging" : "",
-								dropMark?.path === repository.path ? `drop-${dropMark.side}` : "",
+								"repository-group",
+								groupDrag?.id === group.id ? "dragging" : "",
+								groupDropMark?.id === group.id ? `drop-${groupDropMark.side}` : "",
+								dropMark?.kind === "into" && dropMark.group === group.id ? "drop-into" : "",
+								dropMark?.kind === "above-group" && dropMark.group === group.id ? "drop-before" : "",
 							].filter(Boolean).join(" ")}
-							aria-label={repository.name}
-							data-repository={repository.path}
+							aria-label={`Group ${group.name}`}
+							data-group={group.id}
 						>
 							<div
-								className={repository.available ? "group-head" : "group-head unavailable"}
-								onContextMenu={event => {
-									// A right-click anywhere on the header, its buttons included, opens the repository's menu.
-									event.preventDefault();
-									if (menuOpenedByKey.current && repositoryMenu?.path === repository.path) return;
-									menuOpenedByKey.current = false;
-									setRepositoryMenu({ path: repository.path, at: { left: event.clientX, top: event.clientY } });
+								className="repository-group-head"
+								ref={element => {
+									if (element) repositoryGroupHeads.current.set(group.id, element);
+									else repositoryGroupHeads.current.delete(group.id);
 								}}
+								onContextMenu={event => openMenuAt({ kind: "group", id: group.id, at: { left: event.clientX, top: event.clientY } }, event)}
 							>
-								<button
-									type="button"
-									className="group-header"
-									aria-expanded={open}
-									aria-describedby={describedBy === "" ? undefined : describedBy}
-									aria-keyshortcuts={repositories.length > 1 ? `${MOVE_REPOSITORY_SHORTCUTS} ${WORKTREE_MENU_SHORTCUTS}` : WORKTREE_MENU_SHORTCUTS}
-									title={repositories.length > 1 ? `${describeRepository(repository)}. ${MOVE_REPOSITORY_HINT}` : describeRepository(repository)}
-									ref={element => {
-										if (element) headerButtons.current.set(repository.path, element);
-										else headerButtons.current.delete(repository.path);
-									}}
-									onPointerDown={event => onHeaderPointerDown(repository.path, event)}
-									onPointerMove={onHeaderPointerMove}
-									onPointerUp={onHeaderPointerUp}
-									onPointerCancel={onHeaderPointerCancel}
-									onKeyDown={event => {
-										if (opensWorktreeMenu(event)) {
-											event.preventDefault();
-											const box = event.currentTarget.getBoundingClientRect();
-											menuOpenedByKey.current = true;
-											setRepositoryMenu({ path: repository.path, at: { left: box.left, top: box.bottom } });
-											return;
-										}
-										const step = moveStep(event);
-										if (step === 0) return;
-										event.preventDefault();
-										moveByKey(repository.path, index, step);
-									}}
-									onClick={() => {
-										if (dragEnded.current) {
-											dragEnded.current = false;
-											return;
-										}
-										store.toggleGroup(repository.path);
-									}}
-								>
-									<svg className={open ? "chevron open" : "chevron"} aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-										<path d="M3.5 2 6.5 5 3.5 8" />
-									</svg>
-									<span className="group-name">{repository.name}</span>
-									{summary && (
-										// Its words are the button's description too.
-										<span className={`group-status status-${mostUrgent(statuses)}`} aria-hidden="true">{summary}</span>
-									)}
-									{fetchMarker && (
-										// Quiet: a word beside the name, never a dialog. Its sentences are the button's description.
-										<span className="group-flag fetch-failed" title={fetchMarker.tooltip} aria-hidden="true">{fetchMarker.text}</span>
-									)}
-									{pullProblem && (
-										// As quiet as a failed fetch: one lookup answers for the whole repository, so it is said here once.
-										<span className="group-flag pulls-failed" title={pullProblem.tooltip} aria-hidden="true">{pullProblem.text}</span>
-									)}
-									{backupProblem && (
-										// As quiet as the others: one read answers for the whole repository.
-										<span className="group-flag backups-failed" title={backupProblem.tooltip} aria-hidden="true">{backupProblem.text}</span>
-									)}
-									{repository.available
-										? <span className="group-count">{repository.worktrees.length}</span>
-										: <span className="group-flag">unavailable</span>}
-								</button>
-								{repositoryMenu?.path === repository.path && (
-									<WorktreeMenu
-										label={describeRepositoryMenu(repository)}
-										items={repositoryMenuItems(repository, pullRequests)}
-										at={repositoryMenu.at}
-										onClose={backToHeader => closeRepositoryMenu(repository.path, backToHeader)}
-										onChoose={id => {
-											const request = repositoryMenuChoice(repository, pullRequests, id);
-											if (request) store.openDialog(request);
-										}}
-									/>
-								)}
-								{fetchMarker && <span id={fetchMarkerId} hidden>{fetchMarker.tooltip}</span>}
-								{pullProblem && <span id={pullProblemId} hidden>{pullProblem.tooltip}</span>}
-								{backupProblem && <span id={backupProblemId} hidden>{backupProblem.tooltip}</span>}
-								{summary && <span id={summaryId} hidden>{`Agents: ${summary}.`}</span>}
-								{cleanUpCount > 0 && (
-									// Shown only while there is something to clean up, so it is visible without pointing at the header.
+								{renaming ? nameField(`New name for ${group.name}`, group.name) : (
 									<button
 										type="button"
-										className="icon-button group-clean-up"
-										aria-haspopup="dialog"
-										aria-label={describeCleanUpButton(repository.name, cleanUpCount)}
-										title={describeCleanUpButton(repository.name, cleanUpCount)}
-										onClick={() => store.openDialog({ kind: "clean-up-merged", repository: repository.path })}
-									>
-										<svg aria-hidden="true" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-											<path d="M2.5 4.5h11M6 4.5V2.5h4v2M4 4.5l.7 9h6.6l.7-9" />
-											<path d="M6.5 9l1.2 1.2L10 8" />
-										</svg>
-										<span className="group-clean-up-count" aria-hidden="true">{cleanUpCount}</span>
-									</button>
-								)}
-								{repository.available && (
-									<button
-										type="button"
-										className={fetching ? "icon-button group-fetch fetching" : "icon-button group-fetch"}
-										aria-label={fetchLabel}
-										title={fetchLabel}
-										aria-busy={fetching}
-										aria-disabled={fetching}
-										onClick={() => {
-											if (!fetching) void store.fetchNow(repository.path);
-										}}
-									>
-										<svg aria-hidden="true" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-											<path d="M8 2v8M4.5 6.5 8 10l3.5-3.5" />
-											<path d="M2.5 11v2.5h11V11" />
-										</svg>
-									</button>
-								)}
-								{repository.available && (
-									<button
-										type="button"
-										className="icon-button group-new"
-										aria-label={`New in ${repository.name}`}
-										title={`New worktree or arena in ${repository.name}`}
-										aria-haspopup="menu"
-										aria-expanded={newMenu?.repository === repository.path}
+										className="repository-group-header"
+										aria-expanded={open}
+										aria-describedby={describedBy === "" ? undefined : describedBy}
+										aria-keyshortcuts={groupCount > 1 ? MOVE_REPOSITORY_SHORTCUTS : undefined}
+										title={groupCount > 1 ? `${group.name}. ${MOVE_GROUP_HINT}` : group.name}
 										ref={element => {
-											if (element) newButtons.current.set(repository.path, element);
-											else newButtons.current.delete(repository.path);
+											if (element) repositoryGroupHeaders.current.set(group.id, element);
+											else repositoryGroupHeaders.current.delete(group.id);
 										}}
-										onClick={event => {
-											const box = event.currentTarget.getBoundingClientRect();
-											setNewMenu(current => current?.repository === repository.path ? null : { repository: repository.path, at: { left: box.left, top: box.bottom } });
+										onPointerDown={event => onGroupPointerDown(group.id, event)}
+										onPointerMove={onGroupPointerMove}
+										onPointerUp={onGroupPointerUp}
+										onPointerCancel={onGroupPointerCancel}
+										onKeyDown={event => onGroupHeaderKeyDown(group.id, repositoryGroups.groups.indexOf(group), event)}
+										onClick={() => {
+											if (dragEnded.current) {
+												dragEnded.current = false;
+												return;
+											}
+											store.toggleRepositoryGroup(group.id);
 										}}
 									>
-										<svg aria-hidden="true" width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-											<path d="M5.5 1.5v8M1.5 5.5h8" />
+										<svg className={open ? "chevron open" : "chevron"} aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+											<path d="M3.5 2 6.5 5 3.5 8" />
 										</svg>
+										<span className="repository-group-name">{group.name}</span>
+										{summary && (
+											// Its words are the button's description too.
+											<span className={`group-status repository-group-status status-${mostUrgent(statuses)}`} aria-hidden="true">{summary}</span>
+										)}
+										{needsLook && <span className="group-flag repository-group-check" title={GROUP_NEEDS_LOOK_TITLE} aria-hidden="true">check</span>}
+										<span className="repository-group-count">{items.length}</span>
 									</button>
 								)}
-								{newMenu?.repository === repository.path && (
-									<WorktreeMenu
-										label={`New in ${repository.name}`}
-										items={newMenuItems(state.arenas[repository.path])}
-										at={newMenu.at}
-										onClose={backToButton => {
-											setNewMenu(null);
-											if (backToButton) newButtons.current.get(repository.path)?.focus();
-										}}
-										onChoose={id => {
-											const request = newMenuChoice(repository.path, id, state.arenas[repository.path]);
-											if (request) store.openDialog(request);
+								{summary && <span id={summaryId} hidden>{`Agents: ${summary}.`}</span>}
+								{needsLook && <span id={needsLookId} hidden>{GROUP_NEEDS_LOOK_TITLE}</span>}
+								<button
+									type="button"
+									className="icon-button repository-group-more"
+									aria-label={`More for group ${group.name}`}
+									title={`More for group ${group.name}`}
+									aria-haspopup="menu"
+									aria-expanded={menu?.kind === "group" && menu.id === group.id}
+									onClick={event => {
+										menuByKey.current = false;
+										setMenu({ kind: "group", id: group.id, at: underneath(event.currentTarget) });
+									}}
+								>
+									<MoreIcon />
+								</button>
+								{menu?.kind === "group" && menu.id === group.id && (
+									<RepositoryMenu
+										label={describeGroupMenu(group.name)}
+										items={groupMenuItems()}
+										at={menu.at}
+										onClose={closeMenu}
+										onChoose={choice => {
+											if (choice.kind === "rename") startNaming({ kind: "rename", id: group.id });
+											// Its header goes with it, so the keyboard goes to New group.
+											else void store.deleteGroup(group.id).then(() => focusLater(() => newGroupButton.current));
 										}}
 									/>
 								)}
-								<button
-									type="button"
-									className="icon-button group-remove"
-									aria-label={`Remove ${repository.name} from the list`}
-									title={`Remove ${repository.name}. ${REMOVE_REPOSITORY_HINT}`}
-									disabled={removing(repository.path)}
-									onClick={() => void store.removeRepository(repository.path)}
-								>
-									<svg aria-hidden="true" width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-										<path d="M2.5 2.5l6 6M8.5 2.5l-6 6" />
-									</svg>
-								</button>
 							</div>
-							{repository.available && repository.failure !== null && (
-								<div className="sidebar-error group-failure" role="alert">
-									<p className="sidebar-error-title">{TIMBER_LIST_FAILURE_TITLE}</p>
-									<p className="sidebar-error-text">{repository.failure}</p>
-									<p className="sidebar-error-text">
-										{repository.worktrees.length > 0 ? "Showing the worktrees that were listed last." : "No worktrees are shown."}
-									</p>
-								</div>
-							)}
-							{state.removals
-								// A removal whose row does not show, because the worktree left the list, the group is collapsed, or the filter
-								// hides it, is said here in its group instead. The toast that announced it points here.
-								.filter(removal => removal.repository === repository.path && !(open && repository.available && matches.some(worktree => worktree.path === removal.worktree.path)))
-								.map(removal => {
-									const label = worktreeLabel(removal.worktree);
-									if (removal.status.kind === "running") {
-										return <p key={removal.worktree.path} className="sidebar-note removal-running" title={removal.worktree.path}>Removing {label}</p>;
-									}
-									if (removal.status.kind === "waiting") {
-										return <p key={removal.worktree.path} className="sidebar-note removal-running" title={removal.worktree.path}>Waiting to remove {label}</p>;
-									}
-									return (
-										<div key={removal.worktree.path} className="sidebar-error group-failure removal-failure">
-											<p className="sidebar-error-title">{describeRemovalFailed(label, false)}</p>
-											{removal.status.gone && <p className="sidebar-error-text">The worktree is no longer in the list. What is left of it, such as its branch, is what the list and Git show now.</p>}
-											<p className="sidebar-error-text path">{removal.worktree.path}</p>
-											<div className="removal-failure-actions">
-												<button
-													type="button"
-													className="text-button"
-													aria-haspopup="dialog"
-													aria-label={`Details: ${describeRemovalFailed(label, false)}`}
-													onClick={() => store.openDialog({ kind: "done-worktree", repository: repository.path, worktree: listedIdAt(repository.path, removal.worktree.path) ?? removal.worktree.id })}
-												>
-													Details
-												</button>
-												<button type="button" className="text-button" aria-label={`Dismiss: ${describeRemovalFailed(label, false)}`} onClick={() => store.dismissRemoval(repository.path, removal.worktree.path)}>Dismiss</button>
-											</div>
-										</div>
-									);
-								})}
-							{open && repository.available && (() => {
-								// Attempts sit together under their arena, matched by path as Timber lists them; the rest as before.
-								const grouped = groupArenaRows(matches, state.arenas[repository.path]);
-								const row = (worktree: Worktree, label?: string) => {
-									const removal = removalAt(state, repository.path, worktree.path);
-									return (
-										<li key={worktree.id}>
-											<WorktreeRow
-												worktree={worktree}
-												label={label}
-												selected={worktree.id === selectedId}
-												onSelect={() => {
-													// Choosing a worktree, by click, Enter, or Space, puts the keyboard in its shown session, as a chip does.
-													if (state.tab === "workspace") wantTerminalFocus(worktree.id);
-													store.select(worktree.id);
-												}}
-												pullRequest={pullRequestOf(pullRequests, worktree.path)}
-												issue={state.issues[worktree.id]}
-												removal={removal?.status ?? null}
-												sessions={sessionsOf(state, worktree.id)}
-												seen={state.seenStatuses}
-												portClash={describePortClash(clashMarks.get(worktree.path))}
-												actions={(
-													<>
-														{removal?.status.kind === "failed" && (
-															<button
-																type="button"
-																className="text-button row-removal-details"
-																aria-haspopup="dialog"
-																aria-label={`Details: ${describeRemovalFailed(worktreeLabel(worktree), false)}`}
-																title={`What Timber said when it did not finish removing ${worktreeLabel(worktree)}`}
-																onClick={() => store.openDialog({ kind: "done-worktree", repository: repository.path, worktree: worktree.id })}
-															>
-																Details
-															</button>
-														)}
-														<OpenInEditorIconButton repository={repository.path} worktree={worktree} />
-													</>
-												)}
-												onMenuChoice={id => {
-													// For this row's worktree, not the selected one, and without selecting it.
-													const request = worktreeMenuChoice(repository.path, worktree, id, isBeingRemoved(state, repository.path, worktree.path));
-													if (request) store.openDialog(request);
-												}}
-											/>
-										</li>
-									);
-								};
-								return (
-									<>
-										<ul className="rows">
-											{/* The board comes first in each repository. While a filter is typed, only worktrees are searched, so it steps aside. */}
-											{query === "" && <li><IssuesRow repository={repository.path} /></li>}
-											{grouped.plain.map(worktree => row(worktree))}
-										</ul>
-										{grouped.arenas.map(arena => {
-											const header = describeArenaHeader(arena);
-											return (
-												<section key={arena.name} className="arena-rows" aria-label={header.title}>
-													<button
-														type="button"
-														className="arena-head"
-														aria-haspopup="dialog"
-														title={`Compare the attempts of ${arena.name} and keep one. ${ARENA_BETA_NOTE}`}
-														onClick={() => store.openDialog({ kind: "arena-compare", repository: repository.path, arena: arena.name })}
-													>
-														<span className="arena-name">{header.title}</span>
-														<span className="arena-beta">{BETA}</span>
-														<span className="arena-detail">{header.detail}</span>
-														<span className="arena-compare-label">Compare</span>
-													</button>
-													<ul className="rows">{arena.rows.map(({ worktree, attempt }) => row(worktree, attempt.label))}</ul>
-												</section>
-											);
-										})}
-									</>
-								);
-							})()}
-							{/* While a filter is typed, only worktrees are searched, so backups step aside. */}
-							{open && repository.available && query === "" && <BackupsSection repository={repository.path} list={state.backups[repository.path]} now={now} />}
-							{open && !repository.available && (
-								<div className="group-missing">
-									<p className="group-missing-text">The folder is missing, or it is no longer a Git repository.</p>
-									<p className="group-missing-text path">{repository.path}</p>
-									<p className="group-missing-text">{REMOVE_REPOSITORY_HINT}</p>
-									<button
-										type="button"
-										className="text-button"
-										disabled={removing(repository.path)}
-										onClick={() => void store.removeRepository(repository.path)}
-									>
-										Remove
-									</button>
-								</div>
-							)}
+							{open && items.length > 0 && <div className="repository-group-members">{items.map(section)}</div>}
 						</section>
 					);
 				})}
+				{naming?.kind === "new" && (
+					// A group not saved yet: only its name field, at the end where the group will be.
+					<section className="repository-group pending" aria-label="Unsaved group">
+						<div className="repository-group-head">{nameField("Name of the new group", "")}</div>
+					</section>
+				)}
 			</div>
 
 			{nothingMatches && <p className="sidebar-note">No worktree matches that filter.</p>}

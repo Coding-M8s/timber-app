@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { TIMBER_INSTALL_COMMAND, TIMBER_LIST_FAILURE_TITLE, describeChanges, describeListNotice, describeReloadError, describeRow, describeRowMarkers, describeSync, describeTimberProblem, describeWorktreeKind, describeWorktreeSync, worktreeLabel } from "../src/mainview/format";
+import { DELETE_GROUP_HINT, MOVE_GROUP_HINT, TIMBER_INSTALL_COMMAND, TIMBER_LIST_FAILURE_TITLE, describeChanges, describeGroupNameProblem, describeListNotice, describeReloadError, describeRow, describeRowMarkers, describeSync, describeTimberProblem, describeWorktreeKind, describeWorktreeSync, worktreeLabel } from "../src/mainview/format";
 import { browserSampleRepositories, createMockEngine, sampleRepositories, sampleTimberStatuses } from "../src/mainview/engine/mock";
 import type { Worktree } from "../src/shared/model";
 
@@ -293,6 +293,25 @@ describe("describeListNotice", () => {
 			.toBe("Could not remove the repository");
 		expect(describeListNotice({ kind: "failed", action: "reorder", message: "disk full" }, []))
 			.toEqual({ title: "Could not save the order of the repositories", text: "disk full", problem: true });
+		expect(describeListNotice({ kind: "failed", action: "group", message: "disk full" }, []))
+			.toEqual({ title: "Could not save the groups", text: "disk full", problem: true });
+	});
+
+	test("the override names grouping too", () => {
+		expect(describeListNotice({ kind: "overridden" }, []).text)
+			.toBe("That variable is set, so the app shows its repositories and leaves the saved list alone. Unset it to add, remove, reorder, or group repositories here.");
+	});
+});
+
+describe("repository group words", () => {
+	test("say what is wrong with a name", () => {
+		expect(describeGroupNameProblem({ kind: "empty" })).toBe("Type a name for the group.");
+		expect(describeGroupNameProblem({ kind: "taken", name: "Work" })).toBe("There is already a group named Work.");
+	});
+
+	test("say what deleting and moving a group do", () => {
+		expect(DELETE_GROUP_HINT).toBe("Its repositories stay in the list.");
+		expect(MOVE_GROUP_HINT).toBe("Drag to reorder, or press Alt+Up or Alt+Down.");
 	});
 });
 

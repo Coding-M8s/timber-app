@@ -1,4 +1,5 @@
 import type { Preferences } from "./preferences";
+import type { RepositoryGroups } from "./repository-groups";
 
 /**
  * Whether a usable Timber is installed. Everything that runs Timber depends on
@@ -182,6 +183,20 @@ export type RemoveRepositoryResult =
 /** What came of asking to save a new order of the repositories. Nothing on disk changes but the app's settings. */
 export type ReorderRepositoriesResult =
 	| { outcome: "saved" }
+	| { outcome: "overridden" }
+	| { outcome: "failed"; message: string };
+
+/**
+ * What came of asking to change the repository groups. Nothing on disk changes but the app's settings.
+ * Saved carries every group as saved, which is what the sidebar shows from then on.
+ */
+export type RepositoryGroupsResult =
+	| { outcome: "saved"; groups: RepositoryGroups }
+	/** The name has nothing in it once its spaces are trimmed. */
+	| { outcome: "name-empty" }
+	/** Another group has this name, ignoring case. `name` is that group's name as saved. */
+	| { outcome: "name-taken"; name: string }
+	/** The list comes from the development override, so the app does not change it. */
 	| { outcome: "overridden" }
 	| { outcome: "failed"; message: string };
 

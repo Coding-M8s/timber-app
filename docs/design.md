@@ -48,8 +48,8 @@ change them here first when they change.
   in the main text color, a step larger and heavier than a worktree's, and
   each repository after the first has a hairline and extra space above it.
   An unavailable repository's name stays faint.
-- Drag a repository header to move its group; a line shows where it will
-  land. Alt+Up and Alt+Down move a focused header one place. The order is
+- Drag a repository header to move it; a line shows where it will land.
+  Alt+Up and Alt+Down move a focused header one place. The order is
   remembered between runs.
 - Each repository header has a "+" that opens a small menu, "New
   worktree..." and "New arena (Beta)...", and a "Fetch now" control. An "Add
@@ -62,6 +62,34 @@ change them here first when they change.
   belongs to an arena only when Timber lists it at that path and Git still
   has it as Timber created it, never because of its branch or folder name.
   Clicking the header opens Compare.
+- Each repository header also has a More button (three dots). It opens the
+  repository's menu, as do a right-click on the header and Shift+F10 or the
+  context menu key on it: "Clean up merged" first, then "Add to" or "Move to"
+  each group, "New group...", "Take out of" its group, and "Remove from the
+  list", which only changes the app's list. A missing folder still offers its
+  own Remove.
+- Repositories can be gathered into named groups, such as Work and Personal.
+  There are none until the person makes one, and with none the sidebar looks
+  as before. "New group" sits beside Refresh; it, "New group..." in a
+  repository's menu, and "Rename" in a group's menu type the name in place:
+  Enter saves, Escape cancels. An empty name or one another group has,
+  ignoring case, is said under the field. Loose repositories come first, then
+  each group in order with its repositories indented; an empty group shows.
+- A group header folds and unfolds the whole group, by click, Enter, or
+  Space, and the fold is remembered. A folded group sums up its agents as a
+  repository does, and says "check" when one of its repositories has a
+  removal, a failed listing, or a missing folder. While a filter is typed, a
+  group with a match opens and a group without one is hidden.
+- The group's More button, a right-click, or Shift+F10 opens Rename and
+  Delete group. Deleting never asks, because its repositories stay in the
+  list, loose.
+- Dragging a repository header can reorder it, put it in a group (over the
+  group's header, or anywhere in an open one), or take it out (above the
+  first group). Alt+Up and Alt+Down move it among the repositories of its
+  group, or among the loose ones. Group headers drag, and Alt+Up and Alt+Down
+  move them, among the groups.
+- Grouping only changes the app's saved list. No Git or Timber command runs,
+  and nothing in a repository is touched.
 - The app fetches every repository in the background, on an interval from
   Settings that can be turned off. A failed fetch, such as while offline or
   without stored credentials, shows a quiet grey word beside the

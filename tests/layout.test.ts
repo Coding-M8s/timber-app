@@ -8,10 +8,12 @@ import {
 	clampSidebarWidth,
 	defaultLayout,
 	dismissSetup,
+	forgetGroup,
 	forgetRepository,
 	readLayout,
 	sameLayout,
 	toggleCollapsed,
+	toggleGroupCollapsed,
 } from "../src/shared/layout";
 import { parseSettings, serializeSettings } from "../src/shared/settings";
 
@@ -35,7 +37,7 @@ describe("clampSidebarWidth", () => {
 
 describe("readLayout", () => {
 	test("reads a width and the collapsed repositories", () => {
-		expect(readLayout({ sidebarWidth: 320, collapsed: ["/work/timber"], setupDismissed: [], uncommittedChanges: [], issueLists: {} })).toEqual({ sidebarWidth: 320, collapsed: ["/work/timber"], setupDismissed: [], uncommittedChanges: [], issueLists: {} });
+		expect(readLayout({ sidebarWidth: 320, collapsed: ["/work/timber"], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] })).toEqual({ sidebarWidth: 320, collapsed: ["/work/timber"], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] });
 	});
 
 	test("gives the defaults for anything that is not a layout", () => {
@@ -43,13 +45,13 @@ describe("readLayout", () => {
 	});
 
 	test("keeps the readable part when the other part is damaged", () => {
-		expect(readLayout({ sidebarWidth: "wide", collapsed: ["/work/timber"], setupDismissed: [], uncommittedChanges: [], issueLists: {} })).toEqual({ sidebarWidth: DEFAULT_SIDEBAR_WIDTH, collapsed: ["/work/timber"], setupDismissed: [], uncommittedChanges: [], issueLists: {} });
-		expect(readLayout({ sidebarWidth: 320, collapsed: "all" })).toEqual({ sidebarWidth: 320, collapsed: [], setupDismissed: [], uncommittedChanges: [], issueLists: {} });
-		expect(readLayout({ collapsed: ["/work/timber"] })).toEqual({ sidebarWidth: DEFAULT_SIDEBAR_WIDTH, collapsed: ["/work/timber"], setupDismissed: [], uncommittedChanges: [], issueLists: {} });
+		expect(readLayout({ sidebarWidth: "wide", collapsed: ["/work/timber"], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] })).toEqual({ sidebarWidth: DEFAULT_SIDEBAR_WIDTH, collapsed: ["/work/timber"], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] });
+		expect(readLayout({ sidebarWidth: 320, collapsed: "all" })).toEqual({ sidebarWidth: 320, collapsed: [], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] });
+		expect(readLayout({ collapsed: ["/work/timber"] })).toEqual({ sidebarWidth: DEFAULT_SIDEBAR_WIDTH, collapsed: ["/work/timber"], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] });
 	});
 
 	test("brings a width back within the limits, and drops entries that are not paths or are repeated", () => {
-		expect(readLayout({ sidebarWidth: 9000, collapsed: ["/a", 7, "", null, "/a", "/b"], setupDismissed: [], uncommittedChanges: [], issueLists: {} })).toEqual({ sidebarWidth: MAX_SIDEBAR_WIDTH, collapsed: ["/a", "/b"], setupDismissed: [], uncommittedChanges: [], issueLists: {} });
+		expect(readLayout({ sidebarWidth: 9000, collapsed: ["/a", 7, "", null, "/a", "/b"], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] })).toEqual({ sidebarWidth: MAX_SIDEBAR_WIDTH, collapsed: ["/a", "/b"], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] });
 	});
 });
 
@@ -63,17 +65,17 @@ describe("toggleCollapsed, forgetRepository, and sameLayout", () => {
 	});
 
 	test("forget a repository that leaves the list", () => {
-		const layout = { sidebarWidth: 300, collapsed: ["/a", "/b"], setupDismissed: [], uncommittedChanges: [], issueLists: {} };
-		expect(forgetRepository(layout, "/a")).toEqual({ sidebarWidth: 300, collapsed: ["/b"], setupDismissed: [], uncommittedChanges: [], issueLists: {} });
+		const layout = { sidebarWidth: 300, collapsed: ["/a", "/b"], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] };
+		expect(forgetRepository(layout, "/a")).toEqual({ sidebarWidth: 300, collapsed: ["/b"], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] });
 		expect(forgetRepository(layout, "/other")).toBe(layout);
 	});
 
 	test("compare width and collapsed groups", () => {
-		const layout = { sidebarWidth: 300, collapsed: ["/a"], setupDismissed: [], uncommittedChanges: [], issueLists: {} };
-		expect(sameLayout(layout, { sidebarWidth: 300, collapsed: ["/a"], setupDismissed: [], uncommittedChanges: [], issueLists: {} })).toBe(true);
-		expect(sameLayout(layout, { sidebarWidth: 301, collapsed: ["/a"], setupDismissed: [], uncommittedChanges: [], issueLists: {} })).toBe(false);
-		expect(sameLayout(layout, { sidebarWidth: 300, collapsed: [], setupDismissed: [], uncommittedChanges: [], issueLists: {} })).toBe(false);
-		expect(sameLayout(layout, { sidebarWidth: 300, collapsed: ["/b"], setupDismissed: [], uncommittedChanges: [], issueLists: {} })).toBe(false);
+		const layout = { sidebarWidth: 300, collapsed: ["/a"], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] };
+		expect(sameLayout(layout, { sidebarWidth: 300, collapsed: ["/a"], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] })).toBe(true);
+		expect(sameLayout(layout, { sidebarWidth: 301, collapsed: ["/a"], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] })).toBe(false);
+		expect(sameLayout(layout, { sidebarWidth: 300, collapsed: [], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] })).toBe(false);
+		expect(sameLayout(layout, { sidebarWidth: 300, collapsed: ["/b"], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] })).toBe(false);
 	});
 });
 
@@ -83,40 +85,40 @@ describe("dismissed setup prompts", () => {
 	});
 
 	test("are read as distinct paths, dropping anything else", () => {
-		expect(readLayout({ setupDismissed: ["/a", 7, "", null, "/a", "/b"], uncommittedChanges: [], issueLists: {} }).setupDismissed).toEqual(["/a", "/b"]);
+		expect(readLayout({ setupDismissed: ["/a", 7, "", null, "/a", "/b"], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] }).setupDismissed).toEqual(["/a", "/b"]);
 		expect(readLayout({ setupDismissed: "all" }).setupDismissed).toEqual([]);
 	});
 
 	test("dismissing adds the repository once and leaves the given layout as it was", () => {
 		const start = defaultLayout();
 		const dismissed = dismissSetup(start, "/work/docs-site");
-		expect(dismissed).toEqual({ ...start, setupDismissed: ["/work/docs-site"], uncommittedChanges: [], issueLists: {} });
+		expect(dismissed).toEqual({ ...start, setupDismissed: ["/work/docs-site"], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] });
 		expect(start.setupDismissed).toEqual([]);
 		expect(dismissSetup(dismissed, "/work/docs-site")).toBe(dismissed);
 	});
 
 	test("a repository that leaves the list is forgotten here too", () => {
-		const layout = { sidebarWidth: 300, collapsed: ["/b"], setupDismissed: ["/a", "/b"], uncommittedChanges: [], issueLists: {} };
-		expect(forgetRepository(layout, "/a")).toEqual({ sidebarWidth: 300, collapsed: ["/b"], setupDismissed: ["/b"], uncommittedChanges: [], issueLists: {} });
-		expect(forgetRepository(layout, "/b")).toEqual({ sidebarWidth: 300, collapsed: [], setupDismissed: ["/a"], uncommittedChanges: [], issueLists: {} });
+		const layout = { sidebarWidth: 300, collapsed: ["/b"], setupDismissed: ["/a", "/b"], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] };
+		expect(forgetRepository(layout, "/a")).toEqual({ sidebarWidth: 300, collapsed: ["/b"], setupDismissed: ["/b"], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] });
+		expect(forgetRepository(layout, "/b")).toEqual({ sidebarWidth: 300, collapsed: [], setupDismissed: ["/a"], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] });
 	});
 
 	test("count when comparing layouts", () => {
-		const layout = { sidebarWidth: 300, collapsed: [], setupDismissed: ["/a"], uncommittedChanges: [], issueLists: {} };
-		expect(sameLayout(layout, { sidebarWidth: 300, collapsed: [], setupDismissed: ["/a"], uncommittedChanges: [], issueLists: {} })).toBe(true);
-		expect(sameLayout(layout, { sidebarWidth: 300, collapsed: [], setupDismissed: [], uncommittedChanges: [], issueLists: {} })).toBe(false);
-		expect(sameLayout(layout, { sidebarWidth: 300, collapsed: [], setupDismissed: ["/b"], uncommittedChanges: [], issueLists: {} })).toBe(false);
+		const layout = { sidebarWidth: 300, collapsed: [], setupDismissed: ["/a"], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] };
+		expect(sameLayout(layout, { sidebarWidth: 300, collapsed: [], setupDismissed: ["/a"], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] })).toBe(true);
+		expect(sameLayout(layout, { sidebarWidth: 300, collapsed: [], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] })).toBe(false);
+		expect(sameLayout(layout, { sidebarWidth: 300, collapsed: [], setupDismissed: ["/b"], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] })).toBe(false);
 	});
 
 	test("are written to the settings file and read back", () => {
-		const settings = { repositories: [one], layout: { sidebarWidth: 300, collapsed: [], setupDismissed: [one.path], uncommittedChanges: [], issueLists: {} } };
+		const settings = { repositories: [one], layout: { sidebarWidth: 300, collapsed: [], setupDismissed: [one.path], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] } };
 		expect(parseSettings(serializeSettings(settings))).toEqual(settings);
 	});
 });
 
 describe("the layout part of the settings file", () => {
 	test("round-trips beside the repositories", () => {
-		const settings = { repositories: [one, two], layout: { sidebarWidth: 340, collapsed: [two.path], setupDismissed: [], uncommittedChanges: [], issueLists: {} } };
+		const settings = { repositories: [one, two], layout: { sidebarWidth: 340, collapsed: [two.path], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: ["g-work"] } };
 		const text = serializeSettings(settings);
 		expect(JSON.parse(text)).toEqual({ version: 1, ...settings });
 		expect(parseSettings(text)).toEqual(settings);
@@ -134,8 +136,8 @@ describe("the layout part of the settings file", () => {
 		for (const layout of [null, "wide", 7, [], { sidebarWidth: "wide", collapsed: 3 }]) {
 			expect(parseSettings(JSON.stringify({ version: 1, repositories: [one, two], layout }))).toEqual({ repositories: [one, two], layout: defaultLayout() });
 		}
-		expect(parseSettings(JSON.stringify({ version: 1, repositories: [one], layout: { sidebarWidth: 1, collapsed: [one.path, 5], setupDismissed: [], uncommittedChanges: [], issueLists: {} } })))
-			.toEqual({ repositories: [one], layout: { sidebarWidth: MIN_SIDEBAR_WIDTH, collapsed: [one.path], setupDismissed: [], uncommittedChanges: [], issueLists: {} } });
+		expect(parseSettings(JSON.stringify({ version: 1, repositories: [one], layout: { sidebarWidth: 1, collapsed: [one.path, 5], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] } })))
+			.toEqual({ repositories: [one], layout: { sidebarWidth: MIN_SIDEBAR_WIDTH, collapsed: [one.path], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] } });
 	});
 
 	test("a damaged repository list is still a damaged file, whatever the layout says", () => {
@@ -162,5 +164,38 @@ describe("the comparison of each worktree's Changes tab", () => {
 		expect(sameLayout(defaultLayout(), { ...defaultLayout(), uncommittedChanges: ["w1"] })).toBe(false);
 		const settings = { repositories: [one], layout: { ...defaultLayout(), uncommittedChanges: ["w1"] } };
 		expect(parseSettings(serializeSettings(settings))).toEqual(settings);
+	});
+});
+
+describe("folded repository groups", () => {
+	test("start as none, and an older layout without them reads as none", () => {
+		expect(defaultLayout().collapsedGroups).toEqual([]);
+		expect(readLayout({ sidebarWidth: 300, collapsed: ["/a"] }).collapsedGroups).toEqual([]);
+	});
+
+	test("are read as distinct non-empty ids, dropping anything else", () => {
+		expect(readLayout({ collapsedGroups: ["g1", 7, "", null, "g1", "g2"] }).collapsedGroups).toEqual(["g1", "g2"]);
+		expect(readLayout({ collapsedGroups: "all" }).collapsedGroups).toEqual([]);
+	});
+
+	test("toggle both ways and leave the given layout as it was", () => {
+		const start = defaultLayout();
+		const folded = toggleGroupCollapsed(start, "g1");
+		expect(folded.collapsedGroups).toEqual(["g1"]);
+		expect(start.collapsedGroups).toEqual([]);
+		expect(toggleGroupCollapsed(folded, "g1")).toEqual(start);
+	});
+
+	test("a deleted group is forgotten", () => {
+		const layout = { ...defaultLayout(), collapsedGroups: ["g1", "g2"] };
+		expect(forgetGroup(layout, "g1")).toEqual({ ...defaultLayout(), collapsedGroups: ["g2"] });
+		expect(forgetGroup(layout, "other")).toBe(layout);
+	});
+
+	test("count when comparing layouts", () => {
+		const layout = { ...defaultLayout(), collapsedGroups: ["g1"] };
+		expect(sameLayout(layout, { ...defaultLayout(), collapsedGroups: ["g1"] })).toBe(true);
+		expect(sameLayout(layout, defaultLayout())).toBe(false);
+		expect(sameLayout(layout, { ...defaultLayout(), collapsedGroups: ["g2"] })).toBe(false);
 	});
 });

@@ -3012,3 +3012,58 @@ built with `bun run build` and run with Bun through a wrapper named by
   none failed.
 - `bun run build:web`: built.
 - Not run: the desktop window.
+Run for repository groups (issue 130), on 2026-11-20, Linux x64 (Fedora 44,
+sway) with Bun 1.4.2, Git 2.56.1, Timber 0.1.3, and Google Chrome 157:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 2216 passed, 18 skipped, none failed, in 65.99 seconds. Before
+  the change, on the base it started from, the same machine ran 1999 tests in
+  69.5 seconds.
+- `bun run build:web`: built.
+- `tests/repository-groups-browser.test.ts` drives the installed Chrome over
+  its debugging protocol, with the app on the mock engine served by Vite: 9
+  tests in about 4 seconds, 25 runs in a row with none failing, and 8 more
+  together with the terminal tests. They cover
+  what a test without a window cannot: the keyboard going to the name field
+  and back, typing a name, the keys in a menu, and pointer drags. Each of the
+  three faults found by hand (a click lost after a drag across groups, the
+  keyboard lost after a menu move, a refused name field left behind) was put
+  back in turn, and each made a test here fail.
+- `bun run start` on a private headless display (weston 15 with Xwayland,
+  input through XTest), with `XDG_CONFIG_HOME` at a temporary folder holding
+  four real repositories, reading the settings file after each step. Two
+  groups were made by clicking New group and typing; a repository was added
+  from its menu; two were dragged onto group headers; a group was folded by a
+  click, Enter, and Space; one was renamed from its menu; groups were
+  reordered by a drag and by Alt+Down; Shift+F10 opened a group's menu. After
+  quitting and starting again the groups, their order, their repositories,
+  and the folded one were as left. Delete group then left its repositories
+  in the list, loose, and forgot that it was folded, and Take out of the
+  group made a repository loose. Each step was in the file as expected.
+- CI on Windows (`test-windows`, which may fail without failing the run):
+  1933 passed and 58 failed, the same 58 tests by name that fail on main at
+  `05160e1` (1830 passed, 58 failed).
+- CI on Linux ran the browser tests too, and all 9 passed there. One run of
+  `check` failed once in `tests/terminals.test.ts` ("after the shell ended by
+  itself, a program started with nohup goes on until the session is
+  dismissed"), which this change does not touch; the other run of the same
+  commit passed, and so did the failed one when run again unchanged.
+- Not run: the browser tests on Windows, where they are skipped; the desktop
+  app by hand on Windows, macOS, or under WSLg.
+- After main moved by 49 commits (arenas, Clean up merged, port warnings, and
+  the Changes comparison in the layout), the change was put on top of it again
+  on 2026-11-20. The repository's menu now starts with main's "Clean up
+  merged", and the section keeps main's "+" menu, arenas, and port warnings.
+  `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+  `bun run build:web`: built. `bun test` with Bun 1.4.2: 2641 passed, 23
+  skipped, none failed, the nine browser tests among them. Not run again after
+  this: the desktop app by hand.
+- Put on top of main again on 2026-11-20, at `26f5536` (16 more commits:
+  the issues board, chops, sessions after a restart, and the repository
+  header's look). Each repository section now starts with main's Issues
+  row, its rows take the seen statuses, and a folded group sums up only
+  unseen ones. The layout keeps main's `issueLists` beside `collapsedGroups`.
+  Bun 1.4.5: `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+  `bun run build:web`: built. `bun test`: 3002 passed, 27 skipped, none
+  failed, the nine browser tests among them. Not run again after this: the
+  desktop app by hand.

@@ -3,9 +3,20 @@ import { type Attention, assumedAttention } from "../../shared/attention";
 import { type AlertSettings, type StatusNotice, createAlertRunner } from "../../shared/status-notices";
 import { type ChooseSoundResult, type SoundChoice, type SoundOutcome, readSoundChoice } from "../../shared/sound-setting";
 import type { Engine } from "../../shared/engine";
-import { type Layout, defaultLayout, forgetRepository, readLayout } from "../../shared/layout";
-import { type AddRepositoryResult, type BranchSuggestion, type IssueLink, type OpenInEditorRequest, type OpenInEditorResult, type Repository, type SavedBase, type SyncState, type TimberStatus, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
+import { type Layout, defaultLayout, forgetGroup, forgetRepository, readLayout } from "../../shared/layout";
+import { type AddRepositoryResult, type BranchSuggestion, type IssueLink, type OpenInEditorRequest, type OpenInEditorResult, type Repository, type RepositoryGroupsResult, type SavedBase, type SyncState, type TimberStatus, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
 import { applyOrder } from "../../shared/repository-order";
+import {
+	type GroupChange,
+	type GroupedList,
+	type RepositoryGroup,
+	createGroupIn,
+	deleteGroupIn,
+	groupsOfList,
+	placeIn,
+	renameGroupIn,
+	reorderGroupsIn,
+} from "../../shared/repository-groups";
 import { describeCommandLine } from "../../shared/command-line";
 import { TERMINAL_EDITOR_REASON, editorCommand, editorTarget, otherExecutableNames } from "../../shared/editor";
 import { notFoundOnPath } from "../../shared/search-path";
@@ -543,6 +554,25 @@ export function createMockEngine(
 		current = [...current, found];
 		return { outcome: "added", repository: found };
 	};
+	// The groups live in memory too, beside the list, by the same rules as the main process. None to start with.
+	let groups: RepositoryGroup[] = [];
+	let membership: Record<string, string> = {};
+	let groupIds = 0;
+	const groupedList = (): GroupedList<{ path: string; group?: string }> => ({
+		groups,
+		repositories: current.map(({ path }) => (Object.hasOwn(membership, path) ? { path, group: membership[path]! } : { path })),
+	});
+	const changeGroups = async (change: (list: GroupedList<{ path: string; group?: string }>) => GroupChange<{ path: string; group?: string }>): Promise<RepositoryGroupsResult> => {
+		const changed = change(groupedList());
+		if (changed.outcome === "changed") {
+			groups = changed.next.groups;
+			membership = groupsOfList(changed.next).membership;
+			current = applyOrder(current, changed.next.repositories.map(entry => entry.path));
+		} else if (changed.outcome !== "unchanged") {
+			return changed;
+		}
+		return { outcome: "saved", groups: groupsOfList(groupedList()) };
+	};
 	// The layout lives in memory, for as long as this engine does.
 	let layout: Layout = defaultLayout();
 	let layoutFailure: string | null = null;
@@ -906,12 +936,30 @@ export function createMockEngine(
 		async removeRepository(path) {
 			current = current.filter(repository => repository.path !== path);
 			layout = forgetRepository(layout, path);
+			// Its group stays, as it does on disk.
+			delete membership[path];
 			return { outcome: "removed" };
 		},
 		async reorderRepositories(order) {
 			current = applyOrder(current, order);
 			return { outcome: "saved" };
 		},
+		listRepositoryGroups: async () => groupsOfList(groupedList()),
+		async createRepositoryGroup(name, repository) {
+			// Numbered in the order they are made: an id is used up only by a group that was made.
+			const id = `group-${groupIds + 1}`;
+			const result = await changeGroups(list => createGroupIn(list, id, name, repository));
+			if (result.outcome === "saved") groupIds++;
+			return result;
+		},
+		renameRepositoryGroup: (id, name) => changeGroups(list => renameGroupIn(list, id, name)),
+		async deleteRepositoryGroup(id) {
+			const result = await changeGroups(list => deleteGroupIn(list, id));
+			layout = forgetGroup(layout, id);
+			return result;
+		},
+		reorderRepositoryGroups: order => changeGroups(list => reorderGroupsIn(list, order)),
+		placeRepository: (path, group, order) => changeGroups(list => placeIn(list, path, group, order)),
 		newWorktree: request => command(request.repository, repository => actOutNew(repository, request, ending, workflowNames(repository.path))),
 		openWorktree: request => command(request.repository, repository => actOutOpen(repository, request, ending, listedBranches(repository) ?? [], workflowNames(repository.path))),
 		async rebaseWorktree(request) {
