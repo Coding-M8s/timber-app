@@ -2,6 +2,10 @@ import { realpath } from "node:fs/promises";
 import { delimiter } from "node:path";
 import { BRANCH_LIST_FORMAT, BRANCH_SYNC_FORMAT, parseBranchList, parseBranchSync } from "../shared/git-parse";
 import type { BranchSuggestion, SyncState } from "../shared/model";
+import { readGit } from "./read-git";
+
+/** These queries take well under a second. One this slow is stuck, and answers as if Git could not. */
+const GIT_QUERY_TIMEOUT_MS = 30_000;
 
 /**
  * Read-only Git queries.
@@ -14,16 +18,10 @@ import type { BranchSuggestion, SyncState } from "../shared/model";
  * changes a repository.
  */
 async function git(args: readonly string[]): Promise<string | null> {
+	// These run in the background, so they must not take the index lock (see ./read-git.ts).
 	try {
-		const child = Bun.spawn(["git", ...args], {
-			stdin: "ignore",
-			stdout: "pipe",
-			stderr: "ignore",
-			// These run in the background, so they must not take the index lock.
-			env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
-		});
-		const [stdout, exitCode] = await Promise.all([new Response(child.stdout).text(), child.exited]);
-		return exitCode === 0 ? stdout : null;
+		const answer = await readGit(args, { timeoutMs: GIT_QUERY_TIMEOUT_MS });
+		return answer.started && answer.exitCode === 0 ? answer.stdout : null;
 	} catch {
 		return null;
 	}
