@@ -2528,9 +2528,10 @@ Run for chops (issue 173), Linux x64 with Bun 1.4.5 and Git 2.43.0:
   file tests that use links and pipes are skipped there), and macOS.
 
 Run for ports of a worktree (issue 169), Linux x64 with Bun 1.4.5, Git
-2.56.1, and Docker 29.10.0 (client and server):
+2.56.1, and Docker 29.10.0 (client and server), rebased on main at
+d0e7908:
 
-- `bun test`: 2168 tests passed, 18 skipped, 0 failed, including
+- `bun test`: 2171 tests passed, 18 skipped, 0 failed, including
   `tests/ports-parse.test.ts`, `tests/ports-view.test.tsx`, and
   `tests/ports.test.ts`, which reads ports for linked worktrees of a real
   temporary repository through a stand-in `docker`, checks that the
