@@ -2687,10 +2687,10 @@ installed Timber 0.1.3 and with Timber's main branch at 6f64db7 built with
 `bun build src/index.ts --compile` (it also calls itself 0.1.3):
 
 - `bun run typecheck` and `bun run typecheck:desktop`: no errors.
-- `bun test` with the installed 0.1.3: 2345 passed, 20 skipped, 0 failed.
+- `bun test` with the installed 0.1.3: 2417 passed, 20 skipped, 0 failed.
   The real-repository arena test skips, because 0.1.3 answers `error:
   unknown command '__app-arena'`.
-- `TIMBER_APP_TIMBER_PATH=<main build> bun test`: 2346 passed, 18 skipped,
+- `TIMBER_APP_TIMBER_PATH=<main build> bun test`: 2418 passed, 18 skipped,
   0 failed. In a temporary repository with a stub wrapper preset, the app's
   own commands created an arena with one stub and one manual attempt, Timber's
   private snapshot held the task byte for byte, and list, launch, and inspect
@@ -2700,8 +2700,9 @@ installed Timber 0.1.3 and with Timber's main branch at 6f64db7 built with
 - The person who filed the issue ran the app against that build with
   `TIMBER_APP_TIMBER_PATH` and created, compared, and picked an arena. Their
   testing led to the change that pick ends the other attempts' sessions
-  instead of waiting for them, which the mock and stand-in tests cover and
-  which they have not run yet.
+  instead of waiting for them. They ran that version the same way and
+  reported that it works: keeping one ended the other attempts' sessions and
+  kept the chosen attempt's agent running.
 - The records in `tests/fixtures/timber-arena` were recorded by hand with
   that build on Linux. None holds the task text.
 - Not run: the desktop window with arenas, and the browser build in a
