@@ -9,6 +9,19 @@ change them here first when they change.
   selected worktree. Sidebar side (left or right) is a setting, not a button.
 - No built-in code editor. "Open in editor" launches the configured one.
 - A command palette (Ctrl+Shift+P, Cmd+Shift+P on macOS, or the title bar button) searches every action and worktree. It opens the same dialogs as the buttons, and shows an action that cannot run with the reason.
+- Ctrl+Shift+J (Cmd+Shift+J on macOS) shows the next session that needs
+  you, in any repository, the one that has waited longest first, and after
+  those the sessions that are done, the one that finished first first. It
+  selects the worktree, shows the session, and gives it the keyboard;
+  pressed again, it goes on to the next one and around. A done session
+  goes from the list once it has been on screen and the person moved on,
+  and one that finishes on screen never joins it. After the window
+  reloads, those already waiting or done are taken in the order they
+  started. While any are listed, the title bar says so, each part in its
+  state's color with its shape: "2 need you", "1 done", or both, and a
+  click does the same as the shortcut. With none the key does nothing and
+  the title bar shows nothing. The command palette has "Show next session
+  that needs you or is done", with the shortcut beside it.
 
 ## Sidebar
 

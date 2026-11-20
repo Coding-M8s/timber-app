@@ -3,7 +3,8 @@ import { CLEAN_UP_LABEL, cleanUpUnavailableReason } from "./clean-up-format";
 import { DONE_PRIMARY_NOTE } from "./done-format";
 import { worktreeLabel } from "./format";
 import { REBASE_FOLDER_MISSING } from "./rebase-format";
-import { type AppState, type DialogRequest, isRunning, selectedWorktree } from "./store/state";
+import { type AppState, type DialogRequest, isRunning, finishedSessions, selectedWorktree, waitingSessions } from "./store/state";
+import { NONE_WAITING, WAITING_LABEL, describeToVisit } from "./waiting";
 
 /**
  * The command palette without React: what it lists for the state of the app,
@@ -17,6 +18,8 @@ export type PaletteAction =
 	| { kind: "dialog"; request: DialogRequest }
 	| { kind: "fetch"; repository: string }
 	| { kind: "add-repository" }
+	/** Show the next session that needs the person or is done, as the title bar item does. */
+	| { kind: "next-waiting" }
 	| { kind: "editor"; repository: string; worktree: string }
 	/** Start the shell, or the agent named, in a worktree: `worktree` is its identity, `path` its registered path. */
 	| { kind: "terminal"; repository: string; worktree: string; path: string; agent: string | null };
@@ -131,6 +134,11 @@ function actionEntries(state: AppState): PaletteEntry[] {
 		add("terminal", "Open terminal", target, sessionReason, session(null), ["shell", "session"]);
 		for (const agent of state.preferences.agents) add(`agent:${agent.name}`, `Start ${agent.name}`, target, sessionReason, session(agent.name), ["agent", "session"]);
 	}
+	// About every repository, whatever is selected.
+	const waiting = waitingSessions(state).length;
+	const finished = finishedSessions(state).length;
+	add("next-waiting", WAITING_LABEL, describeToVisit(waiting, finished), waiting + finished === 0 ? NONE_WAITING : null,
+		{ kind: "next-waiting" }, ["needs you", "waiting", "done", "finished", "agent", "jump", "attention"]);
 	// One per repository, whatever is selected: it is about the repository, never one worktree.
 	for (const repository of state.repositories) {
 		if (!repository.available) continue;

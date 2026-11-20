@@ -39,11 +39,12 @@ import { HANDOFF_NO_AGENT, describeHandoffNotListed, handoffAgent } from "../han
 import { describeAdded, describeRemoved, folderName, worktreeLabel } from "../format";
 import { describeFetched } from "../fetch-format";
 import { wantTerminalFocus } from "../terminal-focus";
+import { nextWaitingSession, withFinishedOrder, withWaitingOrder } from "../waiting";
 import { mergeOverlapping } from "./merge";
 import { keepEntries } from "./records";
 import {
 	type AppState, type ChangesView, type DialogRequest, type Operation, type PullRequestForm, type Removal, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood,
-	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, timberReady, withTerminal, withoutSession } from "./state";
+	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, timberReady, withTerminal, withoutSession } from "./state";
 
 /**
  * The single holder of what the interface shows: Timber's status, the
@@ -378,6 +379,17 @@ export interface AppStore {
 	 */
 	revealSession(id: string): void;
 	/**
+	 * Bring the next session that needs the person, or else that finished, as
+	 * the title bar item and its shortcut do: every Needs you session, the one
+	 * that has waited longest first, then every finished one not seen yet,
+	 * the one that finished first first, in any repository (see
+	 * ../waiting.ts). It goes to the one after the session on screen when that
+	 * one is in the list, or else to the first. Shown as `revealSession` does.
+	 * Nothing happens, and the answer is false, when there is none, while a
+	 * dialog or the quit question is open, or while Timber is not ready.
+	 */
+	jumpToWaiting(): boolean;
+	/**
 	 * Show the session `step` chips away from this one in its worktree,
 	 * wrapping around, for the keys that switch sessions from a terminal.
 	 */
@@ -606,6 +618,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	}
 
 	function update(change: Partial<AppState>): void {
+		const shownBefore = sessionOnScreen(state)?.id ?? null;
+		const terminalsBefore = state.terminals;
 		state = { ...state, ...change };
 		// A change to the list, or to Timber, may bring links to read or take some away.
 		if (change.repositories || change.timber) catchUpIssues();
@@ -614,8 +628,18 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			const removals = reconcileRemovals(state.repositories, state.removals);
 			if (removals !== state.removals) state = { ...state, removals };
 		}
-		// A session on screen is seen, whatever put it there: a chip, the selection, the tab, or a session that started or ended.
+		// A session that moved into Needs you joins the end of the waiting order, and one that left it leaves.
+		if (change.terminals) {
+			const waitingOrder = withWaitingOrder(state.waitingOrder, state.terminals);
+			if (waitingOrder !== state.waitingOrder) state = { ...state, waitingOrder };
+		}
+		// A finished session joins the end of its order, and leaves once it was seen: on screen, then not.
 		const onScreen = sessionOnScreen(state);
+		const finishedOrder = withFinishedOrder(state.finishedOrder, {
+			before: terminalsBefore, now: state.terminals, shownBefore, shownNow: onScreen?.id ?? null,
+		});
+		if (finishedOrder !== state.finishedOrder) state = { ...state, finishedOrder };
+		// A session on screen is seen, whatever put it there: a chip, the selection, the tab, or a session that started or ended.
 		if (onScreen && state.unseenSessions.includes(onScreen.id)) {
 			state = { ...state, unseenSessions: state.unseenSessions.filter(id => id !== onScreen.id) };
 		}
@@ -1813,6 +1837,14 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		update({ selection, tab: "workspace", shownSessions: { ...state.shownSessions, [session.worktree]: id } });
 	}
 
+	function jumpToWaiting(): boolean {
+		if (state.dialog !== null || state.quitRequest !== null || !timberReady(state)) return false;
+		const next = nextWaitingSession(sessionsToVisit(state), sessionOnScreen(state)?.id ?? null);
+		if (next === null) return false;
+		revealSession(next);
+		return true;
+	}
+
 	function stepSession(id: string, step: 1 | -1): void {
 		const session = state.terminals.find(candidate => candidate.id === id);
 		if (!session) return;
@@ -2123,6 +2155,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		openTerminalIn,
 		showSession,
 		revealSession,
+		jumpToWaiting,
 		stepSession,
 		renameTerminal,
 		closeTerminal,

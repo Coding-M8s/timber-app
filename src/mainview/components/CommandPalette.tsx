@@ -1,6 +1,7 @@
 import { type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from "react";
 import { PALETTE_LABEL, PALETTE_PLACEHOLDER, type PaletteMatch, matchEntries, paletteEntries, rowAfterKey } from "../palette";
 import { runPaletteEntry } from "../palette-run";
+import { waitingShortcut } from "../waiting";
 import { useAppState, useStore } from "../store/react";
 import { estimateTerminalSize } from "./TerminalPanel";
 
@@ -30,6 +31,7 @@ export function CommandPalette() {
 	const [query, setQuery] = useState("");
 	const [active, setActive] = useState(0);
 	const id = useId();
+	const mac = typeof navigator !== "undefined" && /Mac/.test(navigator.platform);
 	const entries = useMemo(() => paletteEntries(state), [state]);
 	const matches = useMemo(() => matchEntries(entries, query), [entries, query]);
 	const current = Math.min(active, matches.length - 1);
@@ -117,6 +119,7 @@ export function CommandPalette() {
 								<span className="palette-label"><Label match={match} /></span>
 								{entry.kind === "worktree" && <span className="palette-kind">Worktree</span>}
 								<span className="palette-detail">{reason ?? entry.detail}</span>
+								{entry.action.kind === "next-waiting" && <kbd className="palette-shortcut">{waitingShortcut(mac)}</kbd>}
 							</li>
 						);
 					})}

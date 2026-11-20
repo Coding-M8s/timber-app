@@ -1,5 +1,6 @@
 import { Dialogs } from "./components/Dialogs";
 import { PaletteShortcut } from "./components/PaletteShortcut";
+import { WaitingShortcut } from "./components/WaitingShortcut";
 import { QuitDialog } from "./components/QuitDialog";
 import { Sidebar } from "./components/Sidebar";
 import { SidebarResizer } from "./components/SidebarResizer";
@@ -119,6 +120,7 @@ export function App({ store, children }: { store: AppStore; children?: ReactNode
 				<Toasts />
 				<Dialogs />
 				<PaletteShortcut />
+				<WaitingShortcut />
 				{children}
 				{/* Over any other dialog: the app is about to quit. */}
 				<QuitDialog />

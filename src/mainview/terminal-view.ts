@@ -5,6 +5,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { isPaletteShortcut } from "./palette";
+import { isWaitingShortcut } from "./waiting";
 import type { AppStore } from "./store/store";
 import { TERMINAL_LINE_HEIGHT, type TerminalAppearance, terminalFontStack } from "../shared/terminal-appearance";
 import { TERMINAL_MINIMUM_CONTRAST, terminalColors, watchTerminalColors } from "./terminal-colors";
@@ -108,6 +109,8 @@ function createView(store: AppStore, id: string): TerminalView {
 	terminal.attachCustomKeyEventHandler(event => {
 		// The palette shortcut is the app's key, so it is never sent to the program.
 		if (isPaletteShortcut(event)) return false;
+		// So is the key for the next session that needs you or is done, even when there is none: Ctrl+J would reach the program as a new line.
+		if (isWaitingShortcut(event)) return false;
 		// Switching sessions and going to the chips are the app's keys, never the program's.
 		const move = sessionKey(event, mac);
 		if (move !== null) {

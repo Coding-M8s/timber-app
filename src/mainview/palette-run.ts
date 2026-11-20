@@ -27,6 +27,9 @@ export function runPaletteEntry(store: AppStore, entry: PaletteEntry, size: Sess
 		case "add-repository":
 			void store.addRepository();
 			return;
+		case "next-waiting":
+			store.jumpToWaiting();
+			return;
 		case "editor":
 			void store.openInEditor({ repository: action.repository, worktree: action.worktree });
 			return;

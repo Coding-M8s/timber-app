@@ -115,6 +115,32 @@ pre:focus-visible {
 	white-space: nowrap;
 }
 
+/* "2 need you, 1 done": each part in its state's color with its shape. */
+.titlebar-waiting {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	gap: 10px;
+	padding: 3px 8px;
+	border: 1px solid var(--line);
+	color: var(--text-2);
+	border-radius: 999px;
+	background: none;
+	font: inherit;
+	font-size: 12px;
+	cursor: pointer;
+}
+
+.titlebar-waiting-part {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.titlebar-waiting:hover {
+	background: var(--fill-hover);
+}
+
 .body {
 	flex: 1 1 auto;
 	min-height: 0;
@@ -3660,6 +3686,13 @@ pre:focus-visible {
 
 .palette-kind {
 	flex: none;
+	font-size: 11px;
+	color: var(--text-3);
+}
+
+.palette-shortcut {
+	flex: none;
+	font-family: inherit;
 	font-size: 11px;
 	color: var(--text-3);
 }
