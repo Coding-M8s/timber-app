@@ -243,9 +243,13 @@ export const recordedBackup = {
 const found = await findTimber();
 export const realTimber: string | null = found.state === "ready" ? found.path : null;
 
-/** Run Git in a real temporary repository, with a fixed identity and no user configuration. */
+/**
+ * Run Git in a real temporary repository, with a fixed identity and no user
+ * configuration. Automatic maintenance is off so that no background job
+ * changes `.git` while a test compares it before and after.
+ */
 export function git(cwd: string, ...args: string[]): string {
-	const result = Bun.spawnSync(["git", "-C", cwd, "-c", "user.name=Timber Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false", ...args], {
+	const result = Bun.spawnSync(["git", "-C", cwd, "-c", "user.name=Timber Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false", "-c", "maintenance.auto=false", "-c", "gc.auto=0", ...args], {
 		stdout: "pipe",
 		stderr: "pipe",
 		env: { ...process.env, GIT_CONFIG_GLOBAL: "", GIT_CONFIG_NOSYSTEM: "1" },
