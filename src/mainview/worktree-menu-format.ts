@@ -16,7 +16,8 @@ import type { DialogRequest } from "./store/state";
 /** The keys that open a focused row's menu, as `aria-keyshortcuts` says them. */
 export const WORKTREE_MENU_SHORTCUTS = "Shift+F10 ContextMenu";
 
-export type WorktreeMenuItemId = "done" | "clean-up-merged";
+/** Done is a worktree row's entry, Clean up merged a repository header's; the others are of a repository's "+" menu (see ./arena-format.ts). */
+export type WorktreeMenuItemId = "done" | "clean-up-merged" | "new-worktree" | "new-arena";
 
 /** One entry of a row's menu. A disabled entry says why in `note`, shown under it. */
 export interface WorktreeMenuItem {

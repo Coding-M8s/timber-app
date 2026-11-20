@@ -82,6 +82,8 @@ interface WorktreeRowProps {
 	worktree: Worktree;
 	selected: boolean;
 	onSelect: () => void;
+	/** The name the row shows instead of the branch, such as an arena attempt's label. */
+	label?: string | undefined;
 	/** The pull request Timber found for the worktree's branch, or null for none or not known. */
 	pullRequest?: PullRequestEntry | null;
 	/** The store's last answer for the worktree's linked issue, if any. Its short form goes in the row's tooltip. */
@@ -111,7 +113,7 @@ interface WorktreeRowProps {
 }
 
 /** One worktree in the sidebar. What it is marked with comes from `describeRowMarkers`; this only draws it. */
-export function WorktreeRow({ worktree, selected, onSelect, pullRequest = null, issue, removal = null, sessions = [], portClash = null, actions, onMenuChoice }: WorktreeRowProps) {
+export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest = null, issue, removal = null, sessions = [], portClash = null, actions, onMenuChoice }: WorktreeRowProps) {
 	const descriptionId = useId();
 	const button = useRef<HTMLButtonElement>(null);
 	// Where the open menu was asked to be, or null while it is closed.
@@ -157,7 +159,7 @@ export function WorktreeRow({ worktree, selected, onSelect, pullRequest = null, 
 			onKeyDown={onRowKeyDown}
 		>
 			<span className="row-line">
-				<span className="row-name">{worktreeLabel(worktree)}</span>
+				<span className="row-name">{label ?? worktreeLabel(worktree)}</span>
 				{at("branch")}
 			</span>
 			<span className="row-line row-meta">

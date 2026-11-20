@@ -13,6 +13,7 @@ import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInE
 import { type Preferences, defaultPreferences } from "../../shared/preferences";
 import type { IssueLookup } from "../../shared/issues";
 import type { BackupDeleteRequest, BackupDeleteResult, BackupList, BackupRestoreRequest, BackupRestoreResult } from "../../shared/backups";
+import type { ArenaInspection, ArenaList, ArenaPresetList, NewArenaRequest, NewArenaResult, PickArenaRequest, PickArenaResult } from "../../shared/arenas";
 import type { PullRequestList } from "../../shared/pull-requests";
 import { applyOrder, moveInOrder } from "../../shared/repository-order";
 import { type ZoomStep, stepZoom, zoomLabel } from "../../shared/zoom";
@@ -346,6 +347,26 @@ export interface AppStore {
 	restoreBackup(request: BackupRestoreRequest): Promise<BackupRestoreResult>;
 	/** Delete one backup, once. Its repository's backups are read again after every outcome. */
 	deleteBackup(request: BackupDeleteRequest): Promise<BackupDeleteResult>;
+	/** A repository's saved arena presets, by name and tool. Never throws. */
+	listArenaPresets(repository: string): Promise<ArenaPresetList>;
+	/** Compare an arena's attempts with Timber. Read-only. Never throws. */
+	inspectArena(request: { repository: string; arena: string }): Promise<ArenaInspection>;
+	/**
+	 * Create an arena, once. The repository and its arenas are read again
+	 * after every outcome. When every attempt is ready, each attempt that has
+	 * an agent gets its own session, started as Timber says (see
+	 * `startAttemptAgent`), and the first attempt is selected. After a
+	 * failure nothing starts. Never throws.
+	 */
+	newArena(request: NewArenaRequest): Promise<NewArenaResult>;
+	/** Keep one attempt of an arena, once. The repository and its arenas are read again after every outcome. Never throws. */
+	pickArena(request: PickArenaRequest): Promise<PickArenaResult>;
+	/**
+	 * Start an arena attempt's agent in its own session, with the command
+	 * Timber gives for it, and show it, as `openTerminalIn` does. The
+	 * worktree must be listed. Never throws.
+	 */
+	startAttemptAgent(request: { repository: string; worktree: string; arena: string; attempt: string }): void;
 	/**
 	 * Start a plain shell session in a worktree and show it: select the
 	 * worktree and show the Workspace tab, as `startSessionsIn` does.
@@ -488,6 +509,9 @@ function notHeardFailure(what: string, error: unknown, then = ""): TimberFailure
  * meanwhile still happens.
  */
 export const BACKUP_READ_SPACING_MS = 15_000;
+
+/** As `BACKUP_READ_SPACING_MS`, for arenas: listing them asks Git about every attempt. */
+export const ARENA_READ_SPACING_MS = 15_000;
 
 export function createAppStore(engine: Engine, schedule: Schedule = scheduleWithTimer): AppStore {
 	let state = initialState;
@@ -708,6 +732,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			forgetGoneReviews();
 			catchUpPullRequests();
 			catchUpBackups();
+			catchUpArenas();
 		} catch (error) {
 			update({ error: { repository: null, message: messageOf(error) } });
 		}
@@ -817,12 +842,51 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		backupReads.catchUp(refreshBackups);
 	}
 
+	/*
+	 * Arenas are read as backups are: when a repository is first listed, on
+	 * Refresh, right after a create or pick, and after a change of the
+	 * repository, spaced out (see `ARENA_READ_SPACING_MS`). A Timber with no
+	 * arenas for apps is asked again only on Refresh or when another Timber is
+	 * found. Reads of one repository never overlap.
+	 */
+	const arenaReads = repositoryReads<ArenaList>(() => state.arenas, arenas => update({ arenas }));
+	let arenaGeneration = 0;
+	const refreshArenas = mergeOverlapping<string>(path => {
+		const generation = arenaGeneration;
+		return arenaReads.read(path, () => engine.listArenas(path), message => ({ state: "failed", message }), answer => {
+			if (generation !== arenaGeneration) return void refreshArenas(path);
+			update({ arenas: { ...state.arenas, [path]: answer } });
+		});
+	});
+	const arenaSpacing = new Map<string, { asked: boolean }>();
+	function requestArenas(path: string): void {
+		if (state.arenas[path]?.state === "unsupported") return;
+		const spacing = arenaSpacing.get(path);
+		if (spacing) {
+			spacing.asked = true;
+			return;
+		}
+		const started = { asked: false };
+		arenaSpacing.set(path, started);
+		schedule(() => {
+			arenaSpacing.delete(path);
+			if (started.asked) requestArenas(path);
+		}, ARENA_READ_SPACING_MS);
+		void refreshArenas(path);
+	}
+	function catchUpArenas(): void {
+		arenaReads.catchUp(refreshArenas);
+	}
+
 	/** Refresh: every repository's backups, at once, also where Timber had no backup list. */
 	async function refresh(): Promise<void> {
 		await reloadAll("all");
 		for (const repository of state.repositories) {
 			// A read in progress may predate the press; a new one follows it.
-			if (repository.available) void refreshBackups(repository.path);
+			if (repository.available) {
+				void refreshBackups(repository.path);
+				void refreshArenas(repository.path);
+			}
 		}
 	}
 
@@ -846,6 +910,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			forgetGoneForms();
 			forgetGoneReviews();
 			requestBackups(path);
+			requestArenas(path);
 			// The file may have changed with the worktree's branch or files: read the chops on screen again.
 			if (state.chops?.repository === path) void readChops(path, state.chops.worktree);
 		} catch (error) {
@@ -1242,10 +1307,15 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			// Another Timber may list backups where the last one could not, or answer otherwise: read them again.
 			if (JSON.stringify(state.timber) !== before) {
 				backupGeneration += 1;
+				arenaGeneration += 1;
 				if (Object.keys(state.backups).length > 0) update({ backups: {} });
+				if (Object.keys(state.arenas).length > 0) update({ arenas: {} });
 			}
 			if (timberReady(state) && !wasReady) void reloadAll("all");
-			else if (timberReady(state)) catchUpBackups();
+			else if (timberReady(state)) {
+				catchUpBackups();
+				catchUpArenas();
+			}
 		});
 	}
 
@@ -1745,6 +1815,68 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		return result;
 	}
 
+	async function listArenaPresets(repository: string): Promise<ArenaPresetList> {
+		try {
+			return await engine.listArenaPresets(repository);
+		} catch (error) {
+			return { ok: false, message: notHeard("the arena presets", error) };
+		}
+	}
+
+	async function inspectArena(request: { repository: string; arena: string }): Promise<ArenaInspection> {
+		try {
+			return await engine.inspectArena(request);
+		} catch (error) {
+			return { state: "failed", message: notHeard("the comparison", error) };
+		}
+	}
+
+	async function newArena(request: NewArenaRequest): Promise<NewArenaResult> {
+		let result: NewArenaResult;
+		try {
+			result = await engine.newArena(request);
+		} catch (error) {
+			const failure = notHeardFailure("how timber arena new ended", error, ". What it did is unknown, so check the list before trying again.");
+			result = { outcome: "failed", ran: true, arena: null, failure };
+		}
+		// Even a failure can leave attempts behind.
+		await Promise.all([reloadOne(request.repository), refreshArenas(request.repository)]);
+		if (result.outcome !== "created") return result;
+		const listed = state.repositories.find(repository => repository.path === request.repository)?.worktrees ?? [];
+		const first = listed.find(worktree => worktree.path === result.arena.attempts[0]?.path);
+		if (first) {
+			update({ tab: "workspace" });
+			select(first.id);
+		}
+		// Each attempt's agent in its own session, one after another, as Timber says to start it. A manual attempt has none.
+		for (const attempt of result.arena.attempts) {
+			if (attempt.tool === "manual" || attempt.stage !== "ready") continue;
+			await openTerminalInTurn({ repository: request.repository, worktree: attempt.path, cols: 80, rows: 24, arenaAttempt: { arena: result.arena.name, attempt: attempt.label } });
+		}
+		return result;
+	}
+
+	async function pickArena(request: PickArenaRequest): Promise<PickArenaResult> {
+		let result: PickArenaResult;
+		try {
+			result = await engine.pickArena(request);
+		} catch (error) {
+			const failure = notHeardFailure("how timber arena pick ended", error, ". What it did is unknown, so check the list before trying again.");
+			result = { outcome: "failed", ran: true, pick: null, failure };
+		}
+		await Promise.all([reloadOne(request.repository), refreshArenas(request.repository)]);
+		return result;
+	}
+
+	function startAttemptAgent(request: { repository: string; worktree: string; arena: string; attempt: string }): void {
+		const worktree = state.repositories.find(repository => repository.path === request.repository)?.worktrees.find(candidate => candidate.path === request.worktree);
+		if (!worktree) return;
+		wantTerminalFocus(worktree.id);
+		update({ tab: "workspace" });
+		select(worktree.id);
+		void openTerminal({ repository: request.repository, worktree: worktree.path, cols: 80, rows: 24, arenaAttempt: { arena: request.arena, attempt: request.attempt } });
+	}
+
 	function openTerminalIn(repositoryPath: string, worktreePath: string): void {
 		const worktree = state.repositories.find(repository => repository.path === repositoryPath)?.worktrees.find(candidate => candidate.path === worktreePath);
 		if (!worktree) return;
@@ -2151,6 +2283,11 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		editPullRequestForm,
 		createPullRequest,
 		restoreBackup,
+		listArenaPresets,
+		inspectArena,
+		newArena,
+		pickArena,
+		startAttemptAgent,
 		deleteBackup,
 		openTerminalIn,
 		showSession,
