@@ -1,6 +1,20 @@
 import type { ElectrobunConfig } from "electrobun";
 import { APP_DESCRIPTION, APP_IDENTIFIER, APP_NAME, APP_VERSION } from "./src/shared/app-info";
 
+/**
+ * On Windows, node-pty and the ConPTY it ships run the terminal sessions
+ * (src/bun/pseudo-terminal.ts). The main process requires it at run time, so
+ * only what Windows needs is copied beside the bundle, where that require
+ * finds it: its JavaScript, and the prebuilt files for this machine's
+ * architecture without their debug symbols.
+ */
+const NODE_PTY = "node_modules/node-pty";
+const PREBUILT = `prebuilds/win32-${process.arch}`;
+const nodePty: Record<string, string> = process.platform !== "win32" ? {} : Object.fromEntries(
+	["package.json", "lib", `${PREBUILT}/conpty.node`, `${PREBUILT}/conpty_console_list.node`, `${PREBUILT}/conpty`]
+		.map(path => [`${NODE_PTY}/${path}`, `bun/${NODE_PTY}/${path}`]),
+);
+
 export default {
 	app: {
 		name: APP_NAME,
@@ -21,6 +35,7 @@ export default {
 			"dist/assets": "views/mainview/assets",
 			// The licenses of the bundled fonts and of the logo travel with every build.
 			licenses: "licenses",
+			...nodePty,
 		},
 		// Vite output changes on every interface build. Hot reload handles the view.
 		watchIgnore: ["dist/**"],
