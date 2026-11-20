@@ -159,6 +159,9 @@ change them here first when they change.
   Write: src/a.ts", in the tooltip. Beside the shown agent's state, a button
   such as "4 tasks" opens the list of its tasks as a tree, each with its
   state, progress, title, and message.
+- Quitting and opening the app again brings every worktree's running
+  sessions back in their places, with the same chip showing; agents go back
+  to their conversations, terminals start a fresh shell.
 - The header names the worktree's saved base beside its sync state and
   changes, in the same words as the row's tooltip.
 - The header shows the worktree's pull request with the same words as its

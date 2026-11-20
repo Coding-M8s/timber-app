@@ -6,12 +6,12 @@ import { manualClock } from "./support/clock";
 const settle = () => Bun.sleep(0);
 const A = "/work/a";
 const B = "/work/b";
-const A_MAIN: AttendedWorktree = { repository: A, worktree: A };
-const A_FEAT: AttendedWorktree = { repository: A, worktree: "/work/a-worktrees/feat" };
-const B_MAIN: AttendedWorktree = { repository: B, worktree: B };
+const A_MAIN: AttendedWorktree = { repository: A, worktree: A, id: "a-main" };
+const A_FEAT: AttendedWorktree = { repository: A, worktree: "/work/a-worktrees/feat", id: "a-feat" };
+const B_MAIN: AttendedWorktree = { repository: B, worktree: B, id: "b-main" };
 
-const shown = (selected: AttendedWorktree | null, focused = true): Attention => ({ visible: true, focused, selected });
-const hidden = (selected: AttendedWorktree | null): Attention => ({ visible: false, focused: false, selected });
+const shown = (selected: AttendedWorktree | null, focused = true): Attention => ({ visible: true, focused, selected, session: null });
+const hidden = (selected: AttendedWorktree | null): Attention => ({ visible: false, focused: false, selected, session: null });
 
 function setup() {
 	const clock = manualClock();

@@ -1,6 +1,8 @@
 import { terminalSample } from "../terminal-sample";
 import { type AgentSetting, agentCommand, findAgent } from "../../shared/agent";
 import { type ArenaLaunch, isArenaName, isAttemptLabel } from "../../shared/arenas";
+import { type ResumableAgent, agentStartArguments, conversationMissingNote, resumableAgent } from "../../shared/agent-resume";
+import type { Attention } from "../../shared/attention";
 import { describeCommandLine } from "../../shared/command-line";
 import type { Engine } from "../../shared/engine";
 import type { TimberStatus, Worktree } from "../../shared/model";
@@ -11,14 +13,16 @@ import {
 } from "../../shared/terminal";
 import { recordsForWindow } from "../../shared/session-status";
 import { PROBE_ANSWER, type StatusRecords, type StatusScanner, createStatusRecords, createStatusScanner } from "../../shared/program-status";
+import { type LiveSession, type SavedSessions, buildSavedSessions, isConversationId, parseSavedSessions, serializeSavedSessions } from "../../shared/saved-sessions";
 import { notFoundOnPath } from "../../shared/search-path";
 import { type WorkflowList, isWorkflowName } from "../../shared/workflows";
 import { worktreeSetupArguments } from "../../shared/worktree-commands";
+import { type MockSessionStorage, memorySessionStorage } from "./mock-session-storage";
 
 /** The part of the engine about terminals, and how they are acted out. */
 export type TerminalCapabilities = Pick<Engine,
 	| "listTerminals" | "openTerminal" | "renameTerminal" | "readTerminal" | "drawnTerminal" | "writeTerminal" | "pasteTerminal" | "resizeTerminal" | "closeTerminal"
-	| "onTerminalOutput" | "onTerminalChanged" | "onQuitRequested" | "confirmQuit" | "writeClipboard" | "readClipboard" | "openLink"
+	| "onTerminalOutput" | "onTerminalChanged" | "onQuitRequested" | "confirmQuit" | "writeClipboard" | "readClipboard" | "openLink" | "takeSavedSessions"
 >;
 
 /** Start a shell with a chop typed into it, as the main process's `TerminalSessions.open` does. Not part of the engine: only `runChop` calls it. */
@@ -68,6 +72,21 @@ export interface TerminalControls {
 	 * nonzero code prints a failing setup script first.
 	 */
 	endWorktreeSetups(exitCode: number | null): void;
+	/** Act out the save at quit without quitting. */
+	saveSessionsNow(): void;
+	/** Act out these conversations as gone from the agent's own storage. */
+	missingConversations(ids: readonly string[]): void;
+	/** The conversation each running agent session is in, by session id. */
+	conversationOf(id: string): string | null;
+	/** The most openTerminal requests that were being answered at once. */
+	mostOpeningAtOnce(): number;
+}
+
+export interface MockTerminalOptions {
+	/** Where the open sessions are kept between runs. A second engine made with the same storage is the app after a restart. Memory of its own when left out. */
+	savedSessions?: MockSessionStorage;
+	/** How long an acted openTerminal takes. None by default. */
+	terminalMilliseconds?: number;
 }
 
 interface Acted {
@@ -84,10 +103,19 @@ interface Acted {
 	pasteMode: PasteModeScanner;
 	/** Every text pasted in, in order, as given. */
 	pasted: string[];
+	/** The agent's name in Settings, or null. */
+	agent: string | null;
+	resumable: ResumableAgent | null;
+	conversation: string | null;
+	/** Whether the person gave the session its name. */
+	renamed: boolean;
 }
 
 /** What a pretend setup script prints when it fails. */
 export const MOCK_SETUP_FAILURE = "bun install v1.4.2\r\nerror: lockfile had changes, but lockfile is frozen\r\nerror: Setup post_create step 1 failed (exit code 1).\r\n";
+
+/** Session ids count across engines, so a second engine, the app after a restart, never gives out an id of the first, as the main process does not. */
+let lastId = 0;
 
 /** The PATH the mock acts out looking on. */
 export const MOCK_PATH = "/usr/local/bin:/usr/bin:/bin";
@@ -100,7 +128,10 @@ export const MOCK_PATH = "/usr/local/bin:/usr/bin:/bin";
  * of a named workflow, read again from `workflows` as the main process reads
  * Timber's settings. New sessions
  * are named as `sessionNaming` answers, as the saved preferences. Output arrives
- * a moment later, as it would over the bridge.
+ * a moment later, as it would over the bridge. The sessions that run are
+ * saved to `savedSessions` when quitting, as the main process saves them,
+ * and handed out once by `takeSavedSessions`; agents go back to their
+ * conversations as the main process has them do.
  */
 const osc7501 = (pairs: string) => `\x1b]7501;${pairs}\x1b\\`;
 const base64 = (text: string) => btoa(String.fromCharCode(...new TextEncoder().encode(text)));
@@ -126,18 +157,40 @@ export function createMockTerminals(
 	sessionNaming: () => SessionNaming = () => "plain",
 	arenaLaunch: (repository: string, worktree: string, arena: string, attempt: string) => ArenaLaunch = () => ({ outcome: "failed", message: "Arena attempts cannot start here. Nothing was started." }),
 	workflows: (repository: string) => Promise<WorkflowList> = async () => ({ ok: false, message: "Workflows cannot be read here." }),
-): TerminalCapabilities & TerminalControls & ChopTerminals {
+	options: MockTerminalOptions = {},
+): TerminalCapabilities & TerminalControls & ChopTerminals & { attendSessions(attention: Attention): void } {
 	const sessions = new Map<string, Acted>();
 	const output = new Set<(output: TerminalOutput) => void>();
 	const changes = new Set<(change: TerminalChange) => void>();
 	const quitListeners = new Set<(live: number) => void>();
-	let lastId = 0;
 	let failing: Exclude<OpenTerminalResult, { outcome: "opened" }> | null = null;
 	let missing: readonly string[] = [];
 	let confirmed = false;
 	let worktreeSetupExit: number | null = 0;
 	let clipboard = "";
 	const links: string[] = [];
+	const storage = options.savedSessions ?? memorySessionStorage();
+	// What the last run saved, read once, as the main process reads sessions.json at launch.
+	let saved: SavedSessions | null = (() => {
+		const text = storage.read();
+		const read = text === null ? null : parseSavedSessions(text);
+		return read?.ok && Object.keys(read.saved.worktrees).length > 0 ? read.saved : null;
+	})();
+	let goneConversations: readonly string[] = [];
+	// The shown chip of each worktree and the selected worktree, from what the window attends to.
+	const shown: Record<string, string> = {};
+	let selectedId: string | null = null;
+	let opening = 0;
+	let mostOpening = 0;
+
+	function saveSessions(): void {
+		const running = [...sessions.values()].flatMap((acted): LiveSession[] => {
+			const { session } = acted;
+			if (session.state.kind !== "running" || (session.kind !== "terminal" && session.kind !== "agent")) return [];
+			return [{ id: session.id, worktree: session.worktree, kind: session.kind, agent: acted.agent, conversation: acted.conversation, name: acted.renamed ? session.name : null }];
+		});
+		storage.write(serializeSavedSessions(buildSavedSessions(running, shown, selectedId)));
+	}
 
 	const later = (task: () => void) => void Promise.resolve().then(task);
 	const live = () => [...sessions.values()].filter(acted => acted.session.state.kind === "running").length;
@@ -281,6 +334,11 @@ export function createMockTerminals(
 		if (!worktree) return { outcome: "not-listed", message: `Timber lists no worktree at ${request.worktree} in ${request.repository}. ${notStarted} Refresh the list.` };
 		let shell = "/bin/mock-shell";
 		let args: string[] = [];
+		// As the main process reads them: a conversation only as a UUID and for an agent from Settings, a name only cleaned, and neither for a Timber command, an arena attempt, or a workflow's own agent.
+		const resume = agent !== null && isConversationId(request.resume) ? request.resume : null;
+		const savedName = chop === undefined && setup === null && attempt === null && (agent !== null || workflowAgent === undefined) ? cleanSessionName(request.name) : null;
+		let resumable: ResumableAgent | null = null;
+		let conversation: string | null = null;
 		if (agent) {
 			const built = agentCommand(agent);
 			if (!built.ok) return { outcome: "failed", message: `${built.message} Change it in Settings, Agents. Nothing was started.` };
@@ -307,6 +365,18 @@ export function createMockTerminals(
 			shell = launch.executable.startsWith("/") ? launch.executable : `/usr/local/bin/${launch.executable}`;
 			args = launch.arguments;
 		}
+		if (agent) {
+			resumable = resumableAgent(launch!.executable, launch!.arguments);
+			const exists = (id: string) => !goneConversations.includes(id);
+			if (resumable !== null && resume !== null && exists(resume)) {
+				args = agentStartArguments(resumable, args, { resume });
+				conversation = resume;
+			} else if (resumable !== null) {
+				// A fresh Codex has no id of the app's choosing; this one stands in for what the main process reads from Codex's files at quit.
+				conversation = crypto.randomUUID();
+				args = agentStartArguments(resumable, args, { fresh: conversation });
+			}
+		}
 		if (setup) [shell, ...args] = setup as [string, ...string[]];
 		if (attempt) {
 			const [program, ...rest] = attempt.argv as [string, ...string[]];
@@ -318,7 +388,8 @@ export function createMockTerminals(
 			id: `mock-terminal-${++lastId}`,
 			kind: launch || attempt ? "agent" : setup ? "timber" : "terminal",
 			name: defaultSessionName(
-				chop ? chop.name : attempt ? attempt.label : worktreeSetup ? WORKTREE_SETUP_SESSION_NAME : sessionNameBase(sessionNaming(), launch ? launch.name : "Terminal", worktree.branch, launch !== null),
+				chop ? chop.name : attempt ? attempt.label : worktreeSetup ? WORKTREE_SETUP_SESSION_NAME
+					: savedName ?? sessionNameBase(sessionNaming(), launch ? launch.name : "Terminal", worktree.branch, launch !== null),
 				taken,
 			),
 			repository: request.repository,
@@ -333,6 +404,7 @@ export function createMockTerminals(
 		const acted: Acted = {
 			session, scrollback: createScrollback(), line: "", typed: "", size: { cols: request.cols, rows: request.rows }, drawn: 0,
 			scanner: createStatusScanner(), records: createStatusRecords(), answers: [], pasteMode: createPasteModeScanner(), pasted: [],
+			agent: agent?.name ?? null, resumable, conversation, renamed: savedName !== null,
 		};
 		sessions.set(session.id, acted);
 		announce({ id: session.id, session });
@@ -345,8 +417,9 @@ export function createMockTerminals(
 		const greeting = launch || attempt
 			? `A pretend ${session.name} in ${session.path}, started as ${session.command}. Nothing runs in the browser. Try exit.\r\n`
 			: `A pretend shell in ${session.path}. Try pwd, clear, or exit.\r\n`;
+		const note = agent !== null && resume !== null && conversation !== resume ? conversationMissingNote(agent.name) : "";
 		// A pretend agent asks for bracketed paste, as Claude Code and Codex do, so a pasted review keeps its line breaks.
-		print(acted, `${greeting}${launch ? "\x1b[?2004h" : ""}${prompt(acted)}`);
+		print(acted, `${note}${greeting}${launch ? "\x1b[?2004h" : ""}${prompt(acted)}`);
 		// The pretend shell never asks for bracketed paste, so a chop is typed line by line, as into dash or PowerShell.
 		if (chop) {
 			const bytes = chopRunBytes(chop.text, acted.pasteMode.on());
@@ -358,12 +431,38 @@ export function createMockTerminals(
 
 	return {
 		listTerminals: async () => [...sessions.values()].map(acted => structuredClone(acted.session)),
-		openTerminal: request => open(request),
+		async takeSavedSessions() {
+			const taken = saved;
+			saved = null;
+			return taken === null ? null : structuredClone(taken);
+		},
+		attendSessions(attention) {
+			if (attention.selected === null) return;
+			selectedId = attention.selected.id;
+			if (attention.session !== null) shown[attention.selected.id] = attention.session;
+		},
+		saveSessionsNow: () => saveSessions(),
+		missingConversations(ids) {
+			goneConversations = [...ids];
+		},
+		conversationOf: id => sessions.get(id)?.conversation ?? null,
+		mostOpeningAtOnce: () => mostOpening,
+		async openTerminal(request) {
+			opening += 1;
+			mostOpening = Math.max(mostOpening, opening);
+			try {
+				if (options.terminalMilliseconds) await new Promise(resolve => setTimeout(resolve, options.terminalMilliseconds));
+				return await open(request);
+			} finally {
+				opening -= 1;
+			}
+		},
 		openChopTerminal: (request, chop) => open(request, chop),
 		async renameTerminal(id, name) {
 			const acted = sessions.get(id);
 			const clean = cleanSessionName(name);
 			if (!acted || clean === null) return null;
+			acted.renamed = true;
 			if (clean !== acted.session.name) {
 				acted.session = { ...acted.session, name: clean };
 				announce({ id, session: acted.session });
@@ -423,6 +522,8 @@ export function createMockTerminals(
 			return () => void quitListeners.delete(listener);
 		},
 		async confirmQuit() {
+			// As the main process does: the sessions are saved while they still run, then ended.
+			if (!confirmed) saveSessions();
 			confirmed = true;
 			for (const id of [...sessions.keys()]) {
 				sessions.delete(id);
@@ -441,6 +542,8 @@ export function createMockTerminals(
 		requestQuit() {
 			const count = live();
 			if (confirmed || count === 0) {
+				// Quitting at once saves what runs, which is nothing, so closed sessions stay closed.
+				if (!confirmed) saveSessions();
 				confirmed = true;
 				return true;
 			}

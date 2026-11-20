@@ -4,8 +4,8 @@ import type { TerminalSession } from "../src/shared/terminal";
 
 const TIMBER = "/work/timber";
 const FEATURE = "/work/timber-worktrees/feat-github-issue-lookup";
-const away = { visible: true, focused: true, selected: { repository: TIMBER, worktree: TIMBER } };
-const here = { visible: true, focused: true, selected: { repository: TIMBER, worktree: FEATURE } };
+const away = { visible: true, focused: true, selected: { repository: TIMBER, worktree: TIMBER, id: "timber" }, session: null };
+const here = { visible: true, focused: true, selected: { repository: TIMBER, worktree: FEATURE, id: "feature" }, session: null };
 const all: AlertSettings = { notify: true, notifyStates: ["needs-you", "done", "error", "crashed"], soundStates: [] };
 
 const session = (change: Partial<TerminalSession> = {}): TerminalSession => ({
@@ -38,7 +38,7 @@ describe("which statuses are told about", () => {
 		expect(onScreen(session(), here)).toBe(true);
 		expect(onScreen(session(), { ...here, focused: false })).toBe(false);
 		expect(onScreen(session(), { ...here, visible: false })).toBe(false);
-		expect(onScreen(session(), { ...here, selected: { repository: "/other", worktree: FEATURE } })).toBe(false);
+		expect(onScreen(session(), { ...here, selected: { repository: "/other", worktree: FEATURE, id: "other" } })).toBe(false);
 		const alerts = createStatusAlerts(0);
 		alerts.changed(working, here, all, 0);
 		expect(alerts.changed(done, here, all, 0)).toEqual([]);

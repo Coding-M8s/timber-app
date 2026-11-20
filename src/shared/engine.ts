@@ -17,6 +17,7 @@ import type { PullRequestList } from "./pull-requests";
 import type { Theme } from "./theme";
 import type { ChooseSoundResult, SoundChoice, SoundOutcome } from "./sound-setting";
 import type { ExportThemeResult, ImportThemeResult } from "./theme-file";
+import type { SavedSessions } from "./saved-sessions";
 import type { OpenTerminalRequest, OpenTerminalResult, PasteResult, TerminalChange, TerminalOutput, TerminalSession, TerminalSnapshot } from "./terminal";
 import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "./timber-config";
 import type { RebaseRequest, RebaseResult } from "./timber-rebase";
@@ -159,7 +160,10 @@ export interface Engine {
 	 * comes back. Safe to call with the same value again. Background fetches
 	 * also wait while the window is hidden (see `fetchNow`), and a session's
 	 * desktop notification is held back while its worktree is the selected
-	 * one in a focused window that shows (see `onShowSession`).
+	 * one in a focused window that shows (see `onShowSession`). The selected
+	 * worktree's id and the session whose chip shows there are also kept, so
+	 * the save at quit knows which worktree was selected and which chip
+	 * showed in each (see `takeSavedSessions`).
 	 */
 	attend(attention: Attention): void;
 	/**
@@ -476,6 +480,13 @@ export interface Engine {
 	 */
 	listTerminals(): Promise<TerminalSession[]>;
 	/**
+	 * The sessions that were open when the app last quit, by worktree, for
+	 * opening them again. Answered once per run: null after that, and when
+	 * there are none. Each is opened with `openTerminal`, which is where
+	 * every check is made.
+	 */
+	takeSavedSessions(): Promise<SavedSessions | null>;
+	/**
 	 * Start the person's shell in a worktree of a repository in the list, as
 	 * a new session beside any it has. Each call starts one. `cols` and
 	 * `rows` are the pane's size. With `agent`, the agent of that name from
@@ -497,6 +508,11 @@ export interface Engine {
 	 * `arenaAttempt`, the attempt's agent starts with exactly the program,
 	 * folder, and environment `timber __app-arena launch` gives for it, in
 	 * the attempt's own worktree, and nothing starts for a manual attempt.
+	 * With `resume`, an agent goes back to that conversation of its own when
+	 * it can and it is still there, and otherwise starts fresh and says so in
+	 * its terminal; only a UUID is read. With `name`, the session gets that
+	 * name, cleaned, in place of the default. Both are for opening a saved
+	 * session again (see `takeSavedSessions`).
 	 */
 	openTerminal(request: OpenTerminalRequest): Promise<OpenTerminalResult>;
 	/**
@@ -572,7 +588,10 @@ export interface Engine {
 	 * Returns a function that stops listening.
 	 */
 	onQuitRequested(listener: (live: number) => void): () => void;
-	/** The person agreed to quit: end every session and quit the app. */
+	/**
+	 * The person agreed to quit: the open sessions are saved, so they open
+	 * again on the next launch, then ended, and the app quits.
+	 */
 	confirmQuit(): Promise<void>;
 	/** Put text on the system clipboard, for copying from a terminal. */
 	writeClipboard(text: string): Promise<void>;

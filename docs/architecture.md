@@ -2699,7 +2699,8 @@ same port. It only reads.
 A worktree can have any number of terminal sessions: each is the person's
 shell, running in its folder, drawn in the Workspace tab under a chip of its
 own. Every session keeps running while another one, or another worktree,
-shows, and coming back shows it as it was.
+shows, and coming back shows it as it was. The terminal and agent sessions
+that run when the app quits open again when it starts.
 
 - **Who owns it.** The main process (`src/bun/terminals.ts`). Each session is
   a pseudo terminal from `Bun.Terminal`, started with `SHELL` when that is a
@@ -2921,7 +2922,101 @@ shows, and coming back shows it as it was.
   person quitting in any other way: the app's code runs in a Worker, where
   signal listeners never run. SIGKILL ends the app without
   asking; the terminals then hang up, which ends the shells and what runs
-  in front, but not what ignores a hang-up.
+  in front, but not what ignores a hang-up. Before any session ends, which
+  sessions run is saved, synchronously (see "After a restart" below). The
+  question says so: "A session is still running. Quitting stops it and
+  everything running in it. It opens again when Timber does, and an agent
+  goes back to its conversation."
+- **After a restart.** Every worktree gets back the terminal and agent
+  sessions it had running when the app quit, in the same order, with the
+  same chip showing and the same worktree selected, and each agent goes back
+  into its own conversation (see
+  [going back to a conversation](#going-back-to-a-conversation)).
+  - *When it is saved.* Once, at quit, through the quit guard, so also when
+    the app restarts itself and when it is uninstalled without its
+    settings: right after the person agreed, or when the window could not
+    ask, and before any session ends; with nothing running, as the app
+    quits (`guardQuit` in `src/bun/index.ts`). Never while the app runs: no
+    timer and no write on a change. A crash, SIGKILL, or a power cut loses
+    what changed since the last clean quit, and the older save opens
+    instead. The conversations themselves are the agents' own and are kept
+    by them.
+  - *What is saved.* `sessions.json` beside `settings.json`, written to a
+    temporary file, flushed, and renamed over the old one, all
+    synchronously (`src/bun/session-layout.ts`, the shape in
+    `src/shared/saved-sessions.ts`). Per worktree, by its id
+    (`Worktree.id`, which holds the common Git directory and the folder):
+    the kinds of its running sessions in chip order, a name only when the
+    person renamed the chip, an agent's name in Settings and the id of its
+    own conversation when one is known, and the index of the chip that
+    showed. Then the id of the selected worktree. A worktree with nothing
+    running is left out, so a closed session stays closed. An example:
+
+    ```json
+    {
+    	"version": 1,
+    	"selected": "/work/timber/.git\u0000verified\u0000/work/timber-worktrees/feat-login",
+    	"worktrees": {
+    		"/work/timber/.git\u0000verified\u0000/work/timber-worktrees/feat-login": {
+    			"shown": 1,
+    			"sessions": [
+    				{"kind":"terminal"},
+    				{"kind":"agent","agent":"Claude Code","conversation":"0b6f1c1e-7a52-4f0e-9d53-2f1f6f0c7a11"},
+    				{"kind":"agent","agent":"Codex","conversation":"01a17995-a303-7160-8d6d-d7587e0d5d50","name":"review"}
+    			]
+    		}
+    	}
+    }
+    ```
+
+    Left out, because the app works them out again at launch or they are
+    not wanted: session ids (new each launch), folders, repository paths,
+    shells, commands (always built again from Settings), states, exit
+    codes, times, default names (made again by the naming Settings choose),
+    and anything a session printed. Only running sessions of kind
+    `terminal` and `agent` are saved; a Timber session such as a rebase,
+    and a session whose process had ended, are not.
+  - *The shown chip and the selected worktree.* The window's `attend`
+    message names the selected worktree's id and the session whose chip
+    shows there (`Attention` in `src/shared/attention.ts`). Chips are
+    switched only in the selected worktree, so the main process keeps the
+    shown chip of every worktree from these reports, with no request at
+    quit, which also works when the window no longer answers.
+  - *How it opens again.* The file is read once at launch. The window takes
+    it once (`takeSavedSessions`, null after that, so a reloaded window
+    opens nothing twice), after its first list of repositories was read and
+    its first list of sessions came in (`restoreOnce` in
+    `src/mainview/store/store.ts`, the order in
+    `src/mainview/store/restore.ts`). The saved selected worktree is
+    selected and goes first, then the others in list order, three
+    worktrees at a time, the sessions of one worktree one after another so
+    chips keep their order. Each opens through the ordinary
+    `openTerminal`, where every check is made, with `resume` for an
+    agent's conversation and `name` for a renamed chip. A shell is a fresh
+    one in the worktree's folder. When a worktree's sessions are open, its
+    saved chip shows, or the nearest one before it that opened, unless the
+    person chose a chip there meanwhile. Session ids are new. A restored
+    session does not light the new-output dot for its first three seconds,
+    or every worktree would show unread output after each launch. Nothing
+    waits for the restore: the window is usable while the sessions start.
+  - *What is skipped.* A saved worktree that Timber no longer lists, whose
+    folder is gone, or whose repository was removed or is unavailable, is
+    skipped without a word, and is not in the next save. An agent that
+    Settings no longer has does not open: one toast, "Could not open a
+    session from the last time again" (with a count for more), and, in the
+    selected worktree, the pane says why, as for any session that did not
+    start.
+  - *Versions.* The file has `version: 1`. One that cannot be read is moved
+    to `sessions.json.damaged`, with a warning in the log, and nothing
+    opens. One of a later version is left as it is, nothing opens, and
+    nothing is saved in that run, so the newer app finds it again. Inside a
+    good file nothing is fatal: what cannot be trusted is dropped piece by
+    piece, a conversation id is kept only as a UUID, names are cleaned as a
+    rename is, and at most 200 worktrees of 50 sessions are read.
+  - *Cost.* The save is one small write: 200 worktrees of 5 sessions are
+    under 100 KB and under 10 ms in the tests, after a Codex search that
+    may take 300 ms in all (see below), so a quit waits under half a
+    second. The existing two second close wait is unchanged.
 - **Windows.** Sessions run on ConPTY through node-pty 1.1.0, with the
   `conpty.dll` and `OpenConsole.exe` it ships (ConPTY 1.23.251008001 from
   Windows Terminal), not the ConPTY in Windows: that one drops the status
@@ -2972,14 +3067,19 @@ shows, and coming back shows it as it was.
   - Shell integration (OSC 133 prompts) is not set up for PowerShell, and
     the shell cannot be chosen in Settings yet.
 - **Not built.** Split views showing two sessions side by side, keeping
-  sessions after a restart, and starting a terminal editor in a session.
+  what a session printed after a restart, keeping sessions running while
+  the app is closed, and starting a terminal editor in a session.
 
 In `bun run dev:web` the mock engine acts out a shell that echoes what is
 typed and knows `pwd`, `clear`, `exit`, and `sample`, which prints a box,
 the colors, and wide characters for looking at how a terminal draws. `timberMock.requestQuit()` acts
 out quitting, `timberMock.endTerminal(id, code)` a shell that exits by
 itself, and `timberMock.failTerminals({ outcome: "unsupported", message })`
-a terminal that cannot start (`null` to undo).
+a terminal that cannot start (`null` to undo). The open sessions are saved
+to the browser's localStorage (`timber-app.mock.sessions`) as quitting saves
+them, when the page goes away and on `timberMock.saveSessionsNow()`, so a
+reload opens them again; `timberMock.missingConversations([id])` acts out a
+conversation that is gone.
 
 ## Rebasing a worktree
 
@@ -3087,8 +3187,10 @@ as a control sequence, as it would a window title or a bell (see
   cannot be read puts the presets back, and the next save of the section
   writes them.
 - **The command.** Split by `splitCommandLine`, never by a shell, as for the
-  editor: quotes group words, nothing is expanded. Nothing is added to it,
-  and it starts in the worktree's folder. The executable is looked for on
+  editor: quotes group words, nothing is expanded. Nothing is added to it
+  but the arguments that pick its conversation (see
+  [going back to a conversation](#going-back-to-a-conversation)), and it
+  starts in the worktree's folder. The executable is looked for on
   the PATH the app was started with, or is a full path; a relative path is
   refused (`findExecutable` in `src/bun/find-executable.ts`, shared with
   "Open in editor"). An app started from a desktop launcher can have a
@@ -3177,6 +3279,77 @@ terminals"); the app's side is `src/bun/handoffs.ts`,
 
 In `bun run dev:web`, `timberMock.typeTimberNew("/work/timber", "feat/x", true)`
 acts out `timber new feat/x` typed in a terminal with Timber's agent on.
+
+### Going back to a conversation
+
+After a restart an agent session goes back into the conversation it was in,
+which the agent itself keeps (see "After a restart" under
+[terminal sessions](#terminal-sessions)). The arguments are added when the
+agent starts and never stored in Settings (`src/shared/agent-resume.ts`).
+Verified on Linux on 2026-11-20:
+
+| Agent | Fresh start | Going back | Source |
+|---|---|---|---|
+| Claude Code 2.1.329 | `claude <args> --session-id <uuid>`, with a UUID the app makes | `claude <args> --resume <uuid>` | `claude --help`: "`--session-id <uuid>` Use a specific session ID for the conversation (must be a valid UUID)"; "`-r, --resume [value]` Resume a conversation by session ID or name" |
+| Codex CLI 0.170.0 | `codex <args>`; no flag sets or prints the id | `codex <args> resume <uuid>` | `codex resume --help`: "Usage: codex resume [OPTIONS] [SESSION_ID] [PROMPT]" |
+
+- **Which agents.** By the executable's last path part as typed in
+  Settings: `claude` or `codex` (`.exe` cut, in any case, on Windows).
+  Anything else, a wrapper script included, starts exactly as typed and
+  fresh after a restart. So when an agent's command now runs another
+  program, it gets no resume flag, and one agent never gets another's id.
+- **A command that already picks a conversation** is started exactly as
+  typed, fresh, with no id saved: for Claude Code `--session-id`,
+  `--resume`, `-r`, `--continue`, `-c`, `--from-pr`, `--teleport`,
+  `--print`, `-p`; for Codex `resume`, `fork`, `exec`, `e`, `review`. Words
+  are matched whole.
+- **Where the conversations are.** Claude Code keeps each as
+  `<config>/projects/<folder>/<uuid>.jsonl`, `<config>` being
+  `$CLAUDE_CONFIG_DIR` or `~/.claude`. Codex keeps each as
+  `<home>/sessions/YYYY/MM/DD/rollout-<local time>-<uuid>.jsonl`, `<home>`
+  being `$CODEX_HOME` or `~/.codex`, with a first line of type
+  `session_meta` that names its id, folder (`cwd`), start time, and
+  `source` (`src/bun/agent-conversations.ts`). The app only looks: it
+  never writes there, and of a conversation it reads nothing but the first
+  line of a Codex session file.
+- **The check before going back.** The id comes back from the window only
+  as a UUID and only follows a flag the main process adds itself. It is
+  used only when the conversation's file is found in that agent's own
+  folder, because both agents refuse an id they do not know: Claude Code
+  prints "No conversation found with session ID" and exits, Codex "No
+  saved session found with ID". Otherwise the agent starts fresh, and a
+  dim line at the top of its terminal says "The saved conversation was not
+  found, so <agent> started fresh." A Claude id is never found under
+  Codex's sessions, and the reverse. Claude Code refuses `--session-id`
+  together with `--resume`, so the two are never combined.
+- **Claude Code** gets `--session-id` with a new UUID on every fresh start,
+  so its id is exact from the first moment. It shows in the command beside
+  the chips.
+- **Codex** has no such flag, so its id is read at quit from its own files:
+  the newest session file whose first line has the worktree's folder as
+  `cwd`, `source` `"cli"`, no `parent_thread_id`, and a start at or after
+  the session's own start, less two seconds. The newest wins, so a `/new`
+  inside Codex is followed. Only day folders from the day before the
+  session started on are opened, at most 1 MiB of a first line is read,
+  newest file first, and the search of all worktrees together stops after
+  300 ms with what it has. It is made only for a worktree with exactly one
+  running Codex session; with two or more, nothing tells them apart, so
+  each keeps the id it was opened with, or starts fresh. An id is never
+  given to two sessions. What was seen on this machine: an interactive
+  Codex has `source` `"cli"`; `codex exec` runs have `"exec"`, the editor
+  extension `"vscode"`, and a subagent an object with a parent, so none of
+  those is taken for the terminal's session. A Codex session file with
+  only its first line, from a Codex that was never spoken to, shows that
+  the file is written when Codex starts.
+- **A custom agent** starts as typed and fresh, and says so when a
+  conversation was asked for.
+- **Known limits.** After `/clear`, Claude Code comes back in the
+  conversation from before it: following it would need Claude Code hooks
+  in the person's own config. Two Codex sessions in one worktree are not
+  told apart. A Codex started by hand in the same folder after the app's
+  Codex session started can be taken for it. When an agent changes where
+  or how it keeps conversations, nothing is found and it starts fresh,
+  never with an error.
 
 ### Agent status
 
@@ -3716,7 +3889,10 @@ knowing a path and two arguments.
   saved repository list and settings too. Then, after the uninstaller ended
   well, the main process deletes the settings file, a kept damaged copy,
   and leftover temporary files, and the folder when nothing else is in it
-  (`removeSettings` in `src/bun/settings.ts`). From then on the settings
+  (`removeSettings` in `src/bun/settings.ts`). The sessions saved for the
+  next launch (`sessions.json`, see "After a restart" under
+  [terminal sessions](#terminal-sessions)) go first, with their damaged
+  copy and temporary files, and nothing is saved at the quit that follows. From then on the settings
   holder refuses every save, so nothing writes the file back before the
   app quits: the window's size, for one, is saved on quit. A failed
   uninstaller leaves the settings alone.

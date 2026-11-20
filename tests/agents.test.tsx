@@ -147,10 +147,13 @@ describe("agent sessions in the store", () => {
 		await start(store, "Codex");
 		await settle();
 		const sessions = sessionsOf(store.getState(), featureId);
-		expect(sessions.map(session => [session.kind, session.name, session.path, session.command])).toEqual([
-			["agent", "Claude Code", FEATURE, "/usr/local/bin/claude"],
-			["agent", "Codex", FEATURE, "/usr/local/bin/codex"],
+		expect(sessions.map(session => [session.kind, session.name, session.path])).toEqual([
+			["agent", "Claude Code", FEATURE],
+			["agent", "Codex", FEATURE],
 		]);
+		// A fresh Claude Code starts with an id of the app's choosing, so it can go back to its conversation after a restart.
+		expect(sessions[0]!.command).toMatch(/^\/usr\/local\/bin\/claude --session-id [0-9a-f-]{36}$/);
+		expect(sessions[1]!.command).toBe("/usr/local/bin/codex");
 		const markup = render(store);
 		expect(markup).toContain('<span class="session-name">Claude Code</span>');
 		expect(markup).toContain('<span class="session-name">Codex</span>');

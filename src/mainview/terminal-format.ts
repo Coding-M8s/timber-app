@@ -263,3 +263,8 @@ export function describeOrphanTerminal(path: string, count = 1): string {
 	const what = count === 1 ? "the session" : `${count} sessions`;
 	return `Ended ${what} in ${path}, because Timber no longer lists that worktree`;
 }
+
+/** The toast when sessions saved at the last quit could not be opened again, such as an agent no longer in Settings. */
+export function describeRestoreFailures(count: number): string {
+	return `Could not open ${count === 1 ? "a session" : `${count} sessions`} from the last time again`;
+}
