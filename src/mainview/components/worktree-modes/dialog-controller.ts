@@ -8,8 +8,9 @@ import type { WorkflowOptions } from "./workflow-choice";
 /**
  * What the New worktree dialog does between its modes and its one
  * submission, without React: which mode shows, which agent is picked, the
- * workflows every mode offers, and how a run starts that agent. ../NewWorktreeDialog.tsx only draws this, so
- * tests drive the same wiring the window uses.
+ * workflows every mode offers, and how a run starts that agent.
+ * ../NewWorktreeDialog.tsx only draws this, so tests drive the same wiring
+ * the window uses.
  */
 
 export interface WorktreeDialogChoices {
@@ -36,7 +37,8 @@ export interface WorktreeDialogController {
 	/**
 	 * Run a mode through the dialog's submission, then start the picked agent
 	 * in the worktree it reports as created (see `runWithAgent`). Answers as
-	 * `Submission.submit` does.
+	 * `Submission.submit` does. After a run that failed, the workflows are
+	 * read again, as a workflow may have left the settings.
 	 */
 	submit(mode: WorktreeDialogMode): Promise<boolean>;
 }
@@ -61,6 +63,12 @@ export function createWorktreeDialogController(
 		for (const listener of [...listeners]) listener();
 	}
 
+	async function readWorkflows(): Promise<void> {
+		const read = ++latestRead;
+		const workflows = await store.listWorkflows(repository);
+		if (read === latestRead) update({ workflows });
+	}
+
 	const agent = () => chosenAgent(store.getState().preferences.agents, state.pick);
 
 	return {
@@ -75,16 +83,17 @@ export function createWorktreeDialogController(
 			submission.clearFailure();
 		},
 		pickAgent: pick => update({ pick }),
-		async readWorkflows() {
-			const read = ++latestRead;
-			const workflows = await store.listWorkflows(repository);
-			if (read === latestRead) update({ workflows });
-		},
+		readWorkflows,
 		agent,
-		submit(mode) {
+		async submit(mode) {
+			// A second submit while one runs does nothing, so it reads nothing either.
+			if (submission.getState().running) return false;
 			// The agent as picked when the person submitted, not when the command ends.
 			const picked = agent();
-			return submission.submit(() => runWithAgent(store, repository, () => mode.run(), picked));
+			const worked = await submission.submit(() => runWithAgent(store, repository, () => mode.run(), picked));
+			// Reading runs Timber, so the list is read again only when a failure may have come from the settings.
+			if (!worked) await readWorkflows();
+			return worked;
 		},
 	};
 }
