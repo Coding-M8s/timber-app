@@ -7,9 +7,9 @@ import { createFetcher } from "../src/bun/fetcher";
 import { type WatchTarget, createRepositoryWatcher } from "../src/bun/repository-watcher";
 import { type ForcePushMarks, type RepositoryFetch, withForcePushes } from "../src/shared/git-fetch";
 import { manualClock } from "./support/clock";
+import { windows } from "./support/runtime";
 import { fingerprint, git } from "./support/timber";
 
-const windows = process.platform === "win32";
 const settle = async () => {
 	for (let round = 0; round < 10; round++) await Bun.sleep(0);
 };

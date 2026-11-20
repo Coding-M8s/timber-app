@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { runTimberWithResultFile } from "../src/bun/timber-run";
 import { OUTPUT_LIMIT_BYTES } from "../src/shared/captured-output";
 import { APPROVAL_FILE_PLACEHOLDER } from "../src/shared/timber-result";
-import { type StandInRun, git, realTimber, recordedResult, standInResultTimber } from "./support/timber";
+import { type StandInRun, git, isolatedEnvironment, makeRepository, realTimber, recordedResult, standInResultTimber } from "./support/timber";
 
 let root: string;
 let repository: string;
@@ -224,13 +224,8 @@ describe.skipIf(realTimber === null)("with the installed Timber, on a real repos
 		scratch = join(work, "temporary");
 		mkdirSync(scratch);
 		// A home of its own, so Timber's first-use marker and any user configuration stay out of this.
-		const home = join(work, "home");
-		mkdirSync(home);
-		environment = { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: join(home, ".config"), XDG_STATE_HOME: join(home, ".local", "state"), GIT_CONFIG_GLOBAL: "", GIT_CONFIG_NOSYSTEM: "1" };
-		git(work, "init", "--initial-branch=main", primary);
-		writeFileSync(join(primary, "tracked.txt"), "one\n");
-		git(primary, "add", "tracked.txt");
-		git(primary, "commit", "-m", "Initial commit");
+		environment = isolatedEnvironment(work);
+		makeRepository(work, "my sample");
 	});
 
 	afterAll(() => {

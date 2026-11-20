@@ -3,13 +3,12 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createTimberSettings } from "../src/bun/timber-settings";
-import type { TimberStatus } from "../src/shared/model";
 import {
 	type TimberSettingsSaveRequest, checkConnectionRequest, checkSaveRequest, invalidFieldPath, invalidFieldsAt, readConnectionCheck, readSettingsOutput,
 	readTimberValues, settingsInput, shownApplyArguments, shownCheckArguments,
 } from "../src/shared/timber-config";
 import { describeTimberCommand, readTimberResult } from "../src/shared/timber-result";
-import { fingerprint, git, realTimber, recordedConfig, standInResultTimber, standInTimber } from "./support/timber";
+import { fingerprint, git, readyAt, realTimber, recordedConfig, standInResultTimber, standInTimber } from "./support/timber";
 
 const SECRET = "lin_api_SuperSecretKey123";
 const JIRA_SECRET = "atl_SuperSecretToken456";
@@ -110,7 +109,7 @@ describe("running Timber's settings commands", () => {
 	let temporary: string;
 	let home: string;
 	let count = 0;
-	const ready = (path: string): TimberStatus => ({ state: "ready", path, version: "0.1.2" });
+	const ready = readyAt("0.1.2");
 
 	beforeAll(() => {
 		root = realpathSync(mkdtempSync(join(tmpdir(), "timber-app-settings-")));

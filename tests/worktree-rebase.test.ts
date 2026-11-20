@@ -8,9 +8,9 @@ import { createWorktreeCommands } from "../src/bun/worktree-commands";
 import type { Repository, TimberStatus } from "../src/shared/model";
 import { rebaseResultArguments } from "../src/shared/timber-rebase";
 import { satisfiesTimberVersion } from "../src/shared/timber-version";
-import { type StandInRun, fingerprint, git, realTimber, recordedRebase, standInResultTimber } from "./support/timber";
+import { type StandInRun, fingerprint, git, gitIdentity, isolatedEnvironment, makeRepository, readyAt, realTimber, recordedRebase, standInResultTimber } from "./support/timber";
 
-const ready = (path: string, version = "0.1.2"): TimberStatus => ({ state: "ready", path, version });
+const ready = readyAt("0.1.2");
 
 describe("WorktreeCommands.rebase, with a stand-in Timber", () => {
 	let root: string;
@@ -208,18 +208,10 @@ describe.skipIf(!recentTimber)("WorktreeCommands.rebase, with the installed Timb
 		primary = join(work, "my sample");
 		scratch = join(work, "temporary");
 		mkdirSync(scratch);
-		const home = join(work, "home");
-		mkdirSync(home);
 		// Git rewrites commits during a rebase, so it needs a committer. With no global config it would guess one from the
 		// host name, which fails on a machine whose name has no domain, so the identity is given here as the `git` helper gives it.
-		environment = {
-			...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: join(home, ".config"), XDG_STATE_HOME: join(home, ".local", "state"), GIT_CONFIG_GLOBAL: "", GIT_CONFIG_NOSYSTEM: "1",
-			GIT_AUTHOR_NAME: "Timber Test", GIT_AUTHOR_EMAIL: "test@example.invalid", GIT_COMMITTER_NAME: "Timber Test", GIT_COMMITTER_EMAIL: "test@example.invalid",
-		};
-		git(work, "init", "--initial-branch=main", primary);
-		writeFileSync(join(primary, "shared.txt"), "one\n");
-		git(primary, "add", ".");
-		git(primary, "commit", "-m", "Initial commit");
+		environment = { ...isolatedEnvironment(work), ...gitIdentity };
+		makeRepository(work, "my sample", { "shared.txt": "one\n" });
 
 		const timber = async (): Promise<TimberStatus> => ready(realTimber!);
 		const list = createRepositoryList({

@@ -1,13 +1,11 @@
 import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPullRequestReader, readPullRequests } from "../src/bun/pull-requests";
 import { createMockEngine, sampleRepositories, sampleTimberStatuses } from "../src/mainview/engine/mock";
-import type { TimberStatus } from "../src/shared/model";
-import { fingerprint, git, realTimber } from "./support/timber";
+import { fingerprint, git, readyAt, realTimber, standIn } from "./support/timber";
 
-const windows = process.platform === "win32";
 const fixture = (name: string) => readFileSync(join(import.meta.dir, "fixtures", "timber-app-pr", name), "utf8");
 const SECRET = "ghp_SuperSecretToken123";
 
@@ -25,47 +23,11 @@ afterAll(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-/** What a stand-in Timber does: print, wait, and exit as told, after reading standard input to its end. */
-interface Act {
-	stdout?: string;
-	stderr?: string;
-	exitCode?: number;
-	waitMs?: number;
-}
-
-const STAND_IN = `
-const { readFileSync, writeFileSync } = require("node:fs");
-const { join } = require("node:path");
-const act = JSON.parse(readFileSync(join(__dirname, "act.json"), "utf8"));
-// Read standard input to its end. With input left open, this would never return.
-const input = readFileSync(0);
-writeFileSync(join(__dirname, "notes.json"), JSON.stringify({ arguments: process.argv.slice(2), cwd: process.cwd(), input: input.length }));
-setTimeout(() => {
-	if (act.stdout) writeFileSync(1, act.stdout);
-	if (act.stderr) writeFileSync(2, act.stderr);
-	process.exit(act.exitCode ?? 0);
-}, act.waitMs ?? 0);
-`;
-
-function standIn(name: string, act: Act): { path: string; notes: () => { arguments: string[]; cwd: string; input: number } | null } {
-	const here = join(root, name);
-	mkdirSync(here, { recursive: true });
-	writeFileSync(join(here, "act.json"), JSON.stringify(act));
-	writeFileSync(join(here, "stand-in.cjs"), STAND_IN);
-	const path = join(here, windows ? "timber.cmd" : "timber");
-	writeFileSync(path, windows
-		? `@echo off\r\n"${process.execPath}" "%~dp0stand-in.cjs" %*\r\nexit /b %errorlevel%\r\n`
-		: `#!/bin/sh\nexec "${process.execPath}" "$(dirname "$0")/stand-in.cjs" "$@"\n`);
-	if (!windows) chmodSync(path, 0o755);
-	const notes = join(here, "notes.json");
-	return { path, notes: () => (existsSync(notes) ? JSON.parse(readFileSync(notes, "utf8")) : null) };
-}
-
-const ready = (path: string): TimberStatus => ({ state: "ready", path, version: "0.1.2" });
+const ready = readyAt("0.1.2");
 
 describe("readPullRequests with a stand-in Timber", () => {
 	test("runs timber __app-pr in the repository folder, with standard input closed, and reads the record", async () => {
-		const timber = standIn("found", { stdout: fixture("found.json") });
+		const timber = standIn(root, "found", { stdout: fixture("found.json") });
 		const list = await readPullRequests(timber.path, folder);
 		expect(list.ok && list.worktrees.map(entry => entry.outcome)).toEqual(["none", "found", "found", "found", "found", "found", "none"]);
 		const notes = timber.notes()!;
@@ -75,17 +37,17 @@ describe("readPullRequests with a stand-in Timber", () => {
 	});
 
 	test("a lookup that failed is read from the record Timber prints with exit code 1", async () => {
-		const list = await readPullRequests(standIn("offline", { stdout: fixture("offline.json"), exitCode: 1 }).path, folder);
+		const list = await readPullRequests(standIn(root, "offline", { stdout: fixture("offline.json"), exitCode: 1 }).path, folder);
 		expect(list.ok && list.worktrees[0]).toEqual({ path: "/work/sample", branch: "main", outcome: "failed", reason: "offline", diagnostic: "Cannot reach GitHub; check connectivity and try again." });
 	});
 
 	test("a Timber without the command passes on what it said", async () => {
-		const timber = standIn("old", { stderr: fixture("unknown-command-0.1.2.stderr"), exitCode: 1 });
+		const timber = standIn(root, "old", { stderr: fixture("unknown-command-0.1.2.stderr"), exitCode: 1 });
 		expect(await readPullRequests(timber.path, folder)).toEqual({ ok: false, message: "timber __app-pr exited with code 1: unknown command '__app-pr'" });
 	});
 
 	test("a Timber that takes too long is stopped, and that is a failure", async () => {
-		const timber = standIn("stuck", { stdout: fixture("found.json"), waitMs: 5_000 });
+		const timber = standIn(root, "stuck", { stdout: fixture("found.json"), waitMs: 5_000 });
 		const started = Date.now();
 		const list = await readPullRequests(timber.path, folder, process.env, 300);
 		expect(Date.now() - started).toBeLessThan(4_000);
@@ -103,14 +65,14 @@ describe("createPullRequestReader", () => {
 	const listed = (paths: string[]) => async (path: string) => paths.includes(path);
 
 	test("reads a repository from the list with the Timber that was found", async () => {
-		const timber = standIn("reader", { stdout: fixture("not-github.json"), exitCode: 1 });
+		const timber = standIn(root, "reader", { stdout: fixture("not-github.json"), exitCode: 1 });
 		const reader = createPullRequestReader({ timber: async () => ready(timber.path), isListed: listed([folder]) });
 		const list = await reader.read(folder);
 		expect(list.ok && list.worktrees.map(entry => entry.outcome === "failed" ? entry.reason : entry.outcome)).toEqual(["not-github", "not-github", "none"]);
 	});
 
 	test("a repository that is not in the list is refused, and Timber is not run", async () => {
-		const timber = standIn("unlisted", { stdout: fixture("found.json") });
+		const timber = standIn(root, "unlisted", { stdout: fixture("found.json") });
 		const reader = createPullRequestReader({ timber: async () => ready(timber.path), isListed: listed([]) });
 		expect(await reader.read(folder)).toEqual({ ok: false, message: `${folder} is not a repository in the app's list.` });
 		expect(timber.notes()).toBeNull();
@@ -140,8 +102,8 @@ describe("nothing Timber printed is logged", () => {
 	});
 
 	test("neither a record nor a diagnostic reaches the console", async () => {
-		const good = standIn("quiet-record", { stdout: fixture("found.json"), stderr: `warning: ${SECRET}\n` });
-		const bad = standIn("quiet-failure", { stderr: `error: ${SECRET}\n`, exitCode: 1 });
+		const good = standIn(root, "quiet-record", { stdout: fixture("found.json"), stderr: `warning: ${SECRET}\n` });
+		const bad = standIn(root, "quiet-failure", { stderr: `error: ${SECRET}\n`, exitCode: 1 });
 		for (const method of methods) spies.push(spyOn(console, method));
 		const reader = createPullRequestReader({ timber: async () => ready(good.path), isListed: async () => true });
 		expect((await reader.read(folder)).ok).toBe(true);

@@ -6,18 +6,7 @@ import { type EditorDependencies, createEditorLauncher } from "../src/bun/editor
 import { type EditorSetting, TERMINAL_EDITOR_REASON } from "../src/shared/editor";
 import type { Repository } from "../src/shared/model";
 import { defaultPreferences } from "../src/shared/preferences";
-
-const windows = process.platform === "win32";
-
-/** Wait until `check` holds, for at most `milliseconds`. */
-async function until(check: () => boolean, milliseconds = 5000): Promise<boolean> {
-	const end = Date.now() + milliseconds;
-	while (Date.now() < end) {
-		if (check()) return true;
-		await Bun.sleep(20);
-	}
-	return check();
-}
+import { until, windows } from "./support/runtime";
 
 // The stand-in editors are shell scripts, so these run where there is a POSIX shell.
 describe.skipIf(windows)("opening a worktree in an editor, with stand-in editors", () => {

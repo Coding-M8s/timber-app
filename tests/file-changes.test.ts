@@ -5,9 +5,8 @@ import { join } from "node:path";
 import { createFileChanges } from "../src/bun/file-changes";
 import { type ChangeArea, type FileChange, type FileDiffResult, MAX_DIFF_BYTES, MAX_DIFF_LINES, parseDiff } from "../src/shared/file-changes";
 import type { Repository } from "../src/shared/model";
+import { windows } from "./support/runtime";
 import { fingerprint, git } from "./support/timber";
-
-const windows = process.platform === "win32";
 
 let root: string;
 let primary: string;

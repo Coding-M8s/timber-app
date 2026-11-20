@@ -7,28 +7,15 @@ import type { Repository, TimberStatus } from "../src/shared/model";
 import { ontoFromText, rebaseArguments, rebaseBases } from "../src/shared/rebase-command";
 import { type OpenTerminalRequest, type TerminalChange, type TerminalOutput, TIMBER_REBASE_SESSION_NAME } from "../src/shared/terminal";
 import { describeCommandLine } from "../src/shared/command-line";
+import { until } from "./support/runtime";
+import { git, ready } from "./support/timber";
 
 const posix = process.platform !== "win32";
-
-async function until(check: () => boolean, milliseconds = 5000): Promise<boolean> {
-	const end = Date.now() + milliseconds;
-	while (Date.now() < end) {
-		if (check()) return true;
-		await Bun.sleep(20);
-	}
-	return check();
-}
 
 const gitEnvironment = {
 	...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1",
 	GIT_AUTHOR_NAME: "Test", GIT_AUTHOR_EMAIL: "test@example.invalid", GIT_COMMITTER_NAME: "Test", GIT_COMMITTER_EMAIL: "test@example.invalid",
 };
-
-function git(cwd: string, ...args: string[]): string {
-	const run = Bun.spawnSync(["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid", ...args], { cwd, stdout: "pipe", stderr: "pipe", env: gitEnvironment });
-	if (run.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${run.stderr.toString()}`);
-	return run.stdout.toString();
-}
 
 describe("the rebase command", () => {
 	test("the base comes first, then --, then the registered path as one argument", () => {
@@ -119,7 +106,6 @@ describe.skipIf(!posix)("rebasing in a terminal session", () => {
 		} };
 	}
 
-	const ready = (path: string): TimberStatus => ({ state: "ready", path, version: "0.1.1" });
 	const printed = (id: string) => outputs.filter(output => output.id === id).map(output => output.data).join("");
 	const exited = (id: string) => changes.find(change => change.id === id && change.session?.state.kind === "exited")?.session ?? null;
 

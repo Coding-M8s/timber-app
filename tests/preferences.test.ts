@@ -11,7 +11,7 @@ import type { RepositoryReader } from "../src/bun/repository-reader";
 import { createSettingsHolder } from "../src/bun/settings";
 import { PREFERENCE_PARTS, applyPreferenceChange, readAlertStates, defaultPreferences, readPreferences, samePreferences, writePreferences } from "../src/shared/preferences";
 import { parseSettings, serializeSettings } from "../src/shared/settings";
-import { git } from "./support/timber";
+import { git, makeRepository } from "./support/timber";
 import { defaultFetchSetting } from "../src/shared/fetch-setting";
 import { defaultThemeChoice } from "../src/shared/theme";
 import { DEFAULT_LIGHT_THEME } from "../src/shared/builtin-themes";
@@ -114,10 +114,7 @@ describe("the saved preferences in the main process", () => {
 	beforeAll(() => {
 		root = realpathSync(mkdtempSync(join(tmpdir(), "timber-app-preferences-")));
 		primary = join(root, "sample");
-		git(root, "init", "--initial-branch=main", primary);
-		writeFileSync(join(primary, "tracked.txt"), "one\n");
-		git(primary, "add", "tracked.txt");
-		git(primary, "commit", "-m", "Initial commit");
+		makeRepository(root, "sample");
 	});
 
 	beforeEach(() => {

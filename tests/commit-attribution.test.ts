@@ -4,11 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { hasAIAttribution } from "../scripts/check-commit-attribution";
+import { windows } from "./support/runtime";
 import { git } from "./support/timber";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const checker = join(root, "scripts/check-commit-attribution.ts");
-const windows = process.platform === "win32";
 
 function run(command: string[], cwd: string, env: Record<string, string | undefined> = process.env) {
 	const result = Bun.spawnSync(command, { cwd, stdout: "pipe", stderr: "pipe", env });

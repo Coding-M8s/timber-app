@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describeSavedBase } from "../src/mainview/base-format";
 import { createRepositoryReader } from "../src/bun/repository-reader";
 import type { Repository, TimberStatus } from "../src/shared/model";
 import { initialOnto } from "../src/shared/rebase-command";
-import { fingerprint, git, realTimber } from "./support/timber";
+import { fingerprint, git, isolatedEnvironment, makeRepository, realTimber } from "./support/timber";
 
 /**
  * The saved base of each worktree, read through the installed Timber from a
@@ -30,16 +30,11 @@ describe.skipIf(realTimber === null)("saved bases, with the installed Timber on 
 	beforeAll(() => {
 		work = realpathSync(mkdtempSync(join(tmpdir(), "timber-app-saved-base-")));
 		// A home of its own, so Timber's first-use marker and any user configuration stay out of this.
-		const home = join(work, "home");
-		mkdirSync(home);
-		environment = { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: join(home, ".config"), XDG_STATE_HOME: join(home, ".local", "state"), GIT_CONFIG_GLOBAL: "", GIT_CONFIG_NOSYSTEM: "1" };
+		environment = isolatedEnvironment(work);
 
 		primary = join(work, "my sample");
 		trees = join(work, "my sample-worktrees");
-		git(work, "init", "--initial-branch=main", primary);
-		writeFileSync(join(primary, "tracked.txt"), "one\n");
-		git(primary, "add", "tracked.txt");
-		git(primary, "commit", "-m", "Initial commit");
+		makeRepository(work, "my sample");
 		const remote = join(work, "remote.git");
 		git(work, "init", "--bare", remote);
 		git(primary, "remote", "add", "origin", remote);
