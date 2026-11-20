@@ -1,9 +1,10 @@
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import type { Repository } from "../../../shared/model";
 import { useStore } from "../../store/react";
 import type { Submission } from "../../store/submission";
 import type { WorktreeDialogMode } from "./mode";
 import { type NewBranchModel, type NewBranchState, canCreate, createNewBranchModel, describeStep, reportedLabel, shownCommand } from "./new-branch-model";
+import { TrackerField, chosenTracker } from "./tracker-choice";
 import { WorkflowField, type WorkflowOptions, chosenWorkflow } from "./workflow-choice";
 
 /**
@@ -30,9 +31,11 @@ export function newBranchMode(
 	};
 	// The command and the run take the same workflow, so the footer shows what runs.
 	const workflow = chosenWorkflow(workflows, fields.workflow);
+	// So does the tracker: the footer shows the name with the prefix the run passes.
+	const tracker = chosenTracker(state.trackers, fields.tracker);
 	return {
 		label: "New branch",
-		command: shownCommand(repository.path, state, workflow),
+		command: shownCommand(repository.path, state, workflow, tracker),
 		canSubmit: step.kind === "setup" || canCreate(fields),
 		...describeStep(step),
 		// `timber new` creates the worktree when it works, and "Run setup" finishes one this mode created.
@@ -41,7 +44,7 @@ export function newBranchMode(
 		setupStart: step.kind === "form" ? "if-skipped" : "never",
 		worktree: step.kind === "form" ? null : step.worktree.path,
 		workflow: step.kind === "form" ? workflow : step.workflow,
-		run: () => model.run(workflow),
+		run: () => model.run(workflow, tracker),
 		fields: step.kind === "form"
 			? (
 				<>
@@ -59,6 +62,7 @@ export function newBranchMode(
 						/>
 						<span className="field-hint">A branch name, a sentence, or an issue: github:123, jira:ENG-1, or linear:ENG-1. Timber decides the branch and the folder.</span>
 					</label>
+					<TrackerField options={state.trackers} chosen={tracker} disabled={submission.getState().running} onPick={pick => edit({ tracker: pick })} />
 					<label className="field">
 						<span className="field-label">Start from</span>
 						<input
@@ -105,5 +109,9 @@ export function useNewBranchMode(repository: Repository, submission: Submission,
 	const store = useStore();
 	const [model] = useState(() => createNewBranchModel(store, repository.path));
 	const state = useSyncExternalStore(model.subscribe, model.getState, model.getState);
+	// Read once when the dialog opens: each read runs Timber and Git, and file watching reads the repository again often.
+	useEffect(() => {
+		void model.readTrackers();
+	}, [model]);
 	return newBranchMode(model, state, repository, submission, workflows);
 }

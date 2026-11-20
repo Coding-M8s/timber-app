@@ -58,6 +58,7 @@ import { createWorktreeCommands } from "./worktree-commands";
 import { createBackupCommands } from "./backups";
 import { createRepositoryTurns } from "./repository-turns";
 import { createWorkflowReader } from "./workflows";
+import { createIssueTrackerReader } from "./issue-trackers";
 import { messageOf } from "../shared/error-message";
 
 const DEV_SERVER_URL = "http://localhost:5173";
@@ -198,6 +199,8 @@ const chops = createChops({ findRepository: path => repositories.find(path), per
 const timberSettings = createTimberSettings({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
 // Runs Timber's settings read and keeps only the workflows. What it prints is private: never log it (see ./workflows.ts).
 const workflows = createWorkflowReader({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
+// Timber's settings read (which checks the list), then the remote's URL. It says whether a login applies, never what it is.
+const issueTrackers = createIssueTrackerReader({ readSettings: request => timberSettings.read(request) });
 // Runs Timber's pull request read, with Timber's own GitHub login. Nothing it prints is logged (see ./pull-requests.ts).
 const pullRequests = createPullRequestReader({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
 const issues = createIssueReader({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
@@ -388,6 +391,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			checkTimberConnection: request => timberSettings.check(request),
 			// An agent's arguments can hold tokens: never log the answer.
 			listWorkflows: ({ repository }) => workflows.list(repository),
+			readIssueTrackers: ({ repository }) => issueTrackers.read(repository),
 			readPullRequests: ({ repository }) => pullRequests.read(repository),
 			readIssue: request => issues.read(request),
 			readBackups: ({ repository }) => backups.list(repository),

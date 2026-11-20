@@ -516,6 +516,23 @@ keeps what was typed in each mode, and is not possible while a command runs.
 
 "New branch" is the first mode, with a name and an optional start point.
 
+- **The Tracker field.** Under Name, for picking which issue tracker a bare
+  issue number or key is read with, for this one creation. The mode's model
+  reads `readIssueTrackers` once when the dialog opens (only the latest read
+  counts), and the field shows only with two or more trackers set up, Default
+  first and picked. Default passes the name unchanged, so Timber's
+  `default_tracker` applies; it is labelled with that tracker, or plain
+  "Default" when Timber reads bare issues with none. A pick goes through
+  `issueSelector` (`src/shared/issue-trackers.ts`) inside
+  `newWorktreeRequest`, so the footer and the run pass the same name: a name
+  that Timber reads as an issue of that tracker (a positive whole number for
+  GitHub, a whole key such as `ENG-42` for Jira and Linear) gets the prefix,
+  and anything else, including a name with a prefix already, passes
+  unchanged, so a prefix never turns a name into a selector Timber refuses.
+  A pick the field no longer offers is Default. No setting is saved.
+  Prefilling the dialog from an issue (#156) should use `issueSelector` too.
+  (`worktree-modes/tracker-choice.tsx`.)
+
 - A failure before anything was created keeps the form open with Timber's
   diagnostic, for example for a name or a base that is ambiguous.
 - When the worktree was made, the dialog closes and setup follows in its
@@ -1627,6 +1644,39 @@ New and Open can offer them, without parsing Timber's TOML for them.
 In `bun run dev:web` timber has a workflow of each agent kind, api-server
 has none, and billing's fails as its `.timber.toml` is malformed.
 `timberMock.setWorkflows(path, list)` changes one (`null` for the sample).
+
+## Issue trackers
+
+The New worktree dialog's Tracker field needs to know which trackers a
+repository has set up, without the app reading Timber's files or holding a
+login.
+
+- **Asking.** `readIssueTrackers` on the `Engine`, answered by
+  `src/bun/issue-trackers.ts`. It reads the repository scope through the
+  same service as Settings (`timber __app-config read --scope repository`,
+  which checks that the repository is in the list and that Timber is ready),
+  then runs one read-only `git -C <checkout> remote get-url --all -- <remote>`
+  through `readGit`, with a limit of ten seconds. Git runs only after
+  Timber's read worked.
+- **Deciding.** `issueTrackersOf` in `src/shared/issue-trackers.ts` is pure,
+  and mirrors Timber's rules. GitHub is set up when the remote Timber uses
+  (its `remote` setting, or `origin`) has exactly one fetch URL, of one
+  github.com repository in a form Timber accepts. Jira is set up when a site
+  applies and its login is saved or given in the environment; Linear when
+  its login is saved or given in the environment. The default is
+  `effective.default_tracker`, none for `none`, and Jira when no default is
+  set but a Jira site applies, as Timber then reads a bare key as Jira.
+- **Private.** Only whether a login applies is used, never a login, and
+  nothing read is logged. A failed read is a failure with Timber's
+  diagnostic; the dialog then shows no field, and creating still works.
+- **Linear** is listed when its login applies, but has not been tested
+  against a real Linear workspace.
+
+In `bun run dev:web` timber has GitHub and Jira, so the field shows, and
+api-server has GitHub only, so it does not. The mock derives the trackers
+from its Timber settings, so saving or removing a login in Settings changes
+them. `timberMock.setGithubRemote(path, false)` takes GitHub away (`null` for
+the sample).
 
 ## Pull requests
 

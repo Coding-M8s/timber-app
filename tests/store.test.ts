@@ -86,6 +86,8 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		...createMockTimberConfig(() => false),
 		// Workflows as the mock acts them out. Their own tests are in workflows.test.ts.
 		...createMockWorkflows(() => false, () => timber),
+		// Issue trackers as the mock acts them out. Their own tests are in new-worktree-tracker.test.tsx.
+		readIssueTrackers: async () => ({ ok: false, message: "Not read in these tests." }),
 		// Pull requests as the mock acts them out. Their own tests are in pull-requests.test.ts.
 		...createMockPullRequests(() => undefined, () => timber),
 		...createMockIssues(() => undefined, () => timber),

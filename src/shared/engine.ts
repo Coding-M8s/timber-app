@@ -21,6 +21,7 @@ import type { CreatePullRequestRequest, CreatePullRequestResult, HeadSubjectRequ
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "./timber-done";
 import type { UninstallPlan, UninstallRequest, UninstallResult } from "./uninstall";
 import type { WorkflowList } from "./workflows";
+import type { IssueTrackers } from "./issue-trackers";
 
 /**
  * Everything the interface may ask of the machine it runs on.
@@ -270,6 +271,17 @@ export interface Engine {
 	 * hold tokens: never log them. Read-only and safe to call again.
 	 */
 	listWorkflows(repository: string): Promise<WorkflowList>;
+	/**
+	 * The issue trackers a repository in the list has set up, named by the
+	 * path of its primary checkout, for the New worktree dialog's Tracker
+	 * field: GitHub when the remote Timber uses is one github.com repository,
+	 * Jira when a site and a login apply, Linear when a login applies, and the
+	 * tracker Timber reads a bare issue with (./issue-trackers.ts). Timber's
+	 * settings come from `timber __app-config read --scope repository`, the
+	 * remote from a read-only `git remote get-url`. Says whether a login
+	 * applies, never what it is. Read-only and safe to call again.
+	 */
+	readIssueTrackers(repository: string): Promise<IssueTrackers>;
 	/**
 	 * The pull request of each worktree of a repository in the list, named by
 	 * the path of its primary checkout, read by `timber __app-pr` with

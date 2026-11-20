@@ -219,8 +219,18 @@ change them here first when they change.
   without waiting for it, once the dialog has created the worktree. The
   footer shows each command that follows under Timber's. The Name hint names
   the issue forms Timber links, `github:123`, `jira:ENG-1`, and
-  `linear:ENG-1`; the app passes the name without rewriting it, only trimming
-  spaces around it, and Timber alone decides whether it is an issue.
+  `linear:ENG-1`; the app passes the name as typed, only trimming spaces
+  around it, and Timber alone decides whether it is an issue. In "New
+  branch", a Tracker field under Name shows when two or more trackers are set
+  up for the repository (GitHub with a GitHub remote, Jira with a site and a
+  login, Linear with a login) and lists only those. It starts on "Default
+  (GitHub)", named after Timber's default tracker, which passes the name
+  unchanged. Picking a tracker turns a Name with the shape of its issue
+  (`42`, `ENG-42`) into `github:42` or `jira:ENG-42` for this one creation,
+  shown in the footer before it runs; a sentence or branch name passes
+  unchanged, and Timber's default tracker never changes. Linear is listed
+  when its login is saved, but has not been tested with a real Linear
+  workspace.
 - **Rebase:** pick the base. The picker starts from the base Timber saved for
   the worktree. A worktree with uncommitted changes is refused, as Timber
   does. The dialog says how the rebase ended. One that stops on conflicts
