@@ -1,4 +1,5 @@
 import type { IssueLink, IssueTracker, SavedBase, SavedBaseProblem, WorktreeChanges } from "./model";
+import { describeExit, isFields, readEnvelope } from "./timber-record";
 
 /**
  * Reading `timber ls --json`, version 1 of Timber's machine interface
@@ -40,11 +41,7 @@ export type TimberListing =
 	| { ok: true; repository: ListedRepository; worktrees: ListedWorktree[] }
 	| { ok: false; message: string };
 
-export type Fields = Record<string, unknown>;
-
-export function isFields(value: unknown): value is Fields {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+export { type Fields, isFields } from "./timber-record";
 
 const isText = (value: unknown): value is string => typeof value === "string";
 export const isTextOrNull = (value: unknown): value is string | null => value === null || typeof value === "string";
@@ -149,18 +146,9 @@ const unreadable = (detail: string) => failed(`${TIMBER_LS_COMMAND} did not answ
  * for the person, never a shorter list.
  */
 export function readTimberListing(stdout: string, exitCode: number | null): TimberListing {
-	let record: unknown;
-	try {
-		record = JSON.parse(stdout);
-	} catch {
-		return unreadable(stdout.trim() === "" ? "it printed nothing" : "the output is not valid JSON");
-	}
-	if (!isFields(record)) return unreadable("the output is not a JSON object");
-
-	if (record.schemaVersion !== SUPPORTED_SCHEMA_VERSION) {
-		const found = typeof record.schemaVersion === "number" || typeof record.schemaVersion === "string" ? String(record.schemaVersion) : "none";
-		return failed(`${TIMBER_LS_COMMAND} answered with schema version ${found}, and this app reads version ${SUPPORTED_SCHEMA_VERSION} only. Update Timber app, or install a Timber that matches it.`);
-	}
+	const envelope = readEnvelope(stdout, TIMBER_LS_COMMAND, SUPPORTED_SCHEMA_VERSION);
+	if (!envelope.ok) return envelope.problem === "version" ? failed(envelope.message) : unreadable(envelope.detail);
+	const { record } = envelope;
 
 	const { command, outcome, diagnostic, worktrees } = record;
 	if (command !== "ls") return unreadable("it is not a record for ls");
@@ -170,8 +158,7 @@ export function readTimberListing(stdout: string, exitCode: number | null): Timb
 	if (!Array.isArray(worktrees)) return unreadable("it has no list of worktrees");
 
 	if (record.exitCode !== exitCode) {
-		const actual = exitCode === null ? "did not exit by itself" : `exited with code ${exitCode}`;
-		return failed(`${TIMBER_LS_COMMAND} ${actual}, but its record says exit code ${record.exitCode}. The list was not used.`);
+		return failed(`${TIMBER_LS_COMMAND} ${describeExit(exitCode)}, but its record says exit code ${record.exitCode}. The list was not used.`);
 	}
 	// The contract ties the two together: succeeded exits with 0, and failed never does.
 	if ((outcome === "failed") === (record.exitCode === 0)) return unreadable(`its outcome "${outcome}" does not go with exit code ${record.exitCode}`);

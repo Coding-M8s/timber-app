@@ -1,6 +1,6 @@
 import type { IssueTracker } from "./model";
-import { ISSUE_TRACKERS, isFields, isHttpsLink } from "./timber-ls";
-import { displayText, readDiagnostic } from "./workflows";
+import { ISSUE_TRACKERS, isHttpsLink } from "./timber-ls";
+import { describeExit, describeFailedRun, displayText, isFields, readEnvelope } from "./timber-record";
 
 /**
  * Reading a worktree's linked issue from `timber __app-issue`, version 1 of
@@ -103,27 +103,17 @@ function readIssue(value: unknown): Issue | null {
  * for the person, never a guess.
  */
 export function readIssueRecord(stdout: string, stderr: string, exitCode: number | null, worktree: string): IssueLookup {
-	const ending = exitCode === null ? "did not exit by itself" : `exited with code ${exitCode}`;
-	const explained = () => {
-		const diagnostic = readDiagnostic(stderr);
-		return failed(diagnostic === null ? `${APP_ISSUE_COMMAND} ${ending} without saying why.` : `${APP_ISSUE_COMMAND} ${ending}: ${diagnostic}`);
-	};
+	const ending = describeExit(exitCode);
+	const explained = () => failed(describeFailedRun(APP_ISSUE_COMMAND, stderr, exitCode));
 	if (exitCode !== 0 && exitCode !== 1) return explained();
 
-	let record: unknown;
-	try {
-		record = JSON.parse(stdout);
-	} catch {
+	const envelope = readEnvelope(stdout, APP_ISSUE_COMMAND, SUPPORTED_APP_ISSUE_SCHEMA_VERSION);
+	if (!envelope.ok) {
 		// An older Timber without the command prints nothing and says so on standard error.
-		if (exitCode !== 0) return explained();
-		return unreadable(stdout.trim() === "" ? "it printed nothing" : "the output is not valid JSON");
+		if (envelope.problem === "not-json" && exitCode !== 0) return explained();
+		return envelope.problem === "version" ? failed(envelope.message) : unreadable(envelope.detail);
 	}
-	if (!isFields(record)) return unreadable("the output is not a JSON object");
-
-	if (record.schemaVersion !== SUPPORTED_APP_ISSUE_SCHEMA_VERSION) {
-		const found = typeof record.schemaVersion === "number" || typeof record.schemaVersion === "string" ? String(record.schemaVersion) : "none";
-		return failed(`${APP_ISSUE_COMMAND} answered with schema version ${found}, and this app reads version ${SUPPORTED_APP_ISSUE_SCHEMA_VERSION} only. Update Timber app, or install a Timber that matches it.`);
-	}
+	const { record } = envelope;
 
 	// The worktree is null only when nothing matched, which is a failure. Otherwise it must be the one asked about.
 	const named = record.worktree;

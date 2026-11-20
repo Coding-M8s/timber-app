@@ -1,4 +1,4 @@
-import { isFields } from "./timber-ls";
+import { describeFailedRun, displayText, isFields, readEnvelope } from "./timber-record";
 
 /**
  * Reading a repository's named workflows from `timber __app-config read
@@ -12,9 +12,6 @@ import { isFields } from "./timber-ls";
 export const APP_CONFIG_READ_ARGUMENTS = ["__app-config", "read", "--scope", "repository"] as const;
 export const APP_CONFIG_READ_COMMAND = `timber ${APP_CONFIG_READ_ARGUMENTS.join(" ")}`;
 export const SUPPORTED_APP_CONFIG_SCHEMA_VERSION = 1;
-
-/** How much of Timber's diagnostic is passed on. */
-const DIAGNOSTIC_LIMIT = 300;
 
 /** Timber's rule for workflow names. A name becomes `--workflow <name>`, so nothing else may pass. */
 const WORKFLOW_NAME = /^[a-z][a-z0-9_-]*$/;
@@ -48,27 +45,8 @@ export type WorkflowList =
 	| { ok: true; workflows: Workflow[] }
 	| { ok: false; message: string };
 
-/** Text from Timber, made safe to show: control characters become a replacement mark, and it is cut short. */
-export function displayText(value: string, limit = 200): string {
-	const clean = value.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, "\uFFFD");
-	const characters = Array.from(clean);
-	return characters.length > limit ? `${characters.slice(0, limit - 1).join("")}\u2026` : clean;
-}
-
 const failed = (message: string): WorkflowList => ({ ok: false, message });
 const unreadable = (detail: string) => failed(`${APP_CONFIG_READ_COMMAND} did not answer with a record this app can read: ${detail}.`);
-
-/**
- * The last line Timber wrote to standard error, which is its diagnostic, made
- * safe to show. An older Timber may print a hint before it. Null when it
- * wrote nothing. The text is never parsed for meaning.
- */
-export function readDiagnostic(stderr: string): string | null {
-	const line = stderr.split(/\r?\n/).map(part => part.trim()).filter(part => part !== "").at(-1);
-	if (line === undefined) return null;
-	const text = line.replace(/^error:\s*/i, "");
-	return text === "" ? null : displayText(text, DIAGNOSTIC_LIMIT);
-}
 
 function readAgent(value: unknown): WorkflowAgent | null {
 	if (value === undefined) return { kind: "not-set" };
@@ -103,24 +81,11 @@ function readWorkflow(name: string, value: unknown): Workflow | null {
  * empty list.
  */
 export function readWorkflowList(stdout: string, stderr: string, exitCode: number | null): WorkflowList {
-	if (exitCode !== 0) {
-		const ending = exitCode === null ? "did not exit by itself" : `exited with code ${exitCode}`;
-		const diagnostic = readDiagnostic(stderr);
-		return failed(diagnostic === null ? `${APP_CONFIG_READ_COMMAND} ${ending} without saying why.` : `${APP_CONFIG_READ_COMMAND} ${ending}: ${diagnostic}`);
-	}
+	if (exitCode !== 0) return failed(describeFailedRun(APP_CONFIG_READ_COMMAND, stderr, exitCode));
 
-	let record: unknown;
-	try {
-		record = JSON.parse(stdout);
-	} catch {
-		return unreadable(stdout.trim() === "" ? "it printed nothing" : "the output is not valid JSON");
-	}
-	if (!isFields(record)) return unreadable("the output is not a JSON object");
-
-	if (record.schemaVersion !== SUPPORTED_APP_CONFIG_SCHEMA_VERSION) {
-		const found = typeof record.schemaVersion === "number" || typeof record.schemaVersion === "string" ? String(record.schemaVersion) : "none";
-		return failed(`${APP_CONFIG_READ_COMMAND} answered with schema version ${found}, and this app reads version ${SUPPORTED_APP_CONFIG_SCHEMA_VERSION} only. Update Timber app, or install a Timber that matches it.`);
-	}
+	const envelope = readEnvelope(stdout, APP_CONFIG_READ_COMMAND, SUPPORTED_APP_CONFIG_SCHEMA_VERSION);
+	if (!envelope.ok) return envelope.problem === "version" ? failed(envelope.message) : unreadable(envelope.detail);
+	const { record } = envelope;
 	if (record.scope !== "repository") return unreadable("it is not a record for the repository scope");
 	const { effective } = record;
 	if (!isFields(effective)) return unreadable("it has no effective settings");

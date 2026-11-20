@@ -1,5 +1,4 @@
-import { isFields } from "./timber-ls";
-import { displayText, readDiagnostic } from "./workflows";
+import { describeExit, describeFailedRun, displayText, isFields, readEnvelope } from "./timber-record";
 
 /**
  * Reading each worktree's pull request from `timber __app-pr`, version 1 of
@@ -214,27 +213,16 @@ function readEntry(value: unknown): PullRequestEntry | null {
  * never a shorter or empty answer.
  */
 export function readPullRequestList(stdout: string, stderr: string, exitCode: number | null): PullRequestList {
-	const ending = exitCode === null ? "did not exit by itself" : `exited with code ${exitCode}`;
-	const explained = () => {
-		const diagnostic = readDiagnostic(stderr);
-		return failed(diagnostic === null ? `${APP_PR_COMMAND} ${ending} without saying why.` : `${APP_PR_COMMAND} ${ending}: ${diagnostic}`);
-	};
+	const explained = () => failed(describeFailedRun(APP_PR_COMMAND, stderr, exitCode));
 	if (exitCode !== 0 && exitCode !== 1) return explained();
 
-	let record: unknown;
-	try {
-		record = JSON.parse(stdout);
-	} catch {
+	const envelope = readEnvelope(stdout, APP_PR_COMMAND, SUPPORTED_APP_PR_SCHEMA_VERSION);
+	if (!envelope.ok) {
 		// An older Timber without the command prints nothing and says so on standard error.
-		if (exitCode !== 0) return explained();
-		return unreadable(stdout.trim() === "" ? "it printed nothing" : "the output is not valid JSON");
+		if (envelope.problem === "not-json" && exitCode !== 0) return explained();
+		return envelope.problem === "version" ? failed(envelope.message) : unreadable(envelope.detail);
 	}
-	if (!isFields(record)) return unreadable("the output is not a JSON object");
-
-	if (record.schemaVersion !== SUPPORTED_APP_PR_SCHEMA_VERSION) {
-		const found = typeof record.schemaVersion === "number" || typeof record.schemaVersion === "string" ? String(record.schemaVersion) : "none";
-		return failed(`${APP_PR_COMMAND} answered with schema version ${found}, and this app reads version ${SUPPORTED_APP_PR_SCHEMA_VERSION} only. Update Timber app, or install a Timber that matches it.`);
-	}
+	const { record } = envelope;
 	if (typeof record.diagnostic === "string" && record.diagnostic.trim() !== "") {
 		return failed(`${APP_PR_COMMAND} could not read the repository: ${displayText(record.diagnostic.trim(), DIAGNOSTIC_LIMIT)}`);
 	}
@@ -249,7 +237,7 @@ export function readPullRequestList(stdout: string, stderr: string, exitCode: nu
 	}
 	// Timber exits with 1 exactly when a lookup failed, so an answer that says otherwise is not trusted.
 	const anyFailed = worktrees.some(entry => entry.outcome === "failed");
-	if (anyFailed !== (exitCode === 1)) return unreadable(`it ${ending}, which does not match its entries`);
+	if (anyFailed !== (exitCode === 1)) return unreadable(`it ${describeExit(exitCode)}, which does not match its entries`);
 	return { ok: true, worktrees };
 }
 
