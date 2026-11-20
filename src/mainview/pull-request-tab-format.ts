@@ -1,4 +1,4 @@
-import { APP_PR_COMMAND, type CheckRunStatus, type PullRequest, type PullRequestEntry, type PullRequestFailureReason, type PullRequestList, type PullRequestState, type ReviewDecision } from "../shared/pull-requests";
+import { APP_PR_COMMAND, type CheckRunStatus, type PullRequest, type PullRequestEntry, type PullRequestFailureReason, type PullRequestList, type PullRequestState, type ReviewDecision, type Reviewer, type ReviewerState } from "../shared/pull-requests";
 import { asSentence, pullRequestFailureSentence } from "./pull-request-format";
 
 /**
@@ -11,6 +11,7 @@ import { asSentence, pullRequestFailureSentence } from "./pull-request-format";
 export const OPEN_IN_BROWSER = "Open in browser";
 export const NO_DESCRIPTION = "No description.";
 export const NO_CHECKS = "No checks were reported for the head commit.";
+export const NO_REVIEWERS = "No reviewers were requested, and no one has reviewed it.";
 
 export const STATE_LABELS: Record<PullRequestState, string> = {
 	open: "Open",
@@ -40,6 +41,14 @@ const REVIEW_SENTENCES: Record<ReviewDecision, string> = {
 	"none": "The repository asks for no review decision on it.",
 };
 
+const REVIEWER_STATE_LABELS: Record<ReviewerState, string> = {
+	"requested": "requested",
+	"approved": "approved",
+	"changes-requested": "changes requested",
+	"commented": "commented",
+	"dismissed": "dismissed",
+};
+
 const PROBLEM_TITLES: Record<PullRequestFailureReason, string> = {
 	"offline": "GitHub could not be reached",
 	"sign-in-needed": "Sign-in needed",
@@ -55,6 +64,18 @@ export interface ReviewView {
 	warning: boolean;
 }
 
+/** One reviewer: its name, a word for a team or a bot, and where it stands. */
+export interface ReviewerView {
+	name: string;
+	/** "team" or "bot", shown beside the name; null for a person. */
+	kind: "team" | "bot" | null;
+	state: string;
+	/** Red, with its words: this reviewer asked for changes. */
+	warning: boolean;
+	url: string | null;
+	openTitle: string;
+}
+
 /** The checks line above the list of runs. */
 export interface ChecksView {
 	text: string;
@@ -63,7 +84,7 @@ export interface ChecksView {
 
 /** What the tab shows. Each kind but `found` is a quiet note in place, never a dialog. */
 export type PullRequestTabView =
-	| { kind: "found"; pullRequest: PullRequest; heading: string; state: string; base: string; checks: ChecksView; review: ReviewView; openTitle: string }
+	| { kind: "found"; pullRequest: PullRequest; heading: string; state: string; base: string; checks: ChecksView; review: ReviewView; reviewers: ReviewerView[]; reviewersNote: string | null; openTitle: string }
 	| { kind: "none" | "waiting" | "problem"; title: string; text: string };
 
 function describeChecks(pull: PullRequest): ChecksView {
@@ -79,6 +100,25 @@ function describeChecks(pull: PullRequest): ChecksView {
 	}
 }
 
+function describeReviewer(reviewer: Reviewer): ReviewerView {
+	return {
+		name: reviewer.name,
+		kind: reviewer.kind === "user" ? null : reviewer.kind,
+		state: REVIEWER_STATE_LABELS[reviewer.state],
+		warning: reviewer.state === "changes-requested",
+		url: reviewer.url,
+		openTitle: `Open ${reviewer.name} on GitHub in the browser`,
+	};
+}
+
+/** A quiet line under the reviewers: there are none, or Timber's login could not read them all. Null when the list says it all. */
+function reviewersNote(pull: PullRequest): string | null {
+	if (pull.reviewersComplete) return pull.reviewers.length === 0 ? NO_REVIEWERS : null;
+	return pull.reviewers.length === 0
+		? "No reviewers could be read with Timber's GitHub login. Some, such as a team it cannot see, may be hidden from it."
+		: "Some reviewers could not be read with Timber's GitHub login, such as a team it cannot see.";
+}
+
 function describeFound(pull: PullRequest): PullRequestTabView {
 	return {
 		kind: "found",
@@ -88,6 +128,8 @@ function describeFound(pull: PullRequest): PullRequestTabView {
 		base: pull.state === "merged" ? `merged into ${pull.baseBranch}` : `into ${pull.baseBranch}`,
 		checks: describeChecks(pull),
 		review: { label: REVIEW_LABELS[pull.review], sentence: REVIEW_SENTENCES[pull.review], warning: pull.review === "changes-requested" },
+		reviewers: pull.reviewers.map(describeReviewer),
+		reviewersNote: reviewersNote(pull),
 		openTitle: `Open pull request #${pull.number} on GitHub in the browser`,
 	};
 }

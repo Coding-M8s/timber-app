@@ -1,6 +1,6 @@
 import type { Engine } from "../../shared/engine";
 import type { Repository, TimberStatus } from "../../shared/model";
-import type { CheckRun, PullRequest, PullRequestEntry, PullRequestFailureReason, PullRequestList } from "../../shared/pull-requests";
+import type { CheckRun, PullRequest, PullRequestEntry, PullRequestFailureReason, PullRequestList, Reviewer } from "../../shared/pull-requests";
 
 /** The part of the engine about pull requests. */
 export type PullRequestCapabilities = Pick<Engine, "readPullRequests">;
@@ -23,6 +23,13 @@ const run = (name: string, status: CheckRun["status"], link = true): CheckRun =>
 	url: link ? `https://github.com/example/checks/${encodeURIComponent(name)}` : null,
 });
 
+const reviewer = (name: string, state: Reviewer["state"], kind: Reviewer["kind"] = "user"): Reviewer => ({
+	kind,
+	name,
+	state,
+	url: kind === "bot" ? null : kind === "team" ? `https://github.com/orgs/${name.replace("/", "/teams/")}` : `https://github.com/${name}`,
+});
+
 const SAMPLE_RUNS: CheckRun[] = [run("test", "passing"), run("lint", "passing"), run("typecheck", "passing")];
 
 /** A sample pull request. The check counts come from its runs, as the parser counts them. */
@@ -37,6 +44,8 @@ const pullRequest = (number: number, branch: string, title: string, fields: Samp
 		baseBranch: "main",
 		checks: { summary, passing: count("passing"), failing: count("failing"), pending: count("pending"), runs: structuredClone(runs) },
 		review: "review-required",
+		reviewers: [],
+		reviewersComplete: true,
 		description: "",
 		...rest,
 	};
@@ -46,6 +55,7 @@ const pullRequest = (number: number, branch: string, title: string, fields: Samp
 export const samplePullRequests: Readonly<Record<string, PullRequest>> = {
 	"feat/github-issue-lookup": pullRequest(42, "timber", "Look up GitHub issues by number", {
 		review: "approved",
+		reviewers: [reviewer("alice", "approved"), reviewer("copilot-pull-request-reviewer", "commented", "bot")],
 		runs: [...SAMPLE_RUNS, run("docs", "skipped")],
 		description: "Adds `timber new github:<n>`, which names the branch after the issue.\n\nCloses #41.\n\n<b>Markup</b> from GitHub shows as text.",
 	}),
@@ -53,16 +63,20 @@ export const samplePullRequests: Readonly<Record<string, PullRequest>> = {
 		summary: "failing",
 		runs: [run("test (ubuntu)", "passing"), run("test (macos)", "failing"), run("lint", "passing"), run("legacy status", "pending", false)],
 		review: "changes-requested",
+		reviewers: [reviewer("example/maintainers", "requested", "team"), reviewer("bob", "changes-requested"), reviewer("carol", "dismissed")],
 		description: "Replaces `sed -i` and `readlink -f`, which differ on macOS.",
 	}),
 	"feat/rate-limit-headers": pullRequest(17, "api-server", "Send rate limit headers", {
 		state: "merged",
 		review: "none",
+		reviewers: [reviewer("dana", "approved")],
 		description: "Sends `RateLimit-Remaining` and `RateLimit-Reset` on every answer.",
 	}),
 	"feat/invoices": pullRequest(8, "billing", "Draft invoices", {
 		state: "draft",
 		summary: "pending",
+		reviewers: [reviewer("erin", "requested")],
+		reviewersComplete: false,
 		runs: [run("test", "passing"), run("build", "pending"), run("deploy preview", "pending")],
 	}),
 	"release/2.4": pullRequest(5, "billing", "Release 2.4", { state: "closed", summary: "none", runs: [], review: "none" }),

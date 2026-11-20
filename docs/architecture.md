@@ -475,8 +475,9 @@ Nothing that depends on Timber is offered until a usable one is found.
   (`src/bun/timber.ts`). It logs the result.
 - The app requires the newest Timber release (see
   [the newest Timber release is required](#the-newest-timber-release-is-required)),
-  and never less than 0.1.2, the first release with the machine interface,
-  `__app-config`, and one-off workflows (0.1.1 had only the first). The
+  and never less than 0.1.3, the first release with the machine interface,
+  `__app-config`, one-off workflows, and `__app-pr` with each pull request's
+  reviewers (0.1.1 had only the first; 0.1.2 had no `__app-pr`). The
   number and the comparison live in `src/shared/timber-version.ts`. A
   pre-release sorts before its release.
 - The `Engine` contract reports one of three states: ready (path and version),
@@ -1362,8 +1363,8 @@ there is one sign-in, Timber's, and the app holds no token.
   part after fifteen. One run answers for every worktree of the repository.
   Timber reads the login it uses for `timber new github:<n>` (`GH_TOKEN`,
   `GITHUB_TOKEN`, or the GitHub CLI's), never prompts, and changes no file
-  or ref. This needs a Timber with `__app-pr`, which is on Timber's main
-  branch and in no release yet. An older one answers "unknown command".
+  or ref. This needs Timber 0.1.3, the first release with `__app-pr`. An
+  older one answers "unknown command".
 - **Reading.** `readPullRequestList` in `src/shared/pull-requests.ts` is
   pure. It accepts one version 1 record from a Timber that exited with 0, or
   with 1 when a lookup failed, and only when the exit code agrees with the
@@ -1372,12 +1373,18 @@ there is one sign-in, Timber's, and the app holds no token.
   one keeps its number, its `https` link, its title (made safe to show), its
   state, its base branch, the summary of its checks with how many runs pass,
   fail, and are pending, each run with its name, status, and link, its
-  review decision, and its description. A run's link is kept only when it
+  review decision, its reviewers, whether that list is complete, and its
+  description. A run's link is kept only when it
   is `https`, since a commit status may point anywhere. The description
   keeps its line breaks and tabs and is otherwise made safe like any text
   from GitHub (`descriptionText`), cut at 20000 characters, and never
-  rendered as markup. Timber reports no reviewers, so the app has none to
-  show. Fields the app does not use are ignored.
+  rendered as markup. Each reviewer keeps its kind (user, team, or bot),
+  its name (made safe to show), its state (requested, approved, changes
+  requested, commented, or dismissed), and its link, kept only when it is
+  `https`. A missing reviewer list, a missing or non-boolean
+  `reviewersComplete`, or a reviewer of an unknown kind or state makes the
+  entry unreadable, since every Timber with `__app-pr` reports them. Fields
+  the app does not use are ignored.
 - **Never an empty answer by mistake.** Another exit code, output that is
   not one such record, another schema version, a repository Timber could
   not read (its `diagnostic`), or any entry that cannot be read fails the
@@ -1400,14 +1407,19 @@ there is one sign-in, Timber's, and the app holds no token.
   worktree's entry from the same answer, with its words from the pure
   `describePullRequestTab` in `src/mainview/pull-request-tab-format.ts`:
   the pull request, "No pull request yet", "Not read yet" before the first
-  answer, or why it could not be read. It reads the store only, so it
+  answer, or why it could not be read. Under the review decision it lists
+  each reviewer with its state, "team" or "bot" beside the name, and an
+  Open link when it has one, then a quiet line when there are none or
+  Timber's login could not read them all. It reads the store only, so it
   changes whenever the pull requests are read again, and it runs no
   command. Its controls open links through `openLink`.
 
 In `bun run dev:web`, timber has an approved pull request and one with
 failing checks and requested changes, api-server a merged one, and billing
 a draft and a closed one, with descriptions and check runs that show
-every status, a run without a link, and none at all. docs-site, once
+every status, a run without a link, and none at all. Their reviewers show
+every state, a team, a bot, none at all, and a list Timber could not read
+in full (the draft). docs-site, once
 added, is not on GitHub.
 `timberMock.setPullRequests(path, list)` changes one (`null` for the
 sample).
@@ -4701,6 +4713,28 @@ Bun 1.4.4:
   "No description."; and "No pull request yet" for spike/new-idea. No
   console errors.
 
+Run for reviewers in the Pull request tab (issue 101), on 2026-11-20,
+Linux x64 (Omarchy, Arch) with Bun 1.4.5 and Timber 0.1.3:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`, on `be57108`: 1954 passed, 14 skipped, 0 failed.
+- `bun run build:web`: built.
+- `timber __app-pr` from Timber 0.1.3 in this repository: each found pull
+  request carried `reviewers` (empty, as none had reviews) and
+  `reviewersComplete: true`. The reviewers in `found.json` are written to
+  Timber's contract.
+- `bun run dev:web` in headless Chromium 157, driven by a temporary script
+  (not committed), each sample worktree selected and the Pull request tab
+  clicked: #38 listed example/maintainers (requested, "team"), bob
+  (changes requested, in red), and carol (dismissed), each with Open; #42
+  alice (approved) and the Copilot bot (commented, "bot", no Open); #17
+  dana (approved); the draft #8 erin (requested) with "Some reviewers could
+  not be read with Timber's GitHub login, such as a team it cannot see.";
+  and the closed #5 "No reviewers were requested, and no one has reviewed
+  it." No console errors other than the dev server's missing favicon.
+- Not run: the desktop window, and reviewers of a real pull request read
+  by the app from GitHub.
+
 Run for desktop notifications and sounds (issue 119), on 2026-11-18,
 Pop!_OS 24.04 (COSMIC, `cosmic-notifications` 1.11.0, spec 1.2) on Linux
 x64 with Bun 1.4.2:
@@ -4951,7 +4985,7 @@ Not run yet:
 - Pull requests in the desktop window, and so `readPullRequests` over the
   RPC bridge, "Open pull request" clicked, and the refresh after a real
   background fetch. Only the main process module, the store, and static
-  markup were run, and no installed Timber release has `__app-pr` yet.
+  markup were run.
 - The backups section and its dialogs in the desktop window, or in a
   browser with `bun run dev:web`. Only the main process module, the store,
   and static markup were run. No Timber release has the backup list yet.

@@ -117,11 +117,13 @@ change them here first when they change.
   issue.
 - The Pull request tab shows the worktree's pull request: its title, state,
   number, and base, "Open in browser", then Review (the review decision in
-  a word and a sentence), Checks (a summary line, then each run with its
+  a word and a sentence, then each reviewer with where it stands,
+  "team" or "bot" beside the name, and an Open link), Checks (a summary line, then each run with its
   status and an Open link when it has one), and Description, as plain text
   with its lines kept, never as markup. Hairlines part the sections.
-  Failing checks and requested changes are red with their words. Timber
-  reports no reviewers, so none are listed yet. It is read-only: it runs
+  Failing checks and requested changes are red with their words, and so
+  is a reviewer who asked for changes. With no reviewers, or some Timber's
+  login could not read, a quiet line says so. It is read-only: it runs
   no command, and only opens links. With no pull request it is a quiet
   placeholder, "No pull request yet". Offline, sign-in needed, not on
   GitHub, or an answer that could not be read is said in its place with

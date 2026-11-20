@@ -9,7 +9,9 @@ import { type PullRequestEntry, type PullRequestList, descriptionText, pullReque
  * which has no `__app-pr`, were recorded from Timber on Linux, exactly as
  * printed, except that the temporary folder they ran in is written `/work`.
  * `found` is written by hand to the same shape, checked field by field
- * against a real run: the repository it was recorded from is private.
+ * against a real run: the repository it was recorded from is private. Its
+ * reviewers follow Timber 0.1.3's contract (docs/ide-contract.md in the
+ * Timber repository); the real run they were checked against had none.
  */
 const fixture = (name: string) => readFileSync(join(import.meta.dir, "fixtures", "timber-app-pr", name), "utf8");
 
@@ -65,6 +67,11 @@ describe("readPullRequestList", () => {
 					],
 				},
 				review: "approved",
+				reviewers: [
+					{ kind: "user", name: "alice", state: "approved", url: "https://github.com/alice" },
+					{ kind: "bot", name: "copilot-pull-request-reviewer", state: "commented", url: null },
+				],
+				reviewersComplete: true,
 				// Markup stays text: nothing here is ever rendered as markup.
 				description: "Closes #11.\n\n<b>Markup</b> stays text.",
 			},
@@ -96,6 +103,50 @@ describe("readPullRequestList", () => {
 
 		record.worktrees[1].pullRequest.checks.runs[0].url = 7;
 		expect(readPullRequestList(JSON.stringify(record), "", 0).ok).toBe(false);
+	});
+
+	test("reads each reviewer in Timber's order, its kind and state, and whether the list is complete", () => {
+		const entries = ok(readPullRequestList(fixture("found.json"), "", 0));
+		const pulls = entries.flatMap(entry => entry.outcome === "found" ? [entry.pullRequest] : []);
+		expect(pulls[1]!.reviewers).toEqual([
+			{ kind: "team", name: "example/maintainers", state: "requested", url: "https://github.com/orgs/example/teams/maintainers" },
+			{ kind: "user", name: "bob", state: "changes-requested", url: "https://github.com/bob" },
+			{ kind: "user", name: "carol", state: "dismissed", url: "https://github.com/carol" },
+		]);
+		expect(pulls.map(pull => [pull.number, pull.reviewers.length, pull.reviewersComplete])).toEqual([
+			[12, 2, true],
+			[13, 3, true],
+			[14, 1, false],
+			[9, 1, true],
+			[7, 0, true],
+		]);
+	});
+
+	test("a reviewer link that is not https is not offered, and reviewer names are made safe to show", () => {
+		const record = JSON.parse(fixture("found.json"));
+		record.worktrees[1].pullRequest.reviewers[0].url = "javascript:alert(1)";
+		record.worktrees[1].pullRequest.reviewers[0].name = " alice\u0007 ";
+		const entries = ok(readPullRequestList(JSON.stringify(record), "", 0));
+		const pull = entries[1]!.outcome === "found" ? entries[1]!.pullRequest : null;
+		expect(pull?.reviewers[0]).toEqual({ kind: "user", name: "alice\uFFFD", state: "approved", url: null });
+	});
+
+	test("reviewers that are not Timber 0.1.3's refuse the list", () => {
+		const record = JSON.parse(fixture("found.json"));
+		const broken = (change: (pull: any) => void) => {
+			const copy = structuredClone(record);
+			change(copy.worktrees[1].pullRequest);
+			return readPullRequestList(JSON.stringify(copy), "", 0).ok;
+		};
+		expect(broken(pull => void delete pull.reviewers)).toBe(false);
+		expect(broken(pull => void delete pull.reviewersComplete)).toBe(false);
+		expect(broken(pull => void (pull.reviewersComplete = "yes"))).toBe(false);
+		expect(broken(pull => void (pull.reviewers = {}))).toBe(false);
+		expect(broken(pull => void (pull.reviewers[0].kind = "robot"))).toBe(false);
+		expect(broken(pull => void (pull.reviewers[0].state = "pending"))).toBe(false);
+		expect(broken(pull => void (pull.reviewers[0].name = 7))).toBe(false);
+		expect(broken(pull => void (pull.reviewers[0].url = 7))).toBe(false);
+		expect(broken(pull => void (pull.reviewers[0] = null))).toBe(false);
 	});
 
 	test("a pull request without a description as text refuses the list", () => {

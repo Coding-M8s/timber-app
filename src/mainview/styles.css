@@ -3624,6 +3624,44 @@ pre:focus-visible {
 	white-space: nowrap;
 }
 
+.pull-reviewers {
+	margin: 8px 0 0;
+	padding: 0;
+	list-style: none;
+}
+
+.pull-reviewers + .pull-tab-line {
+	margin-top: 6px;
+}
+
+.pull-reviewer {
+	display: grid;
+	grid-template-columns: 120px minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 10px;
+	min-height: 26px;
+	font-size: 12.5px;
+}
+
+.pull-reviewer-state {
+	color: var(--text-3);
+}
+
+.pull-reviewer-state.failing {
+	color: var(--error);
+}
+
+.pull-reviewer-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.pull-reviewer-kind {
+	margin-left: 6px;
+	color: var(--text-3);
+}
+
 /* Text from GitHub as plain text: its lines kept, never rendered as markup. */
 .pull-description {
 	margin: 0;
