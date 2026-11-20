@@ -251,7 +251,8 @@ describe("without the session bus", () => {
 	test("Linux shows it with notify-send by argv, and tries the bus again only a minute later", async () => {
 		const folder = mkdtempSync(join(tmpdir(), "timber-notify-"));
 		try {
-			const executable = join(folder, "notify-send");
+			// Bun.which finds a file on Windows only by an extension in PATHEXT, as a real notify-send.exe would have.
+			const executable = join(folder, process.platform === "win32" ? "notify-send.exe" : "notify-send");
 			writeFileSync(executable, "#!/bin/sh\nexit 0\n");
 			chmodSync(executable, 0o755);
 			let clock = 0;

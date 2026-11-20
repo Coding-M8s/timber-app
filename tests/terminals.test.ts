@@ -617,6 +617,7 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 	});
 });
 
+// Skipped on Windows: the stand-in openers are shell scripts named xdg-open and open, the Linux and macOS openers.
 describe.skipIf(!posix)("opening a link from a terminal", () => {
 	let bin: string;
 	let record: string;

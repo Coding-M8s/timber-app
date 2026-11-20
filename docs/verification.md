@@ -2467,3 +2467,47 @@ icons were seen in the window icon run above.
   not open, so the typeface there was judged by eye only.
 - Not run: the network turned off on Windows, and anything on macOS (issue
   158).
+
+Run for the test suite on Windows (issue 163), on 2026-11-20, Windows 11 Home
+x64 (10.0.26200) with Bun 1.4.4, Git 2.50.1, and Timber 0.1.3 installed at
+`%LOCALAPPDATA%\Programs\Timber\timber.exe`:
+
+- Before the change, `bun test` on `main` at `05160e1`: 79 failed, 16
+  errors, 156 skipped. The first `test-windows` CI run (pull request 164)
+  had 60 failed.
+- `bun run typecheck`: no errors.
+- `bun test`: 1997 passed, 138 skipped, none failed, 2135 tests, in 455
+  seconds, with the tests that run the installed Timber among them. Four of
+  those stay skipped on Windows, for the reasons below.
+- As the CI job runs it: `bun test` with Timber's folder taken off PATH,
+  `CI=true`, and TEMP and TMP set to the short 8.3 name of a folder in
+  `%TEMP%` (`TIA81E~1`): 1895 passed, 264 skipped, none failed. With
+  `bunfig.toml` moved away, the same short TEMP failed `commonDirectory`, the
+  saved preferences, and the saved layout, the three failures seen only on
+  CI.
+- Now run on Windows, and skipped there before: watching a real repository
+  with `fs.watch` (passed five runs in a row), the worktree stamps on real
+  repositories, fetching from real repositories (three runs in a row; the
+  check of what a fetch may change now reads paths with this system's
+  separator), `readBackups` with a stand-in, and saving Timber's settings
+  and a login through the real Timber.
+- What the failures were. None was a bug in the app. The tests assumed
+  POSIX paths in recordings, expectations, and stand-ins; `.cmd` stand-ins,
+  which cmd.exe cannot give a line break and which leave Bun running when
+  stopped; stand-in players without `.exe`; Bun's five-second default against
+  the installed Timber; a `/proc` that needs symbolic links; and a timer
+  that took longer than the test allowed for. See
+  [tests on Windows](architecture.md#tests-on-windows).
+- Found along the way, outside this app: `timber backup list --json` took
+  4.3 seconds and `timber backup create` 5.7 on a new repository, where
+  `timber ls --json` took 0.6. On this machine the user's temporary folder
+  also allows another local group, so Timber refuses private records written
+  there unless their folder is made private first.
+- Still skipped on Windows, each with its reason in the test: restarting the
+  app (Linux only), terminal sessions and setup sessions on a POSIX pseudo
+  terminal, the shell-script stand-ins of the editor, link opener,
+  uninstaller, Git runner, and a remote that asks for a password,
+  permission-bit and read-only-folder tests, symbolic links, and the editor
+  and setup script checks of `timber new`, which are POSIX commands.
+- Not run: Linux and the CI jobs for this change before it was pushed, and
+  anything on macOS.

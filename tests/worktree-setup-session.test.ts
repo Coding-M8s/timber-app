@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,7 +7,9 @@ import type { Repository, TimberStatus } from "../src/shared/model";
 import { type OpenTerminalRequest, type TerminalChange, type TerminalOutput, WORKTREE_SETUP_SESSION_NAME } from "../src/shared/terminal";
 import { describeCommandLine } from "../src/shared/command-line";
 import { until } from "./support/runtime";
-import { git, readyAt, realTimber } from "./support/timber";
+import { REAL_TIMBER_TIMEOUT_MS, git, readyAt, realTimber } from "./support/timber";
+
+setDefaultTimeout(REAL_TIMBER_TIMEOUT_MS);
 
 const posix = process.platform !== "win32";
 

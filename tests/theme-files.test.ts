@@ -185,7 +185,8 @@ describe("exporting and importing in the main process", () => {
 		expect(readFileSync(bad, "utf8")).toBe("{ nope");
 	});
 
-	test("an unreadable file is refused", async () => {
+	// Skipped on Windows, where chmod only sets the read-only flag and the file stays readable.
+	test.skipIf(process.platform === "win32")("an unreadable file is refused", async () => {
 		if (process.getuid?.() === 0) return;
 		const locked = join(folder, "locked.json");
 		writeFileSync(locked, themeFileText(mine()));

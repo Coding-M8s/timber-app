@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -8,7 +8,9 @@ import { createWorktreeCommands } from "../src/bun/worktree-commands";
 import type { Repository, TimberStatus } from "../src/shared/model";
 import { rebaseResultArguments } from "../src/shared/timber-rebase";
 import { satisfiesTimberVersion } from "../src/shared/timber-version";
-import { type StandInRun, fingerprint, git, gitIdentity, isolatedEnvironment, makeRepository, readyAt, realTimber, recordedRebase, standInResultTimber } from "./support/timber";
+import { type StandInRun, REAL_TIMBER_TIMEOUT_MS, fingerprint, git, gitIdentity, isolatedEnvironment, makeRepository, readyAt, realTimber, recordedHere, recordedRebase, standInResultTimber } from "./support/timber";
+
+setDefaultTimeout(REAL_TIMBER_TIMEOUT_MS);
 
 const ready = readyAt("0.1.2");
 
@@ -32,7 +34,7 @@ describe("WorktreeCommands.rebase, with a stand-in Timber", () => {
 	});
 
 	/** The recorded record, with the paths of these tests in place of `/work`. */
-	const here = (text: string) => text.replaceAll("/work/sample-worktrees/feat", worktree).replaceAll("/work/sample", repository);
+	const here = (text: string) => recordedHere(text, [["/work/sample-worktrees/feat", worktree], ["/work/sample", repository]], { json: true });
 
 	/** The repository as the app's list would answer. */
 	const listing = (paths: string[], change: Partial<Repository> = {}): Repository => ({

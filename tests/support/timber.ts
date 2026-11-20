@@ -1,5 +1,6 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve, sep } from "node:path";
 import { findTimber } from "../../src/bun/timber";
 import type { TimberStatus } from "../../src/shared/model";
 import { windows } from "./runtime";
@@ -262,6 +263,40 @@ export const recordedBackup = {
 	unknownCommand: backupFixture("unknown-command-0.1.2.stderr"),
 };
 
+/**
+ * A recorded path under `/work`, up to the end of the path: a quote, a
+ * backslash, a line break, or punctuation that follows a path in a sentence.
+ * A word such as `/worktree` is not one.
+ */
+const RECORDED_PATH = /\/work(?![^/"\s])(?:\/[^/"\\\n,;:]*)*/g;
+
+/**
+ * A recording with its `/work` paths in place of the paths of a test, in
+ * this system's form, as the real Timber prints them here: on Windows with
+ * backslashes. `places` maps a recorded path to the test's own, and the
+ * first that starts a recorded path is used, so list the longest first.
+ * `json` says the recording is JSON, whose text needs a backslash escaped.
+ * On Linux and macOS this only puts the test's folders in place.
+ */
+export function recordedHere(text: string, places: readonly (readonly [recorded: string, local: string])[], { json }: { json: boolean }): string {
+	return text.replace(RECORDED_PATH, path => {
+		const place = places.find(([recorded]) => path.startsWith(recorded));
+		if (place === undefined) return path;
+		const local = place[1] + path.slice(place[0].length).replaceAll("/", sep);
+		return json ? JSON.stringify(local).slice(1, -1) : local;
+	});
+}
+
+/**
+ * How long a test that runs the installed Timber may take. On Windows a run
+ * of Timber 0.1.3 takes from under a second (`timber ls`) to over four
+ * (`timber backup list`), so a test that runs it several times does not
+ * finish in Bun's default five seconds. Bun sets the default again for each
+ * test file, so each file that runs the installed Timber calls
+ * `setDefaultTimeout(REAL_TIMBER_TIMEOUT_MS)` itself.
+ */
+export const REAL_TIMBER_TIMEOUT_MS = windows ? 60_000 : 5_000;
+
 /** The Timber installed on this machine, or null. Tests that need the real one are skipped without it. */
 const found = await findTimber();
 export const realTimber: string | null = found.state === "ready" ? found.path : null;
@@ -321,6 +356,38 @@ export const readyAt = (version: string) => (path: string, at = version): Timber
 
 /** Timber 0.1.1 found ready at `path`. */
 export const ready = readyAt("0.1.1");
+
+/**
+ * Make a new, empty folder for metadata written by hand in the form Timber
+ * saves it, such as a worktree's `timber` folder. On Linux and macOS it is
+ * open to this user only. On Windows Timber reads such a folder only when
+ * its access list allows nobody but this user, SYSTEM, and Administrators,
+ * so the folder gets that list and nothing inherited, and what is written in
+ * it inherits the same. A temporary folder can allow others too, such as a
+ * sandbox group.
+ */
+export function privateFolder(path: string): void {
+	mkdirSync(path, { mode: 0o700 });
+	if (!windows) return;
+	const system32 = join(process.env.SystemRoot ?? "C:\\Windows", "System32");
+	const whoami = Bun.spawnSync([join(system32, "whoami.exe"), "/user", "/fo", "csv", "/nh"], { stdout: "pipe", stderr: "pipe" });
+	const user = /"(S-1-[\d-]+)"/.exec(whoami.stdout.toString())?.[1];
+	if (whoami.exitCode !== 0 || user === undefined) throw new Error(`whoami /user failed: ${whoami.stderr.toString()}`);
+	const grants = [user, "S-1-5-18", "S-1-5-32-544"].flatMap(sid => ["/grant:r", `*${sid}:(OI)(CI)F`]);
+	const icacls = Bun.spawnSync([join(system32, "icacls.exe"), path, "/inheritance:r", ...grants], { stdout: "pipe", stderr: "pipe" });
+	if (icacls.exitCode !== 0) throw new Error(`icacls failed: ${icacls.stdout.toString()}${icacls.stderr.toString()}`);
+}
+
+/**
+ * The folder of each worktree Git lists for the repository at `cwd`, in this
+ * system's form. Git on Windows prints them with forward slashes.
+ */
+export function listedWorktrees(cwd: string): string[] {
+	return git(cwd, "worktree", "list", "--porcelain")
+		.split(/\r?\n/)
+		.filter(line => line.startsWith("worktree "))
+		.map(line => resolve(line.slice("worktree ".length)));
+}
 
 /**
  * Every file under `folder` with its size and time of last change, and what
@@ -398,7 +465,7 @@ export interface StandInNotes {
 const STAND_IN_SCRIPT = `
 const { existsSync, readFileSync, statSync, writeFileSync } = require("node:fs");
 const { dirname, join } = require("node:path");
-const run = JSON.parse(readFileSync(join(__dirname, "run.json"), "utf8"));
+const run = JSON.parse(readFileSync(join(folder, "run.json"), "utf8"));
 const given = process.argv.slice(2);
 const at = given.indexOf("--result-file");
 const resultFile = at === -1 ? null : given[at + 1] ?? null;
@@ -424,7 +491,7 @@ try {
 		inputMode = statSync(inputFile).mode & 0o777;
 	}
 } catch {}
-writeFileSync(join(__dirname, "notes.json"), JSON.stringify({
+writeFileSync(join(folder, "notes.json"), JSON.stringify({
 	arguments: given, cwd: process.cwd(), resultFile, folderMode, approvalFile, approval, approvalMode, inputFile, input, inputMode,
 	resultFileExisted: resultFile !== null && existsSync(resultFile),
 }));
@@ -446,23 +513,8 @@ export function standInResultTimber(root: string, name: string, run: StandInRun)
 	const folder = join(root, name);
 	mkdirSync(folder, { recursive: true });
 	writeFileSync(join(folder, "run.json"), JSON.stringify(run));
-	writeFileSync(join(folder, "stand-in.cjs"), STAND_IN_SCRIPT);
-	const path = writeStandInLauncher(folder);
+	const path = bunStandIn(folder, STAND_IN_SCRIPT);
 	return { path, notes: () => JSON.parse(readFileSync(join(folder, "notes.json"), "utf8")) as StandInNotes };
-}
-
-/**
- * Write `timber` (`timber.cmd` on Windows) in `folder`, which runs
- * `stand-in.cjs` beside it on the same Bun that runs the tests, with the
- * arguments it was given, and exits as that does. Returns its path.
- */
-function writeStandInLauncher(folder: string): string {
-	const path = join(folder, windows ? "timber.cmd" : "timber");
-	writeFileSync(path, windows
-		? `@echo off\r\n"${process.execPath}" "%~dp0stand-in.cjs" %*\r\nexit /b %errorlevel%\r\n`
-		: `#!/bin/sh\nexec "${process.execPath}" "$(dirname "$0")/stand-in.cjs" "$@"\n`);
-	if (!windows) chmodSync(path, 0o755);
-	return path;
 }
 
 /** What a stand-in Timber made with `standIn` does: print, wait, and exit as told, after reading standard input to its end. */
@@ -477,10 +529,10 @@ export interface Act {
 const ACT_SCRIPT = `
 const { readFileSync, writeFileSync } = require("node:fs");
 const { join } = require("node:path");
-const act = JSON.parse(readFileSync(join(__dirname, "act.json"), "utf8"));
+const act = JSON.parse(readFileSync(join(folder, "act.json"), "utf8"));
 // Read standard input to its end. With input left open, this would never return.
 const input = readFileSync(0);
-writeFileSync(join(__dirname, "notes.json"), JSON.stringify({ arguments: process.argv.slice(2), cwd: process.cwd(), input: input.length }));
+writeFileSync(join(folder, "notes.json"), JSON.stringify({ arguments: process.argv.slice(2), cwd: process.cwd(), input: input.length }));
 setTimeout(() => {
 	if (act.stdout) writeFileSync(1, act.stdout);
 	if (act.stderr) writeFileSync(2, act.stderr);
@@ -497,8 +549,55 @@ export function standIn(root: string, name: string, act: Act): { path: string; n
 	const here = join(root, name);
 	mkdirSync(here, { recursive: true });
 	writeFileSync(join(here, "act.json"), JSON.stringify(act));
-	writeFileSync(join(here, "stand-in.cjs"), ACT_SCRIPT);
-	const path = writeStandInLauncher(here);
+	const path = bunStandIn(here, ACT_SCRIPT);
 	const notes = join(here, "notes.json");
 	return { path, notes: () => (existsSync(notes) ? JSON.parse(readFileSync(notes, "utf8")) : null) };
+}
+
+/** Each stand-in script compiled for Windows in this run of the tests, by its text. */
+const compiled = new Map<string, string>();
+let compiledFolder: string | null = null;
+
+/**
+ * Put a stand-in Timber in `folder` that runs `script` on the same Bun that
+ * runs the tests, and return its path. The script finds the files beside the
+ * stand-in in `folder`, a variable this defines, and its arguments in
+ * `process.argv.slice(2)`.
+ *
+ * On Linux and macOS the stand-in is a shell script that starts Bun. On
+ * Windows it is an executable compiled with `bun build --compile`, like the
+ * installed `timber.exe`: a `.cmd` file would run through cmd.exe, which
+ * refuses an argument with a line break, and stopping it would leave the Bun
+ * it started running. Each script is compiled once and linked into each folder.
+ */
+export function bunStandIn(folder: string, script: string): string {
+	if (!windows) {
+		writeFileSync(join(folder, "stand-in.cjs"), `const folder = __dirname;\n${script}`);
+		const path = join(folder, "timber");
+		writeFileSync(path, `#!/bin/sh\nexec "${process.execPath}" "$(dirname "$0")/stand-in.cjs" "$@"\n`);
+		chmodSync(path, 0o755);
+		return path;
+	}
+	let executable = compiled.get(script);
+	if (executable === undefined) {
+		if (compiledFolder === null) {
+			const made = mkdtempSync(join(tmpdir(), "timber-app-stand-ins-"));
+			compiledFolder = made;
+			process.on("exit", () => rmSync(made, { recursive: true, force: true }));
+		}
+		const source = join(compiledFolder, `stand-in-${compiled.size}.cjs`);
+		executable = join(compiledFolder, `stand-in-${compiled.size}.exe`);
+		writeFileSync(source, `const folder = require("node:path").dirname(process.execPath);\n${script}`);
+		const build = Bun.spawnSync([process.execPath, "build", "--compile", source, "--outfile", executable], { stdout: "pipe", stderr: "pipe" });
+		if (build.exitCode !== 0) throw new Error(`Could not compile a stand-in Timber: ${build.stderr.toString()}`);
+		compiled.set(script, executable);
+	}
+	const path = join(folder, "timber.exe");
+	try {
+		linkSync(executable, path);
+	} catch {
+		// A link cannot reach another drive.
+		copyFileSync(executable, path);
+	}
+	return path;
 }

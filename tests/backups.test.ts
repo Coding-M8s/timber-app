@@ -1,11 +1,13 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createBackupCommands, readBackups } from "../src/bun/backups";
 import { createRepositoryTurns } from "../src/bun/repository-turns";
 import { windows } from "./support/runtime";
-import { fingerprint, git, isolatedEnvironment, makeRepository, readyAt, realTimber, recordedBackup, standInResultTimber, standInTimber } from "./support/timber";
+import { REAL_TIMBER_TIMEOUT_MS, fingerprint, git, isolatedEnvironment, makeRepository, readyAt, realTimber, recordedBackup, standInResultTimber, standInTimber } from "./support/timber";
+
+setDefaultTimeout(REAL_TIMBER_TIMEOUT_MS);
 
 const ready = readyAt("0.1.2");
 
@@ -23,7 +25,7 @@ afterAll(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-describe.skipIf(windows)("readBackups, with a stand-in Timber", () => {
+describe("readBackups, with a stand-in Timber", () => {
 	test("runs timber backup list --json in the repository and reads the record", async () => {
 		const timber = standInTimber(root, "list", recordedBackup.list.usable, 0);
 		const list = await readBackups(timber.path, folder);
@@ -39,6 +41,8 @@ describe.skipIf(windows)("readBackups, with a stand-in Timber", () => {
 	});
 });
 
+// Skipped on Windows: these check POSIX permission bits of the private folders, and that `C:\recovered` is
+// refused as a relative name, which on Windows is a whole path.
 describe.skipIf(windows)("BackupCommands, with stand-ins", () => {
 	const listed = (path: string) => Promise.resolve(path === folder);
 

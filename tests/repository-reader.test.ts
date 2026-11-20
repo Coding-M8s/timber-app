@@ -1,10 +1,12 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRepositoryReader, syncOf } from "../src/bun/repository-reader";
 import type { Repository, SyncState } from "../src/shared/model";
-import { fingerprint, git, makeRepository, ready, realTimber, recorded, standInTimber } from "./support/timber";
+import { REAL_TIMBER_TIMEOUT_MS, fingerprint, git, makeRepository, ready, realTimber, recorded, standInTimber } from "./support/timber";
+
+setDefaultTimeout(REAL_TIMBER_TIMEOUT_MS);
 
 let root: string;
 let primary: string;
@@ -206,6 +208,8 @@ describe("syncOf", () => {
 	});
 });
 
-test.skipIf(!process.env.CI)("CI has a Timber, so the tests on real repositories run there", () => {
+// The Linux job installs Timber. The Windows job does not, so there the tests that need it are skipped, and
+// they are run on a Windows machine with Timber installed instead (docs/architecture.md, "Tests on Windows").
+test.skipIf(!process.env.CI || process.platform === "win32")("CI has a Timber, so the tests on real repositories run there", () => {
 	expect(realTimber).not.toBeNull();
 });

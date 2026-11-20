@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,7 +6,9 @@ import { createWorkflowReader, readWorkflows } from "../src/bun/workflows";
 import { createMockEngine, sampleTimberStatuses } from "../src/mainview/engine/mock";
 import { sampleWorkflows } from "../src/mainview/engine/mock-workflows";
 import type { WorkflowList } from "../src/shared/workflows";
-import { fingerprint, git, ready, realTimber, recordedAppConfig, standIn } from "./support/timber";
+import { REAL_TIMBER_TIMEOUT_MS, fingerprint, git, ready, realTimber, recordedAppConfig, standIn } from "./support/timber";
+
+setDefaultTimeout(REAL_TIMBER_TIMEOUT_MS);
 
 const SECRET = "ghp_SuperSecretToken123";
 

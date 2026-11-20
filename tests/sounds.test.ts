@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { basename, delimiter, join } from "node:path";
 import {
 	MAX_SOUND_MILLISECONDS,
 	type SoundPlayerDependencies,
@@ -13,6 +13,18 @@ import {
 	playerCommand,
 	systemSoundFiles,
 } from "../src/bun/sounds";
+
+/**
+ * The file name of a pretend player. Bun.which finds a file on Windows only
+ * by an extension in PATHEXT, so there the pretend players end in .exe, as
+ * real players would.
+ */
+function stub(name: string): string {
+	return process.platform === "win32" && !name.endsWith(".exe") ? `${name}.exe` : name;
+}
+
+/** The pretend cache folder, in this system's path form, as the player joins file names to it. */
+const cache = join("/cache", "sounds");
 
 /** A pretend player the test ends by hand. */
 function pretend() {
@@ -73,8 +85,8 @@ describe("sounds", () => {
 			const bin = join(root, name);
 			mkdirSync(bin);
 			for (const player of players) {
-				writeFileSync(join(bin, player), "#!/bin/sh\nexit 0\n");
-				chmodSync(join(bin, player), 0o755);
+				writeFileSync(join(bin, stub(player)), "#!/bin/sh\nexit 0\n");
+				chmodSync(join(bin, stub(player)), 0o755);
 			}
 			bins[name] = bin;
 		}
@@ -93,7 +105,7 @@ describe("sounds", () => {
 		let clock = 0;
 		const player = createSoundPlayer({
 			path: bins.all!,
-			cacheFolder: "/cache/sounds",
+			cacheFolder: cache,
 			platform: "linux",
 			spawn,
 			isRegularFile: path => files.has(path),
@@ -111,9 +123,9 @@ describe("sounds", () => {
 	}
 
 	test("on Linux the first player found is used, with -- before the file", () => {
-		expect(playerCommand("linux", bins.all!, "/s/a.ogg")).toEqual({ argv: [join(bins.all!, "pw-play"), "--", "/s/a.ogg"] });
-		expect(playerCommand("linux", bins.paplay!, "/s/a.ogg")).toEqual({ argv: [join(bins.paplay!, "paplay"), "--", "/s/a.ogg"] });
-		expect(playerCommand("linux", `/nowhere${delimiter}${bins.aplay!}`, "/s/a.wav")).toEqual({ argv: [join(bins.aplay!, "aplay"), "-q", "--", "/s/a.wav"] });
+		expect(playerCommand("linux", bins.all!, "/s/a.ogg")).toEqual({ argv: [join(bins.all!, stub("pw-play")), "--", "/s/a.ogg"] });
+		expect(playerCommand("linux", bins.paplay!, "/s/a.ogg")).toEqual({ argv: [join(bins.paplay!, stub("paplay")), "--", "/s/a.ogg"] });
+		expect(playerCommand("linux", `/nowhere${delimiter}${bins.aplay!}`, "/s/a.wav")).toEqual({ argv: [join(bins.aplay!, stub("aplay")), "-q", "--", "/s/a.wav"] });
 	});
 
 	test("aplay plays WAV only", () => {
@@ -123,7 +135,7 @@ describe("sounds", () => {
 	});
 
 	test("macOS uses afplay", () => {
-		expect(playerCommand("darwin", bins.mac!, "/s/a.aiff")).toEqual({ argv: [join(bins.mac!, "afplay"), "/s/a.aiff"] });
+		expect(playerCommand("darwin", bins.mac!, "/s/a.aiff")).toEqual({ argv: [join(bins.mac!, stub("afplay")), "/s/a.aiff"] });
 		expect(playerCommand("darwin", bins.all!, "/s/a.aiff")).toBeNull();
 	});
 
@@ -131,7 +143,7 @@ describe("sounds", () => {
 		const path = "C:\\Users\\me\\it's $(evil).wav";
 		const command = playerCommand("win32", bins.windows!, path);
 		expect(command).toEqual({
-			argv: [join(bins.windows!, "powershell.exe"), "-NoProfile", "-NonInteractive", "-Command", WINDOWS_SOUND_SCRIPT],
+			argv: [join(bins.windows!, stub("powershell.exe")), "-NoProfile", "-NonInteractive", "-Command", WINDOWS_SOUND_SCRIPT],
 			environment: { [WINDOWS_SOUND_VARIABLE]: path },
 		});
 		expect(WINDOWS_SOUND_SCRIPT).not.toContain("evil");
@@ -148,13 +160,13 @@ describe("sounds", () => {
 	test("a bundled sound is written to the cache once, then played", async () => {
 		const { player, started, writes } = setUp();
 		const first = player.play({ kind: "bundled", name: "ping" });
-		expect(started[0]!.argv).toEqual([join(bins.all!, "pw-play"), "--", "/cache/sounds/ping.wav"]);
+		expect(started[0]!.argv).toEqual([join(bins.all!, stub("pw-play")), "--", join(cache, "ping.wav")]);
 		started[0]!.end(0);
 		expect(await first).toEqual({ outcome: "played" });
 		const second = player.play({ kind: "bundled", name: "ping" });
 		started[1]!.end(0);
 		expect(await second).toEqual({ outcome: "played" });
-		expect(writes).toEqual(["/cache/sounds/ping.wav"]);
+		expect(writes).toEqual([join(cache, "ping.wav")]);
 	});
 
 	test("nothing is written before the first play", () => {
@@ -178,14 +190,14 @@ describe("sounds", () => {
 
 		const none = setUp();
 		void none.player.play({ kind: "system" });
-		expect(none.started[0]!.argv.at(-1)).toBe("/cache/sounds/chime.wav");
-		expect(none.writes).toEqual(["/cache/sounds/chime.wav"]);
+		expect(none.started[0]!.argv.at(-1)).toBe(join(cache, "chime.wav"));
+		expect(none.writes).toEqual([join(cache, "chime.wav")]);
 	});
 
 	test("a custom file plays when it is there", async () => {
 		const { player, started } = setUp({ files: ["/home/me/bell.ogg"] });
 		void player.play({ kind: "custom", path: "/home/me/bell.ogg" });
-		expect(started[0]!.argv).toEqual([join(bins.all!, "pw-play"), "--", "/home/me/bell.ogg"]);
+		expect(started[0]!.argv).toEqual([join(bins.all!, stub("pw-play")), "--", "/home/me/bell.ogg"]);
 	});
 
 	test("a custom file that is gone is missing, or the chime for automatic alerts", async () => {
@@ -193,7 +205,7 @@ describe("sounds", () => {
 		expect(await player.play({ kind: "custom", path: "/home/me/bell.ogg" })).toEqual({ outcome: "missing" });
 		expect(started).toEqual([]);
 		void player.play({ kind: "custom", path: "/home/me/bell.ogg" }, { fallBackToChime: true });
-		expect(started[0]!.argv.at(-1)).toBe("/cache/sounds/chime.wav");
+		expect(started[0]!.argv.at(-1)).toBe(join(cache, "chime.wav"));
 	});
 
 	test("a custom path that could not have been saved is missing, even if a file is there", async () => {
@@ -250,7 +262,7 @@ describe("sounds", () => {
 			started[index]!.end(1);
 		}
 		expect(await quick).toEqual({ outcome: "failed" });
-		expect(started.map(entry => entry.argv[0]!.split("/").at(-1))).toEqual(["pw-play", "paplay", "aplay"]);
+		expect(started.map(entry => basename(entry.argv[0]!))).toEqual(["pw-play", "paplay", "aplay"].map(stub));
 		const late = player.play({ kind: "bundled", name: "ping" });
 		advance(3000);
 		started[3]!.end(1);
@@ -271,7 +283,7 @@ describe("sounds", () => {
 	test("the system sound plays the chime when no player found reads its file", async () => {
 		const { player, started } = setUp({ path: bins.aplay!, files: ["/usr/share/sounds/freedesktop/stereo/message-new-instant.oga"] });
 		const playing = player.play({ kind: "system" });
-		expect(started[0]!.argv.at(-1)).toBe("/cache/sounds/chime.wav");
+		expect(started[0]!.argv.at(-1)).toBe(join(cache, "chime.wav"));
 		started[0]!.end(0);
 		expect(await playing).toEqual({ outcome: "played" });
 	});
@@ -281,11 +293,11 @@ describe("sounds", () => {
 		const once = player.play({ kind: "bundled", name: "ping" });
 		started[0]!.end(0);
 		await once;
-		files.delete("/cache/sounds/ping.wav");
+		files.delete(join(cache, "ping.wav"));
 		const again = player.play({ kind: "bundled", name: "ping" });
 		started[1]!.end(0);
 		await again;
-		expect(writes).toEqual(["/cache/sounds/ping.wav", "/cache/sounds/ping.wav"]);
+		expect(writes).toEqual([join(cache, "ping.wav"), join(cache, "ping.wav")]);
 	});
 
 	test("a player that cannot start failed", async () => {

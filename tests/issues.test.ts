@@ -1,11 +1,13 @@
-import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createIssueReader, readIssue } from "../src/bun/issues";
 import { createMockEngine, sampleRepositories, sampleStatesRepository, sampleTimberStatuses } from "../src/mainview/engine/mock";
 import { readTimberListing } from "../src/shared/timber-ls";
-import { fingerprint, git, readyAt, realTimber, standIn } from "./support/timber";
+import { REAL_TIMBER_TIMEOUT_MS, fingerprint, git, privateFolder, readyAt, realTimber, standIn } from "./support/timber";
+
+setDefaultTimeout(REAL_TIMBER_TIMEOUT_MS);
 
 const fixture = (name: string) => readFileSync(join(import.meta.dir, "fixtures", "timber-app-issue", name), "utf8");
 const SECRET = "lin_api_SuperSecretKey123";
@@ -180,7 +182,7 @@ describe.skipIf(!canReadIssues(realTimber))("with a real Timber that has __app-i
 		// Saving a link takes a tracker lookup, so the link is written as Timber saves it (src/git/issue-link.ts in Timber).
 		const gitDir = realpathSync(git(tree("feat-jira"), "rev-parse", "--absolute-git-dir").trim());
 		const commonGitDir = realpathSync(git(repository, "rev-parse", "--path-format=absolute", "--git-common-dir").trim());
-		mkdirSync(join(gitDir, "timber"), { mode: 0o700 });
+		privateFolder(join(gitDir, "timber"));
 		writeFileSync(join(gitDir, "timber", "issue.json"), `${JSON.stringify({ version: 1, tracker: "jira", key: "PROJ-123", url: "https://example.atlassian.net/browse/PROJ-123", worktreePath: tree("feat-jira"), commonGitDir, worktreeGitDir: gitDir })}\n`, { mode: 0o600 });
 		// Only what Timber needs, so nothing of the person's own settings or logins is read. With no Jira site, Timber contacts nothing.
 		environment = { PATH: process.env.PATH ?? "", HOME: join(work, "home"), XDG_CONFIG_HOME: join(work, "config"), XDG_STATE_HOME: join(work, "state"), XDG_DATA_HOME: join(work, "data") };

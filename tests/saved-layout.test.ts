@@ -141,6 +141,7 @@ describe("the saved layout", () => {
 		expect(onDisk().repositories.map((entry: { path: string }) => entry.path)).toEqual([other]);
 	});
 
+	// Skipped on Windows, where chmod only sets the read-only flag, so the folder stays writable. Also skipped for root, who can write anywhere.
 	test.skipIf(process.platform === "win32" || process.getuid?.() === 0)("a save of the layout that is already saved does not write the file again", async () => {
 		const { layout } = appOn();
 		await layout.save({ sidebarWidth: 310, collapsed: [], setupDismissed: [] });
@@ -154,6 +155,7 @@ describe("the saved layout", () => {
 		}
 	});
 
+	// Skipped on Windows, where chmod only sets the read-only flag, so the folder stays writable. Also skipped for root, who can write anywhere.
 	test.skipIf(process.platform === "win32" || process.getuid?.() === 0)("a save that fails says so, and leaves the file and the remembered layout as they were", async () => {
 		await writeSettings(settingsFile, { repositories: [saved(primary)], layout: { sidebarWidth: 300, collapsed: [], setupDismissed: [] } });
 		const { layout } = appOn();

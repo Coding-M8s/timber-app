@@ -69,6 +69,45 @@ the Electrobun browser SDK (`types/electrobun-web.d.ts`).
 - It turns `exactOptionalPropertyTypes` off, because the SDK ships as
   TypeScript source and its own files do not pass that setting.
 
+### Tests on Windows
+
+`bun test` runs on Windows too, and the `test-windows` CI job fails the run
+when a test fails there. That job installs no Timber, so the tests that need
+the installed Timber are skipped in it and are run on a Windows machine with
+Timber instead (see [what has been verified](verification.md)). A few things
+keep the tests the same on both systems:
+
+- **Paths.** Recordings write their folder as `/work`. `recordedHere` in
+  `tests/support/timber.ts` puts the test's own folders in place, with
+  backslashes on Windows as the real Timber prints them, escaped when the
+  recording is JSON. Git prints worktree folders with forward slashes there,
+  so `listedWorktrees` reads them back in this system's form. A stand-in that
+  records folders keeps them with forward slashes.
+- **The temporary folder.** It can be given in its short 8.3 form, such as
+  `C:\Users\RUNNER~1\...` on GitHub's runners, while Git and Timber print the
+  long one. `tests/support/windows.ts`, loaded first through `bunfig.toml`,
+  puts the long form in TEMP and TMP.
+- **Stand-ins.** A stand-in Timber that runs a Bun script is compiled into a
+  `timber.exe` on Windows (`bunStandIn`), like the installed one: cmd.exe
+  refuses an argument with a line break for a `.cmd` file, and stopping a
+  `.cmd` leaves the Bun it started running, holding its output. A stand-in
+  player or `notify-send` ends in `.exe`, since `Bun.which` finds a file
+  there only by an extension in PATHEXT.
+- **Timeouts.** A run of the installed Timber takes from under a second to
+  over four there, so each file that runs it sets a default timeout of a
+  minute on Windows (`REAL_TIMBER_TIMEOUT_MS`). Bun sets the default again
+  for each file, so a preload cannot.
+- **Private folders.** Timber reads its private records and credential store
+  on Windows only when their access list allows nobody but the user, SYSTEM,
+  and Administrators. A test that writes such a folder by hand makes it with
+  `privateFolder`, since a temporary folder can allow others too.
+
+A test that cannot run on Windows is skipped there with a comment that says
+why: it acts out a Linux-only feature such as restarting through `/proc`,
+needs a POSIX shell or pseudo terminal, uses permission bits that Windows
+does not have, or makes symbolic links, which Windows allows only in
+Developer Mode or for an administrator.
+
 ## Boundary with Timber
 
 Timber's safety logic must exist once. The app follows two rules:

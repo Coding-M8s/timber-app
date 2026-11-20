@@ -1,11 +1,13 @@
-import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { runTimberWithResultFile } from "../src/bun/timber-run";
 import { OUTPUT_LIMIT_BYTES } from "../src/shared/captured-output";
 import { APPROVAL_FILE_PLACEHOLDER } from "../src/shared/timber-result";
-import { type StandInRun, git, isolatedEnvironment, makeRepository, realTimber, recordedResult, standInResultTimber } from "./support/timber";
+import { type StandInRun, REAL_TIMBER_TIMEOUT_MS, git, isolatedEnvironment, listedWorktrees, makeRepository, realTimber, recordedResult, standInResultTimber } from "./support/timber";
+
+setDefaultTimeout(REAL_TIMBER_TIMEOUT_MS);
 
 let root: string;
 let repository: string;
@@ -58,6 +60,7 @@ describe("runTimberWithResultFile", () => {
 		expect(existsSync(dirname(resultFile))).toBe(false);
 	});
 
+	// Skipped on Windows, which has no POSIX permission bits to check.
 	test.skipIf(process.platform === "win32")("the folder holding the result file is open to this user only", async () => {
 		const { notes } = await runNew({ result: recordedResult.succeeded });
 		expect(notes.folderMode).toBe(0o700);
@@ -160,6 +163,8 @@ describe("runTimberWithResultFile", () => {
 		expect(output.text).toBe(stderr);
 	});
 
+	// Skipped on Windows, which has no signals: a process ended from outside has an exit code there, so the
+	// stand-in cannot act out a Timber that was killed.
 	test.skipIf(process.platform === "win32")("a process that was killed is a failure even with a complete record", async () => {
 		const { result } = await runNew({ result: recordedResult.succeeded, kill: true });
 		expect(result).toMatchObject({ outcome: "failed", record: null });
@@ -246,7 +251,7 @@ describe.skipIf(realTimber === null)("with the installed Timber, on a real repos
 		expect(run.result.outcome).toBe("succeeded");
 		const worktree = run.result.record!.worktree!;
 		expect(run.result.record).toMatchObject({ materialized: true, repository: { primaryWorktreeRoot: primary } });
-		expect(git(primary, "worktree", "list", "--porcelain")).toContain(`worktree ${worktree.path}\n`);
+		expect(listedWorktrees(primary)).toContain(worktree.path);
 		expect(git(worktree.path, "branch", "--show-current").trim()).toBe(worktree.branch!);
 		expect(run.command).toBe("timber new 'feat/zażółć login' --result-file <temporary file> --no-editor --no-agent");
 		expect(readdirSync(scratch)).toEqual([]);

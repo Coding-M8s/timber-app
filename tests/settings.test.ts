@@ -48,6 +48,7 @@ describe("writeSettings and readSettings", () => {
 		expect(await readSettings(file)).toEqual(saved);
 	});
 
+	// Skipped on Windows, where chmod only sets the read-only flag, so the folder stays writable. Also skipped for root, who can write anywhere.
 	test.skipIf(process.platform === "win32" || process.getuid?.() === 0)("a save that fails leaves the old file and no temporary file", async () => {
 		const file = freshFile();
 		await writeSettings(file, saved);

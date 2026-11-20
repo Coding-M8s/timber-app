@@ -1,0 +1,3 @@
+[test]
+# Windows only: the temporary folder in its long form. See the file.
+preload = ["./tests/support/windows.ts"]

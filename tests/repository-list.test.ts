@@ -1,10 +1,12 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { type RepositoryListOptions, createRepositoryList } from "../src/bun/repository-list";
 import { createRepositoryReader } from "../src/bun/repository-reader";
-import { fingerprint, git, makeRepository, realTimber, recorded, standInTimber } from "./support/timber";
+import { REAL_TIMBER_TIMEOUT_MS, fingerprint, git, makeRepository, realTimber, recorded, standInTimber } from "./support/timber";
+
+setDefaultTimeout(REAL_TIMBER_TIMEOUT_MS);
 
 let root: string;
 let primary: string;
@@ -91,6 +93,7 @@ describe.skipIf(realTimber === null)("adding", () => {
 		expect(JSON.parse(readFileSync(settingsFile, "utf8")).repositories.length).toBe(1);
 	});
 
+	// Skipped on Windows, which makes symbolic links only in Developer Mode or for an administrator.
 	test.skipIf(process.platform === "win32")("a link to a repository is the same repository", async () => {
 		const link = join(root, `link-${cases}`);
 		symlinkSync(linked, link);
