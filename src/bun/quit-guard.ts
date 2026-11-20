@@ -31,19 +31,21 @@ export interface QuitGuard {
 	 * not, the person is asked, unless a question is already on its way.
 	 */
 	mayQuit(): boolean;
-	/** The person agreed: end every session, then quit. */
-	confirm(): Promise<void>;
+	/** The person agreed: end every session, then quit. Answers whether quitting started. */
+	confirm(): Promise<boolean>;
 }
 
 export function createQuitGuard(dependencies: QuitGuardDependencies): QuitGuard {
 	let agreed = false;
 	let asking = false;
 
-	async function confirm(): Promise<void> {
+	async function confirm(): Promise<boolean> {
 		agreed = true;
 		await dependencies.endAll();
 		// Something else can still keep the app open. Then the next try asks again.
-		if (!dependencies.quit()) agreed = false;
+		if (dependencies.quit()) return true;
+		agreed = false;
+		return false;
 	}
 
 	async function ask(live: number): Promise<void> {

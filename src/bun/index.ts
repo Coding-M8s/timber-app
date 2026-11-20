@@ -1,3 +1,5 @@
+// First, before Electrobun loads: chooses how WebKitGTK draws (see webkit-rendering.ts).
+import { renderingAtStart } from "./webkit-rendering-setup";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import Electrobun, { BrowserView, BrowserWindow, Screen, Updater, Utils } from "electrobun/main";
@@ -25,9 +27,12 @@ import { createPullRequestReader } from "./pull-requests";
 import { createRepositoryList } from "./repository-list";
 import { createRepositoryReader } from "./repository-reader";
 import { createSettingsHolder, settingsFilePath } from "./settings";
-import { createTimberLocator, describeTimberStatus } from "./timber";
+import { createTimberLocator, describeTimberStatus, findTimber } from "./timber";
+import { atMost, createReleaseWatcher, lookUpLatestRelease, releaseFilePath, timberFinder } from "./timber-release";
+import { TIMBER_OVERRIDE_VARIABLE } from "../shared/timber-version";
 import { openWebLink } from "./open-link";
 import { createQuitGuard } from "./quit-guard";
+import { createRestarter } from "./restart";
 import { createRefreshPolicy } from "./refresh-policy";
 import { type WatchTarget, createRepositoryWatcher } from "./repository-watcher";
 import { createWorktreeStamps } from "./worktree-stamp";
@@ -63,8 +68,22 @@ async function mainViewUrl(): Promise<string> {
 	return "views://mainview/index.html";
 }
 
-/** Look for Timber on start, so the answer is ready when the interface asks. */
-const timber = createTimberLocator();
+/**
+ * The newest Timber release is required (see ./timber-release.ts). It is
+ * looked up on start, waiting at most two seconds before the first look for
+ * Timber, so a slow network never holds the window up; the release saved by
+ * an earlier run stands in meanwhile, or offline.
+ */
+/** How often the newest Timber release is looked up again while the app runs. */
+const TIMBER_RELEASE_INTERVAL_MS = 3 * 60 * 60 * 1000;
+const timberRelease = createReleaseWatcher({ file: releaseFilePath(settingsFilePath()), lookUp: () => lookUpLatestRelease() });
+const releaseAtStart = timberRelease.check();
+const timber = createTimberLocator(timberFinder({
+	look: required => findTimber(process.env, required),
+	latest: () => timberRelease.latest(),
+	override: Boolean(process.env[TIMBER_OVERRIDE_VARIABLE]?.trim()),
+	before: atMost(releaseAtStart, 2_000),
+}));
 void timber.current().then(status => console.log(describeTimberStatus(status)));
 
 /** The native folder picker. Null when it was closed without a choice. */
@@ -273,11 +292,14 @@ const uninstaller = createUninstaller({
 	quit: () => void quitGuard.confirm(),
 });
 
+// Starts the app again once it is gone, then quits (see ./restart.ts). The window asked first while terminals run.
+const restarter = createRestarter({ quit: () => quitGuard.confirm() });
+
 const rpc = BrowserView.defineRPC<AppRPC>({
 	maxRequestTime: 15_000,
 	handlers: {
 		requests: {
-			appInfo: () => ({ version: APP_VERSION }),
+			appInfo: () => ({ version: APP_VERSION, rendering: renderingAtStart }),
 			timberStatus: () => timber.current(),
 			recheckTimber: () => timber.refresh(),
 			listRepositories: async () => {
@@ -355,7 +377,9 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			readTerminal: ({ id }) => terminals.read(id),
 			renameTerminal: ({ id, name }) => terminals.rename(id, name),
 			closeTerminal: ({ id }) => terminals.close(id),
-			confirmQuit: () => quitGuard.confirm(),
+			confirmQuit: async () => {
+				await quitGuard.confirm();
+			},
 			writeClipboard: ({ text }) => Utils.clipboardWriteText(text),
 			readClipboard: () => Utils.clipboardReadText(),
 			// Only web links, to the person's browser, never through a shell (see ./open-link.ts).
@@ -366,6 +390,9 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			uninstallPlan: () => uninstaller.plan(),
 			// Removes the app, and its settings only when asked. Then the app quits (see ./uninstall.ts).
 			uninstall: request => uninstaller.uninstall(request),
+			restartPlan: () => restarter.plan(),
+			// Quits, ending every terminal without asking again, and starts the same app again (see ./restart.ts).
+			restart: () => restarter.restart(),
 		},
 		messages: {
 			writeTerminal: ({ id, data }) => terminals.write(id, data),
@@ -409,6 +436,15 @@ function guardQuit(event: unknown): void {
 	}
 	(event as Veto).response = { allow: false };
 }
+/** A different newest Timber release: look for Timber again, and tell the window, which asks for the new answer. */
+async function timberReleaseChanged(): Promise<void> {
+	console.log(describeTimberStatus(await timber.refresh()));
+	tell("the Timber status", () => rpc.send.timberChanged({}));
+}
+const checkTimberRelease = (check: Promise<boolean>) => void check.then(changed => changed ? timberReleaseChanged() : undefined);
+checkTimberRelease(releaseAtStart);
+setInterval(() => checkTimberRelease(timberRelease.check()), TIMBER_RELEASE_INTERVAL_MS);
+
 Electrobun.events.on("before-quit", guardQuit);
 
 /** The usable area of each display, the primary one first. Empty when the displays cannot be read. */

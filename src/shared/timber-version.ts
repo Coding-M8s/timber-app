@@ -59,3 +59,33 @@ export const REBASE_RESULT_TIMBER_VERSION = "0.1.2";
 export function supportsRebaseResult(version: string): boolean {
 	return satisfiesTimberVersion(version, REBASE_RESULT_TIMBER_VERSION);
 }
+
+/**
+ * The version a "latest release" link leads to, read from where GitHub
+ * redirects it: a URL ending in /releases/tag/v0.1.3. Null for anything
+ * else, a pre-release included, so an unexpected answer is never taken for a
+ * release.
+ */
+export function readReleaseLocation(location: string | null): string | null {
+	let url: URL;
+	try {
+		url = new URL(location ?? "");
+	} catch {
+		return null;
+	}
+	const tag = url.search === "" ? /^\/[^/]+\/[^/]+\/releases\/tag\/([^/]+)$/.exec(url.pathname)?.[1] : undefined;
+	if (!tag) return null;
+	const text = decodeURIComponent(tag);
+	const version = parseTimberVersion(text);
+	return version && !version.prerelease ? text.replace(/^v/, "") : null;
+}
+
+/** The newer of two versions. One that cannot be read never wins. */
+export function newerTimberVersion(one: string, other: string | null): string {
+	if (other === null) return one;
+	const left = parseTimberVersion(one);
+	const right = parseTimberVersion(other);
+	if (right === null) return one;
+	if (left === null) return other;
+	return compareTimberVersions(right, left) > 0 ? other : one;
+}

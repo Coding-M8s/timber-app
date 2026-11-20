@@ -771,6 +771,37 @@ pre:focus-visible {
 	overflow-wrap: anywhere;
 }
 
+/* A newer Timber release is out: a strip above the window's parts, which stay as they are. */
+.update-banner {
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 8px 14px;
+	border-bottom: 1px solid var(--line);
+	background: var(--bg-pane);
+}
+
+.update-banner-text {
+	flex: 1 1 auto;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.update-banner-line {
+	margin: 0;
+}
+
+.update-banner-command {
+	font-family: var(--font-mono);
+	font-size: 12px;
+	color: var(--text-2);
+	overflow-wrap: anywhere;
+	user-select: text;
+}
+
 .notice-command {
 	margin: 0;
 	max-width: 100%;
@@ -1100,6 +1131,24 @@ pre:focus-visible {
 	margin: -6px 0 0;
 	font-size: 12px;
 	color: var(--text-3);
+}
+
+/* Settings: a setting with its label and hint on the left and a segmented choice on the right. */
+.settings-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 12px 14px;
+	border: 1px solid var(--line);
+	border-radius: 10px;
+}
+
+.settings-row-text {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-width: 0;
 }
 
 .settings-choice {
@@ -3791,4 +3840,30 @@ pre:focus-visible {
 	display: flex;
 	flex-direction: column;
 	gap: 4px;
+}
+
+/* Offering to restart after a section saved a setting the app reads when it starts. */
+.restart-prompt {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	padding: 12px;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+}
+
+.restart-prompt-text {
+	margin: 0;
+	font-size: 12px;
+	color: var(--text-2);
+}
+
+.restart-prompt-buttons {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+}
+
+.restart-prompt-buttons .button {
+	margin-top: 0;
 }

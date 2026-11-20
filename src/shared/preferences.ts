@@ -12,6 +12,7 @@ import { type FetchSetting, defaultFetchSetting, readFetchSetting, salvageFetchS
 import { type SoundChoice, defaultSoundChoice, readSoundChoice, sameSoundChoice, writeSoundChoice } from "./sound-setting";
 import { ALERT_STATES, type AlertState } from "./status-notices";
 import { type SessionNaming, readSessionNaming } from "./terminal";
+import { type DmabufChoice, readDmabufChoice } from "./rendering";
 import { type TerminalAppearance, defaultTerminalAppearance, readTerminalAppearance, salvageTerminalAppearance, sameTerminalAppearance, writeTerminalAppearance } from "./terminal-appearance";
 
 /** The sides of the window the sidebar can be on. */
@@ -68,6 +69,12 @@ export interface Preferences {
 	soundStates: readonly AlertState[];
 	/** The sound that plays: one that comes with the app, the system's, or a file the person chose. */
 	sound: SoundChoice;
+	/**
+	 * Whether WebKitGTK uses its DMA-BUF renderer on Linux: Auto decides by the
+	 * graphics found (see `autoDmabuf` in ./rendering.ts). Read once at start,
+	 * so a change takes effect the next time the app starts.
+	 */
+	dmabuf: DmabufChoice;
 }
 
 /**
@@ -105,6 +112,12 @@ interface PreferencePart<Value> {
 	 * file: a change that cannot be read is always refused.
 	 */
 	salvage?(value: unknown): Value | undefined;
+	/**
+	 * True when the app reads the preference only as it starts, so a saved
+	 * change waits for a restart. Settings then offers to restart the app
+	 * (see `restartNeededFor`). This is the one place that says so.
+	 */
+	restart?: true;
 }
 
 /**
@@ -184,6 +197,14 @@ export const PREFERENCE_PARTS: { [Key in keyof Preferences]: PreferencePart<Pref
 		same: sameSoundChoice,
 		write: writeSoundChoice,
 	},
+	dmabuf: {
+		fallback: () => "auto",
+		read: readDmabufChoice,
+		same: (one, other) => one === other,
+		write: value => value,
+		// WebKitGTK reads its variable once, before the window is made.
+		restart: true,
+	},
 };
 
 const PREFERENCE_KEYS = Object.keys(PREFERENCE_PARTS) as (keyof Preferences)[];
@@ -249,4 +270,13 @@ export function writePreferences(preferences: Preferences): Record<string, unkno
 	const written: Record<string, unknown> = {};
 	for (const key of PREFERENCE_KEYS) written[key] = partOf(key).write(preferences[key]);
 	return written;
+}
+
+/**
+ * The preferences that are read only as the app starts and differ between
+ * `atStart`, what this run started with, and `saved`, what is saved now.
+ * Empty when nothing saved waits for a restart.
+ */
+export function restartNeededFor(atStart: Preferences, saved: Preferences): (keyof Preferences)[] {
+	return PREFERENCE_KEYS.filter(key => partOf(key).restart === true && !partOf(key).same(atStart[key], saved[key]));
 }

@@ -28,8 +28,8 @@ See the [architecture](docs/architecture.md) and [design](docs/design.md) notes.
 ## Quick start
 
 You need Git, Bun 1.4.2, and for the desktop app
-[Timber](https://github.com/Coding-M8s/timber#quick-start) 0.1.2 or newer on
-your PATH.
+the newest [Timber](https://github.com/Coding-M8s/timber#quick-start) release
+on your PATH.
 
 ```bash
 bun install --frozen-lockfile

@@ -5,10 +5,16 @@ import type { Preferences } from "./preferences";
  * this being "ready".
  */
 export type TimberStatus =
-	| { state: "ready"; path: string; version: string }
+	/**
+	 * `newerRelease` is set while a Timber release newer than this one is out,
+	 * learned while the app was running. Timber stays usable until the next
+	 * start, when the newest release is required.
+	 */
+	| { state: "ready"; path: string; version: string; newerRelease?: string }
 	/** No Timber answered. `override` is the development override's value when it was set. */
 	| { state: "not-found"; override: string | null }
-	| { state: "too-old"; path: string; found: string; required: string };
+	/** `required` is the newest Timber release when `latestRelease` is true, and otherwise the built-in minimum. */
+	| { state: "too-old"; path: string; found: string; required: string; latestRelease?: boolean };
 
 /** How a branch stands against its upstream, as of the last fetch. */
 export type SyncState =

@@ -11,11 +11,13 @@ export async function createEngine(): Promise<Engine> {
 		const { createDesktopEngine } = await import("./desktop");
 		return createDesktopEngine();
 	}
-	// In a browser, ?timber=not-found or ?timber=too-old shows the notice for that state.
+	// In a browser, ?timber=not-found or ?timber=too-old shows the notice for that state, and ?timber=newer-release the banner.
 	const state = new URLSearchParams(location.search).get("timber");
-	const timber = state !== null && Object.hasOwn(sampleTimberStatuses, state)
-		? sampleTimberStatuses[state as keyof typeof sampleTimberStatuses]
-		: sampleTimberStatuses.ready;
+	const timber = state === "newer-release"
+		? { ...sampleTimberStatuses.ready, newerRelease: "9.9.9" }
+		: state !== null && Object.hasOwn(sampleTimberStatuses, state)
+			? sampleTimberStatuses[state as keyof typeof sampleTimberStatuses]
+			: sampleTimberStatuses.ready;
 	// Acted commands take a moment here, so a dialog's running state can be seen.
 	const engine = createMockEngine(browserSampleRepositories, timber, { commandMilliseconds: 1200 });
 	// The browser console can act out what the main process would do, for example
@@ -30,6 +32,8 @@ export async function createEngine(): Promise<Engine> {
 	// timberMock.setDoneDelay(3000) to close the dialog while a removal runs.
 	// For Open in editor: timberMock.endEditorLaunches("not-found") or ("fails").
 	// For Uninstall in About: timberMock.endUninstalls("fails"), ("keeps-settings"), or ("unavailable").
+	// For Restart now after saving a setting read at start: timberMock.endRestarts("fails") or ("unavailable"), and
+	// timberMock.restartCount() counts the restarts acted out. Nothing quits.
 	// For the Changes tab: timberMock.failFileChanges("Git is busy"), or timberMock.setFileChanges(path, files).
 	// For themes: timberMock.setThemeImport(text) gives Import a file, and timberMock.exportedThemes() lists what Export wrote.
 	// For agent sessions: timberMock.missingExecutables(["codex"]) acts out an agent that is not on the PATH.

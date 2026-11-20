@@ -8,6 +8,7 @@ import type { Layout } from "./layout";
 import type { RebaseRequest, RebaseResult } from "./timber-rebase";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
 import type { Preferences } from "./preferences";
+import type { RestartPlan, RestartResult } from "./restart";
 import type { IssueLookup, IssueRequest } from "./issues";
 import type { PullRequestList } from "./pull-requests";
 import type { Theme } from "./theme";
@@ -91,6 +92,9 @@ export type AppRPC = {
 			uninstallPlan: { params: {}; response: UninstallPlan };
 			/** The main process stops a stuck uninstaller after a minute, so the caller allows longer. The app quits right after a good answer. */
 			uninstall: { params: UninstallRequest; response: UninstallResult };
+			restartPlan: { params: {}; response: RestartPlan };
+			/** Ending every session can take a moment, so the caller allows longer. When it works, the app quits before it answers. */
+			restart: { params: {}; response: RestartResult };
 		};
 		messages: {
 			/** Typed or pasted text for a session. */
@@ -121,6 +125,8 @@ export type AppRPC = {
 			showSession: { id: string };
 			/** Where fetching stands for a repository. */
 			fetchChanged: RepositoryFetch;
+			/** The Timber status changed without being asked, for example a newer release came out. Ask `timberStatus` for it. */
+			timberChanged: {};
 		};
 	}>;
 };

@@ -256,6 +256,8 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	setRepositories(repositories: Repository[]): void;
 	/** Report that a repository changed, as the main process would. */
 	announceChange(path: string): void;
+	/** Report that the Timber status changed on its own, as the main process does when a newer release comes out. */
+	announceTimberChange(): void;
 	/** How many times the interface said it had drawn itself through `windowReady`. */
 	readyCalls(): number;
 	/** What the interface last said through `attend`, or null before it said anything. */
@@ -346,6 +348,14 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	endUninstalls(ending: UninstallEnding): void;
 	/** Every uninstall the mock acted out, oldest first. */
 	uninstallRequests(): UninstallRequest[];
+	/**
+	 * Decide how restarting goes from now on: "restarts" (the start), "fails"
+	 * (something keeps the app open), or "unavailable" (this copy cannot
+	 * restart itself). Nothing quits: a restart is only counted.
+	 */
+	endRestarts(ending: RestartEnding): void;
+	/** How many restarts the mock acted out. */
+	restartCount(): number;
 	/** Every editor the mock acted out starting, oldest first. */
 	launchedEditors(): { request: OpenInEditorRequest; command: string }[];
 	/**
@@ -388,6 +398,9 @@ const MOCK_FETCH_FAILURES: Record<FetchFailureKind, string> = {
 
 export const EDITOR_ENDINGS = ["opens", "not-found", "fails"] as const;
 export type EditorEnding = typeof EDITOR_ENDINGS[number];
+
+export const RESTART_ENDINGS = ["restarts", "fails", "unavailable"] as const;
+export type RestartEnding = typeof RESTART_ENDINGS[number];
 
 export const UNINSTALL_ENDINGS = ["uninstalls", "keeps-settings", "fails", "unavailable"] as const;
 export type UninstallEnding = typeof UNINSTALL_ENDINGS[number];
@@ -472,6 +485,7 @@ export function createMockEngine(
 	// Fetching, acted out: Fetch now only, ended as `fetchEnding` says. Nothing reaches a network.
 	const fetches = new Map<string, RepositoryFetch>();
 	const fetchListeners = new Set<(status: RepositoryFetch) => void>();
+	const timberListeners = new Set<() => void>();
 	let fetchEnding: FetchEnding = "fetches";
 	let fetchDelay = 0;
 	const running = new Map<string, Promise<FetchResult>>();
@@ -597,6 +611,9 @@ export function createMockEngine(
 	let editorEnding: EditorEnding = "opens";
 	let uninstallEnding: UninstallEnding = "uninstalls";
 	const uninstalls: UninstallRequest[] = [];
+	let restartEnding: RestartEnding = "restarts";
+	let restarts = 0;
+	const NOT_RESTARTABLE = "This copy of the app runs from source in /home/sam/timber-app, so it cannot restart itself. Quit it and run the command again to use the saved setting.";
 	const NOT_INSTALLED = "This copy of the app was not installed, so there is nothing to uninstall. It runs from /home/sam/timber-app.";
 	const launches: { request: OpenInEditorRequest; command: string }[] = [];
 	const openInEditor = (request: OpenInEditorRequest): OpenInEditorResult => {
@@ -740,9 +757,17 @@ export function createMockEngine(
 		...pullRequests,
 		...issues,
 		...backups,
-		appInfo: async () => ({ version: APP_VERSION }),
+		// As a Linux machine where Auto left the renderer on.
+		appInfo: async () => ({ version: APP_VERSION, rendering: { applies: true, dmabuf: true, decidedBy: "auto", choice: "auto" } }),
 		timberStatus: look,
 		recheckTimber: look,
+		onTimberChanged(listener) {
+			timberListeners.add(listener);
+			return () => void timberListeners.delete(listener);
+		},
+		announceTimberChange() {
+			for (const listener of [...timberListeners]) listener();
+		},
 		listRepositories: () => read(() => current.map(asRead)),
 		loadRepository: path => read(() => {
 			const found = current.find(repository => repository.path === path && repository.available);
@@ -850,6 +875,19 @@ export function createMockEngine(
 			uninstallEnding = next;
 		},
 		uninstallRequests: () => structuredClone(uninstalls),
+		restartPlan: async () => restartEnding === "unavailable" ? { available: false, reason: NOT_RESTARTABLE } : { available: true },
+		async restart() {
+			if (restartEnding === "unavailable") return { outcome: "unavailable", message: NOT_RESTARTABLE };
+			if (restartEnding === "fails") return { outcome: "failed", message: "Something kept the app open, so it did not restart. Try again in a moment." };
+			restarts += 1;
+			return { outcome: "restarting" };
+		},
+		endRestarts(next) {
+			// Called from the browser console too, where nothing checks the word.
+			if (!RESTART_ENDINGS.includes(next)) throw new Error(`Unknown ending: ${String(next)}`);
+			restartEnding = next;
+		},
+		restartCount: () => restarts,
 		async readFileChanges(request) {
 			const listed = listedForChanges(request.repository, request.worktree);
 			if (!listed.ok) return { outcome: listed.outcome, message: listed.message };

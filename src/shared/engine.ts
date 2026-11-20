@@ -6,6 +6,7 @@ import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffRe
 import type { Layout } from "./layout";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
 import type { Preferences } from "./preferences";
+import type { RestartPlan, RestartResult } from "./restart";
 import type { IssueLookup, IssueRequest } from "./issues";
 import type { PullRequestList } from "./pull-requests";
 import type { Theme } from "./theme";
@@ -26,12 +27,14 @@ import type { WorkflowList } from "./workflows";
  * Grow it one capability at a time, and keep every method safe to call again.
  */
 export interface Engine {
-	/** What the app says about itself: its version, for About. */
+	/** What the app says about itself: its version, for About, and how WebKitGTK draws in this run, for Settings. */
 	appInfo(): Promise<AppInfo>;
 	/** Whether a usable Timber is installed, as of the last look. */
 	timberStatus(): Promise<TimberStatus>;
 	/** Look for Timber again, for example after the person installed it. */
 	recheckTimber(): Promise<TimberStatus>;
+	/** Hear that the Timber status changed on its own, for example when a newer release came out. Returns a function that stops listening. */
+	onTimberChanged(listener: () => void): () => void;
 	/**
 	 * The saved repositories, each with exactly the worktrees Timber lists, in
 	 * Timber's order. One whose folder is missing is still listed, marked
@@ -412,4 +415,17 @@ export interface Engine {
 	 * touched. Not safe to call again: after it worked there is no app.
 	 */
 	uninstall(request: UninstallRequest): Promise<UninstallResult>;
+	/**
+	 * Whether this copy of the app can restart itself, so that a saved
+	 * preference read only at start is used (see `restartNeededFor` in
+	 * ./preferences.ts). Read-only and safe to call again.
+	 */
+	restartPlan(): Promise<RestartPlan>;
+	/**
+	 * Quit, ending every terminal without asking again, and start the app
+	 * again with the same arguments and environment once it is gone. The
+	 * window asks first while terminals run. When it works, the answer may
+	 * never arrive, because the app is gone.
+	 */
+	restart(): Promise<RestartResult>;
 }

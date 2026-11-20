@@ -279,7 +279,7 @@ describe("the Editor section of Settings", () => {
 		expect(markup).toContain('<h3 id="');
 		expect(markup).toMatch(/class="settings-section-title">Editor</);
 		await store.savePreferences({ editor: { command: "zed", terminal: false } });
-		expect(await engine.loadPreferences()).toEqual({ sidebarSide: "left", editor: { command: "zed", terminal: false }, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), sessionNames: "plain" as const, statusNotifications: true, notifyStates: ["needs-you", "done", "error", "crashed"] as const, soundStates: [] as const, sound: { kind: "bundled" as const, name: "chime" as const } });
+		expect(await engine.loadPreferences()).toEqual({ sidebarSide: "left", editor: { command: "zed", terminal: false }, agents: AGENT_PRESETS, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), sessionNames: "plain" as const, statusNotifications: true, notifyStates: ["needs-you", "done", "error", "crashed"] as const, soundStates: [] as const, sound: { kind: "bundled" as const, name: "chime" as const }, dmabuf: "auto" as const });
 	});
 });
 

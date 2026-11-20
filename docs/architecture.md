@@ -497,10 +497,12 @@ Nothing that depends on Timber is offered until a usable one is found.
 - On start the main process resolves `timber` from PATH and runs
   `timber --version`, as an executable plus an argument array
   (`src/bun/timber.ts`). It logs the result.
-- The app requires Timber 0.1.2 or newer, the first release with the machine
-  interface, `__app-config`, and one-off workflows (0.1.1 had only the
-  first). The number and the comparison live in
-  `src/shared/timber-version.ts`. A pre-release sorts before its release.
+- The app requires the newest Timber release (see
+  [the newest Timber release is required](#the-newest-timber-release-is-required)),
+  and never less than 0.1.2, the first release with the machine interface,
+  `__app-config`, and one-off workflows (0.1.1 had only the first). The
+  number and the comparison live in `src/shared/timber-version.ts`. A
+  pre-release sorts before its release.
 - The `Engine` contract reports one of three states: ready (path and version),
   not found, or too old (found and required versions). An executable that
   fails, or does not print a version, counts as not found.
@@ -513,7 +515,38 @@ Nothing that depends on Timber is offered until a usable one is found.
   It takes precedence over PATH, and a broken value is reported instead of
   silently falling back.
 - In `bun run dev:web`, add `?timber=not-found` or `?timber=too-old` to the
-  address to see the notice.
+  address to see the notice, or `?timber=newer-release` to see the banner.
+
+### The newest Timber release is required
+
+A Timber older than the newest release may lack what the app uses, so the
+app requires the newest release (`src/bun/timber-release.ts`).
+
+- **Looking it up.** The main process sends a `HEAD` request to
+  `https://github.com/Coding-M8s/timber/releases/latest` without following
+  the redirect, and reads the version from the tag it points to. This needs
+  no login and is not counted against GitHub's API limit. Nothing about the
+  person or the machine is sent. Only a redirect to a release tag counts; a
+  pre-release, an error, or no answer within five seconds is a failed check.
+- **When.** On start, and every three hours while the app runs. The first
+  look for Timber waits at most two seconds for the lookup on start, so a
+  slow network never holds the window up.
+- **Saved.** A lookup that worked is saved in `timber-release.json` beside
+  the settings file, and stands in when a later lookup fails, for example
+  offline. A lookup always replaces the saved release, even with an older
+  one, so a withdrawn release cannot lock anyone out. With no release saved
+  and no answer, the built-in minimum is required.
+- **On start**, a Timber older than the newest release known gets the
+  full-window notice, "Update Timber", with the update command.
+- **While the app runs**, a release that comes out never takes Timber away
+  mid-task. The main process looks for Timber again and tells the window
+  (`timberChanged`), and the status stays ready with `newerRelease` set. The
+  window shows a banner above the sidebar and the workspace with the update
+  command and Check again. Terminals, agents, and Timber keep working until
+  the next start.
+- **The development override.** With `TIMBER_APP_TIMBER_PATH` set, only the
+  built-in minimum is required and there is no banner, because a local build
+  may carry any version number.
 
 ## Saved repository list
 
@@ -1002,6 +1035,59 @@ Settings dialog and kept by the app. They are never Timber's configuration.
 
 In `bun run dev:web`, `timberMock.failPreferenceSaves("disk full")` makes
 saving preferences fail (`null` again to undo).
+
+### Settings that need a restart
+
+Most preferences apply as soon as they are saved. A few are read only when
+the app starts, today the DMA-BUF renderer (see
+[WebKitGTK's DMA-BUF renderer](#webkitgtks-dma-buf-renderer)). After saving
+one of those, the section offers to restart the app.
+
+- **One place.** A preference that needs a restart has `restart: true` in
+  its entry of `PREFERENCE_PARTS` (`src/shared/preferences.ts`).
+  `restartNeededFor` lists the marked ones that differ between two sets of
+  preferences. Nothing else names them, so marking another preference is
+  enough for its section to offer a restart.
+- **Compared with the start.** The store keeps the preferences as first read
+  (`preferencesAtStart`). A save offers a restart only when it left a marked
+  preference that the section saved different from that, so saving the
+  value the app started with offers nothing, as the Rendering hint says.
+- **The offer.** Every section is a `SettingsSection`, and after such a save
+  its foot shows `RestartPrompt`: "Restart now" and "Later". Later puts the
+  offer away and changes nothing; the Rendering hint still says "Restart
+  the app to use the saved choice." Restart now asks the main process
+  whether this copy can restart (`Engine.restartPlan`). When it cannot, the
+  reason shows instead. While terminals run it asks first, says how many
+  end, and has focus on Cancel. The Settings dialog stays open while it
+  checks and while the restart request waits. A lost answer that the
+  window lives to see is a failure that says to quit and start the app by
+  hand. A section can leave the offer out where a restart would change
+  nothing (`offerRestart`): Rendering does on a system without WebKitGTK
+  and while `WEBKIT_DISABLE_DMABUF_RENDERER` decides, since a restart keeps
+  the same environment.
+- **Restarting.** `Engine.restart` (`src/bun/restart.ts`) works as
+  Electrobun's updater does, since Electrobun has no relaunch: it starts a
+  small detached waiter first, then ends every terminal and quits through
+  the quit guard, without asking again. When the app does not quit after
+  all, the waiter is stopped, so no second app starts later. The waiter is
+  a fixed `/bin/sh` script that waits until the launcher is gone and then
+  starts it again. It gives up after 20 seconds rather than start a second
+  app beside one that does not go.
+- **The same app.** Electrobun's launcher starts the app and sets
+  `ELECTROBUN_LAUNCHER_PID`. The main process reads that launcher from
+  `/proc`: its arguments, its environment as it started, and its working
+  folder, and starts `<install>/app/bin/launcher` again with them. A
+  launcher that is not the installed one, such as a shell, is never started.
+  The environment goes to the waiter as its own environment, never in its
+  arguments, which every user of the machine can read.
+- **Only an installed copy on Linux.** A copy started from source (`bun run
+  dev`, `bun run start`, `bun run dev:hmr`) says it cannot restart itself:
+  its watcher would lose track of an app started behind its back. Windows
+  and macOS say that this is built for Linux only so far.
+- **In the browser build** the mock engine can restart and acts it out
+  without quitting. In the browser console, `timberMock.endRestarts("fails")`
+  or `("unavailable")` acts out the other endings, and
+  `timberMock.restartCount()` counts the restarts.
 
 ## Interface zoom
 
@@ -2505,6 +2591,35 @@ X11 display, `gdk_x11_*` calls).
 
 See the issue 63 run under [what has been verified](#what-has-been-verified).
 
+### WebKitGTK's DMA-BUF renderer
+
+Settings, Rendering has a "DMA-BUF renderer" choice: Auto, On, or Off. It
+decides whether WebKitGTK hands frames to the window through DMA-BUF (its
+default) or copies them through shared memory, by setting
+`WEBKIT_DISABLE_DMABUF_RENDERER=1` for Off. Which is smoother depends on the
+machine: on one with Intel graphics only, DMA-BUF lagged and Off was smooth;
+on one with Intel and NVIDIA graphics, Off was choppy and DMA-BUF was smooth.
+
+- Auto turns it off only when every render node in `/sys/class/drm` is
+  Intel (vendor `0x8086`), and otherwise leaves WebKitGTK's default. That
+  rule comes from those two machines only (`autoDmabuf` in
+  `src/shared/rendering.ts`).
+- WebKitGTK reads the variable once, when it starts, so the main process
+  decides first thing: `src/bun/webkit-rendering-setup.ts` is the first
+  import of `src/bun/index.ts`. It reads the saved choice from the settings
+  file synchronously, and a missing or damaged file gives Auto.
+- The variable has to reach the C environment, where WebKitGTK calls
+  `getenv`. Bun keeps `process.env` apart from it, so
+  `src/bun/webkit-rendering.ts` calls libc `setenv` through `bun:ffi`.
+  WebKitGTK's web processes inherit it; terminals and agents the app starts
+  get `process.env`, so they do not.
+- A value of `WEBKIT_DISABLE_DMABUF_RENDERER` set before the app starts wins
+  over the setting, so either renderer can still be tried from a terminal.
+- `appInfo` reports what was decided for this run, and Settings says it.
+  After a change it offers to restart the app (see
+  [settings that need a restart](#settings-that-need-a-restart)), and the
+  hint asks for a restart until then.
+
 ### The GLXBadWindow line at start
 
 Each start seen so far on Linux (Pop!_OS 24.04 under XWayland and Xephyr,
@@ -2537,9 +2652,9 @@ and 170 under Xwayland 24.1 and under Xorg.
   worth it. Putting GDK's handler back through Bun FFI would make any other
   X error end the app, since GDK's handler exits on errors no trap expects.
   `GDK_SYNCHRONIZE=1` makes every X request a round trip.
-  `WEBKIT_DISABLE_DMABUF_RENDERER=1` switches WebKitGTK to a slower drawing
-  path, and would have to be in the process environment before the web
-  view starts.
+  Turning the DMA-BUF renderer off hides it too, but that is chosen for
+  smoothness, not for this line (see
+  [WebKitGTK's DMA-BUF renderer](#webkitgtks-dma-buf-renderer)).
 - Reported upstream as
   [blackboardsh/electrobun#618](https://github.com/blackboardsh/electrobun/issues/618),
   with a fix proposed in
@@ -4690,6 +4805,29 @@ with Bun 1.4.2, the installed Timber 0.1.2, and Timber's main branch at
 - Not run: the desktop window and `readIssue` over the RPC bridge, the
   header link clicked, `bun run dev:web` in a browser, and a found Jira or
   Linear issue, which needs a login.
+
+Run for restarting after a setting that needs it (issue 134), on
+2026-11-19, Pop!_OS on Linux x64 (COSMIC on Wayland, the window through
+XWayland) with Bun 1.4.5 and Electrobun 2.0.6:
+
+- `bun test`: 1946 passed, 2 skipped, 0 failed. `tests/restart.test.ts`
+  runs the waiter for real: it waited for a process to end, then started
+  the command with its arguments, environment, and working folder.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun run build`, then an install with
+  `env -i PATH=/usr/bin:/bin HOME=<temporary folder>`, then the installed
+  `app/bin/launcher --spike-arg` started from a folder of its own with a
+  marker variable in its environment. A temporary hook, not committed,
+  saved the DMA-BUF renderer as Off through the main process's
+  `preferences.save` and called the same `restarter.restart()` that
+  "Restart now" calls. The first run had Auto (off on this machine's
+  Intel-only graphics, decided by Auto). It quit, and a new launcher
+  started with `--spike-arg`, the same working folder, and the marker
+  variable, and its run reported the renderer decided by the choice, Off.
+  The installed copy's settings file held `"dmabuf": "off"`.
+- Not run: the buttons clicked in the desktop window, the question while
+  terminals run in the desktop window (only static markup and the store),
+  the waiter giving up after 20 seconds, Windows and macOS.
 
 Not run yet:
 

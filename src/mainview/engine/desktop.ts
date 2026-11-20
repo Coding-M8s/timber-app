@@ -26,6 +26,7 @@ export function createDesktopEngine(): Engine {
 	const terminalChanges = listeners<TerminalChange>();
 	const quitRequests = listeners<number>();
 	const fetches = listeners<RepositoryFetch>();
+	const timberChanges = listeners<void>();
 	const shownSessions = listeners<string>();
 	const rpc = Electroview.defineRPC<AppRPC>({
 		maxRequestTime: 15_000,
@@ -44,6 +45,7 @@ export function createDesktopEngine(): Engine {
 				terminalChanged: change => terminalChanges.call(change),
 				showSession: ({ id }) => shownSessions.call(id),
 				fetchChanged: status => fetches.call(status),
+				timberChanged: () => timberChanges.call(),
 			},
 		},
 	});
@@ -52,6 +54,7 @@ export function createDesktopEngine(): Engine {
 		appInfo: () => rpc.request.appInfo({}),
 		timberStatus: () => rpc.request.timberStatus({}),
 		recheckTimber: () => rpc.request.recheckTimber({}),
+		onTimberChanged: timberChanges.add,
 		listRepositories: () => rpc.request.listRepositories({}),
 		// The folder picker stays open for as long as the person likes.
 		addRepository: () => rpc.request.addRepository({}, { maxRequestTime: Infinity }),
@@ -127,5 +130,8 @@ export function createDesktopEngine(): Engine {
 		uninstallPlan: () => rpc.request.uninstallPlan({}),
 		// The main process stops a stuck uninstaller after a minute.
 		uninstall: request => rpc.request.uninstall(request, { maxRequestTime: 120_000 }),
+		restartPlan: () => rpc.request.restartPlan({}),
+		// Ending every session can take a moment, like confirmQuit, and the app quits right after.
+		restart: () => rpc.request.restart({}, { maxRequestTime: 30_000 }),
 	};
 }
