@@ -16,6 +16,7 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "icons": "bun scripts/make-icons.ts",
+    "check:attribution": "bun --no-env-file scripts/check-commit-attribution.ts",
     "prepare:devkit": "electrobun prepare",
     "hmr": "electrobun prepare && vite --port 5173 --strictPort",
     "start": "electrobun prepare && vite build && electrobun dev",

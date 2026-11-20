@@ -1,0 +1,35 @@
+name: Feature request
+description: Propose a change or addition to the Timber app
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What outcome do you want, and what are you doing today instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: The interface or behavior you have in mind, and what should stay out of scope.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: Observable outcomes that would show the work is complete, including failure cases.
+      placeholder: |
+        - [ ] First outcome
+        - [ ] Second outcome
+
+  - type: textarea
+    id: related
+    attributes:
+      label: Related issues
+      description: Link prerequisite or related issues, if any.
+      placeholder: "- Depends on #123"
