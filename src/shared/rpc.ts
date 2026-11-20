@@ -1,3 +1,4 @@
+import type { WorktreeHandoff } from "./handoff";
 import type { RPCSchema } from "electrobun/view";
 import type { ChopsRequest } from "./chops";
 import type { Attention } from "./attention";
@@ -133,6 +134,8 @@ export type AppRPC = {
 			terminalChanged: TerminalChange;
 			/** The person clicked the desktop notification of a session: show it. */
 			showSession: { id: string };
+			/** `timber new` in a terminal handed over the worktree it created: open its session. */
+			worktreeHandedOff: WorktreeHandoff;
 			/** Where fetching stands for a repository. */
 			fetchChanged: RepositoryFetch;
 			/** The Timber status changed without being asked, for example a newer release came out. Ask `timberStatus` for it. */

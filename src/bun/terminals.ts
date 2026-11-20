@@ -8,6 +8,7 @@ import {
 	pickWindowsShell, sessionNameBase,
 } from "../shared/terminal";
 import { PROBE_ANSWER, type StatusRecords, type StatusScanner, createStatusRecords, createStatusScanner } from "../shared/program-status";
+import { HANDOFF_VARIABLE } from "../shared/handoff";
 import { asWin32KeyEvents } from "../shared/win32-input";
 import { isWorkflowName } from "../shared/workflows";
 import { worktreeSetupArguments } from "../shared/worktree-commands";
@@ -56,6 +57,14 @@ export interface TerminalDependencies {
 	onChange: (change: TerminalChange) => void;
 	/** The environment the app was started with. The shell gets all of it, with `TERM` set. */
 	environment?: Record<string, string | undefined>;
+	/**
+	 * The folder where `timber new` typed in a session hands the app the
+	 * worktree it created (see ./handoffs.ts), or null when there is none.
+	 * Waited for before a session starts, so one opened while the app starts
+	 * gets it too. Every session gets it as `TIMBER_APP_HANDOFF`; one
+	 * inherited from the app's own environment is never passed on.
+	 */
+	handoffFolder?: () => Promise<string | null>;
 	/** The operating system, as `process.platform` names it. Tests pass another. */
 	platform?: NodeJS.Platform;
 	/**
@@ -174,13 +183,23 @@ function signalSession(live: Live, signal: NodeJS.Signals): void {
 	else if (running(live.process)) signalGroup(live.process.pid, signal);
 }
 
+/** What a session's program gets: the app's environment, with the terminal's own variables and the handoff folder. */
+export function sessionEnvironment(environment: Record<string, string | undefined>, handoff: string | null): Record<string, string | undefined> {
+	const env: Record<string, string | undefined> = { ...environment, TERM: "xterm-256color", COLORTERM: "truecolor", TERM_PROGRAM: "timber-app" };
+	// A folder from the app's own environment, as when it was started from one of its terminals, belongs to another run.
+	delete env[HANDOFF_VARIABLE];
+	if (handoff !== null) env[HANDOFF_VARIABLE] = handoff;
+	return env;
+}
+
 /**
  * Terminal sessions owned by the main process.
  *
  * - A session is the person's shell (`SHELL`, or `/bin/sh`) in a pseudo
  *   terminal (`Bun.Terminal`), started in the worktree's folder with the
- *   app's environment and `TERM=xterm-256color`. The shell leads a session
- *   of processes of its own.
+ *   app's environment, `TERM=xterm-256color`, and the handoff folder in
+ *   `TIMBER_APP_HANDOFF` (see `sessionEnvironment`). The shell leads a
+ *   session of processes of its own.
  * - An agent session starts an agent's command from the saved Settings in
  *   place of the shell, split without a shell, its executable found on the
  *   app's PATH. A request names the agent, never the command. An agent whose
@@ -223,7 +242,7 @@ function signalSession(live: Live, signal: NodeJS.Signals): void {
  */
 export function createTerminalSessions(dependencies: TerminalDependencies): TerminalSessions {
 	const {
-		findRepository, onOutput, onChange, agents = async () => [], sessionNaming = async (): Promise<SessionNaming> => "plain", timber = async (): Promise<TimberStatus> => ({ state: "not-found", override: null }), environment = process.env, platform = process.platform,
+		findRepository, onOutput, onChange, agents = async () => [], sessionNaming = async (): Promise<SessionNaming> => "plain", timber = async (): Promise<TimberStatus> => ({ state: "not-found", override: null }), environment = process.env, handoffFolder = async () => null, platform = process.platform,
 		startTerminal = startPseudoTerminal(platform),
 		closeMilliseconds = CLOSE_MILLISECONDS, flushMilliseconds = FLUSH_MILLISECONDS, undrawnLimit = UNDRAWN_LIMIT,
 	} = dependencies;
@@ -373,6 +392,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		}
 		// Naming is a convenience: when it cannot be read, the session is named as it always was.
 		const naming = run === null ? await sessionNaming().catch((): SessionNaming => "plain") : "plain";
+		const handoff = await handoffFolder().catch(() => null);
 		const consequence = agent ? `${agent.name} was not started.` : run ? `${run.what} was not started.` : "No terminal was started.";
 		const listed = await findListedWorktree(findRepository, request.repository, request.worktree, consequence);
 		if (!listed.ok) return { outcome: "not-listed", message: listed.message };
@@ -390,7 +410,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			child = startTerminal({
 				argv: start.argv,
 				cwd: request.worktree,
-				env: { ...environment, TERM: "xterm-256color", COLORTERM: "truecolor", TERM_PROGRAM: "timber-app" },
+				env: sessionEnvironment(environment, handoff),
 				cols,
 				rows,
 				data: text => {

@@ -1,7 +1,7 @@
 // First, before Electrobun loads: chooses how WebKitGTK draws (see webkit-rendering.ts).
 import { renderingAtStart } from "./webkit-rendering-setup";
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import Electrobun, { BrowserView, BrowserWindow, Screen, Updater, Utils } from "electrobun/main";
 import { APP_IDENTIFIER, APP_NAME, APP_VERSION } from "../shared/app-info";
@@ -18,6 +18,7 @@ import { createDone } from "./done";
 import { createEditorLauncher } from "./editor";
 import { createGitRunner } from "./fetch-git";
 import { createFetcher } from "./fetcher";
+import { type HandoffFolder, openHandoffFolder } from "./handoffs";
 import { createSavedForcePushes } from "./force-pushes";
 import { createChops } from "./chops";
 import { createFileChanges } from "./file-changes";
@@ -288,8 +289,27 @@ void preferences.load().then(applyAlertPreferences, () => {
 	// The defaults stay: notifications on, no sound.
 });
 
+// Where `timber new` typed in one of the app's terminals hands over the worktree it created (see ./handoffs.ts).
+// Each record goes to the window, which opens a session only in a worktree the app lists.
+let handoffFolder: HandoffFolder | null = null;
+let quitting = false;
+const handoffReady: Promise<string | null> = openHandoffFolder({
+	parent: process.env.XDG_RUNTIME_DIR || tmpdir(),
+	onHandoff: handoff => tell("a handed-off worktree", () => rpc.send.worktreeHandedOff(handoff)),
+	onProblem: message => console.warn(message),
+}).then(folder => {
+	handoffFolder = folder;
+	// Made while the app was quitting: nothing will use it.
+	if (quitting) folder.close();
+	return folder.path;
+}, error => {
+	console.warn(`Could not make the handoff folder, so timber new in a terminal stays in that terminal: ${messageOf(error)}`);
+	return null;
+});
+
 // What a terminal prints is private, like what a command prints: it goes to the window and is never logged.
 const terminals = createTerminalSessions({
+	handoffFolder: () => handoffReady,
 	findRepository: path => repositories.find(path),
 	// An agent's command comes from the saved preferences only (see ./terminals.ts).
 	agents: async () => (await preferences.load()).agents,
@@ -465,6 +485,8 @@ function guardQuit(event: unknown): void {
 		sounds.stopAll();
 		refreshPolicy.stop();
 		watcher.stop();
+		quitting = true;
+		handoffFolder?.close();
 		// Asks a running Git to stop, so it can remove its lock files before the app goes.
 		fetcher.stop();
 		// A resize from just before quitting is still waiting to be saved.

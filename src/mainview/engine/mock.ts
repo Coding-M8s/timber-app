@@ -1,3 +1,4 @@
+import type { WorktreeHandoff } from "../../shared/handoff";
 import { type Attention, assumedAttention } from "../../shared/attention";
 import { type AlertSettings, type StatusNotice, createAlertRunner } from "../../shared/status-notices";
 import { type ChooseSoundResult, type SoundChoice, type SoundOutcome, readSoundChoice } from "../../shared/sound-setting";
@@ -320,6 +321,14 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	endSoundPreviews(outcome: SoundOutcome["outcome"]): void;
 	/** Act out the person clicking the desktop notification of a session. */
 	clickNotice(session: string): void;
+	/**
+	 * Act out `timber new <name>` typed in one of the app's terminals, with a
+	 * Timber that hands off: the worktree is made in the repository at
+	 * `repository` (or the record names one that is not in the list), and the
+	 * handoff is heard as from the main process, with `agent` as Timber's own
+	 * agent setting. Answers the handoff, or null when Timber refused.
+	 */
+	typeTimberNew(repository: string, name: string, agent: boolean): WorktreeHandoff | null;
 	/** Make every later read of repositories fail with this message, or pass null to let them work again. */
 	failReads(message: string | null): void;
 	/**
@@ -540,6 +549,7 @@ export function createMockEngine(
 	let pickedSound: string | null = "/home/me/sounds/bell.ogg";
 	let previewEnding: SoundOutcome["outcome"] = "played";
 	const showSessionListeners = new Set<(id: string) => void>();
+	const handoffListeners = new Set<(handoff: WorktreeHandoff) => void>();
 
 	// Fetching, acted out: Fetch now only, ended as `fetchEnding` says. Nothing reaches a network.
 	const fetches = new Map<string, RepositoryFetch>();
@@ -1081,6 +1091,26 @@ export function createMockEngine(
 		onShowSession(listener) {
 			showSessionListeners.add(listener);
 			return () => void showSessionListeners.delete(listener);
+		},
+		typeTimberNew(path, name, agent) {
+			const repository = current.find(candidate => candidate.path === path && candidate.available);
+			// Timber in a terminal works in any repository, listed or not; one not in the list makes a pretend worktree beside it.
+			let worktree = `${path}-worktrees/${name}`;
+			if (repository) {
+				const { created } = actOutNew(repository, { repository: path, name, base: null }, "succeeds");
+				if (!created) return null;
+				const changed = { ...repository, worktrees: inTimberOrder([...repository.worktrees, created]) };
+				current = current.map(candidate => candidate === repository ? changed : candidate);
+				onDisk.set(path, changed);
+				worktree = created.path;
+			}
+			const handoff: WorktreeHandoff = { repository: path, worktree, agent };
+			for (const listener of [...handoffListeners]) listener(structuredClone(handoff));
+			return handoff;
+		},
+		onWorktreeHandedOff(listener) {
+			handoffListeners.add(listener);
+			return () => void handoffListeners.delete(listener);
 		},
 		announceChange: announce,
 		fetchStatuses: async () => current.filter(repository => repository.available).map(repository => structuredClone(fetchOf(repository.path))),

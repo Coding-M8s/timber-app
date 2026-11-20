@@ -2655,7 +2655,10 @@ as a control sequence, as it would a window title or a bell (see
   worktree with no session, and the Agent field of the New worktree dialog
   start an agent, all through `openTerminal`. Timber's `new` and `open`
   never do: they always run with `--no-agent` (see
-  [creating and opening worktrees](#creating-and-opening-worktrees)).
+  [creating and opening worktrees](#creating-and-opening-worktrees)). A
+  `timber new` typed in one of the app's terminals hands its worktree to the
+  app, which starts the agent the same way (see
+  [`timber new` in a terminal](#timber-new-in-a-terminal)).
 - **When it cannot start.** An executable that is not found starts nothing
   and keeps no session, so the other sessions are not touched. The pane
   shows why, with the command that failed, until it is dismissed or a session
@@ -2668,6 +2671,58 @@ as a control sequence, as it would a window title or a bell (see
 In `bun run dev:web` the mock engine acts out an agent as the pretend shell,
 and `timberMock.missingExecutables(["codex"])` acts out an agent whose
 executable is not on the PATH (`[]` to undo).
+
+### `timber new` in a terminal
+
+`timber new` typed in one of the app's terminals opens the new worktree's
+session in the app, as the New worktree dialog does, instead of running
+Timber's agent in the terminal it was typed in. Timber and the app share a
+small contract for it (Timber's `docs/ide-contract.md`, "Handing off from app
+terminals"); the app's side is `src/bun/handoffs.ts`,
+`src/shared/handoff.ts`, and `takeHandoff` in the store.
+
+- **The folder.** At start the main process makes a private folder
+  (`mkdtemp`, mode 0700) under `XDG_RUNTIME_DIR`, or the temporary folder,
+  watches it, and removes it on quit. Every terminal session gets its path
+  as `TIMBER_APP_HANDOFF` (`sessionEnvironment` in `src/bun/terminals.ts`),
+  waited for, so a session opened while the app starts gets it too. The
+  Timber commands the app runs itself with `--result-file` use the app's own
+  environment, without it, and a value the app inherited is dropped. A setup
+  session (`timber open --setup` of an existing worktree) has it, and never
+  hands off, since it creates nothing.
+- **Timber's side.** In an interactive terminal with that variable, a
+  `timber new` (or `timber open`) that creates a worktree runs setup and the
+  editor in that terminal as before, then writes one JSON record to the
+  folder in place of starting its agent, and ends. The record names the
+  repository, the worktree, and whether Timber would have started its agent.
+  It never carries the agent's command. A worktree that already existed, a
+  run without a terminal or with `--result-file`, and Timber's Orca
+  integration behave as before.
+- **Reading.** Each finished record (`*.json`, a regular file of 16 KiB at
+  most) is read once and deleted. Dot-files are still being written. Links
+  and records that do not parse are deleted unread; folders are left alone.
+  At most 4 records are passed on in 5 seconds; the rest are deleted, with a
+  warning in the app's log.
+- **Opening.** The window reads the repository again, then looks for the
+  worktree in the list. Found: it selects it, shows the Workspace tab, and
+  starts the first saved agent there when Timber wanted its agent, or a
+  shell, which takes the keyboard (`startSessionsIn`, `openTerminalIn`).
+  Timber says whether an agent starts, the app says which; Timber's own
+  agent setting may name another. With no saved agent a shell opens and a
+  toast points to Settings, Agents. A worktree that is not in the list, such
+  as one in a repository the app does not show, opens nothing; the toast
+  gives `timber open --agent --no-editor -- '<path>'`. The terminal it was
+  typed in keeps running, untouched.
+- **Safety.** A record is a request only. Another program of the same user
+  could write one, and at most it selects a listed worktree and starts a
+  shell or a saved agent. Nothing named in a record is run.
+- **Older Timber.** A Timber without the handoff ignores the variable, so
+  `timber new` runs its agent in the terminal as before, and the worktree
+  only shows in the sidebar. Terminals outside the app have no variable and
+  behave as before.
+
+In `bun run dev:web`, `timberMock.typeTimberNew("/work/timber", "feat/x", true)`
+acts out `timber new feat/x` typed in a terminal with Timber's agent on.
 
 ### Agent status
 

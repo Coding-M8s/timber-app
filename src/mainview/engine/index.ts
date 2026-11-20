@@ -37,6 +37,7 @@ export async function createEngine(): Promise<Engine> {
 	// For the Changes tab: timberMock.failFileChanges("Git is busy"), or timberMock.setFileChanges(path, files).
 	// For themes: timberMock.setThemeImport(text) gives Import a file, and timberMock.exportedThemes() lists what Export wrote.
 	// For agent sessions: timberMock.missingExecutables(["codex"]) acts out an agent that is not on the PATH.
+	// For timber new typed in a terminal: timberMock.typeTimberNew("/work/timber", "feat/x", true) hands a new worktree to the app.
 	// For agent status: timberMock.agentStatus(id, "state=blocked:kind=permission") acts out an OSC 7501 report,
 	// timberMock.notices() lists the desktop notifications on screen, timberMock.alertSounds() the sounds played, and timberMock.clickNotice(id) clicks one.
 	// For fetching: timberMock.endFetches("offline"), ("authentication"), or ("failed") chooses how Fetch now ends,

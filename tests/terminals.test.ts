@@ -132,6 +132,19 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 		if (!seen) throw new Error(`Did not see ${expected} after ${line}. Printed: ${JSON.stringify(printed(id))}`);
 	}
 
+	test("a session waits for the handoff folder and gets it as TIMBER_APP_HANDOFF, never the app's own", async () => {
+		let ready = (_path: string) => {};
+		const folder = new Promise<string | null>(resolve => (ready = resolve));
+		start({ handoffFolder: () => folder, environment: { PATH: process.env.PATH, HOME: root, SHELL: "/bin/sh", PS1: "$ ", LANG: "C.UTF-8", TIMBER_APP_HANDOFF: "/inherited" } });
+		const opening = sessions.open({ repository, worktree, cols: 80, rows: 24 });
+		await Bun.sleep(20);
+		expect(sessions.list()).toEqual([]);
+		ready("/run/handoff-now");
+		const result = await opening;
+		if (result.outcome !== "opened") throw new Error(`Not opened: ${JSON.stringify(result)}`);
+		await run(result.session.id, 'echo "handoff:$TIMBER_APP_HANDOFF:end"', "handoff:/run/handoff-now:end");
+	});
+
 	describe("the Program Status Protocol (OSC 7501)", () => {
 		const statusOf = (id: string) => changes.filter(change => change.id === id).at(-1)?.session?.status ?? null;
 

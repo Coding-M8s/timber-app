@@ -3,6 +3,7 @@ import type { UninstallPlan, UninstallRequest, UninstallResult } from "../../sha
 import type { RestartPlan, RestartResult } from "../../shared/restart";
 import { readableEditorSetting } from "../../shared/editor";
 import type { Engine } from "../../shared/engine";
+import type { WorktreeHandoff } from "../../shared/handoff";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "../../shared/git-fetch";
 import type { ChopList } from "../../shared/chops";
 import { type Comparison, type FileChangeTarget, type FileChangesResult, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
@@ -32,6 +33,7 @@ import { describeDone, describeRemovalFailed } from "../done-format";
 import { SESSION_STARTED_DIAGNOSTIC, describeCleanUpEnded } from "../clean-up-format";
 import { listedOrder } from "../changes-format";
 import { describeOpenedInEditor } from "../editor-format";
+import { HANDOFF_NO_AGENT, describeHandoffNotListed, handoffAgent } from "../handoff-format";
 import { describeAdded, describeRemoved, folderName, worktreeLabel } from "../format";
 import { describeFetched } from "../fetch-format";
 import { wantTerminalFocus } from "../terminal-focus";
@@ -1627,6 +1629,30 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		void openTerminal({ repository: repositoryPath, worktree: worktree.path, cols: 80, rows: 24 });
 	}
 
+	/**
+	 * Open the session of a worktree that `timber new` in a terminal handed
+	 * over, as the New worktree dialog does: select it, show the Workspace
+	 * tab, and start the first saved agent when Timber wanted its agent, or a
+	 * shell. The repository is read again first, since the worktree is new.
+	 * Only a worktree in the list opens; otherwise a toast says how to open it.
+	 * The terminal it was typed in is left alone.
+	 */
+	async function takeHandoff(handoff: WorktreeHandoff): Promise<void> {
+		if (state.repositories.some(repository => repository.path === handoff.repository)) await reloadOne(handoff.repository);
+		const worktree = state.repositories.find(repository => repository.path === handoff.repository)?.worktrees.find(candidate => candidate.path === handoff.worktree);
+		if (!worktree) {
+			showToast(describeHandoffNotListed(handoff), true);
+			return;
+		}
+		const agent = handoffAgent(handoff, state.preferences.agents);
+		if (agent !== null) {
+			startSessionsIn(handoff.repository, { id: worktree.id, path: worktree.path, branch: worktree.branch }, { setup: false, agent: agent.name });
+			return;
+		}
+		openTerminalIn(handoff.repository, worktree.path);
+		if (handoff.agent) showToast(HANDOFF_NO_AGENT, true);
+	}
+
 	function startSessionsIn(repositoryPath: string, reported: ReportedWorktree, sessions: { setup: boolean; workflow?: string; agent: string | null }): boolean {
 		const worktree = listedReported(repositoryPath, reported);
 		// Not in the list, for example because reading it again failed: there is no pane to start in.
@@ -1761,6 +1787,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				}),
 				engine.onQuitRequested(live => update({ quitRequest: live })),
 				engine.onShowSession(id => revealSession(id)),
+				engine.onWorktreeHandedOff(handoff => void takeHandoff(handoff)),
 				// A newer Timber release came out: ask for the status again, so the banner shows.
 				engine.onTimberChanged(() => void findTimber(() => engine.timberStatus())),
 				engine.onFetchChanged(status => {
