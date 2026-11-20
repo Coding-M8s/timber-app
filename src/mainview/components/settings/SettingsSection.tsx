@@ -52,6 +52,30 @@ export function useSectionSave() {
 }
 
 /**
+ * `useSectionSave` with the section's draft. Until the person changes
+ * something, the draft is `fromSaved`, so the fields only ever differ from
+ * what is saved by what the person did. A change puts the last outcome away,
+ * and a save that worked makes the draft follow what is saved again.
+ */
+export function useDraftSection<Draft>(fromSaved: Draft) {
+	const [edited, setEdited] = useState<Draft | null>(null);
+	const { save, run, reset } = useSectionSave();
+
+	/** A new draft, or a change to the draft as it is when React applies it. */
+	const change = (next: Draft | ((current: Draft) => Draft)) => {
+		setEdited(current => typeof next === "function" ? (next as (current: Draft) => Draft)(current ?? fromSaved) : next);
+		reset();
+	};
+	/** Save `preferences`. When it worked, the draft follows what is saved, and `saved` runs alongside. */
+	const commit = async (preferences: Partial<Preferences>, saved?: () => void) => {
+		if (!await run(preferences)) return;
+		setEdited(null);
+		saved?.();
+	};
+	return { draft: edited ?? fromSaved, save, change, commit, reset };
+}
+
+/**
  * Whether a save of `change` left a preference that this section named, and
  * that the app reads only when it starts, different from what this run
  * started with. Unknown start preferences offer nothing.

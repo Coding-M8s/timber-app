@@ -5,7 +5,7 @@ import {
 	type AgentDraft, addAgentDraft, agentDraftsOf, agentsDraftModel, editAgentDraft, presetsToAdd, removeAgentDraft,
 } from "../../agent-format";
 import { useAppState } from "../../store/react";
-import { type SectionSave, SettingsSection, useSectionSave } from "./SettingsSection";
+import { type SectionSave, SettingsSection, useDraftSection } from "./SettingsSection";
 
 export interface AgentsSectionViewProps {
 	drafts: readonly AgentDraft[];
@@ -133,23 +133,17 @@ export function AgentsSectionView({ drafts, saved, save, onAdd, onEdit, onRemove
 /** The Agents section of Settings: the list of agents, edited row by row and saved with its own Save. */
 export function AgentsSection() {
 	const saved = useAppState().preferences.agents;
-	// Null follows what is saved, so the rows only ever differ from it by what the person did.
-	const [edited, setEdited] = useState<AgentDraft[] | null>(null);
 	const [shown, setShown] = useState<{ saved: readonly AgentSetting[]; drafts: AgentDraft[] }>(() => ({ saved, drafts: agentDraftsOf(saved) }));
 	// Rows keep their keys while what is saved stays the same, so a field keeps its focus.
 	const fromSaved = shown.saved === saved ? shown.drafts : agentDraftsOf(saved);
 	if (shown.saved !== saved) setShown({ saved, drafts: fromSaved });
-	const drafts = edited ?? fromSaved;
-	const { save, run, reset } = useSectionSave();
+	// The rows only ever differ from what is saved by what the person did.
+	const { draft: drafts, save, change, commit } = useDraftSection(fromSaved);
 
-	const change = (next: AgentDraft[]) => {
-		setEdited(next);
-		reset();
-	};
 	const onSave = async () => {
 		const { agents, canSave } = agentsDraftModel(drafts, saved);
 		if (!canSave) return;
-		if (await run({ agents })) setEdited(null);
+		await commit({ agents });
 	};
 
 	return (

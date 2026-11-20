@@ -4,7 +4,7 @@ import { useAppState } from "../../store/react";
 import { SESSION_NAMINGS, type SessionNaming } from "../../../shared/terminal";
 import { SESSION_NAMING_HINTS, SESSION_NAMING_LABELS, TERMINAL_CURSOR_HINTS, TERMINAL_CURSOR_LABELS, type TerminalDraft, missingFontNote, terminalDraftModel, terminalDraftOf } from "../../terminal-appearance-format";
 import { terminalFontInstalled } from "../../terminal-look";
-import { type SectionSave, SettingsSection, useSectionSave } from "./SettingsSection";
+import { type SectionSave, SettingsSection, useDraftSection } from "./SettingsSection";
 
 export interface TerminalSectionViewProps {
 	draft: TerminalDraft;
@@ -110,17 +110,12 @@ export function TerminalSection() {
 	const preferences = useAppState().preferences;
 	const saved = preferences.terminal;
 	const savedNaming = preferences.sessionNames;
-	// Null follows what is saved, so the fields only ever differ from it by what the person did.
-	const [edited, setEdited] = useState<TerminalDraft | null>(null);
+	const { draft, save, change, commit, reset } = useDraftSection(terminalDraftOf(saved));
+	// Null follows what is saved, so the choice only ever differs from it by what the person did.
 	const [editedNaming, setEditedNaming] = useState<SessionNaming | null>(null);
-	const draft = edited ?? terminalDraftOf(saved);
 	const naming = editedNaming ?? savedNaming;
-	const { save, run, reset } = useSectionSave();
 
-	const onEdit = (change: Partial<TerminalDraft>) => {
-		setEdited({ ...draft, ...change });
-		reset();
-	};
+	const onEdit = (edit: Partial<TerminalDraft>) => change({ ...draft, ...edit });
 	const onNaming = (next: SessionNaming) => {
 		setEditedNaming(next);
 		reset();
@@ -128,10 +123,7 @@ export function TerminalSection() {
 	const onSave = async () => {
 		const { appearance, canSave } = terminalDraftModel(draft, saved);
 		if (appearance === null || (!canSave && naming === savedNaming)) return;
-		if (await run({ terminal: appearance, sessionNames: naming })) {
-			setEdited(null);
-			setEditedNaming(null);
-		}
+		await commit({ terminal: appearance, sessionNames: naming }, () => setEditedNaming(null));
 	};
 
 	return (
