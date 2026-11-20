@@ -29,6 +29,17 @@ export function clipboardKey(event: Keys, mac: boolean): "copy" | "paste" | null
 	return key === "c" ? "copy" : key === "v" ? "paste" : null;
 }
 
+/** What Alt+Enter sends: ESC then CR, which agent CLIs and shells read as a new line rather than a submit. */
+export const NEW_LINE_INPUT = "\x1b\r";
+
+/**
+ * Shift+Enter with no other modifier adds a new line, the same as Alt+Enter,
+ * as in chat boxes. Only the key press counts, so one press adds one line.
+ */
+export function newLineKey(event: Keys): boolean {
+	return event.type === "keydown" && event.key === "Enter" && event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey;
+}
+
 /** A link in a terminal opens on a click with Ctrl held, or Cmd on macOS, so a click to select text never opens one. */
 export function opensLink(event: Pick<MouseEvent, "ctrlKey" | "metaKey">, mac: boolean): boolean {
 	return mac ? event.metaKey : event.ctrlKey;

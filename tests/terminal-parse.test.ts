@@ -4,7 +4,7 @@ import {
 	SCROLLBACK_LIMIT, clampTerminalSize, createScrollback, describeQuitRequest, describeTerminalExit, isWebLink, pickShell, pickWindowsShell, webLink,
 } from "../src/shared/terminal";
 import { createTerminalFeed } from "../src/mainview/terminal-feed";
-import { clipboardKey, closeTerminalLabel, describeTerminalState, leftInAlternateScreen, opensLink, shellName } from "../src/mainview/terminal-format";
+import { clipboardKey, closeTerminalLabel, describeTerminalState, leftInAlternateScreen, newLineKey, opensLink, shellName } from "../src/mainview/terminal-format";
 
 const keydown = (key: string, modifiers: Partial<Record<"ctrlKey" | "shiftKey" | "metaKey" | "altKey", boolean>> = {}) =>
 	({ type: "keydown", key, ctrlKey: false, shiftKey: false, metaKey: false, altKey: false, ...modifiers });
@@ -112,6 +112,19 @@ describe("keys and clicks in a terminal", () => {
 		expect(clipboardKey(keydown("c", { metaKey: true }), true)).toBe("copy");
 		expect(clipboardKey(keydown("v", { metaKey: true }), true)).toBe("paste");
 		expect(clipboardKey(keydown("c", { ctrlKey: true }), true)).toBeNull();
+	});
+
+	test("Shift+Enter adds a new line like Alt+Enter; Enter, Alt+Enter and other combinations stay the program's", () => {
+		expect(newLineKey(keydown("Enter", { shiftKey: true }))).toBe(true);
+		expect(newLineKey(keydown("Enter"))).toBe(false);
+		expect(newLineKey(keydown("Enter", { altKey: true }))).toBe(false);
+		expect(newLineKey(keydown("Enter", { ctrlKey: true, shiftKey: true }))).toBe(false);
+		expect(newLineKey(keydown("Enter", { shiftKey: true, altKey: true }))).toBe(false);
+		expect(newLineKey(keydown("Enter", { shiftKey: true, metaKey: true }))).toBe(false);
+		expect(newLineKey(keydown("a", { shiftKey: true }))).toBe(false);
+		// Only the key press itself, so one press adds one new line.
+		expect(newLineKey({ ...keydown("Enter", { shiftKey: true }), type: "keypress" })).toBe(false);
+		expect(newLineKey({ ...keydown("Enter", { shiftKey: true }), type: "keyup" })).toBe(false);
 	});
 
 	test("a link opens on a click with Ctrl, or Cmd on macOS, never on a plain click", () => {

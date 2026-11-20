@@ -9,7 +9,7 @@ import type { AppStore } from "./store/store";
 import { TERMINAL_LINE_HEIGHT, type TerminalAppearance, terminalFontStack } from "../shared/terminal-appearance";
 import { TERMINAL_MINIMUM_CONTRAST, terminalColors, watchTerminalColors } from "./terminal-colors";
 import { terminalAppearance, watchTerminalAppearance } from "./terminal-look";
-import { clipboardKey, leftInAlternateScreen, sessionChipId, sessionKey } from "./terminal-format";
+import { NEW_LINE_INPUT, clipboardKey, leftInAlternateScreen, newLineKey, sessionChipId, sessionKey } from "./terminal-format";
 import { terminalLinks } from "./terminal-links";
 
 /**
@@ -114,6 +114,13 @@ function createView(store: AppStore, id: string): TerminalView {
 			event.preventDefault();
 			if (move === "chips") document.getElementById(sessionChipId(id))?.focus();
 			else store.stepSession(id, move === "next" ? 1 : -1);
+			return false;
+		}
+		// Shift+Enter sends what Alt+Enter does, so agent CLIs add a new line instead of submitting.
+		// Stopping the key press keeps the browser from also sending a plain Enter.
+		if (newLineKey(event)) {
+			event.preventDefault();
+			terminal.input(NEW_LINE_INPUT);
 			return false;
 		}
 		const action = clipboardKey(event, mac);
