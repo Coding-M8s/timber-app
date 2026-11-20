@@ -1,7 +1,7 @@
 import type { TimberFailure } from "./model";
 import { type Fields, isFields, isTextOrNull } from "./timber-ls";
 import { type TimberRun, failureOf } from "./timber-result";
-import { readDiagnostic } from "./workflows";
+import { describeExit, describeFailedRun, readEnvelope } from "./timber-record";
 
 /**
  * Timber's recovery backups, version 1 of its backup records
@@ -150,30 +150,19 @@ function readAll<Item>(value: unknown, read: (item: unknown) => Item | null): It
  * no backups.
  */
 export function readBackupList(stdout: string, stderr: string, exitCode: number | null): BackupList {
-	const ending = exitCode === null ? "did not exit by itself" : `exited with code ${exitCode}`;
 	if (exitCode === 1 && stdout.trim() === "" && UNKNOWN_TO_TIMBER.test(stderr)) return { state: "unsupported" };
 
-	const explained = () => {
-		const diagnostic = readDiagnostic(stderr);
-		return failed(diagnostic === null ? `${BACKUP_LIST_COMMAND} ${ending} without saying why.` : `${BACKUP_LIST_COMMAND} ${ending}: ${diagnostic}`);
-	};
+	const explained = () => failed(describeFailedRun(BACKUP_LIST_COMMAND, stderr, exitCode));
 	if (exitCode !== 0 && exitCode !== 1) return explained();
 
-	let record: unknown;
-	try {
-		record = JSON.parse(stdout);
-	} catch {
-		if (exitCode !== 0) return explained();
-		return unreadable(stdout.trim() === "" ? "it printed nothing" : "the output is not valid JSON");
+	const envelope = readEnvelope(stdout, BACKUP_LIST_COMMAND, SUPPORTED_BACKUP_LIST_SCHEMA_VERSION);
+	if (!envelope.ok) {
+		if (envelope.problem === "not-json" && exitCode !== 0) return explained();
+		return envelope.problem === "version" ? failed(envelope.message) : unreadable(envelope.detail);
 	}
-	if (!isFields(record)) return unreadable("the output is not a JSON object");
-
-	if (record.schemaVersion !== SUPPORTED_BACKUP_LIST_SCHEMA_VERSION) {
-		const found = typeof record.schemaVersion === "number" || typeof record.schemaVersion === "string" ? String(record.schemaVersion) : "none";
-		return failed(`${BACKUP_LIST_COMMAND} answered with schema version ${found}, and this app reads version ${SUPPORTED_BACKUP_LIST_SCHEMA_VERSION} only. Update Timber app, or install a Timber that matches it.`);
-	}
+	const { record } = envelope;
 	const { outcome, diagnostic } = record;
-	if (record.exitCode !== exitCode) return unreadable(`it says exit code ${String(record.exitCode)}, but the process ${ending}`);
+	if (record.exitCode !== exitCode) return unreadable(`it says exit code ${String(record.exitCode)}, but the process ${describeExit(exitCode)}`);
 	if (outcome !== "succeeded" && outcome !== "failed") return unreadable("its outcome is not one this app knows");
 	if ((outcome === "failed") !== (exitCode === 1)) return unreadable(`its outcome "${outcome}" does not go with exit code ${exitCode}`);
 	if (!isTextOrNull(diagnostic)) return unreadable("its diagnostic is not text");

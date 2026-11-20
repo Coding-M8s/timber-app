@@ -1,6 +1,7 @@
 import type { TimberFailure } from "./model";
 import { type ListedRepository, type ListedWorktree, SUPPORTED_SCHEMA_VERSION, isFields, readRepository, readWorktree } from "./timber-ls";
 import { APPROVAL_FILE_PLACEHOLDER, RESULT_FILE_PLACEHOLDER, describeTimberCommand } from "./timber-result";
+import { readEnvelope } from "./timber-record";
 
 /**
  * Removing a worktree through Timber's native cleanup approval, version 1 of
@@ -107,18 +108,9 @@ const unreadable = (detail: string): DonePreviewReading =>
  * version 1, are ignored.
  */
 export function readDonePreview(stdout: string): DonePreviewReading {
-	let record: unknown;
-	try {
-		record = JSON.parse(stdout);
-	} catch {
-		return unreadable(stdout.trim() === "" ? "it printed nothing" : "the output is not valid JSON");
-	}
-	if (!isFields(record)) return unreadable("the output is not a JSON object");
-
-	if (record.schemaVersion !== SUPPORTED_SCHEMA_VERSION) {
-		const found = typeof record.schemaVersion === "number" || typeof record.schemaVersion === "string" ? String(record.schemaVersion) : "none";
-		return { ok: false, message: `${PREVIEW_NAME} answered with schema version ${found}, and this app reads version ${SUPPORTED_SCHEMA_VERSION} only. Update Timber app, or install a Timber that matches it.` };
-	}
+	const envelope = readEnvelope(stdout, PREVIEW_NAME, SUPPORTED_SCHEMA_VERSION);
+	if (!envelope.ok) return envelope.problem === "version" ? { ok: false, message: envelope.message } : unreadable(envelope.detail);
+	const { record } = envelope;
 
 	const { snapshot, expiresAt, options } = record;
 	if (typeof snapshot !== "string" || !SNAPSHOT.test(snapshot)) return unreadable("it has no snapshot");

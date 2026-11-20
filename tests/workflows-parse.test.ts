@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { APP_CONFIG_READ_ARGUMENTS, APP_CONFIG_READ_COMMAND, type WorkflowList, readDiagnostic, readWorkflowList } from "../src/shared/workflows";
+import { APP_CONFIG_READ_ARGUMENTS, APP_CONFIG_READ_COMMAND, type WorkflowList, readWorkflowList } from "../src/shared/workflows";
+import { readDiagnostic } from "../src/shared/timber-record";
 import { recordedAppConfig } from "./support/timber";
 
 const { records, failures } = recordedAppConfig;

@@ -1,5 +1,6 @@
 import type { CapturedOutput, TimberFailure } from "./model";
-import { type Fields, type ListedRepository, type ListedWorktree, SUPPORTED_SCHEMA_VERSION, isFields, isTextOrNull, readRepository, readWorktree } from "./timber-ls";
+import { type Fields, type ListedRepository, type ListedWorktree, SUPPORTED_SCHEMA_VERSION, isTextOrNull, readRepository, readWorktree } from "./timber-ls";
+import { describeExit, readEnvelope } from "./timber-record";
 
 /**
  * Reading the result file of a Timber command, version 1 of Timber's machine
@@ -89,10 +90,6 @@ export function describeTimberCommand(timberArguments: readonly string[]): strin
 	return ["timber", ...shown].join(" ");
 }
 
-function describeExit(exitCode: number | null): string {
-	return exitCode === null ? "did not exit by itself" : `exited with code ${exitCode}`;
-}
-
 /**
  * Read the result file of one run. `text` is what the file held after the
  * process ended, or null when there was no file. `exitCode` is the exit code
@@ -112,18 +109,12 @@ export function readTimberResult(command: ResultCommand, text: string | null, ex
 
 	if (text === null) return noResult("left no result");
 	if (text.trim() === "") return noResult("left an empty result");
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(text);
-	} catch {
-		return unreadable("it is not valid JSON");
+	const envelope = readEnvelope(text, name, SUPPORTED_SCHEMA_VERSION, ", so what it did is unknown");
+	if (!envelope.ok) {
+		if (envelope.problem === "version") return failed(envelope.message);
+		return unreadable(envelope.problem === "not-json" ? "it is not valid JSON" : "it is not a JSON object");
 	}
-	if (!isFields(parsed)) return unreadable("it is not a JSON object");
-
-	if (parsed.schemaVersion !== SUPPORTED_SCHEMA_VERSION) {
-		const found = typeof parsed.schemaVersion === "number" || typeof parsed.schemaVersion === "string" ? String(parsed.schemaVersion) : "none";
-		return failed(`${name} answered with schema version ${found}, and this app reads version ${SUPPORTED_SCHEMA_VERSION} only, so what it did is unknown. Update Timber app, or install a Timber that matches it.`);
-	}
+	const parsed = envelope.record;
 
 	const { outcome, diagnostic, materialized } = parsed;
 	if (parsed.command !== command) return unreadable(`it is not a record for ${command}`);
