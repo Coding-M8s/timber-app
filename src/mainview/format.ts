@@ -4,7 +4,7 @@ import { TIMBER_LS_COMMAND } from "../shared/timber-ls";
 import { TIMBER_OVERRIDE_VARIABLE } from "../shared/timber-version";
 import { SAVED_BASE_UNKNOWN, describeInvalidBase } from "./base-format";
 import { describePullRequestMarkers } from "./pull-request-format";
-import type { ListNotice, RemovalStatus } from "./store/state";
+import type { GroupNameProblem, ListNotice, RemovalStatus } from "./store/state";
 
 /** The command Timber's own quick start gives for installing and for updating. */
 export const TIMBER_INSTALL_COMMAND = "curl -fsSL https://github.com/Coding-M8s/timber/releases/latest/download/install.sh | sh";
@@ -88,10 +88,22 @@ const FAILED_LIST_TITLES = {
 	add: "Could not add the repository",
 	remove: "Could not remove the repository",
 	reorder: "Could not save the order of the repositories",
+	group: "Could not save the groups",
 } as const;
 
+/** What deleting a group does, as the menu item's tooltip says. */
+export const DELETE_GROUP_HINT = "Its repositories stay in the list.";
+
+/** The sentence a group header's tooltip ends with, when there is more than one group. */
+export const MOVE_GROUP_HINT = "Drag to reorder, or press Alt+Up or Alt+Down.";
+
+/** Why a group name was not saved, shown under the name field. */
+export function describeGroupNameProblem(problem: GroupNameProblem): string {
+	return problem.kind === "empty" ? "Type a name for the group." : `There is already a group named ${problem.name}.`;
+}
+
 /**
- * What to tell the person when adding, removing, or reordering left the list
+ * What to tell the person when adding, removing, reordering, or grouping left the list
  * as it was. `problem` is false when nothing went wrong.
  */
 export function describeListNotice(
@@ -112,7 +124,7 @@ export function describeListNotice(
 		case "overridden":
 			return {
 				title: "The list comes from TIMBER_APP_REPOS",
-				text: "That variable is set, so the app shows its repositories and leaves the saved list alone. Unset it to add, remove, or reorder repositories here.",
+				text: "That variable is set, so the app shows its repositories and leaves the saved list alone. Unset it to add, remove, reorder, or group repositories here.",
 				problem: true,
 			};
 		case "failed":

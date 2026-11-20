@@ -16,6 +16,7 @@ import { type Preferences, defaultPreferences } from "../../shared/preferences";
 import type { TerminalSession } from "../../shared/terminal";
 import type { RenderingStatus } from "../../shared/rendering";
 import type { SeenStatuses } from "../seen-status";
+import { type RepositoryGroups, emptyGroups } from "../../shared/repository-groups";
 
 /** Null until the first look for Timber has answered. */
 export type TimberState =
@@ -125,7 +126,10 @@ export type ListNotice =
 	| { kind: "not-a-repository"; folder: string }
 	/** The list comes from the development override. */
 	| { kind: "overridden" }
-	| { kind: "failed"; action: "add" | "remove" | "reorder"; message: string };
+	| { kind: "failed"; action: "add" | "remove" | "reorder" | "group"; message: string };
+
+/** Why a group name was not saved: it was empty once trimmed, or another group has it, ignoring case. */
+export type GroupNameProblem = { kind: "empty" } | { kind: "taken"; name: string };
 
 /**
  * A short note that an operation ended. It disappears on its own. Most say
@@ -258,6 +262,14 @@ export interface AppState {
 	error: ReloadError | null;
 	/** Null once an add or remove worked, or after the person dismissed it. */
 	notice: ListNotice | null;
+	/**
+	 * The groups the sidebar gathers repositories into, and the group of each
+	 * grouped repository. Saved by the engine; a change shows at once and is
+	 * put back if its save fails.
+	 */
+	repositoryGroups: RepositoryGroups;
+	/** Why the last group name typed was not saved. Null once one saved, or when editing again. */
+	groupNameProblem: GroupNameProblem | null;
 	/**
 	 * Outcomes, oldest first. A failure is never only a toast: it stays where
 	 * the person can act on it, and a toast can at most point there.
@@ -460,6 +472,8 @@ export const initialState: AppState = {
 	operations: [],
 	error: null,
 	notice: null,
+	repositoryGroups: emptyGroups(),
+	groupNameProblem: null,
 	toasts: [],
 	removals: [],
 	layout: defaultLayout(),

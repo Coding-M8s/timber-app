@@ -7,8 +7,9 @@ import type { FetchResult, ForcePushSeen, RepositoryFetch } from "./git-fetch";
 import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffResult } from "./file-changes";
 import type { WorktreeHandoff } from "./handoff";
 import type { Layout } from "./layout";
-import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
+import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, RepositoryGroupsResult, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
 import type { Preferences } from "./preferences";
+import type { RepositoryGroups } from "./repository-groups";
 import type { RestartPlan, RestartResult } from "./restart";
 import type { IssueSearchRequest, IssueSearchResult } from "./issue-search";
 import type { IssueListRequest, IssueListResult } from "./issue-lists";
@@ -72,6 +73,46 @@ export interface Engine {
 	 * repository or its folder.
 	 */
 	reorderRepositories(order: string[]): Promise<ReorderRepositoriesResult>;
+	/**
+	 * The groups the sidebar gathers repositories into, in order, and the
+	 * group of each grouped repository, by the path of its primary checkout.
+	 * None while the development override is set. Read from the app's saved
+	 * list without asking Git or Timber.
+	 */
+	listRepositoryGroups(): Promise<RepositoryGroups>;
+	/**
+	 * Make a group at the end. With `repository`, that repository goes in it,
+	 * at the end of the shown order. The name is trimmed, and must not be empty
+	 * or the name of another group, ignoring case. This only changes the app's
+	 * saved list, never anything in a repository or its folder.
+	 */
+	createRepositoryGroup(name: string, repository?: string): Promise<RepositoryGroupsResult>;
+	/**
+	 * Give a group a new name, by the rules of `createRepositoryGroup`. An id
+	 * that names no group changes nothing. This only changes the app's saved
+	 * list, never anything in a repository or its folder.
+	 */
+	renameRepositoryGroup(id: string, name: string): Promise<RepositoryGroupsResult>;
+	/**
+	 * Delete a group. Its repositories stay in the list, loose. Also forgets
+	 * that it was folded. An id that names no group changes nothing. This only
+	 * changes the app's saved list, never anything in a repository or its folder.
+	 */
+	deleteRepositoryGroup(id: string): Promise<RepositoryGroupsResult>;
+	/**
+	 * Order the groups by id, with the same leave-out and skip rules as
+	 * `reorderRepositories`. This only changes the app's saved list, never
+	 * anything in a repository or its folder.
+	 */
+	reorderRepositoryGroups(order: string[]): Promise<RepositoryGroupsResult>;
+	/**
+	 * Put a repository in a group, or with null take it out, and with `order`
+	 * also save the whole list in that order (same rules as
+	 * `reorderRepositories`), in one save. A repository or group that is not
+	 * listed changes nothing. This only changes the app's saved list, never
+	 * anything in a repository or its folder.
+	 */
+	placeRepository(path: string, group: string | null, order?: string[]): Promise<RepositoryGroupsResult>;
 	/**
 	 * Read one repository again, named by the path of its primary checkout.
 	 * Null when Git could not read it there. As in `listRepositories`, a

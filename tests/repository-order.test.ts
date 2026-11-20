@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { DRAG_THRESHOLD, dropIndex, moveStep } from "../src/mainview/repository-drag";
+import { DRAG_THRESHOLD, type DropSlot, dropIndex, dropPlace, moveStep } from "../src/mainview/repository-drag";
 import { applyOrder, moveInOrder, sameOrder } from "../src/shared/repository-order";
 
 const items = (...paths: string[]) => paths.map(path => ({ path }));
@@ -86,5 +86,59 @@ describe("moveStep", () => {
 		expect(moveStep(key("ArrowUp", { metaKey: true }))).toBe(0);
 		expect(moveStep(key("ArrowLeft"))).toBe(0);
 		expect(moveStep(key("Enter"))).toBe(0);
+	});
+});
+
+describe("dropPlace", () => {
+	// Shown top to bottom: loose a and b, then Work (open) with c and d, then Home (folded), then Spare (open, empty).
+	const slots: DropSlot[] = [
+		{ kind: "repository", path: "/a", group: null, middle: 10 },
+		{ kind: "repository", path: "/b", group: null, middle: 30 },
+		{ kind: "group", id: "work", top: 40, bottom: 60, open: true },
+		{ kind: "repository", path: "/c", group: "work", middle: 70 },
+		{ kind: "repository", path: "/d", group: "work", middle: 90 },
+		{ kind: "group", id: "home", top: 110, bottom: 130, open: false },
+		{ kind: "group", id: "spare", top: 140, bottom: 160, open: true },
+	];
+
+	test("above the middle of a repository lands before it, in its group", () => {
+		expect(dropPlace(slots, 5)).toEqual({ group: null, before: "/a" });
+		expect(dropPlace(slots, 25)).toEqual({ group: null, before: "/b" });
+		expect(dropPlace(slots, 65)).toEqual({ group: "work", before: "/c" });
+		expect(dropPlace(slots, 80)).toEqual({ group: "work", before: "/d" });
+	});
+
+	test("below the last loose repository and above the first group lands at the end of the loose ones", () => {
+		expect(dropPlace(slots, 35)).toEqual({ group: null, before: null });
+	});
+
+	test("over a group's header lands at the end of that group", () => {
+		expect(dropPlace(slots, 40)).toEqual({ group: "work", before: null });
+		expect(dropPlace(slots, 55)).toEqual({ group: "work", before: null });
+	});
+
+	test("below the last member of an open group, above the next group, lands at the end of that group", () => {
+		expect(dropPlace(slots, 100)).toEqual({ group: "work", before: null });
+	});
+
+	test("over a folded group, or an empty one, lands at the end of it", () => {
+		expect(dropPlace(slots, 120)).toEqual({ group: "home", before: null });
+		expect(dropPlace(slots, 150)).toEqual({ group: "spare", before: null });
+	});
+
+	test("above everything lands first, and below everything at the end of the last group", () => {
+		expect(dropPlace(slots, -100)).toEqual({ group: null, before: "/a" });
+		expect(dropPlace(slots, 999)).toEqual({ group: "spare", before: null });
+	});
+
+	test("with a single group and no loose repositories, above it is loose, and over it is in it", () => {
+		const single: DropSlot[] = [{ kind: "group", id: "work", top: 40, bottom: 60, open: true }];
+		expect(dropPlace(single, 10)).toEqual({ group: null, before: null });
+		expect(dropPlace(single, 50)).toEqual({ group: "work", before: null });
+		expect(dropPlace(single, 200)).toEqual({ group: "work", before: null });
+	});
+
+	test("with nothing else shown, lands loose", () => {
+		expect(dropPlace([], 50)).toEqual({ group: null, before: null });
 	});
 });

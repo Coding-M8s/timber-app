@@ -14,14 +14,15 @@ import { promptTarget } from "../agent-sessions";
 import { describePromptCopied, describePromptSent } from "../chop-format";
 import { type Comparison, type FileChangeTarget, type FileChangesResult, type FileDiff, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
 import type { PortsResult } from "../../shared/ports";
-import { type Layout, chooseComparison, chooseIssueList, chosenComparison, clampSidebarWidth, dismissSetup, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
-import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberFailure, TimberStatus, Worktree, WorktreeCommandResult } from "../../shared/model";
+import { type Layout, chooseComparison, chooseIssueList, chosenComparison, clampSidebarWidth, dismissSetup, forgetGroup, forgetRepository, sameLayout, toggleCollapsed, toggleGroupCollapsed } from "../../shared/layout";
+import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RepositoryGroupsResult, ReportedWorktree, SavePreferencesResult, TimberFailure, TimberStatus, Worktree, WorktreeCommandResult } from "../../shared/model";
 import { type Preferences, defaultPreferences } from "../../shared/preferences";
 import type { IssueLookup } from "../../shared/issues";
 import type { BackupDeleteRequest, BackupDeleteResult, BackupList, BackupRestoreRequest, BackupRestoreResult } from "../../shared/backups";
 import type { ArenaInspection, ArenaList, ArenaPresetList, NewArenaRequest, NewArenaResult, PickArenaRequest, PickArenaResult } from "../../shared/arenas";
 import type { PullRequestList } from "../../shared/pull-requests";
 import { applyOrder, moveInOrder } from "../../shared/repository-order";
+import { type RepositoryGroups, emptyGroups, placeInOrder, shownOrder, stepAmongSiblings } from "../../shared/repository-groups";
 import { type ZoomStep, stepZoom, zoomLabel } from "../../shared/zoom";
 import type { Theme } from "../../shared/theme";
 import type { ChooseSoundResult, SoundChoice, SoundOutcome } from "../../shared/sound-setting";
@@ -105,6 +106,32 @@ export interface AppStore {
 	 * the app's settings.
 	 */
 	moveRepository(path: string, index: number): Promise<void>;
+	/*
+	 * Repository groups. Each only changes the app's saved list, and none reads
+	 * a repository again: the engine answers with the groups as saved, and the
+	 * store shows that. A name that is empty or taken is said in
+	 * `groupNameProblem`; the override and a failed save in `notice`, with the
+	 * groups and the order last saved put back.
+	 */
+	/** Make a group at the end, with `repository` in it when given. True when it was saved. */
+	createGroup(name: string, repository?: string): Promise<boolean>;
+	/** Give a group a new name. True when it was saved, or there was nothing to change. */
+	renameGroup(id: string, name: string): Promise<boolean>;
+	/** Delete a group. Its repositories stay in the list, loose. */
+	deleteGroup(id: string): Promise<void>;
+	/** Move a group to `index` among the groups, counted without it. Shows at once. */
+	moveGroup(id: string, index: number): Promise<void>;
+	/**
+	 * Put a repository in a group, or with null take it out, before `before`
+	 * (a repository in that destination) or, without one, at its end. Shows at once.
+	 */
+	placeRepository(path: string, group: string | null, before?: string | null): Promise<void>;
+	/** Move a repository one place among its siblings: the repositories of its group, or the loose ones. Shows at once. */
+	stepRepository(path: string, step: -1 | 1): Promise<void>;
+	/** Fold or open a repository group, named by its id, and remember it. */
+	toggleRepositoryGroup(id: string): void;
+	/** Put away the note about a group name, as when the person types again. */
+	clearGroupNameProblem(): void;
 	/** Put away the note about the latest add or remove. */
 	dismissNotice(): void;
 	/** Select a worktree by its identity (`Worktree.id`). One that no repository has is ignored. */
@@ -778,11 +805,22 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	// Saves run one after another, so the last move is the one saved last.
 	let orderSaves: Promise<void> = Promise.resolve();
 	const repositoryTickets = new Map<string, number>();
+	// The groups as the engine last saved them, so a save that fails can put them back.
+	let savedGroups: RepositoryGroups = emptyGroups();
+	// Group changes asked for that have not answered yet. A list read meanwhile keeps the groups on screen.
+	let groupChanges = 0;
+
+	/** The saved groups, read beside the list. They come from the settings, so this is no second read of a repository. */
+	const readGroups = () => engine.listRepositoryGroups().catch(() => null);
 
 	const reloadAll = mergeOverlapping<"all">(() => track({ kind: "reload-all" }, async () => {
 		const ticket = ++lastTicket;
 		try {
-			const listed = await engine.listRepositories();
+			const [listed, groups] = await Promise.all([engine.listRepositories(), readGroups()]);
+			if (groups && groupChanges === 0) {
+				savedGroups = groups;
+				update({ repositoryGroups: groups });
+			}
 			// A repository that was reloaded on its own after this list was asked for keeps that newer data.
 			const read = listed.map(repository => {
 				const current = state.repositories.find(candidate => candidate.path === repository.path);
@@ -1614,6 +1652,106 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		};
 		orderSaves = orderSaves.then(save);
 		return orderSaves;
+	}
+
+	/**
+	 * Ask the engine for a change to the groups, after every move and group change asked for before it, so each
+	 * builds on what the last one saved. `order` is the whole new order when the change shows a new one at once,
+	 * and `before` the order to put back if it fails. Answers whether it was saved.
+	 */
+	function changeGroups(call: () => Promise<RepositoryGroupsResult>, shown: { order: string[]; before: string[] } | null, onSaved?: (groups: RepositoryGroups) => void): Promise<boolean> {
+		const ticket = shown ? ++orderTicket : orderTicket;
+		if (shown) pendingOrder = shown.order;
+		groupChanges++;
+		const run = orderSaves.then(async () => {
+			let result: RepositoryGroupsResult;
+			try {
+				result = await call();
+			} catch (error) {
+				result = { outcome: "failed", message: messageOf(error) };
+			}
+			groupChanges--;
+			if (shown && ticket === orderTicket) pendingOrder = null;
+			switch (result.outcome) {
+				case "saved":
+					savedGroups = result.groups;
+					// A later change already on screen answers for itself.
+					if (groupChanges === 0 || !shown) update({ repositoryGroups: result.groups });
+					if (state.groupNameProblem) update({ groupNameProblem: null });
+					onSaved?.(result.groups);
+					return true;
+				case "name-empty":
+					update({ groupNameProblem: { kind: "empty" } });
+					return false;
+				case "name-taken":
+					update({ groupNameProblem: { kind: "taken", name: result.name } });
+					return false;
+				case "overridden":
+				case "failed":
+					// Put back what is saved, without reading anything again.
+					update({
+						notice: result.outcome === "overridden" ? { kind: "overridden" } : { kind: "failed", action: "group", message: result.message },
+						repositoryGroups: savedGroups,
+						...(shown ? { repositories: applyOrder(state.repositories, shown.before) } : {}),
+					});
+					return false;
+			}
+		});
+		orderSaves = run.then(() => {}, () => {});
+		return run;
+	}
+
+	const pathsOnScreen = () => state.repositories.map(repository => repository.path);
+
+	/** Show a repository in its new group and the list in its new order at once, then save both. */
+	function showPlaced(path: string, group: string | null, order: string[]): Promise<void> {
+		const before = pathsOnScreen();
+		const membership = { ...state.repositoryGroups.membership };
+		if (group === null) delete membership[path];
+		else membership[path] = group;
+		const unchanged = order.every((candidate, at) => candidate === before[at]) && state.repositoryGroups.membership[path] === membership[path];
+		if (unchanged) return Promise.resolve();
+		update({ notice: null, repositories: applyOrder(state.repositories, order), repositoryGroups: { ...state.repositoryGroups, membership } });
+		return changeGroups(() => engine.placeRepository(path, group, order), { order, before }).then(() => {});
+	}
+
+	function placeRepository(path: string, group: string | null, before: string | null = null): Promise<void> {
+		if (group !== null && !state.repositoryGroups.groups.some(known => known.id === group)) return Promise.resolve();
+		const order = placeInOrder(pathsOnScreen(), state.repositoryGroups, path, group, before);
+		return order ? showPlaced(path, group, order) : Promise.resolve();
+	}
+
+	function stepRepository(path: string, step: -1 | 1): Promise<void> {
+		const order = stepAmongSiblings(pathsOnScreen(), state.repositoryGroups, path, step);
+		if (!order) return Promise.resolve();
+		const group = state.repositoryGroups.membership[path];
+		return showPlaced(path, group !== undefined && state.repositoryGroups.groups.some(known => known.id === group) ? group : null, order);
+	}
+
+	function createGroup(name: string, repository?: string): Promise<boolean> {
+		return changeGroups(() => engine.createRepositoryGroup(name, repository), null, groups => {
+			// The engine put the repository at the end of the shown order; so does the screen.
+			if (repository !== undefined) update({ repositories: applyOrder(state.repositories, shownOrder(pathsOnScreen(), groups)) });
+		});
+	}
+
+	function moveGroup(id: string, index: number): Promise<void> {
+		const before = state.repositoryGroups.groups.map(group => group.id);
+		const order = moveInOrder(before, id, index);
+		if (order.every((candidate, at) => candidate === before[at])) return Promise.resolve();
+		const byId = new Map(state.repositoryGroups.groups.map(group => [group.id, group]));
+		update({ notice: null, repositoryGroups: { ...state.repositoryGroups, groups: order.map(known => byId.get(known)!) } });
+		const paths = pathsOnScreen();
+		return changeGroups(() => engine.reorderRepositoryGroups(order), { order: paths, before: paths }).then(() => {});
+	}
+
+	function deleteGroup(id: string): Promise<void> {
+		return changeGroups(() => engine.deleteRepositoryGroup(id), null, () => {
+			// The engine forgot that it was folded in the same save, so the layout needs no save of its own here.
+			if (savedLayout) savedLayout = forgetGroup(savedLayout, id);
+			const layout = forgetGroup(state.layout, id);
+			if (layout !== state.layout) update({ layout });
+		}).then(() => {});
 	}
 
 	function select(worktreeId: string): void {
@@ -2471,6 +2609,19 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		addRepository,
 		removeRepository,
 		moveRepository,
+		createGroup,
+		renameGroup: (id, name) => changeGroups(() => engine.renameRepositoryGroup(id, name), null),
+		deleteGroup,
+		moveGroup,
+		placeRepository,
+		stepRepository,
+		toggleRepositoryGroup(id) {
+			changeLayout(toggleGroupCollapsed(state.layout, id));
+			void saveLayout("layout");
+		},
+		clearGroupNameProblem() {
+			if (state.groupNameProblem) update({ groupNameProblem: null });
+		},
 		dismissNotice() {
 			if (state.notice) update({ notice: null });
 		},

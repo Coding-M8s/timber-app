@@ -3,7 +3,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameS
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { type RepositoryListOptions, createRepositoryList } from "../src/bun/repository-list";
-import { createRepositoryReader } from "../src/bun/repository-reader";
+import { type RepositoryReader, createRepositoryReader } from "../src/bun/repository-reader";
+import { type Settings, parseSettings, serializeSettings } from "../src/shared/settings";
 import { REAL_TIMBER_TIMEOUT_MS, fingerprint, git, makeRepository, realTimber, recorded, standInTimber } from "./support/timber";
 
 setDefaultTimeout(REAL_TIMBER_TIMEOUT_MS);
@@ -432,5 +433,175 @@ describe.skipIf(realTimber === null)("the repositories to watch", () => {
 	test("with the override, are the repositories it lists, each once", async () => {
 		const environment = { TIMBER_APP_REPOS: [linked, primary, plain].join(delimiter) };
 		expect(await listOn({ environment }).watchTargets()).toEqual([{ path: primary, commonDir: join(primary, ".git") }]);
+	});
+});
+
+describe("groups", () => {
+	// Grouping never asks Git or Timber anything, so these lists have a reader that refuses.
+	const refusing: RepositoryReader = {
+		find: async () => { throw new Error("Timber was asked"); },
+		reload: async () => { throw new Error("Timber was asked"); },
+	};
+	const one = { path: "/work/timber", commonDir: "/work/timber/.git" };
+	const two = { path: "/work/api-server", commonDir: "/work/api-server/.git" };
+	const three = { path: "/work/docs-site", commonDir: "/work/docs-site/.git" };
+
+	function savedWith(settings: Settings) {
+		mkdirSync(join(settingsFile, ".."), { recursive: true });
+		writeFileSync(settingsFile, serializeSettings(settings));
+	}
+	const groupsOn = (overrides: Partial<RepositoryListOptions> = {}) => listOn({ reader: refusing, ...overrides });
+	const onDisk = () => parseSettings(readFileSync(settingsFile, "utf8"))!;
+
+	test("making a group saves it, and a restart still has it", async () => {
+		savedWith({ repositories: [one, two] });
+		const list = groupsOn();
+		expect(await list.listGroups()).toEqual({ groups: [], membership: {} });
+		const result = await list.createGroup("  Work  ");
+		expect(result.outcome).toBe("saved");
+		const id = onDisk().groups![0]!.id;
+		expect(result).toEqual({ outcome: "saved", groups: { groups: [{ id, name: "Work" }], membership: {} } });
+		expect(onDisk()).toEqual({ repositories: [one, two], groups: [{ id, name: "Work" }] });
+		// A new holder on the same file is what a restarted app has.
+		expect(await groupsOn().listGroups()).toEqual({ groups: [{ id, name: "Work" }], membership: {} });
+	});
+
+	test("making a group with a repository puts it in, at the end of the shown order", async () => {
+		savedWith({ repositories: [one, two, three] });
+		const result = await groupsOn().createGroup("Work", two.path);
+		const id = onDisk().groups![0]!.id;
+		expect(result).toEqual({ outcome: "saved", groups: { groups: [{ id, name: "Work" }], membership: { [two.path]: id } } });
+		expect(onDisk().repositories).toEqual([one, three, { ...two, group: id }]);
+	});
+
+	test("making a group with a repository that is not listed still makes the group", async () => {
+		savedWith({ repositories: [one] });
+		const result = await groupsOn().createGroup("Work", "/never/listed");
+		expect(result.outcome === "saved" && result.groups.groups.map(group => group.name)).toEqual(["Work"]);
+		expect(onDisk().repositories).toEqual([one]);
+	});
+
+	test("an empty name or a name already taken, ignoring case, saves nothing", async () => {
+		savedWith({ repositories: [one], groups: [{ id: "g1", name: "Work" }] });
+		const text = readFileSync(settingsFile, "utf8");
+		const list = groupsOn();
+		expect(await list.createGroup("   ")).toEqual({ outcome: "name-empty" });
+		expect(await list.createGroup(" work ")).toEqual({ outcome: "name-taken", name: "Work" });
+		expect(readFileSync(settingsFile, "utf8")).toBe(text);
+	});
+
+	test("renaming saves the new name, refuses a taken one, and keeps the same one without writing", async () => {
+		savedWith({ repositories: [one], groups: [{ id: "g1", name: "Work" }, { id: "g2", name: "Personal" }] });
+		const list = groupsOn();
+		expect(await list.renameGroup("g1", "Job")).toEqual({ outcome: "saved", groups: { groups: [{ id: "g1", name: "Job" }, { id: "g2", name: "Personal" }], membership: {} } });
+		expect(onDisk().groups).toEqual([{ id: "g1", name: "Job" }, { id: "g2", name: "Personal" }]);
+		expect(await list.renameGroup("g1", "PERSONAL")).toEqual({ outcome: "name-taken", name: "Personal" });
+		expect(await list.renameGroup("g1", "")).toEqual({ outcome: "name-empty" });
+		const text = readFileSync(settingsFile, "utf8");
+		const saved = statSync(settingsFile).mtimeMs;
+		expect((await list.renameGroup("g1", " Job ")).outcome).toBe("saved");
+		expect(readFileSync(settingsFile, "utf8")).toBe(text);
+		expect(statSync(settingsFile).mtimeMs).toBe(saved);
+		// Only the case changes: that is a new name.
+		expect(await list.renameGroup("g1", "job")).toEqual({ outcome: "saved", groups: { groups: [{ id: "g1", name: "job" }, { id: "g2", name: "Personal" }], membership: {} } });
+	});
+
+	test("deleting a group keeps its repositories in the list, loose, and forgets that it was folded", async () => {
+		const layout = { sidebarWidth: 300, collapsed: [one.path], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: ["g1", "g2"] };
+		savedWith({ repositories: [{ ...one, group: "g1" }, { ...two, group: "g1" }, { ...three, group: "g2" }], groups: [{ id: "g1", name: "Work" }, { id: "g2", name: "Personal" }], layout });
+		expect(await groupsOn().deleteGroup("g1")).toEqual({ outcome: "saved", groups: { groups: [{ id: "g2", name: "Personal" }], membership: { [three.path]: "g2" } } });
+		expect(onDisk()).toEqual({
+			repositories: [one, two, { ...three, group: "g2" }],
+			groups: [{ id: "g2", name: "Personal" }],
+			layout: { ...layout, collapsedGroups: ["g2"] },
+		});
+	});
+
+	test("a repository goes into a group, out of it, and with an order the whole list is saved in that order", async () => {
+		savedWith({ repositories: [one, two, three], groups: [{ id: "g1", name: "Work" }] });
+		const list = groupsOn();
+		expect(await list.place(one.path, "g1")).toEqual({ outcome: "saved", groups: { groups: [{ id: "g1", name: "Work" }], membership: { [one.path]: "g1" } } });
+		expect(onDisk().repositories).toEqual([{ ...one, group: "g1" }, two, three]);
+		expect(await list.place(one.path, null)).toEqual({ outcome: "saved", groups: { groups: [{ id: "g1", name: "Work" }], membership: {} } });
+		expect(onDisk().repositories).toEqual([one, two, three]);
+		expect((await list.place(two.path, "g1", [three.path, one.path, two.path])).outcome).toBe("saved");
+		expect(onDisk().repositories).toEqual([three, one, { ...two, group: "g1" }]);
+		// A restart lists them in that order.
+		expect((await groupsOn().watchTargets()).map(target => target.path)).toEqual([three.path, one.path, two.path]);
+	});
+
+	test("groups are reordered by id, keeping a group the order leaves out and skipping an unknown id", async () => {
+		const work = { id: "g1", name: "Work" };
+		const personal = { id: "g2", name: "Personal" };
+		const spare = { id: "g3", name: "Spare" };
+		savedWith({ repositories: [one], groups: [work, personal, spare] });
+		const list = groupsOn();
+		expect(await list.reorderGroups(["g3", "gone", "g1"])).toEqual({ outcome: "saved", groups: { groups: [spare, work, personal], membership: {} } });
+		expect(onDisk().groups).toEqual([spare, work, personal]);
+	});
+
+	test("an unknown group or repository changes nothing and writes nothing, so it is safe to ask again", async () => {
+		savedWith({ repositories: [{ ...one, group: "g1" }, two], groups: [{ id: "g1", name: "Work" }] });
+		const text = readFileSync(settingsFile, "utf8");
+		const saved = statSync(settingsFile).mtimeMs;
+		const current = { outcome: "saved" as const, groups: { groups: [{ id: "g1", name: "Work" }], membership: { [one.path]: "g1" } } };
+		const list = groupsOn();
+		expect(await list.renameGroup("gone", "Other")).toEqual(current);
+		expect(await list.deleteGroup("gone")).toEqual(current);
+		expect(await list.place(two.path, "gone")).toEqual(current);
+		expect(await list.place("/never/listed", "g1")).toEqual(current);
+		expect(await list.place(two.path, null)).toEqual(current);
+		expect(await list.reorderGroups(["gone"])).toEqual(current);
+		expect(readFileSync(settingsFile, "utf8")).toBe(text);
+		expect(statSync(settingsFile).mtimeMs).toBe(saved);
+	});
+
+	test("changes asked for at once run one after another and never lose each other", async () => {
+		savedWith({ repositories: [one, two] });
+		const list = groupsOn();
+		const [work, personal] = await Promise.all([list.createGroup("Work", one.path), list.createGroup("Personal", two.path)]);
+		expect(work!.outcome).toBe("saved");
+		expect(personal!.outcome === "saved" && personal.groups.groups.map(group => group.name)).toEqual(["Work", "Personal"]);
+		expect(onDisk().repositories.map(entry => entry.group === undefined)).toEqual([false, false]);
+		// Deleting a group while a place into it waits makes the place change nothing.
+		const id = personal!.outcome === "saved" ? personal.groups.groups[1]!.id : "";
+		const [, placed] = await Promise.all([list.deleteGroup(id), list.place(one.path, id)]);
+		expect(placed!.outcome === "saved" && placed.groups.membership[one.path]).not.toBe(id);
+	});
+
+	test("removing a grouped repository keeps the group", async () => {
+		savedWith({ repositories: [{ ...one, group: "g1" }, two], groups: [{ id: "g1", name: "Work" }] });
+		const list = groupsOn();
+		expect(await list.remove(one.path)).toEqual({ outcome: "removed" });
+		expect(onDisk()).toEqual({ repositories: [two], groups: [{ id: "g1", name: "Work" }] });
+		expect(await list.listGroups()).toEqual({ groups: [{ id: "g1", name: "Work" }], membership: {} });
+	});
+
+	test("a save that fails is reported, and the groups stay as they were", async () => {
+		savedWith({ repositories: [one] });
+		const list = groupsOn();
+		await list.listGroups();
+		const folder = join(settingsFile, "..");
+		renameSync(folder, `${folder}-moved`);
+		writeFileSync(folder, "in the way");
+		const result = await list.createGroup("Work");
+		expect(result.outcome).toBe("failed");
+		expect(result.outcome === "failed" && result.message).toContain(`Could not save settings to ${settingsFile}: `);
+		expect(await list.listGroups()).toEqual({ groups: [], membership: {} });
+	});
+
+	test("with the TIMBER_APP_REPOS override, every change says so and the file is left alone", async () => {
+		savedWith({ repositories: [{ ...one, group: "g1" }], groups: [{ id: "g1", name: "Work" }] });
+		const text = readFileSync(settingsFile, "utf8");
+		const list = groupsOn({ environment: { TIMBER_APP_REPOS: one.path } });
+		expect(await list.listGroups()).toEqual({ groups: [], membership: {} });
+		expect(await list.createGroup("Personal")).toEqual({ outcome: "overridden" });
+		expect(await list.createGroup("Personal", one.path)).toEqual({ outcome: "overridden" });
+		expect(await list.renameGroup("g1", "Job")).toEqual({ outcome: "overridden" });
+		expect(await list.deleteGroup("g1")).toEqual({ outcome: "overridden" });
+		expect(await list.reorderGroups(["g1"])).toEqual({ outcome: "overridden" });
+		expect(await list.place(one.path, null)).toEqual({ outcome: "overridden" });
+		expect(await list.place(one.path, "g1", [one.path])).toEqual({ outcome: "overridden" });
+		expect(readFileSync(settingsFile, "utf8")).toBe(text);
 	});
 });

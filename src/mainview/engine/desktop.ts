@@ -65,6 +65,12 @@ export function createDesktopEngine(): Engine {
 		addRepository: () => rpc.request.addRepository({}, { maxRequestTime: Infinity }),
 		removeRepository: path => rpc.request.removeRepository({ path }),
 		reorderRepositories: order => rpc.request.reorderRepositories({ order }),
+		listRepositoryGroups: () => rpc.request.listRepositoryGroups({}),
+		createRepositoryGroup: (name, repository) => rpc.request.createRepositoryGroup({ name, repository: repository ?? null }),
+		renameRepositoryGroup: (id, name) => rpc.request.renameRepositoryGroup({ id, name }),
+		deleteRepositoryGroup: id => rpc.request.deleteRepositoryGroup({ id }),
+		reorderRepositoryGroups: order => rpc.request.reorderRepositoryGroups({ order }),
+		placeRepository: (path, group, order) => rpc.request.placeRepository({ path, group, order: order ?? null }),
 		loadRepository: path => rpc.request.loadRepository({ path }),
 		listBranches: repository => rpc.request.listBranches({ repository }),
 		// Setup scripts take as long as they take.

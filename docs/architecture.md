@@ -752,21 +752,67 @@ The app keeps its own list of repositories, so it is the same after a restart.
 - **Removing.** Remove only takes the entry out of the settings file. No Git
   command runs and nothing in the repository or its folder is touched.
 - **Order.** The sidebar shows the repositories in the order of the entries
-  in the file, which starts as the order they were added. Moving a group
+  in the file, which starts as the order they were added. Moving a repository
   (`Engine.reorderRepositories`) rewrites that order and nothing else; an
   order that changes nothing writes nothing. The store shows the move at once
   and keeps it over a list read that answers while the save runs. Moves save
   one after another, and a move overtaken by a later one is not saved on its
   own. A save that fails reads the list again, so the saved order comes back,
   and says why. No Git command runs.
+- **Groups.** The person can gather repositories into named groups, such as
+  Work and Personal (issue 130). There are none until the person makes one.
+  The file gets an ordered `groups` list, and each grouped entry a `group`
+  that names one by id:
+
+  ```json
+  {
+  	"version": 1,
+  	"repositories": [
+  		{ "path": "/work/api-server", "commonDir": "/work/api-server/.git" },
+  		{ "path": "/work/timber", "commonDir": "/work/timber/.git", "group": "4f6c1d2e-..." }
+  	],
+  	"groups": [
+  		{ "id": "4f6c1d2e-...", "name": "Work" }
+  	]
+  }
+  ```
+
+  Both fields are optional, so `SETTINGS_VERSION` stays 1, and a file
+  without groups is written exactly as before. Order inside a group is the
+  order of the entries, so moving a repository saves the same way as before.
+  Group data is a convenience, like the layout: a `groups` part that cannot be
+  read, an entry with a repeated id or a name that is empty or not text, and a
+  `group` that names no group are dropped, and the repositories always load.
+  The pure rules are in `src/shared/repository-groups.ts`: names are trimmed,
+  inner runs of spaces become one, they are cut to 40 characters, and two
+  names are the same when they match ignoring case.
+- **Group methods.** `Engine.listRepositoryGroups` answers the groups and the
+  group of each repository. `createRepositoryGroup`, `renameRepositoryGroup`,
+  `deleteRepositoryGroup`, `reorderRepositoryGroups`, and `placeRepository`
+  each change the file in one save, in turn with every other change to it,
+  and answer `RepositoryGroupsResult`: `saved` with the groups as saved, a
+  name problem (`name-empty`, `name-taken`), `overridden`, or `failed`.
+  Deleting a group makes its repositories loose and forgets that it was
+  folded, in the same save. A group or repository that is not listed changes
+  nothing and answers `saved`, so a request that raced a delete is safe.
+  Removing a repository takes its `group` with it; the group stays.
+- **No reload.** Grouping changes only the settings file, never the set of
+  repositories, so no Git or Timber command runs, nothing is watched or
+  fetched anew, and the interface never reads the repositories again for it.
+  The store shows each change at once and applies the groups the engine
+  answers. A save that fails puts back the groups and the order last saved
+  from memory, and says why, still without a reload. Loading the groups rides
+  along with each full list read; they come from the settings, so that is no
+  second read of a repository.
 - **Unavailable.** A saved repository that Git cannot read at its saved path,
   because the folder is missing or is no longer a primary checkout, stays in
   the list marked unavailable, with Remove offered. It comes back on the next
   refresh once the folder does.
 - **Development override.** When `TIMBER_APP_REPOS` is set (paths separated by
   `;` on Windows or `:` elsewhere), the app shows those repositories instead
-  and leaves the saved list alone. Add, Remove, and moving a group then
-  explain that the variable is set. Paths in it that are not repositories are skipped.
+  and leaves the saved list alone. Add, Remove, moving a repository, and
+  every group change then explain that the variable is set, and there are
+  no groups. Paths in it that are not repositories are skipped.
   A repository in it that Timber cannot list is shown under the given folder.
 
 ## Shared state and live updates
@@ -1103,9 +1149,10 @@ pure functions in `src/mainview/shell.ts`.
 
 - **Title bar.** The logo, a breadcrumb of the selected repository and
   worktree, and the command palette button.
-- **Sidebar.** The filter and Refresh, one collapsible group per repository
-  with a "+" for a new worktree, "Add repository" after the list, and the
-  Settings cog fixed at the bottom. Its edge is a resize handle: drag it, or
+- **Sidebar.** The filter, Refresh, and New group, one collapsible section per
+  repository with a "+" for a new worktree and a More menu, the repository
+  groups, "Add repository" after the list, and the Settings cog fixed at the
+  bottom. Its edge is a resize handle: drag it, or
   focus it and use the arrow keys, Home, and End. The width stays between 200
   and 480 pixels, and never above half the window.
 - **Workspace.** A header for the selected worktree and two tabs, Workspace
@@ -1184,9 +1231,11 @@ pure functions in `src/mainview/shell.ts`.
   below the workspace.
 - **Long names.** The breadcrumb, the group headers, and the workspace header
   cut a long name short and carry the whole name in their `title`.
-- **The saved layout.** The sidebar width, the collapsed groups, and the
+- **The saved layout.** The sidebar width, the collapsed repositories, and the
   dismissed setup prompts (see [first-run setup](#first-run-setup)), each
-  repository named by the path of its primary checkout, are the `layout` part of the
+  repository named by the path of its primary checkout, and the folded
+  repository groups (`collapsedGroups`, by group id, written only once one is
+  folded), are the `layout` part of the
   settings file (`Layout` in `src/shared/layout.ts`). The interface never
   keeps them itself: it reads them once through `loadLayout` and hands the
   whole layout to `saveLayout`. A file without a `layout` part is valid and

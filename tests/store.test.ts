@@ -9,9 +9,9 @@ import { createMockArenas } from "../src/mainview/engine/mock-arenas";
 import { createMockBackups } from "../src/mainview/engine/mock-backups";
 import { createMockPullRequests } from "../src/mainview/engine/mock-pull-requests";
 import type { Engine } from "../src/shared/engine";
-import { defaultLayout } from "../src/shared/layout";
+import { type Layout, defaultLayout } from "../src/shared/layout";
 import { defaultPreferences } from "../src/shared/preferences";
-import type { AddRepositoryResult, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, TimberStatus, WorktreeCommandResult } from "../src/shared/model";
+import type { AddRepositoryResult, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, RepositoryGroupsResult, TimberStatus, WorktreeCommandResult } from "../src/shared/model";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "../src/shared/timber-done";
 import { createMockEngine, sampleChanges, samplePickableRepository, sampleRepositories, sampleTimberStatuses, sampleUnavailableRepository } from "../src/mainview/engine/mock";
 import { isRunning, selectedWorktree } from "../src/mainview/store/state";
@@ -122,6 +122,13 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		reorderRepositories: order => new Promise((resolve, reject) => {
 			reorders.push({ path: null, order, resolve, reject });
 		}),
+		// Groups have their own tests in "repository groups" below, on the mock engine.
+		listRepositoryGroups: async () => ({ groups: [], membership: {} }),
+		createRepositoryGroup: async () => ({ outcome: "saved", groups: { groups: [], membership: {} } }),
+		renameRepositoryGroup: async () => ({ outcome: "saved", groups: { groups: [], membership: {} } }),
+		deleteRepositoryGroup: async () => ({ outcome: "saved", groups: { groups: [], membership: {} } }),
+		reorderRepositoryGroups: async () => ({ outcome: "saved", groups: { groups: [], membership: {} } }),
+		placeRepository: async () => ({ outcome: "saved", groups: { groups: [], membership: {} } }),
 		listBranches: async () => null,
 		newWorktree: request => new Promise((resolve, reject) => {
 			commands.push({ kind: "new", request, path: request.repository, resolve, reject });
@@ -515,6 +522,54 @@ describe("the mock engine", () => {
 		await settle();
 		expect(modifiedCount(store, FEATURE)).toBe(11);
 		expect(await engine.loadRepository("/work/unknown")).toBeNull();
+	});
+});
+
+describe("the mock engine's repository groups", () => {
+	const listed = async (engine: Engine) => (await engine.listRepositories()).map(repository => repository.path);
+
+	test("start with none, and a group is made, named, and refused a name as the main process does", async () => {
+		const engine = createMockEngine();
+		expect(await engine.listRepositoryGroups()).toEqual({ groups: [], membership: {} });
+		expect(await engine.createRepositoryGroup(" Work ")).toEqual({ outcome: "saved", groups: { groups: [{ id: "group-1", name: "Work" }], membership: {} } });
+		expect(await engine.createRepositoryGroup("Personal", TIMBER)).toEqual({ outcome: "saved", groups: { groups: [{ id: "group-1", name: "Work" }, { id: "group-2", name: "Personal" }], membership: { [TIMBER]: "group-2" } } });
+		expect(await engine.createRepositoryGroup("  ")).toEqual({ outcome: "name-empty" });
+		expect(await engine.createRepositoryGroup("WORK")).toEqual({ outcome: "name-taken", name: "Work" });
+		expect(await engine.renameRepositoryGroup("group-1", "Job")).toEqual({ outcome: "saved", groups: { groups: [{ id: "group-1", name: "Job" }, { id: "group-2", name: "Personal" }], membership: { [TIMBER]: "group-2" } } });
+		expect(await engine.renameRepositoryGroup("group-1", "personal")).toEqual({ outcome: "name-taken", name: "Personal" });
+		expect(await engine.listRepositoryGroups()).toEqual({ groups: [{ id: "group-1", name: "Job" }, { id: "group-2", name: "Personal" }], membership: { [TIMBER]: "group-2" } });
+	});
+
+	test("deleting a group keeps its repositories listed, and forgets that it was folded", async () => {
+		const engine = createMockEngine();
+		await engine.createRepositoryGroup("Work", TIMBER);
+		await engine.saveLayout({ ...defaultLayout(), collapsedGroups: ["group-1"] });
+		expect(await engine.deleteRepositoryGroup("group-1")).toEqual({ outcome: "saved", groups: { groups: [], membership: {} } });
+		expect((await listed(engine)).sort()).toEqual([API_SERVER, TIMBER].sort());
+		expect((await engine.loadLayout()).collapsedGroups).toEqual([]);
+	});
+
+	test("a repository is placed in a group and out, and with an order the list answers in it", async () => {
+		const engine = createMockEngine();
+		await engine.createRepositoryGroup("Work");
+		expect(await engine.placeRepository(TIMBER, "group-1")).toEqual({ outcome: "saved", groups: { groups: [{ id: "group-1", name: "Work" }], membership: { [TIMBER]: "group-1" } } });
+		expect(await listed(engine)).toEqual([TIMBER, API_SERVER]);
+		expect(await engine.placeRepository(TIMBER, "group-1", [API_SERVER, TIMBER])).toEqual({ outcome: "saved", groups: { groups: [{ id: "group-1", name: "Work" }], membership: { [TIMBER]: "group-1" } } });
+		expect(await listed(engine)).toEqual([API_SERVER, TIMBER]);
+		expect((await engine.placeRepository(TIMBER, null)).outcome).toBe("saved");
+		expect(await engine.listRepositoryGroups()).toEqual({ groups: [{ id: "group-1", name: "Work" }], membership: {} });
+		// An unknown group or repository changes nothing.
+		expect(await engine.placeRepository(TIMBER, "gone")).toEqual({ outcome: "saved", groups: { groups: [{ id: "group-1", name: "Work" }], membership: {} } });
+		expect(await engine.placeRepository("/work/never-listed", "group-1")).toEqual({ outcome: "saved", groups: { groups: [{ id: "group-1", name: "Work" }], membership: {} } });
+	});
+
+	test("groups are reordered, and removing a grouped repository keeps its group", async () => {
+		const engine = createMockEngine();
+		await engine.createRepositoryGroup("Work", TIMBER);
+		await engine.createRepositoryGroup("Personal");
+		expect(await engine.reorderRepositoryGroups(["group-2"])).toEqual({ outcome: "saved", groups: { groups: [{ id: "group-2", name: "Personal" }, { id: "group-1", name: "Work" }], membership: { [TIMBER]: "group-1" } } });
+		await engine.removeRepository(TIMBER);
+		expect(await engine.listRepositoryGroups()).toEqual({ groups: [{ id: "group-2", name: "Personal" }, { id: "group-1", name: "Work" }], membership: {} });
 	});
 });
 
@@ -1194,5 +1249,188 @@ describe("telling the engine what the window attends to", () => {
 		broken = false;
 		store.select(FEATURE_ID);
 		expect(told).toEqual([{ visible: true, focused: true, selected: { repository: TIMBER, worktree: FEATURE, id: FEATURE_ID }, session: null }]);
+	});
+});
+
+describe("repository groups", () => {
+	const paths = (store: { getState(): { repositories: readonly { path: string }[] } }) => store.getState().repositories.map(repository => repository.path);
+
+	/** A started store on the mock engine, with counts of every repository read, and of every layout save. */
+	async function groupedStore(change: (mock: Engine) => Partial<Engine> = () => ({})) {
+		const mock = createMockEngine();
+		const reads = { lists: 0, loads: 0 };
+		const layouts: Layout[] = [];
+		const engine: Engine = {
+			...mock,
+			listRepositories: () => {
+				reads.lists++;
+				return mock.listRepositories();
+			},
+			loadRepository: path => {
+				reads.loads++;
+				return mock.loadRepository(path);
+			},
+			saveLayout: layout => {
+				layouts.push(structuredClone(layout));
+				return mock.saveLayout(layout);
+			},
+			...change(mock),
+		};
+		const store = createAppStore(engine);
+		store.start();
+		await settle();
+		await settle();
+		return { store, engine, mock, reads, layouts };
+	}
+
+	test("start with none, and are read with the list", async () => {
+		const mock = createMockEngine();
+		await mock.createRepositoryGroup("Work", TIMBER);
+		const store = createAppStore(mock);
+		expect(store.getState().repositoryGroups).toEqual({ groups: [], membership: {} });
+		store.start();
+		await settle();
+		await settle();
+		expect(store.getState().repositoryGroups).toEqual({ groups: [{ id: "group-1", name: "Work" }], membership: { [TIMBER]: "group-1" } });
+		expect(store.getState().groupNameProblem).toBeNull();
+	});
+
+	test("a group is made, renamed, moved, and deleted, and no repository is read again for any of it", async () => {
+		const { store, reads, layouts } = await groupedStore();
+		const before = { ...reads };
+		expect(await store.createGroup("Work")).toBe(true);
+		expect(await store.createGroup("Personal", API_SERVER)).toBe(true);
+		expect(store.getState().repositoryGroups).toEqual({ groups: [{ id: "group-1", name: "Work" }, { id: "group-2", name: "Personal" }], membership: { [API_SERVER]: "group-2" } });
+		expect(await store.renameGroup("group-1", "Job")).toBe(true);
+		expect(store.getState().repositoryGroups.groups[0]).toEqual({ id: "group-1", name: "Job" });
+		await store.moveGroup("group-2", 0);
+		expect(store.getState().repositoryGroups.groups.map(group => group.id)).toEqual(["group-2", "group-1"]);
+		await store.placeRepository(TIMBER, "group-1");
+		expect(store.getState().repositoryGroups.membership).toEqual({ [API_SERVER]: "group-2", [TIMBER]: "group-1" });
+		await store.stepRepository(TIMBER, -1);
+		await store.placeRepository(TIMBER, null, API_SERVER);
+		store.toggleRepositoryGroup("group-2");
+		await settle();
+		await store.deleteGroup("group-2");
+		expect(store.getState().repositoryGroups).toEqual({ groups: [{ id: "group-1", name: "Job" }], membership: {} });
+		expect(paths(store).sort()).toEqual([API_SERVER, TIMBER].sort());
+		expect(reads).toEqual(before);
+		expect(layouts.length).toBe(1);
+	});
+
+	test("a name problem is set and cleared, and the action answers false", async () => {
+		const { store } = await groupedStore();
+		expect(await store.createGroup("  ")).toBe(false);
+		expect(store.getState().groupNameProblem).toEqual({ kind: "empty" });
+		store.clearGroupNameProblem();
+		expect(store.getState().groupNameProblem).toBeNull();
+		await store.createGroup("Work");
+		expect(await store.createGroup("work")).toBe(false);
+		expect(store.getState().groupNameProblem).toEqual({ kind: "taken", name: "Work" });
+		expect(await store.renameGroup("group-1", "")).toBe(false);
+		expect(store.getState().groupNameProblem).toEqual({ kind: "empty" });
+		// A save that works clears the problem.
+		expect(await store.createGroup("Personal")).toBe(true);
+		expect(store.getState().groupNameProblem).toBeNull();
+	});
+
+	test("placing a repository shows the new order at once, before the engine answers", async () => {
+		let answer: (value: RepositoryGroupsResult) => void = () => {};
+		const { store, mock } = await groupedStore(mock => ({
+			placeRepository: (path, group, order) => new Promise(resolve => {
+				answer = result => resolve(result);
+				void mock.placeRepository(path, group, order);
+			}),
+		}));
+		await store.createGroup("Work");
+		const placing = store.placeRepository(TIMBER, "group-1");
+		// Loose first, then the group: the repository moved to the group shows after the loose one.
+		expect(paths(store)).toEqual([API_SERVER, TIMBER]);
+		expect(store.getState().repositoryGroups.membership).toEqual({ [TIMBER]: "group-1" });
+		await settle();
+		answer({ outcome: "saved", groups: await mock.listRepositoryGroups() });
+		await placing;
+		expect(paths(store)).toEqual([API_SERVER, TIMBER]);
+	});
+
+	test("with no groups, a step is the same as moving the repository one place", async () => {
+		const { store } = await groupedStore();
+		await store.stepRepository(TIMBER, 1);
+		expect(paths(store)).toEqual([API_SERVER, TIMBER]);
+		await store.stepRepository(TIMBER, 1);
+		expect(paths(store)).toEqual([API_SERVER, TIMBER]);
+		await store.stepRepository(TIMBER, -1);
+		expect(paths(store)).toEqual([TIMBER, API_SERVER]);
+	});
+
+	test("with the override, every action says so and changes nothing", async () => {
+		const overridden = async () => ({ outcome: "overridden" as const });
+		const { store, reads } = await groupedStore(() => ({
+			createRepositoryGroup: overridden, renameRepositoryGroup: overridden, deleteRepositoryGroup: overridden,
+			reorderRepositoryGroups: overridden, placeRepository: overridden,
+		}));
+		const before = { ...reads };
+		expect(await store.createGroup("Work")).toBe(false);
+		expect(store.getState().notice).toEqual({ kind: "overridden" });
+		expect(store.getState().groupNameProblem).toBeNull();
+		store.dismissNotice();
+		await store.placeRepository(TIMBER, null);
+		expect(store.getState().notice).toEqual({ kind: "overridden" });
+		expect(paths(store)).toEqual([TIMBER, API_SERVER]);
+		expect(store.getState().repositoryGroups).toEqual({ groups: [], membership: {} });
+		expect(reads).toEqual(before);
+	});
+
+	test("a save that fails puts back the groups and the order last saved, and says why", async () => {
+		let failing = false;
+		const { store, reads } = await groupedStore(mock => ({
+			placeRepository: (path, group, order) => failing ? Promise.resolve({ outcome: "failed", message: "read-only file system" }) : mock.placeRepository(path, group, order),
+			reorderRepositoryGroups: order => failing ? Promise.reject(new Error("bridge closed")) : mock.reorderRepositoryGroups(order),
+		}));
+		await store.createGroup("Work", TIMBER);
+		await store.createGroup("Personal");
+		const saved = structuredClone(store.getState().repositoryGroups);
+		const order = paths(store);
+		const before = { ...reads };
+		failing = true;
+
+		await store.placeRepository(TIMBER, null);
+		expect(store.getState().notice).toEqual({ kind: "failed", action: "group", message: "read-only file system" });
+		expect(store.getState().repositoryGroups).toEqual(saved);
+		expect(paths(store)).toEqual(order);
+
+		await store.moveGroup("group-2", 0);
+		expect(store.getState().notice).toEqual({ kind: "failed", action: "group", message: "bridge closed" });
+		expect(store.getState().repositoryGroups).toEqual(saved);
+		expect(reads).toEqual(before);
+	});
+
+	test("folding a group saves the layout, and deleting the group forgets it without another save", async () => {
+		const { store, layouts } = await groupedStore();
+		await store.createGroup("Work");
+		store.toggleRepositoryGroup("group-1");
+		await settle();
+		expect(store.getState().layout.collapsedGroups).toEqual(["group-1"]);
+		expect(layouts.map(layout => layout.collapsedGroups)).toEqual([["group-1"]]);
+		await store.deleteGroup("group-1");
+		expect(store.getState().layout.collapsedGroups).toEqual([]);
+		await settle();
+		expect(layouts).toHaveLength(1);
+		store.toggleRepositoryGroup("gone");
+		store.toggleRepositoryGroup("gone");
+		await settle();
+		await settle();
+		expect(store.getState().layout.collapsedGroups).toEqual([]);
+	});
+
+	test("an action on a group deleted meanwhile changes nothing and is safe to ask again", async () => {
+		const { store } = await groupedStore();
+		await store.createGroup("Work");
+		await store.deleteGroup("group-1");
+		expect(await store.renameGroup("group-1", "Job")).toBe(true);
+		await store.deleteGroup("group-1");
+		await store.placeRepository(TIMBER, "group-1");
+		expect(store.getState().repositoryGroups).toEqual({ groups: [], membership: {} });
+		expect(store.getState().notice).toBeNull();
 	});
 });

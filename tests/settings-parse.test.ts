@@ -63,3 +63,42 @@ describe("parseSettings", () => {
 		for (const text of damaged) expect(parseSettings(text)).toBeNull();
 	});
 });
+
+describe("repository groups", () => {
+	const work = { id: "g-work", name: "Work" };
+	const personal = { id: "g-personal", name: "Personal" };
+
+	test("round-trip the groups and each repository's group, written after the repositories", () => {
+		const settings = { repositories: [{ ...one, group: work.id }, two], groups: [work, personal] };
+		const text = serializeSettings(settings);
+		expect(parseSettings(text)).toEqual(settings);
+		expect(Object.keys(JSON.parse(text))).toEqual(["version", "repositories", "groups"]);
+		expect(JSON.parse(text).repositories).toEqual([{ ...one, group: work.id }, two]);
+	});
+
+	test("a file with no groups is written exactly as before groups existed", () => {
+		const text = "{\n\t\"version\": 1,\n\t\"repositories\": [\n\t\t{\n\t\t\t\"path\": \"/work/timber\",\n\t\t\t\"commonDir\": \"/work/timber/.git\"\n\t\t},\n\t\t{\n\t\t\t\"path\": \"/work/api-server\",\n\t\t\t\"commonDir\": \"/work/api-server/.git\"\n\t\t}\n\t],\n\t\"layout\": {\n\t\t\"sidebarWidth\": 300,\n\t\t\"collapsed\": [\n\t\t\t\"/work/timber\"\n\t\t],\n\t\t\"setupDismissed\": [],\n\t\t\"uncommittedChanges\": [],\n\t\t\"issueLists\": {}\n\t}\n}\n";
+		expect(serializeSettings(parseSettings(text)!)).toBe(text);
+		expect(serializeSettings({ repositories: [one], groups: [] })).toBe(serializeSettings({ repositories: [one] }));
+	});
+
+	test("a group that names no saved group is dropped, and the repository kept", () => {
+		const text = JSON.stringify({ version: 1, repositories: [{ ...one, group: "gone" }, { ...two, group: work.id }], groups: [work] });
+		expect(parseSettings(text)).toEqual({ repositories: [one, { ...two, group: work.id }], groups: [work] });
+		expect(parseSettings(JSON.stringify({ version: 1, repositories: [{ ...one, group: 7 }] }))).toEqual({ repositories: [one] });
+	});
+
+	test("unreadable group data never costs the repository list", () => {
+		for (const groups of [5, "Work", null, {}, [7, { id: "", name: "x" }, { id: "a", name: 3 }]]) {
+			expect(parseSettings(JSON.stringify({ version: 1, repositories: [{ ...one, group: "a" }, two], groups }))).toEqual({ repositories: [one, two] });
+		}
+		expect(parseSettings(JSON.stringify({ version: 1, repositories: [one], groups: [work, { id: work.id, name: "Again" }, { id: "x", name: "  " }] })))
+			.toEqual({ repositories: [one], groups: [work] });
+	});
+
+	test("the folded groups round-trip in the layout", () => {
+		const settings = { repositories: [{ ...one, group: work.id }], groups: [work], layout: { sidebarWidth: 300, collapsed: [], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [work.id] } };
+		expect(parseSettings(serializeSettings(settings))).toEqual(settings);
+		expect(JSON.parse(serializeSettings(settings)).layout.collapsedGroups).toEqual([work.id]);
+	});
+});
