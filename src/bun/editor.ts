@@ -5,6 +5,7 @@ import type { OpenInEditorRequest, OpenInEditorResult } from "../shared/model";
 import type { Preferences } from "../shared/preferences";
 import { findExecutable, isWindowsBatch } from "./find-executable";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
+import { signalName } from "./signal-name";
 
 /**
  * How long to wait after starting an editor to hear whether it stopped right
@@ -54,7 +55,7 @@ async function earlyExit(child: Bun.Subprocess, milliseconds: number): Promise<{
 		}),
 	]);
 	clearTimeout(timer);
-	return ended ? { code: child.exitCode, signal: child.signalCode } : null;
+	return ended ? { code: child.exitCode, signal: signalName(child.signalCode) } : null;
 }
 
 /**

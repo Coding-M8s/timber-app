@@ -12,6 +12,7 @@ import { rebaseArguments } from "../shared/rebase-command";
 import { findExecutable, isWindowsBatch } from "./find-executable";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
 import { killProcessTree, sessionMembers, signalEach, signalGroup } from "./process-session";
+import { signalName } from "./signal-name";
 
 /** How long a closed session's processes get to end after a hang-up, before they are killed. */
 const CLOSE_MILLISECONDS = 2000;
@@ -421,7 +422,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			flush(live);
 			// A session closed meanwhile is already gone and stays gone.
 			if (sessions.get(session.id) !== live) return;
-			changed(live, { ...live.session, state: { kind: "exited", exitCode: child.exitCode, signal: child.signalCode }, status: live.records.root() });
+			changed(live, { ...live.session, state: { kind: "exited", exitCode: child.exitCode, signal: signalName(child.signalCode) }, status: live.records.root() });
 		});
 		live = { session, process: child, scrollback: createScrollback(), pending: "", flushTimer: null, undrawn: [], undrawnSize: 0, held: false, leftovers: null, ended, scanner: createStatusScanner(), records: createStatusRecords(), statusChanged: false, probedAt: Number.NEGATIVE_INFINITY };
 		sessions.set(session.id, live);
