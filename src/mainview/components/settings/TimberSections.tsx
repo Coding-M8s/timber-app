@@ -1,33 +1,59 @@
 import { type ReactNode, type SubmitEvent, useCallback, useContext, useEffect, useId, useRef, useState } from "react";
-import type { TimberFailure } from "../../../shared/model";
 import {
-	type Integration, type TimberConfigScope, type TimberConnectionCheckResult, type TimberSettingsReadResult, type TimberSettingsRequest,
+	type Integration, type TimberConfigScope, type TimberSettingsReadResult, type TimberSettingsRequest,
 	type TimberSettingsSnapshot, type TimberValues, REPOSITORY_CONFIG_FILE, invalidFieldPath, shownApplyArguments, shownCheckArguments,
 } from "../../../shared/timber-config";
 import { describeTimberCommand } from "../../../shared/timber-result";
 import { useAppState, useStore } from "../../store/react";
 import {
-	type GitDraft, type GroupDrafts, type LauncherDraft, type LauncherPreset, type Mode, type ScriptsDraft, type TimberGroup, type TrackingDraft,
-	AGENT_PRESETS, DRAWN_PATHS, EDITOR_PRESETS, INTEGRATION_LABELS, TIMBER_GROUPS, TIMBER_GROUP_TITLES, TRACKER_CHOICES, credentialsToCheck, credentialsToSave,
-	describeCheck, describeJiraLogin, describeLinearLogin, draftsOf, fieldMessage, groupChanged, groupMessages, inheritLabel, jiraDefault,
-	machineDefault, placeholderFor, trackerPlaceholder, valuesWith, withPreset,
+	type CheckOutcome, type GitDraft, type GroupDrafts, type GroupOutcome, type LauncherDraft, type LauncherPreset, type Mode, type ScriptsDraft, type TimberGroup,
+	type TrackingDraft, AGENT_PRESETS, DRAWN_PATHS, EDITOR_PRESETS, IDLE_OUTCOME as IDLE, INTEGRATION_LABELS, TIMBER_GROUPS, TIMBER_GROUP_TITLES, TRACKER_CHOICES,
+	credentialsToCheck, credentialsToSave, describeCheck, describeJiraLogin, describeLinearLogin, draftsOf, fieldMessage, groupChanged, groupMessages, inheritLabel,
+	jiraDefault, machineDefault, outcomeOfSave, placeholderFor, trackerPlaceholder, typingPutsAway, valuesWith, withPreset,
 } from "../../timber-settings-format";
 import { TimberFailureDetails } from "../TimberFailureDetails";
 import { SettingsSavingContext } from "./SettingsSection";
 
-/** Where saving one group stands. A failure keeps what was typed on screen, so it can be saved again. */
-export type GroupOutcome =
-	| { state: "idle" }
-	| { state: "saving" }
-	| { state: "saved" }
-	| { state: "invalid"; fields: string[]; failure: TimberFailure }
-	| { state: "conflict"; failure: TimberFailure }
-	| { state: "refused"; failure: TimberFailure }
-	| { state: "failed"; failure: TimberFailure };
+/** What a connection check asks about: the scope, and its values with the tracking group as typed. */
+interface CheckTarget {
+	scope: TimberConfigScope;
+	repository: string | null;
+	tracking: TrackingDraft;
+	values: TimberValues;
+}
 
-export type CheckOutcome = { state: "checking" } | { state: "done"; result: TimberConnectionCheckResult };
+/**
+ * What was typed in each group, kept until it is saved, and the connection
+ * checks, which typing in the tracking group puts away. Settings and the
+ * setup wizard both edit Timber's settings with it.
+ */
+export function useTimberDrafts() {
+	const store = useStore();
+	const [edited, setEdited] = useState<Partial<GroupDrafts>>({});
+	const [checks, setChecks] = useState<Partial<Record<Integration, CheckOutcome>>>({});
 
-const IDLE: GroupOutcome = { state: "idle" };
+	/** Keep what was typed in `group`. `putAway` sets its outcome back to idle, called when typing puts `outcome` away. */
+	const change = <Group extends TimberGroup>(group: Group, draft: GroupDrafts[Group], outcome: GroupOutcome | undefined, putAway: () => void) => {
+		setEdited(previous => ({ ...previous, [group]: draft }));
+		if (outcome && typingPutsAway(outcome)) putAway();
+		if (group === "tracking") setChecks({});
+	};
+
+	const check = async (integration: Integration, { scope, repository, tracking, values }: CheckTarget) => {
+		setChecks(previous => ({ ...previous, [integration]: { state: "checking" } }));
+		const credentials = credentialsToCheck(tracking, integration);
+		const answer = await store.checkTimberConnection({
+			scope,
+			repository,
+			integration,
+			values: valuesWith("tracking", tracking, values),
+			...(credentials === undefined ? {} : { credentials }),
+		});
+		setChecks(previous => ({ ...previous, [integration]: { state: "done", result: answer } }));
+	};
+
+	return { edited, setEdited, checks, clearChecks: () => setChecks({}), change, check };
+}
 
 /**
  * Read one scope through Timber when shown, when `key` changes, and again
@@ -465,9 +491,8 @@ export function TimberScopeSettings({ scope, repository }: { scope: TimberConfig
 	const key = `${scope}:${repository ?? ""}`;
 	const [read, readAgain] = useTimberRead({ scope, repository }, key);
 	const [machineRead] = useTimberRead(scope === "repository" ? { scope: "machine", repository: null } : null, key);
-	const [edited, setEdited] = useState<Partial<GroupDrafts>>({});
+	const { edited, setEdited, checks, change, check } = useTimberDrafts();
 	const [outcomes, setOutcomes] = useState<Partial<Record<TimberGroup, GroupOutcome>>>({});
-	const [checks, setChecks] = useState<Partial<Record<Integration, CheckOutcome>>>({});
 	const [editTracked, setEditTracked] = useState(false);
 	const trackedId = useId();
 	// A ref, not the state: a second Enter can arrive before the next render.
@@ -491,13 +516,6 @@ export function TimberScopeSettings({ scope, repository }: { scope: TimberConfig
 	const needsTracked = settings.tracked && !editTracked;
 
 	const setOutcome = (group: TimberGroup, outcome: GroupOutcome) => setOutcomes(previous => ({ ...previous, [group]: outcome }));
-	const change = <Group extends TimberGroup>(group: Group, draft: GroupDrafts[Group]) => {
-		setEdited(previous => ({ ...previous, [group]: draft }));
-		const outcome = outcomes[group];
-		// Typing puts a past outcome away, except Timber's field messages and a conflict, which still need answering.
-		if (outcome && outcome.state !== "invalid" && outcome.state !== "conflict" && outcome.state !== "saving") setOutcome(group, IDLE);
-		if (group === "tracking") setChecks({});
-	};
 
 	const save = async (group: TimberGroup) => {
 		if (running.current) return;
@@ -526,29 +544,12 @@ export function TimberScopeSettings({ scope, repository }: { scope: TimberConfig
 					const { [group]: _saved, ...rest } = previous;
 					return rest;
 				});
-				setOutcome(group, { state: "saved" });
-			} else if (answer.outcome === "invalid") {
-				setOutcome(group, { state: "invalid", fields: answer.invalidFields, failure: answer.failure });
-			} else {
-				setOutcome(group, { state: answer.outcome, failure: answer.failure });
 			}
+			setOutcome(group, outcomeOfSave(answer));
 		} finally {
 			running.current = false;
 			reportSaving(false);
 		}
-	};
-
-	const check = async (integration: Integration) => {
-		setChecks(previous => ({ ...previous, [integration]: { state: "checking" } }));
-		const credentials = credentialsToCheck(drafts.tracking, integration);
-		const answer = await store.checkTimberConnection({
-			scope,
-			repository,
-			integration,
-			values: valuesWith("tracking", drafts.tracking, settings.values),
-			...(credentials === undefined ? {} : { credentials }),
-		});
-		setChecks(previous => ({ ...previous, [integration]: { state: "done", result: answer } }));
 	};
 
 	const readAgainFor = (group: TimberGroup) => {
@@ -559,7 +560,7 @@ export function TimberScopeSettings({ scope, repository }: { scope: TimberConfig
 		const outcome = outcomes[group] ?? IDLE;
 		return {
 			draft: drafts[group],
-			onChange: (draft: GroupDrafts[Group]) => change(group, draft),
+			onChange: (draft: GroupDrafts[Group]) => change(group, draft, outcomes[group], () => setOutcome(group, IDLE)),
 			scope,
 			machine,
 			messages: outcome.state === "invalid" ? outcome.fields : [],
@@ -606,7 +607,7 @@ export function TimberScopeSettings({ scope, repository }: { scope: TimberConfig
 						{group === "git" && <GitFields {...groupProps("git")} />}
 						{group === "scripts" && <ScriptsFields {...groupProps("scripts")} />}
 						{group === "tracking" && (
-							<TrackingFields {...groupProps("tracking")} credentials={settings.credentials} checks={checks} onCheck={integration => void check(integration)} busy={anySaving} />
+							<TrackingFields {...groupProps("tracking")} credentials={settings.credentials} checks={checks} onCheck={integration => void check(integration, { scope, repository, tracking: drafts.tracking, values: settings.values })} busy={anySaving} />
 						)}
 					</TimberGroupForm>
 				);

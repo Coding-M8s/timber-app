@@ -2,14 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import {
-	type GroupOutcome, GitFields, LauncherFields, ScriptsFields, TimberGroupForm, TrackingFields,
+	GitFields, LauncherFields, ScriptsFields, TimberGroupForm, TrackingFields,
 } from "../src/mainview/components/settings/TimberSections";
 import { createMockEngine, sampleTimberStatuses } from "../src/mainview/engine/mock";
 import { MOCK_MACHINE_CONFIG, sampleMachineValues } from "../src/mainview/engine/mock-timber-config";
 import { createAppStore } from "../src/mainview/store/store";
 import {
-	type TrackingDraft, credentialsToCheck, credentialsToSave, describeCheck, draftsOf, groupChanged, groupMessages, valuesWith, withPreset,
-	EDITOR_PRESETS,
+	type GroupOutcome, type TrackingDraft, credentialsToCheck, credentialsToSave, describeCheck, draftsOf, groupChanged, groupMessages, outcomeOfSave, typingPutsAway,
+	valuesWith, withPreset, EDITOR_PRESETS,
 } from "../src/mainview/timber-settings-format";
 import type { TimberCredentialStates, TimberValues } from "../src/shared/timber-config";
 
@@ -91,6 +91,24 @@ describe("a group of Timber's settings as data", () => {
 	test("a check says what was checked and that nothing was saved", () => {
 		expect(describeCheck({ integration: "github", ok: true, source: "github-cli", account: "sam", diagnostic: null })).toBe("GitHub accepted with the GitHub CLI login, signed in as sam. Nothing was saved.");
 		expect(describeCheck({ integration: "linear", ok: false, source: "draft", account: null, diagnostic: "Linear authentication failed." })).toBe("Linear did not accept with the login typed here: Linear authentication failed. Nothing was saved.");
+	});
+
+	test("Timber's answer to a save becomes the group's outcome", () => {
+		const failure = { command: "timber config apply", diagnostic: "No.", output: null };
+		const credentials = { jira: "unchanged", linear: "unchanged" } as const;
+		expect(outcomeOfSave({ outcome: "saved", command: "timber config apply", revision: null, credentials })).toEqual({ state: "saved" });
+		expect(outcomeOfSave({ outcome: "invalid", invalidFields: ["editor.command is invalid"], failure })).toEqual({ state: "invalid", fields: ["editor.command is invalid"], failure });
+		expect(outcomeOfSave({ outcome: "conflict", failure })).toEqual({ state: "conflict", failure });
+		expect(outcomeOfSave({ outcome: "refused", failure })).toEqual({ state: "refused", failure });
+		expect(outcomeOfSave({ outcome: "failed", failure })).toEqual({ state: "failed", failure });
+	});
+
+	test("typing puts a past outcome away, but not field messages, a conflict, or a save still running", () => {
+		const failure = { command: null, diagnostic: "No.", output: null };
+		const away: GroupOutcome[] = [{ state: "idle" }, { state: "saved" }, { state: "refused", failure }, { state: "failed", failure }];
+		const kept: GroupOutcome[] = [{ state: "saving" }, { state: "conflict", failure }, { state: "invalid", fields: [], failure }];
+		expect(away.map(typingPutsAway)).toEqual([true, true, true, true]);
+		expect(kept.map(typingPutsAway)).toEqual([false, false, false]);
 	});
 });
 
