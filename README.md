@@ -6,25 +6,25 @@ The desktop app for [Timber](https://github.com/Coding-M8s/timber): every
 repository, worktree, agent, and terminal in one window. It is a window onto
 Timber, not a replacement for it, and it has no code editor of its own.
 
-**Status: early scaffold.** The sidebar lists real repositories with the
-worktrees Timber lists and their branch status, remembers the repositories you add, and creates a worktree on a new branch (`timber new`) or opens an existing branch as one (`timber open`) from the "+" on a repository. Done removes a worktree
-after a preview of what would be lost. Settings, from the cog, puts the
-sidebar on the left or the right and chooses the editor that "Open in
-editor" starts on a worktree. Each worktree can run several terminals and
-coding agents, such as Claude Code and Codex, in the Workspace tab, one chip
-each, started from the "+" menu (tested on Linux and Windows 11; on
-Windows an agent must be its own `.exe`, not a `.cmd` launcher). Settings,
-Agents lists the agents. The Changes tab lists a
-worktree's staged, unstaged, and untracked files and shows the diff of each,
-read-only. Settings also edits Timber's own settings for the machine and
-each repository, saved and checked by Timber itself. Settings, About can
-uninstall an installed copy (Linux only so far). The app fetches each
-repository in the background (Settings, Fetching) or on "Fetch now",
-updating only remote-tracking branches, and marks branches whose upstream
-moved, was force-pushed, or was deleted. Rebase, in the workspace header,
-runs `timber rebase` in a new session after showing the command. Comparing
-against the base is designed but not built.
-See the [architecture](docs/architecture.md) and [design](docs/design.md) notes.
+**Status: early scaffold.** What works today:
+
+- **Sidebar:** your repositories with the worktrees Timber lists and their
+  branch status. "+" creates a worktree (`timber new`) or opens a branch as
+  one (`timber open`); Done removes one after a preview of what would be lost.
+- **Workspace tab:** several terminals and coding agents, such as Claude Code
+  and Codex, per worktree. On Windows an agent must be its own `.exe`, not a
+  `.cmd` launcher.
+- **Changes tab:** staged, unstaged, and untracked files with a read-only diff.
+- **Fetching:** in the background or on "Fetch now", updating only
+  remote-tracking branches, with marks for upstreams that moved, were
+  force-pushed, or were deleted.
+- **Rebase:** runs `timber rebase` after showing the command.
+- **Settings:** layout, editor, agents, fetching, and Timber's own machine and
+  repository settings, saved and checked by Timber.
+
+Comparing against the base is designed but not built. See the
+[architecture](docs/architecture.md), [design](docs/design.md), and
+[what has been verified](docs/verification.md).
 
 ## Quick start
 
@@ -75,7 +75,7 @@ and Timber are needed too, but not to start the window.
 
 The window is always an X11 window, so a Wayland session needs XWayland; see
 [display server on Linux](docs/architecture.md#display-server-on-linux).
-See [what has been verified](docs/architecture.md#what-has-been-verified).
+See [what has been verified](docs/verification.md).
 
 The first run downloads the Electrobun toolchain into `~/.hutch/` and the
 SDK into the project's `.hutch/`. Use "Add
