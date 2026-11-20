@@ -274,9 +274,10 @@ change them here first when they change.
   base, and untracked files as their own count. "Open in Changes" selects the
   attempt and shows its Changes tab; "Start agent" starts its agent when none
   runs. "Keep this one" compares again, then shows the exact `timber arena
-  pick <arena> --winner <label>` and which attempts it removes, behind a
-  button marked as deleting. It is disabled, with the reason, while any
-  session of the app runs in an attempt: the app never stops one. After the
+  pick <arena> --winner <label>`, which attempts it removes, which of the
+  app's sessions it ends first (every one in the other attempts, agents and
+  shells), and which it keeps open (the chosen attempt's), behind a button
+  marked as deleting. Running agents never block the choice. After the
   pick each row says what happened to it (kept as the winner, removed,
   removed with its work saved under a ref, or kept by Timber with its
   reason), and the comparison and the list are read again.

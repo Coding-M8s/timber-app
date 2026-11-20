@@ -74,7 +74,7 @@ const request = (change: Partial<NewArenaRequest> = {}): NewArenaRequest => ({ r
 describe("ArenaCommands, with a stand-in Timber", () => {
 	test("list runs timber __app-arena list in the repository and reads the record", async () => {
 		const timber = arenaStandIn("list", { list: { stdout: recordedArena.list } });
-		const commands = createArenaCommands({ timber: async () => ready(timber.path), isListed: listed, runningIn: () => [] });
+		const commands = createArenaCommands({ timber: async () => ready(timber.path), isListed: listed, endSessionsIn: async () => [] });
 		const list = await commands.list(folder);
 		expect(list.state).toBe("listed");
 		expect(timber.runs()).toEqual([expect.objectContaining({ arguments: ["__app-arena", "list"], cwd: folder })]);
@@ -82,15 +82,15 @@ describe("ArenaCommands, with a stand-in Timber", () => {
 
 	test("a Timber without __app-arena is unsupported", async () => {
 		const timber = arenaStandIn("unsupported", { list: { stderr: recordedArena.unknownCommand, exitCode: 1 } });
-		const commands = createArenaCommands({ timber: async () => ready(timber.path), isListed: listed, runningIn: () => [] });
+		const commands = createArenaCommands({ timber: async () => ready(timber.path), isListed: listed, endSessionsIn: async () => [] });
 		expect(await commands.list(folder)).toEqual({ state: "unsupported" });
 	});
 
 	test("only a repository in the app's list, and only while Timber is ready", async () => {
 		const timber = arenaStandIn("guard", { list: { stdout: recordedArena.list } });
-		const commands = createArenaCommands({ timber: async () => ready(timber.path), isListed: listed, runningIn: () => [] });
+		const commands = createArenaCommands({ timber: async () => ready(timber.path), isListed: listed, endSessionsIn: async () => [] });
 		expect(await commands.list(join(root, "elsewhere"))).toEqual({ state: "failed", message: `${join(root, "elsewhere")} is not a repository in the app's list.` });
-		const notFound = createArenaCommands({ timber: async () => ({ state: "not-found", override: null }), isListed: listed, runningIn: () => [] });
+		const notFound = createArenaCommands({ timber: async () => ({ state: "not-found", override: null }), isListed: listed, endSessionsIn: async () => [] });
 		expect((await notFound.list(folder)).state).toBe("failed");
 		expect(timber.runs()).toEqual([]);
 	});
@@ -100,7 +100,7 @@ describe("ArenaCommands, with a stand-in Timber", () => {
 		const scratch = join(root, "scratch-create");
 		mkdirSync(scratch);
 		const timber = arenaStandIn("create", { new: { result: recordedArena.newSucceeded } });
-		const commands = createArenaCommands({ timber: async () => ready(timber.path), isListed: listed, runningIn: () => [], temporaryRoot: scratch });
+		const commands = createArenaCommands({ timber: async () => ready(timber.path), isListed: listed, endSessionsIn: async () => [], temporaryRoot: scratch });
 		const result = await commands.create(request({ base: "main" }));
 		expect(result).toMatchObject({ outcome: "created", arena: { name: "demo" } });
 		const [run] = timber.runs();
@@ -118,7 +118,7 @@ describe("ArenaCommands, with a stand-in Timber", () => {
 
 	test("a failed create shows the command with the task file's placeholder, never the task", async () => {
 		const timber = arenaStandIn("create-failed", { new: { result: recordedArena.newExists, stderr: "error: Arena already exists\n", exitCode: 1 } });
-		const commands = createArenaCommands({ timber: async () => ready(timber.path), isListed: listed, runningIn: () => [] });
+		const commands = createArenaCommands({ timber: async () => ready(timber.path), isListed: listed, endSessionsIn: async () => [] });
 		const result = await commands.create(request());
 		if (result.outcome !== "failed") throw new Error(result.outcome);
 		expect(result.failure.command).toBe("timber arena new --preset=stub --runs=1 --tool=manual --runs=1 --prompt-file <task file> --no-editor --no-agent --result-file <temporary file> -- demo");
@@ -127,32 +127,49 @@ describe("ArenaCommands, with a stand-in Timber", () => {
 
 	test("create refuses a request Timber could not take, before running anything", async () => {
 		const timber = arenaStandIn("create-refused", { new: { result: recordedArena.newSucceeded } });
-		const commands = createArenaCommands({ timber: async () => ready(timber.path), isListed: listed, runningIn: () => [] });
+		const commands = createArenaCommands({ timber: async () => ready(timber.path), isListed: listed, endSessionsIn: async () => [] });
 		expect(await commands.create(request({ task: " " }))).toMatchObject({ outcome: "failed", ran: false, failure: { diagnostic: "Write the task the attempts work on. Nothing was run." } });
 		expect(await commands.create(request({ groups: [{ kind: "tool", tool: "codex", model: null, effort: null, runs: 1 }] }))).toMatchObject({ outcome: "failed", ran: false });
 		expect(await commands.create({ repository: folder } as NewArenaRequest)).toMatchObject({ outcome: "failed", ran: false });
 		expect(timber.runs()).toEqual([]);
 	});
 
-	test("pick reads the list afresh and refuses, without running pick, while an app session runs in an attempt", async () => {
-		const timber = arenaStandIn("pick-running", { list: { stdout: recordedArena.list }, pick: { result: recordedArena.pickSucceeded } });
-		const asked: string[][] = [];
+	test("pick reads the list afresh and ends the app's sessions in the other attempts only, before Timber runs", async () => {
+		const timber = arenaStandIn("pick-ends", { list: { stdout: recordedArena.list }, pick: { result: recordedArena.pickSucceeded } });
+		const order: string[] = [];
 		const commands = createArenaCommands({
 			timber: async () => ready(timber.path), isListed: listed,
-			runningIn: paths => {
-				asked.push([...paths]);
-				return ["Agent stub-1"];
+			endSessionsIn: async paths => {
+				order.push(`end ${paths.join(" ")}`, `runs before: ${timber.runs().map(run => run.arguments[0]).join(" ")}`);
+				return [];
 			},
 		});
 		const result = await commands.pick({ repository: folder, arena: "demo", winner: "manual-1" });
-		expect(result).toMatchObject({ outcome: "failed", ran: false, pick: null, failure: { diagnostic: expect.stringContaining("A session still runs in this arena: Agent stub-1.") } });
-		expect(asked).toEqual([["/work/sample-worktrees/arena-demo-manual-1", "/work/sample-worktrees/arena-demo-stub-1"]]);
-		expect(timber.runs().map(run => run.arguments[0] === "arena" ? "pick" : "list")).toEqual(["list"]);
+		expect(result).toMatchObject({ outcome: "picked" });
+		// The winner's folder is never asked about, so its sessions keep running.
+		expect(order).toEqual(["end /work/sample-worktrees/arena-demo-stub-1", "runs before: __app-arena"]);
+		expect(timber.runs().map(run => run.arguments[0])).toEqual(["__app-arena", "arena"]);
 	});
 
-	test("pick runs with a result file once no session runs, and reads what it did to each attempt", async () => {
+	test("a session that does not end stops the pick, which never runs", async () => {
+		const timber = arenaStandIn("pick-stuck", { list: { stdout: recordedArena.list }, pick: { result: recordedArena.pickSucceeded } });
+		const commands = createArenaCommands({ timber: async () => ready(timber.path), isListed: listed, endSessionsIn: async () => ["stub-1"] });
+		const result = await commands.pick({ repository: folder, arena: "demo", winner: "manual-1" });
+		expect(result).toMatchObject({ outcome: "failed", ran: false, pick: null, failure: { diagnostic: "These sessions in the other attempts did not end: stub-1. Close them, then keep manual-1 again. Nothing was run." } });
+		expect(timber.runs().map(run => run.arguments[0])).toEqual(["__app-arena"]);
+	});
+
+	test("an unknown winner ends no session", async () => {
+		const timber = arenaStandIn("pick-unknown-winner", { list: { stdout: recordedArena.list }, pick: { result: recordedArena.pickSucceeded } });
+		let ended = 0;
+		const commands = createArenaCommands({ timber: async () => ready(timber.path), isListed: listed, endSessionsIn: async () => (ended++, []) });
+		expect(await commands.pick({ repository: folder, arena: "demo", winner: "codex-9" })).toMatchObject({ outcome: "failed", ran: false, failure: { diagnostic: "Timber lists no attempt codex-9 in arena demo. Nothing was run." } });
+		expect(ended).toBe(0);
+	});
+
+	test("pick runs with a result file and reads what it did to each attempt", async () => {
 		const timber = arenaStandIn("pick", { list: { stdout: recordedArena.list }, pick: { result: recordedArena.pickSucceeded } });
-		const commands = createArenaCommands({ timber: async () => ready(timber.path), isListed: listed, runningIn: () => [] });
+		const commands = createArenaCommands({ timber: async () => ready(timber.path), isListed: listed, endSessionsIn: async () => [] });
 		const result = await commands.pick({ repository: folder, arena: "demo", winner: "manual-1" });
 		expect(result).toMatchObject({ outcome: "picked", pick: { winner: "manual-1" } });
 		const pick = timber.runs()[1]!;
@@ -161,7 +178,7 @@ describe("ArenaCommands, with a stand-in Timber", () => {
 
 	test("pick refuses an arena Timber does not list, and names that look like options", async () => {
 		const timber = arenaStandIn("pick-unknown", { list: { stdout: recordedArena.list }, pick: { result: recordedArena.pickSucceeded } });
-		const commands = createArenaCommands({ timber: async () => ready(timber.path), isListed: listed, runningIn: () => [] });
+		const commands = createArenaCommands({ timber: async () => ready(timber.path), isListed: listed, endSessionsIn: async () => [] });
 		expect(await commands.pick({ repository: folder, arena: "nothing", winner: "manual-1" })).toMatchObject({ outcome: "failed", ran: false, failure: { diagnostic: "Timber lists no arena called nothing. Nothing was run." } });
 		expect(await commands.pick({ repository: folder, arena: "demo", winner: "--keep-ignored" })).toMatchObject({ outcome: "failed", ran: false });
 		expect(timber.runs().filter(run => run.arguments[0] === "arena")).toEqual([]);
@@ -171,7 +188,7 @@ describe("ArenaCommands, with a stand-in Timber", () => {
 		const worktree = join(root, "attempt");
 		mkdirSync(worktree);
 		const timber = arenaStandIn("launch", { launch: { stdout: recordedArena.launchReady } });
-		const commands = createArenaCommands({ timber: async () => ready(timber.path), isListed: listed, runningIn: () => [] });
+		const commands = createArenaCommands({ timber: async () => ready(timber.path), isListed: listed, endSessionsIn: async () => [] });
 		const launch = await commands.launch({ repository: folder, worktree, arena: "demo", attempt: "stub-1" });
 		expect(launch).toMatchObject({ outcome: "ready", argv: ["/work/stub-agent", "--go"] });
 		expect(timber.runs()[0]).toMatchObject({ arguments: ["__app-arena", "launch", "demo", "--attempt", "stub-1"], cwd: worktree });
@@ -205,8 +222,8 @@ describe.skipIf(arenaTimber === null || windows)("ArenaCommands, with the real T
 		});
 	});
 
-	const commandsFor = (running: string[] = []) => createArenaCommands({
-		timber: async () => ready(arenaTimber!), isListed: path => Promise.resolve(path === repository), runningIn: () => running, environment,
+	const commandsFor = (stuck: string[] = []) => createArenaCommands({
+		timber: async () => ready(arenaTimber!), isListed: path => Promise.resolve(path === repository), endSessionsIn: async () => stuck, environment,
 	});
 
 	test("create, then list, launch, and inspect, which change no file or ref; then pick", async () => {
@@ -244,7 +261,7 @@ describe.skipIf(arenaTimber === null || windows)("ArenaCommands, with the real T
 		});
 		expect(fingerprint(base)).toBe(before);
 
-		// While the app runs a session in an attempt, pick is refused and nothing changes.
+		// When a session in another attempt does not end, nothing is picked and nothing changes.
 		expect(await commandsFor(["Agent stub-1"]).pick({ repository, arena: "demo", winner: "manual-1" })).toMatchObject({ outcome: "failed", ran: false });
 		expect(fingerprint(base)).toBe(before);
 

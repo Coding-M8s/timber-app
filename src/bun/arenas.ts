@@ -22,12 +22,12 @@ export interface ArenaCommandsOptions {
 	/** Whether a path is the primary checkout of a repository in the app's list. */
 	isListed: (repository: string) => Promise<boolean>;
 	/**
-	 * The app's running sessions in any of these folders, by name, for the
-	 * refusal to pick while one runs. Timber does not know about sessions the
-	 * app started, so this is the only check that keeps pick from removing a
-	 * worktree under a running agent.
+	 * End every session of the app in these folders, the other attempts' of a
+	 * pick, and answer the names of those still running afterwards. Timber
+	 * does not know about sessions the app started, so this is what keeps pick
+	 * from removing a worktree under a running agent.
 	 */
-	runningIn: (paths: readonly string[]) => string[];
+	endSessionsIn: (paths: readonly string[]) => Promise<string[]>;
 	/** The turns shared with the other commands that change a repository (see ./repository-turns.ts). */
 	turns?: RepositoryTurns;
 	environment?: Record<string, string | undefined>;
@@ -51,7 +51,11 @@ export interface ArenaCommands {
 	inspect(request: { repository: string; arena: string }): Promise<ArenaInspection>;
 	/** `timber arena new ... --no-editor --no-agent --result-file`, in the repository's turn. */
 	create(request: NewArenaRequest): Promise<NewArenaResult>;
-	/** `timber arena pick <arena> --winner <label> --result-file`, in the repository's turn, never while an app session runs in an attempt. */
+	/**
+	 * `timber arena pick <arena> --winner <label> --result-file`, in the
+	 * repository's turn, after ending the app's sessions in the other
+	 * attempts. The winner's sessions keep running.
+	 */
 	pick(request: PickArenaRequest): Promise<PickArenaResult>;
 	/** `timber __app-arena launch`, run in the attempt's worktree. Read-only: it runs nothing. */
 	launch(request: { repository: string; worktree: string; arena: string; attempt: string }): Promise<ArenaLaunch>;
@@ -65,7 +69,7 @@ function notRun(diagnostic: string) {
 }
 
 export function createArenaCommands(options: ArenaCommandsOptions): ArenaCommands {
-	const { timber, isListed, runningIn, environment = process.env, timeoutMs = READ_ARENAS_TIMEOUT_MS, temporaryRoot } = options;
+	const { timber, isListed, endSessionsIn, environment = process.env, timeoutMs = READ_ARENAS_TIMEOUT_MS, temporaryRoot } = options;
 	const turns = options.turns ?? createRepositoryTurns();
 
 	const record = (executable: string, args: readonly string[], folder: string, command: string, tooLong: string) => runTimberRecord({
@@ -157,10 +161,13 @@ export function createArenaCommands(options: ArenaCommandsOptions): ArenaCommand
 					const listed = arenaOf(list, arena);
 					if (listed === null) return refused(`Timber lists no arena called ${arena}.`);
 					if (listed.outcome !== "read") return refused(`Timber could not read the arena ${arena}: ${listed.diagnostic}`);
-					// Timber refuses only attempts it recorded as running. It never knows about the app's sessions.
-					const running = runningIn(listed.attempts.map(attempt => attempt.path));
+					if (!listed.attempts.some(attempt => attempt.label === winner)) return refused(`Timber lists no attempt ${winner} in arena ${arena}.`);
+					// Pick removes the other attempts' worktrees, so their sessions end first. Timber never knows about
+					// the app's sessions. The winner's keep running.
+					const others = listed.attempts.filter(attempt => attempt.label !== winner).map(attempt => attempt.path);
+					const running = await endSessionsIn(others);
 					if (running.length > 0) {
-						return refused(`A session still runs in this arena: ${running.join(", ")}. Pick removes the other attempts' worktrees, so end their sessions first. The app never stops them for you.`);
+						return refused(`These sessions in the other attempts did not end: ${running.join(", ")}. Close them, then keep ${winner} again.`);
 					}
 					return readPickArenaResult(await runTimberWithResultFile({
 						...where(executable, repository),

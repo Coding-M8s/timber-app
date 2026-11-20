@@ -2111,9 +2111,10 @@ run from `src/bun/arenas.ts`.
 - **Picking.** `pickArena` runs `timber arena pick <arena> --winner <label>
   --result-file`, in the repository's turn. Timber refuses only attempts it
   recorded as running, and it never sees the app's sessions, so the main
-  process first reads the list again and refuses, running nothing, while any
-  running session of the app (an agent or a shell) is in one of the arena's
-  attempt folders. The app never ends one for it. The record says what
+  process first reads the list again, checks that the winner is one of the
+  attempts, and ends every session of the app (agents and shells) in the
+  other attempts' folders, which pick removes. The winner's sessions keep
+  running. When a session does not end, nothing is picked. The record says what
   happened to each attempt: the winner, removed, archived under a
   `refs/timber/arena/...` ref, already removed, or kept or partly removed
   with Timber's reason, which makes the pick a failure to fix and run again.
@@ -2123,8 +2124,8 @@ run from `src/bun/arenas.ts`.
   runs a stand-in Timber that notes each run, the task file's text and
   permission bits included, and, when the Timber found has arenas, the real
   one in a temporary repository with a stub wrapper preset: list, launch,
-  and inspect leave every file and ref as they were, a pick is refused while
-  a session runs, and then archives the attempt with work.
+  and inspect leave every file and ref as they were, a pick whose sessions
+  did not end changes nothing, and a pick archives the attempt with work.
 
 ## Opening a worktree in an editor
 

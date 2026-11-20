@@ -43,8 +43,6 @@ export interface TerminalControls {
 	openedLinks(): string[];
 	/** The last part of a session the window said it drew. */
 	drawnUpTo(id: string): number;
-	/** The names of the running sessions in any of these folders, as the main process checks before an arena pick. */
-	runningIn(paths: readonly string[]): string[];
 	/**
 	 * Act out the program in a session reporting its status through OSC 7501:
 	 * `report` is what goes after `7501;`, such as
@@ -304,7 +302,6 @@ export function createMockTerminals(
 			if (acted) acted.drawn = Math.max(acted.drawn, seq);
 		},
 		drawnUpTo: id => sessions.get(id)?.drawn ?? 0,
-		runningIn: paths => [...sessions.values()].filter(acted => acted.session.state.kind === "running" && paths.includes(acted.session.path)).map(acted => acted.session.name),
 		endWorktreeSetups(exitCode) {
 			worktreeSetupExit = exitCode;
 		},

@@ -845,7 +845,11 @@ export function createMockEngine(
 		removeWorktree: (repositoryPath, path) => {
 			current = current.map(repository => repository.path === repositoryPath ? { ...repository, worktrees: repository.worktrees.filter(candidate => candidate.path !== path) } : repository);
 		},
-		runningIn: paths => terminals.runningIn(paths),
+		endSessionsIn: async paths => {
+			const inThem = async () => (await terminals.listTerminals()).filter(session => paths.includes(session.path));
+			await Promise.all((await inThem()).map(session => terminals.closeTerminal(session.id)));
+			return (await inThem()).filter(session => session.state.kind === "running").map(session => session.name);
+		},
 		delay: () => options.commandMilliseconds ?? 0,
 	});
 	return {
