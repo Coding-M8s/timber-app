@@ -2343,11 +2343,46 @@ What the agent prints on screen is still never read, parsed, or answered.
     window comes forward through Electrobun's `activate`. On COSMIC it did,
     behind another window, without the token (see "What has been
     verified"); other compositors have not been tried.
-  - *macOS and Windows.* Electrobun's `Utils.showNotification` shows it with
-    the text as it is; whether anything there reads markup is not known.
-    It cannot answer a click, take the place of an earlier one, or be
-    withdrawn: Electrobun 2.0.6 has no way to. Neither system has been
-    tried.
+  - *Windows.* Electrobun 2.0.6 shows a notification as a tray balloon it
+    cannot click through, replace, or withdraw, so the app shows WinRT
+    toasts itself (`src/bun/windows-toasts.ts`). The main process keeps one
+    Windows PowerShell 5.1 running a fixed script, given as
+    `-EncodedCommand`, with the app's identifier, name, and icon in
+    environment variables. The script registers the identifier for the
+    current user under `HKCU\Software\Classes\AppUserModelId`, which lets an
+    app with no Start menu shortcut show toasts under its own name and the
+    icon the build ships (`Resources\app.ico`). Windows PowerShell cannot
+    subscribe to WinRT events, so the script compiles a small C# class that
+    adds the `Activated` and `Dismissed` handlers by reflection. The two
+    talk in lines over the script's input and output: the app sends `show
+    <tag> <silent> <title> <body>` (the texts base64 of UTF-8),
+    `withdraw <tag>`, and `stop`, and the script prints `ready`,
+    `activated <tag>`, and `dismissed <tag> <reason>`. It acts as the
+    notification server for `createDesktopNotices`, so the rules above
+    hold: a tag is the app's own number, a session's new toast keeps its
+    tag and takes the place of the one before, `withdraw` hides it and
+    removes it from the notification center, and a click brings the window
+    forward and sends `showSession`. A toast that timed out into the
+    notification center can still be clicked; one the person closed is
+    forgotten. The texts go into the toast as XML text nodes, so nothing is
+    read as markup, and `audio silent` keeps Windows quiet when the app
+    plays its own sound. On quitting, `stop` takes every toast of the app
+    away; so does the end of the script's input, should the app die. When
+    PowerShell is not found, the script ends before `ready` (such as where
+    `Add-Type` is not allowed), or it takes over 20 seconds to start,
+    Electrobun's balloon shows the notification instead, and the app logs
+    why once a minute at most. Programs are found on `PATH`, or `Path`,
+    which is how the variable is named in the process Electrobun starts.
+    The registry entry stays after an uninstall.
+  - *macOS.* Electrobun's `Utils.showNotification` shows it with the text
+    as it is; whether anything there reads markup is not known. It cannot
+    answer a click, take the place of an earlier one, or be withdrawn:
+    Electrobun 2.0.6 has no way to. Not tried.
+  - *Agents on Windows.* Windows' ConPTY drops an OSC sequence written to a
+    program's input, so the answer to the OSC 7501 probe never arrives,
+    and an agent that waits for it, such as Claude Code, reports nothing:
+    no marks, notifications, or sounds for it. A program that reports
+    without asking, such as a shell printing a report, works (issue 149).
   - *Not told again.* A session that stays in a state, such as Needs you
     for a second approval with a new message, gets no new notification, and
     the one on screen keeps its first message.
@@ -4768,6 +4803,46 @@ Linux x64 (Omarchy, Arch) with Bun 1.4.5 and Timber 0.1.3:
   it." No console errors other than the dev server's missing favicon.
 - Not run: the desktop window, and reviewers of a real pull request read
   by the app from GitHub.
+
+Run for notifications that answer a click on Windows (issue 123), on
+2026-11-20, Windows 11 Home build 26200 on x64 with Bun 1.4.4 and Windows
+PowerShell 5.1:
+
+- `bun test`: 1737 passed, 260 skipped, 54 failed. The same 54 fail on
+  `main` on this machine, all tests with POSIX stand-ins (shell scripts
+  as a fake Timber or player, `notify-send`); none is new. The new tests
+  cover the toast lines, the script's start, failure, and end, tags kept
+  on replacing, clicks and dismissals, and the notices on Windows with a
+  fake script; one more runs PowerShell on a real ConPTY and sees a report
+  set the session's status.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- The toast script through `connectToastHost` and `createDesktopNotices`,
+  from a scratch script outside the app, with the real PowerShell: ready
+  in about 0.8 seconds. Two toasts showed as "Timber" with the app's icon;
+  a person clicked each and the click reached `onClick` with its session.
+  One shown and withdrawn 3 seconds later went away. After `stop` no toast
+  of the app was left in the notification center, and no script was left
+  running. A toast titled `Needs you: <i>Claude</i> & Co` with the body
+  `In other: <b>not bold</b> & plain &amp; ünïcödé ✓ 🌲` showed every
+  character as written, nothing in italics or bold.
+- Sounds with the real spawn: the chime, ping, and knock that come with
+  the app and the system's `Windows Notify.wav` played through
+  `SoundPlayer` and were heard; a missing own file answered "missing",
+  and a second sound while one played "busy". No player is offered for an
+  MP3 file.
+- The desktop window (`bun run start`, started from a terminal of the
+  person's own): a shell session in one worktree printed `state=working`,
+  then `state=done`, while another worktree was selected and another
+  window was in front. The toast showed as "Timber"; a person clicked it,
+  and Timber came to the front and showed that worktree and its shell.
+  Before the `Path` fix the same run showed Electrobun's balloon, named
+  "Bun", because `PATH` is empty in the process Electrobun starts.
+- Claude Code 2.1.329 in an agent session, from a scratch script through
+  `createTerminalSessions`: it sent the probe and no report, since ConPTY
+  dropped the answer (issue 149).
+- Not run: macOS; a toast replaced in place while still on screen (the
+  person clicked the first before its replacement came); quitting the
+  desktop window with a toast on screen; a policy that blocks `Add-Type`.
 
 Run for desktop notifications and sounds (issue 119), on 2026-11-18,
 Pop!_OS 24.04 (COSMIC, `cosmic-notifications` 1.11.0, spec 1.2) on Linux

@@ -16,11 +16,11 @@ export interface DesktopNoticeDependencies {
 	path: string;
 	platform?: NodeJS.Platform;
 	now?: () => number;
-	/** Connect to the notification server on the session bus. Linux only. Tests pass their own. */
+	/** Connect to the notification server: on the session bus on Linux, the toast script on Windows. Tests pass their own. */
 	connect?: () => Promise<NotificationServer>;
 	/** Start a program, never through a shell, without waiting for it. Tests pass their own. */
 	spawn?: (argv: string[]) => void;
-	/** Show a notification that cannot answer a click, as Electrobun's `Utils.showNotification` does. macOS and Windows. */
+	/** Show a notification that cannot answer a click, as Electrobun's `Utils.showNotification` does. macOS, and Windows without the toast script. */
 	fallback: (notice: { title: string; body: string }) => void;
 	/** The person clicked the notification of this session. The token, when the server sent one, lets the window come forward on Wayland. */
 	onClick: (session: string, token: string | null) => void;
@@ -78,8 +78,10 @@ function spawnDetached(argv: string[]): void {
  * the `ActivationToken` the server sends for it. Operations for one session
  * run in order, since the server answers a notification's id only later.
  * Without a bus, `notify-send` shows it by argv, and a click does nothing.
- * On macOS and Windows Electrobun shows it, which can neither answer a click
- * nor be replaced or withdrawn: Electrobun 2.0.6 has no way to.
+ * On Windows the server is the app's toast script (./windows-toasts.ts),
+ * which keeps the same rules; when it cannot start, Electrobun shows it.
+ * On macOS Electrobun shows it, which can neither answer a click nor be
+ * replaced or withdrawn: Electrobun 2.0.6 has no way to.
  */
 export function createDesktopNotices(dependencies: DesktopNoticeDependencies): DesktopNotices {
 	const { path, platform = process.platform, now = Date.now, connect, spawn = spawnDetached, fallback, onClick } = dependencies;
@@ -103,7 +105,7 @@ export function createDesktopNotices(dependencies: DesktopNoticeDependencies): D
 	};
 
 	const bus = () => {
-		if (platform !== "linux" || connect === undefined || stopped) return Promise.resolve(null);
+		if ((platform !== "linux" && platform !== "win32") || connect === undefined || stopped) return Promise.resolve(null);
 		if (server !== null) return server;
 		if (failedAt !== null && now() - failedAt < RECONNECT_MILLISECONDS) return Promise.resolve(null);
 		server = connect().then(async connected => {

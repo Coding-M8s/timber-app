@@ -202,4 +202,17 @@ describe.if(windows)("terminal sessions on Windows, on a real ConPTY", () => {
 		expect(session.shell).toMatch(/\\(pwsh|powershell)\.exe$/i);
 		await sessions.close(session.id);
 	});
+
+	test("a Program Status report printed in PowerShell passes ConPTY and sets the session's status", async () => {
+		start({ environment: process.env });
+		const session = await opened();
+		const status = () => sessions.list().find(listed => listed.id === session.id)?.status ?? null;
+		sessions.write(session.id, `Write-Host -NoNewline "$([char]27)]7501;state=working$([char]27)\\"; Write-Host sent1\r`);
+		await seen(session.id, "sent1");
+		expect(await until(() => status()?.state === "working")).toBe(true);
+		sessions.write(session.id, `Write-Host -NoNewline "$([char]27)]7501;state=done$([char]7)"; Write-Host sent2\r`);
+		await seen(session.id, "sent2");
+		expect(await until(() => status()?.state === "done")).toBe(true);
+		await sessions.close(session.id);
+	}, 20_000);
 });

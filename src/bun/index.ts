@@ -1,9 +1,10 @@
 // First, before Electrobun loads: chooses how WebKitGTK draws (see webkit-rendering.ts).
 import { renderingAtStart } from "./webkit-rendering-setup";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import Electrobun, { BrowserView, BrowserWindow, Screen, Updater, Utils } from "electrobun/main";
-import { APP_NAME, APP_VERSION } from "../shared/app-info";
+import { APP_IDENTIFIER, APP_NAME, APP_VERSION } from "../shared/app-info";
 import { type Attention, assumedAttention } from "../shared/attention";
 import { type ForcePushMarks, withForcePushes } from "../shared/git-fetch";
 import type { Repository } from "../shared/model";
@@ -47,7 +48,8 @@ import { themePreload } from "./theme-preload";
 import { createTimberSettings } from "./timber-settings";
 import { createUninstaller } from "./uninstall";
 import { createWindowMemory } from "./window-memory";
-import { applyWindowIcon } from "./window-icon";
+import { applyWindowIcon, windowIconFile } from "./window-icon";
+import { connectToastHost } from "./windows-toasts";
 import { createWindowReveal } from "./window-reveal";
 import { createWorktreeCommands } from "./worktree-commands";
 import { createBackupCommands } from "./backups";
@@ -210,9 +212,25 @@ function tell(what: string, send: () => void): void {
  * brings the window forward and shows it. A notification that no longer holds is withdrawn.
  */
 let attention: Attention = assumedAttention;
+/** Where notifications and sounds look for programs. On Windows the variable may be named `Path`, as Electrobun starts the app. */
+const searchPath = process.env.PATH ?? process.env.Path ?? "";
+/** Windows: start the toast script with Windows PowerShell, for the app's identifier and the icon the build ships. */
+async function connectWindowsToasts() {
+	const warn = (message: string) => console.warn(`Windows notifications: ${message}`);
+	try {
+		const powershell = Bun.which("powershell.exe", { PATH: searchPath });
+		if (powershell === null) throw new Error("Windows PowerShell was not found");
+		const icon = windowIconFile(process.execPath);
+		return await connectToastHost({ powershell, aumid: APP_IDENTIFIER, displayName: APP_NAME, iconFile: existsSync(icon) ? icon : null, onProblem: warn });
+	} catch (error) {
+		// Electrobun shows the notification instead; this is said at most once a minute (see ./desktop-notices.ts).
+		warn(`${error instanceof Error ? error.message : String(error)}. Using Electrobun's notification instead.`);
+		throw error;
+	}
+}
 const desktopNotices = createDesktopNotices({
-	path: process.env.PATH ?? "",
-	connect: () => connectNotificationServer(sessionBusAddress(process.env)),
+	path: searchPath,
+	connect: () => (process.platform === "win32" ? connectWindowsToasts() : connectNotificationServer(sessionBusAddress(process.env))),
 	fallback: notice => {
 		try {
 			Utils.showNotification({ title: notice.title, body: notice.body });
@@ -232,7 +250,7 @@ const desktopNotices = createDesktopNotices({
 });
 // Sounds play here, not in the window, so they play while it is hidden. The sounds that come with the app are written
 // to the cache folder the first time they play.
-const sounds = createSoundPlayer({ path: process.env.PATH ?? "", cacheFolder: join(Utils.paths.userCache, "sounds") });
+const sounds = createSoundPlayer({ path: searchPath, cacheFolder: join(Utils.paths.userCache, "sounds") });
 
 /** The saved settings, kept here so each change is decided at once, in the order the changes came. Read on start and after each save. */
 let alertSettings: AlertSettings = settingsForAlerts(defaultPreferences());
