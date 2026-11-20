@@ -9,6 +9,12 @@ import { workflowPart } from "./workflow-choice";
 export interface KeptWorktree {
 	worktree: ReportedWorktree;
 	created: boolean;
+	/**
+	 * The workflow the failed run passed, or null. Timber does not remember
+	 * it, so running setup again passes it again, even when the list has
+	 * changed since.
+	 */
+	workflow: string | null;
 }
 
 export interface ExistingBranchFormState {
@@ -44,8 +50,8 @@ export interface ExistingBranchForm {
 	 * created when Timber made it, or when it finishes the setup of a
 	 * worktree an earlier run of this form made. A worktree that was already
 	 * there is never reported as created. `workflow` is the one the command
-	 * passes, or null for none. After a failure that kept a worktree, the
-	 * pick stays, so running setup again passes the same workflow.
+	 * passes, or null for none. A failure that kept a worktree keeps the
+	 * workflow with it (see `KeptWorktree`).
 	 */
 	run(workflow?: string | null): Promise<ModeRun>;
 }
@@ -147,7 +153,7 @@ export function createExistingBranchForm(
 			void readBranches();
 			if (result.worktree) {
 				// The worktree is there. The fields now name exactly it, so the next run cannot make another one.
-				update({ kept: { worktree: result.worktree, created }, selector: result.worktree.path, setup: true });
+				update({ kept: { worktree: result.worktree, created, workflow }, selector: result.worktree.path, setup: true });
 			} else {
 				keepBefore();
 			}

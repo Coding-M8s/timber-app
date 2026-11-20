@@ -364,9 +364,10 @@ capabilities of the `Engine` contract.
 - **The arguments.** Options first, then `--`, then what the person typed as
   one argument: `new [--base <ref>] [--workflow <name>] --result-file <path>
   --no-editor --no-agent -- <name>` and `open [--setup] [--workflow <name>]
-  --result-file <path> --no-editor --no-agent -- <selector>`. Text that starts with a dash is therefore never
-  read as an option. Both launch flags are always passed, so an editor or an
-  agent configured in Timber does not start.
+  --result-file <path> --no-editor --no-agent -- <selector>`. Text that
+  starts with a dash is therefore never read as an option. Both launch flags
+  are always passed, so an editor or an agent configured in Timber does not
+  start.
 - **Running.** `src/bun/worktree-commands.ts` runs the command in the
   repository's primary checkout. It refuses a request whose parts are not
   the text and flags the command is built from, refuses a path that is not a
@@ -442,16 +443,20 @@ adds `--workflow <name>` to the command in the footer, so Timber runs that
 workflow's `post_create` scripts after the ordinary ones.
 (`worktree-modes/workflow-choice.tsx`.)
 
-- **The list.** The dialog's controller reads `listWorkflows` when the
-  dialog opens and again whenever the repository was read again. With no
-  workflows there is no field. When the list cannot be read, the field is
+- **The list.** The dialog's controller reads `listWorkflows` once when the
+  dialog opens, and again only after a run that failed, when a workflow may
+  have left the settings. Each read runs Timber, so it is not read again
+  whenever file watching reads the repository again. With no workflows
+  there is no field. When the list cannot be read, the field is
   replaced by a short note with the reason, and creating without a
   workflow still works. A pick the list no longer has passes none, so the
   footer never shows a workflow the field does not.
 - **Open with setup.** Timber does not remember the workflow a worktree was
   created with, so "Open with setup" after a failed New branch run passes
-  the workflow that run had, even when the list has changed since. In
-  Existing branch, the fields that name a kept worktree keep the pick too.
+  the workflow that run had, even when the list has changed since. Existing
+  branch does the same while its fields name the kept worktree; the field
+  then shows that workflow, marked "no longer listed" when the list has
+  lost it.
 - **A workflow that is gone.** Removed from the settings between listing and
   creating, it fails with Timber's diagnostic shown as it is ("Unknown
   workflow. ..."), and nothing is created.

@@ -24,7 +24,8 @@ export function existingBranchMode(
 ): WorktreeDialogMode {
 	const { selector, setup, branches, kept } = state;
 	// The command and the run take the same workflow, so the footer shows what runs.
-	const workflow = chosenWorkflow(workflows, state.workflow);
+	// A kept worktree runs setup again with the workflow of the run that failed, as New branch does.
+	const workflow = kept ? kept.workflow : chosenWorkflow(workflows, state.workflow);
 
 	const fields = (
 		<>

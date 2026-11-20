@@ -161,9 +161,10 @@ change them here first when they change.
   setup" instead of creating again. A Workflow field, None by default,
   lists the repository's workflows with their descriptions; a pick adds
   `--workflow <name>`, and "Open with setup" repeats it. With no workflows
-  there is no field, and a list that cannot be read leaves a short note. An Agent field, the first saved agent
-  by default or None, starts that agent in the worktree once the dialog has
-  created it, and the footer shows its command under Timber's.
+  there is no field, and a list that cannot be read leaves a short note.
+  An Agent field, the first saved agent by default or None, starts that
+  agent in the worktree once the dialog has created it, and the footer
+  shows its command under Timber's.
 - **Rebase:** pick the base. The picker starts from the base Timber saved for
   the worktree. A worktree with uncommitted changes is refused, as Timber
   does. The dialog says how the rebase ended. One that stops on conflicts

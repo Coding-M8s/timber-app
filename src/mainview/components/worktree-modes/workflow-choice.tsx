@@ -46,18 +46,28 @@ interface WorkflowFieldProps {
 export function WorkflowField({ options, chosen, disabled, onPick }: WorkflowFieldProps) {
 	if (options === undefined) return null;
 	if (!options.ok) {
+		if (chosen !== null) {
+			return (
+				<p className="field-hint" role="status">
+					Workflows could not be read. Setup runs again with the {chosen} workflow, as the failed run had. {options.message}
+				</p>
+			);
+		}
 		return (
 			<p className="field-hint" role="status">
 				Workflows could not be read, so none can be picked. The worktree is made without one. {options.message}
 			</p>
 		);
 	}
-	if (options.workflows.length === 0) return null;
+	// A workflow kept from a failed run may have left the list since, and is still shown as it runs.
+	const unlisted = chosen !== null && !options.workflows.some(workflow => workflow.name === chosen);
+	if (options.workflows.length === 0 && !unlisted) return null;
 	return (
 		<label className="field">
 			<span className="field-label">Workflow</span>
 			<select className="field-input" name="workflow" value={chosen ?? ""} disabled={disabled} onChange={event => onPick(workflowOfOption(event.target.value))}>
 				<option value="">None</option>
+				{unlisted && <option value={chosen}>{chosen}: no longer listed</option>}
 				{options.workflows.map(workflow => (
 					<option key={workflow.name} value={workflow.name}>
 						{workflow.description === null ? workflow.name : `${workflow.name}: ${workflow.description}`}

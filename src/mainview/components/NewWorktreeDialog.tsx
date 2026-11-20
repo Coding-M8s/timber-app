@@ -99,10 +99,11 @@ export function NewWorktreeDialog({ repository }: { repository: Repository }) {
 	const { submission, state } = useSubmission(() => store.closeDialog());
 	const [controller] = useState(() => createWorktreeDialogController(store, repository.path, submission));
 	const { selected, workflows } = useSyncExternalStore(controller.subscribe, controller.getState, controller.getState);
-	// Read when the dialog opens, and again whenever the repository was read again, as the branches are.
+	// Read once when the dialog opens: each read runs Timber, and file watching reads the repository again often.
+	// The controller reads again after a run fails, when the settings may have changed.
 	useEffect(() => {
 		void controller.readWorkflows();
-	}, [controller, repository]);
+	}, [controller]);
 	const modes = [useNewBranchMode(repository, submission, workflows), useExistingBranchMode(repository, submission, workflows)];
 	const { agents } = useAppState().preferences;
 	return (

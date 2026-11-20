@@ -238,11 +238,58 @@ describe("Open with setup after a failed workflow script", () => {
 		expect(await submit()).toBe(true);
 		expect(asked.at(-1)).toEqual({ kind: "open", repository: TIMBER, selector: kept!.worktree.path, setup: true, workflow: "triage" });
 	});
+
+	test("Existing branch: the kept worktree keeps its workflow, even when the list later loses it", async () => {
+		const { engine, form, mode, submit, controller, render } = await openedDialog();
+		controller.select(1);
+		await form.readBranches();
+		engine.endCommands("setup-fails");
+		form.setSelector("chore/update-deps");
+		form.setWorkflow("triage");
+		expect(await submit()).toBe(false);
+		const kept = form.getState().kept!;
+		expect(kept.workflow).toBe("triage");
+
+		engine.setWorkflows(TIMBER, { ok: true, workflows: sampleWorkflows.filter(workflow => workflow.name !== "triage") });
+		await controller.readWorkflows();
+		expect(mode().command).toBe(`timber open --setup --workflow triage --result-file <temporary file> --no-editor --no-agent -- ${kept.worktree.path}`);
+		// The field shows what runs, not None.
+		expect(render()).toContain('<option value="triage" selected="">triage: no longer listed</option>');
+
+		engine.setWorkflows(TIMBER, { ok: false, message: "Invalid TOML" });
+		await controller.readWorkflows();
+		expect(mode().command).toContain("--setup --workflow triage --");
+		expect(render()).toContain("Workflows could not be read. Setup runs again with the triage workflow, as the failed run had. Invalid TOML");
+
+		// An edit lets the kept worktree go, and with it the kept workflow.
+		form.setSelector("chore/update-deps");
+		expect(mode().command).toBe("timber open --setup --result-file <temporary file> --no-editor --no-agent -- chore/update-deps");
+	});
+});
+
+describe("how often the workflows are read", () => {
+	test("once when the dialog opens, not after a run that worked, and once after a run that failed", async () => {
+		const engine = createMockEngine();
+		let reads = 0;
+		const { listWorkflows } = engine;
+		engine.listWorkflows = repository => (reads += 1, listWorkflows(repository));
+		const { model, submit } = await openedDialog(TIMBER, engine);
+		expect(reads).toBe(1);
+
+		model.edit({ name: "feat/one", workflow: "review" });
+		expect(await submit()).toBe(true);
+		expect(reads).toBe(1);
+
+		engine.endCommands("refused");
+		model.edit({ name: "feat/two" });
+		expect(await submit()).toBe(false);
+		expect(reads).toBe(2);
+	});
 });
 
 describe("a workflow removed between listing and creating", () => {
 	test("fails with Timber's message as it is, creates nothing, and the dialog stays open", async () => {
-		const { engine, model, submit, render, branches, store, controller } = await openedDialog();
+		const { engine, model, submit, render, branches, store } = await openedDialog();
 		const before = branches();
 		model.edit({ name: "feat/login", workflow: "review" });
 		engine.setWorkflows(TIMBER, { ok: true, workflows: sampleWorkflows.filter(workflow => workflow.name !== "review") });
@@ -252,8 +299,7 @@ describe("a workflow removed between listing and creating", () => {
 		expect(model.getState().step).toEqual({ kind: "form" });
 		expect(render()).toContain(`${UNKNOWN_WORKFLOW_DIAGNOSTIC.replace("<name>", "&lt;name&gt;")}`);
 
-		// Read again, the field no longer offers it, and the next command passes none.
-		await controller.readWorkflows();
+		// Read again after the failure, the field no longer offers it, and the next command passes none.
 		expect(render()).not.toContain('value="review"');
 		expect(render()).toContain("timber new --result-file &lt;temporary file&gt; --no-editor --no-agent -- feat/login");
 	});
