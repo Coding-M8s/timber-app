@@ -2682,7 +2682,7 @@ with Bun 1.4.5, against the mock engine only:
 - Not run by the implementer: the desktop window or the browser build by
   eye, Windows, and macOS.
 
-Run for arenas (issue 172), Linux x64 with Bun 1.4.5 and Git 2.52, with the
+Run for arenas (issue 172), Linux x64 with Bun 1.4.5 and Git 2.56, with the
 installed Timber 0.1.3 and with Timber's main branch at 6f64db7 built with
 `bun build src/index.ts --compile` (it also calls itself 0.1.3):
 
