@@ -47,6 +47,7 @@ import { themePreload } from "./theme-preload";
 import { createTimberSettings } from "./timber-settings";
 import { createUninstaller } from "./uninstall";
 import { createWindowMemory } from "./window-memory";
+import { applyWindowIcon } from "./window-icon";
 import { createWindowReveal } from "./window-reveal";
 import { createWorktreeCommands } from "./worktree-commands";
 import { createBackupCommands } from "./backups";
@@ -479,6 +480,7 @@ const mainWindow = new BrowserWindow({
 	frame: fitWindowFrame(savedWindow?.frame ?? DEFAULT_WINDOW_FRAME, displayAreas()),
 	rpc,
 });
+applyWindowIcon(mainWindow.ptr);
 if (savedWindow?.maximized) mainWindow.maximize();
 const windowReveal = createWindowReveal(by => {
 	mainWindow.show();
