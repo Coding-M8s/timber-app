@@ -2,7 +2,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, sp
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { type Done, createDone } from "../src/bun/done";
+import { type Done, HELD_PREVIEWS, createDone } from "../src/bun/done";
+import { CLEAN_UP_LIMIT } from "../src/mainview/clean-up-format";
 import { createRepositoryList } from "../src/bun/repository-list";
 import { createRepositoryReader } from "../src/bun/repository-reader";
 import { runTimberWithResultFile } from "../src/bun/timber-run";
@@ -588,15 +589,19 @@ describe("with a stand-in for Timber", () => {
 	test("only so many previews are kept, and the oldest go first", async () => {
 		const { preview, apply, ran, timber } = standIn({ result: here(recordedDone.results.removed), stdout: here(recordedDone.previews.dirty) });
 		const ids: string[] = [];
-		for (let index = 0; index < 17; index++) {
+		for (let index = 0; index <= HELD_PREVIEWS; index++) {
 			const result = await preview();
 			if (result.outcome !== "previewed") throw new Error(result.failure.diagnostic);
 			ids.push(result.id);
 		}
-		expect(new Set(ids).size).toBe(17);
+		expect(new Set(ids).size).toBe(HELD_PREVIEWS + 1);
 		rmSync(join(dirname(timber.path), "notes.json"));
 		expect(await apply(ids[0]!)).toMatchObject({ outcome: "failed", ran: false });
 		expect(ran()).toBe(false);
-		expect(await apply(ids[16]!)).toEqual({ outcome: "removed" });
+		expect(await apply(ids[HELD_PREVIEWS]!)).toEqual({ outcome: "removed" });
+	});
+
+	test("enough previews are kept for a whole Clean up merged run, with room for Done dialogs beside it", () => {
+		expect(HELD_PREVIEWS).toBeGreaterThanOrEqual(2 * CLEAN_UP_LIMIT);
 	});
 });

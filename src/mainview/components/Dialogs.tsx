@@ -1,5 +1,6 @@
 import { useAppState } from "../store/react";
 import { SETTINGS_SECTIONS, timberReady } from "../store/state";
+import { CleanUpMergedDialog } from "./CleanUpMergedDialog";
 import { CommandPalette } from "./CommandPalette";
 import { DeleteBackupDialog, RestoreBackupDialog } from "./BackupDialogs";
 import { DoneDialog } from "./DoneDialog";
@@ -28,6 +29,9 @@ export function Dialogs() {
 			return <DoneDialog key={`${dialog.repository}\n${dialog.worktree}`} request={dialog} />;
 		case "rebase-worktree":
 			return <RebaseDialog key={`${dialog.repository}\n${dialog.worktree}`} request={dialog} />;
+		case "clean-up-merged":
+			// It closes itself when the repository is not listed or not there, so the request never lingers unseen.
+			return <CleanUpMergedDialog key={dialog.repository} request={dialog} />;
 		case "palette":
 			return <CommandPalette />;
 		case "restore-backup":

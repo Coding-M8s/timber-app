@@ -8,15 +8,17 @@ import { SETTINGS_LABEL, describeLayoutProblem, describeRepository } from "../sh
 import { DRAG_THRESHOLD, MOVE_REPOSITORY_HINT, MOVE_REPOSITORY_SHORTCUTS, dropIndex, moveStep } from "../repository-drag";
 import { useAppState, useStore } from "../store/react";
 import { hasStatusMark, mostUrgent, shownStatus, summarizeStatuses } from "../../shared/session-status";
-import { isRunning, removalAt, sessionsOf } from "../store/state";
+import { isBeingRemoved, isRunning, removalAt, sessionsOf } from "../store/state";
 import { describeRemovalFailed } from "../done-format";
 import { clashMarksOf, describePortClash } from "../ports-format";
+import { cleanUpUnavailableReason, describeCleanUpButton, mergedCandidates } from "../clean-up-format";
 import { OpenInEditorIconButton } from "./OpenInEditor";
 import { wantTerminalFocus } from "../terminal-focus";
 import { SIDEBAR_ID } from "./SidebarResizer";
 import { BackupsSection } from "./BackupsSection";
 import { WorktreeRow } from "./WorktreeRow";
-import { worktreeMenuChoice } from "../worktree-menu-format";
+import { WORKTREE_MENU_SHORTCUTS, describeRepositoryMenu, opensWorktreeMenu, repositoryMenuChoice, repositoryMenuItems, worktreeMenuChoice } from "../worktree-menu-format";
+import { WorktreeMenu } from "./WorktreeMenu";
 
 export function Sidebar() {
 	const store = useStore();
@@ -46,6 +48,15 @@ export function Sidebar() {
 	const dragEnded = useRef(false);
 	const groupElements = useRef(new Map<string, HTMLElement>());
 	const headerButtons = useRef(new Map<string, HTMLButtonElement>());
+	// The open menu of a repository's header, and where it was asked to be. As for a row's menu, a contextmenu event that
+	// follows Shift+F10 in WebKitGTK leaves the menu the key opened where it is.
+	const [repositoryMenu, setRepositoryMenu] = useState<{ path: string; at: { left: number; top: number } } | null>(null);
+	const menuOpenedByKey = useRef(false);
+	const closeRepositoryMenu = (path: string, backToHeader: boolean) => {
+		menuOpenedByKey.current = false;
+		setRepositoryMenu(null);
+		if (backToHeader) headerButtons.current.get(path)?.focus();
+	};
 
 	/** The identity the list has now for the worktree at this path, which is what the Done dialog is opened with. */
 	const listedIdAt = (repositoryPath: string, path: string) =>
@@ -158,6 +169,10 @@ export function Sidebar() {
 					const fetchMarkerId = `${idBase}-fetch-${index}`;
 					const pullRequests = state.pullRequests[repository.path];
 					const pullProblem = repository.available ? describeRepositoryPullRequestProblem(pullRequests) : null;
+					// The merged worktrees Clean up merged would preview, less those a removal has taken already.
+					const cleanUpCount = cleanUpUnavailableReason(repository, pullRequests) === null
+						? mergedCandidates(repository, pullRequests).filter(worktree => !isBeingRemoved(state, repository.path, worktree.path)).length
+						: 0;
 					const pullProblemId = `${idBase}-pulls-${index}`;
 					const backupProblem = repository.available ? describeBackupsProblem(state.backups[repository.path]) : null;
 					const backupProblemId = `${idBase}-backups-${index}`;
@@ -184,13 +199,22 @@ export function Sidebar() {
 							aria-label={repository.name}
 							data-repository={repository.path}
 						>
-							<div className={repository.available ? "group-head" : "group-head unavailable"}>
+							<div
+								className={repository.available ? "group-head" : "group-head unavailable"}
+								onContextMenu={event => {
+									// A right-click anywhere on the header, its buttons included, opens the repository's menu.
+									event.preventDefault();
+									if (menuOpenedByKey.current && repositoryMenu?.path === repository.path) return;
+									menuOpenedByKey.current = false;
+									setRepositoryMenu({ path: repository.path, at: { left: event.clientX, top: event.clientY } });
+								}}
+							>
 								<button
 									type="button"
 									className="group-header"
 									aria-expanded={open}
 									aria-describedby={describedBy === "" ? undefined : describedBy}
-									aria-keyshortcuts={repositories.length > 1 ? MOVE_REPOSITORY_SHORTCUTS : undefined}
+									aria-keyshortcuts={repositories.length > 1 ? `${MOVE_REPOSITORY_SHORTCUTS} ${WORKTREE_MENU_SHORTCUTS}` : WORKTREE_MENU_SHORTCUTS}
 									title={repositories.length > 1 ? `${describeRepository(repository)}. ${MOVE_REPOSITORY_HINT}` : describeRepository(repository)}
 									ref={element => {
 										if (element) headerButtons.current.set(repository.path, element);
@@ -201,6 +225,13 @@ export function Sidebar() {
 									onPointerUp={onHeaderPointerUp}
 									onPointerCancel={onHeaderPointerCancel}
 									onKeyDown={event => {
+										if (opensWorktreeMenu(event)) {
+											event.preventDefault();
+											const box = event.currentTarget.getBoundingClientRect();
+											menuOpenedByKey.current = true;
+											setRepositoryMenu({ path: repository.path, at: { left: box.left, top: box.bottom } });
+											return;
+										}
 										const step = moveStep(event);
 										if (step === 0) return;
 										event.preventDefault();
@@ -238,10 +269,39 @@ export function Sidebar() {
 										? <span className="group-count">{repository.worktrees.length}</span>
 										: <span className="group-flag">unavailable</span>}
 								</button>
+								{repositoryMenu?.path === repository.path && (
+									<WorktreeMenu
+										label={describeRepositoryMenu(repository)}
+										items={repositoryMenuItems(repository, pullRequests)}
+										at={repositoryMenu.at}
+										onClose={backToHeader => closeRepositoryMenu(repository.path, backToHeader)}
+										onChoose={id => {
+											const request = repositoryMenuChoice(repository, pullRequests, id);
+											if (request) store.openDialog(request);
+										}}
+									/>
+								)}
 								{fetchMarker && <span id={fetchMarkerId} hidden>{fetchMarker.tooltip}</span>}
 								{pullProblem && <span id={pullProblemId} hidden>{pullProblem.tooltip}</span>}
 								{backupProblem && <span id={backupProblemId} hidden>{backupProblem.tooltip}</span>}
 								{summary && <span id={summaryId} hidden>{`Agents: ${summary}.`}</span>}
+								{cleanUpCount > 0 && (
+									// Shown only while there is something to clean up, so it is visible without pointing at the header.
+									<button
+										type="button"
+										className="icon-button group-clean-up"
+										aria-haspopup="dialog"
+										aria-label={describeCleanUpButton(repository.name, cleanUpCount)}
+										title={describeCleanUpButton(repository.name, cleanUpCount)}
+										onClick={() => store.openDialog({ kind: "clean-up-merged", repository: repository.path })}
+									>
+										<svg aria-hidden="true" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+											<path d="M2.5 4.5h11M6 4.5V2.5h4v2M4 4.5l.7 9h6.6l.7-9" />
+											<path d="M6.5 9l1.2 1.2L10 8" />
+										</svg>
+										<span className="group-clean-up-count" aria-hidden="true">{cleanUpCount}</span>
+									</button>
+								)}
 								{repository.available && (
 									<button
 										type="button"
@@ -304,6 +364,9 @@ export function Sidebar() {
 									if (removal.status.kind === "running") {
 										return <p key={removal.worktree.path} className="sidebar-note removal-running" title={removal.worktree.path}>Removing {label}</p>;
 									}
+									if (removal.status.kind === "waiting") {
+										return <p key={removal.worktree.path} className="sidebar-note removal-running" title={removal.worktree.path}>Waiting to remove {label}</p>;
+									}
 									return (
 										<div key={removal.worktree.path} className="sidebar-error group-failure removal-failure">
 											<p className="sidebar-error-title">{describeRemovalFailed(label, false)}</p>
@@ -362,7 +425,7 @@ export function Sidebar() {
 												)}
 												onMenuChoice={id => {
 													// For this row's worktree, not the selected one, and without selecting it.
-													const request = worktreeMenuChoice(repository.path, worktree, id, removal?.status.kind === "running");
+													const request = worktreeMenuChoice(repository.path, worktree, id, isBeingRemoved(state, repository.path, worktree.path));
 													if (request) store.openDialog(request);
 												}}
 											/>

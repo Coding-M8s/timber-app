@@ -3,7 +3,7 @@ import type { Worktree } from "../../shared/model";
 import { type DoneOptions, describeDoneApply, describeDonePreview } from "../../shared/timber-done";
 import {
 	DONE_EXPIRED_NOTE, DONE_REMOTE_NOTE, describeBranchEffect, describeDone, describeExpiry, describeIgnoredEffect,
-	describeRemoving, describeUnpublishedCommits, filesLost, losesWork,
+	describeUnpublishedCommits, filesLost, losesWork,
 } from "../done-format";
 import { worktreeLabel } from "../format";
 import { describeDoneSessionsWarning } from "../terminal-format";
@@ -93,12 +93,11 @@ export function DoneDialogView(props: DoneDialogViewProps) {
 			command={describeDoneApply(worktree.path)}
 			submission={submission}
 			submitLabel="Remove"
-			runningLabel={describeRemoving(label)}
+			runningLabel={`Removing ${label}`}
 			failureTitle={`Timber did not finish removing ${label}`}
 			failureNote={failureNote}
 			canSubmit={!gone && !basePending && canRemove(session)}
 			destructive
-			closableWhileRunning
 			cancelLabel={gone ? "Close" : lossy ? "Keep" : "Cancel"}
 			onSubmit={onRemove}
 			onClose={onClose}
@@ -185,10 +184,11 @@ export function DoneDialogView(props: DoneDialogViewProps) {
  * The Done dialog for one worktree. Opening it asks Timber for a preview,
  * which removes nothing. Remove approves exactly the preview on screen, once.
  *
- * The removal itself belongs to the store (`removeWorktree`), so the dialog
- * can close while it runs and the worktree's row shows it meanwhile. The
- * dialog shows the store's record of that removal: running, or failed with
- * Timber's diagnostic. Closing it puts a failure away.
+ * The removal itself belongs to the store (`removeWorktree`), which closes
+ * the dialog as soon as it starts, so the window is free while Timber works
+ * and the worktree's row shows it meanwhile. A failure is kept by the store
+ * and shown here when the dialog is opened again from the row's Details,
+ * with Timber's diagnostic. Closing it puts the failure away.
  *
  * The request names the worktree by identity. When it leaves the list while
  * the dialog is open, the dialog says so and offers nothing but Close. A

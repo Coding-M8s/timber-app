@@ -39,7 +39,7 @@ describe("palette entries", () => {
 		const labels = entries.filter(entry => entry.kind === "action").map(entry => entry.label);
 		expect(labels).toEqual([
 			"New worktree", "Open existing branch", "Fetch now", "Rebase", "Done", "Open in editor", "Open terminal", "Start Claude Code", "Start Codex",
-			"Settings", "Add repository",
+			"Clean up merged", "Clean up merged", "Settings", "Add repository",
 		]);
 	});
 

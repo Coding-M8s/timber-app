@@ -20,14 +20,15 @@ import type { ChooseSoundResult, SoundChoice, SoundOutcome } from "../../shared/
 import type { ExportThemeResult, ImportThemeResult } from "../../shared/theme-file";
 import { type OpenTerminalRequest, type TerminalChange, type TerminalSession, WORKTREE_SETUP_SESSION_NAME } from "../../shared/terminal";
 import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "../../shared/timber-config";
-import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "../../shared/timber-done";
+import type { DoneApplyRequest, DoneApplyResult, DonePreview, DonePreviewRequest, DonePreviewResult } from "../../shared/timber-done";
 import type { RebaseRequest, RebaseResult } from "../../shared/timber-rebase";
 import { type CreatePullRequestResult, initialPullRequestBase, pullRequestBaseFromText } from "../../shared/timber-pr";
 import { type PullRequestFields, defaultPullRequestTitle, presentPullRequestCreation } from "../pull-request-create-format";
 import type { WorkflowList } from "../../shared/workflows";
 import { type Draw, createTerminalFeed } from "../terminal-feed";
 import { describeOrphanTerminal } from "../terminal-format";
-import { describeRemovalFailed } from "../done-format";
+import { describeDone, describeRemovalFailed } from "../done-format";
+import { SESSION_STARTED_DIAGNOSTIC, describeCleanUpEnded } from "../clean-up-format";
 import { listedOrder } from "../changes-format";
 import { describeOpenedInEditor } from "../editor-format";
 import { describeAdded, describeRemoved, folderName, worktreeLabel } from "../format";
@@ -37,7 +38,7 @@ import { mergeOverlapping } from "./merge";
 import { keepEntries } from "./records";
 import {
 	type AppState, type ChangesView, type DialogRequest, type Operation, type PullRequestForm, type Removal, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood,
-	reconcileRemovals, removalAt, reconcileSelection, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, timberReady, withTerminal, withoutSession } from "./state";
+	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, timberReady, withTerminal, withoutSession } from "./state";
 
 /**
  * The single holder of what the interface shows: Timber's status, the
@@ -235,12 +236,28 @@ export interface AppStore {
 	 * actions are off. Null, with nothing run, while a removal of that
 	 * worktree runs already. Removals of other worktrees run at the same time.
 	 *
-	 * When it worked, the record goes, a toast says so with `toast`, and the
-	 * Done dialog of that worktree closes if it is still open. When it failed,
-	 * the record stays as a failure until it is dismissed, and unless that
-	 * dialog is open a toast points at it. Never throws.
+	 * Once it starts, the Done dialog of that worktree closes, so the rest of
+	 * the window is free while Timber works. When it worked, the record goes
+	 * and a toast says so with `toast`. When it failed, the record stays as a
+	 * failure until it is dismissed, and unless the Done dialog of that
+	 * worktree is open again a toast points at it. With `announce` false no
+	 * toast is shown either way, for a caller that says how a batch ended.
+	 * A removal that Clean up merged queued (`waiting`) may start. Never
+	 * throws.
 	 */
-	removeWorktree(request: { repository: string; worktree: Worktree; preview: string; toast: string }): Promise<DoneApplyResult | null>;
+	removeWorktree(request: { repository: string; worktree: Worktree; preview: string; toast: string; announce?: boolean }): Promise<DoneApplyResult | null>;
+	/**
+	 * Clean up merged: remove these worktrees of one repository one at a
+	 * time, each approving its own preview, so scripts that run before
+	 * deletion never compete. A second run in the same repository starts once
+	 * the first ended. All of them are queued (`waiting`) at once, so
+	 * their actions are off until their turn. Before each turn the worktree
+	 * is looked up in the list as it is then: one that left it is passed
+	 * over, and one with a running session fails without running anything.
+	 * A failure stays as that worktree's record, as for Done, and never
+	 * stops the others. One toast says how the run ended. Never throws.
+	 */
+	cleanUpMerged(request: { repository: string; items: readonly { worktree: Worktree; preview: string; shown: DonePreview }[] }): Promise<void>;
 	/** Put away a failed removal, once the person has seen it. A running one stays. */
 	dismissRemoval(repository: string, path: string): void;
 	/**
@@ -1284,25 +1301,103 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		return listed?.path === worktree.path;
 	}
 
-	async function removeWorktree(request: { repository: string; worktree: Worktree; preview: string; toast: string }): Promise<DoneApplyResult | null> {
-		const { repository, worktree, preview, toast } = request;
+	/** Every removal but the one of the worktree at this registered path in this repository. */
+	const removalsBut = (removals: readonly Removal[], repository: string, path: string) =>
+		removals.filter(removal => removal.repository !== repository || removal.worktree.path !== path);
+
+	/** Keep a failure as the worktree's record, unless its repository left the list and has nowhere to show it. */
+	function recordFailure(repository: string, worktree: Worktree, toast: string, failure: TimberFailure): boolean {
+		const listedRepository = state.repositories.find(candidate => candidate.path === repository);
+		const gone = !listedRepository?.worktrees.some(candidate => candidate.path === worktree.path);
+		const others = removalsBut(state.removals, repository, worktree.path);
+		update({ removals: listedRepository ? [...others, { repository, worktree, toast, status: { kind: "failed", failure, gone } }] : others });
+		return listedRepository !== undefined;
+	}
+
+	async function removeWorktree(request: { repository: string; worktree: Worktree; preview: string; toast: string; announce?: boolean }): Promise<DoneApplyResult | null> {
+		const { repository, worktree, preview, toast, announce = true } = request;
 		const { path } = worktree;
-		if (isBeingRemoved(state, repository, path)) return null;
-		const others = (removals: readonly Removal[]) => removals.filter(removal => removal.repository !== repository || removal.worktree.path !== path);
-		update({ removals: [...others(state.removals), { repository, worktree, toast, status: { kind: "running" } }] });
+		if (removalAt(state, repository, path)?.status.kind === "running") return null;
+		// The removal goes on in the background, so its Done dialog gets out of the way at once.
+		const closing = doneDialogShows(repository, worktree);
+		const record: Removal = { repository, worktree, toast, status: { kind: "running" } };
+		// A queued one keeps its place, so the sidebar lists a run in its order.
+		const queued = removalAt(state, repository, path);
+		const removals = queued ? state.removals.map(removal => removal === queued ? record : removal) : [...state.removals, record];
+		update({ removals, dialog: closing ? null : state.dialog });
 		const result = await applyDone({ repository, path, preview });
+		// A Done dialog opened for the worktree meanwhile, such as one for a failure before, shows the end itself.
 		const watching = doneDialogShows(repository, worktree);
 		if (result.outcome === "removed") {
-			update({ removals: others(state.removals), dialog: watching ? null : state.dialog });
-			showToast(toast);
+			update({ removals: removalsBut(state.removals, repository, path), dialog: watching ? null : state.dialog });
+			if (announce) showToast(toast);
 			return result;
 		}
-		const listedRepository = state.repositories.find(candidate => candidate.path === repository);
-		const gone = !listedRepository?.worktrees.some(candidate => candidate.path === path);
-		// A repository that left the list meanwhile has nowhere to show the failure, so nothing is kept for it.
-		update({ removals: listedRepository ? [...others(state.removals), { repository, worktree, toast, status: { kind: "failed", failure: result.failure, gone } }] : others(state.removals) });
-		if (!watching) showToast(describeRemovalFailed(worktreeLabel(worktree), listedRepository !== undefined), true);
+		const kept = recordFailure(repository, worktree, toast, result.failure);
+		if (announce && !watching) showToast(describeRemovalFailed(worktreeLabel(worktree), kept), true);
 		return result;
+	}
+
+	/** The run of Clean up merged in each repository, by its path, so a second run waits for the first. */
+	const cleanUps = new Map<string, Promise<void>>();
+
+	type CleanUpItems = readonly { worktree: Worktree; preview: string; shown: DonePreview }[];
+	const toastOf = (worktree: Worktree, shown: DonePreview) => describeDone(worktreeLabel(worktree), shown);
+
+	function cleanUpMerged(request: { repository: string; items: CleanUpItems }): Promise<void> {
+		const { repository } = request;
+		const items = request.items.filter(item => !isBeingRemoved(state, repository, item.worktree.path));
+		if (items.length === 0) return Promise.resolve();
+		// Queued at once, so their actions are off even while an earlier run in the repository still works.
+		const paths = new Set(items.map(item => item.worktree.path));
+		update({
+			removals: [
+				...state.removals.filter(removal => removal.repository !== repository || !paths.has(removal.worktree.path)),
+				...items.map((item): Removal => ({ repository, worktree: item.worktree, toast: toastOf(item.worktree, item.shown), status: { kind: "waiting" } })),
+			],
+		});
+		const before = cleanUps.get(repository);
+		// With nothing before it, it starts right away, so its first removal shows as running at once.
+		const run = before ? before.then(() => runCleanUp(repository, items)) : runCleanUp(repository, items);
+		cleanUps.set(repository, run);
+		void run.finally(() => {
+			if (cleanUps.get(repository) === run) cleanUps.delete(repository);
+		});
+		return run;
+	}
+
+	async function runCleanUp(repository: string, items: CleanUpItems): Promise<void> {
+		const queued = new Set(items.map(item => item.worktree.path));
+		const name = state.repositories.find(candidate => candidate.path === repository)?.name ?? repository;
+		let removed = 0;
+		let failed = 0;
+		try {
+			for (const item of items) {
+				const { path } = item.worktree;
+				queued.delete(path);
+				// The list as it is now, which each removal before this one read again.
+				const listedRepository = state.repositories.find(candidate => candidate.path === repository);
+				const worktree = listedRepository?.worktrees.find(candidate => candidate.path === path);
+				if (!worktree) {
+					update({ removals: removalsBut(state.removals, repository, path) });
+					continue;
+				}
+				const toast = toastOf(worktree, item.shown);
+				if (runningSessionCount(state, worktree.id) > 0) {
+					recordFailure(repository, worktree, toast, { command: null, diagnostic: SESSION_STARTED_DIAGNOSTIC, output: null });
+					failed++;
+					continue;
+				}
+				const result = await removeWorktree({ repository, worktree, preview: item.preview, toast, announce: false });
+				// Null: a removal of it ran already, which reports for itself.
+				if (result?.outcome === "removed") removed++;
+				else if (result) failed++;
+			}
+		} finally {
+			// Whatever is still queued, for example after the repository left the list, is not waiting for anything.
+			if (queued.size > 0) update({ removals: state.removals.filter(removal => removal.repository !== repository || !queued.has(removal.worktree.path) || removal.status.kind !== "waiting") });
+		}
+		if (removed + failed > 0) showToast(describeCleanUpEnded(name, removed, failed), failed > 0);
 	}
 
 	function dismissRemoval(repository: string, path: string): void {
@@ -1817,6 +1912,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		previewDone,
 		applyDone,
 		removeWorktree,
+		cleanUpMerged,
 		dismissRemoval,
 		openTerminal,
 		startSessionsIn,

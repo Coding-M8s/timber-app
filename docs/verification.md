@@ -2563,3 +2563,13 @@ d0e7908:
   opening, Open in browser, and Copy were not clicked), Windows (the
   `/proc` tests are skipped there), and macOS. Ports of sessions are read
   on Linux only.
+
+Run for Clean up merged and Done closing on Remove (issue 162), Linux x64
+with Bun 1.4.5, against the mock engine only:
+
+- `bun run typecheck`: no errors.
+- `bun run typecheck:desktop`: no errors.
+- `bun test`: all passed, none failed.
+- `bun run build:web`: built.
+- Not run: the desktop window, or a real `timber __ide-done` run of more
+  than one worktree in a row.

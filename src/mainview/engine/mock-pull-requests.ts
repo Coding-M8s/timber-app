@@ -86,6 +86,12 @@ export const samplePullRequests: Readonly<Record<string, PullRequest>> = {
 		runs: [run("test", "passing"), run("build", "pending"), run("deploy preview", "pending")],
 	}),
 	"release/2.4": pullRequest(5, "billing", "Release 2.4", { state: "closed", summary: "none", runs: [], review: "none" }),
+	// The storefront repository, after several pull requests merged (issue 162).
+	"feat/coupons": pullRequest(61, "storefront", "Apply coupons at checkout", { state: "merged", review: "approved" }),
+	"chore/ci-cache": pullRequest(62, "storefront", "Cache dependencies in CI", { state: "merged", review: "approved" }),
+	"feat/cart-redesign": pullRequest(63, "storefront", "Redesign the cart", { state: "merged", review: "approved" }),
+	"fix/currency-rounding": pullRequest(64, "storefront", "Round currencies half to even", { state: "merged", review: "approved" }),
+	"feat/wishlist": pullRequest(65, "storefront", "Save items to a wishlist", { review: "review-required" }),
 };
 
 /** Sample failures by primary checkout: every branch in it gets the reason, as from Timber. */

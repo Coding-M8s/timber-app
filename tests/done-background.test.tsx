@@ -105,16 +105,25 @@ describe("a removal that runs in the background", () => {
 		expect(store.getState().dialog).toBeNull();
 	});
 
-	test("the Done dialog that stays open shows the removal running, with Close", async () => {
+	test("Remove closes the Done dialog at once, so the window is free while Timber works", async () => {
 		const { store } = await startedStore();
 		store.openDialog({ kind: "done-worktree", repository: TIMBER, worktree: sample(FEATURE).id });
 		const { removal } = await startRemoval(store, FEATURE);
-		const markup = app(store);
-		expect(markup).toContain('<p class="dialog-progress-text" role="status">Removing feat/github-issue-lookup. Closing this dialog does not stop it');
-		expect(markup).toContain('<button type="button" class="button quiet" autofocus="">Close</button>');
-		expect(markup).toContain('<button type="button" class="button danger" disabled="">Running</button>');
-		await removal;
+		// The removal runs, and nothing covers the window.
+		expect(store.getState().removals).toMatchObject([{ worktree: { path: FEATURE }, status: { kind: "running" } }]);
+		expect(store.getState().dialog).toBeNull();
 		expect(app(store)).not.toContain("<dialog");
+		expect(app(store)).toContain(">removing</span>");
+		expect(await removal).toEqual({ outcome: "removed" });
+		expect(toastTexts(store)).toEqual([`Removed ${FEATURE}`]);
+	});
+
+	test("Remove leaves a dialog for another worktree, or another dialog, where it is", async () => {
+		const { store } = await startedStore();
+		store.openDialog({ kind: "settings" });
+		const { removal } = await startRemoval(store, FEATURE);
+		expect(store.getState().dialog).toEqual({ kind: "settings" });
+		await removal;
 	});
 
 	test("two worktrees are removed at once, and the same worktree is never removed twice", async () => {
@@ -218,16 +227,18 @@ describe("a removal that failed while its dialog was closed", () => {
 		expect(store.getState().removals).toEqual([]);
 	});
 
-	test("no toast while the Done dialog of the worktree is open: the dialog shows the failure itself", async () => {
+	test("a failure after Remove closed the dialog is announced with a toast, and kept for Details", async () => {
 		const { store, engine } = await startedStore();
-		// The dialog stays open from Remove on.
 		store.openDialog({ kind: "done-worktree", repository: TIMBER, worktree: sample(FEATURE).id });
 		const { removal } = await startRemoval(store, FEATURE);
 		engine.setChanges(FEATURE, { untracked: ["late.txt"] });
 		await removal;
-		expect(store.getState().toasts).toEqual([]);
+		expect(store.getState().dialog).toBeNull();
+		expect(store.getState().toasts).toMatchObject([{ text: describeRemovalFailed("feat/github-issue-lookup", true), problem: true }]);
 		expect(store.getState().removals).toMatchObject([{ status: { kind: "failed" } }]);
-		expect(store.getState().dialog?.kind).toBe("done-worktree");
+		// Details opens the dialog again, which shows the failure.
+		store.openDialog({ kind: "done-worktree", repository: TIMBER, worktree: sample(FEATURE).id });
+		expect(app(store)).toContain("Timber did not finish removing feat/github-issue-lookup");
 	});
 
 	test("a partial failure: the worktree left the list, the failure stays in its repository, and the details are reachable", async () => {

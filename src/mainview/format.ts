@@ -175,6 +175,7 @@ export type RowMarkerKind =
 	| "force-pushed"
 	| "sync-unknown"
 	| "removing"
+	| "removal-waiting"
 	| "removal-failed"
 	| "detached"
 	| "folder-missing"
@@ -243,6 +244,7 @@ export function describeRowMarkers(worktree: Worktree, pullRequest: PullRequestE
 	const state = (kind: RowMarkerKind, text: string, tooltip: string) => void markers.push({ kind, place: "state", text, tooltip });
 
 	if (removal?.kind === "running") state("removing", "removing", "Timber is removing this worktree. Its actions are off until Timber finishes.");
+	if (removal?.kind === "waiting") state("removal-waiting", "waiting to be removed", "Clean up merged removes this worktree once the ones before it are done. Its actions are off until then.");
 	if (removal?.kind === "failed") state("removal-failed", "removal failed", "Timber did not finish removing this worktree. Details shows what it said.");
 
 	if (worktree.branch === null) {

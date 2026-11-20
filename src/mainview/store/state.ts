@@ -132,6 +132,11 @@ export interface Toast {
 export type RemovalStatus =
 	| { kind: "running" }
 	/**
+	 * Queued by Clean up merged, which removes one worktree at a time. Its
+	 * actions are off as while it runs, and nothing has run for it yet.
+	 */
+	| { kind: "waiting" }
+	/**
 	 * Timber did not finish. `gone` is true when the worktree had left the
 	 * list once the repository was read again, as after a partial failure in
 	 * which the folder was removed and the branch was not.
@@ -162,6 +167,8 @@ export type DialogRequest =
 	| { kind: "done-worktree"; repository: string; worktree: string }
 	/** Rebase a worktree with Timber, in a new session. Named as for Done. */
 	| { kind: "rebase-worktree"; repository: string; worktree: string }
+	/** Remove every linked worktree of one repository whose pull request merged. `repository` is the path of the primary checkout. */
+	| { kind: "clean-up-merged"; repository: string }
 	/**
 	 * Restore or delete one backup. `backup` is the backup as the person chose
 	 * it, kept as it was: a later read of the list never changes what the
@@ -530,24 +537,28 @@ export function removalAt(state: Pick<AppState, "removals">, repository: string,
 	return state.removals.find(removal => removal.repository === repository && removal.worktree.path === path) ?? null;
 }
 
-/** Whether Timber is removing the worktree at this registered path right now. Its actions are off meanwhile. */
+/**
+ * Whether Timber is removing the worktree at this registered path right now,
+ * or Clean up merged has it queued. Its actions are off meanwhile.
+ */
 export function isBeingRemoved(state: Pick<AppState, "removals">, repository: string, path: string): boolean {
-	return removalAt(state, repository, path)?.status.kind === "running";
+	const kind = removalAt(state, repository, path)?.status.kind;
+	return kind === "running" || kind === "waiting";
 }
 
 /**
  * The removals that still mean something after the list changed. A failed
  * one goes when its repository left the list. A failed one whose worktree
  * left the list becomes gone, and a gone one goes when a worktree is listed
- * at that path again, because that is another worktree. A running one
- * always stays.
+ * at that path again, because that is another worktree. A running or
+ * waiting one always stays: whatever runs it takes it away.
  */
 export function reconcileRemovals(repositories: readonly Repository[], removals: readonly Removal[]): readonly Removal[] {
 	let changed = false;
 	const kept: Removal[] = [];
 	for (const removal of removals) {
 		const { status } = removal;
-		if (status.kind === "running") {
+		if (status.kind === "running" || status.kind === "waiting") {
 			kept.push(removal);
 			continue;
 		}

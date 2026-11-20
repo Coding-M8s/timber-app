@@ -80,6 +80,13 @@ change them here first when they change.
   move through the menu; Escape and Tab give the keyboard back to the row,
   as do scrolling the list, resizing the window, and leaving it. A click
   elsewhere puts the menu away.
+- Right-clicking a repository's header, or Shift+F10 or the context menu
+  key on it, opens a menu for that repository, which works the same way. It
+  holds Clean up merged, disabled with the reason until at least one linked
+  worktree of the repository has a merged pull request. The command palette
+  has the same action, once per repository. While there are merged
+  worktrees, the header also shows a Clean up merged button before Fetch
+  now, with how many there are, not counting those already being removed.
 - Timber's backups are listed below a repository's worktrees, under
   "Backups", with their branch, how long ago they were made, and their
   size. Each has Restore, and Delete unless Timber protects it, which says
@@ -189,8 +196,9 @@ change them here first when they change.
 
 - Every dialog that runs Timber shows the exact command in its footer.
 - While the command runs, the dialog shows progress, its controls are
-  disabled, and it cannot be submitted again. It cannot be closed either,
-  except for Done, whose removal goes on in the background.
+  disabled, and it cannot be submitted again. It cannot be closed either.
+  Done and Clean up merged are the exceptions: their removals go on in the
+  background, so Remove closes the dialog at once.
 - A command that worked closes the dialog, if it is still open, and leaves a
   toast, such as "Worktree created", which disappears on its own.
 - A command that failed keeps the dialog open with Timber's diagnostic, so the
@@ -229,10 +237,19 @@ change them here first when they change.
   deletion shows what is left and "Delete again".
 - **Done:** a clean, published worktree gets a summary of what is removed,
   including ignored files. One with unsaved work gets "Delete anyway?" with
-  Keep as the default. After Remove the dialog offers Close: the removal
-  goes on, the worktree's row says "removing" and its actions are off, and a
-  toast says how it ended. A failure stays on the row, or in the repository's
-  group once the worktree left the list, with Details to read it.
+  Keep as the default. Remove closes the dialog: the removal goes on, the
+  worktree's row says "removing" and its actions are off, and a toast says
+  how it ended. A failure stays on the row, or in the repository's group
+  once the worktree left the list, with Details to read it.
+- **Clean up merged:** every linked worktree of one repository whose pull
+  request merged, previewed with Timber's defaults, as Ready or Skipped with
+  the reason. Anything that would need "Delete anyway?", except a deleted
+  upstream, and a live session make a row Skipped, with Open Done for its
+  own dialog. A Ready row with a deleted upstream says that commits only on
+  its branch go with it. One `apply` per Ready row shows before Remove.
+  Remove closes the dialog and the removals run one at a time; queued rows
+  say "waiting to be removed", each ends as for Done, and one toast sums
+  the run up.
 - **Settings:** sections for editor, agents, chops, notifications, fetching, Jira, setup scripts,
   pre-done scripts, starting branch, remote, worktree folder, and layout.
   Presets where they help, but every value is editable free-form, and every
