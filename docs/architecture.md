@@ -5305,11 +5305,15 @@ Windows 11 Home x64 machine (build 26200) with Bun 1.4.4 and Claude Code
   bundled `index.js` requires `node-pty` at run time. From the unpacked
   build, a script beside `index.js` resolved node-pty there and ran cmd.exe
   on its ConPTY.
-- Not run: the installed app, so xterm.js answering `CSI c` in the window,
-  the marks and notifications on Windows, and a session the window does not
-  show; Codex; Windows on arm64; and the terminal tests on Linux and macOS,
-  whose sessions now start through `startBunTerminal` (they are skipped on
-  Windows, and this machine's WSL has no Bun).
+- The build installed with `Timber-Setup.exe` and run by a person: Claude
+  Code opened in a new project reported its status in the app, and the
+  person reported it working.
+- CI on the pull request: the Linux `check` job passed, 2105 tests and none
+  failed, so the terminal tests on Linux ran through `startBunTerminal`.
+  The Windows job failed only in tests listed in issue 163, none of them
+  terminal tests.
+- Not run: notifications on Windows, a session the window does not show,
+  Codex, Windows on arm64, and macOS.
 
 Not run yet:
 
