@@ -113,9 +113,9 @@ describe("timberFinder", () => {
 	};
 
 	test("requires the newest release known on start", async () => {
-		const { look } = timberOf({ current: "0.1.2" });
-		const find = timberFinder({ look, latest: () => "0.1.3", override: false });
-		expect(await find()).toEqual({ state: "too-old", path: "/bin/timber", found: "0.1.2", required: "0.1.3", latestRelease: true });
+		const { look } = timberOf({ current: "0.1.3" });
+		const find = timberFinder({ look, latest: () => "0.1.4", override: false });
+		expect(await find()).toEqual({ state: "too-old", path: "/bin/timber", found: "0.1.3", required: "0.1.4", latestRelease: true });
 	});
 
 	test("with no release known, offline on a first start, the built-in minimum is enough", async () => {

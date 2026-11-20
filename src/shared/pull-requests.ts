@@ -8,7 +8,7 @@ import { displayText, readDiagnostic } from "./workflows";
  * (see src/bun/pull-requests.ts).
  *
  * Timber reads GitHub with its own login, so the app never holds a token.
- * Timber reports no reviewers, only the review decision.
+ * Reviewers come from Timber 0.1.3, the first release with the command.
  */
 export const APP_PR_ARGUMENTS = ["__app-pr"] as const;
 export const APP_PR_COMMAND = `timber ${APP_PR_ARGUMENTS.join(" ")}`;
@@ -21,6 +21,14 @@ export type ChecksSummary = "passing" | "failing" | "pending" | "none";
 /** How one check run or commit status ended, or that it has not yet. */
 export type CheckRunStatus = "passing" | "failing" | "pending" | "skipped";
 export type ReviewDecision = "approved" | "changes-requested" | "review-required" | "none";
+/** A person, a team (which can only be requested), or a bot such as Copilot. */
+export type ReviewerKind = "user" | "team" | "bot";
+/**
+ * Where one reviewer stands. `requested`: asked, and no review since. Otherwise
+ * their latest review, except that a later comment never hides an approval or
+ * a request for changes.
+ */
+export type ReviewerState = "requested" | "approved" | "changes-requested" | "commented" | "dismissed";
 /**
  * Why Timber could not look pull requests up. One lookup answers for the
  * whole repository, so a failure applies to every branch in it.
@@ -37,6 +45,16 @@ export interface CheckRun {
 	name: string;
 	status: CheckRunStatus;
 	/** An `https` link to the run, or null when there is none to follow. */
+	url: string | null;
+}
+
+/** One reviewer of a pull request. */
+export interface Reviewer {
+	kind: ReviewerKind;
+	/** A login, or `org/team-slug` for a team. Text from GitHub, made safe to show. */
+	name: string;
+	state: ReviewerState;
+	/** An `https` link to the profile or team, or null when there is none to follow. */
 	url: string | null;
 }
 
@@ -60,6 +78,10 @@ export interface PullRequest {
 		runs: CheckRun[];
 	};
 	review: ReviewDecision;
+	/** Requested reviewers first, then people who reviewed, each once, in Timber's order. */
+	reviewers: Reviewer[];
+	/** False when GitHub did not let Timber's login read some reviewers; the ones it could read are listed. */
+	reviewersComplete: boolean;
 	/** The body as written, made safe to show as plain text: line breaks and tabs kept, other control characters replaced. Never trusted markup. May be empty. */
 	description: string;
 }
@@ -80,6 +102,8 @@ const STATES: readonly PullRequestState[] = ["open", "draft", "merged", "closed"
 const SUMMARIES: readonly ChecksSummary[] = ["passing", "failing", "pending", "none"];
 const RUN_STATUSES: readonly CheckRunStatus[] = ["passing", "failing", "pending", "skipped"];
 const REVIEWS: readonly ReviewDecision[] = ["approved", "changes-requested", "review-required", "none"];
+const REVIEWER_KINDS: readonly ReviewerKind[] = ["user", "team", "bot"];
+const REVIEWER_STATES: readonly ReviewerState[] = ["requested", "approved", "changes-requested", "commented", "dismissed"];
 const REASONS: readonly PullRequestFailureReason[] = ["offline", "sign-in-needed", "not-github", "failed"];
 
 /** How much of a diagnostic is passed on. */
@@ -130,17 +154,30 @@ function readChecks(value: unknown): PullRequest["checks"] | null {
 	return { summary: value.summary, passing: counts.passing, failing: counts.failing, pending: counts.pending, runs };
 }
 
+/** Null when the value is not a list of reviewers. */
+function readReviewers(value: unknown): Reviewer[] | null {
+	if (!Array.isArray(value)) return null;
+	const reviewers: Reviewer[] = [];
+	for (const reviewer of value) {
+		if (!isFields(reviewer) || typeof reviewer.name !== "string" || !oneOf(REVIEWER_KINDS, reviewer.kind) || !oneOf(REVIEWER_STATES, reviewer.state)) return null;
+		if (reviewer.url !== null && typeof reviewer.url !== "string") return null;
+		reviewers.push({ kind: reviewer.kind, name: displayText(reviewer.name.trim()), state: reviewer.state, url: readLink(reviewer.url) });
+	}
+	return reviewers;
+}
+
 /** Null when the value is not one pull request. Fields this app does not use are ignored. */
 function readPullRequest(value: unknown): PullRequest | null {
 	if (!isFields(value)) return null;
-	const { number, title, state, baseBranch, review, description } = value;
+	const { number, title, state, baseBranch, review, reviewersComplete, description } = value;
 	if (typeof number !== "number" || !Number.isSafeInteger(number) || number < 1) return null;
 	const url = readLink(value.url);
 	if (url === null || typeof title !== "string" || typeof baseBranch !== "string" || typeof description !== "string") return null;
-	if (!oneOf(STATES, state) || !oneOf(REVIEWS, review)) return null;
+	if (!oneOf(STATES, state) || !oneOf(REVIEWS, review) || typeof reviewersComplete !== "boolean") return null;
 	const checks = readChecks(value.checks);
-	if (checks === null) return null;
-	return { number, url, title: displayText(title.trim()), state, baseBranch: displayText(baseBranch), checks, review, description: descriptionText(description) };
+	const reviewers = readReviewers(value.reviewers);
+	if (checks === null || reviewers === null) return null;
+	return { number, url, title: displayText(title.trim()), state, baseBranch: displayText(baseBranch), checks, review, reviewers, reviewersComplete, description: descriptionText(description) };
 }
 
 /** Null when the value is not one entry, or its fields do not agree with its outcome. */

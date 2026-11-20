@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { browserSampleRepositories, createMockEngine, samplePickableRepository, sampleRepositories } from "../src/mainview/engine/mock";
 import { samplePullRequests } from "../src/mainview/engine/mock-pull-requests";
-import { NO_CHECKS, NO_DESCRIPTION, OPEN_IN_BROWSER, describePullRequestTab } from "../src/mainview/pull-request-tab-format";
+import { NO_CHECKS, NO_DESCRIPTION, NO_REVIEWERS, OPEN_IN_BROWSER, describePullRequestTab } from "../src/mainview/pull-request-tab-format";
 import { createAppStore } from "../src/mainview/store/store";
 import type { PullRequest, PullRequestEntry, PullRequestList } from "../src/shared/pull-requests";
 
@@ -32,6 +32,8 @@ const pull = (fields: Partial<PullRequest> = {}): PullRequest => ({
 		],
 	},
 	review: "changes-requested",
+	reviewers: [],
+	reviewersComplete: true,
 	description: "Closes #41.",
 	...fields,
 });
@@ -66,6 +68,39 @@ describe("describePullRequestTab", () => {
 		expect(of({ checks: { summary: "pending", passing: 0, failing: 0, pending: 2, runs: [] } }).checks).toEqual({ text: "Checks still run: 2 pending.", warning: false });
 		expect(of({ checks: { summary: "none", passing: 0, failing: 0, pending: 0, runs: [] } }).checks.text).toBe(NO_CHECKS);
 		expect(of({ title: "" }).heading).toBe("Pull request #42");
+	});
+
+	test("each reviewer has its state in a word, teams and bots say so, and a request for changes is red", () => {
+		const reviewers = [
+			{ kind: "team", name: "example/maintainers", state: "requested", url: "https://github.com/orgs/example/teams/maintainers" },
+			{ kind: "user", name: "bob", state: "changes-requested", url: "https://github.com/bob" },
+			{ kind: "user", name: "carol", state: "approved", url: null },
+			{ kind: "bot", name: "copilot-pull-request-reviewer", state: "commented", url: null },
+			{ kind: "user", name: "dave", state: "dismissed", url: "https://github.com/dave" },
+		] as const;
+		const view = describePullRequestTab(list(found({ reviewers: [...reviewers] })), found({ reviewers: [...reviewers] }), BRANCH);
+		if (view.kind !== "found") throw new Error(view.kind);
+		expect(view.reviewers).toEqual([
+			{ name: "example/maintainers", kind: "team", state: "requested", warning: false, url: "https://github.com/orgs/example/teams/maintainers", openTitle: "Open example/maintainers on GitHub in the browser" },
+			{ name: "bob", kind: null, state: "changes requested", warning: true, url: "https://github.com/bob", openTitle: "Open bob on GitHub in the browser" },
+			{ name: "carol", kind: null, state: "approved", warning: false, url: null, openTitle: "Open carol on GitHub in the browser" },
+			{ name: "copilot-pull-request-reviewer", kind: "bot", state: "commented", warning: false, url: null, openTitle: "Open copilot-pull-request-reviewer on GitHub in the browser" },
+			{ name: "dave", kind: null, state: "dismissed", warning: false, url: "https://github.com/dave", openTitle: "Open dave on GitHub in the browser" },
+		]);
+		expect(view.reviewersNote).toBeNull();
+	});
+
+	test("no reviewers, or reviewers Timber's login could not all read, are said in a quiet line", () => {
+		const note = (fields: Partial<PullRequest>) => {
+			const view = describePullRequestTab(list(found(fields)), found(fields), BRANCH);
+			if (view.kind !== "found") throw new Error(view.kind);
+			return view.reviewersNote;
+		};
+		const one = [{ kind: "user", name: "dave", state: "requested", url: null }] as const;
+		expect(note({ reviewers: [], reviewersComplete: true })).toBe(NO_REVIEWERS);
+		expect(note({ reviewers: [], reviewersComplete: false })).toBe("No reviewers could be read with Timber's GitHub login. Some, such as a team it cannot see, may be hidden from it.");
+		expect(note({ reviewers: [...one], reviewersComplete: false })).toBe("Some reviewers could not be read with Timber's GitHub login, such as a team it cannot see.");
+		expect(note({ reviewers: [...one], reviewersComplete: true })).toBeNull();
 	});
 
 	test("no pull request is a quiet note, also for a detached HEAD", () => {
@@ -131,6 +166,9 @@ describe("the Pull request tab", () => {
 		// A status without a link has no Open.
 		expect(panel).toContain('<span class="pull-check-name" title="legacy status">legacy status</span></li>');
 		expect(panel).toContain("Replaces `sed -i` and `readlink -f`, which differ on macOS.");
+		// Reviewers sit under the decision, each with its state, and an Open when it has a link.
+		expect(panel).toContain('<li class="pull-reviewer"><span class="pull-reviewer-state">requested</span><span class="pull-reviewer-name" title="example/maintainers">example/maintainers<span class="pull-reviewer-kind">team</span></span><button type="button" class="text-button" title="Open example/maintainers on GitHub in the browser">Open</button></li>');
+		expect(panel).toContain('<li class="pull-reviewer"><span class="pull-reviewer-state failing">changes requested</span><span class="pull-reviewer-name" title="bob">bob</span><button type="button" class="text-button" title="Open bob on GitHub in the browser">Open</button></li>');
 		// The tab reads only: it runs nothing, and only Open asks the engine for anything.
 		expect(engine.pullRequestReads(TIMBER)).toBe(1);
 		expect(store.getState().dialog).toBeNull();
@@ -164,6 +202,10 @@ describe("the Pull request tab", () => {
 		expect(closed).toContain('<span class="pull-state closed">Closed</span>');
 		expect(closed).toContain(NO_CHECKS);
 		expect(closed).toContain(NO_DESCRIPTION);
+		expect(closed).toContain(`<p class="pull-tab-line quiet">${NO_REVIEWERS}</p>`);
+		// A bot, and a list Timber's login could not read all of.
+		expect(showing(store, LOOKUP)).toContain('<span class="pull-reviewer-kind">bot</span>');
+		expect(showing(store, "/work/billing-worktrees/feat-invoices")).toContain("Some reviewers could not be read with Timber&#x27;s GitHub login");
 	});
 
 	test("a branch with no pull request gets a quiet placeholder", async () => {

@@ -41,7 +41,7 @@ let empty: string;
 
 beforeAll(() => {
 	root = mkdtempSync(join(tmpdir(), "timber-app-find-"));
-	current = versioned(root, "current", "0.1.2");
+	current = versioned(root, "current", "0.1.3");
 	newer = versioned(root, "newer", "0.4.2");
 	old = versioned(root, "old", "0.1.0");
 	broken = fakeTimber(root, "broken", "exit 1", "exit /b 1");
@@ -59,7 +59,7 @@ const onPath = (...folders: string[]) => ({ PATH: folders.join(delimiter) });
 
 describe("findTimber", () => {
 	test("is ready, with path and version, when a new enough Timber is on PATH", async () => {
-		expect(await findTimber(onPath(empty, current.folder))).toEqual({ state: "ready", path: current.path, version: "0.1.2" });
+		expect(await findTimber(onPath(empty, current.folder))).toEqual({ state: "ready", path: current.path, version: "0.1.3" });
 		expect(await findTimber(onPath(newer.folder))).toEqual({ state: "ready", path: newer.path, version: "0.4.2" });
 	});
 
@@ -74,8 +74,8 @@ describe("findTimber", () => {
 	});
 
 	test("is too old, naming the found and required versions, for an older Timber", async () => {
-		expect(await findTimber(onPath(old.folder))).toEqual({ state: "too-old", path: old.path, found: "0.1.0", required: "0.1.2" });
-		expect(await findTimber(onPath(current.folder), "0.2.0")).toEqual({ state: "too-old", path: current.path, found: "0.1.2", required: "0.2.0" });
+		expect(await findTimber(onPath(old.folder))).toEqual({ state: "too-old", path: old.path, found: "0.1.0", required: "0.1.3" });
+		expect(await findTimber(onPath(current.folder), "0.2.0")).toEqual({ state: "too-old", path: current.path, found: "0.1.3", required: "0.2.0" });
 	});
 
 	test("is not found when the executable fails or does not print a version", async () => {
@@ -87,12 +87,12 @@ describe("findTimber", () => {
 		expect(await findTimber({ ...onPath(old.folder), TIMBER_APP_TIMBER_PATH: newer.path }))
 			.toEqual({ state: "ready", path: newer.path, version: "0.4.2" });
 		expect(await findTimber({ ...onPath(newer.folder), TIMBER_APP_TIMBER_PATH: old.path }))
-			.toEqual({ state: "too-old", path: old.path, found: "0.1.0", required: "0.1.2" });
+			.toEqual({ state: "too-old", path: old.path, found: "0.1.0", required: "0.1.3" });
 	});
 
 	test("a relative override resolves from the current folder", async () => {
 		const status = await findTimber({ ...onPath(empty), TIMBER_APP_TIMBER_PATH: relative(process.cwd(), current.path) });
-		expect(status).toEqual({ state: "ready", path: current.path, version: "0.1.2" });
+		expect(status).toEqual({ state: "ready", path: current.path, version: "0.1.3" });
 	});
 
 	test("a broken override is reported, not replaced by the Timber on PATH", async () => {
@@ -116,8 +116,8 @@ describe("findTimber", () => {
 	test("picks up a Timber installed after the first look", async () => {
 		const environment = onPath(join(root, "later"));
 		expect(await findTimber(environment)).toEqual({ state: "not-found", override: null });
-		const installed = versioned(root, "later", "0.1.2");
-		expect(await findTimber(environment)).toEqual({ state: "ready", path: installed.path, version: "0.1.2" });
+		const installed = versioned(root, "later", "0.1.3");
+		expect(await findTimber(environment)).toEqual({ state: "ready", path: installed.path, version: "0.1.3" });
 	});
 });
 

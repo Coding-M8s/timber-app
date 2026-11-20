@@ -45,14 +45,14 @@ describe("compareTimberVersions", () => {
 });
 
 describe("satisfiesTimberVersion", () => {
-	test("requires 0.1.2, the first with the settings commands, by default", () => {
-		expect(REQUIRED_TIMBER_VERSION).toBe("0.1.2");
-		expect(satisfiesTimberVersion("0.1.2")).toBe(true);
+	test("requires 0.1.3, the first with pull requests and their reviewers, by default", () => {
+		expect(REQUIRED_TIMBER_VERSION).toBe("0.1.3");
+		expect(satisfiesTimberVersion("0.1.3")).toBe(true);
 		expect(satisfiesTimberVersion("0.2.0")).toBe(true);
 		expect(satisfiesTimberVersion("1.0.0")).toBe(true);
+		expect(satisfiesTimberVersion("0.1.2")).toBe(false);
 		expect(satisfiesTimberVersion("0.1.1")).toBe(false);
-		expect(satisfiesTimberVersion("0.1.0")).toBe(false);
-		expect(satisfiesTimberVersion("0.1.2-rc.1")).toBe(false);
+		expect(satisfiesTimberVersion("0.1.3-rc.1")).toBe(false);
 	});
 
 	test("never accepts a version it cannot read", () => {

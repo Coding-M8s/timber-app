@@ -56,6 +56,25 @@ export function PullRequestPanel({ repository, worktree }: { repository: Reposit
 				<p className={view.review.warning ? "pull-tab-line failing" : "pull-tab-line"}>
 					<span className="pull-tab-strong">{view.review.label}.</span> {view.review.sentence}
 				</p>
+				{view.reviewers.length > 0 && (
+					<ul className="pull-reviewers">
+						{view.reviewers.map((reviewer, index) => (
+							<li key={`${index}\0${reviewer.name}`} className="pull-reviewer">
+								<span className={reviewer.warning ? "pull-reviewer-state failing" : "pull-reviewer-state"}>{reviewer.state}</span>
+								<span className="pull-reviewer-name" title={reviewer.name}>
+									{reviewer.name}
+									{reviewer.kind !== null && <span className="pull-reviewer-kind">{reviewer.kind}</span>}
+								</span>
+								{reviewer.url !== null && (
+									<button type="button" className="text-button" title={reviewer.openTitle} onClick={() => void store.openLink(reviewer.url!)}>
+										Open
+									</button>
+								)}
+							</li>
+						))}
+					</ul>
+				)}
+				{view.reviewersNote !== null && <p className="pull-tab-line quiet">{view.reviewersNote}</p>}
 			</section>
 
 			<section className="pull-tab-section" aria-labelledby="pull-checks">

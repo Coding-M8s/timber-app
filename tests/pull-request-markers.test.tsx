@@ -22,6 +22,8 @@ const pull = (fields: Partial<PullRequest> = {}): PullRequest => ({
 	baseBranch: "main",
 	checks: { summary: "passing", passing: 3, failing: 0, pending: 0, runs: [] },
 	review: "review-required",
+	reviewers: [],
+	reviewersComplete: true,
 	description: "",
 	...fields,
 });
