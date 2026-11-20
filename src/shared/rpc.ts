@@ -1,4 +1,5 @@
 import type { RPCSchema } from "electrobun/view";
+import type { ChopsRequest } from "./chops";
 import type { Attention } from "./attention";
 import type { BackupDeleteRequest, BackupRestoreRequest } from "./backups";
 import type { Engine } from "./engine";
@@ -81,6 +82,7 @@ export type AppRPC = {
 			applyDone: { params: DoneApplyRequest; response: Answer<"applyDone"> };
 			readFileChanges: { params: FileChangesRequest; response: Answer<"readFileChanges"> };
 			readFileDiff: { params: FileDiffRequest; response: Answer<"readFileDiff"> };
+			listChops: { params: ChopsRequest; response: Answer<"listChops"> };
 			listTerminals: { params: {}; response: Answer<"listTerminals"> };
 			openTerminal: { params: OpenTerminalRequest; response: Answer<"openTerminal"> };
 			readTerminal: { params: { id: string }; response: Answer<"readTerminal"> };

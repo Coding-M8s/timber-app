@@ -2511,3 +2511,18 @@ x64 (10.0.26200) with Bun 1.4.4, Git 2.50.1, and Timber 0.1.3 installed at
   and setup script checks of `timber new`, which are POSIX commands.
 - Not run: Linux and the CI jobs for this change before it was pushed, and
   anything on macOS.
+
+Run for chops (issue 173), Linux x64 with Bun 1.4.5 and Git 2.43.0:
+
+- `bun test`: 2138 tests passed, 18 skipped, 0 failed, including
+  `tests/chops.test.ts` against a real temporary repository with linked
+  worktrees on branches with different `.timber/chops.json` files: a file
+  changed between reads, a missing file with no `.timber` created, the
+  file's bytes and modification time unchanged by a read, and a symbolic
+  link to the file and to the folder, a folder, a named pipe, a file that
+  is not UTF-8, and one over 256 KB each reported as damaged without
+  hanging.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun run build:web`: built.
+- Not run: the desktop app or the browser build by eye, Windows (the
+  file tests that use links and pipes are skipped there), and macOS.

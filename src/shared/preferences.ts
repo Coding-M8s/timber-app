@@ -4,6 +4,7 @@
  * the app's settings file. Everything here is pure.
  */
 import { AGENT_PRESETS, type AgentSetting, readAgentSettings, sameAgentSettings, writeAgentSettings } from "./agent";
+import { type PersonalChop, readPersonalChops, salvagePersonalChops, samePersonalChops, writePersonalChops } from "./chops";
 import { type EditorSetting, readEditorSetting, sameEditorSetting, writeEditorSetting } from "./editor";
 import { readCustomThemes, salvageCustomThemes, sameCustomThemes, writeCustomThemes } from "./custom-themes";
 import { type Theme, type ThemeChoice, defaultThemeChoice, readThemeChoice, sameThemeChoice, writeThemeChoice } from "./theme";
@@ -31,6 +32,13 @@ export interface Preferences {
 	 * back, and the next save of the Agents section writes them.
 	 */
 	agents: readonly AgentSetting[];
+	/**
+	 * The person's own chops (./chops.ts), for every repository or for one,
+	 * in the order of Settings, Chops. None until some are saved. An entry
+	 * that cannot be read is dropped and the rest kept, so a hand edit does
+	 * not cost the others.
+	 */
+	chops: readonly PersonalChop[];
 	/** Whether and how often the app fetches every repository in the background. */
 	fetch: FetchSetting;
 	/** How large the interface is drawn, where 1 is the size the window system gives. */
@@ -143,6 +151,13 @@ export const PREFERENCE_PARTS: { [Key in keyof Preferences]: PreferencePart<Pref
 		read: readAgentSettings,
 		same: sameAgentSettings,
 		write: writeAgentSettings,
+	},
+	chops: {
+		fallback: () => [],
+		read: readPersonalChops,
+		same: samePersonalChops,
+		write: writePersonalChops,
+		salvage: salvagePersonalChops,
 	},
 	fetch: {
 		fallback: defaultFetchSetting,

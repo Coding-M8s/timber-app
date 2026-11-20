@@ -3237,6 +3237,87 @@ pre:focus-visible {
 	gap: 8px;
 }
 
+/* The Chops section of Settings: the person's chops row by row, then the repository's, read-only. */
+.chop-rows,
+.chop-list {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.chop-row,
+.chop-item {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding-bottom: 12px;
+	border-bottom: 1px solid var(--line);
+}
+
+.chop-row-fields {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-end;
+	gap: 8px;
+}
+
+.chop-name {
+	flex: 1 1 150px;
+}
+
+.chop-kind,
+.chop-scope,
+.chop-agent {
+	flex: 0 1 150px;
+	min-width: 0;
+}
+
+.chop-remove {
+	flex: none;
+	margin-bottom: 6px;
+}
+
+.chop-add {
+	display: flex;
+	gap: 8px;
+}
+
+.chops-repository {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin-top: 8px;
+	padding-top: 12px;
+	border-top: 1px solid var(--line);
+}
+
+.chops-repository-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.chop-item-head {
+	margin: 0;
+	font-size: 12.5px;
+}
+
+.chop-item-name {
+	font-weight: 600;
+}
+
+.chop-item-meta {
+	color: var(--text-2);
+}
+
+.chop-item.overridden .dialog-command {
+	opacity: 0.7;
+}
+
 .field-error {
 	margin: 0;
 	font-size: 12px;

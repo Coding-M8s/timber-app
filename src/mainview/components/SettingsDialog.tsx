@@ -4,6 +4,7 @@ import { useAppState, useStore } from "../store/react";
 import { SETTINGS_SECTIONS, type SettingsSection } from "../store/state";
 import { AboutSection } from "./settings/AboutSection";
 import { AgentsSection } from "./settings/AgentsSection";
+import { ChopsSection } from "./settings/ChopsSection";
 import { EditorSection } from "./settings/EditorSection";
 import { FetchSection } from "./settings/FetchSection";
 import { NotificationsSection } from "./settings/NotificationsSection";
@@ -26,6 +27,7 @@ const SECTION_VIEWS: Record<SettingsSection, ComponentType> = {
 	rendering: RenderingSection,
 	editor: EditorSection,
 	agents: AgentsSection,
+	chops: ChopsSection,
 	notifications: NotificationsSection,
 	fetch: FetchSection,
 	about: AboutSection,

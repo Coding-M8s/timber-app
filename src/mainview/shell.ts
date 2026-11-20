@@ -18,6 +18,7 @@ export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
 	rendering: "Rendering",
 	editor: "Editor",
 	agents: "Agents",
+	chops: "Chops",
 	notifications: "Notifications",
 	fetch: "Fetching",
 	about: "About",

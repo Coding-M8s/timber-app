@@ -150,6 +150,7 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		// The Changes tab has its own tests in file-changes-store.test.ts.
 		readFileChanges: async () => ({ outcome: "read", files: [], more: false }),
 		readFileDiff: async () => ({ outcome: "read", file: null, diff: { kind: "unchanged" } }),
+		listChops: async () => ({ outcome: "listed", file: { state: "missing" }, path: "/work/app/.timber/chops.json", chops: [], overridden: [] }),
 	};
 	const push = (path: string) => {
 		for (const listener of [...listeners]) listener(path);

@@ -1123,7 +1123,8 @@ Settings dialog and kept by the app. They are never Timber's configuration.
   Editor: the editor that "Open in editor" starts (see
   [opening a worktree in an editor](#opening-a-worktree-in-an-editor)).
   Agents: the coding agents the "+" menu starts (see
-  [agent sessions](#agent-sessions)). Fetching: whether the app fetches in
+  [agent sessions](#agent-sessions)). Chops: the person's saved commands
+  and prompts (see [chops](#chops)). Fetching: whether the app fetches in
   the background and how often (see [fetching](#fetching)). Under a
   "Timber" heading, Machine and Repository edit Timber's own settings
   through Timber (see
@@ -1184,6 +1185,99 @@ one of those, the section offers to restart the app.
   without quitting. In the browser console, `timberMock.endRestarts("fails")`
   or `("unavailable")` acts out the other endings, and
   `timberMock.restartCount()` counts the restarts.
+
+## Chops
+
+A chop is a saved, named thing to run in a worktree: a **command** (shell
+text) or a **prompt** (text for an agent). Names clash ignoring case,
+compared without the machine's locale and after NFC normalization, so
+every machine agrees. The rules are pure, in
+`src/shared/chops.ts`.
+
+- **Fields.** `name` is clean as a session name (`cleanSessionName`, at most
+  40 characters), since it names the session it starts. `kind` is `command`
+  or `prompt`. `text` is never blank and at most 10,000 characters.
+  `description` is one line, at most 200 characters, or empty. `agent` is
+  only for a prompt: an agent's name from Settings, Agents, or none for the
+  first saved agent. A name no saved agent has is still a valid chop, since
+  a shared file names agents other people may not have; running it must
+  say so, never fall back to another agent.
+- **Text is checked, not cleaned.** It may hold line breaks and tabs, and
+  Windows line endings become `\n`, but no other control character (C0,
+  DEL, C1), no invisible format character (`\p{Cf}`, such as bidirectional
+  overrides, zero-width spaces, and tag characters) apart from the
+  zero-width joiner in emoji, no line or paragraph separator, and no lone
+  surrogate. The description follows the same rules and has no line
+  breaks. The text is shown
+  before it runs and sent to a terminal as a bracketed paste: an escape
+  sequence such as `ESC [201~` could end the paste early, and an override
+  could hide what it says. It is kept exactly as saved otherwise, so an
+  approval of a repository chop's text stays valid until the text changes.
+- **Personal chops** are the `chops` preference, in the app's settings file,
+  each with `repository`: the primary checkout of a repository in the list,
+  or none for every repository. Names are unique, ignoring case, among the
+  chops for the same repository, and among those for every repository. A
+  save is taken whole or not at all. Reading the settings file keeps every
+  readable entry and drops the rest (`salvagePersonalChops`), so a hand edit
+  does not cost the others at the next save. A chop for a repository that
+  left the list is kept, and Settings shows its path as "not in the list".
+- **The repository file** is `.timber/chops.json` in a worktree, committed
+  with the code, so each branch has its own:
+
+  ```json
+  {
+  	"version": 1,
+  	"chops": [
+  		{ "name": "Test", "kind": "command", "text": "bun test", "description": "Run every test" },
+  		{ "name": "Review", "kind": "prompt", "text": "Review this branch against main.", "agent": "Claude Code" }
+  	]
+  }
+  ```
+
+  `description` and `agent` may be left out. Keys the app does not know are
+  passed over. The app owns only `chops.json` in `.timber`: it reads the
+  file and never writes it, and never creates the folder. `.timber.toml`
+  stays Timber's own and holds no chops. The file is read whole or not at
+  all, at most 100 chops: one entry that cannot be used makes it damaged,
+  with a reason that names the entry by its number and cleaned name
+  ("Chop 2 ("Lint"): ...") and otherwise never quotes the file.
+- **Reading the file** (`src/bun/chops.ts`). The content comes from the
+  repository, so `.timber` must be a folder and `chops.json` a regular
+  file, checked with `lstat`: a symbolic link, a folder, or a device is
+  damaged and never opened. It is then opened with `O_NOFOLLOW` and
+  `O_NONBLOCK`, so a named pipe cannot hang the read and a link put in
+  place of `chops.json` after the check is not followed, and checked again
+  on what was opened. A `.timber` swapped for a link between the check and
+  the open is still followed, and Windows has neither flag; the content is
+  only ever parsed, so that needs a racing local process and reveals
+  nothing beyond "damaged". It
+  must be UTF-8 and at most 256 KB. A missing file, or a `.timber` that is
+  not a folder, is simply no file.
+- **Merging** (`mergeChops`). A personal chop for this repository wins over
+  a personal chop for every repository with the same name, ignoring case,
+  which is then left out. Either kind of personal chop wins over a file chop
+  with the same name, which is listed in `overridden` with which one won.
+  The order is personal for this repository, personal for every repository,
+  then the file's, each in saved order.
+- **`listChops`** takes a repository and a worktree's registered path, not
+  its id, checks it as `findListedWorktree` does, and answers the merged
+  list, the overridden file chops, the file's full path, and whether the
+  file was read, missing, or damaged. The main process merges with the
+  saved preferences, never with chops sent by the interface. The file is
+  read on every call and never cached or watched: the app watches only Git
+  metadata (see [watching for changes](#watching-for-changes)). Settings,
+  Chops reads it when drawn, when the saved chops change, and on "Read
+  again". The store keeps the last answer in `chops`, the latest read
+  winning, and reads it again after every reload of that worktree's
+  repository, which follows Git metadata changes, edits in the selected
+  worktree, and the window coming back into focus. Edits are seen through
+  `git status`, so an ignored `.timber/chops.json`, or one beyond the
+  files that check looks at, shows only on focus or "Read again".
+
+In `bun run dev:web`, the primary checkout of the sample repository shares
+three chops and `fix/macos-portability` has a damaged file.
+`timberMock.setChopsFile(path, text)` changes a worktree's file (`null` for
+none), which shows on the next read.
 
 ## Interface zoom
 

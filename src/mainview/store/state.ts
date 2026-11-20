@@ -1,4 +1,5 @@
 import type { PullRequestCreationFailure, PullRequestFields, ReportedPullRequestView } from "../pull-request-create-format";
+import type { ChopList } from "../../shared/chops";
 import type { FileChange, FileChangeTarget, FileDiffResult } from "../../shared/file-changes";
 import { type Layout, defaultLayout } from "../../shared/layout";
 import type { RepositoryFetch } from "../../shared/git-fetch";
@@ -50,6 +51,22 @@ export type Operation =
  * diff of the selected one. Read only while the tab shows, and started afresh
  * for another worktree.
  */
+/**
+ * The chops of one worktree as last read, for Settings, Chops. Read when the
+ * section is drawn, when the saved chops change, and on "Read again"; and
+ * by the store again after every reload of the worktree's repository (after
+ * a change to its Git metadata, an edit in the worktree that Git lists, or
+ * the window coming back into focus).
+ */
+export interface ChopsView {
+	/** The path of the repository's primary checkout. */
+	repository: string;
+	/** The worktree's identity (`Worktree.id`). */
+	worktree: string;
+	/** Null until the first read answered. */
+	list: ChopList | null;
+}
+
 export interface ChangesView {
 	/** The path of the repository's primary checkout. */
 	repository: string;
@@ -155,7 +172,7 @@ export type DialogRequest =
 	| { kind: "set-up-timber"; repository: string };
 
 /** The sections of the Settings dialog, in the order they are listed. */
-export const SETTINGS_SECTIONS = ["layout", "theme", "terminal", "rendering", "editor", "agents", "notifications", "fetch", "about", "machine", "repository"] as const;
+export const SETTINGS_SECTIONS = ["layout", "theme", "terminal", "rendering", "editor", "agents", "chops", "notifications", "fetch", "about", "machine", "repository"] as const;
 export type SettingsSection = typeof SETTINGS_SECTIONS[number];
 
 /** The views of the selected worktree, in the order of their tabs. */
@@ -264,6 +281,8 @@ export interface AppState {
 	tab: WorkspaceTab;
 	/** The Changes tab as last read. Null before it was first shown. */
 	changes: ChangesView | null;
+	/** The chops of the selected worktree as last read. Null before Settings, Chops first read them. */
+	chops: ChopsView | null;
 	/** Null when no dialog is open. */
 	dialog: DialogRequest | null;
 	/**
@@ -354,6 +373,7 @@ export const initialState: AppState = {
 	quitRequest: null,
 	tab: "workspace",
 	changes: null,
+	chops: null,
 	dialog: null,
 	fetches: {},
 	pullRequests: {},
