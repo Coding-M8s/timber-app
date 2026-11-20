@@ -2657,3 +2657,27 @@ Run for review notes sent to an agent (issue 168), Linux x64 with Bun
 - Not run: the desktop window or the browser build by eye (notes were not
   clicked in a real window, so focus, the arrows, and Shift+click were not
   tried; the component tests render markup only), Windows, and macOS.
+
+Run for the next session that needs you or is done (issue 170), Linux x64
+with Bun 1.4.5, against the mock engine only:
+
+- `bun run typecheck`: no errors.
+- `bun run typecheck:desktop`: no errors.
+- `bun test`: 2356 passed, 18 skipped, none failed, across 145 files, after
+  rebasing on main.
+  `tests/waiting.test.tsx` covers the orders, the cycling, and the words as
+  pure functions, and on the mock engine agents in `timber` and
+  `api-server`: Needs you oldest first, around again, each leaving once
+  answered or closed and rejoining at the end when it waits again; finished
+  sessions after those, in the order they finished, each leaving once seen
+  by a jump or a selection, or once closed, exited, or needing you, and
+  joining again when it finishes again; the key always taken from the page
+  and once per press; nothing with none listed, behind a dialog, the quit
+  question, or a Timber that is not ready; and the palette entry and the
+  title bar's words.
+- `bun run build:web`: built.
+- By hand: the person who asked for the change tried it in the app and it
+  worked. Which platform and build, and which cases were pressed, were not
+  recorded.
+- Not run by the implementer: the desktop window or the browser build by
+  eye, Windows, and macOS.

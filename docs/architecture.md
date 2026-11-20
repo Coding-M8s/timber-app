@@ -1071,8 +1071,10 @@ pure functions in `src/mainview/shell.ts`.
   from any focus. It opens only when no other dialog is open. What it lists
   and how typing narrows it are pure functions in `src/mainview/palette.ts`:
   the actions first (New worktree, Open existing branch, Fetch now, Rebase,
-  Done, Open in editor, Open terminal, Start each saved agent, Settings, Add
-  repository), then every worktree of every available repository. Matching is
+  Done, Open in editor, Open terminal, Start each saved agent, Show next
+  session that needs you or is done, Clean up merged for each repository,
+  Settings, Add repository), then every worktree of every available
+  repository. Matching is
   case-insensitive and fuzzy over the label, the branch, the folder name, and
   the repository name, and shows at most 50 entries so hundreds of worktrees
   stay quick. Actions that need a worktree apply to the selected one and name
@@ -1084,6 +1086,39 @@ pure functions in `src/mainview/shell.ts`.
   (`mode: "existing"`). The "+" and the Settings cog only ask: each puts a
   `DialogRequest` in the store (`openDialog`), and the New dialog or the
   Settings dialog is what answers it.
+- **Next session that needs you or is done.** Ctrl+Shift+J (Cmd+Shift+J on
+  macOS), the title bar's "2 need you, 1 done", and the palette's "Show next
+  session that needs you or is done" all call the store's `jumpToWaiting`,
+  which shows the session as a click on its notification does
+  (`revealSession`). The orders are the interface's own, kept in `update()`
+  in `src/mainview/store/store.ts`. `waitingOrder` (`withWaitingOrder` in
+  `src/mainview/waiting.ts`, whenever `terminals` changes): sessions join at
+  the end as they move into Needs you and leave when they move out, close,
+  or exit, so the one that has waited longest is first. `finishedOrder`
+  (`withFinishedOrder`, on every update, at once when neither the sessions
+  nor what is on screen changed): a session joins at the end as it moves
+  into Done, unless it is on screen then. Done stays until the program
+  reports something else, so it also leaves once it was on screen and no
+  longer is, and joins again only when it finishes again. On screen means
+  shown in the window, focused or not, as for a chip's unseen mark, so one
+  that finishes in a window behind another never joins. No clock is kept and
+  the Engine has no part in it, so after the window reloads, sessions
+  already waiting or done are in the order they started. `waitingSessions`
+  and `finishedSessions` keep only those whose worktree the list has, and
+  `sessionsToVisit` puts every Needs you session before every finished one;
+  the counts, the palette, and the key all read them. A press goes to the
+  session after the one on screen when that one is in the list, wrapping
+  around, or else to the first. A finished session on screen stays in the
+  list until the person moves on, so presses go on from it. With none
+  listed, while a dialog or the quit question is open, or while Timber is
+  not ready, it does nothing and the title bar shows nothing.
+  `WaitingShortcut` listens on the window in the capture phase and always
+  takes the chord from the page (`handleWaitingKey`), a held one jumping
+  once, and a drawn terminal never passes it to its program, even with none
+  listed, since Ctrl+J would reach it as a new line. The title bar says "1
+  needs you" or "2 need you", a sentence, where a collapsed header's summary
+  keeps "2 needs you", and its accessible name joins the parts with a comma.
+  Not verified that a desktop webview leaves Ctrl+Shift+J to the page.
 - **Sidebar side.** The sidebar sits on the left or on the right, as chosen
   in Settings (see [preferences](#preferences-and-the-settings-dialog)). The
   window has no control for it. On the right the body is drawn workspace,
@@ -2479,7 +2514,10 @@ shows, and coming back shows it as it was.
   ended, which can take two seconds. Tab belongs to
   the program in a terminal, so Ctrl+PageUp and Ctrl+PageDown (Cmd+Shift+[
   and ] on macOS) show the previous and next session from inside one, and
-  Ctrl+Shift+S (Cmd+Shift+S) puts the focus on the chips. Which chip shows
+  Ctrl+Shift+S (Cmd+Shift+S) puts the focus on the chips. Ctrl+Shift+J
+  (Cmd+Shift+J) shows the next session that needs you or is done, in any
+  worktree (see
+  [the shell](#the-shell-and-the-saved-layout)). Which chip shows
   in each worktree, and which sessions printed unseen, are the interface's
   own (`shownSessions` and `unseenSessions` in
   `src/mainview/store/state.ts`): after the window reloads, each worktree

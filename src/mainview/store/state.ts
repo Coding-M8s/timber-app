@@ -286,6 +286,19 @@ export interface AppState {
 	shownSessions: Readonly<Record<string, string>>;
 	/** Sessions that printed something since they were last on screen, by id. */
 	unseenSessions: readonly string[];
+	/**
+	 * The sessions shown as Needs you, by id, the one that has waited longest
+	 * first, in every repository, whether or not the list has its worktree now
+	 * (see ../waiting.ts). Kept from `terminals` by the store; read it through
+	 * `waitingSessions`.
+	 */
+	waitingOrder: readonly string[];
+	/**
+	 * The sessions shown as Done that the person has not seen since, by id,
+	 * the one that finished first first (see `withFinishedOrder` in
+	 * ../waiting.ts). Read it through `finishedSessions`.
+	 */
+	finishedOrder: readonly string[];
 	terminalProblem: TerminalProblem | null;
 	/**
 	 * How many terminals ran when the app was asked to quit, while the
@@ -403,6 +416,8 @@ export const initialState: AppState = {
 	terminals: [],
 	shownSessions: {},
 	unseenSessions: [],
+	waitingOrder: [],
+	finishedOrder: [],
 	terminalProblem: null,
 	quitRequest: null,
 	tab: "workspace",
@@ -512,6 +527,33 @@ export function shownSession(state: Pick<AppState, "terminals" | "shownSessions"
 export function sessionOnScreen(state: AppState): TerminalSession | null {
 	if (state.tab !== "workspace" || !state.selection) return null;
 	return shownSession(state, state.selection.worktree);
+}
+
+/**
+ * The sessions that need the person and can be shown now, the one that has
+ * waited longest first: those whose worktree the list has. The title bar's
+ * count, the palette, and the shortcut all read these, so the count is what
+ * the shortcut can reach.
+ */
+export function waitingSessions(state: Pick<AppState, "waitingOrder" | "terminals" | "repositories">): readonly string[] {
+	return reachable(state, state.waitingOrder);
+}
+
+/** The finished sessions not seen yet that can be shown now, the one that finished first first, as for `waitingSessions`. */
+export function finishedSessions(state: Pick<AppState, "finishedOrder" | "terminals" | "repositories">): readonly string[] {
+	return reachable(state, state.finishedOrder);
+}
+
+/** Where the shortcut goes, in order: every session that needs the person, then every finished one. */
+export function sessionsToVisit(state: Pick<AppState, "waitingOrder" | "finishedOrder" | "terminals" | "repositories">): readonly string[] {
+	return [...waitingSessions(state), ...finishedSessions(state)];
+}
+
+function reachable(state: Pick<AppState, "terminals" | "repositories">, order: readonly string[]): readonly string[] {
+	return order.filter(id => {
+		const session = state.terminals.find(candidate => candidate.id === id);
+		return session !== undefined && selectionFor(state.repositories, session.worktree) !== null;
+	});
 }
 
 /**
