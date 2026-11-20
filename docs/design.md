@@ -140,7 +140,8 @@ change them here first when they change.
   run. Created: a toast, "Pull request #12 opened", and the tab shows the
   pull request as soon as GitHub lists it, with its number and "Open in
   browser" until then. Already open: a quiet line above that pull request
-  says so. Refused or failed: Timber's reason stays in the form with the
+  says so, until the pull requests are read again. A new commit on the
+  branch puts its subject in the title, unless one was typed. Refused or failed: Timber's reason stays in the form with the
   fields as typed, ready for a retry, with Timber's output in a details
   area that starts closed, and a line that says what happened to the
   branch: nothing was pushed (refused), the branch was published before

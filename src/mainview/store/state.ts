@@ -307,6 +307,8 @@ export interface PullRequestForm extends PullRequestFields {
 	repository: string;
 	/** The worktree's registered path, the selector given to Timber. */
 	worktree: string;
+	/** The commit the title was read for. A new commit reads its subject again. */
+	head: string | null;
 	/** The person typed a title, so the last commit's subject, read later, does not replace it. */
 	titleEdited: boolean;
 	/** `timber pr` runs: the fields are disabled and nothing else can be submitted. */
