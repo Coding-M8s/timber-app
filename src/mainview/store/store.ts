@@ -33,6 +33,7 @@ import { describeAdded, describeRemoved, folderName, worktreeLabel } from "../fo
 import { describeFetched } from "../fetch-format";
 import { wantTerminalFocus } from "../terminal-focus";
 import { mergeOverlapping } from "./merge";
+import { keepEntries } from "./records";
 import {
 	type AppState, type ChangesView, type DialogRequest, type Operation, type PullRequestForm, type Removal, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood,
 	reconcileRemovals, removalAt, reconcileSelection, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, timberReady, withTerminal, withoutSession } from "./state";
@@ -501,11 +502,11 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	/** Forget issues of worktrees no longer listed or linked the same way, and read those never read. */
 	function catchUpIssues(): void {
 		const linked = new Map(state.repositories.flatMap(repository => repository.available ? repository.worktrees : []).flatMap(worktree => worktree.issue?.kind === "linked" ? [[worktree.id, worktree.issue] as const] : []));
-		const kept = Object.fromEntries(Object.entries(state.issues).filter(([id, entry]) => {
+		const kept = keepEntries(state.issues, (id, entry) => {
 			const link = linked.get(id);
 			return link !== undefined && link.tracker === entry.tracker && link.key === entry.key;
-		}));
-		if (Object.keys(kept).length !== Object.keys(state.issues).length) state = { ...state, issues: kept };
+		});
+		if (kept !== state.issues) state = { ...state, issues: kept };
 		for (const id of dueIssues) if (!linked.has(id)) dueIssues.delete(id);
 		if (!timberReady(state)) return;
 		for (const repository of state.repositories) {
@@ -609,6 +610,44 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		}
 	}));
 
+	/**
+	 * Reads of one kind of answer that each listed repository has, such as its
+	 * pull requests. A repository is read only while Timber is ready and it is
+	 * listed and available, and what it answered is dropped when it left the
+	 * list meanwhile. `answers` gives what is on screen, and `forget` keeps
+	 * only some of it.
+	 */
+	function repositoryReads<Answer>(answers: () => Readonly<Record<string, Answer>>, forget: (kept: Readonly<Record<string, Answer>>) => void) {
+		const reading = new Set<string>();
+		return {
+			/** Ask for the repository's answer, a failure when the engine did not answer, and hand it to `keep` unless the repository left the list. */
+			async read(path: string, ask: () => Promise<Answer>, failed: (message: string) => Answer, keep: (answer: Answer) => void): Promise<void> {
+				if (!timberReady(state) || !state.repositories.some(repository => repository.path === path && repository.available)) return;
+				let answer: Answer;
+				reading.add(path);
+				try {
+					answer = await ask();
+				} catch (error) {
+					answer = failed(`The app did not hear the answer: ${messageOf(error)}`);
+				} finally {
+					reading.delete(path);
+				}
+				// A repository that left the list meanwhile keeps nothing.
+				if (state.repositories.some(repository => repository.path === path)) keep(answer);
+			},
+			/** Forget the answers of repositories no longer listed, and read every one that has none yet. */
+			catchUp(refresh: (path: string) => Promise<void>): void {
+				const listed = new Set(state.repositories.map(repository => repository.path));
+				const kept = keepEntries(answers(), path => listed.has(path));
+				if (kept !== answers()) forget(kept);
+				for (const repository of state.repositories) {
+					// One that is being read for the first time is not asked again.
+					if (repository.available && !(repository.path in answers()) && !reading.has(repository.path)) void refresh(repository.path);
+				}
+			},
+		};
+	}
+
 	/*
 	 * Pull requests come from GitHub through Timber, so they are read as often
 	 * as the repository is fetched: once when it is first listed, then each
@@ -616,36 +655,18 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	 * one repository never overlap. Nothing is read while Timber is not ready,
 	 * as the Timber notice already says why.
 	 */
-	const readingPullRequests = new Set<string>();
-	const refreshPullRequests = mergeOverlapping<string>(async path => {
-		if (!timberReady(state) || !state.repositories.some(repository => repository.path === path && repository.available)) return;
-		let answer: PullRequestList;
-		readingPullRequests.add(path);
-		try {
-			answer = await engine.readPullRequests(path);
-		} catch (error) {
-			answer = { ok: false, message: `The app did not hear the answer: ${messageOf(error)}` };
-		} finally {
-			readingPullRequests.delete(path);
-		}
-		// A repository that left the list meanwhile keeps nothing.
-		if (!state.repositories.some(repository => repository.path === path)) return;
+	const pullRequestReads = repositoryReads<PullRequestList>(() => state.pullRequests, pullRequests => update({ pullRequests }));
+	const refreshPullRequests = mergeOverlapping<string>(path => pullRequestReads.read(path, () => engine.readPullRequests(path), message => ({ ok: false, message }), answer => {
 		// A form's note about what the last run reported lasts until this newer read, which shows the pull request or, still none, the form again.
 		const forms = Object.entries(state.pullRequestForms);
 		const settled = forms.map(([id, form]): [string, PullRequestForm] => form.repository === path && form.reported !== null && !form.running ? [id, { ...form, reported: null }] : [id, form]);
 		const changed = settled.some(([id, form]) => form !== state.pullRequestForms[id]);
 		update({ pullRequests: { ...state.pullRequests, [path]: answer }, ...(changed ? { pullRequestForms: Object.fromEntries(settled) } : {}) });
-	});
+	}));
 
 	/** Read the pull requests of every repository that has none yet, and forget those of one no longer listed. */
 	function catchUpPullRequests(): void {
-		const listed = new Set(state.repositories.map(repository => repository.path));
-		const kept = Object.fromEntries(Object.entries(state.pullRequests).filter(([path]) => listed.has(path)));
-		if (Object.keys(kept).length !== Object.keys(state.pullRequests).length) update({ pullRequests: kept });
-		for (const repository of state.repositories) {
-			// One that is being read for the first time is not asked again.
-			if (repository.available && !(repository.path in state.pullRequests) && !readingPullRequests.has(repository.path)) void refreshPullRequests(repository.path);
-		}
+		pullRequestReads.catchUp(refreshPullRequests);
 	}
 
 	/*
@@ -658,26 +679,16 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	 * again only on Refresh or when another Timber is found. Reads of one
 	 * repository never overlap, and nothing is read while Timber is not ready.
 	 */
-	const readingBackups = new Set<string>();
+	const backupReads = repositoryReads<BackupList>(() => state.backups, backups => update({ backups }));
 	// Goes up when another Timber is found, so an answer from the one before is dropped.
 	let backupGeneration = 0;
-	const refreshBackups = mergeOverlapping<string>(async path => {
-		if (!timberReady(state) || !state.repositories.some(repository => repository.path === path && repository.available)) return;
+	const refreshBackups = mergeOverlapping<string>(path => {
 		const generation = backupGeneration;
-		let answer: BackupList;
-		readingBackups.add(path);
-		try {
-			answer = await engine.readBackups(path);
-		} catch (error) {
-			answer = { state: "failed", message: `The app did not hear the answer: ${messageOf(error)}` };
-		} finally {
-			readingBackups.delete(path);
-		}
-		// A repository that left the list meanwhile keeps nothing.
-		if (!state.repositories.some(repository => repository.path === path)) return;
-		// Asked of a Timber that has since been replaced: ask the new one.
-		if (generation !== backupGeneration) return void refreshBackups(path);
-		update({ backups: { ...state.backups, [path]: answer } });
+		return backupReads.read(path, () => engine.readBackups(path), message => ({ state: "failed", message }), answer => {
+			// Asked of a Timber that has since been replaced: ask the new one.
+			if (generation !== backupGeneration) return void refreshBackups(path);
+			update({ backups: { ...state.backups, [path]: answer } });
+		});
 	});
 
 	/** Repositories whose spacing is running, and whether a read was asked for meanwhile. */
@@ -700,12 +711,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 
 	/** Read the backups of every repository that has none yet, and forget those of one no longer listed. */
 	function catchUpBackups(): void {
-		const listed = new Set(state.repositories.map(repository => repository.path));
-		const kept = Object.fromEntries(Object.entries(state.backups).filter(([path]) => listed.has(path)));
-		if (Object.keys(kept).length !== Object.keys(state.backups).length) update({ backups: kept });
-		for (const repository of state.repositories) {
-			if (repository.available && !(repository.path in state.backups) && !readingBackups.has(repository.path)) void refreshBackups(repository.path);
-		}
+		backupReads.catchUp(refreshBackups);
 	}
 
 	/** Refresh: every repository's backups, at once, also where Timber had no backup list. */
