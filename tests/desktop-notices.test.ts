@@ -280,14 +280,20 @@ describe("without the session bus", () => {
 		}
 	});
 
-	test("macOS and Windows hand it to Electrobun as it is, which cannot be withdrawn", async () => {
-		for (const platform of ["darwin", "win32"] as const) {
-			const { notices, fallbacks, connects } = setup(fakeServer(), { platform });
-			notices.show(notice("s", "a <b>"), { withSound: false });
-			notices.withdraw("s");
-			await settle();
-			expect(fallbacks).toEqual([{ title: "Codex is done", body: "a <b>" }]);
-			expect(connects()).toBe(0);
-		}
+	test("macOS hands it to Electrobun as it is, which cannot be withdrawn", async () => {
+		const { notices, fallbacks, connects } = setup(fakeServer(), { platform: "darwin" });
+		notices.show(notice("s", "a <b>"), { withSound: false });
+		notices.withdraw("s");
+		await settle();
+		expect(fallbacks).toEqual([{ title: "Codex is done", body: "a <b>" }]);
+		expect(connects()).toBe(0);
+	});
+
+	test("Windows connects to its notification server, the toast script (see windows-toasts.test.ts)", async () => {
+		const { notices, fallbacks, connects } = setup(fakeServer(), { platform: "win32" });
+		notices.show(notice("s", "a <b>"), { withSound: false });
+		await settle();
+		expect(connects()).toBe(1);
+		expect(fallbacks).toEqual([]);
 	});
 });

@@ -72,7 +72,7 @@ export interface PlayerCommand {
  * Linux (tested): `pw-play`, then `paplay`, then `aplay`, which plays WAV
  * only. Each takes `--` before the file. macOS (written, not tested):
  * `afplay`; the file is always a full path, so it cannot be read as an
- * option. Windows (written, not tested): PowerShell's
+ * option. Windows (tested): Windows PowerShell's
  * System.Media.SoundPlayer, WAV only, with the file in an environment
  * variable.
  */
@@ -121,7 +121,8 @@ function otherPlayer(platform: NodeJS.Platform, which: (name: string) => string 
 
 /**
  * Where the system's notification sound may be, best first. Linux (tested):
- * the freedesktop sound theme. macOS and Windows: written, not tested.
+ * the freedesktop sound theme. Windows (tested): `Windows Notify.wav` in
+ * the Windows folder. macOS: written, not tested.
  */
 export function systemSoundFiles(platform: NodeJS.Platform, systemRoot: string): string[] {
 	if (platform === "linux") {
