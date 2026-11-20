@@ -249,7 +249,7 @@ export interface AppStore {
 	deleteBackup(request: BackupDeleteRequest): Promise<BackupDeleteResult>;
 	/**
 	 * Start a plain shell session in a worktree and show it: select the
-	 * worktree and show the Workspace tab, as `startAgentIn` does for an agent.
+	 * worktree and show the Workspace tab, as `startSessionsIn` does.
 	 * Used to resolve a rebase that stopped on conflicts. Not in the list:
 	 * nothing starts. Never throws.
 	 */

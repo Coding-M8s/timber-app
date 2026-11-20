@@ -165,7 +165,7 @@ describe("createWorktreeCommands, with a stand-in Timber", () => {
 		for (const workflow of ["--setup", "", "Review", "a b", 7, null, ["review"]]) {
 			const results = [
 				await commands.create({ repository, name: "feat/login", base: null, workflow } as unknown as NewWorktreeRequest),
-				await commands.open({ repository, selector: "feat/login", setup: true, workflow } as unknown as OpenWorktreeRequest),
+				await commands.open({ repository, selector: "feat/login", workflow } as unknown as OpenWorktreeRequest),
 			];
 			for (const result of results) expect(result.outcome === "failed" && result.failure.diagnostic).toMatch(/^The request for timber (new|open) is not complete\. Nothing was run\.$/);
 		}
