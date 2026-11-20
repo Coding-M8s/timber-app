@@ -1,15 +1,12 @@
 import { isAbsolute } from "node:path";
-import { createOutputCapture } from "../shared/captured-output";
 import {
 	BACKUP_LIST_ARGUMENTS, BACKUP_LIST_COMMAND, type BackupDeleteRequest, type BackupDeleteResult, type BackupList, type BackupRestoreRequest, type BackupRestoreResult,
 	backupDeleteArguments, backupRestoreArguments, isAbsoluteFolder, readBackupDeleteResult, readBackupList, readBackupRestoreResult,
 } from "../shared/backups";
 import type { TimberStatus } from "../shared/model";
 import { type RepositoryTurns, createRepositoryTurns } from "./repository-turns";
-import { describeTimberStatus } from "./timber";
 import { runTimberWithResultFile } from "./timber-run";
-import { createRecordCapture } from "./workflows";
-import { messageOf } from "../shared/error-message";
+import { runTimberRecord, withReadyTimber } from "./timber-record";
 
 /**
  * Timber reads its backup storage and each backup's manifest, which is
@@ -62,35 +59,12 @@ export async function readBackups(
 	environment: Record<string, string | undefined> = process.env,
 	timeoutMs: number = READ_BACKUPS_TIMEOUT_MS,
 ): Promise<BackupList> {
-	const stdout = createRecordCapture(RECORD_LIMIT_BYTES);
-	const stderr = createOutputCapture();
-	let exitCode: number | null;
-	let stopped: boolean;
-	try {
-		const child = Bun.spawn([executable, ...BACKUP_LIST_ARGUMENTS], {
-			cwd: folder,
-			stdin: "ignore",
-			stdout: "pipe",
-			stderr: "pipe",
-			env: environment,
-			timeout: timeoutMs,
-		});
-		const collect = async (stream: ReadableStream<Uint8Array>, capture: { add(chunk: Uint8Array): void }) => {
-			for await (const chunk of stream) capture.add(chunk);
-		};
-		// Both streams are read at once, so a full pipe never holds Timber up.
-		await Promise.all([collect(child.stdout, stdout), collect(child.stderr, stderr), child.exited]);
-		exitCode = child.exitCode;
-		stopped = child.signalCode !== null;
-	} catch (error) {
-		return { state: "failed", message: `Could not run ${BACKUP_LIST_COMMAND} in ${folder}: ${messageOf(error)}` };
-	}
-	if (stopped) {
-		return { state: "failed", message: `${BACKUP_LIST_COMMAND} in ${folder} was stopped before it finished. The app waits ${timeoutMs / 1000} seconds for it.` };
-	}
-	const record = stdout.finish();
-	if (record.truncated) return { state: "failed", message: `${BACKUP_LIST_COMMAND} printed more than a backup list holds. The backups were not read.` };
-	return readBackupList(record.text, stderr.finish().text, exitCode);
+	const output = await runTimberRecord({
+		executable, arguments: BACKUP_LIST_ARGUMENTS, folder, environment, timeoutMs, limitBytes: RECORD_LIMIT_BYTES,
+		command: BACKUP_LIST_COMMAND, where: `in ${folder}`, tooLong: "a backup list holds. The backups were not read.",
+	});
+	if (!output.ok) return { state: "failed", message: output.message };
+	return readBackupList(output.record, output.diagnostic, output.exitCode);
 }
 
 /** A failure from before anything ran. Nothing was changed. */
@@ -110,16 +84,9 @@ export function createBackupCommands(options: BackupCommandsOptions): BackupComm
 
 	/** Checks shared by restore and delete, then the run, in the repository's turn. */
 	function inTurn<Result>(repository: string, name: string, run: (executable: string) => Promise<Result>): Promise<Result | ReturnType<typeof notRun>> {
-		return turns.inTurn(repository, async () => {
-			try {
-				if (!await isListed(repository)) return notRun(`${repository} is not a repository in the app's list.`);
-				const status = await timber();
-				if (status.state !== "ready") return notRun(`${describeTimberStatus(status)}.`);
-				return await run(status.path);
-			} catch (error) {
-				return notRun(`Could not start ${name}: ${messageOf(error)}.`);
-			}
-		});
+		return turns.inTurn(repository, () => withReadyTimber<Result | ReturnType<typeof notRun>>({
+			timber, isListed, repository, couldNot: `start ${name}`, fail: notRun, run,
+		}));
 	}
 
 	const where = (executable: string, repository: string) => ({
@@ -133,14 +100,11 @@ export function createBackupCommands(options: BackupCommandsOptions): BackupComm
 		async list(repository) {
 			// The request comes over the bridge, so its shape is checked and not assumed.
 			if (!isFilled(repository)) return { state: "failed", message: "The request for backups names no repository." };
-			try {
-				if (!await isListed(repository)) return { state: "failed", message: `${repository} is not a repository in the app's list.` };
-				const status = await timber();
-				if (status.state !== "ready") return { state: "failed", message: `${describeTimberStatus(status)}.` };
-				return await readBackups(status.path, repository, environment ?? process.env, timeoutMs);
-			} catch (error) {
-				return { state: "failed", message: `Could not read the backups of ${repository}: ${messageOf(error)}.` };
-			}
+			return withReadyTimber<BackupList>({
+				timber, isListed, repository, couldNot: `read the backups of ${repository}`,
+				fail: message => ({ state: "failed", message }),
+				run: executable => readBackups(executable, repository, environment ?? process.env, timeoutMs),
+			});
 		},
 
 		async restore(request) {
