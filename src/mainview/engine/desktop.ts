@@ -112,6 +112,7 @@ export function createDesktopEngine(): Engine {
 		// The main process reads the list first, then Git, which it stops after 20 seconds.
 		readFileChanges: request => rpc.request.readFileChanges(request, { maxRequestTime: 60_000 }),
 		readFileDiff: request => rpc.request.readFileDiff(request, { maxRequestTime: 60_000 }),
+		readPorts: request => rpc.request.readPorts(request, { maxRequestTime: 30_000 }),
 		listChops: request => rpc.request.listChops(request, { maxRequestTime: 60_000 }),
 		listTerminals: () => rpc.request.listTerminals({}),
 		// The main process reads the list first.

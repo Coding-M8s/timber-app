@@ -115,6 +115,17 @@ change them here first when they change.
   in. Link metadata Timber cannot use is a warning, "Issue unknown", with no
   link. A worktree without a link, or a Timber that reports none, shows no
   issue.
+- The header has one quiet item for the worktree's ports, such as "6
+  ports", or "no ports". It opens a list grouped by source: Docker, each
+  service of the worktree's Compose project with `host port -> container
+  port`, and Sessions, each port a process in one of the worktree's
+  sessions listens on, with the session's name. Each line has "Open in
+  browser" and "Copy" for `http://localhost:<port>`. A host port another
+  worktree also claims says so in red with that worktree's name, "also
+  feat/b", and only then does the sidebar row show a small "port clash"
+  with the ports and names in its tooltip. No Docker, Docker stopped, or no
+  permission to use it means no Docker group and a quiet reason in the
+  item's tooltip, never a dialog.
 - The Pull request tab shows the worktree's pull request: its title, state,
   number, and base, "Open in browser", then Review (the review decision in
   a word and a sentence, then each reviewer with where it stands,

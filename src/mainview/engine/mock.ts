@@ -32,6 +32,7 @@ import { type PullRequestControls, createMockPullRequests } from "./mock-pull-re
 import { type BackupControls, createMockBackups } from "./mock-backups";
 import { type ThemeFileControls, createMockThemeFiles } from "./mock-theme-files";
 import { type ChopsControls, createMockChops } from "./mock-chops";
+import { type PortControls, createMockPorts } from "./mock-ports";
 
 const inSync = (branch: string): SyncState => ({ kind: "tracking", upstream: `origin/${branch}`, ahead: 0, behind: 0 });
 
@@ -254,7 +255,7 @@ export const sampleTimberStatuses = {
 /** The mock engine, plus the controls a test or the browser build uses to act out changes. */
 /** The controls for terminals are in ./mock-terminals.ts. */
 /** The controls for Timber's settings are in ./mock-timber-config.ts, for workflows in ./mock-workflows.ts, for pull requests in ./mock-pull-requests.ts, for issues in ./mock-issues.ts, and for backups in ./mock-backups.ts. */
-export interface MockEngine extends Engine, TerminalControls, TimberConfigControls, WorkflowControls, PullRequestControls, IssueControls, BackupControls, ThemeFileControls, ChopsControls {
+export interface MockEngine extends Engine, TerminalControls, TimberConfigControls, WorkflowControls, PullRequestControls, IssueControls, BackupControls, ThemeFileControls, ChopsControls, PortControls {
 	/** Replace the data, without telling the interface. */
 	setRepositories(repositories: Repository[]): void;
 	/** Report that a repository changed, as the main process would. */
@@ -680,6 +681,7 @@ export function createMockEngine(
 	};
 	const filesOf = (worktree: Worktree) => fileChangeLists.get(worktree.path) ?? derivedFileChanges(worktree);
 	const chopFiles = createMockChops();
+	const portReader = createMockPorts();
 
 	const look = async () => structuredClone(typeof timber === "function" ? timber() : timber);
 	const read = async <Result>(result: () => Result): Promise<Result> => {
@@ -956,6 +958,16 @@ export function createMockEngine(
 			return chopFiles.list(request.repository, request.worktree, preferences.chops);
 		},
 		...chopFiles.controls,
+		async readPorts(request) {
+			// As the main process: nothing is read while the window is hidden.
+			if (attended?.visible === false) return { outcome: "hidden" };
+			const repository = current.find(candidate => candidate.path === request.repository);
+			const worktrees = repository?.available ? asRead(repository).worktrees : [];
+			const target = repository?.available && asRead(repository).failure === null ? worktrees.find(candidate => candidate.path === request.worktree) : undefined;
+			if (!target || !target.pathExists) return { outcome: "not-listed", message: `Timber lists no worktree at ${request.worktree} in ${request.repository}. No ports were read.` };
+			return portReader.read(target, worktrees);
+		},
+		...portReader.controls,
 		setFileChanges(path, files) {
 			if (files === null) fileChangeLists.delete(path);
 			else fileChangeLists.set(path, structuredClone(files));

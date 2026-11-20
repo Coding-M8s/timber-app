@@ -2526,3 +2526,35 @@ Run for chops (issue 173), Linux x64 with Bun 1.4.5 and Git 2.43.0:
 - `bun run build:web`: built.
 - Not run: the desktop app or the browser build by eye, Windows (the
   file tests that use links and pipes are skipped there), and macOS.
+
+Run for ports of a worktree (issue 169), Linux x64 with Bun 1.4.5, Git
+2.56.1, and Docker 29.10.0 (client and server):
+
+- `bun test`: 2168 tests passed, 18 skipped, 0 failed, including
+  `tests/ports-parse.test.ts`, `tests/ports-view.test.tsx`, and
+  `tests/ports.test.ts`, which reads ports for linked worktrees of a real
+  temporary repository through a stand-in `docker`, checks that the
+  repository's files and refs are unchanged after a read, that a hidden
+  window and a read within 5 seconds start no `docker`, a pretend `/proc`,
+  and a real listener started under `setsid`, found through the real
+  `/proc`.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun run build:web`: built.
+- `createPorts` against the real Docker and the real worktrees of a private
+  repository with five worktrees: the one running a Compose project listed
+  its 8 published ports (6 services), the other four listed none, and all
+  five reads took 161 ms together.
+- The same reader with `DOCKER_HOST` at a missing socket and at a socket
+  that refuses connections answered "Docker is not running", at a socket
+  with no permissions "No permission to use Docker", and with no `docker`
+  on the PATH "Docker is not installed here", each with Docker's own words
+  after it.
+- A container created and never started, labeled with this worktree as its
+  Compose working directory and asking for a host port another worktree's
+  running container publishes: the read listed no port for this worktree
+  and reported the clash, and `clashMarksOf` marked both worktrees, each
+  with the other's name. The container was removed afterwards.
+- Not run: the desktop window or the browser build by eye (the list's
+  opening, Open in browser, and Copy were not clicked), Windows (the
+  `/proc` tests are skipped there), and macOS. Ports of sessions are read
+  on Linux only.

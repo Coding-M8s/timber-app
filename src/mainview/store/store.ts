@@ -6,6 +6,7 @@ import type { Engine } from "../../shared/engine";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "../../shared/git-fetch";
 import type { ChopList } from "../../shared/chops";
 import { type FileChangeTarget, type FileChangesResult, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
+import type { PortsResult } from "../../shared/ports";
 import { type Layout, clampSidebarWidth, dismissSetup, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberFailure, TimberStatus, Worktree, WorktreeCommandResult } from "../../shared/model";
 import { type Preferences, defaultPreferences } from "../../shared/preferences";
@@ -153,6 +154,12 @@ export interface AppStore {
 	 * worktree starts afresh. Never throws.
 	 */
 	readChops(repository: string, worktreeId: string): Promise<void>;
+	/**
+	 * Read the ports of a worktree, named by the path of its repository and
+	 * its identity, into `ports` and `portClashes`. A hidden window's answer
+	 * changes nothing. The latest read of each worktree wins. Never throws.
+	 */
+	readPorts(repository: string, worktreeId: string): Promise<void>;
 	/** Select a file of `changes` and read its diff. Never throws. */
 	selectChangedFile(file: FileChangeTarget): Promise<void>;
 	/**
@@ -920,6 +927,26 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const next: ChangesView = { ...view, files: answer.files, more: answer.more, problem: null, selected, diff: kept ? view.diff : null };
 		update({ changes: next });
 		if (selected) await readDiff(next, selected, worktree.path);
+	}
+
+	const portTickets = new Map<string, number>();
+	async function readPorts(repositoryPath: string, worktreeId: string): Promise<void> {
+		const worktree = worktreeOf(repositoryPath, worktreeId);
+		if (!worktree) return;
+		const ticket = (portTickets.get(worktree.path) ?? 0) + 1;
+		portTickets.set(worktree.path, ticket);
+		let answer: PortsResult;
+		try {
+			answer = await engine.readPorts({ repository: repositoryPath, worktree: worktree.path });
+		} catch {
+			// Not heard: the last answer stays, and the next trigger asks again.
+			return;
+		}
+		if (answer.outcome === "hidden" || portTickets.get(worktree.path) !== ticket) return;
+		update({
+			ports: { ...state.ports, [worktree.path]: answer },
+			...(answer.outcome === "read" ? { portClashes: answer.clashes } : {}),
+		});
 	}
 
 	let chopsTicket = 0;
@@ -1719,6 +1746,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		},
 		readChanges,
 		readChops,
+		readPorts,
 		selectChangedFile,
 		async readTimberSettings(request) {
 			try {

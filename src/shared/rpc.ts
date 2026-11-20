@@ -6,6 +6,7 @@ import type { Engine } from "./engine";
 import type { ForcePushSeen, RepositoryFetch } from "./git-fetch";
 import type { FileChangesRequest, FileDiffRequest } from "./file-changes";
 import type { Layout } from "./layout";
+import type { PortsRequest } from "./ports";
 import type { RebaseRequest } from "./timber-rebase";
 import type { CreatePullRequestRequest, HeadSubjectRequest } from "./timber-pr";
 import type { NewWorktreeRequest, OpenInEditorRequest, OpenWorktreeRequest } from "./model";
@@ -82,6 +83,7 @@ export type AppRPC = {
 			applyDone: { params: DoneApplyRequest; response: Answer<"applyDone"> };
 			readFileChanges: { params: FileChangesRequest; response: Answer<"readFileChanges"> };
 			readFileDiff: { params: FileDiffRequest; response: Answer<"readFileDiff"> };
+			readPorts: { params: PortsRequest; response: Answer<"readPorts"> };
 			listChops: { params: ChopsRequest; response: Answer<"listChops"> };
 			listTerminals: { params: {}; response: Answer<"listTerminals"> };
 			openTerminal: { params: OpenTerminalRequest; response: Answer<"openTerminal"> };

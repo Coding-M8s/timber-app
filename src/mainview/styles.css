@@ -4062,3 +4062,93 @@ pre:focus-visible {
 .restart-prompt-buttons .button {
 	margin-top: 0;
 }
+
+/* Ports of the worktree (issue 169): one quiet item in the header, and the list it opens. Red only for a port another worktree claims too, always with its words. */
+.ports {
+	position: relative;
+}
+
+.ports-button {
+	padding: 0;
+	border: 0;
+	background: none;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+	text-decoration: underline dotted;
+	text-underline-offset: 2px;
+}
+
+.ports-button:hover,
+.ports-button[aria-expanded="true"] {
+	color: var(--text-2);
+}
+
+.ports-list {
+	position: absolute;
+	top: calc(100% + 4px);
+	left: 0;
+	z-index: 30;
+	width: max-content;
+	min-width: 260px;
+	max-width: min(520px, calc(100vw - 32px));
+	max-height: 60vh;
+	overflow-y: auto;
+	padding: 6px 10px;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: var(--bg-main);
+	box-shadow: 0 8px 24px var(--shadow);
+	color: var(--text-2);
+}
+
+.ports-group + .ports-group {
+	margin-top: 6px;
+	padding-top: 6px;
+	border-top: 1px solid var(--line);
+}
+
+.ports-group-title {
+	margin: 0 0 4px;
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--text-3);
+}
+
+.ports-group ul {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.ports-line {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 2px 10px;
+	padding: 2px 0;
+}
+
+.ports-owner {
+	min-width: 90px;
+}
+
+.ports-port {
+	font-family: var(--font-mono);
+	font-size: 11.5px;
+}
+
+.ports-clash {
+	color: var(--error);
+}
+
+.ports-actions {
+	display: inline-flex;
+	gap: 4px;
+	margin-left: auto;
+}
+
+.ports-empty {
+	margin: 0;
+	max-width: 420px;
+}

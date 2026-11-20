@@ -93,6 +93,8 @@ interface WorktreeRowProps {
 	 * count. Nothing shows when there are none.
 	 */
 	sessions?: readonly TerminalSession[];
+	/** The sentence of a port this worktree shares with another, or null. Only then does the row show a warning. */
+	portClash?: string | null;
 	/**
 	 * Controls for the worktree beside the row, such as "Open in editor". The
 	 * row is itself a button, so they sit next to it, not inside it.
@@ -108,7 +110,7 @@ interface WorktreeRowProps {
 }
 
 /** One worktree in the sidebar. What it is marked with comes from `describeRowMarkers`; this only draws it. */
-export function WorktreeRow({ worktree, selected, onSelect, pullRequest = null, issue, removal = null, sessions = [], actions, onMenuChoice }: WorktreeRowProps) {
+export function WorktreeRow({ worktree, selected, onSelect, pullRequest = null, issue, removal = null, sessions = [], portClash = null, actions, onMenuChoice }: WorktreeRowProps) {
 	const descriptionId = useId();
 	const button = useRef<HTMLButtonElement>(null);
 	// Where the open menu was asked to be, or null while it is closed.
@@ -138,7 +140,7 @@ export function WorktreeRow({ worktree, selected, onSelect, pullRequest = null, 
 	const markers = describeRowMarkers(worktree, pullRequest, removal);
 	const linked = describeIssue(worktree.issue, issue);
 	const running = describeRowSessions(sessions);
-	const description = [describeRow(markers), running.sentence].filter(Boolean).join(" ");
+	const description = [describeRow(markers), portClash, running.sentence].filter(Boolean).join(" ");
 	const at = (place: RowMarker["place"]) => markers.filter(marker => marker.place === place).map(marker => <Marker key={marker.kind} marker={marker} />);
 	const flags = [...at("state"), ...at("pull-request")];
 	const row = (
@@ -159,7 +161,12 @@ export function WorktreeRow({ worktree, selected, onSelect, pullRequest = null, 
 			</span>
 			<span className="row-line row-meta">
 				<span className="row-sub">{describeWorktreeKind(worktree)}</span>
-				{flags.length > 0 && <span className="row-flags">{flags}</span>}
+				{(flags.length > 0 || portClash !== null) && (
+					<span className="row-flags">
+						{flags}
+						{portClash !== null && <span className="row-flag failing" title={portClash} aria-hidden="true">port clash</span>}
+					</span>
+				)}
 				{(running.marks.length > 0 || running.others > 0) && (
 					// Each agent's state as a shape and a color, then the other sessions as a count. Their sentences are in the row's description.
 					<span className="row-sessions" aria-hidden="true">
