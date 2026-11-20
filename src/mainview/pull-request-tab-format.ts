@@ -4,8 +4,9 @@ import { asSentence, pullRequestFailureSentence } from "./pull-request-format";
 /**
  * Words for the Pull request tab: what it shows for the selected worktree,
  * from the pull requests the store last read. Pure, so it can be tested
- * without a window. The tab only reads: it runs no command, and its only
- * control opens links in the browser.
+ * without a window. Showing a pull request runs no command, and its only
+ * controls open links in the browser. The form for a worktree with no pull
+ * request yet has its own words in ./pull-request-create-format.ts.
  */
 
 export const OPEN_IN_BROWSER = "Open in browser";

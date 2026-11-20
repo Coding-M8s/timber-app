@@ -15,6 +15,12 @@ export interface PullRequestControls {
 	pullRequestReads(repository: string): number;
 }
 
+/** How the acted `timber pr` tells the pretend GitHub about a pull request it opened or found. */
+export interface PullRequestOpening {
+	/** From now on, a worktree that has no pull request in the answer has this one. */
+	openedPullRequest(repository: string, worktree: string, pull: PullRequest): void;
+}
+
 type SampleFields = Partial<Omit<PullRequest, "checks">> & { summary?: PullRequest["checks"]["summary"]; runs?: CheckRun[] };
 
 const run = (name: string, status: CheckRun["status"], link = true): CheckRun => ({
@@ -108,9 +114,22 @@ export function sampleAnswer(repository: Repository): PullRequestList {
  * As the main process does, a repository must be in the list and Timber must
  * be ready, with the main process's words for when it is not.
  */
-export function createMockPullRequests(listed: (path: string) => Repository | undefined, timber: () => TimberStatus): PullRequestCapabilities & PullRequestControls {
+export function createMockPullRequests(listed: (path: string) => Repository | undefined, timber: () => TimberStatus): PullRequestCapabilities & PullRequestControls & PullRequestOpening {
 	const chosen = new Map<string, PullRequestList>();
 	const reads = new Map<string, number>();
+	// Pull requests the acted `timber pr` opened or found, by repository and then worktree path.
+	const opened = new Map<string, Map<string, PullRequest>>();
+	const withOpened = (repository: string, list: PullRequestList): PullRequestList => {
+		const mine = opened.get(repository);
+		if (!list.ok || !mine) return list;
+		return {
+			ok: true,
+			worktrees: list.worktrees.map(entry => {
+				const pull = entry.outcome === "none" ? mine.get(entry.path) : undefined;
+				return pull ? { path: entry.path, branch: entry.branch, outcome: "found", pullRequest: pull } : entry;
+			}),
+		};
+	};
 	return {
 		async readPullRequests(repository) {
 			reads.set(repository, (reads.get(repository) ?? 0) + 1);
@@ -119,7 +138,12 @@ export function createMockPullRequests(listed: (path: string) => Repository | un
 			const status = timber();
 			if (status.state === "not-found") return { ok: false, message: "Timber was not found on PATH." };
 			if (status.state === "too-old") return { ok: false, message: `Timber ${status.found} at ${status.path} is older than the required ${status.required}.` };
-			return structuredClone(chosen.get(repository) ?? sampleAnswer(found));
+			return structuredClone(withOpened(repository, chosen.get(repository) ?? sampleAnswer(found)));
+		},
+		openedPullRequest(repository, worktree, pull) {
+			const mine = opened.get(repository) ?? new Map<string, PullRequest>();
+			mine.set(worktree, structuredClone(pull));
+			opened.set(repository, mine);
 		},
 		setPullRequests(repository, list) {
 			if (list === null) chosen.delete(repository);

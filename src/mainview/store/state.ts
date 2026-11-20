@@ -1,3 +1,4 @@
+import type { PullRequestCreationFailure, PullRequestFields, ReportedPullRequestView } from "../pull-request-create-format";
 import type { FileChange, FileChangeTarget, FileDiffResult } from "../../shared/file-changes";
 import { type Layout, defaultLayout } from "../../shared/layout";
 import type { RepositoryFetch } from "../../shared/git-fetch";
@@ -294,6 +295,29 @@ export interface AppState {
 	 * changes, and again after each fetch of its repository ends.
 	 */
 	issues: Readonly<Record<string, IssueEntry>>;
+	/**
+	 * The form in the Pull request tab of each worktree that has no pull
+	 * request yet, by worktree id, with its run and how the last one ended.
+	 * Kept here and not in the tab, so switching tabs or worktrees while
+	 * Timber runs neither loses what was typed nor allows a second run.
+	 */
+	pullRequestForms: Readonly<Record<string, PullRequestForm>>;
+}
+
+/** One worktree's form for `timber pr`, and its latest run. */
+export interface PullRequestForm extends PullRequestFields {
+	/** The path of the repository's primary checkout. */
+	repository: string;
+	/** The worktree's registered path, the selector given to Timber. */
+	worktree: string;
+	/** The person typed a title, so the last commit's subject, read later, does not replace it. */
+	titleEdited: boolean;
+	/** `timber pr` runs: the fields are disabled and nothing else can be submitted. */
+	running: boolean;
+	/** Why the latest run opened nothing. Null while one runs, and once one worked. */
+	failure: PullRequestCreationFailure | null;
+	/** The pull request the latest run created or found, until the tab can show it from the pull requests read. */
+	reported: ReportedPullRequestView | null;
 }
 
 /** What Timber answered for one worktree's linked issue, and which link it answered for. */
@@ -333,6 +357,7 @@ export const initialState: AppState = {
 	pullRequests: {},
 	issues: {},
 	backups: {},
+	pullRequestForms: {},
 };
 
 /** Nothing that depends on Timber is offered until a usable one is found. */

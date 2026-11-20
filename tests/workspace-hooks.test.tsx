@@ -28,6 +28,8 @@ function hooksCalledBy(store: AppStore, render: () => unknown): string[] {
 			called.push(name);
 			if (name === "useContext") return store;
 			if (name === "useSyncExternalStore") return (args[1] as () => unknown)();
+			// Effects run after a render, so a call that only renders runs none.
+			if (name === "useEffect") return undefined;
 			throw new Error(`The stand-in dispatcher does not answer ${name}.`);
 		},
 	});
@@ -61,6 +63,9 @@ describe("the workspace calls the same hooks on every render", () => {
 		store.start();
 		await settle();
 		const repository = store.getState().repositories[0]!;
+		// One with no pull request shows the form for `timber pr` once it is started.
+		const withoutPull = repository.worktrees.find(worktree => worktree.branch === "spike/new-idea")!;
+		store.startPullRequestForm(repository.path, withoutPull);
 		const counts = repository.worktrees.map(worktree => hooksCalledBy(store, () => PullRequestPanel({ repository, worktree })));
 		expect(new Set(counts.map(hooks => hooks.join(","))).size).toBe(1);
 	});

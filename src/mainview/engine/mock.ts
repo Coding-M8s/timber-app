@@ -20,6 +20,8 @@ import { type AvailableUninstallPlan, UNINSTALL_ARGUMENTS, type UninstallRequest
 import { REQUIRED_TIMBER_VERSION } from "../../shared/timber-version";
 import { type CommandEnding, actOutNew, actOutOpen, isCommandEnding } from "./mock-commands";
 import { type RebaseEnding, actOutRebase, isRebaseEnding } from "./mock-rebase";
+import { type PullRequestEnding, actOutPullRequest, isPullRequestEnding } from "./mock-pr";
+import type { CreatePullRequestResult } from "../../shared/timber-pr";
 import { type MockFileChange, derivedFileChanges, diffMockFileChange, listMockFileChanges } from "./mock-file-changes";
 import { MOCK_PATH, type TerminalControls, createMockTerminals } from "./mock-terminals";
 import { type TimberConfigControls, createMockTimberConfig } from "./mock-timber-config";
@@ -305,6 +307,16 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	 * whatever the ending. See ./mock-rebase.ts for what each one acts out.
 	 */
 	endRebaseResults(ending: RebaseEnding): void;
+	/**
+	 * Decide how `timber pr --result-file` ends from now on: "created" (the
+	 * start), "exists", "refused", "failed-login", "failed-after-push", or
+	 * "no-result". An empty title is refused whatever the ending. Created and
+	 * exists put the pull request in the repository's answer, so the next read
+	 * shows it. See ./mock-pr.ts for what each one acts out.
+	 */
+	endPullRequestResults(ending: PullRequestEnding): void;
+	/** Decide the last commit's subject of one worktree, by its path. Null for one with no commit. Until then it is "Work on <branch>". */
+	setHeadSubject(worktree: string, subject: string | null): void;
 	/**
 	 * Decide what the branch list of one repository answers from now on: these
 	 * branches, or null for a list that cannot be read. Until then it answers
@@ -674,6 +686,8 @@ export function createMockEngine(
 	};
 	let ending: CommandEnding = "succeeds";
 	let rebaseEnding: RebaseEnding = "rebased";
+	let pullRequestEnding: PullRequestEnding = "created";
+	const headSubjects = new Map<string, string | null>();
 	const branchLists = new Map<string, BranchSuggestion[] | null>();
 	const listedBranches = (repository: Repository) =>
 		branchLists.has(repository.path) ? branchLists.get(repository.path)! : branchesOf(repository);
@@ -798,6 +812,36 @@ export function createMockEngine(
 			const status = await look();
 			if (status.state !== "ready") return refuse("Timber is not ready.");
 			return structuredClone(actOutRebase(repository, worktree, request, rebaseEnding, status));
+		},
+		async createPullRequest(request) {
+			const refuse = (diagnostic: string): CreatePullRequestResult => ({ outcome: "failed", ran: false, published: false, failure: { command: null, diagnostic: `${diagnostic} Nothing was run.`, output: null } });
+			if (commandMilliseconds > 0) await new Promise(resolve => setTimeout(resolve, commandMilliseconds));
+			// As the main process does: a repository from the list, a worktree it lists with its folder there, then a Timber that is ready.
+			const repository = current.find(candidate => candidate.path === request.repository && candidate.available);
+			if (!repository) return refuse(`${request.repository} is not a repository in the app's list.`);
+			const worktree = timberFailures.has(repository.path) ? undefined : repository.worktrees.find(candidate => candidate.path === request.worktree);
+			if (!worktree) return refuse(`Timber lists no worktree at ${request.worktree} in ${request.repository}. Refresh the list.`);
+			if (!worktree.pathExists) return refuse(`The folder ${worktree.path} is missing.`);
+			const status = await look();
+			if (status.state !== "ready") return refuse("Timber is not ready.");
+			const acted = actOutPullRequest(repository, worktree, request, pullRequestEnding);
+			if (acted.opened) pullRequests.openedPullRequest(repository.path, worktree.path, acted.opened);
+			return structuredClone(acted.result);
+		},
+		async readHeadSubject({ repository: path, worktree: worktreePath }) {
+			const repository = current.find(candidate => candidate.path === path && candidate.available);
+			const worktree = repository?.worktrees.find(candidate => candidate.path === worktreePath);
+			if (!worktree) return null;
+			if (headSubjects.has(worktree.path)) return headSubjects.get(worktree.path)!;
+			return worktree.head === null ? null : `Work on ${worktree.branch ?? "a detached HEAD"}`;
+		},
+		endPullRequestResults(next) {
+			// Called from the browser console too, where nothing checks the word.
+			if (!isPullRequestEnding(next)) throw new Error(`Unknown ending: ${String(next)}`);
+			pullRequestEnding = next;
+		},
+		setHeadSubject(path, subject) {
+			headSubjects.set(path, subject);
 		},
 		listBranches: path => read(() => {
 			const found = current.find(repository => repository.path === path && repository.available);

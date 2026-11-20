@@ -198,8 +198,9 @@ The sidebar shows exactly the worktrees Timber lists, in Timber's order
 
 ### Commands that report through a result file
 
-New, open, done, rebase, saving Timber's settings (`config`), restoring a
-backup (`backup-restore`), and deleting one (`backup-delete`) say how they
+New, open, done, rebase, opening a pull request (`pr`), saving Timber's
+settings (`config`), restoring a backup (`backup-restore`), and deleting one
+(`backup-delete`) say how they
 ended in a result file, not on standard output. One helper runs all of them, so no dialog reads a result its
 own way: `runTimberWithResultFile` in `src/bun/timber-run.ts`. Creating and
 opening worktrees use it (see [below](#creating-and-opening-worktrees)), and
@@ -915,6 +916,13 @@ paths, one with a space), `"refused"`, `"failed"`, `"no-result"` (exit code 1
 and no result file), or `"unsupported"` (a Timber too old to report). A
 worktree with modified or untracked files is refused whatever the ending, as
 Timber does, and a mock Timber older than 0.1.2 is unsupported.
+`timberMock.endPullRequestResults(ending)` chooses how `timber pr` ends from
+then on: `"created"` (the start), `"exists"`, `"refused"`, `"failed-login"`
+(nothing pushed), `"failed-after-push"` (the branch was published), or
+`"no-result"` (exit code 1 and no result file). An empty title is refused
+whatever the ending. Created and exists show the pull request on the next
+read. `timberMock.setHeadSubject(path, subject)` sets a worktree's last
+commit subject (`null` for none); until then it is "Work on <branch>".
 `timberMock.setBranches("/work/timber", list)` replaces the branches offered
 for picking (`null` acts out a list that cannot be read).
 `timberMock.failLayoutSaves("disk full")` makes saving the layout fail
@@ -1485,9 +1493,11 @@ there is one sign-in, Timber's, and the app holds no token.
   answer, or why it could not be read. Under the review decision it lists
   each reviewer with its state, "team" or "bot" beside the name, and an
   Open link when it has one, then a quiet line when there are none or
-  Timber's login could not read them all. It reads the store only, so it
-  changes whenever the pull requests are read again, and it runs no
-  command. Its controls open links through `openLink`.
+  Timber's login could not read them all. It reads the store, so it
+  changes whenever the pull requests are read again. Showing a pull request
+  runs no command, and its controls open links through `openLink`. A
+  worktree on a branch with none yet gets a form that runs `timber pr` (see
+  [opening a pull request](#opening-a-pull-request)).
 
 In `bun run dev:web`, timber has an approved pull request and one with
 failing checks and requested changes, api-server a merged one, and billing
@@ -1498,6 +1508,93 @@ in full (the draft). docs-site, once
 added, is not on GitHub.
 `timberMock.setPullRequests(path, list)` changes one (`null` for the
 sample).
+
+## Opening a pull request
+
+The Pull request tab of a worktree on a branch with no pull request yet is a
+form that runs `timber pr --result-file`. Timber publishes the branch with the
+rules of `timber publish` and opens the pull request on github.com with its
+own login. The app never pushes and never calls GitHub. Timber 0.1.3, the
+release the app requires, is the first with `timber pr`, so there is no
+version gate of its own.
+
+- **The form.** `PullRequestFormView` in
+  `src/mainview/components/PullRequestPanel.tsx`, shown when the worktree's
+  entry from `timber __app-pr` is none and it has a branch. Its state lives in
+  the store, `pullRequestForms` by worktree id, so leaving the tab or the
+  worktree while Timber runs keeps what was typed and the run, and cannot
+  start a second one. `startPullRequestForm` starts it once: Title as the
+  branch, then the last commit's subject once `readHeadSubject` answers,
+  unless something was typed first; Base as `initialPullRequestBase` of the
+  saved base, which gives `<remote>/<branch>` for a saved
+  `refs/remotes/<remote>/<branch>` and nothing for a saved local branch,
+  none, or invalid metadata, since `timber pr --base` refuses a local
+  branch. Empty Base passes no `--base`, and Timber takes the saved base and
+  says what it needs. The app checks no title, length, or base itself:
+  Title is always passed, even empty, and Timber refuses it.
+- **The last commit's subject.** `readHeadSubject` on the `Engine`, answered
+  by `WorktreeCommands.headSubject` in `src/bun/worktree-commands.ts`: for a
+  worktree Timber lists in a repository from the list (`findListedWorktree`)
+  it runs `git -C <worktree> log -1 --format=%s HEAD --` without optional
+  locks (`readHeadSubject` in `src/bun/git-engine.ts`), and answers null for
+  anything else, a branch with no commit, or an empty subject. It changes
+  nothing.
+- **One source for the command.** `prResultArguments` in
+  `src/shared/timber-pr.ts` builds `pr --title <text> [--body <text>]
+  [--base <ref>] [--draft] --result-file <path> -- <registered path>`. Each
+  value is its own argument after its option, so a title or a description
+  that starts with a dash stays text, which Timber 0.1.3 was checked to
+  accept. The footer words it from that function with `<temporary file>`
+  (`pullRequestCommandFor` in `src/mainview/pull-request-create-format.ts`),
+  and it follows every keystroke.
+- **Running and checks.** `createPullRequest` on the `Engine`, answered by
+  `WorktreeCommands.pullRequest`, in the same per-repository turn as `timber
+  new`, `open`, and `rebase`. Before it runs anything it checks that the
+  request is complete (only text becomes an argument, and `draft` is a
+  boolean), that the repository is in the list, that Timber lists the
+  worktree there with its folder, and that Timber is ready. Each refusal is
+  a failure with `ran: false` that ends "Nothing was run." The desktop
+  engine asks with no time limit: Timber stops each GitHub request after ten
+  seconds, but a push takes as long as it takes.
+- **Reading the record.** `readTimberResult` has checked the common fields.
+  `readPrResult` then checks the `pr` object: a known `result`, a positive
+  whole `number` or null, text or null for `url` and `base`, and a boolean
+  `published`. Created and exists must have succeeded and refused and failed
+  must have failed; `number` and `url` are there exactly for created and
+  exists; `url` must be an `https://github.com` link; a refusal never
+  published; and a record that names another worktree is not used. Anything
+  else is a failure whose effect is unknown (`published: null`), since the
+  branch may have been pushed.
+- **Outcomes.** `presentPullRequestCreation` maps each answer. Created: a
+  toast, "Pull request #N opened". Exists: a quiet line above that pull
+  request saying it was already open and Timber opened no other. Both stay
+  as `reported` in the form, and the tab shows the number with "Open in
+  browser" until a read of the pull requests lists it. Refused: Timber's
+  diagnostic, and that nothing was pushed. Failed: Timber's diagnostic, and
+  whether this run published the branch, or that it is unknown, never that
+  nothing changed. Running it again reports one that was opened as already
+  open. Each failure keeps Timber's output in `TimberFailureDetails`, closed
+  at first, and stays until a field changes or the next run.
+- **Afterwards.** After every outcome that ran, even a failure, the store
+  reads the repository and its pull requests again before it says how it
+  ended, so a created pull request shows as soon as GitHub lists it.
+- **In the browser.** The mock engine acts out `timber pr`
+  (`src/mainview/engine/mock-pr.ts`) and writes the record Timber would,
+  read by the same code. Created and exists add the pull request to the
+  repository's next answer. `timberMock.endPullRequestResults` chooses the
+  ending, and `timberMock.setHeadSubject(path, subject)` the last commit's
+  subject (see [reporting outcomes](#reporting-outcomes)).
+- **Tests.** `tests/fixtures/timber-pr` holds two refusals recorded from
+  Timber 0.1.3 (a remote that is not on github.com, and no title). Created,
+  exists, and two failures are written by hand from the recorded one in the
+  form Timber's `docs/ide-contract.md` gives, because recording them would
+  open a real pull request. `tests/timber-pr-parse.test.ts` maps each one.
+  With the installed Timber, `tests/worktree-pr.test.ts` checks that a
+  refusal against a remote on disk changes no file or ref in the worktree,
+  the primary checkout, or the remote, with no GitHub login in reach, and
+  that reading the subject changes nothing.
+  `tests/pull-request-create.test.tsx` covers the form, the store, and the
+  mock endings.
 
 ## Linked issues
 
@@ -5197,3 +5294,20 @@ installed:
   again.
 - `bun run build:web`: built.
 - Not run: the desktop window, Windows, and macOS, as above.
+
+Run for opening a pull request from the Pull request tab (issue 102), Linux
+x64 (Omarchy) with Bun 1.4.5, Git 2.56.1, and the released Timber 0.1.3
+installed:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 2044 passed, 14 skipped, none failed. Against Timber 0.1.3 on
+  a temporary repository whose `origin` is a bare repository on disk:
+  `timber pr` was refused as not on github.com, and again with no title,
+  and neither changed a file or ref in the worktree, the primary checkout,
+  or the remote. `--title '-x<newline>y'` reached Timber as the title, which
+  refused it as more than one line, so a value that starts with a dash is
+  not read as an option. Reading the last commit's subject changed nothing.
+- `bun run build:web`: built.
+- Not run: creating a real pull request on GitHub (the created, exists, and
+  failed records are written by hand from the contract), the form in a
+  browser or the desktop window, Windows, and macOS.

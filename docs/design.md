@@ -123,11 +123,29 @@ change them here first when they change.
   with its lines kept, never as markup. Hairlines part the sections.
   Failing checks and requested changes are red with their words, and so
   is a reviewer who asked for changes. With no reviewers, or some Timber's
-  login could not read, a quiet line says so. It is read-only: it runs
-  no command, and only opens links. With no pull request it is a quiet
-  placeholder, "No pull request yet". Offline, sign-in needed, not on
+  login could not read, a quiet line says so. Showing a pull request runs
+  no command, and only opens links. Offline, sign-in needed, not on
   GitHub, or an answer that could not be read is said in its place with
   the reason, never as a dialog. It follows each new read.
+- A worktree on a branch with no pull request yet gets a form in the tab,
+  "Open a pull request": Title (the last commit's subject, else the
+  branch), Description, Base (the saved base as Timber takes it,
+  `origin/main`, or empty for Timber's own choice when the saved base is a
+  local branch or none), and an "Open as a draft" switch. A quiet line says
+  Timber publishes the branch and opens the pull request, and the app never
+  pushes on its own. The exact `timber pr` command shows above "Publish and
+  open" and changes as the fields change. While Timber runs, the fields and
+  the button are disabled and a progress bar shows; leaving the tab or the
+  worktree keeps the run and what was typed, and never starts a second
+  run. Created: a toast, "Pull request #12 opened", and the tab shows the
+  pull request as soon as GitHub lists it, with its number and "Open in
+  browser" until then. Already open: a quiet line above that pull request
+  says so. Refused or failed: Timber's reason stays in the form with the
+  fields as typed, ready for a retry, with Timber's output in a details
+  area that starts closed, and a line that says what happened to the
+  branch: nothing was pushed (refused), the branch was published before
+  the failure, or that it is unknown. A detached HEAD keeps the quiet
+  placeholder.
 - Above the pull request, in every state of the tab, an Issue section shows
   the linked issue: its title, the tracker with the key and status, the
   assignee or "Unassigned", and "Open in browser". When the status could not

@@ -3818,6 +3818,56 @@ pre:focus-visible {
 	padding-top: 24px;
 }
 
+/* The Pull request tab's form for `timber pr` (issue 102): the fields, then the exact command above the button, as in a dialog. */
+.pull-create {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	max-width: 640px;
+}
+
+.pull-create.after-issue {
+	padding-top: 14px;
+}
+
+.pull-create-fields {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	min-width: 0;
+}
+
+.pull-create-body {
+	height: auto;
+	padding: 7px 9px;
+	resize: vertical;
+	font: inherit;
+	line-height: 1.45;
+}
+
+.pull-create-foot {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	padding-top: 12px;
+	border-top: 1px solid var(--line);
+}
+
+.pull-tab-reported {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 16px;
+	padding-top: 14px;
+}
+
+.pull-tab-existed {
+	padding-bottom: 12px;
+}
+
 /* Settings, Notifications: a row for each state, with a Notify and a Sound box. */
 .alert-states {
 	display: grid;
