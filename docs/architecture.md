@@ -807,7 +807,8 @@ repository through the path described [above](#shared-state-and-live-updates).
   when there is one. Working trees are never watched, so a dependency install
   or a build costs nothing here. `src/shared/git-watch.ts` decides, purely,
   which names count: lock files, logs, objects, and the scratch files of a
-  commit, merge, or rebase in progress do not.
+  commit, merge, or rebase in progress do not. Nor does `FETCH_HEAD`:
+  nothing shown reads it, and a fetch that moves refs is heard under `refs`.
 - **Which repositories.** `RepositoryList.watchTargets` gives each primary
   checkout with its common Git directory, from the saved list without asking
   Timber (or from the repositories the `TIMBER_APP_REPOS` override lists).
@@ -817,6 +818,27 @@ repository through the path described [above](#shared-state-and-live-updates).
   happened for 300 ms, and at the latest 2 seconds after the first, so a
   rebase or a burst of new branches is one reload, or one every 2 seconds
   while it lasts.
+- **Pacing by cost (`src/bun/listing-pace.ts`).** Tools outside the app,
+  such as agents, editors, and shell prompts that run a plain `git
+  status`, rewrite a worktree's index whenever file times are stale, and
+  each rewrite is a change here. Reading a repository with many worktrees
+  takes seconds, so the reloads of one repository are paced by what they
+  cost: every read of its worktrees is timed, and a background change that
+  comes while one runs, or sooner than three times its length after the
+  last one ended, is held. The changes held for one repository become one,
+  which goes back through the refresh policy when its time comes, so it
+  waits while the window is hidden and the selected worktree's stamp is
+  read again first. A change after a quiet spell goes out at once.
+  Refresh and the app's own commands reload without waiting. This bounds
+  the time `timber ls` runs, not CPU: it checks every worktree at once.
+  Making each listing cheaper is Timber's part.
+- **One listing per change (`src/bun/recent-listings.ts`).** The Changes
+  tab and chops need only which worktrees Timber lists and their saved
+  bases, so they reuse the listing the sidebar just read instead of running
+  `timber ls` again. A listing is reused until the watcher or a fetch hears
+  a change in that repository, and for at most 10 seconds; one that Timber
+  could not list is not reused. Every command that changes a repository
+  still reads it again. With `TIMBER_APP_REPOS` nothing is reused or paced.
 - **Folders that come and go.** `worktrees` exists only while there are
   linked worktrees, and its watch stops working when it is removed. Its
   appearing or going in the common directory starts the watch again. A
@@ -858,7 +880,9 @@ repository through the path described [above](#shared-state-and-live-updates).
   other status reads do, and Timber's `timber ls` does the same for its own
   Git calls. So the app never takes the index lock from a Git command the
   person runs, and its own reads do not rewrite the index, which would
-  otherwise wake the watcher again. The check also turns `core.fsmonitor`
+  otherwise wake the watcher again. `git diff` refreshes the index even so,
+  so the Changes tab's diffs also turn `diff.autoRefreshIndex` off (see
+  [the Changes tab](#the-changes-tab)). The check also turns `core.fsmonitor`
   off, so a background read never starts a monitor from the repository's
   configuration.
 - **Not done here.** Fetching, which moves ahead and behind counts, is
@@ -2240,7 +2264,15 @@ Comparing against a backup is a later step.
   merge-base <base> <head>`. The list is `git diff --name-status -z -M
   <branch point>`, which compares that commit with the files on disk, so
   committed, staged, and unstaged changes are one entry each and commits on
-  the base after the branch point do not show. Conflicts and untracked
+  the base after the branch point do not show. Since the index is not
+  refreshed (see below), that list also names files whose times changed
+  but whose content did not, so only the files that `git diff --numstat -z
+  -M <branch point>` also names are kept; Git compares the content for
+  those counts. When the counts are cut short, every name is kept, which can
+  list a file that was only touched, but never leaves out a real change.
+  Comparing the content of every changed file costs more than the names
+  alone, within the same 20 second limit; when the counts fail, every name
+  is kept too. Conflicts and untracked
   files come from the same `git status` as Uncommitted: conflicts replace
   the base diff's entry for that path, and untracked files are a group of
   their own, so a file removed from Git but still on disk is listed as
@@ -2260,9 +2292,12 @@ Comparing against a backup is a later step.
   again and builds the command from what Git says now, so a path from the
   interface never reaches Git unchecked; one that is absolute or steps out
   with `..` is refused first. A file that is no longer changed there says so.
-- **Read-only for real.** Every query runs with `GIT_OPTIONAL_LOCKS=0`.
-  Without it, both `git status` and `git diff` rewrite the index to refresh
-  file times, which a test showed. Paths are literal (`--literal-pathspecs`),
+- **Read-only for real.** Every query runs with `GIT_OPTIONAL_LOCKS=0`,
+  without which `git status` rewrites the index to refresh file times.
+  `git diff` rewrites it even with that, so every diff of tracked files also
+  runs with `-c diff.autoRefreshIndex=false`. A test with stale file times
+  shows that comparing with the base and the diffs leave the index bytes
+  unchanged, and fails without that option. Paths are literal (`--literal-pathspecs`),
   so a file named `*` means that file. Diffs run with `--no-color
   --no-ext-diff --no-textconv`, so the person's diff configuration cannot
   start a program or change the text, and with `LC_ALL=C`, so Git's "Binary

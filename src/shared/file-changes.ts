@@ -143,6 +143,14 @@ export type FileDiffResult =
 const LITERAL = ["--literal-pathspecs"];
 
 /**
+ * For every diff of tracked files: `git diff` refreshes the index and writes
+ * it back when file times are stale, even with `GIT_OPTIONAL_LOCKS=0`, which
+ * only covers `git status`. A write would wake the repository watcher, so
+ * reading the Changes tab would reload the sidebar.
+ */
+const NO_INDEX_REFRESH = ["-c", "diff.autoRefreshIndex=false"];
+
+/**
  * How the status is asked for: machine-readable, NUL-separated, so any file
  * name comes through, and every untracked file on its own instead of its
  * folder. `paths` limits it to those files.
@@ -183,7 +191,7 @@ export function diffArguments(file: FileChange, commit: string | null = null): {
 	const paths = file.previousPath === null ? [file.path] : [file.previousPath, file.path];
 	const detect = file.kind === "renamed" ? ["-M"] : file.kind === "copied" ? ["-C", "--find-copies-harder"] : [];
 	const options = file.area === "base" ? [...detect, ...area] : [...area, ...detect];
-	return { args: [...LITERAL, "diff", ...PLAIN_DIFF, ...options, "--", ...paths], differencesExit: false };
+	return { args: [...NO_INDEX_REFRESH, ...LITERAL, "diff", ...PLAIN_DIFF, ...options, "--", ...paths], differencesExit: false };
 }
 
 /**
@@ -217,9 +225,60 @@ export function commitArguments(revision: string): string[] {
 	return ["rev-parse", "--verify", "--quiet", "--end-of-options", `${revision}^{commit}`];
 }
 
-/** The files changed since the branch point `commit`, committed or not, as names and kinds. `paths` limits it to those files. */
+/**
+ * The files changed since the branch point `commit`, committed or not, as
+ * names and kinds. `paths` limits it to those files. Without the index
+ * refresh, a file whose times changed but whose content did not is listed
+ * too, so the list is checked against `baseContentArguments`.
+ */
 export function baseNamesArguments(commit: string, paths: readonly string[] = []): string[] {
-	return [...LITERAL, "diff", "--no-color", "--no-ext-diff", "--name-status", "-z", "-M", commit, "--", ...paths];
+	return [...NO_INDEX_REFRESH, ...LITERAL, "diff", "--no-color", "--no-ext-diff", "--name-status", "-z", "-M", commit, "--", ...paths];
+}
+
+/**
+ * The same comparison as `baseNamesArguments`, as line counts. Git compares
+ * the content for these, so a file that only has new times is left out.
+ */
+export function baseContentArguments(commit: string, paths: readonly string[] = []): string[] {
+	return [...NO_INDEX_REFRESH, ...LITERAL, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--numstat", "-z", "-M", commit, "--", ...paths];
+}
+
+/**
+ * The paths in `git diff --numstat -z` (see `baseContentArguments`): for a
+ * rename or copy, where it went. Counts are not read, since a binary file has
+ * `-` for both. A record that was cut short is left out.
+ */
+export function parseNumstatPaths(output: string): Set<string> {
+	const records = output.split("\0");
+	records.pop();
+	const paths = new Set<string>();
+	for (let index = 0; index < records.length; index++) {
+		const record = records[index]!;
+		// The path may hold tabs, so only the first two separate fields.
+		const first = record.indexOf("\t");
+		const second = first < 0 ? -1 : record.indexOf("\t", first + 1);
+		if (second < 0) continue;
+		const path = record.slice(second + 1);
+		if (path !== "") {
+			paths.add(path);
+			continue;
+		}
+		// A rename or copy: the original and the new path follow, each ended by a NUL.
+		index += 2;
+		const moved = records[index];
+		if (moved !== undefined && moved !== "") paths.add(moved);
+	}
+	return paths;
+}
+
+/**
+ * The changes of `names` whose content really differs, by `content` from
+ * `parseNumstatPaths`. Null when the line counts were cut short: then every
+ * name is kept, since leaving out a real change is worse than listing a file
+ * that only has new times.
+ */
+export function withChangedContent(names: readonly FileChange[], content: ReadonlySet<string> | null): FileChange[] {
+	return content === null ? [...names] : names.filter(file => content.has(file.path));
 }
 
 const NAME_KINDS: Record<string, ChangeKind> = { M: "modified", A: "added", D: "deleted", T: "type-changed", R: "renamed", C: "copied" };

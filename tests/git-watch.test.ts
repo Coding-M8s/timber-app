@@ -3,9 +3,13 @@ import { isRelevantChange } from "../src/shared/git-watch";
 
 describe("isRelevantChange", () => {
 	test("counts the entries of the common Git directory that change the list or a branch", () => {
-		for (const name of ["HEAD", "index", "packed-refs", "config", "FETCH_HEAD", "ORIG_HEAD", "worktrees", "refs", "reftable"]) {
+		for (const name of ["HEAD", "index", "packed-refs", "config", "ORIG_HEAD", "worktrees", "refs", "reftable"]) {
 			expect(isRelevantChange("common", name)).toBe(true);
 		}
+	});
+
+	test("leaves out FETCH_HEAD, which a fetch writes even when it brings nothing new", () => {
+		expect(isRelevantChange("common", "FETCH_HEAD")).toBe(false);
 	});
 
 	test("leaves out locks, logs, objects, and the scratch files of an operation in progress", () => {

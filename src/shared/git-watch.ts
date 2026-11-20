@@ -23,7 +23,7 @@ const COMMON_NAMES: ReadonlySet<string> = new Set([
 	"packed-refs",
 	// Upstream settings live here.
 	"config",
-	"FETCH_HEAD",
+	// Not FETCH_HEAD: nothing shown reads it, and a fetch that moves refs is heard under `refs` and `packed-refs`.
 	"ORIG_HEAD",
 	// Created or removed as a whole: the first linked worktree, or a repository moving to reftable.
 	"worktrees",

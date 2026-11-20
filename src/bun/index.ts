@@ -38,6 +38,8 @@ import { TIMBER_OVERRIDE_VARIABLE } from "../shared/timber-version";
 import { openWebLink } from "./open-link";
 import { createQuitGuard } from "./quit-guard";
 import { createRestarter } from "./restart";
+import { createListingPace } from "./listing-pace";
+import { createRecentListings } from "./recent-listings";
 import { createRefreshPolicy } from "./refresh-policy";
 import { type WatchTarget, createRepositoryWatcher } from "./repository-watcher";
 import { createWorktreeStamps } from "./worktree-stamp";
@@ -122,7 +124,16 @@ const settingsFile = settingsFilePath();
 console.log(`Settings at ${settingsFile}`);
 // One holder for the file, so the repository list and the layout cannot save over each other.
 const settings = createSettingsHolder(settingsFile);
-const repositories = createRepositoryList({ settingsFile, settings, pickFolder, reader: createRepositoryReader(() => timber.current()) });
+/*
+ * Every read of a repository's worktrees is paced (see ./listing-pace.ts), and the read-only views reuse the one the
+ * sidebar just read (see ./recent-listings.ts), so a background change costs one `timber ls`, not one per view.
+ */
+const pace = createListingPace({
+	send: path => repositoryChanges.announce(path),
+	resend: path => refreshPolicy.changed(path),
+});
+const listings = createRecentListings(createRepositoryReader(() => timber.current()), { listing: pace.listing });
+const repositories = createRepositoryList({ settingsFile, settings, pickFolder, reader: listings });
 const layout = createSavedLayout(settings);
 const preferences = createSavedPreferences(settings);
 const themeFiles = createThemeFiles({ pickFolder, pickFile });
@@ -151,11 +162,16 @@ const arenas = createArenaCommands({
  */
 let watchTargets: readonly WatchTarget[] = [];
 const refreshPolicy = createRefreshPolicy({
-	announce: path => repositoryChanges.announce(path),
+	announce: path => pace.announce(path),
 	readStamp: createWorktreeStamps({ targets: () => watchTargets }),
 	onReturn: () => void watchRepositories(),
 });
-const watcher = createRepositoryWatcher({ onChange: path => refreshPolicy.changed(path) });
+/** A change heard in a repository: listings read before it are not reused, and the policy decides when to tell the window. */
+function heard(path: string): void {
+	listings.forget(path);
+	refreshPolicy.changed(path);
+}
+const watcher = createRepositoryWatcher({ onChange: heard });
 
 /*
  * Fetching (see docs/architecture.md, "Fetching"). Every repository in the list is fetched in the background on the
@@ -165,7 +181,7 @@ const watcher = createRepositoryWatcher({ onChange: path => refreshPolicy.change
 const savedForcePushes = createSavedForcePushes(settings);
 const fetcher = createFetcher({
 	runGit: createGitRunner(),
-	onChanged: path => refreshPolicy.changed(path),
+	onChanged: heard,
 	onStatus: status => tell("where fetching stands", () => rpc.send.fetchChanged(status)),
 	marks: await savedForcePushes.load(),
 	saveMarks: marks => void savedForcePushes.save(marks),
@@ -206,9 +222,9 @@ function watchRepositories(): Promise<void> {
 void watchRepositories();
 
 const done = createDone({ timber: () => timber.current(), findRepository: path => repositories.find(path) });
-const fileChanges = createFileChanges({ findRepository: path => repositories.find(path) });
+const fileChanges = createFileChanges({ findRepository: path => repositories.findRecent(path) });
 // Personal chops come from the saved preferences only; the repository's are read from its file on every request.
-const chops = createChops({ findRepository: path => repositories.find(path), personal: async () => (await preferences.load()).chops });
+const chops = createChops({ findRepository: path => repositories.findRecent(path), personal: async () => (await preferences.load()).chops });
 // Timber reads and writes its own settings and logins. The app never opens those files (see ./timber-settings.ts).
 const timberSettings = createTimberSettings({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
 // Runs Timber's settings read and keeps only the workflows. What it prints is private: never log it (see ./workflows.ts).
@@ -509,6 +525,7 @@ function guardQuit(event: unknown): void {
 		void desktopNotices.stopAll();
 		sounds.stopAll();
 		refreshPolicy.stop();
+		pace.stop();
 		watcher.stop();
 		quitting = true;
 		handoffFolder?.close();
