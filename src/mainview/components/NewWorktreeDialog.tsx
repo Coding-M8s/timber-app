@@ -94,10 +94,10 @@ export function WorktreeDialogFrame(props: WorktreeDialogFrameProps) {
  * mode brings its fields, its command, and what running it means. Add a mode
  * by adding its hook to `modes`.
  */
-export function NewWorktreeDialog({ repository }: { repository: Repository }) {
+export function NewWorktreeDialog({ repository, initialMode = "new" }: { repository: Repository; initialMode?: "new" | "existing" }) {
 	const store = useStore();
 	const { submission, state } = useSubmission(() => store.closeDialog());
-	const [controller] = useState(() => createWorktreeDialogController(store, repository.path, submission));
+	const [controller] = useState(() => createWorktreeDialogController(store, repository.path, submission, initialMode === "existing" ? 1 : 0));
 	const { selected, workflows } = useSyncExternalStore(controller.subscribe, controller.getState, controller.getState);
 	// Read once when the dialog opens: each read runs Timber, and file watching reads the repository again often.
 	// The controller reads again after a run fails, when the settings may have changed.

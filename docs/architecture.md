@@ -938,10 +938,26 @@ pure functions in `src/mainview/shell.ts`.
   Workspace holds the terminal and Changes the diff (see
   [the Changes tab](#the-changes-tab)). Which tab shows is in the store and
   is not remembered between runs.
-- **Not built yet.** The palette button is disabled and says so in its
-  tooltip. The "+" and the Settings cog only ask: each puts a `DialogRequest`
-  in the store (`openDialog`), and the New dialog or the Settings dialog is
-  what answers it.
+- **Command palette.** The title bar button, and Ctrl+Shift+P (Cmd+Shift+P on
+  macOS), open the palette: a `{ kind: "palette" }` dialog in the store, drawn
+  by `CommandPalette.tsx`. `PaletteShortcut` listens on the window in the
+  capture phase, and a drawn terminal lets the chord through, so it works
+  from any focus. It opens only when no other dialog is open. What it lists
+  and how typing narrows it are pure functions in `src/mainview/palette.ts`:
+  the actions first (New worktree, Open existing branch, Fetch now, Rebase,
+  Done, Open in editor, Open terminal, Start each saved agent, Settings, Add
+  repository), then every worktree of every available repository. Matching is
+  case-insensitive and fuzzy over the label, the branch, the folder name, and
+  the repository name, and shows at most 50 entries so hundreds of worktrees
+  stay quick. Actions that need a worktree apply to the selected one and name
+  it. An action that cannot run is listed with its reason, using the same
+  words and rules as its button, and Enter does nothing on it.
+  `palette-run.ts` does the choosing through the store methods the buttons
+  call, so the palette adds no second way of doing anything. "Open existing
+  branch" is the New worktree dialog opened on its Existing branch mode
+  (`mode: "existing"`). The "+" and the Settings cog only ask: each puts a
+  `DialogRequest` in the store (`openDialog`), and the New dialog or the
+  Settings dialog is what answers it.
 - **Sidebar side.** The sidebar sits on the left or on the right, as chosen
   in Settings (see [preferences](#preferences-and-the-settings-dialog)). The
   window has no control for it. On the right the body is drawn workspace,

@@ -1,5 +1,6 @@
 import { useAppState } from "../store/react";
 import { SETTINGS_SECTIONS, timberReady } from "../store/state";
+import { CommandPalette } from "./CommandPalette";
 import { DeleteBackupDialog, RestoreBackupDialog } from "./BackupDialogs";
 import { DoneDialog } from "./DoneDialog";
 import { NewWorktreeDialog } from "./NewWorktreeDialog";
@@ -20,13 +21,15 @@ export function Dialogs() {
 		case "new-worktree": {
 			// Timber runs in the repository's folder, so the repository has to be listed and there.
 			const repository = state.repositories.find(candidate => candidate.path === dialog.repository && candidate.available);
-			return repository ? <NewWorktreeDialog key={repository.path} repository={repository} /> : null;
+			return repository ? <NewWorktreeDialog key={`${repository.path}\n${dialog.mode ?? "new"}`} repository={repository} initialMode={dialog.mode ?? "new"} /> : null;
 		}
 		case "done-worktree":
 			// A key per worktree, so a dialog for another one starts from nothing.
 			return <DoneDialog key={`${dialog.repository}\n${dialog.worktree}`} request={dialog} />;
 		case "rebase-worktree":
 			return <RebaseDialog key={`${dialog.repository}\n${dialog.worktree}`} request={dialog} />;
+		case "palette":
+			return <CommandPalette />;
 		case "restore-backup":
 		case "delete-backup": {
 			// Timber runs in the repository's folder, so the repository has to be listed and there. A key per backup, so another one starts from nothing.

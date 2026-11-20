@@ -186,6 +186,15 @@ export interface AppStore {
 	openDialog(request: DialogRequest): void;
 	closeDialog(): void;
 	/**
+	 * Open the command palette. It never takes the place of another dialog,
+	 * and it is not offered until Timber is ready, as no dialog is.
+	 */
+	openPalette(): void;
+	/** Close the command palette. Any other dialog stays open. */
+	closePalette(): void;
+	/** Open the command palette, or close it when it is open. Nothing happens while another dialog or the quit question is open. */
+	togglePalette(): void;
+	/**
 	 * Ask Timber what removing a worktree would do. Read-only. Never throws: an
 	 * engine that could not answer is a failed preview with the reason.
 	 */
@@ -1050,6 +1059,14 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		});
 	}
 
+	function openPalette(): void {
+		if (state.dialog === null && state.quitRequest === null && timberReady(state)) update({ dialog: { kind: "palette" } });
+	}
+
+	function closePalette(): void {
+		if (state.dialog?.kind === "palette") update({ dialog: null });
+	}
+
 	function moveRepository(path: string, index: number): Promise<void> {
 		const before = state.repositories.map(repository => repository.path);
 		const order = moveInOrder(before, path, index);
@@ -1623,6 +1640,12 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		},
 		closeDialog() {
 			if (state.dialog) update({ dialog: null });
+		},
+		openPalette,
+		closePalette,
+		togglePalette() {
+			if (state.dialog?.kind === "palette") closePalette();
+			else openPalette();
 		},
 		previewDone,
 		applyDone,
