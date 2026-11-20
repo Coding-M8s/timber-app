@@ -6,7 +6,7 @@ import type { Engine } from "../../shared/engine";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "../../shared/git-fetch";
 import { type FileChangeTarget, type FileChangesResult, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
 import { type Layout, clampSidebarWidth, dismissSetup, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
-import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberStatus, Worktree, WorktreeCommandResult } from "../../shared/model";
+import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberFailure, TimberStatus, Worktree, WorktreeCommandResult } from "../../shared/model";
 import { type Preferences, defaultPreferences } from "../../shared/preferences";
 import type { IssueLookup } from "../../shared/issues";
 import type { BackupDeleteRequest, BackupDeleteResult, BackupList, BackupRestoreRequest, BackupRestoreResult } from "../../shared/backups";
@@ -390,6 +390,16 @@ function messageOf(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
+/** Words for an engine that did not answer: "The app did not hear <what>: <the error><then>". */
+function notHeard(what: string, error: unknown, then = ""): string {
+	return `The app did not hear ${what}: ${messageOf(error)}${then}`;
+}
+
+/** A failure for an engine that did not answer, so there is no command and no output to show. */
+function notHeardFailure(what: string, error: unknown, then = ""): TimberFailure {
+	return { command: null, diagnostic: notHeard(what, error, then), output: null };
+}
+
 /** `schedule` is how the store waits before it takes a toast away. Tests pass their own clock. */
 /**
  * Changes to a repository come often while an agent works, and each read of
@@ -481,7 +491,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			try {
 				lookup = await engine.readIssue({ repository, worktree: next.path });
 			} catch (error) {
-				lookup = { ok: false, message: `The app did not hear the answer: ${messageOf(error)}` };
+				lookup = { ok: false, message: notHeard("the answer", error) };
 			} finally {
 				readingIssues.delete(next.id);
 			}
@@ -628,7 +638,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				try {
 					answer = await ask();
 				} catch (error) {
-					answer = failed(`The app did not hear the answer: ${messageOf(error)}`);
+					answer = failed(notHeard("the answer", error));
 				} finally {
 					reading.delete(path);
 				}
@@ -861,7 +871,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	 */
 	let changesTicket = 0;
 	let diffTicket = 0;
-	const unheard = (what: string, error: unknown) => `The app did not hear back about ${what}: ${messageOf(error)}`;
+	const unheard = (what: string, error: unknown) => notHeard(`back about ${what}`, error);
 
 	async function readDiff(view: ChangesView, file: FileChangeTarget, worktreePath: string): Promise<void> {
 		const ticket = ++diffTicket;
@@ -937,7 +947,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			try {
 				return await engine.openInEditor(request);
 			} catch (error) {
-				return { outcome: "failed", command: null, message: `The app did not hear whether the editor started: ${messageOf(error)}` };
+				return { outcome: "failed", command: null, message: notHeard("whether the editor started", error) };
 			}
 		};
 		let answer!: OpenInEditorResult;
@@ -982,7 +992,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			try {
 				answer = await engine.fetchNow(path);
 			} catch (error) {
-				answer = { outcome: "not-listed", message: `The app did not hear how the fetch ended: ${messageOf(error)}` };
+				answer = { outcome: "not-listed", message: notHeard("how the fetch ended", error) };
 			}
 		});
 		const name = state.repositories.find(repository => repository.path === path)?.name ?? folderName(path);
@@ -1158,8 +1168,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		try {
 			result = await ask();
 		} catch (error) {
-			const diagnostic = `The app did not hear how the command ended: ${messageOf(error)}. What it did is unknown, so check the list before trying again.`;
-			result = { outcome: "failed", failure: { command: null, diagnostic, output: null }, worktree: null, created: false, setupSkipped: false };
+			const failure = notHeardFailure("how the command ended", error, ". What it did is unknown, so check the list before trying again.");
+			result = { outcome: "failed", failure, worktree: null, created: false, setupSkipped: false };
 		}
 		await reloadOne(repository);
 		if (result.outcome !== "cancelled" && result.worktree) selectReported(repository, result.worktree);
@@ -1424,8 +1434,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		try {
 			result = await engine.createPullRequest({ repository, worktree, title, body, base: pullRequestBaseFromText(base), draft });
 		} catch (error) {
-			const diagnostic = `The app did not hear how timber pr ended: ${messageOf(error)}. The engine did not answer, so what it did is unknown.`;
-			result = { outcome: "failed", ran: true, published: null, failure: { command: null, diagnostic, output: null } };
+			const failure = notHeardFailure("how timber pr ended", error, ". The engine did not answer, so what it did is unknown.");
+			result = { outcome: "failed", ran: true, published: null, failure };
 		}
 		// Even a failure can come after the push, or after GitHub opened the pull request.
 		if (result.outcome !== "failed" || result.ran) await Promise.all([reloadOne(repository), refreshPullRequests(repository)]);
@@ -1439,8 +1449,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		try {
 			result = await engine.restoreBackup(request);
 		} catch (error) {
-			const diagnostic = `The app did not hear how the restore ended: ${messageOf(error)}. What it did is unknown, so check the list before trying again.`;
-			result = { outcome: "failed", ran: true, failure: { command: null, diagnostic, output: null } };
+			const failure = notHeardFailure("how the restore ended", error, ". What it did is unknown, so check the list before trying again.");
+			result = { outcome: "failed", ran: true, failure };
 		}
 		// Even a restore that failed can leave a worktree behind.
 		await reloadOne(request.repository);
@@ -1457,8 +1467,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		try {
 			result = await engine.deleteBackup(request);
 		} catch (error) {
-			const diagnostic = `The app did not hear how the deletion ended: ${messageOf(error)}. What it did is unknown; the list of backups is read again.`;
-			result = { outcome: "failed", ran: true, failure: { command: null, diagnostic, output: null } };
+			const failure = notHeardFailure("how the deletion ended", error, ". What it did is unknown; the list of backups is read again.");
+			result = { outcome: "failed", ran: true, failure };
 		}
 		// At once, not spaced out: the person is looking at the outcome.
 		await refreshBackups(request.repository);
@@ -1719,7 +1729,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			try {
 				return await engine.readTimberSettings(request);
 			} catch (error) {
-				return { outcome: "failed", failure: { command: null, diagnostic: `The app did not hear back: ${messageOf(error)}`, output: null } };
+				return { outcome: "failed", failure: notHeardFailure("back", error) };
 			}
 		},
 		async saveTimberSettings(request) {
@@ -1727,7 +1737,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			try {
 				result = await engine.saveTimberSettings(request);
 			} catch (error) {
-				return { outcome: "failed", failure: { command: null, diagnostic: `The app did not hear back, so whether the settings were saved is unknown: ${messageOf(error)}. Read them again before saving.`, output: null } };
+				return { outcome: "failed", failure: notHeardFailure("back, so whether the settings were saved is unknown", error, ". Read them again before saving.") };
 			}
 			// Nothing watches Timber's files, so read again what the save may have set up: one repository,
 			// or with machine defaults every one. The setup prompt then goes without waiting for the window's focus.
@@ -1741,7 +1751,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			try {
 				return await engine.checkTimberConnection(request);
 			} catch (error) {
-				return { outcome: "failed", failure: { command: null, diagnostic: `The app did not hear back: ${messageOf(error)}`, output: null } };
+				return { outcome: "failed", failure: notHeardFailure("back", error) };
 			}
 		},
 		openDialog(request) {
