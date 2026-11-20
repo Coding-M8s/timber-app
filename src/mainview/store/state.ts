@@ -391,6 +391,10 @@ export interface PullRequestForm extends PullRequestFields {
 	worktree: string;
 	/** The commit the title was read for. A new commit reads its subject again. */
 	head: string | null;
+	/** The issue key the title was made with (`titleKeyOf` the saved link). A link attached, changed, or removed later makes the title again. */
+	titleKey: string | null;
+	/** The last subject read, so a new key makes the title again without reading. It may be an earlier head's when a later read gave no answer. Null until one is read. */
+	subject: string | null;
 	/** The person typed a title, so the last commit's subject, read later, does not replace it. */
 	titleEdited: boolean;
 	/** `timber pr` runs: the fields are disabled and nothing else can be submitted. */

@@ -5,10 +5,10 @@ import { PullRequestFormView } from "../src/mainview/components/PullRequestPanel
 import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { actOutPullRequest, pullRequestEndings } from "../src/mainview/engine/mock-pr";
 import { sampleAnswer } from "../src/mainview/engine/mock-pull-requests";
-import { CREATE_RUNNING, CREATE_SUBMIT, defaultPullRequestTitle, presentPullRequestCreation, pullRequestCommandFor } from "../src/mainview/pull-request-create-format";
+import { CREATE_RUNNING, CREATE_SUBMIT, defaultPullRequestTitle, presentPullRequestCreation, pullRequestCommandFor, titleKeyOf } from "../src/mainview/pull-request-create-format";
 import type { PullRequestForm } from "../src/mainview/store/state";
 import { createAppStore } from "../src/mainview/store/store";
-import type { Worktree } from "../src/shared/model";
+import type { IssueLink, Worktree } from "../src/shared/model";
 import type { PullRequestList } from "../src/shared/pull-requests";
 import type { CreatePullRequestRequest, CreatePullRequestResult } from "../src/shared/timber-pr";
 
@@ -19,13 +19,45 @@ const settle = async () => {
 const TIMBER = "/work/timber";
 const PORTABILITY = "/work/timber-worktrees/fix-macos-portability";
 const SPIKE = "/work/timber-worktrees/spike-new-idea";
+const JIRA: IssueLink = { kind: "linked", tracker: "jira", key: "PROJ-123", url: "https://example.atlassian.net/browse/PROJ-123" };
+const LINEAR: IssueLink = { kind: "linked", tracker: "linear", key: "ENG-12", url: "https://linear.app/example/issue/ENG-12/add-sign-in" };
+const GITHUB: IssueLink = { kind: "linked", tracker: "github", key: "153", url: "https://github.com/example/app/issues/153" };
 const FAILURE = { command: "timber pr --title x --result-file <temporary file> -- /w", diagnostic: "Timber's reason.", output: { text: "error: Timber's reason.\n", truncated: false } };
 
 describe("the words and the command", () => {
 	test("the title starts as the last commit's subject, else the branch", () => {
-		expect(defaultPullRequestTitle("Add login", "feat/login")).toBe("Add login");
-		expect(defaultPullRequestTitle(null, "feat/login")).toBe("feat/login");
-		expect(defaultPullRequestTitle(null, null)).toBe("");
+		expect(defaultPullRequestTitle("Add login", "feat/login", null)).toBe("Add login");
+		expect(defaultPullRequestTitle(null, "feat/login", null)).toBe("feat/login");
+		expect(defaultPullRequestTitle(null, null, null)).toBe("");
+		expect(defaultPullRequestTitle("Add login", "feat/login", { kind: "none" })).toBe("Add login");
+	});
+
+	test("a saved Jira or Linear link starts the title with its key, and a GitHub link or invalid metadata leaves it as it is", () => {
+		expect(defaultPullRequestTitle("Add login", "feat/login", JIRA)).toBe("PROJ-123: Add login");
+		expect(defaultPullRequestTitle(null, "feat/login", JIRA)).toBe("PROJ-123: feat/login");
+		expect(defaultPullRequestTitle("Add login", "feat/login", LINEAR)).toBe("ENG-12: Add login");
+		// Timber mentions a GitHub issue in the body, which is what links it.
+		expect(defaultPullRequestTitle("Add login", "feat/login", GITHUB)).toBe("Add login");
+		expect(defaultPullRequestTitle("Add login", "feat/login", { kind: "invalid", reason: "malformed" })).toBe("Add login");
+		// Nothing to prefix: Timber refuses an empty title, and a key alone would be one to submit.
+		expect(defaultPullRequestTitle(null, null, JIRA)).toBe("");
+		expect(defaultPullRequestTitle("Add login", "feat/login", { ...JIRA, key: " PROJ-123 " })).toBe("PROJ-123: Add login");
+		expect(titleKeyOf({ ...JIRA, key: "   " })).toBeNull();
+		expect([JIRA, LINEAR, GITHUB, null, { kind: "none" } as const, { kind: "invalid", reason: "malformed" } as const].map(titleKeyOf)).toEqual(["PROJ-123", "ENG-12", null, null, null, null]);
+	});
+
+	test("a title that already starts with the key is not prefixed again", () => {
+		for (const subject of ["PROJ-123: Add login", "PROJ-123 Add login", "proj-123 add login", "[PROJ-123] Add login", "(PROJ-123) Add login", "PROJ-123"]) {
+			expect(defaultPullRequestTitle(subject, "feat/login", JIRA)).toBe(subject);
+		}
+		// A branch named for the issue is left as it is too.
+		expect(defaultPullRequestTitle(null, "proj-123-add-login", JIRA)).toBe("proj-123-add-login");
+		// A longer key, or the key later in the subject, is not the key at the start.
+		expect(defaultPullRequestTitle("PROJ-1234: Add login", "feat/login", JIRA)).toBe("PROJ-123: PROJ-1234: Add login");
+		expect(defaultPullRequestTitle("Add login for PROJ-123", "feat/login", JIRA)).toBe("PROJ-123: Add login for PROJ-123");
+		// The key is compared as text, never as a pattern.
+		expect(defaultPullRequestTitle("Add login", "feat/login", { ...JIRA, key: "A.B" })).toBe("A.B: Add login");
+		expect(defaultPullRequestTitle("AxB Add login", "feat/login", { ...JIRA, key: "A.B" })).toBe("A.B: AxB Add login");
 	});
 
 	test("the command follows every field, and empty ones pass nothing", () => {
@@ -59,7 +91,7 @@ describe("the words and the command", () => {
 
 const form = (change: Partial<PullRequestForm> = {}): PullRequestForm => ({
 	repository: TIMBER, worktree: PORTABILITY, head: null, title: "Run on macOS", body: "", base: "origin/main", draft: false,
-	titleEdited: false, running: false, failure: null, reported: null, ...change,
+	titleKey: null, subject: null, titleEdited: false, running: false, failure: null, reported: null, ...change,
 });
 const formMarkup = (shown: PullRequestForm) => renderToStaticMarkup(<PullRequestFormView form={shown} afterIssue={false} onChange={() => {}} onSubmit={() => {}} />);
 
@@ -154,11 +186,12 @@ describe("the Pull request tab's form", () => {
 		const { engine, store, open, panel } = await started();
 		engine.setHeadSubject(PORTABILITY, "Use POSIX sed");
 		const id = open(PORTABILITY);
-		expect(store.getState().pullRequestForms[id]).toMatchObject({ title: "fix/macos-portability", base: "origin/main", body: "", draft: false });
+		// The sample worktree is linked to Jira TIM-88, so the title starts with its key.
+		expect(store.getState().pullRequestForms[id]).toMatchObject({ title: "TIM-88: fix/macos-portability", base: "origin/main", body: "", draft: false });
 		await settle();
-		expect(store.getState().pullRequestForms[id]?.title).toBe("Use POSIX sed");
-		expect(panel()).toContain('name="title" value="Use POSIX sed"');
-		expect(panel()).toContain("timber pr --title &#x27;Use POSIX sed&#x27; --base origin/main --result-file");
+		expect(store.getState().pullRequestForms[id]?.title).toBe("TIM-88: Use POSIX sed");
+		expect(panel()).toContain('name="title" value="TIM-88: Use POSIX sed"');
+		expect(panel()).toContain("timber pr --title &#x27;TIM-88: Use POSIX sed&#x27; --base origin/main --result-file");
 	});
 
 	test("a branch without a commit keeps the branch, a local saved base leaves Base empty, and a typed title is never replaced", async () => {
@@ -263,7 +296,7 @@ describe("the Pull request tab's form", () => {
 		engine.setHeadSubject(PORTABILITY, "The base's last commit");
 		const id = open(PORTABILITY);
 		await settle();
-		expect(store.getState().pullRequestForms[id]?.title).toBe("The base's last commit");
+		expect(store.getState().pullRequestForms[id]?.title).toBe("TIM-88: The base's last commit");
 
 		// The person commits on the branch: the list is read again with a new head, and the tab starts the form again.
 		const moved = (head: string) => sampleRepositories.map(repository => ({
@@ -275,7 +308,7 @@ describe("the Pull request tab's form", () => {
 		await store.reloadRepository(TIMBER);
 		open(PORTABILITY);
 		await settle();
-		expect(store.getState().pullRequestForms[id]?.title).toBe("Use POSIX sed");
+		expect(store.getState().pullRequestForms[id]?.title).toBe("TIM-88: Use POSIX sed");
 
 		store.editPullRequestForm(id, { title: "Mine" });
 		engine.setRepositories(moved("2222222222222222222222222222222222222222"));
@@ -288,6 +321,96 @@ describe("the Pull request tab's form", () => {
 		engine.setRepositories(sampleRepositories.map(repository => ({ ...repository, worktrees: repository.worktrees.filter(worktree => worktree.path !== PORTABILITY) })));
 		await store.reloadRepository(TIMBER);
 		expect(store.getState().pullRequestForms[id]).toBeUndefined();
+	});
+
+	test("a link attached, changed, or removed makes the title again unless one was typed, and a GitHub link adds no key", async () => {
+		const { engine, store, open } = await started();
+		const linked = (issue: IssueLink | null) => sampleRepositories.map(repository => ({
+			...repository,
+			worktrees: repository.worktrees.map(worktree => worktree.path === SPIKE ? { ...worktree, issue } : worktree),
+		}));
+		engine.setHeadSubject(SPIKE, "Try a new idea");
+		const id = open(SPIKE);
+		await settle();
+		expect(store.getState().pullRequestForms[id]?.title).toBe("Try a new idea");
+
+		engine.setRepositories(linked(LINEAR));
+		await store.reloadRepository(TIMBER);
+		open(SPIKE);
+		await settle();
+		expect(store.getState().pullRequestForms[id]).toMatchObject({ title: "ENG-12: Try a new idea", titleKey: "ENG-12" });
+
+		for (const [issue, title] of [[GITHUB, "Try a new idea"], [{ kind: "invalid", reason: "malformed" }, "Try a new idea"], [JIRA, "PROJ-123: Try a new idea"], [null, "Try a new idea"]] as const) {
+			engine.setRepositories(linked(issue));
+			await store.reloadRepository(TIMBER);
+			open(SPIKE);
+			await settle();
+			expect(store.getState().pullRequestForms[id]?.title).toBe(title);
+		}
+
+		store.editPullRequestForm(id, { title: "Mine" });
+		engine.setRepositories(linked(JIRA));
+		await store.reloadRepository(TIMBER);
+		open(SPIKE);
+		await settle();
+		expect(store.getState().pullRequestForms[id]?.title).toBe("Mine");
+	});
+
+	test("a link changes the title at once, without reading, and a branch without a commit gets the key on the branch", async () => {
+		const { engine, store, open } = await started();
+		const linked = (issue: IssueLink | null) => sampleRepositories.map(repository => ({
+			...repository,
+			worktrees: repository.worktrees.map(worktree => worktree.path === SPIKE ? { ...worktree, issue } : worktree),
+		}));
+		engine.setHeadSubject(SPIKE, null);
+		const id = open(SPIKE);
+		await settle();
+		let reads = 0;
+		engine.readHeadSubject = async () => {
+			reads++;
+			return null;
+		};
+		engine.setRepositories(linked(JIRA));
+		await store.reloadRepository(TIMBER);
+		open(SPIKE);
+		// Already there before anything is read, so the form never offers the old key.
+		expect(store.getState().pullRequestForms[id]?.title).toBe("PROJ-123: spike/new-idea");
+		expect(reads).toBe(0);
+	});
+
+	test("a read with no answer keeps the title, and a read that answers after the link changed uses the new key", async () => {
+		const { engine, store, open } = await started();
+		const changed = (head: string, issue: IssueLink | null) => sampleRepositories.map(repository => ({
+			...repository,
+			worktrees: repository.worktrees.map(worktree => worktree.path === SPIKE ? { ...worktree, head, issue } : worktree),
+		}));
+		engine.setHeadSubject(SPIKE, "Try a new idea");
+		const id = open(SPIKE);
+		await settle();
+
+		// Git could not answer for a new commit: the title read before stays, never the branch.
+		engine.setHeadSubject(SPIKE, null);
+		engine.setRepositories(changed("1111111111111111111111111111111111111111", JIRA));
+		await store.reloadRepository(TIMBER);
+		open(SPIKE);
+		await settle();
+		expect(store.getState().pullRequestForms[id]?.title).toBe("PROJ-123: Try a new idea");
+
+		// A new commit is read slowly, and the link changes before the read answers.
+		let answer: (subject: string | null) => void = () => {};
+		engine.readHeadSubject = () => new Promise(resolve => {
+			answer = resolve;
+		});
+		engine.setRepositories(changed("2222222222222222222222222222222222222222", JIRA));
+		await store.reloadRepository(TIMBER);
+		open(SPIKE);
+		engine.setRepositories(changed("2222222222222222222222222222222222222222", LINEAR));
+		await store.reloadRepository(TIMBER);
+		open(SPIKE);
+		expect(store.getState().pullRequestForms[id]?.title).toBe("ENG-12: Try a new idea");
+		answer("Second idea");
+		await settle();
+		expect(store.getState().pullRequestForms[id]?.title).toBe("ENG-12: Second idea");
 	});
 
 	test("the note about what the run reported lasts until the next read of the pull requests", async () => {

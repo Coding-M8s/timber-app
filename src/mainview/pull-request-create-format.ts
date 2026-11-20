@@ -1,4 +1,4 @@
-import type { TimberFailure } from "../shared/model";
+import type { IssueLink, TimberFailure } from "../shared/model";
 import { type CreatePullRequestResult, prResultArguments, pullRequestBaseFromText } from "../shared/timber-pr";
 import { RESULT_FILE_PLACEHOLDER, describeTimberCommand } from "../shared/timber-result";
 
@@ -23,9 +23,42 @@ export interface PullRequestFields {
 	draft: boolean;
 }
 
-/** The title the form starts with: the last commit's subject, else the branch, else nothing. */
-export function defaultPullRequestTitle(subject: string | null, branch: string | null): string {
-	return subject ?? branch ?? "";
+/**
+ * The key a title starts with for a worktree's saved issue link: the Jira or
+ * Linear key, which is one way those trackers link a pull request to its
+ * issue. Null for a GitHub issue, which Timber already mentions in the body,
+ * and for no link, invalid metadata, or a Timber that does not say.
+ */
+export function titleKeyOf(issue: IssueLink | null): string | null {
+	if (issue?.kind !== "linked" || issue.tracker === "github") return null;
+	const key = issue.key.trim();
+	return key === "" ? null : key;
+}
+
+const isLetterOrDigit = (character: string) => /^[\p{L}\p{N}]$/u.test(character);
+
+/** The title already starts with the key, in any case, maybe after one `[` or `(`, and not as part of a longer key such as PROJ-1234 for PROJ-123. */
+function startsWithKey(title: string, key: string): boolean {
+	const text = title.startsWith("[") || title.startsWith("(") ? title.slice(1) : title;
+	if (text.slice(0, key.length).toLowerCase() !== key.toLowerCase()) return false;
+	const next = text.charAt(key.length);
+	return next === "" || !isLetterOrDigit(next);
+}
+
+/**
+ * The title the form starts with: the last commit's subject, else the
+ * branch, else nothing. With a saved Jira or Linear link it starts with the
+ * issue's key, as `PROJ-123: subject`, unless it already does.
+ */
+export function defaultPullRequestTitle(subject: string | null, branch: string | null, issue: IssueLink | null): string {
+	return pullRequestTitleWithKey(subject, branch, titleKeyOf(issue));
+}
+
+/** `defaultPullRequestTitle` for a key already taken from the link with `titleKeyOf`. */
+export function pullRequestTitleWithKey(subject: string | null, branch: string | null, key: string | null): string {
+	const title = subject ?? branch ?? "";
+	if (key === null || title === "" || startsWithKey(title, key)) return title;
+	return `${key}: ${title}`;
 }
 
 /**

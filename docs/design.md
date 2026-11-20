@@ -169,9 +169,12 @@ change them here first when they change.
   the reason, never as a dialog. It follows each new read.
 - A worktree on a branch with no pull request yet gets a form in the tab,
   "Open a pull request": Title (the last commit's subject, else the
-  branch), Description, Base (the saved base as Timber takes it,
-  `origin/main`, or empty for Timber's own choice when the saved base is a
-  local branch or none), and an "Open as a draft" switch. A quiet line says
+  branch; with a saved Jira or Linear link it starts with the issue's key,
+  as `PROJ-123: subject`, unless it already does, and a GitHub link adds
+  nothing, since Timber mentions that issue in the body), Description,
+  Base (the saved base as Timber takes it, `origin/main`, or empty for
+  Timber's own choice when the saved base is a local branch or none), and
+  an "Open as a draft" switch. A quiet line says
   Timber publishes the branch and opens the pull request, and the app never
   pushes on its own. The exact `timber pr` command shows above "Publish and
   open" and changes as the fields change. While Timber runs, the fields and
@@ -181,9 +184,10 @@ change them here first when they change.
   pull request as soon as GitHub lists it, with its number and "Open in
   browser" until then. Already open: a quiet line above that pull request
   says so, until the pull requests are read again. A new commit on the
-  branch puts its subject in the title, unless one was typed. Refused or failed: Timber's reason stays in the form with the
-  fields as typed, ready for a retry, with Timber's output in a details
-  area that starts closed, and a line that says what happened to the
+  branch puts its subject in the title, and a link attached, changed, or
+  removed makes the title again, unless one was typed. Refused or failed:
+  Timber's reason stays in the form with the fields as typed, ready for a
+  retry, with Timber's output in a details area that starts closed, and a line that says what happened to the
   branch: nothing was pushed (refused), the branch was published before
   the failure, or that it is unknown. A detached HEAD keeps the quiet
   placeholder.
