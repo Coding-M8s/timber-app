@@ -205,9 +205,7 @@ ended in a result file, not on standard output. One helper runs all of them, so 
 own way: `runTimberWithResultFile` in `src/bun/timber-run.ts`. Creating and
 opening worktrees use it (see [below](#creating-and-opening-worktrees)), and
 so do the Done dialog (see [removing a worktree](#removing-a-worktree)) and
-the Rebase dialog (see [rebasing a worktree](#rebasing-a-worktree)), which
-needs a Timber that writes the result file for rebase and falls back to a
-session on an older one.
+the Rebase dialog (see [rebasing a worktree](#rebasing-a-worktree)).
 
 - **The file.** Each run gets a fresh file name in a new folder that only
   this user can open, made in the system's temporary folder. Timber creates
@@ -912,10 +910,9 @@ branch is already checked out is refused whatever the ending, and so is text
 for `timber open` that matches no worktree and no listed branch.
 `timberMock.endRebaseResults(ending)` chooses how `timber rebase` ends from
 then on: `"rebased"` (the start), `"up-to-date"`, `"conflicts"` (two sample
-paths, one with a space), `"refused"`, `"failed"`, `"no-result"` (exit code 1
-and no result file), or `"unsupported"` (a Timber too old to report). A
-worktree with modified or untracked files is refused whatever the ending, as
-Timber does, and a mock Timber older than 0.1.2 is unsupported.
+paths, one with a space), `"refused"`, `"failed"`, or `"no-result"` (exit
+code 1 and no result file). A worktree with modified or untracked files is
+refused whatever the ending, as Timber does.
 `timberMock.endPullRequestResults(ending)` chooses how `timber pr` ends from
 then on: `"created"` (the start), `"exists"`, `"refused"`, `"failed-login"`
 (nothing pushed), `"failed-after-push"` (the branch was published), or
@@ -1954,8 +1951,8 @@ shows, and coming back shows it as it was.
   Format and control characters in the branch are dropped, so the name is
   one `cleanSessionName` keeps (`sessionNameBase` in
   `src/shared/terminal.ts`). The name is set once when the session opens:
-  a later change of branch or of the setting renames nothing. A
-  `timber rebase` session is always "Rebase", and does not read it. The
+  a later change of branch or of the setting renames nothing. A setup
+  session is always "Setup", and does not read it. The
   preference is read before the worktree is looked up, and one that cannot be read names
   sessions as `plain`. The mock engine names its sessions the same way.
 - **Renaming.** `renameTerminal` gives a session
@@ -2192,9 +2189,11 @@ a terminal that cannot start (`null` to undo).
 
 The Rebase dialog runs `timber rebase --result-file` and reads the record,
 so it says how the rebase really ended: rebased, already up to date, stopped
-on conflicts, refused, or failed. Timber 0.1.2 is the first release that
-writes this record (`REBASE_RESULT_TIMBER_VERSION` in
-`src/shared/timber-version.ts`).
+on conflicts, refused, or failed. Every Timber the app accepts as ready
+(`REQUIRED_TIMBER_VERSION` in `src/shared/timber-version.ts`) writes this
+record, so there is no other way to rebase. Like every dialog, it shows only
+while Timber is ready (`Dialogs`); until then the window shows the Timber
+notice instead.
 
 - **Entry.** The Rebase control in the workspace header opens the dialog
   for the selected worktree (`src/mainview/components/RebaseDialog.tsx`).
@@ -2247,7 +2246,7 @@ writes this record (`REBASE_RESULT_TIMBER_VERSION` in
   says the list was read again and the branch should be checked before
   trying again: a failed rebase can leave the branch changed, so it never
   says that nothing changed. A request the app refused before running
-  anything says so, and an older Timber is explained in the dialog.
+  anything says so.
   `presentRebase` in `src/mainview/rebase-format.ts` maps each answer to what
   the dialog does, and is tested without a window.
 - **Conflicts.** The dialog switches to a list of every conflicted file,
@@ -2259,10 +2258,6 @@ writes this record (`REBASE_RESULT_TIMBER_VERSION` in
   as `startSessionsIn` does for an agent) and closes the dialog.
 - **Afterwards.** The store reads the repository again before it answers,
   whatever the outcome, even when the engine does not answer.
-- **The version gate.** The dialog uses the result file when the Timber found
-  is ready and `supportsRebaseResult(version)` holds. The main process checks
-  the same thing and answers `unsupported` without running anything. An older
-  Timber gets the interim dialog below.
 - **In the browser.** The mock engine acts out Timber and writes the record
   Timber would, which is read by the same code. `timberMock.endRebaseResults`
   chooses the ending (see [reporting outcomes](#reporting-outcomes)).
@@ -2272,40 +2267,6 @@ writes this record (`REBASE_RESULT_TIMBER_VERSION` in
   `tests/timber-rebase-parse.test.ts` maps each one. With the installed
   Timber, `tests/worktree-rebase.test.ts` checks that a conflict leaves Git's
   paused rebase in place and that a refusal changes nothing.
-
-### On an older Timber
-
-A Timber older than 0.1.2 has no result file for rebase, so the dialog runs
-`timber rebase` in a new Timber session in the worktree, so the person sees
-what Timber prints. The entry and the Onto field are as above.
-
-- **One source for the command.** `rebaseArguments` builds
-  `rebase [--base <ref>] -- <registered path>`. The footer words it from that
-  function, and the main process runs Timber from the same one, so the
-  command shown is the command that runs.
-- **Running.** The store's `startRebase` asks `openTerminal` with
-  `timberRebase: { onto }`. The request names only the base, never the command. The
-  main process runs nothing while Timber is not ready, acts only on a
-  repository in the app's list and a path Timber lists for it right now,
-  whose folder is there, and starts the Timber that was found in a session
-  of kind `timber` named "Rebase", beside any sessions the worktree has (see
-  [terminal sessions](#terminal-sessions)).
-- **No verdict.** The app never reads what Timber prints and never says
-  whether the rebase worked. The toast says only that it started; the pane
-  shows Timber's output and the exit status every session shows. When the
-  list shows modified or untracked files, the dialog says beforehand that
-  Timber refuses such a worktree, but it does not block: Timber decides.
-- **Conflicts.** When the rebase stops on conflicts, Timber prints the
-  commands to continue or abort and exits with code 1, so the session ends.
-  The person resolves them in a terminal session in the worktree with
-  `git rebase --continue` or `--abort`. The list follows what they do there,
-  as it follows any change in the worktree (see
-  [watching for changes](#watching-for-changes)).
-- **Afterwards.** When a Timber session stops, setup or rebase, the store
-  reads every repository again, whatever the exit code.
-- **In the browser.** The mock engine prints the command and exits with 0.
-  `timberMock.endRebases(code)` chooses the exit code of later rebases, and
-  `null` leaves them running until `timberMock.endTerminal(id, code)`.
 
 ## Agent sessions
 

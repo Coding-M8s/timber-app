@@ -5,10 +5,9 @@ import type { Engine } from "../../shared/engine";
 import type { TimberStatus, Worktree } from "../../shared/model";
 import {
 	type OpenTerminalResult, type Scrollback, type TerminalChange, type TerminalOutput, type TerminalSession, cleanSessionName, createScrollback,
-	defaultSessionName, isWebLink, type SessionNaming, sessionNameBase, TIMBER_REBASE_SESSION_NAME, WORKTREE_SETUP_SESSION_NAME,
+	defaultSessionName, isWebLink, type SessionNaming, sessionNameBase, WORKTREE_SETUP_SESSION_NAME,
 } from "../../shared/terminal";
 import { PROBE_ANSWER, type StatusRecords, type StatusScanner, createStatusRecords, createStatusScanner } from "../../shared/program-status";
-import { rebaseArguments } from "../../shared/rebase-command";
 import { notFoundOnPath } from "../../shared/search-path";
 import { isWorkflowName } from "../../shared/workflows";
 import { worktreeSetupArguments } from "../../shared/worktree-commands";
@@ -42,8 +41,6 @@ export interface TerminalControls {
 	openedLinks(): string[];
 	/** The last part of a session the window said it drew. */
 	drawnUpTo(id: string): number;
-	/** Make every later pretend `timber rebase` end by itself with this exit code (0 at first), or keep running when null. */
-	endRebases(exitCode: number | null): void;
 	/**
 	 * Act out the program in a session reporting its status through OSC 7501:
 	 * `report` is what goes after `7501;`, such as
@@ -68,8 +65,6 @@ interface Acted {
 	typed: string;
 	size: { cols: number; rows: number };
 	drawn: number;
-	/** A pretend `timber rebase`, which takes no input. */
-	rebase: boolean;
 	scanner: StatusScanner;
 	records: StatusRecords;
 	answers: string[];
@@ -85,8 +80,7 @@ export const MOCK_PATH = "/usr/local/bin:/usr/bin:/bin";
  * Terminals acted out in memory, for the browser build and tests. Each one is
  * a pretend shell that echoes what is typed and knows `pwd`, `clear`, and
  * `exit`. An agent session is the same pretend program, started from the
- * agents that `agents` answers, as the saved preferences. A Timber rebase
- * session is a pretend `timber rebase` that takes no input. New sessions
+ * agents that `agents` answers, as the saved preferences. New sessions
  * are named as `sessionNaming` answers, as the saved preferences. Output arrives
  * a moment later, as it would over the bridge.
  */
@@ -104,7 +98,6 @@ export function createMockTerminals(
 	let failing: Exclude<OpenTerminalResult, { outcome: "opened" }> | null = null;
 	let missing: readonly string[] = [];
 	let confirmed = false;
-	let rebaseExit: number | null = 0;
 	let worktreeSetupExit: number | null = 0;
 	let clipboard = "";
 	const links: string[] = [];
@@ -193,22 +186,14 @@ export function createMockTerminals(
 			let setup: string[] | null = null;
 			const worktreeSetup = request.timberWorktreeSetup;
 			if (worktreeSetup !== undefined) {
-				if (agent !== null || request.timberRebase !== undefined || typeof worktreeSetup !== "object" || worktreeSetup === null
+				if (agent !== null || typeof worktreeSetup !== "object" || worktreeSetup === null
 					|| (worktreeSetup.workflow !== undefined && !isWorkflowName(worktreeSetup.workflow))) return { outcome: "failed", message: "The request for Timber setup cannot be read. Nothing was started." };
 				const status = timber();
 				if (status.state !== "ready") return { outcome: "not-configured", message: "No usable Timber was found, so setup cannot start. Nothing was started." };
 				setup = [status.path, ...worktreeSetupArguments(request.worktree, worktreeSetup.workflow)];
 			}
-			const rebase = request.timberRebase;
-			if (rebase !== undefined) {
-				const onto = rebase?.onto;
-				if (agent !== null || (onto !== null && (typeof onto !== "string" || onto === ""))) return { outcome: "failed", message: "The request for Timber rebase cannot be read. Nothing was started." };
-				const status = timber();
-				if (status.state !== "ready") return { outcome: "not-configured", message: "No usable Timber was found, so the rebase cannot start. Nothing was started." };
-				setup = [status.path, ...rebaseArguments({ worktree: request.worktree, onto })];
-			}
 			const worktree = findWorktree(request.repository, request.worktree);
-			const notStarted = agent ? `${agent.name} was not started.` : rebase !== undefined ? "The rebase was not started." : worktreeSetup ? "Setup was not started." : "No terminal was started.";
+			const notStarted = agent ? `${agent.name} was not started.` : worktreeSetup ? "Setup was not started." : "No terminal was started.";
 			if (!worktree) return { outcome: "not-listed", message: `Timber lists no worktree at ${request.worktree} in ${request.repository}. ${notStarted} Refresh the list.` };
 			let shell = "/bin/mock-shell";
 			let args: string[] = [];
@@ -240,7 +225,7 @@ export function createMockTerminals(
 				id: `mock-terminal-${++lastId}`,
 				kind: agent ? "agent" : setup ? "timber" : "terminal",
 				name: defaultSessionName(
-					rebase !== undefined ? TIMBER_REBASE_SESSION_NAME : worktreeSetup ? WORKTREE_SETUP_SESSION_NAME : sessionNameBase(sessionNaming(), agent ? agent.name : "Terminal", worktree.branch, agent !== null),
+					worktreeSetup ? WORKTREE_SETUP_SESSION_NAME : sessionNameBase(sessionNaming(), agent ? agent.name : "Terminal", worktree.branch, agent !== null),
 					taken,
 				),
 				repository: request.repository,
@@ -253,7 +238,6 @@ export function createMockTerminals(
 			};
 			const acted: Acted = {
 				session, scrollback: createScrollback(), line: "", typed: "", size: { cols: request.cols, rows: request.rows }, drawn: 0,
-				rebase: rebase !== undefined,
 				scanner: createStatusScanner(), records: createStatusRecords(), answers: [],
 			};
 			sessions.set(session.id, acted);
@@ -261,12 +245,6 @@ export function createMockTerminals(
 			if (worktreeSetup) {
 				const exitCode = worktreeSetupExit;
 				print(acted, `A pretend setup in ${session.path}, started as ${session.command}. Nothing runs in the browser.\r\n${exitCode ? MOCK_SETUP_FAILURE : ""}`);
-				if (exitCode !== null) later(() => end(acted, exitCode));
-				return { outcome: "opened", session: structuredClone(session) };
-			}
-			if (acted.rebase) {
-				print(acted, `A pretend timber rebase in ${session.path}, started as ${session.command}. Nothing runs in the browser.\r\n`);
-				const exitCode = rebaseExit;
 				if (exitCode !== null) later(() => end(acted, exitCode));
 				return { outcome: "opened", session: structuredClone(session) };
 			}
@@ -292,16 +270,12 @@ export function createMockTerminals(
 			if (acted) acted.drawn = Math.max(acted.drawn, seq);
 		},
 		drawnUpTo: id => sessions.get(id)?.drawn ?? 0,
-		endRebases(exitCode) {
-			rebaseExit = exitCode;
-		},
 		endWorktreeSetups(exitCode) {
 			worktreeSetupExit = exitCode;
 		},
 		writeTerminal(id, data) {
 			const acted = sessions.get(id);
-			// A pretend rebase reads nothing, as Timber reads nothing from the terminal while it rebases.
-			if (acted && acted.session.state.kind === "running" && !acted.rebase) type(acted, data);
+			if (acted && acted.session.state.kind === "running") type(acted, data);
 		},
 		resizeTerminal(id, cols, rows) {
 			const acted = sessions.get(id);

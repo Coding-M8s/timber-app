@@ -2,7 +2,6 @@ import type { NewWorktreeRequest, OpenWorktreeRequest, TimberStatus, WorktreeCom
 import type { ResultCommand } from "../shared/timber-result";
 import { type RebaseRequest, type RebaseResult, readRebaseResult, rebaseResultArguments } from "../shared/timber-rebase";
 import { type CreatePullRequestRequest, type CreatePullRequestResult, type HeadSubjectRequest, prResultArguments, readPrResult } from "../shared/timber-pr";
-import { REBASE_RESULT_TIMBER_VERSION, supportsRebaseResult } from "../shared/timber-version";
 import { readHeadSubject } from "./git-engine";
 import { isWorkflowName } from "../shared/workflows";
 import { newWorktreeArguments, openWorktreeArguments, worktreeCommandResult } from "../shared/worktree-commands";
@@ -117,9 +116,6 @@ export function createWorktreeCommands(options: WorktreeCommandsOptions): Worktr
 				if (!found.ok) return rebaseNotRun(found.message);
 				const status = await timber();
 				if (status.state !== "ready") return rebaseNotRun(`${describeTimberStatus(status)}. Nothing was run.`);
-				if (!supportsRebaseResult(status.version)) {
-					return { outcome: "unsupported", message: `Timber ${status.version} cannot report how a rebase ended. Timber ${REBASE_RESULT_TIMBER_VERSION} or newer can. Nothing was run.` };
-				}
 				const run = await runTimberWithResultFile({
 					executable: status.path,
 					command: "rebase",

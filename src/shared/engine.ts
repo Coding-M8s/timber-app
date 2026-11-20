@@ -105,9 +105,8 @@ export interface Engine {
 	 * The command is `rebaseResultArguments` in ./timber-rebase.ts, so the
 	 * interface can show it before asking. It runs once and is never retried
 	 * here. A rebase that stopped on conflicts is left exactly as Git left it:
-	 * the engine runs no Git command to abort or continue it. An answer of
-	 * `unsupported` means Timber is too old to report through a result file and
-	 * nothing ran. Read the list after every outcome.
+	 * the engine runs no Git command to abort or continue it. Read the list
+	 * after every outcome.
 	 */
 	rebaseWorktree(request: RebaseRequest): Promise<RebaseResult>;
 	/**
@@ -354,11 +353,10 @@ export interface Engine {
 	 * the saved preferences starts instead, its command taken from there only
 	 * (`agentCommand` in ./agent.ts). An agent that is not saved, or whose
 	 * executable is not found, starts nothing and keeps no session. Nothing
-	 * else starts an agent: New and Open never do. With `timberRebase`,
-	 * `timber rebase` starts instead, with the Timber that was found, and
-	 * nothing starts while Timber is not ready. With `timberWorktreeSetup`,
+	 * else starts an agent: New and Open never do. With `timberWorktreeSetup`,
 	 * the worktree's setup scripts run with `timber open --setup` instead
-	 * (`worktreeSetupArguments` in ./worktree-commands.ts), the same way.
+	 * (`worktreeSetupArguments` in ./worktree-commands.ts), with the Timber
+	 * that was found, and nothing starts while Timber is not ready.
 	 */
 	openTerminal(request: OpenTerminalRequest): Promise<OpenTerminalResult>;
 	/**

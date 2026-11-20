@@ -1,7 +1,6 @@
-import type { Repository, TimberStatus, Worktree } from "../../shared/model";
+import type { Repository, Worktree } from "../../shared/model";
 import { type RebaseRequest, type RebaseResult, readRebaseResult, rebaseResultArguments } from "../../shared/timber-rebase";
 import { RESULT_FILE_PLACEHOLDER, type TimberRun, describeTimberCommand, readTimberResult } from "../../shared/timber-result";
-import { supportsRebaseResult } from "../../shared/timber-version";
 
 /**
  * Acting out `timber rebase --result-file` for the mock engine. Nothing runs
@@ -18,7 +17,6 @@ export const rebaseEndings = {
 	"refused": "Timber refuses before it starts",
 	"failed": "Git fails for a reason other than conflicts",
 	"no-result": "Timber exits with 1 but leaves no result",
-	"unsupported": "The installed Timber is too old to report how a rebase ended",
 } as const;
 
 export type RebaseEnding = keyof typeof rebaseEndings;
@@ -48,12 +46,7 @@ function worktreeRecord(worktree: Worktree): object {
  * modified or untracked files is refused whatever the ending, as Timber does.
  * The base is what was typed, or `refs/heads/main` for the saved one.
  */
-export function actOutRebase(repository: Repository, worktree: Worktree, request: RebaseRequest, ending: RebaseEnding, timber: TimberStatus): RebaseResult {
-	if (timber.state === "ready" && !supportsRebaseResult(timber.version)) {
-		return { outcome: "unsupported", message: `Timber ${timber.version} cannot report how a rebase ended. Nothing was run.` };
-	}
-	if (ending === "unsupported") return { outcome: "unsupported", message: "The installed Timber cannot report how a rebase ended. Nothing was run." };
-
+export function actOutRebase(repository: Repository, worktree: Worktree, request: RebaseRequest, ending: RebaseEnding): RebaseResult {
 	const shown = describeTimberCommand(rebaseResultArguments(request, RESULT_FILE_PLACEHOLDER));
 	const dirty = worktree.changes.kind === "known" && (worktree.changes.modified.length > 0 || worktree.changes.untracked.length > 0);
 	const requested = request.onto;

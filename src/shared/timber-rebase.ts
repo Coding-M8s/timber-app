@@ -48,9 +48,7 @@ export type RebaseResult =
 	/** Timber refused to start, and changed nothing. */
 	| { outcome: "refused"; failure: TimberFailure }
 	/** The rebase failed. `ran` is false only when the app refused before it ran anything. A failure that ran can have changed the branch. */
-	| { outcome: "failed"; ran: boolean; failure: TimberFailure }
-	/** The installed Timber is older than the first one with a result file for rebase. Nothing ran. */
-	| { outcome: "unsupported"; message: string };
+	| { outcome: "failed"; ran: boolean; failure: TimberFailure };
 
 type Kind = "rebased" | "up-to-date" | "conflicts" | "refused" | "failed";
 

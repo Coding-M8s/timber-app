@@ -302,8 +302,8 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	endCommands(ending: CommandEnding): void;
 	/**
 	 * Decide how `timber rebase --result-file` ends from now on: "rebased"
-	 * (the start), "up-to-date", "conflicts", "refused", "failed", "no-result",
-	 * or "unsupported". A worktree with modified or untracked files is refused
+	 * (the start), "up-to-date", "conflicts", "refused", "failed", or
+	 * "no-result". A worktree with modified or untracked files is refused
 	 * whatever the ending. See ./mock-rebase.ts for what each one acts out.
 	 */
 	endRebaseResults(ending: RebaseEnding): void;
@@ -811,7 +811,7 @@ export function createMockEngine(
 			if (!worktree.pathExists) return refuse(`The folder ${worktree.path} is missing.`);
 			const status = await look();
 			if (status.state !== "ready") return refuse("Timber is not ready.");
-			return structuredClone(actOutRebase(repository, worktree, request, rebaseEnding, status));
+			return structuredClone(actOutRebase(repository, worktree, request, rebaseEnding));
 		},
 		async createPullRequest(request) {
 			const refuse = (diagnostic: string): CreatePullRequestResult => ({ outcome: "failed", ran: false, published: false, failure: { command: null, diagnostic: `${diagnostic} Nothing was run.`, output: null } });

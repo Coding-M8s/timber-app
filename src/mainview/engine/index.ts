@@ -26,7 +26,7 @@ export async function createEngine(): Promise<Engine> {
 	// timberMock.pickFolder("/tmp") to choose what Add repository picks, or
 	// timberMock.endCommands("setup-fails") to choose how timber new and timber open end.
 	// For the Rebase dialog: timberMock.endRebaseResults("conflicts") chooses how timber rebase ends: "rebased", "up-to-date",
-	// "conflicts", "refused", "failed", "no-result", or "unsupported".
+	// "conflicts", "refused", "failed", or "no-result".
 	// For the Done dialog: timberMock.setChanges(path, { modified: ["a.ts"] }),
 	// timberMock.expirePreviewsAfter(5000), timberMock.failBranchDeletion(true), and
 	// timberMock.setDoneDelay(3000) to close the dialog while a removal runs.

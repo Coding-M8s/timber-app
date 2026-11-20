@@ -52,14 +52,6 @@ export function satisfiesTimberVersion(found: string, required: string = REQUIRE
 	return foundVersion !== null && requiredVersion !== null && compareTimberVersions(foundVersion, requiredVersion) >= 0;
 }
 
-/** The first Timber release whose `timber rebase` writes a result file (`--result-file`). Older ones get the interim Rebase dialog. */
-export const REBASE_RESULT_TIMBER_VERSION = "0.1.2";
-
-/** Whether this Timber version has `timber rebase --result-file`. A version that cannot be read does not. */
-export function supportsRebaseResult(version: string): boolean {
-	return satisfiesTimberVersion(version, REBASE_RESULT_TIMBER_VERSION);
-}
-
 /**
  * The version a "latest release" link leads to, read from where GitHub
  * redirects it: a URL ending in /releases/tag/v0.1.3. Null for anything

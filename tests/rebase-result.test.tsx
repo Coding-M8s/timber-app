@@ -1,10 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { App } from "../src/mainview/App";
-import { RebaseDialogView, type RebaseDialogViewProps, rebaseCommandFor, rebaseResultCommandFor } from "../src/mainview/components/RebaseDialog";
+import { RebaseDialogView, type RebaseDialogViewProps, rebaseResultCommandFor } from "../src/mainview/components/RebaseDialog";
 import { createMockEngine, sampleRepositories, sampleTimberStatuses } from "../src/mainview/engine/mock";
 import { MOCK_CONFLICTS, type RebaseEnding } from "../src/mainview/engine/mock-rebase";
-import { REBASE_ONTO_HINT, REBASE_REPORTS_RESULT, REBASE_RUNS_IN_TERMINAL, describeConflictsAdvice, presentRebase } from "../src/mainview/rebase-format";
+import { REBASE_ONTO_HINT, REBASE_REPORTS_RESULT, describeConflictsAdvice, presentRebase } from "../src/mainview/rebase-format";
 import { sessionsOf } from "../src/mainview/store/state";
 import { createAppStore } from "../src/mainview/store/store";
 import type { TimberStatus, Worktree } from "../src/shared/model";
@@ -45,7 +44,7 @@ function recorded(text: string, exitCode: number): RebaseResult {
 }
 
 describe("how the dialog shows each recorded outcome", () => {
-	const shown = (text: string, exitCode: number) => presentRebase("feat", recorded(text, exitCode), "timber rebase");
+	const shown = (text: string, exitCode: number) => presentRebase("feat", recorded(text, exitCode));
 
 	test("rebased and up to date close the dialog with distinct toasts that name the base", () => {
 		expect(shown(recordedRebase.rebased, 0).outcome).toEqual({ ok: true, toast: "Rebased feat onto main" });
@@ -74,13 +73,7 @@ describe("how the dialog shows each recorded outcome", () => {
 	test("a failure stays open, and a run that never started has words of its own", () => {
 		expect(shown(recordedRebase.failedHook, 1).failureKind).toBe("failed");
 		const notRun: RebaseResult = { outcome: "failed", ran: false, failure: { command: null, diagnostic: "Nothing was run.", output: null } };
-		expect(presentRebase("feat", notRun, "timber rebase").failureKind).toBe("not-run");
-	});
-
-	test("an older Timber stays open with the message and the command that would have run", () => {
-		const result = presentRebase("feat", { outcome: "unsupported", message: "Too old." }, "timber rebase -- /x");
-		expect(result.failureKind).toBe("unsupported");
-		expect(result.outcome).toEqual({ ok: false, failure: { command: "timber rebase -- /x", diagnostic: "Too old.", output: null } });
+		expect(presentRebase("feat", notRun).failureKind).toBe("not-run");
 	});
 });
 
@@ -95,7 +88,7 @@ describe("the store's rebaseWorktree", () => {
 		return reads;
 	}
 
-	for (const ending of ["rebased", "up-to-date", "conflicts", "refused", "failed", "no-result", "unsupported"] as const satisfies RebaseEnding[]) {
+	for (const ending of ["rebased", "up-to-date", "conflicts", "refused", "failed", "no-result"] as const satisfies RebaseEnding[]) {
 		test(`asks the engine once and reads the repository again after "${ending}"`, async () => {
 			const engine = cleanEngine();
 			engine.endRebaseResults(ending);
@@ -159,7 +152,6 @@ describe("the mock engine's rebase endings", () => {
 		expect(await ended("up-to-date")).toMatchObject({ outcome: "up-to-date" });
 		expect(await ended("conflicts")).toMatchObject({ outcome: "conflicts", conflicts: MOCK_CONFLICTS });
 		expect(await ended("failed")).toMatchObject({ outcome: "failed", ran: true });
-		expect(await ended("unsupported")).toMatchObject({ outcome: "unsupported" });
 		const noResult = await ended("no-result");
 		expect(noResult).toMatchObject({ outcome: "failed", ran: true });
 		const command = noResult.outcome === "failed" ? noResult.failure.command : null;
@@ -176,16 +168,15 @@ describe("the mock engine's rebase endings", () => {
 		}
 	});
 
-	test("a worktree the list lacks, or a Timber too old, runs nothing", async () => {
+	test("a worktree the list lacks, or a Timber that is not ready, runs nothing", async () => {
 		expect(await ended("rebased", "/work/nowhere")).toMatchObject({ outcome: "failed", ran: false });
-		const engine = cleanEngine({ state: "ready", path: "/usr/bin/timber", version: "0.1.1" });
-		expect(await engine.rebaseWorktree(request())).toMatchObject({ outcome: "unsupported" });
+		const engine = cleanEngine(sampleTimberStatuses["too-old"]);
+		expect(await engine.rebaseWorktree(request())).toMatchObject({ outcome: "failed", ran: false });
 	});
 });
 
-describe("the Rebase dialog with a Timber that reports the result", () => {
+describe("the Rebase dialog's outcomes", () => {
 	const props = (change: Partial<RebaseDialogViewProps> = {}): RebaseDialogViewProps => ({
-		structured: true,
 		worktree: clean,
 		path: FEATURE,
 		bases: [{ selector: "refs/heads/main", kind: "local" }],
@@ -212,7 +203,6 @@ describe("the Rebase dialog with a Timber that reports the result", () => {
 		expect(markup).toContain(REBASE_REPORTS_RESULT.slice(0, 40));
 		expect(markup).toContain(REBASE_ONTO_HINT.slice(0, 40));
 		expect(markup).toContain("Onto");
-		expect(markup).not.toContain("Rebase in terminal");
 	});
 
 	test("a refusal is shown with Timber's reason, and says nothing was changed", () => {
@@ -228,11 +218,6 @@ describe("the Rebase dialog with a Timber that reports the result", () => {
 		expect(markup).toContain("Timber says no.");
 		expect(markup).toContain("Check the branch and the worktree");
 		expect(markup).not.toContain("Nothing was changed");
-	});
-
-	test("an older Timber is explained in the dialog", () => {
-		const markup = render({ failureKind: "unsupported", submission: { running: false, failure } });
-		expect(markup).toContain("This Timber cannot report a rebase");
 	});
 
 	test("conflicts list every path, say the rebase was left as Git left it, and offer a terminal and Close", () => {
@@ -256,30 +241,5 @@ describe("the Rebase dialog with a Timber that reports the result", () => {
 		expect(markup).toContain("Rebase of feat/conflict stopped on conflicts");
 		expect(markup).toContain("<code>git rebase --continue</code>");
 		expect(markup).toContain("<code>git rebase --abort</code>");
-	});
-
-	test("without a Timber that reports the result, the interim dialog is unchanged", () => {
-		const markup = render({ structured: false });
-		expect(markup).toContain(`timber rebase -- ${FEATURE}`);
-		expect(markup).not.toContain("--result-file");
-		expect(markup).toContain("Rebase in terminal");
-		expect(markup).toContain(REBASE_RUNS_IN_TERMINAL.slice(0, 40));
-		expect(rebaseCommandFor(FEATURE, "")).toBe(`timber rebase -- ${FEATURE}`);
-		// Conflicts and failure words only belong to the result file's dialog.
-		expect(render({ structured: false, failureKind: "refused", submission: { running: false, failure } })).toContain("The rebase did not start");
-	});
-
-	test("the app picks the dialog by the Timber it found", async () => {
-		const open = async (timber: TimberStatus) => {
-			const { store } = await startedStore(cleanEngine(timber));
-			store.openDialog({ kind: "rebase-worktree", repository: TIMBER, worktree: feature.id });
-			await settle();
-			return renderToStaticMarkup(<App store={store} />);
-		};
-		const structured = await open({ state: "ready", path: "/usr/bin/timber", version: "0.1.2" });
-		expect(structured).toContain("--result-file");
-		const interim = await open({ state: "ready", path: "/usr/bin/timber", version: "0.1.1" });
-		expect(interim).toContain("Rebase in terminal");
-		expect(interim).not.toContain("--result-file");
 	});
 });
