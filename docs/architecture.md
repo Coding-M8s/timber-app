@@ -471,12 +471,13 @@ workflow's `post_create` scripts after the ordinary ones.
   replaced by a short note with the reason, and creating without a
   workflow still works. A pick the list no longer has passes none, so the
   footer never shows a workflow the field does not.
-- **Open with setup.** Timber does not remember the workflow a worktree was
-  created with, so "Open with setup" after a failed New branch run passes
-  the workflow that run had, even when the list has changed since. Existing
-  branch does the same while its fields name the kept worktree; the field
-  then shows that workflow, marked "no longer listed" when the list has
-  lost it.
+- **Setup repeats it.** Timber does not remember the workflow a worktree
+  was created with, so the Setup session that follows passes the workflow
+  the dialog ran with (`--workflow <name>`), and "Run setup" after Timber
+  stopped in a New branch run passes the workflow that run had, even when
+  the list has changed since. Existing branch does the same while its
+  fields name the kept worktree; the field then shows that workflow, marked
+  "no longer listed" when the list has lost it.
 - **A workflow that is gone.** Removed from the settings between listing and
   creating, it fails with Timber's diagnostic shown as it is ("Unknown
   workflow. ..."), and nothing is created.
@@ -5089,3 +5090,19 @@ answers `--version` with 0.1.3:
   runs, the Setup and agent sessions side by side, and the RPC bridge for
   `timberWorktreeSetup` were seen only through the store and the mock
   engine. Windows and macOS.
+
+Run again after rebasing onto main with workflows (issue 52), Linux x64
+(Omarchy) with Bun 1.4.5, Git 2.56.1, and the released Timber 0.1.3
+installed:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 1999 passed, 14 skipped, none failed. The skipped tests need
+  Timber commands that 0.1.3 does not have, or run only in CI. Against
+  Timber 0.1.3 on a temporary repository: with only a workflow's
+  `post_create` script, `timber new --workflow review --no-setup` ran
+  nothing and reported `setupSkipped: true`; the Setup session's command
+  with `--workflow review` ran the ordinary script and then the workflow's,
+  and without it only the ordinary one, so the session passes the workflow
+  again.
+- `bun run build:web`: built.
+- Not run: the desktop window, Windows, and macOS, as above.

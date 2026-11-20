@@ -217,6 +217,32 @@ describe("creating a worktree with an agent picked", () => {
 		expect(store.getState().dialog).toBeNull();
 	});
 
+	test("setup and the agent wait for a session already starting in that worktree, instead of being dropped", async () => {
+		const { engine, store, sessions, pickAgent } = await openedDialog();
+		pickAgent(null);
+		// A terminal asked for in that worktree whose answer is still on its way.
+		let answer = () => {};
+		const { openTerminal } = engine;
+		let held = true;
+		engine.openTerminal = async request => {
+			if (held) {
+				held = false;
+				await new Promise<void>(resolve => (answer = resolve));
+			}
+			return openTerminal(request);
+		};
+		const worktree = store.getState().repositories.find(candidate => candidate.path === TIMBER)!.worktrees.find(candidate => candidate.branch === FEATURE_BRANCH)!;
+		const before = sessions().length;
+		void store.openTerminal({ repository: TIMBER, worktree: worktree.path, cols: 80, rows: 24 });
+		await settle();
+		expect(store.startSessionsIn(TIMBER, { id: worktree.id, path: worktree.path, branch: worktree.branch }, { setup: true, workflow: "review", agent: "Codex" })).toBe(true);
+		await settle();
+		answer();
+		await settle();
+		expect(sessions().slice(before).map(session => [session.kind, session.name])).toEqual([["terminal", expect.any(String)], ["timber", "Setup"], ["agent", "Codex"]]);
+		expect(sessions().at(-2)!.command).toEndWith(`timber open --setup --workflow review --no-editor --no-agent -- ${worktree.path}`);
+	});
+
 	test("None starts only setup", async () => {
 		const { model, submit, sessions, selected, pickAgent } = await openedDialog();
 		pickAgent(null);
