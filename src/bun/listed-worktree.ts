@@ -1,6 +1,7 @@
 import { statSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import type { Repository, Worktree } from "../shared/model";
+import { messageOf } from "../shared/error-message";
 
 /**
  * The repository in the app's list whose primary checkout is `path`, read
@@ -8,10 +9,6 @@ import type { Repository, Worktree } from "../shared/model";
  * the list has no such repository (see `RepositoryList.find`).
  */
 export type FindRepository = (path: string) => Promise<Repository | null>;
-
-function messageOf(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
 
 function isFolder(path: string): boolean {
 	try {

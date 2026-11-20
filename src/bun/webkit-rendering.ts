@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { type DmabufChoice, type RenderingStatus, decideRendering } from "../shared/rendering";
 import { defaultPreferences } from "../shared/preferences";
 import { parseSettings } from "../shared/settings";
+import { messageOf } from "../shared/error-message";
 
 /**
  * The PCI vendor ids of the graphics devices Linux lists as render nodes
@@ -70,7 +71,7 @@ export function setUpRendering(settingsFile: string, environment = process.env, 
 		applyWebkitRendering(variables);
 		return status;
 	} catch (error) {
-		console.warn(`Could not choose how WebKitGTK draws: ${error instanceof Error ? error.message : String(error)}`);
+		console.warn(`Could not choose how WebKitGTK draws: ${messageOf(error)}`);
 		return { applies: false };
 	}
 }

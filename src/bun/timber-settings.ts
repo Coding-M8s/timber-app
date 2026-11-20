@@ -12,6 +12,7 @@ import {
 import { SETTINGS_DRAFT_PLACEHOLDER, describeTimberCommand, failureOf } from "../shared/timber-result";
 import { describeTimberStatus } from "./timber";
 import { runTimberWithResultFile } from "./timber-run";
+import { messageOf } from "../shared/error-message";
 
 /** Reading settings is offline, so anything this slow is stuck. */
 const READ_TIMEOUT_MS = 30_000;
@@ -43,10 +44,6 @@ export interface TimberSettingsService {
 	save(request: TimberSettingsSaveRequest): Promise<TimberSettingsSaveResult>;
 	/** Run `timber __app-config check` with the draft in a private input file. Saves nothing. */
 	check(request: TimberConnectionCheckRequest): Promise<TimberConnectionCheckResult>;
-}
-
-function messageOf(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 interface Captured {

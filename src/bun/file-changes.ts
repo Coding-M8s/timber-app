@@ -3,6 +3,7 @@ import {
 	MAX_DIFF_BYTES, MAX_LISTED_FILES, MAX_STATUS_BYTES, diffArguments, parseStatus, readDiffOutput, relativePathProblem, statusArguments,
 } from "../shared/file-changes";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
+import { messageOf } from "../shared/error-message";
 
 /** Git is stopped when it takes longer than this, so a stuck read cannot hold the tab forever. */
 const GIT_MILLISECONDS = 20_000;
@@ -28,10 +29,6 @@ export interface FileChanges {
 }
 
 type GitRun = { ok: true; text: string; truncated: boolean } | { ok: false; message: string };
-
-function messageOf(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
 
 /**
  * Read a stream up to `limit` bytes. Returns what was read and whether there

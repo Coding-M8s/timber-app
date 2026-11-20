@@ -1,5 +1,6 @@
 import { type SavedWindow, type SeenWindow, rememberWindow, sameSavedWindow } from "../shared/window-frame";
 import type { SettingsHolder } from "./settings";
+import { messageOf } from "../shared/error-message";
 
 /** The window part of the settings file: where the window was and how large. */
 export interface WindowMemory {
@@ -44,7 +45,7 @@ export function createWindowMemory({ settings, read, delay = DEFAULT_DELAY, warn
 				await settings.save({ ...current, window: next });
 			} catch (error) {
 				// A convenience: the window stays usable, and the next change tries again.
-				warn(`Could not save the window size to ${settings.file}: ${error instanceof Error ? error.message : String(error)}`);
+				warn(`Could not save the window size to ${settings.file}: ${messageOf(error)}`);
 			}
 		});
 	}

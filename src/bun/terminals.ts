@@ -16,6 +16,7 @@ import { findExecutable, isWindowsBatch } from "./find-executable";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
 import { killProcessTree, sessionMembers, signalEach, signalGroup } from "./process-session";
 import { type PseudoTerminal, type StartPseudoTerminal, startPseudoTerminal } from "./pseudo-terminal";
+import { messageOf } from "../shared/error-message";
 
 /** How long a closed session's processes get to end after a hang-up, before they are killed. */
 const CLOSE_MILLISECONDS = 2000;
@@ -126,10 +127,6 @@ interface Live {
 	probedAt: number;
 	/** The root record changed since the window was last told. Told with the next flush, so a stream of progress is one change per part. */
 	statusChanged: boolean;
-}
-
-function messageOf(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 function isExecutable(path: string): boolean {

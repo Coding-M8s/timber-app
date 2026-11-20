@@ -1,5 +1,6 @@
 import type { ForcePushMarks } from "../shared/git-fetch";
 import type { SettingsHolder } from "./settings";
+import { messageOf } from "../shared/error-message";
 
 /** The force-push marks part of the settings file: branches whose rewritten upstream the person has not seen yet. */
 export interface SavedForcePushes {
@@ -30,7 +31,7 @@ export function createSavedForcePushes(settings: SettingsHolder, warn: (message:
 					await settings.save(next);
 				} catch (error) {
 					// Only the file and the reason: branch names stay out of the log.
-					warn(`Could not save which branches are marked force-pushed to ${settings.file}: ${error instanceof Error ? error.message : String(error)}`);
+					warn(`Could not save which branches are marked force-pushed to ${settings.file}: ${messageOf(error)}`);
 				}
 			});
 		},

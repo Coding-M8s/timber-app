@@ -5,6 +5,7 @@
  */
 import { slugOf } from "./custom-themes";
 import { type Theme, readTheme, writeTheme } from "./theme";
+import { messageOf } from "./error-message";
 
 export const THEME_FILE_FORMAT = "timber-theme";
 export const THEME_FILE_VERSION = 1;
@@ -59,7 +60,7 @@ export function readThemeFile(text: string): { outcome: "read"; theme: SharedThe
 	try {
 		value = JSON.parse(text);
 	} catch (error) {
-		return { outcome: "refused", reason: `The file is not JSON: ${error instanceof Error ? error.message : String(error)}` };
+		return { outcome: "refused", reason: `The file is not JSON: ${messageOf(error)}` };
 	}
 	if (!isRecord(value) || value.format !== THEME_FILE_FORMAT) {
 		return { outcome: "refused", reason: `The file is not a Timber theme: it does not say "format": "${THEME_FILE_FORMAT}".` };

@@ -2,6 +2,7 @@ import { readFile, readlink, realpath } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { type Launch, type RestartPlan, type RestartResult, parseEnviron, splitNul } from "../shared/restart";
 import { installRootOf } from "./uninstall";
+import { messageOf } from "../shared/error-message";
 
 /**
  * Restarting the app from inside it, so that a preference read only at start
@@ -50,10 +51,6 @@ export interface Restarter {
 	plan(): Promise<RestartPlan>;
 	/** Start the waiter, then quit. Runs at most once at a time. */
 	restart(): Promise<RestartResult>;
-}
-
-function messageOf(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 const BY_HAND = "Quit and start it again to use the saved setting.";

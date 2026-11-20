@@ -3,6 +3,7 @@ import type { TimberStatus } from "../shared/model";
 import { APP_PR_ARGUMENTS, APP_PR_COMMAND, type PullRequestList, readPullRequestList } from "../shared/pull-requests";
 import { describeTimberStatus } from "./timber";
 import { createRecordCapture } from "./workflows";
+import { messageOf } from "../shared/error-message";
 
 /**
  * Timber stops its own network part after 15 seconds. Reading the worktrees
@@ -29,10 +30,6 @@ export interface PullRequestReaderOptions {
 export interface PullRequestReader {
 	/** The pull request of each worktree of a repository from the list, named by the path of its primary checkout. */
 	read(repository: string): Promise<PullRequestList>;
-}
-
-function messageOf(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 /**

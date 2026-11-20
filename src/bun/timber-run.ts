@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 import { createOutputCapture } from "../shared/captured-output";
 import { RESULT_FILE_PLACEHOLDER, type ResultCommand, type TimberRun, describeTimberCommand, readTimberResult, resultCommandName } from "../shared/timber-result";
+import { messageOf } from "../shared/error-message";
 
 export interface TimberRunRequest {
 	/** The Timber executable found on start (see ./timber.ts). */
@@ -30,10 +31,6 @@ export interface TimberRunRequest {
 	environment?: Record<string, string | undefined>;
 	/** Where the private folder for the result file is made. The system's temporary folder by default. */
 	temporaryRoot?: string;
-}
-
-function messageOf(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 function isInside(folder: string, candidate: string): boolean {

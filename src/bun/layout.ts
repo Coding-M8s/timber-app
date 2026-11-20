@@ -1,6 +1,7 @@
 import { type Layout, defaultLayout, readLayout, sameLayout } from "../shared/layout";
 import type { SaveLayoutResult } from "../shared/model";
 import type { SettingsHolder } from "./settings";
+import { messageOf } from "../shared/error-message";
 
 /** The layout part of the settings file: how the window was arranged. */
 export interface SavedLayout {
@@ -11,10 +12,6 @@ export interface SavedLayout {
 	 * failure is an answer, not an error, so the interface carries on.
 	 */
 	save(layout: Layout): Promise<SaveLayoutResult>;
-}
-
-function messageOf(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 export function createSavedLayout(settings: SettingsHolder): SavedLayout {

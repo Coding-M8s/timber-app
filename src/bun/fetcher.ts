@@ -5,6 +5,7 @@ import {
 } from "../shared/git-fetch";
 import { type RunGit, batchSshCommand } from "./fetch-git";
 import { type Schedule, type WatchTarget, scheduleWithTimer } from "./repository-watcher";
+import { messageOf } from "../shared/error-message";
 
 /** The first background fetch of a repository waits this long after the app starts or the repository is added. */
 export const FIRST_FETCH_MILLISECONDS = 10_000;
@@ -313,7 +314,7 @@ export function createFetcher(options: FetcherOptions): Fetcher {
 			try {
 				({ failure, cutShort } = await fetchAll(entry, asked));
 			} catch (error) {
-				failure = { kind: "failed", message: error instanceof Error ? error.message : String(error), at: now() };
+				failure = { kind: "failed", message: messageOf(error), at: now() };
 			} finally {
 				release();
 			}

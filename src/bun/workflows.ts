@@ -2,6 +2,7 @@ import { createOutputCapture } from "../shared/captured-output";
 import type { TimberStatus } from "../shared/model";
 import { APP_CONFIG_READ_ARGUMENTS, APP_CONFIG_READ_COMMAND, type WorkflowList, readWorkflowList } from "../shared/workflows";
 import { describeTimberStatus } from "./timber";
+import { messageOf } from "../shared/error-message";
 
 /** Reading settings is offline and takes well under a second, so anything this slow is stuck. */
 export const READ_WORKFLOWS_TIMEOUT_MS = 10_000;
@@ -44,10 +45,6 @@ export interface WorkflowReaderOptions {
 export interface WorkflowReader {
 	/** The named workflows of a repository from the list, named by the path of its primary checkout. */
 	list(repository: string): Promise<WorkflowList>;
-}
-
-function messageOf(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 /**
