@@ -5291,7 +5291,9 @@ Windows 11 Home x64 machine (build 26200) with Bun 1.4.4 and Claude Code
   tests are the same apart from two that are flaky without this change too
   (a real Timber saved bases test, and adding the same repository twice,
   which passed once and failed once alone without it); none are terminal
-  tests.
+  tests. Rebased on `main` at `388ebee`: 1897 passed, 156 skipped, 80
+  failed, 17 errors, none in terminal tests; the Windows failures are
+  issue 163, and CI runs the tests on Windows without failing the run.
 - The real Claude Code 2.1.329 started through `createTerminalSessions` (the
   main process's own module, with node-pty) in a new temporary repository,
   for 15 seconds, no prompt, nothing answering `CSI c`: it reported
