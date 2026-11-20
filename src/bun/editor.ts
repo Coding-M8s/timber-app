@@ -3,7 +3,7 @@ import { describeCommandLine } from "../shared/command-line";
 import { TERMINAL_EDITOR_REASON, editorCommand, editorTarget, otherExecutableNames } from "../shared/editor";
 import type { OpenInEditorRequest, OpenInEditorResult } from "../shared/model";
 import type { Preferences } from "../shared/preferences";
-import { findExecutable } from "./find-executable";
+import { findExecutable, isWindowsBatch } from "./find-executable";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
 
 /**
@@ -12,14 +12,6 @@ import { type FindRepository, findListedWorktree } from "./listed-worktree";
  * behind it. A launcher that hands over and exits with 0 is fine.
  */
 const WATCH_MILLISECONDS = 500;
-
-/**
- * Windows runs a `.cmd` or `.bat` file through cmd.exe, which reads `&`, `%`,
- * and `^` in the arguments again, so a worktree path could change the command.
- * VS Code's `code` on Windows is such a file. Until launching is tested there,
- * they are refused.
- */
-const WINDOWS_BATCH = /\.(cmd|bat)$/i;
 
 export interface EditorDependencies {
 	/** The preferences as saved. The editor command comes only from here, never from the interface. */
@@ -84,7 +76,8 @@ async function earlyExit(child: Bun.Subprocess, milliseconds: number): Promise<{
  *   not close it.
  * - An editor that runs in a terminal is not started: starting it in the
  *   worktree's terminal session is a later step.
- * - On Windows a `.cmd` or `.bat` file is refused (see `WINDOWS_BATCH`).
+ * - On Windows a `.cmd` or `.bat` file is refused (see `isWindowsBatch`).
+ *   VS Code's `code` on Windows is such a file.
  */
 export function createEditorLauncher(dependencies: EditorDependencies): EditorLauncher {
 	const { preferences, findRepository, environment = process.env, watchMilliseconds = WATCH_MILLISECONDS, platform = process.platform } = dependencies;
@@ -119,7 +112,7 @@ export function createEditorLauncher(dependencies: EditorDependencies): EditorLa
 		// From here on the command names the executable that was found, which may be another name of the one in the setting.
 		const command = describeCommandLine([lookup.executable, ...built.arguments]);
 
-		if (platform === "win32" && WINDOWS_BATCH.test(resolved)) {
+		if (platform === "win32" && isWindowsBatch(resolved)) {
 			return {
 				outcome: "failed",
 				command,

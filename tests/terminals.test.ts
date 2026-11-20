@@ -3,12 +3,12 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openWebLink } from "../src/bun/open-link";
-import { sessionMembers, sessionOfStat } from "../src/bun/process-session";
+import { processTreeKillCommand, sessionMembers, sessionOfStat } from "../src/bun/process-session";
 import { type TerminalDependencies, type TerminalSessions, createTerminalSessions } from "../src/bun/terminals";
 import type { Repository } from "../src/shared/model";
 import { describeSearchPath } from "../src/shared/search-path";
 import { PROBE_ANSWER } from "../src/shared/program-status";
-import type { SessionNaming, TerminalChange, TerminalOutput } from "../src/shared/terminal";
+import { type SessionNaming, type TerminalChange, type TerminalOutput, TERMINAL_UNSUPPORTED_REASON } from "../src/shared/terminal";
 
 const posix = process.platform !== "win32";
 const linux = process.platform === "linux";
@@ -46,7 +46,7 @@ describe("reading a process's session", () => {
 	});
 });
 
-describe("terminal sessions on Windows", () => {
+describe("terminal sessions where Bun has no pseudo terminal", () => {
 	test("nothing starts, and the answer says why", async () => {
 		let asked = false;
 		const sessions = createTerminalSessions({
@@ -57,15 +57,23 @@ describe("terminal sessions on Windows", () => {
 			onOutput: () => {},
 			onChange: () => {},
 			platform: "win32",
+			pseudoTerminals: false,
 		});
 		const result = await sessions.open({ repository: "C:\\work\\repo", worktree: "C:\\work\\repo", cols: 80, rows: 24 });
-		expect(result.outcome).toBe("unsupported");
+		expect(result).toEqual({ outcome: "unsupported", message: TERMINAL_UNSUPPORTED_REASON });
 		expect(asked).toBe(false);
 		expect(sessions.list()).toEqual([]);
 	});
 });
 
-// Pseudo terminals exist on Linux and macOS only.
+describe("ending a process tree on Windows", () => {
+	test("is taskkill from the system folder, by process id, with its children, forced", () => {
+		expect(processTreeKillCommand(4242, { SystemRoot: "D:\\Win" })).toEqual(["D:\\Win\\System32\\taskkill.exe", "/PID", "4242", "/T", "/F"]);
+		expect(processTreeKillCommand(7, {})[0]).toBe("C:\\Windows\\System32\\taskkill.exe");
+	});
+});
+
+// These run a POSIX shell. Windows has its own set below.
 describe.skipIf(!posix)("terminal sessions in a real temporary repository", () => {
 	let root: string;
 	let repository: string;

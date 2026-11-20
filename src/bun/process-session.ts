@@ -53,6 +53,26 @@ export function signalEach(pids: readonly number[], signal: NodeJS.Signals): voi
 	}
 }
 
+/**
+ * The command that ends a process and everything it started, on Windows,
+ * which has no sessions or process groups to signal. taskkill follows parent
+ * process ids, so it reaches a process's children only while it still runs.
+ * It is taken from the system folder, not looked for on the PATH.
+ */
+export function processTreeKillCommand(pid: number, environment: Record<string, string | undefined> = process.env): string[] {
+	const systemRoot = environment.SystemRoot?.trim() || environment.SYSTEMROOT?.trim() || "C:\\Windows";
+	return [`${systemRoot}\\System32\\taskkill.exe`, "/PID", String(pid), "/T", "/F"];
+}
+
+/** End a process and everything it started, on Windows. Waits for taskkill, which is quick. A process that is gone already is skipped. */
+export function killProcessTree(pid: number, environment: Record<string, string | undefined> = process.env): void {
+	try {
+		Bun.spawnSync(processTreeKillCommand(pid, environment), { stdin: "ignore", stdout: "ignore", stderr: "ignore", timeout: 5000 });
+	} catch {
+		// taskkill could not run; the caller still kills the process itself.
+	}
+}
+
 /** Send `signal` to a process group, for where the members of a session cannot be listed. */
 export function signalGroup(leader: number, signal: NodeJS.Signals): void {
 	try {

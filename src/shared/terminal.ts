@@ -124,7 +124,7 @@ export const MAX_COLUMNS = 1000;
 export const MAX_ROWS = 500;
 
 export const TERMINAL_UNSUPPORTED_REASON =
-	"Terminals need a pseudo terminal, which Bun offers on Linux and macOS only. Windows is not supported yet.";
+	"Terminals need a pseudo terminal, which the Bun this app runs on does not offer here.";
 
 /** The longest name a session can have, in characters. */
 export const SESSION_NAME_LIMIT = 40;
@@ -250,6 +250,26 @@ export function pickShell(environment: Record<string, string | undefined>, isExe
 	const shell = environment.SHELL?.trim();
 	if (shell && shell.startsWith("/") && isExecutable(shell)) return shell;
 	return "/bin/sh";
+}
+
+/**
+ * The shell to start on Windows: PowerShell 7 (`pwsh.exe`) when it is on the
+ * PATH, else Windows PowerShell, else `ComSpec` when it is a full path to an
+ * executable, else cmd.exe from the system folder. `SHELL` is not read there:
+ * Git Bash sets it to a POSIX path such as `/usr/bin/bash`. `which` finds a
+ * name on the PATH and `isExecutable` checks a path; tests pass their own.
+ */
+export function pickWindowsShell(
+	environment: Record<string, string | undefined>,
+	which: (name: string) => string | null,
+	isExecutable: (path: string) => boolean,
+): string {
+	const found = which("pwsh.exe") ?? which("powershell.exe");
+	if (found !== null) return found;
+	const comSpec = environment.ComSpec?.trim() ?? environment.COMSPEC?.trim();
+	if (comSpec && /^[A-Za-z]:\\/.test(comSpec) && isExecutable(comSpec)) return comSpec;
+	const systemRoot = environment.SystemRoot?.trim() || environment.SYSTEMROOT?.trim() || "C:\\Windows";
+	return `${systemRoot}\\System32\\cmd.exe`;
 }
 
 /**

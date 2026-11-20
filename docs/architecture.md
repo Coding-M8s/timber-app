@@ -1928,9 +1928,33 @@ shows, and coming back shows it as it was.
   signal listeners never run. SIGKILL ends the app without
   asking; the terminals then hang up, which ends the shells and what runs
   in front, but not what ignores a hang-up.
-- **Windows.** `Bun.Terminal` exists on Linux and macOS only, so on Windows
-  `openTerminal` answers that terminals are not supported there yet, and
-  nothing starts.
+- **Windows.** Bun 1.4.4, the Bun the Windows build ships, has
+  `Bun.Terminal` there on top of ConPTY, and sessions use it as on Linux.
+  What differs (`src/bun/terminals.ts`):
+  - *The shell* is PowerShell 7 (`pwsh.exe`) when it is on the PATH, else
+    Windows PowerShell, else `ComSpec`, else cmd.exe from the system folder
+    (`pickWindowsShell` in `src/shared/terminal.ts`). `SHELL` is not read,
+    because Git Bash sets it to a POSIX path.
+  - *Hanging up.* Windows has no sessions or process groups to signal.
+    Closing the pseudo console tells every process attached to it to close;
+    a `ping` running in the shell ended with it within milliseconds. That is
+    what happens when a session is closed and when its shell ends by itself.
+    A program that ignores it was not tried; the kill below is for that.
+  - *Killing.* What still runs after the wait is ended with the shell's
+    whole process tree, `taskkill /PID <pid> /T /F` from the system folder
+    (`killProcessTree` in `src/bun/process-session.ts`). taskkill follows
+    parent process ids, so it reaches only what the shell started while the
+    shell still runs. A program that leaves the console on purpose, as a
+    daemon does with `setsid` on Linux, goes on.
+  - *Agents* must be their own executables. One that resolves to a `.cmd` or
+    `.bat` file, such as an npm launcher, is refused with a message, as
+    "Open in editor" does (`isWindowsBatch` in `src/bun/find-executable.ts`):
+    cmd.exe would read `&`, `%`, and `^` in its arguments again. Claude
+    Code's and Codex's own installers put a `.exe` on the PATH.
+  - Where Bun has no `Bun.Terminal` on Windows, `openTerminal` answers that
+    terminals are not supported there, and nothing starts.
+  - Shell integration (OSC 133 prompts) is not set up for PowerShell, and
+    the shell cannot be chosen in Settings yet.
 - **Not built.** Split views showing two sessions side by side, keeping
   sessions after a restart, and starting a terminal editor in a session.
 
@@ -4836,6 +4860,36 @@ user PATH):
   `%LOCALAPPDATA%\Programs\Timber\timber.exe` and 0.1.3.
 - Not run: adding a repository and the rest of the app on Windows.
 
+Run for terminal and agent sessions on Windows (issue 140), on 2026-11-19,
+on the same Windows 11 Home x64 machine with Bun 1.4.4 (also the Bun in the
+build's `app\bin`), Git 2.50.1, Electrobun 2.0.6, and Timber 0.1.3:
+
+- Before the change, a trial outside the app: `Bun.spawn` with `terminal`
+  started PowerShell on ConPTY, typed input reached it, colored output came
+  back, a resize reached it (`$Host.UI.RawUI.WindowSize.Width` 100, then
+  140), and `exit` ended it with 0. `terminal.close()` ended the shell and a
+  `ping -t` in it within about 10 ms; killing only the shell left the ping
+  running. `Bun.spawn` of a `.cmd` file threw for an argument with `&`.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test tests/terminals-windows.test.ts`: 8 passed, six runs in a row, on
+  a real ConPTY in a temporary repository with a linked worktree whose path
+  has spaces: cmd.exe in the worktree's folder, typed input, a resize seen
+  by `mode con`, a shell that exits with 3 kept with how it ended, Close and
+  quitting each ending the shell and a `ping` it started, `where.exe` as an
+  agent, a `.cmd` agent refused with nothing started, and PowerShell as the
+  shell with the real environment.
+- `bun test`: 1684 passed, 258 skipped, 54 failed, the same 54 as before
+  (see the window icon run above), none in terminal tests.
+- `bun run build`, installed with `Timber-Setup.exe`. A person added this
+  repository, opened a Terminal (Windows PowerShell 5.1) and a Claude Code
+  session (`claude.exe` 2.1.329) in it, and reported both working. Claude
+  Code drew without color: the app had been started by the installer from
+  a Claude Code session whose environment had `NO_COLOR=1`, which every
+  session inherits. That is the app passing on its environment as designed.
+- Not run in the desktop window: Codex, closing a session with a program
+  running, and quitting with sessions running. The tests cover them on a
+  real ConPTY only.
+
 Not run yet:
 
 - The Pull request tab in the desktop window, a check's Open clicked
@@ -4884,8 +4938,8 @@ Not run yet:
 - Anything on macOS, terminals included.
 - Watching for changes on Windows or macOS, where `fs.watch` works
   differently. It was run only on Linux.
-- Terminals on Windows, where `Bun.Terminal` does not exist: they answer
-  that they are not supported, and that answer was only acted out on Linux.
+- Terminals on Windows with a Bun that has no `Bun.Terminal`: they answer
+  that they are not supported, and that answer was only acted out in tests.
 - Copying with Ctrl+Shift+C and opening a link with Ctrl+click in the
   desktop window. Both were checked as functions only.
 - A real X11 login session, and GNOME and KDE, on real hardware. They
