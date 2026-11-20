@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Repository, TimberFailure, TimberStatus } from "../shared/model";
+import type { TimberFailure, TimberStatus } from "../shared/model";
 import { createOutputCapture } from "../shared/captured-output";
 import {
 	type DoneApplyRequest, type DoneApplyResult, type DonePreviewRequest, type DonePreviewResult,
@@ -9,6 +9,7 @@ import { APPROVAL_FILE_PLACEHOLDER, failureOf } from "../shared/timber-result";
 import { describeTimberStatus } from "./timber";
 import { runTimberWithResultFile } from "./timber-run";
 import { messageOf } from "../shared/error-message";
+import { type FindRepository, findListedWorktree } from "./listed-worktree";
 
 /** A preview only reads the repository, so anything this slow is stuck. */
 const PREVIEW_TIMEOUT_MS = 30_000;
@@ -19,12 +20,8 @@ const HELD_PREVIEWS = 16;
 export interface DoneDependencies {
 	/** Where Timber is, as of the last look (see ./timber.ts). */
 	timber: () => Promise<TimberStatus>;
-	/**
-	 * The repository in the app's list whose primary checkout is `path`, read
-	 * again, so that its worktrees are the ones Timber lists right now. Null
-	 * when the list has no such repository (see `RepositoryList.find`).
-	 */
-	findRepository: (path: string) => Promise<Repository | null>;
+	/** The repository in the app's list, read again (see ./listed-worktree.ts). */
+	findRepository: FindRepository;
 	environment?: Record<string, string | undefined>;
 	/** Where the private folder for the approval and result files is made. The system's temporary folder by default. */
 	temporaryRoot?: string;
@@ -81,19 +78,8 @@ export function createDone(dependencies: DoneDependencies): Done {
 	async function locate(repositoryPath: string, worktreePath: string): Promise<{ executable: string } | { refused: string }> {
 		const status = await timber();
 		if (status.state !== "ready") return { refused: `${describeTimberStatus(status)}. Nothing was run.` };
-		let repository: Repository | null;
-		try {
-			repository = await findRepository(repositoryPath);
-		} catch (error) {
-			return { refused: `Could not read the repository at ${repositoryPath}: ${messageOf(error)}. Nothing was run.` };
-		}
-		if (repository === null) return { refused: `${repositoryPath} is not a repository in this app's list. Nothing was run.` };
-		if (!repository.available) return { refused: `Git cannot read the repository at ${repositoryPath}. Nothing was run.` };
-		if (repository.failure !== null) return { refused: `Timber could not list the worktrees of ${repositoryPath}, so nothing was run: ${repository.failure}` };
-		if (!repository.worktrees.some(worktree => worktree.path === worktreePath)) {
-			return { refused: `Timber lists no worktree at ${worktreePath} in ${repositoryPath}. Nothing was run. Refresh the list.` };
-		}
-		return { executable: status.path };
+		const found = await findListedWorktree(findRepository, repositoryPath, worktreePath, "Nothing was run.", { listedOnly: true });
+		return found.ok ? { executable: status.path } : { refused: found.message };
 	}
 
 	async function preview(request: DonePreviewRequest): Promise<DonePreviewResult> {

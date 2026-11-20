@@ -124,7 +124,6 @@ describe("WorktreeCommands.rebase, with a stand-in Timber", () => {
 	});
 
 	test("a repository that is not in the list runs nothing", async () => {
-		await expectNotRun(commandsOn({ result: null }, { listed: false }), ask(), "is not a repository in the app's list");
 		await expectNotRun(commandsOn({ result: null }, { found: null }), ask(), "is not a repository in this app's list");
 	});
 
@@ -172,14 +171,14 @@ describe("WorktreeCommands.rebase, with a stand-in Timber", () => {
 		const timber = standInResultTimber(root, `stand-in-${++count}`, { result: here(recordedRebase.rebased), exitCode: 0 });
 		const commands = createWorktreeCommands({
 			timber: async () => ready(timber.path),
-			isListed: async () => {
+			isListed: async () => true,
+			findRepository: async () => {
 				const turn = ++asked;
 				order.push(`start ${turn}`);
 				if (turn === 1) await held;
 				order.push(`end ${turn}`);
-				return true;
+				return listing([worktree]);
 			},
-			findRepository: async () => listing([worktree]),
 			temporaryRoot: temporary,
 		});
 		const first = commands.rebase(ask());
