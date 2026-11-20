@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/Coding-M8s/timber-app/security/advisories/new
+    about: Report security problems privately. Do not open a public issue.
+  - name: Report a problem with the Timber CLI
+    url: https://github.com/Coding-M8s/timber/issues/new/choose
+    about: Problems with the timber command itself go to the Timber repository.

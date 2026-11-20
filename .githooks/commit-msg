@@ -1,0 +1,3 @@
+#!/bin/sh
+# Reject prohibited attribution without rewriting commit messages.
+exec bun --no-env-file "$(dirname "$0")/../scripts/check-commit-attribution.ts" --message-file "$1"

@@ -1,0 +1,77 @@
+name: Bug report
+description: Report something the Timber app did wrong
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Remove tokens, credentials, and private repository content before submitting.
+        Report security problems privately instead; see SECURITY.md.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what the app did instead.
+      placeholder: |
+        Did: Done on a worktree from the sidebar
+        Expected: ...
+        Got: ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: The smallest sequence of steps that shows the problem.
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: App version or commit
+      description: Settings, About, or `git rev-parse --short HEAD` in your checkout.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: run
+    attributes:
+      label: How you run the app
+      options:
+        - bun run dev or bun run start
+        - bun run dev:web (sample data)
+        - Installed local build
+    validations:
+      required: true
+
+  - type: input
+    id: timber-version
+    attributes:
+      label: Timber version
+      description: Output of `timber --version`.
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Operating system, desktop, and architecture
+      description: For example Ubuntu 24.04 GNOME on Wayland x86_64, or Windows 11 x64.
+    validations:
+      required: true
+
+  - type: input
+    id: git
+    attributes:
+      label: Git version
+      description: Output of `git --version`.
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Sanitized output
+      description: Relevant terminal output from the command that started the app.
+      render: text

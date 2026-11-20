@@ -121,3 +121,4 @@ When the app does not start, run
 - [Architecture](docs/architecture.md): layers, the boundary with Timber, milestones, and what has been verified
 - [Design](docs/design.md): the agreed interface decisions
 - [Development guidance](AGENTS.md)
+- [Contributing](CONTRIBUTING.md) and [security policy](SECURITY.md)
