@@ -127,7 +127,6 @@ describe.skipIf(!posix)("a worktree's setup in a terminal session", () => {
 			{ timberWorktreeSetup: { workflow: "--setup" } },
 			{ timberWorktreeSetup: { workflow: "Review" } },
 			{ timberWorktreeSetup: { workflow: 7 } },
-			{ timberWorktreeSetup: {}, timberRebase: { onto: null } },
 			{ timberWorktreeSetup: {}, agent: "Claude Code" },
 		];
 		for (const extra of wrong) {

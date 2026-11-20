@@ -3,15 +3,9 @@ import { type RebaseResult, shortBase } from "../shared/timber-rebase";
 import type { SubmissionOutcome } from "./store/submission";
 
 /**
- * The words of the Rebase dialog. Pure. The interim words (with no result
- * file) never say how a rebase went: that is only what Timber prints in the
- * session. The words for a result file say how it ended, as Timber's record
- * does.
+ * The words of the Rebase dialog. Pure. They say how a rebase ended, as
+ * Timber's record does.
  */
-
-/** What the dialog does, under its title. */
-export const REBASE_RUNS_IN_TERMINAL =
-	"The rebase runs in a new session in this worktree, beside any it has, so you see what Timber prints. If it stops on conflicts, Timber says what to run and the session ends: resolve them in a terminal here with git rebase --continue or --abort.";
 
 /** Under the Onto field. */
 export const REBASE_ONTO_HINT =
@@ -36,11 +30,6 @@ export function hasLocalChanges(worktree: Worktree): boolean {
 	return changes.kind === "known" && (changes.modified.length > 0 || changes.untracked.length > 0);
 }
 
-/** The toast once the session started. It says only that it started. */
-export function describeRebaseStarted(label: string): string {
-	return `Started timber rebase in a new session in ${label}`;
-}
-
 /** What the dialog does under its title when Timber reports how the rebase ended. */
 export const REBASE_REPORTS_RESULT =
 	"Timber rebases this worktree, and this dialog shows how it ended. A rebase that stops on conflicts stays paused for you to resolve in a terminal in this worktree.";
@@ -60,9 +49,6 @@ export const REBASE_FAILED_NOTE =
 
 /** Above the reason when the app refused before it ran anything. */
 export const REBASE_NOT_RUN_TITLE = "The rebase did not run";
-
-/** Above the reason when the installed Timber cannot report a rebase. */
-export const REBASE_UNSUPPORTED_TITLE = "This Timber cannot report a rebase";
 
 /** The toast when the branch was rebased. */
 export function describeRebased(label: string, base: string | null): string {
@@ -85,7 +71,7 @@ export function describeConflictsAdvice(base: string | null): string {
 }
 
 /** Why a rebase that ran left the dialog open, to choose the words above its failure. */
-export type RebaseFailureKind = "refused" | "failed" | "unsupported" | "not-run";
+export type RebaseFailureKind = "refused" | "failed" | "not-run";
 
 /** A rebase that stopped on conflicts, as `readRebaseResult` reports it. */
 export type RebaseConflicts = Extract<RebaseResult, { outcome: "conflicts" }>;
@@ -104,10 +90,9 @@ export interface RebaseShown {
  * How the dialog shows each way a rebase can end. A rebase or an up to date
  * branch closes the dialog with a toast. Conflicts switch it to the list of
  * files. Everything else stays open with Timber's reason, or the app's own
- * words when it never ran Timber. `command` is the one the dialog showed, for
- * an answer that has none of its own.
+ * words when it never ran Timber.
  */
-export function presentRebase(label: string, result: RebaseResult, command: string): RebaseShown {
+export function presentRebase(label: string, result: RebaseResult): RebaseShown {
 	switch (result.outcome) {
 		case "rebased":
 			return { outcome: { ok: true, toast: describeRebased(label, result.base) }, failureKind: null, conflicts: null };
@@ -120,7 +105,5 @@ export function presentRebase(label: string, result: RebaseResult, command: stri
 		case "failed":
 			// A run that never started changed nothing, so the words for a failed rebase do not fit it.
 			return { outcome: { ok: false, failure: result.failure }, failureKind: result.ran ? "failed" : "not-run", conflicts: null };
-		case "unsupported":
-			return { outcome: { ok: false, failure: { command, diagnostic: result.message, output: null } }, failureKind: "unsupported", conflicts: null };
 	}
 }

@@ -3,7 +3,7 @@ import { createMockTerminals } from "../src/mainview/engine/mock-terminals";
 import type { Worktree } from "../src/shared/model";
 import { applyPreferenceChange, defaultPreferences, readPreferences } from "../src/shared/preferences";
 import {
-	SESSION_NAME_LIMIT, type SessionNaming, TIMBER_REBASE_SESSION_NAME, cleanSessionName, defaultSessionName, issueKeyOf, readSessionNaming, sessionNameBase,
+	SESSION_NAME_LIMIT, type SessionNaming, WORKTREE_SETUP_SESSION_NAME, cleanSessionName, defaultSessionName, issueKeyOf, readSessionNaming, sessionNameBase,
 } from "../src/shared/terminal";
 
 describe("the issue key in a branch", () => {
@@ -142,7 +142,7 @@ describe("the mock engine names sessions as Settings says", () => {
 			() => ({ state: "ready", path: "/usr/local/bin/timber", version: "0.1.1" }),
 			() => naming,
 		);
-		const open = async (path: string, extra: { agent?: string; timberRebase?: { onto: null } } = {}) => {
+		const open = async (path: string, extra: { agent?: string; timberWorktreeSetup?: Record<string, never> } = {}) => {
 			const result = await terminals.openTerminal({ repository, worktree: path, cols: 80, rows: 24, ...extra });
 			if (result.outcome !== "opened") throw new Error(JSON.stringify(result));
 			return result.session;
@@ -167,13 +167,13 @@ describe("the mock engine names sessions as Settings says", () => {
 		expect((await open("/repos/app-detached", { agent: "Codex" })).name).toBe("Codex");
 	});
 
-	test("after the issue key, and a rebase keeps its name", async () => {
+	test("after the issue key, and a setup session keeps its name", async () => {
 		const { open, set } = mock();
 		set("issue");
 		expect((await open("/repos/app-gh")).name).toBe("GH-122");
 		expect((await open("/repos/app-gh", { agent: "Codex" })).name).toBe("Codex: GH-122");
 		expect((await open("/repos/app-login")).name).toBe("feature-login");
-		expect((await open("/repos/app-gh", { timberRebase: { onto: null } })).name).toBe(TIMBER_REBASE_SESSION_NAME);
+		expect((await open("/repos/app-gh", { timberWorktreeSetup: {} })).name).toBe(WORKTREE_SETUP_SESSION_NAME);
 	});
 
 	test("sessions already open, and renamed ones, keep their names when the setting changes", async () => {

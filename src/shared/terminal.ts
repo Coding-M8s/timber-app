@@ -15,7 +15,7 @@ export type TerminalState =
 /**
  * What a session runs: the person's shell, a coding agent from Settings,
  * which starts the agent's command instead of the shell, or a Timber
- * command such as `timber rebase`.
+ * command such as `timber open --setup`.
  */
 export const SESSION_KINDS = ["terminal", "agent", "timber"] as const;
 export type SessionKind = typeof SESSION_KINDS[number];
@@ -67,18 +67,10 @@ export interface OpenTerminalRequest {
 	 */
 	agent?: string;
 	/**
-	 * Start `timber rebase` for this worktree instead of the shell, onto the
-	 * given base, or the one Timber saved when `onto` is null
-	 * (`rebaseArguments` in ./rebase-command.ts). The main process runs the
-	 * Timber it found. Not together with `agent`.
-	 */
-	timberRebase?: { onto: string | null };
-	/**
 	 * Run this worktree's setup scripts with `timber open --setup` instead of
 	 * the shell (`worktreeSetupArguments` in ./worktree-commands.ts), with the
 	 * workflow the worktree was made with, if any: Timber does not remember it.
-	 * The main process runs the Timber it found. Not together with `agent` or
-	 * `timberRebase`.
+	 * The main process runs the Timber it found. Not together with `agent`.
 	 */
 	timberWorktreeSetup?: { workflow?: string };
 }
@@ -139,9 +131,6 @@ export const SESSION_NAME_LIMIT = 40;
 
 const KIND_NAMES: Record<SessionKind, string> = { terminal: "Terminal", agent: "Agent", timber: "Timber" };
 
-/** What a `timber rebase` session is called. */
-export const TIMBER_REBASE_SESSION_NAME = "Rebase";
-
 /** The name of a session that runs a worktree's setup scripts. */
 export const WORKTREE_SETUP_SESSION_NAME = "Setup";
 
@@ -173,8 +162,7 @@ export function defaultSessionName(base: string, taken: readonly string[]): stri
  * How a new terminal or agent session is named: "plain" after the shell or
  * the agent ("Terminal", "Codex"), "branch" after the worktree's branch,
  * "issue" after the issue key in the branch, such as GH-122, or the branch
- * when it has none. Plain by default. A `timber rebase` session is always
- * "Rebase".
+ * when it has none. Plain by default. A setup session is always "Setup".
  */
 export const SESSION_NAMINGS = ["plain", "branch", "issue"] as const;
 export type SessionNaming = typeof SESSION_NAMINGS[number];

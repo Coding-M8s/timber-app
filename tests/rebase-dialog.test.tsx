@@ -1,13 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
-import { RebaseDialogView, type RebaseDialogViewProps, rebaseCommandFor } from "../src/mainview/components/RebaseDialog";
+import { RebaseDialogView, type RebaseDialogViewProps, rebaseResultCommandFor } from "../src/mainview/components/RebaseDialog";
 import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
-import { REBASE_DIRTY_NOTE, describeRebaseStarted } from "../src/mainview/rebase-format";
-import { sessionsOf } from "../src/mainview/store/state";
+import { REBASE_DIRTY_NOTE } from "../src/mainview/rebase-format";
 import { createAppStore } from "../src/mainview/store/store";
 import type { Worktree } from "../src/shared/model";
-import { TIMBER_REBASE_SESSION_NAME } from "../src/shared/terminal";
 
 const settle = async () => {
 	for (let round = 0; round < 5; round += 1) await Bun.sleep(0);
@@ -24,75 +22,8 @@ async function startedStore(engine = createMockEngine()) {
 	return { store, engine };
 }
 
-const request = (onto: string | null = "origin/main") => ({ repository: TIMBER, worktree: FEATURE, onto, cols: 80, rows: 24 });
-
-describe("rebasing from the store", () => {
-	const sessions = (store: Awaited<ReturnType<typeof startedStore>>["store"]) => sessionsOf(store.getState(), feature.id);
-
-	test("a rebase starts in a new Timber session in the worktree, shown in the Workspace tab, with the command it runs", async () => {
-		const { store } = await startedStore();
-		store.showTab("changes");
-		const result = await store.startRebase(request());
-		if (result.outcome !== "started") throw new Error(JSON.stringify(result));
-		const [session] = sessions(store);
-		expect(session).toMatchObject({ kind: "timber", name: TIMBER_REBASE_SESSION_NAME, path: FEATURE });
-		expect(session!.command).toContain(`rebase --base origin/main -- ${FEATURE}`);
-		expect(store.getState().tab).toBe("workspace");
-		expect(store.getState().shownSessions[feature.id]).toBe(session!.id);
-	});
-
-	test("the repositories are read again when the session's process ends, however it ended, and not before", async () => {
-		const engine = createMockEngine();
-		engine.endRebases(null);
-		const { store } = await startedStore(engine);
-		// Any Timber session that stops reads the whole list again (see `timberSessionStopped` in the store).
-		const reads: string[] = [];
-		const list = engine.listRepositories.bind(engine);
-		engine.listRepositories = () => {
-			reads.push("list");
-			return list();
-		};
-		const result = await store.startRebase(request(null));
-		if (result.outcome !== "started") throw new Error(JSON.stringify(result));
-		await settle();
-		expect(reads).toEqual([]);
-		engine.endTerminal(result.session.id, 1);
-		await settle();
-		expect(reads).toEqual(["list"]);
-		expect(sessions(store)[0]?.state).toEqual({ kind: "exited", exitCode: 1, signal: null });
-	});
-
-	test("a worktree that has a terminal keeps it, and the rebase starts beside it", async () => {
-		const { store } = await startedStore();
-		await store.openTerminal({ repository: TIMBER, worktree: FEATURE, cols: 80, rows: 24 });
-		const result = await store.startRebase(request());
-		expect(result.outcome).toBe("started");
-		expect(sessions(store).map(session => session.kind)).toEqual(["terminal", "timber"]);
-	});
-
-	test("an engine that does not answer is reported as not known, never as not run", async () => {
-		const engine = createMockEngine();
-		const { store } = await startedStore(engine);
-		engine.openTerminal = async () => {
-			throw new Error("bridge closed");
-		};
-		const result = await store.startRebase(request());
-		expect(result.outcome).toBe("unknown");
-	});
-
-	test("a refusal is passed on as not run, with Timber's or the app's reason", async () => {
-		const engine = createMockEngine();
-		const { store } = await startedStore(engine);
-		const result = await store.startRebase({ ...request(), worktree: "/work/nowhere" });
-		expect(result.outcome).toBe("not-run");
-		if (result.outcome === "not-run") expect(result.message).toContain("The rebase was not started");
-		expect(sessions(store)).toEqual([]);
-	});
-});
-
 describe("the Rebase dialog", () => {
 	const props = (change: Partial<RebaseDialogViewProps> = {}): RebaseDialogViewProps => ({
-		structured: false,
 		worktree: feature,
 		path: FEATURE,
 		bases: [{ selector: "refs/heads/main", kind: "local" }, { selector: "origin/main", kind: "remote" }],
@@ -106,10 +37,10 @@ describe("the Rebase dialog", () => {
 	const render = (change: Partial<RebaseDialogViewProps> = {}) => renderToStaticMarkup(<RebaseDialogView {...props(change)} />);
 
 	test("the footer shows the exact command for what is typed, and nothing typed passes no base", () => {
-		expect(render()).toContain(`timber rebase -- ${FEATURE}`);
-		expect(rebaseCommandFor(FEATURE, "")).toBe(`timber rebase -- ${FEATURE}`);
-		expect(rebaseCommandFor("/work/my repo", " origin/main ")).toBe("timber rebase --base origin/main -- '/work/my repo'");
-		expect(render({ onto: "origin/main" })).toContain(`timber rebase --base origin/main -- ${FEATURE}`);
+		expect(render()).toContain(`timber rebase --result-file &lt;temporary file&gt; -- ${FEATURE}`);
+		expect(rebaseResultCommandFor(FEATURE, "")).toBe(`timber rebase --result-file <temporary file> -- ${FEATURE}`);
+		expect(rebaseResultCommandFor("/work/my repo", " origin/main ")).toBe("timber rebase --base origin/main --result-file <temporary file> -- '/work/my repo'");
+		expect(render({ onto: "origin/main" })).toContain(`timber rebase --base origin/main --result-file &lt;temporary file&gt; -- ${FEATURE}`);
 	});
 
 	test("the picker offers local branches by full ref and remote branches by remote name", () => {
@@ -127,10 +58,9 @@ describe("the Rebase dialog", () => {
 		expect(render({ worktree: clean })).not.toContain(REBASE_DIRTY_NOTE.slice(0, 40));
 	});
 
-	test("nothing in it says how a rebase went", () => {
+	test("before it runs, nothing in it says how a rebase went", () => {
 		const markup = render().toLowerCase();
 		for (const claim of ["succeeded", "success", "completed", "rebased onto"]) expect(markup).not.toContain(claim);
-		expect(describeRebaseStarted("feat")).toBe("Started timber rebase in a new session in feat");
 	});
 
 	test("a worktree that left the list leaves only Close", () => {
@@ -145,20 +75,18 @@ describe("the Rebase dialog", () => {
 		store.openDialog({ kind: "rebase-worktree", repository: TIMBER, worktree: feature.id });
 		await settle();
 		const markup = renderToStaticMarkup(<App store={store} />);
-		// The mock's Timber is new enough to report the result, so this is the dialog for a result file (see rebase-result.test.tsx).
 		expect(markup).toContain("Rebase</button>");
 		expect(markup).toContain(`timber rebase --base origin/main --result-file &lt;temporary file&gt; -- ${FEATURE}`);
 	});
 
-	test("with a Timber too old to report the result, the workspace header opens the interim dialog", async () => {
-		const { store } = await startedStore(createMockEngine(sampleRepositories, { state: "ready", path: "/usr/bin/timber", version: "0.1.1" }));
+	test("while Timber is not ready, no Rebase dialog shows, only the window's Timber notice", async () => {
+		const { store } = await startedStore(createMockEngine(sampleRepositories, { state: "too-old", path: "/usr/bin/timber", found: "0.1.1", required: "0.1.3" }));
 		store.openDialog({ kind: "rebase-worktree", repository: TIMBER, worktree: feature.id });
 		await settle();
 		const markup = renderToStaticMarkup(<App store={store} />);
-		expect(markup).toContain("Rebase in terminal");
-		// The sample worktree has origin/main saved, so the dialog starts from it.
-		expect(feature.base).toEqual({ kind: "assigned", ref: "refs/remotes/origin/main" });
-		expect(markup).toContain(`timber rebase --base origin/main -- ${FEATURE}`);
+		expect(markup).toContain("0.1.1");
+		expect(markup).not.toContain("timber rebase");
+		expect(markup).not.toContain("Rebase</button>");
 	});
 
 	/** The dialog as the store opens it for one worktree of the sample repositories. */
@@ -194,7 +122,7 @@ describe("the Rebase dialog", () => {
 	test("invalid metadata is a warning, and no base is filled in or guessed", () => {
 		const markup = render({ worktree: { ...feature, base: { kind: "invalid", reason: "stale" } } });
 		expect(markup).toMatch(/<p class="dialog-note saved-base-warning" role="note">Timber found a saved base for this worktree but cannot use it/);
-		expect(markup).toContain(`timber rebase -- ${FEATURE}`);
+		expect(markup).toContain(`timber rebase --result-file &lt;temporary file&gt; -- ${FEATURE}`);
 	});
 
 	test("on a Timber that reports no base, the dialog says nothing about one and starts empty", () => {
@@ -202,6 +130,6 @@ describe("the Rebase dialog", () => {
 		expect(markup).not.toContain("saved-base-warning");
 		expect(markup).not.toContain("No saved base");
 		expect(markup).not.toContain("as the base of this worktree");
-		expect(markup).toContain(`timber rebase -- ${FEATURE}`);
+		expect(markup).toContain(`timber rebase --result-file &lt;temporary file&gt; -- ${FEATURE}`);
 	});
 });

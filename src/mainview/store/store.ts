@@ -16,7 +16,6 @@ import { type ZoomStep, stepZoom, zoomLabel } from "../../shared/zoom";
 import type { Theme } from "../../shared/theme";
 import type { ChooseSoundResult, SoundChoice, SoundOutcome } from "../../shared/sound-setting";
 import type { ExportThemeResult, ImportThemeResult } from "../../shared/theme-file";
-import type { StartRebaseRequest, StartRebaseResult } from "../../shared/rebase-command";
 import { type OpenTerminalRequest, type TerminalChange, type TerminalSession, WORKTREE_SETUP_SESSION_NAME } from "../../shared/terminal";
 import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "../../shared/timber-config";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "../../shared/timber-done";
@@ -233,14 +232,6 @@ export interface AppStore {
 	 * click starts one. Never throws.
 	 */
 	openTerminal(request: OpenTerminalRequest): Promise<void>;
-	/**
-	 * Start `timber rebase` in a new Timber session in a worktree, beside its
-	 * other sessions. The engine is asked once. A session that started shows,
-	 * in the Workspace tab, and when it stops the repositories are read again,
-	 * as for any Timber session. Nothing here says how the rebase went. Never
-	 * throws.
-	 */
-	startRebase(request: StartRebaseRequest): Promise<StartRebaseResult>;
 	/**
 	 * Rebase a worktree with `timber rebase --result-file` and answer how it
 	 * ended (see `RebaseResult`). The engine is asked once, and never again by
@@ -1328,30 +1319,6 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		await openTerminal(request);
 	}
 
-	async function startRebase(request: StartRebaseRequest): Promise<StartRebaseResult> {
-		const { repository, worktree, onto, cols, rows } = request;
-		let result;
-		try {
-			result = await engine.openTerminal({ repository, worktree, cols, rows, timberRebase: { onto } });
-		} catch (error) {
-			return {
-				outcome: "unknown",
-				message: `The app did not hear whether the rebase started: ${messageOf(error)}. Look at the worktree's sessions before trying again.`,
-			};
-		}
-		if (result.outcome !== "opened") return { outcome: "not-run", message: result.message };
-		const { session } = result;
-		// The engine reports the session as it changes, and may have reported it ended before this answer: that report is newer.
-		const known = state.terminals.some(candidate => candidate.id === session.id);
-		update({
-			terminals: known ? state.terminals : withTerminal(state.terminals, session.id, session),
-			shownSessions: { ...state.shownSessions, [session.worktree]: session.id },
-			unseenSessions: state.unseenSessions.filter(id => id !== session.id),
-			tab: "workspace",
-		});
-		return { outcome: "started", session };
-	}
-
 	async function rebaseWorktree(request: RebaseRequest): Promise<RebaseResult> {
 		let result: RebaseResult;
 		try {
@@ -1505,7 +1472,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	}
 
 	/**
-	 * Whether this change stops a Timber session, such as a rebase, given the
+	 * Whether this change stops a Timber session, such as setup, given the
 	 * sessions known before it: the session ended, or it was closed while it
 	 * ran. What it did shows only in the repositories, never in how it ended.
 	 */
@@ -1608,7 +1575,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 					const stopped = timberSessionStopped(state.terminals, change);
 					if (change.session) update({ terminals: withTerminal(state.terminals, change.id, change.session) });
 					else update(withoutSession(state, change.id));
-					// What a Timber session such as a rebase changed shows in the repositories. Read them all again,
+					// What a Timber session such as setup changed shows in the repositories. Read them all again,
 					// since how it ended does not say which ones it touched.
 					if (stopped) void reloadAll("all");
 				}),
@@ -1773,7 +1740,6 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		removeWorktree,
 		dismissRemoval,
 		openTerminal,
-		startRebase,
 		startSessionsIn,
 		rebaseWorktree,
 		startPullRequestForm,

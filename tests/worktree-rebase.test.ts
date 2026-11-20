@@ -147,21 +147,6 @@ describe("WorktreeCommands.rebase, with a stand-in Timber", () => {
 		await expectNotRun(commandsOn({ result: null }, { status: { state: "not-found", override: null } }), ask(), /\.$/);
 	});
 
-	test("a Timber older than the first with a result file for rebase is unsupported, and nothing runs", async () => {
-		const on = commandsOn({ result: here(recordedRebase.rebased), exitCode: 0 });
-		const old = createWorktreeCommands({
-			timber: async () => ready(on.timber.path, "0.1.1"),
-			isListed: async () => true,
-			findRepository: async () => listing([worktree]),
-			temporaryRoot: temporary,
-		});
-		const result = await old.rebase(ask());
-		if (result.outcome !== "unsupported") throw new Error(JSON.stringify(result));
-		expect(result.message).toContain("0.1.1");
-		expect(result.message.endsWith("Nothing was run.")).toBe(true);
-		expect(on.ran()).toBe(false);
-	});
-
 	test("rebases in one repository run one after another", async () => {
 		const order: string[] = [];
 		let asked = 0;

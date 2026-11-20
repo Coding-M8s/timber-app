@@ -4,11 +4,10 @@ import { describeCommandLine } from "../shared/command-line";
 import type { TimberStatus } from "../shared/model";
 import {
 	type OpenTerminalRequest, type OpenTerminalResult, type Scrollback, type SessionNaming, type TerminalChange, type TerminalOutput, type TerminalSession,
-	type TerminalSnapshot, TERMINAL_UNSUPPORTED_REASON, TIMBER_REBASE_SESSION_NAME, WORKTREE_SETUP_SESSION_NAME, clampTerminalSize, cleanSessionName, createScrollback, defaultSessionName, pickShell,
+	type TerminalSnapshot, TERMINAL_UNSUPPORTED_REASON, WORKTREE_SETUP_SESSION_NAME, clampTerminalSize, cleanSessionName, createScrollback, defaultSessionName, pickShell,
 	pickWindowsShell, sessionNameBase,
 } from "../shared/terminal";
 import { PROBE_ANSWER, type StatusRecords, type StatusScanner, createStatusRecords, createStatusScanner } from "../shared/program-status";
-import { rebaseArguments } from "../shared/rebase-command";
 import { asWin32KeyEvents } from "../shared/win32-input";
 import { isWorkflowName } from "../shared/workflows";
 import { worktreeSetupArguments } from "../shared/worktree-commands";
@@ -48,7 +47,7 @@ export interface TerminalDependencies {
 	 * Plain when left out, or when it cannot be read.
 	 */
 	sessionNaming?: () => Promise<SessionNaming>;
-	/** Where Timber is, for `timber rebase` sessions. A rebase never starts while it is not ready. */
+	/** Where Timber is, for worktree setup sessions. Setup never starts while it is not ready. */
 	timber?: () => Promise<TimberStatus>;
 	/** Hears every part of output, in order per session. */
 	onOutput: (output: TerminalOutput) => void;
@@ -185,10 +184,6 @@ function signalSession(live: Live, signal: NodeJS.Signals): void {
  *   title or a bell, never text on screen. A probe is answered on the
  *   session's input; a report sets the session's `status`. Nothing from a
  *   report is run or echoed back, and the output goes on unchanged.
- * - A Timber rebase session runs `timber rebase [--base <ref>] -- <path>`
- *   for the worktree, with the Timber the app found, in its folder
- *   (`rebaseArguments` in ../shared/rebase-command.ts). The request names
- *   only the base. What Timber prints is never read.
  * - A worktree setup session runs `timber open --setup [--workflow <name>]
  *   --no-editor --no-agent -- <path>` for the worktree, in its folder
  *   (`worktreeSetupArguments` in ../shared/worktree-commands.ts), so setup
@@ -198,8 +193,8 @@ function signalSession(live: Live, signal: NodeJS.Signals): void {
  *   folder there, gets one. Each request starts another, beside the ones the
  *   worktree has, named after the shell or the agent ("Terminal",
  *   "Terminal 2", "Codex", ...), or, as Settings says, after the worktree's
- *   branch or its issue key ("feature-login", "Codex: GH-122"). A rebase
- *   is always "Rebase". The name is set once, when the session opens.
+ *   branch or its issue key ("feature-login", "Codex: GH-122"). A setup
+ *   session is always "Setup". The name is set once, when the session opens.
  * - Output is kept, up to `SCROLLBACK_LIMIT`, so the interface can draw a
  *   session again, and is sent in numbered parts, never far ahead of what
  *   the window drew (`UNDRAWN_LIMIT`).
@@ -328,7 +323,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		return { ok: true, kind: "agent", base: agent.name, argv, command: describeCommandLine(argv) };
 	}
 
-	/** A Timber command to run in place of the shell: a rebase, with the Timber the app found. */
+	/** A Timber command to run in place of the shell: a worktree's setup, with the Timber the app found. */
 	interface TimberRun {
 		timber: string;
 		arguments: string[];
@@ -351,28 +346,22 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			agent = findAgent(saved, request.agent);
 			if (agent === null) return { outcome: "not-configured", message: `No agent called "${request.agent}" is set in Settings, Agents. Nothing was started.` };
 		}
-		// A rebase and a worktree's setup run the Timber the app found, and only that one.
+		// A worktree's setup runs the Timber the app found, and only that one.
 		let run: TimberRun | null = null;
-		if (request.timberRebase !== undefined || request.timberWorktreeSetup !== undefined) {
-			const rebase = request.timberRebase;
+		if (request.timberWorktreeSetup !== undefined) {
 			const worktreeSetup = request.timberWorktreeSetup;
 			// A workflow is only ever a workflow name, so it can never read as an option. Whether it exists is Timber's to say.
-			const readable = agent === null && (rebase === undefined) !== (worktreeSetup === undefined)
-				&& (rebase === undefined || (typeof rebase === "object" && rebase !== null && (rebase.onto === null || (typeof rebase.onto === "string" && rebase.onto !== ""))))
-				&& (worktreeSetup === undefined || (typeof worktreeSetup === "object" && worktreeSetup !== null
-					&& (worktreeSetup.workflow === undefined || isWorkflowName(worktreeSetup.workflow))));
-			const what = rebase !== undefined ? "the rebase" : "setup";
-			if (!readable) return { outcome: "failed", message: `The request for Timber ${rebase !== undefined ? "rebase" : "setup"} cannot be read. Nothing was started.` };
+			const readable = agent === null && typeof worktreeSetup === "object" && worktreeSetup !== null
+				&& (worktreeSetup.workflow === undefined || isWorkflowName(worktreeSetup.workflow));
+			if (!readable) return { outcome: "failed", message: "The request for Timber setup cannot be read. Nothing was started." };
 			let status: TimberStatus;
 			try {
 				status = await timber();
 			} catch (error) {
 				return { outcome: "failed", message: `Could not find Timber: ${messageOf(error)}. Nothing was started.` };
 			}
-			if (status.state !== "ready") return { outcome: "not-configured", message: `No usable Timber was found, so ${what} cannot start. Nothing was started.` };
-			run = rebase !== undefined
-				? { timber: status.path, arguments: rebaseArguments({ worktree: request.worktree, onto: rebase.onto }), name: TIMBER_REBASE_SESSION_NAME, what: "The rebase" }
-				: { timber: status.path, arguments: worktreeSetupArguments(request.worktree, worktreeSetup!.workflow), name: WORKTREE_SETUP_SESSION_NAME, what: "Setup" };
+			if (status.state !== "ready") return { outcome: "not-configured", message: "No usable Timber was found, so setup cannot start. Nothing was started." };
+			run = { timber: status.path, arguments: worktreeSetupArguments(request.worktree, worktreeSetup.workflow), name: WORKTREE_SETUP_SESSION_NAME, what: "Setup" };
 		}
 		// Naming is a convenience: when it cannot be read, the session is named as it always was.
 		const naming = run === null ? await sessionNaming().catch((): SessionNaming => "plain") : "plain";
