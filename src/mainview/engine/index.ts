@@ -1,5 +1,6 @@
 import type { Engine } from "../../shared/engine";
 import { browserSampleRepositories, createMockEngine, sampleTimberStatuses } from "./mock";
+import { browserSessionStorage } from "./mock-session-storage";
 
 /**
  * Pick the engine for where the interface is running. Electrobun injects
@@ -19,7 +20,10 @@ export async function createEngine(): Promise<Engine> {
 			? sampleTimberStatuses[state as keyof typeof sampleTimberStatuses]
 			: sampleTimberStatuses.ready;
 	// Acted commands take a moment here, so a dialog's running state can be seen.
-	const engine = createMockEngine(browserSampleRepositories, timber, { commandMilliseconds: 1200 });
+	// The open sessions are kept in localStorage, so a reload acts out quitting and opening the app again.
+	const engine = createMockEngine(browserSampleRepositories, timber, { commandMilliseconds: 1200, savedSessions: browserSessionStorage() });
+	// A reload or a closed tab is the quit of the browser build.
+	globalThis.addEventListener("pagehide", () => engine.saveSessionsNow());
 	// The browser console can act out what the main process would do, for example
 	// timberMock.failReads("Git is busy"), timberMock.announceChange("/work/timber"),
 	// timberMock.failTimber("/work/timber", "Not a Git repository: /work/timber"),
@@ -38,6 +42,8 @@ export async function createEngine(): Promise<Engine> {
 	// For themes: timberMock.setThemeImport(text) gives Import a file, and timberMock.exportedThemes() lists what Export wrote.
 	// For agent sessions: timberMock.missingExecutables(["codex"]) acts out an agent that is not on the PATH.
 	// For timber new typed in a terminal: timberMock.typeTimberNew("/work/timber", "feat/x", true) hands a new worktree to the app.
+	// For sessions after a restart: timberMock.saveSessionsNow() saves the open sessions as quitting does, a reload opens
+	// them again, and timberMock.missingConversations([id]) acts out a conversation that is gone.
 	// For agent status: timberMock.agentStatus(id, "state=blocked:kind=permission") acts out an OSC 7501 report,
 	// timberMock.notices() lists the desktop notifications on screen, timberMock.alertSounds() the sounds played, and timberMock.clickNotice(id) clicks one.
 	// For tasks (subagents and background tasks): type subagents in a session to act out four child records, and subagents clear to clear them.

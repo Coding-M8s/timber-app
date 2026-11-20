@@ -4,8 +4,10 @@
  * Electrobun asks the main process, without waiting, whether the app may quit
  * (`before-quit`) and whether the window may close (`will-close`). While a
  * terminal session runs and the person has not agreed, the answer is no, and
- * the window is asked to show the question. When the person agrees, every
- * session is ended and the app quits for real.
+ * the window is asked to show the question. When the person agrees, which
+ * sessions run is saved first, so they open again on the next launch (see
+ * ./session-layout.ts), then every session is ended and the app quits for
+ * real. The save is synchronous and bounded, so no timer guards it.
  *
  * A window that does not say in time that it shows the question cannot ask
  * anyone, so the app quits then too. That is also what happens when
@@ -23,6 +25,10 @@ export interface QuitGuardDependencies {
 	endAll: () => Promise<void>;
 	/** Start quitting. It asks `mayQuit` again, which then says yes. Answers whether quitting started. */
 	quit: () => boolean;
+	/** Save which sessions are open, before they end. Quick and synchronous. */
+	save?: () => void;
+	/** Quitting did not start after all. */
+	resume?: () => void;
 }
 
 export interface QuitGuard {
@@ -31,7 +37,7 @@ export interface QuitGuard {
 	 * not, the person is asked, unless a question is already on its way.
 	 */
 	mayQuit(): boolean;
-	/** The person agreed: end every session, then quit. Answers whether quitting started. */
+	/** The person agreed: save which sessions are open, end every session, then quit. Answers whether quitting started. */
 	confirm(): Promise<boolean>;
 }
 
@@ -41,10 +47,17 @@ export function createQuitGuard(dependencies: QuitGuardDependencies): QuitGuard 
 
 	async function confirm(): Promise<boolean> {
 		agreed = true;
+		// Saved while every session still runs. A save that fails must not keep the app open.
+		try {
+			dependencies.save?.();
+		} catch {
+			// The save says why itself.
+		}
 		await dependencies.endAll();
-		// Something else can still keep the app open. Then the next try asks again.
+		// Something else can still keep the app open. Then the next try asks again, and the next quit saves again.
 		if (dependencies.quit()) return true;
 		agreed = false;
+		dependencies.resume?.();
 		return false;
 	}
 

@@ -32,7 +32,7 @@ import { type PullRequestFields, defaultPullRequestTitle, presentPullRequestCrea
 import type { WorkflowList } from "../../shared/workflows";
 import type { IssueTrackers } from "../../shared/issue-trackers";
 import { type Draw, createTerminalFeed } from "../terminal-feed";
-import { describeOrphanTerminal } from "../terminal-format";
+import { describeOrphanTerminal, describeRestoreFailures } from "../terminal-format";
 import { BEING_REMOVED_REASON, describeDone, describeRemovalFailed } from "../done-format";
 import { SESSION_STARTED_DIAGNOSTIC, describeCleanUpEnded } from "../clean-up-format";
 import { listedOrder } from "../changes-format";
@@ -45,9 +45,11 @@ import { wantTerminalFocus } from "../terminal-focus";
 import { nextWaitingSession, withFinishedOrder, withWaitingOrder } from "../waiting";
 import { mergeOverlapping } from "./merge";
 import { keepEntries } from "./records";
+import { RESTORE_CONCURRENCY, RESTORE_QUIET_MILLISECONDS, type RestoreJob, restoreJobs, restoreRequest, runLimited } from "./restore";
+import type { SavedSessions } from "../../shared/saved-sessions";
 import {
 	type AppState, type ChangesView, type DialogRequest, type Operation, type PullRequestForm, type Removal, type SessionAgent, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood,
-	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, timberReady, withTerminal, withoutSession } from "./state";
+	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, shownSession, timberReady, withTerminal, withoutSession } from "./state";
 
 /**
  * The single holder of what the interface shows: Timber's status, the
@@ -556,10 +558,13 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 
 	function attend(): void {
 		if (!attending) return;
-		const selected = selectedWorktree(state);
+		const found = selectedWorktree(state);
+		const selected = found && timberReady(state) ? found : null;
 		const next: Attention = {
 			...windowState,
-			selected: selected && timberReady(state) ? { repository: selected.repository.path, worktree: selected.worktree.path } : null,
+			selected: selected ? { repository: selected.repository.path, worktree: selected.worktree.path, id: selected.worktree.id } : null,
+			// The main process keeps the shown chip of each worktree from these, for the save at quit.
+			session: selected ? shownSession(state, selected.worktree.id)?.id ?? null : null,
 		};
 		if (attended && sameAttention(attended, next)) return;
 		attended = next;
@@ -763,6 +768,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			catchUpPullRequests();
 			catchUpBackups();
 			catchUpArenas();
+			restoreOnce();
 		} catch (error) {
 			update({ error: { repository: null, message: messageOf(error) } });
 		}
@@ -1725,6 +1731,79 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		return repository?.worktrees.find(candidate => candidate.path === request.worktree)?.id ?? request.worktree;
 	}
 
+	/*
+	 * Opening the sessions of the last run again (see ./restore.ts and docs/architecture.md, "After a restart"). Once
+	 * per store, when the first full list read ended well and the first list of sessions is in. The engine answers
+	 * the saved sessions once per run, so a reloaded window opens nothing twice. The selected worktree goes first,
+	 * then a few worktrees at a time, the sessions of each one after another, so chips keep their order. Each opens
+	 * through the engine's ordinary `openTerminal`, which makes every check. Nothing here waits for it.
+	 */
+	let restoreAsked = false;
+	let terminalsListed = false;
+	/** Sessions opened again, and until when their new output is not marked unseen. */
+	const quietUntil = new Map<string, number>();
+
+	function restoreOnce(): void {
+		if (restoreAsked || !terminalsListed || !state.loaded) return;
+		restoreAsked = true;
+		Promise.resolve().then(() => engine.takeSavedSessions()).then(saved => {
+			if (saved) void restoreSaved(saved);
+		}, () => {
+			// Nothing to open again: the app starts as it always did.
+		});
+	}
+
+	interface RestoreFailure { worktree: string; agent: string | null; message: string }
+
+	async function restoreSaved(saved: SavedSessions): Promise<void> {
+		if (saved.selected !== undefined && selectionFor(state.repositories, saved.selected)) {
+			select(saved.selected);
+			wantTerminalFocus(saved.selected);
+		}
+		const failures: RestoreFailure[] = [];
+		const jobs = restoreJobs(saved, state.repositories);
+		await runLimited(jobs.map(job => () => restoreWorktree(job, failures)), RESTORE_CONCURRENCY);
+		if (failures.length === 0) return;
+		showToast(describeRestoreFailures(failures.length), true);
+		const selected = state.selection?.worktree;
+		const here = failures.find(failure => failure.worktree === selected);
+		if (here) update({ terminalProblem: { worktree: here.worktree, agent: here.agent, message: here.message, command: null } });
+	}
+
+	async function restoreWorktree(job: RestoreJob, failures: RestoreFailure[]): Promise<void> {
+		const chosen = state.shownSessions[job.worktreeId];
+		const opened: (string | null)[] = [];
+		for (const saved of job.sessions) {
+			// Nothing new starts in a folder that is being deleted.
+			if (isBeingRemoved(state, job.repository, job.path)) return;
+			const agent = saved.kind === "agent" ? saved.agent : null;
+			let message: string;
+			try {
+				// Straight to the engine: the store's own openTerminal would show each new chip and report each problem.
+				const result = await engine.openTerminal(restoreRequest(job, saved));
+				if (result.outcome === "opened") {
+					const { session } = result;
+					quietUntil.set(session.id, Date.now() + RESTORE_QUIET_MILLISECONDS);
+					// The engine reports the session as it changes, and may have reported it ended before this answer: that report is newer.
+					const known = state.terminals.some(candidate => candidate.id === session.id);
+					update({ terminals: known ? state.terminals : withTerminal(state.terminals, session.id, session), unseenSessions: state.unseenSessions.filter(id => id !== session.id) });
+					opened.push(session.id);
+					continue;
+				}
+				message = result.message;
+			} catch (error) {
+				message = `The app did not hear whether ${agent ?? "the terminal"} started: ${messageOf(error)}`;
+			}
+			opened.push(null);
+			failures.push({ worktree: job.worktreeId, agent, message });
+		}
+		// The person's own choice of chip meanwhile wins. Otherwise the saved one shows, or the nearest one before it that opened.
+		if (state.shownSessions[job.worktreeId] !== chosen) return;
+		const shown = opened[job.shown] ?? opened.slice(0, job.shown).reverse().find(id => id !== null) ?? opened.find(id => id !== null);
+		const exists = shown && state.terminals.some(session => session.id === shown);
+		if (exists) update({ shownSessions: { ...state.shownSessions, [job.worktreeId]: shown } });
+	}
+
 	/** The request for a session being answered in each worktree, by `terminalKey`. */
 	const askingTerminal = new Map<string, Promise<void>>();
 
@@ -2160,6 +2239,12 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 					if (!watched.has(part.id)) engine.drawnTerminal(part.id, part.seq);
 					// A chip marks a session that printed while it was not on screen.
 					if (part.data === "" || state.unseenSessions.includes(part.id) || sessionOnScreen(state)?.id === part.id) return;
+					// A session opened again after a restart prints as it starts, which is not news.
+					const quiet = quietUntil.get(part.id);
+					if (quiet !== undefined) {
+						if (quiet > Date.now()) return;
+						quietUntil.delete(part.id);
+					}
 					if (state.terminals.some(session => session.id === part.id)) update({ unseenSessions: [...state.unseenSessions, part.id] });
 				}),
 				engine.onQuitRequested(live => update({ quitRequest: live })),
@@ -2203,6 +2288,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				update({ terminals, unseenSessions: state.unseenSessions.filter(id => terminals.some(session => session.id === id)) });
 				// A Timber session that stopped before the sessions were listed may have changed things after the repositories were read.
 				if (stopped) void reloadAll("all");
+				terminalsListed = true;
+				restoreOnce();
 			};
 			engine.listTerminals().then(settle, () => settle(state.terminals));
 			attending = true;

@@ -1146,17 +1146,17 @@ describe("telling the engine what the window attends to", () => {
 
 		const stop = store.start();
 		// Timber is not known yet, so nothing is selected.
-		expect(engine.attention()).toEqual({ visible: true, focused: false, selected: null });
+		expect(engine.attention()).toEqual({ visible: true, focused: false, selected: null, session: null });
 		await settle();
 		const first = store.getState().selection;
 		expect(first).not.toBeNull();
-		expect(engine.attention()?.selected).toEqual({ repository: TIMBER, worktree: TIMBER });
+		expect(engine.attention()?.selected).toEqual({ repository: TIMBER, worktree: TIMBER, id: TIMBER_ID });
 
 		store.select(FEATURE_ID);
-		expect(engine.attention()).toEqual({ visible: true, focused: false, selected: { repository: TIMBER, worktree: FEATURE } });
+		expect(engine.attention()).toEqual({ visible: true, focused: false, selected: { repository: TIMBER, worktree: FEATURE, id: FEATURE_ID }, session: null });
 
 		store.windowChanged({ visible: false, focused: false });
-		expect(engine.attention()).toEqual({ visible: false, focused: false, selected: { repository: TIMBER, worktree: FEATURE } });
+		expect(engine.attention()).toEqual({ visible: false, focused: false, selected: { repository: TIMBER, worktree: FEATURE, id: FEATURE_ID }, session: null });
 
 		stop();
 		store.windowChanged({ visible: true, focused: true });
@@ -1191,6 +1191,6 @@ describe("telling the engine what the window attends to", () => {
 		expect(store.getState().loaded).toBe(true);
 		broken = false;
 		store.select(FEATURE_ID);
-		expect(told).toEqual([{ visible: true, focused: true, selected: { repository: TIMBER, worktree: FEATURE } }]);
+		expect(told).toEqual([{ visible: true, focused: true, selected: { repository: TIMBER, worktree: FEATURE, id: FEATURE_ID }, session: null }]);
 	});
 });

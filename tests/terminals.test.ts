@@ -8,7 +8,7 @@ import { type TerminalDependencies, type TerminalSessions, createTerminalSession
 import type { Repository } from "../src/shared/model";
 import { describeSearchPath } from "../src/shared/search-path";
 import { PROBE_ANSWER } from "../src/shared/program-status";
-import { CHOP_NOT_TYPED, PASTE_NOT_READY, type SessionNaming, type TerminalChange, type TerminalOutput, TERMINAL_UNSUPPORTED_REASON, bracketedPaste } from "../src/shared/terminal";
+import { CHOP_NOT_TYPED, PASTE_NOT_READY, type SessionNaming, type TerminalChange, type TerminalOutput, TERMINAL_UNSUPPORTED_REASON, WORKTREE_SETUP_SESSION_NAME, bracketedPaste } from "../src/shared/terminal";
 
 /** A short review as it is pasted. */
 const PASTED = "Review notes\n\nsrc/a.ts:2\n> +x\nFix this.";
@@ -830,6 +830,162 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 				const result = await sessions.open({ repository, worktree: unlisted, cols: 80, rows: 24, arenaAttempt: wanted });
 				expect(result.outcome === "not-listed" && result.message).toContain("codex-1 was not started.");
 			});
+		});
+	});
+
+	describe("sessions that come back after a restart", () => {
+		const NEW = "aaaaaaaa-0000-4000-8000-000000000001";
+		const OLD = "bbbbbbbb-0000-4000-8000-000000000002";
+		const GONE = "cccccccc-0000-4000-8000-000000000003";
+		const NOTE = "The saved conversation was not found, so";
+
+		/** Pretend `claude`, `codex`, and `timber` that print their arguments, then wait as a shell. */
+		function resumeBin(): string {
+			const bin = join(root, "resume bin");
+			mkdirSync(bin, { recursive: true });
+			for (const name of ["claude", "codex", "timber"]) {
+				writeFileSync(join(bin, name), `#!/bin/sh\necho "ARGS:$*"\nexec /bin/sh\n`);
+				chmodSync(join(bin, name), 0o755);
+			}
+			return bin;
+		}
+
+		function startResumable(agents = [{ name: "Claude Code", command: "claude --model opus" }, { name: "Codex", command: "codex" }, { name: "Aider", command: "/bin/sh" }]) {
+			const bin = resumeBin();
+			const existing = new Set([OLD]);
+			const asked: string[] = [];
+			start({
+				environment: { PATH: `${bin}:${process.env.PATH}`, HOME: root, SHELL: "/bin/sh", PS1: "$ ", LANG: "C.UTF-8" },
+				agents: async () => agents,
+				timber: async () => ({ state: "ready", path: join(bin, "timber"), version: "0.1.1" }),
+				conversations: {
+					claudeExists: id => (asked.push(`claude:${id}`), existing.has(id)),
+					codexExists: id => (asked.push(`codex:${id}`), existing.has(id)),
+					newId: () => NEW,
+				},
+				now: () => 1234,
+			});
+			return { asked };
+		}
+
+		async function openWith(extra: { agent?: string; resume?: string; name?: string; timberWorktreeSetup?: Record<string, never> }) {
+			const result = await sessions.open({ repository, worktree, cols: 80, rows: 24, ...extra });
+			if (result.outcome !== "opened") throw new Error(`Not opened: ${JSON.stringify(result)}`);
+			return result.session;
+		}
+
+		const shows = async (id: string, text: string) => {
+			const found = await until(() => printed(id).includes(text));
+			if (!found) throw new Error(`Did not see ${text}. Printed: ${JSON.stringify(printed(id))}`);
+		};
+
+		test("a fresh Claude Code gets an id of the app's choosing", async () => {
+			startResumable();
+			const session = await openWith({ agent: "Claude Code" });
+			await shows(session.id, `ARGS:--model opus --session-id ${NEW}`);
+			expect(session.command).toBe(`'${join(root, "resume bin", "claude")}' --model opus --session-id ${NEW}`);
+			expect(sessions.running()).toEqual([{ id: session.id, worktree: `id:${worktree}`, path: worktree, kind: "agent", agent: "Claude Code", resumable: "claude", conversation: NEW, startedAt: 1234, name: null }]);
+		});
+
+		test("Claude Code goes back to a conversation that is there", async () => {
+			startResumable();
+			const session = await openWith({ agent: "Claude Code", resume: OLD });
+			await shows(session.id, `ARGS:--model opus --resume ${OLD}`);
+			expect(sessions.running()[0]!.conversation).toBe(OLD);
+			expect(printed(session.id)).not.toContain("started fresh");
+			expect(printed(session.id)).not.toContain("--session-id");
+		});
+
+		test("a conversation that is gone starts fresh and says so", async () => {
+			startResumable();
+			const session = await openWith({ agent: "Claude Code", resume: GONE });
+			await shows(session.id, `--session-id ${NEW}`);
+			expect(printed(session.id)).toContain("The saved conversation was not found, so Claude Code started fresh.");
+			// The note comes first, and is kept for drawing the session again.
+			expect(printed(session.id).indexOf(NOTE)).toBeLessThan(printed(session.id).indexOf("ARGS:"));
+			expect(sessions.read(session.id)!.data).toContain(NOTE);
+			expect(sessions.running()[0]!.conversation).toBe(NEW);
+		});
+
+		test("Codex resumes with its subcommand, and starts plain otherwise", async () => {
+			const { asked } = startResumable();
+			const resumed = await openWith({ agent: "Codex", resume: OLD });
+			await shows(resumed.id, `ARGS:resume ${OLD}`);
+			const plain = await openWith({ agent: "Codex" });
+			await shows(plain.id, "ARGS:\r\n");
+			const gone = await openWith({ agent: "Codex", resume: GONE });
+			await shows(gone.id, "ARGS:\r\n");
+			expect(printed(gone.id)).toContain("The saved conversation was not found, so Codex started fresh.");
+			expect(printed(plain.id)).not.toContain(NOTE);
+			expect(sessions.running().map(session => session.conversation)).toEqual([OLD, null, null]);
+			// Each agent's id is looked for only in that agent's own folder.
+			expect(asked).toEqual([`codex:${OLD}`, `codex:${GONE}`]);
+		});
+
+		test("an agent the app cannot resume starts as typed, and says so when a conversation was asked for", async () => {
+			startResumable();
+			const session = await openWith({ agent: "Aider", resume: OLD });
+			expect(session.command).toBe("/bin/sh");
+			await shows(session.id, "The saved conversation was not found, so Aider started fresh.");
+			expect(sessions.running()[0]).toMatchObject({ agent: "Aider", resumable: null, conversation: null });
+		});
+
+		test("an id that is not a UUID never reaches the command line", async () => {
+			const { asked } = startResumable();
+			const session = await openWith({ agent: "Claude Code", resume: "--dangerously-skip-permissions" });
+			await shows(session.id, `--session-id ${NEW}`);
+			expect(session.command).not.toContain("dangerously");
+			expect(printed(session.id)).not.toContain("dangerously");
+			expect(printed(session.id)).not.toContain(NOTE);
+			expect(asked).toEqual([]);
+			const odd = await openWith({ agent: "Codex", resume: 42 as unknown as string });
+			await shows(odd.id, "ARGS:\r\n");
+		});
+
+		test("a command that already picks a conversation is left alone", async () => {
+			startResumable([{ name: "Pinned", command: "claude --continue" }]);
+			const session = await openWith({ agent: "Pinned" });
+			await shows(session.id, "ARGS:--continue\r\n");
+			expect(session.command).not.toContain("--session-id");
+			expect(sessions.running()[0]!.conversation).toBeNull();
+		});
+
+		test("a saved name comes back, a default one is made again", async () => {
+			startResumable();
+			const named = await openWith({ name: "dev   server" });
+			expect(named.name).toBe("dev server");
+			const plain = await openWith({});
+			expect(sessions.running().map(session => session.name)).toEqual(["dev server", null]);
+			sessions.rename(plain.id, "x");
+			expect(sessions.running().map(session => session.name)).toEqual(["dev server", "x"]);
+			// A name that is taken in the worktree is numbered as a default is.
+			expect((await openWith({ name: "dev server" })).name).toBe("dev server 2");
+			// Nothing to clean is no name.
+			expect((await openWith({ name: " \n " })).name).toBe("Terminal");
+			const setup = await openWith({ timberWorktreeSetup: {}, name: "mine" });
+			expect(setup.name).toBe(WORKTREE_SETUP_SESSION_NAME);
+		});
+
+		test("only running terminals and agents are listed, in order", async () => {
+			startResumable();
+			const terminal = await openWith({});
+			const agent = await openWith({ agent: "Codex" });
+			const setup = await openWith({ timberWorktreeSetup: {} });
+			expect(setup.kind).toBe("timber");
+			expect(sessions.running().map(session => session.id)).toEqual([terminal.id, agent.id]);
+			sessions.write(terminal.id, "exit\r");
+			expect(await until(() => sessions.list().find(session => session.id === terminal.id)?.state.kind === "exited")).toBe(true);
+			expect(sessions.running().map(session => session.id)).toEqual([agent.id]);
+		});
+
+		test("the shell needs no conversation", async () => {
+			const { asked } = startResumable();
+			const session = await openWith({ resume: OLD });
+			expect(session.kind).toBe("terminal");
+			await run(session.id, "echo ready-$((3+4))", "ready-7");
+			expect(printed(session.id)).not.toContain(NOTE);
+			expect(sessions.running()[0]!.conversation).toBeNull();
+			expect(asked).toEqual([]);
 		});
 	});
 });

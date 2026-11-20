@@ -100,6 +100,20 @@ export interface OpenTerminalRequest {
 	 * top-level `agent`, `timberWorktreeSetup`, or `arenaAttempt`.
 	 */
 	workflowAgent?: { workflow: string; agent?: string };
+	/**
+	 * For an agent from Settings: the conversation to go back to, as saved
+	 * when the app last quit. Only a UUID is read. The main process resumes
+	 * it when the agent is one it can resume and the conversation is still
+	 * there, and otherwise starts the agent fresh and says so in the
+	 * terminal. Not for a shell, a Timber command, an arena attempt, or a
+	 * workflow's own agent.
+	 */
+	resume?: string;
+	/**
+	 * The name the person gave this session before the app quit, in place of
+	 * the default. Cleaned as a rename is. Not for a Timber command.
+	 */
+	name?: string;
 }
 
 export type OpenTerminalResult =
@@ -356,10 +370,11 @@ export function describeTerminalExit(state: Extract<TerminalState, { kind: "exit
 
 /** The question before quitting while sessions run. */
 export function describeQuitRequest(live: number): { title: string; text: string } {
-	const count = live === 1 ? "A session is" : `${live} sessions are`;
 	return {
 		title: "Quit Timber?",
-		text: `${count} still running. Quitting ends ${live === 1 ? "it" : "them"} and everything running in ${live === 1 ? "it" : "them"}.`,
+		text: live === 1
+			? "A session is still running. Quitting stops it and everything running in it. It opens again when Timber does, and an agent goes back to its conversation."
+			: `${live} sessions are still running. Quitting stops them and everything running in them. They open again when Timber does, and agents go back to their conversations.`,
 	};
 }
 

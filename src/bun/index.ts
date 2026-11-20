@@ -47,6 +47,8 @@ import { createRefreshPolicy } from "./refresh-policy";
 import { type WatchTarget, createRepositoryWatcher } from "./repository-watcher";
 import { createWorktreeStamps } from "./worktree-stamp";
 import { createTerminalSessions } from "./terminals";
+import { claudeConfigFolder, claudeConversationExists, codexConversationExists, codexHomeFolder, findCodexConversation } from "./agent-conversations";
+import { createSessionLayout, sessionsFilePath } from "./session-layout";
 import { createDesktopNotices } from "./desktop-notices";
 import { type AlertSettings, createAlertRunner } from "../shared/status-notices";
 import { sessionBusAddress } from "./dbus";
@@ -138,6 +140,17 @@ const pace = createListingPace({
 const listings = createRecentListings(createRepositoryReader(() => timber.current()), { listing: pace.listing });
 const repositories = createRepositoryList({ settingsFile, settings, pickFolder, reader: listings });
 const layout = createSavedLayout(settings);
+/*
+ * The sessions that ran when the app last quit open again (see ./session-layout.ts and docs/architecture.md, "After a
+ * restart"). The file is read now, the window takes it once, and it is written only at quit. `terminals` is made
+ * further down; the save only runs at quit.
+ */
+const sessionLayout = createSessionLayout({
+	file: sessionsFilePath(settingsFile),
+	running: () => terminals.running(),
+	findCodex: options => findCodexConversation({ homeFolder: codexHomeFolder(process.env, homedir()), ...options }),
+});
+await sessionLayout.load();
 const preferences = createSavedPreferences(settings);
 const themeFiles = createThemeFiles({ pickFolder, pickFile });
 // New, open, rebase, and restoring or deleting a backup run one at a time in each repository.
@@ -364,6 +377,12 @@ const terminals = createTerminalSessions({
 	arenaLaunch: request => arenas.launch(request),
 	// A workflow's agent comes from Timber's settings as read now, never from the window. Never log it (see ./workflows.ts).
 	workflows: repository => workflows.list(repository),
+	// An agent goes back to its own conversation only when that is still in the agent's own folder. Nothing there is written.
+	conversations: {
+		claudeExists: id => claudeConversationExists(id, claudeConfigFolder(process.env, homedir())),
+		codexExists: id => codexConversationExists(id, codexHomeFolder(process.env, homedir())),
+		newId: () => crypto.randomUUID(),
+	},
 	onOutput: output => tell("terminal output", () => rpc.send.terminalOutput(output)),
 	onChange: change => {
 		tell("a terminal change", () => rpc.send.terminalChanged(change));
@@ -380,12 +399,19 @@ const quitGuard = createQuitGuard({
 	ask: live => rpc.request.askQuit({ live }, { maxRequestTime: 2000 }),
 	endAll: () => terminals.closeAll(),
 	quit: () => Utils.quit(),
+	// Which sessions run is saved before they end, so they open again on the next launch.
+	save: () => sessionLayout.save(),
+	resume: () => sessionLayout.resume(),
 });
 
 // Runs the uninstaller the installer left beside the app, and nothing else (see ./uninstall.ts).
 const uninstaller = createUninstaller({
 	settingsFolder: dirname(settingsFile),
-	forgetSettings: () => settings.discard(),
+	// The sessions file goes first: the settings folder is removed only when nothing else is in it.
+	forgetSettings: async () => {
+		sessionLayout.discard();
+		await settings.discard();
+	},
 	// The person agreed to quit when they agreed to uninstall, so the terminals end without another question.
 	quit: () => void quitGuard.confirm(),
 });
@@ -488,6 +514,8 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			// Starts the person's shell with a chop's text typed in, the text read here, never sent by the window (see ./chops.ts).
 			runChop: request => chops.run(request),
 			listTerminals: () => terminals.list(),
+			// Answered once per run, so a reloaded window opens nothing twice. Each is opened with openTerminal, which checks it.
+			takeSavedSessions: () => sessionLayout.take(),
 			// Starts a shell, an agent from the saved Settings, or timber rebase, only in a worktree Timber lists (see ./terminals.ts).
 			openTerminal: request => terminals.open(request),
 			readTerminal: ({ id }) => terminals.read(id),
@@ -518,6 +546,8 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			terminalDrawn: ({ id, seq }) => terminals.drawn(id, seq),
 			attend: next => {
 				attention = next;
+				// The selected worktree and its shown chip, for the save at quit.
+				sessionLayout.attend(next);
 				alerts.review();
 				refreshPolicy.attend(next);
 				fetcher.setVisible(next.visible);
@@ -534,11 +564,15 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 repositoryChanges.subscribe(path => tell(`a change in ${path}`, () => rpc.send.repositoryChanged({ path })));
 
 type Veto = { response?: { allow: boolean } };
-// Quitting while terminals run waits for the person (see ./quit-guard.ts). When it goes ahead, every session ends with it.
+// Quitting while terminals run waits for the person (see ./quit-guard.ts). When it goes ahead, the open sessions are saved,
+// then every session ends with it.
 // SIGINT and SIGTERM arrive here as the same request: the app's code runs in a Worker, where signal listeners never run,
 // and Electrobun's native side turns the signal into a quit request. So they ask too.
 function guardQuit(event: unknown): void {
 	if (quitGuard.mayQuit()) {
+		// Saved before anything ends. After an agreed quit this was done already and does nothing; with nothing running it
+		// writes the empty layout, so closed sessions stay closed.
+		sessionLayout.save();
 		// The app goes away in a moment, so there is no time to wait for anything to end by itself.
 		terminals.killAll();
 		alerts.stop();

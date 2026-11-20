@@ -145,8 +145,8 @@ describe("createListingPace", () => {
 });
 
 describe("the pace behind the refresh policy", () => {
-	const shown: Attention = { visible: true, focused: true, selected: { repository: A, worktree: A } };
-	const hidden: Attention = { visible: false, focused: false, selected: { repository: A, worktree: A } };
+	const shown: Attention = { visible: true, focused: true, selected: { repository: A, worktree: A, id: A }, session: null };
+	const hidden: Attention = { visible: false, focused: false, selected: { repository: A, worktree: A, id: A }, session: null };
 
 	function wired() {
 		const clock = manualClock();

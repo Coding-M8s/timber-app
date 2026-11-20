@@ -133,6 +133,7 @@ export function createDesktopEngine(): Engine {
 		// The main process reads the chops and the list first.
 		runChop: request => rpc.request.runChop(request, { maxRequestTime: 60_000 }),
 		listTerminals: () => rpc.request.listTerminals({}),
+		takeSavedSessions: () => rpc.request.takeSavedSessions({}),
 		// The main process reads the list first.
 		openTerminal: request => rpc.request.openTerminal(request, { maxRequestTime: 60_000 }),
 		readTerminal: id => rpc.request.readTerminal({ id }),

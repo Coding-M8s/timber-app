@@ -104,6 +104,7 @@ export type AppRPC = {
 			listChops: { params: ChopsRequest; response: Answer<"listChops"> };
 			runChop: { params: RunChopRequest; response: Answer<"runChop"> };
 			listTerminals: { params: {}; response: Answer<"listTerminals"> };
+			takeSavedSessions: { params: {}; response: Answer<"takeSavedSessions"> };
 			openTerminal: { params: OpenTerminalRequest; response: Answer<"openTerminal"> };
 			readTerminal: { params: { id: string }; response: Answer<"readTerminal"> };
 			renameTerminal: { params: { id: string; name: string }; response: Answer<"renameTerminal"> };

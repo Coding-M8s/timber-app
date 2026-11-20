@@ -42,7 +42,7 @@ describe("the store's ports", () => {
 		await store.readPorts(TIMBER, LOOKUP.id);
 		const before = store.getState().ports[LOOKUP.path];
 		const reads = engine.portReads();
-		engine.attend({ visible: false, focused: false, selected: null });
+		engine.attend({ visible: false, focused: false, selected: null, session: null });
 		engine.setDocker("stopped");
 		await store.readPorts(TIMBER, LOOKUP.id);
 		expect(engine.portReads()).toBe(reads);

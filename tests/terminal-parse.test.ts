@@ -72,8 +72,8 @@ describe("terminal rules", () => {
 	});
 
 	test("the question before quitting counts the terminals", () => {
-		expect(describeQuitRequest(1).text).toBe("A session is still running. Quitting ends it and everything running in it.");
-		expect(describeQuitRequest(3).text).toBe("3 sessions are still running. Quitting ends them and everything running in them.");
+		expect(describeQuitRequest(1).text).toBe("A session is still running. Quitting stops it and everything running in it. It opens again when Timber does, and an agent goes back to its conversation.");
+		expect(describeQuitRequest(3).text).toBe("3 sessions are still running. Quitting stops them and everything running in them. They open again when Timber does, and agents go back to their conversations.");
 	});
 });
 

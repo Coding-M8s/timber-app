@@ -25,6 +25,7 @@ import { type PullRequestEnding, actOutPullRequest, isPullRequestEnding } from "
 import type { CreatePullRequestResult } from "../../shared/timber-pr";
 import { type MockFileChange, derivedFileChanges, diffMockFileChange, listMockFileChanges } from "./mock-file-changes";
 import { MOCK_PATH, type TerminalControls, createMockTerminals } from "./mock-terminals";
+import type { MockSessionStorage } from "./mock-session-storage";
 import { type TimberConfigControls, createMockTimberConfig } from "./mock-timber-config";
 import { type IssueTrackerControls, createMockIssueTrackers } from "./mock-issue-trackers";
 import type { TimberConfigScope } from "../../shared/timber-config";
@@ -493,6 +494,10 @@ export const sampleUninstallPlan: AvailableUninstallPlan = {
 export interface MockEngineOptions {
 	/** How long an acted `timber new` or `timber open` takes. None by default; the browser build waits, so the running state shows. */
 	commandMilliseconds?: number;
+	/** Where the mock keeps the open sessions between runs. A second engine made with the same storage is the app after a restart. Memory of its own when left out. */
+	savedSessions?: MockSessionStorage;
+	/** How long an acted openTerminal takes. None by default. */
+	terminalMilliseconds?: number;
 }
 
 /** A command the mock did not act out, with the reason. */
@@ -793,13 +798,16 @@ export function createMockEngine(
 		for (const [key, repository] of onDisk) onDisk.set(key, saved(repository));
 	};
 	// As the main process does: only a worktree listed right now, whose folder is there.
-	const terminals = createMockTerminals((path, worktreePath) => {
+	const { attendSessions, ...terminals } = createMockTerminals((path, worktreePath) => {
 		const repository = current.find(candidate => candidate.path === path && candidate.available);
 		const worktree = timberFailures.has(path) ? undefined : repository?.worktrees.find(candidate => candidate.path === worktreePath);
 		return worktree && worktree.pathExists ? worktree : null;
 	}, () => preferences.agents, () => typeof timber === "function" ? timber() : timber, () => preferences.sessionNames, (...asked) => arenas.arenaLaunch(...asked),
 	// Read when a workflow's agent starts, as the main process reads Timber's settings again then.
-	repository => workflows.listWorkflows(repository));
+	repository => workflows.listWorkflows(repository), {
+		...(options.savedSessions ? { savedSessions: options.savedSessions } : {}),
+		...(options.terminalMilliseconds ? { terminalMilliseconds: options.terminalMilliseconds } : {}),
+	});
 	// As the main process does, every change is weighed for a desktop notification and a sound, which are only kept here.
 	const alertSettings = (): AlertSettings => ({ notify: preferences.statusNotifications, notifyStates: preferences.notifyStates, soundStates: preferences.soundStates });
 	const alerts = createAlertRunner({
@@ -962,6 +970,8 @@ export function createMockEngine(
 		readyCalls: () => ready,
 		attend(attention) {
 			attended = attention;
+			// As the main process does, for the save at quit: the selected worktree and the chip that shows there.
+			attendSessions(attention);
 			alerts.review();
 		},
 		onRepositoryChanged(listener) {

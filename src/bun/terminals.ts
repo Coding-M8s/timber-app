@@ -1,6 +1,8 @@
 import { accessSync, constants } from "node:fs";
 import { type ArenaLaunch, isArenaName, isAttemptLabel } from "../shared/arenas";
+import { homedir } from "node:os";
 import { type AgentSetting, agentCommand, findAgent } from "../shared/agent";
+import { type ResumableAgent, agentStartArguments, conversationMissingNote, resumableAgent } from "../shared/agent-resume";
 import { describeCommandLine } from "../shared/command-line";
 import type { TimberStatus } from "../shared/model";
 import {
@@ -12,8 +14,10 @@ import { recordsForWindow } from "../shared/session-status";
 import { PROBE_ANSWER, type StatusRecords, type StatusScanner, createStatusRecords, createStatusScanner } from "../shared/program-status";
 import { HANDOFF_VARIABLE } from "../shared/handoff";
 import { asWin32KeyEvents } from "../shared/win32-input";
+import { isConversationId } from "../shared/saved-sessions";
 import { type Workflow, type WorkflowList, isWorkflowName } from "../shared/workflows";
 import { worktreeSetupArguments } from "../shared/worktree-commands";
+import { claudeConfigFolder, claudeConversationExists, codexConversationExists, codexHomeFolder } from "./agent-conversations";
 import { type ExecutableWords, findExecutable, isWindowsBatch } from "./find-executable";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
 import { killProcessTree, sessionMembers, signalEach, signalGroup } from "./process-session";
@@ -102,6 +106,18 @@ export interface TerminalDependencies {
 	 * pass null to see the refusal, or another way to start.
 	 */
 	startTerminal?: StartPseudoTerminal | null;
+	/**
+	 * Whether an agent's own conversation is still there, and a new id for
+	 * one that starts fresh (see ./agent-conversations.ts). By default the
+	 * folders the environment names, or those in the home folder.
+	 */
+	conversations?: {
+		claudeExists: (id: string) => boolean;
+		codexExists: (id: string) => boolean;
+		newId: () => string;
+	};
+	/** The clock, for when a session started. */
+	now?: () => number;
 	/** Tests change the waits and the limit. */
 	closeMilliseconds?: number;
 	flushMilliseconds?: number;
@@ -164,6 +180,8 @@ export interface TerminalSessions {
 	liveCount(): number;
 	/** Each running session's shell, which leads the session's processes, for looking up what they listen on. Read-only. */
 	leaders(): SessionLeader[];
+	/** Every running terminal and agent session in chip order, as the quit save needs them. */
+	running(): RunningSession[];
 }
 
 /** A running session and the process that leads its process session. */
@@ -173,6 +191,25 @@ export interface SessionLeader {
 	/** The worktree's registered path. */
 	path: string;
 	pid: number;
+}
+
+/** A running terminal or agent session, as the quit save needs it (see ./session-layout.ts). */
+export interface RunningSession {
+	id: string;
+	/** The worktree's id (`Worktree.id`). */
+	worktree: string;
+	/** The worktree's registered path, where the session started. */
+	path: string;
+	kind: "terminal" | "agent";
+	/** The agent's name in Settings, for an agent. */
+	agent: string | null;
+	/** Whether, and how, the agent can go back to its conversation. */
+	resumable: ResumableAgent | null;
+	/** The agent's own conversation id, when it is known. */
+	conversation: string | null;
+	startedAt: number;
+	/** The session's name, only when the person gave it one. */
+	name: string | null;
 }
 
 interface Live {
@@ -205,6 +242,14 @@ interface Live {
 	statusChanged: boolean;
 	/** A chop's text still to type, and the timer that types it line by line if bracketed paste never comes. Null once typed, or for any other session. */
 	chop: { text: string; timer: ReturnType<typeof setTimeout> | null; deadline: number } | null;
+	/** The agent's name in Settings, or null for a shell or a Timber command. */
+	agent: string | null;
+	resumable: ResumableAgent | null;
+	/** The agent's own conversation id, when it is known. */
+	conversation: string | null;
+	startedAt: number;
+	/** Whether the name is one the person gave, not a default. */
+	renamed: boolean;
 }
 
 /**
@@ -360,6 +405,15 @@ export function sessionEnvironment(environment: Record<string, string | undefine
  *   "Terminal 2", "Codex", ...), or, as Settings says, after the worktree's
  *   branch or its issue key ("feature-login", "Codex: GH-122"). A setup
  *   session is always "Setup". The name is set once, when the session opens.
+ * - A session opened again after a restart may bring the name the person
+ *   gave it, and an agent the id of its own conversation. Claude Code goes
+ *   back to it with `--resume <id>` and Codex with `resume <id>`, only when
+ *   the conversation is still in the agent's own folder; otherwise the agent
+ *   starts fresh and its terminal says so. A fresh Claude Code gets
+ *   `--session-id` with a new id, so its conversation is known from the
+ *   start. The id is read only as a UUID, and only ever follows a flag the
+ *   app adds itself (see ../shared/agent-resume.ts). A command that already
+ *   picks a conversation, or any other agent, starts as typed.
  * - Output is kept, up to `SCROLLBACK_LIMIT`, so the interface can draw a
  *   session again, and is sent in numbered parts, never far ahead of what
  *   the window drew (`UNDRAWN_LIMIT`).
@@ -385,7 +439,13 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		workflows = async (): Promise<WorkflowList> => ({ ok: false, message: "Workflows cannot be read here." }),
 		startTerminal = startPseudoTerminal(platform),
 		closeMilliseconds = CLOSE_MILLISECONDS, flushMilliseconds = FLUSH_MILLISECONDS, undrawnLimit = UNDRAWN_LIMIT, chopWaitMilliseconds = CHOP_WAIT_MILLISECONDS, chopQuietMilliseconds = CHOP_QUIET_MILLISECONDS,
+		now = Date.now,
 	} = dependencies;
+	const conversations = dependencies.conversations ?? {
+		claudeExists: (id: string) => claudeConversationExists(id, claudeConfigFolder(environment, environment.HOME || homedir())),
+		codexExists: (id: string) => codexConversationExists(id, codexHomeFolder(environment, environment.HOME || homedir())),
+		newId: () => crypto.randomUUID(),
+	};
 	const windows = platform === "win32";
 	/** ConPTY drops an OSC written as it is, so on Windows the answer goes in as typed keys. */
 	const probeAnswer = windows ? asWin32KeyEvents(PROBE_ANSWER) : PROBE_ANSWER;
@@ -492,17 +552,30 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 
 	/** What a session starts with: the shell, or an agent's executable as found on the PATH, with its arguments. */
 	type Start =
-		| { ok: true; kind: TerminalSession["kind"]; base: string; argv: string[]; command: string; environment?: Record<string, string>; unset?: string[] }
+		| {
+			ok: true; kind: TerminalSession["kind"]; base: string; argv: string[]; command: string; environment?: Record<string, string>; unset?: string[];
+			resumable: ResumableAgent | null; conversation: string | null;
+			/** A conversation was asked for and could not be gone back to. */
+			missing: boolean;
+		}
 		| { ok: false; result: OpenTerminalResult };
 
-	function startOf(launch: AgentLaunch | null, run: TimberRun | null): Start {
+	const plain = { resumable: null, conversation: null, missing: false } as const;
+
+	/**
+	 * What a session starts with. `resume` is a saved conversation, and
+	 * `settings` says the launch is an agent from Settings: only such an agent
+	 * gets the words that pick its conversation, never a workflow's own agent
+	 * or an arena attempt, whose commands come from Timber.
+	 */
+	function startOf(launch: AgentLaunch | null, run: TimberRun | null, resume: string | null, settings: boolean): Start {
 		if (run !== null) {
 			const argv = [run.timber, ...run.arguments];
-			return { ok: true, kind: "timber", base: run.name, argv, command: describeCommandLine(argv) };
+			return { ok: true, kind: "timber", base: run.name, argv, command: describeCommandLine(argv), ...plain };
 		}
 		if (launch === null) {
 			const shell = shellOf();
-			return { ok: true, kind: "terminal", base: "Terminal", argv: [shell], command: describeCommandLine([shell]) };
+			return { ok: true, kind: "terminal", base: "Terminal", argv: [shell], command: describeCommandLine([shell]), ...plain };
 		}
 		const command = describeCommandLine([launch.executable, ...launch.arguments]);
 		const lookup = findExecutable(launch.executable, environment.PATH ?? environment.Path ?? "", launch.words);
@@ -525,7 +598,25 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 				},
 			};
 		}
-		return { ok: true, kind: "agent", base: launch.name, argv, command: describeCommandLine(argv), ...(launch.environment ? { environment: launch.environment } : {}), ...(launch.unset ? { unset: launch.unset } : {}) };
+		const extra = { ...(launch.environment ? { environment: launch.environment } : {}), ...(launch.unset ? { unset: launch.unset } : {}) };
+		if (!settings) return { ok: true, kind: "agent", base: launch.name, argv, command: describeCommandLine(argv), ...extra, ...plain };
+		// The conversation is only ever checked in the agent's own folder, and only a UUID gets that far.
+		const resumable = resumableAgent(launch.executable, launch.arguments);
+		let conversation: string | null = null;
+		let args = launch.arguments;
+		if (resumable === "claude" && resume !== null && conversations.claudeExists(resume)) {
+			args = agentStartArguments("claude", args, { resume });
+			conversation = resume;
+		} else if (resumable === "claude") {
+			const fresh = conversations.newId();
+			args = agentStartArguments("claude", args, { fresh });
+			conversation = fresh;
+		} else if (resumable === "codex" && resume !== null && conversations.codexExists(resume)) {
+			args = agentStartArguments("codex", args, { resume });
+			conversation = resume;
+		}
+		const started = [lookup.path, ...args];
+		return { ok: true, kind: "agent", base: launch.name, argv: started, command: describeCommandLine(started), ...extra, resumable, conversation, missing: resume !== null && conversation !== resume };
 	}
 
 	/** A Timber command to run in place of the shell: a worktree's setup, with the Timber the app found. */
@@ -649,11 +740,15 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			if (!setting.ok) return setting.result;
 			launch = setting.launch;
 		}
-		const start = startOf(launch, run);
+		// A conversation and a name from before a restart are read only as a UUID and as a clean name, only for an agent from Settings or a shell, and never for a Timber command, an arena attempt, or a workflow's own agent.
+		const ownLaunch = run === null && attempt.launch === null && (agent !== null || workflowLaunch === null);
+		const resume = ownLaunch && agent !== null && isConversationId(request.resume) ? request.resume : null;
+		const savedName = ownLaunch && chop === undefined ? cleanSessionName(request.name) : null;
+		const start = startOf(launch, run, resume, agent !== null);
 		if (!start.ok) return start.result;
 		// An attempt's session is named after its label, which is how the arena names it everywhere.
 		// A chop's session is named after the chop, whatever the naming in Settings, as Setup is.
-		const base = chop !== undefined ? chop.name : run === null && !launch?.fixedName ? sessionNameBase(naming, start.base, listed.worktree.branch, launch !== null) : start.base;
+		const base = chop !== undefined ? chop.name : savedName ?? (run === null && !launch?.fixedName ? sessionNameBase(naming, start.base, listed.worktree.branch, launch !== null) : start.base);
 		const name = defaultSessionName(base, inWorktree(listed.worktree.id).map(live => live.session.name));
 
 		const shell = start.argv[0]!;
@@ -711,13 +806,22 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			live.pasteMode.reset();
 			changed(live, { ...live.session, state: { kind: "exited", ...end }, ...recordsForWindow(live.records) });
 		});
-		live = { session, process: child, scrollback: createScrollback(), pending: "", flushTimer: null, undrawn: [], undrawnSize: 0, held: false, leftovers: null, ended, scanner: createStatusScanner(), records: createStatusRecords(), pasteMode: createPasteModeScanner(), statusChanged: false, probedAt: Number.NEGATIVE_INFINITY, chop: null };
+		live = {
+			session, process: child, scrollback: createScrollback(), pending: "", flushTimer: null, undrawn: [], undrawnSize: 0, held: false, leftovers: null, ended,
+			scanner: createStatusScanner(), records: createStatusRecords(), pasteMode: createPasteModeScanner(), statusChanged: false, probedAt: Number.NEGATIVE_INFINITY, chop: null,
+			agent: agent?.name ?? null, resumable: start.resumable, conversation: start.conversation, startedAt: now(), renamed: savedName !== null,
+		};
 		if (chop !== undefined) {
 			live.chop = { text: chop.text, timer: null, deadline: Date.now() + chopWaitMilliseconds };
 			waitForChop(live, chopWaitMilliseconds);
 		}
 		sessions.set(session.id, live);
 		changed(live, session);
+		// The note goes before anything the agent printed, and is kept with it, so drawing the session again shows it too.
+		if (start.missing && agent !== null) {
+			live.pending = conversationMissingNote(agent.name) + live.pending;
+			flush(live);
+		}
 		return { outcome: "opened", session: { ...session } };
 	}
 
@@ -759,6 +863,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			const live = sessions.get(id);
 			const clean = cleanSessionName(name);
 			if (!live || clean === null) return null;
+			live.renamed = true;
 			if (clean !== live.session.name) changed(live, { ...live.session, name: clean });
 			return { ...live.session };
 		},
@@ -817,5 +922,13 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		leaders: () => [...sessions.values()]
 			.filter(live => live.session.state.kind === "running")
 			.map(live => ({ id: live.session.id, name: live.session.name, path: live.session.path, pid: live.process.pid })),
+		running: () => [...sessions.values()].flatMap((live): RunningSession[] => {
+			const { session } = live;
+			if (session.state.kind !== "running" || (session.kind !== "terminal" && session.kind !== "agent")) return [];
+			return [{
+				id: session.id, worktree: session.worktree, path: session.path, kind: session.kind, agent: live.agent, resumable: live.resumable,
+				conversation: live.conversation, startedAt: live.startedAt, name: live.renamed ? session.name : null,
+			}];
+		}),
 	};
 }

@@ -16,7 +16,7 @@ let primary: string;
 let linked: string;
 let other: string;
 
-const shown: Attention = { visible: true, focused: true, selected: null };
+const shown: Attention = { visible: true, focused: true, selected: null, session: null };
 
 /**
  * A stand-in `docker` that notes each call in `calls.log` beside itself. Asked

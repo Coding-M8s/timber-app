@@ -23,7 +23,7 @@ export interface WorktreeStampOptions {
  * A short text that changes when the status of a worktree changes, for the
  * periodic check of the selected worktree. Never shown, never logged.
  */
-export type ReadStamp = (worktree: AttendedWorktree) => Promise<string | null>;
+export type ReadStamp = (worktree: Pick<AttendedWorktree, "repository" | "worktree">) => Promise<string | null>;
 
 /**
  * Reads the stamp of a worktree: `git status` with the same options as the

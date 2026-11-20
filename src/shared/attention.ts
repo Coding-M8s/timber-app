@@ -14,6 +14,13 @@ export interface Attention {
 	focused: boolean;
 	/** The selected worktree, checked now and then for edits, or null when nothing is selected. */
 	selected: AttendedWorktree | null;
+	/**
+	 * The session whose chip shows in the selected worktree, or null. Chips
+	 * are switched only in the selected worktree, so the main process learns
+	 * the shown chip of every worktree from these reports, for the save at
+	 * quit (see src/bun/session-layout.ts).
+	 */
+	session: string | null;
 }
 
 export interface AttendedWorktree {
@@ -21,6 +28,8 @@ export interface AttendedWorktree {
 	repository: string;
 	/** The worktree's registered path, exactly as Timber lists it. */
 	worktree: string;
+	/** The worktree's identity (`Worktree.id`). */
+	id: string;
 }
 
 /**
@@ -28,11 +37,13 @@ export interface AttendedWorktree {
  * with nothing selected. A window that never reports keeps getting every
  * change, which is still cheap.
  */
-export const assumedAttention: Attention = { visible: true, focused: true, selected: null };
+export const assumedAttention: Attention = { visible: true, focused: true, selected: null, session: null };
 
 export function sameAttention(left: Attention, right: Attention): boolean {
 	return left.visible === right.visible
 		&& left.focused === right.focused
 		&& left.selected?.repository === right.selected?.repository
-		&& left.selected?.worktree === right.selected?.worktree;
+		&& left.selected?.worktree === right.selected?.worktree
+		&& left.selected?.id === right.selected?.id
+		&& left.session === right.session;
 }

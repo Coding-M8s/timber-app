@@ -209,7 +209,7 @@ describe("terminals in the store", () => {
 		expect(store.getState().quitRequest).toBe(1);
 		const markup = render(store);
 		expect(markup).toContain("Quit Timber?");
-		expect(markup).toContain("A session is still running. Quitting ends it and everything running in it.");
+		expect(markup).toContain("A session is still running. Quitting stops it and everything running in it. It opens again when Timber does, and an agent goes back to its conversation.");
 		expect(markup).toMatch(/<button type="button" class="button quiet"[^>]*>Keep running<\/button>/);
 		store.cancelQuit();
 		expect(store.getState().quitRequest).toBeNull();
