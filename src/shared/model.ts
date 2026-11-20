@@ -254,7 +254,7 @@ export interface TimberFailure {
 export interface NewWorktreeRequest {
 	/** The path of the repository's primary checkout. Timber runs there. */
 	repository: string;
-	/** A branch name, a sentence, or a ticket, as the person typed it. Timber decides what branch it becomes. */
+	/** A branch name, a sentence, or an issue in one of Timber's forms, as the person typed it. Timber decides what branch it becomes. */
 	name: string;
 	/** The ref to start from, or null to let Timber pick its configured base. */
 	base: string | null;

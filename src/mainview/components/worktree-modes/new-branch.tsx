@@ -57,7 +57,7 @@ export function newBranchMode(
 							autoFocus
 							onChange={event => edit({ name: event.target.value })}
 						/>
-						<span className="field-hint">A branch name, a sentence, or a ticket. Timber decides the branch and the folder.</span>
+						<span className="field-hint">A branch name, a sentence, or an issue: github:123, jira:ENG-1, or linear:ENG-1. Timber decides the branch and the folder.</span>
 					</label>
 					<label className="field">
 						<span className="field-label">Start from</span>
