@@ -1,3 +1,4 @@
+import type { WorktreeHandoff } from "../../shared/handoff";
 import { Electroview } from "electrobun/view";
 import type { Engine } from "../../shared/engine";
 import type { RepositoryFetch } from "../../shared/git-fetch";
@@ -28,6 +29,7 @@ export function createDesktopEngine(): Engine {
 	const fetches = listeners<RepositoryFetch>();
 	const timberChanges = listeners<void>();
 	const shownSessions = listeners<string>();
+	const handoffs = listeners<WorktreeHandoff>();
 	const rpc = Electroview.defineRPC<AppRPC>({
 		maxRequestTime: 15_000,
 		handlers: {
@@ -44,6 +46,7 @@ export function createDesktopEngine(): Engine {
 				terminalOutput: output => terminalOutput.call(output),
 				terminalChanged: change => terminalChanges.call(change),
 				showSession: ({ id }) => shownSessions.call(id),
+				worktreeHandedOff: handoff => handoffs.call(handoff),
 				fetchChanged: status => fetches.call(status),
 				timberChanged: () => timberChanges.call(),
 			},
@@ -128,6 +131,7 @@ export function createDesktopEngine(): Engine {
 		onTerminalOutput: terminalOutput.add,
 		onTerminalChanged: terminalChanges.add,
 		onShowSession: shownSessions.add,
+		onWorktreeHandedOff: handoffs.add,
 		onQuitRequested: quitRequests.add,
 		// Ending every session can take a moment, and the app quits right after.
 		confirmQuit: () => rpc.request.confirmQuit({}, { maxRequestTime: 30_000 }),

@@ -80,6 +80,7 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		// Terminals as the mock acts them out. Their own tests are in terminal-store.test.ts.
 		...createMockTerminals(() => null),
 		onShowSession: () => () => {},
+		onWorktreeHandedOff: () => () => {},
 		chooseSoundFile: async () => ({ outcome: "cancelled" }),
 		playSound: async () => ({ outcome: "played" }),
 		// Timber's settings as the mock acts them out. Their own tests are in timber-settings.test.tsx.

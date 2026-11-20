@@ -4,6 +4,7 @@ import type { BackupDeleteRequest, BackupDeleteResult, BackupList, BackupRestore
 import type { Attention } from "./attention";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "./git-fetch";
 import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffResult } from "./file-changes";
+import type { WorktreeHandoff } from "./handoff";
 import type { Layout } from "./layout";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
 import type { Preferences } from "./preferences";
@@ -442,6 +443,16 @@ export interface Engine {
 	 * that stops listening.
 	 */
 	onShowSession(listener: (id: string) => void): () => void;
+	/**
+	 * Hear when `timber new` or `timber open`, typed in one of the app's
+	 * terminals, created a worktree and handed it to the app instead of
+	 * starting its agent in that terminal (see ./handoff.ts). The listener
+	 * opens the worktree's session. The handoff is a request only: the
+	 * window opens a session only in a worktree it lists, and nothing named
+	 * in it is run. Terminals outside the app never hand off. Returns a
+	 * function that stops listening.
+	 */
+	onWorktreeHandedOff(listener: (handoff: WorktreeHandoff) => void): () => void;
 	/**
 	 * Hear when the app was asked to quit, or its window to close, while
 	 * terminals run. Nothing quits until `confirmQuit`. The listener gets how

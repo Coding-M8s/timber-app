@@ -2573,3 +2573,25 @@ with Bun 1.4.5, against the mock engine only:
 - `bun run build:web`: built.
 - Not run: the desktop window, or a real `timber __ide-done` run of more
   than one worktree in a row.
+
+Run for `timber new` in an app terminal (issue 96), Linux x64 with Bun
+1.4.5, with the Timber side from Coding-M8s/timber#190 (merged as `fd1d7a8`):
+
+- `bun test` in the app: all passed, none failed. `tests/handoffs.test.ts`
+  makes a real temporary repository with a linked worktree, has `/bin/sh`
+  with a session's environment write a record into `TIMBER_APP_HANDOFF` as
+  Timber does, and checks that it is heard once, deleted, and that refs,
+  worktrees, and files are unchanged. `tests/worktree-handoff-store.test.ts`
+  covers the window against the mock engine.
+- In Timber, `tests/app-handoff.integration.test.ts` runs `timber new` and
+  `timber open` from source in a real pseudo terminal on temporary
+  repositories, with and without the variable.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun run build:web`: built.
+- End to end without a window: `openHandoffFolder` and `sessionEnvironment`
+  from this branch, with Timber's `main` at `fd1d7a8` run from source in a
+  real pseudo terminal on a temporary repository whose agent is enabled.
+  `timber new feat/e2e --no-editor` printed `Opening <path> in the Timber app
+  with its agent.`, started no agent, and the folder passed on
+  `{ repository, worktree, agent: true }` for the new worktree.
+- Not run: the desktop window, and a released Timber binary with the handoff.
