@@ -1,7 +1,15 @@
-import { type FileChange, type FileChangesResult, type FileDiffResult, MAX_DIFF_BYTES, MAX_LISTED_FILES, type FileDiffRequest, readDiffOutput, relativePathProblem } from "../../shared/file-changes";
+import {
+	type BaseComparison, type Comparison, type FileChange, type FileChangesResult, type FileDiffResult, MAX_DIFF_BYTES, MAX_LISTED_FILES, type FileDiffRequest,
+	baseName, readDiffOutput, relativePathProblem, savedBaseRef,
+} from "../../shared/file-changes";
 import type { Worktree } from "../../shared/model";
 
-/** A changed file of the pretend disk, with the text `git diff` would print for it. */
+/**
+ * A changed file of the pretend disk, with the text `git diff` would print for
+ * it. An entry of the "base" area was committed on the branch, so it shows
+ * only when comparing with the base. Every other entry shows in both
+ * comparisons, as the main process would list it.
+ */
 export interface MockFileChange {
 	change: FileChange;
 	/** Exactly what Git would print. Empty for a file that is no longer changed. */
@@ -51,6 +59,8 @@ const tracked = (area: FileChange["area"], kind: FileChange["kind"], path: strin
 function gallery(): MockFileChange[] {
 	const big = Array.from({ length: 6000 }, (_, index) => `export const row${index} = ${index};`);
 	return [
+		tracked("base", "modified", "src/tax/report.ts", samplePatch("src/tax/report.ts")),
+		tracked("base", "added", "docs/tax.md", sampleNewFilePatch("docs/tax.md", ["# Tax rules", "", "Rates come from the finance team."])),
 		tracked("conflicted", "conflicted", "src/tax/rates.ts", [
 			"diff --cc src/tax/rates.ts",
 			"index 223b783,f70f10e..0000000",
@@ -171,32 +181,76 @@ function gallery(): MockFileChange[] {
 /** The worktree of the browser build that shows every kind of change. */
 export const GALLERY_WORKTREE = "/work/billing-worktrees/feat-tax-rules";
 
-/** What the pretend Git lists for a worktree: its modified and untracked files as small edits and new files. */
+/**
+ * What the pretend Git lists for a worktree: its modified and untracked files
+ * as small edits and new files, and a worktree with a saved base has a
+ * committed edit of README.md on its branch.
+ */
 export function derivedFileChanges(worktree: Worktree): MockFileChange[] {
 	if (worktree.path === GALLERY_WORKTREE) return gallery();
 	if (worktree.changes.kind !== "known") return [];
 	return [
+		...(worktree.base?.kind === "assigned" ? [tracked("base", "modified", "README.md", samplePatch("README.md"))] : []),
 		...worktree.changes.modified.map(path => tracked("unstaged", "modified", path, samplePatch(path))),
 		...worktree.changes.untracked.map(path => tracked("unstaged", "untracked", path, sampleNewFilePatch(path))),
 	];
 }
 
+/** The pretend branch point of every worktree with a usable base. */
+export const MOCK_BRANCH_POINT = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678";
+
+/** Whether the pretend worktree can be compared with its base: any saved base the main process would take, at `MOCK_BRANCH_POINT`. */
+export function mockBase(worktree: Worktree): BaseComparison {
+	const saved = savedBaseRef(worktree.base);
+	if (!saved.ok) return { usable: false, reason: saved.reason };
+	return { usable: true, ref: saved.ref, name: baseName(saved.ref), commit: MOCK_BRANCH_POINT };
+}
+
+/**
+ * The pretend files as one comparison lists them. Uncommitted leaves out what
+ * was committed. Base keeps conflicts, lists every other tracked change once
+ * in the "base" area, and untracked files in their own.
+ */
+export function compareMockFiles(files: readonly MockFileChange[], compare: Comparison): MockFileChange[] {
+	if (compare === "uncommitted") return files.filter(file => file.change.area !== "base" && file.change.area !== "untracked");
+	const listed: MockFileChange[] = files.filter(file => file.change.area === "conflicted" || file.change.area === "base");
+	const seen = new Set(listed.map(file => file.change.path));
+	for (const file of files) {
+		if (file.change.kind === "untracked" || (file.change.area !== "staged" && file.change.area !== "unstaged") || seen.has(file.change.path)) continue;
+		seen.add(file.change.path);
+		listed.push({ ...file, change: { ...file.change, area: "base" } });
+	}
+	const untracked = files.filter(file => file.change.kind === "untracked").map(file => ({ ...file, change: { ...file.change, area: "untracked" as const } }));
+	return [...listed, ...untracked];
+}
+
+/** The comparison the main process would answer with: "base" only when the base can be used. */
+const comparedFor = (worktree: Worktree, compare: Comparison): { compared: Comparison; base: BaseComparison } => {
+	const base = mockBase(worktree);
+	return { compared: compare === "base" && base.usable ? "base" : "uncommitted", base };
+};
+
 /** Answer a listing from the pretend files, as the main process would. */
-export function listMockFileChanges(files: readonly MockFileChange[]): FileChangesResult {
+export function listMockFileChanges(all: readonly MockFileChange[], worktree: Worktree, compare: Comparison): FileChangesResult {
+	const { compared, base } = comparedFor(worktree, compare);
+	const files = compareMockFiles(all, compared);
 	return {
 		outcome: "read",
 		files: files.slice(0, MAX_LISTED_FILES).map(file => structuredClone(file.change)),
 		more: files.length > MAX_LISTED_FILES,
+		compared,
+		base,
 	};
 }
 
 /** Answer a diff from the pretend files, as the main process would, through the same parser. */
-export function diffMockFileChange(files: readonly MockFileChange[], request: FileDiffRequest): FileDiffResult {
+export function diffMockFileChange(all: readonly MockFileChange[], worktree: Worktree, request: FileDiffRequest): FileDiffResult {
 	const { file } = request;
 	for (const path of [file.path, file.previousPath]) {
 		const problem = path === null ? null : relativePathProblem(path);
 		if (problem !== null) return { outcome: "failed", message: `${problem} No changes were read.` };
 	}
+	const files = compareMockFiles(all, comparedFor(worktree, request.compare).compared);
 	const found = files.find(candidate => candidate.change.area === file.area && candidate.change.path === file.path);
 	if (!found) return { outcome: "read", file: null, diff: { kind: "unchanged" } };
 	const tooLarge = new TextEncoder().encode(found.patch).byteLength > MAX_DIFF_BYTES;

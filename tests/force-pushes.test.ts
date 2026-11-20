@@ -37,7 +37,7 @@ describe("createSavedForcePushes", () => {
 
 	test("saves the marks beside the other parts, and takes the part away when none are left", async () => {
 		const settings = createSettingsHolder(file);
-		await settings.save({ repositories: [one], layout: { sidebarWidth: 300, collapsed: [], setupDismissed: [] } });
+		await settings.save({ repositories: [one], layout: { sidebarWidth: 300, collapsed: [], setupDismissed: [], uncommittedChanges: [] } });
 		const saved = createSavedForcePushes(settings);
 		expect(await saved.load()).toEqual({});
 		await saved.save({ [one.path]: { main: mark } });

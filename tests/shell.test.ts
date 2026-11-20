@@ -119,18 +119,18 @@ async function startedStore(engine: Engine = createMockEngine()) {
 describe("the layout in the store", () => {
 	test("starts as the default and takes what the engine remembers", async () => {
 		const engine = createMockEngine();
-		await engine.saveLayout({ sidebarWidth: 340, collapsed: [API_SERVER], setupDismissed: [] });
+		await engine.saveLayout({ sidebarWidth: 340, collapsed: [API_SERVER], setupDismissed: [], uncommittedChanges: [] });
 		const store = createAppStore(engine);
 		expect(store.getState().layout).toEqual(defaultLayout());
 		store.start();
 		await settle();
-		expect(store.getState().layout).toEqual({ sidebarWidth: 340, collapsed: [API_SERVER], setupDismissed: [] });
+		expect(store.getState().layout).toEqual({ sidebarWidth: 340, collapsed: [API_SERVER], setupDismissed: [], uncommittedChanges: [] });
 		expect(store.getState().layoutProblem).toBeNull();
 	});
 
 	test("saving an untouched layout while its read is pending preserves the saved preferences", async () => {
 		const engine = createMockEngine();
-		const saved = { sidebarWidth: 400, collapsed: [API_SERVER], setupDismissed: [] };
+		const saved = { sidebarWidth: 400, collapsed: [API_SERVER], setupDismissed: [], uncommittedChanges: [] };
 		await engine.saveLayout(saved);
 		const load = engine.loadLayout;
 		let answer!: (layout: Layout) => void;
@@ -147,7 +147,7 @@ describe("the layout in the store", () => {
 
 		store.resizeSidebar(350);
 		await store.saveLayout();
-		expect(await load()).toEqual({ sidebarWidth: 350, collapsed: [API_SERVER], setupDismissed: [] });
+		expect(await load()).toEqual({ sidebarWidth: 350, collapsed: [API_SERVER], setupDismissed: [], uncommittedChanges: [] });
 	});
 
 	test("collapsing a group is saved at once, and a restarted store has it", async () => {
@@ -156,7 +156,7 @@ describe("the layout in the store", () => {
 		store.toggleGroup(API_SERVER);
 		expect(store.getState().layout.collapsed).toEqual([API_SERVER]);
 		await settle();
-		expect(saves).toEqual([{ sidebarWidth: DEFAULT_SIDEBAR_WIDTH, collapsed: [API_SERVER], setupDismissed: [] }]);
+		expect(saves).toEqual([{ sidebarWidth: DEFAULT_SIDEBAR_WIDTH, collapsed: [API_SERVER], setupDismissed: [], uncommittedChanges: [] }]);
 
 		// A new store on the same engine is what a restarted interface has.
 		expect((await startedStore(engine)).getState().layout.collapsed).toEqual([API_SERVER]);
@@ -176,7 +176,7 @@ describe("the layout in the store", () => {
 		expect(saves).toEqual([]);
 
 		await store.saveLayout();
-		expect(saves).toEqual([{ sidebarWidth: 333, collapsed: [], setupDismissed: [] }]);
+		expect(saves).toEqual([{ sidebarWidth: 333, collapsed: [], setupDismissed: [], uncommittedChanges: [] }]);
 		expect((await startedStore(engine)).getState().layout.sidebarWidth).toBe(333);
 
 		// Asking again with nothing changed does not reach the engine.
@@ -224,7 +224,7 @@ describe("the layout in the store", () => {
 		store.resizeSidebar(300);
 		await store.saveLayout();
 		expect(changes).toBe(3);
-		expect(store.getState().layout).toEqual({ sidebarWidth: 300, collapsed: [TIMBER], setupDismissed: [] });
+		expect(store.getState().layout).toEqual({ sidebarWidth: 300, collapsed: [TIMBER], setupDismissed: [], uncommittedChanges: [] });
 
 		// Nothing reached the engine, so a restart has the old layout.
 		expect((await startedStore(engine)).getState().layout).toEqual(defaultLayout());
@@ -233,7 +233,7 @@ describe("the layout in the store", () => {
 		engine.failLayoutSaves(null);
 		await store.saveLayout();
 		expect(store.getState().layoutProblem).toBeNull();
-		expect((await startedStore(engine)).getState().layout).toEqual({ sidebarWidth: 300, collapsed: [TIMBER], setupDismissed: [] });
+		expect((await startedStore(engine)).getState().layout).toEqual({ sidebarWidth: 300, collapsed: [TIMBER], setupDismissed: [], uncommittedChanges: [] });
 	});
 
 	test("an engine that throws on save is a failed save, not a broken interface", async () => {
@@ -263,12 +263,12 @@ describe("the layout in the store", () => {
 
 	test("a change made before the saved layout arrives is kept", async () => {
 		const engine = createMockEngine();
-		await engine.saveLayout({ sidebarWidth: 400, collapsed: [API_SERVER], setupDismissed: [] });
+		await engine.saveLayout({ sidebarWidth: 400, collapsed: [API_SERVER], setupDismissed: [], uncommittedChanges: [] });
 		const store = createAppStore(engine);
 		store.start();
 		store.toggleGroup(TIMBER);
 		await settle();
-		expect(store.getState().layout).toEqual({ sidebarWidth: DEFAULT_SIDEBAR_WIDTH, collapsed: [TIMBER], setupDismissed: [] });
+		expect(store.getState().layout).toEqual({ sidebarWidth: DEFAULT_SIDEBAR_WIDTH, collapsed: [TIMBER], setupDismissed: [], uncommittedChanges: [] });
 	});
 
 	test("removing a repository forgets its collapsed group", async () => {

@@ -148,7 +148,7 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		savePreferences: async change => ({ outcome: "saved", preferences: { ...defaultPreferences(), ...change } }),
 		openInEditor: async () => ({ outcome: "not-configured" }),
 		// The Changes tab has its own tests in file-changes-store.test.ts.
-		readFileChanges: async () => ({ outcome: "read", files: [], more: false }),
+		readFileChanges: async () => ({ outcome: "read", files: [], more: false, compared: "uncommitted", base: { usable: false, reason: "No base." } }),
 		readFileDiff: async () => ({ outcome: "read", file: null, diff: { kind: "unchanged" } }),
 		listChops: async () => ({ outcome: "listed", file: { state: "missing" }, path: "/work/app/.timber/chops.json", chops: [], overridden: [] }),
 		readPorts: async () => ({ outcome: "read", docker: { state: "read", ports: [] }, sessions: { state: "read", ports: [] }, clashes: [] }),

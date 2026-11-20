@@ -85,7 +85,7 @@ describe("applyPreferenceChange", () => {
 
 describe("the preferences part of the settings file", () => {
 	test("round-trips beside the repositories and the layout", () => {
-		const settings = { repositories: [one], layout: { sidebarWidth: 300, collapsed: [], setupDismissed: [] }, preferences: { sidebarSide: "right" as const, editor: null, agents: AGENT_PRESETS, chops: [], fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), sessionNames: "plain" as const, statusNotifications: true, notifyStates: ["needs-you", "done", "error", "crashed"] as const, soundStates: [] as const, sound: { kind: "bundled" as const, name: "chime" as const }, dmabuf: "auto" as const } };
+		const settings = { repositories: [one], layout: { sidebarWidth: 300, collapsed: [], setupDismissed: [], uncommittedChanges: [] }, preferences: { sidebarSide: "right" as const, editor: null, agents: AGENT_PRESETS, chops: [], fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), sessionNames: "plain" as const, statusNotifications: true, notifyStates: ["needs-you", "done", "error", "crashed"] as const, soundStates: [] as const, sound: { kind: "bundled" as const, name: "chime" as const }, dmabuf: "auto" as const } };
 		const text = serializeSettings(settings);
 		expect(JSON.parse(text)).toEqual({ version: 1, ...settings });
 		expect(parseSettings(text)).toEqual(settings);
@@ -172,13 +172,13 @@ describe("the saved preferences in the main process", () => {
 		const results = await Promise.all([
 			repositories.addFolder(primary),
 			preferences.save({ sidebarSide: "right" }),
-			layout.save({ sidebarWidth: 330, collapsed: [primary], setupDismissed: [] }),
+			layout.save({ sidebarWidth: 330, collapsed: [primary], setupDismissed: [], uncommittedChanges: [] }),
 		]);
 		expect(results.map(result => result.outcome)).toEqual(["added", "saved", "saved"]);
 		expect(onDisk()).toEqual({
 			version: 1,
 			repositories: [{ path: primary, commonDir: join(primary, ".git") }],
-			layout: { sidebarWidth: 330, collapsed: [primary], setupDismissed: [] },
+			layout: { sidebarWidth: 330, collapsed: [primary], setupDismissed: [], uncommittedChanges: [] },
 			preferences: { sidebarSide: "right", editor: null, agents: AGENT_PRESETS, chops: [], fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), sessionNames: "plain" as const, statusNotifications: true, notifyStates: ["needs-you", "done", "error", "crashed"] as const, soundStates: [] as const, sound: { kind: "bundled" as const, name: "chime" as const }, dmabuf: "auto" as const },
 		});
 		expect(readdirSync(join(settingsFile, ".."))).toEqual(["settings.json"]);

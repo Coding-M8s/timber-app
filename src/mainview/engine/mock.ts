@@ -942,12 +942,12 @@ export function createMockEngine(
 		async readFileChanges(request) {
 			const listed = listedForChanges(request.repository, request.worktree);
 			if (!listed.ok) return { outcome: listed.outcome, message: listed.message };
-			return listMockFileChanges(filesOf(listed.worktree));
+			return listMockFileChanges(filesOf(listed.worktree), listed.worktree, request.compare);
 		},
 		async readFileDiff(request) {
 			const listed = listedForChanges(request.repository, request.worktree);
 			if (!listed.ok) return { outcome: listed.outcome, message: listed.message };
-			return diffMockFileChange(filesOf(listed.worktree), structuredClone(request));
+			return diffMockFileChange(filesOf(listed.worktree), listed.worktree, structuredClone(request));
 		},
 		async listChops(request) {
 			const repository = current.find(candidate => candidate.path === request.repository);

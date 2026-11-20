@@ -163,7 +163,17 @@ change them here first when they change.
   assignee or "Unassigned", and "Open in browser". When the status could not
   be read it shows the key, the quiet word, and Timber's reason. Text from
   the tracker is plain text, never markup.
-- Changes compares against the base, the last commit, or a backup (later).
+- Changes has a "Compare with" switch: Base or Uncommitted. Base is
+  everything the branch changed since it left its saved base, committed or
+  not, so the work stays visible after an agent commits; commits on the base
+  after the branch point do not show. Uncommitted is what `git status`
+  lists. The list's header says what is compared, such as
+  `origin/main @ a1b2c3d`, or "Last commit". Base is the default when the
+  worktree has a saved base Timber and Git can use. Without one (no saved
+  base, metadata Timber cannot use, a ref that is not there, or no shared
+  history), Base is disabled, a quiet line under the switch gives the
+  reason, and the tab shows Uncommitted. The choice is remembered for each
+  worktree. Comparing with a backup comes later.
 - A repository that was never set up for Timber shows a quiet prompt above
   the tabs: Timber's defaults work, setup is optional, "Set up Timber", and
   "Not now". The button opens the setup wizard: the choices of

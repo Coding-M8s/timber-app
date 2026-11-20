@@ -1,7 +1,9 @@
 import {
-	type FileChange, type FileChangesRequest, type FileChangesResult, type FileDiffRequest, type FileDiffResult,
-	MAX_DIFF_BYTES, MAX_LISTED_FILES, MAX_STATUS_BYTES, diffArguments, parseStatus, readDiffOutput, relativePathProblem, statusArguments,
+	type BaseComparison, type FileChange, type FileChangesRequest, type FileChangesResult, type FileDiffRequest, type FileDiffResult,
+	MAX_DIFF_BYTES, MAX_LISTED_FILES, MAX_STATUS_BYTES, baseNamesArguments, commitArguments, diffArguments, isCommitHash, parseNameStatus, parseStatus,
+	baseName, readDiffOutput, relativePathProblem, savedBaseRef, sinceBase, statusArguments,
 } from "../shared/file-changes";
+import type { Worktree } from "../shared/model";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
 import { messageOf } from "../shared/error-message";
 import { readGit } from "./read-git";
@@ -31,6 +33,11 @@ export interface FileChanges {
 
 type GitRun = { ok: true; text: string; truncated: boolean } | { ok: false; message: string };
 
+type FileList = { ok: true; files: FileChange[]; truncated: boolean } | { ok: false; message: string };
+
+/** A commit hash is far shorter than this. */
+const HASH_BYTES = 1024;
+
 /**
  * The changed files of a worktree and the diff of one, from Git.
  *
@@ -46,6 +53,11 @@ type GitRun = { ok: true; text: string; truncated: boolean } | { ok: false; mess
  * - A diff names its file by area and path. The status of that file is read
  *   again and the diff is built from what Git says now, never from what the
  *   interface sent, so a path cannot reach outside the worktree.
+ * - Comparing with the base: the ref comes from the base Timber saved for
+ *   the listed worktree, never from the window. The branch point is
+ *   `git merge-base <base> HEAD`, worked out again for every list and diff.
+ *   A base that cannot be used answers with the uncommitted list and the
+ *   reason, never a failure.
  */
 export function createFileChanges(dependencies: FileChangesDependencies): FileChanges {
 	const { findRepository, git = "git", timeoutMilliseconds = GIT_MILLISECONDS } = dependencies;
@@ -63,20 +75,57 @@ export function createFileChanges(dependencies: FileChangesDependencies): FileCh
 		return { ok: true, text: answer.stdout, truncated: false };
 	}
 
-	async function status(worktree: string, paths: readonly string[] = []): Promise<{ ok: true; files: FileChange[]; truncated: boolean } | { ok: false; message: string }> {
+	async function status(worktree: string, paths: readonly string[] = []): Promise<FileList> {
 		const answer = await run(worktree, statusArguments(paths), MAX_STATUS_BYTES, [0]);
 		if (!answer.ok) return { ok: false, message: `Git could not read the status of ${worktree}: ${answer.message}` };
 		return { ok: true, files: parseStatus(answer.text), truncated: answer.truncated };
+	}
+
+	/** The full hash of a commit, null when there is no such commit, or why Git could not say. */
+	async function commitOf(worktree: string, revision: string): Promise<{ ok: true; commit: string | null } | { ok: false; message: string }> {
+		const answer = await run(worktree, commitArguments(revision), HASH_BYTES, [0, 1]);
+		if (!answer.ok) return { ok: false, message: answer.message };
+		const commit = answer.text.trim();
+		return { ok: true, commit: isCommitHash(commit) ? commit : null };
+	}
+
+	/** Whether the worktree can be compared with the base Timber saved for it, and its branch point. */
+	async function baseOf(worktree: Worktree): Promise<BaseComparison> {
+		const saved = savedBaseRef(worktree.base);
+		if (!saved.ok) return { usable: false, reason: saved.reason };
+		const name = baseName(saved.ref);
+		const head = await commitOf(worktree.path, "HEAD");
+		if (!head.ok) return { usable: false, reason: `Git could not read this worktree's HEAD: ${head.message}` };
+		if (head.commit === null) return { usable: false, reason: "This worktree has no commit yet, so there is no branch point to compare with." };
+		const base = await commitOf(worktree.path, saved.ref);
+		if (!base.ok) return { usable: false, reason: `Git could not read the base ${name}: ${base.message}` };
+		if (base.commit === null) return { usable: false, reason: `The saved base ${name} is not in this repository. Fetch, or check the base Timber saved.` };
+		const answer = await run(worktree.path, ["merge-base", base.commit, head.commit], HASH_BYTES, [0, 1]);
+		if (!answer.ok) return { usable: false, reason: `Git could not find where this branch left ${name}: ${answer.message}` };
+		const commit = answer.text.trim();
+		if (!isCommitHash(commit)) return { usable: false, reason: `This branch and ${name} share no history, so there is no branch point to compare with.` };
+		return { usable: true, ref: saved.ref, name, commit };
+	}
+
+	/** Every change since the branch point `commit`, with conflicts and untracked files from the status. */
+	async function changedSince(worktree: string, commit: string, paths: readonly string[] = []): Promise<FileList> {
+		const read = await status(worktree, paths);
+		if (!read.ok) return read;
+		const answer = await run(worktree, baseNamesArguments(commit, paths), MAX_STATUS_BYTES, [0]);
+		if (!answer.ok) return { ok: false, message: `Git could not compare ${worktree} with its base: ${answer.message}` };
+		return { ok: true, files: sinceBase(read.files, parseNameStatus(answer.text)), truncated: read.truncated || answer.truncated };
 	}
 
 	return {
 		async read(request) {
 			const listed = await findListedWorktree(findRepository, request.repository, request.worktree, NOT_READ);
 			if (!listed.ok) return { outcome: "not-listed", message: listed.message };
-			const read = await status(request.worktree);
+			const base = await baseOf(listed.worktree);
+			const compared = request.compare === "base" && base.usable ? "base" : "uncommitted";
+			const read = base.usable && compared === "base" ? await changedSince(request.worktree, base.commit) : await status(request.worktree);
 			if (!read.ok) return { outcome: "failed", message: read.message };
 			const more = read.truncated || read.files.length > MAX_LISTED_FILES;
-			return { outcome: "read", files: read.files.slice(0, MAX_LISTED_FILES), more };
+			return { outcome: "read", files: read.files.slice(0, MAX_LISTED_FILES), more, compared, base };
 		},
 
 		async diff(request) {
@@ -90,12 +139,14 @@ export function createFileChanges(dependencies: FileChangesDependencies): FileCh
 
 			// Both paths, so that a rename is still found as one.
 			const paths = file.previousPath === null ? [file.path] : [file.previousPath, file.path];
-			const read = await status(request.worktree, paths);
+			const base = request.compare === "base" ? await baseOf(listed.worktree) : null;
+			const commit = base?.usable ? base.commit : null;
+			const read = commit === null ? await status(request.worktree, paths) : await changedSince(request.worktree, commit, paths);
 			if (!read.ok) return { outcome: "failed", message: read.message };
 			const current = read.files.find(candidate => candidate.area === file.area && candidate.path === file.path);
 			if (!current) return { outcome: "read", file: null, diff: { kind: "unchanged" } };
 
-			const { args, differencesExit } = diffArguments(current);
+			const { args, differencesExit } = diffArguments(current, commit);
 			const answer = await run(request.worktree, args, MAX_DIFF_BYTES, differencesExit ? [0, 1] : [0]);
 			if (!answer.ok) return { outcome: "failed", message: `Git could not show the changes of ${current.path}: ${answer.message}` };
 			return { outcome: "read", file: current, diff: readDiffOutput(answer.text, answer.truncated) };

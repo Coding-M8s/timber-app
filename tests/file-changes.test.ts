@@ -133,7 +133,7 @@ describe.skipIf(windows)("reading changes from real repositories", () => {
 	const asEntries = (files: FileChange[]) => files.map(file => `${file.area} ${file.path}`).sort();
 
 	async function diff(folder: string, area: ChangeArea, path: string, previousPath: string | null = null): Promise<FileDiffResult> {
-		return changes().diff({ repository: primary, worktree: folder, file: { area, path, previousPath } });
+		return changes().diff({ repository: primary, compare: "uncommitted", worktree: folder, file: { area, path, previousPath } });
 	}
 
 	test("lists exactly what git status lists, each kind in its area, and changes nothing", async () => {
@@ -141,7 +141,7 @@ describe.skipIf(windows)("reading changes from real repositories", () => {
 		const indexFile = plainGit(linked, "rev-parse", "--path-format=absolute", "--git-path", "index").stdout.trim();
 		const index = readFileSync(indexFile);
 
-		const read = await changes().read({ repository: primary, worktree: linked });
+		const read = await changes().read({ repository: primary, compare: "uncommitted", worktree: linked });
 		expect(read.outcome).toBe("read");
 		if (read.outcome !== "read") return;
 		expect(read.more).toBe(false);
@@ -167,7 +167,7 @@ describe.skipIf(windows)("reading changes from real repositories", () => {
 		});
 		expect(read.files.find(file => file.kind === "renamed")?.previousPath).toBe("old name.txt");
 
-		const conflict = await changes().read({ repository: primary, worktree: conflicted });
+		const conflict = await changes().read({ repository: primary, compare: "uncommitted", worktree: conflicted });
 		expect(conflict.outcome === "read" && asEntries(conflict.files)).toEqual(statusEntries(conflicted));
 		expect(conflict.outcome === "read" && conflict.files).toEqual([{ area: "conflicted", kind: "conflicted", path: "conflict.txt", previousPath: null }]);
 
@@ -258,11 +258,11 @@ describe.skipIf(windows)("reading changes from real repositories", () => {
 	});
 
 	test("reads nothing in a worktree or repository that is not listed", async () => {
-		const elsewhere = await changes().read({ repository: primary, worktree: join(root, "elsewhere") });
+		const elsewhere = await changes().read({ repository: primary, compare: "uncommitted", worktree: join(root, "elsewhere") });
 		expect(elsewhere.outcome).toBe("not-listed");
-		const unknown = await changes().read({ repository: join(root, "other"), worktree: linked });
+		const unknown = await changes().read({ repository: join(root, "other"), compare: "uncommitted", worktree: linked });
 		expect(unknown).toEqual({ outcome: "not-listed", message: `${join(root, "other")} is not a repository in this app's list. No changes were read.` });
-		const relative = await changes().diff({ repository: primary, worktree: "sample", file: { area: "unstaged", path: "keep.txt", previousPath: null } });
+		const relative = await changes().diff({ repository: primary, compare: "uncommitted", worktree: "sample", file: { area: "unstaged", path: "keep.txt", previousPath: null } });
 		expect(relative.outcome).toBe("not-listed");
 	});
 
@@ -278,14 +278,14 @@ describe.skipIf(windows)("reading changes from real repositories", () => {
 		const findRepository = async () => listed([linked]);
 
 		const started = Date.now();
-		const stopped = await createFileChanges({ findRepository, git: slow, timeoutMilliseconds: 200 }).read({ repository: primary, worktree: linked });
+		const stopped = await createFileChanges({ findRepository, git: slow, timeoutMilliseconds: 200 }).read({ repository: primary, compare: "uncommitted", worktree: linked });
 		expect(stopped).toEqual({ outcome: "failed", message: `Git could not read the status of ${linked}: Git took longer than 0.2 seconds and was stopped.` });
 		expect(Date.now() - started).toBeLessThan(3000);
 
-		const failed = await createFileChanges({ findRepository, git: failing }).read({ repository: primary, worktree: linked });
+		const failed = await createFileChanges({ findRepository, git: failing }).read({ repository: primary, compare: "uncommitted", worktree: linked });
 		expect(failed).toEqual({ outcome: "failed", message: `Git could not read the status of ${linked}: fatal: something broke` });
 
-		const missing = await createFileChanges({ findRepository, git: join(bin, "no-such-git") }).read({ repository: primary, worktree: linked });
+		const missing = await createFileChanges({ findRepository, git: join(bin, "no-such-git") }).read({ repository: primary, compare: "uncommitted", worktree: linked });
 		expect(missing.outcome).toBe("failed");
 	});
 
@@ -297,9 +297,9 @@ describe.skipIf(windows)("reading changes from real repositories", () => {
 		const reader = createFileChanges({
 			findRepository: async () => ({ ...listed([fresh]), path: fresh }),
 		});
-		const read = await reader.read({ repository: fresh, worktree: fresh });
-		expect(read).toEqual({ outcome: "read", files: [{ area: "staged", kind: "added", path: "first.txt", previousPath: null }], more: false });
-		const answer = await reader.diff({ repository: fresh, worktree: fresh, file: { area: "staged", path: "first.txt", previousPath: null } });
+		const read = await reader.read({ repository: fresh, compare: "uncommitted", worktree: fresh });
+		expect(read).toEqual({ outcome: "read", files: [{ area: "staged", kind: "added", path: "first.txt", previousPath: null }], more: false, compared: "uncommitted", base: { usable: false, reason: "Timber did not report a base for this worktree." } });
+		const answer = await reader.diff({ repository: fresh, compare: "uncommitted", worktree: fresh, file: { area: "staged", path: "first.txt", previousPath: null } });
 		expect(answer.outcome === "read" && answer.diff.kind === "text" && answer.diff.sections[0]!.hunks[0]!.lines.map(line => line.text)).toEqual(["hello"]);
 	});
 });

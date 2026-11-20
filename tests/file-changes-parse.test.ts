@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
-	type FileChange, MAX_DIFF_LINES, diffArguments, filePathIn, parseDiff, parseStatus, readDiffOutput, relativePathProblem, statusArguments,
+	type FileChange, MAX_DIFF_LINES, baseName, baseNamesArguments, commitArguments, diffArguments, filePathIn, parseDiff, parseNameStatus, parseStatus, readDiffOutput, relativePathProblem, savedBaseRef, sinceBase, statusArguments,
 } from "../src/shared/file-changes";
 
 /** Records as `git status --porcelain=v2 -z` prints them, each ended by a NUL. */
@@ -224,5 +224,88 @@ describe("paths in a worktree", () => {
 		expect(filePathIn("/work/my repo", "src/a.ts")).toBe("/work/my repo/src/a.ts");
 		expect(filePathIn("/work/my repo/", "a.ts")).toBe("/work/my repo/a.ts");
 		expect(filePathIn("C:\\work\\repo", "src/a.ts")).toBe("C:\\work\\repo\\src\\a.ts");
+	});
+});
+
+describe("comparing with the base", () => {
+	const COMMIT = "126c0120bf719fafc110bf4b3dd65333caac142c";
+	/** Records as `git diff --name-status -z` prints them, each ended by a NUL. */
+	const names = (...records: string[]) => records.map(record => `${record}\0`).join("");
+
+	test("parseNameStatus reads each kind, renames and copies with both paths", () => {
+		const output = names("M", "keep.txt", "A", "new.txt", "D", "gone.txt", "T", "lnk", "R087", "old name.txt", "new name.txt", "C075", "source.txt", "copy.txt");
+		expect(parseNameStatus(output)).toEqual<FileChange[]>([
+			{ area: "base", kind: "modified", path: "keep.txt", previousPath: null },
+			{ area: "base", kind: "added", path: "new.txt", previousPath: null },
+			{ area: "base", kind: "deleted", path: "gone.txt", previousPath: null },
+			{ area: "base", kind: "type-changed", path: "lnk", previousPath: null },
+			{ area: "base", kind: "renamed", path: "new name.txt", previousPath: "old name.txt" },
+			{ area: "base", kind: "copied", path: "copy.txt", previousPath: "source.txt" },
+		]);
+	});
+
+	test("parseNameStatus drops an unmerged entry, an unknown letter, and a record cut short", () => {
+		expect(parseNameStatus(names("U", "both.txt", "X", "odd.txt", "M", "kept.txt"))).toEqual([{ area: "base", kind: "modified", path: "kept.txt", previousPath: null }]);
+		// Cut inside a rename: the new path never came.
+		expect(parseNameStatus(`${names("M", "a.txt", "R100", "old.txt")}new`)).toEqual([{ area: "base", kind: "modified", path: "a.txt", previousPath: null }]);
+		expect(parseNameStatus("M\0a.t")).toEqual([]);
+		expect(parseNameStatus("")).toEqual([]);
+	});
+
+	test("sinceBase keeps conflicts from the status, the base diff for the rest, and untracked files on their own", () => {
+		const status: FileChange[] = [
+			{ area: "conflicted", kind: "conflicted", path: "both.txt", previousPath: null },
+			{ area: "staged", kind: "modified", path: "a.txt", previousPath: null },
+			{ area: "unstaged", kind: "untracked", path: "a.txt", previousPath: null },
+			{ area: "unstaged", kind: "untracked", path: "new.txt", previousPath: null },
+		];
+		const since: FileChange[] = [
+			{ area: "base", kind: "modified", path: "both.txt", previousPath: null },
+			{ area: "base", kind: "deleted", path: "a.txt", previousPath: null },
+			{ area: "base", kind: "modified", path: "committed.txt", previousPath: null },
+		];
+		expect(sinceBase(status, since)).toEqual<FileChange[]>([
+			{ area: "conflicted", kind: "conflicted", path: "both.txt", previousPath: null },
+			{ area: "base", kind: "deleted", path: "a.txt", previousPath: null },
+			{ area: "base", kind: "modified", path: "committed.txt", previousPath: null },
+			{ area: "untracked", kind: "untracked", path: "a.txt", previousPath: null },
+			{ area: "untracked", kind: "untracked", path: "new.txt", previousPath: null },
+		]);
+	});
+
+	test("the base diff names the commit, literal paths, and plain output", () => {
+		expect(baseNamesArguments(COMMIT)).toEqual(["--literal-pathspecs", "diff", "--no-color", "--no-ext-diff", "--name-status", "-z", "-M", COMMIT, "--"]);
+		expect(baseNamesArguments(COMMIT, ["a b.txt"])).toEqual(["--literal-pathspecs", "diff", "--no-color", "--no-ext-diff", "--name-status", "-z", "-M", COMMIT, "--", "a b.txt"]);
+		const renamed: FileChange = { area: "base", kind: "renamed", path: "new.txt", previousPath: "old.txt" };
+		expect(diffArguments(renamed, COMMIT)).toEqual({ args: ["--literal-pathspecs", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "-M", COMMIT, "--", "old.txt", "new.txt"], differencesExit: false });
+		const untracked: FileChange = { area: "untracked", kind: "untracked", path: "n.txt", previousPath: null };
+		expect(diffArguments(untracked, COMMIT).args).toEqual(["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--no-index", "--", "/dev/null", "n.txt"]);
+	});
+
+	test("a base diff needs a commit", () => {
+		expect(() => diffArguments({ area: "base", kind: "modified", path: "a.txt", previousPath: null })).toThrow();
+		expect(() => diffArguments({ area: "base", kind: "modified", path: "a.txt", previousPath: null }, "--output=x")).toThrow();
+	});
+
+	test("savedBaseRef takes only an assigned ref under refs/, and says why otherwise", () => {
+		expect(savedBaseRef({ kind: "assigned", ref: "refs/remotes/origin/main" })).toEqual({ ok: true, ref: "refs/remotes/origin/main" });
+		expect(savedBaseRef({ kind: "assigned", ref: "refs/heads/main" })).toEqual({ ok: true, ref: "refs/heads/main" });
+		for (const base of [null, { kind: "unassigned" } as const, { kind: "invalid", reason: "stale" } as const, { kind: "assigned", ref: "--output=x" } as const, { kind: "assigned", ref: "main" } as const]) {
+			const answer = savedBaseRef(base);
+			expect(answer.ok).toBe(false);
+			expect(!answer.ok && answer.reason.length > 0).toBe(true);
+		}
+		expect(savedBaseRef({ kind: "unassigned" })).toEqual({ ok: false, reason: "Timber has no base saved for this worktree." });
+	});
+
+	test("names a remote base by remote and branch, and a local one by its branch", () => {
+		expect(baseName("refs/remotes/origin/main")).toBe("origin/main");
+		expect(baseName("refs/heads/main")).toBe("main");
+		expect(baseName("refs/heads/release/2.4")).toBe("release/2.4");
+		expect(baseName("refs/tags/v1")).toBe("refs/tags/v1");
+	});
+
+	test("a commit is resolved after the end of options", () => {
+		expect(commitArguments("refs/remotes/origin/main")).toEqual(["rev-parse", "--verify", "--quiet", "--end-of-options", "refs/remotes/origin/main^{commit}"]);
 	});
 });

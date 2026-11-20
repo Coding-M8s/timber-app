@@ -1984,23 +1984,46 @@ Open always pass `--no-editor` to Timber (see
 ## The Changes tab
 
 The Changes tab shows what changed in the selected worktree, as `git status`
-and `git diff` see it. It is read-only: nothing in it stages, discards, or
-commits. Comparing against the base or a backup is a later step.
+and `git diff` see it, compared with the worktree's base or with its last
+commit. It is read-only: nothing in it stages, discards, or commits.
+Comparing against a backup is a later step.
 
-- **The capabilities.** `readFileChanges({ repository, worktree })` and
-  `readFileDiff({ repository, worktree, file })` on the `Engine` contract.
+- **The capabilities.** `readFileChanges({ repository, worktree, compare })`
+  and `readFileDiff({ repository, worktree, compare, file })` on the
+  `Engine` contract, where `compare` is "base" or "uncommitted".
   The types and pure parsers are in `src/shared/file-changes.ts`, and the
   main process side is `src/bun/file-changes.ts`. Both act only on a
   worktree Timber lists, in a repository in the app's list, whose folder is
   there (`findListedWorktree`), as "Open in editor" does.
-- **The list.** `git status --porcelain=v2 -z --untracked-files=all`. Each
-  untracked file is listed on its own, not its folder, so it can show its
-  content. A file with staged and unstaged changes is listed once in each
-  group. Groups show conflicts first, then staged, then unstaged (untracked
-  included). Kinds: modified, added, deleted, renamed, copied, type changed,
+- **The list, Uncommitted.** `git status --porcelain=v2 -z
+  --untracked-files=all`. Each untracked file is listed on its own, not its
+  folder, so it can show its content. A file with staged and unstaged
+  changes is listed once in each group. Groups show conflicts first, then
+  staged, then unstaged (untracked included). With Base, the groups are
+  conflicts, changed, and untracked (below). Kinds: modified, added, deleted, renamed, copied, type changed,
   untracked, and conflicted. At most 5,000 files are listed, with a note
   when there are more.
-- **A diff.** Staged changes are `git diff --cached -- <path>`, unstaged
+- **Comparing with the base.** The ref is the base Timber saved for the
+  listed worktree (`Worktree.base`), read in the main process, never sent by
+  the window, and only a canonical ref under `refs/`. The main process
+  resolves it and `HEAD` with `git rev-parse --verify --quiet
+  --end-of-options <rev>^{commit}`, then finds the branch point with `git
+  merge-base <base> <head>`. The list is `git diff --name-status -z -M
+  <branch point>`, which compares that commit with the files on disk, so
+  committed, staged, and unstaged changes are one entry each and commits on
+  the base after the branch point do not show. Conflicts and untracked
+  files come from the same `git status` as Uncommitted: conflicts replace
+  the base diff's entry for that path, and untracked files are a group of
+  their own, so a file removed from Git but still on disk is listed as
+  deleted and as untracked. Every answer says which comparison its files
+  come from (`compared`) and whether the base can be used, with its name
+  and branch point, or the reason it cannot: no saved base, metadata Timber
+  cannot use, a ref Git does not have, no commit yet, or no shared history.
+  A base that cannot be used is never a failure: the answer is the
+  uncommitted list. The branch point is worked out again for every list
+  and diff.
+- **A diff.** A change since the base is `git diff -M <branch point> --
+  <path>`. Staged changes are `git diff --cached -- <path>`, unstaged
   ones `git diff -- <path>`, both paths for a rename or a copy, and an
   untracked file is `git diff --no-index -- /dev/null <path>`, so every line
   is an addition. A conflicted file is Git's combined diff. The request names
@@ -2019,6 +2042,16 @@ commits. Comparing against the base or a backup is a later step.
   stopped beyond that. A diff of more than 5,000 lines is not drawn. Either
   way, and for a binary file, a notice shows instead, with the Git command
   to run in a terminal. Git is stopped after 20 seconds.
+- **Compare with.** A switch above the list, Base or Uncommitted. The view
+  in the store keeps the comparison its files came from, and the header
+  shows `origin/main @ a1b2c3d` or "Last commit". Base is disabled, with
+  the reason under the switch, when the latest answer says the base cannot
+  be used. Switching clears the list and reads it again, so no file of one
+  comparison shows under the other's header. A worktree compares with its
+  base unless the person chose Uncommitted there; that choice is in the
+  saved layout as `uncommittedChanges`, the worktree identities set to
+  Uncommitted. An identity stays there after its worktree is removed,
+  which costs one short string.
 - **In the window.** The file list sits beside the diff. Each file shows its
   name, its folder, and Git's letter (M, A, D, R, C, T, U, and ! for a
   conflict). The first file is selected, and the selection stays on a file
@@ -2032,7 +2065,8 @@ commits. Comparing against the base or a backup is a later step.
   selected file's diff is read again with it. The view is in the store
   (`changes`), and the latest read wins.
 - **Trying it.** In `bun run dev:web` the billing worktree feat/tax-rules
-  shows every kind of change. `timberMock.failFileChanges("Git is busy")`
+  shows every kind of change, and with Base two files committed on the
+  branch. The pretend branch point is always `a1b2c3d`. `timberMock.failFileChanges("Git is busy")`
   makes reads fail (`null` to undo), and `timberMock.setFileChanges(path,
   files)` sets what a worktree lists.
 
