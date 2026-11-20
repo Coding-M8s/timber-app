@@ -388,11 +388,11 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 	});
 
 	test("a window that catches up while output is still being gathered gets all of it in the fresh start", async () => {
-		start({ undrawnLimit: 1, flushMilliseconds: 1000 });
+		start({ undrawnLimit: 1, flushMilliseconds: 500 });
 		const { session } = await opened();
 		// The prompt alone goes past the limit, so output is held from here on.
 		expect(await until(() => outputs.length > 0)).toBe(true);
-		await Bun.sleep(1100);
+		await Bun.sleep(600);
 		sessions.write(session.id, "echo kept-$((2+3))\r");
 		// The answer sits in the part being gathered when the window says it caught up.
 		await Bun.sleep(200);
