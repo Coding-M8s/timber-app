@@ -4,6 +4,7 @@ import type { RestartPlan, RestartResult } from "../../shared/restart";
 import { readableEditorSetting } from "../../shared/editor";
 import type { Engine } from "../../shared/engine";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "../../shared/git-fetch";
+import type { ChopList } from "../../shared/chops";
 import { type FileChangeTarget, type FileChangesResult, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
 import { type Layout, clampSidebarWidth, dismissSetup, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberFailure, TimberStatus, Worktree, WorktreeCommandResult } from "../../shared/model";
@@ -146,6 +147,12 @@ export interface AppStore {
 	 * latest read wins. Never throws.
 	 */
 	readChanges(repository: string, worktreeId: string): Promise<void>;
+	/**
+	 * Read the chops of a worktree, named by the path of its repository and
+	 * its identity, into `chops`. The latest read wins, and another
+	 * worktree starts afresh. Never throws.
+	 */
+	readChops(repository: string, worktreeId: string): Promise<void>;
 	/** Select a file of `changes` and read its diff. Never throws. */
 	selectChangedFile(file: FileChangeTarget): Promise<void>;
 	/**
@@ -743,6 +750,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			endOrphanTerminals();
 			forgetGoneForms();
 			requestBackups(path);
+			// The file may have changed with the worktree's branch or files: read the chops on screen again.
+			if (state.chops?.repository === path) void readChops(path, state.chops.worktree);
 		} catch (error) {
 			if (stale()) return;
 			update({ error: { repository: path, message: messageOf(error) } });
@@ -911,6 +920,24 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const next: ChangesView = { ...view, files: answer.files, more: answer.more, problem: null, selected, diff: kept ? view.diff : null };
 		update({ changes: next });
 		if (selected) await readDiff(next, selected, worktree.path);
+	}
+
+	let chopsTicket = 0;
+	async function readChops(repositoryPath: string, worktreeId: string): Promise<void> {
+		const worktree = worktreeOf(repositoryPath, worktreeId);
+		if (!worktree) return;
+		const ticket = ++chopsTicket;
+		if (state.chops?.worktree !== worktreeId || state.chops.repository !== repositoryPath) {
+			update({ chops: { repository: repositoryPath, worktree: worktreeId, list: null } });
+		}
+		let answer: ChopList;
+		try {
+			answer = await engine.listChops({ repository: repositoryPath, worktree: worktree.path });
+		} catch (error) {
+			answer = { outcome: "failed", message: unheard("the chops", error) };
+		}
+		if (ticket !== chopsTicket || state.chops?.worktree !== worktreeId || state.chops.repository !== repositoryPath) return;
+		update({ chops: { repository: repositoryPath, worktree: worktreeId, list: answer } });
 	}
 
 	async function selectChangedFile(file: FileChangeTarget): Promise<void> {
@@ -1691,6 +1718,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			if (tab !== state.tab) update({ tab });
 		},
 		readChanges,
+		readChops,
 		selectChangedFile,
 		async readTimberSettings(request) {
 			try {

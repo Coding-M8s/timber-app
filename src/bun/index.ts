@@ -19,6 +19,7 @@ import { createEditorLauncher } from "./editor";
 import { createGitRunner } from "./fetch-git";
 import { createFetcher } from "./fetcher";
 import { createSavedForcePushes } from "./force-pushes";
+import { createChops } from "./chops";
 import { createFileChanges } from "./file-changes";
 import { readBranches } from "./git-engine";
 import { createSavedLayout } from "./layout";
@@ -189,6 +190,8 @@ void watchRepositories();
 
 const done = createDone({ timber: () => timber.current(), findRepository: path => repositories.find(path) });
 const fileChanges = createFileChanges({ findRepository: path => repositories.find(path) });
+// Personal chops come from the saved preferences only; the repository's are read from its file on every request.
+const chops = createChops({ findRepository: path => repositories.find(path), personal: async () => (await preferences.load()).chops });
 // Timber reads and writes its own settings and logins. The app never opens those files (see ./timber-settings.ts).
 const timberSettings = createTimberSettings({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
 // Runs Timber's settings read and keeps only the workflows. What it prints is private: never log it (see ./workflows.ts).
@@ -394,6 +397,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			// Read-only Git, only in a worktree Timber lists (see ./file-changes.ts). A diff holds file contents: never log it.
 			readFileChanges: request => fileChanges.read(request),
 			readFileDiff: request => fileChanges.diff(request),
+			listChops: request => chops.list(request),
 			listTerminals: () => terminals.list(),
 			// Starts a shell, an agent from the saved Settings, or timber rebase, only in a worktree Timber lists (see ./terminals.ts).
 			openTerminal: request => terminals.open(request),

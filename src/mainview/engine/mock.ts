@@ -31,6 +31,7 @@ import { type IssueControls, createMockIssues, sampleIssueLinks } from "./mock-i
 import { type PullRequestControls, createMockPullRequests } from "./mock-pull-requests";
 import { type BackupControls, createMockBackups } from "./mock-backups";
 import { type ThemeFileControls, createMockThemeFiles } from "./mock-theme-files";
+import { type ChopsControls, createMockChops } from "./mock-chops";
 
 const inSync = (branch: string): SyncState => ({ kind: "tracking", upstream: `origin/${branch}`, ahead: 0, behind: 0 });
 
@@ -253,7 +254,7 @@ export const sampleTimberStatuses = {
 /** The mock engine, plus the controls a test or the browser build uses to act out changes. */
 /** The controls for terminals are in ./mock-terminals.ts. */
 /** The controls for Timber's settings are in ./mock-timber-config.ts, for workflows in ./mock-workflows.ts, for pull requests in ./mock-pull-requests.ts, for issues in ./mock-issues.ts, and for backups in ./mock-backups.ts. */
-export interface MockEngine extends Engine, TerminalControls, TimberConfigControls, WorkflowControls, PullRequestControls, IssueControls, BackupControls, ThemeFileControls {
+export interface MockEngine extends Engine, TerminalControls, TimberConfigControls, WorkflowControls, PullRequestControls, IssueControls, BackupControls, ThemeFileControls, ChopsControls {
 	/** Replace the data, without telling the interface. */
 	setRepositories(repositories: Repository[]): void;
 	/** Report that a repository changed, as the main process would. */
@@ -678,6 +679,7 @@ export function createMockEngine(
 		return { ok: true, worktree: target };
 	};
 	const filesOf = (worktree: Worktree) => fileChangeLists.get(worktree.path) ?? derivedFileChanges(worktree);
+	const chopFiles = createMockChops();
 
 	const look = async () => structuredClone(typeof timber === "function" ? timber() : timber);
 	const read = async <Result>(result: () => Result): Promise<Result> => {
@@ -945,6 +947,15 @@ export function createMockEngine(
 			if (!listed.ok) return { outcome: listed.outcome, message: listed.message };
 			return diffMockFileChange(filesOf(listed.worktree), structuredClone(request));
 		},
+		async listChops(request) {
+			const repository = current.find(candidate => candidate.path === request.repository);
+			const target = repository?.available && asRead(repository).failure === null
+				? asRead(repository).worktrees.find(candidate => candidate.path === request.worktree)
+				: undefined;
+			if (!target || !target.pathExists) return { outcome: "not-listed", message: `Timber lists no worktree at ${request.worktree} in ${request.repository}. No chops were read.` };
+			return chopFiles.list(request.repository, request.worktree, preferences.chops);
+		},
+		...chopFiles.controls,
 		setFileChanges(path, files) {
 			if (files === null) fileChangeLists.delete(path);
 			else fileChangeLists.set(path, structuredClone(files));

@@ -209,7 +209,7 @@ change them here first when they change.
   goes on, the worktree's row says "removing" and its actions are off, and a
   toast says how it ended. A failure stays on the row, or in the repository's
   group once the worktree left the list, with Details to read it.
-- **Settings:** sections for editor, agents, notifications, fetching, Jira, setup scripts,
+- **Settings:** sections for editor, agents, chops, notifications, fetching, Jira, setup scripts,
   pre-done scripts, starting branch, remote, worktree folder, and layout.
   Presets where they help, but every value is editable free-form, and every
   section has Save.
@@ -220,6 +220,19 @@ change them here first when they change.
   the field they name. A tracked `.timber.toml` is changed only when the
   person ticks the box for that save. Issue tracking has "Test connection"
   for GitHub, Jira, and Linear.
+- **Chops:** a Settings section for saved commands and prompts to run in a
+  worktree. A chop has a name, a kind (Command or Prompt), its text, and an
+  optional description; a prompt can name the agent that gets it, or the
+  first saved agent. The person's own chops are rows with Remove and "Add a
+  chop", each for every repository or for one, saved with the section's
+  Save. Below, "From the repository" lists the chops the selected
+  worktree's `.timber/chops.json` shares, read-only, with the file's path
+  and the branch, so a branch with other chops is plain to see. A personal
+  chop with the same name, ignoring case, wins: the file's chop is listed
+  as "Overridden by your chop". A worktree with no file gets a quiet hint
+  naming where one would go; a damaged file gets its reason, quietly, and
+  personal chops still work. "Read again" reads the file now. Running chops
+  is not part of this section.
 - **Terminal:** a Settings section for the terminal's font, as a name to
   type with Geist Mono as the default, its text size, and the cursor, a
   block or a thin bar. A font that is not installed gets a note under the

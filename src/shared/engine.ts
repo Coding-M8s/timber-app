@@ -1,4 +1,5 @@
 import type { AppInfo } from "./app-info";
+import type { ChopList, ChopsRequest } from "./chops";
 import type { BackupDeleteRequest, BackupDeleteResult, BackupList, BackupRestoreRequest, BackupRestoreResult } from "./backups";
 import type { Attention } from "./attention";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "./git-fetch";
@@ -340,6 +341,17 @@ export interface Engine {
 	 * without its text. Read-only and safe to call again.
 	 */
 	readFileDiff(request: FileDiffRequest): Promise<FileDiffResult>;
+	/**
+	 * The chops a worktree of a repository in the list offers, named by the
+	 * worktree's registered path, not its id: the person's saved chops
+	 * merged with the repository's `.timber/chops.json` in that worktree, as
+	 * `mergeChops` in ./chops.ts merges them, with the file's chops that a
+	 * personal one overrides, and how the file stood. The file is read anew
+	 * on every call, never cached and never watched, so a change to it shows
+	 * on the next call. Nothing is written, and a missing `.timber` folder is
+	 * not created. Read-only and safe to call again.
+	 */
+	listChops(request: ChopsRequest): Promise<ChopList>;
 	/**
 	 * Every terminal session the machine holds, running or exited. Sessions
 	 * outlive the window's view of them: one keeps running while another
