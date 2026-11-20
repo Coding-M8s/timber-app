@@ -50,6 +50,8 @@ export async function createEngine(): Promise<Engine> {
 	// takes GitHub away (null for the sample), and saving or removing a Jira or Linear login in Settings adds or takes away that tracker.
 	// For backups: timberMock.setBackups("/work/timber", { state: "failed", message: "..." }), or null for the sample, and
 	// timberMock.endBackupCommands("refused"), ("partial"), or ("no-result") chooses how a restore or delete ends.
+	// For arenas: timberMock.setArenaPresets("/work/timber", [{ name: "fast", tool: "codex" }]) adds presets to New arena,
+	// timberMock.endArenaCommands("setup-fails") or ("keeps") chooses how a create or pick ends, and billing has no arenas.
 	// The billing worktree feat/tax-rules shows every kind of change.
 	// A removal and a fetch take a moment here, so the running state can be seen.
 	engine.setDoneDelay(900);

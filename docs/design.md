@@ -30,8 +30,17 @@ change them here first when they change.
 - Drag a repository header to move its group; a line shows where it will
   land. Alt+Up and Alt+Down move a focused header one place. The order is
   remembered between runs.
-- Each repository header has a control to create a worktree in it and a
-  "Fetch now" control, and an "Add repository" control sits below the list.
+- Each repository header has a "+" that opens a small menu, "New
+  worktree..." and "New arena (Beta)...", and a "Fetch now" control. An "Add
+  repository" control sits below the list. New arena is disabled, with the
+  reason, when the Timber found has no arenas for apps.
+- An arena's attempts sit together under its header, "Arena <name>" with a
+  "Beta" tag and a short detail ("2 attempts from main @ abc1234", or
+  "1 attempt, codex-1 kept" after a pick). Each attempt's row shows its label
+  instead of the branch, and its agent's state as any row does. A worktree
+  belongs to an arena only when Timber lists it at that path and Git still
+  has it as Timber created it, never because of its branch or folder name.
+  Clicking the header opens Compare.
 - The app fetches every repository in the background, on an interval from
   Settings that can be turned off. A failed fetch, such as while offline or
   without stored credentials, shows a quiet grey word beside the
@@ -248,6 +257,29 @@ change them here first when they change.
   whose command deletes work puts it on the button that keeps everything
   instead. After a run that failed, the keyboard goes back to the first text
   field, to correct it, or to the submit button when there is none.
+- **New arena (Beta):** a name or ticket key, the task, one or more groups of
+  attempts (a tool with an optional model and effort, or a saved preset, and
+  how many runs), and an optional start point. The footer shows the exact
+  `timber arena new ... --no-editor --no-agent --result-file` command, with
+  `<task file>` where the task goes: the task reaches Timber only in a
+  private temporary file and never appears in a command. Under it, the
+  `timber __app-arena launch` the app asks next. Once every attempt is ready
+  the dialog closes, the first attempt is selected, and each attempt with an
+  agent gets its own session, started with exactly the command Timber gives.
+  A create that stopped part of the way starts no agent, says what Timber
+  kept, and does not offer the same name again.
+- **Compare (Beta):** one row per attempt, from `timber arena pick <arena>
+  --inspect --json`, shown in the footer: the agent's state in this app and
+  Timber's, commits, committed and uncommitted changes against the arena's
+  base, and untracked files as their own count. "Open in Changes" selects the
+  attempt and shows its Changes tab; "Start agent" starts its agent when none
+  runs. "Keep this one" compares again, then shows the exact `timber arena
+  pick <arena> --winner <label>` and which attempts it removes, behind a
+  button marked as deleting. It is disabled, with the reason, while any
+  session of the app runs in an attempt: the app never stops one. After the
+  pick each row says what happened to it (kept as the winner, removed,
+  removed with its work saved under a ref, or kept by Timber with its
+  reason), and the comparison and the list are read again.
 - **New or open:** a name or sentence becomes a branch; pick the start point.
   One dialog, opened from the "+" of a repository and named after it, with a
   switch between "New branch" and "Existing branch". The dialog closes as

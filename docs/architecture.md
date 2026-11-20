@@ -2048,6 +2048,84 @@ api-server has none; and billing acts out a Timber without the list.
 and `timberMock.endBackupCommands("refused")`, `("partial")`, or
 `("no-result")` chooses how a restore or delete ends.
 
+## Arenas
+
+An arena gives two or more agents the same task from the same commit, each
+in its own worktree, and keeps one (Coding-M8s/timber-app#172). Timber's
+arena commands are beta, and so is everything the app offers for them.
+Timber owns every rule: which attempt is ready, what its agent runs, what
+counts as work, and what pick may remove. The app repeats none of them. It
+uses Timber's arena records for apps ("Arenas for app consumers" in Timber's
+`docs/ide-contract.md`), read in `src/shared/arenas.ts`, which is pure, and
+run from `src/bun/arenas.ts`.
+
+- **Listing.** `listArenas` runs `timber __app-arena list` in the primary
+  checkout, as an executable plus an argument array, with standard input
+  closed and a limit of thirty seconds. Exit 1 with a record still lists:
+  only a record with a top-level diagnostic is a failure, and an arena
+  Timber could not read is a failed entry beside the others. Another schema
+  version, an attempt that cannot be read, or exit 1 with nothing failed is
+  a failure with a message, never an empty list. Unknown fields are
+  ignored. The store reads arenas as it reads backups: when a repository is
+  first listed, on Refresh, right after a create or pick, and after a change
+  of the repository, at most once in `ARENA_READ_SPACING_MS`.
+- **A Timber without arenas.** Released 0.1.3 has no `__app-arena`, and a
+  build of Timber's main branch with it still calls itself 0.1.3. As for
+  backups, the answer is `unsupported` only when Timber exited with 1,
+  printed nothing, and its standard error says `unknown command
+  '__app-arena'`. The app then offers no arena, and New arena is disabled
+  with the reason. Replace this with a version check once a release has
+  arenas.
+- **The sidebar.** `groupArenaRows` in `src/mainview/arena-format.ts` puts a
+  listed worktree under its arena only when an attempt of an arena read whole
+  has its exact path and `git: "ok"`. Branch and folder names are never
+  read.
+- **Creating.** `newArena` runs `timber arena new` with each group's flags in
+  order (a model, effort, or runs count belongs to the tool or preset before
+  it), `--base`, `--prompt-file <task file>`, `--no-editor --no-agent
+  --result-file <temporary file>`, and the name after `--`. Every value the
+  person typed is joined to its option with `=`, so none can read as an
+  option. The task is written to a new file that only this user can read,
+  in the same private folder as the result file, which is removed after
+  Timber ends; it is never an argument, never logged, and never in a record.
+  Timber names the arena (a ticket key becomes lowercase), so the app takes
+  the name from the record. A failure after Timber reserved the arena keeps
+  that report: the name stays taken, and the app never creates it again.
+- **Starting an attempt's agent.** `openTerminal` with `arenaAttempt` asks
+  `timber __app-arena launch <arena> --attempt <label>` in the attempt's
+  worktree, before anything else, since nothing may wait between finding the
+  worktree and keeping the session. It starts exactly the program, arguments,
+  folder, and environment Timber gives (`environment` set on top of the
+  app's, `unset` removed), the program found on the PATH unless it is a
+  whole path, as an agent session named after the label. Timber's folder
+  must be the worktree asked for. A manual attempt starts nothing. After a
+  create in which every attempt is ready, the store starts one session per
+  attempt with an agent; after a failure it starts none.
+- **Comparing.** `inspectArena` runs `timber arena pick <arena> --inspect
+  --json`, which changes nothing, and the Compare dialog shows its counts as
+  they are: committed and uncommitted apart, untracked as a count. "Open in
+  Changes" opens the attempt's Changes tab as for any worktree. Timber saves
+  no base for an attempt (`timber ls` reports it unassigned), so that tab
+  compares uncommitted changes only; comparing with the arena's base commit
+  there is not done yet.
+- **Picking.** `pickArena` runs `timber arena pick <arena> --winner <label>
+  --result-file`, in the repository's turn. Timber refuses only attempts it
+  recorded as running, and it never sees the app's sessions, so the main
+  process first reads the list again and refuses, running nothing, while any
+  running session of the app (an agent or a shell) is in one of the arena's
+  attempt folders. The app never ends one for it. The record says what
+  happened to each attempt: the winner, removed, archived under a
+  `refs/timber/arena/...` ref, already removed, or kept or partly removed
+  with Timber's reason, which makes the pick a failure to fix and run again.
+  The repository and its arenas are read again after every outcome.
+- **Tests.** `tests/arenas-parse.test.ts` reads records recorded from
+  Timber's main branch (`tests/fixtures/timber-arena`). `tests/arenas.test.ts`
+  runs a stand-in Timber that notes each run, the task file's text and
+  permission bits included, and, when the Timber found has arenas, the real
+  one in a temporary repository with a stub wrapper preset: list, launch,
+  and inspect leave every file and ref as they were, a pick is refused while
+  a session runs, and then archives the attempt with work.
+
 ## Opening a worktree in an editor
 
 The app has no editor of its own. "Open in editor" starts the person's editor
