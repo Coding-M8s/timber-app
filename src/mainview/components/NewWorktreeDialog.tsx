@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { Fragment, useEffect, useState, useSyncExternalStore } from "react";
 import type { AgentSetting } from "../../shared/agent";
 import type { Repository } from "../../shared/model";
 import { useAppState, useStore, useSubmission } from "../store/react";
@@ -81,7 +81,8 @@ export function WorktreeDialogFrame(props: WorktreeDialogFrameProps) {
 			onSubmit={() => onSubmit(mode)}
 			onClose={onClose}
 		>
-			{mode.fields}
+			{/* Keyed by mode, so a switch mounts the new mode's fields and its first field's autoFocus takes the keyboard. */}
+			<Fragment key={mode.label}>{mode.fields}</Fragment>
 			<AgentField agents={agents} chosen={agent} onPick={onPickAgent} />
 		</OperationDialog>
 	);

@@ -204,6 +204,11 @@ change them here first when they change.
 - A command that failed keeps the dialog open with Timber's diagnostic, so the
   person can correct and retry. What the command printed sits in a details
   area that starts closed.
+- Opening a dialog puts the keyboard in its first field, past anything in its
+  header. A dialog with no field leaves it on its first button. A dialog
+  whose command deletes work puts it on the button that keeps everything
+  instead. After a run that failed, the keyboard goes back to the first text
+  field, to correct it, or to the submit button when there is none.
 - **New or open:** a name or sentence becomes a branch; pick the start point.
   One dialog, opened from the "+" of a repository and named after it, with a
   switch between "New branch" and "Existing branch". The dialog closes as
@@ -230,7 +235,12 @@ change them here first when they change.
   shown in the footer before it runs; a sentence or branch name passes
   unchanged, and Timber's default tracker never changes. Linear is listed
   when its login is saved, but has not been tested with a real Linear
-  workspace.
+  workspace. The dialog opens with the keyboard in Name, so typing at once
+  fills it. Switching mode puts the keyboard in that mode's first field,
+  unless New branch is offering "Run setup", which has none; Shift+Tab goes
+  back to the switch, whose arrow keys change the mode. A run that failed
+  puts the keyboard back in Name, or on "Run setup" once the worktree
+  exists.
 - **Rebase:** pick the base. The picker starts from the base Timber saved for
   the worktree. A worktree with uncommitted changes is refused, as Timber
   does. The dialog says how the rebase ended. One that stops on conflicts

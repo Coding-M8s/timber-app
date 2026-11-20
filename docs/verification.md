@@ -2595,3 +2595,31 @@ Run for `timber new` in an app terminal (issue 96), Linux x64 with Bun
   with its agent.`, started no agent, and the folder passed on
   `{ repository, worktree, agent: true }` for the new worktree.
 - Not run: the desktop window, and a released Timber binary with the handoff.
+
+Run for focus in the new worktree dialog (issue 195), Linux x64 with Bun
+1.4.5, against the mock engine only:
+
+- `bun run typecheck`: no errors.
+- `bun run typecheck:desktop`: no errors.
+- `bun test`: 2285 passed, 18 skipped, none failed. The new ones cover
+  `focusFirstField` (first enabled control, disabled, hidden, and non-control
+  entries skipped, nothing moved when there is no control), `openModal`
+  (showModal first, then the first field; no field for a destructive
+  dialog; an open dialog not shown again), `focusAfterFailure` (the first
+  enabled text field past buttons, selects, and boxes, else the submit
+  button) and, in the markup of both modes, the switch in the header before
+  the fields with Name and the branch field as each mode's first field.
+- `bun run build:web`, then the built interface driven in headless Chrome
+  151 by a temporary script (not committed). The "+" opened the dialog with
+  the focus in Name, and typing at once filled it. Shift+Tab reached the
+  switch; the right arrow chose "Existing branch" and put the focus in its
+  branch field; Shift+Tab and the left arrow chose "New branch" and put it
+  back in Name, with the typed name kept. Clicking either side of the switch
+  put the focus in that mode's first field. With `timberMock.endCommands`,
+  a refused run in New branch put the focus back in Name, and typing went on
+  in it; a run that stopped after creating the worktree put it on "Run
+  setup"; a refused run in Existing branch put it in the branch field. The
+  same script against the build before the change found the focus on the
+  switch and Name empty after typing (the failed-run steps were not run
+  against that build).
+- Not run: the desktop window (WebKitGTK), Windows, and macOS.

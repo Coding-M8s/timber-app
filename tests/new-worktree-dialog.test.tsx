@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { WorktreeDialogFrame } from "../src/mainview/components/NewWorktreeDialog";
+import { focusAfterFailure, focusFirstField, openModal } from "../src/mainview/components/OperationDialog";
 import { ModeSwitch } from "../src/mainview/components/worktree-modes/ModeSwitch";
+import { existingBranchMode } from "../src/mainview/components/worktree-modes/existing-branch";
+import { createExistingBranchForm } from "../src/mainview/components/worktree-modes/existing-branch-form";
 import { createWorktreeDialogController } from "../src/mainview/components/worktree-modes/dialog-controller";
 import type { WorktreeDialogMode } from "../src/mainview/components/worktree-modes/mode";
 import { newBranchMode } from "../src/mainview/components/worktree-modes/new-branch";
@@ -419,5 +422,121 @@ describe("the mode switch", () => {
 
 	test("is not drawn for a single mode", () => {
 		expect(frame(0, false, [modes[0]!])).not.toContain("radiogroup");
+	});
+});
+
+describe("the keyboard when the dialog opens", () => {
+	/** A control as `HTMLFieldSetElement.elements` lists it, noting when it is focused. */
+	const control = (name: string, focused: string[], extra: { localName?: string; type?: string; disabled?: boolean } = {}) => ({
+		localName: "input", ...extra, name,
+		focus: () => focused.push(name),
+	});
+
+	test("goes to the first field that takes it", () => {
+		const focused: string[] = [];
+		expect(focusFirstField([control("name", focused), control("base", focused)])).toBe(true);
+		expect(focused).toEqual(["name"]);
+	});
+
+	test("skips disabled and hidden controls, and what is not a control", () => {
+		const focused: string[] = [];
+		const controls = [
+			control("output", focused, { localName: "output" }),
+			control("token", focused, { type: "hidden" }),
+			control("locked", focused, { disabled: true }),
+			control("agent", focused, { localName: "select" }),
+		];
+		expect(focusFirstField(controls)).toBe(true);
+		expect(focused).toEqual(["agent"]);
+	});
+
+	test("moves nothing when the fields have no control", () => {
+		const focused: string[] = [];
+		expect(focusFirstField([])).toBe(false);
+		expect(focusFirstField([control("locked", focused, { disabled: true })])).toBe(false);
+		expect(focused).toEqual([]);
+	});
+
+	/** A dialog that notes what happens to it, opened or not. */
+	const fakeDialog = (events: string[], open = false) => ({
+		open,
+		showModal() {
+			events.push("showModal");
+			this.open = true;
+		},
+	});
+
+	test("opening shows the dialog as a modal, then puts the keyboard in the first field", () => {
+		const events: string[] = [];
+		openModal(fakeDialog(events), { elements: [control("name", events)] }, false);
+		expect(events).toEqual(["showModal", "name"]);
+	});
+
+	test("a destructive dialog opens without a field taking the keyboard, and an open one is not shown again", () => {
+		const events: string[] = [];
+		openModal(fakeDialog(events), { elements: [control("checkbox", events)] }, true);
+		expect(events).toEqual(["showModal"]);
+		const again: string[] = [];
+		openModal(fakeDialog(again, true), { elements: [control("name", again)] }, false);
+		expect(again).toEqual(["name"]);
+	});
+
+	test("after a failed run, the first text field takes the keyboard back, past buttons, selects, and boxes", () => {
+		const focused: string[] = [];
+		const retry = { focus: () => focused.push("retry") };
+		focusAfterFailure([
+			control("back", focused, { localName: "button", type: "button" }),
+			control("rerun", focused, { type: "checkbox" }),
+			control("agent", focused, { localName: "select" }),
+			control("locked", focused, { type: "text", disabled: true }),
+			control("name", focused, { type: "text" }),
+		], retry);
+		expect(focused).toEqual(["name"]);
+	});
+
+	test("after a failed run with no text field, as when New branch offers Run setup, the retry button takes it", () => {
+		const focused: string[] = [];
+		focusAfterFailure([
+			control("back", focused, { localName: "button", type: "button" }),
+			control("agent", focused, { localName: "select" }),
+		], { focus: () => focused.push("retry") });
+		expect(focused).toEqual(["retry"]);
+		expect(() => focusAfterFailure([], null)).not.toThrow();
+	});
+
+	/** Both real modes in the frame, with `selected` on screen. */
+	async function bothModes(selected: number) {
+		const store = createAppStore(createMockEngine());
+		store.start();
+		await settle();
+		store.openDialog({ kind: "new-worktree", repository: TIMBER });
+		const submission = createSubmission(() => store.closeDialog());
+		const repository = store.getState().repositories.find(candidate => candidate.path === TIMBER)!;
+		const model = createNewBranchModel(store, TIMBER);
+		const form = createExistingBranchForm(store, TIMBER, submission);
+		const modes = [
+			newBranchMode(model, model.getState(), repository, submission),
+			existingBranchMode(form, form.getState(), TIMBER, submission.getState().running),
+		];
+		return renderToStaticMarkup(
+			<WorktreeDialogFrame
+				repository={repository} modes={modes} selected={selected} submission={submission.getState()}
+				agents={[]} agent={null} onSelect={() => {}} onPickAgent={() => {}} onSubmit={() => {}} onClose={() => {}}
+			/>,
+		);
+	}
+
+	/** The first control inside the dialog's fields, where opening puts the keyboard. */
+	const firstField = (markup: string) => markup.split('<fieldset class="dialog-fields">')[1]?.match(/<(input|select|textarea|button)\b[^>]*>/)?.[0];
+
+	test("the switch sits in the header, before the fields, and Name is the first field of New branch", async () => {
+		const markup = await bothModes(0);
+		expect(markup.indexOf('role="radiogroup"')).toBeGreaterThan(-1);
+		expect(markup.indexOf('role="radiogroup"')).toBeLessThan(markup.indexOf('<fieldset class="dialog-fields">'));
+		expect(firstField(markup)).toMatch(/^<input class="field-input" placeholder="Fix login bug"[^>]* autofocus="" name="name"/);
+	});
+
+	test("the branch field is the first field of Existing branch", async () => {
+		expect(firstField(await bothModes(1))).toMatch(/^<input [^>]*role="combobox"[^>]* autofocus=""/);
 	});
 });
