@@ -8,7 +8,8 @@ import type { AppStore } from "./store/store";
 import { TERMINAL_LINE_HEIGHT, type TerminalAppearance, terminalFontStack } from "../shared/terminal-appearance";
 import { TERMINAL_MINIMUM_CONTRAST, terminalColors, watchTerminalColors } from "./terminal-colors";
 import { terminalAppearance, watchTerminalAppearance } from "./terminal-look";
-import { clipboardKey, leftInAlternateScreen, opensLink, sessionChipId, sessionKey } from "./terminal-format";
+import { clipboardKey, leftInAlternateScreen, sessionChipId, sessionKey } from "./terminal-format";
+import { terminalLinks } from "./terminal-links";
 
 /**
  * The drawn terminal of one session.
@@ -69,6 +70,7 @@ let webglWorks = true;
 function createView(store: AppStore, id: string): TerminalView {
 	const host = document.createElement("div");
 	host.className = "terminal-host";
+	const links = terminalLinks(url => void store.openLink(url), isMac());
 	const terminal = new Terminal({
 		...appearanceOptions(terminalAppearance()),
 		fontWeight: "400",
@@ -85,9 +87,9 @@ function createView(store: AppStore, id: string): TerminalView {
 		minimumContrastRatio: TERMINAL_MINIMUM_CONTRAST,
 		// Links that programs mark (OSC 8) open as plain ones do, never inside the app's own window.
 		linkHandler: {
-			activate: (event, uri) => {
-				if (opensLink(event, isMac())) void store.openLink(uri);
-			},
+			activate: (event, uri) => links.activate(event, uri),
+			hover: () => links.hover(),
+			leave: () => links.leave(),
 		},
 	});
 	const fitAddon = new FitAddon();
@@ -97,8 +99,8 @@ function createView(store: AppStore, id: string): TerminalView {
 	terminal.unicode.activeVersion = "11";
 	terminal.loadAddon(new WebLinksAddon((event, uri) => {
 		event.preventDefault();
-		if (opensLink(event, isMac())) void store.openLink(uri);
-	}));
+		links.activate(event, uri);
+	}, { hover: () => links.hover(), leave: () => links.leave() }));
 	terminal.onData(data => store.writeTerminal(id, data));
 	terminal.onResize(({ cols, rows }) => store.resizeTerminal(id, cols, rows));
 	const mac = isMac();
@@ -191,6 +193,12 @@ function createView(store: AppStore, id: string): TerminalView {
 			if (!opened) {
 				terminal.open(host);
 				opened = true;
+				// xterm opens links from presses on its screen, and tells a program that tracks the mouse of them on the element around it.
+				// Stopped on the way out, a press that opens a link here never reaches that program, so it cannot open the link a second time.
+				host.querySelector(".xterm-screen")?.addEventListener("mousedown", event => {
+					const press = event as MouseEvent;
+					if (links.keepsFromProgram(press, terminal.modes.mouseTrackingMode !== "none")) press.stopPropagation();
+				});
 			}
 			drawWithWebgl();
 			this.fit();

@@ -1884,7 +1884,12 @@ shows, and coming back shows it as it was.
   browser (`openLink`, `src/bun/open-link.ts`). The link goes, as the URL
   parser writes it out, as the one argument of `xdg-open` on Linux or `open`
   on macOS, never through a shell, because it is whatever a program printed.
-  Elsewhere nothing opens yet. Fonts come from the stylesheet and colors from the
+  Elsewhere nothing opens yet. One click opens a link once: xterm activates
+  only the link under the pointer, whether a program marked it (OSC 8) or it
+  is a plain URL. A program that tracks the mouse, such as Claude Code in
+  fullscreen, may open a clicked link itself, so a press that opens a link
+  here is not reported to it; every other press still is
+  (`src/mainview/terminal-links.ts`). Fonts come from the stylesheet and colors from the
   theme, the sixteen ANSI colors included, and an open terminal takes a new
   theme at once (see [themes](#themes)). Text is drawn at a contrast of at
   least 4.5:1 with its cell's background (`TERMINAL_MINIMUM_CONTRAST` in
