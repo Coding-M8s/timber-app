@@ -2687,10 +2687,10 @@ installed Timber 0.1.3 and with Timber's main branch at 6f64db7 built with
 `bun build src/index.ts --compile` (it also calls itself 0.1.3):
 
 - `bun run typecheck` and `bun run typecheck:desktop`: no errors.
-- `bun test` with the installed 0.1.3: 2282 passed, 20 skipped, 0 failed.
+- `bun test` with the installed 0.1.3: 2345 passed, 20 skipped, 0 failed.
   The real-repository arena test skips, because 0.1.3 answers `error:
   unknown command '__app-arena'`.
-- `TIMBER_APP_TIMBER_PATH=<main build> bun test`: 2283 passed, 18 skipped,
+- `TIMBER_APP_TIMBER_PATH=<main build> bun test`: 2346 passed, 18 skipped,
   0 failed. In a temporary repository with a stub wrapper preset, the app's
   own commands created an arena with one stub and one manual attempt, Timber's
   private snapshot held the task byte for byte, and list, launch, and inspect
