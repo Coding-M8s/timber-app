@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -8,7 +8,9 @@ import { createWorktreeCommands } from "../src/bun/worktree-commands";
 import type { Repository, TimberStatus } from "../src/shared/model";
 import { type CreatePullRequestRequest, prResultArguments } from "../src/shared/timber-pr";
 import { satisfiesTimberVersion } from "../src/shared/timber-version";
-import { type StandInRun, fingerprint, git, gitIdentity, isolatedEnvironment, makeRepository, readyAt, realTimber, recordedPr, standInResultTimber } from "./support/timber";
+import { type StandInRun, REAL_TIMBER_TIMEOUT_MS, fingerprint, git, gitIdentity, isolatedEnvironment, makeRepository, readyAt, realTimber, recordedHere, recordedPr, standInResultTimber } from "./support/timber";
+
+setDefaultTimeout(REAL_TIMBER_TIMEOUT_MS);
 
 const ready = readyAt("0.1.3");
 
@@ -31,7 +33,7 @@ describe("WorktreeCommands.pullRequest, with a stand-in Timber", () => {
 		rmSync(root, { recursive: true, force: true });
 	});
 
-	const here = (text: string) => text.replaceAll("/work/sample-worktrees/feat", worktree).replaceAll("/work/sample", repository);
+	const here = (text: string) => recordedHere(text, [["/work/sample-worktrees/feat", worktree], ["/work/sample", repository]], { json: true });
 
 	const listing = (paths: string[], change: Partial<Repository> = {}): Repository => ({
 		path: repository, name: "my repo", available: true, failure: null, setup: "repository",

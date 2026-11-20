@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
@@ -8,7 +8,9 @@ import { createWorktreeCommands } from "../src/bun/worktree-commands";
 import { type NewWorktreeRequest, type OpenWorktreeRequest, type TimberStatus, worktreeId } from "../src/shared/model";
 import { newWorktreeArguments, openWorktreeArguments, worktreeSetupArguments } from "../src/shared/worktree-commands";
 import { until } from "./support/runtime";
-import { type StandInRun, git, isolatedEnvironment, makeRepository, ready, realTimber, recordedResult, standInResultTimber } from "./support/timber";
+import { type StandInRun, REAL_TIMBER_TIMEOUT_MS, git, isolatedEnvironment, listedWorktrees, makeRepository, ready, realTimber, recordedResult, standInResultTimber } from "./support/timber";
+
+setDefaultTimeout(REAL_TIMBER_TIMEOUT_MS);
 
 /** How long to watch for a detached editor that should not start. */
 const editorStartWait = 500;
@@ -328,6 +330,7 @@ describe.skipIf(realTimber === null)("createWorktreeCommands, with the installed
 		expect(git(primary, "worktree", "list", "--porcelain") + git(primary, "for-each-ref")).toBe(before);
 	});
 
+	// Skipped on Windows: the setup script is a POSIX shell command, so a pass would not show that it was left alone.
 	test.skipIf(process.platform === "win32")("setup scripts never run during timber new, and Timber says it left them for the app", async () => {
 		const primary = freshRepository();
 		const commands = commandsFor(primary);
@@ -342,6 +345,7 @@ describe.skipIf(realTimber === null)("createWorktreeCommands, with the installed
 		expect(readdirSync(scratch)).toEqual([]);
 	});
 
+	// Skipped on Windows: the setup scripts are POSIX shell commands, as above.
 	test.skipIf(process.platform === "win32")("a workflow's post_create scripts wait for the setup session too, which runs them after the ordinary ones", async () => {
 		const primary = freshRepository();
 		const commands = commandsFor(primary);
@@ -407,6 +411,7 @@ describe.skipIf(realTimber === null)("createWorktreeCommands, with the installed
 		expect(result).toMatchObject({ outcome: "succeeded", created: true, setupSkipped: false });
 	});
 
+	// Skipped on Windows: the editor is `touch`, which Windows does not have, so it could not start either way.
 	test.skipIf(process.platform === "win32")("an editor configured in Timber does not start", async () => {
 		const primary = freshRepository();
 		const marker = join(primary, "..", "editor-started");
@@ -502,7 +507,7 @@ describe.skipIf(realTimber === null)("timber open, with the installed Timber on 
 		const result = await open("feat/zażółć-login");
 		expect(result).toMatchObject({ outcome: "succeeded", created: true, worktree: { branch: "feat/zażółć-login" } });
 		if (result.outcome !== "succeeded") return;
-		expect(git(primary, "worktree", "list", "--porcelain")).toContain(`worktree ${result.worktree.path}\n`);
+		expect(listedWorktrees(primary)).toContain(result.worktree.path);
 		expect(git(result.worktree.path, "branch", "--show-current").trim()).toBe("feat/zażółć-login");
 		expect(result.worktree.id).toBe((await listedId(result.worktree.path))!);
 	});

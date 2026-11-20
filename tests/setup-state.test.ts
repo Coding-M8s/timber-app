@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,7 +6,9 @@ import { createRepositoryReader } from "../src/bun/repository-reader";
 import { readSetupState } from "../src/bun/setup-state";
 import { createTimberSettings } from "../src/bun/timber-settings";
 import { REPOSITORY_CONFIG_FILE } from "../src/shared/timber-config";
-import { fingerprint, git, makeRepository, realTimber } from "./support/timber";
+import { REAL_TIMBER_TIMEOUT_MS, fingerprint, git, makeRepository, realTimber } from "./support/timber";
+
+setDefaultTimeout(REAL_TIMBER_TIMEOUT_MS);
 
 let root: string;
 let primary: string;
@@ -82,6 +84,7 @@ describe("whether a real repository was set up for Timber", () => {
 		}
 	});
 
+	// Skipped on Windows, where chmod only sets the read-only flag, so the folder can still be read. Also skipped for root.
 	test.skipIf(process.platform === "win32" || process.getuid?.() === 0)("a folder that cannot be looked into is unknown, never never set up", async () => {
 		const locked = join(root, "locked home");
 		mkdirSync(locked);
@@ -117,7 +120,7 @@ describe.skipIf(realTimber === null)("with the installed Timber, the repository 
 	});
 });
 
-describe.skipIf(realTimber === null || process.platform === "win32")("a save through Timber's settings commands, read back through the main process", () => {
+describe.skipIf(realTimber === null)("a save through Timber's settings commands, read back through the main process", () => {
 	test("the repository reads as set up once the setup wizard's save went through, even with nothing chosen", async () => {
 		const env = { ...process.env, ...environment() };
 		const reader = createRepositoryReader(async () => ({ state: "ready", path: realTimber!, version: "0.1.2" }), env);

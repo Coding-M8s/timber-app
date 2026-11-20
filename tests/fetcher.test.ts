@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { BATCH_SSH_COMMAND, type GitRun, type RunGit, batchSshCommand, createGitRunner, fetchEnvironment } from "../src/bun/fetch-git";
 import { createFetcher } from "../src/bun/fetcher";
 import { type WatchTarget, createRepositoryWatcher } from "../src/bun/repository-watcher";
@@ -44,6 +44,7 @@ describe("fetchEnvironment and batchSshCommand", () => {
 	});
 });
 
+// Skipped on Windows: the stand-in Git is a shell script.
 describe.skipIf(windows)("createGitRunner", () => {
 	let root: string;
 	beforeEach(() => {
@@ -537,7 +538,7 @@ describe("createFetcher, its force-push marks", () => {
 	});
 });
 
-describe.skipIf(windows)("createFetcher against real repositories", () => {
+describe("createFetcher against real repositories", () => {
 	let root: string;
 	let remote: string;
 	let mine: string;
@@ -697,7 +698,7 @@ describe.skipIf(windows)("createFetcher against real repositories", () => {
 		const local = () => git(mine, "for-each-ref", "refs/heads", "refs/tags", "refs/stash") + git(mine, "symbolic-ref", "HEAD");
 		const before = local();
 		// Everything but Git's own folder and the remote-tracking refs, which a fetch is there to move.
-		const unchanged = (folder: string) => fingerprint(folder).split("\n").filter(line => !line.includes("/.git/") && !line.includes("refs/remotes/")).join("\n");
+		const unchanged = (folder: string) => fingerprint(folder).split("\n").filter(line => !line.includes(`${sep}.git${sep}`) && !line.includes("refs/remotes/") && !line.includes(`refs${sep}remotes${sep}`)).join("\n");
 		const files = [unchanged(mine), unchanged(join(root, "mine-feature"))];
 		const index = readFileSync(join(mine, ".git", "index"));
 
@@ -730,7 +731,8 @@ describe.skipIf(windows)("createFetcher against real repositories", () => {
 		expect(result.outcome === "failed" && result.fetch.failure?.kind).toBe("offline");
 	});
 
-	test("a remote that wants a password fails as authentication instead of asking", async () => {
+	// Skipped on Windows: the remote helper that asks for a password is a shell script.
+	test.skipIf(windows)("a remote that wants a password fails as authentication instead of asking", async () => {
 		// A remote helper that asks for credentials, as an HTTPS host does, with nothing stored to answer.
 		const helper = join(root, "git-remote-askme");
 		writeFileSync(helper, "#!/bin/sh\nprintf 'protocol=https\\nhost=example.invalid\\n\\n' | git credential fill >/dev/null || exit 128\n");

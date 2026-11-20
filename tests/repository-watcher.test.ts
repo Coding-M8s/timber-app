@@ -5,16 +5,21 @@ import { join } from "node:path";
 import { type DirectoryWatch, type WatchDirectory, type WatchTarget, createRepositoryWatcher } from "../src/bun/repository-watcher";
 import { createWorktreeStamps } from "../src/bun/worktree-stamp";
 import { manualClock } from "./support/clock";
-import { until, windows } from "./support/runtime";
+import { until } from "./support/runtime";
 import { git } from "./support/timber";
 
-/** Watches that the test fires by hand. A folder in `missing` cannot be watched, as if it were not there. */
+/**
+ * Watches that the test fires by hand. A folder in `missing` cannot be watched, as if it were not there.
+ * Folders are kept with forward slashes: the watcher joins with this system's separator, and the
+ * expectations read the same on every system.
+ */
 function fakeWatches() {
 	const open = new Map<string, { recursive: boolean; event: (name: string | null) => void; error: (error: unknown) => void; closed: boolean }>();
 	const missing = new Set<string>();
 	const refused = new Map<string, string>();
 	let started = 0;
-	const watchDirectory: WatchDirectory = (folder, recursive, onEvent, onError) => {
+	const watchDirectory: WatchDirectory = (joined, recursive, onEvent, onError) => {
+		const folder = joined.replaceAll("\\", "/");
 		if (missing.has(folder)) throw Object.assign(new Error(`ENOENT: ${folder}`), { code: "ENOENT" });
 		const refusal = refused.get(folder);
 		if (refusal) throw Object.assign(new Error(refusal), { code: "ENOSPC" });
@@ -179,7 +184,7 @@ describe("createRepositoryWatcher with stand-in watches", () => {
 		watcher.sync([REPO]);
 		expect(watches.folders()).not.toContain("/work/sample/.git/refs");
 		expect(warnings.length).toBe(1);
-		expect(warnings[0]).toContain("/work/sample/.git/refs");
+		expect(warnings[0]).toContain(join("/work/sample/.git", "refs"));
 		expect(warnings[0]).toContain("ENOSPC");
 
 		watches.refused.clear();
@@ -226,7 +231,7 @@ describe("createRepositoryWatcher with stand-in watches", () => {
 	});
 });
 
-describe.skipIf(windows)("createRepositoryWatcher against a real repository", () => {
+describe("createRepositoryWatcher against a real repository", () => {
 	let root: string;
 	let primary: string;
 	let target: WatchTarget;

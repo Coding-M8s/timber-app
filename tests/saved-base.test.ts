@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,7 +6,9 @@ import { describeSavedBase } from "../src/mainview/base-format";
 import { createRepositoryReader } from "../src/bun/repository-reader";
 import type { Repository, TimberStatus } from "../src/shared/model";
 import { initialOnto } from "../src/shared/rebase-command";
-import { fingerprint, git, isolatedEnvironment, makeRepository, realTimber } from "./support/timber";
+import { REAL_TIMBER_TIMEOUT_MS, fingerprint, git, isolatedEnvironment, makeRepository, realTimber } from "./support/timber";
+
+setDefaultTimeout(REAL_TIMBER_TIMEOUT_MS);
 
 /**
  * The saved base of each worktree, read through the installed Timber from a

@@ -87,7 +87,16 @@ describe("which preferences wait for a restart", () => {
 	});
 });
 
-describe("restarting in the main process", () => {
+/**
+ * Restarting from inside the app is built for Linux only (src/bun/restart.ts).
+ * These tests act out Linux's /proc with symbolic links, which Windows makes
+ * only in Developer Mode or for an administrator, and the waiter is a
+ * /bin/sh script. On Windows the app says it cannot restart before it reads
+ * anything, which the last test here checks on every system.
+ */
+const windows = process.platform === "win32";
+
+describe.skipIf(windows)("restarting in the main process", () => {
 	test("an installed copy started by its launcher can restart, with the launcher's arguments, environment, and folder", async () => {
 		const setup = installed();
 		expect(await readLaunch(setup.proc, 4242, setup.launcher)).toEqual({
@@ -183,7 +192,8 @@ describe("restarting in the main process", () => {
 	});
 });
 
-describe("the waiter, run for real", () => {
+// The waiter is a /bin/sh script, for Linux only. See above.
+describe.skipIf(windows)("the waiter, run for real", () => {
 	test("it waits until the old app is gone, then starts it again with the same arguments, environment, and folder", async () => {
 		const root = folder();
 		const out = join(root, "started");
@@ -199,5 +209,18 @@ describe("the waiter, run for real", () => {
 		expect(await waiter.exited).toBe(0);
 		expect(readFileSync(out, "utf8")).toBe(`two words|s3cret|${cwd}`);
 		expect(BigInt(readFileSync(`${out}.at`, "utf8").trim())).toBeGreaterThanOrEqual(BigInt(readFileSync(join(root, "gone"), "utf8").trim()));
+	});
+});
+
+describe("restarting on Windows", () => {
+	test("an installed copy says it cannot restart itself, reads nothing, and starts nothing", async () => {
+		const { restarter: subject, calls } = restarter({
+			platform: "win32",
+			execPath: "C:\\Users\\sam\\AppData\\Local\\com.example.app\\stable\\app\\bin\\bun.exe",
+			proc: join(folder(), "no such folder"),
+		});
+		expect(await subject.plan()).toEqual({ available: false, reason: "Restarting from inside the app is built for Linux only so far. Quit and start it again to use the saved setting." });
+		expect(await subject.restart()).toMatchObject({ outcome: "unavailable" });
+		expect(calls).toEqual([]);
 	});
 });

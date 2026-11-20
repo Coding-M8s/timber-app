@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -6,10 +6,13 @@ import { type Done, createDone } from "../src/bun/done";
 import { createRepositoryList } from "../src/bun/repository-list";
 import { createRepositoryReader } from "../src/bun/repository-reader";
 import { runTimberWithResultFile } from "../src/bun/timber-run";
+import { quoteWord } from "../src/shared/command-line";
 import type { Repository, TimberStatus } from "../src/shared/model";
 import { DEFAULT_DONE_OPTIONS, type DoneOptions, doneApplyArguments } from "../src/shared/timber-done";
 import { APPROVAL_FILE_PLACEHOLDER } from "../src/shared/timber-result";
-import { type StandInRun, fingerprint, git, isolatedEnvironment, makeRepository, ready, realTimber, recordedDone, standInResultTimber } from "./support/timber";
+import { type StandInRun, REAL_TIMBER_TIMEOUT_MS, fingerprint, git, isolatedEnvironment, listedWorktrees, makeRepository, ready, realTimber, recordedDone, recordedHere, standInResultTimber } from "./support/timber";
+
+setDefaultTimeout(REAL_TIMBER_TIMEOUT_MS);
 
 /** What `git status --porcelain` shows for a worktree, with every untracked and ignored file on its own line. */
 function gitStatus(folder: string): { modified: string[]; untracked: string[]; ignored: string[] } {
@@ -111,7 +114,7 @@ describe.skipIf(realTimber === null)("with the installed Timber, on real reposit
 	}
 
 	const apply = (path: string, id: string, repository = primary) => done.apply({ repository, path, preview: id });
-	const isListed = (path: string) => git(primary, "worktree", "list", "--porcelain").includes(`worktree ${path}\n`);
+	const isListed = (path: string) => listedWorktrees(primary).includes(path);
 	const hasBranch = (branch: string) => git(primary, "branch", "--list", branch).trim() !== "";
 
 	test("the preview lists the files git status shows for that worktree, and changes nothing", async () => {
@@ -283,6 +286,7 @@ describe.skipIf(realTimber === null)("with the installed Timber, on real reposit
 		expect(hasBranch(branch)).toBe(true);
 	});
 
+	// Skipped on Windows, where chmod only sets the read-only flag, so Git can still delete the branch. Also skipped for root.
 	test.skipIf(process.platform === "win32" || process.getuid?.() === 0)("a partial failure is reported with Timber's diagnostic: the folder is gone and the branch is not", async () => {
 		const { path, branch } = tree("partial");
 		const id = await previewed(path);
@@ -393,8 +397,8 @@ describe("with a stand-in for Timber", () => {
 	/** The recordings expire ten minutes after they were made, so these tests run at a time shortly before that. */
 	const recordedNow = () => (JSON.parse(recordedDone.previews.dirty) as { expiresAt: number }).expiresAt - 60_000;
 
-	/** A recording with its `/work` folder replaced by the folder of these tests. */
-	const here = (text: string) => text.replaceAll("/work", root);
+	/** A recording with its `/work` folder replaced by the folder of these tests. `json` is false for plain text. */
+	const here = (text: string, json = true) => recordedHere(text, [["/work", root]], { json });
 
 	/** The repository as the app's list would answer, with these worktree paths. */
 	const listed = (paths: string[]): Repository => ({
@@ -471,16 +475,16 @@ describe("with a stand-in for Timber", () => {
 		for (const stdout of ["", "Removed worktree\n", here(recordedDone.previews.dirty).slice(0, 200), here(recordedDone.previews.dirty).replace('"schemaVersion":1', '"schemaVersion":2')]) {
 			const result = await standIn({ result: null, stdout }).preview();
 			expect(result.outcome).toBe("failed");
-			expect(result.outcome === "failed" && result.failure.command).toBe(`timber __ide-done preview -- ${worktree}`);
+			expect(result.outcome === "failed" && result.failure.command).toBe(`timber __ide-done preview -- ${quoteWord(worktree)}`);
 		}
 	});
 
 	test("a preview that exits with a failure is not used, whatever it printed", async () => {
-		const refusal = here(recordedDone.refusals.locked);
+		const refusal = here(recordedDone.refusals.locked, false);
 		const refused = await standIn({ result: null, stdout: here(recordedDone.previews.dirty), stderr: refusal, exitCode: 1 }).preview();
 		expect(refused).toEqual({
 			outcome: "failed",
-			failure: { command: `timber __ide-done preview -- ${worktree}`, diagnostic: `Worktree at ${join(root, "sample-worktrees", "feat-locked")} is locked; unlock it explicitly before cleanup.`, output: null },
+			failure: { command: `timber __ide-done preview -- ${quoteWord(worktree)}`, diagnostic: `Worktree at ${join(root, "sample-worktrees", "feat-locked")} is locked; unlock it explicitly before cleanup.`, output: null },
 		});
 
 		const crashed = await standIn({ result: null, stderr: "TypeError: undefined is not an object\n    at preview (machine-done.ts:40)\n", exitCode: 1 }).preview();
@@ -565,7 +569,7 @@ describe("with a stand-in for Timber", () => {
 			outcome: "failed",
 			ran: true,
 			failure: {
-				command: `timber __ide-done apply --approval-file <approved preview> --result-file <temporary file> -- ${worktree}`,
+				command: `timber __ide-done apply --approval-file <approved preview> --result-file <temporary file> -- ${quoteWord(worktree)}`,
 				diagnostic,
 				output: { text: `error: ${diagnostic}\n`, truncated: false },
 			},

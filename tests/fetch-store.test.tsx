@@ -96,7 +96,8 @@ describe("the store, when fetching", () => {
 		const engine = createMockEngine();
 		const { store } = await startedStore(engine);
 		expect(store.getState().fetches[TIMBER]).toEqual({ repository: TIMBER, fetching: false, lastFetched: null, failure: null });
-		engine.setFetchDelay(5);
+		// Long enough to still be fetching after settle(): on Windows a timer can take about 16 milliseconds.
+		engine.setFetchDelay(100);
 		const fetching = store.fetchNow(TIMBER);
 		await settle();
 		expect(store.getState().fetches[TIMBER]!.fetching).toBe(true);

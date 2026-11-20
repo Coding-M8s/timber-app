@@ -1,10 +1,12 @@
-import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPullRequestReader, readPullRequests } from "../src/bun/pull-requests";
 import { createMockEngine, sampleRepositories, sampleTimberStatuses } from "../src/mainview/engine/mock";
-import { fingerprint, git, readyAt, realTimber, standIn } from "./support/timber";
+import { REAL_TIMBER_TIMEOUT_MS, fingerprint, git, readyAt, realTimber, standIn } from "./support/timber";
+
+setDefaultTimeout(REAL_TIMBER_TIMEOUT_MS);
 
 const fixture = (name: string) => readFileSync(join(import.meta.dir, "fixtures", "timber-app-pr", name), "utf8");
 const SECRET = "ghp_SuperSecretToken123";

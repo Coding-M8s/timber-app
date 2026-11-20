@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -8,7 +8,9 @@ import {
 	readTimberValues, settingsInput, shownApplyArguments, shownCheckArguments,
 } from "../src/shared/timber-config";
 import { describeTimberCommand, readTimberResult } from "../src/shared/timber-result";
-import { fingerprint, git, readyAt, realTimber, recordedConfig, standInResultTimber, standInTimber } from "./support/timber";
+import { REAL_TIMBER_TIMEOUT_MS, fingerprint, git, privateFolder, readyAt, realTimber, recordedConfig, standInResultTimber, standInTimber } from "./support/timber";
+
+setDefaultTimeout(REAL_TIMBER_TIMEOUT_MS);
 
 const SECRET = "lin_api_SuperSecretKey123";
 const JIRA_SECRET = "atl_SuperSecretToken456";
@@ -244,7 +246,7 @@ describe("running Timber's settings commands", () => {
 	});
 });
 
-describe.skipIf(realTimber === null || process.platform === "win32")("with the real Timber", () => {
+describe.skipIf(realTimber === null)("with the real Timber", () => {
 	let root: string;
 	let repository: string;
 	let xdg: string;
@@ -255,7 +257,8 @@ describe.skipIf(realTimber === null || process.platform === "win32")("with the r
 		root = realpathSync(mkdtempSync(join(tmpdir(), "timber-app-real-settings-")));
 		xdg = join(root, "config");
 		// Timber refuses a credential store in a folder others can write to, so the folders are private whatever the umask.
-		mkdirSync(join(xdg, "timber"), { recursive: true, mode: 0o700 });
+		mkdirSync(xdg, { recursive: true, mode: 0o700 });
+		privateFolder(join(xdg, "timber"));
 		writeFileSync(join(xdg, "timber", "config.toml"), "[agent]\ncommand = \"claude\"\nenabled = true\n");
 		temporary = join(root, "temporary");
 		mkdirSync(temporary);

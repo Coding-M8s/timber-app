@@ -125,18 +125,20 @@ describe("reading the machine and the settings file", () => {
 	});
 });
 
+// WebKitGTK and libc are Linux only. Bun runs the body of a describe it skips, so libc is opened in the test.
 describe.if(process.platform === "linux")("applyWebkitRendering", () => {
-	const libc = dlopen("libc.so.6", {
+	const openLibc = () => dlopen("libc.so.6", {
 		getenv: { args: [FFIType.cstring], returns: FFIType.ptr },
 		unsetenv: { args: [FFIType.cstring], returns: FFIType.i32 },
 	});
 	const cString = (text: string) => Buffer.from(`${text}\0`);
-	const nativeValue = (name: string) => {
-		const pointer = libc.symbols.getenv(cString(name));
-		return pointer ? new CString(pointer).toString() : null;
-	};
 
 	test("writes the variables where WebKitGTK reads them, the C environment, not only process.env", () => {
+		const libc = openLibc();
+		const nativeValue = (name: string) => {
+			const pointer = libc.symbols.getenv(cString(name));
+			return pointer ? new CString(pointer).toString() : null;
+		};
 		const name = "TIMBER_APP_TEST_RENDERING_VARIABLE";
 		libc.symbols.unsetenv(cString(name));
 		try {
