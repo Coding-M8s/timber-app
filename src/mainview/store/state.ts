@@ -1,5 +1,6 @@
 import type { PullRequestCreationFailure, PullRequestFields, ReportedPullRequestView } from "../pull-request-create-format";
 import type { ChopList } from "../../shared/chops";
+import type { PortClash, PortsResult } from "../../shared/ports";
 import type { FileChange, FileChangeTarget, FileDiffResult } from "../../shared/file-changes";
 import { type Layout, defaultLayout } from "../../shared/layout";
 import type { RepositoryFetch } from "../../shared/git-fetch";
@@ -283,6 +284,16 @@ export interface AppState {
 	changes: ChangesView | null;
 	/** The chops of the selected worktree as last read. Null before Settings, Chops first read them. */
 	chops: ChopsView | null;
+	/**
+	 * The ports of each worktree read so far, by its registered path, as last
+	 * read. A worktree missing here was never read. Read when it is selected,
+	 * when its repository reloads, and when the ports list opens; the engine
+	 * answers from its last read within a few seconds, and reads nothing while
+	 * the window is hidden.
+	 */
+	ports: Record<string, PortsResult>;
+	/** Every host port more than one folder claims, from the latest read of any worktree. Marks the rows of every worktree in one. */
+	portClashes: PortClash[];
 	/** Null when no dialog is open. */
 	dialog: DialogRequest | null;
 	/**
@@ -374,6 +385,8 @@ export const initialState: AppState = {
 	tab: "workspace",
 	changes: null,
 	chops: null,
+	ports: {},
+	portClashes: [],
 	dialog: null,
 	fetches: {},
 	pullRequests: {},

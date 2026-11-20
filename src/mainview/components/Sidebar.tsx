@@ -1,4 +1,4 @@
-import { type PointerEvent, useId, useRef, useState } from "react";
+import { type PointerEvent, useId, useMemo, useRef, useState } from "react";
 import { describeBackupsProblem } from "../backup-format";
 import { describeFetchAction, describeFetchMarker } from "../fetch-format";
 import { describeRepositoryPullRequestProblem } from "../pull-request-format";
@@ -10,6 +10,7 @@ import { useAppState, useStore } from "../store/react";
 import { hasStatusMark, mostUrgent, shownStatus, summarizeStatuses } from "../../shared/session-status";
 import { isRunning, removalAt, sessionsOf } from "../store/state";
 import { describeRemovalFailed } from "../done-format";
+import { clashMarksOf, describePortClash } from "../ports-format";
 import { OpenInEditorIconButton } from "./OpenInEditor";
 import { wantTerminalFocus } from "../terminal-focus";
 import { SIDEBAR_ID } from "./SidebarResizer";
@@ -20,6 +21,8 @@ import { worktreeMenuChoice } from "../worktree-menu-format";
 export function Sidebar() {
 	const store = useStore();
 	const state = useAppState();
+	// Rows that share a host port with another worktree get a warning (see ../ports-format.ts).
+	const clashMarks = useMemo(() => clashMarksOf(state.portClashes, state.repositories), [state.portClashes, state.repositories]);
 	const { repositories, loaded } = state;
 	const selectedId = state.selection?.worktree ?? null;
 	const refreshing = isRunning(state, "reload-all");
@@ -339,6 +342,7 @@ export function Sidebar() {
 												issue={state.issues[worktree.id]}
 												removal={removal?.status ?? null}
 												sessions={sessionsOf(state, worktree.id)}
+												portClash={describePortClash(clashMarks.get(worktree.path))}
 												actions={(
 													<>
 														{removal?.status.kind === "failed" && (

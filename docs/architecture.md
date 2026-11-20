@@ -2036,6 +2036,70 @@ commits. Comparing against the base or a backup is a later step.
   makes reads fail (`null` to undo), and `timberMock.setFileChanges(path,
   files)` sets what a worktree lists.
 
+## Ports of a worktree
+
+The workspace header says which `localhost` ports belong to the selected
+worktree, so people open the right one and see when two worktrees want the
+same port. It only reads.
+
+- **The capability.** `readPorts({ repository, worktree })` on the `Engine`
+  contract. The types and pure parsers are in `src/shared/ports.ts`, the
+  main process side is `src/bun/ports.ts`, and the process table is read
+  in `src/bun/session-ports.ts`. It acts only on a worktree Timber lists, in
+  a repository in the app's list, whose folder is there
+  (`findListedWorktree`).
+- **Docker.** `docker ps --all --no-trunc --filter
+  label=com.docker.compose.project.working_dir --format {{.ID}}`, then
+  `docker inspect` of those ids with a format that prints only the name,
+  state, working directory and service labels, published ports, and wanted
+  port bindings (`DOCKER_INSPECT_FORMAT`). Never the whole record, which
+  holds each container's environment. Both run as an executable plus
+  arguments, are stopped after 5 seconds, and only ids Docker printed reach
+  the arguments. A container belongs to the deepest worktree of the
+  repository whose registered or canonical path holds its Compose working
+  directory, on a whole path segment, so `GH-16` never takes `GH-169`'s
+  containers and a worktree inside the primary checkout keeps its own. The
+  list shows the ports a running container publishes, IPv4 and IPv6 as one;
+  a port the container only exposes is left out.
+- **Docker that cannot be read.** No `docker` on the PATH, or one that
+  cannot start, is "not installed". Docker 29's "Cannot connect to the
+  Docker daemon", "failed to connect to the docker API ... is the daemon
+  running", connection refused, and a missing socket are "not running".
+  "permission denied" is no permission. Anything else is "could not list".
+  Each is a sentence with Docker's own first line after it, shown in the
+  header item's tooltip, and sessions are still read.
+- **Sessions.** On Linux, from `/proc`: the processes whose session id is a
+  running session's shell (`TerminalSessions.leaders`), the sockets their
+  descriptors name, and which of those listen in `/proc/net/tcp` and
+  `tcp6`. Only TCP listeners count. Elsewhere, or where `/proc` cannot be
+  read, the sessions part is unknown with a quiet reason, never empty.
+- **Clashes.** Every Compose container on the machine claims the host ports
+  it publishes and the ones its bindings ask for, running or not, so a
+  project that could not start because another holds its port counts. Every
+  running session claims what it listens on. A host port claimed from more
+  than one folder is a clash; the interface maps each folder to the deepest
+  worktree it knows (`portClashMarks`) and drops a clash that falls in one
+  worktree. Both worktrees are marked, each with the other's name; a folder
+  in no known worktree is named by its last segment.
+- **How often.** There is no timer. The interface asks when a worktree is
+  selected, whenever its repository reloads (Refresh, a reported change, the
+  window coming back), and when the list opens. The main process reads
+  nothing while the window is hidden (`attend`), answers `hidden`, and reads
+  the same worktree at most once in 5 seconds (`PORTS_GAP_MILLISECONDS`):
+  sooner requests get the last answer, and requests while a read runs share
+  it. One read is two Docker calls and one walk of `/proc`; against a
+  machine with 13 Compose containers it took about 30 ms.
+- **In the store.** `ports` holds the last answer of each worktree read,
+  by its path; `portClashes` the clashes of the latest read, which mark
+  rows. A hidden answer changes nothing.
+- **Trying it.** In `bun run dev:web`, timber's `feat/github-issue-lookup`
+  shows six Docker ports and a session's port, and its database port
+  clashes with `spike/new-idea`. `timberMock.setDocker("stopped")` (or
+  `"no-docker"`, `"denied"`) makes Docker unreadable,
+  `timberMock.setDocker([...])` sets the containers, and
+  `timberMock.setSessionPorts(path, [{ name, hostPort }])` sets a worktree's
+  session ports.
+
 ## Terminal sessions
 
 A worktree can have any number of terminal sessions: each is the person's

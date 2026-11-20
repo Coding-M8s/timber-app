@@ -9,6 +9,7 @@ import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInE
 import type { Preferences } from "./preferences";
 import type { RestartPlan, RestartResult } from "./restart";
 import type { IssueLookup, IssueRequest } from "./issues";
+import type { PortsRequest, PortsResult } from "./ports";
 import type { PullRequestList } from "./pull-requests";
 import type { Theme } from "./theme";
 import type { ChooseSoundResult, SoundChoice, SoundOutcome } from "./sound-setting";
@@ -341,6 +342,16 @@ export interface Engine {
 	 * without its text. Read-only and safe to call again.
 	 */
 	readFileDiff(request: FileDiffRequest): Promise<FileDiffResult>;
+	/**
+	 * The ports a worktree of a repository in the list has open: what the
+	 * running containers of its Compose project publish (`docker ps` and
+	 * `docker inspect`), what its sessions' processes listen on (the Linux
+	 * process table), and every host port more than one folder claims.
+	 * Read-only. Nothing is read while the window is hidden (`attend`), and a
+	 * worktree at most once in `PORTS_GAP_MILLISECONDS`: a request sooner
+	 * gets the last answer (see ./ports.ts).
+	 */
+	readPorts(request: PortsRequest): Promise<PortsResult>;
 	/**
 	 * The chops a worktree of a repository in the list offers, named by the
 	 * worktree's registered path, not its id: the person's saved chops

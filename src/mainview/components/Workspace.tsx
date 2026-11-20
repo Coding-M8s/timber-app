@@ -10,6 +10,7 @@ import { useAppState, useStore } from "../store/react";
 import { WORKSPACE_TABS, type WorkspaceTab, isBeingRemoved, isRunning, selectedWorktree } from "../store/state";
 import { ChangesPanel } from "./ChangesPanel";
 import { IssueHeaderLink, issueOf } from "./IssueSummary";
+import { PortsItem } from "./PortsItem";
 import { PullRequestPanel } from "./PullRequestPanel";
 import { EditorProblemNote, OpenInEditorButton } from "./OpenInEditor";
 import { SetupPrompt } from "./SetupPrompt";
@@ -87,6 +88,7 @@ export function Workspace() {
 						</span>
 					)}
 					{pullProblem && <span className="pull-problem" title={pullProblem.tooltip} aria-label={pullProblem.tooltip}>{pullProblem.text}</span>}
+					{worktree.pathExists && <PortsItem repository={repository} worktree={worktree} />}
 					<span className="path">{worktree.path}</span>
 				</div>
 				<div className="workspace-done">

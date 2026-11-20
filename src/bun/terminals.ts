@@ -98,6 +98,17 @@ export interface TerminalSessions {
 	killAll(): void;
 	/** How many sessions still run. */
 	liveCount(): number;
+	/** Each running session's shell, which leads the session's processes, for looking up what they listen on. Read-only. */
+	leaders(): SessionLeader[];
+}
+
+/** A running session and the process that leads its process session. */
+export interface SessionLeader {
+	id: string;
+	name: string;
+	/** The worktree's registered path. */
+	path: string;
+	pid: number;
 }
 
 interface Live {
@@ -510,5 +521,8 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			sessions.clear();
 		},
 		liveCount: () => [...sessions.values()].filter(live => live.session.state.kind === "running").length,
+		leaders: () => [...sessions.values()]
+			.filter(live => live.session.state.kind === "running")
+			.map(live => ({ id: live.session.id, name: live.session.name, path: live.session.path, pid: live.process.pid })),
 	};
 }

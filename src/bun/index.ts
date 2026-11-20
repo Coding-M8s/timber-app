@@ -21,6 +21,7 @@ import { createFetcher } from "./fetcher";
 import { createSavedForcePushes } from "./force-pushes";
 import { createChops } from "./chops";
 import { createFileChanges } from "./file-changes";
+import { createPorts } from "./ports";
 import { readBranches } from "./git-engine";
 import { createSavedLayout } from "./layout";
 import { createSavedPreferences } from "./preferences";
@@ -296,7 +297,9 @@ const terminals = createTerminalSessions({
 		tell("a terminal change", () => rpc.send.terminalChanged(change));
 		alerts.changed(change);
 	},
-});
+});// Ports are read for the selected worktree on request only, never on a timer (see ./ports.ts).
+const ports = createPorts({ findRepository: path => repositories.find(path), leaders: () => terminals.leaders(), attention: () => attention });
+
 
 const quitGuard = createQuitGuard({
 	liveCount: () => terminals.liveCount(),
@@ -397,6 +400,8 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			// Read-only Git, only in a worktree Timber lists (see ./file-changes.ts). A diff holds file contents: never log it.
 			readFileChanges: request => fileChanges.read(request),
 			readFileDiff: request => fileChanges.diff(request),
+			// Read-only Docker and process table, only in a worktree Timber lists, never while the window is hidden (see ./ports.ts).
+			readPorts: request => ports.read(request),
 			listChops: request => chops.list(request),
 			listTerminals: () => terminals.list(),
 			// Starts a shell, an agent from the saved Settings, or timber rebase, only in a worktree Timber lists (see ./terminals.ts).
