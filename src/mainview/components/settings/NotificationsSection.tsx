@@ -1,33 +1,9 @@
 import { useId, useState } from "react";
-import { type Preferences, readAlertStates } from "../../../shared/preferences";
-import { BUNDLED_SOUNDS, BUNDLED_SOUND_LABELS, type SoundChoice, type SoundOutcome, sameSoundChoice, soundFileName } from "../../../shared/sound-setting";
+import { BUNDLED_SOUNDS, BUNDLED_SOUND_LABELS, type SoundChoice, soundFileName } from "../../../shared/sound-setting";
 import { ALERT_STATES, type AlertState } from "../../../shared/status-notices";
+import { type NotificationsDraft, describeSoundOutcome, notificationsDraftOf, sameNotificationsDraft, toggleState } from "../../notifications-format";
 import { useAppState, useStore } from "../../store/react";
-import { type SectionSave, SettingsSection, useSectionSave } from "./SettingsSection";
-
-/** What the section edits: the parts of the preferences it saves. */
-export interface NotificationsDraft {
-	statusNotifications: boolean;
-	notifyStates: readonly AlertState[];
-	soundStates: readonly AlertState[];
-	sound: SoundChoice;
-}
-
-export function notificationsDraftOf(preferences: Preferences): NotificationsDraft {
-	const { statusNotifications, notifyStates, soundStates, sound } = preferences;
-	return { statusNotifications, notifyStates, soundStates, sound };
-}
-
-export function sameNotificationsDraft(one: NotificationsDraft, other: NotificationsDraft): boolean {
-	const sameStates = (left: readonly AlertState[], right: readonly AlertState[]) => left.length === right.length && left.every(state => right.includes(state));
-	return one.statusNotifications === other.statusNotifications && sameStates(one.notifyStates, other.notifyStates)
-		&& sameStates(one.soundStates, other.soundStates) && sameSoundChoice(one.sound, other.sound);
-}
-
-/** A list of statuses with one turned on or off, kept in Settings order. */
-export function toggleState(states: readonly AlertState[], state: AlertState, on: boolean): AlertState[] {
-	return readAlertStates(on ? [...states, state] : states.filter(other => other !== state)) ?? [];
-}
+import { type SectionSave, SettingsSection, useDraftSection } from "./SettingsSection";
 
 const STATE_LABELS: Record<AlertState, string> = {
 	"needs-you": "Needs you",
@@ -39,22 +15,6 @@ const STATE_LABELS: Record<AlertState, string> = {
 /** The sound picker's value for a choice: `bundled:<name>`, `system`, or `custom`. */
 function optionOf(choice: SoundChoice): string {
 	return choice.kind === "bundled" ? `bundled:${choice.name}` : choice.kind;
-}
-
-/** Words for a preview that did not play. Null when it played. */
-export function describeSoundOutcome(outcome: SoundOutcome): string | null {
-	switch (outcome.outcome) {
-		case "played":
-			return null;
-		case "busy":
-			return "Another sound is still playing. Try again in a moment.";
-		case "no-player":
-			return "No program that can play this sound was found. On Linux the app uses pw-play, paplay, or aplay.";
-		case "missing":
-			return "The sound file is not there any more. Choose it again.";
-		case "failed":
-			return "The sound could not be played. The file may be of a kind the player cannot read.";
-	}
 }
 
 export interface NotificationsSectionViewProps {
@@ -157,27 +117,22 @@ export function NotificationsSectionView({ draft, saved, save, problem, customPa
 export function NotificationsSection() {
 	const store = useStore();
 	const saved = notificationsDraftOf(useAppState().preferences);
-	// Null follows what is saved, so the fields only ever differ from it by what the person did.
-	const [edited, setEdited] = useState<NotificationsDraft | null>(null);
-	const draft = edited ?? saved;
+	const { draft, save, change, commit } = useDraftSection(saved);
 	const [chosenPath, setChosenPath] = useState<string | null>(null);
 	const [problem, setProblem] = useState<string | null>(null);
-	const { save, run, reset } = useSectionSave();
 	const customPath = chosenPath ?? (saved.sound.kind === "custom" ? saved.sound.path : null);
 
-	const onEdit = (change: Partial<NotificationsDraft>) => {
-		setEdited({ ...draft, ...change });
+	const onEdit = (edit: Partial<NotificationsDraft>) => {
+		change({ ...draft, ...edit });
 		setProblem(null);
-		reset();
 	};
 	const onChooseFile = async () => {
 		const result = await store.chooseSoundFile();
 		if (result.outcome === "chosen") {
 			setChosenPath(result.path);
 			// From the draft as it is now, not as it was when the dialog opened, so boxes ticked meanwhile are kept.
-			setEdited(current => ({ ...(current ?? saved), sound: { kind: "custom", path: result.path } }));
+			change(current => ({ ...current, sound: { kind: "custom", path: result.path } }));
 			setProblem(null);
-			reset();
 		} else if (result.outcome === "refused") setProblem(result.message);
 	};
 	const onPlay = async () => {
@@ -185,7 +140,7 @@ export function NotificationsSection() {
 	};
 	const onSave = async () => {
 		if (sameNotificationsDraft(draft, saved)) return;
-		if (await run({ ...draft })) setEdited(null);
+		await commit({ ...draft });
 	};
 
 	return (

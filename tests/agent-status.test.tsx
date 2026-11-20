@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
-import { NotificationsSectionView, describeSoundOutcome, notificationsDraftOf, sameNotificationsDraft, toggleState } from "../src/mainview/components/settings/NotificationsSection";
+import { NotificationsSectionView } from "../src/mainview/components/settings/NotificationsSection";
+import { describeSoundOutcome, notificationsDraftOf, sameNotificationsDraft, toggleState } from "../src/mainview/notifications-format";
 import { defaultPreferences } from "../src/shared/preferences";
 import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { sessionsOf } from "../src/mainview/store/state";

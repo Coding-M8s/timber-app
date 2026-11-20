@@ -1,8 +1,8 @@
-import { useId, useState } from "react";
+import { useId } from "react";
 import { type FetchSetting, MAX_FETCH_MINUTES, MIN_FETCH_MINUTES } from "../../../shared/fetch-setting";
 import { type FetchDraft, fetchDraftModel, fetchDraftOf } from "../../fetch-format";
 import { useAppState } from "../../store/react";
-import { type SectionSave, SettingsSection, useSectionSave } from "./SettingsSection";
+import { type SectionSave, SettingsSection, useDraftSection } from "./SettingsSection";
 
 export interface FetchSectionViewProps {
 	draft: FetchDraft;
@@ -62,19 +62,13 @@ export function FetchSectionView({ draft, saved, save, onEdit, onSave }: FetchSe
 /** The Fetching section of Settings: background fetching on or off, and how often, saved with its own Save. */
 export function FetchSection() {
 	const saved = useAppState().preferences.fetch;
-	// Null follows what is saved, so the fields only ever differ from it by what the person did.
-	const [edited, setEdited] = useState<FetchDraft | null>(null);
-	const draft = edited ?? fetchDraftOf(saved);
-	const { save, run, reset } = useSectionSave();
+	const { draft, save, change, commit } = useDraftSection(fetchDraftOf(saved));
 
-	const onEdit = (change: Partial<FetchDraft>) => {
-		setEdited({ ...draft, ...change });
-		reset();
-	};
+	const onEdit = (edit: Partial<FetchDraft>) => change({ ...draft, ...edit });
 	const onSave = async () => {
 		const { setting, canSave } = fetchDraftModel(draft, saved);
 		if (!canSave || setting === null) return;
-		if (await run({ fetch: setting })) setEdited(null);
+		await commit({ fetch: setting });
 	};
 
 	return <FetchSectionView draft={draft} saved={saved} save={save} onEdit={onEdit} onSave={() => void onSave()} />;

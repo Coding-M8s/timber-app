@@ -1,11 +1,11 @@
-import { useId, useState } from "react";
+import { useId } from "react";
 import type { EditorSetting } from "../../../shared/editor";
 import { PATH_TOKEN, TERMINAL_EDITOR_REASON } from "../../../shared/editor";
 import {
 	EDITOR_CHOICES, EXAMPLE_WORKTREE, type EditorChoice, type EditorDraft, chooseEditor, draftOf, editEditor, editorDraftModel,
 } from "../../editor-format";
 import { useAppState } from "../../store/react";
-import { type SectionSave, SettingsSection, useSectionSave } from "./SettingsSection";
+import { type SectionSave, SettingsSection, useDraftSection } from "./SettingsSection";
 
 export interface EditorSectionViewProps {
 	draft: EditorDraft;
@@ -93,19 +93,12 @@ export function EditorSectionView({ draft, saved, save, onChoose, onEdit, onSave
 /** The Editor section of Settings: a preset or a command of one's own, saved with its own Save. */
 export function EditorSection() {
 	const saved = useAppState().preferences.editor;
-	// Null follows what is saved, so the fields only ever differ from it by what the person did.
-	const [edited, setEdited] = useState<EditorDraft | null>(null);
-	const draft = edited ?? draftOf(saved);
-	const { save, run, reset } = useSectionSave();
+	const { draft, save, change, commit } = useDraftSection(draftOf(saved));
 
-	const change = (next: EditorDraft) => {
-		setEdited(next);
-		reset();
-	};
 	const onSave = async () => {
 		const { setting, canSave } = editorDraftModel(draft, saved);
 		if (!canSave) return;
-		if (await run({ editor: setting })) setEdited(null);
+		await commit({ editor: setting });
 	};
 
 	return (
