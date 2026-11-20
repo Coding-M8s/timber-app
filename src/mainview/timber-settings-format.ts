@@ -1,7 +1,8 @@
 import { describeCommandLine } from "../shared/command-line";
+import type { TimberFailure } from "../shared/model";
 import {
-	type ConnectionCheck, type Integration, type TimberConfigScope, type TimberCredentialStates, type TimberCredentialsDraft, type TimberValues, type Tracker,
-	invalidFieldsAt,
+	type ConnectionCheck, type Integration, type TimberConfigScope, type TimberConnectionCheckResult, type TimberCredentialStates, type TimberCredentialsDraft,
+	type TimberSettingsSaveResult, type TimberValues, type Tracker, invalidFieldsAt,
 } from "../shared/timber-config";
 
 /**
@@ -354,4 +355,35 @@ export function describeCheck(check: ConnectionCheck): string {
 	const source = check.source === null ? "" : ` with ${SOURCE_WORDS[check.source]}`;
 	if (check.ok) return `${label} accepted${source}${check.account ? `, signed in as ${check.account}` : ""}. Nothing was saved.`;
 	return `${label} did not accept${source}: ${check.diagnostic ?? "no reason was given."} Nothing was saved.`;
+}
+
+/** Where saving one group stands. A failure keeps what was typed on screen, so it can be saved again. */
+export type GroupOutcome =
+	| { state: "idle" }
+	| { state: "saving" }
+	| { state: "saved" }
+	| { state: "invalid"; fields: string[]; failure: TimberFailure }
+	| { state: "conflict"; failure: TimberFailure }
+	| { state: "refused"; failure: TimberFailure }
+	| { state: "failed"; failure: TimberFailure };
+
+export type CheckOutcome = { state: "checking" } | { state: "done"; result: TimberConnectionCheckResult };
+
+export const IDLE_OUTCOME: GroupOutcome = { state: "idle" };
+
+/** What Timber's answer to a save leaves on screen. */
+export function outcomeOfSave(answer: TimberSettingsSaveResult): GroupOutcome {
+	switch (answer.outcome) {
+		case "saved":
+			return { state: "saved" };
+		case "invalid":
+			return { state: "invalid", fields: answer.invalidFields, failure: answer.failure };
+		default:
+			return { state: answer.outcome, failure: answer.failure };
+	}
+}
+
+/** Whether typing puts a past outcome away: all but Timber's field messages and a conflict, which still need answering, and a save still running. */
+export function typingPutsAway(outcome: GroupOutcome): boolean {
+	return outcome.state !== "invalid" && outcome.state !== "conflict" && outcome.state !== "saving";
 }

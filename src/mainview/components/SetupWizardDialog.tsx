@@ -4,11 +4,10 @@ import { type Integration, type TimberConfigScope, REPOSITORY_CONFIG_FILE, shown
 import { describeTimberCommand } from "../../shared/timber-result";
 import { WIZARD_STEPS, WIZARD_STEP_TITLES, type WizardStep, describeChoices, describeScope, firstStepOf, wizardSaveRequest } from "../setup-wizard-format";
 import { useStore } from "../store/react";
-import { type GroupDrafts, type TimberGroup, DRAWN_PATHS, TIMBER_GROUP_TITLES, credentialsToCheck, draftsOf, groupMessages, valuesWith } from "../timber-settings-format";
-import { type CheckOutcome, type GroupOutcome, GitFields, LauncherFields, SaveOutcomeNotes, ScriptsFields, TrackingFields, useTimberRead } from "./settings/TimberSections";
+import { type GroupDrafts, type GroupOutcome, type TimberGroup, DRAWN_PATHS, IDLE_OUTCOME as IDLE, TIMBER_GROUP_TITLES, draftsOf, groupMessages, outcomeOfSave } from "../timber-settings-format";
+import { GitFields, LauncherFields, SaveOutcomeNotes, ScriptsFields, TrackingFields, useTimberDrafts, useTimberRead } from "./settings/TimberSections";
 import { TimberFailureDetails } from "./TimberFailureDetails";
 
-const IDLE: GroupOutcome = { state: "idle" };
 /** How long the last step shows before Save acts, so a double click on Next cannot save unseen. */
 const SAVE_DELAY_MILLISECONDS = 500;
 const ALL_DRAWN = Object.values(DRAWN_PATHS).flat();
@@ -33,9 +32,9 @@ export function SetupWizardDialog({ repository }: { repository: Repository }) {
 	const trackedId = useId();
 	const [scope, setScope] = useState<TimberConfigScope>("repository");
 	const [step, setStep] = useState<WizardStep>("scope");
-	const [edited, setEdited] = useState<Partial<GroupDrafts>>({});
+	const timberDrafts = useTimberDrafts();
+	const { edited, checks, clearChecks } = timberDrafts;
 	const [outcome, setOutcome] = useState<GroupOutcome>(IDLE);
-	const [checks, setChecks] = useState<Partial<Record<Integration, CheckOutcome>>>({});
 	const [editTracked, setEditTracked] = useState(false);
 	// A ref, not the state: a second Enter or an Escape can arrive before the next render.
 	const saving = useRef(false);
@@ -78,18 +77,13 @@ export function SetupWizardDialog({ repository }: { repository: Repository }) {
 	const messages = outcome.state === "invalid" ? outcome.fields : [];
 	const needsTracked = settings !== null && settings.tracked && !editTracked;
 
-	const change = <Group extends TimberGroup>(group: Group, draft: GroupDrafts[Group]) => {
-		setEdited(previous => ({ ...previous, [group]: draft }));
-		// Typing puts a past outcome away, except Timber's field messages and a conflict, which still need answering.
-		if (outcome.state !== "invalid" && outcome.state !== "conflict" && outcome.state !== "saving") setOutcome(IDLE);
-		if (group === "tracking") setChecks({});
-	};
+	const change = <Group extends TimberGroup>(group: Group, draft: GroupDrafts[Group]) => timberDrafts.change(group, draft, outcome, () => setOutcome(IDLE));
 
 	const chooseScope = (next: TimberConfigScope) => {
 		if (next === scope) return;
 		setScope(next);
 		setOutcome(IDLE);
-		setChecks({});
+		clearChecks();
 		setEditTracked(false);
 	};
 
@@ -104,12 +98,8 @@ export function SetupWizardDialog({ repository }: { repository: Repository }) {
 				store.closeDialog();
 				return;
 			}
-			if (answer.outcome === "invalid") {
-				setOutcome({ state: "invalid", fields: answer.invalidFields, failure: answer.failure });
-				setStep(firstStepOf(answer.invalidFields));
-			} else {
-				setOutcome({ state: answer.outcome, failure: answer.failure });
-			}
+			setOutcome(outcomeOfSave(answer));
+			if (answer.outcome === "invalid") setStep(firstStepOf(answer.invalidFields));
 		} finally {
 			saving.current = false;
 		}
@@ -117,16 +107,7 @@ export function SetupWizardDialog({ repository }: { repository: Repository }) {
 
 	const check = async (integration: Integration) => {
 		if (settings === null || drafts === null) return;
-		setChecks(previous => ({ ...previous, [integration]: { state: "checking" } }));
-		const credentials = credentialsToCheck(drafts.tracking, integration);
-		const answer = await store.checkTimberConnection({
-			scope,
-			repository: scope === "repository" ? repository.path : null,
-			integration,
-			values: valuesWith("tracking", drafts.tracking, settings.values),
-			...(credentials === undefined ? {} : { credentials }),
-		});
-		setChecks(previous => ({ ...previous, [integration]: { state: "done", result: answer } }));
+		await timberDrafts.check(integration, { scope, repository: scope === "repository" ? repository.path : null, tracking: drafts.tracking, values: settings.values });
 	};
 
 	const submit = (event: SubmitEvent<HTMLFormElement>) => {
