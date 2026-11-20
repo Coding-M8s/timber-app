@@ -208,6 +208,9 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 		expect(primary.session.name).toBe("Terminal");
 		expect(sessions.list().map(session => session.id)).toEqual([...ids, primary.session.id]);
 		expect(sessions.liveCount()).toBe(4);
+		// Each running session's shell leads its processes, for reading the ports they hold.
+		expect(sessions.leaders().map(leader => [leader.id, leader.name, leader.path])).toEqual(sessions.list().map(session => [session.id, session.name, session.path]));
+		expect(sessions.leaders().every(leader => Number.isInteger(leader.pid) && leader.pid > 0)).toBe(true);
 	});
 
 	test("three sessions in one worktree each keep their own output, and closing one leaves the others running", async () => {

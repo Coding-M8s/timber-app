@@ -2534,16 +2534,20 @@ Run for ports of a worktree (issue 169), Linux x64 with Bun 1.4.5, Git
   `tests/ports-parse.test.ts`, `tests/ports-view.test.tsx`, and
   `tests/ports.test.ts`, which reads ports for linked worktrees of a real
   temporary repository through a stand-in `docker`, checks that the
-  repository's files and refs are unchanged after a read, that a hidden
+  repository's files and refs are unchanged after a read, that a worktree
+  Git does not list or a repository outside the list is refused before
+  Docker is asked, that a hidden
   window and a read within 5 seconds start no `docker`, a pretend `/proc`,
   and a real listener started under `setsid`, found through the real
   `/proc`.
 - `bun run typecheck` and `bun run typecheck:desktop`: no errors.
 - `bun run build:web`: built.
-- `createPorts` against the real Docker and the real worktrees of a private
-  repository with five worktrees: the one running a Compose project listed
-  its 8 published ports (6 services), the other four listed none, and all
-  five reads took 161 ms together.
+- `createPorts` against the real Docker, Git, and `/proc`, with the real
+  worktrees of a private repository with five worktrees (listed through
+  `git worktree list`, not Timber) and the test shell's own session as a
+  terminal's: the one running a Compose project listed its 8 published
+  ports (6 services), the other four listed none, and 25 reads took 33 ms
+  each at the median and 38 ms at most.
 - The same reader with `DOCKER_HOST` at a missing socket and at a socket
   that refuses connections answered "Docker is not running", at a socket
   with no permissions "No permission to use Docker", and with no `docker`

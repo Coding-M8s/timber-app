@@ -1,22 +1,20 @@
 import type { Attention } from "../shared/attention";
 import { messageOf } from "../shared/error-message";
-import type { Repository } from "../shared/model";
 import {
 	DOCKER_MILLISECONDS, DOCKER_PS_ARGUMENTS, PORTS_GAP_MILLISECONDS,
 	type ComposeContainer, type DockerRead, type PortClaim, type PortsRequest, type PortsResult, type SessionPortsRead,
 	describeDockerProblem, dockerClaims, dockerInspectArguments, dockerPortsOf, dockerProblemOf, findClashes, parseComposeContainers, parseContainerIds,
 } from "../shared/ports";
-import { type FindRepository, findListedWorktree } from "./listed-worktree";
 import { sessionListeningPorts } from "./session-ports";
 import type { SessionLeader } from "./terminals";
+import type { ListedWorktrees } from "./worktree-paths";
 
 /** Docker's output is read up to this many bytes. Thousands of containers fit. */
 const DOCKER_OUTPUT_BYTES = 4 * 1024 * 1024;
 
-const NOT_READ = "No ports were read.";
-
 export interface PortsDependencies {
-	findRepository: FindRepository;
+	/** The worktree and its repository's others, checked without Timber (see ./worktree-paths.ts). */
+	listWorktrees: (repository: string, worktree: string) => Promise<ListedWorktrees>;
 	/** The running sessions, with the process that leads each one's processes. */
 	leaders: () => SessionLeader[];
 	/** How the window is: nothing is read while it is hidden. */
@@ -60,8 +58,9 @@ async function runDocker(docker: string, args: readonly string[], timeoutMs: num
  * publish, and what its sessions' processes listen on, with every host port
  * that more than one folder claims.
  *
- * - Only a worktree Timber lists, in a repository in the app's list, with its
- *   folder there (`findListedWorktree`), as the Changes tab.
+ * - Only a worktree Git lists for a repository in the app's list, with its
+ *   folder there. Timber is not asked: a read comes with every reload of the
+ *   repository, and `timber ls` would read every worktree's status.
  * - Read-only: `docker ps --all` and `docker inspect` with a format that
  *   leaves out each container's environment, and the Linux process table.
  * - Nothing is read while the window is hidden, and the same worktree at
@@ -75,7 +74,7 @@ async function runDocker(docker: string, args: readonly string[], timeoutMs: num
  */
 export function createPorts(dependencies: PortsDependencies): Ports {
 	const {
-		findRepository, leaders, attention, proc = "/proc", platform = process.platform, now = Date.now,
+		listWorktrees, leaders, attention, proc = "/proc", platform = process.platform, now = Date.now,
 		docker = () => Bun.which("docker"), timeoutMilliseconds = DOCKER_MILLISECONDS,
 	} = dependencies;
 	const recent = new Map<string, { at: number; result: PortsResult }>();
@@ -96,12 +95,9 @@ export function createPorts(dependencies: PortsDependencies): Ports {
 	}
 
 	async function readNow(request: PortsRequest): Promise<PortsResult> {
-		// The repository is read once, for the check and for the worktrees a container may belong to.
-		let repository: Repository | null = null;
-		const find: FindRepository = async path => (repository = await findRepository(path));
-		const listed = await findListedWorktree(find, request.repository, request.worktree, NOT_READ);
+		const listed = await listWorktrees(request.repository, request.worktree);
 		if (!listed.ok) return { outcome: "not-listed", message: listed.message };
-		const worktrees = (repository as Repository | null)?.worktrees ?? [listed.worktree];
+		const { worktrees } = listed;
 
 		const [{ read: dockerRead, containers }, sessions] = await Promise.all([readDocker(), Promise.resolve(readSessions())]);
 		const docker: DockerRead = dockerRead.state === "read" ? { state: "read", ports: dockerPortsOf(containers, listed.worktree, worktrees) } : dockerRead;

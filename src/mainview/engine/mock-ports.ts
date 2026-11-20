@@ -35,7 +35,7 @@ export interface PortControls {
 	setDocker(answer: readonly ComposeContainer[] | DockerProblem): void;
 	/** Decide the ports one worktree's sessions listen on, by its path. */
 	setSessionPorts(worktree: string, ports: readonly { name: string; hostPort: number }[]): void;
-	/** How many times ports were read, which a hidden window or a read within the gap does not count. */
+	/** How many times ports were read. A hidden window reads nothing, so it does not count. */
 	portReads(): number;
 }
 

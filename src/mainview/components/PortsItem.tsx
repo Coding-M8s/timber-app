@@ -47,7 +47,17 @@ export function PortsItem({ repository, worktree }: { repository: Repository; wo
 	};
 
 	return (
-		<span className="ports" ref={holder}>
+		<span
+			className="ports"
+			ref={holder}
+			// On the holder, so Escape closes the list whether focus is on the button or in the list.
+			onKeyDown={event => {
+				if (event.key !== "Escape" || !open) return;
+				event.stopPropagation();
+				setOpen(false);
+				button.current?.focus();
+			}}
+		>
 			<button
 				type="button"
 				className="ports-button"
@@ -65,12 +75,6 @@ export function PortsItem({ repository, worktree }: { repository: Repository; wo
 					className="ports-list"
 					role="group"
 					aria-label={`Ports of ${worktree.branch ?? worktree.path}`}
-					onKeyDown={event => {
-						if (event.key !== "Escape") return;
-						event.stopPropagation();
-						setOpen(false);
-						button.current?.focus();
-					}}
 				>
 					{groups.length === 0 && <p className="ports-empty">{item.tooltip}</p>}
 					{groups.map(group => (
