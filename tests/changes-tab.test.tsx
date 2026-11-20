@@ -188,8 +188,9 @@ describe("the Changes tab", () => {
 		await store.selectChangedFile(file("staged", "modified", "src/tax/rules.ts"));
 		const markup = render(store);
 		expect(markup).toContain('<div class="diff-hunk-header">@@ -1,6 +1,7 @@</div>');
-		expect(markup).toContain('<div class="diff-line removed"><span class="diff-number">3</span><span class="diff-number"></span><span class="diff-marker" aria-hidden="true">-</span><span class="diff-text">export const retries = 3;</span></div>');
-		expect(markup).toContain('<div class="diff-line added"><span class="diff-number"></span><span class="diff-number">3</span><span class="diff-marker" aria-hidden="true">+</span><span class="diff-text">export const retries = 5;</span></div>');
+		// Each numbered line's numbers are a button that starts a review note on it.
+		expect(markup).toContain('<div class="diff-line removed"><button type="button" class="diff-note-target" tabindex="-1" data-line="0-0-2" aria-label="Add a note on removed line 3" title="Add a note. Shift+click another line of this hunk for a range."><span class="diff-number">3</span><span class="diff-number"></span></button><span class="diff-marker" aria-hidden="true">-</span><span class="diff-text">export const retries = 3;</span></div>');
+		expect(markup).toContain('<div class="diff-line added"><button type="button" class="diff-note-target" tabindex="-1" data-line="0-0-3" aria-label="Add a note on line 3" title="Add a note. Shift+click another line of this hunk for a range."><span class="diff-number"></span><span class="diff-number">3</span></button><span class="diff-marker" aria-hidden="true">+</span><span class="diff-text">export const retries = 5;</span></div>');
 	});
 
 	test("shows a notice for binary, very large, and empty files, and a rename's header", async () => {

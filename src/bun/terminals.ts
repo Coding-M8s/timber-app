@@ -3,9 +3,9 @@ import { type AgentSetting, agentCommand, findAgent } from "../shared/agent";
 import { describeCommandLine } from "../shared/command-line";
 import type { TimberStatus } from "../shared/model";
 import {
-	type OpenTerminalRequest, type OpenTerminalResult, type Scrollback, type SessionNaming, type TerminalChange, type TerminalOutput, type TerminalSession,
+	type OpenTerminalRequest, type OpenTerminalResult, type PasteModeScanner, type PasteResult, type Scrollback, type SessionNaming, type TerminalChange, type TerminalOutput, type TerminalSession,
 	type TerminalSnapshot, TERMINAL_UNSUPPORTED_REASON, WORKTREE_SETUP_SESSION_NAME, clampTerminalSize, cleanSessionName, createScrollback, defaultSessionName, pickShell,
-	pickWindowsShell, sessionNameBase,
+	pickWindowsShell, sessionNameBase, PASTE_NOT_READY, bracketedPaste, createPasteModeScanner, pasteProblem,
 } from "../shared/terminal";
 import { PROBE_ANSWER, type StatusRecords, type StatusScanner, createStatusRecords, createStatusScanner } from "../shared/program-status";
 import { HANDOFF_VARIABLE } from "../shared/handoff";
@@ -93,6 +93,12 @@ export interface TerminalSessions {
 	drawn(id: string, seq: number): void;
 	/** Pass typed text on to a running session. Anything else is ignored. */
 	write(id: string, data: string): void;
+	/**
+	 * Paste text into a running agent session as one bracketed paste, only
+	 * when its program asked for bracketed paste and the text has nothing a
+	 * paste must not hold (`pasteProblem`). Nothing is written otherwise.
+	 */
+	paste(id: string, text: string): PasteResult;
 	resize(id: string, cols: number, rows: number): void;
 	/**
 	 * End a session and forget it. Everything in the shell's session is hung
@@ -142,6 +148,8 @@ interface Live {
 	/** Reads OSC 7501 reports, OSC 133 prompts, and full resets out of the output. */
 	scanner: StatusScanner;
 	records: StatusRecords;
+	/** Whether the program asked for bracketed paste (mode 2004), read from all of its output. */
+	pasteMode: PasteModeScanner;
 	/** When the last probe was answered. A flood of probes, such as from a file shown with `cat`, gets one answer at a time. */
 	probedAt: number;
 	/** The root record changed since the window was last told. Told with the next flush, so a stream of progress is one change per part. */
@@ -278,6 +286,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 	 * itself is not changed.
 	 */
 	function take(live: Live, text: string): void {
+		live.pasteMode.scan(text);
 		for (const event of live.scanner.scan(text)) {
 			if (event.type === "probe") {
 				const now = Date.now();
@@ -452,9 +461,10 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			// A session closed meanwhile is already gone and stays gone.
 			if (sessions.get(session.id) !== live) return;
 			const end = child.ended() ?? { exitCode: null, signal: null };
+			live.pasteMode.reset();
 			changed(live, { ...live.session, state: { kind: "exited", ...end }, status: live.records.root() });
 		});
-		live = { session, process: child, scrollback: createScrollback(), pending: "", flushTimer: null, undrawn: [], undrawnSize: 0, held: false, leftovers: null, ended, scanner: createStatusScanner(), records: createStatusRecords(), statusChanged: false, probedAt: Number.NEGATIVE_INFINITY };
+		live = { session, process: child, scrollback: createScrollback(), pending: "", flushTimer: null, undrawn: [], undrawnSize: 0, held: false, leftovers: null, ended, scanner: createStatusScanner(), records: createStatusRecords(), pasteMode: createPasteModeScanner(), statusChanged: false, probedAt: Number.NEGATIVE_INFINITY };
 		sessions.set(session.id, live);
 		changed(live, session);
 		return { outcome: "opened", session: { ...session } };
@@ -521,6 +531,16 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			const live = sessions.get(id);
 			if (!live || live.session.state.kind !== "running" || typeof data !== "string" || data === "") return;
 			live.process.write(data);
+		},
+		paste(id, text) {
+			const live = sessions.get(id);
+			if (!live || live.session.state.kind !== "running") return { outcome: "gone", message: "The session has ended." };
+			if (live.session.kind !== "agent") return { outcome: "not-agent", message: "Only an agent session takes a pasted review." };
+			const problem = pasteProblem(text);
+			if (problem !== null) return { outcome: "refused", message: problem };
+			if (!live.pasteMode.on()) return { outcome: "not-ready", message: PASTE_NOT_READY };
+			live.process.write(bracketedPaste(text));
+			return { outcome: "pasted" };
 		},
 		resize(id, cols, rows) {
 			const live = sessions.get(id);

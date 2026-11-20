@@ -450,6 +450,8 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			restartPlan: () => restarter.plan(),
 			// Quits, ending every terminal without asking again, and starts the same app again (see ./restart.ts).
 			restart: () => restarter.restart(),
+			// Writes only the session's input, as one bracketed paste (see ./terminals.ts).
+			pasteTerminal: async ({ id, text }) => terminals.paste(id, text),
 		},
 		messages: {
 			writeTerminal: ({ id, data }) => terminals.write(id, data),

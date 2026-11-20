@@ -9,6 +9,7 @@ import { TAB_LABELS, tabAfterKey } from "../shell";
 import { useAppState, useStore } from "../store/react";
 import { WORKSPACE_TABS, type WorkspaceTab, isBeingRemoved, isRunning, selectedWorktree } from "../store/state";
 import { ChangesPanel } from "./ChangesPanel";
+import { describeNoteCount } from "../review-format";
 import { IssueHeaderLink, issueOf } from "./IssueSummary";
 import { PortsItem } from "./PortsItem";
 import { PullRequestPanel } from "./PullRequestPanel";
@@ -60,6 +61,7 @@ export function Workspace() {
 	const pullProblem = describeWorktreePullRequestProblem(pullRequests, pullRequest);
 	// While Timber removes the worktree, nothing new starts in it.
 	const removing = isBeingRemoved(state, repository.path, worktree.path);
+	const notes = state.reviews[worktree.id]?.length ?? 0;
 
 	// As in any tab list: the arrows, Home, and End move between tabs, and the tab reached shows at once.
 	const onTabKey = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -139,6 +141,12 @@ export function Workspace() {
 						onClick={() => store.showTab(tab)}
 					>
 						{TAB_LABELS[tab]}
+						{tab === "changes" && notes > 0 && (
+							<>
+								<span className="tab-count" aria-hidden="true">{notes}</span>
+								<span className="visually-hidden">, {describeNoteCount(notes)}</span>
+							</>
+						)}
 					</button>
 				))}
 			</div>

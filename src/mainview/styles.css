@@ -4234,3 +4234,266 @@ pre:focus-visible {
 	margin: 0;
 	max-width: 420px;
 }
+
+/* Review notes: the count beside the Changes tab. */
+.tab-count {
+	margin-left: 6px;
+	padding: 0 5px;
+	border-radius: 8px;
+	background: var(--fill-selected);
+	color: var(--text-2);
+	font-family: var(--font-mono);
+	font-size: 11px;
+	font-weight: 400;
+}
+
+/* The line numbers of a line that can take a note: a button over both number columns. */
+.diff-note-target {
+	grid-column: 1 / 3;
+	display: grid;
+	grid-template-columns: 5ch 5ch;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	font: inherit;
+	color: inherit;
+	cursor: pointer;
+}
+
+.diff-note-target:hover .diff-number,
+.diff-note-target:focus-visible .diff-number {
+	color: var(--text);
+}
+
+.diff-note-target:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: -2px;
+}
+
+.diff-line.noting {
+	box-shadow: inset 3px 0 0 var(--focus);
+}
+
+/* A note under the lines it is on, and the field one is written in. */
+.diff-note {
+	max-width: 72ch;
+	margin: 4px 12px 6px 11ch;
+	padding: 6px 10px;
+	border: 1px solid var(--line-raised);
+	border-radius: 6px;
+	background: var(--bg-pane);
+	font-family: var(--font-ui);
+	font-size: 12.5px;
+	white-space: normal;
+}
+
+.diff-note:focus-visible {
+	outline: 2px solid var(--focus);
+}
+
+.diff-note-text {
+	margin: 0 0 4px;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	color: var(--text);
+}
+
+.note-form {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.note-field {
+	width: 100%;
+	min-height: 4.5em;
+	resize: vertical;
+	padding: 6px 8px;
+	border: 1px solid var(--line-raised);
+	border-radius: 5px;
+	background: var(--fill-field);
+	color: var(--text);
+	font: inherit;
+}
+
+.note-field:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: -1px;
+}
+
+.note-problem {
+	margin: 0;
+	font-size: 12px;
+	color: var(--error);
+}
+
+.note-buttons {
+	display: flex;
+	justify-content: flex-end;
+	gap: 6px;
+}
+
+.note-buttons .text-button {
+	margin-top: 0;
+}
+
+.note-outdated {
+	margin-right: 6px;
+	font-size: 11px;
+	color: var(--modified);
+}
+
+/* The Review list under the changed files. */
+.review {
+	flex: 0 1 auto;
+	max-height: 45%;
+	overflow: auto;
+	border-top: 1px solid var(--line);
+	padding-bottom: 8px;
+}
+
+.review-items {
+	margin: 0;
+	padding: 0 4px;
+	list-style: none;
+}
+
+.review-item {
+	padding: 2px 0;
+}
+
+.review-note {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 0 6px;
+	width: 100%;
+	padding: 4px 8px;
+	border: 0;
+	border-radius: 5px;
+	background: transparent;
+	color: var(--text-2);
+	font: inherit;
+	font-size: 12.5px;
+	text-align: left;
+	cursor: pointer;
+}
+
+.review-note:hover {
+	background: var(--fill-hover);
+	color: var(--text);
+}
+
+.review-location {
+	margin: 0;
+	font-family: var(--font-mono);
+	font-size: 11.5px;
+	overflow-wrap: anywhere;
+}
+
+.review-summary {
+	flex: 1 1 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--text-3);
+}
+
+.review-actions {
+	display: flex;
+	gap: 6px;
+	padding: 0 8px;
+}
+
+.review-actions .text-button {
+	margin-top: 0;
+}
+
+.review-problem {
+	margin: 4px 12px;
+	font-size: 12px;
+	color: var(--text-3);
+}
+
+.review-bar {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 6px;
+	padding: 6px 12px 0;
+}
+
+.review-bar .text-button {
+	margin-top: 0;
+	margin-right: auto;
+}
+
+.review-question {
+	margin-right: auto;
+	font-size: 12px;
+	color: var(--text-2);
+}
+
+/* The Send review dialog: the agent to paste into, and the message as it will be pasted. */
+.review-dialog {
+	width: min(720px, 92vw);
+}
+
+.review-agents {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin: 0 0 8px;
+	padding: 0;
+	border: 0;
+}
+
+.review-agent {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 13px;
+}
+
+.review-agent-state {
+	color: var(--text-3);
+	font-size: 12px;
+}
+
+.review-warning {
+	margin: 0 0 8px;
+	font-size: 12.5px;
+	color: var(--error);
+}
+
+.review-preview {
+	max-height: 50vh;
+	margin: 0 0 8px;
+	padding: 8px 10px;
+	overflow: auto;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: var(--bg-pane);
+	font-family: var(--font-mono);
+	font-size: 12px;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.review-preview:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: -1px;
+}
+
+/* Words for a screen reader only, such as the number of review notes beside a count. */
+.visually-hidden {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	padding: 0;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+	border: 0;
+}

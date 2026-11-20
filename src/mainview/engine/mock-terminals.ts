@@ -5,7 +5,8 @@ import type { Engine } from "../../shared/engine";
 import type { TimberStatus, Worktree } from "../../shared/model";
 import {
 	type OpenTerminalResult, type Scrollback, type TerminalChange, type TerminalOutput, type TerminalSession, cleanSessionName, createScrollback,
-	defaultSessionName, isWebLink, type SessionNaming, sessionNameBase, WORKTREE_SETUP_SESSION_NAME,
+	defaultSessionName, isWebLink, type SessionNaming, sessionNameBase, WORKTREE_SETUP_SESSION_NAME, type PasteModeScanner, PASTE_NOT_READY, bracketedPaste,
+	createPasteModeScanner, pasteProblem,
 } from "../../shared/terminal";
 import { PROBE_ANSWER, type StatusRecords, type StatusScanner, createStatusRecords, createStatusScanner } from "../../shared/program-status";
 import { notFoundOnPath } from "../../shared/search-path";
@@ -14,7 +15,7 @@ import { worktreeSetupArguments } from "../../shared/worktree-commands";
 
 /** The part of the engine about terminals, and how they are acted out. */
 export type TerminalCapabilities = Pick<Engine,
-	| "listTerminals" | "openTerminal" | "renameTerminal" | "readTerminal" | "drawnTerminal" | "writeTerminal" | "resizeTerminal" | "closeTerminal"
+	| "listTerminals" | "openTerminal" | "renameTerminal" | "readTerminal" | "drawnTerminal" | "writeTerminal" | "pasteTerminal" | "resizeTerminal" | "closeTerminal"
 	| "onTerminalOutput" | "onTerminalChanged" | "onQuitRequested" | "confirmQuit" | "writeClipboard" | "readClipboard" | "openLink"
 >;
 
@@ -48,6 +49,10 @@ export interface TerminalControls {
 	 * It is printed as the sequence and read as the main process reads it.
 	 */
 	agentStatus(id: string, report: string): void;
+	/** Every text pasted into a session with `pasteTerminal`, in order, exactly as given. */
+	pastedInto(id: string): string[];
+	/** Act out the program in a session printing this, read as the main process reads it, such as `\x1b[?2004l` to turn bracketed paste off. */
+	printInto(id: string, data: string): void;
 	/** What was written into a session as the answer to a probe, in order. */
 	probeAnswers(id: string): string[];
 	/**
@@ -68,6 +73,10 @@ interface Acted {
 	scanner: StatusScanner;
 	records: StatusRecords;
 	answers: string[];
+	/** Whether the pretend program asked for bracketed paste, read from what it printed as the main process reads it. */
+	pasteMode: PasteModeScanner;
+	/** Every text pasted in, in order, as given. */
+	pasted: string[];
 }
 
 /** What a pretend setup script prints when it fails. */
@@ -107,6 +116,7 @@ export function createMockTerminals(
 	const prompt = (acted: Acted) => acted.session.kind !== "terminal" ? "\x1b[35m>\x1b[0m " : `\x1b[32m${acted.session.path.split("/").at(-1)}\x1b[0m $ `;
 
 	function print(acted: Acted, data: string): void {
+		acted.pasteMode.scan(data);
 		// What the program prints is read for status first, as the main process does.
 		let statusChanged = false;
 		for (const event of acted.scanner.scan(data)) {
@@ -135,6 +145,7 @@ export function createMockTerminals(
 	function end(acted: Acted, exitCode: number): void {
 		if (acted.session.state.kind !== "running") return;
 		acted.records.exited();
+		acted.pasteMode.reset();
 		acted.session = { ...acted.session, state: { kind: "exited", exitCode, signal: null }, status: acted.records.root() };
 		announce({ id: acted.session.id, session: acted.session });
 	}
@@ -238,7 +249,7 @@ export function createMockTerminals(
 			};
 			const acted: Acted = {
 				session, scrollback: createScrollback(), line: "", typed: "", size: { cols: request.cols, rows: request.rows }, drawn: 0,
-				scanner: createStatusScanner(), records: createStatusRecords(), answers: [],
+				scanner: createStatusScanner(), records: createStatusRecords(), answers: [], pasteMode: createPasteModeScanner(), pasted: [],
 			};
 			sessions.set(session.id, acted);
 			announce({ id: session.id, session });
@@ -251,7 +262,8 @@ export function createMockTerminals(
 			const greeting = agent
 				? `A pretend ${session.name} in ${session.path}, started as ${session.command}. Nothing runs in the browser. Try exit.\r\n`
 				: `A pretend shell in ${session.path}. Try pwd, clear, or exit.\r\n`;
-			print(acted, `${greeting}${prompt(acted)}`);
+			// A pretend agent asks for bracketed paste, as Claude Code and Codex do, so a pasted review keeps its line breaks.
+			print(acted, `${greeting}${agent ? "\x1b[?2004h" : ""}${prompt(acted)}`);
 			return { outcome: "opened", session: structuredClone(session) };
 		},
 		async renameTerminal(id, name) {
@@ -276,6 +288,25 @@ export function createMockTerminals(
 		writeTerminal(id, data) {
 			const acted = sessions.get(id);
 			if (acted && acted.session.state.kind === "running") type(acted, data);
+		},
+		async pasteTerminal(id, text) {
+			const acted = sessions.get(id);
+			if (!acted || acted.session.state.kind !== "running") return { outcome: "gone", message: "The session has ended." };
+			if (acted.session.kind !== "agent") return { outcome: "not-agent", message: "Only an agent session takes a pasted review." };
+			const problem = pasteProblem(text);
+			if (problem !== null) return { outcome: "refused", message: problem };
+			if (!acted.pasteMode.on()) return { outcome: "not-ready", message: PASTE_NOT_READY };
+			acted.pasted.push(text);
+			acted.typed += bracketedPaste(text);
+			// Shown in the pretend input, line by line, and not run: no Enter came.
+			acted.line += text;
+			print(acted, text.replace(/\n/g, "\r\n"));
+			return { outcome: "pasted" };
+		},
+		pastedInto: id => [...(sessions.get(id)?.pasted ?? [])],
+		printInto(id, data) {
+			const acted = sessions.get(id);
+			if (acted && acted.session.state.kind === "running") print(acted, data);
 		},
 		resizeTerminal(id, cols, rows) {
 			const acted = sessions.get(id);

@@ -2623,3 +2623,37 @@ Run for focus in the new worktree dialog (issue 195), Linux x64 with Bun
   switch and Name empty after typing (the failed-run steps were not run
   against that build).
 - Not run: the desktop window (WebKitGTK), Windows, and macOS.
+
+Run for review notes sent to an agent (issue 168), Linux x64 with Bun
+1.4.5, rebased on main at 9e3a5b6:
+
+- `bun test`: 2335 tests passed, 18 skipped, 0 failed, including
+  `tests/review.test.ts` (the message, a cut that never splits a character,
+  choosing and stretching lines, where a note is, quoting and
+  cleaning, outdated notes, `pasteProblem`, `bracketedPaste`, and the paste
+  mode scanner with compound and split sequences), `tests/review-notes.test.tsx`
+  (the store and the mock engine: notes on two files pasted once, the
+  pasted text equal to the preview and written as one bracketed paste with
+  no Enter, nothing pasted before Send, outdated notes marked before the
+  preview and sent with their old lines, an agent with bracketed paste off
+  given nothing, a session that is not an agent of the worktree given
+  nothing, Copy review, notes kept across worktrees and dropped with a
+  worktree that left the list), and `tests/terminals.test.ts`, where a
+  pretend agent in a real pseudo terminal turns on mode 2004 and prints the
+  bytes it was pasted: exactly `bracketedPaste` of the text. An agent that
+  never turned it on, a terminal session, an ended session, and text with
+  an escape got nothing.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun run build:web`: built.
+- Claude Code 2.1.329, started in a real pseudo terminal (`Bun.spawn` with
+  `terminal`, 120 by 40) in an empty temporary Git repository: it turned on
+  mode 2004 before its prompt. A ten-line review sent as `bracketedPaste`
+  showed as `[Pasted text #1 +9 lines]` in its input, and in the 5 seconds
+  after nothing was submitted. It was quit with Ctrl+C, never given Enter.
+- Codex 0.169.0, started the same way: it turned on mode 2004, but in that
+  bare pseudo terminal it showed its sign-in screen even though `codex
+  login status` said it was signed in, so the paste into its prompt was not
+  tried. Not verified with Codex.
+- Not run: the desktop window or the browser build by eye (notes were not
+  clicked in a real window, so focus, the arrows, and Shift+click were not
+  tried; the component tests render markup only), Windows, and macOS.

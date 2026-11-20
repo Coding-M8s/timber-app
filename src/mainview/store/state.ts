@@ -2,6 +2,7 @@ import type { PullRequestCreationFailure, PullRequestFields, ReportedPullRequest
 import type { ChopList } from "../../shared/chops";
 import type { PortClash, PortsResult } from "../../shared/ports";
 import type { BaseComparison, Comparison, FileChange, FileChangeTarget, FileDiffResult } from "../../shared/file-changes";
+import type { ReviewNote } from "../../shared/review";
 import { type Layout, defaultLayout } from "../../shared/layout";
 import type { RepositoryFetch } from "../../shared/git-fetch";
 import type { IssueLookup } from "../../shared/issues";
@@ -181,7 +182,9 @@ export type DialogRequest =
 	/** The command palette: every worktree and action, searched by typing. */
 	| { kind: "palette" }
 	/** The setup wizard of a repository new to Timber, named by the path of its primary checkout. */
-	| { kind: "set-up-timber"; repository: string };
+	| { kind: "set-up-timber"; repository: string }
+	/** Preview a worktree's review notes as one message, and paste it into one of its agents or copy it. `worktree` is `Worktree.id`. */
+	| { kind: "send-review"; worktree: string };
 
 /** The sections of the Settings dialog, in the order they are listed. */
 export const SETTINGS_SECTIONS = ["layout", "theme", "terminal", "rendering", "editor", "agents", "chops", "notifications", "fetch", "about", "machine", "repository"] as const;
@@ -293,6 +296,15 @@ export interface AppState {
 	tab: WorkspaceTab;
 	/** The Changes tab as last read. Null before it was first shown. */
 	changes: ChangesView | null;
+	/**
+	 * The review notes of each worktree, by its identity, in the order they
+	 * were written. Kept in the window only, until sent or discarded, and
+	 * never saved: they quote the files. A worktree that leaves the list
+	 * takes its notes with it.
+	 */
+	reviews: Readonly<Record<string, readonly ReviewNote[]>>;
+	/** The note the Changes tab brings into view once its diff shows, after the person chose it in the Review list. */
+	noteInView: { worktree: string; id: string } | null;
 	/** The chops of the selected worktree as last read. Null before Settings, Chops first read them. */
 	chops: ChopsView | null;
 	/**
@@ -395,6 +407,8 @@ export const initialState: AppState = {
 	quitRequest: null,
 	tab: "workspace",
 	changes: null,
+	reviews: {},
+	noteInView: null,
 	chops: null,
 	ports: {},
 	portClashes: [],

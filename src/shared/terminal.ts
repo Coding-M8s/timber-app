@@ -5,6 +5,7 @@
  */
 
 import type { ProgramStatus } from "./program-status";
+import { isSafeText } from "./safe-text";
 
 /** Whether a session's process still runs, or how it ended. */
 export type TerminalState =
@@ -329,5 +330,94 @@ export function describeQuitRequest(live: number): { title: string; text: string
 	return {
 		title: "Quit Timber?",
 		text: `${count} still running. Quitting ends ${live === 1 ? "it" : "them"} and everything running in ${live === 1 ? "it" : "them"}.`,
+	};
+}
+
+/** The longest text a paste into a session may be, in characters. */
+export const PASTE_TEXT_LIMIT = 100_000;
+
+/**
+ * What is wrong with text to paste into a session, or null when it can go.
+ * It must not be blank, and may hold line breaks and tabs but no other
+ * control or invisible character (`isSafeText`), so it cannot end the paste
+ * early or hide what it says.
+ */
+export function pasteProblem(text: unknown): string | null {
+	if (typeof text !== "string" || text.trim() === "") return "There is nothing to paste.";
+	if (text.length > PASTE_TEXT_LIMIT) return `The text is longer than ${PASTE_TEXT_LIMIT} characters.`;
+	if (text.includes("\r")) return "The text has a carriage return. Line breaks must be \\n.";
+	if (!isSafeText(text)) return "The text has a control or invisible character. Only line breaks and tabs are allowed.";
+	return null;
+}
+
+/**
+ * The bytes a terminal sends for a paste while the program asked for
+ * bracketed paste (mode 2004): the text between `ESC [200~` and `ESC [201~`,
+ * each line break as the carriage return a terminal sends for Enter, as
+ * xterm.js does. The program takes the line breaks as part of the text, not
+ * as Enter. Only for text `pasteProblem` accepts.
+ */
+export function bracketedPaste(text: string): string {
+	return `\x1b[200~${text.replace(/\n/g, "\r")}\x1b[201~`;
+}
+
+/** How a paste into a session went. */
+export type PasteResult =
+	| { outcome: "pasted" }
+	/** The session is not there, or its program ended. */
+	| { outcome: "gone"; message: string }
+	/** The session is not an agent's. */
+	| { outcome: "not-agent"; message: string }
+	/** The program has not asked for bracketed paste, so a line break would act as Enter. Nothing was written. */
+	| { outcome: "not-ready"; message: string }
+	/** The text cannot be pasted (`pasteProblem`). Nothing was written. */
+	| { outcome: "refused"; message: string };
+
+export const PASTE_NOT_READY =
+	"The agent has not turned on bracketed paste, so a line break would send the review early. Wait for its prompt and try again, or copy the review.";
+
+/** The longest unfinished control sequence a paste mode scanner holds back between parts. */
+const PENDING_LIMIT = 64;
+
+/**
+ * Follows whether a program asked its terminal for bracketed paste, from what
+ * it prints: `CSI ? ... h` turns modes on and `CSI ? ... l` off, and mode 2004
+ * may share the sequence with others (`ESC [?1049;2004h`). A sequence split
+ * between two parts is read whole. A full reset (`ESC c`) turns it off.
+ */
+export interface PasteModeScanner {
+	/** Read the next part of what the program printed. */
+	scan(text: string): void;
+	/** Whether bracketed paste is on now. */
+	on(): boolean;
+	/** Back to off, for a program that ended. */
+	reset(): void;
+}
+
+export function createPasteModeScanner(): PasteModeScanner {
+	let on = false;
+	let pending = "";
+	const SEQUENCE = /\x1b(?:\[\?([0-9;]*)([hl])|c)/g;
+	return {
+		scan(text) {
+			const all = pending + text;
+			pending = "";
+			SEQUENCE.lastIndex = 0;
+			for (const match of all.matchAll(SEQUENCE)) {
+				if (match[2] === undefined) {
+					on = false;
+					continue;
+				}
+				if (match[1]!.split(";").includes("2004")) on = match[2] === "h";
+			}
+			// An escape near the end may be the start of a sequence that ends in the next part.
+			const last = all.lastIndexOf("\x1b");
+			if (last >= 0 && all.length - last <= PENDING_LIMIT && /^\x1b(?:\[(?:\?[0-9;]*)?)?$/.test(all.slice(last))) pending = all.slice(last);
+		},
+		on: () => on,
+		reset() {
+			on = false;
+			pending = "";
+		},
 	};
 }

@@ -93,6 +93,7 @@ export type AppRPC = {
 			readTerminal: { params: { id: string }; response: Answer<"readTerminal"> };
 			renameTerminal: { params: { id: string; name: string }; response: Answer<"renameTerminal"> };
 			closeTerminal: { params: { id: string }; response: Answer<"closeTerminal"> };
+			pasteTerminal: { params: { id: string; text: string }; response: Answer<"pasteTerminal"> };
 			confirmQuit: { params: {}; response: Answer<"confirmQuit"> };
 			writeClipboard: { params: { text: string }; response: Answer<"writeClipboard"> };
 			readClipboard: { params: {}; response: Answer<"readClipboard"> };

@@ -6,7 +6,7 @@ import type { Engine } from "../../shared/engine";
 import type { WorktreeHandoff } from "../../shared/handoff";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "../../shared/git-fetch";
 import type { ChopList } from "../../shared/chops";
-import { type Comparison, type FileChangeTarget, type FileChangesResult, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
+import { type Comparison, type FileChangeTarget, type FileChangesResult, type FileDiff, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
 import type { PortsResult } from "../../shared/ports";
 import { type Layout, chooseComparison, chosenComparison, clampSidebarWidth, dismissSetup, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberFailure, TimberStatus, Worktree, WorktreeCommandResult } from "../../shared/model";
@@ -19,7 +19,9 @@ import { type ZoomStep, stepZoom, zoomLabel } from "../../shared/zoom";
 import type { Theme } from "../../shared/theme";
 import type { ChooseSoundResult, SoundChoice, SoundOutcome } from "../../shared/sound-setting";
 import type { ExportThemeResult, ImportThemeResult } from "../../shared/theme-file";
-import { type OpenTerminalRequest, type TerminalChange, type TerminalSession, WORKTREE_SETUP_SESSION_NAME } from "../../shared/terminal";
+import { type OpenTerminalRequest, type PasteResult, type TerminalChange, type TerminalSession, WORKTREE_SETUP_SESSION_NAME } from "../../shared/terminal";
+import { type ReviewNote, buildReviewMessage, markOutdated, normalizeNoteText, notedFiles, noteProblem } from "../../shared/review";
+import { REVIEW_COPIED, describeReviewSent } from "../review-format";
 import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "../../shared/timber-config";
 import type { DoneApplyRequest, DoneApplyResult, DonePreview, DonePreviewRequest, DonePreviewResult } from "../../shared/timber-done";
 import type { RebaseRequest, RebaseResult } from "../../shared/timber-rebase";
@@ -172,6 +174,39 @@ export interface AppStore {
 	 * Never throws.
 	 */
 	compareChanges(compare: Comparison): Promise<void>;
+	/**
+	 * Keep a review note on lines of a diff of a worktree. Answers why it was
+	 * not kept, or null. Nothing is sent: notes wait in `reviews`.
+	 */
+	addReviewNote(worktreeId: string, note: Omit<ReviewNote, "id" | "outdated">): string | null;
+	/** Change what a kept note says. Answers why it was not changed, or null. */
+	editReviewNote(worktreeId: string, id: string, text: string): string | null;
+	deleteReviewNote(worktreeId: string, id: string): void;
+	/** Forget every note of a worktree without sending them. */
+	discardReview(worktreeId: string): void;
+	/**
+	 * Show the file and lines of a note in the Changes tab of the worktree it
+	 * shows, in the note's comparison. Answers why it cannot, such as a file
+	 * no longer listed there, or null. Never throws.
+	 */
+	showReviewNote(worktreeId: string, id: string): Promise<string | null>;
+	/** The note was brought into view. */
+	reviewNoteShown(): void;
+	/**
+	 * The review of a worktree as it would be pasted, after the diff of every
+	 * noted file was read again so that changed lines are marked outdated.
+	 * Null when the worktree has no notes. Never throws.
+	 */
+	prepareReview(worktreeId: string): Promise<string | null>;
+	/**
+	 * Paste `message`, as the preview showed it, into an agent session of the
+	 * worktree as one bracketed paste. Once it was pasted, the worktree's
+	 * notes are gone, the dialog closes, a toast says so, and the session
+	 * shows. Never throws.
+	 */
+	sendReview(worktreeId: string, sessionId: string, message: string): Promise<PasteResult>;
+	/** Put `message` on the clipboard and close the dialog. The notes stay. Answers whether it was copied. */
+	copyReview(message: string): Promise<boolean>;
 	/**
 	 * Create a worktree with `timber new`. Whatever comes of it, the
 	 * repository is read again before this answers, and the worktree Timber
@@ -646,6 +681,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			});
 			endOrphanTerminals();
 			forgetGoneForms();
+			forgetGoneReviews();
 			catchUpPullRequests();
 			catchUpBackups();
 		} catch (error) {
@@ -784,6 +820,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			});
 			endOrphanTerminals();
 			forgetGoneForms();
+			forgetGoneReviews();
 			requestBackups(path);
 			// The file may have changed with the worktree's branch or files: read the chops on screen again.
 			if (state.chops?.repository === path) void readChops(path, state.chops.worktree);
@@ -918,9 +955,75 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				answer = { outcome: "failed", message: unheard(`the changes of ${file.path}`, error) };
 			}
 		});
+		if (answer.outcome === "read" && view.compared !== null) markNotes(view.worktree, view.compared, file, answer.diff);
 		const now = state.changes;
 		if (ticket !== diffTicket || now?.worktree !== view.worktree || now.selected === null || !sameFileChange(now.selected, file)) return;
 		update({ changes: { ...now, diff: answer } });
+	}
+
+	/** Mark the notes on a file outdated when its diff, read again, no longer has their lines as they were. */
+	function markNotes(worktreeId: string, comparison: Comparison, file: FileChangeTarget, diff: FileDiff): void {
+		const notes = state.reviews[worktreeId];
+		if (!notes) return;
+		const marked = markOutdated(notes, comparison, file, diff);
+		if (marked !== notes) update({ reviews: { ...state.reviews, [worktreeId]: marked } });
+	}
+
+	let lastNote = 0;
+	function changeNotes(worktreeId: string, notes: readonly ReviewNote[]): void {
+		const { [worktreeId]: _gone, ...others } = state.reviews;
+		update({ reviews: notes.length > 0 ? { ...others, [worktreeId]: notes } : others });
+	}
+
+	/** Forget the notes of a worktree that left the list. */
+	function forgetGoneReviews(): void {
+		const listed = new Set(state.repositories.flatMap(repository => repository.worktrees.map(worktree => worktree.id)));
+		const kept = Object.entries(state.reviews).filter(([id]) => listed.has(id));
+		if (kept.length !== Object.keys(state.reviews).length) update({ reviews: Object.fromEntries(kept) });
+	}
+
+	/** A worktree in the list by its identity, with its repository's path. */
+	function listedWorktree(worktreeId: string): { repository: string; worktree: Worktree } | null {
+		for (const repository of state.repositories) {
+			const worktree = repository.worktrees.find(candidate => candidate.id === worktreeId);
+			if (worktree) return { repository: repository.path, worktree };
+		}
+		return null;
+	}
+
+	async function prepareReview(worktreeId: string): Promise<string | null> {
+		const found = listedWorktree(worktreeId);
+		const notes = state.reviews[worktreeId];
+		if (!notes || notes.length === 0) return null;
+		if (found) {
+			// Each noted file is read again, so a line that changed since is marked before the preview shows.
+			await Promise.all(notedFiles(notes).map(async ({ comparison, file }) => {
+				try {
+					const answer = await engine.readFileDiff({ repository: found.repository, worktree: found.worktree.path, compare: comparison, file });
+					if (answer.outcome === "read") markNotes(worktreeId, comparison, file, answer.diff);
+				} catch {
+					// Not heard: the note stays as it was.
+				}
+			}));
+		}
+		const now = state.reviews[worktreeId];
+		return now && now.length > 0 ? buildReviewMessage(now) : null;
+	}
+
+	async function showReviewNote(worktreeId: string, id: string): Promise<string | null> {
+		const note = state.reviews[worktreeId]?.find(candidate => candidate.id === id);
+		const view = state.changes;
+		if (!note || view?.worktree !== worktreeId) return null;
+		if (view.compared !== note.comparison) {
+			if (note.comparison === "base" && view.base !== null && !view.base.usable) return "This note is on the comparison with the base, which cannot be used now.";
+			await compareChanges(note.comparison);
+		}
+		const now = state.changes;
+		if (now?.worktree !== worktreeId || now.compared !== note.comparison) return null;
+		if (!now.files?.some(candidate => sameFileChange(candidate, note.file))) return `${note.file.path} is no longer listed in this comparison.`;
+		update({ noteInView: { worktree: worktreeId, id } });
+		await selectChangedFile(note.file);
+		return note.outdated ? "Its lines changed or left the diff since the note, so they may not show." : null;
 	}
 
 	function worktreeOf(repositoryPath: string, worktreeId: string) {
@@ -1903,6 +2006,64 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		readPorts,
 		selectChangedFile,
 		compareChanges,
+		addReviewNote(worktreeId, note) {
+			const text = normalizeNoteText(note.text);
+			const problem = noteProblem(text);
+			if (problem !== null) return problem;
+			if (note.lines.length === 0) return "Choose the lines the note is on.";
+			const kept: ReviewNote = { ...note, text, lines: note.lines.map(line => ({ ...line })), id: `note-${++lastNote}`, outdated: false };
+			changeNotes(worktreeId, [...(state.reviews[worktreeId] ?? []), kept]);
+			return null;
+		},
+		editReviewNote(worktreeId, id, edited) {
+			const notes = state.reviews[worktreeId] ?? [];
+			if (!notes.some(note => note.id === id)) return "The note is gone.";
+			const text = normalizeNoteText(edited);
+			const problem = noteProblem(text);
+			if (problem !== null) return problem;
+			changeNotes(worktreeId, notes.map(note => note.id === id ? { ...note, text } : note));
+			return null;
+		},
+		deleteReviewNote(worktreeId, id) {
+			const notes = state.reviews[worktreeId];
+			if (notes?.some(note => note.id === id)) changeNotes(worktreeId, notes.filter(note => note.id !== id));
+		},
+		discardReview(worktreeId) {
+			if (state.reviews[worktreeId]) changeNotes(worktreeId, []);
+		},
+		showReviewNote,
+		reviewNoteShown() {
+			if (state.noteInView) update({ noteInView: null });
+		},
+		prepareReview,
+		async sendReview(worktreeId, sessionId, message) {
+			const session = state.terminals.find(candidate => candidate.id === sessionId);
+			// Only an agent of the worktree the review is about gets it.
+			if (!session || session.worktree !== worktreeId || session.kind !== "agent") return { outcome: "not-agent", message: "That session is not an agent of this worktree." };
+			let result: PasteResult;
+			try {
+				result = await engine.pasteTerminal(sessionId, message);
+			} catch (error) {
+				// The paste may have gone through: say so, so the review is not pasted twice without a look.
+				return { outcome: "gone", message: notHeard("back about the paste", error, ". It may have been pasted: look at the agent before you send it again.") };
+			}
+			if (result.outcome !== "pasted") return result;
+			changeNotes(worktreeId, []);
+			if (state.dialog?.kind === "send-review") update({ dialog: null });
+			showToast(describeReviewSent(session.name));
+			revealSession(sessionId);
+			return result;
+		},
+		async copyReview(message) {
+			try {
+				await engine.writeClipboard(message);
+			} catch {
+				return false;
+			}
+			if (state.dialog?.kind === "send-review") update({ dialog: null });
+			showToast(REVIEW_COPIED);
+			return true;
+		},
 		async readTimberSettings(request) {
 			try {
 				return await engine.readTimberSettings(request);
