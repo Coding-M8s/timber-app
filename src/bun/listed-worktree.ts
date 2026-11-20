@@ -23,15 +23,19 @@ function isFolder(path: string): boolean {
  * absolute, the repository must be in the app's list, Timber must list the
  * worktree's registered path for it right now, and its folder must be there.
  * `consequence` ends every refusal, such as "No editor was started."
+ *
+ * With `listedOnly`, the path is only looked for in Timber's list, as Done
+ * needs: Timber also removes a worktree whose folder is gone.
  */
 export async function findListedWorktree(
 	findRepository: FindRepository,
 	repositoryPath: string,
 	worktreePath: string,
 	consequence: string,
+	{ listedOnly = false }: { listedOnly?: boolean } = {},
 ): Promise<{ ok: true; worktree: Worktree } | { ok: false; message: string }> {
 	const refuse = (message: string) => ({ ok: false as const, message });
-	if (!isAbsolute(worktreePath)) return refuse(`${worktreePath} is not a full path, so it cannot be a worktree Timber lists. ${consequence}`);
+	if (!listedOnly && !isAbsolute(worktreePath)) return refuse(`${worktreePath} is not a full path, so it cannot be a worktree Timber lists. ${consequence}`);
 	let repository: Repository | null;
 	try {
 		repository = await findRepository(repositoryPath);
@@ -46,6 +50,6 @@ export async function findListedWorktree(
 	}
 	const worktree = repository.worktrees.find(candidate => candidate.path === worktreePath);
 	if (!worktree) return refuse(`Timber lists no worktree at ${worktreePath} in ${repositoryPath}. ${consequence} Refresh the list.`);
-	if (!isFolder(worktreePath)) return refuse(`The folder ${worktreePath} is missing. ${consequence}`);
+	if (!listedOnly && !isFolder(worktreePath)) return refuse(`The folder ${worktreePath} is missing. ${consequence}`);
 	return { ok: true, worktree };
 }

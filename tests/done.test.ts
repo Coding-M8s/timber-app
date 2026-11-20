@@ -508,6 +508,15 @@ describe("with a stand-in for Timber", () => {
 		}
 	});
 
+	test("a listed worktree whose folder is gone is still asked about: Timber removes one too", async () => {
+		const gone = join(root, "sample-worktrees", "feat-gone");
+		const timber = standInResultTimber(root, `stand-in-${++count}`, { result: null, stdout: here(recordedDone.previews.dirty) });
+		const done = createDone({ timber: async () => ready(timber.path), findRepository: async () => listed([gone]), temporaryRoot: scratch, now: recordedNow });
+		await done.preview({ repository, path: gone, options: DEFAULT_DONE_OPTIONS });
+		expect(existsSync(gone)).toBe(false);
+		expect(timber.notes().arguments.at(-1)).toBe(gone);
+	});
+
 	test("nothing runs while Timber is not ready", async () => {
 		const { preview, ran } = standIn({ result: null }, listed([worktree]), { state: "too-old", path: "/usr/bin/timber", found: "0.1.0", required: "0.1.1" });
 		const result = await preview();

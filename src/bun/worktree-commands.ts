@@ -108,7 +108,6 @@ export function createWorktreeCommands(options: WorktreeCommandsOptions): Worktr
 		}
 		return inTurn(repository, async () => {
 			try {
-				if (!await isListed(repository)) return rebaseNotRun(`${repository} is not a repository in the app's list. Nothing was run.`);
 				const found = await findListedWorktree(findRepository, repository, worktree, "Nothing was run.");
 				if (!found.ok) return rebaseNotRun(found.message);
 				const status = await timber();
@@ -140,7 +139,6 @@ export function createWorktreeCommands(options: WorktreeCommandsOptions): Worktr
 		}
 		return inTurn(repository, async () => {
 			try {
-				if (!await isListed(repository)) return prNotRun(`${repository} is not a repository in the app's list. Nothing was run.`);
 				const found = await findListedWorktree(findRepository, repository, worktree, "Nothing was run.");
 				if (!found.ok) return prNotRun(found.message);
 				const status = await timber();
@@ -164,7 +162,6 @@ export function createWorktreeCommands(options: WorktreeCommandsOptions): Worktr
 		const { repository, worktree } = (request ?? {}) as Partial<HeadSubjectRequest>;
 		if (typeof repository !== "string" || typeof worktree !== "string") return null;
 		try {
-			if (!await isListed(repository)) return null;
 			const found = await findListedWorktree(findRepository, repository, worktree, "");
 			return found.ok ? await readHeadSubject(found.worktree.path) : null;
 		} catch {
