@@ -1523,9 +1523,14 @@ version gate of its own.
   entry from `timber __app-pr` is none and it has a branch. Its state lives in
   the store, `pullRequestForms` by worktree id, so leaving the tab or the
   worktree while Timber runs keeps what was typed and the run, and cannot
-  start a second one. `startPullRequestForm` starts it once: Title as the
-  branch, then the last commit's subject once `readHeadSubject` answers,
-  unless something was typed first; Base as `initialPullRequestBase` of the
+  start a second one. The tab calls `startPullRequestForm` each time it
+  shows the worktree. The first call starts the form: Title as the branch,
+  then the last commit's subject once `readHeadSubject` answers, unless
+  something was typed first. A later call whose worktree has a new head
+  reads the subject again, under the same condition, so a form started
+  before the branch had a commit of its own does not keep the base's
+  subject. A form whose worktree left the list is forgotten when the list is
+  read again, so one made again at that path starts afresh. Base as `initialPullRequestBase` of the
   saved base, which gives `<remote>/<branch>` for a saved
   `refs/remotes/<remote>/<branch>` and nothing for a saved local branch,
   none, or invalid metadata, since `timber pr --base` refuses a local
@@ -1568,8 +1573,10 @@ version gate of its own.
 - **Outcomes.** `presentPullRequestCreation` maps each answer. Created: a
   toast, "Pull request #N opened". Exists: a quiet line above that pull
   request saying it was already open and Timber opened no other. Both stay
-  as `reported` in the form, and the tab shows the number with "Open in
-  browser" until a read of the pull requests lists it. Refused: Timber's
+  as `reported` in the form until the next read of the repository's pull
+  requests after the run. Until then, while GitHub does not list it yet,
+  the tab shows its number with "Open in browser". That read shows it, or,
+  if it still says none, the form again. Refused: Timber's
   diagnostic, and that nothing was pushed. Failed: Timber's diagnostic, and
   whether this run published the branch, or that it is unknown, never that
   nothing changed. Running it again reports one that was opened as already
@@ -5300,7 +5307,7 @@ x64 (Omarchy) with Bun 1.4.5, Git 2.56.1, and the released Timber 0.1.3
 installed:
 
 - `bun run typecheck` and `bun run typecheck:desktop`: no errors.
-- `bun test`: 2044 passed, 14 skipped, none failed. Against Timber 0.1.3 on
+- `bun test`: 2046 passed, 14 skipped, none failed. Against Timber 0.1.3 on
   a temporary repository whose `origin` is a bare repository on disk:
   `timber pr` was refused as not on github.com, and again with no title,
   and neither changed a file or ref in the worktree, the primary checkout,

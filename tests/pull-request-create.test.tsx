@@ -58,7 +58,7 @@ describe("the words and the command", () => {
 });
 
 const form = (change: Partial<PullRequestForm> = {}): PullRequestForm => ({
-	repository: TIMBER, worktree: PORTABILITY, title: "Run on macOS", body: "", base: "origin/main", draft: false,
+	repository: TIMBER, worktree: PORTABILITY, head: null, title: "Run on macOS", body: "", base: "origin/main", draft: false,
 	titleEdited: false, running: false, failure: null, reported: null, ...change,
 });
 const formMarkup = (shown: PullRequestForm) => renderToStaticMarkup(<PullRequestFormView form={shown} afterIssue={false} onChange={() => {}} onSubmit={() => {}} />);
@@ -256,6 +256,52 @@ describe("the Pull request tab's form", () => {
 		const before = engine.pullRequestReads(TIMBER);
 		await store.createPullRequest(id);
 		expect(engine.pullRequestReads(TIMBER)).toBe(before + 1);
+	});
+
+	test("a new commit reads the title again unless one was typed, and a worktree that left the list forgets its form", async () => {
+		const { engine, store, open } = await started();
+		engine.setHeadSubject(PORTABILITY, "The base's last commit");
+		const id = open(PORTABILITY);
+		await settle();
+		expect(store.getState().pullRequestForms[id]?.title).toBe("The base's last commit");
+
+		// The person commits on the branch: the list is read again with a new head, and the tab starts the form again.
+		const moved = (head: string) => sampleRepositories.map(repository => ({
+			...repository,
+			worktrees: repository.worktrees.map(worktree => worktree.path === PORTABILITY ? { ...worktree, head } : worktree),
+		}));
+		engine.setRepositories(moved("1111111111111111111111111111111111111111"));
+		engine.setHeadSubject(PORTABILITY, "Use POSIX sed");
+		await store.reloadRepository(TIMBER);
+		open(PORTABILITY);
+		await settle();
+		expect(store.getState().pullRequestForms[id]?.title).toBe("Use POSIX sed");
+
+		store.editPullRequestForm(id, { title: "Mine" });
+		engine.setRepositories(moved("2222222222222222222222222222222222222222"));
+		engine.setHeadSubject(PORTABILITY, "Another commit");
+		await store.reloadRepository(TIMBER);
+		open(PORTABILITY);
+		await settle();
+		expect(store.getState().pullRequestForms[id]?.title).toBe("Mine");
+
+		engine.setRepositories(sampleRepositories.map(repository => ({ ...repository, worktrees: repository.worktrees.filter(worktree => worktree.path !== PORTABILITY) })));
+		await store.reloadRepository(TIMBER);
+		expect(store.getState().pullRequestForms[id]).toBeUndefined();
+	});
+
+	test("the note about what the run reported lasts until the next read of the pull requests", async () => {
+		const { engine, store, open, panel } = await started();
+		const id = open(PORTABILITY);
+		await settle();
+		// GitHub has not listed it: the tab names it, and once a later read still says none, the form is back.
+		engine.createPullRequest = async () => ({ outcome: "created", number: 9, url: "https://github.com/example/timber/pull/9", base: "main", published: true });
+		await store.createPullRequest(id);
+		expect(store.getState().pullRequestForms[id]?.reported?.number).toBe(9);
+		await store.fetchNow(TIMBER);
+		await settle();
+		expect(store.getState().pullRequestForms[id]?.reported).toBeNull();
+		expect(panel()).toContain('name="title"');
 	});
 
 	test("an engine that does not answer is a failure whose effect is unknown, never a throw", async () => {

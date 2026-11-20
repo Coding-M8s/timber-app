@@ -601,6 +601,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				error: null,
 			});
 			endOrphanTerminals();
+			forgetGoneForms();
 			catchUpPullRequests();
 			catchUpBackups();
 		} catch (error) {
@@ -629,7 +630,11 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		}
 		// A repository that left the list meanwhile keeps nothing.
 		if (!state.repositories.some(repository => repository.path === path)) return;
-		update({ pullRequests: { ...state.pullRequests, [path]: answer } });
+		// A form's note about what the last run reported lasts until this newer read, which shows the pull request or, still none, the form again.
+		const forms = Object.entries(state.pullRequestForms);
+		const settled = forms.map(([id, form]): [string, PullRequestForm] => form.repository === path && form.reported !== null && !form.running ? [id, { ...form, reported: null }] : [id, form]);
+		const changed = settled.some(([id, form]) => form !== state.pullRequestForms[id]);
+		update({ pullRequests: { ...state.pullRequests, [path]: answer }, ...(changed ? { pullRequestForms: Object.fromEntries(settled) } : {}) });
 	});
 
 	/** Read the pull requests of every repository that has none yet, and forget those of one no longer listed. */
@@ -729,6 +734,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				error: state.error?.repository === path ? null : state.error,
 			});
 			endOrphanTerminals();
+			forgetGoneForms();
 			requestBackups(path);
 		} catch (error) {
 			if (stale()) return;
@@ -1348,11 +1354,42 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		if (form) update({ pullRequestForms: { ...state.pullRequestForms, [id]: { ...form, ...change } } });
 	}
 
+	/** Forget the form of a worktree that left the list, so one made again at that path starts afresh. One that runs is kept until it ends. */
+	function forgetGoneForms(): void {
+		const listed = new Set(state.repositories.flatMap(repository => repository.worktrees.map(worktree => worktree.id)));
+		const forms = Object.entries(state.pullRequestForms);
+		const kept = forms.filter(([id, form]) => listed.has(id) || form.running);
+		if (kept.length !== forms.length) update({ pullRequestForms: Object.fromEntries(kept) });
+	}
+
+	/** Put the last commit's subject in the title, unless the person typed one or Timber runs. Read for `head`, which a later commit replaces. */
+	function readTitle(repository: string, worktree: Worktree): void {
+		void (async () => {
+			let subject: string | null;
+			try {
+				subject = await engine.readHeadSubject({ repository, worktree: worktree.path });
+			} catch {
+				subject = null;
+			}
+			const now = state.pullRequestForms[worktree.id];
+			if (subject !== null && now && now.head === worktree.head && !now.titleEdited && !now.running) changeForm(worktree.id, { title: defaultPullRequestTitle(subject, worktree.branch) });
+		})();
+	}
+
 	function startPullRequestForm(repository: string, worktree: Worktree): void {
-		if (state.pullRequestForms[worktree.id]) return;
+		const existing = state.pullRequestForms[worktree.id];
+		if (existing) {
+			// A new commit since the title was read: its subject is the better title, unless one was typed.
+			if (existing.head !== worktree.head && !existing.titleEdited && !existing.running) {
+				changeForm(worktree.id, { head: worktree.head });
+				readTitle(repository, worktree);
+			}
+			return;
+		}
 		const form: PullRequestForm = {
 			repository,
 			worktree: worktree.path,
+			head: worktree.head,
 			title: defaultPullRequestTitle(null, worktree.branch),
 			titleEdited: false,
 			body: "",
@@ -1363,16 +1400,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			reported: null,
 		};
 		update({ pullRequestForms: { ...state.pullRequestForms, [worktree.id]: form } });
-		void (async () => {
-			let subject: string | null;
-			try {
-				subject = await engine.readHeadSubject({ repository, worktree: worktree.path });
-			} catch {
-				subject = null;
-			}
-			const now = state.pullRequestForms[worktree.id];
-			if (subject !== null && now && !now.titleEdited && !now.running) changeForm(worktree.id, { title: defaultPullRequestTitle(subject, worktree.branch) });
-		})();
+		readTitle(repository, worktree);
 	}
 
 	function editPullRequestForm(worktreeId: string, change: Partial<PullRequestFields>): void {
