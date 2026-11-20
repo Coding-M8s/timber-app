@@ -167,6 +167,42 @@ export const sampleStatesRepository: Repository = {
 	],
 };
 
+/**
+ * A repository after several pull requests merged, for Clean up merged
+ * (issue 162). Its merged worktrees are: one clean with a deleted upstream,
+ * one clean in step with its upstream, one with files that would be lost,
+ * and one whose removal Timber refuses (`sampleRemovalRefusals`). One more
+ * has a pull request that is still open, and the primary checkout has none.
+ * The browser build lists it; most tests do not.
+ */
+export const sampleMergedRepository: Repository = {
+	path: "/work/storefront",
+	name: "storefront",
+	available: true,
+	failure: null,
+	setup: "repository",
+	worktrees: [
+		worktree("storefront", "main", { primary: true }),
+		worktree("storefront", "feat/coupons", { sync: { kind: "gone", upstream: "origin/feat/coupons" } }),
+		worktree("storefront", "chore/ci-cache", { sync: { kind: "tracking", upstream: "origin/chore/ci-cache", ahead: 0, behind: 0 } }),
+		worktree("storefront", "feat/cart-redesign", {
+			changes: sampleChanges(2, 1),
+			sync: { kind: "gone", upstream: "origin/feat/cart-redesign" },
+		}),
+		worktree("storefront", "fix/currency-rounding", { sync: { kind: "gone", upstream: "origin/fix/currency-rounding" } }),
+		worktree("storefront", "feat/wishlist", { sync: { kind: "tracking", upstream: "origin/feat/wishlist", ahead: 0, behind: 0 } }),
+	],
+};
+
+/**
+ * Removals that Timber refuses in the sample, by worktree path, with its own
+ * words: here the deleted upstream was seen again between preview and
+ * removal. `refuseRemovals` changes them.
+ */
+export const sampleRemovalRefusals: Readonly<Record<string, string>> = {
+	"/work/storefront-worktrees/fix-currency-rounding": "Live upstream state changed before removal; worktree and branch retained. Retry cleanup.",
+};
+
 /** A saved repository whose folder is gone. The browser build lists it; most tests do not. */
 export const sampleUnavailableRepository: Repository = {
 	path: "/work/old-prototype",
@@ -178,7 +214,7 @@ export const sampleUnavailableRepository: Repository = {
 };
 
 /** What `bun run dev:web` lists: every row state, and a repository that is unavailable. */
-export const browserSampleRepositories: Repository[] = [...sampleRepositories, sampleStatesRepository, sampleUnavailableRepository];
+export const browserSampleRepositories: Repository[] = [...sampleRepositories, sampleStatesRepository, sampleMergedRepository, sampleUnavailableRepository];
 
 /**
  * A repository on the pretend disk that is not in the list yet. The mock's
@@ -232,6 +268,7 @@ function branchesOf(repository: Repository): BranchSuggestion[] {
 /** Ignored files in the sample worktrees, by worktree path. The list of worktrees does not carry them. */
 export const sampleIgnored: Readonly<Record<string, readonly string[]>> = {
 	"/work/timber-worktrees/feat-github-issue-lookup": [".env.local", "dist/"],
+	"/work/storefront-worktrees/feat-coupons": ["node_modules/", ".env.local"],
 };
 
 /** A stand-in for Timber's snapshot: 64 hexadecimal digits that change whenever the text does. */
@@ -348,6 +385,12 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	failBranchDeletion(fail: boolean): void;
 	/** How long a removal takes from now on, to look at the running state. */
 	setDoneDelay(milliseconds: number): void;
+	/**
+	 * Make Timber refuse every later removal of the worktree at this path,
+	 * after the preview, with this diagnostic, or pass null to let it work.
+	 * The worktree stays. Starts from `sampleRemovalRefusals`.
+	 */
+	refuseRemovals(path: string, diagnostic: string | null): void;
 	/**
 	 * Decide how "Open in editor" ends from now on, for an editor that is set
 	 * and a worktree that is listed: "opens" (the start), "not-found" (the
@@ -534,6 +577,7 @@ export function createMockEngine(
 	let previewLifetime: number | null = null;
 	let branchDeletionFails = false;
 	let doneDelay = 0;
+	const removalRefusals = new Map<string, string>(Object.entries(sampleRemovalRefusals));
 
 	/**
 	 * What Timber would print for a preview right now, or why there is none.
@@ -608,6 +652,9 @@ export function createMockEngine(
 			const changed = "Worktree, files, settings or repository changed. Review the updated preview before removing.";
 			return ended(changed, `error: ${changed}\n`);
 		}
+
+		const refusal = removalRefusals.get(path);
+		if (refusal !== undefined) return ended(refusal, `error: ${refusal}\n`);
 
 		// The folder goes, and with it the worktree's place in the list.
 		current = current.map(repository => repository.path === repositoryPath
@@ -991,6 +1038,10 @@ export function createMockEngine(
 		},
 		failBranchDeletion(fail) {
 			branchDeletionFails = fail;
+		},
+		refuseRemovals(path, diagnostic) {
+			if (diagnostic === null) removalRefusals.delete(path);
+			else removalRefusals.set(path, diagnostic);
 		},
 		setDoneDelay(milliseconds) {
 			doneDelay = milliseconds;

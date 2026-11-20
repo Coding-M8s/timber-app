@@ -19,15 +19,8 @@ interface OperationDialogProps {
 	/** False while the fields do not make a command that can run. */
 	canSubmit?: boolean;
 	onSubmit: () => void;
-	/** Asked for by Cancel and Escape. Never while the command runs, unless `closableWhileRunning`. */
+	/** Asked for by Cancel and Escape. Never while the command runs. */
 	onClose: () => void;
-	/**
-	 * For a command that goes on in the background once started, such as a
-	 * removal. While it runs, the button that closes the dialog reads "Close"
-	 * and stays enabled, Escape closes, and focus moves to that button.
-	 * Closing never stops the command.
-	 */
-	closableWhileRunning?: boolean;
 	/**
 	 * For a command that deletes work. The submit button is marked as such,
 	 * and nothing but pressing that button itself submits: Enter in a field
@@ -58,9 +51,9 @@ interface OperationDialogProps {
  */
 export function OperationDialog(props: OperationDialogProps) {
 	const { title, headerAside, command, submission, submitLabel, runningLabel, failureTitle, canSubmit = true, onSubmit, onClose, children } = props;
-	const { destructive = false, cancelLabel = "Cancel", failureNote, followUps = [], closableWhileRunning = false } = props;
+	const { destructive = false, cancelLabel = "Cancel", failureNote, followUps = [] } = props;
 	const { running, failure } = submission;
-	const closable = !running || closableWhileRunning;
+	const closable = !running;
 	const dialog = useRef<HTMLDialogElement>(null);
 	const cancel = useRef<HTMLButtonElement>(null);
 	const titleId = useId();
@@ -81,10 +74,9 @@ export function OperationDialog(props: OperationDialogProps) {
 
 	// Opening moves focus to the first control, and a run takes it away, because the buttons are disabled meanwhile.
 	// A destructive dialog puts it on the button that changes nothing, at the start and after every run.
-	// A dialog that may close while its command runs puts it on Close once the command starts, so Escape and Enter work.
 	useEffect(() => {
-		if ((destructive && !running) || (running && closableWhileRunning)) cancel.current?.focus();
-	}, [destructive, running, closableWhileRunning]);
+		if (destructive && !running) cancel.current?.focus();
+	}, [destructive, running]);
 
 	const run = () => {
 		if (!running && canSubmit) onSubmit();
@@ -101,7 +93,7 @@ export function OperationDialog(props: OperationDialogProps) {
 			className="dialog"
 			aria-labelledby={titleId}
 			onCancel={event => {
-				// Escape asks to close. The dialog decides, and never while the command runs unless it goes on in the background.
+				// Escape asks to close. The dialog decides, and never while the command runs.
 				event.preventDefault();
 				if (closable) onClose();
 			}}
@@ -129,7 +121,7 @@ export function OperationDialog(props: OperationDialogProps) {
 						</Fragment>
 					))}
 					<div className="dialog-buttons">
-						<button ref={cancel} type="button" className="button quiet" disabled={!closable} autoFocus={destructive} onClick={onClose}>{running && closableWhileRunning ? "Close" : cancelLabel}</button>
+						<button ref={cancel} type="button" className="button quiet" disabled={!closable} autoFocus={destructive} onClick={onClose}>{cancelLabel}</button>
 						{destructive ? (
 							<button type="button" className="button danger" disabled={running || !canSubmit} onClick={run}>
 								{running ? "Running" : submitLabel}

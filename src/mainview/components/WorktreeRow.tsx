@@ -29,6 +29,7 @@ const markerClass: Record<RowMarkerKind, string> = {
 	"force-pushed": "sync-note rewritten",
 	"sync-unknown": "sync-note",
 	"removing": "row-flag removing",
+	"removal-waiting": "row-flag removing",
 	"removal-failed": "row-flag failing",
 	"detached": "row-flag",
 	"folder-missing": "row-flag",
@@ -193,7 +194,7 @@ export function WorktreeRow({ worktree, selected, onSelect, pullRequest = null, 
 			{menuAt !== null && onMenuChoice && (
 				<WorktreeMenu
 					label={describeWorktreeMenu(worktree)}
-					items={worktreeMenuItems(worktree, removal?.kind === "running")}
+					items={worktreeMenuItems(worktree, removal?.kind === "running" || removal?.kind === "waiting")}
 					at={menuAt}
 					onClose={closeMenu}
 					onChoose={onMenuChoice}

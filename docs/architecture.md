@@ -334,7 +334,10 @@ decides, both when it previews and again when it removes.
   identity, and options from Timber's preview to the private approval file.
   File lists can exceed Timber's 1 MiB approval-file limit and are used only
   for the preview. The interface cannot alter the approval, and each name is
-  used up by one call. At most 16 approvals are kept.
+  used up by one call. At most 64 approvals are kept (`HELD_PREVIEWS` in
+  `src/bun/done.ts`), the oldest going first: twice what one run of [Clean
+  up merged](#cleaning-up-merged-worktrees) holds, so Done dialogs opened
+  while it runs do not push its approvals out.
 - **Remove.** `timber __ide-done apply --approval-file <approved preview>
   --result-file <temporary file> -- <same path>` through the helper above,
   with no time limit, because scripts that run before deletion take as long
@@ -352,8 +355,8 @@ decides, both when it previews and again when it removes.
   The same holds when a worktree leaves the list for any other reason while
   its dialog is open.
 - **In the background.** Once Remove is pressed, the store owns the removal
-  (`removeWorktree` in `src/mainview/store/store.ts`), and the dialog can be
-  closed with Close or Escape while it runs: closing never stops it. Each
+  (`removeWorktree` in `src/mainview/store/store.ts`) and closes the Done
+  dialog as it starts, so nothing covers the window while Timber works. Each
   removal is a record in `removals` (`src/mainview/store/state.ts`), named by
   the repository and the worktree's registered path, because the worktree's
   identity can change while its folder is deleted. While it runs, the row says
@@ -369,7 +372,7 @@ decides, both when it previews and again when it removes.
   `timber __ide-done apply` runs in one repository at once have not been
   tested against Git's own locks; a clash would show as a normal failure.
 - **How it ends.** A removal that worked leaves a toast, and closes the Done
-  dialog of that worktree if it is still open, never another dialog. A
+  dialog of that worktree if one is open again, never another dialog. A
   failure stays as a record until the person closes the Done dialog that
   shows it: the row says "removal failed" with Details, which opens the Done
   dialog with Timber's diagnostic and output. When the row does not show,
@@ -388,6 +391,67 @@ decides, both when it previews and again when it removes.
   `src/mainview/components/DoneDialog.tsx`). Once Timber says the worktree is
   removed, the store closes that terminal (`applyDone` in
   `src/mainview/store/store.ts`). A failed removal leaves it running.
+
+### Cleaning up merged worktrees
+
+Clean up merged removes every linked worktree of one repository whose pull
+request merged, with the same preview and approval as Done, one worktree at
+a time. It adds no Engine capability: it is `previewDone` and `applyDone`
+once per worktree.
+
+- **Entry.** The repository header's menu (right-click, Shift+F10, or the
+  context menu key; `repositoryMenuItems` in
+  `src/mainview/worktree-menu-format.ts`) and one command palette entry per
+  repository. Both are disabled with the reason unless at least one linked
+  worktree has a merged pull request (`cleanUpUnavailableReason` in
+  `src/mainview/clean-up-format.ts`). There is no global version. While it
+  is available, the header also shows a button before Fetch now, with the
+  number of merged worktrees that no removal has taken yet
+  (`describeCleanUpButton`). The button is gone once that number is zero.
+- **Candidates.** `mergedCandidates`: linked worktrees on a branch whose pull
+  request, as `timber __app-pr` last answered, is merged and is for the
+  branch the worktree has now. The primary checkout never is one. A run
+  previews at most 32 (`CLEAN_UP_LIMIT`); the rest are listed as skipped.
+- **Preview.** Opening the dialog asks Timber for every candidate's preview
+  with the default options, so ignored files are discarded, as Done does by
+  default (`src/mainview/store/clean-up-session.ts`). Previews only read and
+  each is its own process with a 30 second limit, so four run at a time
+  (`CLEAN_UP_PREVIEWS_AT_ONCE`). Every answer is sorted by `skipReason`:
+  modified or untracked files, a branch never published, commits still to
+  push, an upstream state Git could not read, or files Timber could not
+  read make a row Skipped, as do a live session and a removal that runs.
+  So does a preview for another commit than the list has: what the list
+  says about commits would then be out of date, and Timber's removal never
+  asks about them.
+  Ignored files never do, and the dialog neither lists nor counts them. A
+  failed preview is Skipped with Timber's diagnostic. Each Skipped row opens
+  the single Done dialog for its worktree.
+- **A deleted upstream is Ready.** That is the usual state after a pull
+  request merged and its branch was deleted on GitHub. Timber's apply then
+  discards local commits without asking, as `timber done` does, and does not
+  check that they are integrated. So the Ready row says, in the Done
+  dialog's words, that commits only on the branch are deleted with it.
+- **What is shown.** Every preview command, and one `apply` command per Ready
+  row, before Remove, in a footer that scrolls once it is long. A preview
+  that expires takes its row out of Ready at once, and Remove checks the
+  time again. The dialog says that a worktree whose turn comes more than ten
+  minutes after the previews is not removed. When the repository leaves the
+  list or its folder goes, the dialog closes.
+- **Remove** hands the Ready rows, each with its own preview's name, to the
+  store (`cleanUpMerged` in `src/mainview/store/store.ts`) and closes the
+  dialog. The store queues them all as `waiting` removals, which turns their
+  actions off as a running removal does, and removes them one at a time
+  through `removeWorktree`, so scripts that run before deletion never
+  compete. A second run in the same repository is queued the same way and
+  starts once the first ended. Before each turn it looks the worktree up again: one that left
+  the list is passed over, and one with a running session fails with
+  nothing run. The repository is read again after every outcome.
+- **Outcomes.** Each worktree ends as a Done removal does, without its own
+  toast: removed, or a failure record with Details, including a refusal
+  (such as a preview that expired while earlier ones ran, or a worktree that
+  changed) and a partial failure. One failure never stops the others. One
+  toast says how many were removed and how many did not finish. The records
+  stay after the dialog closed, and the sidebar shows the list as it is.
 
 ### Creating and opening worktrees
 
@@ -904,9 +968,10 @@ Every operation reports how it ended in the same way.
   is shown before it runs. While it runs, the fields and buttons are
   disabled, a progress bar shows, the dialog cannot be closed, and a second
   submission does nothing. When it worked, the dialog closes and the toast
-  shows. Done is the exception: its removal is the store's
-  (`removeWorktree`), the dialog shows the store's record of it, and it can be
-  closed while the removal runs (`closableWhileRunning`). When it failed, the dialog stays open with the failure, ready for a
+  shows. Done and Clean up merged are the exceptions: their removals are the
+  store's (`removeWorktree`, `cleanUpMerged`), and Remove closes the dialog
+  as they start. A Done failure is shown when its dialog is opened again
+  from Details. When it failed, the dialog stays open with the failure, ready for a
   correction and a retry. Closing gives the keyboard back to the control
   that opened the dialog, such as a worktree row, when it is still in the
   window and enabled. When it is not, as after a removal, the Done dialog

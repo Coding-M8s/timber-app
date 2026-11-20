@@ -207,7 +207,7 @@ describe("repository headers", () => {
 	test("say how to move them, and show the order the store holds", async () => {
 		const { store } = await startedStore();
 		let markup = renderToStaticMarkup(<App store={store} />);
-		expect(markup).toContain('aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"');
+		expect(markup).toContain('aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Shift+F10 ContextMenu"');
 		expect(markup).toContain("Drag to reorder, or press Alt+Up or Alt+Down.");
 		expect(markup.indexOf('aria-label="timber"')).toBeLessThan(markup.indexOf('aria-label="api-server"'));
 

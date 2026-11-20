@@ -2325,6 +2325,43 @@ pre:focus-visible {
 	border-top: 1px solid var(--line);
 }
 
+/* Clean up merged (issue 162): one row per merged worktree, Ready or Skipped with the reason, in the Done dialog's words. */
+.clean-up-list {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	max-height: 260px;
+	overflow-y: auto;
+}
+
+.clean-up-row {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 2px;
+	padding: 6px 8px;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+}
+
+/* Its footer lists one command per Ready worktree, so it scrolls rather than covering the rows. */
+.dialog-foot .dialog-command {
+	max-height: 9.5em;
+	overflow-y: auto;
+}
+
+.clean-up-name {
+	font-weight: 600;
+}
+
+.clean-up-reason {
+	font-size: 12px;
+	color: var(--text-2);
+}
+
 .done-check {
 	display: flex;
 	align-items: baseline;
@@ -3351,6 +3388,22 @@ pre:focus-visible {
 	margin: 0;
 	font-size: 12px;
 	color: var(--error);
+}
+
+/* Clean up merged (issue 162): shown only while the repository has merged worktrees, with how many. */
+.group-clean-up {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	width: auto;
+	min-width: 24px;
+	height: 24px;
+	padding: 0 4px;
+}
+
+.group-clean-up-count {
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
 }
 
 /* Fetching (issue 25): Fetch now on each repository, the quiet marker of a failed fetch, and a rewritten upstream. */

@@ -1,19 +1,22 @@
-import type { Worktree } from "../shared/model";
+import type { Repository, Worktree } from "../shared/model";
+import type { PullRequestList } from "../shared/pull-requests";
 import { menuIndexAfterKey } from "./agent-format";
+import { CLEAN_UP_LABEL, CLEAN_UP_TITLE, cleanUpUnavailableReason } from "./clean-up-format";
 import { BEING_REMOVED_REASON, DONE_CONTROL_TITLE, DONE_PRIMARY_NOTE } from "./done-format";
 import { worktreeLabel } from "./format";
 import type { DialogRequest } from "./store/state";
 
 /**
  * Words and rules for the menu a worktree row opens on a right-click or from
- * the keyboard. Pure, so they can be tested without a window. It holds only
- * Done for now; more entries go in `worktreeMenuItems`.
+ * the keyboard, and for the one a repository's header opens the same way.
+ * Pure, so they can be tested without a window. A row's menu holds only
+ * Done for now, and a header's only Clean up merged.
  */
 
 /** The keys that open a focused row's menu, as `aria-keyshortcuts` says them. */
 export const WORKTREE_MENU_SHORTCUTS = "Shift+F10 ContextMenu";
 
-export type WorktreeMenuItemId = "done";
+export type WorktreeMenuItemId = "done" | "clean-up-merged";
 
 /** One entry of a row's menu. A disabled entry says why in `note`, shown under it. */
 export interface WorktreeMenuItem {
@@ -31,6 +34,27 @@ export interface WorktreeMenuItem {
 export function worktreeMenuItems(worktree: Pick<Worktree, "primary">, removing = false): WorktreeMenuItem[] {
 	const reason = worktree.primary ? DONE_PRIMARY_NOTE : removing ? BEING_REMOVED_REASON : null;
 	return [{ id: "done", label: "Done", disabled: reason !== null, note: reason, title: reason ?? DONE_CONTROL_TITLE }];
+}
+
+/**
+ * The entries of a repository's menu. Clean up merged is offered only when
+ * at least one linked worktree of the repository has a merged pull request.
+ */
+export function repositoryMenuItems(repository: Repository, pullRequests: PullRequestList | undefined): WorktreeMenuItem[] {
+	const reason = cleanUpUnavailableReason(repository, pullRequests);
+	return [{ id: "clean-up-merged", label: CLEAN_UP_LABEL, disabled: reason !== null, note: reason, title: reason ?? CLEAN_UP_TITLE }];
+}
+
+/** The name of a repository's menu, for assistive technology. */
+export function describeRepositoryMenu(repository: Pick<Repository, "name">): string {
+	return `Actions for ${repository.name}`;
+}
+
+/** The dialog choosing an entry of a repository's menu opens. Null for a disabled entry, which does nothing. */
+export function repositoryMenuChoice(repository: Repository, pullRequests: PullRequestList | undefined, id: WorktreeMenuItemId): DialogRequest | null {
+	const item = repositoryMenuItems(repository, pullRequests).find(candidate => candidate.id === id);
+	if (!item || item.disabled) return null;
+	return { kind: "clean-up-merged", repository: repository.path };
 }
 
 /** The name of a worktree's menu, for assistive technology. */

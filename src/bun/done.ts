@@ -14,8 +14,13 @@ import { type FindRepository, findListedWorktree } from "./listed-worktree";
 /** A preview only reads the repository, so anything this slow is stuck. */
 const PREVIEW_TIMEOUT_MS = 30_000;
 
-/** How many previews are kept for approval at once. The oldest go first. */
-const HELD_PREVIEWS = 16;
+/**
+ * How many previews are kept for approval at once. The oldest go first. Clean
+ * up merged holds one per worktree it removes, up to `CLEAN_UP_LIMIT` in
+ * src/mainview/clean-up-format.ts, which is half of this, so Done dialogs
+ * opened while it runs do not push its previews out.
+ */
+export const HELD_PREVIEWS = 64;
 
 export interface DoneDependencies {
 	/** Where Timber is, as of the last look (see ./timber.ts). */

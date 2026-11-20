@@ -1,4 +1,5 @@
 import { type EditorAction, OPEN_IN_EDITOR, describeEditorAction } from "./editor-format";
+import { CLEAN_UP_LABEL, cleanUpUnavailableReason } from "./clean-up-format";
 import { DONE_PRIMARY_NOTE } from "./done-format";
 import { worktreeLabel } from "./format";
 import { REBASE_FOLDER_MISSING } from "./rebase-format";
@@ -129,6 +130,12 @@ function actionEntries(state: AppState): PaletteEntry[] {
 		const session = (agent: string | null): PaletteAction => ({ kind: "terminal", repository: repository.path, worktree: worktree.id, path: worktree.path, agent });
 		add("terminal", "Open terminal", target, sessionReason, session(null), ["shell", "session"]);
 		for (const agent of state.preferences.agents) add(`agent:${agent.name}`, `Start ${agent.name}`, target, sessionReason, session(agent.name), ["agent", "session"]);
+	}
+	// One per repository, whatever is selected: it is about the repository, never one worktree.
+	for (const repository of state.repositories) {
+		if (!repository.available) continue;
+		add(`clean-up:${repository.path}`, CLEAN_UP_LABEL, `In ${repository.name}`, cleanUpUnavailableReason(repository, state.pullRequests[repository.path]),
+			{ kind: "dialog", request: { kind: "clean-up-merged", repository: repository.path } }, ["remove", "merged", "pull request", "done", "worktrees", repository.name]);
 	}
 	add("settings", "Settings", "", null, { kind: "dialog", request: { kind: "settings" } }, ["preferences", "options"]);
 	add("add-repository", "Add repository", "", isRunning(state, "add-repository") ? ADDING_REPOSITORY : null, { kind: "add-repository" }, ["folder", "project"]);
