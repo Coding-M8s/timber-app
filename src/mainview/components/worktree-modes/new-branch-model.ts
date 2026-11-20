@@ -1,9 +1,11 @@
-import type { NewWorktreeRequest, ReportedWorktree, WorktreeCommandResult } from "../../../shared/model";
+import { issueSelector } from "../../../shared/issue-trackers";
+import type { IssueTracker, NewWorktreeRequest, ReportedWorktree, WorktreeCommandResult } from "../../../shared/model";
 import { RESULT_FILE_PLACEHOLDER, describeTimberCommand } from "../../../shared/timber-result";
 import { newWorktreeArguments } from "../../../shared/worktree-commands";
 import { folderName } from "../../format";
 import type { AppStore } from "../../store/store";
 import { type ModeRun, setupCommand } from "./agent-choice";
+import type { TrackerOptions } from "./tracker-choice";
 import { workflowPart } from "./workflow-choice";
 
 /**
@@ -24,6 +26,8 @@ export interface NewBranchFields {
 	base: string;
 	/** The Workflow field as picked, or null for None. What it passes depends on the list (see ./workflow-choice.tsx). */
 	workflow: string | null;
+	/** The Tracker field as picked, or null for Default. What it passes depends on the trackers set up (see ./tracker-choice.tsx). */
+	tracker: IssueTracker | null;
 }
 
 /** Where the mode is. */
@@ -42,16 +46,20 @@ export type NewBranchStep =
 export interface NewBranchState {
 	fields: NewBranchFields;
 	step: NewBranchStep;
+	/** The trackers the repository has set up, for the Tracker field: undefined until read. */
+	trackers: TrackerOptions;
 }
 
 /**
  * The request the fields make: the name and the base without the spaces
  * around them. An empty base means none. `workflow` is the one the command
- * passes, or null for none.
+ * passes, or null for none. `tracker` is the one the name is read with, or
+ * null for Timber's default: a name with the shape of its issue gets its
+ * prefix, such as `jira:ENG-42`, and any other name passes unchanged.
  */
-export function newWorktreeRequest(repository: string, fields: Pick<NewBranchFields, "name" | "base">, workflow: string | null = null): NewWorktreeRequest {
+export function newWorktreeRequest(repository: string, fields: Pick<NewBranchFields, "name" | "base">, workflow: string | null = null, tracker: IssueTracker | null = null): NewWorktreeRequest {
 	const base = fields.base.trim();
-	return { repository, name: fields.name.trim(), base: base === "" ? null : base, ...workflowPart(workflow) };
+	return { repository, name: issueSelector(tracker, fields.name.trim()), base: base === "" ? null : base, ...workflowPart(workflow) };
 }
 
 /** False while there is no name. Timber judges everything else about it. */
@@ -63,13 +71,13 @@ export function canCreate(fields: NewBranchFields): boolean {
  * The command the mode runs next, as shown in the dialog's footer. It is
  * worded from the same request and the same argument builder the engine runs:
  * `timber new` from the form, or the setup session's command once the
- * worktree exists. `workflow` is the one `timber new` would pass from the
- * form.
+ * worktree exists. `workflow` and `tracker` are the ones `timber new` would
+ * use from the form.
  */
-export function shownCommand(repository: string, state: NewBranchState, workflow: string | null = null): string {
+export function shownCommand(repository: string, state: Pick<NewBranchState, "fields" | "step">, workflow: string | null = null, tracker: IssueTracker | null = null): string {
 	const { step } = state;
 	return step.kind === "form"
-		? describeTimberCommand(newWorktreeArguments(newWorktreeRequest(repository, state.fields, workflow), RESULT_FILE_PLACEHOLDER))
+		? describeTimberCommand(newWorktreeArguments(newWorktreeRequest(repository, state.fields, workflow, tracker), RESULT_FILE_PLACEHOLDER))
 		: setupCommand(step.worktree.path, step.workflow);
 }
 
@@ -122,20 +130,26 @@ export interface NewBranchModel {
 	/** Leave "Run setup" and show the form again. The worktree stays as it is. */
 	backToForm(): void;
 	/**
-	 * Run `timber new` from the form, with `workflow` when it is not null,
-	 * once per call and never again by itself. Once the worktree exists, ask for its setup session instead,
+	 * Read the trackers the repository has set up, for the Tracker field.
+	 * Only the latest read counts. Never throws.
+	 */
+	readTrackers(): Promise<void>;
+	/**
+	 * Run `timber new` from the form, with `workflow` when it is not null and
+	 * the name read with `tracker` (see `newWorktreeRequest`), once per call and never again by itself. Once the worktree exists, ask for its setup session instead,
 	 * which runs nothing here. Either way a run that worked reports the
 	 * worktree as created, because this mode made it.
 	 */
-	run(workflow?: string | null): Promise<ModeRun>;
+	run(workflow?: string | null, tracker?: IssueTracker | null): Promise<ModeRun>;
 }
 
-type Actions = Pick<AppStore, "newWorktree">;
+type Actions = Pick<AppStore, "newWorktree" | "readIssueTrackers">;
 
 /** `repository` is the path of the primary checkout the worktree is created in. */
 export function createNewBranchModel(store: Actions, repository: string): NewBranchModel {
 	const listeners = new Set<() => void>();
-	let state: NewBranchState = { fields: { name: "", base: "", workflow: null }, step: { kind: "form" } };
+	let state: NewBranchState = { fields: { name: "", base: "", workflow: null, tracker: null }, step: { kind: "form" }, trackers: undefined };
+	let latestRead = 0;
 
 	function update(change: Partial<NewBranchState>): void {
 		state = { ...state, ...change };
@@ -154,13 +168,18 @@ export function createNewBranchModel(store: Actions, repository: string): NewBra
 		backToForm() {
 			if (state.step.kind !== "form") update({ step: { kind: "form" } });
 		},
-		async run(workflow = null) {
+		async readTrackers() {
+			const read = ++latestRead;
+			const trackers = await store.readIssueTrackers(repository);
+			if (read === latestRead) update({ trackers });
+		},
+		async run(workflow = null, tracker = null) {
 			const { step } = state;
 			if (step.kind === "setup") {
 				const label = reportedLabel(step.worktree);
 				return { outcome: { ok: true, toast: `Opened ${label}` }, created: step.worktree, setup: step.worktree, workflow: step.workflow, startedToast: `Setup started in ${label}` };
 			}
-			const result = await store.newWorktree(newWorktreeRequest(repository, state.fields, workflow));
+			const result = await store.newWorktree(newWorktreeRequest(repository, state.fields, workflow, tracker));
 			const { run, kept } = afterNew(result);
 			if (kept) update({ step: { kind: "setup", worktree: kept, workflow } });
 			return { ...run, workflow };

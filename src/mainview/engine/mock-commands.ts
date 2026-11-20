@@ -66,6 +66,9 @@ const skippedNote = (path: string, workflow: string | undefined) =>
 /** The branch the mock makes of what was typed. The real Timber has its own rules. */
 function branchFor(name: string): string {
 	const trimmed = name.trim();
+	// An issue gets a branch named after its key, as Timber names one after the issue's title.
+	const issue = /^(github|jira|linear):(\S+)$/.exec(trimmed);
+	if (issue) return issue[1] === "github" ? `GH-${issue[2]}` : issue[2]!;
 	return /\s/.test(trimmed) ? trimmed.toLowerCase().replaceAll(/\s+/g, "-") : trimmed;
 }
 

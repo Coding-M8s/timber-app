@@ -101,6 +101,8 @@ export function createDesktopEngine(): Engine {
 		// The main process stops a stuck check after 30 seconds.
 		checkTimberConnection: request => rpc.request.checkTimberConnection(request, { maxRequestTime: 60_000 }),
 		listWorkflows: repository => rpc.request.listWorkflows({ repository }),
+		// The main process stops Timber after 30 seconds and Git after 10.
+		readIssueTrackers: repository => rpc.request.readIssueTrackers({ repository }, { maxRequestTime: 60_000 }),
 		// The main process stops a stuck read after 30 seconds.
 		readPullRequests: repository => rpc.request.readPullRequests({ repository }, { maxRequestTime: 60_000 }),
 		readIssue: request => rpc.request.readIssue(request, { maxRequestTime: 60_000 }),

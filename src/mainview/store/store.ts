@@ -25,6 +25,7 @@ import type { RebaseRequest, RebaseResult } from "../../shared/timber-rebase";
 import { type CreatePullRequestResult, initialPullRequestBase, pullRequestBaseFromText } from "../../shared/timber-pr";
 import { type PullRequestFields, defaultPullRequestTitle, presentPullRequestCreation } from "../pull-request-create-format";
 import type { WorkflowList } from "../../shared/workflows";
+import type { IssueTrackers } from "../../shared/issue-trackers";
 import { type Draw, createTerminalFeed } from "../terminal-feed";
 import { describeOrphanTerminal } from "../terminal-format";
 import { describeDone, describeRemovalFailed } from "../done-format";
@@ -189,6 +190,8 @@ export interface AppStore {
 	 * failure with the reason.
 	 */
 	listWorkflows(repository: string): Promise<WorkflowList>;
+	/** The issue trackers a repository has set up, for the New worktree dialog. Never throws: a failed request is a failure with a message. */
+	readIssueTrackers(repository: string): Promise<IssueTrackers>;
 	/**
 	 * Timber's settings for one scope, for the Settings dialog, read by
 	 * Timber. Read-only. Never throws: an engine that could not answer is a
@@ -1838,6 +1841,13 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				return await engine.listWorkflows(repository);
 			} catch (error) {
 				return { ok: false, message: unheard("the workflows", error) };
+			}
+		},
+		async readIssueTrackers(repository) {
+			try {
+				return await engine.readIssueTrackers(repository);
+			} catch (error) {
+				return { ok: false, message: unheard("the issue trackers", error) };
 			}
 		},
 		toggleGroup(repository) {

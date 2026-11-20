@@ -25,6 +25,7 @@ import type { CreatePullRequestResult } from "../../shared/timber-pr";
 import { type MockFileChange, derivedFileChanges, diffMockFileChange, listMockFileChanges } from "./mock-file-changes";
 import { MOCK_PATH, type TerminalControls, createMockTerminals } from "./mock-terminals";
 import { type TimberConfigControls, createMockTimberConfig } from "./mock-timber-config";
+import { type IssueTrackerControls, createMockIssueTrackers } from "./mock-issue-trackers";
 import type { TimberConfigScope } from "../../shared/timber-config";
 import { type WorkflowControls, createMockWorkflows } from "./mock-workflows";
 import { type IssueControls, createMockIssues, sampleIssueLinks } from "./mock-issues";
@@ -291,8 +292,8 @@ export const sampleTimberStatuses = {
 
 /** The mock engine, plus the controls a test or the browser build uses to act out changes. */
 /** The controls for terminals are in ./mock-terminals.ts. */
-/** The controls for Timber's settings are in ./mock-timber-config.ts, for workflows in ./mock-workflows.ts, for pull requests in ./mock-pull-requests.ts, for issues in ./mock-issues.ts, and for backups in ./mock-backups.ts. */
-export interface MockEngine extends Engine, TerminalControls, TimberConfigControls, WorkflowControls, PullRequestControls, IssueControls, BackupControls, ThemeFileControls, ChopsControls, PortControls {
+/** The controls for Timber's settings are in ./mock-timber-config.ts, for workflows in ./mock-workflows.ts, for issue trackers in ./mock-issue-trackers.ts, for pull requests in ./mock-pull-requests.ts, for issues in ./mock-issues.ts, and for backups in ./mock-backups.ts. */
+export interface MockEngine extends Engine, TerminalControls, TimberConfigControls, IssueTrackerControls, WorkflowControls, PullRequestControls, IssueControls, BackupControls, ThemeFileControls, ChopsControls, PortControls {
 	/** Replace the data, without telling the interface. */
 	setRepositories(repositories: Repository[]): void;
 	/** Report that a repository changed, as the main process would. */
@@ -820,6 +821,7 @@ export function createMockEngine(
 		...timberConfig,
 		...createMockThemeFiles(),
 		...workflows,
+		...createMockIssueTrackers(request => timberConfig.readTimberSettings(request)),
 		...pullRequests,
 		...issues,
 		...backups,

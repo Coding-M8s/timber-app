@@ -69,6 +69,8 @@ export type AppRPC = {
 			checkTimberConnection: { params: TimberConnectionCheckRequest; response: Answer<"checkTimberConnection"> };
 			/** The main process stops Timber after ten seconds, inside the default time limit. */
 			listWorkflows: { params: { repository: string }; response: Answer<"listWorkflows"> };
+			/** The main process stops Timber after thirty seconds and Git after ten, so the caller allows longer. */
+			readIssueTrackers: { params: { repository: string }; response: Answer<"readIssueTrackers"> };
 			/** The main process stops Timber after thirty seconds, so the caller allows longer. */
 			readPullRequests: { params: { repository: string }; response: Answer<"readPullRequests"> };
 			readIssue: { params: IssueRequest; response: Answer<"readIssue"> };

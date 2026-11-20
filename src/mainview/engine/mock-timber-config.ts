@@ -95,7 +95,7 @@ export function createMockTimberConfig(
 ): TimberConfigCapabilities & TimberConfigControls {
 	const files = new Map<string, { values: TimberValues | null; version: number }>();
 	const broken = new Map<string, string | null>();
-	const credentials: { jira: CredentialState; linear: CredentialState } = { jira: "none", linear: "saved" };
+	const credentials: { jira: CredentialState; linear: CredentialState } = { jira: "saved", linear: "none" };
 	let connection: boolean | null = null;
 
 	const keyOf = (scope: TimberConfigScope, repository: string | null) => scope === "machine" ? "machine" : repository!;
