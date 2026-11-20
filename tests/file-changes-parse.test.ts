@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
-	type FileChange, MAX_DIFF_LINES, baseName, baseNamesArguments, commitArguments, diffArguments, filePathIn, parseDiff, parseNameStatus, parseStatus, readDiffOutput, relativePathProblem, savedBaseRef, sinceBase, statusArguments,
+	type FileChange, MAX_DIFF_LINES, baseName, baseContentArguments, baseNamesArguments, commitArguments, diffArguments, filePathIn, parseDiff, parseNameStatus, parseNumstatPaths, parseStatus, readDiffOutput, relativePathProblem, savedBaseRef, sinceBase, statusArguments, withChangedContent,
 } from "../src/shared/file-changes";
+
+/** Every diff of tracked files leaves the index alone (see `NO_INDEX_REFRESH`). */
+const noRefresh = ["-c", "diff.autoRefreshIndex=false"];
 
 /** Records as `git status --porcelain=v2 -z` prints them, each ended by a NUL. */
 const status = (...records: string[]) => records.map(record => `${record}\0`).join("");
@@ -94,14 +97,14 @@ describe("statusArguments and diffArguments", () => {
 	const file = (area: FileChange["area"], kind: FileChange["kind"], previousPath: string | null = null): FileChange => ({ area, kind, path: "-p.txt", previousPath });
 
 	test("compare the index with the last commit for staged changes, and the files with the index otherwise", () => {
-		expect(diffArguments(file("staged", "modified"))).toEqual({ args: ["--literal-pathspecs", "diff", ...plain, "--cached", "--", "-p.txt"], differencesExit: false });
-		expect(diffArguments(file("unstaged", "modified"))).toEqual({ args: ["--literal-pathspecs", "diff", ...plain, "--", "-p.txt"], differencesExit: false });
-		expect(diffArguments(file("conflicted", "conflicted"))).toEqual({ args: ["--literal-pathspecs", "diff", ...plain, "--", "-p.txt"], differencesExit: false });
+		expect(diffArguments(file("staged", "modified"))).toEqual({ args: [...noRefresh, "--literal-pathspecs", "diff", ...plain, "--cached", "--", "-p.txt"], differencesExit: false });
+		expect(diffArguments(file("unstaged", "modified"))).toEqual({ args: [...noRefresh, "--literal-pathspecs", "diff", ...plain, "--", "-p.txt"], differencesExit: false });
+		expect(diffArguments(file("conflicted", "conflicted"))).toEqual({ args: [...noRefresh, "--literal-pathspecs", "diff", ...plain, "--", "-p.txt"], differencesExit: false });
 	});
 
 	test("name both paths of a rename or a copy, with detection on", () => {
-		expect(diffArguments(file("staged", "renamed", "old.txt")).args).toEqual(["--literal-pathspecs", "diff", ...plain, "--cached", "-M", "--", "old.txt", "-p.txt"]);
-		expect(diffArguments(file("staged", "copied", "src.txt")).args).toEqual(["--literal-pathspecs", "diff", ...plain, "--cached", "-C", "--find-copies-harder", "--", "src.txt", "-p.txt"]);
+		expect(diffArguments(file("staged", "renamed", "old.txt")).args).toEqual([...noRefresh, "--literal-pathspecs", "diff", ...plain, "--cached", "-M", "--", "old.txt", "-p.txt"]);
+		expect(diffArguments(file("staged", "copied", "src.txt")).args).toEqual([...noRefresh, "--literal-pathspecs", "diff", ...plain, "--cached", "-C", "--find-copies-harder", "--", "src.txt", "-p.txt"]);
 	});
 
 	test("compare an untracked file with nothing", () => {
@@ -273,11 +276,29 @@ describe("comparing with the base", () => {
 		]);
 	});
 
+	test("parseNumstatPaths reads each path, where a rename went, binary files, and tabs in names", () => {
+		const output = "1\t0\tedited.txt\0-\t-\timage.png\x000\t0\t\0old.txt\0new.txt\x000\t1\ttab\tin name.txt\0";
+		expect([...parseNumstatPaths(output)]).toEqual(["edited.txt", "image.png", "new.txt", "tab\tin name.txt"]);
+		expect([...parseNumstatPaths("1\t0\ta.txt\0" + "2\t0\tcut")]).toEqual(["a.txt"]);
+		expect([...parseNumstatPaths("0\t0\t\0old.txt\0")]).toEqual([]);
+		expect([...parseNumstatPaths("")]).toEqual([]);
+	});
+
+	test("withChangedContent leaves out files whose content did not change, unless the counts were cut short", () => {
+		const names: FileChange[] = [
+			{ area: "base", kind: "modified", path: "touched.txt", previousPath: null },
+			{ area: "base", kind: "renamed", path: "new.txt", previousPath: "old.txt" },
+		];
+		expect(withChangedContent(names, new Set(["new.txt"]))).toEqual([names[1]!]);
+		expect(withChangedContent(names, null)).toEqual(names);
+	});
+
 	test("the base diff names the commit, literal paths, and plain output", () => {
-		expect(baseNamesArguments(COMMIT)).toEqual(["--literal-pathspecs", "diff", "--no-color", "--no-ext-diff", "--name-status", "-z", "-M", COMMIT, "--"]);
-		expect(baseNamesArguments(COMMIT, ["a b.txt"])).toEqual(["--literal-pathspecs", "diff", "--no-color", "--no-ext-diff", "--name-status", "-z", "-M", COMMIT, "--", "a b.txt"]);
+		expect(baseNamesArguments(COMMIT)).toEqual([...noRefresh, "--literal-pathspecs", "diff", "--no-color", "--no-ext-diff", "--name-status", "-z", "-M", COMMIT, "--"]);
+		expect(baseNamesArguments(COMMIT, ["a b.txt"])).toEqual([...noRefresh, "--literal-pathspecs", "diff", "--no-color", "--no-ext-diff", "--name-status", "-z", "-M", COMMIT, "--", "a b.txt"]);
 		const renamed: FileChange = { area: "base", kind: "renamed", path: "new.txt", previousPath: "old.txt" };
-		expect(diffArguments(renamed, COMMIT)).toEqual({ args: ["--literal-pathspecs", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "-M", COMMIT, "--", "old.txt", "new.txt"], differencesExit: false });
+		expect(baseContentArguments(COMMIT, ["a b.txt"])).toEqual([...noRefresh, "--literal-pathspecs", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--numstat", "-z", "-M", COMMIT, "--", "a b.txt"]);
+		expect(diffArguments(renamed, COMMIT)).toEqual({ args: [...noRefresh, "--literal-pathspecs", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "-M", COMMIT, "--", "old.txt", "new.txt"], differencesExit: false });
 		const untracked: FileChange = { area: "untracked", kind: "untracked", path: "n.txt", previousPath: null };
 		expect(diffArguments(untracked, COMMIT).args).toEqual(["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--no-index", "--", "/dev/null", "n.txt"]);
 	});

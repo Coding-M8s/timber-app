@@ -397,6 +397,24 @@ describe("when Timber cannot list the worktrees", () => {
 	});
 });
 
+describe.skipIf(realTimber === null)("finding for a read-only view", () => {
+	test("answers through the reader's recent listing, and only for a repository in the list", async () => {
+		await listOn().addFolder(linked);
+		const asked: string[] = [];
+		const recentReader = {
+			...reader,
+			recent: async (path: string) => {
+				asked.push(path);
+				return { path, name: "recent", available: true, failure: null, setup: "unknown" as const, worktrees: [] };
+			},
+		};
+		const list = listOn({ reader: recentReader });
+		expect((await list.findRecent(primary))?.name).toBe("recent");
+		expect(await list.findRecent(plain)).toBeNull();
+		expect(asked).toEqual([primary]);
+	});
+});
+
 describe.skipIf(realTimber === null)("the repositories to watch", () => {
 	test("are the saved ones, each with its common Git directory, without asking Timber", async () => {
 		const list = listOn();

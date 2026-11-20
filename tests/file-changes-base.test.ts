@@ -175,6 +175,27 @@ describe.skipIf(windows)("comparing a worktree with its base, in real repositori
 		expect(readFileSync(indexFile).equals(index)).toBe(true);
 	});
 
+	test("comparing with the base does not refresh the index, even when file times are stale", async () => {
+		// A worktree of its own, read here first, so no earlier read has refreshed its index already.
+		const other = join(root, "sample-worktrees", "stale-times");
+		git(primary, "worktree", "add", "-b", "stale-times", other, branchPoint);
+		writeFileSync(join(other, "keep.txt"), "one\nchanged\n");
+		// Touched but unchanged, as after a formatter or a build: a plain `git diff` rewrites the index for it.
+		const later = new Date(Date.now() + 5000);
+		for (const name of ["keep.txt", "staged.txt", "unstaged.txt"]) utimesSync(join(other, name), later, later);
+		const indexFile = plainGit(other, "rev-parse", "--path-format=absolute", "--git-path", "index").trim();
+		const index = readFileSync(indexFile);
+
+		const changes = reader(ORIGIN_MAIN, () => other);
+		const answer = await changes.read({ repository: primary, worktree: other, compare: "base" });
+		expect(answer).toMatchObject({ outcome: "read", compared: "base", files: [{ area: "base", kind: "modified", path: "keep.txt" }] });
+		if (answer.outcome !== "read") return;
+		for (const file of answer.files) await changes.diff({ repository: primary, worktree: other, compare: "base", file });
+		await changes.diff({ repository: primary, worktree: other, compare: "uncommitted", file: { area: "unstaged", path: "keep.txt", previousPath: null } });
+
+		expect(readFileSync(indexFile).equals(index)).toBe(true);
+	});
+
 	test("Uncommitted lists what git status lists, and still says the base can be used", async () => {
 		const answer = await read("uncommitted");
 		expect(answer.compared).toBe("uncommitted");

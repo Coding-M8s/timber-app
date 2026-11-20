@@ -19,8 +19,11 @@ export interface RepositoryListOptions {
 	settings?: SettingsHolder;
 	/** Open the native folder picker. Null when the person cancelled. */
 	pickFolder: () => Promise<string | null>;
-	/** Reads a repository and its worktrees. */
-	reader: RepositoryReader;
+	/**
+	 * Reads a repository and its worktrees. With `recent`, `findRecent` may
+	 * answer with a listing that was just read (see ./recent-listings.ts).
+	 */
+	reader: RepositoryReader & { recent?(path: string): Promise<Repository | null> };
 	environment?: Record<string, string | undefined>;
 	warn?: (message: string) => void;
 }
@@ -53,6 +56,12 @@ export interface RepositoryList {
 	 * the app shows.
 	 */
 	find(path: string): Promise<Repository | null>;
+	/**
+	 * As `find`, but may answer with the listing the sidebar just read, when no
+	 * change of the repository was heard since. Only for views that read and
+	 * change nothing, such as the Changes tab and chops.
+	 */
+	findRecent(path: string): Promise<Repository | null>;
 	/**
 	 * The repositories to watch for changes: the primary checkout of each, with
 	 * its common Git directory. From the saved list without asking Timber, or,
@@ -151,6 +160,14 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 			const { repositories } = await settings();
 			if (!repositories.some(entry => entry.path === path)) return null;
 			return await reader.reload(path) ?? unavailable(path);
+		},
+
+		async findRecent(path) {
+			const override = overrideRepositoryPaths(environment);
+			if (override) return (await listOverride(override)).find(repository => repository.path === path) ?? null;
+			const { repositories } = await settings();
+			if (!repositories.some(entry => entry.path === path)) return null;
+			return await (reader.recent ?? reader.reload)(path) ?? unavailable(path);
 		},
 
 		async watchTargets() {

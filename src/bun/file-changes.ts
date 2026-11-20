@@ -1,7 +1,7 @@
 import {
 	type BaseComparison, type FileChange, type FileChangesRequest, type FileChangesResult, type FileDiffRequest, type FileDiffResult,
-	MAX_DIFF_BYTES, MAX_LISTED_FILES, MAX_STATUS_BYTES, baseNamesArguments, commitArguments, diffArguments, isCommitHash, parseNameStatus, parseStatus,
-	baseName, readDiffOutput, relativePathProblem, savedBaseRef, sinceBase, statusArguments,
+	MAX_DIFF_BYTES, MAX_LISTED_FILES, MAX_STATUS_BYTES, baseContentArguments, baseNamesArguments, commitArguments, diffArguments, isCommitHash, parseNameStatus, parseNumstatPaths, parseStatus,
+	baseName, readDiffOutput, relativePathProblem, savedBaseRef, sinceBase, statusArguments, withChangedContent,
 } from "../shared/file-changes";
 import type { Worktree } from "../shared/model";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
@@ -45,9 +45,11 @@ const HASH_BYTES = 1024;
  *   whose folder is there (`findListedWorktree`), the same check as "Open in
  *   editor" and terminals.
  * - Git runs in the worktree as an executable plus arguments, never through
- *   a shell, with `GIT_OPTIONAL_LOCKS=0`, so that neither `git status` nor
- *   `git diff` writes the index as they otherwise do to refresh it. Paths are
- *   literal (`--literal-pathspecs`). Nothing here changes the repository.
+ *   a shell, with `GIT_OPTIONAL_LOCKS=0`, so that `git status` does not
+ *   write the index as it otherwise does to refresh it, and every diff of
+ *   tracked files with `diff.autoRefreshIndex` off, since `git diff` writes
+ *   it even then. Paths are literal (`--literal-pathspecs`). Nothing here
+ *   changes the repository.
  * - Output is read up to a limit, and Git is stopped beyond it or after
  *   `GIT_MILLISECONDS`.
  * - A diff names its file by area and path. The status of that file is read
@@ -63,7 +65,7 @@ export function createFileChanges(dependencies: FileChangesDependencies): FileCh
 	const { findRepository, git = "git", timeoutMilliseconds = GIT_MILLISECONDS } = dependencies;
 
 	async function run(cwd: string, args: readonly string[], limit: number, okExits: readonly number[]): Promise<GitRun> {
-		// No index refresh, and Git's own words in English, which `readDiffOutput` reads ("Binary files ... differ").
+		// No index lock, and Git's own words in English, which `readDiffOutput` reads ("Binary files ... differ").
 		const answer = await readGit(args, { git, cwd, timeoutMs: timeoutMilliseconds, limitBytes: limit, stderrBytes: STDERR_BYTES });
 		if (!answer.started) return { ok: false, message: `Could not start Git: ${messageOf(answer.error)}` };
 		if (answer.timedOut) return { ok: false, message: `Git took longer than ${timeoutMilliseconds / 1000} seconds and was stopped.` };
@@ -111,9 +113,14 @@ export function createFileChanges(dependencies: FileChangesDependencies): FileCh
 	async function changedSince(worktree: string, commit: string, paths: readonly string[] = []): Promise<FileList> {
 		const read = await status(worktree, paths);
 		if (!read.ok) return read;
-		const answer = await run(worktree, baseNamesArguments(commit, paths), MAX_STATUS_BYTES, [0]);
+		const [answer, content] = await Promise.all([
+			run(worktree, baseNamesArguments(commit, paths), MAX_STATUS_BYTES, [0]),
+			run(worktree, baseContentArguments(commit, paths), MAX_STATUS_BYTES, [0]),
+		]);
 		if (!answer.ok) return { ok: false, message: `Git could not compare ${worktree} with its base: ${answer.message}` };
-		return { ok: true, files: sinceBase(read.files, parseNameStatus(answer.text)), truncated: read.truncated || answer.truncated };
+		// Counts that failed or were cut short check nothing: every name is kept rather than a real change left out.
+		const changed = withChangedContent(parseNameStatus(answer.text), content.ok && !content.truncated ? parseNumstatPaths(content.text) : null);
+		return { ok: true, files: sinceBase(read.files, changed), truncated: read.truncated || answer.truncated };
 	}
 
 	return {

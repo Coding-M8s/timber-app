@@ -2708,3 +2708,34 @@ installed Timber 0.1.3 and with Timber's main branch at 6f64db7 built with
 - Not run: the desktop window with arenas, and the browser build in a
   browser. The layout of the New arena and Compare dialogs is not checked by
   eye yet.
+
+Run for keeping background reloads cheap (issue 138), Linux x64 with Bun
+1.4.5, Git 2.43.0, and Timber 0.1.3:
+
+- The issue's first cause did not reproduce. In a temporary repository with
+  two linked worktrees and stale file times, and in a private repository
+  with eight linked worktrees, the inode of every `index` file was the same
+  before and after `timber ls --json`, `timber backup list --json`, and
+  `timber settings --json`, and nothing in the common Git directory got
+  newer. A plain `git status` in a worktree did replace its index. Timber
+  runs its Git calls with `GIT_OPTIONAL_LOCKS=0`. On the private
+  repository, `timber ls --json` took 2.76 s and about 7 s of CPU.
+- `GIT_OPTIONAL_LOCKS=0 git diff --name-status -z -M <commit> --` and
+  `GIT_OPTIONAL_LOCKS=0 git diff --no-textconv -- <file>` both replaced the
+  index after a file was touched. With `-c diff.autoRefreshIndex=false` in
+  front, neither did. Without the refresh, `--name-status` listed the
+  touched but unchanged file and `--numstat` did not.
+- New test in `tests/file-changes-base.test.ts`: with stale file times in a
+  worktree read for the first time, comparing with the base and every diff
+  leave the index bytes unchanged and list only the file whose content
+  changed. Without `diff.autoRefreshIndex=false` it fails at the index.
+- `bun run typecheck`: no errors.
+- `bun run typecheck:desktop`: no errors.
+- `bun test`: 2438 passed, 20 skipped, none failed, after rebasing on main
+  at `71ade8f`.
+- `bun run build:web`: built.
+- Not run: the desktop window with this change, so the issue's measures on
+  a repository with 10 or more worktrees (no `git status` while idle apart
+  from the stamp check, no index writes under `inotifywait`, idle CPU under
+  5% of one core) were not taken. The cost of each `timber ls` is
+  unchanged; it is Timber's part.
