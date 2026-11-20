@@ -1,10 +1,7 @@
 import { isAbsolute } from "node:path";
-import { createOutputCapture } from "../shared/captured-output";
 import { APP_ISSUE_ARGUMENTS, APP_ISSUE_COMMAND, type IssueLookup, type IssueRequest, readIssueRecord } from "../shared/issues";
 import type { TimberStatus } from "../shared/model";
-import { describeTimberStatus } from "./timber";
-import { createRecordCapture } from "./workflows";
-import { messageOf } from "../shared/error-message";
+import { runTimberRecord, withReadyTimber } from "./timber-record";
 
 /**
  * Timber stops its own network part after 15 seconds. Finding the worktree
@@ -48,37 +45,12 @@ export async function readIssue(
 	environment: Record<string, string | undefined> = process.env,
 	timeoutMs: number = READ_ISSUE_TIMEOUT_MS,
 ): Promise<IssueLookup> {
-	const stdout = createRecordCapture(RECORD_LIMIT_BYTES);
-	const stderr = createOutputCapture();
-	let exitCode: number | null;
-	let stopped: boolean;
-	try {
-		const child = Bun.spawn([executable, ...APP_ISSUE_ARGUMENTS, worktree], {
-			cwd: folder,
-			stdin: "ignore",
-			stdout: "pipe",
-			stderr: "pipe",
-			env: environment,
-			timeout: timeoutMs,
-		});
-		const collect = async (stream: ReadableStream<Uint8Array>, capture: { add(chunk: Uint8Array): void }) => {
-			for await (const chunk of stream) capture.add(chunk);
-		};
-		// Both streams are read at once, so a full pipe never holds Timber up.
-		await Promise.all([collect(child.stdout, stdout), collect(child.stderr, stderr), child.exited]);
-		exitCode = child.exitCode;
-		stopped = child.signalCode !== null;
-	} catch (error) {
-		return { ok: false, message: `Could not run ${APP_ISSUE_COMMAND} for ${worktree}: ${messageOf(error)}` };
-	}
-	if (stopped) {
-		return { ok: false, message: `${APP_ISSUE_COMMAND} for ${worktree} was stopped before it finished. The app waits ${timeoutMs / 1000} seconds for it.` };
-	}
-	const record = stdout.finish();
-	if (record.truncated) {
-		return { ok: false, message: `${APP_ISSUE_COMMAND} printed more than an issue record holds. The issue was not read.` };
-	}
-	return readIssueRecord(record.text, stderr.finish().text, exitCode, worktree);
+	const output = await runTimberRecord({
+		executable, arguments: [...APP_ISSUE_ARGUMENTS, worktree], folder, environment, timeoutMs, limitBytes: RECORD_LIMIT_BYTES,
+		command: APP_ISSUE_COMMAND, where: `for ${worktree}`, tooLong: "an issue record holds. The issue was not read.",
+	});
+	if (!output.ok) return output;
+	return readIssueRecord(output.record, output.diagnostic, output.exitCode, worktree);
 }
 
 /**
@@ -94,14 +66,11 @@ export function createIssueReader(options: IssueReaderOptions): IssueReader {
 			const { repository, worktree } = (typeof request === "object" && request !== null ? request : {}) as Partial<IssueRequest>;
 			if (typeof repository !== "string" || repository === "") return { ok: false, message: "The request for an issue names no repository." };
 			if (typeof worktree !== "string" || !isAbsolute(worktree)) return { ok: false, message: "The request for an issue names no full worktree path." };
-			try {
-				if (!await isListed(repository)) return { ok: false, message: `${repository} is not a repository in the app's list.` };
-				const status = await timber();
-				if (status.state !== "ready") return { ok: false, message: `${describeTimberStatus(status)}.` };
-				return await readIssue(status.path, repository, worktree, environment ?? process.env, timeoutMs);
-			} catch (error) {
-				return { ok: false, message: `Could not read the issue of ${worktree}: ${messageOf(error)}.` };
-			}
+			return withReadyTimber({
+				timber, isListed, repository, couldNot: `read the issue of ${worktree}`,
+				fail: message => ({ ok: false, message }),
+				run: executable => readIssue(executable, repository, worktree, environment ?? process.env, timeoutMs),
+			});
 		},
 	};
 }
