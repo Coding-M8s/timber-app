@@ -19,6 +19,8 @@ import { BackupsSection } from "./BackupsSection";
 import { WorktreeRow } from "./WorktreeRow";
 import { WORKTREE_MENU_SHORTCUTS, describeRepositoryMenu, opensWorktreeMenu, repositoryMenuChoice, repositoryMenuItems, worktreeMenuChoice } from "../worktree-menu-format";
 import { WorktreeMenu } from "./WorktreeMenu";
+import { ARENA_BETA_NOTE, BETA, describeArenaHeader, groupArenaRows, newMenuChoice, newMenuItems } from "../arena-format";
+import type { Worktree } from "../../shared/model";
 
 export function Sidebar() {
 	const store = useStore();
@@ -47,6 +49,9 @@ export function Sidebar() {
 	// The click that ends a drag must not also open or close the group.
 	const dragEnded = useRef(false);
 	const groupElements = useRef(new Map<string, HTMLElement>());
+	// The "+" of one repository opens a menu: a new worktree, or a new arena.
+	const [newMenu, setNewMenu] = useState<{ repository: string; at: { left: number; top: number } } | null>(null);
+	const newButtons = useRef(new Map<string, HTMLButtonElement>());
 	const headerButtons = useRef(new Map<string, HTMLButtonElement>());
 	// The open menu of a repository's header, and where it was asked to be. As for a row's menu, a contextmenu event that
 	// follows Shift+F10 in WebKitGTK leaves the menu the key opened where it is.
@@ -324,14 +329,38 @@ export function Sidebar() {
 									<button
 										type="button"
 										className="icon-button group-new"
-										aria-label={`New worktree in ${repository.name}`}
-										title={`New worktree in ${repository.name}`}
-										onClick={() => store.openDialog({ kind: "new-worktree", repository: repository.path })}
+										aria-label={`New in ${repository.name}`}
+										title={`New worktree or arena in ${repository.name}`}
+										aria-haspopup="menu"
+										aria-expanded={newMenu?.repository === repository.path}
+										ref={element => {
+											if (element) newButtons.current.set(repository.path, element);
+											else newButtons.current.delete(repository.path);
+										}}
+										onClick={event => {
+											const box = event.currentTarget.getBoundingClientRect();
+											setNewMenu(current => current?.repository === repository.path ? null : { repository: repository.path, at: { left: box.left, top: box.bottom } });
+										}}
 									>
 										<svg aria-hidden="true" width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
 											<path d="M5.5 1.5v8M1.5 5.5h8" />
 										</svg>
 									</button>
+								)}
+								{newMenu?.repository === repository.path && (
+									<WorktreeMenu
+										label={`New in ${repository.name}`}
+										items={newMenuItems(state.arenas[repository.path])}
+										at={newMenu.at}
+										onClose={backToButton => {
+											setNewMenu(null);
+											if (backToButton) newButtons.current.get(repository.path)?.focus();
+										}}
+										onChoose={id => {
+											const request = newMenuChoice(repository.path, id, state.arenas[repository.path]);
+											if (request) store.openDialog(request);
+										}}
+									/>
 								)}
 								<button
 									type="button"
@@ -387,14 +416,16 @@ export function Sidebar() {
 										</div>
 									);
 								})}
-							{open && repository.available && (
-								<ul className="rows">
-									{matches.map(worktree => {
-										const removal = removalAt(state, repository.path, worktree.path);
-										return (
+							{open && repository.available && (() => {
+								// Attempts sit together under their arena, matched by path as Timber lists them; the rest as before.
+								const grouped = groupArenaRows(matches, state.arenas[repository.path]);
+								const row = (worktree: Worktree, label?: string) => {
+									const removal = removalAt(state, repository.path, worktree.path);
+									return (
 										<li key={worktree.id}>
 											<WorktreeRow
 												worktree={worktree}
+												label={label}
 												selected={worktree.id === selectedId}
 												onSelect={() => {
 													// Choosing a worktree, by click, Enter, or Space, puts the keyboard in its shown session, as a chip does.
@@ -430,10 +461,34 @@ export function Sidebar() {
 												}}
 											/>
 										</li>
-										);
-									})}
-								</ul>
-							)}
+									);
+								};
+								return (
+									<>
+										<ul className="rows">{grouped.plain.map(worktree => row(worktree))}</ul>
+										{grouped.arenas.map(arena => {
+											const header = describeArenaHeader(arena);
+											return (
+												<section key={arena.name} className="arena-rows" aria-label={header.title}>
+													<button
+														type="button"
+														className="arena-head"
+														aria-haspopup="dialog"
+														title={`Compare the attempts of ${arena.name} and keep one. ${ARENA_BETA_NOTE}`}
+														onClick={() => store.openDialog({ kind: "arena-compare", repository: repository.path, arena: arena.name })}
+													>
+														<span className="arena-name">{header.title}</span>
+														<span className="arena-beta">{BETA}</span>
+														<span className="arena-detail">{header.detail}</span>
+														<span className="arena-compare-label">Compare</span>
+													</button>
+													<ul className="rows">{arena.rows.map(({ worktree, attempt }) => row(worktree, attempt.label))}</ul>
+												</section>
+											);
+										})}
+									</>
+								);
+							})()}
 							{/* While a filter is typed, only worktrees are searched, so backups step aside. */}
 							{open && repository.available && query === "" && <BackupsSection repository={repository.path} list={state.backups[repository.path]} now={now} />}
 							{open && !repository.available && (

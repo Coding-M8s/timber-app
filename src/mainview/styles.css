@@ -4519,6 +4519,161 @@ pre:focus-visible {
 }
 
 /* Words for a screen reader only, such as the number of review notes beside a count. */
+
+/* Arenas (beta). In the sidebar, an arena's attempts sit together under a header that opens Compare. */
+.arena-rows {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	margin: 2px 0 2px 8px;
+	padding-left: 6px;
+	border-left: 1px solid var(--line);
+}
+
+.arena-head {
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	gap: 0 6px;
+	min-height: 24px;
+	padding: 3px 6px;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--text-2);
+	font-size: 12px;
+	text-align: left;
+}
+
+.arena-head:hover {
+	background: var(--fill-hover);
+}
+
+.arena-name {
+	font-weight: 600;
+}
+
+.arena-beta {
+	padding: 0 5px;
+	border: 1px solid var(--line);
+	border-radius: 4px;
+	color: var(--text-3);
+	font-size: 10.5px;
+}
+
+.arena-detail {
+	color: var(--text-3);
+	font-size: 11px;
+}
+
+.arena-compare-label {
+	margin-left: auto;
+	color: var(--text-3);
+	font-size: 11px;
+	text-decoration: underline;
+}
+
+/* The New arena dialog: the task is a few lines, and each group of attempts is one row of fields. */
+.arena-task {
+	height: auto;
+	padding: 7px 9px;
+	resize: vertical;
+	font: inherit;
+	line-height: 1.45;
+}
+
+.arena-groups {
+	min-width: 0;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.arena-group {
+	display: grid;
+	grid-template-columns: 1.4fr 1fr 1fr 64px auto;
+	align-items: end;
+	gap: 8px;
+}
+
+.arena-group .field-input:disabled {
+	opacity: 0.55;
+}
+
+.arena-reserved-list {
+	margin: 4px 0 0;
+	padding-left: 18px;
+	font-size: 12px;
+	color: var(--text-2);
+}
+
+/* The Compare dialog has a table, so it is wider than the others. */
+.dialog:has(.arena-compare) {
+	width: min(900px, calc(100% - 32px));
+}
+
+.arena-compare {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 12px;
+}
+
+.arena-compare th,
+.arena-compare td {
+	padding: 6px 8px 6px 0;
+	border-bottom: 1px solid var(--line);
+	text-align: left;
+	vertical-align: top;
+}
+
+.arena-compare thead th {
+	color: var(--text-3);
+	font-weight: 400;
+}
+
+.arena-compare tr.chosen {
+	background: var(--fill-selected);
+}
+
+.arena-attempt-label {
+	display: block;
+	font-weight: 600;
+}
+
+.arena-attempt-tool,
+.arena-outcome {
+	display: block;
+	color: var(--text-3);
+	font-weight: 400;
+}
+
+.arena-outcome {
+	margin-top: 2px;
+	color: var(--text-2);
+}
+
+.arena-outcome.failing {
+	color: var(--error);
+}
+
+.arena-actions {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 2px;
+	white-space: nowrap;
+}
+
+.arena-confirm {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 6px;
+}
+
 .visually-hidden {
 	position: absolute;
 	width: 1px;
@@ -4529,4 +4684,10 @@ pre:focus-visible {
 	clip-path: inset(50%);
 	white-space: nowrap;
 	border: 0;
+}
+
+@media (max-width: 640px) {
+	.arena-group {
+		grid-template-columns: 1fr 1fr;
+	}
 }

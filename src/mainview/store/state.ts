@@ -8,6 +8,7 @@ import type { RepositoryFetch } from "../../shared/git-fetch";
 import type { IssueLookup } from "../../shared/issues";
 import type { IssueTracker } from "../../shared/model";
 import type { Backup, BackupList } from "../../shared/backups";
+import type { ArenaList } from "../../shared/arenas";
 import type { PullRequestList } from "../../shared/pull-requests";
 import type { Repository, TimberFailure, TimberStatus, Worktree } from "../../shared/model";
 import { type Preferences, defaultPreferences } from "../../shared/preferences";
@@ -184,7 +185,11 @@ export type DialogRequest =
 	/** The setup wizard of a repository new to Timber, named by the path of its primary checkout. */
 	| { kind: "set-up-timber"; repository: string }
 	/** Preview a worktree's review notes as one message, and paste it into one of its agents or copy it. `worktree` is `Worktree.id`. */
-	| { kind: "send-review"; worktree: string };
+	| { kind: "send-review"; worktree: string }
+	/** Create an arena in a repository, named by the path of its primary checkout. Beta, as in Timber. */
+	| { kind: "new-arena"; repository: string }
+	/** Compare an arena's attempts and keep one. `arena` is the arena's name as Timber lists it. */
+	| { kind: "arena-compare"; repository: string; arena: string };
 
 /** The sections of the Settings dialog, in the order they are listed. */
 export const SETTINGS_SECTIONS = ["layout", "theme", "terminal", "rendering", "editor", "agents", "chops", "notifications", "fetch", "about", "machine", "repository"] as const;
@@ -354,6 +359,14 @@ export interface AppState {
 	 */
 	backups: Readonly<Record<string, BackupList>>;
 	/**
+	 * Each repository's arenas, by the path of its primary checkout, as
+	 * `timber __app-arena list` last answered. A repository missing here was
+	 * not read yet. Read as backups are: when a repository is first listed,
+	 * on Refresh, right after a create or pick, and after the repository
+	 * changed, at most once in `ARENA_READ_SPACING_MS` for that.
+	 */
+	arenas: Readonly<Record<string, ArenaList>>;
+	/**
 	 * The live state of each linked issue, by worktree id, as `timber
 	 * __app-issue` last answered, with the saved link it was read for. A
 	 * worktree with a linked issue that is missing here was not read yet.
@@ -432,6 +445,7 @@ export const initialState: AppState = {
 	pullRequests: {},
 	issues: {},
 	backups: {},
+	arenas: {},
 	pullRequestForms: {},
 };
 

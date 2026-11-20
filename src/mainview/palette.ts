@@ -1,3 +1,4 @@
+import { NEW_ARENA_LABEL, arenasUnavailable } from "./arena-format";
 import { type EditorAction, OPEN_IN_EDITOR, describeEditorAction } from "./editor-format";
 import { CLEAN_UP_LABEL, cleanUpUnavailableReason } from "./clean-up-format";
 import { DONE_PRIMARY_NOTE } from "./done-format";
@@ -105,6 +106,7 @@ function actionEntries(state: AppState): PaletteEntry[] {
 		const idle: PaletteAction = { kind: "dialog", request: { kind: "settings" } };
 		add("new", "New worktree", "", none, idle, ["create", "branch"]);
 		add("open", "Open existing branch", "", none, idle, ["worktree", "checkout"]);
+		add("arena", NEW_ARENA_LABEL, "", none, idle, ["attempts", "agents", "compare"]);
 		add("fetch", "Fetch now", "", none, idle, ["pull", "remote"]);
 		add("rebase", "Rebase", "", none, idle);
 		add("done", "Done", "", none, idle, ["remove", "finish", "delete"]);
@@ -117,6 +119,7 @@ function actionEntries(state: AppState): PaletteEntry[] {
 		const where = `In ${repository.name}`;
 		add("new", "New worktree", where, null, { kind: "dialog", request: { kind: "new-worktree", repository: repository.path, mode: "new" } }, ["create", "branch"]);
 		add("open", "Open existing branch", where, null, { kind: "dialog", request: { kind: "new-worktree", repository: repository.path, mode: "existing" } }, ["worktree", "checkout"]);
+		add("arena", NEW_ARENA_LABEL, where, arenasUnavailable(state.arenas[repository.path]), { kind: "dialog", request: { kind: "new-arena", repository: repository.path } }, ["attempts", "agents", "compare"]);
 		const fetching = state.fetches[repository.path]?.fetching === true
 			|| state.operations.some(operation => operation.kind === "fetch-repository" && operation.repository === repository.path);
 		add("fetch", "Fetch now", where, fetching ? FETCHING_NOW : null, { kind: "fetch", repository: repository.path }, ["pull", "remote"]);

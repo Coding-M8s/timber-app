@@ -1,6 +1,7 @@
+import { newMenuChoice, newMenuItems } from "../src/mainview/arena-format";
 import { SETTINGS_SECTIONS } from "../src/mainview/store/state";
 import { describe, expect, test } from "bun:test";
-import type { MouseEvent, ReactElement, ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { Sidebar } from "../src/mainview/components/Sidebar";
@@ -150,8 +151,9 @@ describe("sidebar", () => {
 		const markup = render(store);
 		for (const name of ["timber", "api-server"]) {
 			const button = tagOf(groupOf(markup, name), "icon-button group-new");
-			expect(button).toContain(`aria-label="New worktree in ${name}"`);
-			expect(button).toContain(`title="New worktree in ${name}"`);
+			expect(button).toContain(`aria-label="New in ${name}"`);
+			expect(button).toContain(`title="New worktree or arena in ${name}"`);
+			expect(button).toContain(`aria-haspopup="menu"`);
 		}
 		expect(groupOf(markup, "old-prototype")).not.toContain("group-new");
 	});
@@ -166,19 +168,21 @@ function elementsIn(node: ReactNode): ReactElement<Record<string, unknown>>[] {
 }
 
 describe("the + on a repository header", () => {
-	test("asks for the New dialog of that repository, which is drawn until it is closed", async () => {
+	test("opens a menu whose New worktree asks for the New dialog of that repository, which is drawn until it is closed", async () => {
 		const { store } = await startedStore();
 		expect(store.getState().dialog).toBeNull();
 
-		// Render the sidebar once to reach the button's own handler, then click it.
+		// Render the sidebar once to reach the button: it opens a menu, whose entries are `newMenuItems`.
 		let plus: ReactElement<Record<string, unknown>> | undefined;
 		function Probe() {
-			plus = elementsIn(Sidebar()).find(element => element.props["aria-label"] === "New worktree in api-server");
+			plus = elementsIn(Sidebar()).find(element => element.props["aria-label"] === "New in api-server");
 			return null;
 		}
 		renderToStaticMarkup(<StoreProvider store={store}><Probe /></StoreProvider>);
 		expect(plus?.props.className).toBe("icon-button group-new");
-		(plus!.props.onClick as (event: MouseEvent) => void)({} as MouseEvent);
+		expect(plus?.props["aria-haspopup"]).toBe("menu");
+		expect(newMenuItems(store.getState().arenas[API_SERVER]).map(item => item.label)).toEqual(["New worktree\u2026", "New arena (Beta)\u2026"]);
+		store.openDialog(newMenuChoice(API_SERVER, "new-worktree", store.getState().arenas[API_SERVER])!);
 
 		expect(store.getState().dialog).toEqual({ kind: "new-worktree", repository: API_SERVER });
 		// The request is held in the store, and the New dialog is drawn for it.
