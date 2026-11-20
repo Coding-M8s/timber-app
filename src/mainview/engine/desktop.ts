@@ -114,6 +114,13 @@ export function createDesktopEngine(): Engine {
 		// Copying every file back, and deleting, take as long as they take.
 		restoreBackup: request => rpc.request.restoreBackup(request, { maxRequestTime: Infinity }),
 		deleteBackup: request => rpc.request.deleteBackup(request, { maxRequestTime: Infinity }),
+		// The main process stops a stuck read after 30 seconds.
+		listArenas: repository => rpc.request.listArenas({ repository }, { maxRequestTime: 60_000 }),
+		listArenaPresets: repository => rpc.request.listArenaPresets({ repository }, { maxRequestTime: 60_000 }),
+		inspectArena: request => rpc.request.inspectArena(request, { maxRequestTime: 60_000 }),
+		// Creating every attempt's worktree and setup, and archiving and removing attempts, take as long as they take.
+		newArena: request => rpc.request.newArena(request, { maxRequestTime: Infinity }),
+		pickArena: request => rpc.request.pickArena(request, { maxRequestTime: Infinity }),
 		// The main process reads the list first, then Git, which it stops after 20 seconds.
 		readFileChanges: request => rpc.request.readFileChanges(request, { maxRequestTime: 60_000 }),
 		readFileDiff: request => rpc.request.readFileDiff(request, { maxRequestTime: 60_000 }),

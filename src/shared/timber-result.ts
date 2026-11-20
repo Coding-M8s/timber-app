@@ -9,7 +9,7 @@ import { describeExit, readEnvelope } from "./timber-record";
  */
 
 /** The Timber commands that write a result file, as each record names its command. */
-export type ResultCommand = "new" | "open" | "done" | "rebase" | "pr" | "config" | "backup-restore" | "backup-delete";
+export type ResultCommand = "new" | "open" | "done" | "rebase" | "pr" | "config" | "backup-restore" | "backup-delete" | "arena-new" | "arena-pick";
 
 /** How a command is named in messages, as a person would type it. A record names some commands otherwise. */
 export function resultCommandName(command: ResultCommand): string {
@@ -18,6 +18,10 @@ export function resultCommandName(command: ResultCommand): string {
 			return "timber backup restore";
 		case "backup-delete":
 			return "timber __app-backup delete";
+		case "arena-new":
+			return "timber arena new";
+		case "arena-pick":
+			return "timber arena pick";
 		default:
 			return `timber ${command}`;
 	}
@@ -43,7 +47,14 @@ export const SETTINGS_DRAFT_PLACEHOLDER = "<settings draft>";
 /** Shown in place of a worktree's path before Timber has answered, so the path is not known yet. */
 export const WORKTREE_PLACEHOLDER = "<worktree>";
 
-const PLACEHOLDERS: readonly string[] = [RESULT_FILE_PLACEHOLDER, APPROVAL_FILE_PLACEHOLDER, SETTINGS_DRAFT_PLACEHOLDER, WORKTREE_PLACEHOLDER];
+/**
+ * Stands for the task file of `timber arena new` wherever that command is
+ * shown. The real file is a private temporary one that holds the task, which
+ * is never shown, logged, or passed as an argument.
+ */
+export const TASK_FILE_PLACEHOLDER = "<task file>";
+
+const PLACEHOLDERS: readonly string[] = [RESULT_FILE_PLACEHOLDER, APPROVAL_FILE_PLACEHOLDER, SETTINGS_DRAFT_PLACEHOLDER, WORKTREE_PLACEHOLDER, TASK_FILE_PLACEHOLDER];
 
 /** A record that passed every check. */
 export interface ResultRecord {

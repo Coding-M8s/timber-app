@@ -32,6 +32,7 @@ import { type WorkflowControls, createMockWorkflows } from "./mock-workflows";
 import { type IssueControls, createMockIssues, sampleIssueLinks } from "./mock-issues";
 import { type PullRequestControls, createMockPullRequests } from "./mock-pull-requests";
 import { type BackupControls, createMockBackups } from "./mock-backups";
+import { type ArenaControls, createMockArenas } from "./mock-arenas";
 import { type ThemeFileControls, createMockThemeFiles } from "./mock-theme-files";
 import { type ChopsControls, createMockChops } from "./mock-chops";
 import { type PortControls, createMockPorts } from "./mock-ports";
@@ -293,8 +294,8 @@ export const sampleTimberStatuses = {
 
 /** The mock engine, plus the controls a test or the browser build uses to act out changes. */
 /** The controls for terminals are in ./mock-terminals.ts. */
-/** The controls for Timber's settings are in ./mock-timber-config.ts, for workflows in ./mock-workflows.ts, for issue trackers in ./mock-issue-trackers.ts, for pull requests in ./mock-pull-requests.ts, for issues in ./mock-issues.ts, and for backups in ./mock-backups.ts. */
-export interface MockEngine extends Engine, TerminalControls, TimberConfigControls, IssueTrackerControls, WorkflowControls, PullRequestControls, IssueControls, BackupControls, ThemeFileControls, ChopsControls, PortControls {
+/** The controls for Timber's settings are in ./mock-timber-config.ts, for workflows in ./mock-workflows.ts, for issue trackers in ./mock-issue-trackers.ts, for pull requests in ./mock-pull-requests.ts, for issues in ./mock-issues.ts, for backups in ./mock-backups.ts, and for arenas in ./mock-arenas.ts. */
+export interface MockEngine extends Engine, TerminalControls, TimberConfigControls, IssueTrackerControls, WorkflowControls, PullRequestControls, IssueControls, BackupControls, ArenaControls, ThemeFileControls, ChopsControls, PortControls {
 	/** Replace the data, without telling the interface. */
 	setRepositories(repositories: Repository[]): void;
 	/** Report that a repository changed, as the main process would. */
@@ -785,7 +786,7 @@ export function createMockEngine(
 		const repository = current.find(candidate => candidate.path === path && candidate.available);
 		const worktree = timberFailures.has(path) ? undefined : repository?.worktrees.find(candidate => candidate.path === worktreePath);
 		return worktree && worktree.pathExists ? worktree : null;
-	}, () => preferences.agents, () => typeof timber === "function" ? timber() : timber, () => preferences.sessionNames);
+	}, () => preferences.agents, () => typeof timber === "function" ? timber() : timber, () => preferences.sessionNames, (...asked) => arenas.arenaLaunch(...asked));
 	// As the main process does, every change is weighed for a desktop notification and a sound, which are only kept here.
 	const alertSettings = (): AlertSettings => ({ notify: preferences.statusNotifications, notifyStates: preferences.notifyStates, soundStates: preferences.soundStates });
 	const alerts = createAlertRunner({
@@ -826,8 +827,30 @@ export function createMockEngine(
 		},
 		delay: () => options.commandMilliseconds ?? 0,
 	});
+	const arenas = createMockArenas({
+		listed: path => current.find(repository => repository.path === path && repository.available),
+		timber: () => typeof timber === "function" ? timber() : timber,
+		// As Timber's `git worktree add -b` would: each attempt is listed from now on, in Timber's order.
+		addWorktree: (repositoryPath, path, branch) => {
+			current = current.map(repository => repository.path !== repositoryPath ? repository : {
+				...repository,
+				worktrees: inTimberOrder([...repository.worktrees, {
+					id: worktreeId(`${repositoryPath}/.git`, { path, canonicalPath: path }),
+					path, canonicalPath: path, branch, head: "2222222222222222222222222222222222222222",
+					primary: false, detached: false, locked: false, prunable: false, pathExists: true,
+					changes: { kind: "known", modified: [], untracked: [] }, base: { kind: "unassigned" }, sync: { kind: "unpublished" }, issue: null,
+				}]),
+			});
+		},
+		removeWorktree: (repositoryPath, path) => {
+			current = current.map(repository => repository.path === repositoryPath ? { ...repository, worktrees: repository.worktrees.filter(candidate => candidate.path !== path) } : repository);
+		},
+		runningIn: paths => terminals.runningIn(paths),
+		delay: () => options.commandMilliseconds ?? 0,
+	});
 	return {
 		...terminals,
+		...arenas,
 		...timberConfig,
 		...createMockThemeFiles(),
 		...workflows,

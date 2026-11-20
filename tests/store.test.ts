@@ -4,6 +4,7 @@ import { createMockTerminals } from "../src/mainview/engine/mock-terminals";
 import { createMockTimberConfig } from "../src/mainview/engine/mock-timber-config";
 import { createMockWorkflows } from "../src/mainview/engine/mock-workflows";
 import { createMockIssues } from "../src/mainview/engine/mock-issues";
+import { createMockArenas } from "../src/mainview/engine/mock-arenas";
 import { createMockBackups } from "../src/mainview/engine/mock-backups";
 import { createMockPullRequests } from "../src/mainview/engine/mock-pull-requests";
 import type { Engine } from "../src/shared/engine";
@@ -94,6 +95,8 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		...createMockIssues(() => undefined, () => timber),
 		// Backups as the mock acts them out. Their own tests are in backups.test.ts.
 		...createMockBackups({ listed: () => undefined, timber: () => timber, addWorktree: () => {}, delay: () => 0 }),
+		// Arenas as the mock acts them out. Their own tests are in arenas.test.ts and arenas-view.test.tsx.
+		...createMockArenas({ listed: () => undefined, timber: () => timber, addWorktree: () => {}, removeWorktree: () => {}, runningIn: () => [], delay: () => 0 }),
 		appInfo: async () => ({ version: "1.2.3", rendering: { applies: false } }),
 		uninstallPlan: async () => ({ available: false, reason: "Not installed." }),
 		uninstall: async () => ({ outcome: "unavailable", message: "Not installed." }),

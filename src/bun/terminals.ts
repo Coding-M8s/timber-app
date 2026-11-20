@@ -1,4 +1,5 @@
 import { accessSync, constants } from "node:fs";
+import { type ArenaLaunch, isArenaName, isAttemptLabel } from "../shared/arenas";
 import { type AgentSetting, agentCommand, findAgent } from "../shared/agent";
 import { describeCommandLine } from "../shared/command-line";
 import type { TimberStatus } from "../shared/model";
@@ -51,6 +52,12 @@ export interface TerminalDependencies {
 	sessionNaming?: () => Promise<SessionNaming>;
 	/** Where Timber is, for worktree setup sessions. Setup never starts while it is not ready. */
 	timber?: () => Promise<TimberStatus>;
+	/**
+	 * What Timber says an arena attempt's agent runs (`timber __app-arena
+	 * launch`, see ./arenas.ts). The only source of an attempt's command.
+	 * Without it, no attempt starts.
+	 */
+	arenaLaunch?: (request: { repository: string; worktree: string; arena: string; attempt: string }) => Promise<ArenaLaunch>;
 	/** Hears every part of output, in order per session. */
 	onOutput: (output: TerminalOutput) => void;
 	/** Hears every session that started, ended, or is gone. */
@@ -167,6 +174,13 @@ function isExecutable(path: string): boolean {
 
 const wait = (milliseconds: number) => new Promise<void>(resolve => setTimeout(resolve, milliseconds));
 
+/** An environment with `set` put on top and `unset` taken out, as Timber asks for an arena attempt. */
+function withChanges(base: Record<string, string | undefined>, set: Record<string, string> = {}, unset: readonly string[] = []): Record<string, string | undefined> {
+	const changed: Record<string, string | undefined> = { ...base, ...set };
+	for (const name of unset) delete changed[name];
+	return changed;
+}
+
 const running = (child: PseudoTerminal) => child.ended() === null;
 
 /**
@@ -251,6 +265,7 @@ export function sessionEnvironment(environment: Record<string, string | undefine
 export function createTerminalSessions(dependencies: TerminalDependencies): TerminalSessions {
 	const {
 		findRepository, onOutput, onChange, agents = async () => [], sessionNaming = async (): Promise<SessionNaming> => "plain", timber = async (): Promise<TimberStatus> => ({ state: "not-found", override: null }), environment = process.env, handoffFolder = async () => null, platform = process.platform,
+		arenaLaunch = async () => ({ outcome: "failed", message: "Arena attempts cannot start here. Nothing was started." }),
 		startTerminal = startPseudoTerminal(platform),
 		closeMilliseconds = CLOSE_MILLISECONDS, flushMilliseconds = FLUSH_MILLISECONDS, undrawnLimit = UNDRAWN_LIMIT,
 	} = dependencies;
@@ -321,10 +336,11 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 
 	/** What a session starts with: the shell, or an agent's executable as found on the PATH, with its arguments. */
 	type Start =
-		| { ok: true; kind: TerminalSession["kind"]; base: string; argv: string[]; command: string }
+		| { ok: true; kind: TerminalSession["kind"]; base: string; argv: string[]; command: string; environment?: Record<string, string>; unset?: string[] }
 		| { ok: false; result: OpenTerminalResult };
 
-	function startOf(agent: AgentSetting | null, run: TimberRun | null): Start {
+	function startOf(agent: AgentSetting | null, run: TimberRun | null, attempt: AttemptRun | null): Start {
+		if (attempt !== null) return attemptStart(attempt);
 		if (run !== null) {
 			const argv = [run.timber, ...run.arguments];
 			return { ok: true, kind: "timber", base: run.name, argv, command: describeCommandLine(argv) };
@@ -367,8 +383,56 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		what: string;
 	}
 
+	/** An arena attempt's agent, as Timber said to start it. */
+	interface AttemptRun {
+		label: string;
+		argv: string[];
+		environment: Record<string, string>;
+		unset: string[];
+	}
+
+	/** The attempt's program found on the PATH unless Timber gave a whole path, with Timber's arguments as they are. */
+	function attemptStart(attempt: AttemptRun): Start {
+		const [program, ...rest] = attempt.argv;
+		const command = describeCommandLine(attempt.argv);
+		const lookup = findExecutable(program!, environment.PATH ?? environment.Path ?? "", { what: attempt.label, command: `The command Timber gives for ${attempt.label}`, section: "Timber's arena presets" });
+		if (!lookup.ok) {
+			return { ok: false, result: lookup.reason === "relative" ? { outcome: "failed", command, message: lookup.message } : { outcome: "not-found", command, executable: program!, message: lookup.message } };
+		}
+		const argv = [lookup.path, ...rest];
+		if (windows && isWindowsBatch(lookup.path)) {
+			return { ok: false, result: { outcome: "failed", command: describeCommandLine(argv), message: `${lookup.path} is a batch file, which Windows runs through cmd.exe, so the app does not start ${attempt.label} with it. Nothing was started.` } };
+		}
+		return { ok: true, kind: "agent", base: attempt.label, argv, command: describeCommandLine(argv), environment: attempt.environment, unset: attempt.unset };
+	}
+
+	/** Ask Timber what the attempt runs. Null with a result when nothing may start. */
+	async function attemptOf(request: OpenTerminalRequest): Promise<{ run: AttemptRun | null; refused: OpenTerminalResult | null }> {
+		const wanted = request.arenaAttempt;
+		if (wanted === undefined) return { run: null, refused: null };
+		if (request.agent !== undefined || request.timberWorktreeSetup !== undefined || typeof wanted !== "object" || wanted === null || !isArenaName(wanted.arena) || !isAttemptLabel(wanted.attempt)) {
+			return { run: null, refused: { outcome: "failed", message: "The request for an arena attempt cannot be read. Nothing was started." } };
+		}
+		let launch: ArenaLaunch;
+		try {
+			launch = await arenaLaunch({ repository: request.repository, worktree: request.worktree, arena: wanted.arena, attempt: wanted.attempt });
+		} catch (error) {
+			return { run: null, refused: { outcome: "failed", message: `Could not ask Timber how to start ${wanted.attempt}: ${messageOf(error)}. Nothing was started.` } };
+		}
+		if (launch.outcome === "failed") return { run: null, refused: { outcome: "failed", message: launch.message } };
+		if (launch.outcome === "no-agent") return { run: null, refused: { outcome: "not-configured", message: `${wanted.attempt} is a manual attempt, so it has no agent to start. Open a terminal in it instead. Nothing was started.` } };
+		// Timber names the folder; it must be the worktree the request is for, or the agent would work somewhere else.
+		if (launch.cwd !== request.worktree) {
+			return { run: null, refused: { outcome: "failed", message: `Timber gives ${launch.cwd} as the folder of ${wanted.attempt}, not ${request.worktree}. Nothing was started.` } };
+		}
+		return { run: { label: wanted.attempt, argv: launch.argv, environment: launch.environment, unset: launch.unset }, refused: null };
+	}
+
 	async function open(request: OpenTerminalRequest): Promise<OpenTerminalResult> {
 		if (startTerminal === null) return { outcome: "unsupported", message: TERMINAL_UNSUPPORTED_REASON };
+		// Timber is asked first, since nothing may wait between finding the worktree and keeping the session.
+		const attempt = await attemptOf(request);
+		if (attempt.refused) return attempt.refused;
 		// An agent is looked up first: a request for one never falls back to a shell.
 		let agent: AgentSetting | null = null;
 		if (request.agent !== undefined) {
@@ -402,13 +466,14 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		// Naming is a convenience: when it cannot be read, the session is named as it always was.
 		const naming = run === null ? await sessionNaming().catch((): SessionNaming => "plain") : "plain";
 		const handoff = await handoffFolder().catch(() => null);
-		const consequence = agent ? `${agent.name} was not started.` : run ? `${run.what} was not started.` : "No terminal was started.";
+		const consequence = attempt.run ? `${attempt.run.label} was not started.` : agent ? `${agent.name} was not started.` : run ? `${run.what} was not started.` : "No terminal was started.";
 		const listed = await findListedWorktree(findRepository, request.repository, request.worktree, consequence);
 		if (!listed.ok) return { outcome: "not-listed", message: listed.message };
 		// From here to the new session being kept nothing waits, so two sessions that start at once get different names.
-		const start = startOf(agent, run);
+		const start = startOf(agent, run, attempt.run);
 		if (!start.ok) return start.result;
-		const base = run === null ? sessionNameBase(naming, start.base, listed.worktree.branch, agent !== null) : start.base;
+		// An attempt's session is named after its label, which is how the arena names it everywhere.
+		const base = run === null && attempt.run === null ? sessionNameBase(naming, start.base, listed.worktree.branch, agent !== null) : start.base;
 		const name = defaultSessionName(base, inWorktree(listed.worktree.id).map(live => live.session.name));
 
 		const shell = start.argv[0]!;
@@ -419,7 +484,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			child = startTerminal({
 				argv: start.argv,
 				cwd: request.worktree,
-				env: sessionEnvironment(environment, handoff),
+				env: withChanges(sessionEnvironment(environment, handoff), start.environment, start.unset),
 				cols,
 				rows,
 				data: text => {

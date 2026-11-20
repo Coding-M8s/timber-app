@@ -57,6 +57,7 @@ import { connectToastHost } from "./windows-toasts";
 import { createWindowReveal } from "./window-reveal";
 import { createWorktreeCommands } from "./worktree-commands";
 import { createBackupCommands } from "./backups";
+import { createArenaCommands } from "./arenas";
 import { createRepositoryTurns } from "./repository-turns";
 import { createWorkflowReader } from "./workflows";
 import { createIssueTrackerReader } from "./issue-trackers";
@@ -130,6 +131,14 @@ const turns = createRepositoryTurns();
 const worktrees = createWorktreeCommands({ timber: () => timber.current(), isListed: path => repositories.includes(path), findRepository: path => repositories.find(path), turns });
 // Timber's recovery backups. Names and paths are the person's own, and what Timber printed is private: never log either (see ./backups.ts).
 const backups = createBackupCommands({ timber: () => timber.current(), isListed: path => repositories.includes(path), turns });
+// Arenas (see ./arenas.ts). The task and what Timber printed are private: never log either. Pick waits for no
+// session of the app's to run in an attempt, since Timber cannot see them, and the app never ends one for it.
+const arenas = createArenaCommands({
+	timber: () => timber.current(),
+	isListed: path => repositories.includes(path),
+	runningIn: paths => terminals.list().filter(session => session.state.kind === "running" && paths.includes(session.path)).map(session => session.name),
+	turns,
+});
 
 /*
  * Background refresh (see docs/architecture.md, "Watching for changes"). The watcher hears changes to the Git
@@ -316,6 +325,8 @@ const terminals = createTerminalSessions({
 	sessionNaming: async () => (await preferences.load()).sessionNames,
 	// `timber rebase` runs the Timber that was found, never a command from the window.
 	timber: () => timber.current(),
+	// An arena attempt's command comes from Timber only (see ./arenas.ts).
+	arenaLaunch: request => arenas.launch(request),
 	onOutput: output => tell("terminal output", () => rpc.send.terminalOutput(output)),
 	onChange: change => {
 		tell("a terminal change", () => rpc.send.terminalChanged(change));
@@ -419,6 +430,14 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			restoreBackup: request => backups.restore(request),
 			// Deletes one backup, only as the person confirmed it: Timber checks its digest first.
 			deleteBackup: request => backups.remove(request),
+			listArenas: ({ repository }) => arenas.list(repository),
+			// Only names and tools leave the main process, never a preset's command (see ./arenas.ts).
+			listArenaPresets: ({ repository }) => arenas.presets(repository),
+			inspectArena: request => arenas.inspect(request),
+			// The request holds the task: never log it (see ./arenas.ts).
+			newArena: request => arenas.create(request),
+			// Removes the attempts other than the winner, only while no session of the app runs in one (see ./arenas.ts).
+			pickArena: request => arenas.pick(request),
 			previewDone: request => done.preview(request),
 			// Removes a worktree. Only ever with a preview that `previewDone` handed out (see ./done.ts).
 			applyDone: request => done.apply(request),

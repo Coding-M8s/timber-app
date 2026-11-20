@@ -263,6 +263,55 @@ export const recordedBackup = {
 	unknownCommand: backupFixture("unknown-command-0.1.2.stderr"),
 };
 
+const arenaFixture = (name: string) => readFileSync(join(import.meta.dir, "..", "fixtures", "timber-arena", name), "utf8");
+
+/**
+ * Records recorded from Timber's main branch after 0.1.3, the first with
+ * arenas for apps, built with `bun build --compile`, on Linux, exactly as
+ * printed, except that the temporary folder it ran in is written `/work`.
+ * The repository `/work/sample` has the preset `stub`, a wrapper running
+ * `/work/stub-agent`, and every task file held `PRIVATE_TASK_SENTINEL`.
+ *
+ * - `newSucceeded`: `demo`, one manual attempt and one `stub` (exit 0).
+ *   `newExists`: the same name again (exit 1, nothing reserved).
+ *   `newTicket`: `ABC-12`, which Timber names `abc-12`.
+ *   `newSetupFailed`: `broken`, whose `post_create` hook exits 3, so creation
+ *   stopped at setup of `manual-1` (exit 1, reserved).
+ * - `list`: `abc-12` and `demo`, after `stub-1` got one commit, one edit, and
+ *   one untracked file. `listAfterPick`: the same after `pickSucceeded`.
+ *   `listDamaged`: `kept`'s manifest replaced by text that is not JSON (exit
+ *   1, a failed entry). `listOutside`: run outside any repository (exit 1).
+ * - `launchReady` (`stub-1`), `launchNoAgent` (`manual-1`), `launchFailed`
+ *   (an unknown label, exit 1).
+ * - `inspect`: `demo` as in `list`. `inspectFailed`: an arena that does not
+ *   exist (exit 1).
+ * - `pickSucceeded`: `demo` keeping `manual-1`; `stub-1` was archived.
+ *   `pickKept`: `kept` keeping `manual-1`, after `manual-2`'s identity marker
+ *   was deleted, so Timber kept it with its reason (exit 1).
+ * - `appConfig`: `__app-config read --scope repository`, with the preset.
+ * - `unknownCommand`: standard error of `timber __app-arena list` from the
+ *   released 0.1.3, which has no arenas for apps (exit 1, nothing on stdout).
+ */
+export const recordedArena = {
+	newSucceeded: arenaFixture("new-succeeded.json"),
+	newExists: arenaFixture("new-exists.json"),
+	newTicket: arenaFixture("new-ticket.json"),
+	newSetupFailed: arenaFixture("new-setup-failed.json"),
+	list: arenaFixture("list.json"),
+	listAfterPick: arenaFixture("list-after-pick.json"),
+	listDamaged: arenaFixture("list-damaged.json"),
+	listOutside: arenaFixture("list-outside.json"),
+	launchReady: arenaFixture("launch-ready.json"),
+	launchNoAgent: arenaFixture("launch-no-agent.json"),
+	launchFailed: arenaFixture("launch-failed.json"),
+	inspect: arenaFixture("inspect.json"),
+	inspectFailed: arenaFixture("inspect-failed.json"),
+	pickSucceeded: arenaFixture("pick-succeeded.json"),
+	pickKept: arenaFixture("pick-kept.json"),
+	appConfig: arenaFixture("app-config-presets.json"),
+	unknownCommand: arenaFixture("unknown-command-0.1.3.stderr"),
+};
+
 /**
  * A recorded path under `/work`, up to the end of the path: a quote, a
  * backslash, a line break, or punctuation that follows a path in a sentence.
