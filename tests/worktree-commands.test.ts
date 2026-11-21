@@ -186,6 +186,32 @@ describe("createWorktreeCommands, with a stand-in Timber", () => {
 		expect(notes.arguments.slice(-2)).toEqual(["--", "feat/login"]);
 	});
 
+	test("Start work's --branch, -c, and --assign or --reassign run as shown, and only beside a whole issue selector", async () => {
+		const { commands, timber } = commandsOn({ result: recordedResult.succeeded });
+		const refused = [
+			{ name: "feat/login", assign: "assign" },
+			{ name: "42", branch: "GH-42-x" },
+			{ name: "jira:TIM-91", assign: "take" },
+			{ name: "jira:TIM-91", branch: "" },
+			{ name: "jira:TIM-91", branch: 7 },
+			{ name: "jira:TIM-91", allowClosed: false },
+			{ name: "linear:API-21", allowClosed: "yes" },
+			{ name: "linear:API-21", branch: "--help" },
+		];
+		for (const part of refused) {
+			const result = await commands.create({ repository, base: null, ...part } as unknown as NewWorktreeRequest);
+			expect(result.outcome === "failed" && result.failure.diagnostic).toBe("The request for timber new is not complete. Nothing was run.");
+		}
+		expect(() => timber.notes()).toThrow();
+
+		const request: NewWorktreeRequest = { repository, name: "jira:TIM-91", base: null, branch: "TIM-91-proxy", allowClosed: true, assign: "reassign" };
+		await commands.create(request);
+		const notes = timber.notes();
+		expect(notes.arguments).toEqual(newWorktreeArguments(request, notes.resultFile!));
+		expect(notes.arguments.slice(0, 5)).toEqual(["new", "--branch", "TIM-91-proxy", "-c", "--reassign"]);
+		expect(notes.arguments.slice(-2)).toEqual(["--", "jira:TIM-91"]);
+	});
+
 	test("a selector that looks like an option, or has spaces around it, reaches Timber as one argument after the --", async () => {
 		const opened = JSON.stringify({ ...JSON.parse(recordedResult.succeeded), command: "open", materialized: false });
 		for (const selector of ["--setup", " feat/login ", "-"]) {

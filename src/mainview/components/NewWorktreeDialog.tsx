@@ -66,6 +66,8 @@ export function AgentField({ agents, plan, onPick }: AgentFieldProps) {
 
 interface WorktreeDialogFrameProps {
 	repository: Repository;
+	/** The dialog's title. "New worktree in <repository>" unless given. */
+	title?: string;
 	modes: readonly WorktreeDialogMode[];
 	/** The position of the mode on screen in `modes`. */
 	selected: number;
@@ -94,7 +96,7 @@ export function WorktreeDialogFrame(props: WorktreeDialogFrameProps) {
 	const plan = props.plan(mode.workflow);
 	return (
 		<OperationDialog
-			title={`New worktree in ${repository.name}`}
+			title={props.title ?? `New worktree in ${repository.name}`}
 			headerAside={modes.length > 1 && (
 				<ModeSwitch
 					labels={modes.map(candidate => candidate.label)}

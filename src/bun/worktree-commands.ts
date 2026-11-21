@@ -215,9 +215,15 @@ export function createWorktreeCommands(options: WorktreeCommandsOptions): Worktr
 		pullRequest,
 		headSubject,
 		create(request) {
-			const { repository, name, base, workflow } = request;
+			const { repository, name, base, workflow, branch, assign, allowClosed } = request;
 			if (typeof name !== "string" || (base !== null && typeof base !== "string") || !isPickedWorkflow(workflow)) return incomplete("new");
-			return run(repository, "new", resultFile => newWorktreeArguments({ repository, name, base, ...picked(workflow) }, resultFile));
+			// Starting work on an issue: each part has its one form, and only beside a whole issue selector. Timber judges the branch name.
+			// The branch is the value of --branch, before the --: a leading dash could read as an option, and Timber refuses such a name anyway.
+			if ((branch !== undefined && (typeof branch !== "string" || branch === "" || branch.startsWith("-"))) || (assign !== undefined && assign !== "assign" && assign !== "reassign")
+				|| (allowClosed !== undefined && allowClosed !== true)) return incomplete("new");
+			const forIssue = { ...(branch === undefined ? {} : { branch }), ...(assign === undefined ? {} : { assign }), ...(allowClosed === undefined ? {} : { allowClosed }) };
+			if (Object.keys(forIssue).length > 0 && !isIssueLinkSelector(name)) return incomplete("new");
+			return run(repository, "new", resultFile => newWorktreeArguments({ repository, name, base, ...picked(workflow), ...forIssue }, resultFile));
 		},
 		open(request) {
 			const { repository, selector, workflow, issue } = request;

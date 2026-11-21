@@ -271,10 +271,31 @@ logins. The app never reads a tracker login and never signs in.
 - Each card shows the key, the tracker's status (blue while in progress,
   always with its words), a control that opens the issue in the browser,
   the title, and the assignee, or "Unassigned". A card whose issue has a
-  worktree has a pill with its branch that shows that worktree. A card
-  whose issue has an open pull request and no worktree here has Check out
-  PR (below). The others have Start work, which is off for now; starting
-  work from the board is its own issue (156).
+  worktree has an Open worktree pill that shows that worktree, with its
+  branch in the tooltip. Every other card has Start work (below), and one
+  whose issue has an open pull request also has Check out PR (below); a
+  narrow card wraps them under the assignee.
+- Start work opens a dialog like New worktree, titled "Start work on
+  <key> in <repository>": the issue (key, title, assignee, status), a
+  Branch field, Start from, Workflow, and Agent, and the exact `timber new`
+  command, which always names the issue as `github:<n>`, `jira:<KEY>`, or
+  `linear:<KEY>`, so the worktree is linked to it whatever is changed.
+  Branch starts empty, for the name Timber makes from the issue's title,
+  with a hint naming the prefix a typed name needs (`GH-42-`, `ENG-42-`);
+  a typed name adds `--branch <name>`. The app does not show Timber's name
+  ahead of time, since only Timber can make it. The command always has
+  `--assign`, so the issue becomes the person's. When the card says
+  someone else has it, a boxed question under the issue names them before
+  anything runs, the command shows `--reassign`, the button reads "Replace
+  <name> and start work", and Cancel creates and assigns nothing. With an
+  open pull request on the issue, the box also has "Check out their pull
+  request", which opens Check out PR for it. A closed or done issue asks
+  the same way and adds `-c`; the button reads "Start work anyway". When
+  the board could not tell whose the issue is, Timber refuses if it is
+  someone else's, and the box appears then, with Timber's reason above the
+  buttons. A worktree that worked closes the dialog as New worktree does;
+  the toast also says whom the issue was assigned to, or that Timber could
+  not assign it (the worktree stays).
 - Check out PR opens a pull request someone is already working on, for
   review. The pull requests are the ones the tracker itself links to the
   issue, as Timber lists them; the app never guesses them from branch
@@ -311,8 +332,8 @@ logins. The app never reads a tracker login and never signs in.
   A sprint comes whole, up to Timber's 500; the other lists show the first
   50, and a cut-off list says so at its end.
 - Each failure to read is a quiet word or line in the view, never a
-  dialog. (Check out PR runs a Timber command, so like New worktree it is a
-  dialog, and its failure stays in it.) A failed refresh keeps the last
+  dialog. (Check out PR and Start work run a Timber command, so like New worktree they are
+  dialogs, and their failures stay in them.) A failed refresh keeps the last
   list on screen with a grey word beside the title ("offline", "sign-in needed", "no access", "not found") and Timber's
   reason in its tooltip. A first read that fails says so in a line, with
   Timber's reason, and `timber setup` when a login is missing. No current

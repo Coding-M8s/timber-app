@@ -293,6 +293,38 @@ export interface NewWorktreeRequest {
 	base: string | null;
 	/** A named workflow from `listWorkflows`, whose setup scripts run after the ordinary ones. Left out for none. */
 	workflow?: string;
+	/**
+	 * The branch to create for an issue instead of the one Timber generates,
+	 * passed as `--branch`. Only with an issue selector as `name`, as
+	 * `issueLinkSelector` makes it. Timber checks the name: it must start with
+	 * the issue's ID and `-`. Left out for Timber's name.
+	 */
+	branch?: string;
+	/**
+	 * Assign the issue to the person's tracker account: `assign` passes
+	 * `--assign`, which Timber refuses when someone else has the issue, and
+	 * `reassign` passes `--reassign`, which replaces them. Only with an issue
+	 * selector as `name`. Left out for no assignment.
+	 */
+	assign?: "assign" | "reassign";
+	/** Allow a closed or done issue, passed as `-c`. Only with an issue selector as `name`. Timber never reopens it. */
+	allowClosed?: true;
+}
+
+/** What `timber new --assign` or `--reassign` did about the issue's assignee, from its record. */
+export type AssignmentResult = "not-attempted" | "assigned" | "reassigned" | "already-mine" | "failed";
+
+/**
+ * The `assignment` of a `timber new` record. `me` is the signed-in account's
+ * display name (the login for GitHub), `previous` the assignees before
+ * Timber wrote anything, and `diagnostic` the reason a write failed. All
+ * text from the tracker, made safe to show.
+ */
+export interface Assignment {
+	result: AssignmentResult;
+	me: string;
+	previous: string[];
+	diagnostic: string | null;
 }
 
 /** What to open with `timber open`. */
@@ -333,13 +365,15 @@ export interface ReportedWorktree {
  * failure with `created` true means the worktree exists and only what came
  * after, such as a setup script, did not finish: offer to run setup again in
  * `worktree`, never to start over. A failure with `worktree` null says
- * nothing about what exists, so read the list again.
+ * nothing about what exists, so read the list again. `assignment` is there
+ * only when `timber new` ran with `--assign` or `--reassign` and its record
+ * says what it did about the assignee.
  */
 export type WorktreeCommandResult =
-	| { outcome: "succeeded"; worktree: ReportedWorktree; created: boolean; setupSkipped: boolean }
+	| { outcome: "succeeded"; worktree: ReportedWorktree; created: boolean; setupSkipped: boolean; assignment?: Assignment }
 	/** The person closed Timber's own chooser before anything was changed. */
 	| { outcome: "cancelled" }
-	| { outcome: "failed"; failure: TimberFailure; worktree: ReportedWorktree | null; created: boolean; setupSkipped: boolean };
+	| { outcome: "failed"; failure: TimberFailure; worktree: ReportedWorktree | null; created: boolean; setupSkipped: boolean; assignment?: Assignment };
 
 /** A branch offered for picking wherever a branch is typed. Only a suggestion: any text may be typed instead. */
 export interface BranchSuggestion {

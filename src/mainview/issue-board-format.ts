@@ -16,10 +16,6 @@ export const ISSUES_ROW_LABEL = "Issues";
 
 export const LIST_LABELS: Record<IssueList, string> = { sprint: "Current sprint", assigned: "Assigned to me", open: "Open issues" };
 
-/** Where Start work will open the New worktree dialog, once it does (issue 156). */
-export const START_WORK_LABEL = "Start work";
-export const START_WORK_PLACEHOLDER = "Starting work from the board is coming: for now, use New worktree and type the issue's key.";
-
 /** The board's columns, by the tracker's grouping of each status. */
 export type BoardColumnId = "open" | "in-progress" | "done";
 
