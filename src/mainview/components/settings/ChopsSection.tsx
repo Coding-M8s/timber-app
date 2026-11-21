@@ -1,13 +1,14 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { AgentSetting } from "../../../shared/agent";
-import { CHOP_DESCRIPTION_LIMIT, CHOP_KINDS, CHOP_TEXT_LIMIT, type ChopKind, type ChopList, type PersonalChop, chopKindWord } from "../../../shared/chops";
+import { CHOP_DESCRIPTION_LIMIT, CHOP_KINDS, CHOP_TEXT_LIMIT, type ChopKind, type ChopList, type PersonalChop, chopKindWord, samePersonalChops } from "../../../shared/chops";
+import { renameInArrangements, sameChopArrangements } from "../../../shared/chop-order";
 import { SESSION_NAME_LIMIT } from "../../../shared/terminal";
 import {
-	type ChopDraft, type ChopDraftChange, addChopDraft, chopAgentOptions, chopsSectionChange, chopDraftsOf, chopScopeOptions, chopsDraftModel, describeChopSource, describeChopsFile,
+	type ChopDraft, type ChopDraftChange, addChopDraft, chopAgentOptions, chopsSectionChange, chopsSectionRenames, chopDraftsOf, chopScopeOptions, chopsDraftModel, describeChopSource, describeChopsFile,
 	describeOverride, editChopDraft, isBlankChopDraft, removeChopDraft,
 } from "../../chop-format";
 import { useAppState, useStore } from "../../store/react";
-import { selectedWorktree } from "../../store/state";
+import { selectedWorktree, shownChopOrder } from "../../store/state";
 import { type SectionSave, SettingsSection, useDraftSection } from "./SettingsSection";
 
 /** The repository whose chops show, as drawn: the selected worktree's. */
@@ -248,7 +249,14 @@ export function ChopsSection() {
 
 	const onSave = async () => {
 		if (pending === null) return;
-		await commit(pending, () => setChosenUse(null));
+		// A renamed chop keeps its place and star in the chops panel, saved with it, from the order on screen.
+		const renames = pending.chops === undefined ? [] : chopsSectionRenames(saved, fromSaved, drafts);
+		const order = shownChopOrder(store.getState());
+		const chopOrder = renames.length === 0 ? null : renameInArrangements(order, renames);
+		store.noteChopRenames(renames);
+		await commit(chopOrder === null || sameChopArrangements(order, chopOrder) ? pending : { ...pending, chopOrder }, () => setChosenUse(null));
+		// Nothing was renamed when the save failed, so the panel keeps the saved order by the names it lists.
+		if (renames.length > 0 && !samePersonalChops(store.getState().preferences.chops, pending.chops ?? [])) store.noteChopRenames([]);
 	};
 	const view = state.chops !== null && state.chops.repository === repositoryPath ? state.chops.list : null;
 

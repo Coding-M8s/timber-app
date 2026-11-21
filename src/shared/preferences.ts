@@ -1,9 +1,11 @@
 /**
- * The app's own settings, chosen in the Settings dialog: how the app looks and
+ * The app's own settings, chosen in the Settings dialog and in a few places
+ * of the window, such as the chops panel's order: how the app looks and
  * behaves, never how Timber is configured. They are the `preferences` part of
  * the app's settings file. Everything here is pure.
  */
 import { AGENT_PRESETS, type AgentSetting, readAgentSettings, sameAgentSettings, writeAgentSettings } from "./agent";
+import { type ChopArrangements, readChopArrangements, salvageChopArrangements, sameChopArrangements, writeChopArrangements } from "./chop-order";
 import { type PersonalChop, readPersonalChops, salvagePersonalChops, samePersonalChops, writePersonalChops } from "./chops";
 import { type EditorSetting, readEditorSetting, sameEditorSetting, writeEditorSetting } from "./editor";
 import { readCustomThemes, salvageCustomThemes, sameCustomThemes, writeCustomThemes } from "./custom-themes";
@@ -47,6 +49,12 @@ export interface Preferences {
 	 * and keeps `chops` as it is, so turning it on again brings them back.
 	 */
 	useChops: boolean;
+	/**
+	 * The order of each repository's chops in the chops panel, and which are
+	 * favorites, by the primary checkout (./chop-order.ts). Saved by the
+	 * panel, never in the repository. None until a chop is moved or starred.
+	 */
+	chopOrder: ChopArrangements;
 	/** Whether and how often the app fetches every repository in the background. */
 	fetch: FetchSetting;
 	/** How large the interface is drawn, where 1 is the size the window system gives. */
@@ -178,6 +186,13 @@ export const PREFERENCE_PARTS: { [Key in keyof Preferences]: PreferencePart<Pref
 		read: value => typeof value === "boolean" ? value : undefined,
 		same: (one, other) => one === other,
 		write: value => value,
+	},
+	chopOrder: {
+		fallback: () => ({}),
+		read: readChopArrangements,
+		same: sameChopArrangements,
+		write: writeChopArrangements,
+		salvage: salvageChopArrangements,
 	},
 	fetch: {
 		fallback: defaultFetchSetting,

@@ -20,6 +20,7 @@ import type { PortsResult } from "../../shared/ports";
 import { type Layout, type SidePanelView, chooseComparison, chooseIssueList, chosenComparison, clampChopsWidth, clampSidebarWidth, dismissSetup, forgetGroup, forgetRepository, sameLayout, toggleCollapsed, toggleGroupCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RepositoryGroupsResult, ReportedWorktree, SavePreferencesResult, TimberFailure, TimberStatus, Worktree, WorktreeCommandResult } from "../../shared/model";
 import { type Preferences, defaultPreferences } from "../../shared/preferences";
+import type { ChopArrangements, ChopRename } from "../../shared/chop-order";
 import type { IssueLookup } from "../../shared/issues";
 import type { BackupDeleteRequest, BackupDeleteResult, BackupList, BackupRestoreRequest, BackupRestoreResult } from "../../shared/backups";
 import type { ArenaInspection, ArenaList, ArenaPresetList, NewArenaRequest, NewArenaResult, PickArenaRequest, PickArenaResult } from "../../shared/arenas";
@@ -223,6 +224,16 @@ export interface AppStore {
 	 * failed save with the reason.
 	 */
 	savePreferences(change: Partial<Preferences>): Promise<SavePreferencesResult>;
+	/**
+	 * Save the order and favorites of the chops panel as the `chopOrder`
+	 * preference, with any other preferences `also` names in the same save.
+	 * Shown at once (`chopOrderAim`), so a move made before the save answers
+	 * builds on this one. When the latest save fails, the saved order shows
+	 * again, and the result gives the reason.
+	 */
+	saveChopOrder(chopOrder: ChopArrangements, also?: Omit<Partial<Preferences>, "chopOrder">): Promise<SavePreferencesResult>;
+	/** Say that a save about to start renames these chops, so the chops panel keeps their places until the list is read again (`chopRenaming`). */
+	noteChopRenames(renames: readonly ChopRename[]): void;
 	/**
 	 * Zoom one step in or out, or back to 100%, from the keyboard, and save it
 	 * as the zoom preference. Steps taken before a save answers count from
@@ -1350,6 +1361,16 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			preferencesSaved = true;
 			update({ preferences: result.preferences, preferencesProblem: null });
 		}
+		return result;
+	}
+
+	let chopOrderTicket = 0;
+
+	async function saveChopOrder(chopOrder: ChopArrangements, also: Omit<Partial<Preferences>, "chopOrder"> = {}): Promise<SavePreferencesResult> {
+		const ticket = ++chopOrderTicket;
+		update({ chopOrderAim: chopOrder });
+		const result = await savePreferences({ ...also, chopOrder });
+		if (ticket === chopOrderTicket) update({ chopOrderAim: null });
 		return result;
 	}
 
@@ -3250,6 +3271,10 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			if (state.layoutProblem) update({ layoutProblem: null });
 		},
 		savePreferences,
+		saveChopOrder,
+		noteChopRenames(renames) {
+			update({ chopRenaming: renames.length === 0 ? null : { renames, list: state.chops?.list ?? null } });
+		},
 		changeZoom,
 		openInEditor,
 		dismissEditorProblem() {

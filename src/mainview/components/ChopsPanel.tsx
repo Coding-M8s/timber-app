@@ -1,12 +1,16 @@
-import { type KeyboardEvent as ReactKeyboardEvent, type ReactNode, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
-import { type ChopKind, type ChopList, type ListedChop, type PersonalChop, sameChopName } from "../../shared/chops";
+import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, type ReactNode, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import { type ChopArrangement, type ChopArrangements, type ChopPlace, arrangeChops, chopArrangementOf, describeChopAtEnd, describeChopPlace, placeChop, renameInArrangements, stepChop, toggleChopFavorite, withChopArrangement } from "../../shared/chop-order";
+import { type ChopKind, type ChopList, type ListedChop, type PersonalChop, listedChops, sameChopName } from "../../shared/chops";
 import {
-	type ChopForm, type ChopTarget, blankChopForm, chopEditBlockedReason, chopFormNotes, chopFormOf, chopTargetOf, chopsWithSaved, chopsWithout, describeChopDelete, panelChopScopeOptions,
+	type ChopForm, type ChopTarget, blankChopForm, chopEditBlockedReason, chopRenames, chopFormNotes, chopFormOf, chopTargetOf, chopsWithSaved, chopsWithout, describeChopDelete, panelChopScopeOptions,
 } from "../chop-format";
 import {
-	CHOPS_CLOSE_LABEL, CHOPS_FILTER_LABEL, CHOPS_NEW_LABEL, CHOPS_PANEL_ID, CHOPS_PANEL_TITLE, CHOPS_TABS, type ChopRowMenuId, type ChopsPanelRow,
-	chopMatches, chopRowMenuItems, chopRowMenuLabel, chopsNewBlockedReason, chopsPanelModel, chopsTabAfterKey, chopsTabLabel, takesChopsPanelKey,
+	CHOPS_CLOSE_LABEL, CHOPS_FAVORITES_DROP, CHOPS_FAVORITES_HEADING, CHOPS_FILTER_LABEL, CHOPS_NEW_LABEL, CHOPS_PANEL_ID, CHOPS_PANEL_TITLE, CHOPS_REST_HEADING, CHOPS_TABS,
+	MOVE_CHOP_HINT, type ChopRowMenuId, type ChopsPanelRow, chopDropPlace, chopsDragScroll, listedChopArrangement, pendingChopRenames, chopMatches, chopRowMenuItems, chopRowMenuLabel, chopsNewBlockedReason, chopsPanelModel, chopsTabAfterKey, chopsTabLabel,
+	favoriteChopHint, favoriteChopLabel, moveChopLabel, takesChopsPanelKey,
 } from "../chops-panel-format";
+import { DRAG_THRESHOLD, MOVE_REPOSITORY_SHORTCUTS, moveStep } from "../repository-drag";
+import { shownChopOrder } from "../store/state";
 import { runChopIn } from "../palette-run";
 import { useAppState, useStore } from "../store/react";
 import type { AppStore } from "../store/store";
@@ -71,8 +75,18 @@ function subscribePanelEdit(listener: () => void): () => void {
 	return () => panelEditListeners.delete(listener);
 }
 
+/** The controls of a row the keyboard can be sent back to after a move, by their `data-chop-*` attribute. */
+type RowControl = "handle" | "star" | "actions" | "run" | "text";
+const ROW_CONTROLS: readonly RowControl[] = ["handle", "star", "actions", "run", "text"];
+
 /** Where the keyboard goes once the panel is drawn again. */
-type FocusAim = "form" | "cancel" | "close" | "new" | { back: string | null } | { run: string; list: ChopList | null };
+type FocusAim = "form" | "cancel" | "close" | "new" | { back: string | null } | { run: string; list: ChopList | null } | { control: RowControl; name: string };
+
+/** Which control of a row an element is, or the handle when it is none of them. */
+function rowControlOf(element: EventTarget | null): RowControl {
+	if (!(element instanceof HTMLElement)) return "handle";
+	return ROW_CONTROLS.find(control => element.closest(`[data-chop-${control}]`) !== null) ?? "handle";
+}
 
 /** Whether a listed row is the chop being changed, shown, or deleted. */
 function isEditedRow(editing: Editing, chop: ListedChop, repository: string | null): boolean {
@@ -108,6 +122,19 @@ export function ChopsPanel() {
 	const { editing, saving, failure, tried } = useSyncExternalStore(subscribePanelEdit, readPanelEdit, readPanelEdit);
 	const setEditing = (next: Editing | null) => changePanelEdit({ editing: next });
 	const [menu, setMenu] = useState<{ name: string; at: { left: number; top: number }; byKey: boolean } | null>(null);
+	/** What the live region last said about a move or a star, and whether to end it with a no-break space, so the same words said again change the text and are heard again. */
+	const [said, setSaidState] = useState({ text: "", odd: true });
+	const setSaid = (text: string) => setSaidState(last => ({ text, odd: !last.odd }));
+	/** The latest move or star, so only its save's failure is said: a later save holds an earlier one's change. */
+	const arrangeTicket = useRef(0);
+	const [drag, setDrag] = useState<{ name: string; place: ChopPlace } | null>(null);
+	const press = useRef<{ name: string; pointerId: number; startY: number; dragging: boolean } | null>(null);
+	/** Where the pointer of a drag is, and the frame that scrolls the list for it, if one waits. */
+	const pointerY = useRef(0);
+	const scrollFrame = useRef<number | null>(null);
+	const showDropRef = useRef<((name: string, y: number) => void) | null>(null);
+	const restHeadingRef = useRef<HTMLHeadingElement>(null);
+	const dropZoneRef = useRef<HTMLParagraphElement>(null);
 	const focusNext = useRef<FocusAim | null>(null);
 	const nameRef = useRef<HTMLInputElement>(null);
 	const cancelRef = useRef<HTMLButtonElement>(null);
@@ -135,7 +162,10 @@ export function ChopsPanel() {
 		else if (aim === "cancel") target = cancelRef.current;
 		else if (aim === "close") target = closeRef.current;
 		else if (aim === "new") target = newRef.current;
-		else if ("back" in aim) {
+		else if ("control" in aim) {
+			const controls = panelElement()?.querySelectorAll<HTMLElement>(`[data-chop-${aim.control}]`) ?? [];
+			target = [...controls].find(control => sameChopName(control.getAttribute(`data-chop-${aim.control}`) ?? "", aim.name)) ?? null;
+		} else if ("back" in aim) {
 			// Back to the row it was opened from, whose actions button is drawn again once the row is.
 			const buttons = panelElement()?.querySelectorAll<HTMLElement>("[data-chop-actions]") ?? [];
 			target = [...buttons].find(button => aim.back !== null && sameChopName(button.dataset.chopActions ?? "", aim.back)) ?? newRef.current;
@@ -219,10 +249,12 @@ export function ChopsPanel() {
 		focusNext.current = { back: editing.mode === "new" ? null : editing.mode === "view" ? editing.name : editing.target.name };
 		setEditing(null);
 	};
-	const persist = async (chops: PersonalChop[], repository: string, done: () => void) => {
+	const persist = async (chops: PersonalChop[], repository: string, done: () => void, chopOrder: ChopArrangements | null = null) => {
 		changePanelEdit({ saving: true, failure: null });
-		const result = await store.savePreferences({ chops });
+		const result = chopOrder === null ? await store.savePreferences({ chops }) : await store.saveChopOrder(chopOrder, { chops });
 		if (result.outcome !== "saved") {
+			// Nothing was renamed, so the rows keep the saved order by their names.
+			store.noteChopRenames([]);
 			changePanelEdit({ saving: false, failure: result.message });
 			return;
 		}
@@ -248,13 +280,18 @@ export function ChopsPanel() {
 			return;
 		}
 		const listAtSave = model.list;
+		// A renamed chop keeps its place and its star, saved with it, from the order on screen.
+		const order = shownChopOrder(store.getState());
+		const renames = original === null ? [] : chopRenames(now.chops, [{ from: original, to: now.chop }]);
+		const renamed = renames.length === 0 ? null : renameInArrangements(order, renames);
+		store.noteChopRenames(renames);
 		void persist(now.chops, editing.repository.path, () => {
 			changePanelEdit({ tried: false });
 			setTab(now.chop.kind);
 			if (!chopMatches(now.chop, query)) setQuery("");
 			focusNext.current = { run: now.chop.name, list: listAtSave };
 			setEditing(null);
-		});
+		}, renamed);
 	};
 	const remove = () => {
 		if (editing?.mode !== "delete" || panelEdit.saving || editBlocked !== null) return;
@@ -268,6 +305,135 @@ export function ChopsPanel() {
 			setEditing(null);
 		});
 	};
+
+	/**
+	 * Move or star a chop: the order on screen changes at once and is saved
+	 * as the `chopOrder` preference, never in the repository. The live region
+	 * says where the chop is now, and the keyboard goes back to the control
+	 * that had it.
+	 */
+	const arrange = (name: string, change: (chops: readonly ListedChop[], arrangement: ChopArrangement) => ChopArrangement, control: RowControl) => {
+		const repository = model.repository;
+		if (repository === null || panelEdit.saving) return;
+		if (editBlocked !== null) {
+			setSaid(editBlocked);
+			return;
+		}
+		// From the store, not from the last render: keys can arrive faster than the panel is drawn again.
+		const order = shownChopOrder(store.getState());
+		const chops = listedChops(model.list);
+		// By the names listed, also for a chop renamed but not read again yet; saved under the new names.
+		const renames = pendingChopRenames(store.getState(), model.list);
+		const listedNext = change(chops, listedChopArrangement(store.getState(), repository, model.list));
+		const next = renames.length === 0 ? listedNext : chopArrangementOf(renameInArrangements({ [repository]: listedNext }, renames), repository);
+		const shown = arrangeChops(chops, listedNext).filter(({ chop }) => chop.kind === tab && chopMatches(chop, query));
+		focusNext.current = { control, name };
+		setSaid(describeChopPlace(shown, name));
+		const ticket = ++arrangeTicket.current;
+		void store.saveChopOrder(withChopArrangement(order, repository, next)).then(result => {
+			if (result.outcome !== "saved" && ticket === arrangeTicket.current) setSaid(`The order of the chops could not be saved: ${result.message}`);
+		});
+	};
+	const place = (name: string, at: ChopPlace, control: RowControl) => arrange(name, (chops, arrangement) => placeChop(chops, arrangement, name, at), control);
+	const toggleFavorite = (name: string) => arrange(name, (chops, arrangement) => toggleChopFavorite(chops, arrangement, name), "star");
+	const onRowStep = (row: ChopsPanelRow, step: -1 | 1, from: EventTarget | null) => {
+		// From the store, as `arrange` reads it: a second key can come before the panel is drawn again.
+		const now = chopsPanelModel(store.getState(), tab, query);
+		const at = stepChop(now.arranged, now.rows, row.chop.name, step);
+		if (at === null) setSaid(describeChopAtEnd(row.chop.name, row.favorite, step));
+		else place(row.chop.name, at, rowControlOf(from));
+	};
+
+	// Dragging a row by its handle: a line shows where it will land, and a drop above the rest's heading pins it.
+	const dropPlaceAt = (name: string, y: number): ChopPlace => {
+		const slots = model.rows.filter(row => row.chop.name !== name).flatMap(row => {
+			const box = panelElement()?.querySelector<HTMLElement>(`[data-chop-row="${CSS.escape(row.chop.name)}"]`)?.getBoundingClientRect();
+			return box === undefined ? [] : [{ name: row.chop.name, favorite: row.favorite, middle: box.top + box.height / 2 }];
+		});
+		const heading = restHeadingRef.current?.getBoundingClientRect();
+		const zone = dropZoneRef.current?.getBoundingClientRect();
+		const line = heading !== undefined ? heading.top + heading.height / 2 : zone !== undefined ? zone.bottom : null;
+		return chopDropPlace(slots, line, y);
+	};
+	const onHandlePointerDown = (name: string, event: PointerEvent<HTMLButtonElement>) => {
+		if (event.button !== 0 || editBlocked !== null || panelEdit.saving) return;
+		press.current = { name, pointerId: event.pointerId, startY: event.clientY, dragging: false };
+	};
+	const onHandlePointerMove = (event: PointerEvent<HTMLButtonElement>) => {
+		const current = press.current;
+		if (!current || current.pointerId !== event.pointerId) return;
+		// Let go somewhere the handle did not hear, such as beside it before the drag began: the press is over.
+		if (event.buttons === 0) {
+			onHandlePointerCancel();
+			return;
+		}
+		if (!current.dragging) {
+			if (Math.abs(event.clientY - current.startY) < DRAG_THRESHOLD) return;
+			current.dragging = true;
+			event.currentTarget.setPointerCapture(event.pointerId);
+		}
+		pointerY.current = event.clientY;
+		showDropAt(current.name, event.clientY);
+		if (scrollFrame.current === null) scrollFrame.current = requestAnimationFrame(scrollWhileDragging);
+	};
+	/** Show where a dragged chop would land for a pointer at `y`. */
+	const showDropAt = (name: string, y: number) => {
+		const at = dropPlaceAt(name, y);
+		setDrag(last => last?.name === name && last.place.favorite === at.favorite && last.place.before === at.before ? last : { name, place: at });
+	};
+	// The latest render's, for the frame loop below, which outlives the render that started it.
+	showDropRef.current = showDropAt;
+	const onHandlePointerUp = (event: PointerEvent<HTMLButtonElement>) => {
+		const current = press.current;
+		if (!current || current.pointerId !== event.pointerId) return;
+		press.current = null;
+		setDrag(null);
+		if (current.dragging) place(current.name, dropPlaceAt(current.name, event.clientY), "handle");
+	};
+	function onHandlePointerCancel() {
+		press.current = null;
+		setDrag(null);
+	}
+	/**
+	 * While a chop is dragged near the top or bottom of the list, or past
+	 * it, the list scrolls a little each frame (`chopsDragScroll`), so a chop
+	 * can go anywhere in a long list, and where it would land follows.
+	 */
+	function scrollWhileDragging() {
+		scrollFrame.current = null;
+		const current = press.current;
+		const body = panelElement()?.querySelector<HTMLElement>(".chops-panel-body");
+		if (!current?.dragging || !body) return;
+		const box = body.getBoundingClientRect();
+		const step = chopsDragScroll(pointerY.current, box.top, box.bottom);
+		if (step === 0) return;
+		const before = body.scrollTop;
+		body.scrollTop = before + step;
+		if (body.scrollTop === before) return;
+		showDropRef.current?.(current.name, pointerY.current);
+		scrollFrame.current = requestAnimationFrame(scrollWhileDragging);
+	}
+	// While a handle is pressed: a release the handle did not hear ends the press, and Escape puts a drag away, wherever the keyboard is.
+	useEffect(() => {
+		const onUp = (event: globalThis.PointerEvent) => {
+			if (press.current?.pointerId === event.pointerId) onHandlePointerCancel();
+		};
+		const onKey = (event: KeyboardEvent) => {
+			if (event.key !== "Escape" || !press.current?.dragging) return;
+			event.preventDefault();
+			event.stopPropagation();
+			onHandlePointerCancel();
+		};
+		window.addEventListener("pointerup", onUp);
+		window.addEventListener("pointercancel", onUp);
+		window.addEventListener("keydown", onKey, true);
+		return () => {
+			if (scrollFrame.current !== null) cancelAnimationFrame(scrollFrame.current);
+			window.removeEventListener("pointerup", onUp);
+			window.removeEventListener("pointercancel", onUp);
+			window.removeEventListener("keydown", onKey, true);
+		};
+	}, []);
 
 	const editorId = `${baseId}-editor`;
 	const editor = (): ReactNode => {
@@ -346,6 +512,133 @@ export function ChopsPanel() {
 		return index === -1 ? null : document.getElementById(actionsId(index));
 	};
 
+	// Each row's ids count across both parts, so they stay unique.
+	const favoriteRows = model.rows.filter(row => row.favorite);
+	const otherRows = model.rows.filter(row => !row.favorite);
+	const lastOf = (rows: readonly ChopsPanelRow[]) => rows.at(-1)?.chop.name ?? null;
+	const rowClass = (row: ChopsPanelRow) => {
+		const names = ["chops-panel-item"];
+		if (drag === null) return names[0];
+		if (drag.name === row.chop.name) names.push("dragging");
+		if (drag.place.favorite === row.favorite && drag.place.before !== null && sameChopName(drag.place.before, row.chop.name)) names.push("drop-before");
+		if (drag.place.before === null && drag.place.favorite === row.favorite && lastOf(row.favorite ? favoriteRows : otherRows) === row.chop.name) names.push("drop-after");
+		return names.join(" ");
+	};
+	const dropAfterHeading = drag !== null && !drag.place.favorite && drag.place.before === null && otherRows.length === 0;
+	const renderRow = (row: ChopsPanelRow) => {
+		const index = model.rows.indexOf(row);
+		return (
+			<li
+				key={row.chop.name}
+				data-chop-row={row.chop.name}
+				className={rowClass(row)}
+				onContextMenu={event => {
+					if (index === editedIndex) return;
+					event.preventDefault();
+					// A browser may follow Shift+F10 with a contextmenu event; the menu the key opened stays where it is.
+					if (menu?.byKey && menu.name === row.chop.name) return;
+					openMenuAt(row, { left: event.clientX, top: event.clientY }, false);
+				}}
+				onKeyDown={event => {
+					if (index === editedIndex) return;
+					const step = moveStep(event);
+					if (step !== 0) {
+						event.preventDefault();
+						onRowStep(row, step, event.target);
+						return;
+					}
+					if (!opensWorktreeMenu(event)) return;
+					event.preventDefault();
+					const box = document.getElementById(actionsId(index))?.getBoundingClientRect();
+					openMenuAt(row, { left: box?.left ?? 0, top: box?.bottom ?? 0 }, true);
+				}}
+			>
+				{index === editedIndex ? editor() : (
+					<>
+						<div className="chops-panel-row">
+							<button
+								type="button"
+								className="icon-button chops-panel-handle"
+								data-chop-handle={row.chop.name}
+								aria-label={moveChopLabel(row.chop.name)}
+								aria-keyshortcuts={MOVE_REPOSITORY_SHORTCUTS}
+								aria-disabled={editBlocked !== null}
+								title={editBlocked ?? MOVE_CHOP_HINT}
+								onPointerDown={event => onHandlePointerDown(row.chop.name, event)}
+								onPointerMove={onHandlePointerMove}
+								onPointerUp={onHandlePointerUp}
+								onPointerCancel={onHandlePointerCancel}
+								onLostPointerCapture={onHandlePointerCancel}
+							>
+								<svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+									<circle cx="6" cy="4" r="1.1" />
+									<circle cx="10" cy="4" r="1.1" />
+									<circle cx="6" cy="8" r="1.1" />
+									<circle cx="10" cy="8" r="1.1" />
+									<circle cx="6" cy="12" r="1.1" />
+									<circle cx="10" cy="12" r="1.1" />
+								</svg>
+							</button>
+							<button
+								type="button"
+								className={row.favorite ? "icon-button chops-panel-star favorite" : "icon-button chops-panel-star"}
+								data-chop-star={row.chop.name}
+								aria-label={favoriteChopLabel(row.chop.name)}
+								aria-pressed={row.favorite}
+								aria-disabled={editBlocked !== null}
+								title={editBlocked ?? favoriteChopHint(row.favorite)}
+								onClick={() => toggleFavorite(row.chop.name)}
+							>
+								<svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill={row.favorite ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round">
+									<path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z" />
+								</svg>
+							</button>
+							<p className="chop-item-head" title={row.chop.source === "repository-file" ? "Double-click to view" : "Double-click to edit"} onDoubleClick={() => openChop(row.chop, "edit")}>
+								<span className="chop-item-name">{row.chop.name}</span>{" "}
+								<span className="chop-item-meta" title={row.sourceTitle}>{row.source}</span>
+							</p>
+							<button
+								type="button"
+								id={actionsId(index)}
+								data-chop-actions={row.chop.name}
+								className="icon-button chops-panel-actions"
+								aria-label={chopRowMenuLabel(row.chop.name)}
+								aria-haspopup="menu"
+								aria-expanded={menu?.name === row.chop.name}
+								aria-keyshortcuts={WORKTREE_MENU_SHORTCUTS}
+								title={chopRowMenuLabel(row.chop.name)}
+								onClick={event => {
+									const box = event.currentTarget.getBoundingClientRect();
+									openMenuAt(row, { left: box.left, top: box.bottom }, false);
+								}}
+							>
+								<svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+									<circle cx="3.5" cy="8" r="1.25" />
+									<circle cx="8" cy="8" r="1.25" />
+									<circle cx="12.5" cy="8" r="1.25" />
+								</svg>
+							</button>
+							<button
+								type="button"
+								className="button quiet chops-panel-run"
+								data-chop-run={row.chop.name}
+								aria-label={row.label}
+								aria-disabled={model.blocked !== null}
+								aria-describedby={`${textId(index)} ${footerId}`}
+								title={model.blocked ?? row.label}
+								onClick={event => choose(row, event.detail)}
+							>
+								{row.word}
+							</button>
+						</div>
+						{/* Focusable, so a long text that scrolls can be read by keyboard before it runs. */}
+						<pre id={textId(index)} className="chops-panel-text" data-chop-text={row.chop.name} tabIndex={0}>{row.chop.text}</pre>
+					</>
+				)}
+			</li>
+		);
+	};
+
 	const listed = model.failure === null && model.empty === null;
 	return (
 		<aside id={CHOPS_PANEL_ID} className="chops-panel" data-view="chops" aria-labelledby={titleId} tabIndex={-1}>
@@ -411,79 +704,31 @@ export function ChopsPanel() {
 				{listed && (
 					<div id={listId} role="tabpanel" aria-labelledby={tabId(tab)}>
 						<p className="dialog-note chops-panel-none" role="status">{model.tabEmpty ?? ""}</p>
-						{model.rows.length > 0 && (
-							<ul className="chops-panel-list" aria-label={`${chopsTabLabel(tab)} of ${repositoryName}`}>
-								{model.rows.map((row, index) => (
-									<li
-										key={row.chop.name}
-										className="chops-panel-item"
-										onContextMenu={event => {
-											if (index === editedIndex) return;
-											event.preventDefault();
-											// A browser may follow Shift+F10 with a contextmenu event; the menu the key opened stays where it is.
-											if (menu?.byKey && menu.name === row.chop.name) return;
-											openMenuAt(row, { left: event.clientX, top: event.clientY }, false);
-										}}
-										onKeyDown={event => {
-											if (index === editedIndex || !opensWorktreeMenu(event)) return;
-											event.preventDefault();
-											const box = document.getElementById(actionsId(index))?.getBoundingClientRect();
-											openMenuAt(row, { left: box?.left ?? 0, top: box?.bottom ?? 0 }, true);
-										}}
-									>
-										{index === editedIndex ? editor() : (
-											<>
-												<div className="chops-panel-row">
-													<p className="chop-item-head" title={row.chop.source === "repository-file" ? "Double-click to view" : "Double-click to edit"} onDoubleClick={() => openChop(row.chop, "edit")}>
-														<span className="chop-item-name">{row.chop.name}</span>{" "}
-														<span className="chop-item-meta" title={row.sourceTitle}>{row.source}</span>
-													</p>
-													<button
-														type="button"
-														id={actionsId(index)}
-														data-chop-actions={row.chop.name}
-														className="icon-button chops-panel-actions"
-														aria-label={chopRowMenuLabel(row.chop.name)}
-														aria-haspopup="menu"
-														aria-expanded={menu?.name === row.chop.name}
-														aria-keyshortcuts={WORKTREE_MENU_SHORTCUTS}
-														title={chopRowMenuLabel(row.chop.name)}
-														onClick={event => {
-															const box = event.currentTarget.getBoundingClientRect();
-															openMenuAt(row, { left: box.left, top: box.bottom }, false);
-														}}
-													>
-														<svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-															<circle cx="3.5" cy="8" r="1.25" />
-															<circle cx="8" cy="8" r="1.25" />
-															<circle cx="12.5" cy="8" r="1.25" />
-														</svg>
-													</button>
-													<button
-														type="button"
-														className="button quiet chops-panel-run"
-														data-chop-run={row.chop.name}
-														aria-label={row.label}
-														aria-disabled={model.blocked !== null}
-														aria-describedby={`${textId(index)} ${footerId}`}
-														title={model.blocked ?? row.label}
-														onClick={event => choose(row, event.detail)}
-													>
-														{row.word}
-													</button>
-												</div>
-												{/* Focusable, so a long text that scrolls can be read by keyboard before it runs. */}
-												<pre id={textId(index)} className="chops-panel-text" tabIndex={0}>{row.chop.text}</pre>
-											</>
-										)}
-									</li>
-								))}
-							</ul>
-						)}
+							{favoriteRows.length === 0 && drag !== null && (
+								<p ref={dropZoneRef} className={drag.place.favorite ? "chops-panel-drop active" : "chops-panel-drop"}>{CHOPS_FAVORITES_DROP}</p>
+							)}
+							{favoriteRows.length > 0 && (
+								<>
+									<h3 className="chops-panel-section">{CHOPS_FAVORITES_HEADING}</h3>
+									<ul className="chops-panel-list" aria-label={`Favorite ${chopsTabLabel(tab).toLowerCase()} of ${repositoryName}`}>
+										{favoriteRows.map(renderRow)}
+									</ul>
+									{/* With every chop of the tab a favorite, only while dragging, as the place to drop one out of Favorites. */}
+									{(otherRows.length > 0 || drag !== null) && (
+										<h3 ref={restHeadingRef} className={dropAfterHeading ? "chops-panel-section drop-after" : "chops-panel-section"}>{CHOPS_REST_HEADING}</h3>
+									)}
+								</>
+							)}
+							{otherRows.length > 0 && (
+								<ul className="chops-panel-list" aria-label={`${favoriteRows.length > 0 ? "Other " + chopsTabLabel(tab).toLowerCase() : chopsTabLabel(tab)} of ${repositoryName}`}>
+									{otherRows.map(renderRow)}
+								</ul>
+							)}
 					</div>
 				)}
 			</div>
 			{listed && <p id={footerId} className="chops-panel-footer">{model.footer}</p>}
+			<p className="visually-hidden" role="status" aria-live="polite">{said.text === "" ? "" : `${said.text}${said.odd ? "\u00a0" : ""}`}</p>
 			{menu !== null && menuRow !== null && (
 				<WorktreeMenu<ChopRowMenuId>
 					label={chopRowMenuLabel(menuRow.chop.name)}

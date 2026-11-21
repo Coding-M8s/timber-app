@@ -93,8 +93,30 @@ change them here first when they change.
   never the repository file; with the saved settings unreadable, the panel
   changes nothing and says why. A chop for every repository hidden by one
   of the same name for this repository is not listed, so it is changed in
-  Settings. With no chops, the panel says so and offers New chop. Sounds,
-  favorites, and ordering come later (#253, #254). "Use chops" in
+  Settings. With no chops, the panel says so and offers New chop. Each
+  row starts with a drag handle and a star. The star pins a chop to
+  Favorites, listed first under a "Favorites" heading, with the rest under
+  "Other chops" (shown with nothing under it only while dragging, as a
+  place to drop); starring puts it last in Favorites, and unstarring puts
+  it first in the rest. Dragging the handle moves a chop, with a line where
+  it will land; dropping it above "Other chops", or on the drop zone shown
+  at the top while no favorite shows, pins it, and Escape puts the drag
+  away. Dragged near the top or bottom of the list, or past it, the list
+  scrolls, faster nearer the edge, so a chop can go anywhere in a long
+  list. Alt+Up and Alt+Down move
+  the focused row one place within its part, never across it, and the
+  keyboard stays on the control that had it. A screen reader hears the new
+  place ("Deploy, 2 of 4 in Favorites."), or that the chop is already
+  first or last, also when the same words are said again. Commands and prompts share one order. The order and the
+  favorites are kept for each repository in the app's settings, never in
+  the repository, so a `.timber/chops.json` chop can be starred and moved
+  and the file never changes; with the saved settings unreadable, nothing
+  moves and the panel says why. Renaming a chop, in the panel or in
+  Settings, Chops, keeps its place and star, also while the list is read
+  again; renamed to a name the order held before, such as a deleted
+  chop's, it keeps its own place, not that one. A chop deleted and made
+  again with the same name gets its place and star back. The palette, the "+" menu, and "Insert chop" keep the
+  listed order. Sounds come later (#254). "Use chops" in
   Settings, Chops, turns the feature off: no button, panel, or chop
   shortcut, and no chops in the palette, the "+" menu, the empty pane, or
   "Insert chop". The saved chops are kept. The mock's Ctrl+Alt+C was a

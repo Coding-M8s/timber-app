@@ -1,9 +1,10 @@
+import { type ArrangedChop, type ChopArrangement, type ChopRename, NO_CHOP_ARRANGEMENT, arrangeChops, chopArrangementOf, renameInArrangements } from "../shared/chop-order";
 import { type ChopKind, type ChopList, type ChopSource, type ListedChop, listedChops } from "../shared/chops";
 import { promptTarget } from "./agent-sessions";
 import { type ChopAction, chopAction, chopButtonLabel, describeChopSource } from "./chop-format";
 import { worktreeLabel } from "./format";
 import { chopBlockedReason, chopPlace } from "./palette";
-import { type AppState, canToggleChopsPanel, offeredChops, selectedWorktree } from "./store/state";
+import { type AppState, canToggleChopsPanel, offeredChops, selectedWorktree, shownChopOrder } from "./store/state";
 
 /**
  * Words and keys of the chops panel: the title bar's Chops button, the
@@ -143,7 +144,7 @@ export function chopRunWord(action: ChopAction): string {
 	}
 }
 
-export interface ChopsPanelRow {
+export interface ChopsPanelRow extends ArrangedChop {
 	chop: ListedChop;
 	/** Where it comes from, short, and in full for the tooltip. */
 	source: string;
@@ -167,7 +168,11 @@ export interface ChopsPanelModel {
 	reading: boolean;
 	/** How many chops of each kind, whatever the filter. */
 	counts: Record<ChopKind, number>;
-	/** The chops of the tab that match the filter, in listed order. */
+	/** The repository's order and favorites, as shown now. Empty when no repository's chops are listed. */
+	arrangement: ChopArrangement;
+	/** Every chop listed, both kinds, favorites first, in the person's order (`arrangeChops`). */
+	arranged: ArrangedChop[];
+	/** The chops of the tab that match the filter, in the person's order: favorites first. */
 	rows: ChopsPanelRow[];
 	/** What the tab says when `rows` is empty, or null. */
 	tabEmpty: string | null;
@@ -219,10 +224,14 @@ export function chopsPanelModel(state: AppState, tab: ChopKind, query: string): 
 	for (const chop of chops) counts[chop.kind] += 1;
 	const action = chopAction(tab, state.preferences.agents.length);
 	const blocked = chopBlockedReason(action, chopPlace(state));
-	const rows = chops
-		.filter(chop => chop.kind === tab && chopMatches(chop, query))
-		.map(chop => ({
+	const repository = read?.repository ?? null;
+	const arrangement = repository === null ? NO_CHOP_ARRANGEMENT : listedChopArrangement(state, repository, list);
+	const arranged = arrangeChops(chops, arrangement);
+	const rows = arranged
+		.filter(({ chop }) => chop.kind === tab && chopMatches(chop, query))
+		.map(({ chop, favorite }) => ({
 			chop,
+			favorite,
 			source: chopSourceShort(chop.source),
 			sourceTitle: describeChopSource(chop.source),
 			action,
@@ -230,12 +239,14 @@ export function chopsPanelModel(state: AppState, tab: ChopKind, query: string): 
 			label: chopButtonLabel(chop.name, action),
 		}));
 	return {
-		repository: read?.repository ?? null,
+		repository,
 		list,
 		failure,
 		empty,
 		reading: selected !== null && list === null,
 		counts,
+		arrangement,
+		arranged,
 		rows,
 		tabEmpty: chops.length > 0 && rows.length === 0 ? describeChopsTabEmpty(tab, query) : null,
 		blocked,
@@ -274,4 +285,87 @@ export function chopRowMenuItems(source: ChopSource, editBlocked: string | null)
 		{ id: "edit", label: "Edit", disabled: off, note: editBlocked, title: editBlocked ?? "Change it here. Settings shows the same chops." },
 		{ id: "delete", label: "Delete", disabled: off, note: null, title: editBlocked ?? "Asks first." },
 	];
+}
+
+/** The hint a row's handle gives in its tooltip. */
+export const MOVE_CHOP_HINT = "Drag to reorder, or press Alt+Up or Alt+Down. Drop into Favorites to pin it.";
+
+/** The label of a row's drag handle. */
+export function moveChopLabel(name: string): string {
+	return `Move ${name}`;
+}
+
+/** The label of a row's star, a toggle that says whether the chop is a favorite with `aria-pressed`. */
+export function favoriteChopLabel(name: string): string {
+	return `Favorite ${name}`;
+}
+
+/** What a starred or unstarred chop's star says in its tooltip. */
+export function favoriteChopHint(favorite: boolean): string {
+	return favorite ? "Unpin from Favorites" : "Pin to Favorites, at the top of its tab";
+}
+
+export const CHOPS_FAVORITES_HEADING = "Favorites";
+export const CHOPS_REST_HEADING = "Other chops";
+/** What the drop zone at the top says while a chop is dragged and no favorite shows. */
+export const CHOPS_FAVORITES_DROP = "Drop here to pin to Favorites";
+
+/** A row the pointer can be over while a chop is dragged, top to bottom as shown: its part and its vertical middle. */
+export interface ChopDropSlot {
+	name: string;
+	favorite: boolean;
+	middle: number;
+}
+
+/**
+ * Where a dragged chop lands for a pointer at `y`. `slots` never include
+ * the dragged chop. `line` is where Favorites end and the rest begins: the
+ * middle of the rest's heading, or the bottom of the drop zone shown while
+ * no favorite does; null for no Favorites to drop into. Above it lands in Favorites, which pins the chop;
+ * below it, in the rest. Within its part, above a row's middle lands
+ * before that row, and past the last row at the end of the part.
+ */
+export function chopDropPlace(slots: readonly ChopDropSlot[], line: number | null, y: number): { favorite: boolean; before: string | null } {
+	const favorite = line !== null && y < line;
+	const before = slots.find(slot => slot.favorite === favorite && y < slot.middle);
+	return { favorite, before: before?.name ?? null };
+}
+
+/** The renames still waiting for the chop list to be read again: the list shown is the one they were saved against. Empty otherwise. */
+export function pendingChopRenames(state: Pick<AppState, "chopRenaming">, list: ChopList | null): readonly ChopRename[] {
+	const renaming = state.chopRenaming;
+	return renaming !== null && renaming.list === list ? renaming.renames : [];
+}
+
+/**
+ * A repository's order by the names `list` shows: the order on screen,
+ * with chops renamed but still listed under their old names
+ * (`pendingChopRenames`) found by those names, so a row does not jump
+ * until the list is read again.
+ */
+export function listedChopArrangement(state: Pick<AppState, "chopRenaming" | "chopOrderAim" | "preferences">, repository: string, list: ChopList | null): ChopArrangement {
+	const saved = chopArrangementOf(shownChopOrder(state), repository);
+	const renames = pendingChopRenames(state, list);
+	if (renames.length === 0) return saved;
+	return chopArrangementOf(renameInArrangements({ [repository]: saved }, renames.map(rename => ({ ...rename, from: rename.to, to: rename.from }))), repository);
+}
+
+/** How near, in pixels, to the top or bottom of the panel's list a dragged chop scrolls it. */
+export const CHOPS_DRAG_SCROLL_EDGE = 32;
+/** The most the list scrolls in one frame while a chop is dragged, in pixels. */
+export const CHOPS_DRAG_SCROLL_STEP = 12;
+
+/**
+ * How far the panel's list scrolls this frame while a chop is dragged with
+ * the pointer at `y`: up near its top, down near its bottom, faster the
+ * nearer the edge, and also past the edge. The list's box runs from `top`
+ * to `bottom`. Zero away from the edges.
+ */
+export function chopsDragScroll(y: number, top: number, bottom: number): number {
+	const edge = Math.min(CHOPS_DRAG_SCROLL_EDGE, (bottom - top) / 2);
+	if (edge <= 0) return 0;
+	const speed = (depth: number) => Math.ceil(CHOPS_DRAG_SCROLL_STEP * Math.min(1, depth / edge));
+	if (y < top + edge) return -speed(top + edge - y);
+	if (y > bottom - edge) return speed(y - (bottom - edge));
+	return 0;
 }
