@@ -139,11 +139,18 @@ Timber's safety logic must exist once. The app follows two rules:
    [watching for changes](#watching-for-changes)). Git is invoked as an
    executable plus an argument array.
 
-One thing is not read-only and does not go through Timber: **fetching** (see
-[fetching](#fetching)). It writes only remote-tracking refs (`refs/remotes/`),
-which Timber neither owns nor checks, and never a local branch, a tag, the
-index, or a working tree. Timber has no fetch of its own to call. Everything
-else that writes still goes through Timber.
+Two things are not read-only and do not go through Timber, because Timber
+has no command for them:
+
+- **Fetching** (see [fetching](#fetching)). It writes only remote-tracking
+  refs (`refs/remotes/`), which Timber neither owns nor checks, and never a
+  local branch, a tag, the index, or a working tree.
+- **Sync actions** (see [sync actions](#sync-actions)), started from a
+  worktree's row: today Pull, which fetches and then fast-forwards the
+  worktree's branch to its upstream. It never creates, rebases, or removes
+  a worktree, never makes a merge commit, and never rewrites a branch.
+
+Everything else that writes still goes through Timber.
 
 Timber itself rules out GUI work, a daemon, and a local API inside its own
 repository. That is why this is a separate repository, and why the app's
@@ -1025,9 +1032,12 @@ repository through the path described [above](#shared-state-and-live-updates).
 
 Ahead and behind counts, "upstream gone", and "force-pushed" are only as
 good as the last fetch. So the app fetches every repository in the list, in
-the background and when asked, without anyone fetching by hand. This is the
-one place where the app writes to a repository without Timber, and it
-writes only remote-tracking refs.
+the background and when asked, without anyone fetching by hand. The
+fetcher's own fetches write only remote-tracking refs. Pull's fetch (see
+[sync actions](#sync-actions)) takes the same turn but runs the plain `git
+fetch <remote>` it showed, so, like a fetch typed in a terminal, it follows
+the remote's configured refspecs and may also fetch tags and write
+`FETCH_HEAD`.
 
 - **When (`src/bun/fetcher.ts`).** Each repository is fetched about 10
   seconds after the app starts or the repository is added, 5 seconds apart
@@ -1124,6 +1134,77 @@ writes only remote-tracking refs.
   latest failure) goes to the window directly as `fetchChanged`, without a
   reload. "Fetch now" on a repository's header runs a fetch whether or not
   background fetching is on; one that worked says so in a toast.
+
+## Sync actions
+
+A sync action brings a worktree's branch and its upstream together from the
+worktree's row. Pull is the first. The seam is built so push (issue 261) is
+one more entry in each table below, with its runner, and no new interface
+plumbing.
+
+- **The table (`src/shared/sync-actions.ts`).** Pure. `SYNC_ACTIONS` gives,
+  for each action, its steps (`syncActionSteps`: Git arguments, and whether
+  a step reaches a remote) and when it is offered (`syncActionApplies`).
+  `readPullRuns` reads what Git printed into a `SyncActionResult`: done
+  (`moved` says whether the branch moved, and `fetchFailure` that the fetch
+  did not work), refused (diverged, local changes, or other, with Git's
+  words), or failed. The steps name the branch's remote and the upstream's
+  full ref, which the list reads with each branch's sync state (`remote` and
+  `upstreamRef` on `SyncState`, from `%(upstream:remotename)` and
+  `%(upstream)`).
+- **The contract.** `Engine.runSyncAction` takes the action, the repository,
+  the worktree's registered path, and the target (remote and upstream ref)
+  the shown commands named. `src/shared/rpc.ts` gives it no time limit.
+- **The runner (`src/bun/sync-actions.ts`).** One runner per action. Each
+  run is in the repository's turn (`src/bun/repository-turns.ts`), so it
+  never overlaps a rebase or another command there, and only for a worktree
+  Timber lists right now, on a branch whose remote and upstream are still
+  the ones shown: otherwise nothing runs and the result says so. Git runs
+  as an executable plus arguments in the worktree's folder, with the
+  never-asking environment of `src/bun/fetch-git.ts`.
+- **Pull.** Two steps, shown before they run:
+  1. `git fetch <remote>`, run through `Fetcher.fetchWith`: after the fetch
+     of that repository that runs, never beside it, and followed by the
+     same before-and-after check, so a force-push it brings in is marked
+     and the repository is reported changed. One that fails shows on the
+     repository's header like any failed fetch ("offline", "sign-in needed",
+     or "fetch failed", with Git's words in its tooltip) until a fetch works.
+     One that works fetched a single remote, so it does not count as a fetch
+     that worked and clears no earlier failure. The
+     arguments are exactly the ones shown, so the remote's own configured
+     refspecs apply, as for a `git pull` typed in a terminal: it may also
+     fetch tags and write `FETCH_HEAD`, which the background fetch never
+     does.
+  2. `git merge --ff-only --no-autostash <upstream ref>`, even when the
+     fetch failed: it then fast-forwards to the commits of the last fetch
+     that worked, which are the ones the behind count was made from, and
+     the result notes the fetch failure with Git's words.
+  Online this is `git pull --ff-only`. `--no-autostash` keeps a configured
+  `merge.autostash` from putting local changes away and back: when they are
+  in the way, Git refuses and leaves them. A branch that diverged is
+  refused by Git, with its message and a note pointing to Rebase. Any
+  other stop is reported as a failure that may have changed files, with
+  Git's words and a note to check the worktree, never as "nothing changed". The
+  fast-forward is stopped after 10 minutes, as a fetch is, since it
+  updates files and runs hooks.
+- **When it is offered.** Pull is offered for a branch that is behind and not
+  ahead, whose upstream is a remote-tracking branch that was not marked
+  force-pushed. Not for a diverged, force-pushed, gone, unpublished, or
+  detached branch, and not while Timber removes the worktree.
+- **The interface.** `src/mainview/sync-action-format.ts` has each
+  action's words, the row's control (`describeSyncControls`), the dialog's
+  commands, and how a result is told. On the row, the behind count becomes
+  a button beside the row's own button (the row is a button, so it cannot
+  hold one), drawn where the marker was; the marker's sentence stays in
+  the row's description. The worktree menu and the command palette list
+  Pull while it applies. Each opens `SyncActionDialog`, an `OperationDialog`
+  that shows both commands, the second as a follow-up. A pull that worked
+  closes it with a toast, marked as a problem when the fetch failed, and
+  gives the keyboard to the worktree's row, since the control that opened
+  it is gone. A
+  refusal stays in the dialog with Git's words. The store reads the
+  repository again after every outcome, so the row's counts follow without
+  a refresh.
 
 ## Reporting outcomes
 

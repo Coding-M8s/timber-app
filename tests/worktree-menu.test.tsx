@@ -112,7 +112,7 @@ describe("a worktree row with a menu", () => {
 	test("says which keys open its menu, and the menu stays closed until asked", () => {
 		const markup = renderToStaticMarkup(<WorktreeRow worktree={linked} selected={false} onSelect={() => {}} onMenuChoice={() => {}} />);
 		expect(markup).toContain(`aria-keyshortcuts="${WORKTREE_MENU_SHORTCUTS}"`);
-		expect(markup).toContain('<div class="row-item">');
+		expect(markup).toContain('<div class="row-item" data-worktree-path="/work/app-worktrees/feat-x">');
 		expect(markup).not.toContain('role="menu"');
 	});
 

@@ -3,7 +3,7 @@ import {
 	BRANCH_UPSTREAM_FORMAT, type FetchFailure, type FetchResult, type ForcePushMark, type ForcePushMarks, REMOTE_REF_FORMAT, type RepositoryFetch,
 	type StaleMark, type TrackedBranch, parseRemoteRefs, parseTrackedBranches, readFetchFailure, remoteTrackingRefspecs, trackedRemotes,
 } from "../shared/git-fetch";
-import { type RunGit, batchSshCommand } from "./fetch-git";
+import { type GitRun, type RunGit, batchSshCommand } from "./fetch-git";
 import { type Schedule, type WatchTarget, scheduleWithTimer } from "./repository-watcher";
 import { messageOf } from "../shared/error-message";
 
@@ -38,9 +38,9 @@ export interface FetcherOptions {
 
 /**
  * Fetches the repositories in the list, in the background on an interval and
- * when asked, and notices upstreams that were rewritten. This is the only
- * place where the app writes to a repository without Timber, and it writes
- * only remote-tracking refs.
+ * when asked, and notices upstreams that were rewritten. Its own fetches
+ * write only remote-tracking refs. A sync action's fetch (`fetchWith`) runs
+ * the arguments it showed, in its turn.
  *
  * - One fetch at a time per repository: asking while one runs waits for it.
  *   At most two repositories are fetched at the same time.
@@ -69,6 +69,17 @@ export interface Fetcher {
 	setVisible(visible: boolean): void;
 	/** Fetch one repository now, or wait for the fetch that runs. Works whether or not background fetching is on. */
 	fetchNow(path: string): Promise<FetchResult>;
+	/**
+	 * Run `git <args>` in `cwd` as one fetch of a listed repository, for a sync
+	 * action such as Pull (see ./sync-actions.ts): after the fetch that runs,
+	 * never beside it, and followed by the same check for rewritten upstreams,
+	 * so a force-push it brings in is marked as one a background fetch brings
+	 * in. Nothing prompts. One that fails is the repository's latest failure,
+	 * as any fetch's is. One that works fetched a single remote, so it is not
+	 * counted as a fetch that worked and clears no failure. Null when the
+	 * repository is not in the list, and nothing ran.
+	 */
+	fetchWith(path: string, args: readonly string[], cwd: string): Promise<GitRun | null>;
 	/** Where fetching stands for every repository. */
 	statuses(): RepositoryFetch[];
 	/** The force-push marks of a repository, by branch. */
@@ -96,6 +107,8 @@ interface Entry {
 	due: boolean;
 	/** The person asked for the fetch that is running or waiting its turn, so it runs even when background fetching was turned off meanwhile. */
 	asked: boolean;
+	/** A fetch for a sync action (`fetchWith`) that runs. Other fetches of the repository wait for it. */
+	single: Promise<unknown> | null;
 }
 
 export function createFetcher(options: FetcherOptions): Fetcher {
@@ -243,14 +256,58 @@ export function createFetcher(options: FetcherOptions): Fetcher {
 			], { network: true, signal: stopping.signal, env });
 			if (answer.exitCode !== 0 && failure === null) failure = readFetchFailure(answer.stderr, now());
 		}
-		const after = await remoteRefs(gitDir);
-		if (after === null) return { failure: failure ?? unreadable(), cutShort };
+		const after = await afterFetch(entry, branches, before);
+		if (after === "unreadable") return { failure: failure ?? unreadable(), cutShort };
 		// A repository that left the list meanwhile keeps no marks and reports nothing.
-		if (!current(entry)) return { failure, cutShort: true };
+		if (after === "left") return { failure, cutShort: true };
+		return { failure, cutShort };
+	}
+
+	/**
+	 * After a fetch: mark rewritten upstreams and report the repository changed
+	 * when a remote-tracking ref or a mark changed. `before` is every
+	 * remote-tracking ref from before the fetch.
+	 */
+	async function afterFetch(entry: Entry, branches: readonly TrackedBranch[], before: Map<string, string>): Promise<"done" | "unreadable" | "left"> {
+		const after = await remoteRefs(entry.target.commonDir);
+		if (after === null) return "unreadable";
+		if (!current(entry)) return "left";
 		const marked = await noteRewrites(entry, branches, before, after);
 		const changed = before.size !== after.size || [...after].some(([ref, object]) => before.get(ref) !== object);
 		if ((changed || marked) && current(entry)) onChanged(entry.target.path);
-		return { failure, cutShort };
+		return "done";
+	}
+
+	/** One fetch for a sync action, with the person's own arguments, in its turn (see `fetchWith`). */
+	async function fetchSingle(entry: Entry, args: readonly string[], cwd: string): Promise<GitRun> {
+		for (let busy = entry.single ?? entry.running; busy !== null; busy = entry.single ?? entry.running) await busy.catch(() => {});
+		const job = (async (): Promise<GitRun> => {
+			await draining.get(entry.target.path)?.catch(() => {});
+			const release = await slot();
+			try {
+				const gitDir = entry.target.commonDir;
+				const listed = await read(["--git-dir", gitDir, "for-each-ref", `--format=${BRANCH_UPSTREAM_FORMAT}`, "refs/heads"]);
+				const before = listed === null ? null : await remoteRefs(gitDir);
+				const sshCommand = await runGit(["--git-dir", gitDir, "config", "--get", "core.sshCommand"], { network: false, signal: stopping.signal });
+				const env = batchSshCommand(environment, sshCommand.exitCode === 0 ? sshCommand.stdout : null);
+				const answer = await runGit(args, { network: true, signal: stopping.signal, env, cwd });
+				if (listed !== null && before !== null) await afterFetch(entry, parseTrackedBranches(listed), before);
+				// A failure shows on the repository's header as any fetch's does, until a fetch works. One that worked
+				// fetched a single remote, so it neither counts as a fetch of all of them nor clears an earlier failure.
+				if (answer.exitCode !== 0 && !stopped() && current(entry)) {
+					entry.failure = readFetchFailure(answer.stderr, now());
+					tell(entry);
+				}
+				return answer;
+			} finally {
+				release();
+			}
+		})();
+		const single = job.finally(() => {
+			if (entry.single === single) entry.single = null;
+		});
+		entry.single = single;
+		return job;
 	}
 
 	/**
@@ -295,6 +352,8 @@ export function createFetcher(options: FetcherOptions): Fetcher {
 		const running = (async (): Promise<FetchResult> => {
 			// The same repository, removed and added again while its fetch ran: one fetch at a time all the same.
 			await draining.get(entry.target.path)?.catch(() => {});
+			// A fetch for a sync action goes first when it started first.
+			while (entry.single !== null) await entry.single.catch(() => {});
 			const release = await slot();
 			// While it waited its turn, the repository may have left the list, or background fetching been turned off.
 			const left = !current(entry);
@@ -369,7 +428,7 @@ export function createFetcher(options: FetcherOptions): Fetcher {
 			}
 			for (const target of wanted.values()) {
 				if (entries.has(target.path)) continue;
-				entries.set(target.path, { target, running: null, failures: 0, lastFetched: null, failure: null, cancelTimer: null, due: false, asked: false });
+				entries.set(target.path, { target, running: null, failures: 0, lastFetched: null, failure: null, cancelTimer: null, due: false, asked: false, single: null });
 			}
 			planAll();
 		},
@@ -405,6 +464,12 @@ export function createFetcher(options: FetcherOptions): Fetcher {
 			const entry = entries.get(path);
 			if (!entry || stopped()) return { outcome: "not-listed", message: `${path} is not a repository in this app's list. Nothing was fetched.` };
 			return run(entry, true);
+		},
+
+		async fetchWith(path, args, cwd) {
+			const entry = entries.get(path);
+			if (!entry || stopped()) return null;
+			return fetchSingle(entry, args, cwd);
 		},
 
 		statuses: () => [...entries.values()].map(statusOf),

@@ -43,3 +43,22 @@ export function focusFirstWorktree(repository: string, root: FocusRoot = documen
 export function focusLost(active: Element | null, body: Element | null): boolean {
 	return active === null || active === body;
 }
+
+export interface RowRoot {
+	querySelectorAll(selectors: string): Iterable<{ dataset: { worktreePath?: string }; querySelector(selectors: string): FocusTarget | null }>;
+}
+
+/**
+ * Put the keyboard on the row of the worktree at `path`, its registered
+ * path, as after Pull: the control that opened the dialog is gone once the
+ * branch caught up. Answers whether the row took it.
+ */
+export function focusWorktreeRow(path: string, root: RowRoot = document as unknown as RowRoot): boolean {
+	for (const item of root.querySelectorAll("[data-worktree-path]")) {
+		if (item.dataset.worktreePath !== path) continue;
+		const row = item.querySelector(".row");
+		row?.focus();
+		return row !== null;
+	}
+	return false;
+}

@@ -11,6 +11,7 @@ import type { WorktreeFileRequest, WorktreeFileWriteRequest } from "./worktree-f
 import type { Layout } from "./layout";
 import type { PortsRequest } from "./ports";
 import type { RebaseRequest } from "./timber-rebase";
+import type { SyncActionRequest } from "./sync-actions";
 import type { SetBaseRequest } from "./timber-base";
 import type { CreatePullRequestRequest, HeadSubjectRequest } from "./timber-pr";
 import type { NewWorktreeRequest, OpenInEditorRequest, OpenWorktreeRequest } from "./model";
@@ -60,6 +61,8 @@ export type AppRPC = {
 			openWorktree: { params: OpenWorktreeRequest; response: Answer<"openWorktree"> };
 			/** As `newWorktree`: Git hooks and a fetch take as long as they take, so the caller must not time it out. */
 			rebaseWorktree: { params: RebaseRequest; response: Answer<"rebaseWorktree"> };
+			/** As `newWorktree`: a fetch, a fast-forward, and Git hooks take as long as they take, so the caller must not time it out. */
+			runSyncAction: { params: SyncActionRequest; response: Answer<"runSyncAction"> };
 			/** As `newWorktree`: checking a remote base reaches the network, so the caller must not time it out. */
 			setWorktreeBase: { params: SetBaseRequest; response: Answer<"setWorktreeBase"> };
 			/** As `newWorktree`: a push and GitHub take as long as they take, so the caller must not time it out. */

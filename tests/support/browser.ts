@@ -57,6 +57,10 @@ export interface BrowserPage {
 	press(key: keyof typeof KEYS, modifier?: keyof typeof MODIFIERS): Promise<void>;
 	/** Type text into whatever has the keyboard. */
 	type(text: string): Promise<void>;
+	/** Move the pointer over the first element that matches, without pressing. */
+	hover(selector: string): Promise<void>;
+	/** What the page looks like now, as PNG bytes, for looking at a layout by eye. */
+	screenshot(): Promise<Uint8Array>;
 	close(): Promise<void>;
 }
 
@@ -185,6 +189,15 @@ export async function openSidebarPage(): Promise<BrowserPage> {
 			await mouse("mousePressed", at, true);
 			await mouse("mouseReleased", at, false);
 			pointer = at;
+		},
+		async hover(selector) {
+			const at = await middle(selector);
+			await mouse("mouseMoved", at, false);
+			pointer = at;
+		},
+		async screenshot() {
+			const { data } = await send("Page.captureScreenshot", { format: "png" }) as { data: string };
+			return Uint8Array.from(atob(data), character => character.charCodeAt(0));
 		},
 		async dragTo(from, to) {
 			await mouse("mouseMoved", from, false);

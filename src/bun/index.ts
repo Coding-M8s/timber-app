@@ -19,6 +19,7 @@ import { createDone } from "./done";
 import { createEditorLauncher } from "./editor";
 import { createGitRunner } from "./fetch-git";
 import { createFetcher } from "./fetcher";
+import { createSyncActions } from "./sync-actions";
 import { type HandoffFolder, openHandoffFolder } from "./handoffs";
 import { createSavedForcePushes } from "./force-pushes";
 import { createChops } from "./chops";
@@ -207,12 +208,24 @@ const chopsWatcher = createChopsWatcher({ onChange: repository => tell(`a change
  * is reported like any other change, through the refresh policy, so a hidden window catches up when it returns.
  */
 const savedForcePushes = createSavedForcePushes(settings);
+const gitRunner = createGitRunner();
 const fetcher = createFetcher({
-	runGit: createGitRunner(),
+	runGit: gitRunner,
 	onChanged: heard,
 	onStatus: status => tell("where fetching stands", () => rpc.send.fetchChanged(status)),
 	marks: await savedForcePushes.load(),
 	saveMarks: marks => void savedForcePushes.save(marks),
+});
+/*
+ * Sync actions, such as Pull (see ./sync-actions.ts): Git in a listed worktree, in the repository's turn, with its
+ * fetch as one fetch of the fetcher's, so it never runs beside another and a force-push it brings in is marked.
+ * What Git printed is private: it goes back to the window and is never logged.
+ */
+const syncActions = createSyncActions({
+	findRepository: path => repositories.find(path),
+	turns,
+	runGit: gitRunner,
+	fetch: (repository, args, cwd) => fetcher.fetchWith(repository, args, cwd),
 });
 // Nothing is fetched in the background until the preferences say whether to.
 void preferences.load().then(
@@ -503,6 +516,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			newWorktree: request => worktrees.create(request),
 			openWorktree: request => worktrees.open(request),
 			rebaseWorktree: request => worktrees.rebase(request),
+			runSyncAction: request => syncActions.run(request),
 			setWorktreeBase: request => worktrees.setBase(request),
 			createPullRequest: request => worktrees.pullRequest(request),
 			// Read-only Git, and only for a worktree Timber lists in a repository the app lists.

@@ -15,6 +15,7 @@ import { SetBaseDialog } from "./SetBaseDialog";
 import { SendPromptDialog } from "./SendPromptDialog";
 import { SettingsDialog } from "./SettingsDialog";
 import { SetupWizardDialog } from "./SetupWizardDialog";
+import { SyncActionDialog } from "./SyncActionDialog";
 import { UnsavedFileDialog } from "./UnsavedFileDialog";
 
 /**
@@ -39,6 +40,8 @@ export function Dialogs() {
 			return <DoneDialog key={`${dialog.repository}\n${dialog.worktree}`} request={dialog} />;
 		case "rebase-worktree":
 			return <RebaseDialog key={`${dialog.repository}\n${dialog.worktree}`} request={dialog} />;
+		case "sync-action":
+			return <SyncActionDialog key={`${dialog.action}\n${dialog.repository}\n${dialog.worktree}`} request={dialog} />;
 		case "set-base":
 			return <SetBaseDialog key={`${dialog.repository}\n${dialog.worktree}`} request={dialog} />;
 		case "clean-up-merged":

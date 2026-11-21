@@ -283,6 +283,7 @@ export function RepositorySection({ state, store, repository, matches, open, que
 									<OpenInEditorIconButton repository={repository.path} worktree={worktree} />
 								</>
 							)}
+							onSyncAction={action => store.openDialog({ kind: "sync-action", action, repository: repository.path, worktree: worktree.id })}
 							onMenuChoice={id => {
 								// For this row's worktree, not the selected one, and without selecting it.
 								const request = worktreeMenuChoice(repository.path, worktree, id, isBeingRemoved(state, repository.path, worktree.path));

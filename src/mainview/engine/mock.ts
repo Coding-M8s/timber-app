@@ -35,6 +35,8 @@ import { type TimberChoice, sameTimberChoice } from "../../shared/timber-choice"
 import { TIMBER_PIN } from "../../shared/timber-pin";
 import { type CommandEnding, actOutNew, actOutOpen, isCommandEnding } from "./mock-commands";
 import { type RebaseEnding, actOutRebase, isRebaseEnding } from "./mock-rebase";
+import { type SyncEnding, actOutSyncAction, isSyncEnding, withSampleTarget } from "./mock-sync";
+import { type SyncActionRequest, isSyncActionKind, syncNotRun } from "../../shared/sync-actions";
 import { actOutSetBase } from "./mock-base";
 import { type PullRequestEnding, actOutPullRequest, isPullRequestEnding } from "./mock-pr";
 import type { CreatePullRequestResult } from "../../shared/timber-pr";
@@ -89,7 +91,7 @@ function worktree(repository: string, branch: string, overrides: SampleOverrides
 	};
 	// As Timber does: a canonical path only for a folder whose status it could read.
 	const canonicalPath = sample.pathExists && sample.changes.kind === "known" ? path : null;
-	return { ...sample, id: worktreeId(`/work/${repository}/.git`, { path, canonicalPath }), canonicalPath, detached: sample.branch === null };
+	return { ...sample, sync: withSampleTarget(sample.sync), id: worktreeId(`/work/${repository}/.git`, { path, canonicalPath }), canonicalPath, detached: sample.branch === null };
 }
 
 /**
@@ -387,6 +389,15 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	 * whatever the ending. See ./mock-rebase.ts for what each one acts out.
 	 */
 	endRebaseResults(ending: RebaseEnding): void;
+	/**
+	 * Decide how a sync action such as Pull ends from now on: "pulled" (the
+	 * start), "fetch-failed", "diverged", "local-changes", or "failed". A branch
+	 * that is ahead is refused as diverged whatever the ending. See
+	 * ./mock-sync.ts for what each one acts out.
+	 */
+	endSyncActions(ending: SyncEnding): void;
+	/** Every sync action asked for, in order. */
+	syncActionRequests(): SyncActionRequest[];
 	/**
 	 * Decide how `timber pr --result-file` ends from now on: "created" (the
 	 * start), "created-reviewer-failed" (the first reviewer cannot be
@@ -881,6 +892,8 @@ export function createMockEngine(
 	};
 	let ending: CommandEnding = "succeeds";
 	let rebaseEnding: RebaseEnding = "rebased";
+	let syncEnding: SyncEnding = "pulled";
+	const syncRequests: SyncActionRequest[] = [];
 	let pullRequestEnding: PullRequestEnding = "created";
 	const headSubjects = new Map<string, string | null>();
 	const branchLists = new Map<string, BranchSuggestion[] | null>();
@@ -1062,6 +1075,23 @@ export function createMockEngine(
 			if (status.state !== "ready") return refuse("Timber is not ready.");
 			return structuredClone(actOutRebase(repository, worktree, request, rebaseEnding));
 		},
+		async runSyncAction(request) {
+			syncRequests.push(structuredClone(request));
+			if (!isSyncActionKind(request.action)) return syncNotRun("pull", "The request names no sync action this app knows.");
+			if (commandMilliseconds > 0) await new Promise(resolve => setTimeout(resolve, commandMilliseconds));
+			// As the main process does: a repository from the list, and a worktree it lists with its folder there.
+			const repository = current.find(candidate => candidate.path === request.repository && candidate.available);
+			if (!repository) return syncNotRun(request.action, `${request.repository} is not a repository in this app's list.`);
+			const worktree = timberFailures.has(repository.path) ? undefined : repository.worktrees.find(candidate => candidate.path === request.worktree);
+			if (!worktree) return syncNotRun(request.action, `Timber lists no worktree at ${request.worktree} in ${request.repository}. Refresh the list.`);
+			if (!worktree.pathExists) return syncNotRun(request.action, `The folder ${worktree.path} is missing.`);
+			const acted = actOutSyncAction[request.action](worktree, request, syncEnding, Date.now());
+			if (acted.sync !== null && worktree.branch !== null) {
+				const after = acted.sync;
+				changeSync(repository.path, worktree.branch, () => after);
+			}
+			return structuredClone(acted.result);
+		},
 		async setWorktreeBase(request) {
 			const refuse = (diagnostic: string): SetBaseResult => ({ outcome: "failed", ran: false, failure: { command: null, diagnostic: `${diagnostic} Nothing was run.`, output: null } });
 			if (commandMilliseconds > 0) await new Promise(resolve => setTimeout(resolve, commandMilliseconds));
@@ -1147,6 +1177,12 @@ export function createMockEngine(
 			// Setup runs in its own session, so that is where "setup-fails" fails.
 			terminals.endWorktreeSetups(next === "setup-fails" ? 1 : 0);
 		},
+		endSyncActions(next) {
+			// Called from the browser console too, where nothing checks the word.
+			if (!isSyncEnding(next)) throw new Error(`Unknown ending: ${String(next)}`);
+			syncEnding = next;
+		},
+		syncActionRequests: () => structuredClone(syncRequests),
 		endRebaseResults(next) {
 			// Called from the browser console too, where nothing checks the word.
 			if (!isRebaseEnding(next)) throw new Error(`Unknown ending: ${String(next)}`);

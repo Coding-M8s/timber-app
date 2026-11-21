@@ -3313,3 +3313,34 @@ Bun 1.4.5, Git 2.43, and headless Google Chrome over the mock engine:
 - Not run: the desktop window on any platform, and a real shell or agent
   getting a chop from the panel (the path is the palette's, tested over
   the mock engine and, for the main process, by its own tests).
+
+Run for Pull from a worktree's row (issue 260), Linux x64 with Bun 1.4.5,
+Git 2.56.1, and headless Chromium 158 over the mock engine:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun run build:web`: built.
+- `bun test`: 3354 passed, 19 skipped, 0 failed, after a rebase onto main.
+- `tests/sync-actions.test.ts`, against real temporary repositories with a
+  local bare remote: a fast-forward that includes a commit pushed after the
+  last background fetch, with no merge commit; a remote that cannot be
+  reached (its URL set to a missing local path) still fast-forwards to the
+  last fetched commit and reports the fetch failure; a diverged branch is
+  refused with Git's message and its commit, status, and merge count
+  unchanged; local changes in the way are refused with the modified and
+  untracked files, the status, and the stash as they were, also with
+  `merge.autostash` set (that test fails without `--no-autostash`); a
+  changed upstream, an unlisted worktree, and an incomplete request run
+  nothing, not even the fetch.
+- `tests/fetcher.test.ts`: a sync action's fetch waits for a running fetch
+  and the next one waits for it, runs in the worktree's folder, marks a
+  force-push it brings in against real repositories, and puts a failure on
+  the repository's fetch state without counting a success.
+- `tests/sync-action-browser.test.ts` in Chromium: the control is beside
+  the row's button, not inside it; the dialog shows both commands; after
+  the pull the control goes, the toast says so, and the keyboard is on the
+  row; a failed fetch gives a problem toast with Git's words; a diverged
+  refusal stays in the dialog and points to Rebase; Shift+F10 on the row
+  opens its menu with Pull first, and Enter opens the dialog.
+- Not run: the desktop window on any platform, a real network or sign-in
+  failure (the unreachable remote was a missing local path), and a pull
+  over SSH or HTTPS.

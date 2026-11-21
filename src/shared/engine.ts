@@ -25,6 +25,7 @@ import type { SavedSessions } from "./saved-sessions";
 import type { OpenTerminalRequest, OpenTerminalResult, PasteResult, TerminalChange, TerminalOutput, TerminalSession, TerminalSnapshot } from "./terminal";
 import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "./timber-config";
 import type { RebaseRequest, RebaseResult } from "./timber-rebase";
+import type { SyncActionRequest, SyncActionResult } from "./sync-actions";
 import type { SetBaseRequest, SetBaseResult } from "./timber-base";
 import type { CreatePullRequestRequest, CreatePullRequestResult, HeadSubjectRequest } from "./timber-pr";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "./timber-done";
@@ -161,6 +162,18 @@ export interface Engine {
 	 * after every outcome.
 	 */
 	rebaseWorktree(request: RebaseRequest): Promise<RebaseResult>;
+	/**
+	 * Run a sync action, such as Pull, in a worktree Timber lists, in the same
+	 * turn as the other commands of its repository, and answer how it ended.
+	 * The commands are `syncActionSteps` in ./sync-actions.ts, so the interface
+	 * can show them before asking. They run Git directly, as an executable plus
+	 * arguments in the worktree's folder, and nothing ever prompts. Pull's fetch
+	 * runs as one fetch of the repository, never beside another, and a
+	 * force-push it brings in is marked. Nothing runs when the branch's remote
+	 * or upstream is no longer the one in `request.target`. It runs once and is
+	 * never retried here. Read the list after every outcome.
+	 */
+	runSyncAction(request: SyncActionRequest): Promise<SyncActionResult>;
 	/**
 	 * Save a worktree's base by running `timber base --set <ref>
 	 * --result-file` in a repository from the list, and answer how it ended as

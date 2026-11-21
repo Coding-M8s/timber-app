@@ -2,12 +2,14 @@ import type { BranchSuggestion, SyncState } from "./model";
 
 /**
  * How Git is asked for every local branch and its upstream, one line each:
- * the full ref name, the short upstream name, and the tracking state, with a
- * NUL between them. None of the three can contain a NUL or a line break.
+ * the full ref name, the short upstream name, the tracking state, the
+ * upstream's full ref, and the remote it comes from, with a NUL between them.
+ * None of them can contain a NUL or a line break.
  */
-export const BRANCH_SYNC_FORMAT = "%(refname)%00%(upstream:short)%00%(upstream:track,nobracket)";
+export const BRANCH_SYNC_FORMAT = "%(refname)%00%(upstream:short)%00%(upstream:track,nobracket)%00%(upstream)%00%(upstream:remotename)";
 
 const branchPrefix = "refs/heads/";
+const remotesPrefix = "refs/remotes/";
 
 /**
  * Parse `git for-each-ref --format=<BRANCH_SYNC_FORMAT> refs/heads` into the
@@ -17,12 +19,13 @@ const branchPrefix = "refs/heads/";
  * "gone" when the upstream ref no longer exists, and otherwise "ahead N",
  * "behind N", or both separated by a comma. A branch with no upstream has an
  * empty upstream name. A line that does not fit is left out, so that branch
- * simply has no known sync state.
+ * simply has no known sync state. The remote and the upstream's full ref are
+ * kept only for an upstream that is a remote-tracking branch.
  */
 export function parseBranchSync(output: string): Map<string, SyncState> {
 	const branches = new Map<string, SyncState>();
 	for (const line of output.split("\n")) {
-		const [ref, upstream, track, ...rest] = line.split("\0");
+		const [ref, upstream, track, upstreamRef = "", remote = "", ...rest] = line.split("\0");
 		if (ref === undefined || upstream === undefined || track === undefined || rest.length > 0) continue;
 		if (!ref.startsWith(branchPrefix)) continue;
 		const branch = ref.slice(branchPrefix.length);
@@ -32,7 +35,10 @@ export function parseBranchSync(output: string): Map<string, SyncState> {
 			branches.set(branch, { kind: "gone", upstream });
 		} else {
 			const match = /^(?:ahead (\d+))?(?:, )?(?:behind (\d+))?$/.exec(track);
-			if (match) branches.set(branch, { kind: "tracking", upstream, ahead: Number(match[1] ?? 0), behind: Number(match[2] ?? 0) });
+			if (!match) continue;
+			const tracking: SyncState = { kind: "tracking", upstream, ahead: Number(match[1] ?? 0), behind: Number(match[2] ?? 0) };
+			const remoteTracking = upstreamRef.startsWith(remotesPrefix) && upstreamRef.length > remotesPrefix.length && remote !== "" && remote !== ".";
+			branches.set(branch, remoteTracking ? { ...tracking, remote, upstreamRef } : tracking);
 		}
 	}
 	return branches;
