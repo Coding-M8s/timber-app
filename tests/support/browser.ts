@@ -63,6 +63,8 @@ export interface BrowserPage {
 	hover(selector: string): Promise<void>;
 	/** What the page looks like now, as PNG bytes, for looking at a layout by eye. */
 	screenshot(): Promise<Uint8Array>;
+	/** Lay the page out at this window size, as a window resized to it would be. */
+	resize(width: number, height: number): Promise<void>;
 	close(): Promise<void>;
 }
 
@@ -204,6 +206,10 @@ export async function openSidebarPage(page = "sidebar-page.tsx"): Promise<Browse
 		async screenshot() {
 			const { data } = await send("Page.captureScreenshot", { format: "png" }) as { data: string };
 			return Uint8Array.from(atob(data), character => character.charCodeAt(0));
+		},
+		async resize(width, height) {
+			await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
+			await until(`window.innerWidth === ${width} && window.innerHeight === ${height}`, `the page was laid out at ${width} by ${height}`);
 		},
 		async dragTo(from, to) {
 			await mouse("mouseMoved", from, false);
