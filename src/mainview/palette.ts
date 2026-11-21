@@ -1,16 +1,20 @@
 import { NEW_ARENA_LABEL, arenasUnavailable } from "./arena-format";
 import { type EditorAction, OPEN_IN_EDITOR, describeEditorAction } from "./editor-format";
-import { CLEAN_UP_LABEL, cleanUpUnavailableReason } from "./clean-up-format";
+import { CLEAN_UP_LABEL, CLEAN_UP_TITLE, cleanUpUnavailableReason, mergedCandidates } from "./clean-up-format";
 import { DONE_PRIMARY_NOTE } from "./done-format";
 import { worktreeLabel } from "./format";
 import { REBASE_FOLDER_MISSING } from "./rebase-format";
-import { type AppState, type DialogRequest, isRunning, finishedSessions, selectedWorktree, waitingSessions } from "./store/state";
+import type { Repository } from "../shared/model";
+import { type AppState, type DialogRequest, isRunning, finishedSessions, selectedWorktree, sessionsOf, waitingSessions } from "./store/state";
+import { type RowSessionMark, describeRowSessions } from "./terminal-format";
 import { NONE_WAITING, WAITING_LABEL, describeToVisit } from "./waiting";
 
 /**
  * The command palette without React: what it lists for the state of the app,
- * which of it can be done now, how typing narrows it, and the shortcut that
- * opens it. Choosing an entry does what its button does (see palette-run.ts).
+ * which of it can be done now, how typing narrows it, how it is scoped to the
+ * selected worktree's repository and sorted into sections, and the shortcut
+ * that opens it. Choosing an entry does what its button does (see
+ * palette-run.ts).
  */
 
 /** What choosing an entry does. Each is something a button already does. */
@@ -25,28 +29,55 @@ export type PaletteAction =
 	/** Start the shell, or the agent named, in a worktree: `worktree` is its identity, `path` its registered path. */
 	| { kind: "terminal"; repository: string; worktree: string; path: string; agent: string | null };
 
+/**
+ * Where an entry is listed: actions for the selected worktree, actions for a
+ * repository, the worktrees to switch to, and actions about the whole app.
+ */
+export type PaletteSection = "worktree" | "repository" | "worktrees" | "app";
+
+/** The picture beside an entry's label. */
+export type PaletteIcon =
+	| "terminal" | "agent" | "rebase" | "done" | "editor" | "new" | "branch" | "arena" | "fetch" | "clean-up"
+	| "worktree" | "next" | "settings" | "add-repository";
+
 export interface PaletteEntry {
 	/** Unique in the list, so rows have a stable key. */
 	id: string;
 	kind: "worktree" | "action";
+	section: PaletteSection;
+	icon: PaletteIcon;
 	label: string;
-	/** What it applies to, for example the repository of a worktree, or the worktree an action is for. */
+	/** A short note at the end of the row, such as "2 merged", or empty. */
 	detail: string;
+	/** The path of the repository it belongs to, or null for an entry about the whole app. */
+	repository: string | null;
+	/** That repository's name, shown when the palette is not scoped to it. Empty for the whole app. */
+	repositoryName: string;
+	/** What choosing it does, in one sentence, for the line under the list. */
+	hint: string;
 	/** Other words that find it, besides the label. */
 	keywords: readonly string[];
 	/** Why it cannot be chosen now, or null when it can. */
 	disabledReason: string | null;
+	/** For a worktree: whether it is the selected one. */
+	current?: boolean;
+	/** For a worktree: the marks of its sessions, as its sidebar row shows them. */
+	sessions?: readonly RowSessionMark[];
+	/** For a worktree: its sessions as one sentence, or empty. */
+	sessionWords?: string;
 	action: PaletteAction;
 }
 
 export const PALETTE_LABEL = "Command palette";
-export const PALETTE_PLACEHOLDER = "Type a worktree, branch, repository, or action";
+export const PALETTE_PLACEHOLDER = "Search actions and worktrees";
 export const NO_WORKTREE_SELECTED = "Select a worktree first.";
 export const ADDING_REPOSITORY = "A repository is being added.";
 export const STARTING_SESSION = "A session is already starting in this worktree.";
 export const FETCHING_NOW = "This repository is being fetched.";
 export const OPENING_IN_EDITOR = "The editor is being opened for this worktree.";
 export const FOLDER_MISSING_FOR_SESSION = "The worktree's folder is missing, so a terminal cannot start there.";
+export const OTHER_REPOSITORIES = "Other repositories";
+export const NOTHING_MATCHES = "Nothing matches.";
 
 /** The shortcut that opens the palette, as shown on the title bar button. */
 export const PALETTE_SHORTCUT = "Ctrl+Shift+P";
@@ -65,10 +96,10 @@ export function isPaletteShortcut(event: Keys): boolean {
 }
 
 /**
- * Every entry for the state: the actions first, then every worktree of every
- * available repository, so a long list of worktrees never pushes the actions
- * out of sight. Actions that need a worktree name the selected one, and are
- * shown with a reason when they cannot run.
+ * Every entry for the state, unscoped: the actions first, then every
+ * worktree of every available repository. Actions that need a worktree are
+ * for the selected one, and carry a reason when they cannot run. Which of
+ * them show, and where, is `paletteView`'s part.
  */
 export function paletteEntries(state: AppState): PaletteEntry[] {
 	return [...actionEntries(state), ...worktreeEntries(state)];
@@ -76,17 +107,28 @@ export function paletteEntries(state: AppState): PaletteEntry[] {
 
 function worktreeEntries(state: AppState): PaletteEntry[] {
 	const entries: PaletteEntry[] = [];
+	const selected = state.selection?.worktree ?? null;
 	for (const repository of state.repositories) {
 		if (!repository.available) continue;
 		for (const worktree of repository.worktrees) {
 			const folder = worktree.path.split(/[\\/]/).filter(Boolean).pop() ?? worktree.path;
+			const label = worktreeLabel(worktree);
+			const sessions = describeRowSessions(sessionsOf(state, worktree.id));
 			entries.push({
 				id: `worktree:${worktree.id}`,
 				kind: "worktree",
-				label: worktreeLabel(worktree),
-				detail: repository.name,
+				section: "worktrees",
+				icon: "worktree",
+				label,
+				detail: "",
+				repository: repository.path,
+				repositoryName: repository.name,
+				hint: `Shows ${label} in ${repository.name}.`,
 				keywords: [worktree.branch ?? "", folder, repository.name],
 				disabledReason: null,
+				current: worktree.id === selected,
+				sessions: sessions.marks,
+				sessionWords: sessions.sentence,
 				action: { kind: "select", worktree: worktree.id },
 			});
 		}
@@ -94,62 +136,92 @@ function worktreeEntries(state: AppState): PaletteEntry[] {
 	return entries;
 }
 
+interface Owner {
+	section: PaletteSection;
+	icon: PaletteIcon;
+	repository: Repository | null;
+}
+
 function actionEntries(state: AppState): PaletteEntry[] {
 	const selection = selectedWorktree(state);
 	const entries: PaletteEntry[] = [];
-	const add = (id: string, label: string, detail: string, disabledReason: string | null, action: PaletteAction, keywords: readonly string[] = []) =>
-		entries.push({ id: `action:${id}`, kind: "action", label, detail, keywords: [label, ...keywords], disabledReason, action });
+	const add = (owner: Owner, id: string, label: string, hint: string, disabledReason: string | null, action: PaletteAction, keywords: readonly string[] = [], detail = "") =>
+		entries.push({
+			id: `action:${id}`,
+			kind: "action",
+			section: owner.section,
+			icon: owner.icon,
+			label,
+			detail,
+			repository: owner.repository?.path ?? null,
+			repositoryName: owner.repository?.name ?? "",
+			hint,
+			keywords: [label, ...keywords],
+			disabledReason,
+			action,
+		});
+	const inWorktree = (icon: PaletteIcon): Owner => ({ section: "worktree", icon, repository: selection?.repository ?? null });
+	const inRepository = (icon: PaletteIcon, repository: Repository | null = selection?.repository ?? null): Owner => ({ section: "repository", icon, repository });
+	const inApp = (icon: PaletteIcon): Owner => ({ section: "app", icon, repository: null });
 
 	if (!selection) {
 		const none = NO_WORKTREE_SELECTED;
 		// Without a selection none of these can run, so they share a placeholder action that is never taken.
 		const idle: PaletteAction = { kind: "dialog", request: { kind: "settings" } };
-		add("new", "New worktree", "", none, idle, ["create", "branch"]);
-		add("open", "Open existing branch", "", none, idle, ["worktree", "checkout"]);
-		add("arena", NEW_ARENA_LABEL, "", none, idle, ["attempts", "agents", "compare"]);
-		add("fetch", "Fetch now", "", none, idle, ["pull", "remote"]);
-		add("rebase", "Rebase", "", none, idle);
-		add("done", "Done", "", none, idle, ["remove", "finish", "delete"]);
-		add("editor", OPEN_IN_EDITOR, "", none, idle, ["code"]);
-		add("terminal", "Open terminal", "", none, idle, ["shell", "session"]);
-		for (const agent of state.preferences.agents) add(`agent:${agent.name}`, `Start ${agent.name}`, "", none, idle, ["agent", "session"]);
+		add(inWorktree("terminal"), "terminal", "Open terminal", "", none, idle, ["shell", "session"]);
+		for (const agent of state.preferences.agents) add(inWorktree("agent"), `agent:${agent.name}`, `Start ${agent.name}`, "", none, idle, ["agent", "session"]);
+		add(inWorktree("rebase"), "rebase", "Rebase", "", none, idle);
+		add(inWorktree("editor"), "editor", OPEN_IN_EDITOR, "", none, idle, ["code"]);
+		add(inWorktree("done"), "done", "Done", "", none, idle, ["remove", "finish", "delete"]);
+		add(inRepository("new"), "new", "New worktree", "", none, idle, ["create", "branch"]);
+		add(inRepository("branch"), "open", "Open existing branch", "", none, idle, ["worktree", "checkout"]);
+		add(inRepository("arena"), "arena", NEW_ARENA_LABEL, "", none, idle, ["attempts", "agents", "compare"]);
+		add(inRepository("fetch"), "fetch", "Fetch now", "", none, idle, ["pull", "remote"]);
 	} else {
 		const { repository, worktree } = selection;
-		const target = `${worktreeLabel(worktree)} in ${repository.name}`;
-		const where = `In ${repository.name}`;
-		add("new", "New worktree", where, null, { kind: "dialog", request: { kind: "new-worktree", repository: repository.path, mode: "new" } }, ["create", "branch"]);
-		add("open", "Open existing branch", where, null, { kind: "dialog", request: { kind: "new-worktree", repository: repository.path, mode: "existing" } }, ["worktree", "checkout"]);
-		add("arena", NEW_ARENA_LABEL, where, arenasUnavailable(state.arenas[repository.path]), { kind: "dialog", request: { kind: "new-arena", repository: repository.path } }, ["attempts", "agents", "compare"]);
-		const fetching = state.fetches[repository.path]?.fetching === true
-			|| state.operations.some(operation => operation.kind === "fetch-repository" && operation.repository === repository.path);
-		add("fetch", "Fetch now", where, fetching ? FETCHING_NOW : null, { kind: "fetch", repository: repository.path }, ["pull", "remote"]);
-		add("rebase", "Rebase", target, worktree.pathExists ? null : REBASE_FOLDER_MISSING,
-			{ kind: "dialog", request: { kind: "rebase-worktree", repository: repository.path, worktree: worktree.id } });
-		add("done", "Done", target, worktree.primary ? DONE_PRIMARY_NOTE : null,
-			{ kind: "dialog", request: { kind: "done-worktree", repository: repository.path, worktree: worktree.id } }, ["remove", "finish", "delete"]);
-		const running = state.operations.some(operation => operation.kind === "open-in-editor" && operation.worktree === worktree.path);
-		const editor: EditorAction = describeEditorAction(state.preferences.editor, worktree, running);
-		add("editor", OPEN_IN_EDITOR, target, editor.available ? null : editor.reason ?? OPENING_IN_EDITOR,
-			{ kind: "editor", repository: repository.path, worktree: worktree.path }, ["code"]);
+		const name = worktreeLabel(worktree);
 		const starting = state.operations.some(operation => operation.kind === "open-terminal" && operation.worktree === worktree.id);
 		const sessionReason = !worktree.pathExists ? FOLDER_MISSING_FOR_SESSION : starting ? STARTING_SESSION : null;
 		const session = (agent: string | null): PaletteAction => ({ kind: "terminal", repository: repository.path, worktree: worktree.id, path: worktree.path, agent });
-		add("terminal", "Open terminal", target, sessionReason, session(null), ["shell", "session"]);
-		for (const agent of state.preferences.agents) add(`agent:${agent.name}`, `Start ${agent.name}`, target, sessionReason, session(agent.name), ["agent", "session"]);
+		add(inWorktree("terminal"), "terminal", "Open terminal", `Starts a shell in ${worktree.path}.`, sessionReason, session(null), ["shell", "session"]);
+		for (const agent of state.preferences.agents) {
+			add(inWorktree("agent"), `agent:${agent.name}`, `Start ${agent.name}`, `Starts ${agent.name} in ${worktree.path}.`, sessionReason, session(agent.name), ["agent", "session"]);
+		}
+		add(inWorktree("rebase"), "rebase", "Rebase", `Opens Rebase for ${name}, which shows the Timber command before it runs.`, worktree.pathExists ? null : REBASE_FOLDER_MISSING,
+			{ kind: "dialog", request: { kind: "rebase-worktree", repository: repository.path, worktree: worktree.id } });
+		const running = state.operations.some(operation => operation.kind === "open-in-editor" && operation.worktree === worktree.path);
+		const editor: EditorAction = describeEditorAction(state.preferences.editor, worktree, running);
+		add(inWorktree("editor"), "editor", OPEN_IN_EDITOR, `Opens ${name} in your editor.`, editor.available ? null : editor.reason ?? OPENING_IN_EDITOR,
+			{ kind: "editor", repository: repository.path, worktree: worktree.path }, ["code"]);
+		add(inWorktree("done"), "done", "Done", `Opens Done for ${name}, which shows the Timber command before it runs.`, worktree.primary ? DONE_PRIMARY_NOTE : null,
+			{ kind: "dialog", request: { kind: "done-worktree", repository: repository.path, worktree: worktree.id } }, ["remove", "finish", "delete"]);
+		add(inRepository("new"), "new", "New worktree", `Opens New worktree for ${repository.name}.`, null,
+			{ kind: "dialog", request: { kind: "new-worktree", repository: repository.path, mode: "new" } }, ["create", "branch"]);
+		add(inRepository("branch"), "open", "Open existing branch", `Opens a worktree for a branch ${repository.name} already has.`, null,
+			{ kind: "dialog", request: { kind: "new-worktree", repository: repository.path, mode: "existing" } }, ["worktree", "checkout"]);
+		add(inRepository("arena"), "arena", NEW_ARENA_LABEL, `Opens New arena for ${repository.name}.`, arenasUnavailable(state.arenas[repository.path]),
+			{ kind: "dialog", request: { kind: "new-arena", repository: repository.path } }, ["attempts", "agents", "compare"]);
+		const fetching = state.fetches[repository.path]?.fetching === true
+			|| state.operations.some(operation => operation.kind === "fetch-repository" && operation.repository === repository.path);
+		add(inRepository("fetch"), "fetch", "Fetch now", `Fetches ${repository.name} from its remotes.`, fetching ? FETCHING_NOW : null, { kind: "fetch", repository: repository.path }, ["pull", "remote"]);
+	}
+	// One per repository, whatever is selected: it is about the repository, never one worktree.
+	for (const repository of state.repositories) {
+		if (!repository.available) continue;
+		const pullRequests = state.pullRequests[repository.path];
+		const merged = mergedCandidates(repository, pullRequests).length;
+		add(inRepository("clean-up", repository), `clean-up:${repository.path}`, CLEAN_UP_LABEL, `${CLEAN_UP_TITLE}.`, cleanUpUnavailableReason(repository, pullRequests),
+			{ kind: "dialog", request: { kind: "clean-up-merged", repository: repository.path } }, ["remove", "merged", "pull request", "done", "worktrees", repository.name],
+			merged > 0 ? `${merged} merged` : "");
 	}
 	// About every repository, whatever is selected.
 	const waiting = waitingSessions(state).length;
 	const finished = finishedSessions(state).length;
-	add("next-waiting", WAITING_LABEL, describeToVisit(waiting, finished), waiting + finished === 0 ? NONE_WAITING : null,
-		{ kind: "next-waiting" }, ["needs you", "waiting", "done", "finished", "agent", "jump", "attention"]);
-	// One per repository, whatever is selected: it is about the repository, never one worktree.
-	for (const repository of state.repositories) {
-		if (!repository.available) continue;
-		add(`clean-up:${repository.path}`, CLEAN_UP_LABEL, `In ${repository.name}`, cleanUpUnavailableReason(repository, state.pullRequests[repository.path]),
-			{ kind: "dialog", request: { kind: "clean-up-merged", repository: repository.path } }, ["remove", "merged", "pull request", "done", "worktrees", repository.name]);
-	}
-	add("settings", "Settings", "", null, { kind: "dialog", request: { kind: "settings" } }, ["preferences", "options"]);
-	add("add-repository", "Add repository", "", isRunning(state, "add-repository") ? ADDING_REPOSITORY : null, { kind: "add-repository" }, ["folder", "project"]);
+	add(inApp("next"), "next-waiting", WAITING_LABEL, "Shows the session that has waited longest, then the one that finished first.", waiting + finished === 0 ? NONE_WAITING : null,
+		{ kind: "next-waiting" }, ["needs you", "waiting", "done", "finished", "agent", "jump", "attention"], describeToVisit(waiting, finished));
+	add(inApp("settings"), "settings", "Settings", "Opens Settings.", null, { kind: "dialog", request: { kind: "settings" } }, ["preferences", "options"]);
+	add(inApp("add-repository"), "add-repository", "Add repository", "Adds a Git repository's folder to the list.", isRunning(state, "add-repository") ? ADDING_REPOSITORY : null,
+		{ kind: "add-repository" }, ["folder", "project"]);
 	return entries;
 }
 
@@ -219,6 +291,108 @@ export function matchEntries(entries: readonly PaletteEntry[], query: string, li
 	});
 	found.sort((a, b) => b.score - a.score || a.order - b.order);
 	return found.slice(0, limit).map(item => item.match);
+}
+
+/** The selected worktree and its repository, as the palette names them, or null when none is selected. */
+export interface PaletteScope {
+	repository: string;
+	repositoryName: string;
+	worktreeName: string;
+}
+
+export function paletteScope(state: AppState): PaletteScope | null {
+	const selection = selectedWorktree(state);
+	if (!selection) return null;
+	return { repository: selection.repository.path, repositoryName: selection.repository.name, worktreeName: worktreeLabel(selection.worktree) };
+}
+
+/** Entries under one heading. A null heading is a list with no sections, as when typing across every repository. */
+export interface PaletteGroup {
+	heading: string | null;
+	matches: PaletteMatch[];
+}
+
+export interface PaletteView {
+	groups: PaletteGroup[];
+	/** Every listed entry in the order shown, which is the order the arrows move through. */
+	options: PaletteMatch[];
+	/** The line that names the actions left out because they cannot run now, or null when none was left out. */
+	unavailable: string | null;
+}
+
+const SECTIONS: readonly PaletteSection[] = ["worktree", "repository", "worktrees", "app"];
+
+/** At most this many left-out actions are named in the line under the list; more are only counted. */
+export const UNAVAILABLE_NAMED = 4;
+
+function sectionHeading(section: PaletteSection, context: PaletteScope | null, scoped: boolean): string {
+	switch (section) {
+		case "worktree":
+			return context ? `In ${context.worktreeName}` : "Worktree";
+		case "repository":
+			return context ? `In ${context.repositoryName}` : "Repository";
+		case "worktrees":
+			return scoped && context ? `Worktrees in ${context.repositoryName}` : "Worktrees";
+		case "app":
+			return "App";
+	}
+}
+
+/** The line for actions left out of an empty search, such as "3 actions are not available here: Done, Open in editor, New arena." */
+export function describeUnavailable(labels: readonly string[]): string | null {
+	const unique = [...new Set(labels)];
+	if (unique.length === 0) return null;
+	const count = unique.length === 1 ? "1 action is" : `${unique.length} actions are`;
+	const names = unique.length <= UNAVAILABLE_NAMED ? `: ${unique.join(", ")}` : "";
+	return `${count} not available here${names}. Type one to see why.`;
+}
+
+/**
+ * What the palette lists for a query. Scoped to the selected worktree's
+ * repository, it lists only that repository's entries and the app's, and
+ * once something is typed, other repositories' worktrees that match come
+ * after them, never their actions. Unscoped, it lists every repository's.
+ *
+ * With nothing typed, entries are in sections, and actions that cannot run
+ * are left out and named in one line instead. With something typed, they are
+ * found like any other entry, and the best match comes first. At most
+ * `limit` entries are listed, and the scoped repository's come first, so
+ * other repositories never push them out.
+ */
+export function paletteView(entries: readonly PaletteEntry[], query: string, context: PaletteScope | null, scoped: boolean, limit = PALETTE_LIMIT): PaletteView {
+	const scope = scoped && context ? context.repository : null;
+	const inScope = (entry: PaletteEntry) => scope === null || entry.repository === null || entry.repository === scope;
+	const typed = query.trim() !== "";
+	let groups: PaletteGroup[];
+	let unavailable: string | null = null;
+	if (!typed) {
+		const shown = entries.filter(inScope);
+		unavailable = describeUnavailable(shown.filter(entry => entry.disabledReason !== null).map(entry => entry.label));
+		const available = shown.filter(entry => entry.disabledReason === null);
+		groups = SECTIONS.map(section => ({
+			heading: sectionHeading(section, context, scope !== null),
+			matches: available.filter(entry => entry.section === section).map(entry => ({ entry, positions: [] })),
+		}));
+	} else if (scope === null) {
+		groups = [{ heading: null, matches: matchEntries(entries, query, Number.POSITIVE_INFINITY) }];
+	} else {
+		const here = matchEntries(entries.filter(inScope), query, Number.POSITIVE_INFINITY);
+		const elsewhere = matchEntries(entries.filter(entry => !inScope(entry) && entry.kind === "worktree"), query, Number.POSITIVE_INFINITY);
+		groups = [{ heading: `In ${context!.repositoryName}`, matches: here }, { heading: OTHER_REPOSITORIES, matches: elsewhere }];
+	}
+	let room = limit;
+	groups = groups.map(group => {
+		const kept = group.matches.slice(0, Math.max(0, room));
+		room -= kept.length;
+		return { ...group, matches: kept };
+	}).filter(group => group.matches.length > 0);
+	return { groups, options: groups.flatMap(group => group.matches), unavailable };
+}
+
+/** What the line under the list says for the highlighted entry: why it cannot run, or what it does. */
+export function describeHighlighted(entry: PaletteEntry | undefined): string {
+	if (!entry) return "";
+	return entry.disabledReason ?? entry.hint;
 }
 
 /** The entry a key moves to in a list of `count` rows from `index`: the arrows step and wrap, Home and End jump. Null for any other key. */
