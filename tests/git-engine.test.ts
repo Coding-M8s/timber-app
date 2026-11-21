@@ -51,12 +51,12 @@ describe("readBranchSync", () => {
 	test("reads every branch against its upstream from a real repository", async () => {
 		const branches = await readBranchSync(join(primary, ".git"));
 		expect(Object.fromEntries(branches!)).toEqual({
-			"main": { kind: "tracking", upstream: "origin/main", ahead: 0, behind: 0 },
-			"ahead": { kind: "tracking", upstream: "origin/ahead", ahead: 1, behind: 0 },
-			"behind": { kind: "tracking", upstream: "origin/behind", ahead: 0, behind: 2 },
-			"both": { kind: "tracking", upstream: "origin/both", ahead: 1, behind: 1 },
+			"main": { kind: "tracking", upstream: "origin/main", ahead: 0, behind: 0, remote: "origin", upstreamRef: "refs/remotes/origin/main" },
+			"ahead": { kind: "tracking", upstream: "origin/ahead", ahead: 1, behind: 0, remote: "origin", upstreamRef: "refs/remotes/origin/ahead" },
+			"behind": { kind: "tracking", upstream: "origin/behind", ahead: 0, behind: 2, remote: "origin", upstreamRef: "refs/remotes/origin/behind" },
+			"both": { kind: "tracking", upstream: "origin/both", ahead: 1, behind: 1, remote: "origin", upstreamRef: "refs/remotes/origin/both" },
 			"deleted": { kind: "gone", upstream: "origin/deleted" },
-			"zażółć": { kind: "tracking", upstream: "origin/zażółć", ahead: 0, behind: 0 },
+			"zażółć": { kind: "tracking", upstream: "origin/zażółć", ahead: 0, behind: 0, remote: "origin", upstreamRef: "refs/remotes/origin/zażółć" },
 			"feat/x": { kind: "unpublished" },
 		});
 	});

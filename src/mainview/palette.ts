@@ -9,6 +9,7 @@ import type { Repository } from "../shared/model";
 import { type AppState, type DialogRequest, isBeingRemoved, isRunning, offeredChops, finishedSessions, selectedWorktree, sessionsOf, waitingSessions } from "./store/state";
 import { type RowSessionMark, describeRowSessions } from "./terminal-format";
 import { NONE_WAITING, WAITING_LABEL, describeToVisit } from "./waiting";
+import { syncMenuEntries } from "./sync-action-format";
 
 /**
  * The command palette without React: what it lists for the state of the app,
@@ -239,6 +240,12 @@ function actionEntries(state: AppState): PaletteEntry[] {
 			const hint = action === "run" ? (chop.title === "" ? `Runs ${chop.name} in ${worktree.path}.` : `${what}. Runs in ${worktree.path}.`) : action === "send" ? `${what}. Goes to an agent in ${worktree.path}.` : `${what}. No agent is saved, so this copies the prompt.`;
 			add(inWorktree(chop.kind === "prompt" ? "agent" : "terminal"), `chop:${chop.name}`, runChopLabel(chop.name, action), hint, chopBlockedReason(action, place),
 				{ kind: "chop", repository: repository.path, worktree: worktree.id, chop: chop.name }, [chop.title, "chop", chop.kind]);
+		}
+		// A sync action is listed only while it applies to the branch, as on the row and in its menu.
+		for (const entry of syncMenuEntries(worktree)) {
+			add(inWorktree("fetch"), `sync:${entry.action}`, entry.label, `Opens ${entry.label} for ${name}, which shows the Git commands before they run.`,
+				isBeingRemoved(state, repository.path, worktree.path) ? BEING_REMOVED_REASON : null,
+				{ kind: "dialog", request: { kind: "sync-action", action: entry.action, repository: repository.path, worktree: worktree.id } }, ["git", "fast-forward", "update"]);
 		}
 		add(inWorktree("rebase"), "rebase", "Rebase", `Opens Rebase for ${name}, which shows the Timber command before it runs.`, worktree.pathExists ? null : REBASE_FOLDER_MISSING,
 			{ kind: "dialog", request: { kind: "rebase-worktree", repository: repository.path, worktree: worktree.id } });

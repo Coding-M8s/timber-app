@@ -40,7 +40,7 @@ describe("palette entries", () => {
 		expect(feature.action).toEqual({ kind: "select", worktree: FEATURE_ID });
 		const labels = entries.filter(entry => entry.kind === "action").map(entry => entry.label);
 		expect(labels).toEqual([
-			"Open terminal", "Start Claude Code", "Start Codex", "Rebase", "Open in editor", "Done", "New worktree", "Open existing branch", "New arena (Beta)", "Fetch now",
+			"Open terminal", "Start Claude Code", "Start Codex", "Pull", "Rebase", "Open in editor", "Done", "New worktree", "Open existing branch", "New arena (Beta)", "Fetch now",
 			"Clean up merged", "Clean up merged", "Show next session that needs you or is done", "Settings", "Add repository",
 		]);
 	});

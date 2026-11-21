@@ -2,8 +2,12 @@ import type { TimberFailure } from "../../shared/model";
 
 /** What a dialog's operation came to. */
 export type SubmissionOutcome =
-	/** It worked. `toast` is the short note to show, for example "Worktree created". */
-	| { ok: true; toast: string }
+	/**
+	 * It worked. `toast` is the short note to show, for example "Worktree
+	 * created". `problem` marks a toast that also says something went wrong on
+	 * the way, such as a pull whose fetch failed.
+	 */
+	| { ok: true; toast: string; problem?: boolean }
 	| { ok: false; failure: TimberFailure };
 
 export interface SubmissionState {
@@ -34,8 +38,8 @@ export interface Submission {
 
 const idle: SubmissionState = { running: false, failure: null };
 
-/** `onSuccess` gets the toast text of every run that worked, after the running state has ended. */
-export function createSubmission(onSuccess: (toast: string) => void): Submission {
+/** `onSuccess` gets the toast text of every run that worked, and whether it points at a problem, after the running state has ended. */
+export function createSubmission(onSuccess: (toast: string, problem: boolean) => void): Submission {
 	let state = idle;
 	const listeners = new Set<() => void>();
 
@@ -65,7 +69,7 @@ export function createSubmission(onSuccess: (toast: string) => void): Submission
 				return false;
 			}
 			update(idle);
-			onSuccess(outcome.toast);
+			onSuccess(outcome.toast, outcome.problem === true);
 			return true;
 		},
 		clearFailure() {

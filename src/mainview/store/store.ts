@@ -34,6 +34,7 @@ import { REVIEW_COPIED, describeReviewSent } from "../review-format";
 import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "../../shared/timber-config";
 import type { DoneApplyRequest, DoneApplyResult, DonePreview, DonePreviewRequest, DonePreviewResult } from "../../shared/timber-done";
 import type { RebaseRequest, RebaseResult } from "../../shared/timber-rebase";
+import type { SyncActionRequest, SyncActionResult } from "../../shared/sync-actions";
 import type { SetBaseRequest, SetBaseResult } from "../../shared/timber-base";
 import { type CreatePullRequestResult, initialPullRequestBase, pullRequestBaseFromText, pullRequestReviewersFromText } from "../../shared/timber-pr";
 import { type PullRequestFields, defaultPullRequestTitle, presentPullRequestCreation, pullRequestTitleWithKey, titleKeyOf } from "../pull-request-create-format";
@@ -440,6 +441,12 @@ export interface AppStore {
 	 * rebase that stopped on conflicts is left as Git left it.
 	 */
 	rebaseWorktree(request: RebaseRequest): Promise<RebaseResult>;
+	/**
+	 * Run a sync action such as Pull and answer how it ended (see
+	 * `SyncActionResult`). The engine is asked once. The repository is read
+	 * again after every outcome, so the row's counts follow at once.
+	 */
+	runSyncAction(request: SyncActionRequest): Promise<SyncActionResult>;
 	/**
 	 * Save a worktree's base with `timber base --set --result-file` and answer
 	 * how it ended (see `SetBaseResult`). The engine is asked once, and never
@@ -2411,6 +2418,19 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		return result;
 	}
 
+	async function runSyncAction(request: SyncActionRequest): Promise<SyncActionResult> {
+		let result: SyncActionResult;
+		try {
+			result = await engine.runSyncAction(request);
+		} catch (error) {
+			const diagnostic = `The app did not hear how the ${request.action} ended: ${messageOf(error)}. The engine did not answer, so what Git did is unknown. Check the worktree before trying again.`;
+			result = { outcome: "failed", action: request.action, ran: true, failure: { command: null, diagnostic, output: null } };
+		} finally {
+			await reloadOne(request.repository);
+		}
+		return result;
+	}
+
 	async function setWorktreeBase(request: SetBaseRequest): Promise<SetBaseResult> {
 		let result: SetBaseResult;
 		try {
@@ -3129,7 +3149,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		},
 		openDialog(request) {
 			// Neither Done, Rebase, nor Set base starts on a worktree that Timber is removing.
-			if ((request.kind === "done-worktree" || request.kind === "rebase-worktree" || request.kind === "set-base") && removingId(request.repository, request.worktree)) return;
+			if ((request.kind === "done-worktree" || request.kind === "rebase-worktree" || request.kind === "set-base" || request.kind === "sync-action") && removingId(request.repository, request.worktree)) return;
 			update({ dialog: request });
 		},
 		closeDialog() {
@@ -3149,6 +3169,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		openTerminal,
 		startSessionsIn,
 		rebaseWorktree,
+		runSyncAction,
 		setWorktreeBase,
 		startPullRequestForm,
 		editPullRequestForm,

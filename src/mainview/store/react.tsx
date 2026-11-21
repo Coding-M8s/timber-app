@@ -33,8 +33,8 @@ export function useSubmission(onDone: () => void): { submission: Submission; sta
 	useEffect(() => {
 		done.current = onDone;
 	});
-	const [submission] = useState(() => createSubmission(toast => {
-		store.showToast(toast);
+	const [submission] = useState(() => createSubmission((toast, problem) => {
+		store.showToast(toast, problem);
 		done.current();
 	}));
 	const state = useSyncExternalStore(submission.subscribe, submission.getState, submission.getState);

@@ -36,6 +36,15 @@ export type SyncState =
 		ahead: number;
 		behind: number;
 		/**
+		 * The remote the upstream comes from, such as `origin`, and the
+		 * upstream's full ref, such as `refs/remotes/origin/feat/login`, for
+		 * a sync action's commands (see ./sync-actions.ts). Absent when Git
+		 * did not say, as for an upstream that is another local branch: no
+		 * sync action is offered then.
+		 */
+		remote?: string;
+		upstreamRef?: string;
+		/**
 		 * Set when a fetch by the app found the upstream rewritten: its previous
 		 * commit is not an ancestor of the new one, as after a force-push. `at`
 		 * names the mark, for saying that the person saw it. Absent otherwise.

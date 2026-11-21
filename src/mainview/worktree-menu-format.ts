@@ -5,24 +5,27 @@ import { CLEAN_UP_LABEL, CLEAN_UP_TITLE, cleanUpUnavailableReason } from "./clea
 import { BEING_REMOVED_REASON, DONE_CONTROL_TITLE, DONE_PRIMARY_NOTE } from "./done-format";
 import { worktreeLabel } from "./format";
 import type { DialogRequest } from "./store/state";
+import { type SyncActionKind, isSyncActionKind } from "../shared/sync-actions";
+import { syncMenuEntries } from "./sync-action-format";
 
 /**
  * Words and rules for the menu a worktree row opens on a right-click or from
  * the keyboard, and for the one a repository's header opens the same way.
- * Pure, so they can be tested without a window. A row's menu holds only
- * Done for now, and a header's only Clean up merged.
+ * Pure, so they can be tested without a window. A row's menu holds the sync
+ * actions that apply to its branch, such as Pull, then Done; a header's holds
+ * only Clean up merged.
  */
 
 /** The keys that open a focused row's menu, as `aria-keyshortcuts` says them. */
 export const WORKTREE_MENU_SHORTCUTS = "Shift+F10 ContextMenu";
 
 /**
- * Done is a worktree row's entry, Clean up merged a repository header's; new
- * worktree and new arena are of a repository's "+" menu (see
- * ./arena-format.ts); "insert-chop:" and a chop's name are of a session
- * chip's menu (see ./chop-format.ts).
+ * Done and "sync:" with a sync action are a worktree row's entries, Clean up
+ * merged a repository header's; new worktree and new arena are of a
+ * repository's "+" menu (see ./arena-format.ts); "insert-chop:" and a chop's
+ * name are of a session chip's menu (see ./chop-format.ts).
  */
-export type WorktreeMenuItemId = "done" | "clean-up-merged" | "new-worktree" | "new-arena" | `insert-chop:${string}`;
+export type WorktreeMenuItemId = "done" | `sync:${SyncActionKind}` | "clean-up-merged" | "new-worktree" | "new-arena" | `insert-chop:${string}`;
 
 /** One entry of a row's menu. A disabled entry says why in `note`, shown under it. */
 export interface WorktreeMenuItem {
@@ -34,12 +37,18 @@ export interface WorktreeMenuItem {
 }
 
 /**
- * The entries of a worktree's menu. As in the workspace header, Done is never
- * offered for a primary checkout, nor while Timber removes the worktree.
+ * The entries of a worktree's menu: each sync action that applies to its
+ * branch, such as Pull, then Done. A sync action that does not apply is not
+ * listed, and while Timber removes the worktree one that does is off. As in
+ * the workspace header, Done is never offered for a primary checkout, nor
+ * while Timber removes the worktree.
  */
-export function worktreeMenuItems(worktree: Pick<Worktree, "primary">, removing = false): WorktreeMenuItem[] {
+export function worktreeMenuItems(worktree: Worktree, removing = false): WorktreeMenuItem[] {
 	const reason = worktree.primary ? DONE_PRIMARY_NOTE : removing ? BEING_REMOVED_REASON : null;
-	return [{ id: "done", label: "Done", disabled: reason !== null, note: reason, title: reason ?? DONE_CONTROL_TITLE }];
+	const sync = syncMenuEntries(worktree).map((entry): WorktreeMenuItem => ({
+		id: `sync:${entry.action}`, label: entry.label, disabled: removing, note: removing ? BEING_REMOVED_REASON : null, title: removing ? BEING_REMOVED_REASON : entry.title,
+	}));
+	return [...sync, { id: "done", label: "Done", disabled: reason !== null, note: reason, title: reason ?? DONE_CONTROL_TITLE }];
 }
 
 /**
@@ -75,6 +84,10 @@ export function describeWorktreeMenu(worktree: Worktree): string {
 export function worktreeMenuChoice(repository: string, worktree: Worktree, id: WorktreeMenuItemId, removing = false): DialogRequest | null {
 	const item = worktreeMenuItems(worktree, removing).find(candidate => candidate.id === id);
 	if (!item || item.disabled) return null;
+	if (item.id.startsWith("sync:")) {
+		const action = item.id.slice("sync:".length);
+		return isSyncActionKind(action) ? { kind: "sync-action", action, repository, worktree: worktree.id } : null;
+	}
 	return { kind: "done-worktree", repository, worktree: worktree.id };
 }
 

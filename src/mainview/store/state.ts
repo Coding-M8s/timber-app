@@ -21,6 +21,7 @@ import type { TerminalSession } from "../../shared/terminal";
 import type { RenderingStatus } from "../../shared/rendering";
 import type { SeenStatuses } from "../seen-status";
 import { type RepositoryGroups, emptyGroups } from "../../shared/repository-groups";
+import type { SyncActionKind } from "../../shared/sync-actions";
 
 /** Null until the first look for Timber has answered. */
 export type TimberState =
@@ -226,6 +227,8 @@ export type DialogRequest =
 	| { kind: "done-worktree"; repository: string; worktree: string }
 	/** Rebase a worktree with Timber, in a new session. Named as for Done. */
 	| { kind: "rebase-worktree"; repository: string; worktree: string }
+	/** Run a sync action such as Pull in a worktree, after showing its Git commands. Named as for Done. */
+	| { kind: "sync-action"; action: SyncActionKind; repository: string; worktree: string }
 	/** Save the base Timber keeps for a worktree, from the Changes tab. Named as for Done. */
 	| { kind: "set-base"; repository: string; worktree: string }
 	/** Remove every linked worktree of one repository whose pull request merged. `repository` is the path of the primary checkout. */

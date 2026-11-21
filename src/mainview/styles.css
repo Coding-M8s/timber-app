@@ -3295,6 +3295,50 @@ pre:focus-visible {
 	opacity: 1;
 }
 
+/*
+ * A sync action's control, such as Pull, where its marker was: at the end of
+ * the row's first line, always shown. The row keeps room for it, and it moves
+ * left while the row's other controls show.
+ */
+.row-item.with-sync .row {
+	padding-right: 48px;
+}
+
+.row-item.with-sync:hover .row,
+.row-item.with-sync:focus-within .row,
+.row-item.with-sync.selected .row {
+	padding-right: 74px;
+}
+
+.row-sync {
+	position: absolute;
+	top: 5px;
+	right: 6px;
+	display: flex;
+	gap: 4px;
+}
+
+.row-item:hover .row-sync,
+.row-item:focus-within .row-sync,
+.row-item.selected .row-sync {
+	right: 32px;
+}
+
+.row-sync-button {
+	height: 20px;
+	padding: 0 5px;
+	border: 1px solid currentColor;
+	border-radius: 5px;
+	background: transparent;
+	font-family: var(--font-mono);
+	font-size: 11px;
+	cursor: pointer;
+}
+
+.row-sync-button:hover {
+	background: var(--fill-selected);
+}
+
 /* What Timber said about a removal that did not finish, beside the row's other controls. */
 .row-removal-details {
 	align-self: center;

@@ -172,7 +172,7 @@ describe.skipIf(realTimber === null)("branch status with the installed Timber, o
 		expect(revListCounts("behind")).toEqual({ ahead: 0, behind: 3 });
 		expect(revListCounts("both")).toEqual({ ahead: 2, behind: 1 });
 		for (const branch of ["main", "changes", "ahead", "behind", "both"]) {
-			expect(at(repository, branch).sync).toEqual({ kind: "tracking", upstream: `origin/${branch}`, ...revListCounts(branch) });
+			expect(at(repository, branch).sync).toEqual({ kind: "tracking", upstream: `origin/${branch}`, remote: "origin", upstreamRef: `refs/remotes/origin/${branch}`, ...revListCounts(branch) });
 		}
 		expect(shown(at(repository, "ahead"))).toEqual(["up 2"]);
 		expect(shown(at(repository, "behind"))).toEqual(["down 3"]);

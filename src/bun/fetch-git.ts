@@ -22,6 +22,10 @@ export interface RunGitOptions {
 	signal?: AbortSignal;
 	/** Variables to set on top of the usual environment (see `fetchEnvironment`). */
 	env?: Record<string, string>;
+	/** The folder Git runs in. The app's own folder when not given. */
+	cwd?: string;
+	/** Git is stopped after this long, instead of the usual limit for a fetch or a read. */
+	limitMilliseconds?: number;
 }
 
 /** Run Git with these arguments. */
@@ -131,12 +135,12 @@ function readText(stream: ReadableStream<Uint8Array>, stops: (() => void)[]): Pr
  */
 export function createGitRunner(git = "git", environment: Record<string, string | undefined> = process.env): RunGit {
 	const env = fetchEnvironment(environment);
-	return async (args, { network, signal, env: extra }) => {
-		const limit = network ? FETCH_MILLISECONDS : READ_MILLISECONDS;
+	return async (args, { network, signal, env: extra, cwd, limitMilliseconds }) => {
+		const limit = limitMilliseconds ?? (network ? FETCH_MILLISECONDS : READ_MILLISECONDS);
 		if (signal?.aborted) return { exitCode: null, stdout: "", stderr: "The app stopped Git before it started.", timedOut: false };
 		let child: Bun.Subprocess<"ignore", "pipe", "pipe">;
 		try {
-			child = Bun.spawn([git, ...args], { stdin: "ignore", stdout: "pipe", stderr: "pipe", env: { ...env, ...extra }, detached: true });
+			child = Bun.spawn([git, ...args], { stdin: "ignore", stdout: "pipe", stderr: "pipe", env: { ...env, ...extra }, detached: true, ...(cwd === undefined ? {} : { cwd }) });
 		} catch (error) {
 			return { exitCode: null, stdout: "", stderr: `Could not start Git: ${messageOf(error)}`, timedOut: false };
 		}

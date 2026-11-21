@@ -139,6 +139,11 @@ change them here first when they change.
   only" when it was never published. "force-pushed" stays until the person
   has selected that worktree and moved on. Modified and untracked counts use
   the yellow `M` and green `U`.
+- A branch that is behind and not ahead gets a Pull control in place of its
+  down arrow and count: the same arrow and count, outlined as a button,
+  beside the row. It opens a dialog that shows `git fetch <remote>` and
+  `git merge --ff-only --no-autostash <upstream>` before they run. Pull is
+  also in the row's menu and the command palette while it applies.
 - A row whose branch has a pull request shows it with its state, on the
   line under the branch: `#42` while open, or `#42 draft`, `#42 merged`,
   `#42 closed`. An open or draft one adds its checks ("checks pass",

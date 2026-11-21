@@ -13,6 +13,8 @@ import { AgentIcon } from "./AgentIcon";
 import { ChildBadge } from "./ChildTasks";
 import { StatusGlyph } from "./StatusGlyph";
 import { WorktreeMenu } from "./WorktreeMenu";
+import type { SyncActionKind } from "../../shared/sync-actions";
+import { type SyncControl, describeSyncControls } from "../sync-action-format";
 
 function Arrow({ direction }: { direction: "up" | "down" }) {
 	return (
@@ -115,10 +117,36 @@ interface WorktreeRowProps {
 	 * the row has no menu. A disabled entry is never passed here.
 	 */
 	onMenuChoice?: (id: WorktreeMenuItemId) => void;
+	/**
+	 * A sync action's control was chosen, such as Pull, for this row's
+	 * worktree. With it, a marker that has an action, such as the behind count,
+	 * becomes a control beside the row in its place. Without it, the marker
+	 * stays a marker.
+	 */
+	onSyncAction?: (action: SyncActionKind) => void;
+}
+
+/**
+ * The marker each sync action's control takes the place of. Push is meant to
+ * be one more entry here, with the ahead count.
+ */
+const syncMarker: Record<SyncActionKind, RowMarkerKind> = { pull: "behind" };
+
+/** The arrow each sync action's control draws, as its marker does. */
+const syncArrow: Record<SyncActionKind, "up" | "down"> = { pull: "down" };
+
+/** A sync action's control: the arrow and count of the marker it replaces, as a button of its own. */
+function SyncActionButton({ control, onChoose }: { control: SyncControl; onChoose: () => void }) {
+	return (
+		<button type="button" className={`${markerClass[syncMarker[control.action]]} row-sync-button`} aria-haspopup="dialog" aria-label={control.label} title={control.title} onClick={onChoose}>
+			<Arrow direction={syncArrow[control.action]} />
+			{control.text}
+		</button>
+	);
 }
 
 /** One worktree in the sidebar. What it is marked with comes from `describeRowMarkers`; this only draws it. */
-export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest = null, issue, removal = null, sessions = [], seen = {}, portClash = null, actions, onMenuChoice }: WorktreeRowProps) {
+export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest = null, issue, removal = null, sessions = [], seen = {}, portClash = null, actions, onMenuChoice, onSyncAction }: WorktreeRowProps) {
 	const descriptionId = useId();
 	const button = useRef<HTMLButtonElement>(null);
 	// Where the open menu was asked to be, or null while it is closed.
@@ -149,7 +177,12 @@ export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest =
 	const linked = describeIssue(worktree.issue, issue);
 	const running = describeRowSessions(sessions, seen);
 	const description = [describeRow(markers), portClash, running.sentence].filter(Boolean).join(" ");
-	const at = (place: RowMarker["place"]) => markers.filter(marker => marker.place === place).map(marker => <Marker key={marker.kind} marker={marker} />);
+	// No sync action starts on a worktree that Timber is removing.
+	const removing = removal?.kind === "running" || removal?.kind === "waiting";
+	const syncControls = onSyncAction && !removing ? describeSyncControls(worktree) : [];
+	// A marker whose control is beside the row is not drawn twice. Its sentence stays in the row's description.
+	const replaced = new Set(syncControls.map(control => syncMarker[control.action]));
+	const at = (place: RowMarker["place"]) => markers.filter(marker => marker.place === place && !replaced.has(marker.kind)).map(marker => <Marker key={marker.kind} marker={marker} />);
 	const flags = [...at("state"), ...at("pull-request")];
 	const row = (
 		<button
@@ -192,16 +225,23 @@ export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest =
 			{description !== "" && <span id={descriptionId} className="row-description" hidden>{description}</span>}
 		</button>
 	);
-	if (actions === undefined && !onMenuChoice) return row;
+	if (actions === undefined && !onMenuChoice && syncControls.length === 0) return row;
+	const itemClass = ["row-item", selected ? "selected" : "", syncControls.length > 0 ? "with-sync" : ""].filter(Boolean).join(" ");
 	return (
 		// A right-click anywhere on the row, its actions included, opens its menu.
-		<div className={selected ? "row-item selected" : "row-item"} onContextMenu={onContextMenu}>
+		<div className={itemClass} data-worktree-path={worktree.path} onContextMenu={onContextMenu}>
 			{row}
+			{syncControls.length > 0 && onSyncAction && (
+				// Where the marker was, beside the row's button: the row is a button, so a control cannot be inside it.
+				<span className="row-sync">
+					{syncControls.map(control => <SyncActionButton key={control.action} control={control} onChoose={() => onSyncAction(control.action)} />)}
+				</span>
+			)}
 			{actions !== undefined && <span className="row-actions">{actions}</span>}
 			{menuAt !== null && onMenuChoice && (
 				<WorktreeMenu
 					label={describeWorktreeMenu(worktree)}
-					items={worktreeMenuItems(worktree, removal?.kind === "running" || removal?.kind === "waiting")}
+					items={worktreeMenuItems(worktree, removing)}
 					at={menuAt}
 					onClose={closeMenu}
 					onChoose={onMenuChoice}

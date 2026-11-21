@@ -513,6 +513,65 @@ describe("createFetcher, when it fetches", () => {
 	});
 });
 
+describe("createFetcher, a fetch for a sync action", () => {
+	test("runs the given arguments in the given folder, after the fetch that runs and before the next, never beside either", async () => {
+		const order: string[] = [];
+		const releases: (() => void)[] = [];
+		const plain = plainAnswer();
+		const cwds: (string | undefined)[] = [];
+		const runGit: RunGit = async (args, options) => {
+			if (options.network) {
+				const name = args.includes("--refmap=") ? "background" : "pull";
+				order.push(`${name} starts`);
+				cwds.push(options.cwd);
+				await new Promise<void>(resolve => releases.push(resolve));
+				order.push(`${name} ends`);
+			}
+			return { exitCode: 0, stdout: "", stderr: "", timedOut: false, ...plain(args, options.network) };
+		};
+		const { fetcher } = scheduled(runGit);
+		fetcher.sync([REPO]);
+		const first = fetcher.fetchNow(REPO.path);
+		await settle();
+		const pulled = fetcher.fetchWith(REPO.path, ["fetch", "origin"], "/work/sample-feature");
+		await settle();
+		const next = fetcher.fetchNow(REPO.path);
+		for (let round = 0; round < 6; round++) {
+			for (const release of releases.splice(0)) release();
+			await settle();
+		}
+		await Promise.all([first, pulled, next]);
+		// The second Fetch now joins the first, which already ran, or waits for the pull's fetch: never beside it.
+		for (let index = 0; index < order.length; index += 2) expect(order[index + 1]).toBe(order[index]!.replace("starts", "ends"));
+		expect(order.slice(0, 4)).toEqual(["background starts", "background ends", "pull starts", "pull ends"]);
+		expect(cwds[1]).toBe("/work/sample-feature");
+		expect(await pulled).toMatchObject({ exitCode: 0 });
+	});
+
+	test("answers null and runs nothing for a repository that is not in the list", async () => {
+		const scripted = plainRepository();
+		const { fetcher } = scheduled(scripted.runGit);
+		expect(await fetcher.fetchWith("/work/nowhere", ["fetch", "origin"], "/work/nowhere")).toBeNull();
+		expect(scripted.calls).toEqual([]);
+	});
+
+	test("a failure becomes the repository's latest one, and one that worked neither counts as a fetch of every remote nor clears it", async () => {
+		const state = { offline: true };
+		const scripted = scriptedGit((args, network) => network && state.offline ? { exitCode: 128, stderr: "fatal: unable to access 'https://example.com/x.git/': Could not resolve host: example.com\n" } : plainAnswer()(args, network));
+		const { fetcher, statuses } = scheduled(scripted.runGit);
+		fetcher.sync([REPO]);
+		expect(await fetcher.fetchWith(REPO.path, ["fetch", "origin"], REPO.path)).toMatchObject({ exitCode: 128 });
+		expect(fetcher.statuses()).toEqual([{ repository: REPO.path, fetching: false, lastFetched: null, failure: expect.objectContaining({ kind: "offline" }) }]);
+		expect(statuses.at(-1)?.failure?.message).toContain("Could not resolve host");
+		state.offline = false;
+		expect(await fetcher.fetchWith(REPO.path, ["fetch", "origin"], REPO.path)).toMatchObject({ exitCode: 0 });
+		expect(fetcher.statuses()[0]).toMatchObject({ lastFetched: null, failure: { kind: "offline" } });
+		// The next fetch of every remote that works clears it, as always.
+		expect(await fetcher.fetchNow(REPO.path)).toMatchObject({ outcome: "fetched" });
+		expect(fetcher.statuses()[0]?.failure).toBeNull();
+	});
+});
+
 describe("createFetcher, its force-push marks", () => {
 	const at = 1_000;
 	const mark = { upstream: "refs/remotes/origin/main", upstreamName: "origin/main", object: "b".repeat(40), branchObject: "c".repeat(40), at };
@@ -613,6 +672,23 @@ describe("createFetcher against real repositories", () => {
 		} finally {
 			watcher.stop();
 		}
+	});
+
+	test("a force-push that a sync action's fetch brings in is marked as one a background fetch brings in", async () => {
+		const { fetcher, changed } = realFetcher();
+		git(theirs, "fetch", "-q", "origin");
+		git(theirs, "checkout", "-q", "-b", "feature", "origin/feature");
+		commit(theirs, "other.md", "first try\n", "First try");
+		git(theirs, "push", "-q", "origin", "feature");
+		git(mine, "fetch", "-q", "origin");
+		git(theirs, "reset", "-q", "--hard", "HEAD~1");
+		commit(theirs, "other.md", "second try\n", "Second try");
+		git(theirs, "push", "-q", "--force", "origin", "feature");
+
+		expect(await fetcher.fetchWith(mine, ["fetch", "origin"], join(root, "mine-feature"))).toMatchObject({ exitCode: 0 });
+		expect(Object.keys(fetcher.marks(mine))).toEqual(["feature"]);
+		expect(head(mine, "origin/feature")).toBe(head(theirs, "feature"));
+		expect(changed).toEqual([mine]);
 	});
 
 	test("a force-push to a tracked branch is marked until it is seen", async () => {
