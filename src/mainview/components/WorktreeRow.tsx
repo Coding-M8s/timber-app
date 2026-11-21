@@ -209,9 +209,11 @@ export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest =
 					</span>
 				)}
 				{(running.marks.length > 0 || running.others > 0) && (
-					// Each agent's state as a shape and a color, then the other sessions as a count. Their sentences are in the row's description.
+					// Each agent's state as a shape and a color, past a few the rest as "+4", then the other sessions as a count.
+					// Every sentence, the counted agents' too, is in the row's description.
 					<span className="row-sessions" aria-hidden="true">
-						{running.marks.map(mark => <SessionMark key={mark.id} mark={mark} />)}
+						{running.shown.map(mark => <SessionMark key={mark.id} mark={mark} />)}
+						{running.hidden.count > 0 && <span className="row-agents-more" title={running.hidden.words}>+{running.hidden.count}</span>}
 						{running.others > 0 && (
 							<span className="row-shells" title={running.othersWords}>
 								<span className="row-sessions-dot" />
@@ -226,9 +228,10 @@ export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest =
 		</button>
 	);
 	if (actions === undefined && !onMenuChoice && syncControls.length === 0) return row;
-	const itemClass = ["row-item", selected ? "selected" : "", syncControls.length > 0 ? "with-sync" : ""].filter(Boolean).join(" ");
+	const itemClass = ["row-item", selected ? "selected" : "", syncControls.length > 0 ? "with-sync" : "", removal?.kind === "failed" ? "removal-failed" : ""].filter(Boolean).join(" ");
 	return (
 		// A right-click anywhere on the row, its actions included, opens its menu.
+		// A removal that failed keeps its Details in view (see styles.css).
 		<div className={itemClass} data-worktree-path={worktree.path} onContextMenu={onContextMenu}>
 			{row}
 			{syncControls.length > 0 && onSyncAction && (

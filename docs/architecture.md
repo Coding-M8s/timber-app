@@ -391,7 +391,9 @@ decides, both when it previews and again when it removes.
   dialog of that worktree if one is open again, never another dialog. A
   failure stays as a record until the person closes the Done dialog that
   shows it: the row says "removal failed" with Details, which opens the Done
-  dialog with Timber's diagnostic and output. When the row does not show,
+  dialog with Timber's diagnostic and output. Details, with the row's other
+  controls, shows on a line of its own under the row without pointing at it,
+  so it covers nothing at any sidebar width. When the row does not show,
   because the worktree left the list (as after a partial failure), the group
   is collapsed, or the filter hides it, the failure shows in its repository's
   group with Details and Dismiss, and a removal that runs shows there as
@@ -4190,7 +4192,12 @@ What the agent prints on screen is still never read, parsed, or answered.
   whose program reported a status, gets a mark. On the sidebar row it is a
   thin rounded outline in its state's color, holding the state's shape and
   the session's initial, or as many of its first letters as tell it apart
-  on that row; its name and state are the tooltip. Claude Code and Codex,
+  on that row; its name and state are the tooltip. Past three marks, the row
+  shows the two most urgent, in the order they started, and "+4" for the
+  rest, whose names and states are its tooltip; the row's description for
+  assistive technology names every one (`describeRowSessions` in
+  `src/mainview/terminal-format.ts`). The row's lines wrap, so nothing in it
+  reaches past the sidebar at its narrowest width. Claude Code and Codex,
   known by an agent session's executable (`claude`, `codex`) or a reported
   `app` starting with either name (`agentBrand` in
   `src/shared/session-status.ts`), show their makers' official marks instead

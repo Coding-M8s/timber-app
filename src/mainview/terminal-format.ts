@@ -1,4 +1,4 @@
-import { type AgentBrand, type ShownStatus, agentBrand, childBadge, describeNotableChildren, describeSessionState, describeSessionStatus, hasStatusMark, sessionInitials, shortMessage, shownStatus } from "../shared/session-status";
+import { type AgentBrand, type ShownStatus, agentBrand, childBadge, describeNotableChildren, describeSessionState, describeSessionStatus, hasStatusMark, sessionInitials, shortMessage, shownStatus, urgencyRank } from "../shared/session-status";
 import { type TerminalSession, describeTerminalExit, sessionKindName } from "../shared/terminal";
 import { type SeenStatuses, isSeen } from "./seen-status";
 
@@ -208,12 +208,22 @@ export interface RowSessionMark {
 }
 
 /**
+ * How many places a sidebar row has for marks. With more marks than that, one
+ * place goes to a count of the rest, such as "+4", so the row stays inside a
+ * narrow sidebar (issue 240).
+ */
+export const ROW_AGENT_MARKS = 3;
+
+/**
  * What a sidebar row shows of its worktree's sessions: a mark for each agent
  * and each session whose program reported a status, in the order they
  * started, a count of the other running sessions, and all of it as one
- * sentence for the row's description.
+ * sentence for the row's description. `marks` holds every one. Past
+ * `ROW_AGENT_MARKS`, the row shows only `shown`, the most urgent marks, the
+ * earliest first among equals, and `hidden` counts and names the rest. The
+ * sentence always names every one.
  */
-export function describeRowSessions(sessions: readonly TerminalSession[], seen: SeenStatuses = {}): { marks: RowSessionMark[]; others: number; othersWords: string; sentence: string } {
+export function describeRowSessions(sessions: readonly TerminalSession[], seen: SeenStatuses = {}): { marks: RowSessionMark[]; shown: RowSessionMark[]; hidden: { count: number; words: string }; others: number; othersWords: string; sentence: string } {
 	const marked = sessions.filter(hasStatusMark);
 	const brands = marked.map(agentBrand);
 	// Only the sessions shown as letters need telling apart by them.
@@ -235,7 +245,19 @@ export function describeRowSessions(sessions: readonly TerminalSession[], seen: 
 	const othersWords = others === 0 ? "" : marks.length > 0 ? describeOtherSessions(others) : describeRunningSessions(others);
 	const parts = marks.map(mark => `${mark.words}.`);
 	if (others > 0) parts.push(`${othersWords}.`);
-	return { marks, others, othersWords, sentence: parts.join(" ") };
+	const { shown, hidden } = fitMarks(marks);
+	return { marks, shown, hidden, others, othersWords, sentence: parts.join(" ") };
+}
+
+/** The marks a row has places for, as `describeRowSessions` says, and the rest as a count with their words. */
+function fitMarks(marks: readonly RowSessionMark[]): { shown: RowSessionMark[]; hidden: { count: number; words: string } } {
+	if (marks.length <= ROW_AGENT_MARKS) return { shown: [...marks], hidden: { count: 0, words: "" } };
+	// A child that needs the person makes its session need them too. An unseen status asks more of the person than the same status seen.
+	const rank = (mark: RowSessionMark) => Math.min(urgencyRank(mark.status.kind) * 2 + (mark.seen ? 1 : 0), mark.badge ? urgencyRank(mark.badge.status.kind) * 2 : Infinity);
+	const kept = new Set([...marks].sort((one, other) => rank(one) - rank(other)).slice(0, ROW_AGENT_MARKS - 1));
+	const rest = marks.filter(mark => !kept.has(mark));
+	const words = `${rest.length} more: ${rest.map(mark => `${mark.words}.`).join(" ")}`;
+	return { shown: marks.filter(mark => kept.has(mark)), hidden: { count: rest.length, words } };
 }
 
 /** The words for running sessions beside agents, such as "2 other sessions running". */
