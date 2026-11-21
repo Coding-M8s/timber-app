@@ -2012,7 +2012,9 @@ the `theme` preference says which.
   appearance (dark or light), the interface's colors (`UI_COLOR_PROPERTIES`,
   each with the CSS custom property the stylesheet uses for it), and the
   terminal's (`TERMINAL_COLORS`, named as xterm.js names them: background,
-  text, cursor, selection, scrollbar, and the sixteen ANSI colors). A color
+  text, cursor, selection, scrollbar, and the sixteen ANSI colors; the text
+  and the sixteen are also custom properties, `TERMINAL_COLOR_PROPERTIES`,
+  which the File tab's editor colors code with). A color
   is hex or `rgb()`/`rgba()` text (`src/shared/color.ts`). `readTheme` never
   fails: a part that is missing or cannot be read comes from Timber Dark or
   Timber Light, by the theme's appearance, and is named in `replaced`, for
@@ -2896,7 +2898,9 @@ run from `src/bun/arenas.ts`.
 
 ## Opening a worktree in an editor
 
-The app has no editor of its own. "Open in editor" starts the person's editor
+The app has no code editor of its own, only the File tab's small text editor
+for quick fixes (see [the file viewer](#the-file-viewer)). "Open in editor"
+starts the person's editor
 on a worktree's folder, and nothing else in the app ever starts one: New and
 Open always pass `--no-editor` to Timber (see
 [creating and opening worktrees](#creating-and-opening-worktrees)).
@@ -3174,8 +3178,8 @@ checks a ref.
 ## The file viewer
 
 The File tab shows one file of a worktree, such as a plan or a report an
-agent wrote. A Markdown file shows rendered, and its source can be edited
-and saved; any other file is read-only.
+agent wrote. A Markdown file shows rendered too. Any text file can be
+edited and saved in a small editor.
 
 - **The capability.** `readWorktreeFile({ repository, worktree, path })` on
   the `Engine` contract. Types and pure checks are in
@@ -3232,7 +3236,8 @@ and saved; any other file is read-only.
   every refusal leaves every file as it was.
 - **Edits in the window.** The `FileView` holds `mode`, `draft`, `saving`,
   and `saveProblem`, in the store, so a draft outlives the File tab's
-  component. A text box gives back plain new lines, so a file with CR LF is
+  component. The editor gives back plain new lines (CodeMirror splits lines
+  at CR LF, CR, and LF, and joins them with LF), so a file with CR LF is
   edited as `editableText` and saved as `textToSave`, and saving unedited
   text writes the same bytes. `hasUnsavedEdits` decides when to ask: before
   `closeFile`, `readFileAgain`, and `openFile` of another path, which leave
@@ -3241,6 +3246,78 @@ and saved; any other file is read-only.
   message); the quit guard asks while that is above zero as it does while
   sessions run, and Restart now and restarting into an update ask in the
   window.
+- **What can be edited.** `canEditFile` in `src/mainview/file-view-format.ts`:
+  any file read as text, unless `lineEndingProblem`
+  (`src/shared/worktree-files.ts`) finds CR LF mixed with LF, or a lone CR.
+  The editor turns both into plain new lines and a save puts back one kind
+  for the whole file, so such a file would change on lines nobody touched;
+  it shows in the editor read-only, with the reason (`editRefusal`). The
+  modes are Rendered, Source, and Edit for Markdown; any other file is
+  always in Edit (`initialFileMode`), with no switch, and its draft starts
+  with its first change (`changeDraft` makes it while the file can be
+  edited). Read again and Discard go back to the mode the file opened in,
+  and drop the editor's memory, so a new editor starts from the file. What the file reads as, with plain new lines, is
+  worked out once per read (`editableFileText`), since `hasUnsavedEdits`
+  runs after every change to the open files.
+- **The editor.** `src/mainview/components/TextEditor.tsx`, on CodeMirror 6
+  (`@codemirror/state`, `view`, `commands`, `language`, `search`,
+  `autocomplete` for closing brackets only, and `language-data`, pinned;
+  notices in `licenses/codemirror.txt`). Markdown's Source is the same
+  editor, not `editable`: read-only, and it gives the store nothing. A plain text box was
+  tried first and could not keep up: in Chrome a keystroke in a box of
+  10,000 lines took about 450 ms (3,000 lines: 47 ms), with the rest of
+  the window hidden. CodeMirror draws only the lines in view. Only these
+  parts are used: line numbers, the active line, the drawn selection,
+  special characters shown, history, search, and the default, history,
+  and search keys (`editorKeys`), without the keys the window keeps
+  (Ctrl+Shift+P, K, and J, in any order of the modifiers) and without
+  going to a line, selecting the next match or every match, block
+  comments, and deleting, moving, or copying lines; Ctrl+/ (`toggleComment`)
+  stays. `bracketMatching` marks the matching bracket, and `closeBrackets`
+  closes brackets and quotes. No completion, language server, linting, or
+  other extension.
+- **Coloring.** `src/mainview/editor-language.ts`. `pickLanguage` matches
+  the file's name and extension against `@codemirror/language-data`, whose
+  descriptions import each parser on demand, so opening a file loads only
+  its own (Vite splits each into its own chunk). The parser goes into a
+  compartment once loaded; one loaded before, as for the last showing,
+  goes in at once. A kind it does not know, or a file over
+  `MAX_COLORED_LINES` or `MAX_COLORED_CHARACTERS`, stays plain, and the
+  status line says why. `codeHighlightStyle` colors each kind of token
+  with a `var()` of the theme's terminal palette (`TERMINAL_COLOR_PROPERTIES`
+  in `src/shared/theme.ts`, which `themeVariables` now sets beside the
+  interface's colors), so a theme change recolors open files with no
+  script. The parser reparses incrementally and colors only the lines in
+  view; typing in a colored file of 10,000 lines stays under 50 ms per key
+  (`tests/text-editor-browser.test.ts`).
+  Tab is `indentWithTab`, with CodeMirror's own Escape then Tab to move
+  the keyboard on, and `indentUnit` comes from the file (`indentUnitOf`
+  in `src/mainview/text-editor-format.ts`). The editor is made once as it
+  appears, so typing renders nothing but its status line. The text goes
+  to the store's draft (`changeDraft`) at once when the file turns
+  unsaved or saved (the text compared with the file as a CodeMirror
+  `Text`, and with whether the store's draft holds unsaved edits, since a
+  save changes the file without a change in the editor), so the quit
+  guard knows, else after 150 ms without typing, and always on
+  leaving the editor (as a click on Save or a dialog taking the keyboard
+  does), on Ctrl+S (in the text or the search field), and when the
+  editor goes, as when another tab shows.
+  Saving makes the editor read-only until the answer.
+- **Undo and redo.** CodeMirror's history, Ctrl+Z, Ctrl+Shift+Z, and
+  Ctrl+Y (Cmd on macOS). The editor's whole state, history and selection
+  included, and its scroll are kept for each worktree's open file
+  (`FileEditMemory`) in the store's closure, not its state
+  (`fileEditMemory`), so typing changes no state. An editor that appears
+  takes the kept state while it still holds the draft, with its own
+  handlers in place of the last editor's (`StateEffect.reconfigure`,
+  which keeps the history). The memory goes on Discard and Read again, and
+  with the file when it closes, another opens in its place, or its
+  worktree leaves the list.
+- **Search.** CodeMirror's search, with the bar drawn by React into its
+  panel: the query is the text as typed (`literal`), matching case only
+  when asked. Matches are counted up to `MAX_MATCHES`, and the count says
+  which one is selected (`describeMatches`). Next and previous are
+  CodeMirror's `findNext` and `findPrevious`, around the ends.
 - **Rendering Markdown.** `markdownTokens` in
   `src/mainview/markdown-format.ts` uses only the lexer of `marked`
   (GitHub flavored) to turn the text into tokens, and
@@ -3252,9 +3329,9 @@ and saved; any other file is read-only.
   worktree goes to `openFile`, a `#` link scrolls to the heading, and
   anything else is not followed.
 - **Trying it.** In `bun run dev:web` every worktree has `docs/plan.md`,
-  `report.txt`, `logo.png` (binary), and a `docs` folder, besides its
-  changed files. `timberMock.setWorktreeFile(worktreePath, path, text)` puts
-  a file there, `{ kind: "bytes", bytes: [0] }` a binary one, and `null`
+  `report.txt`, `src/long.ts` (10,000 lines, for typing in a long file),
+  `logo.png` (binary), and a `docs` folder, besides its changed files.
+  `timberMock.setWorktreeFile(worktreePath, path, text)` puts a file there, `{ kind: "bytes", bytes: [0] }` a binary one, and `null`
   removes it. Changing a file while it is edited acts out an agent writing
   it, and `timberMock.delayFileSaves(milliseconds)` slows saves down.
 
@@ -4670,7 +4747,8 @@ None of it should have to change after a first release.
   and nothing is fetched from the network.
 - **Licenses.** `licenses/` holds the SIL Open Font License of the fonts,
   the notices of the palettes that built-in themes use, the MIT licenses of
-  node-pty and of the ConPTY it ships (Windows only), and the notice for
+  node-pty and of the ConPTY it ships (Windows only), of CodeMirror and
+  the packages it uses, and the notice for
   the logo, which is copyright Coding-M8s with all rights
   reserved and is not covered by the MIT license of the code. The build
   copies the folder into the app, to `Resources/app/licenses`.

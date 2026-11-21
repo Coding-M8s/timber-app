@@ -63,8 +63,9 @@ import { mergeOverlapping } from "./merge";
 import { keepEntries } from "./records";
 import { RESTORE_CONCURRENCY, RESTORE_QUIET_MILLISECONDS, type RestoreJob, goneSavedWorktrees, restoreJobs, restoreRequest, runLimited } from "./restore";
 import { type SavedSessions, pickShown } from "../../shared/saved-sessions";
-import { type WorktreeFileResult, editableText, textToSave } from "../../shared/worktree-files";
-import { afterSave, canEditFile, fileText, hasUnsavedEdits, initialFileMode, outsideResult, pathInWorktree, settleFiles, unsavedFileCount } from "../file-view-format";
+import { type WorktreeFileResult, textToSave } from "../../shared/worktree-files";
+import { type FileEditMemory, createFileEditMemory } from "../text-editor-format";
+import { afterSave, canEditFile, editableFileText, fileText, hasUnsavedEdits, initialFileMode, outsideResult, pathInWorktree, settleFiles, unsavedFileCount } from "../file-view-format";
 import {
 	type AppState, type ChangesView, type DialogRequest, type FileMode, type FileView, type Operation, type PullRequestForm, type Removal, type SessionAgent, type UnsavedFileStep, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood,
 	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, canToggleSidePanel, filesPanelShown, offeredChops, sidePanelShown, sidePanelView, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, shownSession, timberReady, withTerminal, withoutSession } from "./state";
@@ -267,9 +268,9 @@ export interface AppStore {
 	closeFile(worktreeId: string): void;
 	/** Show the open file rendered or as its source. Any draft stays, and shows in either. */
 	showFileAs(worktreeId: string, mode: Exclude<FileMode, "edit">): void;
-	/** Edit the open Markdown file's source, starting from the file as read, or from the draft kept since. */
+	/** Edit the open file's text, starting from the file as read, or from the draft kept since. */
 	editFile(worktreeId: string): void;
-	/** The edited text of the open file, as typed. */
+	/** The edited text of the open file, as typed. A file other than Markdown gets its draft from the first change. */
 	changeDraft(worktreeId: string, text: string): void;
 	/**
 	 * Save the draft of the open file, only that file, through the engine.
@@ -279,6 +280,13 @@ export interface AppStore {
 	saveFile(worktreeId: string, options?: { overwrite?: boolean }): Promise<boolean>;
 	/** Drop the draft of the open file, and show the file as it is on disk. */
 	discardEdits(worktreeId: string): void;
+	/**
+	 * The editor's undo history, caret, and scroll for the open file of a
+	 * worktree, kept outside the state so typing does not render the window.
+	 * It is forgotten with the draft: on Discard, Read again, closing the
+	 * file, opening another, and when the worktree leaves the list.
+	 */
+	fileEditMemory(worktreeId: string, path: string): FileEditMemory;
 	/** Answer the question about unsaved edits: save then go on, discard then go on, or keep editing. */
 	answerUnsavedFile(answer: "save" | "discard" | "keep"): Promise<void>;
 	/**
@@ -867,6 +875,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 
 	/** How many files with unsaved edits the main process was last told of. */
 	let reportedUnsaved = 0;
+	// The editor's undo history, caret, and scroll per worktree (see `fileEditMemory`).
+	const editMemories = new Map<string, FileEditMemory>();
 
 	function update(change: Partial<AppState>): void {
 		const shownBefore = sessionOnScreen(state)?.id ?? null;
@@ -876,6 +886,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		if (change.tab !== undefined || change.selection !== undefined || change.files !== undefined || change.repositories !== undefined) {
 			const settled = settleFiles(state);
 			if (settled) state = { ...state, ...settled };
+			// The editor's memory goes with its file: closed, replaced, or gone with its worktree.
+			for (const [id, memory] of editMemories) if (state.files[id]?.path !== memory.path) forgetEditMemory(id);
 			// The main process asks before quitting while any file holds unsaved edits.
 			const unsaved = unsavedFileCount(state.files);
 			if (unsaved !== reportedUnsaved) {
@@ -1475,6 +1487,21 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	/* The latest read of each worktree's open file wins, and an answer for a file no longer open there is dropped. */
 	const fileTickets = new Map<string, number>();
 
+	function forgetEditMemory(worktreeId: string): void {
+		const memory = editMemories.get(worktreeId);
+		if (memory) memory.forgotten = true;
+		editMemories.delete(worktreeId);
+	}
+
+	function fileEditMemory(worktreeId: string, path: string): FileEditMemory {
+		let memory = editMemories.get(worktreeId);
+		if (!memory || memory.path !== path) {
+			memory = createFileEditMemory(path);
+			editMemories.set(worktreeId, memory);
+		}
+		return memory;
+	}
+
 	async function readOpenFile(worktreeId: string): Promise<void> {
 		const view = state.files[worktreeId];
 		if (!view) return;
@@ -1491,6 +1518,9 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		// Editing started while this read was on its way: the text the draft started from stays what a save checks the file
 		// against, so newer text on disk is reported as a change, never written over.
 		if (now.draft !== null && view.draft === null) return;
+		// With no draft, the editor shows the file as read: a new read makes a new editor, so it never shows text older than
+		// what a save checks the file against.
+		if (now.draft === null) forgetEditMemory(worktreeId);
 		update({ files: { ...state.files, [worktreeId]: { ...now, result } } });
 	}
 
@@ -1544,7 +1574,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const view = state.files[worktreeId];
 		if (!view || !mayDropDraft(worktreeId, { kind: "read-again" })) return;
 		// Reading again drops the draft, which held nothing unsaved, and leaves edit mode.
-		if (view.draft !== null || view.mode === "edit" || view.saveProblem !== null) changeFile(worktreeId, { draft: null, mode: view.mode === "edit" ? "rendered" : view.mode, saveProblem: null });
+		forgetEditMemory(worktreeId);
+		if (view.draft !== null || view.mode === "edit" || view.saveProblem !== null) changeFile(worktreeId, { draft: null, mode: view.mode === "edit" ? initialFileMode(view.path) : view.mode, saveProblem: null });
 		void readOpenFile(worktreeId);
 	}
 
@@ -1556,12 +1587,13 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	function editFile(worktreeId: string): void {
 		const view = state.files[worktreeId];
 		if (!view || !canEditFile(view)) return;
-		changeFile(worktreeId, { mode: "edit", draft: view.draft ?? editableText(fileText(view)!) });
+		changeFile(worktreeId, { mode: "edit", draft: view.draft ?? editableFileText(view)! });
 	}
 
 	function discardEdits(worktreeId: string): void {
 		const view = state.files[worktreeId];
 		if (!view) return;
+		forgetEditMemory(worktreeId);
 		changeFile(worktreeId, { draft: null, saveProblem: null, mode: view.mode === "edit" ? initialFileMode(view.path) : view.mode });
 	}
 
@@ -3291,10 +3323,13 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		showFileAs: (worktreeId, mode) => changeFile(worktreeId, { mode }),
 		editFile,
 		changeDraft: (worktreeId, text) => {
-			if (state.files[worktreeId]?.draft !== undefined && state.files[worktreeId]?.draft !== null) changeFile(worktreeId, { draft: text });
+			const view = state.files[worktreeId];
+			// A file other than Markdown is edited where it shows, so its first change starts the draft.
+			if (view && (view.draft !== null || (view.mode === "edit" && canEditFile(view)))) changeFile(worktreeId, { draft: text });
 		},
 		saveFile,
 		discardEdits,
+		fileEditMemory,
 		answerUnsavedFile,
 		readChanges,
 		readChops,

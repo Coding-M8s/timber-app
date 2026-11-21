@@ -9,7 +9,7 @@ This is the desktop app for Timber: TypeScript on Bun, an Electrobun shell, and 
 - Installed Git and its worktree metadata are the source of truth. Invoke Git using executable plus argument arrays; never interpolate user input into shell commands.
 - Never reimplement Timber's safety rules here. Creating, rebasing, and removing worktrees goes through Timber. Read-only queries may call Git directly.
 - Every action that runs a Timber command shows that command before it runs.
-- No built-in code editor. People open a worktree in their own editor.
+- Only a small built-in text editor, for quick fixes to one file: typing, undo and redo, search, save, coloring by language, matching and closing brackets, and toggling a line comment, on CodeMirror's packages. No language servers, plugins, completion, linting, replace, or project-wide features; people open a worktree in their own editor for real work. Keep it small and fast rather than growing it into an IDE.
 - Test Git behavior with meaningful temporary real repositories, and assert that read-only queries leave files and refs intact.
 - Keep secrets out of repository config, logs, tickets, and commits.
 - No platform is verified yet. Claim support for an operating system only after actual testing on it.

@@ -1,7 +1,7 @@
 import type { AppState, FileMode, FileView, UnsavedFileStep, WorkspaceTab } from "./store/state";
 import type { Worktree } from "../shared/model";
 import { describeQuitRequest } from "../shared/terminal";
-import { MAX_FILE_BYTES, MAX_FILE_LINES, type WorktreeFileResult, type WorktreeFileWriteResult, editableText, isMarkdownPath, worktreeRelativePath } from "../shared/worktree-files";
+import { MAX_FILE_BYTES, MAX_FILE_LINES, type WorktreeFileResult, type WorktreeFileWriteResult, editableText, isMarkdownPath, lineEndingProblem, worktreeRelativePath } from "../shared/worktree-files";
 
 /**
  * The File tab's rules and words. Pure, so they can be tested without a
@@ -90,21 +90,52 @@ export function fileText(view: Pick<FileView, "result">): string | null {
 	return result?.outcome === "read" && result.content.kind === "text" ? result.content.text : null;
 }
 
-/** Whether the file can be edited here: a Markdown file read as text. */
-export function canEditFile(view: Pick<FileView, "path" | "result">): boolean {
-	return isMarkdownPath(view.path) && fileText(view) !== null;
+// Worked out once per read, since the store asks after every change and a file may be 1 MiB.
+const editTexts = new WeakMap<object, string>();
+const endingProblems = new WeakMap<object, string | null>();
+
+/** The text of the file as last read or saved, as it is edited: with plain new lines. Null when it is not text. */
+export function editableFileText(view: Pick<FileView, "result">): string | null {
+	const { result } = view;
+	if (result?.outcome !== "read" || result.content.kind !== "text") return null;
+	let text = editTexts.get(result.content);
+	if (text === undefined) {
+		text = editableText(result.content.text);
+		editTexts.set(result.content, text);
+	}
+	return text;
 }
 
-/** The mode a file opens in: Markdown rendered, anything else as its source. */
+/**
+ * Why a file read as text cannot be edited here, or null when it can, or is
+ * not text at all (the viewer says why in place of the text).
+ */
+export function editRefusal(view: Pick<FileView, "result">): string | null {
+	const { result } = view;
+	if (result?.outcome !== "read" || result.content.kind !== "text") return null;
+	let problem = endingProblems.get(result.content);
+	if (problem === undefined) {
+		problem = lineEndingProblem(result.content.text);
+		endingProblems.set(result.content, problem);
+	}
+	return problem === null ? null : `${problem} Open it in your editor to change it.`;
+}
+
+/** Whether the file can be edited here: any file read as text, unless its line endings could not be saved as they were. */
+export function canEditFile(view: Pick<FileView, "result">): boolean {
+	return fileText(view) !== null && editRefusal(view) === null;
+}
+
+/** The mode a file opens in: Markdown rendered, anything else in the editor, which is how it shows. */
 export function initialFileMode(path: string): FileMode {
-	return isMarkdownPath(path) ? "rendered" : "source";
+	return isMarkdownPath(path) ? "rendered" : "edit";
 }
 
 /** Whether the file holds edits that are not saved: a draft that differs from the file as read, or any draft once the file is no longer text. */
 export function hasUnsavedEdits(view: Pick<FileView, "draft" | "result">): boolean {
 	if (view.draft === null) return false;
-	const text = fileText(view);
-	return text === null || editableText(text) !== view.draft;
+	const text = editableFileText(view);
+	return text === null || text !== view.draft;
 }
 
 /** How many open files hold unsaved edits, as quitting asks about. */

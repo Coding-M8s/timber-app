@@ -141,19 +141,35 @@ export type WorktreeFileWriteResult =
 	| { outcome: "too-large"; path: string; message: string }
 	| Exclude<WorktreeFileResult, { outcome: "read" }>;
 
-/** Whether a file is Markdown, by its name, so the File tab shows it rendered and lets it be edited. */
+/** Whether a file is Markdown, by its name, so the File tab shows it rendered as well as its source. */
 export function isMarkdownPath(path: string): boolean {
 	return /\.(md|markdown)$/i.test(path);
 }
 
 /**
- * Whether a text ends its lines with CR LF throughout. A text box gives back
+ * Whether a text ends its lines with CR LF throughout. The editor gives back
  * plain new lines, so such a text is edited with them and saved with CR LF
  * again (`textToSave`).
  */
 export function usesCrLf(text: string): boolean {
 	const crlf = text.split("\r\n").length - 1;
 	return crlf > 0 && crlf === text.split("\n").length - 1;
+}
+
+/**
+ * Why a text may not be edited here, or null when it may: its line endings
+ * could not be saved as they were. The editor turns every CR LF and lone CR
+ * into a plain new line, and a save puts back one kind of ending for the
+ * whole file, so a file that mixes CR LF with LF, or has a lone CR, would
+ * come back changed on lines nobody touched.
+ */
+export function lineEndingProblem(text: string): string | null {
+	const lf = text.split("\n").length - 1;
+	const crlf = text.split("\r\n").length - 1;
+	const cr = text.split("\r").length - 1;
+	if (cr > crlf) return "It has a carriage return that does not end a line, which editing here would change.";
+	if (crlf > 0 && crlf < lf) return "Its lines end in both CR LF and LF, and saving here would make them all one kind.";
+	return null;
 }
 
 /** The text a file is edited as: its lines ended by plain new lines. */

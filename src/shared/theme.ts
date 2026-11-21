@@ -99,6 +99,31 @@ export const TERMINAL_COLORS = [
 ] as const;
 export type TerminalColor = typeof TERMINAL_COLORS[number];
 
+/**
+ * The terminal's text and sixteen ANSI colors, each with a CSS custom
+ * property, for what the interface draws in them too: the File tab's editor
+ * colors code with them, so it matches the terminals in every theme.
+ */
+export const TERMINAL_COLOR_PROPERTIES = {
+	foreground: "--terminal-foreground",
+	black: "--terminal-black",
+	red: "--terminal-red",
+	green: "--terminal-green",
+	yellow: "--terminal-yellow",
+	blue: "--terminal-blue",
+	magenta: "--terminal-magenta",
+	cyan: "--terminal-cyan",
+	white: "--terminal-white",
+	brightBlack: "--terminal-bright-black",
+	brightRed: "--terminal-bright-red",
+	brightGreen: "--terminal-bright-green",
+	brightYellow: "--terminal-bright-yellow",
+	brightBlue: "--terminal-bright-blue",
+	brightMagenta: "--terminal-bright-magenta",
+	brightCyan: "--terminal-bright-cyan",
+	brightWhite: "--terminal-bright-white",
+} as const satisfies Partial<Record<TerminalColor, string>>;
+
 export interface Theme {
 	/** What a choice saves. Built-in themes start with "timber-" or the theme's own name. */
 	id: string;
@@ -239,6 +264,7 @@ export function resolveTheme(choice: ThemeChoice, systemDark: boolean, themes: r
 export function themeVariables(theme: Theme): Record<string, string> {
 	const variables: Record<string, string> = {};
 	for (const key of UI_COLORS) variables[UI_COLOR_PROPERTIES[key]] = theme.ui[key];
+	for (const [key, name] of Object.entries(TERMINAL_COLOR_PROPERTIES)) variables[name] = theme.terminal[key as keyof typeof TERMINAL_COLOR_PROPERTIES];
 	return variables;
 }
 

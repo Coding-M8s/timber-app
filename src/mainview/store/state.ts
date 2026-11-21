@@ -80,8 +80,10 @@ export interface ChopsView {
 }
 
 /**
- * How the File tab shows its file. A Markdown file starts "rendered", any
- * other file "source"; only a Markdown file can be put in "edit".
+ * How the File tab shows its file. A Markdown file starts "rendered", and
+ * switches between "rendered", "source", and "edit". Any other file is
+ * always "edit": it shows in the editor, read-only when it cannot be edited,
+ * and its draft starts with the first change.
  */
 export type FileMode = "rendered" | "source" | "edit";
 

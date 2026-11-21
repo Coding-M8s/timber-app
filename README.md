@@ -4,7 +4,8 @@
 
 The desktop app for [Timber](https://github.com/Coding-M8s/timber): every
 repository, worktree, agent, and terminal in one window. It is a window onto
-Timber, not a replacement for it, and it has no code editor of its own.
+Timber, not a replacement for it. Its File tab has a small text editor for
+quick fixes; real work happens in your own editor.
 
 **Status: early scaffold.** What works today:
 

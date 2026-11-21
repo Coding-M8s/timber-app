@@ -23,6 +23,8 @@ const SAMPLE_FILES: Record<string, MockWorktreeFile> = {
 		"",
 	].join("\n"),
 	"report.txt": Array.from({ length: 120 }, (_, index) => `line ${index + 1}: checked`).join("\n") + "\n",
+	// A long file, for trying the editor: typing in it should stay smooth.
+	"src/long.ts": Array.from({ length: 10_000 }, (_, index) => `\tconst value${index + 1} = compute(${index + 1}, "a line of the long file");`).join("\n") + "\n",
 	"logo.png": { kind: "bytes", bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00] },
 	docs: { kind: "folder" },
 	".gitignore": "node_modules/\n*.log\n",
