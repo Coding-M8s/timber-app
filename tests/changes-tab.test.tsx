@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import {
-	MORE_FILES_NOTE, baseUnavailable, describeComparison, describeDiffNotice, describeFileArea, describeFileCounts, describeNoChanges, diffCommand, fileAfterKey, groupFileChanges, listedOrder, splitPath,
+	MORE_FILES_NOTE, NO_REFRESH, REFRESHING_CHANGES, baseUnavailable, describeComparison, describeDiffNotice, describeFileArea, describeFileCounts, describeNoChanges, diffCommand, fileAfterKey, groupFileChanges, listedOrder, nextRefreshSpan, splitPath,
 } from "../src/mainview/changes-format";
 import { FOLDER_MISSING_CHANGES } from "../src/mainview/components/ChangesPanel";
 import { browserSampleRepositories, createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { GALLERY_WORKTREE, MOCK_BRANCH_POINT, type MockFileChange, sampleNewFilePatch, samplePatch } from "../src/mainview/engine/mock-file-changes";
+import { changesBusy } from "../src/mainview/store/state";
 import { createAppStore } from "../src/mainview/store/store";
 import type { Engine } from "../src/shared/engine";
 import type { Comparison, FileChange, FileChangesResult, FileDiffResult } from "../src/shared/file-changes";
@@ -267,6 +270,143 @@ describe("the Changes tab", () => {
 		const markup = render(store);
 		expect(markup).toContain(MORE_FILES_NOTE);
 		expect(markup).toContain("5000 unstaged, and more");
+	});
+});
+
+describe("refreshing the Changes tab", () => {
+	/** The gallery worktree's Changes tab, read once, on an engine whose reported changes the test can send. */
+	async function shown() {
+		const base = createMockEngine(browserSampleRepositories);
+		let report: (path: string) => void = () => {};
+		const engine: Engine = {
+			...base,
+			onRepositoryChanged(listener) {
+				report = listener;
+				return base.onRepositoryChanged(listener);
+			},
+		};
+		const store = await started(engine);
+		const { repository, worktree } = find(store.getState().repositories, GALLERY_WORKTREE);
+		store.select(worktree.id);
+		store.showTab("changes");
+		await store.readChanges(repository.path, worktree.id);
+		await store.compareChanges("uncommitted");
+		return { store, repository, worktree, report: (path: string) => report(path) };
+	}
+
+	const bar = (markup: string) => /<div class="changes-bar">(.*?)<\/div>/.exec(markup)?.[1] ?? "";
+	const SPINNER = '<span class="changes-spinner"><svg class="status-glyph status-working"';
+	const ANNOUNCED = `<span class="visually-hidden" role="status">${REFRESHING_CHANGES}</span>`;
+	const QUIET = '<span class="visually-hidden" role="status"></span>';
+
+	test("at rest: no spinner, an empty announcement, the counts, and Refresh ready", async () => {
+		const { store } = await shown();
+		const markup = render(store);
+		const settled = bar(markup);
+		expect(settled).not.toContain("changes-spinner");
+		expect(settled).toContain(QUIET);
+		expect(settled).toContain('<span class="changes-count" role="status">1 conflicted, 4 staged, 12 unstaged</span>');
+		expect(settled).toMatch(/<button type="button" class="text-button" title="[^"]+">Refresh<\/button>/);
+		expect(markup).toContain('<div class="change-groups">');
+	});
+
+	test("the tab's Refresh shows the spinner, keeps the list dimmed and the counts, and says Refreshing once", async () => {
+		const { store, repository } = await shown();
+		const reloading = store.reloadRepository(repository.path);
+		const markup = render(store);
+		const busy = bar(markup);
+		expect(busy).toContain(SPINNER);
+		expect(busy).toContain("1 conflicted, 4 staged, 12 unstaged");
+		// One live region says it; the counts' own does not change.
+		expect(busy.split(REFRESHING_CHANGES)).toHaveLength(2);
+		expect(busy).toContain(ANNOUNCED);
+		// The button keeps its label, so it does not change width, and cannot start a second read.
+		expect(busy).toMatch(/<button type="button" class="text-button" disabled="" title="[^"]+">Refresh<\/button>/);
+		expect(markup).toContain('<div class="change-groups refreshing">');
+		await reloading;
+	});
+
+	test("the sidebar's Refresh, a reported change, and a read of the changes show the spinner too", async () => {
+		const { store, repository, worktree, report } = await shown();
+		const all = store.refresh();
+		expect(bar(render(store))).toContain(SPINNER);
+		await all;
+
+		report(repository.path);
+		expect(bar(render(store))).toContain(SPINNER);
+		expect(bar(render(store))).toContain(ANNOUNCED);
+		await settle();
+
+		const reading = store.readChanges(repository.path, worktree.id);
+		expect(bar(render(store))).toContain(SPINNER);
+		await reading;
+	});
+
+	test("switching Compare with shows the spinner, and says Reading changes in place of the old counts, not Refreshing as well", async () => {
+		const { store } = await shown();
+		const switching = store.compareChanges("base");
+		const busy = bar(render(store));
+		expect(busy).toContain(SPINNER);
+		expect(busy).toContain('<span class="changes-count" role="status">Reading changes</span>');
+		expect(busy).toContain(QUIET);
+		await switching;
+	});
+
+	test("a clean worktree's No changes stays, dimmed, while it is read again", async () => {
+		const store = await started();
+		store.showTab("changes");
+		const main = sampleRepositories[0]!.worktrees[0]!;
+		await store.readChanges(TIMBER, main.id);
+		const reading = store.readChanges(TIMBER, main.id);
+		expect(render(store)).toContain('<div class="changes-clean refreshing">');
+		await reading;
+	});
+
+	test("the tab is busy for its own reads, its repository's, and every repository's, not another worktree's", async () => {
+		const { store, repository, worktree } = await shown();
+		const state = (operations: ReturnType<typeof store.getState>["operations"]) => ({ ...store.getState(), operations });
+		expect(changesBusy(state([]), repository.path, worktree.id)).toBe(false);
+		expect(changesBusy(state([{ kind: "read-changes", worktree: worktree.id }]), repository.path, worktree.id)).toBe(true);
+		expect(changesBusy(state([{ kind: "read-changes", worktree: "other" }]), repository.path, worktree.id)).toBe(false);
+		expect(changesBusy(state([{ kind: "reload-repository", repository: repository.path }]), repository.path, worktree.id)).toBe(true);
+		expect(changesBusy(state([{ kind: "reload-repository", repository: "/elsewhere" }]), repository.path, worktree.id)).toBe(false);
+		expect(changesBusy(state([{ kind: "reload-all" }]), repository.path, worktree.id)).toBe(true);
+	});
+
+	test("a refresh is over a list only if one showed as it began, so a first read or a switch of Compare with is never called Refreshing", () => {
+		// Each step is one render: whether reading (or just done), and whether a list shows.
+		const run = (worktree: string, steps: readonly [boolean, boolean][]) => {
+			let span = NO_REFRESH;
+			return steps.map(([active, listShown]) => (span = nextRefreshSpan(span, worktree, active, listShown)).overList);
+		};
+		// A refresh of a list on screen, through the moment between the reload and the read.
+		expect(run("w", [[true, true], [true, true], [true, true], [false, true]])).toEqual([true, true, true, false]);
+		// A first read: the list arrives while the indicator still shows, and is not dimmed or announced.
+		expect(run("w", [[true, false], [true, true], [false, true]])).toEqual([false, false, false]);
+		// A switch of Compare with mid-refresh empties the list; the new list is not a refresh either.
+		expect(run("w", [[true, true], [true, false], [true, true]])).toEqual([true, false, false]);
+		// The next refresh starts afresh.
+		let span = nextRefreshSpan(NO_REFRESH, "w", true, false);
+		span = nextRefreshSpan(span, "w", false, true);
+		expect(nextRefreshSpan(span, "w", true, true).overList).toBe(true);
+		// Another worktree starts its own span, over no list until its own shows.
+		expect(nextRefreshSpan({ worktree: "w", overList: true }, "v", true, false)).toEqual({ worktree: "v", overList: false });
+		// An unchanged span is the same object, so the panel does not render again for it.
+		const same = { worktree: "w", overList: true };
+		expect(nextRefreshSpan(same, "w", true, true)).toBe(same);
+	});
+
+	test("the spinner is the working ring, which stands still when less motion is asked for, and the dimmed list does not fade then", () => {
+		const styles = readFileSync(join(import.meta.dir, "..", "src/mainview/styles.css"), "utf8").replace(/\r\n/g, "\n");
+		const reduced = [...styles.matchAll(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/g)];
+		const still = (pattern: RegExp) => reduced.find(match => pattern.test(match[1]!));
+		expect(still(/\.status-glyph\.status-working\s*\{\s*animation:\s*none;/)).toBeDefined();
+		expect(styles).toMatch(/\.change-groups\.refreshing,\s*\.changes-clean\.refreshing\s*\{\s*opacity:\s*0\.7;/);
+		// The still rule comes after the fade it turns off: at equal specificity, the later rule wins.
+		const fade = /\n\.change-groups,\s*\.changes-clean\s*\{\s*transition:\s*opacity/.exec(styles);
+		const stopped = still(/\.change-groups,\s*\.changes-clean\s*\{\s*transition:\s*none;/);
+		expect(fade).not.toBeNull();
+		expect(stopped?.index).toBeGreaterThan(fade!.index);
 	});
 });
 

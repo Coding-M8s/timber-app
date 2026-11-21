@@ -147,6 +147,33 @@ export function describeFileCounts(files: readonly FileChange[], more: boolean):
 	return more ? `${parts.join(", ")}, and more` : parts.join(", ");
 }
 
+/** Said once, politely, while the Changes tab reads again what is already on screen. */
+export const REFRESHING_CHANGES = "Refreshing…";
+
+/**
+ * One refresh of a worktree's Changes tab, from the first read to a moment
+ * after the last. `overList` says whether it began with a list on screen and
+ * still has one: only then is the list dimmed and "Refreshing" said. A first
+ * read, or the read of the other comparison's list, has no list to refresh,
+ * and the bar says "Reading changes" for it.
+ */
+export interface RefreshSpan {
+	worktree: string | null;
+	overList: boolean;
+}
+
+export const NO_REFRESH: RefreshSpan = { worktree: null, overList: false };
+
+/** The span after a render that is `active` (reading, or just done) for `worktree`, with or without a list on screen. */
+export function nextRefreshSpan(previous: RefreshSpan, worktree: string, active: boolean, listShown: boolean): RefreshSpan {
+	if (!active) return NO_REFRESH;
+	// A new span, or another worktree: it is over a list only if one shows as it starts.
+	if (previous.worktree !== worktree) return { worktree, overList: listShown };
+	// A list that goes, as on a switch of "Compare with", does not come back as refreshed in this span.
+	const overList = previous.overList && listShown;
+	return overList === previous.overList ? previous : { worktree, overList };
+}
+
 export const MORE_FILES_NOTE = `Only the first ${MAX_LISTED_FILES.toLocaleString("en-US")} changed files are listed. Run git status in a terminal to see them all.`;
 
 /** The file a key moves to in the list: the arrows step, Home and End jump. Null for any other key, or an empty list. */

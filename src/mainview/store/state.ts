@@ -537,6 +537,18 @@ export function isRunning(state: AppState, kind: Operation["kind"]): boolean {
 	return state.operations.some(operation => operation.kind === kind);
 }
 
+/**
+ * Whether a worktree's Changes tab is being read again: its changed files, or
+ * its repository (the tab's Refresh, a reported change), or every repository
+ * (the sidebar's Refresh).
+ */
+export function changesBusy(state: AppState, repository: string, worktree: string): boolean {
+	return state.operations.some(operation =>
+		operation.kind === "reload-all"
+		|| (operation.kind === "read-changes" && operation.worktree === worktree)
+		|| (operation.kind === "reload-repository" && operation.repository === repository));
+}
+
 function firstWorktree(repositories: readonly Repository[]): Selection | null {
 	for (const repository of repositories) {
 		const worktree = repository.worktrees[0];
