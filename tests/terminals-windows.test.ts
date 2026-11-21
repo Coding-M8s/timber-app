@@ -159,10 +159,16 @@ describe.if(windows)("terminal sessions on Windows, on a real ConPTY", () => {
 			await seen(session.id, "127.0.0.1");
 			// The shell is the test's child process that has a child of its own: the ping.
 			// With node-pty the pseudo console's OpenConsole.exe is the test's child too, with no children.
-			const table = await processTable();
-			const shells = table.childrenOf(process.pid).filter(pid => table.childrenOf(pid).length > 0);
+			// The echo of the typed line shows 127.0.0.1 before the ping starts, so read the table until it has.
+			let shells: number[] = [];
+			let children: number[] = [];
+			await until(async () => {
+				const table = await processTable();
+				shells = table.childrenOf(process.pid).filter(pid => table.childrenOf(pid).length > 0);
+				children = shells.length === 1 ? table.childrenOf(shells[0]!) : [];
+				return shells.length === 1;
+			}, 15_000);
 			expect(shells.length).toBe(1);
-			const children = table.childrenOf(shells[0]!);
 			expect(children.length).toBeGreaterThan(0);
 
 			if (how === "close") await sessions.close(session.id);
@@ -170,7 +176,8 @@ describe.if(windows)("terminal sessions on Windows, on a real ConPTY", () => {
 
 			expect(await until(() => [...shells, ...children].every(pid => !alive(pid)), 8000)).toBe(true);
 			expect(sessions.list()).toEqual([]);
-		});
+			// Each read of the process table starts PowerShell, which takes about a second, more on a cold runner.
+		}, 30_000);
 	}
 
 	test("an agent starts from its own executable, found on the PATH", async () => {
