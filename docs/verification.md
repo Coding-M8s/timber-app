@@ -3422,3 +3422,37 @@ x64 with Bun 1.4.5 and Git 2.43:
   - 620 by 760, the stacked layout: the panel opens over the diff, 300px.
   - No page errors, and the page never scrolled sideways at any size.
 - Not yet checked: the desktop window by eye, and a screen reader.
+
+Run for starting a review note from a `+` in the diff's gutter (issue 229),
+Linux x64 with Bun 1.4.5, Git 2.43, and Google Chrome 151:
+
+- `bun install --frozen-lockfile`, then `bun test` before the change: 3424
+  passed, 19 skipped, 0 failed.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 3447 passed, 19 skipped, 0 failed. This includes
+  `tests/review-drag.test.ts` (the row under the pointer, where a dragged
+  range ends and why, and its label) and a markup test that each line that
+  takes a note has an `aria-hidden` `+` in its numbers button, with the
+  button's name unchanged, and that Git's note and the hunk's header have
+  neither.
+- `tests/review-gutter-browser.test.ts` in headless Chrome, 12 passed, over
+  a file with a 42-line hunk and a second hunk ending in Git's note:
+  hovering lights the row and shows its `+`, and Git's note shows neither;
+  a click on `+` starts a one-line note, in Base and in Uncommitted; a drag
+  over three lines shows "Lines 3-5" beside the pointer and the bar on
+  three rows, and letting go opens "Note on 3 lines, ending at line 5"
+  with no text selected, in Base and in Uncommitted; a drag stops at 30
+  lines ("Lines 2-31 (30 lines at most)") and at the hunk's edge, down
+  into the next hunk and up past the header; a drag back to its line
+  starts a one-line note, and no label shows before the range reaches
+  another line; an upward drag opens the field under the bottom line and
+  keeps the text typed; Escape lets go of a drag and starts nothing, also
+  when the pointer is then let go on the line pressed, and the note being
+  written keeps its text; Enter, the arrows, and Shift+Enter still start
+  notes and ranges, in both comparisons, and the `+` shows on the focused
+  numbers. The Escape test fails with the click after Escape let through.
+- Screenshots of the hover, drag, and let-go states in headless Chrome with
+  Timber Dark matched the approved mock.
+- Not yet checked: the desktop window by eye, which draws with WebKitGTK,
+  not Chrome; whether the `+` hides the first digit of 3 and 4 digit old
+  line numbers there; and a screen reader.

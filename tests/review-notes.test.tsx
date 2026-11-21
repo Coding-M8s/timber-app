@@ -289,6 +289,23 @@ describe("the Changes tab with notes", () => {
 		expect(markup).toContain('aria-label="Add a note on removed line 3"');
 	});
 
+	test("each line that takes a note has a + in its numbers button, hidden from a screen reader, which hears the button as before", async () => {
+		const { engine, store } = await startedStore();
+		const patch = samplePatch("src/a.ts").replace(" \treturn readConfig();\n", " \treturn readConfig();\n\\ No newline at end of file\n");
+		engine.setFileChanges(FEATURE.path, [mock(file("src/a.ts"), patch)]);
+		await store.readChanges(TIMBER, FEATURE.id);
+		await store.selectChangedFile(file("src/a.ts"));
+		const markup = render(store);
+		const plus = '<span class="diff-note-plus" aria-hidden="true">+</span>';
+		// Eight numbered lines, each a lit row with a + first in its button, named as before.
+		expect(markup.split('<div class="diff-line context notable">').length - 1 + markup.split('<div class="diff-line added notable">').length - 1 + markup.split('<div class="diff-line removed notable">').length - 1).toBe(8);
+		expect(markup.split(plus).length - 1).toBe(8);
+		expect(markup).toMatch(/<button type="button" class="diff-note-target" tabindex="0" data-line="0-0-0" aria-label="Add a note on line 1" title="[^"]*Drag the \+[^"]*"><span class="diff-note-plus" aria-hidden="true">\+<\/span>/);
+		// Git's note and the hunk's header take no note: no lit row, no +.
+		expect(markup).toContain('<div class="diff-line note"><span class="diff-number"></span><span class="diff-number"></span>');
+		expect(markup).toMatch(/<div class="diff-hunk-header">@@ -1,6 \+1,7 @@<\/div><div class="diff-line context notable">/);
+	});
+
 	test("each note leads with a reference: a button named by where it is, with its first line", async () => {
 		const { store } = await startedStore();
 		await notesOnTwoFiles(store);
@@ -346,7 +363,7 @@ describe("the Changes tab with notes", () => {
 		await store.showReviewNote(FEATURE.id, onA!.id);
 		let markup = render(store);
 		expect(markup).toContain(`class="review-ref chosen" data-note-id="${onA!.id}" aria-current="true"`);
-		expect(markup.match(/class="diff-line [a-z]+ shown"/g)).toEqual(['class="diff-line removed shown"', 'class="diff-line added shown"', 'class="diff-line added shown"']);
+		expect(markup.match(/class="diff-line [a-z]+ notable shown"/g)).toEqual(['class="diff-line removed notable shown"', 'class="diff-line added notable shown"', 'class="diff-line added notable shown"']);
 		// Once shown, the lines are no longer marked; the reference stays chosen.
 		store.reviewNoteShown();
 		markup = render(store);

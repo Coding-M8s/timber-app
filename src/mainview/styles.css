@@ -5567,6 +5567,7 @@ pre:focus-visible {
 
 /* The line numbers of a line that can take a note: a button over both number columns. */
 .diff-note-target {
+	position: relative;
 	grid-column: 1 / 3;
 	display: grid;
 	grid-template-columns: 5ch 5ch;
@@ -5590,6 +5591,77 @@ pre:focus-visible {
 
 .diff-line.noting {
 	box-shadow: inset 3px 0 0 var(--focus);
+}
+
+/*
+ * A line that takes a note lights up under the pointer and shows a "+" at
+ * the left edge of its numbers: a click starts a note there, a drag a range.
+ * The "+" is only faded out, never removed, so it keeps its place to be
+ * pressed. A range's bar stays on a lit line.
+ */
+.diff-line.notable:hover {
+	box-shadow: inset 0 0 0 100vmax var(--fill-hover);
+}
+
+.diff-line.notable.noting:hover {
+	box-shadow: inset 3px 0 0 var(--focus), inset 0 0 0 100vmax var(--fill-hover);
+}
+
+.diff-note-plus {
+	position: absolute;
+	top: 50%;
+	left: 2px;
+	display: grid;
+	place-items: center;
+	width: 14px;
+	height: 14px;
+	margin-top: -7px;
+	border-radius: 3px;
+	background: var(--focus);
+	color: var(--bg-main);
+	font-weight: 700;
+	line-height: 1;
+	opacity: 0;
+	cursor: grab;
+	user-select: none;
+	touch-action: none;
+}
+
+.diff-line.notable:hover .diff-note-plus,
+.diff-line.drag-anchor .diff-note-plus,
+.diff-note-target:focus-visible .diff-note-plus {
+	opacity: 1;
+}
+
+/* While a "+" is dragged, the pointer selects no text and lights no other line: the bar shows the range. */
+.diff-body.dragging {
+	user-select: none;
+	cursor: grabbing;
+}
+
+.diff-body.dragging .diff-note-plus {
+	cursor: grabbing;
+}
+
+.diff-body.dragging .diff-line.notable:hover:not(.noting) {
+	box-shadow: none;
+}
+
+/* The lines a drag is over, beside the pointer. */
+.diff-drag-label {
+	position: fixed;
+	top: 0;
+	left: 0;
+	z-index: 50;
+	padding: 2px 6px;
+	border: 1px solid var(--line-raised);
+	border-radius: 4px;
+	background: var(--bg-raised);
+	box-shadow: 0 4px 12px var(--shadow);
+	color: var(--text);
+	font-size: 11px;
+	white-space: nowrap;
+	pointer-events: none;
 }
 
 /* A note under the lines it is on, and the field one is written in. */
@@ -5875,7 +5947,8 @@ pre:focus-visible {
 }
 
 /* The lines of a chosen reference, marked for a moment. */
-.diff-line.shown {
+.diff-line.shown,
+.diff-line.shown:hover {
 	box-shadow: inset 3px 0 0 var(--focus), inset 0 0 0 100vmax var(--fill-selected);
 }
 
