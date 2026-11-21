@@ -372,7 +372,7 @@ describe("settings dialog", () => {
 		expect(markup).toMatch(/<dialog class="dialog settings-dialog" aria-labelledby="[^"]+">/);
 		expect(markup).toMatch(/<h2 [^>]*class="dialog-title">Settings<\/h2>/);
 		expect(markup).toContain('<nav class="settings-nav" aria-label="Settings sections">');
-		expect(markup).toMatch(/class="settings-nav-item selected" aria-current="page"[^>]*>Layout</);
+		expect(markup).toMatch(/class="settings-nav-item selected" aria-current="page"[^>]*><svg class="settings-nav-icon"[^]*?<\/svg>Layout</);
 		expect(markup).toContain('<input type="radio" name="sidebar-side" checked="" value="left"/>');
 		expect(markup).toContain('<input type="radio" name="sidebar-side" value="right"/>');
 	});

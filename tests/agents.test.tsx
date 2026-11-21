@@ -314,6 +314,6 @@ describe("the Agents section of Settings", () => {
 		const { store } = await startedStore();
 		store.openDialog({ kind: "settings", section: "agents" });
 		const markup = render(store);
-		expect(markup).toMatch(/class="settings-nav-item selected" aria-current="page"[^>]*>Agents</);
+		expect(markup).toMatch(/class="settings-nav-item selected" aria-current="page"[^>]*><svg class="settings-nav-icon"[^]*?<\/svg>Agents</);
 	});
 });

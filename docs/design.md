@@ -471,6 +471,12 @@ logins. The app never reads a tracker login and never signs in.
   pre-done scripts, starting branch, remote, worktree folder, and layout.
   Presets where they help, but every value is editable free-form, and every
   section has Save.
+  The dialog keeps one size. The list down its side, each section with an
+  icon, groups them under Appearance, Workflow, Activity, and Timber, with
+  About on its own at the foot. A section opens with its title and what it
+  is for, sets its settings in one panel a row each, shows a choice of a
+  few as chips and an on or off setting as a switch, and keeps its Save in
+  a bar along the bottom while the rest scrolls.
   Timber's own settings are edited in a Machine and a Repository section,
   in groups (editor, coding assistant, branch and remote and folder,
   scripts, issue tracking) that each have their own Save and show the exact

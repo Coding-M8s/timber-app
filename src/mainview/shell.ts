@@ -29,6 +29,20 @@ export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
 /** Sections that show Timber's own settings, listed under a heading of their own. */
 export const TIMBER_SETTINGS_SECTIONS: readonly SettingsSection[] = ["machine", "repository"];
 
+/**
+ * How the list down the side of Settings groups its sections, top to bottom.
+ * About is not in a group: it sits on its own at the foot of the list.
+ */
+export const SETTINGS_NAV_GROUPS: readonly { label: string; sections: readonly SettingsSection[] }[] = [
+	{ label: "Appearance", sections: ["layout", "theme", "terminal", "rendering"] },
+	{ label: "Workflow", sections: ["editor", "agents", "chops"] },
+	{ label: "Activity", sections: ["notifications", "fetch"] },
+	{ label: "Timber", sections: TIMBER_SETTINGS_SECTIONS },
+];
+
+/** The section at the foot of the Settings list, apart from the groups. */
+export const SETTINGS_NAV_FOOT: SettingsSection = "about";
+
 export const SIDEBAR_SIDE_LABELS: Record<SidebarSide, string> = {
 	left: "Left",
 	right: "Right",
