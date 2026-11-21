@@ -498,8 +498,7 @@ export interface Engine {
 	 */
 	readFileDiff(request: FileDiffRequest): Promise<FileDiffResult>;
 	/**
-	 * One file of a worktree of a repository in the list, for the read-only
-	 * file viewer. The path is relative to the worktree, and neither it nor a
+	 * One file of a worktree of a repository in the list, for the File tab. The path is relative to the worktree, and neither it nor a
 	 * link it is may lead outside the worktree. Only a plain file is read, up
 	 * to `MAX_FILE_BYTES`; a larger or binary file comes without its text.
 	 * Writes nothing and runs no Git. Safe to call again.

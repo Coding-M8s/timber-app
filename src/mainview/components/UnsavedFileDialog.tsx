@@ -13,12 +13,15 @@ export function UnsavedFileDialog({ worktree, then }: { worktree: string; then: 
 	const state = useAppState();
 	const view = state.files[worktree];
 	const dialog = useRef<HTMLDialogElement>(null);
+	const save = useRef<HTMLButtonElement>(null);
 	const titleId = useId();
 	const textId = useId();
 
 	useEffect(() => {
 		const element = dialog.current;
 		if (element && !element.open) element.showModal();
+		// showModal moves focus to the first button, so Save takes it back.
+		save.current?.focus();
 		return () => element?.close();
 	}, []);
 
@@ -46,7 +49,7 @@ export function UnsavedFileDialog({ worktree, then }: { worktree: string; then: 
 					<div className="dialog-buttons">
 						<button type="button" className="button quiet" onClick={() => void store.answerUnsavedFile("keep")}>Keep editing</button>
 						<button type="button" className="button danger" disabled={view.saving} onClick={() => void store.answerUnsavedFile("discard")}>Discard</button>
-						<button type="button" className="button primary" autoFocus disabled={view.saving} onClick={() => void store.answerUnsavedFile("save")}>
+						<button ref={save} type="button" className="button primary" autoFocus disabled={view.saving} onClick={() => void store.answerUnsavedFile("save")}>
 							{view.saving ? "Saving" : "Save"}
 						</button>
 					</div>

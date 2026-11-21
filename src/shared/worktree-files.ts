@@ -1,5 +1,5 @@
 /**
- * Reading one file of a worktree, for the read-only file viewer. Pure: the
+ * Reading and saving one file of a worktree, for the File tab. Pure: the
  * main process opens the file (see src/bun/worktree-files.ts) and decides
  * what its bytes are with these functions, and the mock engine and the tests
  * use them too.
@@ -143,7 +143,7 @@ export type WorktreeFileWriteResult =
 
 /** Whether a file is Markdown, by its name, so the File tab shows it rendered and lets it be edited. */
 export function isMarkdownPath(path: string): boolean {
-	return /\.(md|markdown|mdown|mkd)$/i.test(path);
+	return /\.(md|markdown)$/i.test(path);
 }
 
 /**
