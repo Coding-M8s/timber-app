@@ -3289,3 +3289,27 @@ and headless Google Chrome over the mock engine:
   `takesChopsPanelKey`), a pointer drag of the panel's edge, and whether
   any desktop on Linux, macOS, or Windows takes Ctrl+Shift+K or
   Cmd+Shift+K before the app. The shortcut was chosen by analysis.
+
+Run for running a chop from the chops panel (issue 251), Linux x64 with
+Bun 1.4.5, Git 2.43, and headless Google Chrome over the mock engine:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 3287 passed, 19 skipped, 0 failed, after a rebase onto main. `tests/chops-panel.test.tsx`
+  covers the list (counts, rows with source and text, the tabs' keys), the
+  filter (names and text, the no-match words), and the run target (the
+  footer for commands, for a prompt with no agent, one, or several
+  running, and with no agent saved), the shared `chopBlockedReason` with
+  the palette, Run disabled with the reason and still focusable with no
+  worktree selected, and, over the mock engine, a run through `runChopIn`:
+  a personal command opens a terminal in the selected worktree, a
+  `.timber/chops.json` chop asks first, Run puts the issues board away,
+  Copy leaves the view, a prompt goes to the only agent running after it
+  is approved, and nothing runs with "Use chops" off.
+  `tests/chops-panel-browser.test.ts` clicks Run in Chrome, types in the
+  filter, moves the tabs by keyboard, checks the keyboard stays in the
+  panel after Run, that a repository chop asks before its first run, and
+  that a click on a blocked Run starts nothing and opens nothing.
+- `bun run build:web`: built.
+- Not run: the desktop window on any platform, and a real shell or agent
+  getting a chop from the panel (the path is the palette's, tested over
+  the mock engine and, for the main process, by its own tests).

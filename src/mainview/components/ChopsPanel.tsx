@@ -1,14 +1,15 @@
 import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, useEffect, useId, useRef, useState } from "react";
 import { MAX_CHOPS_WIDTH, MIN_CHOPS_WIDTH } from "../../shared/layout";
-import { chopKindWord, listedChops } from "../../shared/chops";
-import { describeChopSource } from "../chop-format";
+import type { ChopKind } from "../../shared/chops";
 import {
-	CHOPS_BUTTON_ID, CHOPS_CLOSE_LABEL, CHOPS_PANEL_ID, CHOPS_PANEL_TITLE, CHOPS_WIDTH_LABEL, describeChopsPanelEmpty, takesChopsPanelKey,
+	CHOPS_BUTTON_ID, CHOPS_CLOSE_LABEL, CHOPS_FILTER_LABEL, CHOPS_PANEL_ID, CHOPS_PANEL_TITLE, CHOPS_TABS, CHOPS_WIDTH_LABEL, type ChopsPanelRow,
+	chopsPanelModel, chopsTabAfterKey, chopsTabLabel, takesChopsPanelKey,
 } from "../chops-panel-format";
+import { runChopIn } from "../palette-run";
 import { chopsWidthAfterDrag, chopsWidthAfterKey } from "../shell";
 import { useAppState, useStore } from "../store/react";
-import { selectedWorktree } from "../store/state";
 import type { AppStore } from "../store/store";
+import { estimateTerminalSize } from "./TerminalPanel";
 
 /*
  * Where the keyboard goes as the panel shows and hides. The store knows
@@ -144,23 +145,49 @@ export function ChopsResizer() {
 }
 
 /**
- * The chops panel, on the right of the workspace. For now it lists the
- * chops of the selected worktree's repository by name; running, making,
- * and ordering them come with the panel's later work. Its Close button only
- * hides it: the saved chops and "Use chops" stay as they are.
+ * The chops panel, on the right of the workspace: the chops of the selected
+ * worktree's repository in a Commands and a Prompts tab, each with its
+ * count, a filter over names and text, and each chop's name, source, and
+ * text, so what runs shows before it runs. Run, Send, or Copy goes through
+ * the palette's path (`runChopIn`), which asks before a repository chop's
+ * first run. The footer says where the next run goes, or why nothing can
+ * run. Its Close button only hides it: the saved chops and "Use chops" stay
+ * as they are.
  */
 export function ChopsPanel() {
 	const store = useStore();
 	const state = useAppState();
 	const titleId = useId();
+	const baseId = useId();
+	const [tab, setTab] = useState<ChopKind>("command");
+	const [query, setQuery] = useState("");
 	// Shown by the button or the shortcut before React drew it: take the keyboard now.
 	useEffect(() => takeFocus(), []);
-	const selected = selectedWorktree(state);
-	const repository = selected?.repository.path ?? null;
-	const list = state.chops !== null && state.chops.repository === repository ? state.chops.list : null;
-	const chops = listedChops(list);
-	const failure = list !== null && list.outcome !== "listed" ? list.message : null;
-	const empty = failure === null ? describeChopsPanelEmpty(selected !== null, list === null ? null : chops.length) : null;
+	const model = chopsPanelModel(state, tab, query);
+	const repositoryName = state.repositories.find(repository => repository.path === model.repository)?.name ?? "the repository";
+	const tabId = (kind: ChopKind) => `${baseId}-tab-${kind}`;
+	const listId = `${baseId}-list`;
+	const footerId = `${baseId}-footer`;
+	const textId = (index: number) => `${baseId}-text-${index}`;
+	const showTab = (kind: ChopKind) => setTab(kind);
+	const onTabKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+		const next = chopsTabAfterKey(tab, event.key);
+		if (next === null) return;
+		event.preventDefault();
+		setTab(next);
+		document.getElementById(tabId(next))?.focus();
+	};
+	const choose = (row: ChopsPanelRow, clicks: number) => {
+		// Not `disabled`, so the button keeps the keyboard while a session starts, and says why with its tooltip and the footer.
+		if (model.blocked !== null || model.repository === null) return;
+		// A double click chooses once: a prompt to a running agent waits for nothing, so a second click would send it again.
+		if (clicks > 1) return;
+		const selection = state.selection;
+		if (selection === null) return;
+		// Copying shows nothing new, so the view the person is on stays.
+		runChopIn(store, model.repository, selection.worktree, row.chop.name, () => estimateTerminalSize(document.getElementById("workspace-panel")), row.action !== "copy");
+	};
+	const listed = model.failure === null && model.empty === null;
 	return (
 		<aside id={CHOPS_PANEL_ID} className="chops-panel" aria-labelledby={titleId} tabIndex={-1}>
 			<div className="chops-panel-head">
@@ -171,23 +198,74 @@ export function ChopsPanel() {
 					</svg>
 				</button>
 			</div>
-			<div className="chops-panel-body">
-				{failure !== null && <p className="dialog-note">{failure}</p>}
-				{empty !== null && <p className="dialog-note" role={list === null && selected !== null ? "status" : undefined}>{empty}</p>}
-				{chops.length > 0 && (
-					<ul className="chops-panel-list" aria-label={`Chops of ${selected?.repository.name ?? "the repository"}`}>
-						{chops.map(chop => (
-							<li key={chop.name} className="chops-panel-item">
-								<p className="chop-item-head">
-									<span className="chop-item-name">{chop.name}</span>{" "}
-									<span className="chop-item-meta">{chopKindWord(chop.kind)}, {describeChopSource(chop.source)}</span>
-								</p>
-								<pre className="chops-panel-text">{chop.text}</pre>
-							</li>
+			{listed && (
+				<div className="chops-panel-tools">
+					<div className="chops-panel-tabs" role="tablist" aria-label={`Chops of ${repositoryName}`} onKeyDown={onTabKey}>
+						{CHOPS_TABS.map(kind => (
+							<button
+								key={kind}
+								type="button"
+								role="tab"
+								id={tabId(kind)}
+								className={kind === tab ? "chops-panel-tab selected" : "chops-panel-tab"}
+								aria-selected={kind === tab}
+								aria-controls={listId}
+								// Only the tab that shows is a tab stop. The arrows reach the other.
+								tabIndex={kind === tab ? 0 : -1}
+								onClick={() => showTab(kind)}
+							>
+								{chopsTabLabel(kind)} <span className="chops-panel-count">{model.counts[kind]}</span>
+							</button>
 						))}
-					</ul>
+					</div>
+					<input
+						type="search"
+						className="filter chops-panel-filter"
+						placeholder={CHOPS_FILTER_LABEL}
+						aria-label={CHOPS_FILTER_LABEL}
+						aria-controls={listId}
+						value={query}
+						onChange={event => setQuery(event.target.value)}
+					/>
+				</div>
+			)}
+			<div className="chops-panel-body">
+				{model.failure !== null && <p className="dialog-note">{model.failure}</p>}
+				{model.empty !== null && <p className="dialog-note" role={model.reading ? "status" : undefined}>{model.empty}</p>}
+				{listed && (
+					<div id={listId} role="tabpanel" aria-labelledby={tabId(tab)}>
+						<p className="dialog-note chops-panel-none" role="status">{model.tabEmpty ?? ""}</p>
+						{model.rows.length > 0 && (
+							<ul className="chops-panel-list" aria-label={`${chopsTabLabel(tab)} of ${repositoryName}`}>
+								{model.rows.map((row, index) => (
+									<li key={row.chop.name} className="chops-panel-item">
+										<div className="chops-panel-row">
+											<p className="chop-item-head">
+												<span className="chop-item-name">{row.chop.name}</span>{" "}
+												<span className="chop-item-meta" title={row.sourceTitle}>{row.source}</span>
+											</p>
+											<button
+												type="button"
+												className="button quiet chops-panel-run"
+												aria-label={row.label}
+												aria-disabled={model.blocked !== null}
+												aria-describedby={`${textId(index)} ${footerId}`}
+												title={model.blocked ?? row.label}
+												onClick={event => choose(row, event.detail)}
+											>
+												{row.word}
+											</button>
+										</div>
+										{/* Focusable, so a long text that scrolls can be read by keyboard before it runs. */}
+										<pre id={textId(index)} className="chops-panel-text" tabIndex={0}>{row.chop.text}</pre>
+									</li>
+								))}
+							</ul>
+						)}
+					</div>
 				)}
 			</div>
+			{listed && <p id={footerId} className="chops-panel-footer">{model.footer}</p>}
 		</aside>
 	);
 }

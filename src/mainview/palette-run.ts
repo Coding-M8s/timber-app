@@ -44,9 +44,23 @@ export function runPaletteEntry(store: AppStore, entry: PaletteEntry, size: Sess
 			});
 			return;
 		case "chop":
-			store.select(action.worktree);
-			store.showTab("workspace");
-			void store.runChop(action.repository, action.worktree, action.chop, size());
+			runChopIn(store, action.repository, action.worktree, action.chop, size);
 			return;
 	}
+}
+
+/**
+ * Run a chop of a repository in a worktree, by its identity, as the palette
+ * and the chops panel do: through `AppStore.runChop`, which asks before a
+ * repository chop's first run, picks or asks for a prompt's agent, and
+ * copies a prompt when no agent is saved. With `showSession`, the worktree
+ * is selected and its Workspace tab shown first, so the new session, or why
+ * it did not start, is in view.
+ */
+export function runChopIn(store: AppStore, repository: string, worktree: string, chop: string, size: SessionSize, showSession = true): void {
+	if (showSession) {
+		store.select(worktree);
+		store.showTab("workspace");
+	}
+	void store.runChop(repository, worktree, chop, size());
 }

@@ -2,11 +2,15 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import {
-	CHOPS_PANEL_SHORTCUT, CHOPS_PANEL_SHORTCUT_MAC, chopsButtonHint, describeChopsPanelEmpty, isChopsPanelShortcut, takesChopsPanelKey,
+	CHOPS_PANEL_SHORTCUT, CHOPS_PANEL_SHORTCUT_MAC, chopMatches, chopSourceShort, chopsButtonHint, chopsPanelModel, chopsTabAfterKey, describeChopsPanelEmpty,
+	describeChopsTabEmpty, isChopsPanelShortcut, takesChopsPanelKey,
 } from "../src/mainview/chops-panel-format";
-import { isPaletteShortcut } from "../src/mainview/palette";
+import { BEING_REMOVED_REASON } from "../src/mainview/done-format";
+import { worktreeLabel } from "../src/mainview/format";
+import { FOLDER_MISSING_FOR_SESSION, NO_WORKTREE_SELECTED, STARTING_SESSION, chopBlockedReason, isPaletteShortcut, paletteEntries } from "../src/mainview/palette";
+import { runChopIn } from "../src/mainview/palette-run";
 import { chopsWidthAfterDrag, chopsWidthAfterKey, SIDEBAR_KEY_STEP } from "../src/mainview/shell";
-import { createMockEngine, sampleTimberStatuses } from "../src/mainview/engine/mock";
+import { createMockEngine, sampleRepositories, sampleTimberStatuses } from "../src/mainview/engine/mock";
 import { canToggleChopsPanel, chopsEnabled, chopsPanelShown } from "../src/mainview/store/state";
 import { createAppStore } from "../src/mainview/store/store";
 import { isWaitingShortcut } from "../src/mainview/waiting";
@@ -176,7 +180,7 @@ describe("the chops panel as drawn", () => {
 		const markup = render(store);
 		const panel = markup.slice(markup.indexOf('id="chops-panel"'));
 		expect(panel).toContain('<span class="chop-item-name">Test</span>');
-		expect(panel).toContain('<pre class="chops-panel-text">bun test</pre>');
+		expect(panel).toMatch(/<pre id="[^"]+" class="chops-panel-text" tabindex="0">bun test<\/pre>/);
 	});
 
 	test("with Use chops off there is no button, panel, or edge, even when the panel was left open", async () => {
@@ -194,5 +198,229 @@ describe("the chops panel as drawn", () => {
 		expect(describeChopsPanelEmpty(true, null)).toBe("Reading the chops");
 		expect(describeChopsPanelEmpty(true, 0)).toContain("No chops yet");
 		expect(describeChopsPanelEmpty(true, 2)).toBeNull();
+	});
+});
+
+describe("the chops panel's list and filter", () => {
+	const sample = [
+		{ name: "Typecheck", kind: "command" as const, text: "bun run typecheck", description: "", agent: null, source: "personal-repository" as const },
+		{ name: "Deploy", kind: "command" as const, text: "bun run deploy --preview", description: "", agent: null, source: "repository-file" as const },
+	];
+
+	test("the filter matches names and text, ignoring case and spaces around it, and not the description", () => {
+		expect(sample.filter(chop => chopMatches(chop, "")).map(chop => chop.name)).toEqual(["Typecheck", "Deploy"]);
+		expect(sample.filter(chop => chopMatches(chop, " typeCHECK ")).map(chop => chop.name)).toEqual(["Typecheck"]);
+		expect(sample.filter(chop => chopMatches(chop, "--preview")).map(chop => chop.name)).toEqual(["Deploy"]);
+		expect(chopMatches({ name: "A", text: "b" }, "description")).toBe(false);
+	});
+
+	test("says so when nothing matches, and when a tab has none", () => {
+		expect(describeChopsTabEmpty("command", " lint ")).toBe('No commands match "lint".');
+		expect(describeChopsTabEmpty("prompt", "x")).toBe('No prompts match "x".');
+		expect(describeChopsTabEmpty("prompt", "")).toBe("No prompts yet. Add one in Settings, Chops.");
+	});
+
+	test("each source in few words", () => {
+		expect(chopSourceShort("repository-file")).toBe(".timber");
+		expect(chopSourceShort("personal-repository")).toBe("this repository");
+		expect(chopSourceShort("personal-every")).toBe("every repository");
+	});
+
+	test("the arrows move between the two tabs, Home and End go to the first and last", () => {
+		expect(chopsTabAfterKey("command", "ArrowRight")).toBe("prompt");
+		expect(chopsTabAfterKey("prompt", "ArrowRight")).toBe("command");
+		expect(chopsTabAfterKey("command", "ArrowLeft")).toBe("prompt");
+		expect(chopsTabAfterKey("prompt", "Home")).toBe("command");
+		expect(chopsTabAfterKey("command", "End")).toBe("prompt");
+		expect(chopsTabAfterKey("command", "Enter")).toBeNull();
+	});
+});
+
+describe("the chops panel's model (mock engine)", () => {
+	const TIMBER = "/work/timber";
+	const FEATURE = sampleRepositories[0]!.worktrees[1]!;
+	const label = worktreeLabel(FEATURE);
+
+	async function panelStore() {
+		const started = await startedStore();
+		await started.store.savePreferences({ chops: [chop] });
+		started.store.select(FEATURE.id);
+		await started.store.readChops(TIMBER);
+		return started;
+	}
+
+	test("counts each kind, lists the tab's chops with source and text, and says where a command runs", async () => {
+		const { store } = await panelStore();
+		const model = chopsPanelModel(store.getState(), "command", "");
+		expect(model.repository).toBe(TIMBER);
+		// The sample file shares Test, Dev server, and a prompt; the personal Test takes the file's place.
+		expect(model.counts).toEqual({ command: 2, prompt: 1 });
+		expect(model.rows.map(row => [row.chop.name, row.source, row.chop.text, row.word, row.label])).toEqual([
+			["Test", "every repository", "bun test", "Run", "Run Test"],
+			["Dev server", ".timber", "bun run dev:web", "Run", "Run Dev server"],
+		]);
+		expect(model.rows[1]!.sourceTitle).toBe("From the repository");
+		expect(model.blocked).toBeNull();
+		expect(model.footer).toBe(`Commands run in a new terminal in ${label}.`);
+		expect(model.tabEmpty).toBeNull();
+	});
+
+	test("the filter narrows the tab, and the counts stay", async () => {
+		const { store } = await panelStore();
+		expect(chopsPanelModel(store.getState(), "command", "dev:web").rows.map(row => row.chop.name)).toEqual(["Dev server"]);
+		const none = chopsPanelModel(store.getState(), "command", "nothing like it");
+		expect(none.rows).toEqual([]);
+		expect(none.tabEmpty).toBe('No commands match "nothing like it".');
+		expect(none.counts).toEqual({ command: 2, prompt: 1 });
+	});
+
+	test("with no worktree selected, the chops last read stay listed and none can run, with the reason", async () => {
+		const { store } = await panelStore();
+		const model = chopsPanelModel({ ...store.getState(), selection: null }, "command", "");
+		expect(model.rows.map(row => row.chop.name)).toEqual(["Test", "Dev server"]);
+		expect(model.blocked).toBe(NO_WORKTREE_SELECTED);
+		expect(model.footer).toBe(NO_WORKTREE_SELECTED);
+		expect(chopsPanelModel({ ...store.getState(), selection: null }, "prompt", "").blocked).toBe(NO_WORKTREE_SELECTED);
+	});
+
+	test("blocked for the palette's reasons: a missing folder, a session starting, the worktree being removed", async () => {
+		const { store } = await panelStore();
+		const state = store.getState();
+		const starting = { ...state, operations: [...state.operations, { kind: "open-terminal" as const, worktree: FEATURE.id, agent: null }] };
+		expect(chopsPanelModel(starting, "command", "").blocked).toBe(STARTING_SESSION);
+		// A prompt waits for no session to start.
+		expect(chopsPanelModel(starting, "prompt", "").blocked).toBeNull();
+		const removing = { ...state, removals: [{ repository: TIMBER, worktree: FEATURE, toast: "", status: { kind: "running" as const } }] };
+		expect(chopsPanelModel(removing, "command", "").footer).toBe(BEING_REMOVED_REASON);
+		// The palette gives the same reason for the same chop.
+		expect(paletteEntries(removing).find(entry => entry.label === "Run chop: Test")?.disabledReason).toBe(BEING_REMOVED_REASON);
+		expect(chopBlockedReason("run", { pathExists: false, starting: true, removing: true })).toBe(FOLDER_MISSING_FOR_SESSION);
+		expect(chopBlockedReason("copy", { pathExists: false, starting: true, removing: true })).toBeNull();
+		expect(chopBlockedReason("copy", null)).toBe(NO_WORKTREE_SELECTED);
+	});
+
+	test("the Prompts tab says where a prompt goes: a new agent, the only one running, the one picked, or the clipboard", async () => {
+		const { store } = await panelStore();
+		const first = store.getState().preferences.agents[0]!.name;
+		const none = chopsPanelModel(store.getState(), "prompt", "");
+		expect(none.rows.map(row => [row.chop.name, row.word, row.label])).toEqual([["Review the diff", "Send", "Send Review the diff"]]);
+		expect(none.footer).toBe(`Prompts start a new agent in ${label}: the one the chop names, or ${first}.`);
+		await store.openTerminal({ repository: TIMBER, worktree: FEATURE.path, cols: 80, rows: 24, agent: first });
+		await settle();
+		expect(chopsPanelModel(store.getState(), "prompt", "").footer).toBe(`Prompts go to ${first} in ${label}.`);
+		await store.openTerminal({ repository: TIMBER, worktree: FEATURE.path, cols: 80, rows: 24, agent: first });
+		await settle();
+		expect(chopsPanelModel(store.getState(), "prompt", "").footer).toBe(`You pick the agent in ${label} when you send a prompt.`);
+		await store.savePreferences({ agents: [] });
+		const copy = chopsPanelModel(store.getState(), "prompt", "");
+		expect(copy.rows[0]).toMatchObject({ word: "Copy", label: "Copy Review the diff" });
+		expect(copy.footer).toBe("No agent is saved in Settings, Agents, so a prompt is copied to the clipboard.");
+	});
+});
+
+describe("running a chop from the panel (mock engine)", () => {
+	const TIMBER = "/work/timber";
+	const FEATURE = sampleRepositories[0]!.worktrees[1]!;
+	const size = () => ({ cols: 80, rows: 24 });
+
+	async function panelStore() {
+		const started = await startedStore();
+		await started.store.savePreferences({ chops: [chop, { name: "Hello", kind: "command", text: "pwd", description: "", agent: null, repository: null }] });
+		started.store.select(FEATURE.id);
+		await started.store.readChops(TIMBER);
+		return started;
+	}
+
+	test("a personal command runs in a new terminal in the selected worktree, and the Workspace tab shows it", async () => {
+		const { engine, store } = await panelStore();
+		store.showTab("changes");
+		runChopIn(store, TIMBER, FEATURE.id, "Hello", size);
+		await settle();
+		const session = store.getState().terminals.find(candidate => candidate.name === "Hello")!;
+		expect(session).toMatchObject({ kind: "terminal", worktree: FEATURE.id, state: { kind: "running" } });
+		expect(store.getState().tab).toBe("workspace");
+		expect(engine.typedInto(session.id)).toBe("pwd\r");
+	});
+
+	test("a chop from .timber/chops.json still asks before its first run, and runs nothing until approved", async () => {
+		const { store } = await panelStore();
+		runChopIn(store, TIMBER, FEATURE.id, "Dev server", size);
+		await settle();
+		expect(store.getState().terminals).toEqual([]);
+		expect(store.getState().dialog).toMatchObject({ kind: "approve-chop", chop: { name: "Dev server", text: "bun run dev:web" } });
+	});
+
+	test("Run puts the issues board away, as choosing the worktree does", async () => {
+		const { store } = await panelStore();
+		store.openBoard(TIMBER);
+		expect(store.getState().board).toBe(TIMBER);
+		runChopIn(store, TIMBER, FEATURE.id, "Hello", size);
+		await settle();
+		expect(store.getState().board).toBeNull();
+	});
+
+	test("Copy with no agent saved leaves the view as it is", async () => {
+		const { engine, store } = await panelStore();
+		await store.savePreferences({ agents: [] });
+		store.showTab("changes");
+		runChopIn(store, TIMBER, FEATURE.id, "Review the diff", size, false);
+		await settle();
+		expect(store.getState().tab).toBe("changes");
+		expect(await engine.readClipboard()).toContain("Review the changes on this branch");
+	});
+
+	test("a prompt goes to the only agent running, as from the palette", async () => {
+		const { engine, store } = await panelStore();
+		const agent = store.getState().preferences.agents[0]!.name;
+		await store.openTerminal({ repository: TIMBER, worktree: FEATURE.path, ...size(), agent });
+		await settle();
+		const running = store.getState().terminals[0]!;
+		// The sample file's prompt asks first; approved, it goes to the running agent and no agent starts.
+		runChopIn(store, TIMBER, FEATURE.id, "Review the diff", size);
+		await settle();
+		expect(store.getState().dialog).toMatchObject({ kind: "approve-chop", chop: { name: "Review the diff" }, session: running.id });
+		store.closeDialog();
+		await store.runChop(TIMBER, FEATURE.id, "Review the diff", size(), "Review the changes on this branch against main.\nList risks and missing tests, most serious first.", { session: running.id });
+		await settle();
+		expect(store.getState().terminals).toHaveLength(1);
+		expect(engine.promptsSentTo(running.id)).toHaveLength(1);
+	});
+
+	test("with Use chops off nothing runs", async () => {
+		const { store } = await panelStore();
+		await store.savePreferences({ useChops: false });
+		runChopIn(store, TIMBER, FEATURE.id, "Hello", size);
+		await settle();
+		expect(store.getState().terminals).toEqual([]);
+	});
+});
+
+describe("the chops panel as drawn, with runs", () => {
+	test("tabs with counts, a filter, rows with source and Run, and the footer", async () => {
+		const { store } = await startedStore();
+		await store.savePreferences({ chops: [chop] });
+		store.select(sampleRepositories[0]!.worktrees[1]!.id);
+		await store.readChops("/work/timber");
+		store.toggleChopsPanel();
+		const panel = render(store).split('id="chops-panel"')[1]!;
+		expect(panel).toMatch(/role="tab"[^>]*aria-selected="true"[^>]*>Commands <span class="chops-panel-count">2<\/span>/);
+		expect(panel).toMatch(/role="tab"[^>]*aria-selected="false"[^>]*>Prompts <span class="chops-panel-count">1<\/span>/);
+		expect(panel).toContain('aria-label="Filter chops"');
+		expect(panel).toContain('<span class="chop-item-meta" title="From the repository">.timber</span>');
+		expect(panel).toMatch(/aria-label="Run Dev server" aria-disabled="false"/);
+		expect(panel).toContain("Commands run in a new terminal in");
+	});
+
+	test("with no worktree selected, Run is disabled with the reason, and stays focusable", async () => {
+		const { store } = await startedStore();
+		await store.savePreferences({ chops: [chop] });
+		await store.readChops("/work/timber");
+		store.toggleChopsPanel();
+		const state = store.getState();
+		(state as { selection: unknown }).selection = null;
+		const panel = render(store).split('id="chops-panel"')[1]!;
+		expect(panel).toMatch(new RegExp(`aria-label="Run Test" aria-disabled="true" aria-describedby="[^"]+-text-0 [^"]+-footer" title="${NO_WORKTREE_SELECTED}"`));
+		expect(panel).not.toMatch(/chops-panel-run"[^>]* disabled=""/);
+		expect(panel).toContain(`class="chops-panel-footer">${NO_WORKTREE_SELECTED}</p>`);
 	});
 });

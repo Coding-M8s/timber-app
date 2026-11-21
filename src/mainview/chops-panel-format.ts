@@ -1,4 +1,9 @@
-import { type AppState, canToggleChopsPanel } from "./store/state";
+import { type ChopKind, type ChopSource, type ListedChop, listedChops } from "../shared/chops";
+import { promptTarget } from "./agent-sessions";
+import { type ChopAction, chopAction, chopButtonLabel, describeChopSource } from "./chop-format";
+import { worktreeLabel } from "./format";
+import { chopBlockedReason, chopPlace } from "./palette";
+import { type AppState, canToggleChopsPanel, offeredChops, selectedWorktree } from "./store/state";
 
 /**
  * Words and keys of the chops panel: the title bar's Chops button, the
@@ -61,10 +66,175 @@ export function takesChopsPanelKey(event: Keys, state: AppState): boolean {
 	return isChopsPanelShortcut(event) && canToggleChopsPanel(state);
 }
 
-/** What the panel says while it has nothing to list. */
+/**
+ * What the panel says while it has nothing to list: with no worktree
+ * selected and no chops read yet, that one should be selected; with one
+ * selected, that they are being read; then that there are none.
+ */
 export function describeChopsPanelEmpty(selected: boolean, listed: number | null): string | null {
-	if (!selected) return "Select a worktree to see the chops of its repository.";
-	if (listed === null) return "Reading the chops";
+	if (listed === null) return selected ? "Reading the chops" : "Select a worktree to see the chops of its repository.";
 	if (listed === 0) return "No chops yet. Add one in Settings, Chops, or share some in .timber/chops.json.";
 	return null;
+}
+
+/** The panel's tabs: one for commands, one for prompts. */
+export const CHOPS_TABS: readonly ChopKind[] = ["command", "prompt"];
+
+const TAB_WORDS: Record<ChopKind, { tab: string; plural: string }> = {
+	command: { tab: "Commands", plural: "commands" },
+	prompt: { tab: "Prompts", plural: "prompts" },
+};
+
+export function chopsTabLabel(kind: ChopKind): string {
+	return TAB_WORDS[kind].tab;
+}
+
+/** The tab the arrow keys, Home, or End move to, or null for any other key. Two tabs: either arrow goes to the other. */
+export function chopsTabAfterKey(current: ChopKind, key: string): ChopKind | null {
+	switch (key) {
+		case "ArrowLeft":
+		case "ArrowRight":
+			return current === "command" ? "prompt" : "command";
+		case "Home":
+			return "command";
+		case "End":
+			return "prompt";
+		default:
+			return null;
+	}
+}
+
+export const CHOPS_FILTER_LABEL = "Filter chops";
+
+const SOURCE_SHORT: Record<ChopSource, string> = {
+	"repository-file": ".timber",
+	"personal-repository": "this repository",
+	"personal-every": "every repository",
+};
+
+/** Where a chop comes from, in the panel's few words. The tooltip says it in full (`describeChopSource`). */
+export function chopSourceShort(source: ChopSource): string {
+	return SOURCE_SHORT[source];
+}
+
+/** Whether a chop's name or text has the query, ignoring case. An empty query has every chop. */
+export function chopMatches(chop: Pick<ListedChop, "name" | "text">, query: string): boolean {
+	const wanted = query.trim().toLowerCase();
+	return wanted === "" || chop.name.toLowerCase().includes(wanted) || chop.text.toLowerCase().includes(wanted);
+}
+
+/** What a tab says when it lists nothing: no chop matches the filter, or it has none of its kind. */
+export function describeChopsTabEmpty(kind: ChopKind, query: string): string {
+	const wanted = query.trim();
+	if (wanted !== "") return `No ${TAB_WORDS[kind].plural} match "${wanted}".`;
+	return `No ${TAB_WORDS[kind].plural} yet. Add one in Settings, Chops.`;
+}
+
+/** The visible word of a row's button. Its accessible name is `chopButtonLabel`, which names the chop. */
+export function chopRunWord(action: ChopAction): string {
+	switch (action) {
+		case "run":
+			return "Run";
+		case "send":
+			return "Send";
+		case "copy":
+			return "Copy";
+	}
+}
+
+export interface ChopsPanelRow {
+	chop: ListedChop;
+	/** Where it comes from, short, and in full for the tooltip. */
+	source: string;
+	sourceTitle: string;
+	action: ChopAction;
+	/** The button's visible word, and its accessible name. */
+	word: string;
+	label: string;
+}
+
+export interface ChopsPanelModel {
+	/** The repository whose chops are listed, by its primary checkout, or null when none are. */
+	repository: string | null;
+	/** Why the list could not be read, or null. */
+	failure: string | null;
+	/** What shows in place of the tabs while there is nothing to list, or null. */
+	empty: string | null;
+	/** Whether the selected worktree's repository's chops are being read. */
+	reading: boolean;
+	/** How many chops of each kind, whatever the filter. */
+	counts: Record<ChopKind, number>;
+	/** The chops of the tab that match the filter, in listed order. */
+	rows: ChopsPanelRow[];
+	/** What the tab says when `rows` is empty, or null. */
+	tabEmpty: string | null;
+	/** Why this tab's chops cannot be chosen now, or null. Every row of a tab does the same, so it holds for each. */
+	blocked: string | null;
+	/** Where the next run goes, or, while blocked, why nothing runs. */
+	footer: string;
+}
+
+/**
+ * Where a choice of the tab goes now, in words: a command to a new terminal
+ * in the selected worktree; a prompt to its only agent, to a new agent, to
+ * the one the person picks, or to the clipboard with no agent saved.
+ */
+function describeTarget(state: AppState, kind: ChopKind, action: ChopAction): string {
+	const selection = selectedWorktree(state)!;
+	const where = worktreeLabel(selection.worktree);
+	if (kind === "command") return `Commands run in a new terminal in ${where}.`;
+	if (action === "copy") return "No agent is saved in Settings, Agents, so a prompt is copied to the clipboard.";
+	const target = promptTarget(state.terminals, selection.worktree.id);
+	switch (target.kind) {
+		case "session": {
+			const session = state.terminals.find(candidate => candidate.id === target.session);
+			return `Prompts go to ${session?.name ?? "the agent running"} in ${where}.`;
+		}
+		case "new":
+			return `Prompts start a new agent in ${where}: the one the chop names, or ${state.preferences.agents[0]!.name}.`;
+		case "ask":
+			return `You pick the agent in ${where} when you send a prompt.`;
+	}
+}
+
+/**
+ * What the chops panel shows for a tab and a filter. The chops are the
+ * selected worktree's repository's; with no worktree selected, the ones last
+ * read stay listed, as in the palette, and none can be chosen. Each row runs
+ * through the same path as the palette, and is blocked for the same reason
+ * (`chopBlockedReason`).
+ */
+export function chopsPanelModel(state: AppState, tab: ChopKind, query: string): ChopsPanelModel {
+	const selected = selectedWorktree(state);
+	const offered = offeredChops(state);
+	const read = selected === null ? offered : offered?.repository === selected.repository.path ? offered : null;
+	const list = read?.list ?? null;
+	const chops = listedChops(list);
+	const failure = list !== null && list.outcome !== "listed" ? list.message : null;
+	const empty = failure === null ? describeChopsPanelEmpty(selected !== null, list === null ? null : chops.length) : null;
+	const counts: Record<ChopKind, number> = { command: 0, prompt: 0 };
+	for (const chop of chops) counts[chop.kind] += 1;
+	const action = chopAction(tab, state.preferences.agents.length);
+	const blocked = chopBlockedReason(action, chopPlace(state));
+	const rows = chops
+		.filter(chop => chop.kind === tab && chopMatches(chop, query))
+		.map(chop => ({
+			chop,
+			source: chopSourceShort(chop.source),
+			sourceTitle: describeChopSource(chop.source),
+			action,
+			word: chopRunWord(action),
+			label: chopButtonLabel(chop.name, action),
+		}));
+	return {
+		repository: read?.repository ?? null,
+		failure,
+		empty,
+		reading: selected !== null && list === null,
+		counts,
+		rows,
+		tabEmpty: chops.length > 0 && rows.length === 0 ? describeChopsTabEmpty(tab, query) : null,
+		blocked,
+		footer: blocked ?? describeTarget(state, tab, action),
+	};
 }
