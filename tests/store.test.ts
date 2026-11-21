@@ -83,6 +83,10 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		...createMockTerminals(() => null),
 		onShowSession: () => () => {},
 		onWorktreeHandedOff: () => () => {},
+		appUpdate: async () => ({ kind: "idle" }),
+		checkForAppUpdate: async () => ({ kind: "idle" }),
+		onAppUpdateChanged: () => () => {},
+		installAppUpdate: async () => ({ outcome: "failed", message: "Not acted out here." }),
 		chooseSoundFile: async () => ({ outcome: "cancelled" }),
 		playSound: async () => ({ outcome: "played" }),
 		// Timber's settings as the mock acts them out. Their own tests are in timber-settings.test.tsx.

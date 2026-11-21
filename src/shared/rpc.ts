@@ -22,6 +22,7 @@ import type { OpenTerminalRequest, TerminalChange, TerminalOutput } from "./term
 import type { TimberConnectionCheckRequest, TimberSettingsRequest, TimberSettingsSaveRequest } from "./timber-config";
 import type { DoneApplyRequest, DonePreviewRequest } from "./timber-done";
 import type { UninstallRequest } from "./uninstall";
+import type { AppUpdateInstallRequest, AppUpdateState } from "./app-update";
 
 /** What the engine answers for a request, so the bridge and the contract cannot drift apart. */
 type Answer<Name extends keyof Engine> = Awaited<ReturnType<Engine[Name]>>;
@@ -133,6 +134,10 @@ export type AppRPC = {
 			restartPlan: { params: {}; response: Answer<"restartPlan"> };
 			/** Ending every session can take a moment, so the caller allows longer. When it works, the app quits before it answers. */
 			restart: { params: {}; response: Answer<"restart"> };
+			appUpdate: { params: {}; response: Answer<"appUpdate"> };
+			checkForAppUpdate: { params: {}; response: Answer<"checkForAppUpdate"> };
+			/** Ending every session can take a moment, so the caller allows longer. When it works, the app quits before it answers. */
+			installAppUpdate: { params: AppUpdateInstallRequest; response: Answer<"installAppUpdate"> };
 		};
 		messages: {
 			/** Typed or pasted text for a session. */
@@ -169,6 +174,8 @@ export type AppRPC = {
 			fetchChanged: RepositoryFetch;
 			/** The Timber status changed without being asked, for example a newer release came out. Ask `timberStatus` for it. */
 			timberChanged: {};
+			/** Where updating the app stands changed. */
+			appUpdateChanged: AppUpdateState;
 		};
 	}>;
 };

@@ -1,4 +1,5 @@
 import type { AppInfo } from "./app-info";
+import type { AppUpdateInstallRequest, AppUpdateInstallResult, AppUpdateState } from "./app-update";
 import type { ArenaInspection, ArenaList, ArenaPresetList, NewArenaRequest, NewArenaResult, PickArenaRequest, PickArenaResult } from "./arenas";
 import type { ChopList, ChopsRequest, RunChopRequest, RunChopResult } from "./chops";
 import type { BackupDeleteRequest, BackupDeleteResult, BackupList, BackupRestoreRequest, BackupRestoreResult } from "./backups";
@@ -703,4 +704,22 @@ export interface Engine {
 	 * never arrive, because the app is gone.
 	 */
 	restart(): Promise<RestartResult>;
+	/** Where updating the app from its GitHub releases stands (see ./app-update.ts). Read-only and safe to call again. */
+	appUpdate(): Promise<AppUpdateState>;
+	/**
+	 * Look for a newer release now, and download it when there is one. It
+	 * answers at once with where updating stands; what follows arrives through
+	 * `onAppUpdateChanged`. A look already running is not started twice. A
+	 * failed look, for example offline, is a state, never an error.
+	 */
+	checkForAppUpdate(): Promise<AppUpdateState>;
+	/** Hear where updating the app stands each time it changes. Returns a function that stops listening. */
+	onAppUpdateChanged(listener: (state: AppUpdateState) => void): () => void;
+	/**
+	 * Restart into the downloaded update. While sessions run it does nothing
+	 * and says so, unless `endSessions` says the person agreed; then which
+	 * sessions run is saved, so they open again, and they end. When it works,
+	 * the answer may never arrive, because the app is gone.
+	 */
+	installAppUpdate(request: AppUpdateInstallRequest): Promise<AppUpdateInstallResult>;
 }

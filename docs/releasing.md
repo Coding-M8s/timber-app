@@ -2,8 +2,10 @@
 
 A release is one tag. Pushing a tag such as `v0.2.0` runs
 `.github/workflows/release.yml`, which builds the app on Linux and Windows
-and opens a draft GitHub Release with both installers and their checksums.
-A person checks the draft and publishes it.
+and opens a draft GitHub Release with both installers, the update files,
+and their checksums. A person checks the draft and publishes it. Installed
+apps update to it once it is published (see
+[updating the app](architecture.md#updating-the-app)).
 
 ## Steps
 
@@ -21,11 +23,20 @@ A person checks the draft and publishes it.
 3. **Wait for the workflow.** Under Actions, "Release" runs one build job
    per platform, then the release job.
 4. **Check the draft.** Under Releases, the draft "Timber v0.2.0" holds
-   `linux-x64-Timber-Setup.tar.gz`, `win-x64-Timber-Setup.zip`, and
+   `linux-x64-Timber-Setup.tar.gz`, `win-x64-Timber-Setup.zip`, the update
+   files (`stable-linux-x64-Timber.tar.zst`, `stable-linux-x64-update.json`,
+   `stable-linux-x64-update-v2.json`, and the same three for `win`), and
    `SHA256SUMS.txt`. Its notes are `.github/release-notes.md` followed by
    the pull requests GitHub lists since the last release. Install each
    build on a clean machine and start it before publishing.
-5. **Publish the draft.**
+5. **Publish the draft, as the latest release and not as a pre-release.**
+   Installed apps look only at the newest published release that is not a
+   pre-release (`releases/latest/download`), so a pre-release, or a draft,
+   is never offered to them. Within six hours of publishing, an installed
+   app built with the update address is meant to find it, download it, and
+   offer "Restart to update". An update from one published release to the
+   next has not been run yet; record the first one in
+   [verification](verification.md).
 
 ## What the workflow does
 
@@ -46,6 +57,11 @@ A person checks the draft and publishes it.
   jobs, so a failed check, test, or build on either platform leaves no
   draft. Fix it on `main`, then move the tag: `git push origin :v0.2.0`,
   tag again, and push.
+- **Attaches what installed apps update from.** Each build checks with
+  `ls` that its bundle and both update manifests are in `artifacts/`, and
+  uploads them beside the installer. Their names are fixed: the updater
+  asks for them by name under `release.baseUrl`. A missing one fails the
+  build, and `sha256sum` fails the release job, so no draft lacks them.
 - **Only the release job can write.** The workflow reads the repository;
   the release job alone gets `contents: write`, to create the draft. It
   writes `SHA256SUMS.txt` with `sha256sum` and calls
@@ -93,8 +109,5 @@ The pull request also runs the release builds, because it changes
   say so. On Windows, SmartScreen is expected to warn about the unsigned
   installer ("Windows protected your PC"); "More info", then "Run anyway",
   installs it.
-- **Update bundles.** `bun run build` also writes the `.tar.zst` bundle and
-  the `update.json` files that Electrobun's updater reads. They are not
-  attached; automatic updates (issue 32) will add them.
 - **macOS.** Not built.
 - **A canary channel.** It can follow later with `bun run build:canary`.

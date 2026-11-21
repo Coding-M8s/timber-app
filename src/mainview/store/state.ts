@@ -1,3 +1,5 @@
+import type { AppUpdateState } from "../../shared/app-update";
+import type { InstallStep } from "../app-update-format";
 import type { PullRequestCreationFailure, PullRequestFields, ReportedPullRequestView, ReviewerFailuresView } from "../pull-request-create-format";
 import type { ChopList, ListedChop } from "../../shared/chops";
 import type { PortClash, PortsResult } from "../../shared/ports";
@@ -306,6 +308,12 @@ export interface AppState {
 	preferencesAtStart: Preferences | null;
 	/** The app's own version, for About. Null until the engine has answered. */
 	appVersion: string | null;
+	/** Where updating the app from its GitHub releases stands (see src/shared/app-update.ts). */
+	appUpdate: AppUpdateState;
+	/** The downloaded update the person said Later to, so the banner stays away for it in this run. Null when none. */
+	appUpdateLater: string | null;
+	/** Where Restart to update stands, shared by the banner and About, so a failure stays on screen. */
+	appUpdateStep: InstallStep;
 	/** What the app decided about WebKitGTK's renderer when it started. Null until the engine has answered. */
 	rendering: RenderingStatus | null;
 	/** Why the last "Open in editor" opened nothing. Null once one worked, or after the person dismissed it. */
@@ -482,6 +490,9 @@ export const initialState: AppState = {
 	preferencesProblem: null,
 	preferencesAtStart: null,
 	appVersion: null,
+	appUpdate: { kind: "idle" },
+	appUpdateLater: null,
+	appUpdateStep: { kind: "offer" },
 	rendering: null,
 	editorProblem: null,
 	terminals: [],

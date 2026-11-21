@@ -562,6 +562,15 @@ logins. The app never reads a tracker login and never signs in.
   saved. Later changes nothing. While terminals run, Restart now asks first
   and says how many end, with focus on Cancel. A copy that cannot restart
   itself says why.
+- **App updates:** once a newer release of the app is downloaded, a banner
+  across the top says "Timber app 0.2.0 is downloaded. Restart the app to
+  install it." with "Later" and "Restart to update". Later hides it until
+  another version is ready. While sessions run, Restart to update asks
+  first, says how many end and that they open again, with focus on Cancel.
+  The app never restarts by itself. Settings, About has an Updates part:
+  where updating stands and "Check for updates". A look that failed, such
+  as offline, is said there in plain text and nowhere else: no banner, no
+  alert, no dialog.
 - **Uninstall:** at the end of Settings, About. The first button only shows
   what would be removed and the command; "Uninstall and quit" is the
   dangerous one, and Cancel has the focus. The saved repository list stays

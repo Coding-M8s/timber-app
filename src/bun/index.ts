@@ -40,6 +40,7 @@ import { createSettingsHolder, settingsFilePath } from "./settings";
 import { checkTimber, chooseTimber, createTimberLocator, describeTimberStatus, findBundledTimber } from "./timber";
 import { atMost, createReleaseWatcher, lookUpLatestRelease, releaseFilePath, timberFinder } from "./timber-release";
 import { openWebLink } from "./open-link";
+import { createAppUpdates } from "./app-updates";
 import { createQuitGuard } from "./quit-guard";
 import { createRestarter } from "./restart";
 import { createListingPace } from "./listing-pace";
@@ -432,6 +433,30 @@ const uninstaller = createUninstaller({
 // Starts the app again once it is gone, then quits (see ./restart.ts). The window asked first while terminals run.
 const restarter = createRestarter({ quit: () => quitGuard.confirm() });
 
+/*
+ * Updating the app from its GitHub releases (see ./app-updates.ts). Electrobun's applyUpdate asks before quitting like
+ * any quit, starts the swap, and quits; it says how that went only in its status history.
+ */
+const appUpdates = createAppUpdates({
+	updater: {
+		localBuild: async () => {
+			const info = await Updater.getLocalInfo();
+			return { channel: info.channel, baseUrl: info.baseUrl };
+		},
+		check: () => Updater.checkForUpdate(),
+		download: () => Updater.downloadUpdate(),
+		latest: () => Updater.updateInfo(),
+		apply: async () => {
+			await Updater.applyUpdate();
+			return Updater.getStatusHistory().at(-1)?.status === "launching-new-version";
+		},
+	},
+	liveCount: () => terminals.liveCount(),
+	// The person agreed, so the sessions are saved and end without another question, as for a restart.
+	restartInto: apply => quitGuard.confirmWith(apply),
+	onChange: state => tell("the app update", () => rpc.send.appUpdateChanged(state)),
+});
+
 const rpc = BrowserView.defineRPC<AppRPC>({
 	maxRequestTime: 15_000,
 	handlers: {
@@ -572,6 +597,14 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			restartPlan: () => restarter.plan(),
 			// Quits, ending every terminal without asking again, and starts the same app again (see ./restart.ts).
 			restart: () => restarter.restart(),
+			appUpdate: () => appUpdates.current(),
+			// Answers at once; the download that may follow is told through appUpdateChanged.
+			checkForAppUpdate: () => {
+				void appUpdates.check();
+				return appUpdates.current();
+			},
+			// Restarts only when asked, and while sessions run only once the person agreed (see ./app-updates.ts).
+			installAppUpdate: request => appUpdates.install(request),
 			// Writes only the session's input, as one bracketed paste (see ./terminals.ts).
 			pasteTerminal: async ({ id, text }) => terminals.paste(id, text),
 		},
@@ -638,6 +671,15 @@ async function lookForTimberAgain(): Promise<void> {
 const checkTimberRelease = (check: Promise<boolean>) => void check.then(changed => changed ? lookForTimberAgain() : undefined);
 checkTimberRelease(releaseAtStart);
 setInterval(() => checkTimberRelease(timberRelease.check()), TIMBER_RELEASE_INTERVAL_MS);
+
+/*
+ * A newer release of the app is looked for a little after start, so it never competes with the first listing, and
+ * then every six hours. A look that fails, for example offline, only says so in Settings, About.
+ */
+const APP_UPDATE_FIRST_LOOK_MS = 30_000;
+const APP_UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
+setTimeout(() => void appUpdates.check(), APP_UPDATE_FIRST_LOOK_MS);
+setInterval(() => void appUpdates.check(), APP_UPDATE_INTERVAL_MS);
 
 Electrobun.events.on("before-quit", guardQuit);
 

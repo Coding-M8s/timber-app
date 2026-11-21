@@ -6,6 +6,7 @@ import { Sidebar } from "./components/Sidebar";
 import { SidebarResizer } from "./components/SidebarResizer";
 import { TimberNotice } from "./components/TimberNotice";
 import { TimberUpdateBanner } from "./components/TimberUpdateBanner";
+import { AppUpdateBanner } from "./components/AppUpdate";
 import { type CSSProperties, type ReactNode, useEffect, useRef } from "react";
 import { sameCustomThemes } from "../shared/custom-themes";
 import { sameThemeChoice } from "../shared/theme";
@@ -53,6 +54,7 @@ function Body() {
 	const right = state.preferences.sidebarSide === "right";
 	return (
 		<>
+			<AppUpdateBanner />
 			<TimberUpdateBanner />
 			<div className={right ? "body sidebar-right" : "body"} style={widths}>
 				{right ? parts.reverse() : parts}

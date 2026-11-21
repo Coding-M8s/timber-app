@@ -3100,3 +3100,24 @@ Run for shipping Timber inside the app (issue 30), on 2026-11-21, Linux x64
 - Not run: the installed desktop app by hand (New, Open, Done, and Rebase
   through the window with no Timber installed, switching Settings, Timber,
   Executable, and About), the Windows build, and macOS, which is not built.
+
+Run for updating the app from GitHub releases (issue 32), Linux x64 with
+Bun 1.4.5 and Git 2.56.1:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 3087 passed, 19 skipped, none failed. The updater is stood in
+  for (`tests/app-updates.test.ts`), the store and window run through the
+  mock engine (`tests/app-update-view.test.tsx`), and the quit guard's
+  `confirmWith` and the release workflow's files have their own tests.
+- `bun run build`: wrote `stable-linux-x64-Timber.tar.zst` (90 MB),
+  `stable-linux-x64-update.json`, and `stable-linux-x64-update-v2.json`
+  beside the installer, and printed "delta patch generation disabled". The
+  bundle's `Resources/version.json` has `"baseUrl":
+  "https://github.com/Coding-M8s/timber-app/releases/latest/download"`.
+- `curl -sIL` of a `releases/latest/download/<asset>?0123abcd` address of
+  a public release (Timber's `LICENSE`): 200 after GitHub's redirect, so
+  the updater's added query does not break the address.
+- Not run: an installed build updating to a newer published one on Linux
+  or Windows, an interrupted update, and being offline in the installed
+  app. The first release that can update is the first built with the update
+  address, and it needs a later published release to update to.

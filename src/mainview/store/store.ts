@@ -5,6 +5,7 @@ import { type IssueBoard, boardKey, boardView, emptyBoard, listsToRead, withRead
 import { type Attention, sameAttention } from "../../shared/attention";
 import type { UninstallPlan, UninstallRequest, UninstallResult } from "../../shared/uninstall";
 import type { RestartPlan, RestartResult } from "../../shared/restart";
+import type { AppUpdateInstallRequest, AppUpdateInstallResult } from "../../shared/app-update";
 import { readableEditorSetting } from "../../shared/editor";
 import type { Engine } from "../../shared/engine";
 import type { WorktreeHandoff } from "../../shared/handoff";
@@ -38,7 +39,8 @@ import { type PullRequestFields, defaultPullRequestTitle, presentPullRequestCrea
 import type { WorkflowList } from "../../shared/workflows";
 import type { IssueTrackers } from "../../shared/issue-trackers";
 import { type Draw, createTerminalFeed } from "../terminal-feed";
-import { describeOrphanTerminal, describeRestoreFailures } from "../terminal-format";
+import { describeOrphanTerminal, describeRestoreFailures, liveTerminalCount } from "../terminal-format";
+import { installStepOf } from "../app-update-format";
 import { BEING_REMOVED_REASON, describeDone, describeRemovalFailed } from "../done-format";
 import { SESSION_STARTED_DIAGNOSTIC, describeCleanUpEnded } from "../clean-up-format";
 import { listedOrder } from "../changes-format";
@@ -545,6 +547,24 @@ export interface AppStore {
 	 * failure. Never throws.
 	 */
 	restart(): Promise<RestartResult>;
+	/** Look for a newer release of the app now. What it finds arrives in `appUpdate`. Never throws. */
+	checkForAppUpdate(): Promise<void>;
+	/**
+	 * Restart into the downloaded update. While sessions run it does nothing
+	 * and says so, unless `endSessions` says the person agreed. No answer may
+	 * come back when it works, as the app is gone. Never throws.
+	 */
+	installAppUpdate(request: AppUpdateInstallRequest): Promise<AppUpdateInstallResult>;
+	/**
+	 * Restart to update was pressed: while sessions run, ask first (in
+	 * `appUpdateStep`); otherwise restart into the update. With `endSessions`
+	 * the person agreed that the sessions end.
+	 */
+	restartForUpdate(endSessions: boolean): Promise<void>;
+	/** The person did not agree to end the sessions: back to Restart to update. */
+	cancelUpdateRestart(): void;
+	/** The person said Later to the downloaded update: the banner goes away until another version is ready. */
+	appUpdateLater(): void;
 	/** The person agreed to quit while terminals run. */
 	confirmQuit(): Promise<void>;
 	/** The person chose to keep the app open. */
@@ -606,6 +626,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	// What the engine was last told through `attend`, and whether to tell it: only between `start` and its stop.
 	let windowState: WindowState = { visible: true, focused: true };
 	let attended: Attention | null = null;
+	/** How many update states were heard, so an answer that crossed a newer one on its way is dropped. */
+	let appUpdateChanges = 0;
 	let attending = false;
 	// What the seen statuses were last kept from, so most updates skip that work.
 	let seenFrom: { terminals: readonly TerminalSession[]; onScreen: string | null } = { terminals: initialState.terminals, onScreen: null };
@@ -2498,6 +2520,16 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		};
 	}
 
+	/** Restart into the downloaded update. Never throws. */
+	async function installUpdate(request: AppUpdateInstallRequest): Promise<AppUpdateInstallResult> {
+		try {
+			return await engine.installAppUpdate(request);
+		} catch (error) {
+			// When it worked the window is gone before this shows, so a lost answer seen here means the app is still open.
+			return { outcome: "failed", message: `No answer came back from the update: ${messageOf(error)}. If the app is still open, quit it and start it again.` };
+		}
+	}
+
 	return {
 		getState: () => state,
 		subscribe(listener) {
@@ -2549,6 +2581,11 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				engine.onWorktreeHandedOff(handoff => void takeHandoff(handoff)),
 				// A newer Timber release came out: ask for the status again, so the banner shows.
 				engine.onTimberChanged(() => void findTimber(() => engine.timberStatus())),
+				engine.onAppUpdateChanged(next => {
+					appUpdateChanges += 1;
+					// Another version is on its way, so what Restart to update said about the last one is old.
+					update(next.kind === "downloading" ? { appUpdate: next, appUpdateStep: { kind: "offer" } } : { appUpdate: next });
+				}),
 				engine.onFetchChanged(status => {
 					heardFetches.add(status.repository);
 					showFetch(status);
@@ -2570,6 +2607,12 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			void findTimber(() => engine.timberStatus());
 			engine.appInfo().then(info => update({ appVersion: info.version, rendering: info.rendering }), () => {
 				// About says the version is not known.
+			});
+			const heardBefore = appUpdateChanges;
+			engine.appUpdate().then(next => {
+				if (appUpdateChanges === heardBefore) update({ appUpdate: next });
+			}, () => {
+				// Settings, About can look again.
 			});
 			// Sessions outlive the window, for example when it reloads. Changes heard meanwhile are newer than this answer.
 			const settle = (listed: readonly TerminalSession[]) => {
@@ -2925,6 +2968,33 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				// When the restart worked the window is gone before this shows, so a lost answer seen here means the app is still open.
 				return { outcome: "failed", message: `No answer came back from the restart: ${messageOf(error)}. If the app is still open, quit it and start it again.` };
 			}
+		},
+		async checkForAppUpdate() {
+			const heardBefore = appUpdateChanges;
+			try {
+				const next = await engine.checkForAppUpdate();
+				// A change heard while the answer was on its way is newer than it.
+				if (appUpdateChanges === heardBefore) update({ appUpdate: next });
+			} catch (error) {
+				update({ appUpdate: { kind: "failed", stage: "check", message: `No answer came back from the look: ${messageOf(error)}.` } });
+			}
+		},
+		installAppUpdate: installUpdate,
+		async restartForUpdate(endSessions) {
+			const live = liveTerminalCount(state.terminals);
+			if (live > 0 && !endSessions) {
+				update({ appUpdateStep: { kind: "confirm", live } });
+				return;
+			}
+			update({ appUpdateStep: { kind: "restarting" } });
+			const result = await installUpdate({ endSessions });
+			update({ appUpdateStep: installStepOf(result) });
+		},
+		cancelUpdateRestart() {
+			update({ appUpdateStep: { kind: "offer" } });
+		},
+		appUpdateLater() {
+			if (state.appUpdate.kind === "ready") update({ appUpdateLater: state.appUpdate.version });
 		},
 		async confirmQuit() {
 			update({ quitRequest: null });

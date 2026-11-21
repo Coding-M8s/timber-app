@@ -67,4 +67,11 @@ export default {
 		linux: { bundleCEF: false, icon: "icons/icon.png" },
 		win: { bundleCEF: false, icon: "icons/icon.ico" },
 	},
+	release: {
+		// Where an installed app looks for updates: the files of the newest published, non-prerelease GitHub release,
+		// which the release workflow attaches. Drafts are not seen. See docs/releasing.md.
+		baseUrl: "https://github.com/Coding-M8s/timber-app/releases/latest/download",
+		// Every update downloads the whole bundle. Patches against the previous release can come later.
+		generatePatch: false,
+	},
 } satisfies ElectrobunConfig;
