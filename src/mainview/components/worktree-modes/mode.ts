@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { AgentStart, ModeRun, SetupStart } from "./agent-choice";
+import type { AgentStart, FollowUp, ModeRun, SetupStart } from "./agent-choice";
 
 /**
  * One way the worktree dialog can make a worktree, for example from a new
@@ -26,4 +26,14 @@ export interface WorktreeDialogMode {
 	workflow: string | null;
 	/** Run the command the footer shows. The frame starts setup and the picked agent in the worktree it reports. */
 	run(): Promise<ModeRun>;
+	/**
+	 * Set for a mode that starts its own agents, as Arena does for each
+	 * attempt: the footer shows these lines in place of setup and the picked
+	 * agent, and the dialog has no Agent field.
+	 */
+	ownFollowUps?: readonly FollowUp[];
+	/** Shown right below a failure, for what the person should know next. */
+	failureNote?: ReactNode;
+	/** Why this mode cannot be chosen now, or null or left out when it can. The switch shows it and keeps the mode off. */
+	unavailable?: string | null;
 }

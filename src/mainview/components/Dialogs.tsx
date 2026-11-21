@@ -7,7 +7,6 @@ import { ArenaCompareDialog } from "./ArenaCompareDialog";
 import { CommandPalette } from "./CommandPalette";
 import { DeleteBackupDialog, RestoreBackupDialog } from "./BackupDialogs";
 import { DoneDialog } from "./DoneDialog";
-import { NewArenaDialog } from "./NewArenaDialog";
 import { NewWorktreeDialog } from "./NewWorktreeDialog";
 import { RebaseDialog } from "./RebaseDialog";
 import { SendReviewDialog } from "./ReviewNotes";
@@ -66,14 +65,11 @@ export function Dialogs() {
 		case "send-review":
 			// A key per worktree, so another review starts from nothing.
 			return <SendReviewDialog key={dialog.worktree} worktree={dialog.worktree} />;
-		case "new-arena":
 		case "arena-compare": {
 			// Timber runs in the repository's folder, so the repository has to be listed and there. A key per arena, so another starts from nothing.
 			const repository = state.repositories.find(candidate => candidate.path === dialog.repository && candidate.available);
 			if (!repository) return null;
-			return dialog.kind === "new-arena"
-				? <NewArenaDialog key={repository.path} repository={repository} />
-				: <ArenaCompareDialog key={`${repository.path}\n${dialog.arena}`} request={dialog} />;
+			return <ArenaCompareDialog key={`${repository.path}\n${dialog.arena}`} request={dialog} />;
 		}
 		case "approve-chop":
 			// A key per chop text, so a changed text is a new question.

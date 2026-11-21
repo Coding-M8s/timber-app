@@ -76,6 +76,8 @@ describe("palette entries", () => {
 		expect(byLabel(state, "Rebase").action).toEqual({ kind: "dialog", request: { kind: "rebase-worktree", repository: TIMBER, worktree: FEATURE_ID } });
 		expect(byLabel(state, "Done").action).toEqual({ kind: "dialog", request: { kind: "done-worktree", repository: TIMBER, worktree: FEATURE_ID } });
 		expect(byLabel(state, "Open existing branch").action).toEqual({ kind: "dialog", request: { kind: "new-worktree", repository: TIMBER, mode: "existing" } });
+		// New arena opens the New worktree dialog on its Arena mode.
+		expect(byLabel(state, "New arena (Beta)").action).toEqual({ kind: "dialog", request: { kind: "new-worktree", repository: TIMBER, mode: "arena" } });
 		expect(byLabel(state, "Settings").action).toEqual({ kind: "dialog", request: { kind: "settings" } });
 	});
 

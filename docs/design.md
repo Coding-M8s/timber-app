@@ -100,10 +100,10 @@ change them here first when they change.
 - Drag a repository header to move it; a line shows where it will land.
   Alt+Up and Alt+Down move a focused header one place. The order is
   remembered between runs.
-- Each repository header has a "+" that opens a small menu, "New
-  worktree..." and "New arena (Beta)...", and a "Fetch now" control. An "Add
-  repository" control sits below the list. New arena is disabled, with the
-  reason, when the Timber found has no arenas for apps.
+- Each repository header has a "+" that opens the New worktree dialog
+  directly, and a "Fetch now" control. An "Add repository" control sits
+  below the list. The dialog's Arena (Beta) mode is disabled, with the reason
+  as its tooltip, when the Timber found has no arenas for apps.
 - An arena's attempts sit together under its header, "Arena <name>" with a
   "Beta" tag and a short detail ("2 attempts from main @ abc1234", or
   "1 attempt, codex-1 kept" after a pick). Each attempt's row shows its label
@@ -580,7 +580,8 @@ logins. The app never reads a tracker login and never signs in.
   whose command deletes work puts it on the button that keeps everything
   instead. After a run that failed, the keyboard goes back to the first text
   field, to correct it, or to the submit button when there is none.
-- **New arena (Beta):** a name or ticket key, the task, one or more groups of
+- **Arena (Beta), a mode of New worktree:** the palette's New arena opens
+  the dialog on it. A name or ticket key, the task, one or more groups of
   attempts (a tool with an optional model and effort, or a saved preset, and
   how many runs), and an optional start point. The footer shows the exact
   `timber arena new ... --no-editor --no-agent --result-file` command, with
@@ -590,7 +591,8 @@ logins. The app never reads a tracker login and never signs in.
   the dialog closes, the first attempt is selected, and each attempt with an
   agent gets its own session, started with exactly the command Timber gives.
   A create that stopped part of the way starts no agent, says what Timber
-  kept, and does not offer the same name again.
+  kept, and does not offer the same name again. The mode has no Agent
+  field: each attempt starts its own agent as Timber says.
 - **Compare (Beta):** one row per attempt, from `timber arena pick <arena>
   --inspect --json`, shown in the footer: the agent's state in this app and
   Timber's, commits, committed and uncommitted changes against the arena's
@@ -606,7 +608,8 @@ logins. The app never reads a tracker login and never signs in.
   reason), and the comparison and the list are read again.
 - **New or open:** a name or sentence becomes a branch; pick the start point.
   One dialog, opened from the "+" of a repository and named after it, with a
-  switch between "New branch" and "Existing branch". The dialog closes as
+  switch between "New branch", "Existing branch", and "Arena (Beta)" (see
+  above). The dialog closes as
   soon as the worktree exists: setup scripts run afterwards in a "Setup"
   terminal in the worktree, where they can be watched, and never hold the
   window. When Timber created the worktree but stopped before setup, the

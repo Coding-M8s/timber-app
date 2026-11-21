@@ -27,14 +27,14 @@ const escaped = (text: string) => text.replaceAll("&", "&amp;").replaceAll("<", 
 const rows = (markup: string) => markup.match(/class="row( selected)?"/g)?.length ?? 0;
 
 describe("the dialog behind the +", () => {
-	test("has both modes on its switch, New branch first", async () => {
+	test("has its three modes on its switch, New branch first", async () => {
 		const store = createAppStore(createMockEngine());
 		store.start();
 		await settle();
 		store.openDialog({ kind: "new-worktree", repository: TIMBER });
 		const markup = renderToStaticMarkup(<App store={store} />);
 		expect(markup.match(/<dialog/g)?.length).toBe(1);
-		expect([...markup.matchAll(/class="mode-label">([^<]*)</g)].map(match => match[1])).toEqual(["New branch", "Existing branch"]);
+		expect([...markup.matchAll(/class="mode-label">([^<]*)</g)].map(match => match[1])).toEqual(["New branch", "Existing branch", "Arena (Beta)"]);
 		expect(markup).toMatch(/class="mode-option selected"><input[^>]*checked=""\/><span class="mode-label">New branch/);
 		expect(markup).toContain(">Create worktree</button>");
 	});

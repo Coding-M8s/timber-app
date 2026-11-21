@@ -259,8 +259,8 @@ function actionEntries(state: AppState): PaletteEntry[] {
 			{ kind: "dialog", request: { kind: "new-worktree", repository: repository.path, mode: "new" } }, ["create", "branch"]);
 		add(inRepository("branch"), "open", "Open existing branch", `Opens a worktree for a branch ${repository.name} already has.`, null,
 			{ kind: "dialog", request: { kind: "new-worktree", repository: repository.path, mode: "existing" } }, ["worktree", "checkout"]);
-		add(inRepository("arena"), "arena", NEW_ARENA_LABEL, `Opens New arena for ${repository.name}.`, arenasUnavailable(state.arenas[repository.path]),
-			{ kind: "dialog", request: { kind: "new-arena", repository: repository.path } }, ["attempts", "agents", "compare"]);
+		add(inRepository("arena"), "arena", NEW_ARENA_LABEL, `Opens New worktree for ${repository.name} on its Arena mode.`, arenasUnavailable(state.arenas[repository.path]),
+			{ kind: "dialog", request: { kind: "new-worktree", repository: repository.path, mode: "arena" } }, ["attempts", "agents", "compare"]);
 		const fetching = state.fetches[repository.path]?.fetching === true
 			|| state.operations.some(operation => operation.kind === "fetch-repository" && operation.repository === repository.path);
 		add(inRepository("fetch"), "fetch", "Fetch now", `Fetches ${repository.name} from its remotes.`, fetching ? FETCHING_NOW : null, { kind: "fetch", repository: repository.path }, ["pull", "remote"]);

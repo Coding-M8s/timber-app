@@ -3,10 +3,16 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import {
 	type ArenaGroupDraft, describeAttemptSession, describeAttemptTool, describeComparison, describePickOutcome, firstGroupDraft, groupArenaRows, groupChoices, groupOf,
-	newArenaCommandFor, newMenuChoice, newMenuItems, pickCommandFor,
+	arenasUnavailable, newArenaCommandFor, pickCommandFor,
 } from "../src/mainview/arena-format";
 import { ArenaCompareView, type ArenaCompareViewProps, type CompareRow } from "../src/mainview/components/ArenaCompareDialog";
-import { NewArenaView, type NewArenaViewProps } from "../src/mainview/components/NewArenaDialog";
+import { WorktreeDialogFrame, openingMode } from "../src/mainview/components/NewWorktreeDialog";
+import { arenaMode } from "../src/mainview/components/worktree-modes/arena";
+import { type ArenaFormState, createArenaForm } from "../src/mainview/components/worktree-modes/arena-form";
+import { createWorktreeDialogController } from "../src/mainview/components/worktree-modes/dialog-controller";
+import type { WorktreeDialogMode } from "../src/mainview/components/worktree-modes/mode";
+import { createSubmission } from "../src/mainview/store/submission";
+import type { SubmissionState } from "../src/mainview/store/submission";
 import { createMockEngine, sampleRepositories, sampleStatesRepository } from "../src/mainview/engine/mock";
 import { createAppStore } from "../src/mainview/store/store";
 import type { ArenaList, InspectedAttempt } from "../src/shared/arenas";
@@ -84,25 +90,58 @@ describe("arena words and rules", () => {
 		expect(describeAttemptSession([])).toEqual({ text: "No agent", running: false });
 	});
 
-	test("the + menu offers New arena, disabled with the reason when the Timber found has no arenas", () => {
-		expect(newMenuItems({ state: "listed", arenas: [] }).map(item => [item.id, item.disabled])).toEqual([["new-worktree", false], ["new-arena", false]]);
-		const unsupported = newMenuItems({ state: "unsupported" })[1]!;
-		expect(unsupported).toMatchObject({ disabled: true, note: expect.stringContaining("no arenas for apps") });
-		expect(newMenuChoice("/r", "new-arena", { state: "listed", arenas: [] })).toEqual({ kind: "new-arena", repository: "/r" });
-		expect(newMenuChoice("/r", "new-arena", { state: "unsupported" })).toBeNull();
-		expect(newMenuChoice("/r", "new-worktree", undefined)).toEqual({ kind: "new-worktree", repository: "/r" });
+	test("the dialog opens on Arena when asked, or on New branch when the Timber found has no arenas", () => {
+		expect(openingMode("arena", arenasUnavailable({ state: "listed", arenas: [] }))).toBe(2);
+		expect(openingMode("arena", arenasUnavailable({ state: "unsupported" }))).toBe(0);
+		expect(openingMode("new", null)).toBe(0);
+		expect(openingMode("existing", null)).toBe(1);
 	});
 });
 
-describe("the New arena dialog", () => {
-	const props = (change: Partial<NewArenaViewProps> = {}): NewArenaViewProps => ({
-		repositoryName: "timber", name: "demo", task: TASK, groups: [firstGroupDraft()], base: "", presets: [{ name: "stub", tool: "wrapper" }], presetsProblem: null, reserved: null,
-		submission: { running: false, failure: null }, onName() {}, onTask() {}, onGroups() {}, onBase() {}, onSubmit() {}, onClose() {}, ...change,
+describe("the Arena mode of the New worktree dialog", () => {
+	const repository = sampleRepositories[0]!;
+	const form = { setName() {}, setTask() {}, setGroups() {}, setBase() {}, run: async () => ({ outcome: { ok: true as const, toast: "" }, created: null, setup: null }) };
+	const fake = (label: string): WorktreeDialogMode => ({
+		label, fields: <p>{label} fields</p>, command: "timber new x", canSubmit: true, submitLabel: "Create worktree", runningLabel: "Running", failureTitle: "Failed",
+		agentStart: "always", setupStart: "always", worktree: null, workflow: null, run: async () => ({ outcome: { ok: true, toast: "" }, created: null, setup: null }),
+	});
+	type Change = Partial<ArenaFormState> & { submission?: SubmissionState; unavailable?: string | null; selected?: number };
+	const frame = (change: Change = {}) => {
+		const { submission = { running: false, failure: null }, unavailable = null, selected = 2, ...fields } = change;
+		const state: ArenaFormState = { name: "demo", task: TASK, groups: [firstGroupDraft()], base: "", presets: [{ name: "stub", tool: "wrapper" }], presetsProblem: null, reserved: null, ...fields };
+		const modes = [fake("New branch"), fake("Existing branch"), arenaMode(form, state, TIMBER, unavailable)];
+		const agents = [{ name: "Codex", command: "codex", args: [] }];
+		return renderToStaticMarkup(
+			<WorktreeDialogFrame
+				repository={repository} modes={modes} selected={selected} submission={submission} agents={agents}
+				plan={() => ({ source: "pick", agent: agents[0]!, workflow: null, unread: false })}
+				onSelect={() => {}} onPickAgent={() => {}} onSubmit={() => {}} onClose={() => {}}
+			/>,
+		);
+	};
+
+	test("is the third mode on the switch, beside New branch and Existing branch", () => {
+		const markup = frame();
+		expect([...markup.matchAll(/<span class="mode-label">([^<]+)<\/span>/g)].map(match => match[1])).toEqual(["New branch", "Existing branch", "Arena (Beta)"]);
+		expect(markup).toMatch(/class="mode-option selected"[^>]*><input[^>]*checked=""\/><span class="mode-label">Arena \(Beta\)/);
+	});
+
+	test("has no Agent field: each attempt starts its own agent, as Timber says", () => {
+		expect(frame()).not.toContain('name="agent"');
+		expect(frame({ selected: 0 })).toContain('name="agent"');
+	});
+
+	test("cannot be picked, and says why, when the Timber found has no arenas", () => {
+		const markup = frame({ selected: 0, unavailable: "The Timber found has no arenas for apps. Install a newer Timber." });
+		expect(markup).toMatch(/<label class="mode-option" title="The Timber found has no arenas for apps. Install a newer Timber."><input class="mode-radio" type="radio" disabled="" name="[^"]+"\/><span class="mode-label">Arena \(Beta\)/);
+		const shown = frame({ unavailable: "No arenas." });
+		expect(shown).toContain("No arenas.");
+		expect(shown).toMatch(/<button type="submit" class="button primary" disabled="">Create arena<\/button>/);
 	});
 
 	test("shows the exact command and the launch Timber is asked for, says Beta, and never shows the task in a command", () => {
-		const markup = renderToStaticMarkup(<NewArenaView {...props()} />);
-		expect(markup).toContain("New arena (Beta) in timber");
+		const markup = frame();
+		expect(markup).toContain("New worktree in timber");
 		expect(markup).toContain("Arenas are beta in Timber");
 		expect(markup).toContain('aria-label="Command that will run">timber arena new --tool=codex --runs=2 --prompt-file &lt;task file&gt; --no-editor --no-agent --result-file &lt;temporary file&gt; -- demo</pre>');
 		expect(markup).toContain('aria-label="Command that will start next">timber __app-arena launch &lt;arena&gt; --attempt &lt;label&gt;</pre>');
@@ -113,16 +152,16 @@ describe("the New arena dialog", () => {
 	});
 
 	test("cannot be submitted without a task, or with fewer than two attempts, and says why", () => {
-		const noTask = renderToStaticMarkup(<NewArenaView {...props({ task: "" })} />);
+		const noTask = frame({ task: "" });
 		expect(noTask).toContain("Write the task the attempts work on.");
 		expect(noTask).toMatch(/<button type="submit" class="button primary" disabled="">Create arena<\/button>/);
-		const one = renderToStaticMarkup(<NewArenaView {...props({ groups: [{ ...firstGroupDraft(), runs: "1" }] })} />);
+		const one = frame({ groups: [{ ...firstGroupDraft(), runs: "1" }] });
 		expect(one).toContain("An arena has at least 2 attempts.");
 	});
 
 	test("after a create that stopped, says what Timber kept and does not offer the same name again", () => {
 		const reserved = { name: "demo", base: { ref: "refs/heads/main", commit: "a".repeat(40) }, failure: { stage: "setup", attempt: "codex-1" }, attempts: [{ label: "codex-1", tool: "codex", preset: "codex", model: null, effort: null, branch: "arena/demo/codex-1", path: "/w/a", created: true, stage: "failed", failedStage: "setup" }] };
-		const markup = renderToStaticMarkup(<NewArenaView {...props({ reserved, submission: { running: false, failure: { command: "timber arena new", diagnostic: "Setup failed.", output: null } } })} />);
+		const markup = frame({ reserved, submission: { running: false, failure: { command: "timber arena new", diagnostic: "Setup failed.", output: null } } });
 		expect(markup).toContain("Timber kept arena demo; it stopped at setup of codex-1. No agent was started.");
 		expect(markup).toContain("codex-1: created, setup failed");
 		expect(markup).toContain("Timber already kept an arena called demo. Choose another name.");
@@ -171,7 +210,7 @@ describe("creating an arena from the app", () => {
 	test("a repository whose Timber has no arenas offers none", async () => {
 		const { store } = await startedStore();
 		expect(store.getState().arenas[BILLING]).toEqual({ state: "unsupported" });
-		expect(newMenuItems(store.getState().arenas[BILLING])[1]!.disabled).toBe(true);
+		expect(arenasUnavailable(store.getState().arenas[BILLING])).toContain("no arenas for apps");
 	});
 });
 
@@ -242,5 +281,69 @@ describe("comparing and keeping an attempt", () => {
 		const list = store.getState().arenas[TIMBER];
 		expect(list?.state === "listed" && list.arenas[0]!.outcome === "read" && list.arenas[0]!.winner).toBe("codex-1");
 		expect(render(store)).toContain("1 attempt, codex-1 kept");
+	});
+});
+
+describe("running the Arena mode through the New worktree dialog", () => {
+	async function opened() {
+		const engine = createMockEngine([...sampleRepositories, sampleStatesRepository]);
+		const asked = { arenas: 0, presets: 0 };
+		const { newArena, listArenaPresets } = engine;
+		engine.newArena = request => (asked.arenas++, newArena(request));
+		engine.listArenaPresets = repository => (asked.presets++, listArenaPresets(repository));
+		const { store } = await startedStore(engine);
+		store.openDialog({ kind: "new-worktree", repository: TIMBER, mode: "arena" });
+		const submission = createSubmission(toast => {
+			store.showToast(toast);
+			store.closeDialog();
+		});
+		const form = createArenaForm(store, TIMBER, submission);
+		const controller = createWorktreeDialogController(store, TIMBER, submission, 2);
+		const mode = () => arenaMode(form, form.getState(), TIMBER);
+		return { store, engine, asked, form, submission, controller, mode };
+	}
+
+	test("creates the arena once, closes the dialog with Timber's count, and starts only the attempts' agents, never the dialog's pick", async () => {
+		const { store, asked, form, controller, mode } = await opened();
+		expect(store.getState().preferences.agents.length).toBeGreaterThan(0);
+		form.setName("demo");
+		form.setTask(TASK);
+		expect(await controller.submit(mode())).toBe(true);
+		await settle();
+		expect(asked.arenas).toBe(1);
+		expect(store.getState().dialog).toBeNull();
+		expect(store.getState().toasts.map(toast => toast.text)).toContain("Arena demo created with 2 attempts");
+		expect(store.getState().terminals.map(session => session.name)).toEqual(["codex-1", "codex-2"]);
+	});
+
+	test("a create that stopped keeps the dialog open with what Timber reserved, and an edit puts the failure away", async () => {
+		const { store, engine, form, submission, controller, mode } = await opened();
+		engine.endArenaCommands("setup-fails");
+		form.setName("broken");
+		form.setTask(TASK);
+		expect(await controller.submit(mode())).toBe(false);
+		expect(store.getState().dialog).toEqual({ kind: "new-worktree", repository: TIMBER, mode: "arena" });
+		expect(form.getState().reserved?.name).toBe("broken");
+		expect(mode().failureNote).toBeDefined();
+		expect(mode().canSubmit).toBe(false);
+		form.setName("other");
+		expect(submission.getState().failure).toBeNull();
+		expect(mode().canSubmit).toBe(true);
+	});
+
+	test("a request for the Arena mode, as the palette's New arena sends, opens the dialog on it", async () => {
+		const { store } = await opened();
+		const markup = render(store);
+		expect(markup).toMatch(/class="mode-option selected"[^>]*><input[^>]*checked=""\/><span class="mode-label">Arena \(Beta\)/);
+		expect(markup).toContain(">Create arena</button>");
+		expect(markup).not.toContain('name="agent"');
+	});
+
+	test("reads the presets once, however often it is asked", async () => {
+		const { asked, form } = await opened();
+		await Promise.all([form.readPresets(), form.readPresets()]);
+		await form.readPresets();
+		expect(asked.presets).toBe(1);
+		expect(form.getState().presetsProblem).toBeNull();
 	});
 });

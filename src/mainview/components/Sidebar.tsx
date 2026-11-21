@@ -68,9 +68,6 @@ export function Sidebar() {
 	// The click that ends a drag must not also open or close the group.
 	const dragEnded = useRef(false);
 	const groupElements = useRef(new Map<string, HTMLElement>());
-	// The "+" of one repository opens a menu: a new worktree, or a new arena.
-	const [newMenu, setNewMenu] = useState<{ repository: string; at: { left: number; top: number } } | null>(null);
-	const newButtons = useRef(new Map<string, HTMLButtonElement>());
 	const headerButtons = useRef(new Map<string, HTMLButtonElement>());
 	const repositoryGroupElements = useRef(new Map<string, HTMLElement>());
 	const repositoryGroupHeads = useRef(new Map<string, HTMLElement>());
@@ -313,15 +310,6 @@ export function Sidebar() {
 					},
 					fetchAsked: fetchAsked(repository.path),
 					clashMarks,
-					newMenuAt: newMenu?.repository === repository.path ? newMenu.at : null,
-					newButtonRef: element => {
-						if (element) newButtons.current.set(repository.path, element);
-						else newButtons.current.delete(repository.path);
-					},
-					onNewMenu: (at, backToButton) => {
-						setNewMenu(current => at === null ? null : current?.repository === repository.path ? null : { repository: repository.path, at });
-						if (backToButton) newButtons.current.get(repository.path)?.focus();
-					},
 					removing: removing(repository.path),
 					more: (
 						<button

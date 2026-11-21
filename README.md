@@ -9,8 +9,8 @@ Timber, not a replacement for it, and it has no code editor of its own.
 **Status: early scaffold.** What works today:
 
 - **Sidebar:** your repositories with the worktrees Timber lists and their
-  branch status. "+" creates a worktree (`timber new`) or opens a branch as
-  one (`timber open`); Done removes one after a preview of what would be lost.
+  branch status. "+" creates a worktree (`timber new`), opens a branch as
+  one (`timber open`), or starts an arena (`timber arena new`); Done removes one after a preview of what would be lost.
 - **Workspace tab:** several terminals and coding agents, such as Claude Code
   and Codex, per worktree. On Windows an agent must be its own `.exe`, not a
   `.cmd` launcher.

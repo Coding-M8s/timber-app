@@ -597,7 +597,20 @@ Timber command, which always has `--no-setup`.
   "Rerun setup" ticked, so the next run the person starts cannot create
   anything, and runs setup in its session.
 
-Both modes have a **Workflow** field among their own fields, for the
+"Arena (Beta)" is the third mode: `timber arena new` with the fields and
+command the New arena dialog had (`worktree-modes/arena.tsx`, its state in
+`arena-form.ts`). The palette's New arena opens the dialog on it
+(`mode: "arena"`). It starts its own agents, so it sets `ownFollowUps`: the
+footer shows the `timber __app-arena launch` the store asks next in place of
+setup and the picked agent, and the frame draws no Agent field. Its run
+reports no worktree, so the controller starts nothing; `store.newArena`
+starts each attempt's agent. A create that stopped shows what Timber
+reserved as the mode's `failureNote`. The presets are read only once the
+mode is on screen, since each read runs Timber. When the Timber found has no
+arenas for apps, the mode's `unavailable` reason disables its option on the
+switch, and a request for it opens on New branch instead.
+
+The New branch and Existing branch modes have a **Workflow** field among their own fields, for the
 repository's [named workflows](#named-workflows): None first and by
 default, then each workflow in Timber's order with its description. A pick
 adds `--workflow <name>` to the command in the footer, so Timber runs that
@@ -1327,7 +1340,8 @@ pure functions in `src/mainview/shell.ts`.
   `palette-run.ts` does the choosing through the store methods the buttons
   call, so the palette adds no second way of doing anything. "Open existing
   branch" is the New worktree dialog opened on its Existing branch mode
-  (`mode: "existing"`). The "+" and the Settings cog only ask: each puts a
+  (`mode: "existing"`), and "New arena (Beta)" the same dialog on its Arena
+  mode (`mode: "arena"`). The "+" and the Settings cog only ask: each puts a
   `DialogRequest` in the store (`openDialog`), and the New dialog or the
   Settings dialog is what answers it.
 - **Next session that needs you or is done.** Ctrl+Shift+J (Cmd+Shift+J on
@@ -2731,8 +2745,8 @@ run from `src/bun/arenas.ts`.
   build of Timber's main branch with it still calls itself 0.1.3. As for
   backups, the answer is `unsupported` only when Timber exited with 1,
   printed nothing, and its standard error says `unknown command
-  '__app-arena'`. The app then offers no arena, and New arena is disabled
-  with the reason. Replace this with a version check once a release has
+  '__app-arena'`. The app then offers no arena: the New worktree dialog's
+  Arena mode and the palette's New arena are disabled with the reason. Replace this with a version check once a release has
   arenas.
 - **The sidebar.** `groupArenaRows` in `src/mainview/arena-format.ts` puts a
   listed worktree under its arena only when an attempt of an arena read whole

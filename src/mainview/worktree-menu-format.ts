@@ -21,11 +21,10 @@ export const WORKTREE_MENU_SHORTCUTS = "Shift+F10 ContextMenu";
 
 /**
  * Done and "sync:" with a sync action are a worktree row's entries, Clean up
- * merged a repository header's; new worktree and new arena are of a
- * repository's "+" menu (see ./arena-format.ts); "insert-chop:" and a chop's
- * name are of a session chip's menu (see ./chop-format.ts).
+ * merged a repository header's; "insert-chop:" and a chop's name are of a
+ * session chip's menu (see ./chop-format.ts).
  */
-export type WorktreeMenuItemId = "done" | `sync:${SyncActionKind}` | "clean-up-merged" | "new-worktree" | "new-arena" | `insert-chop:${string}`;
+export type WorktreeMenuItemId = "done" | `sync:${SyncActionKind}` | "clean-up-merged" | `insert-chop:${string}`;
 
 /** One entry of a row's menu. A disabled entry says why in `note`, shown under it. */
 export interface WorktreeMenuItem {

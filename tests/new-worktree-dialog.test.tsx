@@ -71,7 +71,7 @@ describe("the + on a repository", () => {
 		store.start();
 		await settle();
 		const markup = renderToStaticMarkup(<App store={store} />);
-		expect(markup).toContain('class="icon-button group-new" aria-label="New in timber" title="New worktree or arena in timber" aria-haspopup="menu"');
+		expect(markup).toContain('class="icon-button group-new" aria-label="New in timber" title="New worktree in timber" aria-haspopup="dialog"');
 		expect(markup).toContain('aria-label="New in api-server"');
 		expect(markup).not.toContain("New in old-prototype");
 		expect(markup).not.toContain("<dialog");

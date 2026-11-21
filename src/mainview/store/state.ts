@@ -219,10 +219,13 @@ export interface Removal {
 	status: RemovalStatus;
 }
 
+/** What the New worktree dialog makes: a new branch, a worktree for an existing branch, or an arena (beta, as in Timber). */
+export type NewWorktreeMode = "new" | "existing" | "arena";
+
 /** The dialog open over the window. One at a time. */
 export type DialogRequest =
-	/** `mode` picks what the dialog starts on: a new branch unless it says "existing". */
-	| { kind: "new-worktree"; repository: string; mode?: "new" | "existing" }
+	/** `mode` picks what the dialog starts on: a new branch unless it says otherwise. */
+	| { kind: "new-worktree"; repository: string; mode?: NewWorktreeMode }
 	/** Remove a worktree. `repository` is the path of the primary checkout, `worktree` is `Worktree.id`. */
 	| { kind: "done-worktree"; repository: string; worktree: string }
 	/** Rebase a worktree with Timber, in a new session. Named as for Done. */
@@ -254,8 +257,6 @@ export type DialogRequest =
 	| { kind: "unsaved-file"; worktree: string; then: UnsavedFileStep }
 	/** Preview a worktree's review notes as one message, and paste it into one of its agents or copy it. `worktree` is `Worktree.id`. */
 	| { kind: "send-review"; worktree: string }
-	/** Create an arena in a repository, named by the path of its primary checkout. Beta, as in Timber. */
-	| { kind: "new-arena"; repository: string }
 	/** Compare an arena's attempts and keep one. `arena` is the arena's name as Timber lists it. */
 	| { kind: "arena-compare"; repository: string; arena: string }
 	/**

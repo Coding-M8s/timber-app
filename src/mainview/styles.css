@@ -6117,7 +6117,7 @@ pre:focus-visible {
 	text-decoration: underline;
 }
 
-/* The New arena dialog: the task is a few lines, and each group of attempts is one row of fields. */
+/* The Arena mode of the New worktree dialog: the task is a few lines, and each group of attempts is one row of fields. */
 .arena-task {
 	height: auto;
 	padding: 7px 9px;
