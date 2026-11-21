@@ -5824,6 +5824,11 @@ pre:focus-visible {
 	color: var(--text);
 }
 
+.issue-card-check-out:hover {
+	background: var(--fill-hover);
+	color: var(--text);
+}
+
 .issue-card-start:disabled,
 .issue-card-worktree:disabled {
 	color: var(--text-3);

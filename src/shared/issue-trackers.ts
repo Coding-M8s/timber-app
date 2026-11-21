@@ -19,9 +19,12 @@ export const ISSUE_TRACKERS: readonly IssueTracker[] = ["github", "jira", "linea
 /**
  * What a repository has set up. `defaultTracker` is the tracker Timber reads
  * a bare issue number or key with, or null when it reads none.
+ * `githubRepository` is the "owner/name" of the github.com repository Timber
+ * looks GitHub issues up in, or null when there is none: a `github:<n>`
+ * selector names issue n there and nowhere else.
  */
 export type IssueTrackers =
-	| { ok: true; defaultTracker: IssueTracker | null; available: IssueTracker[] }
+	| { ok: true; defaultTracker: IssueTracker | null; available: IssueTracker[]; githubRepository: string | null }
 	| { ok: false; message: string };
 
 /** The parts of Timber's settings record the trackers come from. */
@@ -50,6 +53,25 @@ export function issueSelector(tracker: IssueTracker | null, name: string): strin
 	return tracker !== null && isIssueOf(tracker, name) ? `${tracker}:${name}` : name;
 }
 
+/**
+ * The selector `timber open --issue` links a worktree to an issue with:
+ * `github:<n>`, `jira:<KEY>`, or `linear:<KEY>`, only when the key has the
+ * whole shape of that tracker's issue. Null otherwise, and then no link is
+ * asked for: unlike `issueSelector`, nothing passes unchanged, because Timber
+ * would read a bare key with its default tracker.
+ */
+export function issueLinkSelector(tracker: IssueTracker, key: string): string | null {
+	return isIssueOf(tracker, key) ? `${tracker}:${key}` : null;
+}
+
+/** Whether a value is a selector `issueLinkSelector` makes. The main process checks a request with it. */
+export function isIssueLinkSelector(value: unknown): value is string {
+	if (typeof value !== "string") return false;
+	const colon = value.indexOf(":");
+	const tracker = value.slice(0, colon);
+	return colon > 0 && (ISSUE_TRACKERS as readonly string[]).includes(tracker) && issueLinkSelector(tracker as IssueTracker, value.slice(colon + 1)) === value;
+}
+
 /** The remote Timber looks up GitHub issues through: the one it is set to, or origin. */
 export function githubRemoteName(effective: Pick<TimberValues, "remote">): string {
 	return effective.remote ?? "origin";
@@ -63,14 +85,18 @@ export function remoteUrlArguments(folder: string, remote: string): string[] {
 /** Timber's shape of a github.com remote URL. */
 const GITHUB_URL = /^(?:https:\/\/github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)\/([A-Za-z0-9_.-]+)$/;
 
-/** Whether `git remote get-url --all` printed exactly one URL, of one github.com repository. */
-export function isGithubRemote(stdout: string): boolean {
+/**
+ * The "owner/name" of the github.com repository, when `git remote get-url
+ * --all` printed exactly one URL, of one github.com repository. Null
+ * otherwise.
+ */
+export function githubRepositoryOf(stdout: string): string | null {
 	const urls = stdout.split(/\r?\n/).filter(line => line !== "");
-	if (urls.length !== 1) return false;
+	if (urls.length !== 1) return null;
 	const match = GITHUB_URL.exec(urls[0]!);
-	if (!match) return false;
+	if (!match) return null;
 	const name = match[2]!.replace(/\.git$/, "");
-	return name !== "" && name !== "." && name !== "..";
+	return name !== "" && name !== "." && name !== ".." ? `${match[1]!}/${name}` : null;
 }
 
 /**
@@ -78,14 +104,14 @@ export function isGithubRemote(stdout: string): boolean {
  * Jira when a site and a login apply, and Linear when a login applies. A
  * login in the environment counts as one saved, as it does for Timber.
  */
-export function issueTrackersOf(settings: TrackerSettings, github: boolean): IssueTrackers {
+export function issueTrackersOf(settings: TrackerSettings, githubRepository: string | null): IssueTrackers {
 	const { jira, linear } = settings.credentials;
 	const setUp: Record<IssueTracker, boolean> = {
-		github,
+		github: githubRepository !== null,
 		jira: jira.configured && (jira.state === "saved" || jira.environmentOverride),
 		linear: linear.state === "saved" || linear.environmentOverride,
 	};
-	return { ok: true, defaultTracker: defaultTrackerOf(settings), available: ISSUE_TRACKERS.filter(tracker => setUp[tracker]) };
+	return { ok: true, defaultTracker: defaultTrackerOf(settings), available: ISSUE_TRACKERS.filter(tracker => setUp[tracker]), githubRepository };
 }
 
 function defaultTrackerOf({ effective }: TrackerSettings): IssueTracker | null {

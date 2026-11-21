@@ -3143,3 +3143,60 @@ Run for passing a lowercase Jira or Linear key when that tracker is picked
   `tests/issue-trackers-reader.test.ts`).
 - Not run: a lowercase key against a real Jira site or Linear workspace,
   and the installed desktop app by hand.
+
+Run for Check out PR on the issues board (issue 211), Linux x64 with Bun
+1.4.5, Git 2.56.1, and Timber 0.1.4 installed:
+
+- `timber __app-issues open --tracker github --limit 100` in this
+  repository: `found`, 37 issues, every one with `pullRequests: []` (none
+  null). The repository had no open pull request, so no card offered Check
+  out PR against the real tracker. The recorded GitHub project iteration
+  fixture (`tests/fixtures/timber-app-issue-lists/sprint-iteration.json`)
+  holds a real linked pull request (#139 of Coding-M8s/timber, a draft),
+  and `tests/issue-lists-parse.test.ts` reads it.
+- `timber __app-issues sprint --tracker jira` here: `failed`,
+  `sign-in-needed`, "Jira is not set up for this repository." Jira was not
+  tested against a real site; only the mock engine's Jira sample was.
+  Linear was not tested and is not claimed.
+- In a fresh clone of this repository in a temporary folder,
+  `timber open --issue github:203 --no-setup --result-file <file>
+  --no-editor --no-agent -- GH-203-show-an-agent-s-status-as-seen-once-you-visit-its-session`
+  with standard input closed: exit 0, record `succeeded`, `materialized`
+  true, the worktree on that branch with `issue` linked to `github:203`.
+  `timber __app-issues search --tracker github -- 203` then gave issue 203
+  that worktree, which is what gives a card its pill. The pull request's
+  head branch named without its remote opened the remote branch.
+- In the same clone, the same branch with `--issue github:131`: `failed`,
+  "This worktree is already linked to github:203; nothing was changed.
+  Rerun with --replace-issue to replace the link." A branch that does not
+  exist (`patch-1-from-a-fork`): `failed`, "No existing branch or worktree
+  matches ...". Neither asked anything. Timber 0.1.4's `open` never chooses
+  a base, so there is no base question to refuse; the app runs it with
+  standard input ignored and no chooser, so anything ambiguous fails with
+  Timber's text.
+- `tests/worktree-commands.test.ts` against the real Timber: a bare head
+  branch name opens `origin/<branch>`; with a stand-in Timber, `--issue
+  <selector>` comes first among the options and anything but a whole
+  selector is refused before Timber runs.
+- Against this pull request (#257), linked to issue 211 by "Closes
+  #211", in a fresh clone of this repository with no worktree for it:
+  `timber __app-issues open --tracker github --limit 100` gave issue 211
+  `worktree: null` and `pullRequests` [#257, head
+  `GH-211-check-out-an-issue-s-open-pull-request-from-the-board`,
+  `fromFork: false`, `draft: false`]. The app's own `readIssueListRecord`,
+  `githubRemoteRepository` (`Coding-M8s/timber-app`), and `checkOutChoice`
+  on that record offered Check out PR on 211 only, and
+  `openWorktreeArguments` built `open --issue github:211 --no-setup
+  --result-file <file> --no-editor --no-agent -- <that branch>`. Running
+  exactly those arguments with standard input closed: exit 0, `succeeded`,
+  `materialized` true, linked to `github:211`, upstream
+  `origin/GH-211-...`. Reading the list again gave 211 that worktree, so
+  the card shows its pill and no Check out PR.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+  `bun run build:web`: built. `bun test`: 3118 passed, 19 skipped, none
+  failed.
+- Not run: the desktop window or the browser build by eye, so the card,
+  the dialog, and the Pull request tab after a check out were not seen
+  drawn (the GitHub check out above ran the app's logic and the exact
+  command, not the window); Jira and Linear against real trackers; Windows
+  and macOS.

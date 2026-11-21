@@ -2,6 +2,7 @@ import type { Engine } from "../../shared/engine";
 import type { IssueSearchRequest, IssueSearchResult, SuggestedIssue } from "../../shared/issue-search";
 import type { Issue, IssueFailureReason, IssueLookup } from "../../shared/issues";
 import type { IssueLink, Repository, TimberStatus } from "../../shared/model";
+import { sampleLinks } from "./mock-issue-lists";
 
 /** The part of the engine about linked issues. */
 export type IssueCapabilities = Pick<Engine, "readIssue" | "searchIssues">;
@@ -116,7 +117,7 @@ export function createMockIssues(listed: (path: string) => Repository | undefine
 			if (searchAnswer) return structuredClone(searchAnswer);
 			const issues: SuggestedIssue[] = sampleIssueSearch(tracker, text).slice(0, 10).map(issue => {
 				const tree = found.worktrees.find(candidate => candidate.issue?.kind === "linked" && candidate.issue.tracker === issue.tracker && candidate.issue.key === issue.key);
-				return { ...issue, worktree: tree ? { path: tree.path, branch: tree.branch } : null };
+				return { ...issue, worktree: tree ? { path: tree.path, branch: tree.branch } : null, pullRequests: sampleLinks(issue) };
 			});
 			return { ok: true, outcome: "found", issues, truncated: false };
 		},

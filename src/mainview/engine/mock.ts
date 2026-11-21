@@ -265,6 +265,10 @@ export const sampleSpareBranches: Record<string, BranchSuggestion[]> = {
 		{ selector: "chore/update-deps", kind: "local" },
 		{ selector: "origin/feat/config-reload", kind: "remote" },
 		{ selector: "origin/release/0.2", kind: "remote" },
+		// The head branches of the sample pull requests (./mock-issue-lists.ts).
+		{ selector: "origin/feat/linked-issue-header", kind: "remote" },
+		{ selector: "origin/fix/explain-arena", kind: "remote" },
+		{ selector: "origin/TIM-80-saved-base", kind: "remote" },
 	],
 };
 
@@ -859,14 +863,15 @@ export function createMockEngine(
 		branchLists.has(repository.path) ? branchLists.get(repository.path)! : branchesOf(repository);
 	const { commandMilliseconds = 0 } = options;
 	// As the main process does: only with a usable Timber, and only in a repository from the list.
-	const command = async (path: string, act: (repository: Repository) => { result: WorktreeCommandResult; created: Worktree | null }): Promise<WorktreeCommandResult> => {
+	const command = async (path: string, act: (repository: Repository) => { result: WorktreeCommandResult; created: Worktree | null; replaced?: Worktree }): Promise<WorktreeCommandResult> => {
 		if (commandMilliseconds > 0) await new Promise(resolve => setTimeout(resolve, commandMilliseconds));
 		if ((await look()).state !== "ready") return notRun("Timber is not ready.");
 		const repository = current.find(candidate => candidate.path === path && candidate.available);
 		if (!repository) return notRun(`${path} is not a repository in the app's list.`);
-		const { result, created } = act(repository);
-		if (created) {
-			const changed = { ...repository, worktrees: inTimberOrder([...repository.worktrees, created]) };
+		const { result, created, replaced } = act(repository);
+		if (created || replaced) {
+			const kept = repository.worktrees.map(worktree => (replaced && worktree.path === replaced.path ? replaced : worktree));
+			const changed = { ...repository, worktrees: inTimberOrder(created ? [...kept, created] : kept) };
 			current = current.map(candidate => candidate === repository ? changed : candidate);
 			onDisk.set(path, changed);
 		}

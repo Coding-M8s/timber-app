@@ -169,6 +169,23 @@ describe("createWorktreeCommands, with a stand-in Timber", () => {
 		expect(notes.arguments.slice(0, 3)).toEqual(["new", "--workflow", "review"]);
 	});
 
+	test("an issue link is --issue <selector> among the options; anything but a whole selector is refused before anything runs", async () => {
+		const opened = JSON.stringify({ ...JSON.parse(recordedResult.succeeded), command: "open", materialized: false });
+		const { commands, timber } = commandsOn({ result: opened });
+		for (const issue of ["42", "github:042", "github:", "jira:ENG", "gitlab:ENG-1", "github:42 ", "--replace-issue", "", 42, null]) {
+			const result = await commands.open({ repository, selector: "feat/login", issue } as unknown as OpenWorktreeRequest);
+			expect(result.outcome === "failed" && result.failure.diagnostic).toBe("The request for timber open is not complete. Nothing was run.");
+		}
+		expect(() => timber.notes()).toThrow();
+
+		const request = { repository, selector: "feat/login", issue: "github:42" };
+		await commands.open(request);
+		const notes = timber.notes();
+		expect(notes.arguments).toEqual(openWorktreeArguments(request, notes.resultFile!));
+		expect(notes.arguments.slice(0, 3)).toEqual(["open", "--issue", "github:42"]);
+		expect(notes.arguments.slice(-2)).toEqual(["--", "feat/login"]);
+	});
+
 	test("a selector that looks like an option, or has spaces around it, reaches Timber as one argument after the --", async () => {
 		const opened = JSON.stringify({ ...JSON.parse(recordedResult.succeeded), command: "open", materialized: false });
 		for (const selector of ["--setup", " feat/login ", "-"]) {
@@ -477,7 +494,7 @@ describe.skipIf(realTimber === null)("timber open, with the installed Timber on 
 		git(primary, "push", "--set-upstream", "origin", "main");
 		// Local branches without a worktree, one branch that only origin has, and one that both remotes have.
 		for (const branch of ["feat/zażółć-login", "feat/reopened", "feat/with-setup"]) git(primary, "branch", branch, "main");
-		git(primary, "push", "origin", "main:feat/remote-only", "main:twice");
+		git(primary, "push", "origin", "main:feat/remote-only", "main:twice", "main:feat/pr-head");
 		git(primary, "push", "fork", "main:twice");
 		git(primary, "fetch", "--all");
 
@@ -529,6 +546,13 @@ describe.skipIf(realTimber === null)("timber open, with the installed Timber on 
 		expect(result).toMatchObject({ outcome: "succeeded", created: true, worktree: { branch: "feat/remote-only" } });
 		if (result.outcome !== "succeeded") return;
 		expect(git(result.worktree.path, "rev-parse", "--abbrev-ref", "@{upstream}").trim()).toBe("origin/feat/remote-only");
+	});
+
+	test("a pull request's head branch, named without its remote, opens the remote branch", async () => {
+		const result = await open("feat/pr-head");
+		expect(result).toMatchObject({ outcome: "succeeded", created: true, worktree: { branch: "feat/pr-head" } });
+		if (result.outcome !== "succeeded") return;
+		expect(git(result.worktree.path, "rev-parse", "--abbrev-ref", "@{upstream}").trim()).toBe("origin/feat/pr-head");
 	});
 
 	test("setup scripts never run during timber open: Timber says it left them only when it created the worktree", async () => {

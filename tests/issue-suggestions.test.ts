@@ -6,7 +6,7 @@ import { manualClock } from "./support/clock";
 const settle = () => Bun.sleep(0);
 
 const issue = (key: string, worktree: SuggestedIssue["worktree"] = null): SuggestedIssue => ({
-	tracker: "jira", key, url: `https://example.atlassian.net/browse/${key}`, title: `Title of ${key}`, status: { name: "To Do", category: "open" }, assignee: null, worktree,
+	tracker: "jira", key, url: `https://example.atlassian.net/browse/${key}`, title: `Title of ${key}`, status: { name: "To Do", category: "open" }, assignee: null, worktree, pullRequests: [],
 });
 const found = (...keys: string[]): IssueSearchResult => ({ ok: true, outcome: "found", issues: keys.map(key => issue(key)), truncated: false });
 
@@ -28,10 +28,10 @@ function setUp() {
 
 describe("which tracker and which text", () => {
 	test("the picked tracker, else the default, else the only one set up", () => {
-		expect(suggestionTracker({ ok: true, defaultTracker: "github", available: ["github", "jira"] }, "jira")).toBe("jira");
-		expect(suggestionTracker({ ok: true, defaultTracker: "jira", available: ["github", "jira"] }, null)).toBe("jira");
-		expect(suggestionTracker({ ok: true, defaultTracker: null, available: ["github"] }, null)).toBe("github");
-		expect(suggestionTracker({ ok: true, defaultTracker: null, available: ["github", "jira"] }, null)).toBeNull();
+		expect(suggestionTracker({ ok: true, defaultTracker: "github", available: ["github", "jira"], githubRepository: "example/timber" }, "jira")).toBe("jira");
+		expect(suggestionTracker({ ok: true, defaultTracker: "jira", available: ["github", "jira"], githubRepository: "example/timber" }, null)).toBe("jira");
+		expect(suggestionTracker({ ok: true, defaultTracker: null, available: ["github"], githubRepository: "example/timber" }, null)).toBe("github");
+		expect(suggestionTracker({ ok: true, defaultTracker: null, available: ["github", "jira"], githubRepository: "example/timber" }, null)).toBeNull();
 		expect(suggestionTracker({ ok: false, message: "unreadable" }, null)).toBeNull();
 		expect(suggestionTracker(undefined, null)).toBeNull();
 	});

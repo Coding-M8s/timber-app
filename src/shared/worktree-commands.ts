@@ -28,9 +28,10 @@ export function newWorktreeArguments(request: NewWorktreeRequest, resultFile: st
 	return ["new", ...base, ...workflowArguments(request.workflow), "--no-setup", "--result-file", resultFile, "--no-editor", "--no-agent", "--", request.name];
 }
 
-/** Everything after `timber` for opening a worktree. `resultFile` is put in as it is. */
+/** Everything after `timber` for opening a worktree. `resultFile` is put in as it is. An issue to link comes first, as `--issue <selector>`. */
 export function openWorktreeArguments(request: OpenWorktreeRequest, resultFile: string): string[] {
-	return ["open", ...workflowArguments(request.workflow), "--no-setup", "--result-file", resultFile, "--no-editor", "--no-agent", "--", request.selector];
+	const issue = request.issue === undefined ? [] : ["--issue", request.issue];
+	return ["open", ...issue, ...workflowArguments(request.workflow), "--no-setup", "--result-file", resultFile, "--no-editor", "--no-agent", "--", request.selector];
 }
 
 /**

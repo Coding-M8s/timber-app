@@ -1,3 +1,4 @@
+import type { SuggestedIssue } from "../../shared/issue-search";
 import type { AppUpdateState } from "../../shared/app-update";
 import type { InstallStep } from "../app-update-format";
 import type { PullRequestCreationFailure, PullRequestFields, ReportedPullRequestView, ReviewerFailuresView } from "../pull-request-create-format";
@@ -215,7 +216,13 @@ export type DialogRequest =
 	 * Ask where a prompt chop goes: one of the worktree's running agents, or a
 	 * new agent. `worktree` is `Worktree.id`; `chop` is the chop's name.
 	 */
-	| { kind: "send-prompt"; repository: string; worktree: string; chop: string };
+	| { kind: "send-prompt"; repository: string; worktree: string; chop: string }
+	/**
+	 * Check out one of an issue's open pull requests from the issues board.
+	 * `repository` is the path of the primary checkout; `issue` is the card as
+	 * the board listed it, with the pull requests the tracker links to it.
+	 */
+	| { kind: "check-out-pull-request"; repository: string; issue: SuggestedIssue };
 
 /** The sections of the Settings dialog, in the order they are listed. */
 export const SETTINGS_SECTIONS = ["layout", "theme", "terminal", "rendering", "editor", "agents", "chops", "notifications", "fetch", "about", "executable", "machine", "repository"] as const;

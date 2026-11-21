@@ -40,14 +40,14 @@ async function newBranch(path = TIMBER, engine: MockEngine = createMockEngine())
 	return { engine, store, model, mode, fields, submit, asked };
 }
 
-const both: IssueTrackers = { ok: true, defaultTracker: "github", available: ["github", "jira"] };
+const both: IssueTrackers = { ok: true, defaultTracker: "github", available: ["github", "jira"], githubRepository: "example/timber" };
 
 describe("which trackers show", () => {
 	test("only with two or more set up, and only those", () => {
 		expect(shownTrackers(both)).toEqual(["github", "jira"]);
-		expect(shownTrackers({ ok: true, defaultTracker: "github", available: ["github", "jira", "linear"] })).toEqual(["github", "jira", "linear"]);
-		expect(shownTrackers({ ok: true, defaultTracker: "github", available: ["github"] })).toEqual([]);
-		expect(shownTrackers({ ok: true, defaultTracker: null, available: [] })).toEqual([]);
+		expect(shownTrackers({ ok: true, defaultTracker: "github", available: ["github", "jira", "linear"], githubRepository: "example/timber" })).toEqual(["github", "jira", "linear"]);
+		expect(shownTrackers({ ok: true, defaultTracker: "github", available: ["github"], githubRepository: "example/timber" })).toEqual([]);
+		expect(shownTrackers({ ok: true, defaultTracker: null, available: [], githubRepository: null })).toEqual([]);
 		expect(shownTrackers({ ok: false, message: "Invalid TOML" })).toEqual([]);
 		expect(shownTrackers(undefined)).toEqual([]);
 	});
@@ -56,14 +56,14 @@ describe("which trackers show", () => {
 		expect(chosenTracker(both, "jira")).toBe("jira");
 		expect(chosenTracker(both, null)).toBeNull();
 		expect(chosenTracker(both, "linear")).toBeNull();
-		expect(chosenTracker({ ok: true, defaultTracker: "github", available: ["jira"] }, "jira")).toBeNull();
+		expect(chosenTracker({ ok: true, defaultTracker: "github", available: ["jira"], githubRepository: null }, "jira")).toBeNull();
 		expect(chosenTracker(undefined, "jira")).toBeNull();
 	});
 
 	test("Default names Timber's default tracker when there is one", () => {
 		expect(defaultTrackerLabel(both)).toBe("Default (GitHub)");
-		expect(defaultTrackerLabel({ ok: true, defaultTracker: "jira", available: ["github", "jira"] })).toBe("Default (Jira)");
-		expect(defaultTrackerLabel({ ok: true, defaultTracker: null, available: ["github", "jira"] })).toBe("Default");
+		expect(defaultTrackerLabel({ ok: true, defaultTracker: "jira", available: ["github", "jira"], githubRepository: "example/timber" })).toBe("Default (Jira)");
+		expect(defaultTrackerLabel({ ok: true, defaultTracker: null, available: ["github", "jira"], githubRepository: "example/timber" })).toBe("Default");
 	});
 
 	test("the empty option is Default", () => {
@@ -147,7 +147,7 @@ describe("the Tracker field with GitHub and Jira set up", () => {
 describe("the Tracker field in other repositories", () => {
 	test("is not shown with only GitHub set up, and the name passes unchanged", async () => {
 		const { model, fields, mode } = await newBranch(API);
-		expect(model.getState().trackers).toEqual({ ok: true, defaultTracker: "github", available: ["github"] });
+		expect(model.getState().trackers).toEqual({ ok: true, defaultTracker: "github", available: ["github"], githubRepository: "example/api-server" });
 		expect(fields()).not.toContain('name="tracker"');
 		// A pick left from before cannot reach the command.
 		model.edit({ name: "ENG-42", tracker: "jira" });
@@ -169,7 +169,7 @@ describe("the Tracker field in other repositories", () => {
 		const engine = createMockEngine();
 		engine.setGithubRemote(TIMBER, false);
 		const { model, fields } = await newBranch(TIMBER, engine);
-		expect(model.getState().trackers).toEqual({ ok: true, defaultTracker: "github", available: ["jira"] });
+		expect(model.getState().trackers).toEqual({ ok: true, defaultTracker: "github", available: ["jira"], githubRepository: null });
 		expect(fields()).not.toContain('name="tracker"');
 	});
 
@@ -208,9 +208,9 @@ describe("the Tracker field in other repositories", () => {
 		engine.readIssueTrackers = () => new Promise(resolve => answers.push(resolve));
 		const first = model.readTrackers();
 		const second = model.readTrackers();
-		answers[1]!({ ok: true, defaultTracker: null, available: ["github", "linear"] });
+		answers[1]!({ ok: true, defaultTracker: null, available: ["github", "linear"], githubRepository: "example/timber" });
 		answers[0]!({ ok: false, message: "stale" });
 		await Promise.all([first, second]);
-		expect(model.getState().trackers).toEqual({ ok: true, defaultTracker: null, available: ["github", "linear"] });
+		expect(model.getState().trackers).toEqual({ ok: true, defaultTracker: null, available: ["github", "linear"], githubRepository: "example/timber" });
 	});
 });

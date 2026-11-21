@@ -1,6 +1,7 @@
 import { type BranchSuggestion, type NewWorktreeRequest, type OpenWorktreeRequest, type Repository, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
 import { RESULT_FILE_PLACEHOLDER, type ResultCommand, type TimberRun, describeTimberCommand, readTimberResult } from "../../shared/timber-result";
 import { newWorktreeArguments, openWorktreeArguments, worktreeCommandResult } from "../../shared/worktree-commands";
+import { sampleIssueLink } from "./mock-issue-lists";
 
 /**
  * Acting out `timber new` and `timber open` for the mock engine. Nothing
@@ -151,37 +152,53 @@ export function actOutOpen(
 	ending: CommandEnding,
 	branches: readonly BranchSuggestion[] = [],
 	workflows: readonly string[] = [],
-): { result: WorktreeCommandResult; created: Worktree | null } {
+): { result: WorktreeCommandResult; created: Worktree | null; replaced?: Worktree } {
 	const acted = stage("open", repository, describeTimberCommand(openWorktreeArguments(request, RESULT_FILE_PLACEHOLDER)));
 	const { selector } = request;
 	const refused = (diagnostic: string) => ({ result: acted.failed(diagnostic), created: null });
 	if (request.workflow !== undefined && !workflows.includes(request.workflow)) return refused(UNKNOWN_WORKFLOW_DIAGNOSTIC);
 	if (ending === "ambiguous") return refused(ambiguousDiagnostic(selector));
+	// As Timber does with --issue: the issue is looked up once, before anything is created.
+	const link = request.issue === undefined ? null : sampleIssueLink(request.issue);
+	if (request.issue !== undefined && link === null) return refused(`Could not find ${request.issue}. Nothing was changed.`);
 
-	const found = repository.worktrees.find(worktree => worktree.path === selector || worktree.branch === selector);
+	let found = repository.worktrees.find(worktree => worktree.path === selector || worktree.branch === selector);
+	let replaced: Worktree | undefined;
+	if (found && link !== null) {
+		if (found.primary) return refused("The primary worktree cannot be linked to an issue.");
+		const before = found.issue;
+		if (before?.kind === "linked" && (before.tracker !== link.tracker || before.key !== link.key)) {
+			return refused(`This worktree is already linked to ${before.tracker}:${before.key}; nothing was changed. Rerun with --replace-issue to replace the link.`);
+		}
+		found = { ...found, issue: link };
+		replaced = found;
+	}
 	if (found) {
 		const fields = { worktree: worktreeRecord(found) };
 		const printed = `Opened existing worktree at ${found.path}\n`;
+		const linked = replaced === undefined ? {} : { replaced };
 		switch (ending) {
 			case "succeeds":
-				return { result: acted.succeeded(fields, printed), created: null };
+				return { result: acted.succeeded(fields, printed), created: null, ...linked };
 			case "refused":
 				return refused(`Worktree ${found.path} is missing or unverifiable. Check it before opening it again.`);
 			case "setup-fails":
 			case "stops-after-create":
 				// An existing worktree runs no setup and creates nothing, so there is nothing to fail.
-				return { result: acted.succeeded(fields, printed), created: null };
+				return { result: acted.succeeded(fields, printed), created: null, ...linked };
 			case "no-result":
 				return { result: acted.noResult(printed), created: null };
 		}
 	}
 
-	const branch = branches.find(candidate => candidate.selector === selector);
+	// As Timber does: an exact local branch, then an exact remote branch, also when named without its remote.
+	const branch = branches.find(candidate => candidate.selector === selector)
+		?? branches.find(candidate => candidate.kind === "remote" && candidate.selector === `origin/${selector}`);
 	if (!branch || ending === "refused") return refused(`No existing branch or worktree matches "${selector}". Check the exact branch or absolute worktree path.`);
 	// A remote-tracking branch becomes a local branch that follows it. A new worktree always leaves its setup to the app.
-	const name = branch.kind === "remote" ? selector.slice(selector.indexOf("/") + 1) : selector;
-	// As Timber does: opening a branch saves no base.
-	const created = newWorktreeIn(repository, name, { kind: "unassigned" }, branch.kind === "remote" ? { kind: "tracking", upstream: selector, ahead: 0, behind: 0 } : { kind: "unpublished" });
+	const name = branch.kind === "remote" ? branch.selector.slice(branch.selector.indexOf("/") + 1) : branch.selector;
+	// As Timber does: opening a branch saves no base. With --issue, it saves the link.
+	const created = { ...newWorktreeIn(repository, name, { kind: "unassigned" }, branch.kind === "remote" ? { kind: "tracking", upstream: branch.selector, ahead: 0, behind: 0 } : { kind: "unpublished" }), issue: link };
 	const fields = { materialized: true, worktree: worktreeRecord(created) };
 	const printed = `Created worktree at ${created.path}\n`;
 	switch (ending) {

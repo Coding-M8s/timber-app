@@ -1,6 +1,7 @@
 import { useAppState } from "../store/react";
 import { SETTINGS_SECTIONS, timberReady } from "../store/state";
 import { ApproveChopDialog } from "./ApproveChopDialog";
+import { CheckOutPullRequestDialog } from "./CheckOutPullRequestDialog";
 import { CleanUpMergedDialog } from "./CleanUpMergedDialog";
 import { ArenaCompareDialog } from "./ArenaCompareDialog";
 import { CommandPalette } from "./CommandPalette";
@@ -70,6 +71,11 @@ export function Dialogs() {
 		case "send-prompt":
 			// A key per chop and worktree, so another prompt starts from nothing.
 			return <SendPromptDialog key={`${dialog.worktree}\n${dialog.chop}`} request={dialog} />;
+		case "check-out-pull-request": {
+			// Timber runs in the repository's folder, so the repository has to be listed and there. A key per issue, so another starts from nothing.
+			const repository = state.repositories.find(candidate => candidate.path === dialog.repository && candidate.available);
+			return repository ? <CheckOutPullRequestDialog key={`${dialog.repository}\n${dialog.issue.url}`} request={dialog} /> : null;
+		}
 		case "set-up-timber": {
 			// Timber reads and saves the repository's settings in its folder, so it has to be listed and there.
 			const repository = state.repositories.find(candidate => candidate.path === dialog.repository && candidate.available);

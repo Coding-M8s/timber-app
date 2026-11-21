@@ -296,6 +296,13 @@ export interface OpenWorktreeRequest {
 	 * that follows passes it again.
 	 */
 	workflow?: string;
+	/**
+	 * An issue to link the worktree to, as `issueLinkSelector` makes it
+	 * (`github:42`, `jira:ENG-12`, `linear:ENG-12`), passed as `--issue`. Left
+	 * out for none. Timber looks the issue up once, saves the link, and
+	 * refuses a worktree linked to another issue.
+	 */
+	issue?: string;
 }
 
 /** The worktree a Timber command reported: enough to find it in the list and to name it to Timber again. */

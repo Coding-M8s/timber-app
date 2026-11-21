@@ -1,4 +1,4 @@
-import { type IssueTrackers, githubRemoteName, isGithubRemote, issueTrackersOf, remoteUrlArguments } from "../shared/issue-trackers";
+import { type IssueTrackers, githubRemoteName, githubRepositoryOf, issueTrackersOf, remoteUrlArguments } from "../shared/issue-trackers";
 import type { TimberSettingsReadResult, TimberSettingsRequest } from "../shared/timber-config";
 import { readGit } from "./read-git";
 
@@ -24,13 +24,14 @@ export interface IssueTrackerReader {
 }
 
 /**
- * Whether the remote Timber looks up GitHub issues through is one github.com
- * repository. One read-only `git remote get-url --all`, as an argument
- * array; a remote that is missing, or Git that fails, is no.
+ * The "owner/name" of the github.com repository the remote Timber looks up
+ * GitHub issues through, or null when it is not one. One read-only `git
+ * remote get-url --all`, as an argument array; a remote that is missing, or
+ * Git that fails, is null.
  */
-export async function hasGithubRemote(folder: string, remote: string, git?: string): Promise<boolean> {
+export async function githubRemoteRepository(folder: string, remote: string, git?: string): Promise<string | null> {
 	const answer = await readGit(remoteUrlArguments(folder, remote), { ...(git === undefined ? {} : { git }), timeoutMs: REMOTE_TIMEOUT_MS, limitBytes: REMOTE_LIMIT_BYTES });
-	return answer.started && answer.exitCode === 0 && !answer.timedOut && !answer.truncated && isGithubRemote(answer.stdout);
+	return answer.started && answer.exitCode === 0 && !answer.timedOut && !answer.truncated ? githubRepositoryOf(answer.stdout) : null;
 }
 
 /**
@@ -47,7 +48,7 @@ export function createIssueTrackerReader(options: IssueTrackerReaderOptions): Is
 			const settings = await readSettings({ scope: "repository", repository });
 			if (settings.outcome === "failed") return { ok: false, message: settings.failure.diagnostic };
 			const { effective, credentials } = settings.settings;
-			const github = await hasGithubRemote(repository, githubRemoteName(effective), git);
+			const github = await githubRemoteRepository(repository, githubRemoteName(effective), git);
 			return issueTrackersOf({ effective, credentials }, github);
 		},
 	};

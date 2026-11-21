@@ -85,6 +85,9 @@ export const samplePullRequests: Readonly<Record<string, PullRequest>> = {
 		reviewersComplete: false,
 		runs: [run("test", "passing"), run("build", "pending"), run("deploy preview", "pending")],
 	}),
+	// The head branches of pull requests the sample trackers link to issues (./mock-issue-lists.ts), once checked out from the board.
+	"feat/linked-issue-header": pullRequest(48, "timber", "Show the linked issue in the header", { description: "Closes #42." }),
+	"fix/explain-arena": pullRequest(50, "timber", "Explain why New arena is disabled", { state: "draft", summary: "pending" }),
 	"release/2.4": pullRequest(5, "billing", "Release 2.4", { state: "closed", summary: "none", runs: [], review: "none" }),
 	// The storefront repository, after several pull requests merged (issue 162).
 	"feat/coupons": pullRequest(61, "storefront", "Apply coupons at checkout", { state: "merged", review: "approved" }),

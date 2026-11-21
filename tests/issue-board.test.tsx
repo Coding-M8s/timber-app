@@ -30,7 +30,7 @@ async function startedStore(engine = createMockEngine()) {
 const render = (store: ReturnType<typeof createAppStore>) => renderToStaticMarkup(<App store={store} />);
 
 const card = (key: string, category: "open" | "in-progress" | "closed", name: string, tracker: SuggestedIssue["tracker"] = "jira"): SuggestedIssue => ({
-	tracker, key, url: `https://example.atlassian.net/browse/${key}`, title: key, status: { name, category }, assignee: null, worktree: null,
+	tracker, key, url: `https://example.atlassian.net/browse/${key}`, title: key, status: { name, category }, assignee: null, worktree: null, pullRequests: [],
 });
 
 describe("boardColumns", () => {
@@ -91,18 +91,18 @@ describe("which list and tracker the board shows", () => {
 	});
 
 	test("the tracker picked, else Timber's default, else the first set up; the field shows with two or more", () => {
-		const two = { ok: true as const, defaultTracker: null, available: ["github" as const, "linear" as const] };
+		const two = { ok: true as const, defaultTracker: null, available: ["github" as const, "linear" as const], githubRepository: "example/timber" };
 		expect(boardTracker(two, null)).toBe("github");
 		expect(boardTracker({ ...two, defaultTracker: "linear" }, null)).toBe("linear");
 		expect(boardTracker(two, "linear")).toBe("linear");
 		expect(boardTracker(two, "jira")).toBe("github");
-		expect(boardTracker({ ok: true, defaultTracker: null, available: [] }, null)).toBeNull();
+		expect(boardTracker({ ok: true, defaultTracker: null, available: [], githubRepository: null }, null)).toBeNull();
 		expect(boardTrackerChoices(two)).toEqual(["github", "linear"]);
-		expect(boardTrackerChoices({ ok: true, defaultTracker: null, available: ["jira"] })).toEqual([]);
+		expect(boardTrackerChoices({ ok: true, defaultTracker: null, available: ["jira"], githubRepository: null })).toEqual([]);
 	});
 
 	test("a failed read keeps the last good list, and a list not set up is read again on Refresh", () => {
-		let board: IssueBoard = { ...emptyBoard(), trackers: { ok: true, defaultTracker: "jira", available: ["jira"] } };
+		let board: IssueBoard = { ...emptyBoard(), trackers: { ok: true, defaultTracker: "jira", available: ["jira"], githubRepository: null } };
 		const found: IssueListResult = { ok: true, outcome: "found", issues: [], truncated: false, sprint: { name: "S", source: "jira-board" } };
 		board = withRead(board, boardKey("jira", "sprint"), { result: found, at: 1 });
 		board = withRead(board, boardKey("jira", "sprint"), { result: { ok: true, outcome: "failed", reason: "offline", diagnostic: "x" }, at: 2 });
