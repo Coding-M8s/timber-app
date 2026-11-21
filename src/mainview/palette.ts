@@ -418,6 +418,23 @@ export function describeHighlighted(entry: PaletteEntry | undefined): string {
 	return entry.disabledReason ?? entry.hint;
 }
 
+/** Where the pointer was, in screen pixels. */
+export interface PointerAt {
+	x: number;
+	y: number;
+}
+
+/**
+ * Whether a mouse move over the list is the person moving the pointer.
+ * After the list scrolls under a pointer that stays still, as when the
+ * arrows wrap to the last row, WebKit and Chromium send a move at the same
+ * place, which must not take the highlight from the row the keys chose. The
+ * first move seen only records where the pointer is.
+ */
+export function pointerMoved(last: PointerAt | null, next: PointerAt): boolean {
+	return last !== null && (last.x !== next.x || last.y !== next.y);
+}
+
 /** The entry a key moves to in a list of `count` rows from `index`: the arrows step and wrap, Home and End jump. Null for any other key. */
 export function rowAfterKey(count: number, index: number, key: string): number | null {
 	if (count === 0) return null;

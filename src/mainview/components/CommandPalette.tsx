@@ -1,7 +1,7 @@
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
 	NOTHING_MATCHES, PALETTE_LABEL, PALETTE_PLACEHOLDER, type PaletteIcon, type PaletteMatch, describeHighlighted, paletteEntries,
-	paletteScope, paletteView, rowAfterKey, rowTarget,
+	paletteScope, paletteView, pointerMoved, rowAfterKey, rowTarget, type PointerAt,
 } from "../palette";
 import { runPaletteEntry } from "../palette-run";
 import { waitingShortcut } from "../waiting";
@@ -61,6 +61,7 @@ export function CommandPalette() {
 	const state = useAppState();
 	const dialog = useRef<HTMLDialogElement>(null);
 	const input = useRef<HTMLInputElement>(null);
+	const pointer = useRef<PointerAt | null>(null);
 	const [query, setQuery] = useState("");
 	const [active, setActive] = useState(0);
 	const [widened, setWidened] = useState(false);
@@ -188,7 +189,12 @@ export function CommandPalette() {
 										aria-selected={index === current}
 										aria-disabled={reason === null ? undefined : true}
 										className={`palette-row${index === current ? " active" : ""}${reason === null ? "" : " disabled"}`}
-										onMouseMove={() => setActive(index)}
+										onMouseMove={event => {
+											const next = { x: event.screenX, y: event.screenY };
+											const moved = pointerMoved(pointer.current, next);
+											pointer.current = next;
+											if (moved) setActive(index);
+										}}
 										onClick={() => choose(match)}
 									>
 										<Icon icon={entry.icon} current={entry.current === true} />
