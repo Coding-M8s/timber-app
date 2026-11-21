@@ -22,7 +22,9 @@ import { SetupWizardDialog } from "./SetupWizardDialog";
 export function Dialogs() {
 	const state = useAppState();
 	const { dialog } = state;
-	if (!dialog || !timberReady(state)) return null;
+	if (!dialog) return null;
+	// Settings opens without a usable Timber too, from the notice, so another Timber can be chosen there.
+	if (!timberReady(state) && dialog.kind !== "settings") return null;
 	switch (dialog.kind) {
 		case "new-worktree": {
 			// Timber runs in the repository's folder, so the repository has to be listed and there.

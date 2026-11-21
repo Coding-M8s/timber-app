@@ -3076,19 +3076,27 @@ Run for shipping Timber inside the app (issue 30), on 2026-11-21, Linux x64
   matching `timber-pin.json`, into `vendor/timber/v0.1.4/linux-x64`. The
   binary printed 0.1.4. A run with a wrong checksum fails and keeps nothing
   (`tests/fetch-timber.test.ts`, against a fake download).
-- `bun run build`: built. The packed app holds `Resources/app/timber/` with
-  `timber` (executable), `LICENSE`, and `THIRD_PARTY_NOTICES.txt`, and the
-  `timber` there printed 0.1.4. A first build left the folder out, because
-  Electrobun reads `electrobun.config.ts` from a folder of its own; the check
-  now starts from the config's own folder, and
-  `tests/bundled-timber-build.test.ts` reads the config from another folder.
+- `bun run build`: a first build left the `timber` folder out, because
+  Electrobun reads `electrobun.config.ts` from a folder of its own and the
+  check was relative. The check now starts from the config's own folder,
+  and `tests/bundled-timber-build.test.ts` reads the config from another
+  folder. Built again: the packed app (`Resources/*.tar.zst`, unpacked)
+  holds `Resources/app/timber/` with `timber` (mode 755), `LICENSE`, and
+  `THIRD_PARTY_NOTICES.txt`, and that `timber` printed 0.1.4.
+  `linux-x64-Timber-Setup.tar.gz` grew from 52 MB to 93 MB.
+- `TIMBER_APP_REQUIRE_BUNDLED_TIMBER=1 electrobun build --env=dev`, as the
+  release workflow builds: with the `vendor` folder moved away it failed
+  with "vendor/timber/v0.1.4/linux-x64 is missing"; with it back it built,
+  with `timber` in the app.
 - The built app's bundled Timber, through `chooseTimber` and `checkTimber`
   with `PATH=/usr/bin:/bin` and no timber on it: ready, source `bundled`,
   0.1.4. `listWorktrees` with it listed a new temporary repository.
 - `bun run typecheck` and `bun run typecheck:desktop`: no errors.
-  `bun run build:web`: built. `bun test`: 3046 passed, 19 skipped, none
+  `bun run build:web`: built. `bun test`: 3050 passed, 19 skipped, none
   failed. Again with only the pinned binary on PATH (no `~/.local/bin`), as
-  CI now runs: 3046 passed, 19 skipped, none failed.
+  CI now runs: 3050 passed, 19 skipped, none failed.
+- Settings opens from the Timber notice's Choose Timber, the one dialog that
+  opens without a usable Timber (`tests/app-shell.test.tsx`).
 - Not run: the installed desktop app by hand (New, Open, Done, and Rebase
   through the window with no Timber installed, switching Settings, Timber,
   Executable, and About), the Windows build, and macOS, which is not built.

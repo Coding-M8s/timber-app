@@ -46,7 +46,7 @@ test("the tag check exits with 1 and names the mismatch, and 0 on a match", () =
 test("a version tag starts the release, and changes to the workflow, version, or dependencies build without releasing", () => {
 	expect(release.on.push).toEqual({ tags: ["v*"] });
 	expect(release.on.pull_request).toEqual({
-		paths: [".github/workflows/release.yml", "scripts/check-release-tag.ts", "scripts/fetch-timber.ts", "timber-pin.json", "package.json", "bun.lock"],
+		paths: [".github/workflows/release.yml", "scripts/check-release-tag.ts", "scripts/fetch-timber.ts", "scripts/bundled-timber-copy.ts", "electrobun.config.ts", "timber-pin.json", "package.json", "bun.lock"],
 	});
 	expect(release.jobs.release!.if).toBe("startsWith(github.ref, 'refs/tags/v')");
 });
@@ -134,5 +134,13 @@ test("every desktop build fetches and checks the pinned Timber before it builds"
 		expect(steps).toContain("bun scripts/fetch-timber.ts");
 		expect(steps.indexOf("bun scripts/fetch-timber.ts")).toBeLessThan(steps.findIndex(step => step.startsWith("electrobun build")));
 	}
-	expect(release.on.pull_request).toMatchObject({ paths: expect.arrayContaining(["timber-pin.json", "scripts/fetch-timber.ts"]) });
+	expect(release.on.pull_request).toMatchObject({ paths: expect.arrayContaining(["timber-pin.json", "scripts/fetch-timber.ts", "scripts/bundled-timber-copy.ts"]) });
+});
+
+test("a release build fails rather than ship without its Timber", () => {
+	for (const name of builds) {
+		const build = release.jobs[name]!.steps.filter(step => step.run?.trim() === "bun run build");
+		expect(build).toHaveLength(1);
+		expect(build[0]!.env?.TIMBER_APP_REQUIRE_BUNDLED_TIMBER).toBe("1");
+	}
 });

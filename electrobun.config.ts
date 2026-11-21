@@ -1,8 +1,8 @@
 import type { ElectrobunConfig } from "electrobun";
-import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { APP_DESCRIPTION, APP_IDENTIFIER, APP_NAME, APP_VERSION } from "./src/shared/app-info";
-import { TIMBER_PIN, timberTarget, vendorFolder } from "./src/shared/timber-pin";
+import { TIMBER_PIN } from "./src/shared/timber-pin";
+import { REQUIRE_BUNDLED_TIMBER_VARIABLE, bundledTimberCopy } from "./scripts/bundled-timber-copy";
 
 /**
  * On Windows, node-pty and the ConPTY it ships run the terminal sessions
@@ -24,13 +24,18 @@ const nodePty: Record<string, string> = process.platform !== "win32" ? {} : Obje
  * `bundledTimberFolder` (src/bun/timber.ts) looks. `bun run build` fetches
  * and checks it first (scripts/fetch-timber.ts), and stops when a checksum
  * does not match. A development build that never fetched it has none, and
- * uses the timber on PATH. Only the folder of the pinned version counts, so
- * one left from an earlier pin is never copied. Electrobun reads this file
- * from a folder of its own, so the check starts from where this file is.
+ * uses the timber on PATH; a release build sets
+ * TIMBER_APP_REQUIRE_BUNDLED_TIMBER, which makes a missing one an error.
+ * Only the folder of the pinned version counts, so one left from an earlier
+ * pin is never copied.
  */
-const target = timberTarget(process.platform, process.arch);
-const vendored = target === null ? null : vendorFolder(TIMBER_PIN.version, target);
-const timber: Record<string, string> = vendored !== null && existsSync(fileURLToPath(new URL(vendored, import.meta.url))) ? { [vendored]: "timber" } : {};
+const timber = bundledTimberCopy(
+	TIMBER_PIN,
+	fileURLToPath(new URL(".", import.meta.url)),
+	process.platform,
+	process.arch,
+	process.env[REQUIRE_BUNDLED_TIMBER_VARIABLE] === "1",
+);
 
 export default {
 	app: {

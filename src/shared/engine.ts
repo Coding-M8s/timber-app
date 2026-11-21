@@ -39,11 +39,11 @@ import type { IssueTrackers } from "./issue-trackers";
 export interface Engine {
 	/** What the app says about itself: its version, for About, and how WebKitGTK draws in this run, for Settings. */
 	appInfo(): Promise<AppInfo>;
-	/** Whether a usable Timber is installed, as of the last look. */
+	/** Whether the Timber the app runs (bundled, chosen in Settings, or on PATH) is usable, and where it came from, as of the last look. */
 	timberStatus(): Promise<TimberStatus>;
 	/** Look for Timber again, for example after the person installed it. */
 	recheckTimber(): Promise<TimberStatus>;
-	/** Hear that the Timber status changed on its own, for example when a newer release came out. Returns a function that stops listening. */
+	/** Hear that the Timber status changed on its own, for example when a newer release came out or another Timber was chosen. Returns a function that stops listening. */
 	onTimberChanged(listener: () => void): () => void;
 	/**
 	 * The saved repositories, each with exactly the worktrees Timber lists, in

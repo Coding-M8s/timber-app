@@ -463,14 +463,19 @@ describe("settings dialog", () => {
 		expect(markup).toContain("permission denied");
 	});
 
-	test("shows what is saved, and like every dialog waits for Timber", async () => {
+	test("shows what is saved, and unlike every other dialog opens without a usable Timber, so another can be chosen", async () => {
 		const { store } = await startedStore();
 		await store.savePreferences({ sidebarSide: "right" });
 		store.openDialog({ kind: "settings" });
 		expect(render(store)).toContain('<input type="radio" name="sidebar-side" checked="" value="right"/>');
 
 		const { store: waiting } = await startedStore(createMockEngine(sampleRepositories, sampleTimberStatuses["not-found"]));
-		waiting.openDialog({ kind: "settings" });
-		expect(render(waiting)).not.toContain("settings-dialog");
+		waiting.openDialog({ kind: "rebase-worktree", repository: "/work/timber", worktree: "/work/timber" });
+		expect(render(waiting)).not.toContain("<dialog");
+		waiting.openDialog({ kind: "settings", section: "executable" });
+		const markup = render(waiting);
+		expect(markup).toContain("settings-dialog");
+		expect(markup).toContain("The Timber that comes with the app");
+		expect(markup).toContain("Not usable: there is no timber on PATH.");
 	});
 });
