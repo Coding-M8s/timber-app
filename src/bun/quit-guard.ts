@@ -39,13 +39,18 @@ export interface QuitGuard {
 	mayQuit(): boolean;
 	/** The person agreed: save which sessions are open, end every session, then quit. Answers whether quitting started. */
 	confirm(): Promise<boolean>;
+	/**
+	 * The same, with another way to quit, such as restarting into an update.
+	 * While `quit` runs, quitting may go ahead. Answers what `quit` answered.
+	 */
+	confirmWith(quit: () => Promise<boolean>): Promise<boolean>;
 }
 
 export function createQuitGuard(dependencies: QuitGuardDependencies): QuitGuard {
 	let agreed = false;
 	let asking = false;
 
-	async function confirm(): Promise<boolean> {
+	async function confirmWith(quit: () => Promise<boolean>): Promise<boolean> {
 		agreed = true;
 		// Saved while every session still runs. A save that fails must not keep the app open.
 		try {
@@ -55,11 +60,19 @@ export function createQuitGuard(dependencies: QuitGuardDependencies): QuitGuard 
 		}
 		await dependencies.endAll();
 		// Something else can still keep the app open. Then the next try asks again, and the next quit saves again.
-		if (dependencies.quit()) return true;
-		agreed = false;
-		dependencies.resume?.();
-		return false;
+		let started = false;
+		try {
+			started = await quit();
+		} finally {
+			if (!started) {
+				agreed = false;
+				dependencies.resume?.();
+			}
+		}
+		return started;
 	}
+
+	const confirm = () => confirmWith(async () => dependencies.quit());
 
 	async function ask(live: number): Promise<void> {
 		let shown: boolean;
@@ -85,5 +98,6 @@ export function createQuitGuard(dependencies: QuitGuardDependencies): QuitGuard 
 			return false;
 		},
 		confirm,
+		confirmWith,
 	};
 }

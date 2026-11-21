@@ -1,6 +1,7 @@
 import type { WorktreeHandoff } from "../../shared/handoff";
 import { Electroview } from "electrobun/view";
 import type { Engine } from "../../shared/engine";
+import type { AppUpdateState } from "../../shared/app-update";
 import type { RepositoryFetch } from "../../shared/git-fetch";
 import type { AppRPC } from "../../shared/rpc";
 import type { TerminalChange, TerminalOutput } from "../../shared/terminal";
@@ -28,6 +29,7 @@ export function createDesktopEngine(): Engine {
 	const quitRequests = listeners<number>();
 	const fetches = listeners<RepositoryFetch>();
 	const timberChanges = listeners<void>();
+	const appUpdates = listeners<AppUpdateState>();
 	const shownSessions = listeners<string>();
 	const handoffs = listeners<WorktreeHandoff>();
 	const chopChanges = listeners<string>();
@@ -51,6 +53,7 @@ export function createDesktopEngine(): Engine {
 				worktreeHandedOff: handoff => handoffs.call(handoff),
 				fetchChanged: status => fetches.call(status),
 				timberChanged: () => timberChanges.call(),
+				appUpdateChanged: state => appUpdates.call(state),
 			},
 		},
 	});
@@ -167,5 +170,10 @@ export function createDesktopEngine(): Engine {
 		restartPlan: () => rpc.request.restartPlan({}),
 		// Ending every session can take a moment, like confirmQuit, and the app quits right after.
 		restart: () => rpc.request.restart({}, { maxRequestTime: 30_000 }),
+		appUpdate: () => rpc.request.appUpdate({}),
+		checkForAppUpdate: () => rpc.request.checkForAppUpdate({}),
+		onAppUpdateChanged: appUpdates.add,
+		// Ending every session can take a moment, like restart, and the app quits right after.
+		installAppUpdate: request => rpc.request.installAppUpdate(request, { maxRequestTime: 30_000 }),
 	};
 }

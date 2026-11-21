@@ -98,4 +98,24 @@ describe("asking before quitting", () => {
 		expect(await guard.confirm()).toBe(true);
 		expect(events).toEqual(["endAll", "quit"]);
 	});
+
+	test("an update quits its own way: saved, ended, then its quit, and the quit it asks for goes ahead", async () => {
+		const { guard, events } = setup();
+		const started = await guard.confirmWith(async () => {
+			events.push("apply");
+			// The updater asks before quitting, as any quit does.
+			events.push(`mayQuit:${guard.mayQuit()}`);
+			return true;
+		});
+		expect(started).toBe(true);
+		expect(events).toEqual(["save:2", "endAll", "apply", "mayQuit:true"]);
+	});
+
+	test("an update whose quit did not start resumes saving, and the next quit asks again", async () => {
+		const { guard, events, setLive } = setup();
+		expect(await guard.confirmWith(async () => false)).toBe(false);
+		expect(events).toContain("resume");
+		setLive(1);
+		expect(guard.mayQuit()).toBe(false);
+	});
 });

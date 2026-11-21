@@ -4323,6 +4323,67 @@ other `X11 Error:` line is not explained by it. See the issue 64 run under
    after each fetch instead of reading their reflogs (see
    [fetching](#fetching)).
 
+## Updating the app
+
+An installed app updates itself from the app's GitHub releases, with
+Electrobun's updater (`src/bun/app-updates.ts`, issue 32).
+
+- **Where it looks.** `release.baseUrl` in `electrobun.config.ts` is
+  `https://github.com/Coding-M8s/timber-app/releases/latest/download`, and
+  the build stamps it into the app's `Resources/version.json`. The updater
+  asks for `<baseUrl>/stable-<os>-x64-update-v2.json` (falling back to
+  `-update.json`), and the bundle that manifest names,
+  `stable-<os>-x64-Timber.tar.zst`. GitHub serves the files of the newest
+  published release that is not a pre-release under `latest/download`, so a
+  draft is never offered and a pre-release never either. The updater adds a
+  `?<random hex>` to each address; GitHub ignores it (tried with a public
+  release asset on 2026-11-21). The release workflow attaches the six files
+  (see [releasing](releasing.md)).
+- **What counts as newer.** The manifest's `hash`, a build's own, differs
+  from the running app's. Any other published build is offered, so
+  publishing an older version would offer that one.
+- **Whole bundles.** `generatePatch` is false: every update downloads the
+  whole bundle, about 90 MB on Linux. Delta patches need the previous
+  release at build time and can come later.
+- **When it looks.** 30 seconds after start, so it never competes with the
+  first listing, then every six hours, and when the person presses "Check
+  for updates" in Settings, About. One look at a time; a second request
+  shares it. A newer release is downloaded at once, and checked against the
+  manifest's SHA-256 by Electrobun before it counts as ready. A look that
+  finds nothing new, or fails, while an update is ready keeps it ready and
+  says nothing, so the banner and an open question stay.
+- **Nothing installs by itself.** A downloaded update waits for "Restart to
+  update". `Engine.installAppUpdate` refuses while sessions run unless the
+  request says the person agreed (`endSessions`), so the rule holds in the
+  main process, not only in the window. Then `QuitGuard.confirmWith` saves
+  which sessions run, ends them, and calls Electrobun's `applyUpdate`, which
+  asks before quitting like any quit (the guard now says yes), starts its
+  helper, and quits. The helper swaps the new app in once the old one is
+  gone and starts it (read in Electrobun's source, not run yet); the saved sessions open again then (see "After a
+  restart" under [terminal sessions](#terminal-sessions)). On Windows the
+  helper runs as a scheduled task, which Electrobun creates.
+- **Failure leaves the installed app.** The download is unpacked and
+  checked beside the installed app, under its channel folder, and the swap
+  happens only after the app quit, with a rollback in Electrobun's helper.
+  That is read in Electrobun 2.0.6's `Updater.ts` and its helper's
+  messages, not run: an interrupted download or swap has not been tried.
+  A look or download that fails, offline for one, becomes the state
+  `failed` with the reason, shown only in Settings, About: no dialog, no
+  banner. When `applyUpdate` does not get as far as quitting, the window
+  says so and asks to quit and start again; by then the sessions have
+  ended and the app's watchers have stopped, as for any quit.
+- **Copies that cannot update.** The `dev` channel (`bun run dev`, `bun run
+  start`) and a build without `baseUrl` answer `unavailable`, and About says
+  why without a button.
+- **What has been verified.** The pure parts and the store are tested with
+  a stand-in updater and the mock engine (`tests/app-updates.test.ts`,
+  `tests/app-update-view.test.tsx`, `tests/quit-guard.test.ts`). `bun run
+  build` on Linux stamps the address into `version.json` and writes the
+  three Linux files. An update from one installed release to the next has
+  not been run on Linux or Windows yet: the first release that can update
+  is the first one built with this address, and it needs a later one to
+  update to.
+
 ## Open decisions
 
 - **Timber's machine interface is experimental.** The app spawns the

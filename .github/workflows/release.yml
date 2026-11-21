@@ -1,8 +1,8 @@
 name: Release
 
 # Pushing a version tag such as v0.2.0 builds the app on Linux and Windows,
-# each on its own platform, and puts both installers with their checksums in
-# a draft GitHub Release. A person reviews the draft and publishes it. See
+# each on its own platform, and puts both installers and the update files,
+# with their checksums, in a draft GitHub Release. A person reviews the draft and publishes it. See
 # docs/releasing.md.
 #
 # A pull request that changes this workflow, the version, or the dependencies
@@ -53,10 +53,19 @@ jobs:
       - run: bun run build
         env:
           TIMBER_APP_REQUIRE_BUNDLED_TIMBER: "1"
+      # What installed apps update from: the bundle and the two update manifests
+      # Electrobun's updater reads. ls fails when one is missing.
+      - name: Check the update files
+        shell: bash
+        run: ls -l artifacts/stable-linux-x64-Timber.tar.zst artifacts/stable-linux-x64-update.json artifacts/stable-linux-x64-update-v2.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-x64
-          path: artifacts/linux-x64-Timber-Setup.tar.gz
+          path: |
+            artifacts/linux-x64-Timber-Setup.tar.gz
+            artifacts/stable-linux-x64-Timber.tar.zst
+            artifacts/stable-linux-x64-update.json
+            artifacts/stable-linux-x64-update-v2.json
           if-no-files-found: error
 
   # As in CI, Timber is not installed here, so the tests that need it are
@@ -84,10 +93,19 @@ jobs:
       - run: bun run build
         env:
           TIMBER_APP_REQUIRE_BUNDLED_TIMBER: "1"
+      # What installed apps update from: the bundle and the two update manifests
+      # Electrobun's updater reads. ls fails when one is missing.
+      - name: Check the update files
+        shell: bash
+        run: ls -l artifacts/stable-win-x64-Timber.tar.zst artifacts/stable-win-x64-update.json artifacts/stable-win-x64-update-v2.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: win-x64
-          path: artifacts/win-x64-Timber-Setup.zip
+          path: |
+            artifacts/win-x64-Timber-Setup.zip
+            artifacts/stable-win-x64-Timber.tar.zst
+            artifacts/stable-win-x64-update.json
+            artifacts/stable-win-x64-update-v2.json
           if-no-files-found: error
 
   # Runs only when both builds, and so all their checks, passed.
@@ -104,16 +122,29 @@ jobs:
         with:
           path: release
           merge-multiple: true
+      # Installed apps download the newest published release's stable-* files
+      # by name (electrobun.config.ts, release.baseUrl), so every release
+      # carries them. sha256sum fails when one is missing, and then no draft
+      # is made.
       - name: Write the checksums
         working-directory: release
-        run: sha256sum linux-x64-Timber-Setup.tar.gz win-x64-Timber-Setup.zip > SHA256SUMS.txt
+        run: sha256sum $FILES > SHA256SUMS.txt
+        env:
+          FILES: >-
+            linux-x64-Timber-Setup.tar.gz win-x64-Timber-Setup.zip
+            stable-linux-x64-Timber.tar.zst stable-linux-x64-update.json stable-linux-x64-update-v2.json
+            stable-win-x64-Timber.tar.zst stable-win-x64-update.json stable-win-x64-update-v2.json
       - name: Create the draft release
         working-directory: release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
+          FILES: >-
+            linux-x64-Timber-Setup.tar.gz win-x64-Timber-Setup.zip
+            stable-linux-x64-Timber.tar.zst stable-linux-x64-update.json stable-linux-x64-update-v2.json
+            stable-win-x64-Timber.tar.zst stable-win-x64-update.json stable-win-x64-update-v2.json
         run: |
           gh release create "$TAG" --draft --verify-tag --title "Timber $TAG" \
             --notes-file ../.github/release-notes.md --generate-notes \
-            linux-x64-Timber-Setup.tar.gz win-x64-Timber-Setup.zip SHA256SUMS.txt
+            $FILES SHA256SUMS.txt

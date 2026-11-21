@@ -84,25 +84,44 @@ test("the release waits for both builds, and only it may write", () => {
 	for (const name of builds) expect(release.jobs[name]!.permissions).toBeUndefined();
 });
 
-test("each build uploads its installer and fails when the file is missing", () => {
-	const uploads = Object.fromEntries(builds.map(name => {
-		const upload = release.jobs[name]!.steps.find(step => step.uses?.startsWith("actions/upload-artifact@"));
+/** What each platform's build makes for a release: its installer, and what installed apps update from. */
+const releaseFiles = {
+	"build-linux": ["linux-x64-Timber-Setup.tar.gz", "stable-linux-x64-Timber.tar.zst", "stable-linux-x64-update.json", "stable-linux-x64-update-v2.json"],
+	"build-windows": ["win-x64-Timber-Setup.zip", "stable-win-x64-Timber.tar.zst", "stable-win-x64-update.json", "stable-win-x64-update-v2.json"],
+} as const;
+
+test("each build checks for and uploads its installer and update files, and fails when one is missing", () => {
+	for (const name of builds) {
+		const steps = release.jobs[name]!.steps;
+		const upload = steps.find(step => step.uses?.startsWith("actions/upload-artifact@"));
 		expect(upload?.with?.["if-no-files-found"]).toBe("error");
-		return [name, upload?.with?.path];
-	}));
-	expect(uploads).toEqual({
-		"build-linux": "artifacts/linux-x64-Timber-Setup.tar.gz",
-		"build-windows": "artifacts/win-x64-Timber-Setup.zip",
-	});
+		expect(String(upload?.with?.path).trim().split("\n")).toEqual(releaseFiles[name].map(file => `artifacts/${file}`));
+		// The upload fails only when none is there, so each update file is looked for first.
+		const check = steps.find(step => step.name === "Check the update files");
+		expect(check?.run?.trim()).toBe(`ls -l ${releaseFiles[name].slice(1).map(file => `artifacts/${file}`).join(" ")}`);
+		expect(steps.indexOf(check!)).toBeLessThan(steps.indexOf(upload!));
+	}
 });
 
-test("the release is a draft with both installers and their checksums", () => {
-	const script = runs(release.jobs.release!).join("\n");
-	expect(script).toContain("sha256sum linux-x64-Timber-Setup.tar.gz win-x64-Timber-Setup.zip > SHA256SUMS.txt");
-	expect(script).toContain("gh release create \"$TAG\" --draft --verify-tag");
-	expect(script).toContain("linux-x64-Timber-Setup.tar.gz win-x64-Timber-Setup.zip SHA256SUMS.txt");
+test("the release is a draft with the installers, the update files, and their checksums", () => {
+	const job = release.jobs.release!;
+	const files = [releaseFiles["build-linux"][0], releaseFiles["build-windows"][0], ...releaseFiles["build-linux"].slice(1), ...releaseFiles["build-windows"].slice(1)];
+	const sums = job.steps.find(step => step.name === "Write the checksums")!;
+	expect(sums.run?.trim()).toBe("sha256sum $FILES > SHA256SUMS.txt");
+	expect(sums.env?.FILES?.trim().split(/\s+/)).toEqual(files);
+	const create = job.steps.find(step => step.name === "Create the draft release")!;
+	expect(create.env?.FILES?.trim().split(/\s+/)).toEqual(files);
+	expect(create.run).toContain("gh release create \"$TAG\" --draft --verify-tag");
+	expect(create.run).toContain("$FILES SHA256SUMS.txt");
 	// The tag reaches the script through the environment, never pasted into it.
-	expect(script).not.toContain("${{");
+	expect(runs(job).join("\n")).not.toContain("${{");
+});
+
+test("installed apps look for updates in the newest published release, and download whole bundles", () => {
+	// Read as text: the configuration imports Electrobun's types, which only the desktop typecheck has.
+	const config = readFileSync(join(root, "electrobun.config.ts"), "utf8");
+	expect(config).toContain('baseUrl: "https://github.com/Coding-M8s/timber-app/releases/latest/download",');
+	expect(config).toContain("generatePatch: false,");
 });
 
 test("every action in every workflow is pinned to a commit", () => {

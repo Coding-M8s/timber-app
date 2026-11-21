@@ -3,9 +3,10 @@ import { type AboutRow, aboutRows } from "../../about-format";
 import logoUrl from "../../assets/logo.png";
 import { useAppState } from "../../store/react";
 import { UninstallPanel } from "./UninstallPanel";
+import { AppUpdatePanel } from "../AppUpdate";
 
-/** The About section as drawn from its data, so it can be tested without a window. `uninstall` is what shows under Uninstall. */
-export function AboutSectionView({ rows, uninstall }: { rows: readonly AboutRow[]; uninstall?: ReactNode }) {
+/** The About section as drawn from its data, so it can be tested without a window. `updates` shows under Updates, `uninstall` under Uninstall. */
+export function AboutSectionView({ rows, updates, uninstall }: { rows: readonly AboutRow[]; updates?: ReactNode; uninstall?: ReactNode }) {
 	const titleId = useId();
 	return (
 		<section className="settings-section" aria-labelledby={titleId}>
@@ -26,6 +27,12 @@ export function AboutSectionView({ rows, uninstall }: { rows: readonly AboutRow[
 					))}
 				</dl>
 			</div>
+			{updates !== undefined && (
+				<>
+					<h4 className="about-subtitle">Updates</h4>
+					{updates}
+				</>
+			)}
 			<h4 className="about-subtitle">Licenses</h4>
 			<p className="about-text">
 				The app is set in Geist and Geist Mono, copyright Vercel in collaboration with basement.studio, used under the SIL Open Font License 1.1. Both typefaces are built in, so nothing is fetched from the network.
@@ -50,8 +57,8 @@ export function AboutSectionView({ rows, uninstall }: { rows: readonly AboutRow[
 	);
 }
 
-/** The app's version, the Timber in use, the licenses of what the app bundles, and uninstalling. Nothing here is saved. */
+/** The app's version, the Timber in use, updating the app, the licenses of what the app bundles, and uninstalling. Nothing here is saved. */
 export function AboutSection() {
 	const state = useAppState();
-	return <AboutSectionView rows={aboutRows(state.appVersion, state.timber)} uninstall={<UninstallPanel />} />;
+	return <AboutSectionView rows={aboutRows(state.appVersion, state.timber)} updates={<AppUpdatePanel />} uninstall={<UninstallPanel />} />;
 }

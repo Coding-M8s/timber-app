@@ -38,6 +38,7 @@ import { type PullRequestEnding, actOutPullRequest, isPullRequestEnding } from "
 import type { CreatePullRequestResult } from "../../shared/timber-pr";
 import { type MockFileChange, derivedFileChanges, diffMockFileChange, listMockFileChanges } from "./mock-file-changes";
 import { MOCK_PATH, type TerminalControls, createMockTerminals } from "./mock-terminals";
+import { type AppUpdateInstallRequest, type AppUpdateState, UPDATES_FROM_SOURCE } from "../../shared/app-update";
 import type { MockSessionStorage } from "./mock-session-storage";
 import { type TimberConfigControls, createMockTimberConfig } from "./mock-timber-config";
 import { type IssueTrackerControls, createMockIssueTrackers } from "./mock-issue-trackers";
@@ -443,6 +444,16 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	endRestarts(ending: RestartEnding): void;
 	/** How many restarts the mock acted out. */
 	restartCount(): number;
+	/**
+	 * Decide what a look for an app update finds from now on: "up-to-date"
+	 * (the start), "update" (version 0.2.0, which downloads at once),
+	 * "offline", or "unavailable" (a copy run from source).
+	 */
+	endAppUpdateChecks(ending: AppUpdateEnding): void;
+	/** Every restart into an update the mock acted out, oldest first. Nothing quits. */
+	appUpdateInstalls(): AppUpdateInstallRequest[];
+	/** Make every later restart into an update fail with this message, as the main process says it, or pass null to let them work again. */
+	failAppUpdateInstalls(message: string | null): void;
 	/** Every editor the mock acted out starting, oldest first. */
 	launchedEditors(): { request: OpenInEditorRequest; command: string }[];
 	/**
@@ -488,6 +499,12 @@ export type EditorEnding = typeof EDITOR_ENDINGS[number];
 
 export const RESTART_ENDINGS = ["restarts", "fails", "unavailable"] as const;
 export type RestartEnding = typeof RESTART_ENDINGS[number];
+
+export const APP_UPDATE_ENDINGS = ["up-to-date", "update", "offline", "unavailable"] as const;
+export type AppUpdateEnding = typeof APP_UPDATE_ENDINGS[number];
+
+/** The newer release the mock finds. */
+export const MOCK_APP_UPDATE_VERSION = "0.2.0";
 
 export const UNINSTALL_ENDINGS = ["uninstalls", "keeps-settings", "fails", "unavailable"] as const;
 export type UninstallEnding = typeof UNINSTALL_ENDINGS[number];
@@ -745,6 +762,26 @@ export function createMockEngine(
 	const uninstalls: UninstallRequest[] = [];
 	let restartEnding: RestartEnding = "restarts";
 	let restarts = 0;
+	let appUpdateEnding: AppUpdateEnding = "up-to-date";
+	let appUpdate: AppUpdateState = { kind: "idle" };
+	const appUpdateListeners = new Set<(state: AppUpdateState) => void>();
+	const appUpdateRequests: AppUpdateInstallRequest[] = [];
+	let appUpdateInstallFailure: string | null = null;
+	const setAppUpdate = (next: AppUpdateState) => {
+		appUpdate = next;
+		for (const listener of [...appUpdateListeners]) listener(next);
+	};
+	/** What a look finds, told the way the main process tells it: checking first, then the answer. */
+	const lookForAppUpdate = async () => {
+		if (appUpdateEnding === "unavailable") return setAppUpdate({ kind: "unavailable", reason: UPDATES_FROM_SOURCE });
+		setAppUpdate({ kind: "checking" });
+		await Promise.resolve();
+		if (appUpdateEnding === "offline") return setAppUpdate({ kind: "failed", stage: "check", message: "Unable to connect. Is the computer able to access the url?" });
+		if (appUpdateEnding === "up-to-date") return setAppUpdate({ kind: "up-to-date", checkedAt: Date.now() });
+		setAppUpdate({ kind: "downloading", version: MOCK_APP_UPDATE_VERSION });
+		await Promise.resolve();
+		setAppUpdate({ kind: "ready", version: MOCK_APP_UPDATE_VERSION });
+	};
 	const NOT_RESTARTABLE = "This copy of the app runs from source in /home/sam/timber-app, so it cannot restart itself. Quit it and run the command again to use the saved setting.";
 	const NOT_INSTALLED = "This copy of the app was not installed, so there is nothing to uninstall. It runs from /home/sam/timber-app.";
 	const launches: { request: OpenInEditorRequest; command: string }[] = [];
@@ -1121,6 +1158,37 @@ export function createMockEngine(
 			restartEnding = next;
 		},
 		restartCount: () => restarts,
+		appUpdate: async () => appUpdate,
+		async checkForAppUpdate() {
+			if (appUpdate.kind !== "unavailable" && appUpdate.kind !== "checking" && appUpdate.kind !== "downloading" && appUpdate.kind !== "installing") void lookForAppUpdate();
+			return appUpdate;
+		},
+		onAppUpdateChanged(listener) {
+			appUpdateListeners.add(listener);
+			return () => void appUpdateListeners.delete(listener);
+		},
+		async installAppUpdate(request) {
+			if (appUpdate.kind !== "ready") return { outcome: "failed", message: "No update is ready to install yet." };
+			const live = (await terminals.listTerminals()).filter(session => session.state.kind === "running").length;
+			if (live > 0 && !request.endSessions) return { outcome: "sessions-running", live };
+			appUpdateRequests.push(structuredClone(request));
+			const ready = appUpdate;
+			setAppUpdate({ kind: "installing", version: ready.version });
+			if (appUpdateInstallFailure === null) return { outcome: "restarting" };
+			// As the main process does: the update stays ready, and the answer says why.
+			await Promise.resolve();
+			setAppUpdate(ready);
+			return { outcome: "failed", message: appUpdateInstallFailure };
+		},
+		failAppUpdateInstalls(message) {
+			appUpdateInstallFailure = message;
+		},
+		endAppUpdateChecks(next) {
+			// Called from the browser console too, where nothing checks the word.
+			if (!APP_UPDATE_ENDINGS.includes(next)) throw new Error(`Unknown ending: ${String(next)}`);
+			appUpdateEnding = next;
+		},
+		appUpdateInstalls: () => structuredClone(appUpdateRequests),
 		async readFileChanges(request) {
 			const listed = listedForChanges(request.repository, request.worktree);
 			if (!listed.ok) return { outcome: listed.outcome, message: listed.message };

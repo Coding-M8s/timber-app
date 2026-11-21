@@ -31,4 +31,10 @@ is expected to show "Windows protected your PC". Choose "More info", then
 "Run anyway". The app installs to
 `%LOCALAPPDATA%\com.codingm8s.timber-app\stable` with a Start menu entry.
 
+**Updates.** This build looks for a newer release a little after it starts
+and every six hours, downloads it, and offers "Restart to update". It never
+restarts by itself. Settings, About has "Check for updates". The `stable-*`
+files of this release are what installed apps update from. Updating is new
+in this beta and has not yet been tried from one release to the next.
+
 To remove the app, use Settings, About, Uninstall.
