@@ -468,10 +468,29 @@ logins. The app never reads a tracker login and never signs in.
   or Shift+Enter on another line of the same hunk makes it a range. A note
   shows under its lines. Lines without numbers, such as Git's own notes or
   a conflict's combined diff, and binary or very large files, take no
-  notes. Notes collect in a Review list under the files, with a count on
-  the Changes tab: each shows where it is (`path:line`) and its first line,
-  shows its lines when clicked, and has Edit and Delete. Discard asks
-  first. Nothing is sent while writing.
+  notes. Notes collect in a Review panel on the right of the diff, shown
+  while the worktree has notes, with a count on the Changes tab and in the
+  panel's heading. The panel is 300px wide and does not grow: many notes
+  scroll inside it, while the diff, the file list, and the panel's Discard
+  and Send review stay where they are. Each note is a box led by its
+  reference, a button named "Show `path:line`" (", outdated" when it is):
+  `path:line` or the range, the folder dimmed, "outdated" or "removed
+  line" beside it, and under that its first line with Git's `+` or `-`
+  ("empty line" when it is blank). Then the note, and Edit and Delete;
+  Edit opens the note's field in its box. Choosing a reference shows the
+  file, scrolls the diff to the lines, and marks them for a moment; the
+  reference keeps its mark until another is chosen. An outdated note goes
+  to its old lines where some are still there as they were, with the same
+  numbers; when none are, its box says so. Deleting a note gives the
+  keyboard to the next reference. Discard asks first. Nothing is sent
+  while writing.
+- Where the diff and the panel do not fit side by side (under 800px for
+  both, about 1100px of the Changes tab), the panel is hidden and a
+  "Review" button with the count shows in the diff's title bar. It opens
+  the panel over the right of the diff, below that bar, with the keyboard
+  on its Close. Close, Escape, or the button again closes it, and the
+  keyboard goes back to the button; choosing a reference closes it and
+  shows the lines. The page never scrolls sideways.
 - Send review opens a preview of the whole review as one message, exactly
   as it will be pasted: each note as `path:line` (removed lines say they
   use the old numbers), the quoted lines with Git's `+` and `-`, and the

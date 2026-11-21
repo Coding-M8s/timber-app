@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { DiffLine, FileDiff, FileChangeTarget } from "../src/shared/file-changes";
 import {
-	NOTE_LINE_LIMIT, OUTDATED_MARK, QUOTE_LENGTH_LIMIT, type ReviewNote, buildReviewMessage, chooseNoteLine, markOutdated, normalizeNoteText, notableLine, notedFiles, notedLines, noteLocation, noteProblem, quoteLine,
+	NOTE_LINE_LIMIT, OUTDATED_MARK, QUOTE_LENGTH_LIMIT, type ReviewNote, buildReviewMessage, chooseNoteLine, markOutdated, normalizeNoteText, notableLine, notedFiles, notedLines, noteLinesShown, noteLocation, noteProblem, noteSpan, quoteLine, quotedParts,
 } from "../src/shared/review";
 import { cleanLine } from "../src/shared/safe-text";
 import { PASTE_TEXT_LIMIT, bracketedPaste, createPasteModeScanner, pasteProblem } from "../src/shared/terminal";
@@ -38,6 +38,18 @@ describe("where a note is", () => {
 
 	test("a path with a control character in it is cleaned", () => {
 		expect(noteLocation({ file: { ...file, path: "src/\x1b[201~evil.ts" }, lines: [added("x", 1) as never] })).toBe("src/\ufffd[201~evil.ts:1");
+	});
+});
+
+describe("a note's reference", () => {
+	test("names the lines with the numbers of the file as it is now, or the old ones for removed lines", () => {
+		expect(noteSpan(note(hunk.slice(1, 4), ""))).toEqual({ lines: "2-3", removed: false });
+		expect(noteSpan(note([removed("a", 7), removed("b", 8)], ""))).toEqual({ lines: "7-8", removed: true });
+	});
+
+	test("shows its first line with Git's marker apart, cleaned as quoted", () => {
+		expect(quotedParts({ kind: "added", text: "a\x1b[201~b\r", oldLine: null, newLine: 1 })).toEqual({ marker: "+", text: "a\ufffd[201~b" });
+		expect(quotedParts({ kind: "context", text: "\tsame", oldLine: 1, newLine: 1 })).toEqual({ marker: " ", text: "\tsame" });
 	});
 });
 
@@ -142,6 +154,16 @@ describe("outdated notes", () => {
 		expect(marked[0]!.outdated).toBe(true);
 		expect(marked[0]!.lines).toEqual(kept.lines);
 		expect(markOutdated(marked, "base", file, textDiff(hunk))[0]!.outdated).toBe(true);
+	});
+
+	test("still show where some of their old lines are there as they were, and nowhere else", () => {
+		const changed = textDiff([context("import x from \"x\";", 1, 1), removed("const a = 1;", 2), added("const a = 42;", 2)]);
+		expect(noteLinesShown(kept, changed)).toBe(true);
+		// Only the changed line was noted: nothing of it is left.
+		expect(noteLinesShown(note([hunk[2]!], "n"), changed)).toBe(false);
+		// The same text at another number is not taken for it.
+		expect(noteLinesShown(note([hunk[2]!], "n"), textDiff([added("const a = 2;", 9)]))).toBe(false);
+		expect(noteLinesShown(kept, { kind: "unchanged" })).toBe(false);
 	});
 
 	test("are marked when the file is no longer changed there", () => {

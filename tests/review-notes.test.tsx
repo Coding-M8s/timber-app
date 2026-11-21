@@ -151,7 +151,7 @@ describe("review notes", () => {
 		await store.readChanges(TIMBER, FEATURE.id);
 		expect(store.getState().reviews[FEATURE.id]!.map(note => note.outdated)).toEqual([false, true]);
 		const markup = render(store);
-		expect(markup).toContain('<span class="note-outdated">outdated</span>');
+		expect(markup).toContain('<span class="review-ref-tag outdated">outdated</span>');
 	});
 
 	test("an agent that has not turned on bracketed paste gets nothing, and the notes stay", async () => {
@@ -225,31 +225,151 @@ describe("review notes", () => {
 		engine.setFileChanges(FEATURE.path, [mock(file("src/a.ts"), samplePatch("src/a.ts").replace("retries = 5", "retries = 8")), mock(file("src/b.ts"))]);
 		await store.readChanges(TIMBER, FEATURE.id);
 		await store.prepareReview(FEATURE.id);
+		// Its removed line is still there as it was, so the old lines show in part and nothing needs saying.
+		expect(await store.showReviewNote(FEATURE.id, onA!.id)).toBeNull();
+		// None of its lines are left: that is said.
+		const rewritten = samplePatch("src/a.ts").replace("retries = 3", "retries = 4").replace("retries = 5", "retries = 8").replace("= 250", "= 300");
+		engine.setFileChanges(FEATURE.path, [mock(file("src/a.ts"), rewritten), mock(file("src/b.ts"))]);
+		await store.readChanges(TIMBER, FEATURE.id);
 		expect(await store.showReviewNote(FEATURE.id, onA!.id)).toBe("Its lines changed or left the diff since the note, so they may not show.");
+	});
+
+	test("a note on its way into view is let go when another file or worktree is chosen first", async () => {
+		const { store } = await startedStore();
+		await notesOnTwoFiles(store);
+		const [onA] = store.getState().reviews[FEATURE.id]!;
+		await store.showReviewNote(FEATURE.id, onA!.id);
+		expect(store.getState().noteInView).toEqual({ worktree: FEATURE.id, id: onA!.id });
+		await store.selectChangedFile(file("src/b.ts"));
+		expect(store.getState().noteInView).toBeNull();
+		await store.showReviewNote(FEATURE.id, onA!.id);
+		await store.compareChanges("base");
+		expect(store.getState().noteInView).toBeNull();
+		await store.showReviewNote(FEATURE.id, onA!.id);
+		store.select(OTHER.id);
+		expect(store.getState().noteInView).toBeNull();
+	});
+
+	test("the chosen note stays chosen until another is chosen or it goes", async () => {
+		const { store } = await startedStore();
+		await notesOnTwoFiles(store);
+		const [onA, onB] = store.getState().reviews[FEATURE.id]!;
+		await store.showReviewNote(FEATURE.id, onA!.id);
+		store.reviewNoteShown();
+		expect(store.getState().chosenNote).toEqual({ worktree: FEATURE.id, id: onA!.id });
+		await store.showReviewNote(FEATURE.id, onB!.id);
+		expect(store.getState().chosenNote).toEqual({ worktree: FEATURE.id, id: onB!.id });
+		store.deleteReviewNote(FEATURE.id, onA!.id);
+		expect(store.getState().chosenNote).toEqual({ worktree: FEATURE.id, id: onB!.id });
+		store.deleteReviewNote(FEATURE.id, onB!.id);
+		expect(store.getState().chosenNote).toBeNull();
 	});
 });
 
 describe("the Changes tab with notes", () => {
-	test("counts the notes on the tab, lists them under the files, and shows each under its lines", async () => {
+	test("counts the notes on the tab, shows them in a panel beside the diff, and each under its lines", async () => {
 		const { store } = await startedStore();
 		await notesOnTwoFiles(store);
 		const markup = render(store);
 		expect(markup).toContain('<span class="tab-count" aria-hidden="true">2</span><span class="visually-hidden">, 2 review notes</span>');
-		expect(markup).toContain('<section class="review" aria-label="Review">');
-		expect(markup).toContain('<span class="review-location">src/a.ts:3-4</span>');
-		expect(markup).toContain('<span class="review-summary">Why change the retries?</span>');
+		// The panel follows the diff, out of the file list's column.
+		const files = markup.indexOf('class="changes-files"');
+		const main = markup.indexOf('class="changes-main"');
+		const panel = markup.search(/<aside id="[^"]+" class="review-panel" aria-label="Review">/);
+		expect(files).toBeGreaterThan(-1);
+		expect(main).toBeGreaterThan(files);
+		expect(panel).toBeGreaterThan(markup.indexOf('class="changes-diff"'));
+		expect(markup).not.toContain('<section class="review"');
+		expect(markup).toContain('<span class="visually-hidden">2 review notes</span>');
+		expect(markup).toContain(">Send review</button>");
+		expect(markup).toContain(">Discard</button>");
 		// src/b.ts shows: its note is under its first line, and every numbered line can take a note.
 		expect(markup).toContain('<p class="diff-note-text">Sort these imports.</p>');
 		expect(markup).toContain('aria-label="Add a note on line 1"');
 		expect(markup).toContain('aria-label="Add a note on removed line 3"');
-		expect(markup).toContain(">Send review</button>");
 	});
 
-	test("has no Review list and no count without notes", async () => {
+	test("each note leads with a reference: a button named by where it is, with its first line", async () => {
+		const { store } = await startedStore();
+		await notesOnTwoFiles(store);
+		const markup = render(store);
+		const [onA] = store.getState().reviews[FEATURE.id]!;
+		expect(markup).toContain(`<button type="button" class="review-ref" data-note-id="${onA!.id}" aria-label="Show src/a.ts:3-4" title="Show src/a.ts:3-4">`);
+		expect(markup).toContain('<span class="review-ref-folder">src/</span><span class="review-ref-name">a.ts:3-4</span>');
+		expect(markup).toContain('<span class="review-ref-line"><span class="review-ref-marker removed">-</span>export const retries = 3;</span>');
+		expect(markup).toContain('<p class="review-text">Why change the retries?\nThree was on purpose.</p>');
+		expect(markup).toContain('aria-label="Edit the note on src/a.ts:3-4"');
+		expect(markup).toContain('aria-label="Delete the note on src/a.ts:3-4"');
+	});
+
+	test("a reference whose first line is blank says so", async () => {
+		const { store } = await startedStore();
+		await store.selectChangedFile(file("src/a.ts"));
+		// Line 2 of the sample patch is empty.
+		expect(addNote(store, 1, 1, "Drop this blank line.")).toBeNull();
+		expect(render(store)).toContain('<span class="review-ref-marker context"> </span><span class="review-ref-empty">empty line</span>');
+	});
+
+	test("an outdated note says so in its reference, also to a screen reader", async () => {
+		const { engine, store } = await startedStore();
+		await notesOnTwoFiles(store);
+		engine.setFileChanges(FEATURE.path, [mock(file("src/a.ts"), samplePatch("src/a.ts").replace("retries = 5", "retries = 7")), mock(file("src/b.ts"))]);
+		await store.prepareReview(FEATURE.id);
+		const markup = render(store);
+		expect(markup).toContain('aria-label="Show src/a.ts:3-4, outdated"');
+		expect(markup).toContain('<span class="review-ref-tag outdated">outdated</span>');
+	});
+
+	test("a note on removed lines says so in its reference", async () => {
+		const { store } = await startedStore();
+		await store.selectChangedFile(file("src/a.ts"));
+		expect(addNote(store, 2, 2, "Keep three.")).toBeNull();
+		const markup = render(store);
+		expect(markup).toContain('<span class="review-ref-name">a.ts:3</span></span><span class="review-ref-tag">removed line</span>');
+		expect(markup).toContain('aria-label="Show src/a.ts:3 (removed line, numbered as before the change)"');
+	});
+
+	test("a note on more than one removed line says so in its reference", async () => {
+		const { store } = await startedStore();
+		await store.selectChangedFile(file("src/a.ts"));
+		const view = store.getState().changes!;
+		const lines = [{ kind: "removed" as const, text: "a", oldLine: 7, newLine: null }, { kind: "removed" as const, text: "b", oldLine: 8, newLine: null }];
+		expect(store.addReviewNote(FEATURE.id, { comparison: view.compared!, file: view.selected!, lines, text: "Both go." })).toBeNull();
+		const markup = render(store);
+		expect(markup).toContain('<span class="review-ref-name">a.ts:7-8</span></span><span class="review-ref-tag">removed lines</span>');
+	});
+
+	test("choosing a reference marks it, and marks its lines in the diff for a moment", async () => {
+		const { store } = await startedStore();
+		await notesOnTwoFiles(store);
+		const [onA] = store.getState().reviews[FEATURE.id]!;
+		await store.showReviewNote(FEATURE.id, onA!.id);
+		let markup = render(store);
+		expect(markup).toContain(`class="review-ref chosen" data-note-id="${onA!.id}" aria-current="true"`);
+		expect(markup.match(/class="diff-line [a-z]+ shown"/g)).toEqual(['class="diff-line removed shown"', 'class="diff-line added shown"', 'class="diff-line added shown"']);
+		// Once shown, the lines are no longer marked; the reference stays chosen.
+		store.reviewNoteShown();
+		markup = render(store);
+		expect(markup).not.toContain(" shown\"");
+		expect(markup).toContain(`class="review-ref chosen" data-note-id="${onA!.id}"`);
+	});
+
+	test("the Review button that opens the panel in a narrow window names the panel and the count", async () => {
+		const { store } = await startedStore();
+		await notesOnTwoFiles(store);
+		const markup = render(store);
+		const id = /<aside id="([^"]+)" class="review-panel"/.exec(markup)![1]!;
+		expect(markup).toContain(`<button type="button" class="button quiet review-toggle" aria-expanded="false" aria-controls="${id}" aria-label="Review, 2 review notes"`);
+		expect(markup).toContain('<button type="button" class="text-button review-close" aria-label="Close the review">Close</button>');
+	});
+
+	test("has no Review panel, no Review button, and no count without notes", async () => {
 		const { store } = await startedStore();
 		const markup = render(store);
 		expect(markup).not.toContain("tab-count");
-		expect(markup).not.toContain('class="review"');
+		expect(markup).not.toContain("review-panel");
+		expect(markup).not.toContain("review-toggle");
+		expect(markup).toContain('class="changes-main"');
 	});
 
 	test("the Send review dialog lists the running agents and a new one, and with none saved offers only Copy review", async () => {
