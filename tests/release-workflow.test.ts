@@ -7,7 +7,7 @@ import { releaseTagProblem } from "../scripts/check-release-tag";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const checker = join(root, "scripts/check-release-tag.ts");
 
-interface Step { uses?: string; run?: string; name?: string; with?: Record<string, unknown>; env?: Record<string, string> }
+interface Step { uses?: string; run?: string; name?: string; shell?: string; if?: string; with?: Record<string, unknown>; env?: Record<string, string> }
 interface Job { "runs-on": string; needs?: string[]; if?: string; permissions?: Record<string, string>; steps: Step[] }
 interface Workflow { on: Record<string, unknown>; permissions?: Record<string, string>; jobs: Record<string, Job> }
 
@@ -63,6 +63,17 @@ test("each platform builds on its own runner, after the checks", () => {
 			expect(at(check)).toBeGreaterThan(at("bun install"));
 			expect(at(check)).toBeLessThan(at("bun run build"));
 		}
+	}
+});
+
+test("the tag check reads the tag from the environment through bash on every platform", () => {
+	// On Windows a run step is PowerShell by default, where "$TAG" is an empty
+	// PowerShell variable, not the environment variable.
+	for (const name of builds) {
+		const check = release.jobs[name]!.steps.find(step => step.run?.startsWith("bun scripts/check-release-tag.ts"));
+		expect(check?.run?.trim()).toBe('bun scripts/check-release-tag.ts "$TAG"');
+		expect(check?.shell).toBe("bash");
+		expect(check?.env).toEqual({ TAG: "${{ github.ref_name }}" });
 	}
 });
 
