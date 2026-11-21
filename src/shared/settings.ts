@@ -1,3 +1,4 @@
+import { type ChopApprovals, readChopApprovals } from "./chops";
 import { type ForcePushMarks, readForcePushMarks } from "./git-fetch";
 import { type Layout, readLayout } from "./layout";
 import { type Preferences, readPreferences, writePreferences } from "./preferences";
@@ -40,6 +41,12 @@ export interface Settings {
 	 * moved or resized, and in files written before the app remembered it.
 	 */
 	window?: SavedWindow;
+	/**
+	 * The texts of repository chops the person agreed to run, as digests, by
+	 * the repository's primary checkout (see `ChopApprovals` in ./chops.ts).
+	 * Absent when there are none.
+	 */
+	chopApprovals?: ChopApprovals;
 }
 
 export const SETTINGS_VERSION = 1;
@@ -64,7 +71,7 @@ function readRepository(value: unknown): SavedRepository | null {
  * this version, or holding an entry that is not a saved repository. A damaged
  * file is never half-read, so a later save cannot quietly drop part of it.
  *
- * The layout, the preferences, the force-push marks, and the window are the exception,
+ * The layout, the preferences, the force-push marks, the window, and the chop approvals are the exception,
  * because they are only a convenience: a part that cannot be read falls back to the defaults (see
  * `readLayout`, `readPreferences`, and `readSavedWindow`) and never costs the repository list.
  */
@@ -97,6 +104,8 @@ export function parseSettings(text: string): Settings | null {
 	}
 	const window = readSavedWindow(value.window);
 	if (window) settings.window = window;
+	const chopApprovals = readChopApprovals(value.chopApprovals);
+	if (Object.keys(chopApprovals).length > 0) settings.chopApprovals = chopApprovals;
 	return settings;
 }
 
@@ -112,6 +121,7 @@ export function serializeSettings(settings: Settings): string {
 	const preferences = settings.preferences && writePreferences(settings.preferences);
 	const forcePushes = settings.forcePushes && Object.keys(settings.forcePushes).length > 0 ? readForcePushMarks(settings.forcePushes) : null;
 	const window = settings.window && readSavedWindow(settings.window);
+	const chopApprovals = settings.chopApprovals ? readChopApprovals(settings.chopApprovals) : {};
 	return `${JSON.stringify({
 		version: SETTINGS_VERSION,
 		repositories,
@@ -119,5 +129,6 @@ export function serializeSettings(settings: Settings): string {
 		...(preferences ? { preferences } : {}),
 		...(forcePushes ? { forcePushes } : {}),
 		...(window ? { window: { frame: { x: window.frame.x, y: window.frame.y, width: window.frame.width, height: window.frame.height }, maximized: window.maximized } } : {}),
+		...(Object.keys(chopApprovals).length > 0 ? { chopApprovals } : {}),
 	}, null, "\t")}\n`;
 }

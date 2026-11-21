@@ -383,20 +383,49 @@ export function bracketedPaste(text: string): string {
 	return `\x1b[200~${text.replace(/\n/g, "\r")}\x1b[201~`;
 }
 
+/**
+ * The bytes to write for a paste with no Enter: one bracketed paste while the
+ * program asked for it, the text as it is when it is one line, or null when
+ * it has a line break and the program did not ask, since the break would act
+ * as Enter. Only for text `pasteProblem` accepts.
+ */
+export function pasteBytes(text: string, bracketed: boolean): string | null {
+	if (bracketed) return bracketedPaste(text);
+	return text.includes("\n") ? null : text;
+}
+
+/**
+ * The bytes that type a command chop's text into a shell and run it: one
+ * bracketed paste and Enter while the shell asked for bracketed paste, so
+ * the whole text is one command line. Otherwise each line as typed, each
+ * line break as Enter, as a script would run them, and Enter at the end.
+ * Null when the shell did not ask and the text has a tab, which a shell
+ * would take as completion. Only for text `pasteProblem` accepts.
+ */
+export function chopRunBytes(text: string, bracketed: boolean): string | null {
+	if (bracketed) return `${bracketedPaste(text)}\r`;
+	if (text.includes("\t")) return null;
+	return `${text.replace(/\n/g, "\r")}\r`;
+}
+
+/** What a chop session says when its text could not be typed, on a line of its own, dimmed. */
+export const CHOP_NOT_TYPED =
+	"The chop was not typed: the shell has not turned on bracketed paste, and the chop has a tab, which the shell would take as completion. Copy it from Settings, Chops.";
+
 /** How a paste into a session went. */
 export type PasteResult =
 	| { outcome: "pasted" }
 	/** The session is not there, or its program ended. */
 	| { outcome: "gone"; message: string }
-	/** The session is not an agent's. */
+	/** The session is not an agent's, where only an agent's may take it, such as a review. */
 	| { outcome: "not-agent"; message: string }
-	/** The program has not asked for bracketed paste, so a line break would act as Enter. Nothing was written. */
+	/** The program has not asked for bracketed paste and the text has a line break, which would act as Enter. Nothing was written. */
 	| { outcome: "not-ready"; message: string }
 	/** The text cannot be pasted (`pasteProblem`). Nothing was written. */
 	| { outcome: "refused"; message: string };
 
 export const PASTE_NOT_READY =
-	"The agent has not turned on bracketed paste, so a line break would send the review early. Wait for its prompt and try again, or copy the review.";
+	"The program has not turned on bracketed paste, so a line break would act as Enter and send the text early. Wait for its prompt and try again, or copy the text.";
 
 /** The longest unfinished control sequence a paste mode scanner holds back between parts. */
 const PENDING_LIMIT = 64;

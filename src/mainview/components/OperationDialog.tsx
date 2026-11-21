@@ -6,7 +6,7 @@ interface OperationDialogProps {
 	title: string;
 	/** Sits beside the title, for example a switch between modes. It is outside the fields, so it disables itself while the command runs. */
 	headerAside?: ReactNode;
-	/** The exact Timber command the dialog is about to run, shown before it runs. */
+	/** The exact command the dialog is about to run, shown before it runs: a Timber command, or a chop's text. */
 	command: string;
 	/** The state of the dialog's submission (see `useSubmission`). */
 	submission: SubmissionState;

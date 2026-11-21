@@ -3330,6 +3330,18 @@ pre:focus-visible {
 	background: var(--line);
 }
 
+/* The repository's chops in the "+" menu, under a quiet heading. */
+.session-menu [role="group"] {
+	display: flex;
+	flex-direction: column;
+}
+
+.session-menu-heading {
+	margin: 2px 8px 2px;
+	font-size: 11px;
+	color: var(--text-3);
+}
+
 /* A worktree row's menu, opened by a right-click or Shift+F10. Fixed, so the scrolling sidebar does not clip it. */
 .worktree-menu {
 	position: fixed;

@@ -34,6 +34,7 @@ import { type PullRequestControls, createMockPullRequests } from "./mock-pull-re
 import { type BackupControls, createMockBackups } from "./mock-backups";
 import { type ArenaControls, createMockArenas } from "./mock-arenas";
 import { type ThemeFileControls, createMockThemeFiles } from "./mock-theme-files";
+import type { ChopList } from "../../shared/chops";
 import { type ChopsControls, createMockChops } from "./mock-chops";
 import { type PortControls, createMockPorts } from "./mock-ports";
 
@@ -740,6 +741,14 @@ export function createMockEngine(
 	};
 	const filesOf = (worktree: Worktree) => fileChangeLists.get(worktree.path) ?? derivedFileChanges(worktree);
 	const chopFiles = createMockChops();
+	/** As the main process: a repository in the list, its main checkout's file. The mock's main checkouts are always there. */
+	const listMockChops = (repositoryPath: string): ChopList => {
+		const repository = current.find(candidate => candidate.path === repositoryPath);
+		if (!repository) return { outcome: "not-listed", message: `${repositoryPath} is not a repository in this app's list. No chops were read.` };
+		// As when the main checkout's folder is missing: Git cannot read it.
+		if (!repository.available) return { outcome: "not-listed", message: `The folder of the main checkout, ${repositoryPath}, cannot be read. No chops were read.` };
+		return chopFiles.list(repositoryPath, preferences.chops);
+	};
 	const portReader = createMockPorts();
 
 	const look = async () => structuredClone(typeof timber === "function" ? timber() : timber);
@@ -1038,12 +1047,12 @@ export function createMockEngine(
 			return diffMockFileChange(filesOf(listed.worktree), listed.worktree, structuredClone(request));
 		},
 		async listChops(request) {
-			const repository = current.find(candidate => candidate.path === request.repository);
-			const target = repository?.available && asRead(repository).failure === null
-				? asRead(repository).worktrees.find(candidate => candidate.path === request.worktree)
-				: undefined;
-			if (!target || !target.pathExists) return { outcome: "not-listed", message: `Timber lists no worktree at ${request.worktree} in ${request.repository}. No chops were read.` };
-			return chopFiles.list(request.repository, request.worktree, preferences.chops);
+			return listMockChops(request.repository);
+		},
+		onChopsChanged: listener => chopFiles.onChopsChanged(listener),
+		async runChop(request) {
+			// The pretend terminals check the worktree is listed, with its folder there, as the main process does.
+			return chopFiles.run(structuredClone(request), listMockChops(request.repository), (open, chop) => terminals.openChopTerminal(open, chop));
 		},
 		...chopFiles.controls,
 		async readPorts(request) {

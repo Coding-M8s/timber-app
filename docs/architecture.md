@@ -826,7 +826,8 @@ repository through the path described [above](#shared-state-and-live-updates).
   `packed-refs`, `config`), `refs` and `worktrees` recursively (each linked
   worktree keeps its HEAD and index in `worktrees/<name>`), and `reftable`
   when there is one. Working trees are never watched, so a dependency install
-  or a build costs nothing here. `src/shared/git-watch.ts` decides, purely,
+  or a build costs nothing here. The one exception is the chops file of
+  each main checkout, watched on its own (see [chops](#chops)). `src/shared/git-watch.ts` decides, purely,
   which names count: lock files, logs, objects, and the scratch files of a
   commit, merge, or rebase in progress do not. Nor does `FETCH_HEAD`:
   nothing shown reads it, and a fetch that moves refs is heard under `refs`.
@@ -854,7 +855,7 @@ repository through the path described [above](#shared-state-and-live-updates).
   the time `timber ls` runs, not CPU: it checks every worktree at once.
   Making each listing cheaper is Timber's part.
 - **One listing per change (`src/bun/recent-listings.ts`).** The Changes
-  tab and chops need only which worktrees Timber lists and their saved
+  tab and running a chop need only which worktrees Timber lists and their saved
   bases, so they reuse the listing the sidebar just read instead of running
   `timber ls` again. A listing is reused until the watcher or a fetch hears
   a change in that repository, and for at most 10 seconds; one that Timber
@@ -1383,8 +1384,12 @@ every machine agrees. The rules are pure, in
   readable entry and drops the rest (`salvagePersonalChops`), so a hand edit
   does not cost the others at the next save. A chop for a repository that
   left the list is kept, and Settings shows its path as "not in the list".
-- **The repository file** is `.timber/chops.json` in a worktree, committed
-  with the code, so each branch has its own:
+- **The repository file** is `.timber/chops.json`, committed with the code,
+  and read from the repository's main checkout (its primary checkout) only,
+  never from the active worktree, so every worktree of a repository shows
+  the same list. A branch's change to the file shows once it reaches the
+  main checkout. It is an optional extra a team can share; the person's own
+  chops are the default source:
 
   ```json
   {
@@ -1421,25 +1426,90 @@ every machine agrees. The rules are pure, in
   with the same name, which is listed in `overridden` with which one won.
   The order is personal for this repository, personal for every repository,
   then the file's, each in saved order.
-- **`listChops`** takes a repository and a worktree's registered path, not
-  its id, checks it as `findListedWorktree` does, and answers the merged
-  list, the overridden file chops, the file's full path, and whether the
-  file was read, missing, or damaged. The main process merges with the
-  saved preferences, never with chops sent by the interface. The file is
-  read on every call and never cached or watched: the app watches only Git
-  metadata (see [watching for changes](#watching-for-changes)). Settings,
-  Chops reads it when drawn, when the saved chops change, and on "Read
-  again". The store keeps the last answer in `chops`, the latest read
-  winning, and reads it again after every reload of that worktree's
-  repository, which follows Git metadata changes, edits in the selected
-  worktree, and the window coming back into focus. Edits are seen through
-  `git status`, so an ignored `.timber/chops.json`, or one beyond the
-  files that check looks at, shows only on focus or "Read again".
+- **`listChops`** takes a repository, the path of its primary checkout,
+  which must be in the app's list with its folder there, and answers the
+  merged list, the overridden file chops, the file's full path in the main
+  checkout, and whether the file was read, missing, or damaged. The main
+  process merges with the saved preferences, never with chops sent by the
+  interface. The file is read on every call and never cached.
+- **Watching the file** (`src/bun/chops-watcher.ts`). For each repository
+  in the list, two watches, neither recursive and neither polling: the main
+  checkout's own folder, where only events named `.timber` count, so the
+  folder appearing or going is heard and a build writing beside it is not;
+  and `.timber` while it is there, for `chops.json`. Nothing is read there.
+  A burst becomes one `chopsChanged` message after 300 ms, and the window
+  lists that repository's chops again if they are on screen. The watches
+  follow the repository list with the Git metadata watches. The store also
+  reads them again after every reload of the repository, as for a pull in
+  the main checkout, and on "Read again".
+- **In the window.** The store keeps one answer in `chops`: the selected
+  worktree's repository's, the latest read winning. `ChopsKeeper` reads it
+  when another repository is selected and when the saved chops change. The
+  Workspace "+" menu lists the command chops after the agents, under
+  "Chops", with the description, or the text's first line, as the tooltip;
+  with no session yet the empty pane has a "Run" button for each. The
+  command palette has "Run chop: <name>" for each, found by name and
+  description, for the active worktree, and lists them with the reason when
+  they cannot run: no worktree selected, the folder missing or being
+  removed, or a session already starting there. The words, the menu
+  entries, and the palette entries are pure (`src/mainview/chop-format.ts`,
+  `src/mainview/agent-format.ts`, `src/mainview/palette.ts`).
+- **Running a command chop** (`runChop`). The request names the
+  repository, the worktree's registered path, the chop by name, and the
+  pane's size, never the text. The main process lists the chops once, finds
+  the command chop by name, ignoring case, and runs the text from that same
+  read. A prompt chop is not run here. It starts the person's shell in the
+  worktree as a new session named after the chop (`defaultSessionName`, so
+  a second run is "Test 2"), whatever Settings says about naming, as Setup
+  is. The text is then typed in (`chopRunBytes` in
+  `src/shared/terminal.ts`): as soon as the shell turns on bracketed paste
+  (mode 2004, read from its output), as one bracketed paste and Enter, so
+  the whole text is one command line. If it has not once its output was
+  quiet for 300 ms, as at a prompt of dash or `/bin/sh`, which never turn it
+  on, or after 5 seconds of no output at all, each line is typed with
+  Enter, as a script runs. A text with a tab is not typed that way, since a shell takes a tab
+  as completion; the session prints why instead. The timer ends with the
+  session. The shell stays after the command ends, so its output can be
+  read, and the shell's history runs it again. Only the main process can
+  pass a chop to `TerminalSessions.open`; the `openTerminal` request
+  cannot.
+- **Approving a repository chop.** A chop from the file is code from the
+  repository. It runs only once its text was approved for that repository:
+  otherwise `runChop` starts nothing and answers `needs-approval` with the
+  chop as read and the file's path, and the window shows the exact text and
+  where it comes from, with Cancel first; Run asks again with `approve` set
+  to the text shown, which approves it only if it is still the chop's text,
+  so a file changed meanwhile asks again. The question never replaces a
+  dialog the person opened meanwhile: a toast asks them to run it again.
+  A run after Run that cannot start, such as while another session starts
+  there, says why in a toast. Approvals are kept app-side in
+  the settings file under `chopApprovals`, by primary checkout, as
+  SHA-256 digests of the kind and the text (`chopDigestInput`), at most 200
+  per repository, newest kept. A changed text has another digest and asks
+  again; a rename does not. A save that fails still runs that once, and
+  the next run asks again. Personal chops run straight away. The mock keeps
+  approvals in memory.
+- **Insert chop.** Right-clicking a session's chip, or Shift+F10 or the
+  context menu key on it, opens its menu: "Insert chop: <name>" for each
+  command chop of its repository, disabled with the reason once the session
+  ended. It types the text into the session with `pasteTerminal`, with no
+  Enter, so it can be edited first: as one bracketed paste when the program
+  asked for one, so line breaks do not run it early; a text of one line as
+  typed when it did not; and a text with a line break is refused then, with
+  a toast. No approval is asked: nothing runs until the person presses
+  Enter. `pasteTerminal` takes any running session now, not only an
+  agent's; the review still goes only to an agent, which the store checks.
+- **Windows.** Untested. The shell is PowerShell, which may not turn on
+  bracketed paste, so a chop is typed line by line once its prompt is
+  quiet. Whether
+  ConPTY passes `ESC [?2004h` and a bracketed paste through is not known
+  (see [review notes](#review-notes)).
 
-In `bun run dev:web`, the primary checkout of the sample repository shares
-three chops and `fix/macos-portability` has a damaged file.
-`timberMock.setChopsFile(path, text)` changes a worktree's file (`null` for
-none), which shows on the next read.
+In `bun run dev:web`, the sample Timber repository's main checkout shares
+three chops and the API server has a damaged file.
+`timberMock.setChopsFile(repository, text)` changes a repository's file
+(`null` for none) and is heard as the watch would hear it.
+`timberMock.chopApprovals()` shows what was approved.
 
 ## Interface zoom
 
@@ -2470,17 +2540,20 @@ choice of agent are in `src/mainview/review-format.ts`, and the views in
   what the note quotes. A draft is not a note: choosing another file or
   worktree drops it.
 - **Pasting** (`pasteTerminal` on the `Engine`). The main process takes
-  the text only for a running agent session, only when it passes
+  the text for a running session, only when it passes
   `pasteProblem` (not blank, at most 100,000 characters, no carriage
-  return, `isSafeText`), and only when the agent's program asked for
-  bracketed paste: every session's output passes a paste mode scanner
+  return, `isSafeText`), and, for text with a line break, only when the
+  program asked for bracketed paste: every session's output passes a paste mode scanner
   (`createPasteModeScanner` in `src/shared/terminal.ts`) beside the status
   scanner, which reads `CSI ? ... h` and `l` with mode 2004 among any
   others, across parts, and turns off on a full reset or when the program
   ends. Then it writes `ESC [200~`, the text with each `\n` as `\r`, and
   `ESC [201~` (`bracketedPaste`), as xterm.js pastes, and nothing after
-  it: no Enter. Otherwise nothing is written, and the answer says why
-  (`gone`, `not-agent`, `not-ready`, `refused`). The window's own
+  it: no Enter. A text of one line goes as typed while the program has
+  not asked (`pasteBytes`), as "Insert chop" needs for a plain shell.
+  Otherwise nothing is written, and the answer says why (`gone`,
+  `not-ready`, `refused`). The store gives a review only to an agent of
+  its worktree (`not-agent`). The window's own
   terminal view cannot do this, because a session's view exists only once
   its pane showed.
 - **Sending** (`sendReview`). The dialog shows the message from
@@ -2634,7 +2707,7 @@ shows, and coming back shows it as it was.
   [creating and opening worktrees](#creating-and-opening-worktrees)).
 - **The contract.** `openTerminal`, `listTerminals`, `readTerminal`,
   `renameTerminal`, `writeTerminal`, `pasteTerminal` (see
-  [review notes](#review-notes)), `resizeTerminal`, `drawnTerminal`,
+  [review notes](#review-notes)), `runChop` (see [chops](#chops)), `resizeTerminal`, `drawnTerminal`,
   `closeTerminal`, and the listeners `onTerminalOutput` and
   `onTerminalChanged` on the `Engine`.
   Typing, resizing, and saying what was drawn are RPC messages with no

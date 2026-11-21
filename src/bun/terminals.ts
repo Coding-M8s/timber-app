@@ -6,7 +6,7 @@ import type { TimberStatus } from "../shared/model";
 import {
 	type OpenTerminalRequest, type OpenTerminalResult, type PasteModeScanner, type PasteResult, type Scrollback, type SessionNaming, type TerminalChange, type TerminalOutput, type TerminalSession,
 	type TerminalSnapshot, TERMINAL_UNSUPPORTED_REASON, WORKTREE_SETUP_SESSION_NAME, clampTerminalSize, cleanSessionName, createScrollback, defaultSessionName, pickShell,
-	pickWindowsShell, sessionNameBase, PASTE_NOT_READY, bracketedPaste, createPasteModeScanner, pasteProblem,
+	pickWindowsShell, sessionNameBase, PASTE_NOT_READY, CHOP_NOT_TYPED, chopRunBytes, createPasteModeScanner, pasteBytes, pasteProblem,
 } from "../shared/terminal";
 import { PROBE_ANSWER, type StatusRecords, type StatusScanner, createStatusRecords, createStatusScanner } from "../shared/program-status";
 import { HANDOFF_VARIABLE } from "../shared/handoff";
@@ -36,6 +36,20 @@ const UNDRAWN_LIMIT = 1024 * 1024;
 const PROBE_INTERVAL_MILLISECONDS = 100;
 /** After the shell ended, how long to wait for the last output still in the terminal. */
 const DRAIN_MILLISECONDS = 250;
+/**
+ * The longest a chop's shell gets to turn on bracketed paste before the chop
+ * is typed line by line instead, while it prints nothing. Long enough for
+ * slow startup files, such as a version manager's.
+ */
+const CHOP_WAIT_MILLISECONDS = 5000;
+/**
+ * Once the shell printed something, such as its prompt, how long it must
+ * stay quiet without turning on bracketed paste before the chop is typed
+ * line by line. A shell that never turns it on, such as dash, or
+ * PowerShell on Windows, waits about this long on each run, not the
+ * longest wait.
+ */
+const CHOP_QUIET_MILLISECONDS = 300;
 
 export interface TerminalDependencies {
 	/** The repository in the app's list, read again (see ./listed-worktree.ts). */
@@ -91,14 +105,32 @@ export interface TerminalDependencies {
 	closeMilliseconds?: number;
 	flushMilliseconds?: number;
 	undrawnLimit?: number;
+	chopWaitMilliseconds?: number;
+	chopQuietMilliseconds?: number;
+}
+
+/** A command chop to type into a new shell session (see `TerminalSessions.open`). */
+export interface ChopInput {
+	/** The chop's name, which names the session. */
+	name: string;
+	/** The chop's text, as `pasteProblem` accepts it. */
+	text: string;
 }
 
 /** The main process side of terminal sessions. A worktree can have several. */
 export interface TerminalSessions {
 	/** Every session, running or exited, in the order they started. */
 	list(): TerminalSession[];
-	/** Start another shell, an agent from Settings, or a workflow's agent, in a listed worktree, beside the sessions it has. */
-	open(request: OpenTerminalRequest): Promise<OpenTerminalResult>;
+	/**
+	 * Start another shell, an agent from Settings, or a workflow's agent, in a
+	 * listed worktree, beside the sessions it has. With `chop`, the shell
+	 * starts named after the chop, and the chop's text is typed into it and
+	 * run (`chopRunBytes` in ../shared/terminal.ts): as one bracketed paste
+	 * and Enter as soon as the shell turns bracketed paste on, or line by line
+	 * once its output is quiet without it. Only the main process passes
+	 * `chop`; the interface's `openTerminal` never does.
+	 */
+	open(request: OpenTerminalRequest, chop?: ChopInput): Promise<OpenTerminalResult>;
 	/** Give a session another name. Null for a session that is gone, or a name with nothing in it. */
 	rename(id: string, name: string): TerminalSession | null;
 	/** The end of what a session printed. Null for a session that is gone. */
@@ -108,9 +140,11 @@ export interface TerminalSessions {
 	/** Pass typed text on to a running session. Anything else is ignored. */
 	write(id: string, data: string): void;
 	/**
-	 * Paste text into a running agent session as one bracketed paste, only
-	 * when its program asked for bracketed paste and the text has nothing a
-	 * paste must not hold (`pasteProblem`). Nothing is written otherwise.
+	 * Paste text into a running session, with no Enter (`pasteBytes` in
+	 * ../shared/terminal.ts): one bracketed paste when its program asked for
+	 * bracketed paste, a text of one line as it is when it did not. Nothing
+	 * is written for a text with a line break the program cannot take as
+	 * part of it, or one a paste must not hold (`pasteProblem`).
 	 */
 	paste(id: string, text: string): PasteResult;
 	resize(id: string, cols: number, rows: number): void;
@@ -168,6 +202,8 @@ interface Live {
 	probedAt: number;
 	/** The root record changed since the window was last told. Told with the next flush, so a stream of progress is one change per part. */
 	statusChanged: boolean;
+	/** A chop's text still to type, and the timer that types it line by line if bracketed paste never comes. Null once typed, or for any other session. */
+	chop: { text: string; timer: ReturnType<typeof setTimeout> | null; deadline: number } | null;
 }
 
 /**
@@ -347,7 +383,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		arenaLaunch = async () => ({ outcome: "failed", message: "Arena attempts cannot start here. Nothing was started." }),
 		workflows = async (): Promise<WorkflowList> => ({ ok: false, message: "Workflows cannot be read here." }),
 		startTerminal = startPseudoTerminal(platform),
-		closeMilliseconds = CLOSE_MILLISECONDS, flushMilliseconds = FLUSH_MILLISECONDS, undrawnLimit = UNDRAWN_LIMIT,
+		closeMilliseconds = CLOSE_MILLISECONDS, flushMilliseconds = FLUSH_MILLISECONDS, undrawnLimit = UNDRAWN_LIMIT, chopWaitMilliseconds = CHOP_WAIT_MILLISECONDS, chopQuietMilliseconds = CHOP_QUIET_MILLISECONDS,
 	} = dependencies;
 	const windows = platform === "win32";
 	/** ConPTY drops an OSC written as it is, so on Windows the answer goes in as typed keys. */
@@ -382,6 +418,10 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 	 */
 	function take(live: Live, text: string): void {
 		live.pasteMode.scan(text);
+		// The shell reads its command line now: the chop goes in whole.
+		if (live.chop !== null && live.pasteMode.on() && live.session.state.kind === "running") typeChop(live);
+		// The shell printed but has not asked: once it stays quiet, it is waiting at a prompt that takes no paste.
+		else if (live.chop !== null) waitForChop(live, Math.min(chopQuietMilliseconds, live.chop.deadline - Date.now()));
 		for (const event of live.scanner.scan(text)) {
 			if (event.type === "probe") {
 				const now = Date.now();
@@ -392,6 +432,41 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			} else if (live.records.apply(event)) live.statusChanged = true;
 		}
 		live.pending += text;
+	}
+
+	/**
+	 * Type the chop still waiting in a session, once: as a bracketed paste
+	 * while the shell asked for one, otherwise line by line. A text the shell
+	 * would mangle without one is not typed, and the session says why.
+	 */
+	function typeChop(live: Live): void {
+		const chop = live.chop;
+		if (chop === null) return;
+		if (chop.timer !== null) clearTimeout(chop.timer);
+		live.chop = null;
+		const bytes = chopRunBytes(chop.text, live.pasteMode.on());
+		if (bytes !== null) {
+			live.process.write(bytes);
+			return;
+		}
+		live.pending += `\r\n\x1b[2m${CHOP_NOT_TYPED}\x1b[0m\r\n`;
+		live.flushTimer ??= setTimeout(() => flush(live), flushMilliseconds);
+	}
+
+	/** Type the waiting chop after `milliseconds`, line by line unless the shell asked for bracketed paste meanwhile. */
+	function waitForChop(live: Live, milliseconds: number): void {
+		const chop = live.chop;
+		if (chop === null) return;
+		if (chop.timer !== null) clearTimeout(chop.timer);
+		chop.timer = setTimeout(() => {
+			if (sessions.get(live.session.id) === live && live.session.state.kind === "running") typeChop(live);
+		}, Math.max(0, milliseconds));
+	}
+
+	/** Forget a chop not typed yet, for a session that ended or closed. */
+	function dropChop(live: Live): void {
+		if (live.chop?.timer) clearTimeout(live.chop.timer);
+		live.chop = null;
 	}
 
 	function flush(live: Live): void {
@@ -495,8 +570,15 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		return { ok: true, agent };
 	}
 
-	async function open(request: OpenTerminalRequest): Promise<OpenTerminalResult> {
+	async function open(request: OpenTerminalRequest, chop?: ChopInput): Promise<OpenTerminalResult> {
 		if (startTerminal === null) return { outcome: "unsupported", message: TERMINAL_UNSUPPORTED_REASON };
+		// A chop runs in the person's shell only.
+		if (chop !== undefined && (request.agent !== undefined || request.timberWorktreeSetup !== undefined || request.arenaAttempt !== undefined || request.workflowAgent !== undefined)) {
+			return { outcome: "failed", message: "A chop runs in a shell, not with an agent, setup, a workflow, or an arena attempt. Nothing was started." };
+		}
+		if (chop !== undefined && (cleanSessionName(chop.name) !== chop.name || pasteProblem(chop.text) !== null)) {
+			return { outcome: "failed", message: "The chop cannot be typed into a shell. Nothing was started." };
+		}
 		// Only names are read from the request, the workflow's and the pick's: the command comes from Timber, read again below.
 		const workflowAgent = request.workflowAgent;
 		if (workflowAgent !== undefined) {
@@ -551,12 +633,12 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			else return { outcome: "not-configured", message: `The ${name} workflow no longer sets an agent. Nothing was started. Start one from the "+" menu.` };
 		}
 		// Naming is a convenience: when it cannot be read, the session is named as it always was.
-		const naming = run === null ? await sessionNaming().catch((): SessionNaming => "plain") : "plain";
+		const naming = run === null && chop === undefined ? await sessionNaming().catch((): SessionNaming => "plain") : "plain";
 		const handoff = await handoffFolder().catch(() => null);
 		const consequence = attempt.launch ? `${attempt.launch.name} was not started.`
 			: agent ? `${agent.name} was not started.`
 			: workflowAgent !== undefined ? `The agent of the ${workflowAgent.workflow} workflow was not started.`
-			: run ? `${run.what} was not started.` : "No terminal was started.";
+			: run ? `${run.what} was not started.` : chop ? `${chop.name} was not started.` : "No terminal was started.";
 		const listed = await findListedWorktree(findRepository, request.repository, request.worktree, consequence);
 		if (!listed.ok) return { outcome: "not-listed", message: listed.message };
 		// From here to the new session being kept nothing waits, so two sessions that start at once get different names.
@@ -569,7 +651,8 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		const start = startOf(launch, run);
 		if (!start.ok) return start.result;
 		// An attempt's session is named after its label, which is how the arena names it everywhere.
-		const base = run === null && !launch?.fixedName ? sessionNameBase(naming, start.base, listed.worktree.branch, launch !== null) : start.base;
+		// A chop's session is named after the chop, whatever the naming in Settings, as Setup is.
+		const base = chop !== undefined ? chop.name : run === null && !launch?.fixedName ? sessionNameBase(naming, start.base, listed.worktree.branch, launch !== null) : start.base;
 		const name = defaultSessionName(base, inWorktree(listed.worktree.id).map(live => live.session.name));
 
 		const shell = start.argv[0]!;
@@ -622,10 +705,15 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			// A session closed meanwhile is already gone and stays gone.
 			if (sessions.get(session.id) !== live) return;
 			const end = child.ended() ?? { exitCode: null, signal: null };
+			dropChop(live);
 			live.pasteMode.reset();
 			changed(live, { ...live.session, state: { kind: "exited", ...end }, status: live.records.root() });
 		});
-		live = { session, process: child, scrollback: createScrollback(), pending: "", flushTimer: null, undrawn: [], undrawnSize: 0, held: false, leftovers: null, ended, scanner: createStatusScanner(), records: createStatusRecords(), pasteMode: createPasteModeScanner(), statusChanged: false, probedAt: Number.NEGATIVE_INFINITY };
+		live = { session, process: child, scrollback: createScrollback(), pending: "", flushTimer: null, undrawn: [], undrawnSize: 0, held: false, leftovers: null, ended, scanner: createStatusScanner(), records: createStatusRecords(), pasteMode: createPasteModeScanner(), statusChanged: false, probedAt: Number.NEGATIVE_INFINITY, chop: null };
+		if (chop !== undefined) {
+			live.chop = { text: chop.text, timer: null, deadline: Date.now() + chopWaitMilliseconds };
+			waitForChop(live, chopWaitMilliseconds);
+		}
 		sessions.set(session.id, live);
 		changed(live, session);
 		return { outcome: "opened", session: { ...session } };
@@ -647,6 +735,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		const live = sessions.get(id);
 		if (!live) return;
 		sessions.delete(id);
+		dropChop(live);
 		if (live.flushTimer !== null) clearTimeout(live.flushTimer);
 		// Hanging up the terminal sends SIGHUP to the shell and what runs in front; the rest of its session gets it too.
 		// On Windows it closes the pseudo console, and every process attached to it is told to close.
@@ -696,11 +785,11 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		paste(id, text) {
 			const live = sessions.get(id);
 			if (!live || live.session.state.kind !== "running") return { outcome: "gone", message: "The session has ended." };
-			if (live.session.kind !== "agent") return { outcome: "not-agent", message: "Only an agent session takes a pasted review." };
 			const problem = pasteProblem(text);
 			if (problem !== null) return { outcome: "refused", message: problem };
-			if (!live.pasteMode.on()) return { outcome: "not-ready", message: PASTE_NOT_READY };
-			live.process.write(bracketedPaste(text));
+			const bytes = pasteBytes(text, live.pasteMode.on());
+			if (bytes === null) return { outcome: "not-ready", message: PASTE_NOT_READY };
+			live.process.write(bytes);
 			return { outcome: "pasted" };
 		},
 		resize(id, cols, rows) {
@@ -715,6 +804,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		},
 		killAll() {
 			for (const live of sessions.values()) {
+				dropChop(live);
 				// Killed first: on Windows the process tree is found through the shell, which closing the pseudo console may end first.
 				killLeftovers(live);
 				live.process.close();

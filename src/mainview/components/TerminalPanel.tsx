@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import { type KeyboardEvent, type MouseEvent, useEffect, useId, useRef, useState } from "react";
 import { type SessionMenuItem, describeSessionProblemTitle, describeStarting, menuIndexAfterKey, sessionMenuChoice, sessionMenuItems } from "../agent-format";
 import type { Repository, Worktree } from "../../shared/model";
 import { SESSION_NAME_LIMIT, type TerminalSession } from "../../shared/terminal";
@@ -9,6 +9,10 @@ import { StatusGlyph } from "./StatusGlyph";
 import { terminalAppearance } from "../terminal-look";
 import { useAppState, useStore } from "../store/react";
 import { isBeingRemoved, sessionsOf, shownSession } from "../store/state";
+import { type ChopEntry, chopEntries, describeSessionChipMenu, sessionChipMenuChop, sessionChipMenuItems } from "../chop-format";
+import type { ChopList } from "../../shared/chops";
+import { WORKTREE_MENU_SHORTCUTS, opensWorktreeMenu } from "../worktree-menu-format";
+import { WorktreeMenu } from "./WorktreeMenu";
 import { BEING_REMOVED_REASON } from "../done-format";
 import { dropTerminalFocus, onTerminalFocusWish, takeTerminalFocus, wantTerminalFocus } from "../terminal-focus";
 import {
@@ -228,6 +232,8 @@ interface ChipProps {
 	closing: boolean;
 	/** Sessions being closed, never picked to show next. */
 	closingIds: readonly string[];
+	/** The chops of the session's repository as last read, for "Insert chop". */
+	chops: ChopList | null;
 	onRename: () => void;
 }
 
@@ -236,9 +242,22 @@ interface ChipProps {
  * beside the tab, not inside it, and is for the pointer; on the keyboard,
  * Delete closes and F2 renames, and the row of chips has both as buttons.
  */
-function Chip({ session, selected, unseen, ids, shownId, closing, closingIds, onRename }: ChipProps) {
+function Chip({ session, selected, unseen, ids, shownId, closing, closingIds, chops, onRename }: ChipProps) {
 	const store = useStore();
 	const descriptionId = useId();
+	// Where its menu was asked to be, or null while it is closed. As for a worktree row, Shift+F10 may be followed by a contextmenu event.
+	const [menuAt, setMenuAt] = useState<{ left: number; top: number } | null>(null);
+	const openedByKey = useRef(false);
+	const closeMenu = (backToChip: boolean) => {
+		openedByKey.current = false;
+		setMenuAt(null);
+		if (backToChip) document.getElementById(sessionChipId(session.id))?.focus();
+	};
+	const onContextMenu = (event: MouseEvent<HTMLElement>) => {
+		event.preventDefault();
+		if (openedByKey.current && menuAt !== null) return;
+		setMenuAt({ left: event.clientX, top: event.clientY });
+	};
 	const running = session.state.kind === "running";
 	const exit = shortExit(session.state);
 	const description = closing ? `${describeSessionChip(session, unseen)}. Closing` : describeSessionChip(session, unseen);
@@ -253,6 +272,13 @@ function Chip({ session, selected, unseen, ids, shownId, closing, closingIds, on
 	};
 
 	const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+		if (opensWorktreeMenu(event)) {
+			event.preventDefault();
+			const box = event.currentTarget.getBoundingClientRect();
+			openedByKey.current = true;
+			setMenuAt({ left: box.left, top: box.bottom });
+			return;
+		}
 		const next = chipAfterKey(ids, session.id, event.key);
 		if (next !== null) {
 			event.preventDefault();
@@ -281,6 +307,7 @@ function Chip({ session, selected, unseen, ids, shownId, closing, closingIds, on
 				event.preventDefault();
 				close();
 			}}
+			onContextMenu={onContextMenu}
 		>
 			<button
 				type="button"
@@ -291,10 +318,11 @@ function Chip({ session, selected, unseen, ids, shownId, closing, closingIds, on
 				aria-controls={selected ? SESSION_PANEL_ID : undefined}
 				aria-describedby={descriptionId}
 				aria-busy={closing || undefined}
-				aria-keyshortcuts="Delete F2"
+				aria-keyshortcuts={`Delete F2 ${WORKTREE_MENU_SHORTCUTS}`}
+				aria-haspopup="menu"
 				// Only the chosen chip is a tab stop. The arrows reach the others.
 				tabIndex={selected ? 0 : -1}
-				title={`${description}. Double-click or F2 renames, Delete closes.`}
+				title={`${description}. Double-click or F2 renames, Delete closes, a right-click inserts a chop.`}
 				onClick={() => {
 					// The chip that shows already has its terminal on screen: hand it the keyboard now.
 					if (selected) views?.terminalView(store, session.id).focus();
@@ -322,6 +350,22 @@ function Chip({ session, selected, unseen, ids, shownId, closing, closingIds, on
 			<button type="button" className="session-chip-close" tabIndex={-1} aria-label={closeTerminalLabel(session)} title={closeTerminalLabel(session)} disabled={closing} onClick={close}>
 				<span aria-hidden="true">×</span>
 			</button>
+			{menuAt !== null && (
+				<WorktreeMenu
+					label={describeSessionChipMenu(session.name)}
+					items={sessionChipMenuItems(running, chops)}
+					at={menuAt}
+					onClose={closeMenu}
+					onChoose={id => {
+						const chop = sessionChipMenuChop(id);
+						if (chop === null) return;
+						// The text goes into the terminal, which takes the keyboard so it can be edited at once.
+						if (!selected) store.showSession(session.id);
+						wantTerminalFocus(session.worktree);
+						void store.insertChop(session.id, chop).then(() => views?.terminalView(store, session.id).focus());
+					}}
+				/>
+			)}
 		</span>
 	);
 }
@@ -348,27 +392,31 @@ const MENU_WIDTH = 440;
 
 interface SessionMenuProps {
 	items: readonly SessionMenuItem[];
+	/** The repository's command chops, listed after the agents. */
+	chops: readonly ChopEntry[];
 	disabled: boolean;
 	title: string;
 	onStart: (agent: string | null) => void;
+	onRunChop: (name: string) => void;
 	onSetUp: () => void;
 }
 
 /**
  * "+" at the end of the chips: a menu of what can start, the shell and every
- * agent from Settings, each with what it runs, then a way to Settings,
- * Agents. The arrows, Home, and End move through it and wrap; Escape closes
+ * agent from Settings, each with what it runs, then the repository's command
+ * chops by name, each in a new session named after it, then a way to
+ * Settings, Agents. The arrows, Home, and End move through it and wrap; Escape closes
  * it and Tab or a click elsewhere puts it away. Choosing an entry gives the
  * keyboard back to "+", so the new session's terminal takes it.
  */
-function SessionMenu({ items, disabled, title, onStart, onSetUp }: SessionMenuProps) {
+function SessionMenu({ items, chops, disabled, title, onStart, onRunChop, onSetUp }: SessionMenuProps) {
 	const menuId = useId();
 	const [open, setOpen] = useState(false);
 	// "+" follows the last chip, so near the window's right edge the menu hangs to the left of it instead.
 	const [alignEnd, setAlignEnd] = useState(false);
 	const button = useRef<HTMLButtonElement>(null);
 	const menu = useRef<HTMLDivElement>(null);
-	const entries = items.length + 1;
+	const entries = items.length + chops.length + 1;
 	const itemId = (index: number) => `${menuId}-item-${index}`;
 
 	const show = (index: number) => {
@@ -396,9 +444,10 @@ function SessionMenu({ items, disabled, title, onStart, onSetUp }: SessionMenuPr
 	}, [disabled]);
 
 	const choose = (index: number) => {
-		const choice = sessionMenuChoice(items, index);
+		const choice = sessionMenuChoice(items, index, chops);
 		close(true);
 		if (choice?.kind === "start") onStart(choice.agent);
+		else if (choice?.kind === "chop") onRunChop(choice.name);
 		else if (choice?.kind === "set-up") onSetUp();
 	};
 
@@ -466,8 +515,29 @@ function SessionMenu({ items, disabled, title, onStart, onSetUp }: SessionMenuPr
 							<span className={item.agent === null ? "session-menu-detail" : "session-menu-detail mono"}>{item.detail}</span>
 						</button>
 					))}
+					{chops.length > 0 && (
+						<div role="group" aria-label="Chops">
+							<div className="session-menu-separator" role="separator" />
+							<p className="session-menu-heading" aria-hidden="true">Chops</p>
+							{chops.map((chop, offset) => (
+								<button
+									key={`chop:${chop.name}`}
+									type="button"
+									role="menuitem"
+									id={itemId(items.length + offset)}
+									className="session-menu-item"
+									tabIndex={-1}
+									title={chop.title}
+									onClick={() => choose(items.length + offset)}
+								>
+									<span className="session-kind" aria-hidden="true">{"\u25B8"}</span>
+									<span className="session-menu-label">{chop.name}</span>
+								</button>
+							))}
+						</div>
+					)}
 					<div className="session-menu-separator" role="separator" />
-					<button type="button" role="menuitem" id={itemId(items.length)} className="session-menu-item" tabIndex={-1} onClick={() => choose(items.length)}>
+					<button type="button" role="menuitem" id={itemId(items.length + chops.length)} className="session-menu-item" tabIndex={-1} onClick={() => choose(items.length + chops.length)}>
 						<span className="session-menu-label">{SET_UP_AGENTS}</span>
 					</button>
 				</div>
@@ -520,6 +590,8 @@ export function TerminalPanel({ repository, worktree }: { repository: Repository
 	const start = (agent: string | null = null) =>
 		void store.openTerminal({ repository: repository.path, worktree: worktree.path, ...estimateTerminalSize(panel.current), ...(agent === null ? {} : { agent }) });
 	const setUpAgents = () => store.openDialog({ kind: "settings", section: "agents" });
+	const chops = state.chops?.repository === repository.path ? chopEntries(state.chops.list) : [];
+	const runChop = (name: string) => void store.runChop(repository.path, worktree.id, name, estimateTerminalSize(panel.current));
 
 	if (!shown) {
 		return (
@@ -545,6 +617,22 @@ export function TerminalPanel({ repository, worktree }: { repository: Repository
 						</button>
 					))}
 				</div>
+				{chops.length > 0 && (
+					<div className="empty-actions" role="group" aria-label="Chops">
+						{chops.map(chop => (
+							<button
+								key={chop.name}
+								type="button"
+								className="button quiet"
+								disabled={starting || unavailable !== null}
+								title={unavailable !== null ? unavailable : chop.title}
+								onClick={() => runChop(chop.name)}
+							>
+								{startingAgent === chop.name ? `Starting ${chop.name}` : `Run ${chop.name}`}
+							</button>
+						))}
+					</div>
+				)}
 				<button type="button" className="text-button" onClick={setUpAgents}>{SET_UP_AGENTS}</button>
 				{unavailable !== null && <p className="empty-text">{unavailable}</p>}
 				<TerminalProblemNote worktree={worktree} />
@@ -571,12 +659,13 @@ export function TerminalPanel({ repository, worktree }: { repository: Repository
 								shownId={shown.id}
 								closing={closingIds.includes(session.id)}
 								closingIds={closingIds}
+								chops={state.chops?.repository === session.repository ? state.chops.list : null}
 								onRename={() => setRenaming(session.id)}
 							/>
 						),
 					)}
 				</div>
-				<SessionMenu items={sessionMenuItems(agents)} disabled={starting || unavailable !== null} title={newTitle} onStart={start} onSetUp={setUpAgents} />
+				<SessionMenu items={sessionMenuItems(agents)} chops={chops} disabled={starting || unavailable !== null} title={newTitle} onStart={start} onRunChop={runChop} onSetUp={setUpAgents} />
 				<SessionControls session={shown} onRename={() => setRenaming(shown.id)} />
 			</div>
 			<TerminalProblemNote worktree={worktree} />

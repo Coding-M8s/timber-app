@@ -1,6 +1,6 @@
 import type { AppInfo } from "./app-info";
 import type { ArenaInspection, ArenaList, ArenaPresetList, NewArenaRequest, NewArenaResult, PickArenaRequest, PickArenaResult } from "./arenas";
-import type { ChopList, ChopsRequest } from "./chops";
+import type { ChopList, ChopsRequest, RunChopRequest, RunChopResult } from "./chops";
 import type { BackupDeleteRequest, BackupDeleteResult, BackupList, BackupRestoreRequest, BackupRestoreResult } from "./backups";
 import type { Attention } from "./attention";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "./git-fetch";
@@ -435,16 +435,39 @@ export interface Engine {
 	 */
 	readPorts(request: PortsRequest): Promise<PortsResult>;
 	/**
-	 * The chops a worktree of a repository in the list offers, named by the
-	 * worktree's registered path, not its id: the person's saved chops
-	 * merged with the repository's `.timber/chops.json` in that worktree, as
-	 * `mergeChops` in ./chops.ts merges them, with the file's chops that a
-	 * personal one overrides, and how the file stood. The file is read anew
-	 * on every call, never cached and never watched, so a change to it shows
-	 * on the next call. Nothing is written, and a missing `.timber` folder is
-	 * not created. Read-only and safe to call again.
+	 * The chops a repository in the list offers, the same in every one of its
+	 * worktrees: the person's saved chops merged with `.timber/chops.json` in
+	 * the repository's main checkout (its primary checkout), as `mergeChops`
+	 * in ./chops.ts merges them, with the file's chops that a personal one
+	 * overrides, and how the file stood. A branch's change to the file shows
+	 * once it reaches the main checkout. The file is read anew on every call,
+	 * never cached. Nothing is written, and a missing `.timber` folder is not
+	 * created. Read-only and safe to call again.
 	 */
 	listChops(request: ChopsRequest): Promise<ChopList>;
+	/**
+	 * Hear when the chops file of a repository's main checkout may have
+	 * changed: `.timber` or `.timber/chops.json` there was written, made, or
+	 * removed. Heard from a watch on those two folders only, never by
+	 * polling. The listener gets the primary checkout, to list its chops
+	 * again. Returns a function that stops listening.
+	 */
+	onChopsChanged(listener: (repository: string) => void): () => void;
+	/**
+	 * Run a command chop in a worktree of a repository in the list: the
+	 * person's shell starts there as a new session named after the chop
+	 * (never after the branch), and the chop's text is typed into it and
+	 * run. The shell stays when the command ends, so its output can be read
+	 * and the command run again. The text comes from the chop list as the
+	 * machine reads it for this call, once, never from the request. A chop
+	 * from the repository's file runs only when its text was approved for
+	 * this repository (`isChopApproved` in ./chops.ts); otherwise nothing
+	 * starts and the answer is `needs-approval` with the exact text. A
+	 * request whose `approve` is that exact text approves it, keeps the
+	 * approval app-side, and runs it. Personal chops run straight away. Not
+	 * safe to call again blindly: each call starts a session.
+	 */
+	runChop(request: RunChopRequest): Promise<RunChopResult>;
 	/**
 	 * Every terminal session the machine holds, running or exited. Sessions
 	 * outlive the window's view of them: one keeps running while another
@@ -496,15 +519,17 @@ export interface Engine {
 	/** Pass what was typed or pasted on to a running session. Nothing comes back. */
 	writeTerminal(id: string, data: string): void;
 	/**
-	 * Paste text into a running agent session as one bracketed paste
-	 * (`bracketedPaste` in ./terminal.ts), as a person's paste would arrive,
-	 * so its line breaks stay part of the text and nothing is sent early. No
-	 * Enter follows: the text waits in the agent's input. Refused, and
-	 * nothing written, when the text has a control or invisible character
-	 * (`pasteProblem`), when the session is not an agent's, or when its
-	 * program has not asked for bracketed paste (mode 2004). Files are never
-	 * touched: only the session's input is written. Not safe to call again
-	 * blindly: each call pastes once more.
+	 * Paste text into a running session, an agent's or a shell's, as a
+	 * person's paste would arrive, without Enter, so the text waits in the
+	 * program's input to be edited or sent. When the program asked for
+	 * bracketed paste (mode 2004) the text goes as one bracketed paste
+	 * (`bracketedPaste` in ./terminal.ts), so its line breaks stay part of
+	 * it. When it did not, a text of one line is typed as it is, and a text
+	 * with a line break is refused, since the break would act as Enter.
+	 * Refused, and nothing written, when the text has a control or invisible
+	 * character (`pasteProblem`). Files are never touched: only the
+	 * session's input is written. Not safe to call again blindly: each call
+	 * pastes once more.
 	 */
 	pasteTerminal(id: string, text: string): Promise<PasteResult>;
 	/** Tell a running session the size of its pane. Nothing comes back. */

@@ -2836,3 +2836,28 @@ with Bun 1.4.5 and Git 2.56.1, after rebasing on main at `ca3607b`:
 - `bun run build:web`: built.
 - Not run: the desktop window, and the Windows batch-file test for a
   workflow's agent, which skips on Linux.
+
+Run for running command chops (issue 174), Linux x64 with Bun 1.4.5, bash
+5.2.21, and Git 2.43.0:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 2603 passed, 24 skipped, 0 failed, after rebasing on main at
+  `0ba893c` (2485 passed, 20 skipped before the rebase). An earlier run on a
+  machine with a load average near 50 had two five-second timeouts in
+  `tests/saved-base.test.ts` and `tests/repository-list.test.ts`, which this
+  change does not touch; run alone then, both files passed.
+- `bun run build:web`: built.
+- New tests run real shells: a chop typed line by line into `/bin/sh`, which
+  never turns on bracketed paste, runs, and the shell stays; into bash, which
+  does, it goes in as one bracketed paste within a moment, with both line
+  by line waits set to a minute; into `/bin/sh` with the longest wait set to
+  a minute, it is typed once the prompt is quiet; a tab without bracketed paste is not typed, and
+  the session says why. `tests/chops.test.ts` lists a real repository's
+  chops from its main checkout while a linked worktree's branch has other
+  ones, and runs a repository chop only after its text was approved, asking
+  again once the file changed. `tests/chops-watcher.test.ts` hears a real
+  `.timber/chops.json` made and edited, and not a file written beside
+  `.timber`.
+- Not run: the desktop window or the browser build by eye, so the "+" menu,
+  the chip's menu, and the approval dialog were not seen drawn. Windows and
+  macOS were not tested: how PowerShell and ConPTY take a chop is unknown.

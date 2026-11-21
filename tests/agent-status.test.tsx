@@ -188,7 +188,7 @@ describe("agent status in the app", () => {
 		store.showSession(agent.id);
 		await report(`state=blocked:kind=question:msg=${b64("Which branch?")}`);
 		const markup = render(store);
-		expect(markup).toContain('title="Agent, codex. Needs you: question. Which branch?. Double-click or F2 renames, Delete closes."');
+		expect(markup).toContain('title="Agent, codex. Needs you: question. Which branch?. Double-click or F2 renames, Delete closes, a right-click inserts a chop."');
 		expect(markup).toContain('<svg class="status-glyph status-needs-you"');
 		// A question gets a raised hand instead of the diamond.
 		expect(markup).toContain('class="status-hand"');

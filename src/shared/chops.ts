@@ -1,5 +1,5 @@
 import { isSafeLine, isSafeText } from "./safe-text";
-import { SESSION_NAME_LIMIT, cleanSessionName } from "./terminal";
+import { type OpenTerminalResult, SESSION_NAME_LIMIT, type TerminalSession, cleanSessionName } from "./terminal";
 
 /**
  * Chops: saved, named things to run in a worktree. A command chop is shell
@@ -54,7 +54,7 @@ export interface ListedChop extends Chop {
 	source: ChopSource;
 }
 
-/** The repository file, relative to a worktree's folder, with `/` between parts. */
+/** The repository file, relative to the main checkout's folder, with `/` between parts. */
 export const CHOPS_FILE = ".timber/chops.json";
 export const CHOPS_FILE_VERSION = 1;
 /** The most chops the personal list, or the repository file, can hold. */
@@ -236,14 +236,14 @@ export interface OverriddenChop extends ListedChop {
 }
 
 export interface MergedChops {
-	/** What a worktree offers, in order: personal for this repository, personal for every repository, then the file's, each in saved order. */
+	/** What a repository offers, in order: personal for this repository, personal for every repository, then the file's, each in saved order. */
 	chops: ListedChop[];
 	/** The file's chops that a personal chop overrides, in the file's order. */
 	overridden: OverriddenChop[];
 }
 
 /**
- * The chops a worktree of `repository` offers. A personal chop for this
+ * The chops `repository` offers, in every worktree. A personal chop for this
  * repository takes the place of a personal chop for every repository with
  * the same name, which is then left out, and either kind of personal chop
  * takes the place of a file chop with the same name, which is listed in
@@ -272,16 +272,98 @@ export type ChopsFileState =
 	| { state: "read" }
 	| { state: "damaged"; message: string };
 
-/** A worktree's chops: the repository file is read anew for every request. */
+/** A repository's chops: the repository file is read anew from its main checkout for every request. */
 export interface ChopsRequest {
 	/** The primary checkout of a repository in the list. */
 	repository: string;
-	/** The worktree's registered path, exactly as Timber lists it, not its id. */
-	worktree: string;
 }
 
 export type ChopList =
-	| ({ outcome: "listed"; file: ChopsFileState; /** The full path of the repository file in this worktree, whether or not it is there. */ path: string } & MergedChops)
-	/** The repository or worktree is not one Timber lists right now, or its folder is missing. */
+	| ({ outcome: "listed"; file: ChopsFileState; /** The full path of the repository file in the main checkout, whether or not it is there. */ path: string } & MergedChops)
+	/** The repository is not in the list right now, or its main checkout's folder is missing. */
 	| { outcome: "not-listed"; message: string }
 	| { outcome: "failed"; message: string };
+
+/** The listed chops a "+" menu, the palette, or "Insert chop" offers: the commands, in listed order. Prompt chops are not run here yet. */
+export function commandChops(list: ChopList | null | undefined): ListedChop[] {
+	return list?.outcome === "listed" ? list.chops.filter(chop => chop.kind === "command") : [];
+}
+
+/** The chop of a list with this name, ignoring case, or null. */
+export function findListedChop(chops: readonly ListedChop[], name: string): ListedChop | null {
+	return chops.find(chop => sameChopName(chop.name, name)) ?? null;
+}
+
+/**
+ * Approvals of repository chops, kept app-side by the primary checkout of
+ * the repository: for each, the digests (`chopDigest`) of the texts the
+ * person agreed to run. A text that changed has another digest, so it asks
+ * again. A digest says nothing of the text.
+ */
+export type ChopApprovals = Readonly<Record<string, readonly string[]>>;
+
+/** The most approvals kept for one repository. The oldest go first. */
+export const CHOP_APPROVAL_LIMIT = 200;
+
+/** What a digest is made of: the kind and the text, so an approved prompt's text never runs unasked as a command. */
+export function chopDigestInput(chop: Pick<Chop, "kind" | "text">): string {
+	return `${chop.kind}\0${chop.text}`;
+}
+
+const DIGEST = /^[0-9a-f]{64}$/;
+
+/** Whether a repository chop may run without asking: a personal chop always, a file chop once its digest was approved for this repository. */
+export function isChopApproved(approvals: ChopApprovals, repository: string, chop: Pick<ListedChop, "source">, digest: string): boolean {
+	if (chop.source !== "repository-file") return true;
+	return approvals[repository]?.includes(digest) ?? false;
+}
+
+/** The approvals with one more digest for a repository, newest last, at most `CHOP_APPROVAL_LIMIT` for it. Unchanged when it is there. */
+export function withChopApproval(approvals: ChopApprovals, repository: string, digest: string): Record<string, string[]> {
+	const next: Record<string, string[]> = Object.fromEntries(Object.entries(approvals).map(([key, digests]) => [key, [...digests]]));
+	const kept = (next[repository] ?? []).filter(known => known !== digest);
+	kept.push(digest);
+	next[repository] = kept.slice(-CHOP_APPROVAL_LIMIT);
+	return next;
+}
+
+/** The approvals from a settings file: every repository with a list of digests, each 64 lowercase hex characters. What cannot be read is dropped. */
+export function readChopApprovals(value: unknown): Record<string, string[]> {
+	if (!isRecord(value)) return {};
+	const approvals: Record<string, string[]> = {};
+	for (const [repository, digests] of Object.entries(value)) {
+		if (repository === "" || !Array.isArray(digests)) continue;
+		const kept = [...new Set(digests.filter((digest): digest is string => typeof digest === "string" && DIGEST.test(digest)))].slice(-CHOP_APPROVAL_LIMIT);
+		if (kept.length > 0) approvals[repository] = kept;
+	}
+	return approvals;
+}
+
+/**
+ * Run a command chop in a worktree: the main process starts the person's
+ * shell there, named after the chop, and types the chop's text into it. The
+ * text is looked up by name, from the same list `listChops` answers. A
+ * repository chop runs only once its text was approved for the repository:
+ * otherwise the answer is `needs-approval` with the text to show, and the
+ * request is made again with `approve` set to that exact text.
+ */
+export interface RunChopRequest {
+	/** The primary checkout of a repository in the list. */
+	repository: string;
+	/** The worktree's registered path, exactly as Timber lists it. */
+	worktree: string;
+	/** The chop's name, matched ignoring case. */
+	chop: string;
+	cols: number;
+	rows: number;
+	/** The text the person saw and confirmed. It is approved, and the chop runs, only when it is still the chop's text. */
+	approve?: string;
+}
+
+export type RunChopResult =
+	| { outcome: "opened"; session: TerminalSession }
+	/** A repository chop whose text was not approved. Nothing was started. `path` is the file it comes from. */
+	| { outcome: "needs-approval"; chop: ListedChop; path: string }
+	/** No command chop has that name now. Nothing was started. */
+	| { outcome: "no-chop"; message: string }
+	| Exclude<OpenTerminalResult, { outcome: "opened" }>;

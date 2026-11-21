@@ -1,5 +1,6 @@
 import { useAppState } from "../store/react";
 import { SETTINGS_SECTIONS, timberReady } from "../store/state";
+import { ApproveChopDialog } from "./ApproveChopDialog";
 import { CleanUpMergedDialog } from "./CleanUpMergedDialog";
 import { ArenaCompareDialog } from "./ArenaCompareDialog";
 import { CommandPalette } from "./CommandPalette";
@@ -60,6 +61,9 @@ export function Dialogs() {
 				? <NewArenaDialog key={repository.path} repository={repository} />
 				: <ArenaCompareDialog key={`${repository.path}\n${dialog.arena}`} request={dialog} />;
 		}
+		case "approve-chop":
+			// A key per chop text, so a changed text is a new question.
+			return <ApproveChopDialog key={`${dialog.repository}\n${dialog.chop.name}\n${dialog.chop.text}`} request={dialog} />;
 		case "set-up-timber": {
 			// Timber reads and saves the repository's settings in its folder, so it has to be listed and there.
 			const repository = state.repositories.find(candidate => candidate.path === dialog.repository && candidate.available);

@@ -8,7 +8,7 @@ import { type TerminalDependencies, type TerminalSessions, createTerminalSession
 import type { Repository } from "../src/shared/model";
 import { describeSearchPath } from "../src/shared/search-path";
 import { PROBE_ANSWER } from "../src/shared/program-status";
-import { PASTE_NOT_READY, type SessionNaming, type TerminalChange, type TerminalOutput, TERMINAL_UNSUPPORTED_REASON, bracketedPaste } from "../src/shared/terminal";
+import { CHOP_NOT_TYPED, PASTE_NOT_READY, type SessionNaming, type TerminalChange, type TerminalOutput, TERMINAL_UNSUPPORTED_REASON, bracketedPaste } from "../src/shared/terminal";
 
 /** A short review as it is pasted. */
 const PASTED = "Review notes\n\nsrc/a.ts:2\n> +x\nFix this.";
@@ -444,6 +444,81 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 		expect(reset.seq).toBe(sessions.read(session.id)!.seq);
 	});
 
+	describe("a command chop", () => {
+		async function openedChop(name: string, text: string) {
+			const result = await sessions.open({ repository, worktree, cols: 80, rows: 24 }, { name, text });
+			if (result.outcome !== "opened") throw new Error(`Not opened: ${JSON.stringify(result)}`);
+			return result.session;
+		}
+		const shows = async (id: string, expected: string) => {
+			if (!await until(() => printed(id).includes(expected))) throw new Error(`Did not see ${expected}. Printed: ${JSON.stringify(printed(id))}`);
+		};
+
+		test("runs in a shell named after it, whatever the naming, typed line by line when the shell has no bracketed paste, and the shell stays", async () => {
+			start({ chopWaitMilliseconds: 100, sessionNaming: async () => "branch" });
+			const session = await openedChop("Two lines", "echo chop-$((40 + 2))\necho second-$((1 + 1))");
+			expect(session).toMatchObject({ kind: "terminal", name: "Two lines", path: worktree, shell: "/bin/sh" });
+			await shows(session.id, "chop-42");
+			await shows(session.id, "second-2");
+			// The command ended; the shell is still there, so it can be run again.
+			expect(sessions.list().find(listed => listed.id === session.id)?.state).toEqual({ kind: "running" });
+			await run(session.id, "echo still-here", "still-here\r\n");
+			// A second run of the same chop gets its own name, as sessions do.
+			expect((await openedChop("Two lines", "true")).name).toBe("Two lines 2");
+		});
+
+		test("goes in whole, as one bracketed paste and Enter, as soon as the shell asks for bracketed paste", async () => {
+			const bash = Bun.which("bash");
+			if (bash === null || !linux) return;
+			// Long enough that only the shell's own request can have typed it in time.
+			start({ chopWaitMilliseconds: 60_000, chopQuietMilliseconds: 60_000, environment: { PATH: process.env.PATH, HOME: root, SHELL: bash, PS1: "$ ", LANG: "C.UTF-8", INPUTRC: "/dev/null" } });
+			const session = await openedChop("Pasted", "echo one-$((0 + 1)) && \\\necho two-$((1 + 1))");
+			await shows(session.id, "one-1");
+			await shows(session.id, "two-2");
+		});
+
+		test("a shell that prints its prompt without asking for bracketed paste gets the chop once it is quiet, not after the longest wait", async () => {
+			start({ chopWaitMilliseconds: 60_000, chopQuietMilliseconds: 100 });
+			const session = await openedChop("Quick", "echo quick-$((3 + 4))");
+			await shows(session.id, "quick-7");
+		});
+
+		test("a tab is not typed into a shell without bracketed paste, where it would complete, and the session says why", async () => {
+			start({ chopWaitMilliseconds: 50 });
+			const session = await openedChop("Tabbed", "printf 'a\tb'");
+			await shows(session.id, CHOP_NOT_TYPED);
+			expect(sessions.list().find(listed => listed.id === session.id)?.state).toEqual({ kind: "running" });
+		});
+
+		test("is refused with an agent, or with text a paste must not hold", async () => {
+			start();
+			expect(await sessions.open({ repository, worktree, cols: 80, rows: 24, agent: "Claude Code" }, { name: "x", text: "true" })).toMatchObject({ outcome: "failed" });
+			expect(await sessions.open({ repository, worktree, cols: 80, rows: 24 }, { name: "x", text: "a\x1b[201~b" })).toMatchObject({ outcome: "failed" });
+			expect(sessions.list()).toEqual([]);
+		});
+
+		test("closing the session before the chop was typed types nothing later", async () => {
+			start({ chopWaitMilliseconds: 50 });
+			const session = await openedChop("Gone", "echo never");
+			await sessions.close(session.id);
+			await Bun.sleep(100);
+			expect(printed(session.id)).not.toContain("never");
+		});
+	});
+
+	describe("inserting text into a shell", () => {
+		test("one line without bracketed paste goes in as typed, with no Enter", async () => {
+			start();
+			const { session } = await opened();
+			await run(session.id, "echo ready", "ready\r\n");
+			expect(sessions.paste(session.id, "echo inserted-$((2 + 2))")).toEqual({ outcome: "pasted" });
+			await until(() => printed(session.id).includes("echo inserted-$((2 + 2))"));
+			await Bun.sleep(100);
+			expect(printed(session.id)).not.toContain("inserted-4");
+			await run(session.id, "", "inserted-4");
+		});
+	});
+
 	describe("agent sessions", () => {
 		/** A folder of pretend agents, put on the PATH of the sessions, each printing its arguments and folder, then echoing lines. */
 		function agentsBin(): string {
@@ -656,7 +731,7 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 				expect(printed(claude.id)).not.toContain("got Review");
 			});
 
-			test("text that could end the paste early, a terminal, and a session that is gone get nothing", async () => {
+			test("text that could end the paste early, a line break a program cannot take, and a session that is gone get nothing", async () => {
 				startWithAgents();
 				const paster = await openedAgent("Paster");
 				await seen(paster.id, "paster ready");
@@ -664,7 +739,8 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 				expect(sessions.paste(paster.id, "  ").outcome).toBe("refused");
 				const opened = await sessions.open({ repository, worktree, cols: 80, rows: 24 });
 				if (opened.outcome !== "opened") throw new Error("No terminal");
-				expect(sessions.paste(opened.session.id, PASTED).outcome).toBe("not-agent");
+				// The test's shell never asks for bracketed paste: a line break would act as Enter.
+				expect(sessions.paste(opened.session.id, PASTED)).toEqual({ outcome: "not-ready", message: PASTE_NOT_READY });
 				await sessions.close(paster.id);
 				expect(sessions.paste(paster.id, PASTED).outcome).toBe("gone");
 				expect(sessions.paste("no-such-session", PASTED).outcome).toBe("gone");

@@ -11,6 +11,7 @@ import { sameCustomThemes } from "../shared/custom-themes";
 import { sameThemeChoice } from "../shared/theme";
 import { TitleBar } from "./components/TitleBar";
 import { TerminalViewKeeper } from "./components/TerminalPanel";
+import { ChopsKeeper } from "./components/settings/ChopsSection";
 import { Toasts } from "./components/Toasts";
 import { Workspace } from "./components/Workspace";
 import { StoreProvider, useAppState, useStore } from "./store/react";
@@ -125,6 +126,7 @@ export function App({ store, children }: { store: AppStore; children?: ReactNode
 				{/* Over any other dialog: the app is about to quit. */}
 				<QuitDialog />
 				<TerminalViewKeeper />
+				<ChopsKeeper />
 				<ThemeKeeper />
 				<TerminalLookKeeper />
 				<ZoomKeys />

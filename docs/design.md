@@ -370,13 +370,31 @@ change them here first when they change.
   first saved agent. The person's own chops are rows with Remove and "Add a
   chop", each for every repository or for one, saved with the section's
   Save. Below, "From the repository" lists the chops the selected
-  worktree's `.timber/chops.json` shares, read-only, with the file's path
-  and the branch, so a branch with other chops is plain to see. A personal
-  chop with the same name, ignoring case, wins: the file's chop is listed
-  as "Overridden by your chop". A worktree with no file gets a quiet hint
-  naming where one would go; a damaged file gets its reason, quietly, and
-  personal chops still work. "Read again" reads the file now. Running chops
-  is not part of this section.
+  worktree's repository shares in `.timber/chops.json` in its main
+  checkout, read-only, with the file's path. Chops belong to a repository,
+  not to a worktree: every worktree of it shows the same list, and a
+  branch's change to the file shows once it reaches the main checkout. A
+  personal chop with the same name, ignoring case, wins: the file's chop is
+  listed as "Overridden by your chop". A main checkout with no file gets a
+  quiet hint naming where one would go; a damaged file gets its reason,
+  quietly, and personal chops still work. A change to the file shows on its
+  own; "Read again" reads it now.
+- **Running a chop:** a command chop runs in the active worktree only; to
+  run it elsewhere, switch worktree first. The Workspace "+" menu has a
+  Chops part listing the repository's command chops by name, with the
+  description in the tooltip, and a worktree with no session yet has a
+  "Run" button for each. The command palette lists "Run chop: <name>",
+  found by name and description, and shows one that cannot run now with
+  the reason. Running one opens a new session named after it, types the
+  text into the shell, and runs it; the shell stays when the command ends,
+  so its output can be read and the command run again. A chop from the
+  repository's file is code from the repository: the first time it runs,
+  and again whenever its text changes, a dialog shows the exact text and
+  the file it comes from, with Cancel first, and runs it only on Run.
+  Personal chops run straight away. Right-clicking a session's chip, or
+  Shift+F10 or the context menu key on it, offers "Insert chop: <name>",
+  which types the chop's text into that session without Enter, so it can be
+  edited first.
 - **Terminal:** a Settings section for the terminal's font, as a name to
   type with Geist Mono as the default, its text size, and the cursor, a
   block or a thin bar. A font that is not installed gets a note under the

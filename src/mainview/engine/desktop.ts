@@ -30,6 +30,7 @@ export function createDesktopEngine(): Engine {
 	const timberChanges = listeners<void>();
 	const shownSessions = listeners<string>();
 	const handoffs = listeners<WorktreeHandoff>();
+	const chopChanges = listeners<string>();
 	const rpc = Electroview.defineRPC<AppRPC>({
 		maxRequestTime: 15_000,
 		handlers: {
@@ -43,6 +44,7 @@ export function createDesktopEngine(): Engine {
 			},
 			messages: {
 				repositoryChanged: ({ path }) => changes.call(path),
+				chopsChanged: ({ repository }) => chopChanges.call(repository),
 				terminalOutput: output => terminalOutput.call(output),
 				terminalChanged: change => terminalChanges.call(change),
 				showSession: ({ id }) => shownSessions.call(id),
@@ -127,6 +129,9 @@ export function createDesktopEngine(): Engine {
 		readFileDiff: request => rpc.request.readFileDiff(request, { maxRequestTime: 60_000 }),
 		readPorts: request => rpc.request.readPorts(request, { maxRequestTime: 30_000 }),
 		listChops: request => rpc.request.listChops(request, { maxRequestTime: 60_000 }),
+		onChopsChanged: chopChanges.add,
+		// The main process reads the chops and the list first.
+		runChop: request => rpc.request.runChop(request, { maxRequestTime: 60_000 }),
 		listTerminals: () => rpc.request.listTerminals({}),
 		// The main process reads the list first.
 		openTerminal: request => rpc.request.openTerminal(request, { maxRequestTime: 60_000 }),

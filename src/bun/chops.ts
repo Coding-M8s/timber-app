@@ -1,19 +1,47 @@
-import { constants } from "node:fs";
+import { createHash } from "node:crypto";
+import { constants, statSync } from "node:fs";
 import { lstat, open } from "node:fs/promises";
 import { join } from "node:path";
 import { messageOf } from "../shared/error-message";
-import { CHOPS_FILE, CHOPS_FILE_BYTES, type ChopList, type ChopsFileState, type ChopsRequest, type Chop, type PersonalChop, mergeChops, parseChopsFile } from "../shared/chops";
-import { type FindRepository, findListedWorktree } from "./listed-worktree";
+import {
+	CHOPS_FILE, CHOPS_FILE_BYTES, type ChopApprovals, type ChopList, type ChopsFileState, type ChopsRequest, type Chop, type PersonalChop, type RunChopRequest, type RunChopResult,
+	chopDigestInput, commandChops, findListedChop, isChopApproved, mergeChops, parseChopsFile,
+} from "../shared/chops";
+import type { OpenTerminalRequest, OpenTerminalResult } from "../shared/terminal";
+import type { FindRepository } from "./listed-worktree";
+import type { ChopInput } from "./terminals";
 
 export interface ChopsDependencies {
 	findRepository: FindRepository;
 	/** The personal chops as saved now. Read for every request, so a save shows at once. */
 	personal: () => Promise<readonly PersonalChop[]>;
+	/** The approvals of repository chops as saved now. None when left out. */
+	approvals?: () => Promise<ChopApprovals>;
+	/** Keep an approval. Throws when it could not be saved. */
+	approve?: (repository: string, digest: string) => Promise<void>;
+	/** Start the person's shell in a worktree with a chop typed into it (`TerminalSessions.open`). Without it, nothing runs. */
+	openTerminal?: (request: OpenTerminalRequest, chop: ChopInput) => Promise<OpenTerminalResult>;
+	warn?: (message: string) => void;
 }
 
 export interface Chops {
-	/** A worktree's chops, with the repository file read anew. Read-only: nothing is written or created. */
+	/** A repository's chops, with the main checkout's file read anew. Read-only: nothing is written or created. */
 	list(request: ChopsRequest): Promise<ChopList>;
+	/** Run a command chop in a worktree, as `Engine.runChop` says. */
+	run(request: RunChopRequest): Promise<RunChopResult>;
+}
+
+/** The digest an approval keeps: SHA-256 of the kind and the text (`chopDigestInput`), in hex. */
+export function chopDigest(chop: Pick<Chop, "kind" | "text">): string {
+	return createHash("sha256").update(chopDigestInput(chop), "utf8").digest("hex");
+}
+
+function isFolder(path: string): boolean {
+	try {
+		return statSync(path).isDirectory();
+	} catch {
+		return false;
+	}
 }
 
 const codeOf = (error: unknown) => (error as NodeJS.ErrnoException | null)?.code;
@@ -24,7 +52,7 @@ const isAbsent = (error: unknown) => codeOf(error) === "ENOENT" || codeOf(error)
 export type ChopsFileRead = { file: ChopsFileState; chops: Chop[] };
 
 /**
- * Read the repository file of one worktree, safely, since its content comes
+ * Read the repository file of a main checkout, safely, since its content comes
  * from the repository:
  *
  * - `.timber` must be a folder and `chops.json` a regular file, neither a
@@ -38,10 +66,10 @@ export type ChopsFileRead = { file: ChopsFileState; chops: Chop[] };
  *
  * Nothing is written, and a missing folder is not created.
  */
-export async function readChopsFile(worktree: string): Promise<ChopsFileRead> {
+export async function readChopsFile(checkout: string): Promise<ChopsFileRead> {
 	const damaged = (message: string): ChopsFileRead => ({ file: { state: "damaged", message }, chops: [] });
-	const folder = join(worktree, ".timber");
-	const path = join(worktree, ...CHOPS_FILE.split("/"));
+	const folder = join(checkout, ".timber");
+	const path = join(checkout, ...CHOPS_FILE.split("/"));
 	try {
 		const info = await lstat(folder);
 		if (info.isSymbolicLink()) return damaged("The .timber folder is a symbolic link, so the app does not follow it.");
@@ -90,26 +118,63 @@ export async function readChopsFile(worktree: string): Promise<ChopsFileRead> {
 }
 
 /**
- * The chops of a worktree: the person's saved chops merged with the
- * repository's file (`mergeChops` in ../shared/chops.ts). Only a worktree that
- * Timber lists, in a repository in the app's list, whose folder is there
- * (`findListedWorktree`). The file is read on every call and never cached,
- * so a change to it, or a switch of branch, shows on the next read without
- * any watch on the working tree.
+ * The chops of a repository: the person's saved chops merged with the file
+ * in the repository's main checkout (`mergeChops` in ../shared/chops.ts), the
+ * same for every worktree. Only a repository in the app's list whose primary
+ * checkout's folder is there. The file is read on every call and never
+ * cached, so a change to it shows on the next read.
  */
-export function createChops({ findRepository, personal }: ChopsDependencies): Chops {
+export function createChops({ findRepository, personal, approvals = async () => ({}), approve = async () => {}, openTerminal, warn = console.warn }: ChopsDependencies): Chops {
+	/** The list, and the primary checkout it was read for, which keys both the merge and the approvals. */
+	async function read(request: ChopsRequest): Promise<{ list: ChopList; checkout: string }> {
+		const notRead = "No chops were read.";
+		const answer = (list: ChopList, checkout = request.repository) => ({ list, checkout });
+		let repository;
+		try {
+			repository = await findRepository(request.repository);
+		} catch (error) {
+			return answer({ outcome: "failed", message: `Could not read the repository at ${request.repository}: ${messageOf(error)}. ${notRead}` });
+		}
+		if (repository === null) return answer({ outcome: "not-listed", message: `${request.repository} is not a repository in this app's list. ${notRead}` });
+		if (!isFolder(repository.path)) return answer({ outcome: "not-listed", message: `The folder of the main checkout, ${repository.path}, is missing. ${notRead}` });
+		let saved: readonly PersonalChop[];
+		try {
+			saved = await personal();
+		} catch (error) {
+			return answer({ outcome: "failed", message: `Could not read the saved chops: ${messageOf(error)}` });
+		}
+		const { file, chops } = await readChopsFile(repository.path);
+		return answer({ outcome: "listed", file, path: join(repository.path, ...CHOPS_FILE.split("/")), ...mergeChops(saved, repository.path, chops) }, repository.path);
+	}
+
 	return {
-		async list(request) {
-			const listed = await findListedWorktree(findRepository, request.repository, request.worktree, "No chops were read.");
-			if (!listed.ok) return { outcome: "not-listed", message: listed.message };
-			let saved: readonly PersonalChop[];
+		list: async request => (await read(request)).list,
+		async run(request) {
+			if (openTerminal === undefined) return { outcome: "unsupported", message: "Chops cannot run here. Nothing was started." };
+			if (typeof request.chop !== "string") return { outcome: "no-chop", message: "The request names no chop. Nothing was started." };
+			// Read once: the text approved is the text that runs.
+			const { list: listed, checkout } = await read({ repository: request.repository });
+			if (listed.outcome !== "listed") return { outcome: listed.outcome === "not-listed" ? "not-listed" : "failed", message: listed.message };
+			const chop = findListedChop(commandChops(listed), request.chop);
+			if (chop === null) return { outcome: "no-chop", message: `No command chop called "${request.chop}" is in ${request.repository} now. Nothing was started.` };
+			const digest = chopDigest(chop);
+			let saved: ChopApprovals;
 			try {
-				saved = await personal();
+				saved = await approvals();
 			} catch (error) {
-				return { outcome: "failed", message: `Could not read the saved chops: ${messageOf(error)}` };
+				warn(`Could not read the chop approvals: ${messageOf(error)}`);
+				saved = {};
 			}
-			const { file, chops } = await readChopsFile(request.worktree);
-			return { outcome: "listed", file, path: join(request.worktree, ...CHOPS_FILE.split("/")), ...mergeChops(saved, request.repository, chops) };
+			if (!isChopApproved(saved, checkout, chop, digest)) {
+				if (request.approve !== chop.text) return { outcome: "needs-approval", chop, path: listed.path };
+				try {
+					await approve(checkout, digest);
+				} catch (error) {
+					// The person agreed to this run: it goes ahead, and the next one asks again.
+					warn(`Could not save the approval of a chop: ${messageOf(error)}`);
+				}
+			}
+			return openTerminal({ repository: request.repository, worktree: request.worktree, cols: request.cols, rows: request.rows }, { name: chop.name, text: chop.text });
 		},
 	};
 }

@@ -1,5 +1,5 @@
 import type { PullRequestCreationFailure, PullRequestFields, ReportedPullRequestView } from "../pull-request-create-format";
-import type { ChopList } from "../../shared/chops";
+import type { ChopList, ListedChop } from "../../shared/chops";
 import type { PortClash, PortsResult } from "../../shared/ports";
 import type { BaseComparison, Comparison, FileChange, FileChangeTarget, FileDiffResult } from "../../shared/file-changes";
 import type { ReviewNote } from "../../shared/review";
@@ -55,17 +55,16 @@ export type Operation =
  * for another worktree.
  */
 /**
- * The chops of one worktree as last read, for Settings, Chops. Read when the
- * section is drawn, when the saved chops change, and on "Read again"; and
- * by the store again after every reload of the worktree's repository (after
- * a change to its Git metadata, an edit in the worktree that Git lists, or
- * the window coming back into focus).
+ * The chops of the selected worktree's repository as last read: the same in
+ * every worktree of it. Read when another repository is selected, when the
+ * saved chops change, when the main checkout's chops file changed
+ * (`onChopsChanged`), after every reload of the repository, and on "Read
+ * again" in Settings, Chops. The "+" menu, the palette, and "Insert chop"
+ * list from it.
  */
 export interface ChopsView {
 	/** The path of the repository's primary checkout. */
 	repository: string;
-	/** The worktree's identity (`Worktree.id`). */
-	worktree: string;
 	/** Null until the first read answered. */
 	list: ChopList | null;
 }
@@ -197,7 +196,13 @@ export type DialogRequest =
 	/** Create an arena in a repository, named by the path of its primary checkout. Beta, as in Timber. */
 	| { kind: "new-arena"; repository: string }
 	/** Compare an arena's attempts and keep one. `arena` is the arena's name as Timber lists it. */
-	| { kind: "arena-compare"; repository: string; arena: string };
+	| { kind: "arena-compare"; repository: string; arena: string }
+	/**
+	 * Show a repository chop's exact text, from `path`, before it first runs or
+	 * after it changed, and run it only on confirm. `worktree` is `Worktree.id`.
+	 * `chop` is as the main process read it, kept as it was.
+	 */
+	| { kind: "approve-chop"; repository: string; worktree: string; chop: ListedChop; path: string };
 
 /** The sections of the Settings dialog, in the order they are listed. */
 export const SETTINGS_SECTIONS = ["layout", "theme", "terminal", "rendering", "editor", "agents", "chops", "notifications", "fetch", "about", "machine", "repository"] as const;
@@ -331,7 +336,7 @@ export interface AppState {
 	reviews: Readonly<Record<string, readonly ReviewNote[]>>;
 	/** The note the Changes tab brings into view once its diff shows, after the person chose it in the Review list. */
 	noteInView: { worktree: string; id: string } | null;
-	/** The chops of the selected worktree as last read. Null before Settings, Chops first read them. */
+	/** The chops of the selected worktree's repository as last read. Null before the first read. */
 	chops: ChopsView | null;
 	/**
 	 * The ports of each worktree read so far, by its registered path, as last
