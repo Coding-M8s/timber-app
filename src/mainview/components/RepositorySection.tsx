@@ -20,8 +20,7 @@ import { BackupsSection } from "./BackupsSection";
 import { WorktreeRow } from "./WorktreeRow";
 import { IssuesRow } from "./IssuesBoard";
 import { WORKTREE_MENU_SHORTCUTS, worktreeMenuChoice } from "../worktree-menu-format";
-import { WorktreeMenu } from "./WorktreeMenu";
-import { ARENA_BETA_NOTE, BETA, describeArenaHeader, groupArenaRows, newMenuChoice, newMenuItems } from "../arena-format";
+import { ARENA_BETA_NOTE, BETA, describeArenaHeader, groupArenaRows } from "../arena-format";
 
 export interface RepositorySectionProps {
 	state: AppState;
@@ -50,11 +49,6 @@ export interface RepositorySectionProps {
 	removing: boolean;
 	/** The rows that share a host port with another worktree, by worktree path (see ../ports-format.ts). */
 	clashMarks: ReadonlyMap<string, readonly PortClashMark[]>;
-	/** Where the menu of the "+" is open, a new worktree or a new arena, or null while it is closed. */
-	newMenuAt: { left: number; top: number } | null;
-	newButtonRef: Ref<HTMLButtonElement>;
-	/** Open the menu of the "+" there, or close it when it is open or `at` is null. `backToButton` gives the keyboard back to the "+". */
-	onNewMenu: (at: { left: number; top: number } | null, backToButton?: boolean) => void;
 	/** The More button, last in the header. */
 	more: ReactNode;
 	/** A right-click on the header row, which opens the same menu as More. */
@@ -69,7 +63,7 @@ export interface RepositorySectionProps {
  * below it its worktrees, backups, and what went wrong. A plain function of
  * its props, with no hooks of its own, so the sidebar draws it in place.
  */
-export function RepositorySection({ state, store, repository, matches, open, query, now, idBase, index, marks, sectionRef, movable, header, fetchAsked, removing, clashMarks, newMenuAt, newButtonRef, onNewMenu, more, onHeadContextMenu, listedIdAt, selectedId }: RepositorySectionProps) {
+export function RepositorySection({ state, store, repository, matches, open, query, now, idBase, index, marks, sectionRef, movable, header, fetchAsked, removing, clashMarks, more, onHeadContextMenu, listedIdAt, selectedId }: RepositorySectionProps) {
 	const fetch = state.fetches[repository.path];
 	const fetching = fetch?.fetching === true || fetchAsked;
 	const fetchMarker = repository.available ? describeFetchMarker(fetch, now) : null;
@@ -175,31 +169,14 @@ export function RepositorySection({ state, store, repository, matches, open, que
 						type="button"
 						className="icon-button group-new"
 						aria-label={`New in ${repository.name}`}
-						title={`New worktree or arena in ${repository.name}`}
-						aria-haspopup="menu"
-						aria-expanded={newMenuAt !== null}
-						ref={newButtonRef}
-						onClick={event => {
-							const box = event.currentTarget.getBoundingClientRect();
-							onNewMenu({ left: box.left, top: box.bottom });
-						}}
+						title={`New worktree in ${repository.name}`}
+						aria-haspopup="dialog"
+						onClick={() => store.openDialog({ kind: "new-worktree", repository: repository.path })}
 					>
 						<svg aria-hidden="true" width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
 							<path d="M5.5 1.5v8M1.5 5.5h8" />
 						</svg>
 					</button>
-				)}
-				{newMenuAt && (
-					<WorktreeMenu
-						label={`New in ${repository.name}`}
-						items={newMenuItems(state.arenas[repository.path])}
-						at={newMenuAt}
-						onClose={backToButton => onNewMenu(null, backToButton)}
-						onChoose={id => {
-							const request = newMenuChoice(repository.path, id, state.arenas[repository.path]);
-							if (request) store.openDialog(request);
-						}}
-					/>
 				)}
 				{more}
 			</div>

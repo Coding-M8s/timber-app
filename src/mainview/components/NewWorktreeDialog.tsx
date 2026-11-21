@@ -1,10 +1,13 @@
 import { Fragment, useEffect, useState, useSyncExternalStore } from "react";
 import type { AgentSetting } from "../../shared/agent";
 import type { Repository } from "../../shared/model";
+import { arenasUnavailable } from "../arena-format";
 import { useAppState, useStore, useSubmission } from "../store/react";
+import type { NewWorktreeMode } from "../store/state";
 import type { SubmissionState } from "../store/submission";
 import { OperationDialog } from "./OperationDialog";
 import { ModeSwitch } from "./worktree-modes/ModeSwitch";
+import { useArenaMode } from "./worktree-modes/arena";
 import { type AgentPlan, followUps, startingAgent } from "./worktree-modes/agent-choice";
 import { createWorktreeDialogController, pickOfOption } from "./worktree-modes/dialog-controller";
 import { useExistingBranchMode } from "./worktree-modes/existing-branch";
@@ -81,7 +84,8 @@ interface WorktreeDialogFrameProps {
 /**
  * The worktree dialog as a drawing of its modes: one `OperationDialog` for
  * whichever mode is selected, with the Agent field under the mode's own
- * fields. The switch shows only when there is a choice.
+ * fields, unless the mode starts its own agents. The switch shows only when
+ * there is a choice.
  */
 export function WorktreeDialogFrame(props: WorktreeDialogFrameProps) {
 	const { repository, modes, selected, submission, agents, onSelect, onPickAgent, onSubmit, onClose } = props;
@@ -92,10 +96,18 @@ export function WorktreeDialogFrame(props: WorktreeDialogFrameProps) {
 		<OperationDialog
 			title={`New worktree in ${repository.name}`}
 			headerAside={modes.length > 1 && (
-				<ModeSwitch labels={modes.map(candidate => candidate.label)} selected={modes.indexOf(mode)} disabled={submission.running} onSelect={onSelect} />
+				<ModeSwitch
+					labels={modes.map(candidate => candidate.label)}
+					selected={modes.indexOf(mode)}
+					disabled={submission.running}
+					onSelect={onSelect}
+					unavailable={modes.map(candidate => typeof candidate.unavailable === "string")}
+					notes={modes.map(candidate => candidate.unavailable)}
+				/>
 			)}
 			command={mode.command}
-			followUps={followUps(startingAgent(plan), mode.agentStart, mode.setupStart, mode.worktree, mode.workflow)}
+			followUps={mode.ownFollowUps ?? followUps(startingAgent(plan), mode.agentStart, mode.setupStart, mode.worktree, mode.workflow)}
+			failureNote={mode.failureNote}
 			submission={submission}
 			submitLabel={mode.submitLabel}
 			runningLabel={mode.runningLabel}
@@ -106,9 +118,20 @@ export function WorktreeDialogFrame(props: WorktreeDialogFrameProps) {
 		>
 			{/* Keyed by mode, so a switch mounts the new mode's fields and its first field's autoFocus takes the keyboard. */}
 			<Fragment key={mode.label}>{mode.fields}</Fragment>
-			<AgentField agents={agents} plan={plan} onPick={onPickAgent} />
+			{!mode.ownFollowUps && <AgentField agents={agents} plan={plan} onPick={onPickAgent} />}
 		</OperationDialog>
 	);
+}
+
+/** The position of each mode on the switch. */
+const MODE_INDEX: Record<NewWorktreeMode, number> = { new: 0, existing: 1, arena: 2 };
+
+/**
+ * The mode the dialog opens on: the one asked for, or New branch when that is
+ * Arena and the Timber found has no arenas for apps.
+ */
+export function openingMode(asked: NewWorktreeMode, arenas: string | null): number {
+	return asked === "arena" && arenas !== null ? MODE_INDEX.new : MODE_INDEX[asked];
 }
 
 /**
@@ -118,17 +141,22 @@ export function WorktreeDialogFrame(props: WorktreeDialogFrameProps) {
  * mode brings its fields, its command, and what running it means. Add a mode
  * by adding its hook to `modes`.
  */
-export function NewWorktreeDialog({ repository, initialMode = "new" }: { repository: Repository; initialMode?: "new" | "existing" }) {
+export function NewWorktreeDialog({ repository, initialMode = "new" }: { repository: Repository; initialMode?: NewWorktreeMode }) {
 	const store = useStore();
 	const { submission, state } = useSubmission(() => store.closeDialog());
-	const [controller] = useState(() => createWorktreeDialogController(store, repository.path, submission, initialMode === "existing" ? 1 : 0));
+	const [controller] = useState(() =>
+		createWorktreeDialogController(store, repository.path, submission, openingMode(initialMode, arenasUnavailable(store.getState().arenas[repository.path]))));
 	const { selected, workflows } = useSyncExternalStore(controller.subscribe, controller.getState, controller.getState);
 	// Read once when the dialog opens: each read runs Timber, and file watching reads the repository again often.
 	// The controller reads again after a run fails, when the settings may have changed.
 	useEffect(() => {
 		void controller.readWorkflows();
 	}, [controller]);
-	const modes = [useNewBranchMode(repository, submission, workflows), useExistingBranchMode(repository, submission, workflows)];
+	const modes = [
+		useNewBranchMode(repository, submission, workflows),
+		useExistingBranchMode(repository, submission, workflows),
+		useArenaMode(repository, submission, selected === MODE_INDEX.arena),
+	];
 	const { agents } = useAppState().preferences;
 	return (
 		<WorktreeDialogFrame

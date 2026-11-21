@@ -14,6 +14,8 @@ interface ModeSwitchProps {
 	describedBy?: string;
 	/** Per mode, true when that one mode cannot be chosen now. The others stay usable. */
 	unavailable?: readonly boolean[];
+	/** Per mode, a tooltip, such as why it cannot be chosen now. */
+	notes?: readonly (string | null | undefined)[];
 }
 
 /**
@@ -21,12 +23,12 @@ interface ModeSwitchProps {
  * buttons drawn as one segmented control, so Tab reaches it, the arrow keys
  * move the choice, and a screen reader hears one choice out of several.
  */
-export function ModeSwitch({ labels, selected, disabled, onSelect, label = "What to make the worktree from", describedBy, unavailable = [] }: ModeSwitchProps) {
+export function ModeSwitch({ labels, selected, disabled, onSelect, label = "What to make the worktree from", describedBy, unavailable = [], notes = [] }: ModeSwitchProps) {
 	const name = useId();
 	return (
 		<div className="mode-switch" role="radiogroup" aria-label={label} aria-describedby={describedBy}>
 			{labels.map((label, index) => (
-				<label key={label} className={index === selected ? "mode-option selected" : "mode-option"}>
+				<label key={label} className={index === selected ? "mode-option selected" : "mode-option"} title={notes[index] ?? undefined}>
 					<input
 						className="mode-radio"
 						type="radio"

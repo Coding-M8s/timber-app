@@ -3,8 +3,6 @@ import {
 	type PickedAttempt, TASK_FILE_PLACEHOLDER, arenaNewArguments, arenaPickArguments,
 } from "../shared/arenas";
 import type { Worktree } from "../shared/model";
-import type { DialogRequest } from "./store/state";
-import type { WorktreeMenuItem, WorktreeMenuItemId } from "./worktree-menu-format";
 import type { TerminalSession } from "../shared/terminal";
 import { RESULT_FILE_PLACEHOLDER, describeTimberCommand } from "../shared/timber-result";
 
@@ -15,6 +13,8 @@ import { RESULT_FILE_PLACEHOLDER, describeTimberCommand } from "../shared/timber
  */
 export const BETA = "Beta";
 export const NEW_ARENA_LABEL = "New arena (Beta)";
+/** On the New worktree dialog's switch, beside New branch and Existing branch. */
+export const ARENA_MODE_LABEL = "Arena (Beta)";
 export const ARENA_BETA_NOTE = "Arenas are beta in Timber: the commands and what they report may still change.";
 export const NEW_ARENA_NOTE = "Timber makes one worktree per attempt, all from the same commit. The task goes to Timber in a private file, never on the command line.";
 export const AGENTS_FOLLOW_UP = "Then, for each attempt, the app asks Timber what its agent runs, as below, and starts that in the attempt's own session. A manual attempt gets none.";
@@ -24,22 +24,6 @@ export const PICK_NOTE = "Pick keeps this attempt and removes the others. The ap
 /** Why New arena cannot be offered for a repository, or null when it can: only a Timber with no arenas for apps rules it out. */
 export function arenasUnavailable(list: ArenaList | undefined): string | null {
 	return list?.state === "unsupported" ? "The Timber found has no arenas for apps. Install a newer Timber." : null;
-}
-
-/** The entries of a repository's "+" menu. New arena says why when the Timber found has no arenas for apps. */
-export function newMenuItems(list: ArenaList | undefined): WorktreeMenuItem[] {
-	const reason = arenasUnavailable(list);
-	return [
-		{ id: "new-worktree", label: "New worktree\u2026", disabled: false, note: null, title: "Create a worktree with timber new" },
-		{ id: "new-arena", label: `${NEW_ARENA_LABEL}\u2026`, disabled: reason !== null, note: reason, title: reason ?? "Give two or more agents the same task from the same commit, then keep the best" },
-	];
-}
-
-/** The dialog an entry of a repository's "+" menu opens, or null for a disabled one or an entry that is not its own. */
-export function newMenuChoice(repository: string, id: WorktreeMenuItemId, list: ArenaList | undefined): DialogRequest | null {
-	const item = newMenuItems(list).find(candidate => candidate.id === id);
-	if (!item || item.disabled) return null;
-	return id === "new-arena" ? { kind: "new-arena", repository } : { kind: "new-worktree", repository };
 }
 
 /** One group of attempts as the dialog holds it, as typed. */
