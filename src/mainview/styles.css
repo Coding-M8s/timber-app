@@ -601,6 +601,22 @@ pre:focus-visible {
 	color: var(--text-3);
 }
 
+/*
+ * A Done, Error, or crash the person has seen turns quiet: the same shape in
+ * the theme's quietest text color, which themes keep readable on every
+ * surface (see seen-status.ts). On the row the outline turns dashed too, so
+ * seen is not told there by color alone; a chip and a palette entry say
+ * "seen" in their words.
+ */
+.row-agent.seen,
+.status-glyph.seen {
+	color: var(--text-3);
+}
+
+.row-agent.seen {
+	border-style: dashed;
+}
+
 .status-glyph {
 	flex: none;
 	display: block;

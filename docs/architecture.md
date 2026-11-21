@@ -1150,7 +1150,8 @@ pure functions in `src/mainview/shell.ts`.
   reports something else, so it also leaves once it was on screen and no
   longer is, and joins again only when it finishes again. On screen means
   shown in the window, focused or not, as for a chip's unseen mark, so one
-  that finishes in a window behind another never joins. No clock is kept and
+  that finishes in a window behind another never joins. This is not the
+  rule for a seen status (below), which needs a focused window. No clock is kept and
   the Engine has no part in it, so after the window reloads, sessions
   already waiting or done are in the order they started. `waitingSessions`
   and `finishedSessions` keep only those whose worktree the list has, and
@@ -2853,7 +2854,16 @@ shows, and coming back shows it as it was.
   shows its first session and nothing is marked. A session counts as seen
   whenever it is on screen: its chip shows in the selected worktree while
   the Workspace tab shows. A program that keeps redrawing, such as a
-  spinner, keeps its chip marked.
+  spinner, keeps its chip marked. Which Done, Error, and crash statuses the
+  person has seen is the interface's own too (`seenStatuses`, kept by
+  `withSeenStatuses` in `src/mainview/seen-status.ts` from `update()`, and
+  again when the window's focus or visibility changes): the session on
+  screen in a window that shows and has the focus is seen in the state it
+  shows, and the mark is forgotten once the session leaves that state, so a
+  new state starts unseen. Needs you is never seen. This is per session,
+  stricter than the desktop notification's per-worktree rule: a Done on a
+  chip that never showed stays bright. Seen does not survive a reload, and
+  the Engine has no part in it.
 - **The sidebar.** A worktree's row shows a mark for each agent session, and
   for each other running session whose program reported a status (see
   [agent status](#agent-status)), then the other running sessions in blue
@@ -3342,8 +3352,12 @@ What the agent prints on screen is still never read, parsed, or answered.
   OpenAI's mark in the text color. On its chip, the same mark in a quiet
   outline takes the place of the agent star, and the same shape, with the decoded
   message in the chip's tooltip and its state in words beside the chips. A
-  collapsed repository header sums up its agents, such as "1 needs you, 2
-  working", the most urgent first; an expanded one shows nothing extra.
+  collapsed repository header sums up its agents' unseen states, such as
+  "1 needs you, 2 working", the most urgent first; an expanded one shows
+  nothing extra. A Done, Error, or crash the person has seen (see
+  `seenStatuses` under [the shell](#the-shell-and-the-saved-layout)) keeps
+  its shape in the theme's quietest text color (`seen` on the glyph and the
+  row mark, whose outline turns dashed), and its words say "seen".
   Every mark is hidden from assistive technology, and the row's and the
   header's descriptions say it in words.
 - **Desktop notifications and sounds.** When a marked session moves to

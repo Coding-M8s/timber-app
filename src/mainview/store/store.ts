@@ -42,6 +42,7 @@ import { describeAdded, describeRemoved, folderName, worktreeLabel } from "../fo
 import { workflowAgentLabel } from "../agent-format";
 import { describeFetched } from "../fetch-format";
 import { wantTerminalFocus } from "../terminal-focus";
+import { withSeenStatuses } from "../seen-status";
 import { nextWaitingSession, withFinishedOrder, withWaitingOrder } from "../waiting";
 import { mergeOverlapping } from "./merge";
 import { keepEntries } from "./records";
@@ -553,6 +554,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	let windowState: WindowState = { visible: true, focused: true };
 	let attended: Attention | null = null;
 	let attending = false;
+	// What the seen statuses were last kept from, so most updates skip that work.
+	let seenFrom: { terminals: readonly TerminalSession[]; onScreen: string | null } = { terminals: initialState.terminals, onScreen: null };
 
 	function attend(): void {
 		if (!attending) return;
@@ -693,6 +696,13 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			before: terminalsBefore, now: state.terminals, shownBefore, shownNow: onScreen?.id ?? null,
 		});
 		if (finishedOrder !== state.finishedOrder) state = { ...state, finishedOrder };
+		// A Done, Error, or crash on screen in a focused window is seen, and stays seen until the agent's state changes.
+		const seenNow = windowState.visible && windowState.focused ? onScreen?.id ?? null : null;
+		if (state.terminals !== seenFrom.terminals || seenNow !== seenFrom.onScreen) {
+			seenFrom = { terminals: state.terminals, onScreen: seenNow };
+			const seenStatuses = withSeenStatuses(state.seenStatuses, state.terminals, seenNow);
+			if (seenStatuses !== state.seenStatuses) state = { ...state, seenStatuses };
+		}
 		// A session on screen is seen, whatever put it there: a chip, the selection, the tab, or a session that started or ended.
 		if (onScreen && state.unseenSessions.includes(onScreen.id)) {
 			state = { ...state, unseenSessions: state.unseenSessions.filter(id => id !== onScreen.id) };
@@ -2215,8 +2225,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		windowChanged(next) {
 			if (next.visible === windowState.visible && next.focused === windowState.focused) return;
 			windowState = { visible: next.visible, focused: next.focused };
-			attend();
-			noteForcePush();
+			// Through `update`, which tells the engine and repaints: the focus coming back may make a status seen.
+			update({});
 		},
 		retryTimber: () => findTimber(() => engine.recheckTimber()),
 		refresh,

@@ -6,6 +6,7 @@ import type { IssueEntry, RemovalStatus } from "../store/state";
 import { describeRowTitle } from "../base-format";
 import { describeIssue, issueTitlePart } from "../issue-format";
 import { type RowMarker, type RowMarkerKind, describeRow, describeRowMarkers, describeWorktreeKind, worktreeLabel } from "../format";
+import type { SeenStatuses } from "../seen-status";
 import { type RowSessionMark, describeRowSessions } from "../terminal-format";
 import { WORKTREE_MENU_SHORTCUTS, type WorktreeMenuItemId, describeWorktreeMenu, opensWorktreeMenu, worktreeMenuItems } from "../worktree-menu-format";
 import { AgentIcon } from "./AgentIcon";
@@ -72,8 +73,8 @@ function Marker({ marker }: { marker: RowMarker }) {
 function SessionMark({ mark }: { mark: RowSessionMark }) {
 	return (
 		// One thin rounded outline in the state's color holds the state's shape and the agent's mark or letters.
-		<span className={`row-agent status-${mark.status.kind}${mark.brand ? " branded" : ""}`} title={mark.words} aria-hidden="true">
-			<StatusGlyph status={mark.status} />
+		<span className={`row-agent status-${mark.status.kind}${mark.brand ? " branded" : ""}${mark.seen ? " seen" : ""}`} title={mark.words} aria-hidden="true">
+			<StatusGlyph status={mark.status} seen={mark.seen} />
 			{mark.brand ? <AgentIcon brand={mark.brand} /> : <span className="row-agent-letters">{mark.initial}</span>}
 			{mark.badge !== null && <ChildBadge badge={mark.badge} />}
 		</span>
@@ -98,6 +99,8 @@ interface WorktreeRowProps {
 	 * count. Nothing shows when there are none.
 	 */
 	sessions?: readonly TerminalSession[];
+	/** The Done, Error, and crash statuses the person has seen, which show quiet (see ../seen-status.ts). */
+	seen?: SeenStatuses;
 	/** The sentence of a port this worktree shares with another, or null. Only then does the row show a warning. */
 	portClash?: string | null;
 	/**
@@ -115,7 +118,7 @@ interface WorktreeRowProps {
 }
 
 /** One worktree in the sidebar. What it is marked with comes from `describeRowMarkers`; this only draws it. */
-export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest = null, issue, removal = null, sessions = [], portClash = null, actions, onMenuChoice }: WorktreeRowProps) {
+export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest = null, issue, removal = null, sessions = [], seen = {}, portClash = null, actions, onMenuChoice }: WorktreeRowProps) {
 	const descriptionId = useId();
 	const button = useRef<HTMLButtonElement>(null);
 	// Where the open menu was asked to be, or null while it is closed.
@@ -144,7 +147,7 @@ export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest =
 	};
 	const markers = describeRowMarkers(worktree, pullRequest, removal);
 	const linked = describeIssue(worktree.issue, issue);
-	const running = describeRowSessions(sessions);
+	const running = describeRowSessions(sessions, seen);
 	const description = [describeRow(markers), portClash, running.sentence].filter(Boolean).join(" ");
 	const at = (place: RowMarker["place"]) => markers.filter(marker => marker.place === place).map(marker => <Marker key={marker.kind} marker={marker} />);
 	const flags = [...at("state"), ...at("pull-request")];

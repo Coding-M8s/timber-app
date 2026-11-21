@@ -116,7 +116,7 @@ function worktreeEntries(state: AppState): PaletteEntry[] {
 		for (const worktree of repository.worktrees) {
 			const folder = worktree.path.split(/[\\/]/).filter(Boolean).pop() ?? worktree.path;
 			const label = worktreeLabel(worktree);
-			const sessions = describeRowSessions(sessionsOf(state, worktree.id));
+			const sessions = describeRowSessions(sessionsOf(state, worktree.id), state.seenStatuses);
 			entries.push({
 				id: `worktree:${worktree.id}`,
 				kind: "worktree",

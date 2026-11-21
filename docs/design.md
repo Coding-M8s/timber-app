@@ -105,9 +105,20 @@ change them here first when they change.
   the chip, in the shape and color of the most urgent one, so a task that
   needs you shows its diamond. An agent that says Done or Idle while tasks
   run says "tasks still running".
-- A collapsed repository header sums up its agents, such as "1 needs you, 2
-  working", Needs you first; an agent with a task that needs you counts as
-  needing you. An expanded one adds nothing.
+- Once the person has seen a Done, Error, or crashed agent, its mark turns
+  quiet: the same shape in the theme's quietest text color, with a dashed
+  outline on the row, and its tooltip and description say "seen", such as
+  "Codex: Done, seen". Seen means the session itself was on screen (its
+  chip shows in the selected worktree, on the Workspace tab) in a window
+  that shows and has the focus. That is stricter than the notification
+  rule, which looks at the worktree: a second agent whose chip never showed
+  stays unseen. Needs you is never seen, because the agent still waits. A
+  new state from the agent, such as Working then Done again, starts unseen.
+  Seen lasts until the app restarts.
+- A collapsed repository header sums up its agents' unseen states, such as
+  "1 needs you, 2 working", Needs you first, so "1 done" drops out once
+  seen; an agent with a task that needs you counts as needing you, seen or
+  not. An expanded one adds nothing.
 - When an agent needs you, is done, reports an error, or crashes in a
   worktree that is not on screen, a desktop notification says so; clicking
   it shows that session. Never for the worktree on screen in a focused

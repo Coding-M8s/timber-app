@@ -294,18 +294,24 @@ export function sessionInitials(names: readonly string[]): string[] {
 }
 
 /**
- * A session's own status in words, with "tasks still running" when it says
- * Done or Idle while children run, such as "Done, tasks still running". No
- * count, so it can be a live region that does not speak on every change.
+ * A session's own status in words, with "seen" once the person has seen it,
+ * and "tasks still running" when it says Done or Idle while children run,
+ * such as "Done, seen, tasks still running". No count, so it can be a live
+ * region that does not speak on every change.
  */
-export function describeSessionState(session: Pick<TerminalSession, "state" | "status"> & Partial<Pick<TerminalSession, "children">>): string {
-	const words = describeShownStatus(shownStatus(session));
+export function describeSessionState(session: Pick<TerminalSession, "state" | "status"> & Partial<Pick<TerminalSession, "children">>, seen = false): string {
+	const shown = describeShownStatus(shownStatus(session));
+	const words = seen ? `${shown}, seen` : shown;
 	return stillWorking(session) ? `${words}, tasks still running` : words;
 }
 
-/** One session's status in words, with its name, such as "Codex: Needs you: approval, approve Write: src/a.ts. 2 tasks: 2 working". */
-export function describeSessionStatus(session: Pick<TerminalSession, "name" | "state" | "status"> & Partial<Pick<TerminalSession, "children">>): string {
-	const words = describeSessionState(session);
+/**
+ * One session's status in words, with its name, such as "Codex: Needs you:
+ * approval, approve Write: src/a.ts. 2 tasks: 2 working", or "Codex: Done,
+ * seen" once the person has seen it.
+ */
+export function describeSessionStatus(session: Pick<TerminalSession, "name" | "state" | "status"> & Partial<Pick<TerminalSession, "children">>, seen = false): string {
+	const words = describeSessionState(session, seen);
 	const full = session.state.kind === "running" ? session.status?.message ?? null : null;
 	const message = full === null ? null : shortMessage(full);
 	const children = describeNotableChildren(session);

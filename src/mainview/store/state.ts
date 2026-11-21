@@ -14,6 +14,7 @@ import type { Repository, TimberFailure, TimberStatus, Worktree } from "../../sh
 import { type Preferences, defaultPreferences } from "../../shared/preferences";
 import type { TerminalSession } from "../../shared/terminal";
 import type { RenderingStatus } from "../../shared/rendering";
+import type { SeenStatuses } from "../seen-status";
 
 /** Null until the first look for Timber has answered. */
 export type TimberState =
@@ -317,6 +318,12 @@ export interface AppState {
 	 * ../waiting.ts). Read it through `finishedSessions`.
 	 */
 	finishedOrder: readonly string[];
+	/**
+	 * The sessions whose Done, Error, or crash the person has seen, with the
+	 * state each was seen in (see ../seen-status.ts). Kept from `terminals`
+	 * and what is on screen in a focused window by the store.
+	 */
+	seenStatuses: SeenStatuses;
 	terminalProblem: TerminalProblem | null;
 	/**
 	 * How many terminals ran when the app was asked to quit, while the
@@ -454,6 +461,7 @@ export const initialState: AppState = {
 	unseenSessions: [],
 	waitingOrder: [],
 	finishedOrder: [],
+	seenStatuses: {},
 	terminalProblem: null,
 	quitRequest: null,
 	tab: "workspace",
