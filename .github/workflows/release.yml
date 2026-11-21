@@ -5,13 +5,14 @@ name: Release
 # a draft GitHub Release. A person reviews the draft and publishes it. See
 # docs/releasing.md.
 #
-# A pull request that changes this workflow runs the builds too, so a broken
-# build shows before a tag is pushed. Only a tag makes a release.
+# A pull request that changes this workflow, the version, or the dependencies
+# runs the builds too, so a broken build shows before a tag is pushed. Only a
+# tag makes a release.
 on:
   push:
     tags: ["v*"]
   pull_request:
-    paths: [".github/workflows/release.yml", "scripts/check-release-tag.ts"]
+    paths: [".github/workflows/release.yml", "scripts/check-release-tag.ts", "package.json", "bun.lock"]
 
 permissions:
   contents: read

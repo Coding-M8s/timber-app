@@ -43,9 +43,11 @@ test("the tag check exits with 1 and names the mismatch, and 0 on a match", () =
 	expect(bad.stderr.toString()).toContain(version);
 });
 
-test("a version tag starts the release, and changes to the workflow build without releasing", () => {
+test("a version tag starts the release, and changes to the workflow, version, or dependencies build without releasing", () => {
 	expect(release.on.push).toEqual({ tags: ["v*"] });
-	expect(release.on.pull_request).toEqual({ paths: [".github/workflows/release.yml", "scripts/check-release-tag.ts"] });
+	expect(release.on.pull_request).toEqual({
+		paths: [".github/workflows/release.yml", "scripts/check-release-tag.ts", "package.json", "bun.lock"],
+	});
 	expect(release.jobs.release!.if).toBe("startsWith(github.ref, 'refs/tags/v')");
 });
 
