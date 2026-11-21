@@ -44,6 +44,10 @@ change them here first when they change.
 
 - Worktrees are grouped under collapsible repository headers. Selecting a
   worktree in another repository switches to it.
+- A repository's header stands apart from its worktree rows: its name is
+  in the main text color, a step larger and heavier than a worktree's, and
+  each repository after the first has a hairline and extra space above it.
+  An unavailable repository's name stays faint.
 - Drag a repository header to move its group; a line shows where it will
   land. Alt+Up and Alt+Down move a focused header one place. The order is
   remembered between runs.
