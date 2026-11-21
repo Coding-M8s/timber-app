@@ -105,7 +105,7 @@ describe("the New branch form", () => {
 	test("has a name, an optional start point, and the agent, and nothing that belongs to other tickets", async () => {
 		const { render } = await openedDialog();
 		const markup = render();
-		expect(markup).toMatch(/<span class="field-label">Name<\/span><input class="field-input" placeholder="Fix login bug"[^>]* name="name" value=""\/>/);
+		expect(markup).toMatch(/<label class="field-label" for="[^"]+">Name<\/label><input [^>]*class="field-input" role="combobox"[^>]* placeholder="Fix login bug"[^>]* name="name" value=""\/>/);
 		expect(markup).toMatch(/<span class="field-label">Start from<\/span><input class="field-input" placeholder="Timber&#x27;s configured base"[^>]* name="base" value=""\/>/);
 		expect(markup.match(/<input /g)?.length).toBe(2);
 		expect(markup).toContain(">Cancel</button>");
@@ -118,7 +118,7 @@ describe("the New branch form", () => {
 
 	test("the name's hint names the issue forms Timber links", async () => {
 		const { render } = await openedDialog();
-		expect(render()).toContain('<span class="field-hint">A branch name, a sentence, or an issue: github:123, jira:ENG-1, or linear:ENG-1. Timber decides the branch and the folder.</span>');
+		expect(render()).toMatch(/<span id="[^"]+" class="field-hint">A branch name, a sentence, or an issue: github:123, jira:ENG-1, or linear:ENG-1. Timber decides the branch and the folder.<\/span>/);
 	});
 
 	test("cannot be submitted without a name", async () => {
@@ -150,9 +150,9 @@ describe("the New branch form", () => {
 		await submit();
 		expect(submission.getState().failure).not.toBeNull();
 		// What the name field does on every change.
-		type Field = { props: { children: { props: { onChange(event: object): void } }[] } };
+		type Field = { props: { onChange(value: string): void } };
 		const [nameField] = (mode().fields as { props: { children: Field[] } }).props.children;
-		nameField!.props.children[1]!.props.onChange({ target: { value: "feat/login-2" } });
+		nameField!.props.onChange("feat/login-2");
 		expect(model.getState().fields.name).toBe("feat/login-2");
 		expect(submission.getState()).toEqual({ running: false, failure: null });
 	});
@@ -533,7 +533,7 @@ describe("the keyboard when the dialog opens", () => {
 		const markup = await bothModes(0);
 		expect(markup.indexOf('role="radiogroup"')).toBeGreaterThan(-1);
 		expect(markup.indexOf('role="radiogroup"')).toBeLessThan(markup.indexOf('<fieldset class="dialog-fields">'));
-		expect(firstField(markup)).toMatch(/^<input class="field-input" placeholder="Fix login bug"[^>]* autofocus="" name="name"/);
+		expect(firstField(markup)).toMatch(/^<input [^>]*role="combobox"[^>]* placeholder="Fix login bug"[^>]* autofocus="" name="name"/);
 	});
 
 	test("the branch field is the first field of Existing branch", async () => {

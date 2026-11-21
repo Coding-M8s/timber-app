@@ -27,6 +27,7 @@ import { createWorktreePaths } from "./worktree-paths";
 import { readBranches } from "./git-engine";
 import { createSavedLayout } from "./layout";
 import { createSavedPreferences } from "./preferences";
+import { createIssueSearcher } from "./issue-search";
 import { createIssueReader } from "./issues";
 import { createPullRequestReader } from "./pull-requests";
 import { createRepositoryList } from "./repository-list";
@@ -234,6 +235,7 @@ const issueTrackers = createIssueTrackerReader({ readSettings: request => timber
 // Runs Timber's pull request read, with Timber's own GitHub login. Nothing it prints is logged (see ./pull-requests.ts).
 const pullRequests = createPullRequestReader({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
 const issues = createIssueReader({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
+const issueSearch = createIssueSearcher({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
 const editor = createEditorLauncher({ preferences: () => preferences.load(), findRepository: path => repositories.find(path) });
 
 /** Report to the window. It may not be connected yet, or be reloading; its first load reads everything anyway. */
@@ -445,6 +447,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			readIssueTrackers: ({ repository }) => issueTrackers.read(repository),
 			readPullRequests: ({ repository }) => pullRequests.read(repository),
 			readIssue: request => issues.read(request),
+			searchIssues: request => issueSearch.search(request),
 			readBackups: ({ repository }) => backups.list(repository),
 			// Restores into a new folder and branch; Timber never changes the backup or its source (see ./backups.ts).
 			restoreBackup: request => backups.restore(request),

@@ -2256,6 +2256,81 @@ pre:focus-visible {
 	color: var(--text-3);
 }
 
+/* Issue suggestions under the Name field: over the fields below it, so the dialog does not jump while typing. */
+.name-field {
+	position: relative;
+}
+
+.suggestion-list {
+	position: absolute;
+	top: 56px;
+	left: 0;
+	right: 0;
+	z-index: 2;
+	max-height: 220px;
+	margin: 0;
+	padding: 4px;
+	list-style: none;
+	overflow-y: auto;
+	border: 1px solid var(--line-raised);
+	border-radius: 7px;
+	background: var(--bg-main);
+	box-shadow: 0 8px 24px var(--shadow-strong);
+}
+
+.suggestion {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	padding: 4px 7px;
+	border-radius: 5px;
+	cursor: default;
+}
+
+.suggestion:hover {
+	background: var(--fill-hover);
+}
+
+.suggestion.active {
+	background: var(--fill-selected);
+}
+
+.suggestion-key {
+	flex: none;
+	font-family: var(--font-mono);
+	font-size: 12px;
+	color: var(--text-2);
+}
+
+.suggestion-title {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.suggestion-mark,
+.suggestion-status {
+	flex: none;
+	font-size: 11.5px;
+	color: var(--text-3);
+}
+
+.suggestion-mark {
+	padding: 0 5px;
+	border: 1px solid var(--line);
+	border-radius: 4px;
+}
+
+.suggestion-status.in-progress {
+	color: var(--ahead);
+}
+
+.suggestion-hint {
+	color: var(--text-3);
+}
+
 .check {
 	display: flex;
 	align-items: flex-start;

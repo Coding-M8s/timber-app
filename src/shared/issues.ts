@@ -73,7 +73,7 @@ const failed = (message: string): IssueLookup => ({ ok: false, message });
 const unreadable = (detail: string) => failed(`${APP_ISSUE_COMMAND} did not answer with a record this app can read: ${detail}.`);
 
 /** Null when the value is not one issue. Fields this app does not use are ignored. */
-function readIssue(value: unknown): Issue | null {
+export function readIssueValue(value: unknown): Issue | null {
 	if (!isFields(value)) return null;
 	const { tracker, key, url, title, status, assignee } = value;
 	if (!oneOf(ISSUE_TRACKERS, tracker) || typeof key !== "string" || key.trim() === "" || !isHttpsLink(url)) return null;
@@ -124,7 +124,7 @@ export function readIssueRecord(stdout: string, stderr: string, exitCode: number
 		if (exitCode !== 0) return unreadable(`it ${ending}, which does not match its outcome`);
 		if (named === null || reason !== null || diagnostic !== null) return unreadable("its fields do not match its outcome");
 		if (outcome === "none") return issue === null ? { ok: true, outcome } : unreadable("its fields do not match its outcome");
-		const read = readIssue(issue);
+		const read = readIssueValue(issue);
 		return read === null ? unreadable("its issue is not one this app can read") : { ok: true, outcome, issue: read };
 	}
 	if (outcome === "failed") {

@@ -1,4 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { type Suggestions, NameField } from "./name-field";
+import { createIssueSuggestions, suggestionTracker } from "./issue-suggestions";
 import type { Repository } from "../../../shared/model";
 import { useStore } from "../../store/react";
 import type { Submission } from "../../store/submission";
@@ -23,6 +25,7 @@ export function newBranchMode(
 	repository: Repository,
 	submission: Pick<Submission, "clearFailure" | "getState">,
 	workflows: WorkflowOptions = undefined,
+	suggestions: Suggestions | null = null,
 ): WorktreeDialogMode {
 	const { fields, step } = state;
 	const edit = (change: Partial<NewBranchState["fields"]>) => {
@@ -48,20 +51,12 @@ export function newBranchMode(
 		fields: step.kind === "form"
 			? (
 				<>
-					<label className="field">
-						<span className="field-label">Name</span>
-						<input
-							className="field-input"
-							name="name"
-							value={fields.name}
-							placeholder="Fix login bug"
-							autoComplete="off"
-							spellCheck={false}
-							autoFocus
-							onChange={event => edit({ name: event.target.value })}
-						/>
-						<span className="field-hint">A branch name, a sentence, or an issue: github:123, jira:ENG-1, or linear:ENG-1. Timber decides the branch and the folder.</span>
-					</label>
+					<NameField
+						value={fields.name}
+						suggestions={suggestions}
+						disabled={submission.getState().running}
+						onChange={name => edit({ name })}
+					/>
 					<TrackerField options={state.trackers} chosen={tracker} disabled={submission.getState().running} onPick={pick => edit({ tracker: pick })} />
 					<label className="field">
 						<span className="field-label">Start from</span>
@@ -113,5 +108,13 @@ export function useNewBranchMode(repository: Repository, submission: Submission,
 	useEffect(() => {
 		void model.readTrackers();
 	}, [model]);
-	return newBranchMode(model, state, repository, submission, workflows);
+	const [suggestions] = useState(() => createIssueSuggestions({ search: request => store.searchIssues(request), repository: repository.path }));
+	const shown = useSyncExternalStore(suggestions.subscribe, suggestions.getState, suggestions.getState);
+	const tracker = suggestionTracker(state.trackers, state.fields.tracker);
+	// Typing never waits for this: the field has its new text already, and the list follows when Timber answers.
+	useEffect(() => {
+		suggestions.type(state.step.kind === "form" ? state.fields.name : "", tracker);
+	}, [suggestions, state.fields.name, state.step.kind, tracker]);
+	useEffect(() => () => suggestions.pause(), [suggestions]);
+	return newBranchMode(model, state, repository, submission, workflows, { controller: suggestions, state: shown });
 }

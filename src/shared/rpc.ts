@@ -13,6 +13,7 @@ import type { RebaseRequest } from "./timber-rebase";
 import type { CreatePullRequestRequest, HeadSubjectRequest } from "./timber-pr";
 import type { NewWorktreeRequest, OpenInEditorRequest, OpenWorktreeRequest } from "./model";
 import type { Preferences } from "./preferences";
+import type { IssueSearchRequest } from "./issue-search";
 import type { IssueRequest } from "./issues";
 import type { Theme } from "./theme";
 import type { SoundChoice } from "./sound-setting";
@@ -76,6 +77,8 @@ export type AppRPC = {
 			/** The main process stops Timber after thirty seconds, so the caller allows longer. */
 			readPullRequests: { params: { repository: string }; response: Answer<"readPullRequests"> };
 			readIssue: { params: IssueRequest; response: Answer<"readIssue"> };
+			/** The main process stops Timber after thirty seconds, so the caller allows longer. */
+			searchIssues: { params: IssueSearchRequest; response: Answer<"searchIssues"> };
 			/** The main process stops Timber after thirty seconds, so the caller allows longer. */
 			readBackups: { params: { repository: string }; response: Answer<"readBackups"> };
 			/** Answers only when Timber has ended, after it copied every file back, so the caller must not time it out. */
