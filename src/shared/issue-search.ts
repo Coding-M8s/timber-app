@@ -66,8 +66,8 @@ const oneOf = <Value extends string>(values: readonly Value[], value: unknown): 
 const failed = (message: string): IssueSearchResult => ({ ok: false, unsupported: false, message });
 const unreadable = (detail: string) => failed(`${APP_ISSUES_COMMAND} did not answer with a record this app can read: ${detail}.`);
 
-/** Null when the value is not one listed issue. */
-function readSuggested(value: unknown): SuggestedIssue | null {
+/** Null when the value is not one listed issue. Shared with the board's lists (./issue-lists.ts). */
+export function readListedIssue(value: unknown): SuggestedIssue | null {
 	const issue = readIssueValue(value);
 	if (issue === null || !isFields(value)) return null;
 	const { worktree } = value;
@@ -108,7 +108,7 @@ export function readIssueSearchRecord(stdout: string, stderr: string, exitCode: 
 	if (outcome === "found" || outcome === "none") {
 		if (exitCode !== 0) return unreadable(`it ${describeExit(exitCode)}, which does not match its outcome`);
 		if (reason !== null || diagnostic !== null) return unreadable("its fields do not match its outcome");
-		const read = issues.map(readSuggested);
+		const read = issues.map(readListedIssue);
 		if (read.some(issue => issue === null)) return unreadable("an issue in it cannot be read");
 		return { ok: true, outcome: "found", issues: read as SuggestedIssue[], truncated };
 	}

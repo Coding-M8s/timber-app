@@ -1,4 +1,7 @@
 import type { IssueSearchRequest, IssueSearchResult } from "../../shared/issue-search";
+import type { IssueList, IssueListResult } from "../../shared/issue-lists";
+import type { IssueTracker } from "../../shared/model";
+import { type IssueBoard, boardKey, boardView, emptyBoard, listsToRead, withRead, withReading } from "./issue-board";
 import { type Attention, sameAttention } from "../../shared/attention";
 import type { UninstallPlan, UninstallRequest, UninstallResult } from "../../shared/uninstall";
 import type { RestartPlan, RestartResult } from "../../shared/restart";
@@ -11,7 +14,7 @@ import { promptTarget } from "../agent-sessions";
 import { describePromptCopied, describePromptSent } from "../chop-format";
 import { type Comparison, type FileChangeTarget, type FileChangesResult, type FileDiff, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
 import type { PortsResult } from "../../shared/ports";
-import { type Layout, chooseComparison, chosenComparison, clampSidebarWidth, dismissSetup, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
+import { type Layout, chooseComparison, chooseIssueList, chosenComparison, clampSidebarWidth, dismissSetup, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, ReportedWorktree, SavePreferencesResult, TimberFailure, TimberStatus, Worktree, WorktreeCommandResult } from "../../shared/model";
 import { type Preferences, defaultPreferences } from "../../shared/preferences";
 import type { IssueLookup } from "../../shared/issues";
@@ -106,6 +109,18 @@ export interface AppStore {
 	dismissNotice(): void;
 	/** Select a worktree by its identity (`Worktree.id`). One that no repository has is ignored. */
 	select(worktreeId: string): void;
+	/**
+	 * Show a repository's issues board in place of the selected worktree, and
+	 * read its trackers and the list it shows. Opening it is the only time it
+	 * reads by itself: there is no timer.
+	 */
+	openBoard(repository: string): void;
+	/** Read the board's trackers and the list it shows again, and each list that was not set up. */
+	refreshBoard(repository: string): Promise<void>;
+	/** Show another list on the board, remember it for the repository, and read it. */
+	pickBoardList(repository: string, list: IssueList): Promise<void>;
+	/** Show another tracker's lists on the board, for this run, and read the list shown. */
+	pickBoardTracker(repository: string, tracker: IssueTracker): Promise<void>;
 	/**
 	 * Say briefly that an operation worked, or with `problem` that one failed
 	 * where the details are kept. The toast disappears on its own.
@@ -780,6 +795,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				repositories,
 				loaded: true,
 				selection: reconcileSelection(repositories, state.selection),
+				board: state.board !== null && repositories.some(repository => repository.path === state.board) ? state.board : null,
 				error: null,
 			});
 			endOrphanTerminals();
@@ -960,6 +976,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			update({
 				repositories,
 				selection: reconcileSelection(repositories, state.selection),
+				board: state.board !== null && repositories.some(repository => repository.path === state.board) ? state.board : null,
 				error: state.error?.repository === path ? null : state.error,
 			});
 			endOrphanTerminals();
@@ -1494,7 +1511,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 
 	function selectRepository(path: string): void {
 		const selection = selectionForRepository(state.repositories, path);
-		if (selection && selection.worktree !== state.selection?.worktree) update({ selection });
+		if (selection && (selection.worktree !== state.selection?.worktree || state.board !== null)) update({ selection, board: null });
 	}
 
 	// One at a time: a second click while the picker is open, or while a repository is being forgotten, does nothing.
@@ -1601,8 +1618,54 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 
 	function select(worktreeId: string): void {
 		const selection = selectionFor(state.repositories, worktreeId);
-		if (selection && selection.worktree !== state.selection?.worktree) update({ selection });
+		if (!selection) return;
+		// Choosing a worktree puts the issues board away, even the worktree that was selected under it.
+		if (selection.worktree !== state.selection?.worktree) update({ selection, board: null });
+		else if (state.board !== null) update({ board: null });
 	}
+
+	const boardOf = (repository: string): IssueBoard => state.issueBoards[repository] ?? emptyBoard();
+	const changeBoard = (repository: string, change: (board: IssueBoard) => IssueBoard) =>
+		update({ issueBoards: { ...state.issueBoards, [repository]: change(boardOf(repository)) } });
+
+	async function listOnBoard(repository: string, tracker: IssueTracker, list: IssueList): Promise<void> {
+		const key = boardKey(tracker, list);
+		if (boardOf(repository).reading.includes(key)) return;
+		changeBoard(repository, board => withReading(board, key));
+		let result: IssueListResult;
+		try {
+			result = await engine.listIssues({ repository, list, tracker });
+		} catch (error) {
+			result = { ok: false, unsupported: false, message: unheard("the issue list", error) };
+		}
+		// Kept under its own tracker and list, so an answer that comes late never shows on another list.
+		const before = boardView(boardOf(repository), state.layout.issueLists[repository]);
+		changeBoard(repository, board => withRead(board, key, { result, at: Date.now() }));
+		// A list that turned out not to be set up leaves the picker. The next one shows, and is read when it never was.
+		const after = boardView(boardOf(repository), state.layout.issueLists[repository]);
+		if (before.list === list && after.list !== null && after.list !== list && after.tracker !== null && after.latest === null) {
+			await listOnBoard(repository, after.tracker, after.list);
+		}
+	}
+
+	async function refreshBoard(repository: string): Promise<void> {
+		if (boardOf(repository).reading.includes("trackers")) return;
+		changeBoard(repository, board => withReading(board, "trackers"));
+		let trackers: IssueBoard["trackers"];
+		try {
+			trackers = await engine.readIssueTrackers(repository);
+		} catch (error) {
+			trackers = { ok: false, message: unheard("the issue trackers", error) };
+		}
+		// A read that failed keeps the trackers read before, so the last list stays on screen.
+		changeBoard(repository, board => ({ ...board, trackers: !trackers.ok && board.trackers?.ok ? board.trackers : trackers, reading: board.reading.filter(key => key !== "trackers") }));
+		const board = boardOf(repository);
+		const view = boardView(board, state.layout.issueLists[repository]);
+		if (view.tracker === null) return;
+		const tracker = view.tracker;
+		await Promise.all(listsToRead(board, state.layout.issueLists[repository]).map(list => listOnBoard(repository, tracker, list)));
+	}
+
 
 	/** Select the worktree a Timber command reported, when the list that was just read has it. */
 	/** The listed worktree Timber reported. By identity first: the registered path stands in when Timber could verify the folder in only one of the two reads. */
@@ -2239,7 +2302,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const selection = session && selectionFor(state.repositories, session.worktree);
 		if (!session || !selection) return;
 		wantTerminalFocus(session.worktree);
-		update({ selection, tab: "workspace", shownSessions: { ...state.shownSessions, [session.worktree]: id } });
+		// Showing a session puts any issues board away, so the session is what shows.
+		update({ selection, board: null, tab: "workspace", shownSessions: { ...state.shownSessions, [session.worktree]: id } });
 	}
 
 	function jumpToWaiting(): boolean {
@@ -2411,6 +2475,29 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			if (state.notice) update({ notice: null });
 		},
 		select,
+		openBoard(repository) {
+			if (!state.repositories.some(candidate => candidate.path === repository)) return;
+			if (state.board !== repository) update({ board: repository });
+			void refreshBoard(repository);
+		},
+		refreshBoard,
+		async pickBoardList(repository, list) {
+			const layout = chooseIssueList(state.layout, repository, list);
+			if (layout !== state.layout) {
+				changeLayout(layout);
+				void saveLayout("layout");
+			}
+			const view = boardView(boardOf(repository), list);
+			if (view.tracker !== null && view.list === list) await listOnBoard(repository, view.tracker, list);
+		},
+		async pickBoardTracker(repository, tracker) {
+			changeBoard(repository, board => ({ ...board, picked: tracker }));
+			const board = boardOf(repository);
+			const view = boardView(board, state.layout.issueLists[repository]);
+			if (view.tracker === null) return;
+			const shown = view.tracker;
+			await Promise.all(listsToRead(board, state.layout.issueLists[repository]).map(list => listOnBoard(repository, shown, list)));
+		},
 		showToast,
 		dismissToast,
 		newWorktree: request => runWorktreeCommand(request.repository, () => engine.newWorktree(request)),
@@ -2462,7 +2549,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			if (state.editorProblem) update({ editorProblem: null });
 		},
 		showTab(tab) {
-			if (tab !== state.tab) update({ tab });
+			// A worktree's tab is asked for, so the worktree shows in place of any issues board.
+			if (tab !== state.tab || state.board !== null) update({ tab, board: null });
 		},
 		readChanges,
 		readChops,

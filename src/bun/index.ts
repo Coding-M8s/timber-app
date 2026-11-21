@@ -30,6 +30,7 @@ import { readBranches } from "./git-engine";
 import { createSavedLayout } from "./layout";
 import { createSavedPreferences } from "./preferences";
 import { createIssueSearcher } from "./issue-search";
+import { createIssueLister } from "./issue-lists";
 import { createIssueReader } from "./issues";
 import { createPullRequestReader } from "./pull-requests";
 import { createRepositoryList } from "./repository-list";
@@ -268,6 +269,7 @@ const issueTrackers = createIssueTrackerReader({ readSettings: request => timber
 const pullRequests = createPullRequestReader({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
 const issues = createIssueReader({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
 const issueSearch = createIssueSearcher({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
+const issueLists = createIssueLister({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
 const editor = createEditorLauncher({ preferences: () => preferences.load(), findRepository: path => repositories.find(path) });
 
 /** Report to the window. It may not be connected yet, or be reloading; its first load reads everything anyway. */
@@ -495,6 +497,8 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			readPullRequests: ({ repository }) => pullRequests.read(repository),
 			readIssue: request => issues.read(request),
 			searchIssues: request => issueSearch.search(request),
+			// Read-only: Timber lists issues with its own login and changes nothing (see ./issue-lists.ts).
+			listIssues: request => issueLists.list(request),
 			readBackups: ({ repository }) => backups.list(repository),
 			// Restores into a new folder and branch; Timber never changes the backup or its source (see ./backups.ts).
 			restoreBackup: request => backups.restore(request),

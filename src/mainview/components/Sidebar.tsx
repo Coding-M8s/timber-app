@@ -18,6 +18,7 @@ import { wantTerminalFocus } from "../terminal-focus";
 import { SIDEBAR_ID } from "./SidebarResizer";
 import { BackupsSection } from "./BackupsSection";
 import { WorktreeRow } from "./WorktreeRow";
+import { IssuesRow } from "./IssuesBoard";
 import { WORKTREE_MENU_SHORTCUTS, describeRepositoryMenu, opensWorktreeMenu, repositoryMenuChoice, repositoryMenuItems, worktreeMenuChoice } from "../worktree-menu-format";
 import { WorktreeMenu } from "./WorktreeMenu";
 import { ARENA_BETA_NOTE, BETA, describeArenaHeader, groupArenaRows, newMenuChoice, newMenuItems } from "../arena-format";
@@ -29,7 +30,8 @@ export function Sidebar() {
 	// Rows that share a host port with another worktree get a warning (see ../ports-format.ts).
 	const clashMarks = useMemo(() => clashMarksOf(state.portClashes, state.repositories), [state.portClashes, state.repositories]);
 	const { repositories, loaded } = state;
-	const selectedId = state.selection?.worktree ?? null;
+	// While an issues board shows, no worktree row is the one shown.
+	const selectedId = state.board === null ? state.selection?.worktree ?? null : null;
 	const refreshing = isRunning(state, "reload-all");
 	const failure = state.error && describeReloadError(state.error, repositories);
 	const notice = state.notice && describeListNotice(state.notice, repositories);
@@ -466,7 +468,11 @@ export function Sidebar() {
 								};
 								return (
 									<>
-										<ul className="rows">{grouped.plain.map(worktree => row(worktree))}</ul>
+										<ul className="rows">
+											{/* The board comes first in each repository. While a filter is typed, only worktrees are searched, so it steps aside. */}
+											{query === "" && <li><IssuesRow repository={repository.path} /></li>}
+											{grouped.plain.map(worktree => row(worktree))}
+										</ul>
 										{grouped.arenas.map(arena => {
 											const header = describeArenaHeader(arena);
 											return (

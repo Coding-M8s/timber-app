@@ -1,6 +1,7 @@
 import logoUrl from "../assets/logo.png";
 import { worktreeLabel } from "../format";
 import { paletteHint } from "../palette";
+import { ISSUES_ROW_LABEL } from "../issue-board-format";
 import { useAppState, useStore } from "../store/react";
 import { finishedSessions, selectedWorktree, timberReady, waitingSessions } from "../store/state";
 import { describeFinished, describeToVisit, describeWaiting, waitingHint } from "../waiting";
@@ -18,14 +19,17 @@ export function TitleBar() {
 	const finishedCount = ready ? finishedSessions(state).length : 0;
 	const waiting = describeWaiting(waitingCount);
 	const finished = describeFinished(finishedCount);
-	const branch = selection && worktreeLabel(selection.worktree);
+	// While a repository's issues board shows, the title names it and the board instead of the selected worktree.
+	const boardRepository = state.board === null ? null : state.repositories.find(repository => repository.path === state.board) ?? null;
+	const repository = boardRepository ?? selection?.repository ?? null;
+	const branch = boardRepository !== null ? ISSUES_ROW_LABEL : selection && worktreeLabel(selection.worktree);
 	return (
 		<header className="titlebar">
 			<img className="titlebar-logo" src={logoUrl} alt="Timber" width={22} height={22} />
 			{/* Long names are cut short here, so each part carries its whole name as a tooltip. */}
 			<div className="breadcrumb">
-				{selection
-					? <span className="titlebar-repo" title={selection.repository.name}>{selection.repository.name}</span>
+				{repository
+					? <span className="titlebar-repo" title={repository.name}>{repository.name}</span>
 					: <span className="titlebar-repo">Timber</span>}
 				{branch !== null && (
 					<>

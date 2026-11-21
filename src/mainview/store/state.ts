@@ -6,6 +6,7 @@ import type { ReviewNote } from "../../shared/review";
 import { type Layout, defaultLayout } from "../../shared/layout";
 import type { RepositoryFetch } from "../../shared/git-fetch";
 import type { IssueLookup } from "../../shared/issues";
+import type { IssueBoard } from "./issue-board";
 import type { IssueTracker } from "../../shared/model";
 import type { Backup, BackupList } from "../../shared/backups";
 import type { ArenaList } from "../../shared/arenas";
@@ -400,6 +401,14 @@ export interface AppState {
 	 */
 	issues: Readonly<Record<string, IssueEntry>>;
 	/**
+	 * The repository, by the path of its primary checkout, whose issues board
+	 * shows in place of the selected worktree, or null. Choosing a worktree
+	 * puts it away. The selected worktree and its sessions stay as they were.
+	 */
+	board: string | null;
+	/** Each repository's issues board as last read, by the path of its primary checkout (./issue-board.ts). Kept for the run. */
+	issueBoards: Readonly<Record<string, IssueBoard>>;
+	/**
 	 * The form in the Pull request tab of each worktree that has no pull
 	 * request yet, by worktree id, with its run and how the last one ended.
 	 * Kept here and not in the tab, so switching tabs or worktrees while
@@ -480,6 +489,8 @@ export const initialState: AppState = {
 	fetches: {},
 	pullRequests: {},
 	issues: {},
+	board: null,
+	issueBoards: {},
 	backups: {},
 	arenas: {},
 	pullRequestForms: {},

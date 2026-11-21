@@ -2944,3 +2944,71 @@ and Git 2.43.0, after rebasing on main at `6ce7d27`:
 - Not run: the desktop window or the browser build by eye, so the "+" menu,
   the Send prompt dialog, and the approval dialog were not seen drawn.
   Windows and macOS were not tested.
+
+Run for the issues board (issue 155), Linux x64 (Omarchy, Hyprland) with
+Bun 1.4.5, Timber 0.1.3 installed, and Timber's main branch at `4c42ed0`
+built with `bun run build` and run with Bun through a wrapper named by
+`TIMBER_APP_TIMBER_PATH` (main still calls itself 0.1.3):
+
+- New tests: `tests/issue-lists-parse.test.ts` reads records recorded from
+  that build (GitHub assigned with a linked worktree, open cut off at 3, an
+  empty Linear assigned list, a GitHub project iteration holding issues of
+  another repository, an empty milestone, a missing milestone, a sprint not
+  set up, no tracker named, Jira sign-in needed, offline, and 0.1.3's
+  "unknown command") and refuses records that do not add up.
+  `tests/issue-lists.test.ts` runs a stand-in Timber (arguments, standard
+  input closed, a 500-issue sprint, timeout, refusals, nothing logged), the
+  mock engine, and the real Timber on a temporary repository with nothing
+  set up, checking that files and refs are left as they were.
+  `tests/issue-board.test.tsx` covers the columns (none ever dropped), the
+  words, which list and tracker show, the remembered list in the layout, and
+  the board in the window: nothing read until it opens, a list not set up
+  leaving the picker and coming back on Refresh, late answers kept on their
+  own list, offline keeping the last list, and the unsupported message.
+- The app's `listIssues` (`src/bun/issue-lists.ts`) against real trackers,
+  from this repository's primary checkout: GitHub assigned found 3 with #155
+  marked with its worktree (1067 ms); GitHub open found 23 (950 ms); GitHub
+  sprint not configured (89 ms); Jira sprint sign-in needed, as this machine
+  has no Jira site (89 ms); Linear assigned found 0 with Linear's real login
+  (268 ms); Linear sprint not configured, as no team is set (94 ms). In a
+  clone with `.timber.toml` naming `[github].project = "Coding-M8s/2"`: the
+  current iteration "Iteration 1", 3 issues from Coding-M8s/timber (1354
+  ms). With `[github].milestone = "10 Shipping"`: 4 issues (933 ms). With a
+  milestone that does not exist: not found (422 ms). `git status` of the
+  primary checkout was clean before and after.
+- Jira, in another repository on this machine that has a Jira site and
+  login set up in Timber: assigned found 8 (2032 ms), two marked with their
+  worktrees, with statuses in both open and in-progress categories. With
+  `[jira].project` and `[jira].sprint_jql` (`project = <key> AND sprint in
+  openSprints()`) added to its local, untracked `.timber.toml` for the run
+  and then restored byte for byte (checksum matched, refs unchanged): the
+  sprint, a saved Jira query with no name, found 57 (1491 ms), sorted by
+  `boardColumns` into Open 7, In progress 12, Done 38 in 0.19 ms; open found
+  50 and truncated (1274 ms), into Open 39 and In progress 11. Those records
+  hold a company's issues, so they were read and deleted, not kept as
+  fixtures. A Jira board sprint (`[jira].board`) was not tried.
+- Linear, with Timber's real Linear login and `[linear].team` naming a real
+  team, in the clone: sprint none, as the team has no active cycle (224 ms,
+  kept as `linear-sprint-none.json`); open found 4, all "Todo" (239 ms);
+  assigned found 0 (235 ms). A found Linear cycle was not tried.
+- In the mock engine (`vite --port 5191`) in Chrome: opening timber's
+  Issues row showed the v0.3 milestone in Open and Done with #41's worktree
+  pill; switching the Tracker field to Jira showed TIM Sprint 14 in three
+  columns with "To Do, Selected for Dev", "In Review, In Progress", and
+  "Done, Won't Do". Offline on Refresh kept the 7 cards with "offline" and
+  Timber's reason as its tooltip. A sprint not set up left the picker with
+  Assigned to me shown and the hint, and came back on Refresh once set up.
+  The pill showed its worktree and put the board away. Picking a list saved
+  it in the layout. Switching between a 3-issue list and a cached sprint,
+  measured from the click to a forced layout: 140 issues 13.5 to 23.6 ms
+  (three runs; a long-task observer over two switches reported none), and
+  500 issues 33 and 51 ms (two runs, no long-task observer). Sorting 500
+  issues into columns stays under 50 ms in `tests/issue-board.test.tsx`.
+- `bun run typecheck`: no errors.
+- `bun run typecheck:desktop`: no errors.
+- `bun test`, after rebasing on main at `0ba893c`: 2619 passed, 27
+  skipped, none failed, with the installed Timber 0.1.3. With
+  `TIMBER_APP_TIMBER_PATH` naming the main build: 2622 passed, 19 skipped,
+  none failed.
+- `bun run build:web`: built.
+- Not run: the desktop window.

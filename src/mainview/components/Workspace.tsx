@@ -11,6 +11,7 @@ import { WORKSPACE_TABS, type WorkspaceTab, isBeingRemoved, isRunning, selectedW
 import { ChangesPanel } from "./ChangesPanel";
 import { describeNoteCount } from "../review-format";
 import { IssueHeaderLink, issueOf } from "./IssueSummary";
+import { IssuesBoard } from "./IssuesBoard";
 import { PortsItem } from "./PortsItem";
 import { PullRequestPanel } from "./PullRequestPanel";
 import { EditorProblemNote, OpenInEditorButton } from "./OpenInEditor";
@@ -24,6 +25,10 @@ export function Workspace() {
 	const store = useStore();
 	const state = useAppState();
 	const selection = selectedWorktree(state);
+	// A repository's issues board shows in place of the selected worktree, whose sessions keep running.
+	if (state.board !== null && state.repositories.some(repository => repository.path === state.board)) {
+		return <IssuesBoard key={state.board} repository={state.board} />;
+	}
 	if (!selection) {
 		// Before the first answer, and after a first load that failed, the sidebar says what is going on.
 		const waiting = !state.loaded;

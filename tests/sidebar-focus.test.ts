@@ -8,9 +8,13 @@ function sidebar(groups: { repository: string; rows: string[] }[]) {
 	const root: FocusRoot = {
 		querySelectorAll: () => groups.map(group => ({
 			dataset: { repository: group.repository },
-			querySelector: (selectors: string) => selectors === ".row"
-				? group.rows[0] === undefined ? null : target(group.rows[0])
-				: selectors === ".group-header" ? target(`${group.repository} header`) : null,
+			// Each group's Issues row comes first, as in the sidebar. It is a row, and not a worktree's.
+			querySelector: (selectors: string) => {
+				const rows = ["Issues", ...group.rows];
+				if (selectors === ".row") return target(rows[0]!);
+				if (selectors === ".row:not(.issues-row)") return group.rows[0] === undefined ? null : target(group.rows[0]);
+				return selectors === ".group-header" ? target(`${group.repository} header`) : null;
+			},
 		})),
 	};
 	return { root, focused };

@@ -160,6 +160,53 @@ change them here first when they change.
   repository's name, "backups unknown". Compare comes later.
 - Settings is a cogwheel at the bottom of the sidebar.
 
+## Issues board
+
+Each repository's work that is waiting, read by Timber with its own
+logins. The app never reads a tracker login and never signs in.
+
+- An "Issues" row sits first in each repository in the sidebar, with the
+  sprint's name beside it once a read found one. It opens the board in place
+  of the workspace, the way a worktree row opens its workspace; the title bar
+  says "repository / Issues". Choosing a worktree puts the board away. Its
+  sessions keep running meanwhile. While a filter is typed, the row steps
+  aside with the backups.
+- A picker at the top chooses the list: Current sprint (Jira's active sprint
+  of a board or a saved query, a GitHub project's current iteration or an
+  open milestone, Linear's current cycle), Assigned to me, or Open issues.
+  The pick is remembered per repository between runs. A list Timber says is
+  not set up leaves the picker, the next one shows, and a quiet line under
+  the picker says so in Timber's words, which name the setting that adds it. The remembered
+  pick is kept, so a list set up later comes back on the next Refresh.
+- A Tracker field shows only when two or more trackers are set up. It starts
+  on Timber's default tracker, else the first set up, and a pick lasts for
+  the run.
+- Columns are Open, In progress, and Done, each with the tracker's own
+  status names beside it. GitHub issues are only open or closed, so a
+  GitHub board has Open and Done. Assigned to me and Open issues hold only
+  issues that are not done, so they have no Done column. An issue whose
+  status falls elsewhere still gets its column; none is ever left out.
+- Each card shows the key, the tracker's status (blue while in progress,
+  always with its words), a control that opens the issue in the browser,
+  the title, and the assignee, or "Unassigned". A card whose issue has a
+  worktree has a pill with its branch that shows that worktree. The others
+  have Start work, which is off for now; starting work from the board is
+  its own issue (156).
+- The board reads when it opens, when another list or tracker is picked,
+  and on Refresh. There is no timer. "Read 2 minutes ago" says when. Each
+  column scrolls on its own and a long sprint draws only the cards in view.
+  A sprint comes whole, up to Timber's 500; the other lists show the first
+  50, and a cut-off list says so at its end.
+- Each failure is a quiet word or line in the view, never a dialog. A
+  failed refresh keeps the last list on screen with a grey word beside the
+  title ("offline", "sign-in needed", "no access", "not found") and Timber's
+  reason in its tooltip. A first read that fails says so in a line, with
+  Timber's reason, and `timber setup` when a login is missing. No current
+  sprint, an empty list, and no tracker set up each say so in one line.
+- A Timber without `__app-issues` shows that the board needs a Timber built
+  from its main branch. No Timber release has the command yet; the message
+  names a version once one does.
+
 ## Workspace
 
 - Three tabs: Workspace (panes), Changes (diff), and Pull request.
