@@ -4,7 +4,7 @@
  * interface only draws what it prints and passes on what is typed.
  */
 
-import type { ProgramStatus } from "./program-status";
+import type { ChildStatus, ProgramStatus } from "./program-status";
 import { isSafeText } from "./safe-text";
 
 /** Whether a session's process still runs, or how it ended. */
@@ -50,6 +50,14 @@ export interface TerminalSession {
 	 * session can have one, agent or shell.
 	 */
 	status: ProgramStatus | null;
+	/**
+	 * The program's child records, such as its subagents' and background
+	 * tasks', ordered by path so a record comes right before its descendants
+	 * (see `StatusRecords.children`). Empty when there are none. Each message
+	 * is already cut to `MESSAGE_SHOWN_LIMIT` characters, so a change with many
+	 * children stays near 300 KB at the very most.
+	 */
+	children: ChildStatus[];
 }
 
 /** Start another session in a worktree. Named as for "Open in editor". */

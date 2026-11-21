@@ -10,7 +10,7 @@ const all: AlertSettings = { notify: true, notifyStates: ["needs-you", "done", "
 
 const session = (change: Partial<TerminalSession> = {}): TerminalSession => ({
 	id: "s", kind: "agent", name: "Codex", repository: TIMBER, worktree: "w", path: FEATURE, shell: "/usr/local/bin/codex", command: "codex",
-	state: { kind: "running" }, status: null, ...change,
+	state: { kind: "running" }, status: null, children: [], ...change,
 });
 const status = (state: "idle" | "working" | "done" | "blocked" | "error", more: Partial<NonNullable<TerminalSession["status"]>> = {}) =>
 	({ state, kind: null, progress: null, app: null, title: null, message: null, ...more });
@@ -209,5 +209,78 @@ describe("the runner", () => {
 		runner.changed(working);
 		runner.changed(done);
 		expect(acted).toHaveLength(4);
+	});
+});
+
+describe("a session's tasks", () => {
+	const child = (id: string, state: "idle" | "working" | "done" | "blocked" | "error", more: Partial<NonNullable<TerminalSession["status"]>> = {}) => ({ id, ...status(state, more) });
+	const withChildren = (...children: ReturnType<typeof child>[]) => change({ status: status("working"), children });
+
+	test("a task moving to Needs you or Error notifies, named in the title, and one moving to Done does not", () => {
+		const alerts = createStatusAlerts(0);
+		alerts.changed(withChildren(child("a", "working")), away, all, 0);
+		expect(alerts.changed(withChildren(child("a", "done")), away, all, 0)).toEqual([]);
+		expect(alerts.changed(withChildren(child("a", "done"), child("b", "blocked", { kind: "permission", title: "Run the tests", message: "approve Bash: bun test" })), away, all, 0))
+			.toEqual([show("Codex: task Run the tests needs you", "In feat-github-issue-lookup: approve Bash: bun test")]);
+		// The task no longer needs you: its notification goes.
+		expect(alerts.changed(withChildren(child("a", "done"), child("b", "working")), away, all, 0)).toEqual([withdraw()]);
+		expect(alerts.changed(withChildren(child("c", "error")), away, all, 0)).toEqual([show("Codex: task c reported an error", "In feat-github-issue-lookup: Error")]);
+		// Cleared, it goes too.
+		expect(alerts.changed(withChildren(), away, all, 0)).toEqual([withdraw()]);
+	});
+
+	test("the session needing you itself comes first, and a second task needing you is not told again", () => {
+		const alerts = createStatusAlerts(0);
+		alerts.changed(change({ status: status("blocked") }), away, all, 0);
+		expect(alerts.changed(change({ status: status("blocked"), children: [child("a", "blocked")] }), away, all, 0)).toEqual([]);
+		const tasks = createStatusAlerts(0);
+		tasks.changed(withChildren(), away, all, 0);
+		expect(tasks.changed(withChildren(child("b", "blocked")), away, all, 0)).toHaveLength(1);
+		expect(tasks.changed(withChildren(child("b", "blocked"), child("c", "blocked")), away, all, 0)).toEqual([]);
+	});
+
+	test("follows the rate limit and the on-screen rule, and an exited session's tasks are not told", () => {
+		const alerts = createStatusAlerts(10_000);
+		alerts.changed(withChildren(), away, all, 0);
+		expect(alerts.changed(withChildren(child("a", "blocked")), away, all, 0)).toHaveLength(1);
+		alerts.changed(withChildren(), away, all, 1000);
+		// Inside the interval for Needs you, the next one waits, and goes out when it ends if it still holds.
+		expect(alerts.changed(withChildren(child("b", "blocked")), away, all, 2000)).toEqual([]);
+		expect(alerts.nextDue()).toBe(10_000);
+		expect(alerts.review(away, all, 10_000)).toEqual([show("Codex: task b needs you", "In feat-github-issue-lookup: Needs you")]);
+		const shown = createStatusAlerts(0);
+		shown.changed(withChildren(), here, all, 0);
+		expect(shown.changed(withChildren(child("a", "blocked")), here, all, 0)).toEqual([]);
+		const ended = createStatusAlerts(0);
+		ended.changed(withChildren(), away, all, 0);
+		expect(ended.changed(change({ status: status("done"), state: { kind: "exited", exitCode: 0, signal: null }, children: [child("a", "error")] }), away, all, 0)).toEqual([]);
+	});
+});
+
+describe("a session's tasks, told once", () => {
+	const child = (id: string, state: "idle" | "working" | "done" | "blocked" | "error") => ({ id, ...status(state) });
+	const at = (root: "working" | "blocked" | "done", ...children: ReturnType<typeof child>[]) => change({ status: status(root), children });
+
+	test("a second task needing you is not told, even when its path sorts first", () => {
+		const alerts = createStatusAlerts(0);
+		alerts.changed(at("working"), away, all, 0);
+		expect(alerts.changed(at("working", child("b", "blocked")), away, all, 0)).toEqual([show("Codex: task b needs you", "In feat-github-issue-lookup: Needs you")]);
+		expect(alerts.changed(at("working", child("a", "blocked"), child("b", "blocked")), away, all, 0)).toEqual([]);
+	});
+
+	test("a task left in Error, or still waiting, is not told again when the root moves away and back", () => {
+		const alerts = createStatusAlerts(0);
+		alerts.changed(at("working"), away, all, 0);
+		expect(alerts.changed(at("working", child("e", "error")), away, all, 0)).toHaveLength(1);
+		expect(alerts.changed(at("blocked", child("e", "error")), away, all, 0)).toEqual([show("Codex needs you", "In feat-github-issue-lookup: Needs you")]);
+		expect(alerts.changed(at("working", child("e", "error")), away, all, 0)).toEqual([withdraw()]);
+		// Once it left Error, it is told again when it comes back.
+		alerts.changed(at("working", child("e", "working")), away, all, 0);
+		expect(alerts.changed(at("working", child("e", "error")), away, all, 0)).toHaveLength(1);
+		const waiting = createStatusAlerts(0);
+		waiting.changed(at("working"), away, all, 0);
+		waiting.changed(at("working", child("b", "blocked")), away, all, 0);
+		waiting.changed(at("blocked", child("b", "blocked")), away, all, 0);
+		expect(waiting.changed(at("working", child("b", "blocked")), away, all, 0)).toEqual([withdraw()]);
 	});
 });

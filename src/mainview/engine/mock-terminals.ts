@@ -9,6 +9,7 @@ import {
 	defaultSessionName, isWebLink, type SessionNaming, sessionNameBase, WORKTREE_SETUP_SESSION_NAME, type PasteModeScanner, PASTE_NOT_READY, CHOP_NOT_TYPED,
 	type OpenTerminalRequest, chopRunBytes, createPasteModeScanner, pasteBytes, pasteProblem,
 } from "../../shared/terminal";
+import { recordsForWindow } from "../../shared/session-status";
 import { PROBE_ANSWER, type StatusRecords, type StatusScanner, createStatusRecords, createStatusScanner } from "../../shared/program-status";
 import { notFoundOnPath } from "../../shared/search-path";
 import { type WorkflowList, isWorkflowName } from "../../shared/workflows";
@@ -101,6 +102,23 @@ export const MOCK_PATH = "/usr/local/bin:/usr/bin:/bin";
  * are named as `sessionNaming` answers, as the saved preferences. Output arrives
  * a moment later, as it would over the bridge.
  */
+const osc7501 = (pairs: string) => `\x1b]7501;${pairs}\x1b\\`;
+const base64 = (text: string) => btoa(String.fromCharCode(...new TextEncoder().encode(text)));
+/**
+ * What `subagents` typed in a mock session prints: the program working, with
+ * four tasks, one with a task of its own under it that needs the person.
+ * Claude Code's own ids are flat; the nested one shows the tree.
+ */
+const SUBAGENT_REPORTS = [
+	`state=working:msg=${base64("Running 4 tasks")}`,
+	`state=working:progress=40:id=review:title=${base64("Review the diff")}`,
+	`state=blocked:kind=permission:id=review/tests:title=${base64("Run the tests")}:msg=${base64("approve Bash: bun test")}`,
+	`state=working:id=dev-server:title=${base64("bun run dev:web")}`,
+	`state=done:id=docs:title=${base64("Update the docs")}`,
+].map(osc7501).join("");
+/** `subagents clear`: a clear without an id removes every record, the program's own too. */
+const SUBAGENT_CLEAR = osc7501("state=clear");
+
 export function createMockTerminals(
 	findWorktree: (repository: string, path: string) => Worktree | null,
 	agents: () => readonly AgentSetting[] = () => [],
@@ -135,7 +153,7 @@ export function createMockTerminals(
 			} else if (acted.records.apply(event)) statusChanged = true;
 		}
 		if (statusChanged && acted.session.state.kind === "running") {
-			acted.session = { ...acted.session, status: acted.records.root() };
+			acted.session = { ...acted.session, ...recordsForWindow(acted.records) };
 			announce({ id: acted.session.id, session: acted.session });
 		}
 		const seq = acted.scrollback.append(data);
@@ -156,7 +174,7 @@ export function createMockTerminals(
 		if (acted.session.state.kind !== "running") return;
 		acted.records.exited();
 		acted.pasteMode.reset();
-		acted.session = { ...acted.session, state: { kind: "exited", exitCode, signal: null }, status: acted.records.root() };
+		acted.session = { ...acted.session, state: { kind: "exited", exitCode, signal: null }, ...recordsForWindow(acted.records) };
 		announce({ id: acted.session.id, session: acted.session });
 	}
 
@@ -167,9 +185,11 @@ export function createMockTerminals(
 			end(acted, 0);
 			return;
 		}
-		if (name === "clear") print(acted, "\x1b[2J\x1b[H");
+		if (name === "subagents" && command.trim().split(/\s+/)[1] === "clear") print(acted, `\r\n${SUBAGENT_CLEAR}cleared the tasks\r\n`);
+		else if (name === "clear") print(acted, "\x1b[2J\x1b[H");
 		else if (name === "pwd") print(acted, `\r\n${acted.session.path}\r\n`);
 		else if (name === "sample") print(acted, `\r\n${terminalSample()}`);
+		else if (name === "subagents") print(acted, `\r\n${SUBAGENT_REPORTS}acted out four tasks; type "subagents clear" to clear them\r\n`);
 		else if (name) print(acted, `\r\nmock shell: ${name}: acted out in the browser, nothing runs\r\n`);
 		else print(acted, "\r\n");
 		print(acted, prompt(acted));
@@ -308,6 +328,7 @@ export function createMockTerminals(
 			command: describeCommandLine([shell, ...args]),
 			state: { kind: "running" },
 			status: null,
+			children: [],
 		};
 		const acted: Acted = {
 			session, scrollback: createScrollback(), line: "", typed: "", size: { cols: request.cols, rows: request.rows }, drawn: 0,

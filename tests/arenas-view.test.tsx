@@ -78,7 +78,7 @@ describe("arena words and rules", () => {
 		expect(describeAttemptTool({ tool: "wrapper", preset: "stub", model: null, effort: null })).toBe("stub preset (wrapper)");
 		expect(describePickOutcome({ label: "a", outcome: "archived", archiveRef: "refs/timber/arena/demo/a", reason: null })).toBe("Removed, its work saved under refs/timber/arena/demo/a");
 		expect(describePickOutcome({ label: "a", outcome: "kept", archiveRef: null, reason: "It runs." })).toBe("Kept by Timber: It runs.");
-		const session = (state: TerminalSession["state"]): TerminalSession => ({ id: "1", kind: "agent", name: "codex-1", repository: "/r", worktree: "w", path: "/p", shell: "codex", command: "codex", state, status: null });
+		const session = (state: TerminalSession["state"]): TerminalSession => ({ id: "1", kind: "agent", name: "codex-1", repository: "/r", worktree: "w", path: "/p", shell: "codex", command: "codex", state, status: null, children: [] });
 		expect(describeAttemptSession([session({ kind: "running" })])).toEqual({ text: "Agent running", running: true });
 		expect(describeAttemptSession([session({ kind: "exited", exitCode: 0, signal: null })])).toEqual({ text: "Agent exited with 0", running: false });
 		expect(describeAttemptSession([])).toEqual({ text: "No agent", running: false });

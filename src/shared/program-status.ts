@@ -40,6 +40,9 @@ export interface ProgramStatus {
 	message: string | null;
 }
 
+/** A child record, such as a subagent's or a background task's, with its path. */
+export type ChildStatus = { id: string } & ProgramStatus;
+
 /** One report, read. `id` is the record's path, such as `sub/1`, or null for the root record. */
 export type StatusReport =
 	| ({ id: string | null } & ProgramStatus)
@@ -282,12 +285,14 @@ export function parseStatusReport(payload: string): StatusReport | null {
  * `STATUS_LIMITS.records`; when full, the one updated longest ago goes.
  */
 export interface StatusRecords {
-	/** Apply what the scanner found. True when the root record changed. */
+	/** Apply what the scanner found. True when any record changed, the root or a child. */
 	apply(event: StatusEvent): boolean;
-	/** The process exited: `working` and `blocked` records end. True when the root record changed. */
+	/** The process exited: `working`, `blocked`, and `idle` records end. True when any record changed. */
 	exited(): boolean;
 	/** The root record, or null when there is none. */
 	root(): ProgramStatus | null;
+	/** Every child record, ordered by path, so a record comes right before its descendants. */
+	children(): ChildStatus[];
 	/** How many records are kept, children included. */
 	size(): number;
 }
@@ -298,51 +303,74 @@ export function sameProgramStatus(one: ProgramStatus | null, other: ProgramStatu
 		&& one.app === other.app && one.title === other.title && one.message === other.message;
 }
 
+/** Order record paths so a parent comes right before its descendants: `a`, `a/b`, `a-c`, not `a`, `a-c`, `a/b`. */
+function comparePaths(one: string, other: string): number {
+	const left = one.split("/");
+	const right = other.split("/");
+	for (let index = 0; index < Math.min(left.length, right.length); index += 1) {
+		if (left[index] !== right[index]) return left[index]! < right[index]! ? -1 : 1;
+	}
+	return left.length - right.length;
+}
+
 export function createStatusRecords(): StatusRecords {
 	// A Map keeps the order of insertion, so the first entry is the one updated longest ago.
 	const records = new Map<string, ProgramStatus>();
 
-	function changing(change: () => void): boolean {
-		const before = records.get("") ?? null;
-		change();
-		return !sameProgramStatus(before, records.get("") ?? null);
-	}
-
 	/**
 	 * `working` and `blocked` end on an exit or a new prompt, and so does
 	 * `idle`, which the spec lets a terminal drop: a program that idled and
-	 * then quit leaves no mark on its shell. `done` and `error` stay.
+	 * then quit leaves no mark on its shell. `done` and `error` stay. True
+	 * when a record ended.
 	 */
-	function endTransient(): void {
+	function endTransient(): boolean {
+		let ended = false;
 		for (const [path, record] of records) {
-			if (record.state === "working" || record.state === "blocked" || record.state === "idle") records.delete(path);
+			if (record.state === "working" || record.state === "blocked" || record.state === "idle") {
+				records.delete(path);
+				ended = true;
+			}
 		}
+		return ended;
 	}
 
 	return {
 		apply(event) {
-			return changing(() => {
-				if (event.type === "reset") records.clear();
-				else if (event.type === "prompt") endTransient();
-				else if (event.type === "report" && event.report !== null) {
-					const { id, ...rest } = event.report;
-					const path = id ?? "";
-					if (rest.state === "clear") {
-						if (path === "") records.clear();
-						else for (const key of [...records.keys()]) if (key === path || key.startsWith(`${path}/`)) records.delete(key);
-						return;
-					}
-					records.delete(path);
-					records.set(path, rest as ProgramStatus);
-					if (records.size > STATUS_LIMITS.records) records.delete(records.keys().next().value!);
-				}
-			});
+			if (event.type === "reset") {
+				const had = records.size > 0;
+				records.clear();
+				return had;
+			}
+			if (event.type === "prompt") return endTransient();
+			if (event.type !== "report" || event.report === null) return false;
+			const { id, ...rest } = event.report;
+			const path = id ?? "";
+			if (rest.state === "clear") {
+				const before = records.size;
+				if (path === "") records.clear();
+				else for (const key of [...records.keys()]) if (key === path || key.startsWith(`${path}/`)) records.delete(key);
+				return records.size !== before;
+			}
+			// The same report again changes nothing the window shows, though it counts as the newest update.
+			const before = records.get(path) ?? null;
+			records.delete(path);
+			records.set(path, rest as ProgramStatus);
+			let changed = !sameProgramStatus(before, rest as ProgramStatus);
+			if (records.size > STATUS_LIMITS.records) {
+				records.delete(records.keys().next().value!);
+				changed = true;
+			}
+			return changed;
 		},
-		exited: () => changing(endTransient),
+		exited: endTransient,
 		root: () => {
 			const root = records.get("");
 			return root ? { ...root } : null;
 		},
+		children: () => [...records]
+			.filter(([path]) => path !== "")
+			.sort(([one], [other]) => comparePaths(one, other))
+			.map(([id, record]) => ({ id, ...record })),
 		size: () => records.size,
 	};
 }

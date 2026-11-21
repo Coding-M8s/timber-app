@@ -3,7 +3,8 @@ import { type SessionMenuItem, describeSessionProblemTitle, describeStarting, me
 import type { Repository, Worktree } from "../../shared/model";
 import { SESSION_NAME_LIMIT, type TerminalSession } from "../../shared/terminal";
 import { estimateTerminalCells } from "../../shared/terminal-appearance";
-import { agentBrand, hasStatusMark, shownStatus } from "../../shared/session-status";
+import { agentBrand, childBadge, hasStatusMark, shownStatus } from "../../shared/session-status";
+import { ChildBadge, ChildTasks } from "./ChildTasks";
 import { AgentIcon } from "./AgentIcon";
 import { StatusGlyph } from "./StatusGlyph";
 import { terminalAppearance } from "../terminal-look";
@@ -143,6 +144,7 @@ function SessionControls({ session, onRename }: SessionControlsProps) {
 		<div className="session-controls">
 			<span className="session-shell" title={session.command}>{shellName(session.shell)}</span>
 			<span className="session-state" role="status">{describeTerminalState(session)}</span>
+			<ChildTasks session={session} />
 			<button type="button" className="text-button" title={`Rename ${session.name} (F2 on its chip)`} onClick={onRename}>Rename</button>
 			<button
 				type="button"
@@ -260,6 +262,7 @@ function Chip({ session, selected, unseen, ids, shownId, closing, closingIds, ch
 	};
 	const running = session.state.kind === "running";
 	const exit = shortExit(session.state);
+	const badge = childBadge(session);
 	const description = closing ? `${describeSessionChip(session, unseen)}. Closing` : describeSessionChip(session, unseen);
 
 	const close = () => {
@@ -339,6 +342,7 @@ function Chip({ session, selected, unseen, ids, shownId, closing, closingIds, ch
 					? <StatusGlyph status={shownStatus(session)} />
 					// A filled dot while it runs, a hollow one once it ended: the shape says it, not only the color.
 					: <span className="session-dot" aria-hidden="true" />}
+				{badge !== null && <ChildBadge badge={badge} />}
 				{agentBrand(session) !== null
 					? <span className="session-kind branded" aria-hidden="true"><AgentIcon brand={agentBrand(session)!} /></span>
 					: <span className="session-kind" aria-hidden="true">{session.kind === "agent" ? "\u2726" : ">_"}</span>}
@@ -666,7 +670,7 @@ export function TerminalPanel({ repository, worktree }: { repository: Repository
 					)}
 				</div>
 				<SessionMenu items={sessionMenuItems(agents)} chops={chops} disabled={starting || unavailable !== null} title={newTitle} onStart={start} onRunChop={runChop} onSetUp={setUpAgents} />
-				<SessionControls session={shown} onRename={() => setRenaming(shown.id)} />
+				<SessionControls key={shown.id} session={shown} onRename={() => setRenaming(shown.id)} />
 			</div>
 			<TerminalProblemNote worktree={worktree} />
 			<Session key={shown.id} session={shown} renaming={renaming === shown.id} />

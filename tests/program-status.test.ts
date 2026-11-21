@@ -168,14 +168,44 @@ describe("reading a report", () => {
 describe("records", () => {
 	const event = (pairs: string): StatusEvent => ({ type: "report", report: parseStatusReport(pairs) });
 
-	test("each report replaces the record, and says whether the root changed", () => {
+	test("each report replaces the record, and says whether any record changed", () => {
 		const records = createStatusRecords();
 		expect(records.apply(event("state=working:progress=10"))).toBe(true);
 		expect(records.apply(event("state=working:progress=10"))).toBe(false);
 		expect(records.apply(event("state=blocked:kind=permission"))).toBe(true);
 		expect(records.root()).toMatchObject({ state: "blocked", kind: "permission", progress: null });
+		expect(records.apply(event("state=working:id=sub"))).toBe(true);
+		// A child repeating itself changes nothing, so a stream of the same report sends nothing to the window.
 		expect(records.apply(event("state=working:id=sub"))).toBe(false);
+		expect(records.apply(event("state=working:id=sub:progress=20"))).toBe(true);
 		expect(records.size()).toBe(2);
+	});
+
+	test("children come ordered by path, a record right before its descendants, and the root apart", () => {
+		const records = createStatusRecords();
+		records.apply(event("state=working"));
+		records.apply(event("state=working:id=b"));
+		records.apply(event("state=done:id=a-c"));
+		records.apply(event(`state=blocked:kind=question:id=a/b:title=${Buffer.from("Tests").toString("base64")}`));
+		records.apply(event("state=working:id=a"));
+		expect(records.children().map(child => child.id)).toEqual(["a", "a/b", "a-c", "b"]);
+		expect(records.children()[1]).toEqual({ id: "a/b", state: "blocked", kind: "question", progress: null, app: null, title: "Tests", message: null });
+		expect(records.root()?.state).toBe("working");
+	});
+
+	test("clearing, a prompt, and a reset say whether anything went", () => {
+		const records = createStatusRecords();
+		expect(records.apply(event("state=clear:id=none"))).toBe(false);
+		records.apply(event("state=done:id=a"));
+		expect(records.apply({ type: "prompt" })).toBe(false);
+		expect(records.exited()).toBe(false);
+		records.apply(event("state=working:id=a/b"));
+		expect(records.apply({ type: "prompt" })).toBe(true);
+		expect(records.children().map(child => child.id)).toEqual(["a"]);
+		expect(records.apply(event("state=clear:id=a"))).toBe(true);
+		expect(records.apply({ type: "reset" })).toBe(false);
+		records.apply(event("state=idle:id=x"));
+		expect(records.apply({ type: "reset" })).toBe(true);
 	});
 
 	test("a dropped report changes nothing", () => {

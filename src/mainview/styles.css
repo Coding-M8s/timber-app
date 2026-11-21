@@ -647,6 +647,27 @@ pre:focus-visible {
 	}
 }
 
+/*
+ * How many of a session's tasks (subagents and background tasks) run, beside its
+ * mark on the row and on its chip: the most urgent one's shape and color, and the count.
+ */
+.child-badge {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	gap: 1px;
+	margin-left: 2px;
+	font-size: 10px;
+	font-weight: 600;
+	line-height: 1;
+	font-variant-numeric: tabular-nums;
+}
+
+.child-badge .status-glyph {
+	width: 8px;
+	height: 8px;
+}
+
 /* A collapsed repository's agents, summed up beside its name, such as "1 needs you, 2 working". */
 .group-status {
 	flex: 0 1 auto;
@@ -2888,6 +2909,85 @@ pre:focus-visible {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+
+/* The shown session's tasks: a button beside its state, and the list it opens over the terminal. */
+.child-tasks-anchor {
+	position: relative;
+	flex: none;
+}
+
+.child-tasks-button {
+	white-space: nowrap;
+}
+
+.child-tasks {
+	position: absolute;
+	top: calc(100% + 6px);
+	right: 0;
+	z-index: 20;
+	min-width: 260px;
+	max-width: min(480px, 80vw);
+	max-height: min(400px, 60vh);
+	overflow-y: auto;
+	padding: 6px 8px;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: var(--bg-main);
+	box-shadow: 0 8px 24px var(--shadow);
+	color: var(--text);
+	font-size: 12px;
+}
+
+.child-task-list {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.child-task-list .child-task-list {
+	padding-left: 14px;
+}
+
+.child-task {
+	padding: 3px 0;
+}
+
+.child-task-line {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+}
+
+.child-task-mark {
+	flex: none;
+}
+
+.child-task-name {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.child-task-state {
+	flex: none;
+	margin-left: auto;
+	color: var(--text-3);
+}
+
+.child-task-message {
+	display: block;
+	padding-left: 16px;
+	overflow-wrap: anywhere;
+	color: var(--text-3);
+	font-size: 11.5px;
+}
+
+.child-tasks-more {
+	margin: 4px 0 0;
+	color: var(--text-3);
 }
 
 .session-close {

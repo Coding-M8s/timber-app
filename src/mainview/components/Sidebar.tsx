@@ -7,7 +7,7 @@ import { REMOVE_REPOSITORY_HINT, TIMBER_LIST_FAILURE_TITLE, describeListNotice, 
 import { SETTINGS_LABEL, describeLayoutProblem, describeRepository } from "../shell";
 import { DRAG_THRESHOLD, MOVE_REPOSITORY_HINT, MOVE_REPOSITORY_SHORTCUTS, dropIndex, moveStep } from "../repository-drag";
 import { useAppState, useStore } from "../store/react";
-import { hasStatusMark, mostUrgent, shownStatus, summarizeStatuses } from "../../shared/session-status";
+import { alertStatus, hasStatusMark, mostUrgent, summarizeStatuses } from "../../shared/session-status";
 import { isBeingRemoved, isRunning, removalAt, sessionsOf } from "../store/state";
 import { describeRemovalFailed } from "../done-format";
 import { clashMarksOf, describePortClash } from "../ports-format";
@@ -182,9 +182,10 @@ export function Sidebar() {
 					const backupProblem = repository.available ? describeBackupsProblem(state.backups[repository.path]) : null;
 					const backupProblemId = `${idBase}-backups-${index}`;
 					// Only while the group is collapsed, its agents' states are summed up beside its name, Needs you first.
+					// A session whose task needs you, or reported an error, counts as that (`alertStatus`), so it is as easy to see as the agent itself.
 					const statuses = open ? [] : state.terminals
 						.filter(session => session.repository === repository.path && hasStatusMark(session))
-						.map(shownStatus);
+						.map(session => alertStatus(session).status);
 					const summary = summarizeStatuses(statuses);
 					const summaryId = `${idBase}-summary-${index}`;
 					const describedBy = [fetchMarker ? fetchMarkerId : "", pullProblem ? pullProblemId : "", backupProblem ? backupProblemId : "", summary ? summaryId : ""].filter(Boolean).join(" ");
