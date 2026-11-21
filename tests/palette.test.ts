@@ -3,7 +3,7 @@ import { createMockEngine, sampleRepositories } from "../src/mainview/engine/moc
 import { DONE_PRIMARY_NOTE } from "../src/mainview/done-format";
 import {
 	ADDING_REPOSITORY, FETCHING_NOW, FOLDER_MISSING_FOR_SESSION, NO_WORKTREE_SELECTED, OTHER_REPOSITORIES, STARTING_SESSION, describeHighlighted, describeUnavailable,
-	isPaletteShortcut, matchEntries, paletteEntries, paletteHint, paletteScope, paletteView, rowAfterKey, rowTarget,
+	isPaletteShortcut, matchEntries, paletteEntries, paletteHint, paletteScope, paletteView, pointerMoved, rowAfterKey, rowTarget,
 } from "../src/mainview/palette";
 import { REBASE_FOLDER_MISSING } from "../src/mainview/rebase-format";
 import { type AppState, initialState } from "../src/mainview/store/state";
@@ -342,6 +342,13 @@ describe("the shortcut and the list keys", () => {
 	test("the hint names the shortcut for the platform", () => {
 		expect(paletteHint(false)).toBe("Command palette (Ctrl+Shift+P)");
 		expect(paletteHint(true)).toBe("Command palette (Cmd+Shift+P)");
+	});
+
+	test("only a pointer that moved takes the highlight, never a move sent after the list scrolled", () => {
+		expect(pointerMoved(null, { x: 10, y: 20 })).toBe(false);
+		expect(pointerMoved({ x: 10, y: 20 }, { x: 10, y: 20 })).toBe(false);
+		expect(pointerMoved({ x: 10, y: 20 }, { x: 10, y: 24 })).toBe(true);
+		expect(pointerMoved({ x: 10, y: 20 }, { x: 11, y: 20 })).toBe(true);
 	});
 
 	test("the arrows step and wrap, Home and End jump", () => {

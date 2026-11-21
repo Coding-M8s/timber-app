@@ -2756,7 +2756,7 @@ with Bun 1.4.5:
   options, numbered in order.
 - `bun run typecheck`: no errors.
 - `bun run typecheck:desktop`: no errors.
-- `bun test`: 2462 passed, 20 skipped, none failed.
+- `bun test`: 2463 passed, 20 skipped, none failed.
 - `bun run build:web`: built.
 - In the mock engine (`vite --port 5174`) in headless Chromium: Ctrl+Shift+P
   opened the palette scoped to timber with the box focused; typing "rate"
@@ -2770,4 +2770,9 @@ with Bun 1.4.5:
   Claude Code started it, and the palette opened again showed main's
   session mark. Enter on feat/github-issue-lookup selected it and closed the
   palette.
+- Arrow Up right after opening, with the pointer resting over the list,
+  wrapped to Add repository, and a mouse move at the same place, as WebKit
+  sends after the list scrolls under a still pointer, then took the
+  highlight to fix/macos-portability. With moves at the same place ignored,
+  Add repository kept it, and a real move still took it.
 - Not run: the desktop window.
