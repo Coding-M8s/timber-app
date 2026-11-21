@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { DONE_PRIMARY_NOTE } from "../src/mainview/done-format";
 import {
-	ADDING_REPOSITORY, FETCHING_NOW, FOLDER_MISSING_FOR_SESSION, NO_WORKTREE_SELECTED, STARTING_SESSION, isPaletteShortcut, matchEntries, paletteEntries,
-	paletteHint, rowAfterKey,
+	ADDING_REPOSITORY, FETCHING_NOW, FOLDER_MISSING_FOR_SESSION, NO_WORKTREE_SELECTED, OTHER_REPOSITORIES, STARTING_SESSION, describeHighlighted, describeUnavailable,
+	isPaletteShortcut, matchEntries, paletteEntries, paletteHint, paletteScope, paletteView, rowAfterKey,
 } from "../src/mainview/palette";
 import { REBASE_FOLDER_MISSING } from "../src/mainview/rebase-format";
 import { type AppState, initialState } from "../src/mainview/store/state";
@@ -25,35 +25,48 @@ async function sampleState(): Promise<{ state: AppState; store: ReturnType<typeo
 const byLabel = (state: AppState, label: string) => paletteEntries(state).find(entry => entry.label === label)!;
 
 describe("palette entries", () => {
-	test("lists every worktree of every available repository, then the actions", async () => {
+	test("lists the actions, then every worktree of every available repository", async () => {
 		const { state } = await sampleState();
 		const entries = paletteEntries(state);
 		const worktrees = entries.filter(entry => entry.kind === "worktree");
 		const total = state.repositories.filter(repository => repository.available).flatMap(repository => repository.worktrees).length;
 		expect(worktrees.length).toBe(total);
 		const feature = worktrees.find(entry => entry.label === "feat/github-issue-lookup")!;
-		expect(feature.detail).toBe("timber");
+		expect(feature.repositoryName).toBe("timber");
+		expect(feature.repository).toBe(TIMBER);
+		expect(feature.section).toBe("worktrees");
 		expect(feature.keywords).toContain("timber");
 		expect(feature.keywords).toContain("feat-github-issue-lookup");
 		expect(feature.action).toEqual({ kind: "select", worktree: FEATURE_ID });
 		const labels = entries.filter(entry => entry.kind === "action").map(entry => entry.label);
 		expect(labels).toEqual([
-			"New worktree", "Open existing branch", "New arena (Beta)", "Fetch now", "Rebase", "Done", "Open in editor", "Open terminal", "Start Claude Code", "Start Codex",
-			"Show next session that needs you or is done", "Clean up merged", "Clean up merged", "Settings", "Add repository",
+			"Open terminal", "Start Claude Code", "Start Codex", "Rebase", "Open in editor", "Done", "New worktree", "Open existing branch", "New arena (Beta)", "Fetch now",
+			"Clean up merged", "Clean up merged", "Show next session that needs you or is done", "Settings", "Add repository",
 		]);
 	});
 
-	test("actions for a worktree name the selected one", async () => {
-		const { state, store } = await sampleState();
+	test("actions for a worktree are in its section and say what they do to it", async () => {
+		const { store } = await sampleState();
 		store.select(FEATURE_ID);
 		const entries = paletteEntries(store.getState());
 		for (const label of ["Rebase", "Done", "Open in editor", "Open terminal", "Start Codex"]) {
-			expect(entries.find(entry => entry.label === label)!.detail).toBe("feat/github-issue-lookup in timber");
+			const entry = entries.find(candidate => candidate.label === label)!;
+			expect(entry.section).toBe("worktree");
+			expect(entry.repository).toBe(TIMBER);
+			expect(entry.detail).toBe("");
 		}
+		expect(byLabel(store.getState(), "Rebase").hint).toContain("feat/github-issue-lookup");
+		expect(byLabel(store.getState(), "Open terminal").hint).toBe(`Starts a shell in ${sampleRepositories[0]!.worktrees[1]!.path}.`);
 		for (const label of ["New worktree", "Open existing branch", "Fetch now"]) {
-			expect(entries.find(entry => entry.label === label)!.detail).toBe("In timber");
+			const entry = entries.find(candidate => candidate.label === label)!;
+			expect(entry.section).toBe("repository");
+			expect(entry.hint).toContain("timber");
 		}
-		expect(state.selection).not.toBeNull();
+		for (const label of ["Settings", "Add repository", "Show next session that needs you or is done"]) {
+			const entry = entries.find(candidate => candidate.label === label)!;
+			expect(entry.section).toBe("app");
+			expect(entry.repository).toBeNull();
+		}
 	});
 
 	test("the actions open the dialogs the buttons open", async () => {
@@ -121,7 +134,8 @@ describe("palette entries", () => {
 		const { state } = await sampleState();
 		const unavailable: Repository = { ...state.repositories[0]!, path: "/gone", name: "gone", available: false };
 		const entries = paletteEntries({ ...state, repositories: [...state.repositories, unavailable] });
-		expect(entries.some(entry => entry.detail === "gone")).toBe(false);
+		expect(entries.some(entry => entry.kind === "worktree" && entry.repositoryName === "gone")).toBe(false);
+		expect(entries.some(entry => entry.repository === "/gone")).toBe(false);
 	});
 });
 
@@ -152,7 +166,7 @@ describe("matching", () => {
 	test("the repository name finds its worktrees", async () => {
 		const { state } = await sampleState();
 		const matches = matchEntries(paletteEntries(state), "api-server");
-		expect(matches.some(match => match.entry.kind === "worktree" && match.entry.detail === "api-server")).toBe(true);
+		expect(matches.some(match => match.entry.kind === "worktree" && match.entry.repositoryName === "api-server")).toBe(true);
 	});
 
 	test("a prefix beats a later match and a shorter name beats a longer one", async () => {
@@ -181,6 +195,101 @@ describe("matching", () => {
 		const elapsed = performance.now() - start;
 		expect(matches[0]!.entry.label).toBe("feature/topic-499");
 		expect(elapsed).toBeLessThan(50);
+	});
+});
+
+describe("the view: scoped to the repository, in sections", () => {
+	const API = "/work/api-server";
+	const labelsOf = (view: ReturnType<typeof paletteView>) => view.options.map(match => match.entry.label);
+
+	test("scoped with nothing typed: only this repository and the app, in four sections", async () => {
+		const { state } = await sampleState();
+		const context = paletteScope(state)!;
+		expect(context).toEqual({ repository: TIMBER, repositoryName: "timber", worktreeName: "main" });
+		const view = paletteView(paletteEntries(state), "", context, true);
+		expect(view.groups.map(group => group.heading)).toEqual(["In main", "In timber", "Worktrees in timber", "App"]);
+		for (const { entry } of view.options) expect(entry.repository === null || entry.repository === TIMBER).toBe(true);
+		const worktrees = view.groups[2]!.matches.map(match => match.entry);
+		expect(worktrees.length).toBe(sampleRepositories[0]!.worktrees.length);
+		expect(worktrees.filter(entry => entry.current).map(entry => entry.label)).toEqual(["main"]);
+	});
+
+	test("with nothing typed, actions that cannot run are left out and named in one line", async () => {
+		const { state } = await sampleState();
+		const view = paletteView(paletteEntries(state), "", paletteScope(state), true);
+		expect(view.options.every(match => match.entry.disabledReason === null)).toBe(true);
+		expect(labelsOf(view)).not.toContain("Done");
+		expect(view.unavailable).toContain("Done");
+		expect(view.unavailable).toMatch(/^\d actions are not available here: .*\. Type one to see why\.$/);
+	});
+
+	test("typing finds an action that cannot run, with its reason for the line under the list", async () => {
+		const { state } = await sampleState();
+		const view = paletteView(paletteEntries(state), "done", paletteScope(state), true);
+		const done = view.options.find(match => match.entry.label === "Done")!;
+		expect(done.entry.disabledReason).toBe(DONE_PRIMARY_NOTE);
+		expect(describeHighlighted(done.entry)).toBe(DONE_PRIMARY_NOTE);
+		expect(view.unavailable).toBeNull();
+	});
+
+	test("typing lists this repository first, then other repositories' worktrees, never their actions", async () => {
+		const { state } = await sampleState();
+		const view = paletteView(paletteEntries(state), "rate", paletteScope(state), true);
+		expect(view.groups.map(group => group.heading)).toEqual(["In timber", OTHER_REPOSITORIES]);
+		const others = view.groups[1]!.matches.map(match => match.entry);
+		expect(others.map(entry => entry.label)).toEqual(["feat/rate-limit-headers"]);
+		expect(others.every(entry => entry.kind === "worktree" && entry.repository === API)).toBe(true);
+		const cleanUps = paletteView(paletteEntries(state), "clean up", paletteScope(state), true).options.filter(match => match.entry.label === "Clean up merged");
+		expect(cleanUps.map(match => match.entry.repository)).toEqual([TIMBER]);
+	});
+
+	test("unscoped, every repository's worktrees and each repository's Clean up merged are found", async () => {
+		const { state } = await sampleState();
+		const context = paletteScope(state);
+		const empty = paletteView(paletteEntries(state), "", context, false);
+		expect(empty.groups.map(group => group.heading)).toEqual(["In main", "In timber", "Worktrees", "App"]);
+		const repositories = new Set(empty.groups[2]!.matches.map(match => match.entry.repository));
+		expect(repositories).toEqual(new Set([TIMBER, API]));
+		const typed = paletteView(paletteEntries(state), "clean up", context, false);
+		expect(typed.groups.map(group => group.heading)).toEqual([null]);
+		expect(typed.options.filter(match => match.entry.label === "Clean up merged").map(match => match.entry.repository).sort()).toEqual([API, TIMBER]);
+	});
+
+	test("with no worktree selected it is unscoped, and many unavailable actions are only counted", () => {
+		const state: AppState = { ...initialState, repositories: sampleRepositories };
+		expect(paletteScope(state)).toBeNull();
+		const view = paletteView(paletteEntries(state), "", null, true);
+		expect(view.groups.map(group => group.heading)).toEqual(["Worktrees", "App"]);
+		expect(view.unavailable).toMatch(/^\d+ actions are not available here\. Type one to see why\.$/);
+	});
+
+	test("Clean up merged shows in the repository section, with its count, once something merged", async () => {
+		const { state } = await sampleState();
+		const feature = sampleRepositories[0]!.worktrees[1]!;
+		const merged: AppState = {
+			...state,
+			pullRequests: {
+				...state.pullRequests,
+				[TIMBER]: { ok: true, worktrees: [{ path: feature.path, branch: feature.branch!, outcome: "found", pullRequest: { state: "merged" } as never }] },
+			},
+		};
+		const view = paletteView(paletteEntries(merged), "", paletteScope(merged), true);
+		const cleanUp = view.groups[1]!.matches.find(match => match.entry.label === "Clean up merged")!;
+		expect(cleanUp.entry.detail).toBe("1 merged");
+		expect(view.unavailable ?? "").not.toContain("Clean up merged");
+	});
+
+	test("the limit never lets other repositories push this repository's matches out", async () => {
+		const { state } = await sampleState();
+		const view = paletteView(paletteEntries(state), "e", paletteScope(state), true, 3);
+		expect(view.options.length).toBe(3);
+		expect(view.options.every(match => match.entry.repository !== API)).toBe(true);
+	});
+
+	test("the line for left-out actions", () => {
+		expect(describeUnavailable([])).toBeNull();
+		expect(describeUnavailable(["Done", "Done"])).toBe("1 action is not available here: Done. Type one to see why.");
+		expect(describeUnavailable(["A", "B", "C", "D", "E"])).toBe("5 actions are not available here. Type one to see why.");
 	});
 });
 

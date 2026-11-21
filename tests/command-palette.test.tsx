@@ -20,6 +20,12 @@ async function startedStore() {
 }
 
 const render = (store: ReturnType<typeof createAppStore>) => renderToStaticMarkup(<App store={store} />);
+/** Only the palette's dialog, so the sidebar's rows do not count. */
+const renderPalette = (store: ReturnType<typeof createAppStore>) => {
+	const markup = render(store);
+	const start = markup.indexOf('<dialog class="dialog palette"');
+	return markup.slice(start, markup.indexOf("</dialog>", start));
+};
 const choose = (store: Awaited<ReturnType<typeof startedStore>>, label: string) => {
 	const entry = paletteEntries(store.getState()).find(candidate => candidate.label === label)!;
 	runPaletteEntry(store, entry, size);
@@ -38,12 +44,36 @@ describe("the command palette", () => {
 		expect(markup).toContain("feat/github-issue-lookup");
 	});
 
-	test("a disabled entry shows its reason and is marked disabled", async () => {
+	test("it opens scoped to the selected worktree's repository, in sections, with a line for the highlighted entry", async () => {
 		const store = await startedStore();
 		store.openDialog({ kind: "palette" });
-		const markup = render(store);
-		expect(markup).toMatch(/aria-disabled="true"[^>]*>(<span[^>]*>Done<\/span>)/);
-		expect(markup).toContain("The primary checkout is never removed.");
+		const markup = renderPalette(store);
+		expect(markup).toContain('class="palette-scope"');
+		expect(markup).toContain("Searching timber only. Search every repository");
+		for (const heading of ["In main", "In timber", "Worktrees in timber", "App"]) expect(markup).toContain(`>${heading}</div>`);
+		expect(markup).not.toContain("feat/rate-limit-headers");
+		expect(markup).toContain(`Starts a shell in ${sampleRepositories[0]!.worktrees[0]!.path}.`);
+		expect(markup).toContain("Backspace: all repositories");
+		expect(markup).toContain(">Current</span>");
+	});
+
+	test("an action that cannot run is left out of the list and named in the line under it", async () => {
+		const store = await startedStore();
+		store.openDialog({ kind: "palette" });
+		const markup = renderPalette(store);
+		expect(markup).not.toMatch(/role="option"[^>]*>.*?<span class="palette-label">Done<\/span>/);
+		expect(markup).toMatch(/class="palette-unavailable"[^>]*>[^<]*Done/);
+		expect(markup).not.toContain("The primary checkout is never removed.");
+	});
+
+	test("the rows are the listbox's options, and headings are not", async () => {
+		const store = await startedStore();
+		store.openDialog({ kind: "palette" });
+		const markup = renderPalette(store);
+		const options = markup.match(/role="option"/g)!.length;
+		const ids = [...markup.matchAll(/id="([^"]*-row-(\d+))"/g)].map(match => Number(match[2]));
+		expect(ids).toEqual(Array.from({ length: options }, (_, index) => index));
+		expect(markup).toMatch(/class="palette-heading" aria-hidden="true"/);
 	});
 
 	test("choosing a worktree selects it and closes the palette", async () => {

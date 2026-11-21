@@ -8,7 +8,24 @@ change them here first when they change.
 - One window: a sidebar of worktrees and, opposite it, the workspace for the
   selected worktree. Sidebar side (left or right) is a setting, not a button.
 - No built-in code editor. "Open in editor" launches the configured one.
-- A command palette (Ctrl+Shift+P, Cmd+Shift+P on macOS, or the title bar button) searches every action and worktree. It opens the same dialogs as the buttons, and shows an action that cannot run with the reason.
+- A command palette (Ctrl+Shift+P, Cmd+Shift+P on macOS, or the title bar
+  button) searches actions and worktrees. It opens the same dialogs as the
+  buttons.
+  - With a worktree selected it is scoped to that worktree's repository: a
+    chip in the box names the repository and worktree, and rows do not
+    repeat them. Backspace in the empty box, or the chip, widens it to every
+    repository. With nothing selected it starts unscoped.
+  - With nothing typed, entries are in sections: In the worktree (terminal,
+    agents, Rebase, Open in editor, Done), In the repository (New worktree,
+    Open existing branch, New arena, Fetch now, Clean up merged), the
+    repository's worktrees with the current one marked and their sessions'
+    marks, and App (next session, Settings, Add repository). Actions that
+    cannot run now are left out and named in one line under the list.
+  - Typing ranks matches. Scoped, this repository's come first, then other
+    repositories' worktrees under "Other repositories", never their actions.
+    An action that cannot run is found too, dimmed.
+  - A line under the list says what the highlighted entry does, or why it
+    cannot run.
 - Ctrl+Shift+J (Cmd+Shift+J on macOS) shows the next session that needs
   you, in any repository, the one that has waited longest first, and after
   those the sessions that are done, the one that finished first first. It
@@ -106,7 +123,9 @@ change them here first when they change.
   key on it, opens a menu for that repository, which works the same way. It
   holds Clean up merged, disabled with the reason until at least one linked
   worktree of the repository has a merged pull request. The command palette
-  has the same action, once per repository. While there are merged
+  has the same action, with how many merged: scoped, only its repository's,
+  and unscoped, one per repository. With nothing typed it shows only when
+  it can run. While there are merged
   worktrees, the header also shows a Clean up merged button before Fetch
   now, with how many there are, not counting those already being removed.
 - Timber's backups are listed below a repository's worktrees, under

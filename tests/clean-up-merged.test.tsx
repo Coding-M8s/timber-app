@@ -133,11 +133,12 @@ describe("which worktrees Clean up merged is about", () => {
 	test("the command palette has one entry per repository, never a global one", async () => {
 		const { store } = await startedStore();
 		const entries = paletteEntries(store.getState()).filter(entry => entry.label === "Clean up merged");
-		expect(entries.map(entry => [entry.detail, entry.disabledReason])).toEqual([
-			["In timber", NO_MERGED_REASON],
-			["In api-server", null],
-			["In storefront", null],
+		expect(entries.map(entry => [entry.repositoryName, entry.section, entry.disabledReason])).toEqual([
+			["timber", "repository", NO_MERGED_REASON],
+			["api-server", "repository", null],
+			["storefront", "repository", null],
 		]);
+		expect(entries.map(entry => entry.detail)).toEqual(["", ...entries.slice(1).map(entry => `${mergedCandidates(store.getState().repositories.find(repository => repository.path === entry.repository)!, store.getState().pullRequests[entry.repository!]).length} merged`)]);
 		expect(entries[2]!.action).toEqual({ kind: "dialog", request: { kind: "clean-up-merged", repository: STOREFRONT } });
 	});
 });

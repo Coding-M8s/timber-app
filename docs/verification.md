@@ -2739,3 +2739,27 @@ Run for keeping background reloads cheap (issue 138), Linux x64 with Bun
   from the stamp check, no index writes under `inotifywait`, idle CPU under
   5% of one core) were not taken. The cost of each `timber ls` is
   unchanged; it is Timber's part.
+
+Run for the command palette scoped to the repository (issue 209), Linux x64
+with Bun 1.4.5:
+
+- New tests in `tests/palette.test.ts` cover the view: scoped with nothing
+  typed (only the repository and the app, in four sections, the current
+  worktree marked), unavailable actions left out and named in one line,
+  typing finding them with their reason, other repositories' worktrees
+  after this repository's and never their actions, unscoped and no
+  selection, Clean up merged with its count, and the limit never dropping
+  this repository's matches. `tests/command-palette.test.tsx` checks the
+  chip, the headings, the line under the list, and that only rows are
+  options, numbered in order.
+- `bun run typecheck`: no errors.
+- `bun run typecheck:desktop`: no errors.
+- `bun test`: 2460 passed, 20 skipped, none failed.
+- `bun run build:web`: built.
+- In the mock engine (`vite --port 5174`) in headless Chromium: Ctrl+Shift+P
+  opened the palette scoped to timber with the box focused; typing "rate"
+  listed New worktree, then feat/rate-limit-headers under Other
+  repositories; Backspace in the empty box removed the chip and listed every
+  repository's worktrees; typing "done" showed Done dimmed with "The primary
+  checkout is never removed." under the list.
+- Not run: the desktop window.
