@@ -217,7 +217,7 @@ describe("the chops panel's list and filter", () => {
 	test("says so when nothing matches, and when a tab has none", () => {
 		expect(describeChopsTabEmpty("command", " lint ")).toBe('No commands match "lint".');
 		expect(describeChopsTabEmpty("prompt", "x")).toBe('No prompts match "x".');
-		expect(describeChopsTabEmpty("prompt", "")).toBe("No prompts yet. Add one in Settings, Chops.");
+		expect(describeChopsTabEmpty("prompt", "")).toBe("No prompts yet. Make one with New chop.");
 	});
 
 	test("each source in few words", () => {

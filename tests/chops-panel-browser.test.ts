@@ -43,7 +43,9 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the chops
 		await page.until(PANEL_SHOWN, "the panel showed");
 		await page.until(FOCUS_IN_PANEL, "the panel took the keyboard");
 		expect(await page.evaluate<string | null>(`document.querySelector(${JSON.stringify(BUTTON)}).getAttribute("aria-pressed")`)).toBe("true");
-		// By keyboard: Tab reaches the Close button inside the panel, and Enter hides it.
+		// By keyboard: Tab reaches New chop, then the Close button inside the panel, and Enter hides it.
+		await page.press("Tab");
+		expect(await page.evaluate<string>(ACTIVE)).toBe("New chop");
 		await page.press("Tab");
 		expect(await page.evaluate<string>(ACTIVE)).toBe("Hide the chops panel");
 		await page.press("Enter");
@@ -193,5 +195,140 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the chops
 		expect(await page.evaluate<number>(`${STORE}.getState().terminals.length`)).toBe(0);
 		expect(await page.evaluate<boolean>(`${STORE}.getState().dialog === null`)).toBe(true);
 		expect(await page.evaluate<string>(`${STORE}.getState().tab`)).toBe("changes");
+	}, 30_000);
+
+	const SET_VALUE = (selector: string, value: string) => `(() => {
+		const field = document.querySelector(${JSON.stringify(selector)});
+		const proto = field instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : field instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+		Object.getOwnPropertyDescriptor(proto, "value").set.call(field, ${JSON.stringify(value)});
+		field.dispatchEvent(new Event(field instanceof HTMLSelectElement ? "change" : "input", { bubbles: true }));
+	})()`;
+	const NAME_FIELD = "#chops-panel .chop-editor input[type='text']";
+	const TEXT_FIELD = "#chops-panel .chop-editor textarea";
+	const SAVED_NAMES = `${STORE}.getState().preferences.chops.map(chop => chop.name)`;
+
+	async function openPanel() {
+		await page.evaluate(`${STORE}.select(${STORE}.getState().repositories[0].worktrees[1].id)`);
+		await page.click(BUTTON);
+		await page.until(`document.querySelector('#chops-panel [aria-label="Run Dev server"]') !== null`, "the panel listed the repository's chops");
+	}
+
+	test("New chop makes one inline; a second Enter saves once; the keyboard goes to its Run", async () => {
+		await openPanel();
+		await page.click(`#chops-panel [aria-label="New chop"]`);
+		await page.until(`document.activeElement?.matches(${JSON.stringify(NAME_FIELD)}) === true`, "the form's name took the keyboard");
+		await page.type("Lint");
+		await page.evaluate(SET_VALUE(TEXT_FIELD, "bun run lint"));
+		await page.evaluate(`document.querySelector(${JSON.stringify(NAME_FIELD)}).focus()`);
+		await page.evaluate(`window.chopSaves = 0; const save = ${STORE}.savePreferences; ${STORE}.savePreferences = change => { if (change.chops) window.chopSaves += 1; return save(change); }`);
+		await page.press("Enter");
+		await page.press("Enter");
+		await page.until(`document.querySelector('#chops-panel [aria-label="Run Lint"]') !== null`, "Lint was listed");
+		await page.until(`document.activeElement?.getAttribute("aria-label") === "Run Lint"`, "the keyboard went to Lint's Run");
+		expect(await page.evaluate<number>("window.chopSaves")).toBe(1);
+		expect(await page.evaluate<unknown>(`${STORE}.getState().preferences.chops`)).toEqual([{ name: "Lint", kind: "command", text: "bun run lint", description: "", agent: null, repository: "/work/timber" }]);
+		expect(await page.evaluate<string>(`document.querySelector('#chops-panel [aria-label="Run Lint"]').closest("li").querySelector(".chop-item-meta").textContent`)).toBe("this repository");
+	}, 30_000);
+
+	test("a form half typed survives hiding and showing the panel; Escape cancels it", async () => {
+		await openPanel();
+		await page.click(`#chops-panel [aria-label="New chop"]`);
+		await page.until(`document.activeElement?.matches(${JSON.stringify(NAME_FIELD)}) === true`, "the form opened");
+		await page.type("Half");
+		await page.press("K", "ctrlShift");
+		await page.until(PANEL_HIDDEN, "the panel hid");
+		await page.press("K", "ctrlShift");
+		await page.until(PANEL_SHOWN, "the panel showed");
+		expect(await page.evaluate<string>(`document.querySelector(${JSON.stringify(NAME_FIELD)}).value`)).toBe("Half");
+		await page.evaluate(`document.querySelector(${JSON.stringify(NAME_FIELD)}).focus()`);
+		await page.press("Escape");
+		await page.until(`document.querySelector("#chops-panel .chop-editor") === null`, "Escape cancelled the form");
+		expect(await page.evaluate<string[]>(SAVED_NAMES)).toEqual([]);
+	}, 30_000);
+
+	test("a double click edits your chop in place, and Settings shows the change", async () => {
+		await page.evaluate(`${STORE}.savePreferences({ chops: [{ name: "Hello", kind: "command", text: "pwd", description: "", agent: null, repository: null }] })`);
+		await openPanel();
+		const name = await page.evaluate<{ x: number; y: number }>(`(() => { const box = document.querySelector('#chops-panel [aria-label="Run Hello"]').closest("li").querySelector(".chop-item-name").getBoundingClientRect(); return { x: box.left + 4, y: box.top + box.height / 2 }; })()`);
+		await page.evaluate(`document.querySelector('#chops-panel [aria-label="Run Hello"]').closest("li").querySelector(".chop-item-head").dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: ${name.x}, clientY: ${name.y} }))`);
+		await page.until(`document.querySelector("#chops-panel li .chop-editor") !== null`, "the form opened in place of the row");
+		expect(await page.evaluate<string>(`document.querySelector(${JSON.stringify(NAME_FIELD)}).value`)).toBe("Hello");
+		await page.evaluate(SET_VALUE(TEXT_FIELD, "pwd -P"));
+		await page.click(`#chops-panel .chop-editor button[type="submit"]`);
+		await page.until(`${STORE}.getState().preferences.chops[0]?.text === "pwd -P"`, "the change was saved");
+		await page.evaluate(`${STORE}.openDialog({ kind: "settings", section: "chops" })`);
+		await page.until(`[...document.querySelectorAll(".settings-dialog textarea")].some(field => field.value === "pwd -P")`, "Settings showed the change");
+	}, 30_000);
+
+	test("Shift+F10 opens a row's menu; Delete asks first, Cancel keeps it, Delete removes it", async () => {
+		await page.evaluate(`${STORE}.savePreferences({ chops: [{ name: "Hello", kind: "command", text: "pwd", description: "", agent: null, repository: null }] })`);
+		await openPanel();
+		await page.evaluate(`document.querySelector('#chops-panel [aria-label="Run Hello"]').focus()`);
+		await page.press("F10", "shift");
+		await page.until(`document.querySelector('[role="menu"][aria-label="Actions for Hello"]') !== null`, "the menu opened");
+		expect(await page.evaluate<string[]>(`[...document.querySelectorAll('[role="menu"] [role="menuitem"]')].map(item => item.textContent)`)).toEqual(["Edit", "Delete"]);
+		await page.press("ArrowDown");
+		await page.press("Enter");
+		await page.until(`document.querySelector("#chops-panel .chop-delete") !== null`, "the panel asked before deleting");
+		await page.until(`document.activeElement?.textContent === "Cancel"`, "the keyboard went to Cancel");
+		await page.press("Enter");
+		await page.until(`document.querySelector("#chops-panel .chop-delete") === null`, "Cancel put the question away");
+		expect(await page.evaluate<string[]>(SAVED_NAMES)).toEqual(["Hello"]);
+		await page.click(`#chops-panel [aria-label="Actions for Hello"]`);
+		await page.until(`document.querySelector('[role="menu"]') !== null`, "the menu opened by its button");
+		await page.press("ArrowDown");
+		await page.press("Enter");
+		await page.until(`document.querySelector("#chops-panel .chop-delete") !== null`, "the panel asked again");
+		await page.click(`#chops-panel .chop-delete .button.danger`);
+		await page.until(`${STORE}.getState().preferences.chops.length === 0`, "Hello was deleted");
+		await page.until(`document.querySelector('#chops-panel [aria-label="Run Hello"]') === null`, "Hello left the list");
+	}, 30_000);
+
+	test("a chop from .timber/chops.json is only shown: its menu has View, and the view has no field to change", async () => {
+		await openPanel();
+		await page.evaluate(`document.querySelector('#chops-panel [aria-label="Run Dev server"]').focus()`);
+		await page.press("F10", "shift");
+		await page.until(`document.querySelector('[role="menu"][aria-label="Actions for Dev server"]') !== null`, "the menu opened");
+		expect(await page.evaluate<string[]>(`[...document.querySelectorAll('[role="menu"] [role="menuitem"]')].map(item => item.textContent)`)).toEqual(["View"]);
+		await page.press("Enter");
+		await page.until(`document.querySelector("#chops-panel .chop-editor") !== null`, "the chop was shown");
+		expect(await page.evaluate<number>(`document.querySelectorAll("#chops-panel .chop-editor input, #chops-panel .chop-editor textarea, #chops-panel .chop-editor select").length`)).toBe(0);
+		await page.until(`document.activeElement?.textContent === "Close"`, "the keyboard went to Close");
+		await page.press("Enter");
+		await page.until(`document.querySelector("#chops-panel .chop-editor") === null`, "Close put it away");
+	}, 30_000);
+
+	test("Escape gives the keyboard back to the row's actions; a file chop's View leaves an open form as it is", async () => {
+		await page.evaluate(`${STORE}.savePreferences({ chops: [{ name: "Hello", kind: "command", text: "pwd", description: "", agent: null, repository: null }] })`);
+		await openPanel();
+		await page.click(`#chops-panel [aria-label="Actions for Hello"]`);
+		await page.until(`document.querySelector('[role="menu"]') !== null`, "the menu opened");
+		await page.press("Enter");
+		await page.until(`document.activeElement?.matches(${JSON.stringify(NAME_FIELD)}) === true`, "the edit form took the keyboard");
+		await page.type(" there");
+		// Another chop asked for while a form is open: the form stays, with what was typed.
+		await page.evaluate(`document.querySelector('#chops-panel [aria-label="Run Dev server"]').closest("li").querySelector(".chop-item-head").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))`);
+		await page.until(`document.activeElement?.matches(${JSON.stringify(NAME_FIELD)}) === true`, "the keyboard went back to the form");
+		expect(await page.evaluate<string>(`document.querySelector(${JSON.stringify(NAME_FIELD)}).value`)).toBe("Hello there");
+		await page.press("Escape");
+		await page.until(`document.activeElement?.getAttribute("aria-label") === "Actions for Hello"`, "the keyboard went back to the row");
+		expect(await page.evaluate<string[]>(SAVED_NAMES)).toEqual(["Hello"]);
+	}, 30_000);
+
+	test("a failed save keeps the form and says why; Delete from the form asks, and Cancel goes back to the form", async () => {
+		await page.evaluate(`${STORE}.savePreferences({ chops: [{ name: "Hello", kind: "command", text: "pwd", description: "", agent: null, repository: null }] })`);
+		await openPanel();
+		await page.evaluate(`document.querySelector('#chops-panel [aria-label="Run Hello"]').closest("li").querySelector(".chop-item-head").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))`);
+		await page.until(`document.activeElement?.matches(${JSON.stringify(NAME_FIELD)}) === true`, "the edit form opened");
+		await page.evaluate(SET_VALUE(TEXT_FIELD, "pwd -L"));
+		await page.evaluate(`window.timberTestEngine.failPreferenceSaves("The disk is full.")`);
+		await page.click(`#chops-panel .chop-editor button[type="submit"]`);
+		await page.until(`document.querySelector('#chops-panel .chop-editor [role="alert"]')?.textContent === "Not saved: The disk is full."`, "the failure was shown");
+		expect(await page.evaluate<string>(`document.querySelector(${JSON.stringify(TEXT_FIELD)}).value`)).toBe("pwd -L");
+		await page.click(`#chops-panel .chop-editor-delete`);
+		await page.until(`document.querySelector("#chops-panel .chop-delete") !== null`, "the panel asked before deleting");
+		await page.click(`#chops-panel .chop-delete .button.quiet`);
+		await page.until(`document.querySelector(${JSON.stringify(TEXT_FIELD)})?.value === "pwd -L"`, "Cancel went back to the form with its text");
+		expect(await page.evaluate<string>(`${STORE}.getState().preferences.chops[0].text`)).toBe("pwd");
 	}, 30_000);
 });

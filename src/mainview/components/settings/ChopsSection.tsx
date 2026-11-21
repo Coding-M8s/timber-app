@@ -115,7 +115,7 @@ export function ChopsSectionView({ drafts, saved, useChops, canSave, repositorie
 	return (
 		<SettingsSection
 			title="Chops"
-			description="Saved commands and prompts to run in a worktree, listed in the chops panel beside the workspace while Use chops is on. Yours are kept in the app's settings, for every repository or for one. A repository can share more in .timber/chops.json, which the app only reads."
+			description="Saved commands and prompts to run in a worktree, listed in the chops panel beside the workspace while Use chops is on. Yours are kept in the app's settings, for every repository or for one, and can be made, changed, and deleted here or in the panel. A repository can share more in .timber/chops.json, which the app only reads."
 			save={save}
 			canSave={canSave}
 			onSave={onSave}

@@ -57,7 +57,27 @@ change them here first when they change.
   or, when nothing can run, why. With no worktree selected the chops last
   read stay listed, and Run is disabled with the reason. Running a command
   or sending a prompt shows the Workspace tab; copying leaves the view as
-  it is. Making and ordering chops from the panel come later. "Use chops" in
+  it is. The panel's "+" (New chop) opens a form above the list: the kind,
+  preset from the tab; for this repository or every repository; the name;
+  the command or prompt; the agent for a prompt; and a description. A
+  double click on a row's name, its right-click menu, Shift+F10 or the
+  menu key, or its actions button edits one of the person's own chops in
+  place, or asks before deleting it (Cancel has the keyboard; Escape
+  cancels; asked from the edit form, Cancel goes back to it). Cancel
+  gives the keyboard back to the row. While a save waits, the form takes
+  no change and nothing else opens; a failed save keeps the form and says
+  why. A `.timber/chops.json` chop's menu has only View, which shows
+  it whole, read-only, with a note that making one's own chop with the
+  same name takes its place. The form says when a name takes the place of
+  the file's chop or of the person's chop for every repository. One form
+  at a time; it survives hiding the panel and selecting another
+  repository, and saves for the repository it was opened for. Saving
+  writes the same list Settings, Chops shows, under the same rules, and
+  never the repository file; with the saved settings unreadable, the panel
+  changes nothing and says why. A chop for every repository hidden by one
+  of the same name for this repository is not listed, so it is changed in
+  Settings. With no chops, the panel says so and offers New chop. Sounds,
+  favorites, and ordering come later (#253, #254). "Use chops" in
   Settings, Chops, turns the feature off: no button, panel, or chop
   shortcut, and no chops in the palette, the "+" menu, the empty pane, or
   "Insert chop". The saved chops are kept. The mock's Ctrl+Alt+C was a
@@ -661,7 +681,7 @@ logins. The app never reads a tracker login and never signs in.
   optional description; a prompt can name the agent that gets it, or the
   first saved agent. The person's own chops are rows with Remove and "Add a
   chop", each for every repository or for one, saved with the section's
-  Save. Below, "From the repository" lists the chops the selected
+  Save. The chops panel makes, changes, and deletes the same chops. Below, "From the repository" lists the chops the selected
   worktree's repository shares in `.timber/chops.json` in its main
   checkout, read-only, with the file's path. Chops belong to a repository,
   not to a worktree: every worktree of it shows the same list, and a

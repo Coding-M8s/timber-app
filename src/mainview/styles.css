@@ -310,6 +310,77 @@ pre:focus-visible {
 	cursor: default;
 }
 
+/* Making, changing, or deleting a chop in the panel: above the list, or in place of its row. */
+.chop-editor {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin: 0 0 12px;
+	padding: 10px;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: var(--bg-pane);
+}
+
+.chops-panel-item .chop-editor {
+	margin: 0;
+}
+
+.chop-editor-title {
+	margin: 0;
+	font-size: 12.5px;
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+
+.chop-editor-pair {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.chop-editor-pair > .field {
+	flex: 1 1 120px;
+	min-width: 0;
+}
+
+.chop-editor-actions {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	align-items: center;
+	gap: 8px;
+}
+
+.chop-editor-delete {
+	margin-right: auto;
+}
+
+.chop-editor-delete[aria-disabled="true"],
+.button.danger[aria-disabled="true"] {
+	opacity: 0.5;
+	cursor: default;
+}
+
+.chop-delete-question {
+	margin: 0;
+	font-size: 12.5px;
+	overflow-wrap: anywhere;
+}
+
+.chops-panel-actions {
+	flex: none;
+}
+
+.chops-panel-new[aria-disabled="true"] {
+	opacity: 0.5;
+	cursor: default;
+}
+
+.chops-panel-empty-new {
+	margin-top: 8px;
+}
+
 .chops-panel-footer {
 	flex: none;
 	margin: 0;
