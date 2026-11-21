@@ -472,14 +472,29 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 			if (result.outcome !== "opened") throw new Error(`Not opened: ${JSON.stringify(result)}`);
 			return result.session;
 		}
+		// Gives up before the test's own 5 second timeout, so a failure says what was printed.
 		const shows = async (id: string, expected: string) => {
-			if (!await until(() => printed(id).includes(expected))) throw new Error(`Did not see ${expected}. Printed: ${JSON.stringify(printed(id))}`);
+			if (!await until(() => printed(id).includes(expected), 4000)) throw new Error(`Did not see ${expected}. Printed: ${JSON.stringify(printed(id))}`);
 		};
 
+		/**
+		 * Start sessions in a shell that never asks for bracketed paste: it
+		 * prints a prompt and runs each line it reads. `/bin/sh` will not do,
+		 * as it is bash on some systems, and bash asks for bracketed paste
+		 * even when started as `sh`.
+		 */
+		function startPlainShell(overrides: Partial<TerminalDependencies> = {}): string {
+			const shell = join(root, "plain-shell");
+			writeFileSync(shell, `#!/bin/sh\nwhile printf '$ ' && IFS= read -r line; do eval "$line"; done\n`);
+			chmodSync(shell, 0o755);
+			start({ environment: { PATH: process.env.PATH, HOME: root, SHELL: shell, LANG: "C.UTF-8" }, ...overrides });
+			return shell;
+		}
+
 		test("runs in a shell named after it, whatever the naming, typed line by line when the shell has no bracketed paste, and the shell stays", async () => {
-			start({ chopWaitMilliseconds: 100, sessionNaming: async () => "branch" });
+			const shell = startPlainShell({ chopWaitMilliseconds: 100, sessionNaming: async () => "branch" });
 			const session = await openedChop("Two lines", "echo chop-$((40 + 2))\necho second-$((1 + 1))");
-			expect(session).toMatchObject({ kind: "terminal", name: "Two lines", path: worktree, shell: "/bin/sh" });
+			expect(session).toMatchObject({ kind: "terminal", name: "Two lines", path: worktree, shell });
 			await shows(session.id, "chop-42");
 			await shows(session.id, "second-2");
 			// The command ended; the shell is still there, so it can be run again.
@@ -500,15 +515,18 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 		});
 
 		test("a shell that prints its prompt without asking for bracketed paste gets the chop once it is quiet, not after the longest wait", async () => {
-			start({ chopWaitMilliseconds: 60_000, chopQuietMilliseconds: 100 });
+			startPlainShell({ chopWaitMilliseconds: 60_000, chopQuietMilliseconds: 100 });
 			const session = await openedChop("Quick", "echo quick-$((3 + 4))");
 			await shows(session.id, "quick-7");
 		});
 
 		test("a tab is not typed into a shell without bracketed paste, where it would complete, and the session says why", async () => {
-			start({ chopWaitMilliseconds: 50 });
+			startPlainShell({ chopWaitMilliseconds: 50 });
 			const session = await openedChop("Tabbed", "printf 'a\tb'");
 			await shows(session.id, CHOP_NOT_TYPED);
+			// Nothing of the chop reached the shell, neither echoed nor run.
+			await Bun.sleep(200);
+			expect(printed(session.id)).not.toContain("a\tb");
 			expect(sessions.list().find(listed => listed.id === session.id)?.state).toEqual({ kind: "running" });
 		});
 

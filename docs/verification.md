@@ -2885,3 +2885,24 @@ main at `0ba893c` and addressing the review:
   real Claude Code and Codex sessions, and the reload check in
   `bun run dev:web`, were seen only through the tests of the main process
   parts, the store, and the mock engine. Windows and macOS.
+
+Run for the command chop tests' shell (issue 221), Linux x64 (Omarchy) with
+Bun 1.4.5, where `/bin/sh` is bash 5.3.20, which turns on bracketed paste
+even when started as `sh`, on main at `b664d18`:
+
+- Before: `bun test tests/terminals.test.ts` on main at `4f913bd` had 63
+  passed, 1 failed,
+  1 error. The tab test's chop went in as a bracketed paste and ran, so the
+  message it waited for never came. Its wait of 5 seconds matched the test's
+  own timeout, so it gave up only after the next test had cleared the
+  output, which is why the error showed `Printed: ""`.
+- The tab test, the line by line test, and the quiet prompt test now start a
+  stand-in shell that prompts and runs each line it reads, and never asks
+  for bracketed paste. The chop tests' wait is 4 seconds, inside the test.
+- Broken on purpose, then restored: with `chopRunBytes` typing a tab, the tab
+  test failed; with it always pasting, those three tests failed.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 2806 passed, 24 skipped, 0 failed, no errors.
+- `bun run build:web`: built.
+- Not run here: a machine where `/bin/sh` is dash. CI runs `bun test` on
+  ubuntu-24.04, where it is.
