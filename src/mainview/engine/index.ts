@@ -39,6 +39,7 @@ export async function createEngine(): Promise<Engine> {
 	// For Restart now after saving a setting read at start: timberMock.endRestarts("fails") or ("unavailable"), and
 	// timberMock.restartCount() counts the restarts acted out. Nothing quits.
 	// For the Changes tab: timberMock.failFileChanges("Git is busy"), or timberMock.setFileChanges(path, files).
+	// For the file viewer: timberMock.setWorktreeFile(worktree, "notes.md", "text"), { kind: "bytes", bytes: [0] }, or null for a missing file.
 	// For themes: timberMock.setThemeImport(text) gives Import a file, and timberMock.exportedThemes() lists what Export wrote.
 	// For agent sessions: timberMock.missingExecutables(["codex"]) acts out an agent that is not on the PATH.
 	// For timber new typed in a terminal: timberMock.typeTimberNew("/work/timber", "feat/x", true) hands a new worktree to the app.

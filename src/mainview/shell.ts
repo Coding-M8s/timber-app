@@ -53,24 +53,30 @@ export const TAB_LABELS: Record<WorkspaceTab, string> = {
 	workspace: "Workspace",
 	changes: "Changes",
 	"pull-request": "Pull request",
+	file: "File",
 };
+
+/** The tabs a worktree shows: File only while a file is open there. */
+export function visibleTabs(fileOpen: boolean): WorkspaceTab[] {
+	return WORKSPACE_TABS.filter(tab => tab !== "file" || fileOpen);
+}
 
 /**
  * The tab a key moves to from `current`: the arrows step and wrap around, Home
  * and End jump to the first and the last. Null for any other key.
  */
-export function tabAfterKey(current: WorkspaceTab, key: string): WorkspaceTab | null {
-	const count = WORKSPACE_TABS.length;
-	const index = WORKSPACE_TABS.indexOf(current);
+export function tabAfterKey(current: WorkspaceTab, key: string, tabs: readonly WorkspaceTab[] = visibleTabs(false)): WorkspaceTab | null {
+	const count = tabs.length;
+	const index = Math.max(0, tabs.indexOf(current));
 	switch (key) {
 		case "ArrowRight":
-			return WORKSPACE_TABS[(index + 1) % count]!;
+			return tabs[(index + 1) % count]!;
 		case "ArrowLeft":
-			return WORKSPACE_TABS[(index + count - 1) % count]!;
+			return tabs[(index + count - 1) % count]!;
 		case "Home":
-			return WORKSPACE_TABS[0];
+			return tabs[0]!;
 		case "End":
-			return WORKSPACE_TABS[count - 1]!;
+			return tabs[count - 1]!;
 		default:
 			return null;
 	}

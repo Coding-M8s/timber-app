@@ -1,4 +1,4 @@
-import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { findTimber } from "../../src/bun/timber";
@@ -462,7 +462,7 @@ export function fingerprint(folder: string): string {
 		for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
 			const path = join(directory, entry.name);
 			if (entry.isDirectory()) walk(path);
-			else files.push(`${path} ${statSync(path).size} ${statSync(path).mtimeMs}`);
+			else files.push(`${path} ${lstatSync(path).size} ${lstatSync(path).mtimeMs}`);
 		}
 	};
 	walk(folder);

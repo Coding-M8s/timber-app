@@ -2943,6 +2943,53 @@ checks a ref.
   the saved base unchanged. `tests/set-base.test.tsx` covers the control,
   the dialog, the mock, and the store.
 
+## The file viewer
+
+The File tab shows one file of a worktree, read-only, such as a plan or a
+report an agent wrote.
+
+- **The capability.** `readWorktreeFile({ repository, worktree, path })` on
+  the `Engine` contract. Types and pure checks are in
+  `src/shared/worktree-files.ts`, the main process side is
+  `src/bun/worktree-files.ts`. It acts only on a worktree Timber lists, in a
+  repository in the app's list, whose folder is there
+  (`findListedWorktree`). It runs no Git and writes nothing; a test on a
+  real repository compares files, refs, worktrees, status, and the index
+  bytes before and after every kind of read.
+- **Staying inside.** The path must be relative and must not step out
+  (`relativePathProblem`). Then the real path of the file, every link
+  followed, must be inside the real path of the worktree, so a link to a
+  file elsewhere is refused as "outside" without reading it. A link whose
+  target is gone is "missing".
+- **What is read.** Only a plain file: a folder or a pipe is refused before
+  it is opened, and the file is opened without blocking and checked again.
+  At most `MAX_FILE_BYTES` (1 MiB) and one more byte are read, whatever size
+  the file claimed, so a file still growing is refused too. A NUL byte or
+  bytes that are not UTF-8 make it binary. More than `MAX_FILE_LINES`
+  (20,000) lines is too large.
+- **In the window.** The open file of each worktree is in the store
+  (`files`, by worktree identity), never saved. The File tab is listed only
+  while its worktree has one (`visibleTabs`); when the selected worktree has
+  none, or its worktree leaves the list, the store shows the Workspace tab
+  instead (`settleFiles`). The numbers and the text are two blocks side by
+  side, not an element per line, so 20,000 lines draw quickly. The latest
+  read of each worktree's file wins.
+- **Opening a file.** "View file" beside a diff in the Changes tab, for a
+  file that is on disk. In a terminal, a link provider finds paths in each
+  row (`findFilePaths` in `src/mainview/terminal-paths.ts`): a name with an
+  extension, with or without folders, relative or absolute, maybe followed
+  by `:line` or `:line:column`, never inside a web address. Ctrl+click (Cmd
+  on macOS) opens it, as for links, and hovering it keeps the click from a
+  program that tracks the mouse. A relative path is taken from the
+  worktree's folder, not the shell's current folder, which the app does
+  not know. A path that wraps onto the next row is not found. An absolute
+  path outside the worktree is refused in the window, without a read.
+- **Trying it.** In `bun run dev:web` every worktree has `docs/plan.md`,
+  `report.txt`, `logo.png` (binary), and a `docs` folder, besides its
+  changed files. `timberMock.setWorktreeFile(worktreePath, path, text)` puts
+  a file there, `{ kind: "bytes", bytes: [0] }` a binary one, and `null`
+  removes it.
+
 ## Review notes
 
 Notes on lines of a diff in the Changes tab, sent to an agent as one

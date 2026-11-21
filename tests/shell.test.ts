@@ -7,7 +7,7 @@ import type { Layout } from "../src/shared/layout";
 import type { SaveLayoutResult, SavePreferencesResult } from "../src/shared/model";
 import { type Preferences, defaultPreferences } from "../src/shared/preferences";
 import { createMockEngine } from "../src/mainview/engine/mock";
-import { SIDEBAR_KEY_STEP, describeLayoutProblem, describeRepository, sidebarWidthAfterDrag, sidebarWidthAfterKey, tabAfterKey } from "../src/mainview/shell";
+import { SIDEBAR_KEY_STEP, describeLayoutProblem, describeRepository, sidebarWidthAfterDrag, sidebarWidthAfterKey, tabAfterKey, visibleTabs } from "../src/mainview/shell";
 import { createAppStore } from "../src/mainview/store/store";
 import { defaultFetchSetting } from "../src/shared/fetch-setting";
 import { defaultThemeChoice } from "../src/shared/theme";
@@ -34,6 +34,16 @@ describe("tabAfterKey", () => {
 
 	test("any other key is left alone", () => {
 		for (const key of ["Tab", "Enter", " ", "ArrowDown", "a"]) expect(tabAfterKey("workspace", key)).toBeNull();
+	});
+
+	test("the File tab is reached only while a file is open", () => {
+		expect(visibleTabs(false)).toEqual(["workspace", "changes", "pull-request"]);
+		expect(visibleTabs(true)).toEqual(["workspace", "changes", "pull-request", "file"]);
+		const open = visibleTabs(true);
+		expect(tabAfterKey("pull-request", "ArrowRight", open)).toBe("file");
+		expect(tabAfterKey("file", "ArrowRight", open)).toBe("workspace");
+		expect(tabAfterKey("workspace", "End", open)).toBe("file");
+		expect(tabAfterKey("pull-request", "ArrowRight")).toBe("workspace");
 	});
 });
 

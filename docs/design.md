@@ -417,6 +417,16 @@ logins. The app never reads a tracker login and never signs in.
   shows the new base as elsewhere in Changes (`name @ hash`, or a commit
   base by its short hash), and the workspace header and the row's tooltip
   name the new base. A remote base shows there only once it is fetched.
+- File viewer: a File tab after Pull request shows one file of the worktree,
+  read-only, with line numbers, in the terminal's font. The tab is there only
+  while a file is open in that worktree, named after the file, with a close
+  button beside it; closing goes back to the tab the file was opened from.
+  A file opens from "View file" beside the diff in the Changes tab, or by
+  Ctrl+click (Cmd+click on macOS) on a file path in a terminal, read from
+  the worktree's folder. Binary files, files over 1 MB or 20,000 lines,
+  missing files, folders, and paths outside the worktree get a plain notice
+  in place of the text. "Read again" reads it as it is now. This is a
+  viewer, not an editor.
 - Review notes: in the Changes tab, clicking a line's numbers (or Enter on
   them) starts a note on that line, in either comparison, and Shift+click
   or Shift+Enter on another line of the same hunk makes it a range. A note

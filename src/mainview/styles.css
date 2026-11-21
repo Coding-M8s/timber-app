@@ -2750,6 +2750,26 @@ pre:focus-visible {
 	background: var(--text);
 }
 
+/* Closes the File tab beside it. */
+.tab-close {
+	align-self: center;
+	width: 22px;
+	height: 22px;
+	margin-left: -6px;
+	padding: 0;
+	border: 0;
+	border-radius: 5px;
+	background: transparent;
+	color: var(--text-3);
+	font-size: 15px;
+	line-height: 1;
+}
+
+.tab-close:hover {
+	background: var(--fill-hover);
+	color: var(--text);
+}
+
 .tab:focus-visible,
 .tabpanel:focus-visible {
 	outline: 2px solid var(--focus);
@@ -6058,4 +6078,58 @@ pre:focus-visible {
 	.board-cards {
 		overflow-y: visible;
 	}
+}
+
+/* The File tab: one file, read-only, numbers beside the text. */
+.file-viewer {
+	flex: 1 1 auto;
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+}
+
+/* Only the first of the buttons in a title line is pushed to the end; the rest follow it. */
+.diff-editor + .diff-editor {
+	margin-left: 0;
+}
+
+.file-viewer-body {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow: auto;
+	line-height: 1.5;
+}
+
+.file-viewer-body:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: -2px;
+}
+
+/* Wide lines scroll sideways with the numbers, which stay lined up with their lines. */
+.file-viewer-lines {
+	display: flex;
+	min-width: max-content;
+	padding: 6px 0 12px;
+}
+
+.file-viewer-numbers,
+.file-viewer-text {
+	margin: 0;
+	font: inherit;
+	line-height: inherit;
+	white-space: pre;
+	tab-size: 4;
+}
+
+.file-viewer-numbers {
+	flex: none;
+	padding: 0 1.5ch 0 1ch;
+	text-align: right;
+	color: var(--text-3);
+	user-select: none;
+}
+
+.file-viewer-text {
+	padding-right: 12px;
+	color: var(--text);
 }

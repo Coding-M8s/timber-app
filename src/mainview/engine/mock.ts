@@ -39,6 +39,7 @@ import { actOutSetBase } from "./mock-base";
 import { type PullRequestEnding, actOutPullRequest, isPullRequestEnding } from "./mock-pr";
 import type { CreatePullRequestResult } from "../../shared/timber-pr";
 import { type MockFileChange, derivedFileChanges, diffMockFileChange, listMockFileChanges } from "./mock-file-changes";
+import { type MockWorktreeFile, createMockWorktreeFiles } from "./mock-worktree-files";
 import { MOCK_PATH, type TerminalControls, createMockTerminals } from "./mock-terminals";
 import { type AppUpdateInstallRequest, type AppUpdateState, UPDATES_FROM_SOURCE } from "../../shared/app-update";
 import type { MockSessionStorage } from "./mock-session-storage";
@@ -478,6 +479,13 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	/** Make every later read of changed files and diffs fail with this message, or pass null to let them work again. */
 	failFileChanges(message: string | null): void;
 	/**
+	 * Put a file on the pretend disk of the worktree at `worktree`, for the
+	 * file viewer: its text, bytes that are not text, or a folder. Pass null
+	 * to remove it, so the viewer says it is missing. `failFileChanges` makes
+	 * these reads fail too.
+	 */
+	setWorktreeFile(worktree: string, path: string, file: MockWorktreeFile | null): void;
+	/**
 	 * Decide how fetches end from now on: "fetches" (the start), or failing as
 	 * "offline", "authentication", or "failed". The mock fetches nothing in the
 	 * background; only Fetch now runs one.
@@ -846,6 +854,7 @@ export function createMockEngine(
 		return { ok: true, worktree: target };
 	};
 	const filesOf = (worktree: Worktree) => fileChangeLists.get(worktree.path) ?? derivedFileChanges(worktree);
+	const worktreeFiles = createMockWorktreeFiles();
 	const chopFiles = createMockChops();
 	/** As the main process: a repository in the list, its main checkout's file. The mock's main checkouts are always there. */
 	const listMockChops = (repositoryPath: string): ChopList => {
@@ -1232,6 +1241,11 @@ export function createMockEngine(
 			if (!listed.ok) return { outcome: listed.outcome, message: listed.message };
 			return diffMockFileChange(filesOf(listed.worktree), listed.worktree, structuredClone(request));
 		},
+		async readWorktreeFile(request) {
+			const listed = listedForChanges(request.repository, request.worktree);
+			if (!listed.ok) return { outcome: listed.outcome, message: listed.message.replace("No changes were read.", "The file was not read.").replace("so no changes were read", "so the file was not read") };
+			return worktreeFiles.read(listed.worktree.path, request.path, filesOf(listed.worktree));
+		},
 		async listChops(request) {
 			return listMockChops(request.repository);
 		},
@@ -1257,6 +1271,9 @@ export function createMockEngine(
 		},
 		failFileChanges(message) {
 			fileChangeFailure = message;
+		},
+		setWorktreeFile(worktree, path, file) {
+			worktreeFiles.set(worktree, path, structuredClone(file));
 		},
 		setChanges(path, files) {
 			if (files.ignored) ignored.set(path, files.ignored);

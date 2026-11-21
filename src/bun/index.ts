@@ -25,6 +25,7 @@ import { createChops } from "./chops";
 import { createSavedChopApprovals } from "./chop-approvals";
 import { createChopsWatcher } from "./chops-watcher";
 import { createFileChanges } from "./file-changes";
+import { createWorktreeFiles } from "./worktree-files";
 import { createPorts } from "./ports";
 import { createWorktreePaths } from "./worktree-paths";
 import { readBranches } from "./git-engine";
@@ -251,6 +252,7 @@ void watchRepositories();
 
 const done = createDone({ timber: () => timber.current(), findRepository: path => repositories.find(path) });
 const fileChanges = createFileChanges({ findRepository: path => repositories.findRecent(path) });
+const worktreeFiles = createWorktreeFiles({ findRepository: path => repositories.findRecent(path) });
 // Personal chops come from the saved preferences only; the repository's are read from its main checkout's file on every request.
 // A chop's text comes from that read only, never from the window; a repository chop runs once its text is approved (see ./chops.ts).
 const chopApprovals = createSavedChopApprovals(settings);
@@ -558,6 +560,8 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			// Read-only Git, only in a worktree Timber lists (see ./file-changes.ts). A diff holds file contents: never log it.
 			readFileChanges: request => fileChanges.read(request),
 			readFileDiff: request => fileChanges.diff(request),
+			// Reads one file, only inside a worktree Timber lists, links included (see ./worktree-files.ts). It holds file contents: never log it.
+			readWorktreeFile: request => worktreeFiles.read(request),
 			// Read-only Docker and process table, only in a worktree Timber lists, never while the window is hidden (see ./ports.ts).
 			readPorts: request => ports.read(request),
 			listChops: request => chops.list(request),
