@@ -1,3 +1,4 @@
+import type { TimberSource } from "../src/shared/model";
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
@@ -133,22 +134,32 @@ describe("the licenses", () => {
 
 describe("About", () => {
 	test("lists the app's version and the Timber in use, with where it was found", () => {
-		expect(aboutRows("0.4.0", { known: true, status: { state: "ready", path: "/usr/bin/timber", version: "0.1.2" } })).toEqual([
+		expect(aboutRows("0.4.0", { known: true, status: { state: "ready", source: "path", path: "/usr/bin/timber", version: "0.1.2" } })).toEqual([
 			{ label: "Timber app", value: "0.4.0", mono: true, note: null },
-			{ label: "Timber", value: "0.1.2", mono: true, note: "/usr/bin/timber" },
+			{ label: "Timber", value: "0.1.2", mono: true, note: "Found on PATH: /usr/bin/timber" },
 		]);
+	});
+
+	test("says whether the Timber in use is the bundled one, the chosen one, or the override", () => {
+		const note = (source: TimberSource) => aboutRows(null, { known: true, status: { state: "ready", source, path: "/t", version: "0.1.4" } })[1]!.note;
+		expect(note("bundled")).toBe("Bundled with the app: /t");
+		expect(note("setting")).toBe("Chosen in Settings: /t");
+		expect(note("override")).toBe("From TIMBER_APP_TIMBER_PATH: /t");
+		expect(aboutRows(null, { known: true, status: { state: "not-found", source: "setting", path: "/t" } })[1]).toEqual({
+			label: "Timber", value: "Did not answer", mono: false, note: "Chosen in Settings: /t",
+		});
 	});
 
 	test("says so when a version is not known yet, or Timber is missing, too old, or could not be looked for", () => {
 		const timberRow = (...parameters: Parameters<typeof aboutRows>) => aboutRows(...parameters)[1]!;
 		expect(aboutRows(null, null)[0]).toEqual({ label: "Timber app", value: "Version not known", mono: false, note: null });
 		expect(timberRow(null, null).value).toBe("Looking for Timber");
-		expect(timberRow(null, { known: true, status: { state: "not-found", override: null } }).value).toBe("Not installed");
-		expect(timberRow(null, { known: true, status: { state: "too-old", path: "/usr/bin/timber", found: "0.1.0", required: "0.1.2" } })).toEqual({
+		expect(timberRow(null, { known: true, status: { state: "not-found", source: "path", path: null } }).value).toBe("Not installed");
+		expect(timberRow(null, { known: true, status: { state: "too-old", source: "path", path: "/usr/bin/timber", found: "0.1.0", required: "0.1.2" } })).toEqual({
 			label: "Timber",
 			value: "0.1.0",
 			mono: true,
-			note: "Too old: the app needs 0.1.2 or newer. Found at /usr/bin/timber",
+			note: "Too old: the app needs 0.1.2 or newer. Found on PATH: /usr/bin/timber",
 		});
 		expect(timberRow(null, { known: false, message: "spawn failed" })).toEqual({ label: "Timber", value: "Could not look for Timber", mono: false, note: "spawn failed" });
 	});

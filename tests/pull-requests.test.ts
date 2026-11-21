@@ -81,7 +81,7 @@ describe("createPullRequestReader", () => {
 	});
 
 	test("nothing runs while Timber is not ready", async () => {
-		const reader = createPullRequestReader({ timber: async () => ({ state: "not-found", override: null }), isListed: listed([folder]) });
+		const reader = createPullRequestReader({ timber: async () => ({ state: "not-found", source: "path", path: null }), isListed: listed([folder]) });
 		expect(await reader.read(folder)).toEqual({ ok: false, message: "Timber was not found on PATH." });
 	});
 

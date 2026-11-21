@@ -986,7 +986,7 @@ sleep 5
 			start({
 				environment: { PATH: `${bin}:${process.env.PATH}`, HOME: root, SHELL: "/bin/sh", PS1: "$ ", LANG: "C.UTF-8" },
 				agents: async () => agents,
-				timber: async () => ({ state: "ready", path: join(bin, "timber"), version: "0.1.1" }),
+				timber: async () => ({ state: "ready", source: "path", path: join(bin, "timber"), version: "0.1.1" }),
 				conversations: {
 					claudeExists: id => (asked.push(`claude:${id}`), existing.has(id)),
 					codexExists: id => (asked.push(`codex:${id}`), existing.has(id)),

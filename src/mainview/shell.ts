@@ -22,12 +22,13 @@ export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
 	notifications: "Notifications",
 	fetch: "Fetching",
 	about: "About",
+	executable: "Executable",
 	machine: "Machine",
 	repository: "Repository",
 };
 
-/** Sections that show Timber's own settings, listed under a heading of their own. */
-export const TIMBER_SETTINGS_SECTIONS: readonly SettingsSection[] = ["machine", "repository"];
+/** Sections about Timber, listed under a heading of their own: which Timber runs, then Timber's own settings. */
+export const TIMBER_SETTINGS_SECTIONS: readonly SettingsSection[] = ["executable", "machine", "repository"];
 
 /**
  * How the list down the side of Settings groups its sections, top to bottom.

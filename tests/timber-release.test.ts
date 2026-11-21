@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LATEST_RELEASE_URL, createReleaseWatcher, lookUpLatestRelease, readSavedRelease, releaseFilePath, timberFinder } from "../src/bun/timber-release";
-import type { TimberStatus } from "../src/shared/model";
+import type { TimberSource, TimberStatus } from "../src/shared/model";
 import { newerTimberVersion, readReleaseLocation, satisfiesTimberVersion } from "../src/shared/timber-version";
 import { describeTimberProblem, describeTimberUpdate } from "../src/mainview/format";
 import { createMockEngine } from "../src/mainview/engine/mock";
@@ -99,29 +99,33 @@ describe("the saved release", () => {
 	});
 });
 
+type Candidate = { source: TimberSource; path: string | null };
+const onPath = (): Candidate => ({ source: "path", path: "/bin/timber" });
+
 describe("timberFinder", () => {
 	/** A pretend Timber of `version`, judged against whatever is required, as findTimber does. */
 	const timberOf = (version: { current: string }) => {
 		const asked: string[] = [];
-		const look = async (required: string): Promise<TimberStatus> => {
+		const look = async (candidate: Candidate, required: string): Promise<TimberStatus> => {
 			asked.push(required);
+			const { source } = candidate;
 			return satisfiesTimberVersion(version.current, required)
-				? { state: "ready", path: "/bin/timber", version: version.current }
-				: { state: "too-old", path: "/bin/timber", found: version.current, required };
+				? { state: "ready", source, path: "/bin/timber", version: version.current }
+				: { state: "too-old", source, path: "/bin/timber", found: version.current, required };
 		};
 		return { look, asked };
 	};
 
 	test("requires the newest release known on start", async () => {
 		const { look } = timberOf({ current: "0.1.3" });
-		const find = timberFinder({ look, latest: () => "0.1.4", override: false });
-		expect(await find()).toEqual({ state: "too-old", path: "/bin/timber", found: "0.1.3", required: "0.1.4", latestRelease: true });
+		const find = timberFinder({ look, latest: () => "0.1.4", choose: onPath });
+		expect(await find()).toEqual({ state: "too-old", source: "path", path: "/bin/timber", found: "0.1.3", required: "0.1.4", latestRelease: true });
 	});
 
 	test("with no release known, offline on a first start, the built-in minimum is enough", async () => {
 		const { look, asked } = timberOf({ current: "0.1.2" });
-		const find = timberFinder({ look, latest: () => null, override: false, minimum: "0.1.2" });
-		expect(await find()).toEqual({ state: "ready", path: "/bin/timber", version: "0.1.2" });
+		const find = timberFinder({ look, latest: () => null, choose: onPath, minimum: "0.1.2" });
+		expect(await find()).toEqual({ state: "ready", source: "path", path: "/bin/timber", version: "0.1.2" });
 		expect(asked).toEqual(["0.1.2"]);
 	});
 
@@ -129,35 +133,54 @@ describe("timberFinder", () => {
 		const version = { current: "0.1.3" };
 		let latest = "0.1.3";
 		const { look } = timberOf(version);
-		const find = timberFinder({ look, latest: () => latest, override: false });
-		expect(await find()).toEqual({ state: "ready", path: "/bin/timber", version: "0.1.3" });
+		const find = timberFinder({ look, latest: () => latest, choose: onPath });
+		expect(await find()).toEqual({ state: "ready", source: "path", path: "/bin/timber", version: "0.1.3" });
 
 		latest = "0.1.4";
-		expect(await find()).toEqual({ state: "ready", path: "/bin/timber", version: "0.1.3", newerRelease: "0.1.4" });
+		expect(await find()).toEqual({ state: "ready", source: "path", path: "/bin/timber", version: "0.1.3", newerRelease: "0.1.4" });
 		// Updated, then Check again: the banner goes.
 		version.current = "0.1.4";
-		expect(await find()).toEqual({ state: "ready", path: "/bin/timber", version: "0.1.4" });
+		expect(await find()).toEqual({ state: "ready", source: "path", path: "/bin/timber", version: "0.1.4" });
 	});
 
 	test("once Timber is not usable, each look requires the newest release known", async () => {
 		const version = { current: "0.1.2" };
 		let latest = "0.1.3";
 		const { look, asked } = timberOf(version);
-		const find = timberFinder({ look, latest: () => latest, override: false });
+		const find = timberFinder({ look, latest: () => latest, choose: onPath });
 		expect((await find()).state).toBe("too-old");
 		latest = "0.1.4";
 		version.current = "0.1.3";
 		expect(await find()).toMatchObject({ state: "too-old", required: "0.1.4" });
 		version.current = "0.1.4";
-		expect(await find()).toEqual({ state: "ready", path: "/bin/timber", version: "0.1.4" });
+		expect(await find()).toEqual({ state: "ready", source: "path", path: "/bin/timber", version: "0.1.4" });
 		expect(asked).toEqual(["0.1.3", "0.1.4", "0.1.4"]);
 	});
 
 	test("the development override needs only the built-in minimum, and gets no banner", async () => {
 		const { look, asked } = timberOf({ current: "0.1.2" });
-		const find = timberFinder({ look, latest: () => "0.1.3", override: true, minimum: "0.1.2" });
-		expect(await find()).toEqual({ state: "ready", path: "/bin/timber", version: "0.1.2" });
+		const find = timberFinder({ look, latest: () => "0.1.3", choose: () => ({ source: "override" as const, path: "/bin/timber" }), minimum: "0.1.2" });
+		expect(await find()).toEqual({ state: "ready", source: "override", path: "/bin/timber", version: "0.1.2" });
 		expect(asked).toEqual(["0.1.2"]);
+	});
+
+	test("the bundled Timber needs only the built-in minimum, and gets no banner, however new the newest release", async () => {
+		const { look, asked } = timberOf({ current: "0.1.3" });
+		const find = timberFinder({ look, latest: () => "0.9.0", choose: () => ({ source: "bundled" as const, path: "/app/timber/timber" }), minimum: "0.1.3" });
+		expect(await find()).toEqual({ state: "ready", source: "bundled", path: "/bin/timber", version: "0.1.3" });
+		expect(asked).toEqual(["0.1.3"]);
+	});
+
+	test("choosing another Timber requires the newest release of it at once, even while the last one was usable", async () => {
+		const { look, asked } = timberOf({ current: "0.1.3" });
+		let chosen: Candidate = { source: "bundled", path: "/app/timber/timber" };
+		const find = timberFinder({ look, latest: () => "0.1.4", choose: () => chosen, minimum: "0.1.3" });
+		expect(await find()).toMatchObject({ state: "ready", source: "bundled" });
+		chosen = { source: "setting", path: "/opt/timber" };
+		expect(await find()).toMatchObject({ state: "too-old", source: "setting", required: "0.1.4", latestRelease: true });
+		chosen = { source: "bundled", path: "/app/timber/timber" };
+		expect(await find()).toMatchObject({ state: "ready", source: "bundled" });
+		expect(asked).toEqual(["0.1.3", "0.1.4", "0.1.3"]);
 	});
 
 	test("waits for the lookup on start before the first look only", async () => {
@@ -165,7 +188,7 @@ describe("timberFinder", () => {
 		let finish!: () => void;
 		const before = new Promise<void>(resolve => finish = resolve).then(() => void (latest = "0.1.3"));
 		const { look, asked } = timberOf({ current: "0.1.3" });
-		const find = timberFinder({ look, latest: () => latest, override: false, before, minimum: "0.1.2" });
+		const find = timberFinder({ look, latest: () => latest, choose: onPath, before, minimum: "0.1.2" });
 		const first = find();
 		await Promise.resolve();
 		expect(asked).toEqual([]);
@@ -177,21 +200,21 @@ describe("timberFinder", () => {
 
 describe("what the window says", () => {
 	test("the banner names the release and keeps Timber working until the next start", () => {
-		expect(describeTimberUpdate({ state: "ready", path: "/bin/timber", version: "0.1.3", newerRelease: "0.1.4" }))
+		expect(describeTimberUpdate({ state: "ready", source: "path", path: "/bin/timber", version: "0.1.3", newerRelease: "0.1.4" }))
 			.toBe("Timber 0.1.4 is out, and you have 0.1.3. Timber keeps working for now; from the next start, Timber app needs 0.1.4.");
-		expect(describeTimberUpdate({ state: "ready", path: "/bin/timber", version: "0.1.4" })).toBeNull();
+		expect(describeTimberUpdate({ state: "ready", source: "path", path: "/bin/timber", version: "0.1.4" })).toBeNull();
 		expect(describeTimberUpdate(null)).toBeNull();
 	});
 
 	test("the notice says the newest release is needed when that is the reason", () => {
-		expect(describeTimberProblem({ state: "too-old", path: "/bin/timber", found: "0.1.2", required: "0.1.3", latestRelease: true }))
+		expect(describeTimberProblem({ state: "too-old", source: "path", path: "/bin/timber", found: "0.1.2", required: "0.1.3", latestRelease: true }))
 			.toEqual({ title: "Update Timber", text: "Found Timber 0.1.2 at /bin/timber. Timber app needs the newest release, 0.1.3.", action: "Update it with:" });
 	});
 });
 
 describe("the window hears a newer release", () => {
 	test("asks for the status again, and keeps the worktrees on screen", async () => {
-		let status: TimberStatus = { state: "ready", path: "/bin/timber", version: "0.1.3" };
+		let status: TimberStatus = { state: "ready", source: "path", path: "/bin/timber", version: "0.1.3" };
 		const engine = createMockEngine(undefined, () => status);
 		const store = createAppStore(engine);
 		const stop = store.start();
@@ -204,7 +227,7 @@ describe("the window hears a newer release", () => {
 		engine.announceTimberChange();
 		await settle();
 		const timber = store.getState().timber;
-		expect(timber?.known && timber.status).toEqual({ state: "ready", path: "/bin/timber", version: "0.1.3", newerRelease: "0.1.4" });
+		expect(timber?.known && timber.status).toEqual({ state: "ready", source: "path", path: "/bin/timber", version: "0.1.3", newerRelease: "0.1.4" });
 		expect(store.getState().repositories).toEqual(repositories);
 		stop();
 	});

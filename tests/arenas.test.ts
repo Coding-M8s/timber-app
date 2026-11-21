@@ -90,7 +90,7 @@ describe("ArenaCommands, with a stand-in Timber", () => {
 		const timber = arenaStandIn("guard", { list: { stdout: recordedArena.list } });
 		const commands = createArenaCommands({ timber: async () => ready(timber.path), isListed: listed, endSessionsIn: async () => [] });
 		expect(await commands.list(join(root, "elsewhere"))).toEqual({ state: "failed", message: `${join(root, "elsewhere")} is not a repository in the app's list.` });
-		const notFound = createArenaCommands({ timber: async () => ({ state: "not-found", override: null }), isListed: listed, endSessionsIn: async () => [] });
+		const notFound = createArenaCommands({ timber: async () => ({ state: "not-found", source: "path", path: null }), isListed: listed, endSessionsIn: async () => [] });
 		expect((await notFound.list(folder)).state).toBe("failed");
 		expect(timber.runs()).toEqual([]);
 	});

@@ -105,7 +105,7 @@ describe("whether a real repository was set up for Timber", () => {
 });
 
 describe.skipIf(realTimber === null)("with the installed Timber, the repository says whether it was set up", () => {
-	const reader = () => createRepositoryReader(async () => ({ state: "ready", path: realTimber!, version: "0.1.1" }), { ...process.env, ...environment() });
+	const reader = () => createRepositoryReader(async () => ({ state: "ready", source: "path", path: realTimber!, version: "0.1.1" }), { ...process.env, ...environment() });
 
 	test("from its primary checkout and from a linked worktree alike", async () => {
 		expect((await reader().reload(primary))?.setup).toBe("none");
@@ -123,10 +123,10 @@ describe.skipIf(realTimber === null)("with the installed Timber, the repository 
 describe.skipIf(realTimber === null)("a save through Timber's settings commands, read back through the main process", () => {
 	test("the repository reads as set up once the setup wizard's save went through, even with nothing chosen", async () => {
 		const env = { ...process.env, ...environment() };
-		const reader = createRepositoryReader(async () => ({ state: "ready", path: realTimber!, version: "0.1.2" }), env);
+		const reader = createRepositoryReader(async () => ({ state: "ready", source: "path", path: realTimber!, version: "0.1.2" }), env);
 		const temporary = mkdtempSync(join(tmpdir(), "timber-setup-save-"));
 		const settings = createTimberSettings({
-			timber: async () => ({ state: "ready", path: realTimber!, version: "0.1.2" }),
+			timber: async () => ({ state: "ready", source: "path", path: realTimber!, version: "0.1.2" }),
 			isListed: async candidate => candidate === primary,
 			environment: env,
 			temporaryRoot: temporary,

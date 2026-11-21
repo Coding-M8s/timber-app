@@ -446,7 +446,7 @@ describe("settings dialog", () => {
 		expect(markup).toContain(`<div class="settings-panel" id="${nav![2]}" aria-labelledby="${nav![1]}">`);
 		// Every other section stays mounted, hidden, so what was typed in it survives a switch.
 		expect(markup.match(/class="settings-panel"[^>]*hidden=""/g)?.length).toBe(SETTINGS_SECTIONS.length - 1);
-		for (const section of ["terminal", "editor", "agents", "fetch", "about", "machine", "repository"]) {
+		for (const section of ["terminal", "editor", "agents", "fetch", "about", "executable", "machine", "repository"]) {
 			expect(markup).toMatch(new RegExp(`class="settings-panel" id="[^"]*-panel-${section}"[^>]*hidden=""`));
 		}
 	});

@@ -23,8 +23,9 @@
     "dev": "electrobun prepare && vite build && electrobun dev --watch",
     "dev:hmr": "concurrently --kill-others --success first \"bun run hmr\" \"bun run start\"",
     "typecheck:desktop": "electrobun prepare && tsc --noEmit -p tsconfig.desktop.json",
-    "build": "electrobun prepare && vite build && electrobun build --env=stable",
-    "build:canary": "electrobun prepare && vite build && electrobun build --env=canary"
+    "fetch:timber": "bun scripts/fetch-timber.ts",
+    "build": "electrobun prepare && bun scripts/fetch-timber.ts && vite build && electrobun build --env=stable",
+    "build:canary": "electrobun prepare && bun scripts/fetch-timber.ts && vite build && electrobun build --env=canary"
   },
   "dependencies": {
     "@xterm/addon-fit": "0.11.0",

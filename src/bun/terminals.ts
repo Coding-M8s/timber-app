@@ -470,7 +470,7 @@ export function sessionEnvironment(environment: Record<string, string | undefine
  */
 export function createTerminalSessions(dependencies: TerminalDependencies): TerminalSessions {
 	const {
-		findRepository, onOutput, onChange, agents = async () => [], sessionNaming = async (): Promise<SessionNaming> => "plain", timber = async (): Promise<TimberStatus> => ({ state: "not-found", override: null }), environment = process.env, handoffFolder = async () => null, platform = process.platform,
+		findRepository, onOutput, onChange, agents = async () => [], sessionNaming = async (): Promise<SessionNaming> => "plain", timber = async (): Promise<TimberStatus> => ({ state: "not-found", source: "path", path: null }), environment = process.env, handoffFolder = async () => null, platform = process.platform,
 		arenaLaunch = async () => ({ outcome: "failed", message: "Arena attempts cannot start here. Nothing was started." }),
 		workflows = async (): Promise<WorkflowList> => ({ ok: false, message: "Workflows cannot be read here." }),
 		startTerminal = startPseudoTerminal(platform),

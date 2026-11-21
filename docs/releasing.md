@@ -34,8 +34,14 @@ A person checks the draft and publishes it.
   lockfile, checks that the tag is `v` plus the version in `package.json`
   (`scripts/check-release-tag.ts`), runs `bun run typecheck` and `bun test`,
   then `bun run build`. Linux also runs `bun run typecheck:desktop` and
-  installs the same Timber as CI, so the tests that need Timber run there; on
-  Windows they are skipped, as in CI.
+  puts the pinned Timber on PATH, as CI does, so the tests that need Timber
+  run there; on Windows they are skipped, as in CI.
+- **Ships Timber inside the app.** `bun run build` downloads the Timber
+  release pinned in `timber-pin.json` for the platform, checks each file's
+  SHA-256 against the pin, and stops when one does not match, so no draft
+  is made (see [the bundled Timber](architecture.md#the-bundled-timber)).
+  Timber's `LICENSE` and `THIRD_PARTY_NOTICES.txt` go into the app beside
+  it.
 - **A failing check stops the release.** The release job needs both build
   jobs, so a failed check, test, or build on either platform leaves no
   draft. Fix it on `main`, then move the tag: `git push origin :v0.2.0`,
@@ -45,10 +51,41 @@ A person checks the draft and publishes it.
   writes `SHA256SUMS.txt` with `sha256sum` and calls
   `gh release create --draft --verify-tag`.
 - **Actions are pinned to commits**, as in CI. A test checks this for every
-  workflow, and that CI and the release install the same Timber.
-- **A pull request that changes the workflow, `package.json`, or
-  `bun.lock` runs the builds** without the release job, so a version or a
+  workflow, and that CI and the release test with the pinned Timber.
+- **A pull request that changes the workflow, `package.json`, `bun.lock`,
+  `timber-pin.json`, or `scripts/fetch-timber.ts` runs the builds** without the release job, so a version or a
   dependency that breaks a build shows before a tag does.
+
+## Raising the bundled Timber
+
+The app ships the Timber release named in `timber-pin.json`, and nothing
+else names it. Raise it in a pull request of its own, reviewed like any
+other change.
+
+1. **Write the new pin.** Set `version` without the `v`, and copy each
+   SHA-256 from the release's `SHA256SUMS` files: the four binaries
+   (`timber-v<version>-linux-x64`, `-windows-x64.exe`, `-darwin-arm64`,
+   `-darwin-x64`), `LICENSE`, and `THIRD_PARTY_NOTICES.txt`.
+
+   ```bash
+   gh release download v0.1.5 -R Coding-M8s/timber -p 'SHA256SUMS*' -D /tmp/timber-sums
+   cat /tmp/timber-sums/SHA256SUMS*
+   ```
+
+2. **Check it builds.** `bun run fetch:timber` downloads the new files and
+   fails on any checksum that does not match. Then run `bun test`, which
+   runs the pin tests, and `bun run build`.
+3. **Read Timber's license again.** If `LICENSE` changed, update the
+   license text in Settings, About (`AboutSection.tsx`).
+4. **Try it in the built app**, with no other Timber on PATH and Settings,
+   Timber, Executable on the bundled Timber: About shows the new version,
+   bundled; then list a repository, create a worktree with New, open a
+   branch with Open, rebase a worktree, and remove one with Done.
+5. **Record what was run** in the pull request: the commands, the platform,
+   and what each step showed.
+
+The pull request also runs the release builds, because it changes
+`timber-pin.json`.
 
 ## Not in a release yet
 

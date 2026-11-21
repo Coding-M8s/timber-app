@@ -523,7 +523,7 @@ describe("with a stand-in for Timber", () => {
 	});
 
 	test("nothing runs while Timber is not ready", async () => {
-		const { preview, ran } = standIn({ result: null }, listed([worktree]), { state: "too-old", path: "/usr/bin/timber", found: "0.1.0", required: "0.1.1" });
+		const { preview, ran } = standIn({ result: null }, listed([worktree]), { state: "too-old", source: "path", path: "/usr/bin/timber", found: "0.1.0", required: "0.1.1" });
 		const result = await preview();
 		expect(result).toMatchObject({ outcome: "failed", failure: { command: null } });
 		expect(result.outcome === "failed" && result.failure.diagnostic).toContain("Nothing was run");

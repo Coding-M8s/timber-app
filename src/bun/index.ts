@@ -9,6 +9,7 @@ import { type Attention, assumedAttention } from "../shared/attention";
 import { type ForcePushMarks, withForcePushes } from "../shared/git-fetch";
 import type { Repository } from "../shared/model";
 import { type Preferences, defaultPreferences } from "../shared/preferences";
+import { sameTimberChoice } from "../shared/timber-choice";
 import { readSoundChoice } from "../shared/sound-setting";
 import type { AppRPC } from "../shared/rpc";
 import { availableThemes, themeStyleSheet } from "../shared/theme";
@@ -36,9 +37,8 @@ import { createPullRequestReader } from "./pull-requests";
 import { createRepositoryList } from "./repository-list";
 import { createRepositoryReader } from "./repository-reader";
 import { createSettingsHolder, settingsFilePath } from "./settings";
-import { createTimberLocator, describeTimberStatus, findTimber } from "./timber";
+import { checkTimber, chooseTimber, createTimberLocator, describeTimberStatus, findBundledTimber } from "./timber";
 import { atMost, createReleaseWatcher, lookUpLatestRelease, releaseFilePath, timberFinder } from "./timber-release";
-import { TIMBER_OVERRIDE_VARIABLE } from "../shared/timber-version";
 import { openWebLink } from "./open-link";
 import { createQuitGuard } from "./quit-guard";
 import { createRestarter } from "./restart";
@@ -96,13 +96,6 @@ async function mainViewUrl(): Promise<string> {
 const TIMBER_RELEASE_INTERVAL_MS = 3 * 60 * 60 * 1000;
 const timberRelease = createReleaseWatcher({ file: releaseFilePath(settingsFilePath()), lookUp: () => lookUpLatestRelease() });
 const releaseAtStart = timberRelease.check();
-const timber = createTimberLocator(timberFinder({
-	look: required => findTimber(process.env, required),
-	latest: () => timberRelease.latest(),
-	override: Boolean(process.env[TIMBER_OVERRIDE_VARIABLE]?.trim()),
-	before: atMost(releaseAtStart, 2_000),
-}));
-void timber.current().then(status => console.log(describeTimberStatus(status)));
 
 /** The native folder picker. Null when it was closed without a choice. */
 async function pickFolder(): Promise<string | null> {
@@ -155,6 +148,18 @@ const sessionLayout = createSessionLayout({
 });
 await sessionLayout.load();
 const preferences = createSavedPreferences(settings);
+/*
+ * Which Timber runs: the development override, else the choice in Settings, Timber, Executable, which is the one
+ * bundled with the app unless changed (see ./timber.ts). Read again on every look, so a saved choice counts at once.
+ */
+const bundledTimber = findBundledTimber();
+const timber = createTimberLocator(timberFinder({
+	choose: async () => chooseTimber(process.env, (await preferences.load()).timber, bundledTimber),
+	look: (candidate, required) => checkTimber(candidate, process.env, required),
+	latest: () => timberRelease.latest(),
+	before: atMost(releaseAtStart, 2_000),
+}));
+void timber.current().then(status => console.log(describeTimberStatus(status)));
 const themeFiles = createThemeFiles({ pickFolder, pickFile });
 // New, open, rebase, and restoring or deleting a backup run one at a time in each repository.
 const turns = createRepositoryTurns();
@@ -475,8 +480,10 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			saveLayout: ({ layout: next }) => layout.save(next),
 			loadPreferences: () => preferences.load(),
 			savePreferences: async ({ change }) => {
+				const before = await preferences.load();
 				const result = await preferences.save(change);
 				if (result.outcome === "saved") {
+					if (!sameTimberChoice(before.timber, result.preferences.timber)) void lookForTimberAgain();
 					fetcher.configure(result.preferences.fetch);
 					applyZoom(result.preferences.zoom);
 					applyAlertPreferences(result.preferences);
@@ -620,12 +627,15 @@ function guardQuit(event: unknown): void {
 	}
 	(event as Veto).response = { allow: false };
 }
-/** A different newest Timber release: look for Timber again, and tell the window, which asks for the new answer. */
-async function timberReleaseChanged(): Promise<void> {
+/**
+ * A different newest Timber release, or another Timber chosen in Settings: look for Timber again, and tell the
+ * window, which asks for the new answer.
+ */
+async function lookForTimberAgain(): Promise<void> {
 	console.log(describeTimberStatus(await timber.refresh()));
 	tell("the Timber status", () => rpc.send.timberChanged({}));
 }
-const checkTimberRelease = (check: Promise<boolean>) => void check.then(changed => changed ? timberReleaseChanged() : undefined);
+const checkTimberRelease = (check: Promise<boolean>) => void check.then(changed => changed ? lookForTimberAgain() : undefined);
 checkTimberRelease(releaseAtStart);
 setInterval(() => checkTimberRelease(timberRelease.check()), TIMBER_RELEASE_INTERVAL_MS);
 

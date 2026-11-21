@@ -103,7 +103,7 @@ describe("WorktreeCommands.pullRequest, with a stand-in Timber", () => {
 		await expectNotRun(commandsOn({ result: null }, { found: null }), ask(), "is not a repository in this app's list");
 		await expectNotRun(commandsOn({ result: null }, { found: listing([]) }), ask(), "Timber lists no worktree at");
 		await expectNotRun(commandsOn({ result: null }, { found: listing([join(root, "gone")]) }), ask({ worktree: join(root, "gone") }), "is missing");
-		await expectNotRun(commandsOn({ result: null }, { status: { state: "not-found", override: null } }), ask(), /\.$/);
+		await expectNotRun(commandsOn({ result: null }, { status: { state: "not-found", source: "path", path: null } }), ask(), /\.$/);
 	});
 
 	test("runs in the same turn as the other commands of the repository", async () => {

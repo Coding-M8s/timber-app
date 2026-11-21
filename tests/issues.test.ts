@@ -96,7 +96,7 @@ describe("createIssueReader", () => {
 	});
 
 	test("nothing runs while Timber is not ready", async () => {
-		const reader = createIssueReader({ timber: async () => ({ state: "not-found", override: null }), isListed: listed([folder]) });
+		const reader = createIssueReader({ timber: async () => ({ state: "not-found", source: "path", path: null }), isListed: listed([folder]) });
 		expect(await reader.read({ repository: folder, worktree: FOUND })).toEqual({ ok: false, message: "Timber was not found on PATH." });
 	});
 

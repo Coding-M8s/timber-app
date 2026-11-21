@@ -25,7 +25,7 @@ describe.skipIf(realTimber === null)("saved bases, with the installed Timber on 
 		const result = Bun.spawnSync([realTimber!, ...timberArguments], { cwd: primary, env: environment, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
 		if (result.exitCode !== 0) throw new Error(`timber ${timberArguments.join(" ")} failed: ${result.stdout.toString()}${result.stderr.toString()}`);
 	};
-	const ready: TimberStatus = { state: "ready", path: realTimber!, version: "0.1.2" };
+	const ready: TimberStatus = { state: "ready", source: "path", path: realTimber!, version: "0.1.2" };
 	const read = async (): Promise<Repository> => (await createRepositoryReader(async () => ready, environment).reload(primary))!;
 	const byBranch = (repository: Repository, branch: string) => repository.worktrees.find(worktree => worktree.branch === branch)!;
 

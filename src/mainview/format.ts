@@ -13,38 +13,63 @@ export const TIMBER_INSTALL_GUIDE = "https://github.com/Coding-M8s/timber#quick-
 export interface TimberProblem {
 	title: string;
 	text: string;
-	/** The line above the install command. */
-	action: string;
+	/** The line above the install command, or null when installing Timber is not the way out. */
+	action: string | null;
 }
+
+/** Where the person picks which Timber the app runs. */
+export const TIMBER_CHOICE_PLACE = "Settings, Timber, Executable";
 
 /** What to tell the person when Timber is not usable, or null when it is ready. */
 export function describeTimberProblem(status: TimberStatus): TimberProblem | null {
-	switch (status.state) {
-		case "ready":
-			return null;
-		case "too-old":
-			return status.latestRelease
+	if (status.state === "ready") return null;
+	if (status.source === "bundled") {
+		return {
+			title: "The Timber that comes with the app is not working",
+			text: status.state === "too-old"
+				? `The bundled Timber at ${status.path} is ${status.found}, but Timber app needs ${status.required} or newer. Reinstall the app, or choose another Timber in ${TIMBER_CHOICE_PLACE}.`
+				: `No Timber answered at ${status.path}. Reinstall the app, or choose another Timber in ${TIMBER_CHOICE_PLACE}.`,
+			action: null,
+		};
+	}
+	if (status.state === "too-old") {
+		const where = status.source === "setting" ? `, the one chosen in ${TIMBER_CHOICE_PLACE}` : "";
+		return status.latestRelease
+			? {
+				title: "Update Timber",
+				text: `Found Timber ${status.found} at ${status.path}${where}. Timber app needs the newest release, ${status.required}.`,
+				action: "Update it with:",
+			}
+			: {
+				title: "Timber is too old",
+				text: `Found Timber ${status.found} at ${status.path}${where}. Timber app needs ${status.required} or newer.`,
+				action: "Update it with:",
+			};
+	}
+	switch (status.source) {
+		case "override":
+			return {
+				title: "Timber did not answer at the override",
+				text: `${TIMBER_OVERRIDE_VARIABLE} points to ${status.path}, but no Timber answered there. Correct it, or unset it to use the Timber chosen in ${TIMBER_CHOICE_PLACE}.`,
+				action: null,
+			};
+		case "setting":
+			return {
+				title: "The chosen Timber did not answer",
+				text: `${TIMBER_CHOICE_PLACE} points to ${status.path}, but no Timber answered there. Choose another file, or the Timber that comes with the app.`,
+				action: null,
+			};
+		case "path":
+			return status.path === null
 				? {
-					title: "Update Timber",
-					text: `Found Timber ${status.found} at ${status.path}. Timber app needs the newest release, ${status.required}.`,
-					action: "Update it with:",
-				}
-				: {
-					title: "Timber is too old",
-					text: `Found Timber ${status.found} at ${status.path}. Timber app needs ${status.required} or newer.`,
-					action: "Update it with:",
-				};
-		case "not-found":
-			return status.override
-				? {
-					title: "Timber did not answer at the override",
-					text: `${TIMBER_OVERRIDE_VARIABLE} points to ${status.override}, but no Timber answered there. Correct it, or unset it to use the timber on your PATH.`,
-					action: "To install Timber:",
-				}
-				: {
 					title: "Timber is not installed",
 					text: "Timber app needs the timber command, the newest release, on your PATH.",
 					action: "Install it with:",
+				}
+				: {
+					title: "Timber did not answer",
+					text: `Found timber at ${status.path} on your PATH, but it did not print its version. Timber app needs the newest release.`,
+					action: "Install it again with:",
 				};
 	}
 }

@@ -14,6 +14,7 @@ import { CloseIcon, SettingsSectionIcon } from "./settings/SettingsIcons";
 import { RenderingSection } from "./settings/RenderingSection";
 import { MachineSection, RepositorySection } from "./settings/TimberSections";
 import { TerminalSection } from "./settings/TerminalSection";
+import { TimberExecutableSection } from "./settings/TimberExecutableSection";
 import { ThemeSection } from "./settings/ThemeSection";
 
 /**
@@ -32,6 +33,7 @@ const SECTION_VIEWS: Record<SettingsSection, ComponentType> = {
 	notifications: NotificationsSection,
 	fetch: FetchSection,
 	about: AboutSection,
+	executable: TimberExecutableSection,
 	machine: MachineSection,
 	repository: RepositorySection,
 };
@@ -47,7 +49,8 @@ const SECTION_VIEWS: Record<SettingsSection, ComponentType> = {
  * the foot. Each section scrolls on its own, below the list's fixed place,
  * with its Save in a bar along the bottom.
  *
- * Under "Timber", the Machine and Repository sections show Timber's own
+ * Under "Timber", Executable picks which Timber the app runs, an app
+ * preference like the others. The Machine and Repository sections show Timber's own
  * settings, read through Timber each time the dialog opens, in groups that
  * each save through Timber with their own Save. The app never writes
  * Timber's files itself.

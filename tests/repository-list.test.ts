@@ -43,7 +43,7 @@ afterAll(() => {
 });
 
 /** Reads repositories with the Timber installed on this machine. */
-const reader = createRepositoryReader(async () => ({ state: "ready", path: realTimber!, version: "0.1.1" }));
+const reader = createRepositoryReader(async () => ({ state: "ready", source: "path", path: realTimber!, version: "0.1.1" }));
 
 /** A list on this test's settings file. */
 function listOn(overrides: Partial<RepositoryListOptions> = {}) {
@@ -367,7 +367,7 @@ describe.skipIf(realTimber === null)("includes", () => {
 });
 
 describe("when Timber cannot list the worktrees", () => {
-	const failing = () => createRepositoryReader(async () => ({ state: "ready", path: standInTimber(root, "failing-timber", recorded.failed, 1).path, version: "0.1.1" }));
+	const failing = () => createRepositoryReader(async () => ({ state: "ready", source: "path", path: standInTimber(root, "failing-timber", recorded.failed, 1).path, version: "0.1.1" }));
 	const diagnostic = "Not a Git repository: /work/plain";
 
 	test("adding reports the diagnostic and saves nothing", async () => {

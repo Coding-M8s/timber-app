@@ -1,5 +1,8 @@
 import type { ElectrobunConfig } from "electrobun";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { APP_DESCRIPTION, APP_IDENTIFIER, APP_NAME, APP_VERSION } from "./src/shared/app-info";
+import { TIMBER_PIN, timberTarget, vendorFolder } from "./src/shared/timber-pin";
 
 /**
  * On Windows, node-pty and the ConPTY it ships run the terminal sessions
@@ -14,6 +17,20 @@ const nodePty: Record<string, string> = process.platform !== "win32" ? {} : Obje
 	["package.json", "lib", `${PREBUILT}/conpty.node`, `${PREBUILT}/conpty_console_list.node`, `${PREBUILT}/conpty`]
 		.map(path => [`${NODE_PTY}/${path}`, `bun/${NODE_PTY}/${path}`]),
 );
+
+/**
+ * The pinned Timber, with its license and notices, goes into the app as
+ * `timber`, beside the main process's `bun` folder, where
+ * `bundledTimberFolder` (src/bun/timber.ts) looks. `bun run build` fetches
+ * and checks it first (scripts/fetch-timber.ts), and stops when a checksum
+ * does not match. A development build that never fetched it has none, and
+ * uses the timber on PATH. Only the folder of the pinned version counts, so
+ * one left from an earlier pin is never copied. Electrobun reads this file
+ * from a folder of its own, so the check starts from where this file is.
+ */
+const target = timberTarget(process.platform, process.arch);
+const vendored = target === null ? null : vendorFolder(TIMBER_PIN.version, target);
+const timber: Record<string, string> = vendored !== null && existsSync(fileURLToPath(new URL(vendored, import.meta.url))) ? { [vendored]: "timber" } : {};
 
 export default {
 	app: {
@@ -36,6 +53,7 @@ export default {
 			// The licenses of the bundled fonts and of the logo travel with every build.
 			licenses: "licenses",
 			...nodePty,
+			...timber,
 		},
 		// Vite output changes on every interface build. Hot reload handles the view.
 		watchIgnore: ["dist/**"],

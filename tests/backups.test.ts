@@ -51,7 +51,7 @@ describe.skipIf(windows)("BackupCommands, with stand-ins", () => {
 		const commands = createBackupCommands({ timber: async () => ready(timber.path), isListed: listed });
 		expect(await commands.list(join(root, "elsewhere"))).toEqual({ state: "failed", message: `${join(root, "elsewhere")} is not a repository in the app's list.` });
 		expect(await commands.list("")).toEqual({ state: "failed", message: "The request for backups names no repository." });
-		const notFound = createBackupCommands({ timber: async () => ({ state: "not-found", override: null }), isListed: listed });
+		const notFound = createBackupCommands({ timber: async () => ({ state: "not-found", source: "path", path: null }), isListed: listed });
 		expect((await notFound.list(folder)).state).toBe("failed");
 		expect((await commands.list(folder)).state).toBe("listed");
 	});

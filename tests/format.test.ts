@@ -215,19 +215,41 @@ describe("describeTimberProblem", () => {
 	});
 
 	test("says Timber is not installed and that the newest release is needed", () => {
-		const problem = describeTimberProblem({ state: "not-found", override: null })!;
+		const problem = describeTimberProblem({ state: "not-found", source: "path", path: null })!;
 		expect(problem.title).toBe("Timber is not installed");
 		expect(problem.text).toBe("Timber app needs the timber command, the newest release, on your PATH.");
 		expect(problem.action).toBe("Install it with:");
 	});
 
 	test("names the override when it is the one that failed", () => {
-		const problem = describeTimberProblem({ state: "not-found", override: "/opt/dev/timber" })!;
+		const problem = describeTimberProblem({ state: "not-found", source: "override", path: "/opt/dev/timber" })!;
 		expect(problem.text).toContain("TIMBER_APP_TIMBER_PATH points to /opt/dev/timber");
+		expect(problem.action).toBeNull();
+	});
+
+	test("names the chosen file when it is the one that failed, and offers no installer", () => {
+		const problem = describeTimberProblem({ state: "not-found", source: "setting", path: "/opt/timber" })!;
+		expect(problem.text).toBe("Settings, Timber, Executable points to /opt/timber, but no Timber answered there. Choose another file, or the Timber that comes with the app.");
+		expect(problem.action).toBeNull();
+	});
+
+	test("a broken bundled Timber points to reinstalling or choosing another, not to the installer", () => {
+		const missing = describeTimberProblem({ state: "not-found", source: "bundled", path: "/app/timber/timber" })!;
+		expect(missing.title).toBe("The Timber that comes with the app is not working");
+		expect(missing.text).toContain("Reinstall the app, or choose another Timber in Settings, Timber, Executable.");
+		expect(missing.action).toBeNull();
+		const old = describeTimberProblem({ state: "too-old", source: "bundled", path: "/app/timber/timber", found: "0.1.0", required: "0.1.3" })!;
+		expect(old.text).toContain("is 0.1.0, but Timber app needs 0.1.3 or newer");
+		expect(old.action).toBeNull();
+	});
+
+	test("an old chosen Timber is named as the chosen one", () => {
+		const problem = describeTimberProblem({ state: "too-old", source: "setting", path: "/opt/timber", found: "0.1.3", required: "0.1.4", latestRelease: true })!;
+		expect(problem.text).toBe("Found Timber 0.1.3 at /opt/timber, the one chosen in Settings, Timber, Executable. Timber app needs the newest release, 0.1.4.");
 	});
 
 	test("names the found and required versions for an old Timber", () => {
-		const problem = describeTimberProblem({ state: "too-old", path: "/usr/bin/timber", found: "0.1.0", required: "0.1.1" })!;
+		const problem = describeTimberProblem({ state: "too-old", source: "path", path: "/usr/bin/timber", found: "0.1.0", required: "0.1.1" })!;
 		expect(problem.title).toBe("Timber is too old");
 		expect(problem.text).toBe("Found Timber 0.1.0 at /usr/bin/timber. Timber app needs 0.1.1 or newer.");
 		expect(problem.action).toBe("Update it with:");

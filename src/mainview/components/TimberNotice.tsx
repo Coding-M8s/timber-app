@@ -16,7 +16,7 @@ export function TimberNotice({ status, failure, checking, onRetry }: TimberNotic
 		<main className="notice" aria-live="polite">
 			<h1 className="notice-title">{problem?.title ?? "Could not look for Timber"}</h1>
 			<p className="notice-text">{problem?.text ?? failure}</p>
-			{problem && (
+			{problem && problem.action !== null && (
 				<>
 					<p className="notice-text">{problem.action}</p>
 					<pre className="notice-command">{TIMBER_INSTALL_COMMAND}</pre>

@@ -97,7 +97,7 @@ describe("createIssueLister", () => {
 	});
 
 	test("nothing runs while Timber is not ready", async () => {
-		const lister = createIssueLister({ timber: async () => ({ state: "not-found", override: null }), isListed: listed([folder]) });
+		const lister = createIssueLister({ timber: async () => ({ state: "not-found", source: "path", path: null }), isListed: listed([folder]) });
 		expect(await lister.list({ repository: folder, list: "open", tracker: "github" })).toEqual({ ok: false, unsupported: false, message: "Timber was not found on PATH." });
 	});
 });

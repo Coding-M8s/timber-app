@@ -93,12 +93,12 @@ describe("createWorkflowReader", () => {
 	});
 
 	test("nothing runs while Timber is not ready", async () => {
-		const reader = createWorkflowReader({ timber: async () => ({ state: "not-found", override: null }), isListed: listed([folder]) });
+		const reader = createWorkflowReader({ timber: async () => ({ state: "not-found", source: "path", path: null }), isListed: listed([folder]) });
 		expect(await reader.list(folder)).toEqual({ ok: false, message: "Timber was not found on PATH." });
 	});
 
 	test("a request without a repository is refused", async () => {
-		const reader = createWorkflowReader({ timber: async () => ({ state: "not-found", override: null }), isListed: async () => true });
+		const reader = createWorkflowReader({ timber: async () => ({ state: "not-found", source: "path", path: null }), isListed: async () => true });
 		for (const repository of ["", undefined, 3]) {
 			expect((await reader.list(repository as string)).ok).toBe(false);
 		}
@@ -136,7 +136,7 @@ describe("nothing from the record is logged", () => {
 		const script = join(root, "read-in-a-child.ts");
 		writeFileSync(script, [
 			`import { createWorkflowReader, readWorkflows } from ${JSON.stringify(join(import.meta.dir, "..", "src", "bun", "workflows.ts"))};`,
-			`const reader = createWorkflowReader({ timber: async () => ({ state: "ready", path: ${JSON.stringify(good.path)}, version: "0.1.1" }), isListed: async () => true });`,
+			`const reader = createWorkflowReader({ timber: async () => ({ state: "ready", source: "path", path: ${JSON.stringify(good.path)}, version: "0.1.1" }), isListed: async () => true });`,
 			`const list = await reader.list(${JSON.stringify(folder)});`,
 			`await readWorkflows(${JSON.stringify(bad.path)}, ${JSON.stringify(folder)});`,
 			// Proof that the read worked, without printing what it read.

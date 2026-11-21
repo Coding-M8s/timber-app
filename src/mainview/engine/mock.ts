@@ -30,6 +30,8 @@ import { failureOf, readTimberResult } from "../../shared/timber-result";
 import { APP_VERSION } from "../../shared/app-info";
 import { type AvailableUninstallPlan, UNINSTALL_ARGUMENTS, type UninstallRequest } from "../../shared/uninstall";
 import { REQUIRED_TIMBER_VERSION } from "../../shared/timber-version";
+import { type TimberChoice, sameTimberChoice } from "../../shared/timber-choice";
+import { TIMBER_PIN } from "../../shared/timber-pin";
 import { type CommandEnding, actOutNew, actOutOpen, isCommandEnding } from "./mock-commands";
 import { type RebaseEnding, actOutRebase, isRebaseEnding } from "./mock-rebase";
 import { type PullRequestEnding, actOutPullRequest, isPullRequestEnding } from "./mock-pr";
@@ -301,9 +303,9 @@ function fingerprint(text: string): string {
 
 /** One sample of each state Timber can be found in. */
 export const sampleTimberStatuses = {
-	"ready": { state: "ready", path: "/home/sam/.local/bin/timber", version: REQUIRED_TIMBER_VERSION },
-	"not-found": { state: "not-found", override: null },
-	"too-old": { state: "too-old", path: "/home/sam/.local/bin/timber", found: "0.1.0", required: REQUIRED_TIMBER_VERSION },
+	"ready": { state: "ready", source: "path", path: "/home/sam/.local/bin/timber", version: REQUIRED_TIMBER_VERSION },
+	"not-found": { state: "not-found", source: "path", path: null },
+	"too-old": { state: "too-old", source: "path", path: "/home/sam/.local/bin/timber", found: "0.1.0", required: REQUIRED_TIMBER_VERSION },
 } as const satisfies Record<TimberStatus["state"], TimberStatus>;
 
 /** The mock engine, plus the controls a test or the browser build uses to act out changes. */
@@ -522,13 +524,29 @@ function inTimberOrder(worktrees: Worktree[]): Worktree[] {
 	return [...worktrees].sort((a, b) => Number(b.primary) - Number(a.primary) || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
+/** Where the mock app's bundled Timber is. */
+export const MOCK_BUNDLED_TIMBER = "/opt/Timber/Resources/app/timber/timber";
+
+/** What looking for Timber finds with each choice in Settings, Timber, Executable, when every Timber answers. */
+export function mockTimberFor(choice: TimberChoice): TimberStatus {
+	switch (choice.kind) {
+		case "bundled":
+			return { state: "ready", source: "bundled", path: MOCK_BUNDLED_TIMBER, version: TIMBER_PIN.version };
+		case "path":
+			return sampleTimberStatuses.ready;
+		case "file":
+			return { state: "ready", source: "setting", path: choice.path, version: TIMBER_PIN.version };
+	}
+}
+
 /**
  * `timber` is the answer to every look for Timber. Pass a function to change
  * the answer between looks, for example to act out an install before Retry.
+ * Without it, the answer follows the saved Timber choice (`mockTimberFor`).
  */
 export function createMockEngine(
 	repositories: Repository[] = sampleRepositories,
-	timber: TimberStatus | (() => TimberStatus) = sampleTimberStatuses.ready,
+	timber?: TimberStatus | (() => TimberStatus),
 	options: MockEngineOptions = {},
 ): MockEngine {
 	let current = repositories;
@@ -595,6 +613,7 @@ export function createMockEngine(
 	const fetches = new Map<string, RepositoryFetch>();
 	const fetchListeners = new Set<(status: RepositoryFetch) => void>();
 	const timberListeners = new Set<() => void>();
+	const currentTimber = (): TimberStatus => timber === undefined ? mockTimberFor(preferences.timber) : typeof timber === "function" ? timber() : timber;
 	let fetchEnding: FetchEnding = "fetches";
 	let fetchDelay = 0;
 	const running = new Map<string, Promise<FetchResult>>();
@@ -635,7 +654,7 @@ export function createMockEngine(
 	 * `ran` is false when the app itself stopped before running Timber.
 	 */
 	const previewRecord = (repositoryPath: string, path: string, options: DoneOptions): { text: string } | { refused: string; ran?: false } => {
-		const status = typeof timber === "function" ? timber() : timber;
+		const status = currentTimber();
 		if (status.state !== "ready") return { refused: "Timber is not ready. Nothing was run.", ran: false };
 		const repository = current.find(candidate => candidate.path === repositoryPath);
 		if (!repository) return { refused: `${repositoryPath} is not a repository in this app's list. Nothing was run.`, ran: false };
@@ -789,7 +808,7 @@ export function createMockEngine(
 	};
 	const portReader = createMockPorts();
 
-	const look = async () => structuredClone(typeof timber === "function" ? timber() : timber);
+	const look = async () => structuredClone(currentTimber());
 	const read = async <Result>(result: () => Result): Promise<Result> => {
 		if (failure !== null) throw new Error(failure);
 		return structuredClone(result());
@@ -833,7 +852,7 @@ export function createMockEngine(
 		const repository = current.find(candidate => candidate.path === path && candidate.available);
 		const worktree = timberFailures.has(path) ? undefined : repository?.worktrees.find(candidate => candidate.path === worktreePath);
 		return worktree && worktree.pathExists ? worktree : null;
-	}, () => preferences.agents, () => typeof timber === "function" ? timber() : timber, () => preferences.sessionNames, (...asked) => arenas.arenaLaunch(...asked),
+	}, () => preferences.agents, () => currentTimber(), () => preferences.sessionNames, (...asked) => arenas.arenaLaunch(...asked),
 	// Read when a workflow's agent starts, as the main process reads Timber's settings again then.
 	repository => workflows.listWorkflows(repository), {
 		...(options.savedSessions ? { savedSessions: options.savedSessions } : {}),
@@ -858,14 +877,14 @@ export function createMockEngine(
 		},
 	});
 	terminals.onTerminalChanged(change => alerts.changed(change));
-	const timberConfig = createMockTimberConfig(path => current.some(repository => repository.path === path), () => typeof timber === "function" ? timber() : timber, saveSetup);
-	const { workflowNames, ...workflows } = createMockWorkflows(path => current.some(repository => repository.path === path), () => typeof timber === "function" ? timber() : timber);
-	const pullRequests = createMockPullRequests(path => current.find(repository => repository.path === path && repository.available), () => typeof timber === "function" ? timber() : timber);
-	const issues = createMockIssues(path => current.find(repository => repository.path === path && repository.available), () => typeof timber === "function" ? timber() : timber);
-	const issueLists = createMockIssueLists(path => current.find(repository => repository.path === path && repository.available), () => typeof timber === "function" ? timber() : timber);
+	const timberConfig = createMockTimberConfig(path => current.some(repository => repository.path === path), () => currentTimber(), saveSetup);
+	const { workflowNames, ...workflows } = createMockWorkflows(path => current.some(repository => repository.path === path), () => currentTimber());
+	const pullRequests = createMockPullRequests(path => current.find(repository => repository.path === path && repository.available), () => currentTimber());
+	const issues = createMockIssues(path => current.find(repository => repository.path === path && repository.available), () => currentTimber());
+	const issueLists = createMockIssueLists(path => current.find(repository => repository.path === path && repository.available), () => currentTimber());
 	const backups = createMockBackups({
 		listed: path => current.find(repository => repository.path === path && repository.available),
-		timber: () => typeof timber === "function" ? timber() : timber,
+		timber: () => currentTimber(),
 		// As `git worktree add -b` would: the recovery worktree is listed from now on, in Timber's order.
 		addWorktree: (repositoryPath, path, branch) => {
 			current = current.map(repository => repository.path !== repositoryPath ? repository : {
@@ -882,7 +901,7 @@ export function createMockEngine(
 	});
 	const arenas = createMockArenas({
 		listed: path => current.find(repository => repository.path === path && repository.available),
-		timber: () => typeof timber === "function" ? timber() : timber,
+		timber: () => currentTimber(),
 		// As Timber's `git worktree add -b` would: each attempt is listed from now on, in Timber's order.
 		addWorktree: (repositoryPath, path, branch) => {
 			current = current.map(repository => repository.path !== repositoryPath ? repository : {
@@ -1058,8 +1077,11 @@ export function createMockEngine(
 			if (preferencesFailure !== null) return { outcome: "failed", message: preferencesFailure };
 			const { preferences: next, unreadable } = applyPreferenceChange(preferences, structuredClone(change));
 			if (unreadable.length > 0) return { outcome: "failed", message: `Nothing was saved, because these settings could not be read: ${unreadable.join(", ")}.` };
+			const timberChanged = !sameTimberChoice(preferences.timber, next.timber);
 			preferences = next;
 			alerts.review();
+			// As the main process does: another Timber is looked for at once, and the window told.
+			if (timberChanged) for (const listener of [...timberListeners]) listener();
 			return { outcome: "saved", preferences: structuredClone(preferences) };
 		},
 		failPreferenceSaves(message) {

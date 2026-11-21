@@ -401,7 +401,7 @@ export function isolatedEnvironment(root: string): Record<string, string | undef
 }
 
 /** A Timber of `version` found ready: `ready(path)`, or `ready(path, otherVersion)`. */
-export const readyAt = (version: string) => (path: string, at = version): TimberStatus => ({ state: "ready", path, version: at });
+export const readyAt = (version: string) => (path: string, at = version): TimberStatus => ({ state: "ready", source: "path", path, version: at });
 
 /** Timber 0.1.1 found ready at `path`. */
 export const ready = readyAt("0.1.1");
