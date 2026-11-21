@@ -201,7 +201,7 @@ export function CommandPalette() {
 										<span className={`palette-label${entry.kind === "worktree" ? " worktree" : ""}`}><Label match={match} /></span>
 										{entry.sessions && entry.sessions.length > 0 && (
 											<span className="palette-sessions" title={entry.sessionWords}>
-												{entry.sessions.map(mark => <StatusGlyph key={mark.id} status={mark.status} />)}
+												{entry.sessions.map(mark => <StatusGlyph key={mark.id} status={mark.status} seen={mark.seen} />)}
 											</span>
 										)}
 										{target !== null && <span className="palette-repository">{target}</span>}

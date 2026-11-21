@@ -6,6 +6,7 @@ import { estimateTerminalCells } from "../../shared/terminal-appearance";
 import { agentBrand, childBadge, hasStatusMark, shownStatus } from "../../shared/session-status";
 import { ChildBadge, ChildTasks } from "./ChildTasks";
 import { AgentIcon } from "./AgentIcon";
+import { isSeen } from "../seen-status";
 import { StatusGlyph } from "./StatusGlyph";
 import { terminalAppearance } from "../terminal-look";
 import { useAppState, useStore } from "../store/react";
@@ -227,6 +228,8 @@ interface ChipProps {
 	session: TerminalSession;
 	selected: boolean;
 	unseen: boolean;
+	/** The person has seen its Done, Error, or crash (see ../seen-status.ts). */
+	seen: boolean;
 	ids: readonly string[];
 	/** The chosen session of the worktree. */
 	shownId: string;
@@ -244,7 +247,7 @@ interface ChipProps {
  * beside the tab, not inside it, and is for the pointer; on the keyboard,
  * Delete closes and F2 renames, and the row of chips has both as buttons.
  */
-function Chip({ session, selected, unseen, ids, shownId, closing, closingIds, chops, onRename }: ChipProps) {
+function Chip({ session, selected, unseen, seen, ids, shownId, closing, closingIds, chops, onRename }: ChipProps) {
 	const store = useStore();
 	const descriptionId = useId();
 	// Where its menu was asked to be, or null while it is closed. As for a worktree row, Shift+F10 may be followed by a contextmenu event.
@@ -263,7 +266,7 @@ function Chip({ session, selected, unseen, ids, shownId, closing, closingIds, ch
 	const running = session.state.kind === "running";
 	const exit = shortExit(session.state);
 	const badge = childBadge(session);
-	const description = closing ? `${describeSessionChip(session, unseen)}. Closing` : describeSessionChip(session, unseen);
+	const description = closing ? `${describeSessionChip(session, unseen, seen)}. Closing` : describeSessionChip(session, unseen, seen);
 
 	const close = () => {
 		// Closing the chosen chip shows the one beside it, which takes the focus, or "+" when it was the last one.
@@ -339,7 +342,7 @@ function Chip({ session, selected, unseen, ids, shownId, closing, closingIds, ch
 			>
 				{hasStatusMark(session)
 					// An agent's status, or a program's that reported one, as a shape and a color. The words are in its description.
-					? <StatusGlyph status={shownStatus(session)} />
+					? <StatusGlyph status={shownStatus(session)} seen={seen} />
 					// A filled dot while it runs, a hollow one once it ended: the shape says it, not only the color.
 					: <span className="session-dot" aria-hidden="true" />}
 				{badge !== null && <ChildBadge badge={badge} />}
@@ -659,6 +662,7 @@ export function TerminalPanel({ repository, worktree }: { repository: Repository
 								session={session}
 								selected={session.id === shown.id}
 								unseen={state.unseenSessions.includes(session.id)}
+								seen={isSeen(state.seenStatuses, session)}
 								ids={ids}
 								shownId={shown.id}
 								closing={closingIds.includes(session.id)}

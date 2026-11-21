@@ -1,5 +1,6 @@
 import { type AgentBrand, type ShownStatus, agentBrand, childBadge, describeNotableChildren, describeSessionState, describeSessionStatus, hasStatusMark, sessionInitials, shortMessage, shownStatus } from "../shared/session-status";
 import { type TerminalSession, describeTerminalExit, sessionKindName } from "../shared/terminal";
+import { type SeenStatuses, isSeen } from "./seen-status";
 
 export { describeQuitRequest } from "../shared/terminal";
 
@@ -163,23 +164,23 @@ export function closeTerminalLabel(session: Pick<TerminalSession, "state" | "nam
 
 /**
  * What a chip says to assistive technology, beyond its name: its kind, how
- * it ended, and whether it printed since it was last on screen. The same
- * words are the chip's tooltip.
+ * it ended, whether the person has seen its status, and whether it printed
+ * since it was last on screen. The same words are the chip's tooltip.
  */
-export function describeSessionChip(session: Pick<TerminalSession, "kind" | "name" | "state" | "shell"> & Partial<Pick<TerminalSession, "status" | "children">>, unseen: boolean): string {
+export function describeSessionChip(session: Pick<TerminalSession, "kind" | "name" | "state" | "shell"> & Partial<Pick<TerminalSession, "status" | "children">>, unseen: boolean, seen = false): string {
 	const parts = [`${sessionKindName(session.kind)}, ${shellName(session.shell)}`];
 	const status = session.status === undefined ? null : { kind: session.kind, state: session.state, status: session.status, children: session.children ?? [] };
 	if (status !== null && hasStatusMark(status) && session.state.kind === "running") {
 		// A running agent that never reported says nothing more, as before the protocol.
 		const shown = shownStatus(status);
-		if (shown.kind !== "unknown") parts.push(describeSessionState(status));
+		if (shown.kind !== "unknown") parts.push(describeSessionState(status, seen));
 		// What the program said, such as "approve Write: src/a.ts". It was cleaned up when it was read.
 		if (session.status?.message) parts.push(shortMessage(session.status.message));
 		// Its children that run or reported an error, such as "3 tasks: 1 needs you, 2 working".
 		const children = describeNotableChildren(status);
 		if (children !== "") parts.push(children);
 	} else if (status !== null && hasStatusMark(status) && shownStatus(status).kind === "crashed" && session.state.kind === "exited") {
-		parts.push(`Crashed. ${describeTerminalExit(session.state)}`);
+		parts.push(seen ? `Crashed, seen. ${describeTerminalExit(session.state)}` : `Crashed. ${describeTerminalExit(session.state)}`);
 	} else if (session.state.kind === "exited") parts.push(describeTerminalExit(session.state));
 	if (unseen) parts.push("New output since you last looked");
 	return parts.join(". ");
@@ -195,7 +196,9 @@ export interface RowSessionMark {
 	status: ShownStatus;
 	/** How many of its children run or reported an error, and the most urgent of their statuses, or null when there are none. */
 	badge: { count: number; status: ShownStatus } | null;
-	/** Such as "Codex: Needs you: approval. approve Write: src/a.ts. 2 tasks: 2 working". */
+	/** Whether the person has seen this Done, Error, or crash (see ../seen-status.ts). */
+	seen: boolean;
+	/** Such as "Codex: Needs you: approval. approve Write: src/a.ts. 2 tasks: 2 working", or "Codex: Done, seen". */
 	words: string;
 }
 
@@ -205,20 +208,24 @@ export interface RowSessionMark {
  * started, a count of the other running sessions, and all of it as one
  * sentence for the row's description.
  */
-export function describeRowSessions(sessions: readonly TerminalSession[]): { marks: RowSessionMark[]; others: number; othersWords: string; sentence: string } {
+export function describeRowSessions(sessions: readonly TerminalSession[], seen: SeenStatuses = {}): { marks: RowSessionMark[]; others: number; othersWords: string; sentence: string } {
 	const marked = sessions.filter(hasStatusMark);
 	const brands = marked.map(agentBrand);
 	// Only the sessions shown as letters need telling apart by them.
 	const lettered = marked.filter((_, index) => brands[index] === null);
 	const initials = sessionInitials(lettered.map(session => session.name));
-	const marks = marked.map((session, index) => ({
-		id: session.id,
-		initial: brands[index] === null ? initials[lettered.indexOf(session)]! : "",
-		brand: brands[index]!,
-		status: shownStatus(session),
-		badge: childBadge(session),
-		words: describeSessionStatus(session),
-	}));
+	const marks = marked.map((session, index) => {
+		const wasSeen = isSeen(seen, session);
+		return {
+			id: session.id,
+			initial: brands[index] === null ? initials[lettered.indexOf(session)]! : "",
+			brand: brands[index]!,
+			status: shownStatus(session),
+			badge: childBadge(session),
+			seen: wasSeen,
+			words: describeSessionStatus(session, wasSeen),
+		};
+	});
 	const others = sessions.filter(session => !hasStatusMark(session) && session.state.kind === "running").length;
 	const othersWords = others === 0 ? "" : marks.length > 0 ? describeOtherSessions(others) : describeRunningSessions(others);
 	const parts = marks.map(mark => `${mark.words}.`);

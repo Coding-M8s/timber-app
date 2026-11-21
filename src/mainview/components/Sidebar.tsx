@@ -7,7 +7,8 @@ import { REMOVE_REPOSITORY_HINT, TIMBER_LIST_FAILURE_TITLE, describeListNotice, 
 import { SETTINGS_LABEL, describeLayoutProblem, describeRepository } from "../shell";
 import { DRAG_THRESHOLD, MOVE_REPOSITORY_HINT, MOVE_REPOSITORY_SHORTCUTS, dropIndex, moveStep } from "../repository-drag";
 import { useAppState, useStore } from "../store/react";
-import { alertStatus, hasStatusMark, mostUrgent, summarizeStatuses } from "../../shared/session-status";
+import { mostUrgent, summarizeStatuses } from "../../shared/session-status";
+import { unseenStatuses } from "../seen-status";
 import { isBeingRemoved, isRunning, removalAt, sessionsOf } from "../store/state";
 import { describeRemovalFailed } from "../done-format";
 import { clashMarksOf, describePortClash } from "../ports-format";
@@ -181,11 +182,9 @@ export function Sidebar() {
 					const pullProblemId = `${idBase}-pulls-${index}`;
 					const backupProblem = repository.available ? describeBackupsProblem(state.backups[repository.path]) : null;
 					const backupProblemId = `${idBase}-backups-${index}`;
-					// Only while the group is collapsed, its agents' states are summed up beside its name, Needs you first.
+					// Only while the group is collapsed, its agents' states are summed up beside its name, Needs you first. Seen ones are left out.
 					// A session whose task needs you, or reported an error, counts as that (`alertStatus`), so it is as easy to see as the agent itself.
-					const statuses = open ? [] : state.terminals
-						.filter(session => session.repository === repository.path && hasStatusMark(session))
-						.map(session => alertStatus(session).status);
+					const statuses = open ? [] : unseenStatuses(state.terminals.filter(session => session.repository === repository.path), state.seenStatuses);
 					const summary = summarizeStatuses(statuses);
 					const summaryId = `${idBase}-summary-${index}`;
 					const describedBy = [fetchMarker ? fetchMarkerId : "", pullProblem ? pullProblemId : "", backupProblem ? backupProblemId : "", summary ? summaryId : ""].filter(Boolean).join(" ");
@@ -437,6 +436,7 @@ export function Sidebar() {
 												issue={state.issues[worktree.id]}
 												removal={removal?.status ?? null}
 												sessions={sessionsOf(state, worktree.id)}
+												seen={state.seenStatuses}
 												portClash={describePortClash(clashMarks.get(worktree.path))}
 												actions={(
 													<>

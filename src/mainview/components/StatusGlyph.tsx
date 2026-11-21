@@ -6,15 +6,16 @@ import type { ShownStatus } from "../../shared/session-status";
  * hand when what it needs is an answer to a question), a check
  * when done, a hollow circle when idle, a cross for an error, a crossed
  * circle when it crashed, a square once it stopped, and a dot while it runs
- * with no status. The color comes from the `status-<kind>` class. Hidden
+ * with no status. The color comes from the `status-<kind>` class, or a quiet
+ * grey once the person has seen a Done, Error, or crash (`seen`). Hidden
  * from assistive technology: the words are always beside it or in a
  * description.
  */
-export function StatusGlyph({ status }: { status: ShownStatus }) {
+export function StatusGlyph({ status, seen = false }: { status: ShownStatus; seen?: boolean }) {
 	const { kind } = status;
 	const question = status.kind === "needs-you" && status.reason === "question";
 	return (
-		<svg className={`status-glyph status-${kind}`} aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+		<svg className={`status-glyph status-${kind}${seen ? " seen" : ""}`} aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
 			{kind === "working" && <path d="M5 1.2a3.8 3.8 0 1 1-3.8 3.8" />}
 			{kind === "needs-you" && !question && <path d="M5 0.8 9.2 5 5 9.2 0.8 5Z" fill="currentColor" strokeWidth="1" />}
 			{question && (
