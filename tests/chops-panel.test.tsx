@@ -180,7 +180,7 @@ describe("the chops panel as drawn", () => {
 		const markup = render(store);
 		const panel = markup.slice(markup.indexOf('id="chops-panel"'));
 		expect(panel).toContain('<span class="chop-item-name">Test</span>');
-		expect(panel).toMatch(/<pre id="[^"]+" class="chops-panel-text" tabindex="0">bun test<\/pre>/);
+		expect(panel).toMatch(/<pre id="[^"]+" class="chops-panel-text" data-chop-text="Test" tabindex="0">bun test<\/pre>/);
 	});
 
 	test("with Use chops off there is no button, panel, or edge, even when the panel was left open", async () => {

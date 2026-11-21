@@ -2,6 +2,7 @@ import {
 	CHOP_LIMIT, type ChopKind, type ChopList, type ChopSource, type ChopsFileState, type ListedChop, type PersonalChop, chopProblem, commandChops, listedChops, normalizeChopText, readPersonalChops,
 	sameChopName, samePersonalChops,
 } from "../shared/chops";
+import type { ChopRename } from "../shared/chop-order";
 import { cleanSessionName } from "../shared/terminal";
 import type { WorktreeMenuItem, WorktreeMenuItemId } from "./worktree-menu-format";
 
@@ -104,6 +105,36 @@ export function chopsSectionChange(model: Pick<ChopsDraftModel, "chops" | "canSa
 	if (model.canSave) return { ...(useChanged ? { useChops } : {}), chops: model.chops };
 	if (useChanged && samePersonalChops(model.chops, saved)) return { useChops };
 	return null;
+}
+
+/**
+ * The renames a save of personal chops makes, so each renamed chop keeps
+ * its place and star in the chops panel (`renameInArrangements`). Each pair
+ * is a chop as saved and as it will be saved; `next` is the whole list as
+ * it will be saved. A chop for every repository is not renamed where a
+ * chop for one repository in `next` has its old or its new name, since
+ * that one is listed there instead.
+ */
+export function chopRenames(next: readonly PersonalChop[], pairs: readonly { from: Pick<PersonalChop, "name" | "repository">; to: Pick<PersonalChop, "name"> }[]): ChopRename[] {
+	return pairs.filter(({ from, to }) => to.name !== "" && from.name !== to.name).map(({ from, to }) => ({
+		repository: from.repository,
+		from: from.name,
+		to: to.name,
+		...(from.repository === null ? { shadowed: [...new Set(next.filter(chop => chop.repository !== null && (sameChopName(chop.name, from.name) || sameChopName(chop.name, to.name))).map(chop => chop.repository!))] } : {}),
+	}));
+}
+
+/**
+ * The renames Settings, Chops would save: rows drawn from what is saved
+ * (`savedDrafts`, in the order of `saved`) that are still there, by key,
+ * with another name.
+ */
+export function chopsSectionRenames(saved: readonly PersonalChop[], savedDrafts: readonly ChopDraft[], drafts: readonly ChopDraft[]): ChopRename[] {
+	const pairs = drafts.flatMap(draft => {
+		const index = savedDrafts.findIndex(row => row.key === draft.key);
+		return index === -1 || saved[index] === undefined ? [] : [{ from: saved[index]!, to: chopOf(draft) }];
+	});
+	return chopRenames(drafts.map(chopOf), pairs);
 }
 
 /** Whether a row has nothing typed in it yet, so it says what it needs without an alert. */

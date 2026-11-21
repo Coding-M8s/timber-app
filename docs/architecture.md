@@ -1460,6 +1460,54 @@ pure functions in `src/mainview/shell.ts`.
   click, its actions button, or Shift+F10 and the menu key, handled as a
   key as the worktree row does. Saves are blocked while
   `preferencesProblem` is set, since the window then holds the defaults.
+  Favorites and order: the pure rules are in `src/shared/chop-order.ts`.
+  A repository's `ChopArrangement` is two lists of names, `favorites` and
+  `rest`, each top to bottom, matched ignoring case, since a merged list
+  has each name once whatever its kind; one order serves both tabs.
+  `arrangeChops` puts the favorites first, then the rest, then chops
+  neither names in listed order. `placeChop` puts one chop in a part,
+  before a chop or at the part's end, and keeps names not listed now (a
+  damaged file, a deleted chop) after the listed ones while there is room
+  (`CHOP_ORDER_LIMIT`). `stepChop` is Alt+Up and Alt+Down: the chop takes
+  the place of the row shown next to it in its part, so the other tab's
+  chops and rows hidden by the filter keep theirs, and a step never stars
+  or unstars. `chopDropPlace` in `chops-panel-format.ts` turns a pointer
+  position into a place, with the "Other chops" heading, or the drop zone
+  while no favorite shows, as the line between the parts.
+  `chopsPanelModel` arranges the rows from `shownChopOrder(state)`. The
+  panel saves through the store's `saveChopOrder`, which shows the new
+  order at once as `chopOrderAim` and calls `savePreferences({ chopOrder
+  })`, so quick moves build on each other; a failed latest save shows the
+  saved order again, and the live region says why. After a move, focus is
+  sent back to the same control of the row (`data-chop-handle`,
+  `data-chop-star`, `data-chop-run`, and the like), since React draws a
+  moved row anew. A rename keeps the chop's place and star: the panel's
+  form and Settings, Chops each find their renames (`chopRenames`, and
+  `chopsSectionRenames` by row key in Settings) and save
+  `renameInArrangements` of the order on screen in the same save as the
+  chops. All renames apply at once, so two chops that swap names swap
+  places. The renamed chop is the one listed under its new name, so a
+  place that name held before (a deleted chop's, or the file chop's it now
+  overrides) is dropped; a chop for every repository is left alone where
+  a chop for that repository has its old or new name, since that one is
+  listed there. Until the chop list is read again under the new names,
+  the store's `chopRenaming` (set by `noteChopRenames` before the save,
+  with the list shown then) lets `chopsPanelModel` find the renamed chops'
+  places by their old names (`listedChopArrangement`), so a row does not
+  jump, and a move made in that time is saved under the new names; a
+  failed save lets the renames go. Whether a chop for every repository is
+  held back by one for a repository is judged from the list as it will be
+  saved. A press on a handle ends on any release of its pointer in the
+  window, on lost capture, or on Escape, which a window listener hears
+  while a drag is live. While a drag is near the top or bottom of the
+  panel's list, or past it, a frame loop scrolls the list by
+  `chopsDragScroll` in `chops-panel-format.ts` (up to 12 pixels a frame
+  within 32 pixels of the edge, faster nearer it) and works out the drop
+  place again, until the pointer leaves the edge or the list can scroll no
+  further.
+  The live region ends every other message with a no-break space, so the
+  same words said again are heard again, and only the latest move's save
+  failure is said, since a later save holds the earlier change.
   `ChopsShortcut` listens on the window in the capture phase and takes the
   key only when it acts (`takesChopsPanelKey`): with chops off, a dialog
   or the quit question open, or Timber not ready, the key goes on to the
@@ -1605,7 +1653,9 @@ Settings dialog and kept by the app. They are never Timber's configuration.
   while the rows are as saved (`chopsSectionChange`), so it never waits on
   rows nobody touched; with a changed row that cannot be saved, nothing is
   saved until the row is fixed or removed. Turning it off never touches
-  `chops`. Fetching: whether the app fetches in
+  `chops`. The chops panel's order and favorites (`chopOrder`) are a
+  preference with no section: the panel saves them (see the chops panel
+  above). Fetching: whether the app fetches in
   the background and how often (see [fetching](#fetching)). Under a
   "Timber" heading, Executable picks which Timber the app runs (see
   [finding Timber](#finding-timber)), and Machine and Repository edit
@@ -1703,6 +1753,15 @@ every machine agrees. The rules are pure, in
   readable entry and drops the rest (`salvagePersonalChops`), so a hand edit
   does not cost the others at the next save. A chop for a repository that
   left the list is kept, and Settings shows its path as "not in the list".
+- **Order and favorites** are the `chopOrder` preference: for each
+  repository's primary checkout, the names of its favorites and of the
+  rest, in the chops panel's order (`src/shared/chop-order.ts`). Any chop
+  listed can be in it, a file chop too, and the repository is never
+  written. A save is taken whole or not at all; reading the settings file
+  keeps every readable name (`salvageChopArrangements`). At most 200 names
+  for a repository and 200 repositories are kept: the order of a
+  repository that left the list stays, and past 200 the one changed
+  longest ago is dropped (`withChopArrangement` keeps them oldest first).
 - **The repository file** is `.timber/chops.json`, committed with the code,
   and read from the repository's main checkout (its primary checkout) only,
   never from the active worktree, so every worktree of a repository shows

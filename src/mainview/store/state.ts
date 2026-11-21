@@ -1,3 +1,4 @@
+import type { ChopArrangements, ChopRename } from "../../shared/chop-order";
 import type { SuggestedIssue } from "../../shared/issue-search";
 import type { AppUpdateState } from "../../shared/app-update";
 import type { InstallStep } from "../app-update-format";
@@ -361,6 +362,19 @@ export interface AppState {
 	/** Why the saved preferences could not be read on start. Null once a save worked. */
 	preferencesProblem: string | null;
 	/**
+	 * The chop order the latest move or star in the chops panel asked for,
+	 * shown until its save answers, so quick moves add up. Null when none
+	 * waits: the saved `preferences.chopOrder` shows (`shownChopOrder`).
+	 */
+	chopOrderAim: ChopArrangements | null;
+	/**
+	 * Chops just saved under new names, and the chop list shown when they
+	 * were saved. While that list still shows, under the old names, the
+	 * panel finds their places by the old names, so a renamed chop does not
+	 * jump until the list is read again (`chopsPanelModel`).
+	 */
+	chopRenaming: { renames: readonly ChopRename[]; list: unknown } | null;
+	/**
 	 * The preferences as first read, which this run started with. A
 	 * preference read only at start keeps using this value until a restart
 	 * (see `restartNeededFor` in src/shared/preferences.ts). The defaults when
@@ -560,6 +574,8 @@ export const initialState: AppState = {
 	layoutProblem: null,
 	preferences: defaultPreferences(),
 	preferencesProblem: null,
+	chopOrderAim: null,
+	chopRenaming: null,
 	preferencesAtStart: null,
 	appVersion: null,
 	appUpdate: { kind: "idle" },
@@ -619,6 +635,11 @@ export function chopsEnabled(state: AppState): boolean {
  */
 export function offeredChops(state: AppState): AppState["chops"] {
 	return state.preferences.useChops ? state.chops : null;
+}
+
+/** The chop order the panel shows: the one a waiting save asked for, or the saved one. */
+export function shownChopOrder(state: Pick<AppState, "chopOrderAim" | "preferences">): ChopArrangements {
+	return state.chopOrderAim ?? state.preferences.chopOrder;
 }
 
 /**

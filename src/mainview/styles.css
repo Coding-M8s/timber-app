@@ -376,6 +376,101 @@ pre:focus-visible {
 	flex: none;
 }
 
+/* A row's drag handle and star sit before its name. */
+.chops-panel-handle,
+.chops-panel-star {
+	flex: none;
+	color: var(--text-3);
+}
+
+.chops-panel-handle {
+	cursor: grab;
+	touch-action: none;
+}
+
+.chops-panel-star.favorite {
+	color: var(--modified);
+}
+
+.chops-panel-handle[aria-disabled="true"],
+.chops-panel-star[aria-disabled="true"] {
+	opacity: 0.5;
+	cursor: default;
+}
+
+/* Favorites first, then the rest, each under a small heading. */
+.chops-panel-section {
+	margin: 4px 0 8px;
+	color: var(--text-3);
+	font-size: 11px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.chops-panel-section + .chops-panel-list,
+.chops-panel-list + .chops-panel-section {
+	margin-top: 12px;
+}
+
+/* Moving a chop: the dragged one fades, and a line shows where it will land. */
+.chops-panel-item {
+	position: relative;
+}
+
+.chops-panel-item.dragging {
+	opacity: 0.5;
+}
+
+.chops-panel-item.dragging .chops-panel-handle {
+	cursor: grabbing;
+}
+
+.chops-panel-item.drop-before::before,
+.chops-panel-item.drop-after::after,
+.chops-panel-section.drop-after::after {
+	content: "";
+	position: absolute;
+	left: 0;
+	right: 0;
+	height: 2px;
+	border-radius: 1px;
+	background: var(--focus);
+	pointer-events: none;
+}
+
+.chops-panel-item.drop-before::before {
+	top: -6px;
+}
+
+.chops-panel-item.drop-after::after {
+	bottom: -6px;
+}
+
+.chops-panel-section.drop-after {
+	position: relative;
+}
+
+.chops-panel-section.drop-after::after {
+	bottom: -4px;
+}
+
+/* Shown while a chop is dragged and no favorite shows: a drop here pins it. */
+.chops-panel-drop {
+	margin: 0 0 10px;
+	padding: 8px;
+	border: 1px dashed var(--line-raised);
+	border-radius: 6px;
+	color: var(--text-3);
+	font-size: 12px;
+	text-align: center;
+}
+
+.chops-panel-drop.active {
+	border-color: var(--focus);
+	color: var(--text);
+}
+
 .chops-panel-new[aria-disabled="true"] {
 	opacity: 0.5;
 	cursor: default;

@@ -3560,3 +3560,57 @@ engine:
 - Not run: the desktop window on any platform, a push over SSH or to a
   real HTTPS host, and a real sign-in failure (the app's push tests used a
   missing local path as the unreachable remote).
+
+Run for favorites and ordering in the chops panel (issue 253), Linux x64
+with Bun 1.4.5, Git 2.43.0, and headless Google Chrome 151 over the mock
+engine:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun run build:web`: built.
+- `bun test`: 3593 passed, 19 skipped, 0 failed, after a rebase onto main.
+  The run before it had one failure, a timeout in
+  `tests/worktree-pr.test.ts` while the installed Timber listed worktrees
+  under load; that file passed alone (9 passed) and in the full rerun.
+  `tests/chop-order.test.tsx` covers the order logic: favorites first,
+  then the rest, then chops neither list names, in listed order; a move
+  before a chop or to the end of a part; a drop into Favorites that pins
+  and out of them that unpins; the star's place at the end of Favorites
+  and the top of the rest; names not listed kept after the listed ones,
+  and dropped first at the limit; Alt+Up and Alt+Down taking the place of
+  the row shown next to it, with the other tab's chops and rows hidden by
+  the filter left in place, never crossing between the parts, and
+  stopping at the ends; the words the live region says; the drop place
+  for a pointer position; reading a change whole or not at all, and
+  salvaging a hand-edited file; and renames for one repository or every
+  repository, two chops swapping names, a rename onto a deleted chop's
+  name, a chop for every repository hidden by one for a repository under
+  its old or new name, and the renames Settings, Chops finds by row among
+  moved, added, and removed rows; the oldest repository's order dropped
+  past 200; handles and stars off with the reason while the saved settings
+  cannot be read; a renamed chop keeping its place until the list is read
+  again; a chop for a repository deleted in the same save not holding back
+  a rename to its name; no empty "Other chops" heading; and how fast the
+  list scrolls for a drag at each distance from its edges. Over the mock engine, quick moves add up before their saves
+  answer, a failed save shows the saved order again, and the panel draws
+  Favorites first with a pressed star and a handle on each row. Against a
+  real temporary repository, a `.timber/chops.json` chop starred through
+  the main process's preferences is read back by a new settings holder,
+  as at a restart, for that repository only, and the file's bytes, its
+  time, and the repository's files are unchanged.
+  `tests/chops-panel-browser.test.ts` drives in Chrome: Alt+Up on a
+  handle and Alt+Down on a Run button move the chop, keep the keyboard on
+  that control, say the new place, and save; Alt+Up at the top says the
+  chop is already first; the star pins a file chop to the top with the
+  keyboard on the star; dragging a handle onto the Favorites drop zone
+  pins the chop; dragging reorders within Favorites and drops a chop out
+  of them; Escape puts a drag away; a press let go beside the handle
+  leaves no drag behind for a later hover or a later press elsewhere; a
+  rename whose save fails leaves the rows where they were; the last of 32
+  chops dragged to the top of the list scrolls it to its top and lands
+  first; the same words
+  said twice
+  change the live region; a starred chop renamed in the panel's form
+  keeps its place and star with no frame where it jumps; and a chop
+  renamed in Settings, Chops keeps its place in the panel.
+- Not run: the desktop window on any platform, the WebKitGTK webview, and
+  a screen reader.
