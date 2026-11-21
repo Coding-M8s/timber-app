@@ -1,6 +1,7 @@
 import type { NewWorktreeRequest, OpenWorktreeRequest, TimberStatus, WorktreeCommandResult } from "../shared/model";
 import type { ResultCommand } from "../shared/timber-result";
 import { type RebaseRequest, type RebaseResult, readRebaseResult, rebaseResultArguments } from "../shared/timber-rebase";
+import { type SetBaseRequest, type SetBaseResult, readSetBaseResult, setBaseResultArguments } from "../shared/timber-base";
 import { type CreatePullRequestRequest, type CreatePullRequestResult, type HeadSubjectRequest, prResultArguments, readPrResult } from "../shared/timber-pr";
 import { readHeadSubject } from "./git-engine";
 import { isWorkflowName } from "../shared/workflows";
@@ -27,10 +28,11 @@ export interface WorktreeCommandsOptions {
 }
 
 /**
- * Creating, opening, and rebasing worktrees, and opening a pull request for
- * one. All go through Timber, which owns every rule about what may be created
- * where and what may be pushed: nothing here checks a name, a base, a title,
- * or a folder. Each call runs Timber once and never again by itself.
+ * Creating, opening, and rebasing worktrees, saving a worktree's base, and
+ * opening a pull request for one. All go through Timber, which owns every
+ * rule about what may be created where and what may be pushed: nothing here
+ * checks a name, a base, a title, or a folder. Each call runs Timber once and
+ * never again by itself.
  */
 export interface WorktreeCommands {
 	/** Run `timber new` in a repository from the list. */
@@ -43,6 +45,12 @@ export interface WorktreeCommands {
 	 * conflicts is left as Git left it: no Git command runs here.
 	 */
 	rebase(request: RebaseRequest): Promise<RebaseResult>;
+	/**
+	 * Run `timber base --set --result-file` for a worktree Timber lists, in the
+	 * same turn as the other commands of its repository. Timber checks the base
+	 * and saves it: nothing here checks a ref.
+	 */
+	setBase(request: SetBaseRequest): Promise<SetBaseResult>;
 	/**
 	 * Run `timber pr --result-file` for a worktree Timber lists, in the same
 	 * turn as the other commands of its repository. Timber publishes the
@@ -128,6 +136,36 @@ export function createWorktreeCommands(options: WorktreeCommandsOptions): Worktr
 		});
 	}
 
+	/** A failure from before `timber base` ran. Nothing was changed. */
+	const setBaseNotRun = (diagnostic: string): SetBaseResult => ({ outcome: "failed", ran: false, failure: { command: null, diagnostic, output: null } });
+
+	async function setBase(request: SetBaseRequest): Promise<SetBaseResult> {
+		const { repository, worktree, base } = (request ?? {}) as Partial<SetBaseRequest>;
+		// Only text becomes an argument: the request comes over the bridge.
+		if (typeof repository !== "string" || typeof worktree !== "string" || typeof base !== "string" || base === "") {
+			return setBaseNotRun("The request for timber base is not complete. Nothing was run.");
+		}
+		return inTurn(repository, async () => {
+			try {
+				const found = await findListedWorktree(findRepository, repository, worktree, "Nothing was run.");
+				if (!found.ok) return setBaseNotRun(found.message);
+				const status = await timber();
+				if (status.state !== "ready") return setBaseNotRun(`${describeTimberStatus(status)}. Nothing was run.`);
+				const run = await runTimberWithResultFile({
+					executable: status.path,
+					command: "base",
+					arguments: resultFile => setBaseResultArguments({ worktree, base }, resultFile),
+					folder: repository,
+					...(environment ? { environment } : {}),
+					...(temporaryRoot === undefined ? {} : { temporaryRoot }),
+				});
+				return readSetBaseResult(run, worktree);
+			} catch (error) {
+				return setBaseNotRun(`Could not start timber base: ${messageOf(error)}. Nothing was run.`);
+			}
+		});
+	}
+
 	/** A failure from before `timber pr` ran. Nothing was pushed. */
 	const prNotRun = (diagnostic: string): CreatePullRequestResult => ({ outcome: "failed", ran: false, published: false, failure: { command: null, diagnostic, output: null } });
 
@@ -173,6 +211,7 @@ export function createWorktreeCommands(options: WorktreeCommandsOptions): Worktr
 
 	return {
 		rebase,
+		setBase,
 		pullRequest,
 		headSubject,
 		create(request) {

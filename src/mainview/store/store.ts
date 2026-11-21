@@ -34,6 +34,7 @@ import { REVIEW_COPIED, describeReviewSent } from "../review-format";
 import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "../../shared/timber-config";
 import type { DoneApplyRequest, DoneApplyResult, DonePreview, DonePreviewRequest, DonePreviewResult } from "../../shared/timber-done";
 import type { RebaseRequest, RebaseResult } from "../../shared/timber-rebase";
+import type { SetBaseRequest, SetBaseResult } from "../../shared/timber-base";
 import { type CreatePullRequestResult, initialPullRequestBase, pullRequestBaseFromText, pullRequestReviewersFromText } from "../../shared/timber-pr";
 import { type PullRequestFields, defaultPullRequestTitle, presentPullRequestCreation, pullRequestTitleWithKey, titleKeyOf } from "../pull-request-create-format";
 import type { WorkflowList } from "../../shared/workflows";
@@ -396,6 +397,17 @@ export interface AppStore {
 	 * rebase that stopped on conflicts is left as Git left it.
 	 */
 	rebaseWorktree(request: RebaseRequest): Promise<RebaseResult>;
+	/**
+	 * Save a worktree's base with `timber base --set --result-file` and answer
+	 * how it ended (see `SetBaseResult`). The engine is asked once, and never
+	 * again by itself. Once a base is saved, the worktree compares with its
+	 * base in the Changes tab, as the person's choice; so does one whose
+	 * answer was lost but whose list read again shows a new base. The
+	 * repository is read again before this answers, whatever the outcome, so
+	 * the header, the row, and the Changes tab show what Timber saved. Never
+	 * throws.
+	 */
+	setWorktreeBase(request: SetBaseRequest): Promise<SetBaseResult>;
 	/**
 	 * Start the Pull request tab's form for a worktree with no pull request
 	 * yet, once: the base starts as the saved one in the form Timber takes,
@@ -1250,6 +1262,11 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 
 	function worktreeOf(repositoryPath: string, worktreeId: string) {
 		return state.repositories.find(candidate => candidate.path === repositoryPath)?.worktrees.find(candidate => candidate.id === worktreeId) ?? null;
+	}
+
+	/** A listed worktree by its registered path, as requests to the engine name it. */
+	function worktreeAt(repositoryPath: string, worktreePath: string) {
+		return state.repositories.find(candidate => candidate.path === repositoryPath)?.worktrees.find(candidate => candidate.path === worktreePath) ?? null;
 	}
 
 	async function readChanges(repositoryPath: string, worktreeId: string): Promise<void> {
@@ -2181,6 +2198,36 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		return result;
 	}
 
+	async function setWorktreeBase(request: SetBaseRequest): Promise<SetBaseResult> {
+		let result: SetBaseResult;
+		try {
+			result = await engine.setWorktreeBase(request);
+		} catch (error) {
+			const diagnostic = `The app did not hear how timber base ended: ${messageOf(error)}. The engine did not answer, so whether the base was saved is unknown. Check the worktree's base before trying again.`;
+			result = { outcome: "failed", ran: true, failure: { command: null, diagnostic, output: null } };
+		}
+		const before = worktreeAt(request.repository, request.worktree)?.base ?? null;
+		await reloadOne(request.repository);
+		const worktree = worktreeAt(request.repository, request.worktree);
+		if (!worktree) return result;
+		// When the answer was not heard or not readable, Timber may still have saved a base: the list read again says.
+		const saved = result.outcome === "set" || (result.outcome === "failed" && result.ran && (worktree.base?.kind === "assigned" || worktree.base?.kind === "commit") && JSON.stringify(worktree.base) !== JSON.stringify(before));
+		if (!saved) return result;
+		// The worktree now compares with its base, as if the person had chosen Base there.
+		const layout = chooseComparison(state.layout, worktree.id, "base");
+		if (layout !== state.layout) {
+			changeLayout(layout);
+			void saveLayout("layout");
+		}
+		// A new base is a different list: read it afresh, so nothing of the old one shows under the new header.
+		const view = state.changes;
+		if (view?.worktree === worktree.id && view.repository === request.repository) {
+			update({ changes: { ...view, files: null, more: false, compared: null, problem: null, selected: null, diff: null } });
+			await readChanges(request.repository, worktree.id);
+		}
+		return result;
+	}
+
 	function changeForm(id: string, change: Partial<PullRequestForm>): void {
 		const form = state.pullRequestForms[id];
 		if (form) update({ pullRequestForms: { ...state.pullRequestForms, [id]: { ...form, ...change } } });
@@ -2841,8 +2888,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			}
 		},
 		openDialog(request) {
-			// Neither Done nor Rebase starts on a worktree that Timber is removing.
-			if ((request.kind === "done-worktree" || request.kind === "rebase-worktree") && removingId(request.repository, request.worktree)) return;
+			// Neither Done, Rebase, nor Set base starts on a worktree that Timber is removing.
+			if ((request.kind === "done-worktree" || request.kind === "rebase-worktree" || request.kind === "set-base") && removingId(request.repository, request.worktree)) return;
 			update({ dialog: request });
 		},
 		closeDialog() {
@@ -2862,6 +2909,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		openTerminal,
 		startSessionsIn,
 		rebaseWorktree,
+		setWorktreeBase,
 		startPullRequestForm,
 		editPullRequestForm,
 		createPullRequest,

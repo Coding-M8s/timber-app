@@ -81,6 +81,7 @@ export function createDesktopEngine(): Engine {
 		openWorktree: request => rpc.request.openWorktree(request, { maxRequestTime: Infinity }),
 		// A fetch and Git hooks take as long as they take.
 		rebaseWorktree: request => rpc.request.rebaseWorktree(request, { maxRequestTime: Infinity }),
+		setWorktreeBase: request => rpc.request.setWorktreeBase(request, { maxRequestTime: Infinity }),
 		// A push and GitHub take as long as they take. Timber stops each GitHub request after ten seconds.
 		createPullRequest: request => rpc.request.createPullRequest(request, { maxRequestTime: Infinity }),
 		readHeadSubject: request => rpc.request.readHeadSubject(request),

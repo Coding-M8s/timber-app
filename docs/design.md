@@ -391,6 +391,12 @@ logins. The app never reads a tracker login and never signs in.
   "Refreshing…" once for each refresh: the spinner stays a moment after a
   read ends, so the reload of the repository and the read of its changes
   that follows count as one.
+- At the end of the Compare with row, a quiet "Set base…" (no saved base,
+  or one Timber cannot use) or "Change base…" (a saved base) opens the Set
+  base dialog. Once Timber saves the base, the tab moves to Base, its header
+  shows the new base as elsewhere in Changes (`name @ hash`, or a commit
+  base by its short hash), and the workspace header and the row's tooltip
+  name the new base. A remote base shows there only once it is fetched.
 - Review notes: in the Changes tab, clicking a line's numbers (or Enter on
   them) starts a note on that line, in either comparison, and Shift+click
   or Shift+Enter on another line of the same hunk makes it a range. A note
@@ -521,6 +527,13 @@ logins. The app never reads a tracker login and never signs in.
   does. The dialog says how the rebase ended. One that stops on conflicts
   lists the files and offers a terminal in the worktree, leaving the rebase
   paused for the person to finish or abort.
+- **Set base:** a Base field filled with the saved base, with the
+  repository's branches as suggestions, and the exact `timber base --set`
+  command under it. It says that only Timber's record of the base changes,
+  never the branch or files, that a remote branch is checked over the
+  network and compared with only once fetched, and that a commit is given
+  by its full hash. Saved metadata Timber cannot use shows as a warning. A refusal
+  stays in the dialog with Timber's reason and what was typed.
 - **Restore backup:** the backup's branch, age, source folder, and ID, and
   the folder for the new worktree, by default beside the primary checkout.
   Says that the branch is `recovery/<id>`, that changes come back unstaged

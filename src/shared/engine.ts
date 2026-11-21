@@ -24,6 +24,7 @@ import type { SavedSessions } from "./saved-sessions";
 import type { OpenTerminalRequest, OpenTerminalResult, PasteResult, TerminalChange, TerminalOutput, TerminalSession, TerminalSnapshot } from "./terminal";
 import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "./timber-config";
 import type { RebaseRequest, RebaseResult } from "./timber-rebase";
+import type { SetBaseRequest, SetBaseResult } from "./timber-base";
 import type { CreatePullRequestRequest, CreatePullRequestResult, HeadSubjectRequest } from "./timber-pr";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "./timber-done";
 import type { UninstallPlan, UninstallRequest, UninstallResult } from "./uninstall";
@@ -159,6 +160,16 @@ export interface Engine {
 	 * after every outcome.
 	 */
 	rebaseWorktree(request: RebaseRequest): Promise<RebaseResult>;
+	/**
+	 * Save a worktree's base by running `timber base --set <ref>
+	 * --result-file` in a repository from the list, and answer how it ended as
+	 * Timber's record says: set, refused, or failed. The command is
+	 * `setBaseResultArguments` in ./timber-base.ts, so the interface can show
+	 * it before asking. Timber checks the base and changes only its saved
+	 * metadata, never the branch, the index, or files. It runs once and is
+	 * never retried here. Read the list after every outcome.
+	 */
+	setWorktreeBase(request: SetBaseRequest): Promise<SetBaseResult>;
 	/**
 	 * Publish a worktree's branch and open a pull request for it by running
 	 * `timber pr --result-file` in a repository from the list, and answer how

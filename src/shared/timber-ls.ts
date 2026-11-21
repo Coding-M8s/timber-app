@@ -70,7 +70,7 @@ function readChanges(value: unknown): WorktreeChanges | null {
  * with its full lowercase hash; anything else answers "unreadable", so that a
  * base is never guessed.
  */
-function readBase(value: unknown): SavedBase | null | "unreadable" {
+export function readBase(value: unknown): SavedBase | null | "unreadable" {
 	if (value === undefined) return null;
 	if (!isFields(value)) return "unreadable";
 	if (value.kind === "assigned" && isText(value.ref) && value.ref !== "") return { kind: "assigned", ref: value.ref };

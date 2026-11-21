@@ -26,6 +26,7 @@ import {
 } from "../../shared/timber-done";
 import type { FetchFailureKind, FetchResult, ForcePushSeen, RepositoryFetch } from "../../shared/git-fetch";
 import type { RebaseResult } from "../../shared/timber-rebase";
+import type { SetBaseResult } from "../../shared/timber-base";
 import { failureOf, readTimberResult } from "../../shared/timber-result";
 import { APP_VERSION } from "../../shared/app-info";
 import { type AvailableUninstallPlan, UNINSTALL_ARGUMENTS, type UninstallRequest } from "../../shared/uninstall";
@@ -34,6 +35,7 @@ import { type TimberChoice, sameTimberChoice } from "../../shared/timber-choice"
 import { TIMBER_PIN } from "../../shared/timber-pin";
 import { type CommandEnding, actOutNew, actOutOpen, isCommandEnding } from "./mock-commands";
 import { type RebaseEnding, actOutRebase, isRebaseEnding } from "./mock-rebase";
+import { actOutSetBase } from "./mock-base";
 import { type PullRequestEnding, actOutPullRequest, isPullRequestEnding } from "./mock-pr";
 import type { CreatePullRequestResult } from "../../shared/timber-pr";
 import { type MockFileChange, derivedFileChanges, diffMockFileChange, listMockFileChanges } from "./mock-file-changes";
@@ -1041,6 +1043,26 @@ export function createMockEngine(
 			const status = await look();
 			if (status.state !== "ready") return refuse("Timber is not ready.");
 			return structuredClone(actOutRebase(repository, worktree, request, rebaseEnding));
+		},
+		async setWorktreeBase(request) {
+			const refuse = (diagnostic: string): SetBaseResult => ({ outcome: "failed", ran: false, failure: { command: null, diagnostic: `${diagnostic} Nothing was run.`, output: null } });
+			if (commandMilliseconds > 0) await new Promise(resolve => setTimeout(resolve, commandMilliseconds));
+			// As the main process does: a repository from the list, a worktree it lists with its folder there, then a Timber that is ready.
+			const repository = current.find(candidate => candidate.path === request.repository && candidate.available);
+			if (!repository) return refuse(`${request.repository} is not a repository in the app's list.`);
+			const worktree = timberFailures.has(repository.path) ? undefined : repository.worktrees.find(candidate => candidate.path === request.worktree);
+			if (!worktree) return refuse(`Timber lists no worktree at ${request.worktree} in ${request.repository}. Refresh the list.`);
+			if (!worktree.pathExists) return refuse(`The folder ${worktree.path} is missing.`);
+			const status = await look();
+			if (status.state !== "ready") return refuse("Timber is not ready.");
+			const { result, saved } = actOutSetBase(repository, worktree, request, listedBranches(repository) ?? []);
+			if (saved) {
+				// Timber keeps the base in the worktree's metadata, so the next read of the list shows it.
+				const changed = { ...repository, worktrees: repository.worktrees.map(candidate => candidate === worktree ? saved : candidate) };
+				current = current.map(candidate => candidate === repository ? changed : candidate);
+				onDisk.set(repository.path, changed);
+			}
+			return structuredClone(result);
 		},
 		async createPullRequest(request) {
 			const refuse = (diagnostic: string): CreatePullRequestResult => ({ outcome: "failed", ran: false, published: false, failure: { command: null, diagnostic: `${diagnostic} Nothing was run.`, output: null } });

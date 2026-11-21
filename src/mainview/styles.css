@@ -3616,6 +3616,11 @@ pre:focus-visible {
 	white-space: nowrap;
 }
 
+/* Pushed to the end of the row, so it stays put when the compared text appears. */
+.changes-base-action {
+	margin-left: auto;
+}
+
 .changes-base-note {
 	margin: 0;
 	padding: 6px 12px;
