@@ -11,6 +11,7 @@ import {
 	TERMINAL_COLORS,
 	THEME_STYLE_ID,
 	UI_COLORS,
+	TERMINAL_COLOR_PROPERTIES,
 	UI_COLOR_PROPERTIES,
 	contrastWarnings,
 	defaultThemeChoice,
@@ -201,7 +202,7 @@ describe("the theme's stylesheet", () => {
 	});
 
 	test("defines every custom property the stylesheet uses, and the stylesheet has no color of its own", () => {
-		const defined = new Set([...Object.values(UI_COLOR_PROPERTIES), "--font-ui", "--font-mono", "--font-terminal", "--sidebar-width", "--chops-width"]);
+		const defined = new Set([...Object.values(UI_COLOR_PROPERTIES), ...Object.values(TERMINAL_COLOR_PROPERTIES), "--font-ui", "--font-mono", "--font-terminal", "--sidebar-width", "--chops-width"]);
 		const used = new Set([...STYLES.matchAll(/var\((--[a-z0-9-]+)/g)].map(match => match[1]!));
 		expect([...used].filter(name => !defined.has(name))).toEqual([]);
 		const withoutComments = STYLES.replace(/\/\*[\s\S]*?\*\//g, "");

@@ -6868,7 +6868,7 @@ pre:focus-visible {
 	}
 }
 
-/* The File tab: one file, read-only, numbers beside the text. */
+/* The File tab: one file, numbers beside the text. */
 .file-viewer {
 	flex: 1 1 auto;
 	display: flex;
@@ -6891,35 +6891,6 @@ pre:focus-visible {
 .file-viewer-body:focus-visible {
 	outline: 2px solid var(--focus);
 	outline-offset: -2px;
-}
-
-/* Wide lines scroll sideways with the numbers, which stay lined up with their lines. */
-.file-viewer-lines {
-	display: flex;
-	min-width: max-content;
-	padding: 6px 0 12px;
-}
-
-.file-viewer-numbers,
-.file-viewer-text {
-	margin: 0;
-	font: inherit;
-	line-height: inherit;
-	white-space: pre;
-	tab-size: 4;
-}
-
-.file-viewer-numbers {
-	flex: none;
-	padding: 0 1.5ch 0 1ch;
-	text-align: right;
-	color: var(--text-3);
-	user-select: none;
-}
-
-.file-viewer-text {
-	padding-right: 12px;
-	color: var(--text);
 }
 
 /* The switch between rendered, source, and edit sits right after the path; it is smaller than in a dialog. */
@@ -6960,27 +6931,146 @@ pre:focus-visible {
 	color: var(--text-2);
 }
 
-/* Edit mode: the source in one plain text box, in the terminal's font. */
-.file-editor {
+/* Edit mode: the small editor, on CodeMirror. Numbers beside the text, in the terminal's font, a search bar above, a status line below. */
+.text-editor {
 	flex: 1 1 auto;
+	display: flex;
+	flex-direction: column;
 	min-height: 0;
-	width: 100%;
-	margin: 0;
-	padding: 8px 12px 12px;
-	border: 0;
-	border-radius: 0;
-	background: transparent;
-	color: var(--text);
-	line-height: 1.5;
-	tab-size: 4;
-	white-space: pre;
-	overflow: auto;
-	resize: none;
 }
 
-.file-editor:focus-visible {
+.text-editor-host {
+	flex: 1 1 auto;
+	display: flex;
+	min-height: 0;
+}
+
+.text-editor-host .cm-editor {
+	flex: 1 1 auto;
+	min-width: 0;
+	height: 100%;
+	background: transparent;
+	color: var(--text);
+}
+
+.text-editor-host .cm-editor.cm-focused {
 	outline: 2px solid var(--focus);
 	outline-offset: -2px;
+}
+
+.text-editor-host .cm-scroller {
+	font-family: inherit;
+	line-height: 1.5;
+}
+
+.text-editor-host .cm-content {
+	padding: 8px 0 12px;
+	caret-color: var(--text);
+}
+
+.text-editor-host .cm-cursor {
+	border-left-color: var(--text);
+}
+
+.text-editor-host .cm-gutters {
+	border-right: 1px solid var(--line);
+	background: transparent;
+	color: var(--text-3);
+}
+
+.text-editor-host .cm-lineNumbers .cm-gutterElement {
+	padding: 0 1.5ch 0 1ch;
+}
+
+.text-editor-host .cm-activeLine,
+.text-editor-host .cm-activeLineGutter {
+	background: var(--fill-hover);
+}
+
+.text-editor-host .cm-selectionBackground,
+.text-editor-host .cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground {
+	background: var(--fill-selected);
+}
+
+/* Every match is marked; the one selected stands out, even while the search field has the keyboard. */
+.text-editor-host .cm-searchMatch {
+	background: var(--fill-strong);
+	outline: 1px solid var(--modified);
+}
+
+.text-editor-host .cm-searchMatch-selected {
+	background: var(--fill-selected);
+	outline: 2px solid var(--focus);
+}
+
+.text-editor-host .cm-panels {
+	background: var(--bg-main);
+	color: var(--text);
+	font-family: var(--font-ui);
+}
+
+.text-editor-host .cm-panels-top {
+	border-bottom: 1px solid var(--line);
+}
+
+.text-editor-find-bar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+	padding: 6px 12px;
+	border-bottom: 1px solid var(--line);
+	font-size: 12px;
+}
+
+.text-editor-find-field {
+	width: 240px;
+	padding: 3px 6px;
+	border: 1px solid var(--line-raised);
+	border-radius: 4px;
+	background: var(--fill-field);
+	color: var(--text);
+	font: inherit;
+}
+
+.text-editor-find-field:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: -1px;
+}
+
+.text-editor-find-count {
+	min-width: 9ch;
+	color: var(--text-2);
+}
+
+.text-editor-find-case {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	color: var(--text-2);
+}
+
+.text-editor-status {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 16px;
+	padding: 3px 12px;
+	border-top: 1px solid var(--line);
+	color: var(--text-3);
+	font-size: 12px;
+}
+
+.text-editor-hint {
+	margin-left: auto;
+}
+
+/* Why a text file cannot be edited here, quietly, under the title line. */
+.file-edit-refusal {
+	margin: 0;
+	padding: 6px 12px;
+	border-bottom: 1px solid var(--line);
+	color: var(--text-2);
+	font-size: 12px;
 }
 
 /* A Markdown file, rendered, in the interface's font. */

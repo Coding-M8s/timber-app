@@ -213,7 +213,7 @@ describe("editing and saving text", () => {
 });
 
 describe("the Markdown reader in the File tab", () => {
-	test("opens a Markdown file rendered, with a switch to its source, and other files read-only", async () => {
+	test("opens a Markdown file rendered, with a switch to its source and Edit, and other text files straight in the editor, with no switch", async () => {
 		const store = await started();
 		store.openFile(FEATURE.id, "docs/plan.md");
 		await settle();
@@ -225,18 +225,24 @@ describe("the Markdown reader in the File tab", () => {
 
 		store.showFileAs(FEATURE.id, "source");
 		markup = render(store);
-		expect(markup).toContain("# Plan");
-		expect(markup).toMatch(/file-viewer-numbers" aria-hidden="true">1\n2\n3/);
+		// Source is the editor, read-only, colored as Edit is.
+		expect(markup).toContain('<div class="text-editor-host"');
+		expect(markup).toContain('<span class="text-editor-language">Markdown</span>');
+		expect(markup).toContain("Read-only. Ctrl+F to find");
 
 		store.openFile(FEATURE.id, "report.txt");
 		await settle();
 		markup = render(store);
-		expect(store.getState().files[FEATURE.id]?.mode).toBe("source");
-		expect(markup).toContain("Read-only");
+		expect(store.getState().files[FEATURE.id]?.mode).toBe("edit");
+		expect(markup).not.toContain("Read-only");
 		expect(markup).not.toContain("radiogroup");
-		// Edit is only for Markdown.
-		store.editFile(FEATURE.id);
+		expect(markup).toContain('<div class="text-editor-host"');
+		expect(markup).toContain("Ctrl+S to save");
+		expect(markup).toContain('<span class="text-editor-language">Plain text: no coloring for this kind of file</span>');
+		// Its draft starts with the first change.
 		expect(store.getState().files[FEATURE.id]?.draft).toBeNull();
+		store.changeDraft(FEATURE.id, "line 1: changed\n");
+		expect(store.getState().files[FEATURE.id]?.draft).toBe("line 1: changed\n");
 	});
 
 	test("edits the source, keeps the draft across tabs, previews it rendered, and saves only that file", async () => {
@@ -248,8 +254,9 @@ describe("the Markdown reader in the File tab", () => {
 		await settle();
 		store.editFile(FEATURE.id);
 		let markup = render(store);
-		expect(markup).toContain('<textarea class="file-editor" aria-label="Source of notes.md"');
-		expect(markup).toContain("# Notes\n</textarea>");
+		// The editor itself is drawn in the window, by CodeMirror; here only its frame and status line show.
+		expect(markup).toContain('<div class="text-editor-host"');
+		expect(markup).toContain("<span>Ln 1, Col 1</span><span>2 lines</span>");
 		expect(engine.unsavedFilesReported()).toBe(0);
 
 		store.changeDraft(FEATURE.id, "# Notes\n\nNew line\n");

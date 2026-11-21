@@ -93,7 +93,7 @@ describe("the file explorer's folders", () => {
 		expect(engine.watchedWorktreeFolders()).toBeNull();
 		store.toggleSidePanel("files");
 		await settle();
-		expect(rowsOf(store)).toEqual(["docs", ".gitignore", "logo.png", "README.md", "report.txt"]);
+		expect(rowsOf(store)).toEqual(["docs", "src", ".gitignore", "logo.png", "README.md", "report.txt"]);
 		expect(engine.watchedWorktreeFolders()).toEqual({ repository: "/work/timber", worktree: PRIMARY.path, folders: [""] });
 		store.hideChopsPanel();
 		expect(engine.watchedWorktreeFolders()).toBeNull();

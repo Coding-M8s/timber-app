@@ -42,13 +42,13 @@ describe("the File tab", () => {
 		const markup = render(store);
 		expect(tabs(markup)).toEqual(["Workspace", "Changes", "Pull request", "plan.md"]);
 		expect(markup).toContain('aria-label="Close plan.md"');
-		// Markdown opens rendered (see markdown-reader.test.tsx); its source shows the numbers.
+		// Markdown opens rendered (see markdown-reader.test.tsx); its source shows in the editor, read-only, colored.
 		expect(markup).toContain(">Plan</h1>");
 		store.showFileAs(FEATURE.id, "source");
 		const source = render(store);
-		expect(source).toContain("# Plan");
-		// The numbers are their own block, one per line.
-		expect(source).toMatch(/file-viewer-numbers" aria-hidden="true">1\n2\n3\n4\n5\n6\n7<\/pre>/);
+		expect(source).toContain('<div class="text-editor-host"');
+		expect(source).toContain('<span class="text-editor-language">Markdown</span>');
+		expect(source).toContain("Read-only. Ctrl+F to find");
 
 		store.closeFile(FEATURE.id);
 		expect(store.getState().tab).toBe("changes");
@@ -134,7 +134,12 @@ describe("the File tab", () => {
 		// The button calls this; the file's text is what the mock has on disk.
 		store.openFile(FEATURE.id, "src/net.ts");
 		await settle();
-		expect(render(store)).toContain("export const retries = 5;");
+		const view = store.getState().files[FEATURE.id];
+		expect(view?.result?.outcome === "read" && view.result.content.kind === "text" && view.result.content.text).toContain("export const retries = 5;");
+		// It opens in the editor, colored as TypeScript.
+		const markup = render(store);
+		expect(markup).toContain('<div class="text-editor-host"');
+		expect(markup).toContain('<span class="text-editor-language">TypeScript</span>');
 	});
 
 	test("an open file leaves with its worktree", () => {

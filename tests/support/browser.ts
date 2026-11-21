@@ -32,12 +32,18 @@ const KEYS: Record<string, { code: string; keyCode: number; text?: string }> = {
 	Tab: { code: "Tab", keyCode: 9 },
 	K: { code: "KeyK", keyCode: 75 },
 	E: { code: "KeyE", keyCode: 69 },
+	F: { code: "KeyF", keyCode: 70 },
+	P: { code: "KeyP", keyCode: 80 },
+	S: { code: "KeyS", keyCode: 83 },
+	Y: { code: "KeyY", keyCode: 89 },
+	Z: { code: "KeyZ", keyCode: 90 },
+	"/": { code: "Slash", keyCode: 191, text: "/" },
 	Home: { code: "Home", keyCode: 36 },
 	End: { code: "End", keyCode: 35 },
 	F10: { code: "F10", keyCode: 121 },
 };
 
-const MODIFIERS = { alt: 1, shift: 8, ctrlShift: 10 } as const;
+const MODIFIERS = { alt: 1, ctrl: 2, shift: 8, ctrlShift: 10 } as const;
 
 export interface BrowserPage {
 	/** Load the test page again, with the app as it starts. */

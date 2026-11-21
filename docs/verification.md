@@ -3457,6 +3457,58 @@ Linux x64 with Bun 1.4.5, Git 2.43, and Google Chrome 151:
   not Chrome; whether the `+` hides the first digit of 3 and 4 digit old
   line numbers there; and a screen reader.
 
+Run for the File tab's editor (issue 238), Linux x64 with Bun 1.4.5 and
+Google Chrome 151 (headless):
+
+- A plain text box was tried first. In headless Chrome, with the rest of the
+  window hidden, a keystroke in a text box took about 3.6 ms at 100 lines,
+  9.6 ms at 1,000, 47 ms at 3,000, and 451 ms at 10,000 lines, so it could
+  not meet "typing stays smooth in a 10,000 line file". The editor moved to
+  CodeMirror 6.
+- `bun run dev:web` in headless Chrome, driven over the DevTools protocol,
+  with `src/long.ts` (10,000 lines, 607,788 characters) in Edit: 100
+  keystrokes in the middle took about 7 ms each, the protocol's round trip
+  included. Ctrl+Z, Ctrl+Shift+Z, Tab, Enter, Ctrl+F with Enter to the
+  match and Escape back to the text, the history after Workspace and back,
+  Ctrl+S, and Ctrl+Shift+P for the palette all worked.
+- `bun test tests/text-editor-browser.test.ts`: 10 passed: the same steps
+  as a test, typing held under 50 ms a keystroke, and Ctrl+S and Ctrl+F
+  from the search field, the first edit after a save reaching the store at
+  once, a bar left open coming back without the keyboard, and
+  Ctrl+Shift+K deleting no line.
+- `bun test`, run twice: 3,445 passed, 19 skipped, 0 failed each time;
+  after rebasing on main, 3,475 passed, 19 skipped, 0 failed.
+  `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+  `bun run build:web`: built.
+- Not yet checked: the desktop window (WebKitGTK, WKWebView, WebView2) by
+  hand, typing with an input method, and a screen reader.
+
+Run for the review of the File tab's editor (issue 238: code files open
+straight in the editor, coloring by language, brackets, and Ctrl+/), Linux
+x64 with Bun 1.4.5 and Google Chrome 151 (headless):
+
+- `bun test tests/text-editor-browser.test.ts`: 14 passed. `src/long.ts`
+  (10,000 lines) opens straight in the editor with no switch, colored as
+  TypeScript, keywords in the theme's magenta and strings in its green;
+  saving Nord, then a custom theme with magenta `#ff0000`, recolored the
+  open file. 100 keystrokes in the middle of the colored file took about
+  14 ms each, the protocol's round trip included (7 ms before coloring).
+  The matching bracket was marked, `(` and `"` closed themselves, and
+  Ctrl+/ put a `//` comment on the line and took it away. Read again
+  after the file changed on disk showed the new text, and a save wrote
+  only that plus the typing.
+- `bun test tests/editor-language.test.ts`: TypeScript, JavaScript, JSON,
+  Markdown, CSS, HTML, Python, Rust, Go, shell, YAML, and TOML each picked
+  and colored; loading Rust's parser loaded no other language's; an
+  unknown kind and a file over 15,000 lines stay plain with the reason.
+- Screenshots of a `.tsx` file in Timber Dark, Timber Light, and Gruvbox
+  Dark, looked at by eye.
+- `bun test`: 3,486 passed, 19 skipped, 0 failed; after rebasing on main,
+  3,622 passed, 19 skipped, 0 failed. `bun run typecheck` and
+  `bun run typecheck:desktop`: no errors. `bun run build:web`: built, each
+  language in its own chunk.
+- Not yet checked: the desktop window by hand.
+
 Run for keeping hand-set keys inside a table a settings group saves (issue
 275), Linux x64 with Bun 1.4.5, Git 2.43, and Timber 0.1.4:
 

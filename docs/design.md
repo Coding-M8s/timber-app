@@ -7,7 +7,8 @@ change them here first when they change.
 
 - One window: a sidebar of worktrees and, opposite it, the workspace for the
   selected worktree. Sidebar side (left or right) is a setting, not a button.
-- No built-in code editor. "Open in editor" launches the configured one.
+- No built-in code editor beyond a small text editor for quick fixes in the
+  File tab (see File viewer). "Open in editor" launches the configured one.
 - A command palette (Ctrl+Shift+P, Cmd+Shift+P on macOS, or the title bar
   button) searches actions and worktrees. It opens the same dialogs as the
   buttons.
@@ -506,13 +507,49 @@ logins. The app never reads a tracker login and never signs in.
   folder. A web link still needs Ctrl+click (Cmd+click on macOS), since it
   leaves the app; a file stays in it. Binary files, files over 1 MB or 20,000 lines,
   missing files, folders, and paths outside the worktree get a plain notice
-  in place of the text. "Read again" reads it as it is now. Other files are
-  read-only: this is a viewer, not an editor.
+  in place of the text. "Read again" reads it as it is now. Any text file
+  but Markdown opens straight in the editor, ready to type, with no switch:
+  the editor is the view. Markdown has a Rendered / Source / Edit switch
+  (see Markdown reader).
+- Editor: the text with line numbers, in the terminal's font, colored by
+  its language, the caret's line marked, and a status line with the
+  caret's line and column, the line count, and the language. It is for
+  small fixes, and does only these things: typing, undo and redo (Ctrl+Z,
+  Ctrl+Shift+Z or Ctrl+Y; Cmd on macOS), search (Ctrl+F), Save (Ctrl+S),
+  matching and closing brackets and quotes, and Ctrl+/ (Cmd+/) to toggle
+  a line comment. The language comes from the file's name and extension,
+  and its parser loads only when a file of that kind opens. Code is
+  colored from the theme's terminal palette (keywords, functions,
+  variables, strings, numbers, comments, types, brackets and
+  punctuation), so built-in and custom themes match their terminals and
+  a theme change recolors open files. A kind of file it does not know,
+  and a file over 15,000 lines or 768 KB, stay plain, and the status line
+  says why. The undo history stays while
+  other tabs show and goes with the draft. Tab indents the line, or every
+  selected line, as the file does (a tab, or the spaces of its first
+  indented line), and Shift+Tab takes an indent away; Escape then Tab
+  moves the keyboard on. Enter keeps the line's indent. Search opens a bar
+  above the text, filled from the selection: Enter and Shift+Enter (or F3
+  and Shift+F3) go to the next and previous match, around the ends, with
+  "3 of 12" or "No matches", a Match case box, and Escape to close and go
+  back to the text. Ctrl+F with the bar open goes back to its field, and
+  Ctrl+S saves from it too. A bar left open is still open when the File
+  tab shows again, with the keyboard in the text. Every match is marked,
+  and the selected one stands out even while the bar has the keyboard.
+  Lines do not wrap. Typing stays smooth in a colored file of 10,000
+  lines. It has no completion, language servers, linting, plugins,
+  replace, multiple cursors, go to line, block comments, moving or copying
+  lines, or search across files; "Open in editor" is there for those. A
+  file whose lines end in both CR LF and LF, or that has a lone CR, opens
+  in the same editor read-only, with that reason, since saving here would
+  change lines nobody touched. Save shows beside the file once it can be
+  edited, and Discard once it has unsaved edits.
 - Markdown reader: a `.md` or `.markdown` file opens rendered, in the
   interface's font, with a Rendered / Source / Edit switch in the File tab's
-  title line. Source is the read-only view with line numbers. Edit is one
-  plain text box over the source (no search, highlighting, or undo history
-  beyond the text box's own), with Save (Ctrl+S, Cmd+S on macOS) and
+  title line. Source is the editor above, read-only, and Edit the editor
+  itself, both colored as Markdown, so switching does not change how the
+  text looks. Saving, unsaved edits, and changes
+  on disk work the same for every file: Save (Ctrl+S, Cmd+S on macOS) and
   Discard; once saved, Discard reads "Done". "Unsaved" shows while the text
   differs from the file. The edits are kept when another tab or worktree
   shows, and Rendered shows them before they are saved. Saving writes only
