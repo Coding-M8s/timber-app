@@ -41,6 +41,7 @@ function Body() {
 				failure={timber.known ? null : timber.message}
 				checking={isRunning(state, "find-timber")}
 				onRetry={() => void store.retryTimber()}
+				onChoose={() => store.openDialog({ kind: "settings", section: "executable" })}
 			/>
 		);
 	}

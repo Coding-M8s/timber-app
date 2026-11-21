@@ -54,6 +54,10 @@ Timber?", so the app and the command stay until Quit.
 
 What each of the three leaves behind was observed on Linux only.
 
+None of them fetches the bundled Timber, so they run the timber on PATH
+until `bun run fetch:timber` has run once (see
+[the bundled Timber](#the-bundled-timber)).
+
 ### Two type checks
 
 `bun run typecheck` is the everyday check. It needs no toolchain and applies
@@ -695,7 +699,10 @@ Nothing that depends on Timber is offered until a usable one is found.
   About and Settings, Timber, Executable show the version, the source, and
   the path.
 - When Timber is not ready, the interface shows a full-window notice instead
-  of the worktree list. It gives install guidance for the timber on PATH,
+  of the worktree list, with Retry and Choose Timber, which opens Settings,
+  Timber, Executable. Settings is the one dialog that opens without a
+  usable Timber, so a chosen Timber that stopped working never locks the
+  person out. It gives install guidance for the timber on PATH,
   and for a bundled or chosen Timber points to reinstalling the app or to
   Settings instead. Retry looks again, so a Timber
   installed into a folder already on PATH is picked up without a restart. A
@@ -1388,8 +1395,9 @@ Settings dialog and kept by the app. They are never Timber's configuration.
   [agent sessions](#agent-sessions)). Chops: the person's saved commands
   and prompts (see [chops](#chops)). Fetching: whether the app fetches in
   the background and how often (see [fetching](#fetching)). Under a
-  "Timber" heading, Machine and Repository edit Timber's own settings
-  through Timber (see
+  "Timber" heading, Executable picks which Timber the app runs (see
+  [finding Timber](#finding-timber)), and Machine and Repository edit
+  Timber's own settings through Timber (see
   [Timber's settings](#timbers-settings-in-the-settings-dialog)).
 
 In `bun run dev:web`, `timberMock.failPreferenceSaves("disk full")` makes
@@ -4010,9 +4018,12 @@ None of it should have to change after a first release.
   as Bun would, and with a named import from JSON it stamped its own default,
   0.1.0, without a word.
 - **About.** A section of the Settings dialog, among the app's own sections.
-  It shows the app's version and the Timber in use, with the path it was
-  found at, or says that Timber is missing, too old, or could not be looked
-  for (`src/mainview/about-format.ts`). It also names the licenses below.
+  It shows the app's version and the Timber in use, with where it came
+  from (bundled with the app, chosen in Settings, found on PATH, or the
+  development override) and its path, or says that Timber is missing, too
+  old, or could not be looked for (`src/mainview/about-format.ts`). It also
+  names the licenses below, Timber's among them: its `LICENSE` and
+  `THIRD_PARTY_NOTICES.txt` ship in the app's `timber` folder.
   It ends with Uninstall; see
   [uninstalling from the app](#uninstalling-from-the-app).
 - **Icons.** `icons/` holds them, all made from

@@ -1017,6 +1017,13 @@ pre:focus-visible {
 	user-select: text;
 }
 
+.notice-actions {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 8px;
+}
+
 .notice-command {
 	margin: 0;
 	max-width: 100%;

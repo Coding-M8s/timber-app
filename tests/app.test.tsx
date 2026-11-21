@@ -88,6 +88,7 @@ describe("App", () => {
 		const { store } = await startedStore(createMockEngine(sampleRepositories, sampleTimberStatuses["not-found"]));
 		const markup = renderToStaticMarkup(<App store={store} />);
 		expect(markup).toContain("Timber is not installed");
+		expect(markup).toContain(">Choose Timber</button>");
 		expect(markup).not.toContain('class="sidebar"');
 	});
 
