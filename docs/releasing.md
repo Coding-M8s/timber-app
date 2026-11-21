@@ -46,8 +46,9 @@ A person checks the draft and publishes it.
   `gh release create --draft --verify-tag`.
 - **Actions are pinned to commits**, as in CI. A test checks this for every
   workflow, and that CI and the release install the same Timber.
-- **A pull request that changes the workflow runs the builds** without the
-  release job, so a broken build shows before a tag does.
+- **A pull request that changes the workflow, `package.json`, or
+  `bun.lock` runs the builds** without the release job, so a version or a
+  dependency that breaks a build shows before a tag does.
 
 ## Not in a release yet
 
