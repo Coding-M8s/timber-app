@@ -99,6 +99,16 @@ Without a usable Timber the app shows install guidance instead; see
 | `bun run build` | Build the desktop app |
 | `bun run icons` | Remake the [app icons](docs/architecture.md#app-identity) from the logo (needs ImageMagick) |
 
+## Releases
+
+Linux and Windows installers are attached to
+[GitHub Releases](https://github.com/Coding-M8s/timber-app/releases), with a
+`SHA256SUMS.txt` to check them against. They are not signed during the
+beta. On Windows, SmartScreen is expected to say "Windows protected your
+PC" for an unsigned installer; choose "More info", then "Run anyway". Each
+release's notes give the install steps. How a release is made:
+[releasing](docs/releasing.md).
+
 ## Linux build
 
 `bun run build` makes an installer, not an app that runs in place. Running
@@ -120,5 +130,6 @@ When the app does not start, run
 
 - [Architecture](docs/architecture.md): layers, the boundary with Timber, milestones, and what has been verified
 - [Design](docs/design.md): the agreed interface decisions
+- [Releasing](docs/releasing.md): one tag builds unsigned Linux and Windows installers into a draft release
 - [Development guidance](AGENTS.md)
 - [Contributing](CONTRIBUTING.md) and [security policy](SECURITY.md)
