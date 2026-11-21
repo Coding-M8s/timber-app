@@ -1,5 +1,5 @@
 import { isSafeLine, isSafeText } from "./safe-text";
-import { type OpenTerminalResult, SESSION_NAME_LIMIT, type TerminalSession, cleanSessionName } from "./terminal";
+import { type OpenTerminalResult, type PasteResult, SESSION_NAME_LIMIT, type TerminalSession, cleanSessionName } from "./terminal";
 
 /**
  * Chops: saved, named things to run in a worktree. A command chop is shell
@@ -284,9 +284,14 @@ export type ChopList =
 	| { outcome: "not-listed"; message: string }
 	| { outcome: "failed"; message: string };
 
-/** The listed chops a "+" menu, the palette, or "Insert chop" offers: the commands, in listed order. Prompt chops are not run here yet. */
+/** The listed chops "Insert chop" offers: the commands, in listed order. */
 export function commandChops(list: ChopList | null | undefined): ListedChop[] {
 	return list?.outcome === "listed" ? list.chops.filter(chop => chop.kind === "command") : [];
+}
+
+/** The listed chops a "+" menu or the palette offers: commands to run and prompts to send, in listed order. */
+export function listedChops(list: ChopList | null | undefined): ListedChop[] {
+	return list?.outcome === "listed" ? list.chops : [];
 }
 
 /** The chop of a list with this name, ignoring case, or null. */
@@ -305,9 +310,14 @@ export type ChopApprovals = Readonly<Record<string, readonly string[]>>;
 /** The most approvals kept for one repository. The oldest go first. */
 export const CHOP_APPROVAL_LIMIT = 200;
 
-/** What a digest is made of: the kind and the text, so an approved prompt's text never runs unasked as a command. */
-export function chopDigestInput(chop: Pick<Chop, "kind" | "text">): string {
-	return `${chop.kind}\0${chop.text}`;
+/**
+ * What a digest is made of: the kind and the text, so an approved prompt's
+ * text never runs unasked as a command, and for a prompt the agent it names,
+ * so a file cannot point an approved prompt at another agent without asking
+ * again.
+ */
+export function chopDigestInput(chop: Pick<Chop, "kind" | "text"> & { agent?: string | null }): string {
+	return chop.kind === "prompt" ? `${chop.kind}\0${chop.text}\0${chop.agent ?? ""}` : `${chop.kind}\0${chop.text}`;
 }
 
 const DIGEST = /^[0-9a-f]{64}$/;
@@ -340,12 +350,15 @@ export function readChopApprovals(value: unknown): Record<string, string[]> {
 }
 
 /**
- * Run a command chop in a worktree: the main process starts the person's
- * shell there, named after the chop, and types the chop's text into it. The
- * text is looked up by name, from the same list `listChops` answers. A
- * repository chop runs only once its text was approved for the repository:
- * otherwise the answer is `needs-approval` with the text to show, and the
- * request is made again with `approve` set to that exact text.
+ * Run a chop in a worktree. A command chop: the main process starts the
+ * person's shell there, named after the chop, and types the chop's text into
+ * it. A prompt chop: the main process sends the text to the running agent
+ * session `session` names, or, without one, starts the chop's agent (the
+ * first saved agent when it names none) and sends it once the agent is
+ * ready. The text is looked up by name, from the same list `listChops`
+ * answers. A repository chop runs only once its text was approved for the
+ * repository: otherwise the answer is `needs-approval` with the text to
+ * show, and the request is made again with `approve` set to that exact text.
  */
 export interface RunChopRequest {
 	/** The primary checkout of a repository in the list. */
@@ -358,12 +371,19 @@ export interface RunChopRequest {
 	rows: number;
 	/** The text the person saw and confirmed. It is approved, and the chop runs, only when it is still the chop's text. */
 	approve?: string;
+	/** For a prompt chop only: the id of a running agent session of this worktree to send it to. Left out to start a new agent. */
+	session?: string;
 }
 
 export type RunChopResult =
+	/** A new session started: a shell running a command, or an agent whose prompt goes once it is ready (`TerminalSession.prompt`). */
 	| { outcome: "opened"; session: TerminalSession }
+	/** A prompt went to the running agent `session` named, as typed input followed by Enter. */
+	| { outcome: "sent"; session: TerminalSession }
+	/** A prompt could not go to the session named. Nothing was written, and no agent was started. */
+	| Exclude<PasteResult, { outcome: "pasted" }>
 	/** A repository chop whose text was not approved. Nothing was started. `path` is the file it comes from. */
 	| { outcome: "needs-approval"; chop: ListedChop; path: string }
-	/** No command chop has that name now. Nothing was started. */
+	/** No chop has that name now, or `session` was given for a command chop. Nothing was started. */
 	| { outcome: "no-chop"; message: string }
 	| Exclude<OpenTerminalResult, { outcome: "opened" }>;

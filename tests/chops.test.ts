@@ -122,10 +122,18 @@ describe.skipIf(windows)("reading a worktree's chops from real repositories", ()
 					opened.push({ request, chop });
 					return { outcome: "failed", message: "not started in a test" };
 				},
+				sendPrompt: (id, repository, worktree, text) => {
+					prompts.push({ id, repository, worktree, text });
+					return id === "gone" ? { outcome: "gone", message: "The session has ended." } : { outcome: "pasted" };
+				},
+				session: id => ({ id, kind: "agent", name: "Codex", repository: primary, worktree: "w", path: linked, shell: "/bin/codex", command: "/bin/codex", state: { kind: "running" }, status: null, children: [] }),
+				agents: async () => agents,
 				warn: () => {},
 			});
-			return { runner, opened, approvals: () => approvals };
+			return { runner, opened, prompts, approvals: () => approvals };
 		};
+		const prompts: { id: string; repository: string; worktree: string; text: string }[] = [];
+		let agents: { name: string; command: string }[] = [{ name: "Claude Code", command: "claude" }, { name: "Codex", command: "codex" }];
 		// Read once the repositories exist.
 		let request: { repository: string; worktree: string; cols: number; rows: number };
 		beforeAll(() => {
@@ -136,7 +144,7 @@ describe.skipIf(windows)("reading a worktree's chops from real repositories", ()
 			personal = [{ name: "Mine", kind: "command", text: "make\nmake check", description: "", agent: null, repository: null }];
 			const { runner, opened } = setUp();
 			await runner.run({ ...request, chop: "mine" });
-			expect(opened).toEqual([{ request, chop: { name: "Mine", text: "make\nmake check" } }]);
+			expect(opened).toEqual([{ request, chop: { kind: "command", name: "Mine", text: "make\nmake check" } }]);
 		});
 
 		test("a repository chop asks first, runs once approved, and asks again when its text changes", async () => {
@@ -148,7 +156,7 @@ describe.skipIf(windows)("reading a worktree's chops from real repositories", ()
 			// An approval of other text approves nothing.
 			expect((await runner.run({ ...request, chop: "Test", approve: "bun test --bail" })).outcome).toBe("needs-approval");
 			await runner.run({ ...request, chop: "Test", approve: "bun test" });
-			expect(opened.map(run => run.chop)).toEqual([{ name: "Test", text: "bun test" }]);
+			expect(opened.map(run => run.chop)).toEqual([{ kind: "command", name: "Test", text: "bun test" }]);
 			expect(approvals()[primary]).toEqual([chopDigest({ kind: "command", text: "bun test" })]);
 			// Approved now: no question.
 			await runner.run({ ...request, chop: "Test" });
@@ -164,11 +172,44 @@ describe.skipIf(windows)("reading a worktree's chops from real repositories", ()
 			}
 		});
 
-		test("a prompt chop, or a name nobody has, starts nothing", async () => {
+		test("a name nobody has, or a session for a command, starts nothing", async () => {
 			personal = [];
 			const { runner, opened } = setUp();
-			expect((await runner.run({ ...request, chop: "Review", approve: "Review the diff" })).outcome).toBe("no-chop");
 			expect((await runner.run({ ...request, chop: "Nope" })).outcome).toBe("no-chop");
+			expect((await runner.run({ ...request, chop: "Test", session: "s1", approve: "bun test" })).outcome).toBe("no-chop");
+			expect(opened).toEqual([]);
+		});
+
+		test("a prompt starts its agent with the text to send once ready, never on the command line, after the same approval", async () => {
+			personal = [];
+			const { runner, opened } = setUp();
+			expect(await runner.run({ ...request, chop: "Review" })).toMatchObject({ outcome: "needs-approval", chop: { kind: "prompt", text: "Review the diff" } });
+			expect(opened).toEqual([]);
+			await runner.run({ ...request, chop: "Review", approve: "Review the diff" });
+			expect(opened).toEqual([{ request: { ...request, agent: "Claude Code" }, chop: { kind: "prompt", text: "Review the diff" } }]);
+		});
+
+		test("a prompt that names no agent starts the first saved one; a named agent not saved, or none saved, starts nothing", async () => {
+			personal = [{ name: "Ask", kind: "prompt", text: "Write tests", description: "", agent: null, repository: null }];
+			const { runner, opened } = setUp();
+			await runner.run({ ...request, chop: "Ask" });
+			expect(opened.at(-1)).toEqual({ request: { ...request, agent: "Claude Code" }, chop: { kind: "prompt", text: "Write tests" } });
+			personal = [{ ...personal[0]!, agent: "Aider" }];
+			expect(await runner.run({ ...request, chop: "Ask" })).toMatchObject({ outcome: "not-configured", message: expect.stringContaining('No agent called "Aider"') });
+			agents = [];
+			personal = [{ ...personal[0]!, agent: null }];
+			expect(await runner.run({ ...request, chop: "Ask" })).toMatchObject({ outcome: "not-configured", message: expect.stringContaining("Copy it instead") });
+			expect(opened).toHaveLength(1);
+			agents = [{ name: "Claude Code", command: "claude" }, { name: "Codex", command: "codex" }];
+		});
+
+		test("a prompt goes to the running agent named, with the text read here, and starts nothing", async () => {
+			personal = [{ name: "Ask", kind: "prompt", text: "Write tests\nthen run them", description: "", agent: "Codex", repository: null }];
+			const { runner, opened, prompts } = setUp();
+			prompts.length = 0;
+			expect(await runner.run({ ...request, chop: "Ask", session: "s1" })).toMatchObject({ outcome: "sent", session: { id: "s1", name: "Codex" } });
+			expect(prompts).toEqual([{ id: "s1", repository: primary, worktree: linked, text: "Write tests\nthen run them" }]);
+			expect(await runner.run({ ...request, chop: "Ask", session: "gone" })).toMatchObject({ outcome: "gone" });
 			expect(opened).toEqual([]);
 		});
 
@@ -176,6 +217,9 @@ describe.skipIf(windows)("reading a worktree's chops from real repositories", ()
 			expect(chopDigest({ kind: "command", text: "x" })).toMatch(/^[0-9a-f]{64}$/);
 			expect(chopDigest({ kind: "command", text: "x" })).not.toBe(chopDigest({ kind: "prompt", text: "x" }));
 			expect(chopDigest({ kind: "command", text: "x" })).not.toBe(chopDigest({ kind: "command", text: "x " }));
+			// A prompt's agent counts: a file cannot send an approved prompt to another agent unasked.
+			expect(chopDigest({ kind: "prompt", text: "x", agent: "Codex" })).not.toBe(chopDigest({ kind: "prompt", text: "x", agent: "Claude Code" }));
+			expect(chopDigest({ kind: "prompt", text: "x", agent: null })).not.toBe(chopDigest({ kind: "prompt", text: "x", agent: "Codex" }));
 		});
 	});
 

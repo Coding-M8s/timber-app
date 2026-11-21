@@ -11,7 +11,7 @@ import { StatusGlyph } from "./StatusGlyph";
 import { terminalAppearance } from "../terminal-look";
 import { useAppState, useStore } from "../store/react";
 import { isBeingRemoved, sessionsOf, shownSession } from "../store/state";
-import { type ChopEntry, chopEntries, describeSessionChipMenu, sessionChipMenuChop, sessionChipMenuItems } from "../chop-format";
+import { type ChopEntry, chopAction, chopButtonLabel, chopEntries, chopTitle, describeSessionChipMenu, sessionChipMenuChop, sessionChipMenuItems } from "../chop-format";
 import type { ChopList } from "../../shared/chops";
 import { WORKTREE_MENU_SHORTCUTS, opensWorktreeMenu } from "../worktree-menu-format";
 import { WorktreeMenu } from "./WorktreeMenu";
@@ -399,8 +399,10 @@ const MENU_WIDTH = 440;
 
 interface SessionMenuProps {
 	items: readonly SessionMenuItem[];
-	/** The repository's command chops, listed after the agents. */
+	/** The repository's chops, commands and prompts, listed after the agents. */
 	chops: readonly ChopEntry[];
+	/** How many agents are saved in Settings: a prompt with none is copied instead of sent. */
+	agentsSaved: number;
 	disabled: boolean;
 	title: string;
 	onStart: (agent: string | null) => void;
@@ -416,7 +418,7 @@ interface SessionMenuProps {
  * it and Tab or a click elsewhere puts it away. Choosing an entry gives the
  * keyboard back to "+", so the new session's terminal takes it.
  */
-function SessionMenu({ items, chops, disabled, title, onStart, onRunChop, onSetUp }: SessionMenuProps) {
+function SessionMenu({ items, chops, agentsSaved, disabled, title, onStart, onRunChop, onSetUp }: SessionMenuProps) {
 	const menuId = useId();
 	const [open, setOpen] = useState(false);
 	// "+" follows the last chip, so near the window's right edge the menu hangs to the left of it instead.
@@ -534,11 +536,12 @@ function SessionMenu({ items, chops, disabled, title, onStart, onRunChop, onSetU
 									id={itemId(items.length + offset)}
 									className="session-menu-item"
 									tabIndex={-1}
-									title={chop.title}
+									title={chopTitle(chop, chopAction(chop.kind, agentsSaved))}
 									onClick={() => choose(items.length + offset)}
 								>
 									<span className="session-kind" aria-hidden="true">{"\u25B8"}</span>
 									<span className="session-menu-label">{chop.name}</span>
+									{chop.kind === "prompt" && <span className="session-menu-detail">{chopAction(chop.kind, agentsSaved) === "copy" ? "Copy prompt" : "Prompt"}</span>}
 								</button>
 							))}
 						</div>
@@ -626,18 +629,23 @@ export function TerminalPanel({ repository, worktree }: { repository: Repository
 				</div>
 				{chops.length > 0 && (
 					<div className="empty-actions" role="group" aria-label="Chops">
-						{chops.map(chop => (
-							<button
-								key={chop.name}
-								type="button"
-								className="button quiet"
-								disabled={starting || unavailable !== null}
-								title={unavailable !== null ? unavailable : chop.title}
-								onClick={() => runChop(chop.name)}
-							>
-								{startingAgent === chop.name ? `Starting ${chop.name}` : `Run ${chop.name}`}
-							</button>
-						))}
+						{chops.map(chop => {
+							const action = chopAction(chop.kind, agents.length);
+							// Copying needs no session to start, nor the folder.
+							const blocked = action === "copy" ? null : unavailable;
+							return (
+								<button
+									key={chop.name}
+									type="button"
+									className="button quiet"
+									disabled={(action !== "copy" && starting) || blocked !== null}
+									title={blocked !== null ? blocked : chopTitle(chop, action)}
+									onClick={() => runChop(chop.name)}
+								>
+									{startingAgent === chop.name ? `Starting ${chop.name}` : chopButtonLabel(chop.name, action)}
+								</button>
+							);
+						})}
 					</div>
 				)}
 				<button type="button" className="text-button" onClick={setUpAgents}>{SET_UP_AGENTS}</button>
@@ -673,7 +681,7 @@ export function TerminalPanel({ repository, worktree }: { repository: Repository
 						),
 					)}
 				</div>
-				<SessionMenu items={sessionMenuItems(agents)} chops={chops} disabled={starting || unavailable !== null} title={newTitle} onStart={start} onRunChop={runChop} onSetUp={setUpAgents} />
+				<SessionMenu items={sessionMenuItems(agents)} chops={chops} agentsSaved={agents.length} disabled={starting || unavailable !== null} title={newTitle} onStart={start} onRunChop={runChop} onSetUp={setUpAgents} />
 				<SessionControls key={shown.id} session={shown} onRename={() => setRenaming(shown.id)} />
 			</div>
 			<TerminalProblemNote worktree={worktree} />

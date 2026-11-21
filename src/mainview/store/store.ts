@@ -6,7 +6,9 @@ import { readableEditorSetting } from "../../shared/editor";
 import type { Engine } from "../../shared/engine";
 import type { WorktreeHandoff } from "../../shared/handoff";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "../../shared/git-fetch";
-import { type ChopList, commandChops, findListedChop } from "../../shared/chops";
+import { type ChopList, type RunChopResult, commandChops, findListedChop, listedChops } from "../../shared/chops";
+import { promptTarget } from "../agent-sessions";
+import { describePromptCopied, describePromptSent } from "../chop-format";
 import { type Comparison, type FileChangeTarget, type FileChangesResult, type FileDiff, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
 import type { PortsResult } from "../../shared/ports";
 import { type Layout, chooseComparison, chosenComparison, clampSidebarWidth, dismissSetup, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
@@ -168,14 +170,21 @@ export interface AppStore {
 	 */
 	readChops(repository: string): Promise<void>;
 	/**
-	 * Run a command chop in a worktree, named by its repository and identity,
-	 * in a new session named after it, as `Engine.runChop` does, and show it.
-	 * A repository chop whose text was not approved opens the dialog that
-	 * shows it; `approve` is the text confirmed there. Nothing starts while
-	 * another session starts in the worktree, or in a folder being deleted.
-	 * Why it did not start shows in `terminalProblem`. Never throws.
+	 * Run a chop in a worktree, named by its repository and identity, as
+	 * `Engine.runChop` does, and show its session. A command runs in a new
+	 * session named after it. A prompt goes where `target` says: a running
+	 * agent session, or a new agent with `{ session: null }`. Without a
+	 * target it goes to a new agent when none runs in the worktree, to the
+	 * only one when it does not wait on the person, and otherwise the Send
+	 * prompt dialog asks (`promptTarget`). With no agent saved in Settings,
+	 * a prompt is put on the clipboard instead. A repository chop whose text
+	 * was not approved opens the dialog that shows it; `approve` is the text
+	 * confirmed there. No new session starts while another one starts in the
+	 * worktree, or in a folder being deleted. Why a new session did not start
+	 * shows in `terminalProblem`, and why a prompt did not go to a running
+	 * agent in a toast. Never throws.
 	 */
-	runChop(repository: string, worktreeId: string, chop: string, size: { cols: number; rows: number }, approve?: string): Promise<void>;
+	runChop(repository: string, worktreeId: string, chop: string, size: { cols: number; rows: number }, approve?: string, target?: { session: string | null }): Promise<void>;
 	/**
 	 * Type a command chop of the session's repository into a running session,
 	 * with no Enter, as `Engine.pasteTerminal` does. A toast says when it
@@ -1232,11 +1241,71 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		update({ chops: { repository: repositoryPath, list: answer } });
 	}
 
-	async function runChop(repositoryPath: string, worktreeId: string, name: string, size: { cols: number; rows: number }, approve?: string): Promise<void> {
+	/** Put a prompt chop's text, as listed, on the clipboard. */
+	async function copyPrompt(repositoryPath: string, name: string): Promise<void> {
+		const list = state.chops?.repository === repositoryPath ? state.chops.list : null;
+		const chop = findListedChop(listedChops(list), name);
+		if (chop === null || chop.kind !== "prompt") {
+			showToast(`No prompt chop called "${name}" is listed for this repository now.`, true);
+			return;
+		}
+		try {
+			await engine.writeClipboard(chop.text);
+		} catch {
+			showToast(`${chop.name} could not be put on the clipboard.`, true);
+			return;
+		}
+		showToast(describePromptCopied(chop.name));
+	}
+
+	/** Send a prompt chop to a running agent session, which shows once it went. */
+	async function sendPromptChop(repositoryPath: string, worktreeId: string, worktreePath: string, name: string, size: { cols: number; rows: number }, session: string, approve?: string): Promise<void> {
+		let result: RunChopResult;
+		try {
+			result = await engine.runChop({ repository: repositoryPath, worktree: worktreePath, chop: name, ...size, session, ...(approve === undefined ? {} : { approve }) });
+		} catch (error) {
+			showToast(notHeard("back about the prompt", error, ". It may have been sent: look at the agent before you send it again."), true);
+			return;
+		}
+		if (result.outcome === "sent") {
+			if (!state.terminals.some(known => known.id === result.session.id)) update({ terminals: withTerminal(state.terminals, result.session.id, result.session) });
+			showToast(describePromptSent(name, result.session.name));
+			revealSession(result.session.id);
+			return;
+		}
+		if (result.outcome === "needs-approval") {
+			if (state.dialog === null || state.dialog.kind === "palette") update({ dialog: { kind: "approve-chop", repository: repositoryPath, worktree: worktreeId, chop: result.chop, path: result.path, session } });
+			else showToast(`${name} comes from the repository and needs your approval. Send it again once this dialog is closed.`, true);
+			return;
+		}
+		if (result.outcome === "opened") return;
+		showToast(`${name} was not sent: ${result.message}`, true);
+	}
+
+	async function runChop(repositoryPath: string, worktreeId: string, name: string, size: { cols: number; rows: number }, approve?: string, target?: { session: string | null }): Promise<void> {
+		const listed = findListedChop(listedChops(state.chops?.repository === repositoryPath ? state.chops.list : null), name);
+		if (listed?.kind === "prompt") {
+			// With no agent saved, the prompt has nowhere to go: it is copied instead.
+			if (state.preferences.agents.length === 0) return copyPrompt(repositoryPath, name);
+			const worktree = worktreeOf(repositoryPath, worktreeId);
+			if (!worktree) return showToast(`${name} was not sent: the worktree is no longer listed.`, true);
+			if (isBeingRemoved(state, repositoryPath, worktree.path)) return showToast(`${name} was not sent: ${BEING_REMOVED_REASON}`, true);
+			const where = target ?? (() => {
+				const chosen = promptTarget(state.terminals, worktreeId);
+				return chosen.kind === "new" ? { session: null } : chosen.kind === "session" ? { session: chosen.session } : null;
+			})();
+			if (where === null) {
+				// Never over a dialog the person opened meanwhile.
+				if (state.dialog === null || state.dialog.kind === "palette") update({ dialog: { kind: "send-prompt", repository: repositoryPath, worktree: worktreeId, chop: name } });
+				return;
+			}
+			if (where.session !== null) return sendPromptChop(repositoryPath, worktreeId, worktree.path, name, size, where.session, approve);
+		}
 		const worktree = worktreeOf(repositoryPath, worktreeId);
-		// After the approval dialog closed, a run that cannot start says so: nothing else would.
+		// After the approval dialog closed, or for a prompt, whose palette entry does not wait for a starting session,
+		// a run that cannot start says so: nothing else would.
 		const blocked = (why: string) => {
-			if (approve !== undefined) showToast(`${name} was not started: ${why}`, true);
+			if (approve !== undefined || listed?.kind === "prompt") showToast(`${name} was not started: ${why}`, true);
 		};
 		if (!worktree) return blocked("the worktree is no longer listed.");
 		if (isBeingRemoved(state, repositoryPath, worktree.path)) return blocked(BEING_REMOVED_REASON);
@@ -1249,7 +1318,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				if (result.outcome === "opened") {
 					const { session } = result;
 					update({
-						terminals: withTerminal(state.terminals, session.id, session),
+						// A change heard meanwhile, such as the prompt being sent, is newer than this answer.
+						terminals: state.terminals.some(known => known.id === session.id) ? state.terminals : withTerminal(state.terminals, session.id, session),
 						shownSessions: { ...state.shownSessions, [session.worktree]: session.id },
 						unseenSessions: state.unseenSessions.filter(id => id !== session.id),
 						terminalProblem: state.terminalProblem?.worktree === worktreeId ? null : state.terminalProblem,
@@ -1262,6 +1332,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 					else showToast(`${name} comes from the repository and needs your approval. Run it again once this dialog is closed.`, true);
 					return;
 				}
+				// A run with no session never answers "sent".
+				if (result.outcome === "sent") return;
 				message = result.message;
 				if ((result.outcome === "not-found" || result.outcome === "failed") && result.command !== undefined) command = result.command;
 			} catch (error) {
@@ -2245,8 +2317,15 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 					// Until the first list answers, changes wait, and are applied on top of it.
 					if (heard !== null) return void heard.push(change);
 					const stopped = timberSessionStopped(state.terminals, change);
+					const promptBefore = state.terminals.find(session => session.id === change.id)?.prompt;
 					if (change.session) update({ terminals: withTerminal(state.terminals, change.id, change.session) });
 					else update(withoutSession(state, change.id));
+					// A new agent's prompt went, or could not: say so, since the person may be looking elsewhere.
+					const prompt = change.session?.prompt;
+					if (prompt && promptBefore?.state === "pending" && prompt.state !== "pending") {
+						if (prompt.state === "sent") showToast(describePromptSent(null, change.session!.name));
+						else showToast(`The prompt was not sent: ${prompt.message}`, true);
+					}
 					// What a Timber session such as setup changed shows in the repositories. Read them all again,
 					// since how it ended does not say which ones it touched.
 					if (stopped) void reloadAll("all");

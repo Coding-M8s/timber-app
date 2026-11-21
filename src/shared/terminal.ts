@@ -59,7 +59,19 @@ export interface TerminalSession {
 	 * children stays near 300 KB at the very most.
 	 */
 	children: ChildStatus[];
+	/**
+	 * For an agent started with a prompt chop, how the prompt stands: waiting
+	 * for the agent to be ready, sent, or not sent with the reason. Left out
+	 * for every other session.
+	 */
+	prompt?: PromptDelivery;
 }
+
+/** How a prompt chop's text stands in the agent session started for it. */
+export type PromptDelivery =
+	| { state: "pending" }
+	| { state: "sent" }
+	| { state: "not-sent"; message: string };
 
 /** Start another session in a worktree. Named as for "Open in editor". */
 export interface OpenTerminalRequest {
@@ -423,6 +435,18 @@ export function bracketedPaste(text: string): string {
 export function pasteBytes(text: string, bracketed: boolean): string | null {
 	if (bracketed) return bracketedPaste(text);
 	return text.includes("\n") ? null : text;
+}
+
+/**
+ * The bytes that send a prompt to an agent: the paste as `pasteBytes` builds
+ * it, so line breaks stay part of the text while the agent asked for
+ * bracketed paste, then Enter, written apart so the agent reads the paste
+ * whole before it is submitted. Null when the paste cannot go. Only for text
+ * `pasteProblem` accepts.
+ */
+export function promptBytes(text: string, bracketed: boolean): { paste: string; enter: string } | null {
+	const paste = pasteBytes(text, bracketed);
+	return paste === null ? null : { paste, enter: "\r" };
 }
 
 /**

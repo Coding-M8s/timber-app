@@ -5,9 +5,10 @@ import { join } from "node:path";
 import { messageOf } from "../shared/error-message";
 import {
 	CHOPS_FILE, CHOPS_FILE_BYTES, type ChopApprovals, type ChopList, type ChopsFileState, type ChopsRequest, type Chop, type PersonalChop, type RunChopRequest, type RunChopResult,
-	chopDigestInput, commandChops, findListedChop, isChopApproved, mergeChops, parseChopsFile,
+	chopDigestInput, findListedChop, isChopApproved, listedChops, mergeChops, parseChopsFile,
 } from "../shared/chops";
-import type { OpenTerminalRequest, OpenTerminalResult } from "../shared/terminal";
+import { type AgentSetting, findAgent } from "../shared/agent";
+import type { OpenTerminalRequest, OpenTerminalResult, PasteResult, TerminalSession } from "../shared/terminal";
 import type { FindRepository } from "./listed-worktree";
 import type { ChopInput } from "./terminals";
 
@@ -19,20 +20,26 @@ export interface ChopsDependencies {
 	approvals?: () => Promise<ChopApprovals>;
 	/** Keep an approval. Throws when it could not be saved. */
 	approve?: (repository: string, digest: string) => Promise<void>;
-	/** Start the person's shell in a worktree with a chop typed into it (`TerminalSessions.open`). Without it, nothing runs. */
+	/** Start the person's shell with a command chop typed into it, or an agent with a prompt to send (`TerminalSessions.open`). Without it, nothing runs. */
 	openTerminal?: (request: OpenTerminalRequest, chop: ChopInput) => Promise<OpenTerminalResult>;
+	/** Send a prompt to a running agent session of a worktree (`TerminalSessions.sendPrompt`). Without it, no prompt goes to a running agent. */
+	sendPrompt?: (id: string, repository: string, worktreePath: string, text: string) => PasteResult;
+	/** The session with this id now, for the answer after a prompt went to it. */
+	session?: (id: string) => TerminalSession | null;
+	/** The agents as saved in Settings, for the agent a prompt chop starts. None when left out. */
+	agents?: () => Promise<readonly AgentSetting[]>;
 	warn?: (message: string) => void;
 }
 
 export interface Chops {
 	/** A repository's chops, with the main checkout's file read anew. Read-only: nothing is written or created. */
 	list(request: ChopsRequest): Promise<ChopList>;
-	/** Run a command chop in a worktree, as `Engine.runChop` says. */
+	/** Run a command chop, or send a prompt chop, in a worktree, as `Engine.runChop` says. */
 	run(request: RunChopRequest): Promise<RunChopResult>;
 }
 
-/** The digest an approval keeps: SHA-256 of the kind and the text (`chopDigestInput`), in hex. */
-export function chopDigest(chop: Pick<Chop, "kind" | "text">): string {
+/** The digest an approval keeps: SHA-256 of the kind, the text, and a prompt's agent (`chopDigestInput`), in hex. */
+export function chopDigest(chop: Pick<Chop, "kind" | "text"> & { agent?: string | null }): string {
 	return createHash("sha256").update(chopDigestInput(chop), "utf8").digest("hex");
 }
 
@@ -124,7 +131,9 @@ export async function readChopsFile(checkout: string): Promise<ChopsFileRead> {
  * checkout's folder is there. The file is read on every call and never
  * cached, so a change to it shows on the next read.
  */
-export function createChops({ findRepository, personal, approvals = async () => ({}), approve = async () => {}, openTerminal, warn = console.warn }: ChopsDependencies): Chops {
+export function createChops({
+	findRepository, personal, approvals = async () => ({}), approve = async () => {}, openTerminal, sendPrompt, session: sessionOf = () => null, agents = async () => [], warn = console.warn,
+}: ChopsDependencies): Chops {
 	/** The list, and the primary checkout it was read for, which keys both the merge and the approvals. */
 	async function read(request: ChopsRequest): Promise<{ list: ChopList; checkout: string }> {
 		const notRead = "No chops were read.";
@@ -155,8 +164,28 @@ export function createChops({ findRepository, personal, approvals = async () => 
 			// Read once: the text approved is the text that runs.
 			const { list: listed, checkout } = await read({ repository: request.repository });
 			if (listed.outcome !== "listed") return { outcome: listed.outcome === "not-listed" ? "not-listed" : "failed", message: listed.message };
-			const chop = findListedChop(commandChops(listed), request.chop);
-			if (chop === null) return { outcome: "no-chop", message: `No command chop called "${request.chop}" is in ${request.repository} now. Nothing was started.` };
+			const chop = findListedChop(listedChops(listed), request.chop);
+			if (chop === null) return { outcome: "no-chop", message: `No chop called "${request.chop}" is in ${request.repository} now. Nothing was started.` };
+			if (request.session !== undefined && (chop.kind !== "prompt" || typeof request.session !== "string")) {
+				const message = chop.kind === "prompt" ? "The request names no session. Nothing was sent." : `${chop.name} is a command, which runs in a new session only. Nothing was started.`;
+				return { outcome: "no-chop", message };
+			}
+			// The agent a new session starts is found before asking for approval, so a prompt that cannot go asks nothing.
+			let agent: AgentSetting | null = null;
+			if (chop.kind === "prompt" && request.session === undefined) {
+				let saved: readonly AgentSetting[];
+				try {
+					saved = await agents();
+				} catch (error) {
+					return { outcome: "failed", message: `Could not read the agents in Settings: ${messageOf(error)}. Nothing was started.` };
+				}
+				// A chop that names an agent gets that one or none, never another.
+				agent = chop.agent === null ? saved[0] ?? null : findAgent(saved, chop.agent);
+				if (agent === null) {
+					const message = chop.agent === null ? "No agent is saved in Settings, Agents, so the prompt has no agent to go to. Copy it instead." : `No agent called "${chop.agent}" is saved in Settings, Agents, so ${chop.name} cannot start it. Nothing was started.`;
+					return { outcome: "not-configured", message };
+				}
+			}
 			const digest = chopDigest(chop);
 			let saved: ChopApprovals;
 			try {
@@ -174,7 +203,15 @@ export function createChops({ findRepository, personal, approvals = async () => 
 					warn(`Could not save the approval of a chop: ${messageOf(error)}`);
 				}
 			}
-			return openTerminal({ repository: request.repository, worktree: request.worktree, cols: request.cols, rows: request.rows }, { name: chop.name, text: chop.text });
+			const where = { repository: request.repository, worktree: request.worktree, cols: request.cols, rows: request.rows };
+			if (chop.kind === "command") return openTerminal(where, { kind: "command", name: chop.name, text: chop.text });
+			if (agent !== null) return openTerminal({ ...where, agent: agent.name }, { kind: "prompt", text: chop.text });
+			if (sendPrompt === undefined) return { outcome: "unsupported", message: "Prompts cannot be sent here. Nothing was sent." };
+			// The session must be in this repository's worktree: an approval for one repository never reaches another's agent.
+			const sent = sendPrompt(request.session!, request.repository, request.worktree, chop.text);
+			if (sent.outcome !== "pasted") return sent;
+			const target = sessionOf(request.session!);
+			return target === null ? { outcome: "gone", message: "The session has ended." } : { outcome: "sent", session: target };
 		},
 	};
 }

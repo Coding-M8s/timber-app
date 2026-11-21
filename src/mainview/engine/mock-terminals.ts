@@ -9,9 +9,10 @@ import type { TimberStatus, Worktree } from "../../shared/model";
 import {
 	type OpenTerminalResult, type Scrollback, type TerminalChange, type TerminalOutput, type TerminalSession, cleanSessionName, createScrollback,
 	defaultSessionName, isWebLink, type SessionNaming, sessionNameBase, WORKTREE_SETUP_SESSION_NAME, type PasteModeScanner, PASTE_NOT_READY, CHOP_NOT_TYPED,
-	type OpenTerminalRequest, chopRunBytes, createPasteModeScanner, pasteBytes, pasteProblem,
+	type OpenTerminalRequest, type PasteResult, chopRunBytes, createPasteModeScanner, pasteProblem, promptBytes,
 } from "../../shared/terminal";
 import { recordsForWindow } from "../../shared/session-status";
+import { PROMPT_STILL_STARTING } from "../../shared/agent-prompt";
 import { PROBE_ANSWER, type StatusRecords, type StatusScanner, createStatusRecords, createStatusScanner } from "../../shared/program-status";
 import {
 	type LiveSession, type RestoreTag, type SavedSessions, buildSavedSessions, createSavedCarry, isConversationId, isRestoreTag, parseSavedSessions, serializeSavedSessions,
@@ -28,9 +29,18 @@ export type TerminalCapabilities = Pick<Engine,
 	| "forgetSavedSessions"
 >;
 
-/** Start a shell with a chop typed into it, as the main process's `TerminalSessions.open` does. Not part of the engine: only `runChop` calls it. */
+/** A chop to start a session with, as the main process's `ChopInput`. */
+export type MockChopInput = { kind: "command"; name: string; text: string } | { kind: "prompt"; text: string };
+
+/**
+ * What `runChop` uses, as the main process's `TerminalSessions` does: start a
+ * shell with a command chop typed into it, or an agent with a prompt to
+ * send, and send a prompt to a running agent. Not part of the engine.
+ */
 export interface ChopTerminals {
-	openChopTerminal(request: OpenTerminalRequest, chop: { name: string; text: string }): Promise<OpenTerminalResult>;
+	openChopTerminal(request: OpenTerminalRequest, chop: MockChopInput): Promise<OpenTerminalResult>;
+	sendPrompt(id: string, repository: string, worktreePath: string, text: string): PasteResult;
+	sessionById(id: string): TerminalSession | null;
 }
 
 export interface TerminalControls {
@@ -63,8 +73,10 @@ export interface TerminalControls {
 	 * It is printed as the sequence and read as the main process reads it.
 	 */
 	agentStatus(id: string, report: string): void;
-	/** Every text pasted into a session with `pasteTerminal`, in order, exactly as given. */
+	/** Every text pasted into a session with `pasteTerminal`, or sent to it as a prompt, in order, exactly as given. */
 	pastedInto(id: string): string[];
+	/** Every prompt sent to a session, followed by Enter, in order, exactly as given. */
+	promptsSentTo(id: string): string[];
 	/** Act out the program in a session printing this, read as the main process reads it, such as `\x1b[?2004l` to turn bracketed paste off. */
 	printInto(id: string, data: string): void;
 	/** What was written into a session as the answer to a probe, in order. */
@@ -114,6 +126,8 @@ interface Acted {
 	renamed: boolean;
 	/** The saved session it opened again, when it did. */
 	restored: RestoreTag | null;
+	/** Every prompt sent, with Enter after it, in order, as given. */
+	prompts: string[];
 }
 
 /** What a pretend setup script prints when it fails. */
@@ -275,9 +289,12 @@ export function createMockTerminals(
 	}
 
 	/** Start a session as the main process would. With `chop`, a pretend shell named after the chop, with the chop's text typed in. */
-	async function open(request: OpenTerminalRequest, chop?: { name: string; text: string }): Promise<OpenTerminalResult> {
+	async function open(request: OpenTerminalRequest, chop?: MockChopInput): Promise<OpenTerminalResult> {
 		if (failing) return structuredClone(failing);
-		if (chop !== undefined && (request.agent !== undefined || request.timberWorktreeSetup !== undefined || request.arenaAttempt !== undefined || request.workflowAgent !== undefined)) {
+		if (chop?.kind === "prompt" && (typeof request.agent !== "string" || request.timberWorktreeSetup !== undefined || request.arenaAttempt !== undefined || request.workflowAgent !== undefined)) {
+			return { outcome: "failed", message: "A prompt goes to an agent from Settings only. Nothing was started." };
+		}
+		if (chop?.kind === "command" && (request.agent !== undefined || request.timberWorktreeSetup !== undefined || request.arenaAttempt !== undefined || request.workflowAgent !== undefined)) {
 			return { outcome: "failed", message: "A chop runs in a shell, not with an agent, setup, a workflow, or an arena attempt. Nothing was started." };
 		}
 		// As the main process does: only names are read from the request, the workflow's and the pick's.
@@ -337,7 +354,7 @@ export function createMockTerminals(
 			else return { outcome: "not-configured", message: `The ${name} workflow no longer sets an agent. Nothing was started. Start one from the "+" menu.` };
 		}
 		const worktree = findWorktree(request.repository, request.worktree);
-		const notStarted = attempt ? `${attempt.label} was not started.` : agent ? `${agent.name} was not started.` : workflowAgent !== undefined ? `The agent of the ${workflowAgent.workflow} workflow was not started.` : worktreeSetup ? "Setup was not started." : chop ? `${chop.name} was not started.` : "No terminal was started.";
+		const notStarted = attempt ? `${attempt.label} was not started.` : agent ? `${agent.name} was not started.` : workflowAgent !== undefined ? `The agent of the ${workflowAgent.workflow} workflow was not started.` : worktreeSetup ? "Setup was not started." : chop?.kind === "command" ? `${chop.name} was not started.` : "No terminal was started.";
 		if (!worktree) return { outcome: "not-listed", message: `Timber lists no worktree at ${request.worktree} in ${request.repository}. ${notStarted} Refresh the list.` };
 		let shell = "/bin/mock-shell";
 		let args: string[] = [];
@@ -397,7 +414,7 @@ export function createMockTerminals(
 			id: `mock-terminal-${++lastId}`,
 			kind: launch || attempt ? "agent" : setup ? "timber" : "terminal",
 			name: defaultSessionName(
-				chop ? chop.name : attempt ? attempt.label : worktreeSetup ? WORKTREE_SETUP_SESSION_NAME
+				chop?.kind === "command" ? chop.name : attempt ? attempt.label : worktreeSetup ? WORKTREE_SETUP_SESSION_NAME
 					: savedName ?? sessionNameBase(sessionNaming(), launch ? launch.name : "Terminal", worktree.branch, launch !== null),
 				taken,
 			),
@@ -409,10 +426,11 @@ export function createMockTerminals(
 			state: { kind: "running" },
 			status: null,
 			children: [],
+			...(chop?.kind === "prompt" ? { prompt: { state: "pending" as const } } : {}),
 		};
 		const acted: Acted = {
 			session, scrollback: createScrollback(), line: "", typed: "", size: { cols: request.cols, rows: request.rows }, drawn: 0,
-			scanner: createStatusScanner(), records: createStatusRecords(), answers: [], pasteMode: createPasteModeScanner(), pasted: [],
+			scanner: createStatusScanner(), records: createStatusRecords(), answers: [], pasteMode: createPasteModeScanner(), pasted: [], prompts: [],
 			agent: agent?.name ?? null, resumable, conversation, renamed: savedName !== null, restored,
 		};
 		sessions.set(session.id, acted);
@@ -430,12 +448,43 @@ export function createMockTerminals(
 		// A pretend agent asks for bracketed paste, as Claude Code and Codex do, so a pasted review keeps its line breaks.
 		print(acted, `${note}${greeting}${launch ? "\x1b[?2004h" : ""}${prompt(acted)}`);
 		// The pretend shell never asks for bracketed paste, so a chop is typed line by line, as into dash or PowerShell.
-		if (chop) {
+		// The pretend agent is ready at once: bracketed paste is on and nothing more is printed. The prompt goes a moment later.
+		if (chop?.kind === "prompt") {
+			later(() => {
+				if (acted.session.state.kind !== "running" || !sessions.has(acted.session.id)) return;
+				const sent = deliver(acted, chop.text, true);
+				acted.session = { ...acted.session, prompt: sent.outcome === "pasted" ? { state: "sent" } : { state: "not-sent", message: sent.message } };
+				announce({ id: acted.session.id, session: acted.session });
+			});
+		}
+		if (chop?.kind === "command") {
 			const bytes = chopRunBytes(chop.text, acted.pasteMode.on());
 			if (bytes === null) print(acted, `\r\n\x1b[2m${CHOP_NOT_TYPED}\x1b[0m\r\n`);
 			else type(acted, bytes);
 		}
 		return { outcome: "opened", session: structuredClone(session) };
+	}
+
+	/** Paste text in, as the main process's `deliver` does, and with `enter`, Enter after it. */
+	function deliver(acted: Acted, text: string, enter: boolean): PasteResult {
+		const problem = pasteProblem(text);
+		if (problem !== null) return { outcome: "refused", message: problem };
+		const bytes = promptBytes(text, acted.pasteMode.on());
+		if (bytes === null) return { outcome: "not-ready", message: PASTE_NOT_READY };
+		acted.pasted.push(text);
+		acted.typed += bytes.paste;
+		// Shown in the pretend input, line by line, and not run until Enter.
+		acted.line += text;
+		print(acted, text.replace(/\n/g, "\r\n"));
+		if (enter) {
+			acted.prompts.push(text);
+			// The pretend program takes the whole paste as one line.
+			acted.typed += bytes.enter;
+			print(acted, "\r\n");
+			acted.line = "";
+			print(acted, prompt(acted));
+		}
+		return { outcome: "pasted" };
 	}
 
 	return {
@@ -486,6 +535,18 @@ export function createMockTerminals(
 			})();
 		},
 		openChopTerminal: (request, chop) => open(request, chop),
+		sendPrompt(id, repository, worktreePath, text) {
+			const acted = sessions.get(id);
+			if (!acted || acted.session.state.kind !== "running") return { outcome: "gone", message: "The session has ended." };
+			if (acted.session.kind !== "agent" || acted.session.path !== worktreePath || acted.session.repository !== repository) return { outcome: "not-agent", message: "That session is not an agent of this worktree." };
+			if (acted.session.prompt?.state === "pending") return { outcome: "not-ready", message: PROMPT_STILL_STARTING };
+			return deliver(acted, text, true);
+		},
+		sessionById: id => {
+			const acted = sessions.get(id);
+			return acted ? structuredClone(acted.session) : null;
+		},
+		promptsSentTo: id => [...(sessions.get(id)?.prompts ?? [])],
 		async renameTerminal(id, name) {
 			const acted = sessions.get(id);
 			const clean = cleanSessionName(name);
@@ -513,16 +574,7 @@ export function createMockTerminals(
 		async pasteTerminal(id, text) {
 			const acted = sessions.get(id);
 			if (!acted || acted.session.state.kind !== "running") return { outcome: "gone", message: "The session has ended." };
-			const problem = pasteProblem(text);
-			if (problem !== null) return { outcome: "refused", message: problem };
-			const bytes = pasteBytes(text, acted.pasteMode.on());
-			if (bytes === null) return { outcome: "not-ready", message: PASTE_NOT_READY };
-			acted.pasted.push(text);
-			acted.typed += bytes;
-			// Shown in the pretend input, line by line, and not run: no Enter came.
-			acted.line += text;
-			print(acted, text.replace(/\n/g, "\r\n"));
-			return { outcome: "pasted" };
+			return deliver(acted, text, false);
 		},
 		pastedInto: id => [...(sessions.get(id)?.pasted ?? [])],
 		printInto(id, data) {

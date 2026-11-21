@@ -1,25 +1,10 @@
-import { PASTE_TEXT_LIMIT, type TerminalSession } from "../shared/terminal";
+import { PASTE_TEXT_LIMIT } from "../shared/terminal";
 
 /**
  * Words and choices for review notes in the Changes tab and the Send review
  * dialog. Pure, so they can be tested without a window. The message itself
  * is built in ../shared/review.ts.
  */
-
-/** The agent sessions of a worktree a review can be pasted into: running, in the order they started. */
-export function reviewSessions(sessions: readonly TerminalSession[], worktree: string): TerminalSession[] {
-	return sessions.filter(session => session.worktree === worktree && session.kind === "agent" && session.state.kind === "running");
-}
-
-/** The session picked at first: the only one, or none when there are several to choose from. */
-export function firstReviewSession(sessions: readonly TerminalSession[]): string | null {
-	return sessions.length === 1 ? sessions[0]!.id : null;
-}
-
-/** Whether the agent waits on a question or an approval, which a paste could answer. */
-export function waitsOnPerson(session: Pick<TerminalSession, "status">): boolean {
-	return session.status?.state === "blocked";
-}
 
 export const REVIEW_WAITS_WARNING =
 	"This agent is waiting for you, such as for an approval. The review would go into that answer. Answer it first, or pick another agent.";

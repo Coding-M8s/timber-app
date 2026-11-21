@@ -2906,3 +2906,41 @@ even when started as `sh`, on main at `b664d18`:
 - `bun run build:web`: built.
 - Not run here: a machine where `/bin/sh` is dash. CI runs `bun test` on
   ubuntu-24.04, where it is.
+
+Run for prompt chops (issue 175), Linux x64 with Bun 1.4.5, bash 5.2.21,
+and Git 2.43.0, after rebasing on main at `6ce7d27`:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 2837 passed, 24 skipped, 0 failed (before the rebase, on
+  main at `640ae42`: 2651 passed with the change, 2644 without it).
+- `bun run build:web`: built.
+- New tests run real pseudo terminals with pretend agents: one that never
+  probes gets the prompt as one bracketed paste and then Enter once it
+  asked for bracketed paste and went quiet, started with the same command
+  line as without a prompt; one that probes and reports `blocked` gets
+  nothing while blocked, then the prompt once it reports `idle`; one that
+  is never ready, or ends first, gets nothing and its session says why; a
+  prompt is refused for a shell, setup, and text a paste must not hold;
+  `sendPrompt` writes at once to a running agent and refuses a shell,
+  another worktree or repository, a session that is gone, multi-line text
+  without bracketed paste, and an agent still waiting for its own prompt.
+  `tests/chops.test.ts` runs prompt chops against a real repository's
+  `.timber/chops.json`, approval included.
+- Claude Code 2.1.330, by hand, through `createTerminalSessions` with the
+  probe answered and the window's replies to its other queries acted out:
+  in a trusted folder it probed, reported `idle` about 0.8 seconds after
+  start, got a two-line prompt as one paste and Enter, and answered it in
+  one turn (`working`, then `done`); in a folder it did not trust it
+  reported `blocked` with "trust this folder" and the prompt stayed
+  pending, unanswered. Sent to a running Claude Code with `sendPrompt`,
+  the two-line prompt was also answered in one turn. Enter 0 ms and 100
+  ms after the paste both submitted it whole; 100 ms is kept.
+- Codex 0.169.0: not verified. Started the same way, it never probed and
+  turned on bracketed paste at once, then showed its sign-in screen in
+  this environment although `codex login status` says it is logged in, so
+  no prompt was sent to it. This is the limit the readiness rule documents:
+  for an agent that reports nothing, the app cannot tell its input from a
+  first-run screen that takes Enter.
+- Not run: the desktop window or the browser build by eye, so the "+" menu,
+  the Send prompt dialog, and the approval dialog were not seen drawn.
+  Windows and macOS were not tested.
