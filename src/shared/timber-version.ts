@@ -1,5 +1,5 @@
-/** The first Timber release with everything the app builds on: the machine interface, `__app-config`, one-off workflows, `__app-pr` with reviewers, and `--no-setup`. */
-export const REQUIRED_TIMBER_VERSION = "0.1.3";
+/** The first Timber release with everything the app builds on: the machine interface, `__app-config`, one-off workflows, `__app-pr` with reviewers, `--no-setup`, and Jira and Linear keys in any case. */
+export const REQUIRED_TIMBER_VERSION = "0.1.4";
 
 /** Development override: names the Timber executable to use instead of the one on PATH. */
 export const TIMBER_OVERRIDE_VARIABLE = "TIMBER_APP_TIMBER_PATH";

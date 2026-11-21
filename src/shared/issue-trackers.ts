@@ -29,8 +29,8 @@ export type TrackerSettings = Pick<TimberSettingsSnapshot, "effective" | "creden
 
 /** Timber's shape of a GitHub issue number: a positive whole number that fits exactly. */
 const GITHUB_NUMBER = /^[1-9][0-9]*$/;
-/** Timber's shape of a Jira or Linear key, matched whole. */
-const ISSUE_KEY = /^[A-Z][A-Z0-9]*-[0-9]+$/;
+/** Timber's shape of a Jira or Linear key, matched whole and in any case: Timber uppercases it. */
+const ISSUE_KEY = /^[A-Za-z][A-Za-z0-9]*-[0-9]+$/;
 
 function isIssueOf(tracker: IssueTracker, name: string): boolean {
 	if (tracker === "github") return GITHUB_NUMBER.test(name) && Number.isSafeInteger(Number(name));
@@ -40,8 +40,11 @@ function isIssueOf(tracker: IssueTracker, name: string): boolean {
 /**
  * The name `timber new` gets for a Tracker pick: `github:42`, `jira:ENG-42`,
  * or `linear:ENG-42` when the name has the shape of that tracker's issue,
- * and the name unchanged otherwise. Null is the Default pick, which leaves
- * every name to Timber's default tracker.
+ * and the name unchanged otherwise. A key keeps the case it was typed in
+ * (`jira:eng-42`): Timber reads it in any case and uppercases it. So with
+ * Jira or Linear picked, a key-shaped branch name such as `fix-2` reads as a
+ * key too, as it would with that tracker as Timber's default. Null is the
+ * Default pick, which leaves every name to Timber's default tracker.
  */
 export function issueSelector(tracker: IssueTracker | null, name: string): string {
 	return tracker !== null && isIssueOf(tracker, name) ? `${tracker}:${name}` : name;
@@ -85,10 +88,9 @@ export function issueTrackersOf(settings: TrackerSettings, github: boolean): Iss
 	return { ok: true, defaultTracker: defaultTrackerOf(settings), available: ISSUE_TRACKERS.filter(tracker => setUp[tracker]) };
 }
 
-function defaultTrackerOf({ effective, credentials }: TrackerSettings): IssueTracker | null {
+function defaultTrackerOf({ effective }: TrackerSettings): IssueTracker | null {
 	const chosen = effective.default_tracker;
 	if (chosen === "none") return null;
-	if (chosen !== undefined) return chosen;
-	// With no default set, Timber reads a bare key as Jira when a Jira site applies.
-	return credentials.jira.configured ? "jira" : null;
+	// With no default set, Timber reads every bare name as a branch, even with a Jira site.
+	return chosen ?? null;
 }

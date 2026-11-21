@@ -3121,3 +3121,25 @@ Bun 1.4.5 and Git 2.56.1:
   or Windows, an interrupted update, and being offline in the installed
   app. The first release that can update is the first built with the update
   address, and it needs a later published release to update to.
+
+Run for passing a lowercase Jira or Linear key when that tracker is picked
+(issue 196), Linux x64 with Bun 1.4.5, Git 2.43.0, and Timber 0.1.4:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+  `bun run build:web`: built.
+- `bun test`: 3090 passed, 19 skipped, none failed. `issueSelector` cases
+  are in `tests/issue-trackers.test.ts`; the dialog's footer and request
+  with `eng-42` and Jira, and `eng-7` and Linear, are in
+  `tests/new-worktree-tracker.test.tsx`.
+- Timber 0.1.4 in a new temporary repository, with an empty home so no
+  saved settings applied: `timber new jira:eng-42` stopped with "Jira site
+  settings are missing or disabled" and `timber new linear:eng-42` with
+  "Linear credentials are missing", so both read as selectors; `timber new
+  jira:eng` still stopped with "Invalid Jira issue selector". No worktree
+  or branch was made.
+- With no `default_tracker` set, the Tracker field's Default is now plain
+  "Default", even with a Jira site, since Timber 0.1.4 reads every bare
+  name as a branch then (`tests/issue-trackers.test.ts`,
+  `tests/issue-trackers-reader.test.ts`).
+- Not run: a lowercase key against a real Jira site or Linear workspace,
+  and the installed desktop app by hand.

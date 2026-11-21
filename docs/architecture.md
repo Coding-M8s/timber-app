@@ -530,9 +530,13 @@ keeps what was typed in each mode, and is not possible while a command runs.
   `issueSelector` (`src/shared/issue-trackers.ts`) inside
   `newWorktreeRequest`, so the footer and the run pass the same name: a name
   that Timber reads as an issue of that tracker (a positive whole number for
-  GitHub, a whole key such as `ENG-42` for Jira and Linear) gets the prefix,
-  and anything else, including a name with a prefix already, passes
-  unchanged, so a prefix never turns a name into a selector Timber refuses.
+  GitHub, a whole key such as `ENG-42` for Jira and Linear, in any case)
+  gets the prefix, and anything else, including a name with a prefix
+  already, passes unchanged, so a prefix never turns a name into a selector
+  Timber refuses. A key keeps the case it was typed in (`eng-42` becomes
+  `jira:eng-42`), since Timber 0.1.4 reads keys in any case and uppercases
+  them. So with Jira or Linear picked, a key-shaped branch name such as
+  `fix-2` is read as a key too; Default or `feature/fix-2` keeps it a branch.
   A pick the field no longer offers is Default. No setting is saved.
   Prefilling the dialog from an issue (#156) should use `issueSelector` too.
   (`worktree-modes/tracker-choice.tsx`.)
@@ -687,9 +691,10 @@ Nothing that depends on Timber is offered until a usable one is found.
   the window (`timberChanged`), with no restart.
 - The app requires the newest Timber release (see
   [the newest Timber release is required](#the-newest-timber-release-is-required)),
-  and never less than 0.1.3, the first release with the machine interface,
-  `__app-config`, one-off workflows, and `__app-pr` with each pull request's
-  reviewers (0.1.1 had only the first; 0.1.2 had no `__app-pr`). The
+  and never less than 0.1.4, the first release with the machine interface,
+  `__app-config`, one-off workflows, `__app-pr` with each pull request's
+  reviewers, and Jira and Linear keys in any case (0.1.1 had only the first;
+  0.1.2 had no `__app-pr`; 0.1.3 read only uppercase keys). The
   number and the comparison live in `src/shared/timber-version.ts`. A
   pre-release sorts before its release.
 - The `Engine` contract reports one of three states: ready (path and version),
@@ -1984,8 +1989,9 @@ login.
   github.com repository in a form Timber accepts. Jira is set up when a site
   applies and its login is saved or given in the environment; Linear when
   its login is saved or given in the environment. The default is
-  `effective.default_tracker`, none for `none`, and Jira when no default is
-  set but a Jira site applies, as Timber then reads a bare key as Jira.
+  `effective.default_tracker`, and none for `none` or when no default is
+  set, even with a Jira site, as Timber 0.1.4 then reads every bare name as
+  a branch.
 - **Private.** Only whether a login applies is used, never a login, and
   nothing read is logged. A failed read is a failure with Timber's
   diagnostic; the dialog then shows no field, and creating still works.

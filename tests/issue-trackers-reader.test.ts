@@ -88,7 +88,7 @@ describe("createIssueTrackerReader", () => {
 	test("uses origin when Timber names no remote", async () => {
 		const folder = repositoryWith("origin-only", { origin: ["https://gitlab.com/group/project.git"], upstream: ["https://github.com/a/b.git"] });
 		const reader = createIssueTrackerReader({ readSettings: settingsRead({}) });
-		expect(await reader.read(folder)).toEqual({ ok: true, defaultTracker: "jira", available: ["jira"] });
+		expect(await reader.read(folder)).toEqual({ ok: true, defaultTracker: null, available: ["jira"] });
 	});
 
 	test("answers Timber's diagnostic when its read failed, and runs no Git", async () => {
