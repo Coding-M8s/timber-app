@@ -895,6 +895,84 @@ sleep 5
 				startWithAgents();
 				const session = await openedWithPrompt("Claude Code");
 				expect(sessions.sendPrompt(session.id, repository, worktree, "one line")).toEqual({ outcome: "not-ready", message: PROMPT_STILL_STARTING });
+				expect(sessions.paste(session.id, "one line")).toEqual({ outcome: "not-ready", message: PROMPT_STILL_STARTING });
+			});
+		});
+
+		describe("a review for a new agent", () => {
+			// The paste, and then "x" typed by the person: an Enter in between would show as 0d.
+			const pastedThenX = `${Buffer.from(`${bracketedPaste(PROMPT)}x`).toString("hex")} done`;
+			const promptOf = (id: string) => sessions.list().find(session => session.id === id)?.prompt;
+
+			async function openedWithReview(agent: string, review = PROMPT) {
+				const result = await sessions.open({ repository, worktree, cols: 80, rows: 24, agent, review });
+				if (result.outcome !== "opened") throw new Error(`Not opened: ${JSON.stringify(result)}`);
+				return result.session;
+			}
+
+			test("is pasted once the agent is ready, as one paste with no Enter, never on its command line", async () => {
+				startWithAgents({ promptQuietMilliseconds: 100, promptEnterMilliseconds: 20 });
+				const plain = await openedAgent("Prompted");
+				const session = await openedWithReview("Prompted");
+				expect(session.prompt).toEqual({ state: "pending", what: "review" });
+				expect(session.command).toBe(plain.command);
+				expect(await until(() => promptOf(session.id)?.state === "sent")).toBe(true);
+				expect(promptOf(session.id)).toEqual({ state: "sent", what: "review" });
+				// Well past the pause before a prompt's Enter: still nothing after the paste.
+				await Bun.sleep(100);
+				expect(printed(session.id)).not.toContain(" done");
+				sessions.write(session.id, "x");
+				await seen(session.id, " done");
+				expect(printed(session.id)).toContain(pastedThenX);
+			});
+
+			test("waits while the agent is blocked, such as on a trust question, and is pasted once it is idle", async () => {
+				startWithAgents({ promptQuietMilliseconds: 50 });
+				const session = await openedWithReview("Reporter");
+				await seen(session.id, "trust this folder?");
+				await Bun.sleep(250);
+				expect(promptOf(session.id)).toEqual({ state: "pending", what: "review" });
+				expect(await until(() => promptOf(session.id)?.state === "sent")).toBe(true);
+				sessions.write(session.id, "x");
+				await seen(session.id, " done");
+				expect(printed(session.id)).toContain(pastedThenX);
+			});
+
+			test("an agent that is never ready, or ends first, gets nothing, and the session says why in a review's words", async () => {
+				startWithAgents({ promptWaitMilliseconds: 300 });
+				const late = await openedWithReview("Claude Code");
+				expect(await until(() => promptOf(late.id)?.state === "not-sent")).toBe(true);
+				expect(promptOf(late.id)).toMatchObject({ what: "review", message: expect.stringContaining("Claude Code was not ready for the review") });
+				const ended = await openedWithReview("Codex");
+				await seen(ended.id, "fake-codex in");
+				sessions.write(ended.id, "\x04");
+				expect(await until(() => promptOf(ended.id)?.state === "not-sent")).toBe(true);
+				expect(promptOf(ended.id)).toMatchObject({ what: "review", message: expect.stringContaining("ended before it was ready for the review") });
+			});
+
+			test("goes to a new agent from Settings only, never with text a paste must not hold", async () => {
+				startWithAgents();
+				const where = { repository, worktree, cols: 80, rows: 24 };
+				const refused: OpenTerminalRequest[] = [
+					{ ...where, review: PROMPT },
+					{ ...where, review: PROMPT, timberWorktreeSetup: {} },
+					{ ...where, review: PROMPT, agent: "Codex", arenaAttempt: { arena: "demo", attempt: "codex-1" } },
+					{ ...where, review: PROMPT, workflowAgent: { workflow: "review" } },
+					{ ...where, review: PROMPT, agent: "Codex", resume: crypto.randomUUID() },
+					{ ...where, review: PROMPT, agent: "Codex", restore: { worktree: "w", index: 0 } },
+					{ ...where, review: "a\x1b[201~b", agent: "Codex" },
+					{ ...where, review: "x".repeat(100_001), agent: "Codex" },
+				];
+				for (const request of refused) expect(await sessions.open(request)).toMatchObject({ outcome: "failed" });
+				expect(await sessions.open({ ...where, review: PROMPT, agent: "Codex" }, { kind: "prompt", text: PROMPT })).toMatchObject({ outcome: "failed" });
+				expect(sessions.list()).toEqual([]);
+			});
+
+			test("an agent still waiting to paste its review takes no other paste or prompt", async () => {
+				startWithAgents();
+				const session = await openedWithReview("Claude Code");
+				expect(sessions.paste(session.id, "one line")).toEqual({ outcome: "not-ready", message: PROMPT_STILL_STARTING });
+				expect(sessions.sendPrompt(session.id, repository, worktree, "one line")).toEqual({ outcome: "not-ready", message: PROMPT_STILL_STARTING });
 			});
 		});
 

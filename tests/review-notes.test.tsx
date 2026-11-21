@@ -3,8 +3,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { type MockFileChange, samplePatch } from "../src/mainview/engine/mock-file-changes";
-import { NO_REVIEW_AGENT, REVIEW_COPIED, describeReviewSent, reviewTooLong } from "../src/mainview/review-format";
-import { onlyAgent, runningAgents, waitsOnPerson } from "../src/mainview/agent-sessions";
+import {
+	NEW_REVIEW_AGENT_NOTE, NO_REVIEW_AGENT, REVIEW_COPIED, describeNewReviewAgent, describeReviewAgentStarted, describeReviewNotPasted, describeReviewSent,
+	reviewAlreadyWaiting, reviewTooLong,
+} from "../src/mainview/review-format";
+import { onlyAgent, reviewWaiting, runningAgents, waitsOnPerson } from "../src/mainview/agent-sessions";
+import { PROMPT_STILL_STARTING, promptEndedMessage } from "../src/shared/agent-prompt";
 import { sessionsOf } from "../src/mainview/store/state";
 import { createAppStore } from "../src/mainview/store/store";
 import { defaultLayout } from "../src/shared/layout";
@@ -248,18 +252,253 @@ describe("the Changes tab with notes", () => {
 		expect(markup).not.toContain('class="review"');
 	});
 
-	test("the Send review dialog lists the running agents, and without one offers Copy review", async () => {
+	test("the Send review dialog lists the running agents and a new one, and with none saved offers only Copy review", async () => {
 		const { store } = await startedStore();
 		await notesOnTwoFiles(store);
+		await startAgent(store, "Claude Code");
 		store.openDialog({ kind: "send-review", worktree: FEATURE.id });
 		let markup = render(store);
-		expect(markup).toContain(NO_REVIEW_AGENT);
-		expect(markup).toContain(">Copy review</button>");
-		expect(markup).not.toContain(">Send</button>");
-		await startAgent(store, "Claude Code");
+		expect(markup).toContain('<span class="review-agent-name">Claude Code</span>');
+		expect(markup).toContain(`<span class="review-agent-name">${describeNewReviewAgent("Claude Code")}</span>`);
+		expect(markup).toContain(">Send</button>");
+		// With none saved, an agent that runs is still listed, but no new one is offered.
+		expect(await store.savePreferences({ agents: [] })).toMatchObject({ outcome: "saved" });
 		markup = render(store);
 		expect(markup).toContain('<span class="review-agent-name">Claude Code</span>');
+		expect(markup).not.toContain(describeNewReviewAgent("Claude Code"));
 		expect(markup).toContain(">Send</button>");
+		// With none saved and none running, Copy review is the only way.
+		await store.closeTerminal(sessionsOf(store.getState(), FEATURE.id)[0]!.id);
+		await settle();
+		store.closeDialog();
+		store.openDialog({ kind: "send-review", worktree: FEATURE.id });
+		markup = render(store);
+		expect(markup).toContain(NO_REVIEW_AGENT);
+		// Copy review is the main button; it waits for the preview, which a static render does not read.
+		expect(markup).toContain('<button type="button" class="button primary" disabled="">Copy review</button>');
+		expect(markup).not.toContain(">Send</button>");
+	});
+});
+
+/** The radio input of a choice in the Send review dialog, by the name it shows. */
+function choiceInput(markup: string, name: string): string {
+	const label = markup.split('<label class="review-agent">').find(part => part.includes(`<span class="review-agent-name">${name}</span>`));
+	if (!label) throw new Error(`No choice ${name}`);
+	return label.slice(0, label.indexOf("/>"));
+}
+
+describe("sending a review to a new agent", () => {
+	test("with no agent running, the dialog picks a new one at first and shows its command before anything runs", async () => {
+		const { engine, store } = await startedStore();
+		await notesOnTwoFiles(store);
+		store.openDialog({ kind: "send-review", worktree: FEATURE.id });
+		const markup = render(store);
+		expect(choiceInput(markup, describeNewReviewAgent("Claude Code"))).toContain('checked=""');
+		expect(markup).toContain(`${NEW_REVIEW_AGENT_NOTE} <code>claude</code>`);
+		// Opening the dialog starts nothing.
+		expect(sessionsOf(store.getState(), FEATURE.id)).toEqual([]);
+		// Cancel starts and sends nothing.
+		store.closeDialog();
+		await settle();
+		expect(sessionsOf(store.getState(), FEATURE.id)).toEqual([]);
+		expect(store.getState().reviews[FEATURE.id]).toHaveLength(2);
+		expect(engine.mostOpeningAtOnce()).toBe(0);
+	});
+
+	test("Send starts the first saved agent, which shows it waits, and pastes the review once it is ready, with no Enter", async () => {
+		const { engine, store } = await startedStore();
+		await notesOnTwoFiles(store);
+		engine.holdNewAgents(true);
+		store.openDialog({ kind: "send-review", worktree: FEATURE.id });
+		const preview = (await store.prepareReview(FEATURE.id))!;
+		expect(await store.startReviewAgent(FEATURE.id, preview, { cols: 80, rows: 24 })).toBeNull();
+		await settle();
+		const [agent] = sessionsOf(store.getState(), FEATURE.id);
+		expect(agent).toMatchObject({ kind: "agent", name: "Claude Code", prompt: { state: "pending", what: "review" } });
+		// Nothing is pasted yet, and the notes stay while it waits.
+		expect(engine.pastedInto(agent!.id)).toEqual([]);
+		expect(store.getState().reviews[FEATURE.id]).toHaveLength(2);
+		expect(store.getState().dialog).toBeNull();
+		expect(store.getState().shownSessions[FEATURE.id]).toBe(agent!.id);
+		expect(store.getState().toasts.map(toast => toast.text)).toContain(describeReviewAgentStarted("Claude Code"));
+		expect(render(store)).toContain('<span class="session-state" role="status">Waiting to paste the review</span>');
+
+		engine.agentReady(agent!.id);
+		await settle();
+		await settle();
+		expect(engine.pastedInto(agent!.id)).toEqual([preview]);
+		// One bracketed paste, and nothing after it: no Enter.
+		expect(engine.typedInto(agent!.id)).toBe(`\x1b[200~${preview.replaceAll("\n", "\r")}\x1b[201~`);
+		expect(engine.promptsSentTo(agent!.id)).toEqual([]);
+		expect(store.getState().reviews[FEATURE.id]).toBeUndefined();
+		expect(store.getState().toasts.map(toast => toast.text)).toContain(describeReviewSent("Claude Code"));
+		expect(sessionsOf(store.getState(), FEATURE.id)[0]!.prompt).toEqual({ state: "sent", what: "review" });
+	});
+
+	test("an agent ready at once gets the review, and the notes go once", async () => {
+		const { engine, store } = await startedStore();
+		await notesOnTwoFiles(store);
+		const preview = (await store.prepareReview(FEATURE.id))!;
+		expect(await store.startReviewAgent(FEATURE.id, preview, { cols: 80, rows: 24 })).toBeNull();
+		await settle();
+		await settle();
+		const [agent] = sessionsOf(store.getState(), FEATURE.id);
+		expect(engine.pastedInto(agent!.id)).toEqual([preview]);
+		expect(store.getState().reviews[FEATURE.id]).toBeUndefined();
+		expect(store.getState().toasts.filter(toast => toast.text === describeReviewSent("Claude Code"))).toHaveLength(1);
+	});
+
+	test("a note added or changed while the agent starts stays once the review is pasted", async () => {
+		const { engine, store } = await startedStore();
+		await notesOnTwoFiles(store);
+		engine.holdNewAgents(true);
+		const preview = (await store.prepareReview(FEATURE.id))!;
+		expect(await store.startReviewAgent(FEATURE.id, preview, { cols: 80, rows: 24 })).toBeNull();
+		await settle();
+		const [first, second] = store.getState().reviews[FEATURE.id]!;
+		expect(store.editReviewNote(FEATURE.id, second!.id, "Sort these imports, please.")).toBeNull();
+		expect(addNote(store, 1, 1, "And this one.")).toBeNull();
+		const [agent] = sessionsOf(store.getState(), FEATURE.id);
+		engine.agentReady(agent!.id);
+		await settle();
+		await settle();
+		const left = store.getState().reviews[FEATURE.id]!;
+		expect(left.map(note => note.text)).toEqual(["Sort these imports, please.", "And this one."]);
+		expect(left.some(note => note.id === first!.id)).toBe(false);
+	});
+
+	test("while one agent waits to paste a review, no second one starts and nothing is pasted into it", async () => {
+		const { engine, store } = await startedStore();
+		await notesOnTwoFiles(store);
+		engine.holdNewAgents(true);
+		const preview = (await store.prepareReview(FEATURE.id))!;
+		expect(await store.startReviewAgent(FEATURE.id, preview, { cols: 80, rows: 24 })).toBeNull();
+		await settle();
+		const [agent] = sessionsOf(store.getState(), FEATURE.id);
+		expect(reviewWaiting(store.getState().terminals, FEATURE.id)?.id).toBe(agent!.id);
+		expect(await store.startReviewAgent(FEATURE.id, preview, { cols: 80, rows: 24 })).toBe(reviewAlreadyWaiting("Claude Code"));
+		expect(await store.sendReview(FEATURE.id, agent!.id, preview)).toEqual({ outcome: "not-ready", message: PROMPT_STILL_STARTING });
+		expect(sessionsOf(store.getState(), FEATURE.id)).toHaveLength(1);
+		expect(engine.pastedInto(agent!.id)).toEqual([]);
+		// The dialog asks, and offers no second new agent.
+		store.openDialog({ kind: "send-review", worktree: FEATURE.id });
+		const markup = render(store);
+		expect(choiceInput(markup, describeNewReviewAgent("Claude Code"))).toContain('disabled=""');
+		expect(markup).toContain(reviewAlreadyWaiting("Claude Code"));
+		expect(choiceInput(markup, "Claude Code")).not.toContain('checked=""');
+	});
+
+	test("an agent that ends before it is ready gets nothing, and the notes stay", async () => {
+		const { engine, store } = await startedStore();
+		await notesOnTwoFiles(store);
+		engine.holdNewAgents(true);
+		const preview = (await store.prepareReview(FEATURE.id))!;
+		expect(await store.startReviewAgent(FEATURE.id, preview, { cols: 80, rows: 24 })).toBeNull();
+		await settle();
+		const [agent] = sessionsOf(store.getState(), FEATURE.id);
+		engine.endTerminal(agent!.id, 1);
+		await settle();
+		expect(engine.pastedInto(agent!.id)).toEqual([]);
+		expect(store.getState().reviews[FEATURE.id]).toHaveLength(2);
+		expect(store.getState().toasts.map(toast => toast.text)).toContain(describeReviewNotPasted(promptEndedMessage("Claude Code", "review")));
+	});
+
+	test("an agent that does not start says why, and the notes and the dialog stay", async () => {
+		const { engine, store } = await startedStore();
+		await notesOnTwoFiles(store);
+		store.openDialog({ kind: "send-review", worktree: FEATURE.id });
+		const preview = (await store.prepareReview(FEATURE.id))!;
+		engine.failTerminals({ outcome: "not-configured", message: "No agent called \"Claude Code\" is saved." });
+		expect(await store.startReviewAgent(FEATURE.id, preview, { cols: 80, rows: 24 })).toBe("No agent called \"Claude Code\" is saved.");
+		expect(store.getState().reviews[FEATURE.id]).toHaveLength(2);
+		expect(store.getState().dialog).toEqual({ kind: "send-review", worktree: FEATURE.id });
+	});
+
+	test("a review pasted while the answer that started the agent was lost still drops the notes it was given", async () => {
+		const { engine, store } = await startedStore();
+		await notesOnTwoFiles(store);
+		const open = engine.openTerminal.bind(engine);
+		engine.openTerminal = async request => {
+			await open(request);
+			await settle();
+			throw new Error("The window lost the answer");
+		};
+		const preview = (await store.prepareReview(FEATURE.id))!;
+		expect(await store.startReviewAgent(FEATURE.id, preview, { cols: 80, rows: 24 })).toContain("The window lost the answer");
+		const [agent] = sessionsOf(store.getState(), FEATURE.id);
+		expect(engine.pastedInto(agent!.id)).toEqual([preview]);
+		expect(store.getState().reviews[FEATURE.id]).toBeUndefined();
+		expect(store.getState().toasts.map(toast => toast.text)).toContain(describeReviewSent("Claude Code"));
+	});
+
+	test("an agent closed before the answer that started it came does not come back, and another review agent can start", async () => {
+		const { engine, store } = await startedStore();
+		await notesOnTwoFiles(store);
+		engine.holdNewAgents(true);
+		const open = engine.openTerminal.bind(engine);
+		engine.openTerminal = async request => {
+			const result = await open(request);
+			if (result.outcome === "opened") {
+				await settle();
+				await engine.closeTerminal(result.session.id);
+				await settle();
+			}
+			return result;
+		};
+		const preview = (await store.prepareReview(FEATURE.id))!;
+		expect(await store.startReviewAgent(FEATURE.id, preview, { cols: 80, rows: 24 })).toBeNull();
+		expect(store.getState().terminals).toEqual([]);
+		expect(reviewWaiting(store.getState().terminals, FEATURE.id)).toBeNull();
+		engine.openTerminal = open;
+		expect(await store.startReviewAgent(FEATURE.id, preview, { cols: 80, rows: 24 })).toBeNull();
+		await settle();
+		expect(sessionsOf(store.getState(), FEATURE.id)).toHaveLength(1);
+	});
+
+	test("with no agent saved, nothing starts", async () => {
+		const { store } = await startedStore();
+		await notesOnTwoFiles(store);
+		expect(await store.savePreferences({ agents: [] })).toMatchObject({ outcome: "saved" });
+		const preview = (await store.prepareReview(FEATURE.id))!;
+		expect(await store.startReviewAgent(FEATURE.id, preview, { cols: 80, rows: 24 })).toContain("No agent is saved");
+		expect(sessionsOf(store.getState(), FEATURE.id)).toEqual([]);
+	});
+});
+
+describe("which agent the Send review dialog picks at first", () => {
+	test("the only agent running that does not wait on the person", async () => {
+		const { store } = await startedStore();
+		await notesOnTwoFiles(store);
+		await startAgent(store, "Claude Code");
+		store.openDialog({ kind: "send-review", worktree: FEATURE.id });
+		const markup = render(store);
+		expect(choiceInput(markup, "Claude Code")).toContain('checked=""');
+		expect(choiceInput(markup, describeNewReviewAgent("Claude Code"))).not.toContain('checked=""');
+	});
+
+	test("nothing when the only one waits on the person, or several run, and Cancel sends nothing", async () => {
+		const { engine, store } = await startedStore();
+		await notesOnTwoFiles(store);
+		const claude = await startAgent(store, "Claude Code");
+		engine.agentStatus(claude.id, "state=blocked:kind=permission");
+		await settle();
+		store.openDialog({ kind: "send-review", worktree: FEATURE.id });
+		let markup = render(store);
+		expect(choiceInput(markup, "Claude Code")).not.toContain('checked=""');
+		expect(choiceInput(markup, describeNewReviewAgent("Claude Code"))).not.toContain('checked=""');
+		expect(markup).toContain('class="button primary" disabled="">Send</button>');
+		store.closeDialog();
+
+		engine.agentStatus(claude.id, "state=idle");
+		const codex = await startAgent(store, "Codex");
+		store.openDialog({ kind: "send-review", worktree: FEATURE.id });
+		markup = render(store);
+		for (const name of ["Claude Code", "Codex", describeNewReviewAgent("Claude Code")]) expect(choiceInput(markup, name)).not.toContain('checked=""');
+		store.closeDialog();
+		await settle();
+		expect(engine.pastedInto(claude.id)).toEqual([]);
+		expect(engine.pastedInto(codex.id)).toEqual([]);
+		expect(store.getState().reviews[FEATURE.id]).toHaveLength(2);
 	});
 });
 

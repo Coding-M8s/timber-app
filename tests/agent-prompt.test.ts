@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { PROMPT_BUSY_MILLISECONDS, PROMPT_QUIET_MILLISECONDS, isReadyForPrompt, promptNotReadyMessage } from "../src/shared/agent-prompt";
+import { PROMPT_BUSY_MILLISECONDS, PROMPT_QUIET_MILLISECONDS, isReadyForPrompt, promptEndedMessage, promptNotReadyMessage } from "../src/shared/agent-prompt";
 import type { ProgramStatus } from "../src/shared/program-status";
 import { type TerminalSession, bracketedPaste, promptBytes } from "../src/shared/terminal";
 import { promptTarget } from "../src/mainview/agent-sessions";
@@ -35,6 +35,12 @@ describe("when a new agent is ready for its prompt", () => {
 
 	test("the message names the agent and the wait in seconds", () => {
 		expect(promptNotReadyMessage("Codex", 120_000)).toContain("Codex was not ready for the prompt within 120 seconds");
+	});
+
+	test("for a review, the messages say it was not pasted and the notes are kept, with no chop to run again", () => {
+		expect(promptNotReadyMessage("Codex", 120_000, "review")).toBe("Codex was not ready for the review within 120 seconds, so it was not pasted. The notes are kept: send the review again.");
+		expect(promptEndedMessage("Codex", "review")).toBe("Codex ended before it was ready for the review, so it was not pasted. The notes are kept.");
+		expect(promptEndedMessage("Codex")).toBe("Codex ended before it was ready for the prompt, so it was not sent.");
 	});
 });
 

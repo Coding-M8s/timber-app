@@ -633,7 +633,12 @@ export interface Engine {
 	 * name, cleaned, in place of the default. With `restore`, the session is
 	 * the saved one at that worktree id and index, so the save at quit does
 	 * not keep that saved one as well. All three are for opening a saved
-	 * session again (see `takeSavedSessions`).
+	 * session again (see `takeSavedSessions`). With `review`, the saved agent
+	 * starts as usual, with nothing of the review on its command line, and the review
+	 * is pasted into its input once it is ready, as a prompt chop's prompt
+	 * would be sent (./agent-prompt.ts), but with no Enter; the session's
+	 * `prompt`, with `what: "review"`, says how that stands. Not safe to call
+	 * again blindly: each call starts an agent and pastes the review again.
 	 */
 	openTerminal(request: OpenTerminalRequest): Promise<OpenTerminalResult>;
 	/**
@@ -665,7 +670,10 @@ export interface Engine {
 	 * it. When it did not, a text of one line is typed as it is, and a text
 	 * with a line break is refused, since the break would act as Enter.
 	 * Refused, and nothing written, when the text has a control or invisible
-	 * character (`pasteProblem`). Files are never touched: only the
+	 * character (`pasteProblem`), and `not-ready` while the session is an
+	 * agent still waiting for the prompt chop or review it was started with
+	 * (`TerminalSession.prompt` pending), since it may be on a first-run
+	 * screen. Files are never touched: only the
 	 * session's input is written. Not safe to call again blindly: each call
 	 * pastes once more.
 	 */

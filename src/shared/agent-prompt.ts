@@ -1,7 +1,8 @@
 import type { ProgramStatus } from "./program-status";
 
 /**
- * When an agent started for a prompt chop is ready for the prompt. Pure, so
+ * When an agent started for a prompt chop, or with a review to paste, is
+ * ready for that text. Pure, so
  * the rule can be tested without a pseudo terminal; the main process acts on
  * it in ../bun/terminals.ts.
  *
@@ -51,15 +52,23 @@ export function isReadyForPrompt(agent: PromptReadiness, quietNeeded = PROMPT_QU
 	return agent.pasteOn && (agent.quietMilliseconds >= quietNeeded || agent.pasteOnMilliseconds >= busyNeeded);
 }
 
-/** Why a prompt does not go to an agent still waiting to be ready for its own prompt. */
-export const PROMPT_STILL_STARTING = "The agent is still starting, and has not had its own prompt yet. Wait until it is ready, then send this again.";
+/** Why text does not go to an agent still waiting to be ready for the prompt or review it was started with. */
+export const PROMPT_STILL_STARTING = "The agent is still starting, and has not had the text it was started with yet. Wait until it is ready, then send this again.";
 
-/** Why a new agent's prompt was not sent: it was not ready in time. */
-export function promptNotReadyMessage(agent: string, milliseconds: number): string {
-	return `${agent} was not ready for the prompt within ${Math.round(milliseconds / 1000)} seconds, so it was not sent. Run the chop again, or copy the prompt from Settings, Chops.`;
+/** Which text a new agent waits for: a prompt chop's, or a review, which is pasted with no Enter. */
+export type DeliveredText = "prompt" | "review";
+
+/** Why a new agent's prompt or review was not sent: it was not ready in time. */
+export function promptNotReadyMessage(agent: string, milliseconds: number, what: DeliveredText = "prompt"): string {
+	const seconds = Math.round(milliseconds / 1000);
+	return what === "review"
+		? `${agent} was not ready for the review within ${seconds} seconds, so it was not pasted. The notes are kept: send the review again.`
+		: `${agent} was not ready for the prompt within ${seconds} seconds, so it was not sent. Run the chop again, or copy the prompt from Settings, Chops.`;
 }
 
-/** Why a new agent's prompt was not sent: it ended first. */
-export function promptEndedMessage(agent: string): string {
-	return `${agent} ended before it was ready for the prompt, so it was not sent.`;
+/** Why a new agent's prompt or review was not sent: it ended first. */
+export function promptEndedMessage(agent: string, what: DeliveredText = "prompt"): string {
+	return what === "review"
+		? `${agent} ended before it was ready for the review, so it was not pasted. The notes are kept.`
+		: `${agent} ended before it was ready for the prompt, so it was not sent.`;
 }

@@ -1,12 +1,18 @@
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
-import { onlyAgent, runningAgents, waitsOnPerson } from "../agent-sessions";
+import { promptTarget, reviewWaiting, runningAgents, waitsOnPerson } from "../agent-sessions";
 import { AgentChoices } from "./AgentChoices";
+import { estimateTerminalSize } from "./TerminalPanel";
+import { describeAgentCommand } from "../../shared/agent";
 import { type ReviewNote, noteLocation } from "../../shared/review";
 import { PASTE_TEXT_LIMIT, type PasteResult } from "../../shared/terminal";
 import { useAppState, useStore } from "../store/react";
 import {
-	NO_REVIEW_AGENT, REVIEW_PASTE_NOTE, REVIEW_WAITS_WARNING, describeNoteCount, noteSummary, reviewTooLong,
+	NEW_REVIEW_AGENT_NOTE, NO_REVIEW_AGENT, REVIEW_PASTE_NOTE, REVIEW_WAITS_WARNING, describeNewReviewAgent, describeNoteCount, noteSummary,
+	reviewAlreadyWaiting, reviewTooLong,
 } from "../review-format";
+
+/** The radio value of the "new agent" choice; session ids never take this form. */
+const NEW_AGENT = "\0new";
 
 /** Ctrl+Enter, or Cmd+Enter, saves a note from its text field; Escape cancels. */
 function noteKeys(event: KeyboardEvent<HTMLTextAreaElement>, save: () => void, cancel: () => void): void {
@@ -216,9 +222,13 @@ export function ReviewList({ worktree }: { worktree: string }) {
 
 /**
  * The preview of a review before it goes anywhere: the agent to paste it
- * into, picked at first when there is only one, and the message exactly as
- * it will be pasted. Nothing is sent until Send. With no agent running, Copy
- * review is the way out.
+ * into, and the message exactly as it will be pasted. The choices are the
+ * worktree's running agents and a new one, the first saved agent, with the
+ * command that starts it. What is picked at first is as for a prompt chop
+ * (`promptTarget`): the new agent when none runs, the only one when it does
+ * not wait on the person, and otherwise nothing, so the person picks.
+ * Nothing is sent or started until Send. With no agent running and none
+ * saved, Copy review is the only way out; it is there in every case.
  */
 export function SendReviewDialog({ worktree }: { worktree: string }) {
 	const store = useStore();
@@ -228,10 +238,26 @@ export function SendReviewDialog({ worktree }: { worktree: string }) {
 	const [message, setMessage] = useState<string | null>(null);
 	const [prepared, setPrepared] = useState(false);
 	const sessions = runningAgents(state.terminals, worktree);
-	const [picked, setPicked] = useState<string | null>(() => onlyAgent(sessions));
+	const newAgent = state.preferences.agents[0] ?? null;
+	const waiting = reviewWaiting(state.terminals, worktree);
+	const firstPick = () => {
+		const target = promptTarget(state.terminals, worktree);
+		return target.kind === "session" ? target.session : target.kind === "new" && newAgent !== null ? NEW_AGENT : null;
+	};
+	const [picked, setPicked] = useState<string | null>(firstPick);
+	// An agent that starts or ends while the dialog is open changes what is picked at first: never a new one beside one that runs now.
+	const running = sessions.map(session => session.id).join(" ");
+	const seenRunning = useRef(running);
+	useEffect(() => {
+		if (seenRunning.current === running) return;
+		seenRunning.current = running;
+		setPicked(firstPick());
+	});
 	const [sending, setSending] = useState(false);
 	const [problem, setProblem] = useState<string | null>(null);
 	const chosen = sessions.find(session => session.id === picked) ?? null;
+	const startsNew = picked === NEW_AGENT && newAgent !== null && waiting === null;
+	const canSend = sessions.length > 0 || newAgent !== null;
 	const tooLong = message !== null && message.length > PASTE_TEXT_LIMIT;
 
 	useEffect(() => {
@@ -263,9 +289,15 @@ export function SendReviewDialog({ worktree }: { worktree: string }) {
 	}, [prepared, message, store]);
 
 	const send = async () => {
-		if (chosen === null || message === null || tooLong || sending) return;
+		if ((chosen === null && !startsNew) || message === null || tooLong || sending) return;
 		setSending(true);
 		setProblem(null);
+		if (chosen === null) {
+			const why = await store.startReviewAgent(worktree, message, estimateTerminalSize(document.getElementById("workspace-panel")));
+			setSending(false);
+			if (why !== null) setProblem(why);
+			return;
+		}
 		const result: PasteResult = await store.sendReview(worktree, chosen.id, message);
 		setSending(false);
 		if (result.outcome !== "pasted") setProblem(result.message);
@@ -286,10 +318,20 @@ export function SendReviewDialog({ worktree }: { worktree: string }) {
 					<h2 id={titleId} className="dialog-title">Send review</h2>
 				</header>
 				<div className="dialog-fields">
-					{sessions.length === 0 ? (
+					{!canSend ? (
 						<p className="dialog-note">{NO_REVIEW_AGENT}</p>
 					) : (
-						<AgentChoices sessions={sessions} picked={picked} onPick={setPicked} name="review-agent" legend="Paste into" disabled={sending} />
+						<AgentChoices sessions={sessions} picked={picked} onPick={setPicked} name="review-agent" legend="Paste into" disabled={sending}>
+							{newAgent !== null && (
+								<label className="review-agent">
+									<input type="radio" name="review-agent" checked={picked === NEW_AGENT} disabled={waiting !== null} onChange={() => setPicked(NEW_AGENT)} />
+									<span className="review-agent-name">{describeNewReviewAgent(newAgent.name)}</span>
+									<span className="review-agent-state">
+										{waiting !== null ? reviewAlreadyWaiting(waiting.name) : <>{NEW_REVIEW_AGENT_NOTE} <code>{describeAgentCommand(newAgent) ?? newAgent.command}</code></>}
+									</span>
+								</label>
+							)}
+						</AgentChoices>
 					)}
 					{chosen !== null && waitsOnPerson(chosen) && <p className="review-warning" role="alert">{REVIEW_WAITS_WARNING}</p>}
 					{message === null ? (
@@ -298,7 +340,7 @@ export function SendReviewDialog({ worktree }: { worktree: string }) {
 						<pre className="review-preview" tabIndex={0} aria-label="The review, exactly as it will be pasted">{message}</pre>
 					)}
 					{tooLong && <p className="review-warning" role="alert">{reviewTooLong(message.length)}</p>}
-					{sessions.length > 0 && <p className="dialog-note">{REVIEW_PASTE_NOTE}</p>}
+					{canSend && <p className="dialog-note">{REVIEW_PASTE_NOTE}</p>}
 				</div>
 				{problem !== null && (
 					<div className="sidebar-error" role="alert">
@@ -309,14 +351,14 @@ export function SendReviewDialog({ worktree }: { worktree: string }) {
 				<footer className="dialog-foot">
 					<div className="dialog-buttons">
 						<button type="button" className="button quiet" disabled={sending} onClick={() => store.closeDialog()}>Cancel</button>
-						<button type="button" className={sessions.length === 0 ? "button primary" : "button quiet"} disabled={message === null || sending} onClick={() => {
+						<button type="button" className={canSend ? "button quiet" : "button primary"} disabled={message === null || sending} onClick={() => {
 							if (message !== null) void store.copyReview(message).then(copied => copied || setProblem("The review could not be put on the clipboard."));
 						}}>
 							Copy review
 						</button>
-						{sessions.length > 0 && (
-							<button type="button" className="button primary" disabled={chosen === null || message === null || tooLong || sending} onClick={() => void send()}>
-								{sending ? "Pasting" : "Send"}
+						{canSend && (
+							<button type="button" className="button primary" disabled={(chosen === null && !startsNew) || message === null || tooLong || sending} onClick={() => void send()}>
+								{sending ? (startsNew ? "Starting" : "Pasting") : "Send"}
 							</button>
 						)}
 					</div>

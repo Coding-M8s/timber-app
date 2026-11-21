@@ -3196,18 +3196,53 @@ the Send prompt dialog, `src/mainview/components/AgentChoices.tsx`.
   its worktree (`not-agent`). The window's own
   terminal view cannot do this, because a session's view exists only once
   its pane showed.
+- **Where it goes.** The dialog picks as for a prompt chop
+  (`promptTarget` in `src/mainview/agent-sessions.ts`): the new agent when
+  none runs in the worktree, the only one when it does not wait on the
+  person and is not still waiting for text of its own, and otherwise
+  nothing, so the person picks. The choices are the running agents and a
+  new one, the first agent saved in Settings, with its command line
+  (`describeAgentCommand`). With none saved, no new one is offered; with
+  none saved and none running, Copy review is the only way.
 - **Sending** (`sendReview`). The dialog shows the message from
   `prepareReview` and sends that string. Once pasted, the worktree's notes
   are gone, the dialog closes, a toast says to press Enter in the agent,
   and its session shows. Any other answer keeps the notes and the dialog,
   with the reason. Copy review writes the same string to the clipboard and
   keeps the notes.
+- **Sending to a new agent** (`startReviewAgent`). The store opens the
+  first saved agent with `openTerminal` and `review` set to the message.
+  The main process takes the review as a prompt chop's prompt with no
+  Enter: the agent starts as usual, with nothing of the review on its
+  command line, and the review waits for `isReadyForPrompt` (`src/shared/agent-prompt.ts`), so an
+  agent that probed waits while it is `blocked`, such as on "trust this
+  folder", and one that never probed waits for bracketed paste and quiet.
+  Then it goes as one bracketed paste through the same `deliver` as
+  `pasteTerminal`, and nothing after it. The session's `prompt` is
+  `{ state: "pending", what: "review" }` meanwhile, which the session's
+  state words show as "Waiting to paste the review", then `sent` or
+  `not-sent` with the reason (not ready in 120 seconds, or ended first). A
+  review request with a shell, setup, an arena attempt, a workflow,
+  `resume`, or `restore`, or text `pasteProblem` refuses, starts nothing.
+  While it waits, that agent takes no other paste or prompt
+  (`PROMPT_STILL_STARTING`), and the store starts no second review agent
+  in the worktree (`reviewWaiting`). The store keeps the notes the agent
+  was given, by session; once `sent` it drops only those still unchanged,
+  so a note added or edited meanwhile stays. `not-sent` keeps the notes,
+  with a toast. A change heard before the answer that opened the session
+  is settled when the answer comes. A reloaded window has neither the
+  notes nor what was given, so only the toast shows then. The limit is
+  the prompt chop's: the app never reads what an agent prints, so an agent
+  that never probed and shows a first-run screen that takes a paste gets
+  the review there. Nothing is sent without Enter, so the person can still
+  clear it.
 - **Trying it.** In `bun run dev:web`, start Claude Code or Codex in a
   worktree with changes (the mock agent asks for bracketed paste), note
   lines in the Changes tab, and Send review: the pretend agent shows the
   text it was given. `timberMock.pastedInto(id)` lists what each session
   was given, and `timberMock.printInto(id, "\x1b[?2004l")` turns its
-  bracketed paste off.
+  bracketed paste off. `timberMock.holdNewAgents(true)` keeps a new agent
+  waiting for its review or prompt until `timberMock.agentReady(id)`.
 - **Tried with a real agent:** Claude Code only, on Linux, in a bare
   pseudo terminal outside the app (see [verification](verification.md)).
   Codex and the app window are not tried. ConPTY on Windows is not tried:
