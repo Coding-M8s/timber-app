@@ -360,10 +360,12 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	endRebaseResults(ending: RebaseEnding): void;
 	/**
 	 * Decide how `timber pr --result-file` ends from now on: "created" (the
-	 * start), "exists", "refused", "failed-login", "failed-after-push", or
-	 * "no-result". An empty title is refused whatever the ending. Created and
-	 * exists put the pull request in the repository's answer, so the next read
-	 * shows it. See ./mock-pr.ts for what each one acts out.
+	 * start), "created-reviewer-failed" (the first reviewer cannot be
+	 * requested), "exists", "refused", "failed-login", "failed-after-push", or
+	 * "no-result". An empty title or an unusable reviewer is refused whatever
+	 * the ending. Created and exists request the reviewers and put the pull
+	 * request in the repository's answer, so the next read shows it with the
+	 * requested ones. See ./mock-pr.ts for what each one acts out.
 	 */
 	endPullRequestResults(ending: PullRequestEnding): void;
 	/** Decide the last commit's subject of one worktree, by its path. Null for one with no commit. Until then it is "Work on <branch>". */

@@ -1,6 +1,7 @@
 import type { SavedBase, TimberFailure } from "./model";
 import { type Fields, isFields, isTextOrNull } from "./timber-ls";
 import { type TimberRun, failureOf } from "./timber-result";
+import { displayText } from "./timber-record";
 
 /**
  * `timber pr` with a result file, and what its record means to the
@@ -34,6 +35,8 @@ export interface CreatePullRequestRequest {
 	/** Passed as `--base`. Null for the base Timber saved for the worktree. */
 	base: string | null;
 	draft: boolean;
+	/** Each one is passed as its own `--reviewer`, in this order: a login or `org/team`. Timber checks, trims, and deduplicates them. */
+	reviewers: string[];
 }
 
 /**
@@ -43,13 +46,14 @@ export interface CreatePullRequestRequest {
  * option, so a title or a description that starts with a dash stays text.
  * `resultFile` is put in as it is.
  */
-export function prResultArguments(request: Pick<CreatePullRequestRequest, "worktree" | "title" | "body" | "base" | "draft">, resultFile: string): string[] {
+export function prResultArguments(request: Pick<CreatePullRequestRequest, "worktree" | "title" | "body" | "base" | "draft" | "reviewers">, resultFile: string): string[] {
 	return [
 		"pr",
 		"--title", request.title,
 		...(request.body === "" ? [] : ["--body", request.body]),
 		...(request.base === null ? [] : ["--base", request.base]),
 		...(request.draft ? ["--draft"] : []),
+		...request.reviewers.flatMap(reviewer => ["--reviewer", reviewer]),
 		"--result-file", resultFile,
 		"--", request.worktree,
 	];
@@ -62,6 +66,16 @@ export function prResultArguments(request: Pick<CreatePullRequestRequest, "workt
 export function pullRequestBaseFromText(text: string): string | null {
 	const trimmed = text.trim();
 	return trimmed === "" ? null : trimmed;
+}
+
+/**
+ * The Reviewers field's text as Timber takes it: each name between commas or
+ * spaces, in the order typed, with empty ones left out. Nothing else is
+ * checked or merged here: Timber trims, deduplicates, and refuses what it
+ * cannot request, before it reads a login or pushes.
+ */
+export function pullRequestReviewersFromText(text: string): string[] {
+	return text.split(/[\s,]+/).filter(name => name !== "");
 }
 
 /**
@@ -84,6 +98,18 @@ export interface ReportedPullRequest {
 	base: string | null;
 	/** This run pushed commits to the remote. */
 	published: boolean;
+	/** What became of each `--reviewer`, in the order given. Empty when none was given. */
+	reviewers: ReviewerRequestOutcome[];
+}
+
+/** What Timber did with one `--reviewer` once the pull request was created or found. */
+export interface ReviewerRequestOutcome {
+	/** The login, or `org/team`, as Timber took it. Made safe to show. */
+	name: string;
+	kind: "user" | "team";
+	result: "requested" | "failed";
+	/** Timber's fixed wording when the request failed, made safe to show; never GitHub's text. Null when requested. */
+	diagnostic: string | null;
 }
 
 /** How one `timber pr` ended. */
@@ -111,6 +137,36 @@ interface PrFields {
 	url: string | null;
 	base: string | null;
 	published: boolean;
+	reviewers: ReviewerRequestOutcome[];
+}
+
+const REVIEWER_KINDS: readonly string[] = ["user", "team"];
+const REVIEWER_RESULTS: readonly string[] = ["requested", "failed"];
+
+/**
+ * The `reviewers` list of a record, or null when it is not one: every entry
+ * a name, a kind, and a result, with a diagnostic exactly when the request
+ * failed. Timber leaves no entry out, so the list is required, even empty.
+ */
+function readReviewerOutcomes(value: unknown): ReviewerRequestOutcome[] | null {
+	if (!Array.isArray(value)) return null;
+	const outcomes: ReviewerRequestOutcome[] = [];
+	for (const entry of value) {
+		if (!isFields(entry)) return null;
+		const { name, kind, result, diagnostic } = entry;
+		if (typeof name !== "string" || name.trim() === "" || typeof kind !== "string" || !REVIEWER_KINDS.includes(kind)) return null;
+		if (typeof result !== "string" || !REVIEWER_RESULTS.includes(result)) return null;
+		const failed = result === "failed";
+		if (failed !== (typeof diagnostic === "string") || (failed ? (diagnostic as string).trim() === "" : diagnostic !== null)) return null;
+		outcomes.push({
+			// Up to the longest org/team Timber takes: 100 characters, a slash, and 100 more.
+			name: displayText(name.trim(), 201),
+			kind: kind as ReviewerRequestOutcome["kind"],
+			result: result as ReviewerRequestOutcome["result"],
+			diagnostic: typeof diagnostic === "string" ? displayText(diagnostic.trim()) : null,
+		});
+	}
+	return outcomes;
 }
 
 /** The `pr` object of a record, or why it cannot be used. */
@@ -121,7 +177,9 @@ function readFields(value: unknown): PrFields | string {
 	if (number !== null && (typeof number !== "number" || !Number.isSafeInteger(number) || number <= 0)) return "its pull request number is not a number";
 	if (!isTextOrNull(url) || !isTextOrNull(base)) return "its link or base is not text";
 	if (typeof published !== "boolean") return "it does not say whether the branch was published";
-	return { result: result as Kind, number, url, base, published };
+	const reviewers = readReviewerOutcomes((value as Fields).reviewers);
+	if (reviewers === null) return "its reviewers are not a list this app can read";
+	return { result: result as Kind, number, url, base, published, reviewers };
 }
 
 function isPullRequestLink(url: string): boolean {
@@ -170,8 +228,9 @@ export function readPrResult(run: TimberRun, worktreePath: string): CreatePullRe
 	}
 	if (fields.url !== null && !isPullRequestLink(fields.url)) return unreadable("its link is not a GitHub link");
 	if (kind === "refused" && fields.published) return unreadable("it says a refused run published the branch");
+	if (!reported && fields.reviewers.length > 0) return unreadable(`it lists reviewers for a result of "${kind}"`);
 
-	if (reported) return { outcome: kind, number: fields.number!, url: fields.url!, base: fields.base, published: fields.published };
+	if (reported) return { outcome: kind, number: fields.number!, url: fields.url!, base: fields.base, published: fields.published, reviewers: fields.reviewers };
 	const failure = failureOf(run)!;
 	if (kind === "refused") return { outcome: "refused", failure };
 	return { outcome: "failed", ran: true, published: fields.published, failure };

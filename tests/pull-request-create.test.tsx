@@ -3,9 +3,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { PullRequestFormView } from "../src/mainview/components/PullRequestPanel";
 import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
-import { actOutPullRequest, pullRequestEndings } from "../src/mainview/engine/mock-pr";
+import { REVIEWER_REFUSED, actOutPullRequest, pullRequestEndings } from "../src/mainview/engine/mock-pr";
 import { sampleAnswer } from "../src/mainview/engine/mock-pull-requests";
-import { CREATE_RUNNING, CREATE_SUBMIT, defaultPullRequestTitle, issueMentionHint, presentPullRequestCreation, pullRequestCommandFor, titleKeyOf } from "../src/mainview/pull-request-create-format";
+import { CREATE_RUNNING, CREATE_SUBMIT, REVIEWERS_HINT, defaultPullRequestTitle, issueMentionHint, matchReviewers, presentPullRequestCreation, pullRequestCommandFor, reviewerSuggestions, reviewerToken, titleKeyOf, withReviewerPicked } from "../src/mainview/pull-request-create-format";
 import type { PullRequestForm } from "../src/mainview/store/state";
 import { createAppStore } from "../src/mainview/store/store";
 import type { IssueLink, Repository, Worktree } from "../src/shared/model";
@@ -23,6 +23,14 @@ const JIRA: IssueLink = { kind: "linked", tracker: "jira", key: "PROJ-123", url:
 const LINEAR: IssueLink = { kind: "linked", tracker: "linear", key: "ENG-12", url: "https://linear.app/example/issue/ENG-12/add-sign-in" };
 const GITHUB: IssueLink = { kind: "linked", tracker: "github", key: "153", url: "https://github.com/example/app/issues/153" };
 const FAILURE = { command: "timber pr --title x --result-file <temporary file> -- /w", diagnostic: "Timber's reason.", output: { text: "error: Timber's reason.\n", truncated: false } };
+
+/** One pull request from the sample answer, to change for a test. */
+function samplePull() {
+	const answer = sampleAnswer(sampleRepositories[0]!);
+	const found = answer.ok ? answer.worktrees.find(entry => entry.outcome === "found") : undefined;
+	if (found?.outcome !== "found") throw new Error("sample");
+	return found.pullRequest;
+}
 
 describe("the words and the command", () => {
 	test("the title starts as the last commit's subject, else the branch", () => {
@@ -61,19 +69,71 @@ describe("the words and the command", () => {
 	});
 
 	test("the command follows every field, and empty ones pass nothing", () => {
-		const fields = { title: "Add login", body: "", base: "", draft: false };
+		const fields = { title: "Add login", body: "", base: "", draft: false, reviewers: "" };
 		expect(pullRequestCommandFor("/work/w", fields)).toBe("timber pr --title 'Add login' --result-file <temporary file> -- /work/w");
 		expect(pullRequestCommandFor("/work/w", { ...fields, body: "Closes #3", base: " origin/main ", draft: true }))
 			.toBe("timber pr --title 'Add login' --body 'Closes #3' --base origin/main --draft --result-file <temporary file> -- /work/w");
 		expect(pullRequestCommandFor("/work/w", { ...fields, base: "   " })).not.toContain("--base");
 	});
 
+	test("each reviewer typed is its own --reviewer in the command, and none passes nothing", () => {
+		const fields = { title: "Add login", body: "", base: "", draft: false, reviewers: "alice, example/core  bob," };
+		expect(pullRequestCommandFor("/work/w", fields))
+			.toBe("timber pr --title 'Add login' --reviewer alice --reviewer example/core --reviewer bob --result-file <temporary file> -- /work/w");
+		expect(pullRequestCommandFor("/work/w", { ...fields, reviewers: " , " })).not.toContain("--reviewer");
+	});
+
+	test("suggests the people and teams the repository's pull requests list, each once, by name, and no bots", () => {
+		expect(reviewerSuggestions(sampleAnswer(sampleRepositories[0]!))).toEqual([
+			{ name: "alice", kind: "user" },
+			{ name: "bob", kind: "user" },
+			{ name: "carol", kind: "user" },
+			{ name: "example/maintainers", kind: "team" },
+		]);
+		const pullRequest = (reviewers: { name: string; kind: "user" | "team" | "bot" }[]) => ({ ...samplePull(), reviewers: reviewers.map(reviewer => ({ ...reviewer, state: "requested" as const, url: null })) });
+		const list: PullRequestList = { ok: true, worktrees: [
+			{ path: "/a", branch: "a", outcome: "found", pullRequest: pullRequest([{ name: "Zed", kind: "user" }, { name: "alice", kind: "user" }]) },
+			{ path: "/b", branch: "b", outcome: "none" },
+			{ path: "/c", branch: "c", outcome: "found", pullRequest: pullRequest([{ name: "ALICE", kind: "user" }, { name: "Copilot", kind: "bot" }]) },
+		] };
+		expect(reviewerSuggestions(list).map(suggestion => suggestion.name)).toEqual(["alice", "Zed"]);
+		expect(reviewerSuggestions(undefined)).toEqual([]);
+		expect(reviewerSuggestions({ ok: false, message: "offline" })).toEqual([]);
+	});
+
+	test("the name being typed narrows the suggestions, leaving out the ones already typed, and a pick takes its place", () => {
+		const suggestions = [{ name: "alice", kind: "user" as const }, { name: "alina", kind: "user" as const }, { name: "example/core", kind: "team" as const }];
+		expect(reviewerToken("bob, al")).toBe("al");
+		expect(reviewerToken("bob ")).toBe("");
+		expect(matchReviewers(suggestions, "").map(suggestion => suggestion.name)).toEqual(["alice", "alina", "example/core"]);
+		expect(matchReviewers(suggestions, "AL").map(suggestion => suggestion.name)).toEqual(["alice", "alina"]);
+		expect(matchReviewers(suggestions, "Alice, ").map(suggestion => suggestion.name)).toEqual(["alina", "example/core"]);
+		expect(matchReviewers(suggestions, "alice, CORE").map(suggestion => suggestion.name)).toEqual(["example/core"]);
+		expect(withReviewerPicked("bob, al", "alice")).toBe("bob, alice, ");
+		expect(withReviewerPicked("", "example/core")).toBe("example/core, ");
+	});
+
 	test("created is a toast, and already open is a note that names it", () => {
-		expect(presentPullRequestCreation({ outcome: "created", number: 7, url: "https://github.com/a/b/pull/7", base: "main", published: true }))
-			.toEqual({ toast: "Pull request #7 opened", failure: null, reported: { outcome: "created", number: 7, url: "https://github.com/a/b/pull/7", note: null } });
-		const exists = presentPullRequestCreation({ outcome: "exists", number: 5, url: "https://github.com/a/b/pull/5", base: "main", published: false });
+		expect(presentPullRequestCreation({ outcome: "created", number: 7, url: "https://github.com/a/b/pull/7", base: "main", published: true, reviewers: [] }))
+			.toEqual({ toast: "Pull request #7 opened", failure: null, reported: { outcome: "created", number: 7, url: "https://github.com/a/b/pull/7", note: null }, reviewerFailures: null });
+		const exists = presentPullRequestCreation({ outcome: "exists", number: 5, url: "https://github.com/a/b/pull/5", base: "main", published: false, reviewers: [] });
 		expect(exists.toast).toBeNull();
 		expect(exists.reported?.note).toBe("A pull request from this branch into main was already open, so Timber opened no other: #5.");
+	});
+
+	test("reviewers that could not be requested are named with Timber's reason, and the pull request is still opened", () => {
+		const requested = { name: "alice", kind: "user" as const, result: "requested" as const, diagnostic: null };
+		const failed = { name: "example/core", kind: "team" as const, result: "failed" as const, diagnostic: "GitHub could not find the pull request or the team while requesting a reviewer." };
+		const created = presentPullRequestCreation({ outcome: "created", number: 7, url: "https://github.com/a/b/pull/7", base: "main", published: true, reviewers: [requested, failed] });
+		expect(created.toast).toBe("Pull request #7 opened. 1 reviewer could not be requested.");
+		expect(created.reported).toMatchObject({ outcome: "created", number: 7 });
+		expect(created.reviewerFailures).toEqual({ number: 7, lines: ["Review could not be requested from example/core. GitHub could not find the pull request or the team while requesting a reviewer."] });
+		const two = presentPullRequestCreation({ outcome: "created", number: 7, url: "https://github.com/a/b/pull/7", base: "main", published: true, reviewers: [failed, { ...failed, name: "bob" }] });
+		expect(two.toast).toBe("Pull request #7 opened. 2 reviewers could not be requested.");
+		const exists = presentPullRequestCreation({ outcome: "exists", number: 5, url: "https://github.com/a/b/pull/5", base: "main", published: false, reviewers: [failed] });
+		expect(exists.reported?.note).toContain("was already open");
+		expect(exists.reviewerFailures?.number).toBe(5);
+		expect(presentPullRequestCreation({ outcome: "created", number: 7, url: "https://github.com/a/b/pull/7", base: "main", published: true, reviewers: [requested] }).reviewerFailures).toBeNull();
 	});
 
 	test("refused says nothing was pushed, and a failure says what happened to the branch", () => {
@@ -110,19 +170,24 @@ describe("the issue Timber mentions in the body", () => {
 
 const form = (change: Partial<PullRequestForm> = {}): PullRequestForm => ({
 	repository: TIMBER, worktree: PORTABILITY, head: null, title: "Run on macOS", body: "", base: "origin/main", draft: false,
-	titleKey: null, subject: null, titleEdited: false, running: false, failure: null, reported: null, ...change,
+	reviewers: "", titleKey: null, subject: null, titleEdited: false, running: false, failure: null, reported: null, reviewerFailures: null, ...change,
 });
 const formMarkup = (shown: PullRequestForm, mentionHint: string | null = null) =>
-	renderToStaticMarkup(<PullRequestFormView form={shown} afterIssue={false} mentionHint={mentionHint} onChange={() => {}} onSubmit={() => {}} />);
+	renderToStaticMarkup(<PullRequestFormView form={shown} afterIssue={false} mentionHint={mentionHint} suggestions={[]} onChange={() => {}} onSubmit={() => {}} />);
 
 describe("PullRequestFormView", () => {
-	test("title, description, base, and a draft switch, then the exact command", () => {
-		const markup = formMarkup(form({ body: "Closes #3", draft: true }));
+	test("title, description, base, reviewers, and a draft switch, then the exact command", () => {
+		const markup = formMarkup(form({ body: "Closes #3", draft: true, reviewers: "alice, example/core" }));
+		expect(markup).toContain('role="combobox"');
+		expect(markup).toContain('name="reviewers" value="alice, example/core"');
+		expect(markup).toContain(REVIEWERS_HINT);
+		// The suggestions show only while the field has the focus.
+		expect(markup).not.toContain('role="listbox"');
 		expect(markup).toContain('name="title" value="Run on macOS"');
 		expect(markup).toContain("<textarea");
 		expect(markup).toContain('name="base" value="origin/main"');
 		expect(markup).toContain('type="checkbox" role="switch" name="draft" checked=""');
-		expect(markup).toContain(`timber pr --title &#x27;Run on macOS&#x27; --body &#x27;Closes #3&#x27; --base origin/main --draft --result-file &lt;temporary file&gt; -- ${PORTABILITY}`);
+		expect(markup).toContain(`timber pr --title &#x27;Run on macOS&#x27; --body &#x27;Closes #3&#x27; --base origin/main --draft --reviewer alice --reviewer example/core --result-file &lt;temporary file&gt; -- ${PORTABILITY}`);
 		expect(markup).toContain(`>${CREATE_SUBMIT}</button>`);
 		expect(markup).not.toContain("progressbar");
 		expect(markup).not.toContain("Timber adds Refs");
@@ -158,12 +223,12 @@ describe("the mock engine acts out timber pr", () => {
 	const repository = sampleRepositories[0]!;
 	const worktree = repository.worktrees.find(candidate => candidate.path === PORTABILITY)!;
 	const ask = (change: Partial<CreatePullRequestRequest> = {}): CreatePullRequestRequest =>
-		({ repository: TIMBER, worktree: PORTABILITY, title: "Run on macOS", body: "", base: null, draft: false, ...change });
+		({ repository: TIMBER, worktree: PORTABILITY, title: "Run on macOS", body: "", base: null, draft: false, reviewers: [], ...change });
 
 	test("every ending reads back through the same reader as the main process", () => {
 		const outcomes = Object.keys(pullRequestEndings).map(ending => actOutPullRequest(repository, worktree, ask(), ending as keyof typeof pullRequestEndings).result);
-		expect(outcomes.map(result => result.outcome)).toEqual(["created", "exists", "refused", "failed", "failed", "failed"]);
-		expect(outcomes.map(result => (result.outcome === "failed" ? result.published : null))).toEqual([null, null, null, false, true, null]);
+		expect(outcomes.map(result => result.outcome)).toEqual(["created", "created", "exists", "refused", "failed", "failed", "failed"]);
+		expect(outcomes.map(result => (result.outcome === "failed" ? result.published : null))).toEqual([null, null, null, null, false, true, null]);
 		for (const result of outcomes) if ("failure" in result) expect(result.failure.command).toBe(`timber pr --title 'Run on macOS' --result-file <temporary file> -- ${PORTABILITY}`);
 	});
 
@@ -171,6 +236,39 @@ describe("the mock engine acts out timber pr", () => {
 		expect(actOutPullRequest(repository, worktree, ask({ title: " " }), "created").result.outcome).toBe("refused");
 		const acted = actOutPullRequest(repository, worktree, ask({ draft: true, base: "upstream/release/1.0", body: "Text" }), "created");
 		expect(acted.opened).toMatchObject({ state: "draft", baseBranch: "release/1.0", description: "Text", title: "Run on macOS" });
+	});
+
+	test("reviewers are requested on created and exists as Timber takes them, and the pull request lists the requested ones", () => {
+		const reviewers = [" alice ", "example/core", "ALICE"];
+		const created = actOutPullRequest(repository, worktree, ask({ reviewers }), "created");
+		expect(created.result).toMatchObject({ outcome: "created", reviewers: [
+			{ name: "alice", kind: "user", result: "requested", diagnostic: null },
+			{ name: "example/core", kind: "team", result: "requested", diagnostic: null },
+		] });
+		expect(created.opened?.reviewers).toEqual([
+			{ name: "alice", kind: "user", state: "requested", url: "https://github.com/alice" },
+			{ name: "example/core", kind: "team", state: "requested", url: "https://github.com/orgs/example/teams/core" },
+		]);
+		const exists = actOutPullRequest(repository, worktree, ask({ reviewers: ["bob"] }), "exists");
+		expect(exists.result).toMatchObject({ outcome: "exists", reviewers: [{ name: "bob", result: "requested" }] });
+		expect(exists.opened?.reviewers.map(reviewer => reviewer.name)).toEqual(["bob"]);
+		expect(actOutPullRequest(repository, worktree, ask(), "created").result).toMatchObject({ reviewers: [] });
+	});
+
+	test("the first reviewer that cannot be requested fails with Timber's reason, and the pull request is still created", () => {
+		const acted = actOutPullRequest(repository, worktree, ask({ reviewers: ["alice", "bob"] }), "created-reviewer-failed");
+		expect(acted.result).toMatchObject({ outcome: "created", reviewers: [
+			{ name: "alice", result: "failed", diagnostic: REVIEWER_REFUSED },
+			{ name: "bob", result: "requested", diagnostic: null },
+		] });
+		expect(acted.opened?.reviewers.map(reviewer => reviewer.name)).toEqual(["bob"]);
+	});
+
+	test("a reviewer that is not a login or org/team, or more than 15, is refused whatever the ending, as Timber does", () => {
+		for (const reviewers of [["@alice"], ["a/b/c"], ["-x"], Array.from({ length: 16 }, (_, index) => `user${index}`)]) {
+			expect(actOutPullRequest(repository, worktree, ask({ reviewers }), "created").result.outcome).toBe("refused");
+		}
+		expect(actOutPullRequest(repository, worktree, ask({ reviewers: Array.from({ length: 16 }, () => "same") }), "created").result.outcome).toBe("created");
 	});
 });
 
@@ -262,7 +360,7 @@ describe("the Pull request tab's form", () => {
 		await settle();
 		store.editPullRequestForm(id, { title: "Run on macOS", body: "- one\n- two", base: " origin/main ", draft: true });
 		await store.createPullRequest(id);
-		expect(calls).toEqual([{ repository: TIMBER, worktree: PORTABILITY, title: "Run on macOS", body: "- one\n- two", base: "origin/main", draft: true }]);
+		expect(calls).toEqual([{ repository: TIMBER, worktree: PORTABILITY, title: "Run on macOS", body: "- one\n- two", base: "origin/main", draft: true, reviewers: [] }]);
 		const { number } = store.getState().pullRequestForms[id]!.reported!;
 		expect(store.getState().toasts.map(toast => toast.text)).toEqual([`Pull request #${number} opened`]);
 		const shown = panel();
@@ -303,7 +401,7 @@ describe("the Pull request tab's form", () => {
 		const id = open(PORTABILITY);
 		await settle();
 		// GitHub has not listed it yet: the answer keeps saying none.
-		const result: CreatePullRequestResult = { outcome: "created", number: 9, url: "https://github.com/example/timber/pull/9", base: "main", published: true };
+		const result: CreatePullRequestResult = { outcome: "created", number: 9, url: "https://github.com/example/timber/pull/9", base: "main", published: true, reviewers: [] };
 		engine.createPullRequest = async () => result;
 		await store.createPullRequest(id);
 		expect(panel()).toContain("Pull request #9 opened.</span> It shows here once GitHub lists it");
@@ -466,13 +564,83 @@ describe("the Pull request tab's form", () => {
 		const id = open(PORTABILITY);
 		await settle();
 		// GitHub has not listed it: the tab names it, and once a later read still says none, the form is back.
-		engine.createPullRequest = async () => ({ outcome: "created", number: 9, url: "https://github.com/example/timber/pull/9", base: "main", published: true });
+		engine.createPullRequest = async () => ({ outcome: "created", number: 9, url: "https://github.com/example/timber/pull/9", base: "main", published: true, reviewers: [] });
 		await store.createPullRequest(id);
 		expect(store.getState().pullRequestForms[id]?.reported?.number).toBe(9);
 		await store.fetchNow(TIMBER);
 		await settle();
 		expect(store.getState().pullRequestForms[id]?.reported).toBeNull();
 		expect(panel()).toContain('name="title"');
+	});
+
+	test("reviewers typed are passed as typed, each its own; the tab lists the requested ones", async () => {
+		const { store, calls, open, panel } = await started();
+		const id = open(PORTABILITY);
+		await settle();
+		store.editPullRequestForm(id, { reviewers: "alice, example/maintainers" });
+		expect(panel()).toContain("--reviewer alice --reviewer example/maintainers --result-file");
+		await store.createPullRequest(id);
+		expect(calls[0]!.reviewers).toEqual(["alice", "example/maintainers"]);
+		const shown = panel();
+		expect(shown).toContain('<span class="pull-reviewer-name" title="alice">alice');
+		expect(shown).toContain('title="example/maintainers">example/maintainers');
+		expect(shown).not.toContain("could not be requested");
+	});
+
+	test("a reviewer that could not be requested shows with the pull request it created, and outlasts the next read", async () => {
+		const { engine, store, open, panel } = await started();
+		engine.endPullRequestResults("created-reviewer-failed");
+		const id = open(PORTABILITY);
+		await settle();
+		store.editPullRequestForm(id, { title: "Run on macOS", reviewers: "ghost, bob" });
+		await store.createPullRequest(id);
+		const { number } = store.getState().pullRequestForms[id]!.reported!;
+		expect(store.getState().toasts.map(toast => toast.text)).toEqual([`Pull request #${number} opened. 1 reviewer could not be requested.`]);
+		const line = `Review could not be requested from ghost. ${REVIEWER_REFUSED}`;
+		const shown = panel();
+		// The pull request it created shows, with the failure under its header area, not in its place.
+		expect(shown).toContain(">Run on macOS</h2>");
+		expect(shown).toContain(line);
+		expect(shown.indexOf(line)).toBeLessThan(shown.indexOf(">Run on macOS</h2>"));
+		await store.fetchNow(TIMBER);
+		await settle();
+		expect(store.getState().pullRequestForms[id]?.reported).toBeNull();
+		expect(panel()).toContain(line);
+		store.dismissReviewerFailures(id);
+		expect(panel()).not.toContain(line);
+		expect(panel()).toContain(">Run on macOS</h2>");
+	});
+
+	test("before GitHub lists it, the failed reviewer shows under the note that names the created pull request", async () => {
+		const { engine, store, open, panel } = await started();
+		const id = open(PORTABILITY);
+		await settle();
+		engine.createPullRequest = async () => ({
+			outcome: "created", number: 9, url: "https://github.com/example/timber/pull/9", base: "main", published: true,
+			reviewers: [{ name: "bob", kind: "user", result: "failed", diagnostic: "GitHub failed while requesting a reviewer; request them on the pull request." }],
+		});
+		await store.createPullRequest(id);
+		const shown = panel();
+		expect(shown).toContain("Pull request #9 opened.</span>");
+		expect(shown).toContain("Review could not be requested from bob. GitHub failed while requesting a reviewer");
+		expect(shown.indexOf("Pull request #9 opened.")).toBeLessThan(shown.indexOf("Review could not be requested"));
+		// A later read that still lists none brings the form back, and the reviewer stays named above it.
+		await store.fetchNow(TIMBER);
+		await settle();
+		expect(store.getState().pullRequestForms[id]?.reported).toBeNull();
+		const again = panel();
+		expect(again).toContain('name="title"');
+		expect(again).toContain("Review could not be requested from bob.");
+		expect(again.indexOf("Review could not be requested")).toBeLessThan(again.indexOf('name="title"'));
+		// So does a read that fails.
+		engine.setPullRequests(TIMBER, { ok: false, message: "GitHub could not be reached." });
+		await store.fetchNow(TIMBER);
+		await settle();
+		expect(panel()).toContain("Review could not be requested from bob.");
+		// The next run starts without it.
+		engine.createPullRequest = async () => ({ outcome: "refused", failure: FAILURE });
+		await store.createPullRequest(id);
+		expect(store.getState().pullRequestForms[id]?.reviewerFailures).toBeNull();
 	});
 
 	test("an engine that does not answer is a failure whose effect is unknown, never a throw", async () => {

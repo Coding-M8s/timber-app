@@ -131,10 +131,11 @@ export function createWorktreeCommands(options: WorktreeCommandsOptions): Worktr
 	const prNotRun = (diagnostic: string): CreatePullRequestResult => ({ outcome: "failed", ran: false, published: false, failure: { command: null, diagnostic, output: null } });
 
 	async function pullRequest(request: CreatePullRequestRequest): Promise<CreatePullRequestResult> {
-		const { repository, worktree, title, body, base, draft } = (request ?? {}) as Partial<CreatePullRequestRequest>;
+		const { repository, worktree, title, body, base, draft, reviewers } = (request ?? {}) as Partial<CreatePullRequestRequest>;
 		// Only text becomes an argument: the request comes over the bridge.
 		if (typeof repository !== "string" || typeof worktree !== "string" || typeof title !== "string" || typeof body !== "string"
-			|| (base !== null && (typeof base !== "string" || base === "")) || typeof draft !== "boolean") {
+			|| (base !== null && (typeof base !== "string" || base === "")) || typeof draft !== "boolean"
+			|| !Array.isArray(reviewers) || !reviewers.every(reviewer => typeof reviewer === "string" && reviewer !== "")) {
 			return prNotRun("The request for timber pr is not complete. Nothing was run.");
 		}
 		return inTurn(repository, async () => {
@@ -146,7 +147,7 @@ export function createWorktreeCommands(options: WorktreeCommandsOptions): Worktr
 				const run = await runTimberWithResultFile({
 					executable: status.path,
 					command: "pr",
-					arguments: resultFile => prResultArguments({ worktree, title, body, base, draft }, resultFile),
+					arguments: resultFile => prResultArguments({ worktree, title, body, base, draft, reviewers: [...reviewers] }, resultFile),
 					folder: repository,
 					...(environment ? { environment } : {}),
 					...(temporaryRoot === undefined ? {} : { temporaryRoot }),

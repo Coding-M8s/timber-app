@@ -1081,11 +1081,14 @@ paths, one with a space), `"refused"`, `"failed"`, or `"no-result"` (exit
 code 1 and no result file). A worktree with modified or untracked files is
 refused whatever the ending, as Timber does.
 `timberMock.endPullRequestResults(ending)` chooses how `timber pr` ends from
-then on: `"created"` (the start), `"exists"`, `"refused"`, `"failed-login"`
+then on: `"created"` (the start), `"created-reviewer-failed"` (the first
+reviewer cannot be requested, with Timber's wording), `"exists"`,
+`"refused"`, `"failed-login"`
 (nothing pushed), `"failed-after-push"` (the branch was published), or
-`"no-result"` (exit code 1 and no result file). An empty title is refused
-whatever the ending. Created and exists show the pull request on the next
-read. `timberMock.setHeadSubject(path, subject)` sets a worktree's last
+`"no-result"` (exit code 1 and no result file). An empty title, or a
+reviewer that is not a login or `org/team`, is refused whatever the ending.
+Created and exists show the pull request on the next read, with the
+reviewers requested. `timberMock.setHeadSubject(path, subject)` sets a worktree's last
 commit subject (`null` for none); until then it is "Work on <branch>".
 `timberMock.setBranches("/work/timber", list)` replaces the branches offered
 for picking (`null` acts out a list that cannot be read).
@@ -1914,7 +1917,15 @@ form that runs `timber pr --result-file`. Timber publishes the branch with the
 rules of `timber publish` and opens the pull request on github.com with its
 own login. The app never pushes and never calls GitHub. Timber 0.1.3, the
 release the app requires, is the first with `timber pr`, so there is no
-version gate of its own.
+version gate of its own. Reviewers need `timber pr --reviewer` and the
+record's `reviewers` field (Coding-M8s/timber#174), which are on Timber's
+main branch but in no release yet. The app reads the record in that form
+already, so until the required Timber is raised to the first release with
+them, a record from Timber 0.1.3, which has no `reviewers`, is one this app
+cannot read, and with reviewers 0.1.3 stops at "unknown option
+'--reviewer'" with exit code 1 and no result file, which the app reports as
+a failure whose effect is unknown. Raising the required release is the step
+that finishes this.
 
 - **The form.** `PullRequestFormView` in
   `src/mainview/components/PullRequestPanel.tsx`, shown when the worktree's
@@ -1946,6 +1957,23 @@ version gate of its own.
   branch. Empty Base passes no `--base`, and Timber takes the saved base and
   says what it needs. The app checks no title, length, or base itself:
   Title is always passed, even empty, and Timber refuses it.
+- **Reviewers.** `ReviewersField` in
+  `src/mainview/components/ReviewersField.tsx`, a text field in the form for
+  logins or `org/team`, separated by commas or spaces
+  (`pullRequestReviewersFromText` in `src/shared/timber-pr.ts` splits them
+  and leaves out empty ones, nothing more). Timber trims, deduplicates, and
+  refuses a value that is not a login or `org/team`, more than 15, a team
+  outside the base repository's owner, and any reviewer on a Bitbucket
+  base, all before it reads a login or pushes, so the app checks none of
+  that. While the field has the focus, `reviewerSuggestions` in
+  `src/mainview/pull-request-create-format.ts` offers the people and teams
+  the repository's last `timber __app-pr` answer lists as reviewers, each
+  once whatever its case, by name, without bots, which `--reviewer` does
+  not take. `matchReviewers` narrows them by the name being typed (the text
+  after the last comma or space, with the caret taken to be at the end) and
+  leaves out the ones typed before it, and `withReviewerPicked` puts a
+  picked one in its place. Arrow keys move, Enter takes the marked one, and
+  Enter with none marked submits the form. While Timber runs, nothing is offered.
 - **The last commit's subject.** `readHeadSubject` on the `Engine`, answered
   by `WorktreeCommands.headSubject` in `src/bun/worktree-commands.ts`: for a
   worktree Timber lists in a repository from the list (`findListedWorktree`)
@@ -1955,32 +1983,41 @@ version gate of its own.
   could not answer. It changes nothing.
 - **One source for the command.** `prResultArguments` in
   `src/shared/timber-pr.ts` builds `pr --title <text> [--body <text>]
-  [--base <ref>] [--draft] --result-file <path> -- <registered path>`. Each
-  value is its own argument after its option, so a title or a description
-  that starts with a dash stays text, which Timber 0.1.3 was checked to
-  accept. The footer words it from that function with `<temporary file>`
+  [--base <ref>] [--draft] [--reviewer <name>]... --result-file <path> --
+  <registered path>`, one `--reviewer` for each reviewer, in the order
+  typed. Each value is its own argument after its option, so a title or a
+  description that starts with a dash stays text, which Timber 0.1.3 was
+  checked to accept, and a reviewer that starts with a dash stays a value,
+  which Timber refuses as no login. The footer words it from that function with `<temporary file>`
   (`pullRequestCommandFor` in `src/mainview/pull-request-create-format.ts`),
   and it follows every keystroke.
 - **Running and checks.** `createPullRequest` on the `Engine`, answered by
   `WorktreeCommands.pullRequest`, in the same per-repository turn as `timber
   new`, `open`, and `rebase`. Before it runs anything it checks that the
-  request is complete (only text becomes an argument, and `draft` is a
-  boolean), that the repository is in the list, that Timber lists the
+  request is complete (only text becomes an argument, `draft` is a
+  boolean, and `reviewers` is a list of text that is not empty), that the repository is in the list, that Timber lists the
   worktree there with its folder, and that Timber is ready. Each refusal is
   a failure with `ran: false` that ends "Nothing was run." The desktop
   engine asks with no time limit: Timber stops each GitHub request after ten
   seconds, but a push takes as long as it takes.
 - **Reading the record.** `readTimberResult` has checked the common fields.
   `readPrResult` then checks the `pr` object: a known `result`, a positive
-  whole `number` or null, text or null for `url` and `base`, and a boolean
-  `published`. Created and exists must have succeeded and refused and failed
+  whole `number` or null, text or null for `url` and `base`, a boolean
+  `published`, and a `reviewers` list, required even empty, whose every
+  entry has a `name` that is not blank, a `kind` of `user` or `team`, a
+  `result` of `requested` or `failed`, and a `diagnostic` that is text that
+  is not blank exactly when it failed and null otherwise. Names and
+  diagnostics are made safe to show (`displayText`). Reviewers are listed
+  only for created and exists. The app does not compare the list with what
+  was asked for, since Timber trims and deduplicates. Created and exists must have succeeded and refused and failed
   must have failed; `number` and `url` are there exactly for created and
   exists; `url` must be an `https://github.com` link; a refusal never
   published; and a record that names another worktree is not used. Anything
   else is a failure whose effect is unknown (`published: null`), since the
   branch may have been pushed.
 - **Outcomes.** `presentPullRequestCreation` maps each answer. Created: a
-  toast, "Pull request #N opened". Exists: a quiet line above that pull
+  toast, "Pull request #N opened", with "1 reviewer could not be
+  requested." (or the count) after it when some failed. Exists: a quiet line above that pull
   request saying it was already open and Timber opened no other. Both stay
   as `reported` in the form until the next read of the repository's pull
   requests after the run. Until then, while GitHub does not list it yet,
@@ -1990,25 +2027,41 @@ version gate of its own.
   whether this run published the branch, or that it is unknown, never that
   nothing changed. Running it again reports one that was opened as already
   open. Each failure keeps Timber's output in `TimberFailureDetails`, closed
-  at first, and stays until a field changes or the next run.
+  at first, and stays until a field changes or the next run. A reviewer
+  that could not be requested, on created or exists, is a line in
+  `reviewerFailures` of the form, "Review could not be requested from
+  <name>." with Timber's diagnostic. It shows below the note that names the
+  reported pull request, and, once the pull requests read list it, above
+  that pull request in the tab, so it never takes the place of what was
+  created. Unlike `reported`, a read keeps it: it lasts until "Dismiss"
+  (`dismissReviewerFailures`), the next run, or the form is forgotten.
+  While a read still lists no pull request, or the pull requests cannot be
+  read, it shows above the form or the note in the tab's place.
 - **Afterwards.** After every outcome that ran, even a failure, the store
   reads the repository and its pull requests again before it says how it
   ended, so a created pull request shows as soon as GitHub lists it.
 - **In the browser.** The mock engine acts out `timber pr`
   (`src/mainview/engine/mock-pr.ts`) and writes the record Timber would,
   read by the same code. Created and exists add the pull request to the
-  repository's next answer. `timberMock.endPullRequestResults` chooses the
+  repository's next answer, and request each reviewer, trimmed and each
+  once as Timber takes them, so that pull request lists the requested ones
+  with `requested`. A reviewer Timber would refuse is refused whatever the
+  ending. `timberMock.endPullRequestResults` chooses the
   ending, and `timberMock.setHeadSubject(path, subject)` the last commit's
   subject (see [reporting outcomes](#reporting-outcomes)).
 - **Tests.** `tests/fixtures/timber-pr` holds two refusals recorded from
-  Timber 0.1.3 (a remote that is not on github.com, and no title). Created,
+  Timber 0.1.3 (a remote that is not on github.com, and no title), each
+  with the empty `reviewers` list that later Timber writes. Created,
   exists, and two failures are written by hand from the recorded one in the
   form Timber's `docs/ide-contract.md` gives, because recording them would
   open a real pull request. `tests/timber-pr-parse.test.ts` maps each one.
   With the installed Timber, `tests/worktree-pr.test.ts` checks that a
   refusal against a remote on disk changes no file or ref in the worktree,
-  the primary checkout, or the remote, with no GitHub login in reach, and
-  that reading the subject changes nothing.
+  the primary checkout, or the remote, with no GitHub login in reach,
+  including refused reviewers, one of them starting with a dash, and that
+  reading the subject changes nothing. The refusal test checks Timber's
+  outcomes only with a Timber whose `timber pr --help` lists `--reviewer`;
+  with an older one it still checks that nothing changed.
   `tests/pull-request-create.test.tsx` covers the form, the store, and the
   mock endings.
 

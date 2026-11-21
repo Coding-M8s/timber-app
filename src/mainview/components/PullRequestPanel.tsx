@@ -1,11 +1,12 @@
 import { type SubmitEvent, useEffect, useId } from "react";
 import type { Repository, Worktree } from "../../shared/model";
 import { pullRequestOf } from "../../shared/pull-requests";
-import { BASE_HINT, CREATE_HEADING, CREATE_NOTE, CREATE_RUNNING, CREATE_SUBMIT, type PullRequestFields, issueMentionHint, type ReportedPullRequestView, pullRequestCommandFor } from "../pull-request-create-format";
+import { BASE_HINT, CREATE_HEADING, CREATE_NOTE, CREATE_RUNNING, CREATE_SUBMIT, type PullRequestFields, issueMentionHint, type ReportedPullRequestView, type ReviewerFailuresView, type ReviewerSuggestion, pullRequestCommandFor, reviewerSuggestions } from "../pull-request-create-format";
 import { NO_DESCRIPTION, OPEN_IN_BROWSER, RUN_STATUS_LABELS, describePullRequestTab } from "../pull-request-tab-format";
 import { useAppState, useStore } from "../store/react";
 import type { PullRequestForm } from "../store/state";
 import { IssueSection, issueOf } from "./IssueSummary";
+import { ReviewersField } from "./ReviewersField";
 import { TimberFailureDetails } from "./TimberFailureDetails";
 
 /**
@@ -34,21 +35,27 @@ export function PullRequestPanel({ repository, worktree }: { repository: Reposit
 	}, [offersForm, store, repository.path, worktree]);
 
 	if (view.kind !== "found") {
+		// Reviewers the last run could not request show whatever the tab shows now: GitHub may not list the
+		// pull request yet, or the pull requests may not be readable, and the toast alone does not name them.
+		const failures = form?.reviewerFailures
+			? <ReviewerFailures failures={form.reviewerFailures} onDismiss={() => store.dismissReviewerFailures(worktree.id)} />
+			: null;
 		if (offersForm && form) {
 			return (
 				<div className="pull-tab">
 					{issue && <IssueSection issue={issue} />}
-					{form.reported
-						? <ReportedNote reported={form.reported} onOpen={() => void store.openLink(form.reported!.url)} />
-						: (
-							<PullRequestFormView
-								form={form}
-								afterIssue={issue !== null}
-								mentionHint={issueMentionHint(worktree.issue)}
-								onChange={change => store.editPullRequestForm(worktree.id, change)}
-								onSubmit={() => void store.createPullRequest(worktree.id)}
-							/>
-						)}
+					{form.reported && <ReportedNote reported={form.reported} onOpen={() => void store.openLink(form.reported!.url)} />}
+					{failures}
+					{!form.reported && (
+						<PullRequestFormView
+							form={form}
+							afterIssue={issue !== null}
+							mentionHint={issueMentionHint(worktree.issue)}
+							suggestions={reviewerSuggestions(list)}
+							onChange={change => store.editPullRequestForm(worktree.id, change)}
+							onSubmit={() => void store.createPullRequest(worktree.id)}
+						/>
+					)}
 				</div>
 			);
 		}
@@ -58,9 +65,10 @@ export function PullRequestPanel({ repository, worktree }: { repository: Reposit
 				<p className="empty-text">{view.text}</p>
 			</div>
 		);
-		return issue === null ? note : (
+		return issue === null && failures === null ? note : (
 			<div className="pull-tab">
-				<IssueSection issue={issue} />
+				{issue && <IssueSection issue={issue} />}
+				{failures}
 				{note}
 			</div>
 		);
@@ -68,10 +76,12 @@ export function PullRequestPanel({ repository, worktree }: { repository: Reposit
 
 	const pull = view.pullRequest;
 	const existed = form?.reported?.outcome === "exists" && form.reported.number === pull.number ? form.reported.note : null;
+	const reviewerFailures = form?.reviewerFailures?.number === pull.number ? form.reviewerFailures : null;
 	return (
 		<div className="pull-tab">
 			{issue && <IssueSection issue={issue} />}
 			{existed && <p className="pull-tab-line pull-tab-existed" role="status">{existed}</p>}
+			{reviewerFailures && <ReviewerFailures failures={reviewerFailures} onDismiss={() => store.dismissReviewerFailures(worktree.id)} />}
 			<header className={issue ? "pull-tab-header after-issue" : "pull-tab-header"}>
 				<div className="pull-tab-heading">
 					<h2 className="pull-tab-title">{view.heading}</h2>
@@ -155,25 +165,44 @@ function ReportedNote({ reported, onOpen }: { reported: ReportedPullRequestView;
 	);
 }
 
+/**
+ * The reviewers Timber could not request on the pull request it created or
+ * found, each with Timber's reason. It shows with that pull request, below
+ * what says it was opened or already open, so it never hides that, and
+ * stays until put away or the next run.
+ */
+function ReviewerFailures({ failures, onDismiss }: { failures: ReviewerFailuresView; onDismiss: () => void }) {
+	return (
+		<div className="pull-tab-reviewer-failures" role="status">
+			<ul className="pull-tab-failure-lines">
+				{failures.lines.map((line, index) => <li key={`${index}\0${line}`} className="pull-tab-line failing">{line}</li>)}
+			</ul>
+			<button type="button" className="text-button" onClick={onDismiss}>Dismiss</button>
+		</div>
+	);
+}
+
 export interface PullRequestFormViewProps {
 	form: PullRequestForm;
 	/** The Issue section shows above, so the form starts with a hairline. */
 	afterIssue: boolean;
 	/** Which issue Timber mentions in the body (`issueMentionHint` of the saved link), shown under Description. Null for none. */
 	mentionHint: string | null;
+	/** The people and teams to offer in the Reviewers field. */
+	suggestions: readonly ReviewerSuggestion[];
 	onChange: (change: Partial<PullRequestFields>) => void;
 	onSubmit: () => void;
 }
 
 /**
  * The form that opens a pull request with `timber pr`: title, description,
- * base, and a draft switch, then the exact command, which follows what is
+ * base, reviewers, and a draft switch, then the exact command, which follows what is
  * typed. It holds no state of its own. While Timber runs, everything is
  * disabled and a progress bar shows. A failure stays above the command, with
  * what Timber printed in a details area that starts closed, until a field
  * changes or the next run.
  */
-export function PullRequestFormView({ form, afterIssue, mentionHint, onChange, onSubmit }: PullRequestFormViewProps) {
+export function PullRequestFormView({ form, afterIssue, mentionHint, suggestions, onChange, onSubmit }: PullRequestFormViewProps) {
 	const headingId = useId();
 	const { running, failure } = form;
 	const submit = (event: SubmitEvent<HTMLFormElement>) => {
@@ -199,6 +228,7 @@ export function PullRequestFormView({ form, afterIssue, mentionHint, onChange, o
 					<input className="field-input mono" name="base" value={form.base} placeholder="Saved base" spellCheck={false} onChange={event => onChange({ base: event.target.value })} />
 					<span className="field-hint">{BASE_HINT}</span>
 				</label>
+				<ReviewersField value={form.reviewers} suggestions={suggestions} disabled={running} onChange={reviewers => onChange({ reviewers })} />
 				<label className="check">
 					<input type="checkbox" role="switch" name="draft" checked={form.draft} onChange={event => onChange({ draft: event.target.checked })} />
 					<span>Open as a draft</span>

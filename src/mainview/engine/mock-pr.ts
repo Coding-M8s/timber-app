@@ -1,6 +1,6 @@
 import type { Repository, Worktree } from "../../shared/model";
-import type { PullRequest } from "../../shared/pull-requests";
-import { type CreatePullRequestRequest, type CreatePullRequestResult, prResultArguments, readPrResult } from "../../shared/timber-pr";
+import type { PullRequest, Reviewer } from "../../shared/pull-requests";
+import { type CreatePullRequestRequest, type CreatePullRequestResult, type ReviewerRequestOutcome, prResultArguments, readPrResult } from "../../shared/timber-pr";
 import { RESULT_FILE_PLACEHOLDER, type TimberRun, describeTimberCommand, readTimberResult } from "../../shared/timber-result";
 
 /**
@@ -14,6 +14,7 @@ import { RESULT_FILE_PLACEHOLDER, type TimberRun, describeTimberCommand, readTim
 /** How the acted pull requests end. */
 export const pullRequestEndings = {
 	"created": "Timber publishes the branch and opens the pull request",
+	"created-reviewer-failed": "Timber opens the pull request, but the first reviewer cannot be requested",
 	"exists": "A pull request from the branch into that base is already open",
 	"refused": "Timber refuses before it reads a login or pushes",
 	"failed-login": "There is no GitHub login, so nothing is pushed",
@@ -24,6 +25,30 @@ export const pullRequestEndings = {
 export type PullRequestEnding = keyof typeof pullRequestEndings;
 
 export const isPullRequestEnding = (value: unknown): value is PullRequestEnding => typeof value === "string" && Object.hasOwn(pullRequestEndings, value);
+
+/** Timber's wording when GitHub refuses a reviewer (422), from `timber pr --reviewer`. */
+export const REVIEWER_REFUSED = "GitHub could not request this reviewer; check that they can access the repository and are not the pull request author.";
+
+// Timber's checks of a --reviewer value: a login, or org/team with a team slug.
+const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9_]|-(?=[A-Za-z0-9_])){0,99}$/u;
+const TEAM_SLUG = /^[A-Za-z0-9_](?:[A-Za-z0-9_-]){0,99}$/u;
+
+/**
+ * The reviewers as Timber takes them, in order: trimmed, each once whatever
+ * its case, or null when one is not a login or `org/team`, which Timber
+ * refuses before anything else.
+ */
+function takeReviewers(values: readonly string[]): { name: string; kind: "user" | "team" }[] | null {
+	const taken: { name: string; kind: "user" | "team" }[] = [];
+	for (const raw of values) {
+		const name = raw.trim();
+		const parts = name.split("/");
+		const kind = parts.length === 1 && LOGIN.test(name) ? "user" : parts.length === 2 && LOGIN.test(parts[0]!) && TEAM_SLUG.test(parts[1]!) ? "team" : null;
+		if (kind === null) return null;
+		if (!taken.some(other => other.kind === kind && other.name.toLowerCase() === name.toLowerCase())) taken.push({ name, kind });
+	}
+	return taken;
+}
 
 /** The number the next acted pull request gets. */
 let nextNumber = 300;
@@ -47,8 +72,11 @@ export interface ActedPullRequest {
 
 /**
  * Act out one `timber pr`. The repository is the one from the pretend list
- * and `worktree` is one it lists whose folder is there. An empty title is
- * refused whatever the ending, as Timber does. The base is the branch part of
+ * and `worktree` is one it lists whose folder is there. An empty title, a
+ * reviewer that is not a login or `org/team`, and more than 15 reviewers are
+ * refused whatever the ending, as Timber does. Created and exists request
+ * each reviewer, trimmed and each once as Timber takes them, and the pull
+ * request then lists the ones requested. The base is the branch part of
  * what was typed, or `main` for the saved one.
  */
 export function actOutPullRequest(repository: Repository, worktree: Worktree, request: CreatePullRequestRequest, ending: PullRequestEnding): ActedPullRequest {
@@ -67,11 +95,30 @@ export function actOutPullRequest(repository: Repository, worktree: Worktree, re
 		const run: TimberRun = { command: shown, result: readTimberResult("pr", text, failed ? 1 : 0), output: { text: printed, truncated: false } };
 		return readPrResult(run, worktree.path);
 	};
-	const none = { number: null, url: null, base, published: false };
+	const none = { number: null, url: null, base, published: false, reviewers: [] };
 	const refused = (diagnostic: string): ActedPullRequest =>
 		({ result: written({ result: "refused", ...none }, "failed", diagnostic, `error: ${diagnostic}\n`), opened: null });
 
 	if (request.title.trim() === "") return refused("Provide a pull request title with --title <text>.");
+	const reviewers = takeReviewers(request.reviewers);
+	if (reviewers === null) return refused("Each --reviewer must be a GitHub user login or org/team.");
+	if (reviewers.length > 15) return refused("Request at most 15 reviewers with --reviewer.");
+	/** What became of each reviewer: the first fails when the ending says so. */
+	const outcomes = (firstFails: boolean): ReviewerRequestOutcome[] => reviewers.map((reviewer, index) => firstFails && index === 0
+		? { ...reviewer, result: "failed", diagnostic: REVIEWER_REFUSED }
+		: { ...reviewer, result: "requested", diagnostic: null });
+	/** The requested ones, as GitHub then lists them on the pull request. */
+	const listed = (requested: readonly ReviewerRequestOutcome[]): Reviewer[] => requested.filter(outcome => outcome.result === "requested").map(({ name, kind }) => ({
+		kind,
+		name,
+		state: "requested",
+		url: kind === "team" ? `https://github.com/orgs/${name.replace("/", "/teams/")}` : `https://github.com/${name}`,
+	}));
+	const printedReviewers = (requested: readonly ReviewerRequestOutcome[]): string => {
+		const failed = requested.filter(outcome => outcome.result === "failed").map(outcome => `warning: Could not request review from ${outcome.name}: ${outcome.diagnostic}\n`).join("");
+		const names = requested.filter(outcome => outcome.result === "requested").map(outcome => outcome.name);
+		return failed + (names.length > 0 ? `Requested review from ${names.join(", ")}.\n` : "");
+	};
 	const pull = (number: number, title: string, description: string, draft: boolean): PullRequest => ({
 		number,
 		url: `https://github.com/example/${owner}/pull/${number}`,
@@ -86,16 +133,19 @@ export function actOutPullRequest(repository: Repository, worktree: Worktree, re
 	});
 
 	switch (ending) {
-		case "created": {
+		case "created":
+		case "created-reviewer-failed": {
 			const number = nextNumber++;
-			const opened = pull(number, request.title, request.body, request.draft);
-			const result = written({ result: "created", number, url: opened.url, base, published: true }, "succeeded", null, `Published ${worktree.branch ?? ""}\nOpened ${opened.url}\n`);
+			const requested = outcomes(ending === "created-reviewer-failed");
+			const opened = { ...pull(number, request.title, request.body, request.draft), reviewers: listed(requested) };
+			const result = written({ result: "created", number, url: opened.url, base, published: true, reviewers: requested }, "succeeded", null, `Published ${worktree.branch ?? ""}\nOpened ${opened.url}\n${printedReviewers(requested)}`);
 			return { result, opened };
 		}
 		case "exists": {
 			const number = nextNumber++;
-			const opened = pull(number, "An earlier pull request for this branch", "Opened before, from another window.", false);
-			const result = written({ result: "exists", number, url: opened.url, base, published: false }, "succeeded", null, `${worktree.branch ?? ""} is up to date on origin\nA pull request is already open: ${opened.url}\n`);
+			const requested = outcomes(false);
+			const opened = { ...pull(number, "An earlier pull request for this branch", "Opened before, from another window.", false), reviewers: listed(requested) };
+			const result = written({ result: "exists", number, url: opened.url, base, published: false, reviewers: requested }, "succeeded", null, `${worktree.branch ?? ""} is up to date on origin\nA pull request is already open: ${opened.url}\n${printedReviewers(requested)}`);
 			return { result, opened };
 		}
 		case "refused":

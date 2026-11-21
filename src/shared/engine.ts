@@ -119,7 +119,8 @@ export interface Engine {
 	 * Publish a worktree's branch and open a pull request for it by running
 	 * `timber pr --result-file` in a repository from the list, and answer how
 	 * it ended as Timber's record says: created, already open, refused, or
-	 * failed. The command is `prResultArguments` in ./timber-pr.ts, so the
+	 * failed, with what became of each reviewer asked for on a created or
+	 * already open one. The command is `prResultArguments` in ./timber-pr.ts, so the
 	 * interface can show it before asking. Timber pushes and calls GitHub; the
 	 * engine never does. It runs once and is never retried here, since a
 	 * failure can come after the push. Read the list and the pull requests

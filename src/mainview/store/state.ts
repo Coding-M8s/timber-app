@@ -1,4 +1,4 @@
-import type { PullRequestCreationFailure, PullRequestFields, ReportedPullRequestView } from "../pull-request-create-format";
+import type { PullRequestCreationFailure, PullRequestFields, ReportedPullRequestView, ReviewerFailuresView } from "../pull-request-create-format";
 import type { ChopList, ListedChop } from "../../shared/chops";
 import type { PortClash, PortsResult } from "../../shared/ports";
 import type { BaseComparison, Comparison, FileChange, FileChangeTarget, FileDiffResult } from "../../shared/file-changes";
@@ -416,6 +416,12 @@ export interface PullRequestForm extends PullRequestFields {
 	failure: PullRequestCreationFailure | null;
 	/** The pull request the latest run created or found, until the tab can show it from the pull requests read. */
 	reported: ReportedPullRequestView | null;
+	/**
+	 * The reviewers the latest run could not request on the pull request it
+	 * created or found. Unlike `reported`, a read of the pull requests keeps
+	 * it: it lasts until it is put away or the next run.
+	 */
+	reviewerFailures: ReviewerFailuresView | null;
 }
 
 /** What Timber answered for one worktree's linked issue, and which link it answered for. */
