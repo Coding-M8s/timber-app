@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { InstallControlsView } from "../src/mainview/components/AppUpdate";
-import { MarkdownView } from "../src/mainview/components/MarkdownView";
+import { type Context, MarkdownAnchor, MarkdownView } from "../src/mainview/components/MarkdownView";
 import { RestartPromptView } from "../src/mainview/components/settings/RestartPrompt";
 import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { updateConfirmText } from "../src/mainview/app-update-format";
@@ -12,6 +12,8 @@ import { restartStepAfterPlan } from "../src/mainview/restart-format";
 import { createAppStore } from "../src/mainview/store/store";
 import type { FileView } from "../src/mainview/store/state";
 import type { Engine } from "../src/shared/engine";
+import type { WorktreeFileResult } from "../src/shared/worktree-files";
+import type { ReactElement } from "react";
 import { editableText, isMarkdownPath, textToSave, textToSaveProblem, usesCrLf } from "../src/shared/worktree-files";
 
 const settle = () => Bun.sleep(0);
@@ -110,6 +112,34 @@ describe("rendering Markdown", () => {
 		expect(markup).toContain('title="Open README.md here"');
 		expect(markup).toContain('title="Go to this heading"');
 		expect(markup).toContain('title="Open https://example.com/b in the browser"');
+	});
+
+	test("a click or Enter follows a link through the app and keeps the page where it is", () => {
+		const opened: string[] = [];
+		const files: string[] = [];
+		const scrolled: string[] = [];
+		const context: Context = { path: "docs/a.md", onOpenLink: url => opened.push(url), onOpenFile: path => files.push(path), nextHeadingId: headingIds(), scrollTo: id => scrolled.push(id) };
+		const follow = (href: string, how: "click" | "enter" | "space") => {
+			const element = MarkdownAnchor({ target: markdownLink(href, context.path), href, context, children: "x" }) as ReactElement<{ onClick?: (event: unknown) => void; onKeyDown?: (event: unknown) => void; href?: string }>;
+			expect(element.props.href).toBeUndefined();
+			let prevented = false;
+			const event = { key: how === "enter" ? "Enter" : " ", preventDefault: () => { prevented = true; } };
+			if (how === "click") element.props.onClick?.(event);
+			else element.props.onKeyDown?.(event);
+			return prevented;
+		};
+		expect(follow("https://example.com/x", "click")).toBe(true);
+		expect(follow("../README.md", "enter")).toBe(true);
+		expect(follow("#Next", "click")).toBe(true);
+		// Other keys are left to the page, which does nothing with them.
+		expect(follow("https://example.com/y", "space")).toBe(false);
+		expect(opened).toEqual(["https://example.com/x"]);
+		expect(files).toEqual(["README.md"]);
+		expect(scrolled).toEqual(["markdown-next"]);
+		// A link that is not followed has no handler at all.
+		const off = MarkdownAnchor({ target: { kind: "none" }, href: "javascript:x", context, children: "x" }) as ReactElement<Record<string, unknown>>;
+		expect(off.type).toBe("span");
+		expect(off.props.onClick).toBeUndefined();
 	});
 
 	test("reads where a link leads", () => {
@@ -317,6 +347,58 @@ describe("the Markdown reader in the File tab", () => {
 		expect(await store.saveFile(FEATURE.id, { overwrite: true })).toBe(true);
 		expect(engine.readWorktreeFileNow(FEATURE.path, "notes.md")).toBe("mine\n");
 		expect(store.getState().files[FEATURE.id]?.saveProblem).toBeNull();
+	});
+
+	test("a read that lands after editing started does not move what a save checks against", async () => {
+		const engine = createMockEngine();
+		engine.setWorktreeFile(FEATURE.path, "notes.md", "first\n");
+		let release: (() => void) | null = null;
+		const held: Engine = {
+			...engine,
+			readWorktreeFile: async request => {
+				const answer: WorktreeFileResult = await engine.readWorktreeFile(request);
+				if (release === null) return answer;
+				await new Promise<void>(resolve => { const go = release!; release = () => { go(); resolve(); }; });
+				return answer;
+			},
+		};
+		const store = await started(held);
+		store.openFile(FEATURE.id, "notes.md");
+		await settle();
+		// An agent writes the file; Read again starts and is held; editing starts from what was read before.
+		engine.setWorktreeFile(FEATURE.path, "notes.md", "the agent's\n");
+		release = () => {};
+		store.readFileAgain(FEATURE.id);
+		// The read has the new text and waits to be let go.
+		await settle();
+		store.editFile(FEATURE.id);
+		store.changeDraft(FEATURE.id, "first\nmine\n");
+		release!();
+		await settle();
+		await settle();
+		expect(await store.saveFile(FEATURE.id)).toBe(false);
+		expect(store.getState().files[FEATURE.id]?.saveProblem?.kind).toBe("changed");
+		expect(engine.readWorktreeFileNow(FEATURE.path, "notes.md")).toBe("the agent's\n");
+	});
+
+	test("keeps the edits when reading the list fails", async () => {
+		const engine = createMockEngine();
+		engine.setWorktreeFile(FEATURE.path, "notes.md", "# Notes\n");
+		const store = await started(engine);
+		store.openFile(FEATURE.id, "notes.md");
+		await settle();
+		store.editFile(FEATURE.id);
+		store.changeDraft(FEATURE.id, "mine\n");
+		engine.failTimber(sampleRepositories[0]!.path, "Timber broke");
+		await store.reloadRepository(sampleRepositories[0]!.path);
+		engine.failReads("Disk gone");
+		await store.refresh();
+		await settle();
+		expect(store.getState().files[FEATURE.id]?.draft).toBe("mine\n");
+		engine.failReads(null);
+		engine.failTimber(sampleRepositories[0]!.path, null);
+		await store.refresh();
+		expect(store.getState().files[FEATURE.id]?.draft).toBe("mine\n");
 	});
 
 	test("a failed save says why and keeps the edits", async () => {

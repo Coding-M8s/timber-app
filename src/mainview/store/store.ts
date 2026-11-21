@@ -1287,6 +1287,9 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		}
 		const now = state.files[worktreeId];
 		if (fileTickets.get(worktreeId) !== ticket || !now || now.path !== view.path || now.worktreePath !== view.worktreePath) return;
+		// Editing started while this read was on its way: the text the draft started from stays what a save checks the file
+		// against, so newer text on disk is reported as a change, never written over.
+		if (now.draft !== null && view.draft === null) return;
 		update({ files: { ...state.files, [worktreeId]: { ...now, result } } });
 	}
 
@@ -1402,7 +1405,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			return;
 		}
 		if (answer === "save") {
-			// The question stays while saving, and stays when the save did not write, so its reason shows in the File tab.
+			// The question stays while saving. When the save did not write, it closes and the reason shows in the File tab.
 			const saved = await saveFile(worktree);
 			if (!saved) {
 				if (state.dialog === dialog) update({ dialog: null });

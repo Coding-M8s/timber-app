@@ -9,7 +9,7 @@ interface Actions {
 	onOpenFile(path: string): void;
 }
 
-interface Context extends Actions {
+export interface Context extends Actions {
 	/** The file shown, relative to the worktree, which relative links are read from. */
 	path: string;
 	nextHeadingId: (text: string) => string;
@@ -164,7 +164,7 @@ const LINK_TITLES: Record<MarkdownLink["kind"], (target: MarkdownLink, href: str
  * says, and a link that is not followed is plain text with its address in
  * its tooltip.
  */
-function MarkdownAnchor({ target, href, context, children }: { target: MarkdownLink; href: string; context: Context; children: ReactNode }) {
+export function MarkdownAnchor({ target, href, context, children }: { target: MarkdownLink; href: string; context: Context; children: ReactNode }) {
 	const title = LINK_TITLES[target.kind](target, href);
 	if (target.kind === "none") return <span className="markdown-link-off" title={title}>{children}</span>;
 	const follow = () => {
