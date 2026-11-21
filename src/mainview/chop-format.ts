@@ -1,4 +1,7 @@
-import { CHOP_LIMIT, type ChopKind, type ChopList, type ChopSource, type ChopsFileState, type ListedChop, type PersonalChop, chopProblem, commandChops, listedChops, normalizeChopText, samePersonalChops } from "../shared/chops";
+import {
+	CHOP_LIMIT, type ChopKind, type ChopList, type ChopSource, type ChopsFileState, type ListedChop, type PersonalChop, chopProblem, commandChops, listedChops, normalizeChopText, readPersonalChops,
+	sameChopName, samePersonalChops,
+} from "../shared/chops";
 import { cleanSessionName } from "../shared/terminal";
 import type { WorktreeMenuItem, WorktreeMenuItemId } from "./worktree-menu-format";
 
@@ -43,8 +46,8 @@ export function removeChopDraft(drafts: readonly ChopDraft[], key: string): Chop
 	return drafts.filter(draft => draft.key !== key);
 }
 
-/** A row as it would be saved: the name cleaned as a session name, the description trimmed, the agent only for a prompt. */
-function chopOf(draft: ChopDraft): PersonalChop {
+/** A row, or the chops panel's form, as it would be saved: the name cleaned as a session name, the description trimmed, the agent only for a prompt. */
+export function chopOf(draft: Omit<ChopDraft, "key">): PersonalChop {
 	return {
 		name: cleanSessionName(draft.name) ?? "",
 		kind: draft.kind,
@@ -324,4 +327,121 @@ export function sessionChipMenuChop(id: WorktreeMenuItemId): string | null {
 /** The name of a session chip's menu, for assistive technology. */
 export function describeSessionChipMenu(name: string): string {
 	return `Actions for ${name}`;
+}
+
+/*
+ * Making, changing, and deleting the person's own chops from the chops
+ * panel. The panel saves the whole personal list, as Settings, Chops does,
+ * through the same preference, so both show the same list. A chop from
+ * `.timber/chops.json` is never a target: the app only reads that file.
+ */
+
+/** What the chops panel's form holds: a chop as typed, with its kind and the repository it is for. */
+export type ChopForm = Omit<ChopDraft, "key">;
+
+/** One personal chop, by the group it is in (its repository, or null for every repository) and its name, matched ignoring case. */
+export interface ChopTarget {
+	name: string;
+	repository: string | null;
+}
+
+/** An empty form of a kind, for the repository given, or for every repository with null. */
+export function blankChopForm(kind: ChopKind, repository: string | null): ChopForm {
+	return { name: "", kind, text: "", description: "", agent: null, repository };
+}
+
+/**
+ * The saved personal chop a listed chop of `repository` is, or null for a
+ * chop from the repository file, which the panel never changes.
+ */
+export function chopTargetOf(chop: Pick<ListedChop, "name" | "source">, repository: string): ChopTarget | null {
+	switch (chop.source) {
+		case "personal-repository":
+			return { name: chop.name, repository };
+		case "personal-every":
+			return { name: chop.name, repository: null };
+		case "repository-file":
+			return null;
+	}
+}
+
+/** Where a target is in the saved personal chops, or -1. */
+export function personalChopIndex(personal: readonly PersonalChop[], target: ChopTarget): number {
+	return personal.findIndex(chop => chop.repository === target.repository && sameChopName(chop.name, target.name));
+}
+
+/** The form that edits a saved personal chop, or null when it is not saved now. */
+export function chopFormOf(personal: readonly PersonalChop[], target: ChopTarget): ChopForm | null {
+	const chop = personal[personalChopIndex(personal, target)];
+	return chop === undefined ? null : { ...chop };
+}
+
+export type ChopSaveCheck = { ok: true; chops: PersonalChop[]; chop: PersonalChop } | { ok: false; problem: string };
+
+/**
+ * The personal chops with the form saved: in the place of `original`, so
+ * its order is kept, or at the end for a new chop. The rules are the ones
+ * Settings and the main process hold: a clean name that no other chop of the
+ * same group has, ignoring case, a text within its limit with no control
+ * characters, and at most `CHOP_LIMIT` chops. `personal` is what is saved
+ * when the save starts, so a change made elsewhere is never undone.
+ */
+export function chopsWithSaved(personal: readonly PersonalChop[], original: ChopTarget | null, form: ChopForm): ChopSaveCheck {
+	const index = original === null ? -1 : personalChopIndex(personal, original);
+	if (original !== null && index === -1) return { ok: false, problem: `${original.name} is no longer saved. It may have been changed in Settings. Cancel and open it again.` };
+	const chop = chopOf(form);
+	const others = personal.filter((other, at) => at !== index && other.repository === chop.repository).map(other => other.name);
+	const problem = chopProblem(chop, others);
+	if (problem !== null) return { ok: false, problem };
+	const chops = index === -1 ? [...personal, chop] : personal.map((other, at) => at === index ? chop : other);
+	if (chops.length > CHOP_LIMIT) return { ok: false, problem: `You have ${CHOP_LIMIT} chops, the most the app keeps. Delete one first.` };
+	// The main process reads the list whole or not at all: check it as it will.
+	if (readPersonalChops(chops) === undefined) return { ok: false, problem: "Your saved chops could not be read as they are. Open Settings, Chops to fix them." };
+	return { ok: true, chops, chop };
+}
+
+/** The personal chops without the target, or null when it is not saved now. */
+export function chopsWithout(personal: readonly PersonalChop[], target: ChopTarget): PersonalChop[] | null {
+	const index = personalChopIndex(personal, target);
+	return index === -1 ? null : personal.filter((_chop, at) => at !== index);
+}
+
+/**
+ * What the form says, without stopping the save, about the chops of the same
+ * name in the repository it is listed for: a personal chop for this
+ * repository takes the place of one for every repository, and either takes
+ * the place of the repository file's.
+ */
+export function chopFormNotes(form: ChopForm, list: ChopList | null | undefined, repository: string, original: ChopTarget | null): string[] {
+	const name = cleanSessionName(form.name);
+	if (name === null || list?.outcome !== "listed") return [];
+	const isOriginal = (chop: ListedChop) => original !== null && sameChopName(chop.name, original.name) && chopTargetOf(chop, repository)?.repository === original.repository;
+	const same = list.chops.filter(chop => sameChopName(chop.name, name) && !isOriginal(chop));
+	const notes: string[] = [];
+	const fromFile = same.some(chop => chop.source === "repository-file") || list.overridden.some(chop => sameChopName(chop.name, name));
+	if (fromFile && (form.repository === null || form.repository === repository)) notes.push(`It takes the place of the chop called ${name} in ${list.path} here. That file is not changed.`);
+	if (form.repository === repository && same.some(chop => chop.source === "personal-every")) notes.push(`It takes the place of your chop called ${name} for every repository, here.`);
+	if (form.repository === null && same.some(chop => chop.source === "personal-repository")) notes.push(`Your chop called ${name} for this repository stays in its place here.`);
+	return notes;
+}
+
+/** What the panel says before a chop is deleted. */
+export function describeChopDelete(target: ChopTarget, repositoryName: string): string {
+	const where = target.repository === null ? "every repository" : repositoryName;
+	return `Delete ${target.name}? It goes from your chops for ${where}, here and in Settings.`;
+}
+
+/** Why the panel cannot change chops now, or null: the saved settings could not be read, so saving would write the defaults over them. */
+export function chopEditBlockedReason(preferencesProblem: string | null): string | null {
+	return preferencesProblem === null ? null : "The saved settings could not be read, so chops cannot be changed here. Open Settings to see why.";
+}
+
+/** The choices of the panel form's "For" field: every repository, or the repository it was opened for. */
+export function panelChopScopeOptions(repository: { path: string; name: string }): ChopScopeOption[] {
+	return [{ value: repository.path, label: `This repository (${repository.name})` }, { value: "", label: "Every repository" }];
+}
+
+/** What the read-only view of a chop from the repository file says. */
+export function describeFileChopView(path: string): string {
+	return `From ${path}, which the app only reads. To change it here, make your own chop with the same name: it takes the place of this one.`;
 }

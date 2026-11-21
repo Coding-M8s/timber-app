@@ -3314,6 +3314,40 @@ Bun 1.4.5, Git 2.43, and headless Google Chrome over the mock engine:
   getting a chop from the panel (the path is the palette's, tested over
   the mock engine and, for the main process, by its own tests).
 
+Run for making, changing, and deleting chops in the panel (issue 252),
+Linux x64 with Bun 1.4.5, Git 2.43, and headless Google Chrome over the
+mock engine:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun run build:web`: built.
+- `bun test`: 3408 passed, 19 skipped, 0 failed, after a rebase onto main.
+  `tests/chops-panel-edit.test.tsx` covers the rules the panel saves
+  under (`chopsWithSaved`, `chopsWithout`): a new chop at the end, an
+  edit kept in its place, a rename, a move to every repository, names
+  unique ignoring case within a group and allowed across groups, the
+  text and description limits, control characters, bidirectional
+  overrides and lone carriage returns, the chop limit, and an edit of a
+  chop gone from the settings. A `.timber/chops.json` chop is never a
+  target and its menu has only View. Over the mock engine, a chop made,
+  changed, and deleted is the list Settings, Chops draws, and the file's
+  chops stay listed. Against real temporary repositories, a personal chop
+  that overrides the file's chop, changed and deleted through the main
+  process's preferences, leaves the file's bytes, its time, and the
+  repository's files unchanged, and a chop saved for a repository with
+  no file creates no `.timber` folder.
+  `tests/chops-panel-browser.test.ts` drives in Chrome: New chop and a
+  double Enter that saves once, a half typed form kept across hiding and
+  showing the panel, Escape, a double click that edits in place with
+  Settings showing the change, Shift+F10 and the actions button opening
+  a row's menu, Delete asking first with Cancel on the keyboard, a file
+  chop's View with no field to change, Escape giving the keyboard back
+  to the row, a file chop asked for while a form is open leaving the form
+  as typed, a failed save keeping the form with the reason, and Cancel on
+  a delete asked from the edit form going back to the form.
+- Not run: the desktop window on any platform, a right click with a real
+  pointer (the browser tests open the menu by key and by its button), and
+  the WebKitGTK webview.
+
 Run for Pull from a worktree's row (issue 260), Linux x64 with Bun 1.4.5,
 Git 2.56.1, and headless Chromium 158 over the mock engine:
 

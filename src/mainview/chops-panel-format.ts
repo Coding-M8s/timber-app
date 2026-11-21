@@ -1,4 +1,4 @@
-import { type ChopKind, type ChopSource, type ListedChop, listedChops } from "../shared/chops";
+import { type ChopKind, type ChopList, type ChopSource, type ListedChop, listedChops } from "../shared/chops";
 import { promptTarget } from "./agent-sessions";
 import { type ChopAction, chopAction, chopButtonLabel, describeChopSource } from "./chop-format";
 import { worktreeLabel } from "./format";
@@ -24,6 +24,7 @@ export const CHOPS_BUTTON_ID = "titlebar-chops";
 export const CHOPS_PANEL_TITLE = "Chops";
 export const CHOPS_BUTTON_LABEL = "Chops";
 export const CHOPS_CLOSE_LABEL = "Hide the chops panel";
+export const CHOPS_NEW_LABEL = "New chop";
 export const CHOPS_WIDTH_LABEL = "Chops panel width";
 
 /**
@@ -73,7 +74,7 @@ export function takesChopsPanelKey(event: Keys, state: AppState): boolean {
  */
 export function describeChopsPanelEmpty(selected: boolean, listed: number | null): string | null {
 	if (listed === null) return selected ? "Reading the chops" : "Select a worktree to see the chops of its repository.";
-	if (listed === 0) return "No chops yet. Add one in Settings, Chops, or share some in .timber/chops.json.";
+	if (listed === 0) return "No chops yet. Make one with New chop, or share some with everyone in .timber/chops.json.";
 	return null;
 }
 
@@ -127,7 +128,7 @@ export function chopMatches(chop: Pick<ListedChop, "name" | "text">, query: stri
 export function describeChopsTabEmpty(kind: ChopKind, query: string): string {
 	const wanted = query.trim();
 	if (wanted !== "") return `No ${TAB_WORDS[kind].plural} match "${wanted}".`;
-	return `No ${TAB_WORDS[kind].plural} yet. Add one in Settings, Chops.`;
+	return `No ${TAB_WORDS[kind].plural} yet. Make one with New chop.`;
 }
 
 /** The visible word of a row's button. Its accessible name is `chopButtonLabel`, which names the chop. */
@@ -156,6 +157,8 @@ export interface ChopsPanelRow {
 export interface ChopsPanelModel {
 	/** The repository whose chops are listed, by its primary checkout, or null when none are. */
 	repository: string | null;
+	/** The list read for `repository`, or null. */
+	list: ChopList | null;
 	/** Why the list could not be read, or null. */
 	failure: string | null;
 	/** What shows in place of the tabs while there is nothing to list, or null. */
@@ -228,6 +231,7 @@ export function chopsPanelModel(state: AppState, tab: ChopKind, query: string): 
 		}));
 	return {
 		repository: read?.repository ?? null,
+		list,
 		failure,
 		empty,
 		reading: selected !== null && list === null,
@@ -237,4 +241,37 @@ export function chopsPanelModel(state: AppState, tab: ChopKind, query: string): 
 		blocked,
 		footer: blocked ?? describeTarget(state, tab, action),
 	};
+}
+
+/**
+ * Why the panel's "New chop" cannot make one now, or null: changes are
+ * blocked (`chopEditBlockedReason`), or no list of a repository is shown,
+ * so a new chop would have nowhere to show.
+ */
+export function chopsNewBlockedReason(model: Pick<ChopsPanelModel, "repository" | "failure" | "reading">, editBlocked: string | null): string | null {
+	if (editBlocked !== null) return editBlocked;
+	if (model.repository === null) return model.reading ? "The chops are being read." : "Select a worktree to make a chop for its repository.";
+	if (model.failure !== null) return "The chops of this repository could not be listed, so a new one would not show. Make it in Settings, Chops.";
+	return null;
+}
+
+export type ChopRowMenuId = "edit" | "delete" | "view";
+
+/** The label of a row's actions button and its menu. */
+export function chopRowMenuLabel(name: string): string {
+	return `Actions for ${name}`;
+}
+
+/**
+ * The entries of a row's menu: Edit and Delete for the person's own chop,
+ * off with the reason while changes are blocked, and View for a chop from
+ * the repository file, which the app never changes.
+ */
+export function chopRowMenuItems(source: ChopSource, editBlocked: string | null): { id: ChopRowMenuId; label: string; disabled: boolean; note: string | null; title: string }[] {
+	if (source === "repository-file") return [{ id: "view", label: "View", disabled: false, note: null, title: "Show it whole. The app never changes .timber/chops.json." }];
+	const off = editBlocked !== null;
+	return [
+		{ id: "edit", label: "Edit", disabled: off, note: editBlocked, title: editBlocked ?? "Change it here. Settings shows the same chops." },
+		{ id: "delete", label: "Delete", disabled: off, note: null, title: editBlocked ?? "Asks first." },
+	];
 }

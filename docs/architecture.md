@@ -1397,6 +1397,23 @@ pure functions in `src/mainview/shell.ts`.
   selects the worktree and shows the Workspace tab (not for Copy) and calls
   the store's `runChop`. The tab and the filter are the component's state
   and are not remembered.
+  Making, changing, and deleting the person's own chops in the panel use
+  the pure rules in `chop-format.ts`: `chopsWithSaved` and `chopsWithout`
+  take what is saved when the save starts (`store.getState()`), keep the
+  edited chop's place, and check names, text, limits, and the whole list as
+  `readPersonalChops` will; `chopTargetOf` maps a listed row to its saved
+  chop by group and name, and is null for a repository file's chop. The
+  panel saves through `savePreferences({ chops })`, the Settings path, so
+  there is no engine capability of its own and the main process checks it
+  again; it then reads the listed repository's chops again, which
+  `ChopsKeeper` does not do with no worktree selected. The form, a view of
+  a file chop, and the delete question are drawn by `ChopEditor.tsx`, in
+  place of the row or above the list. What is open is kept in the panel's
+  module, as the focus return is, so it survives the panel being hidden.
+  A row's menu is the worktree menu (`WorktreeMenu`), opened by right
+  click, its actions button, or Shift+F10 and the menu key, handled as a
+  key as the worktree row does. Saves are blocked while
+  `preferencesProblem` is set, since the window then holds the defaults.
   `ChopsShortcut` listens on the window in the capture phase and takes the
   key only when it acts (`takesChopsPanelKey`): with chops off, a dialog
   or the quit question open, or Timber not ready, the key goes on to the
@@ -1701,8 +1718,8 @@ every machine agrees. The rules are pure, in
   worktree's repository's, the latest read winning. `ChopsKeeper` reads it
   when another repository is selected and when the saved chops change. The
   chops panel (see [the shell](#the-shell-and-the-saved-layout)) lists it
-  in a Commands and a Prompts tab, with a filter, and runs each through
-  the palette's path. The
+  in a Commands and a Prompts tab, with a filter, runs each through
+  the palette's path, and makes, changes, and deletes personal chops. The
   Workspace "+" menu lists the chops after the agents, under "Chops",
   commands and prompts, a prompt marked "Prompt", or "Copy prompt" when no
   agent is saved in Settings, with the description, or the text's first
