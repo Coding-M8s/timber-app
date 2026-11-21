@@ -11,6 +11,7 @@ import { NewArenaDialog } from "./NewArenaDialog";
 import { NewWorktreeDialog } from "./NewWorktreeDialog";
 import { RebaseDialog } from "./RebaseDialog";
 import { SendReviewDialog } from "./ReviewNotes";
+import { SetBaseDialog } from "./SetBaseDialog";
 import { SendPromptDialog } from "./SendPromptDialog";
 import { SettingsDialog } from "./SettingsDialog";
 import { SetupWizardDialog } from "./SetupWizardDialog";
@@ -37,6 +38,8 @@ export function Dialogs() {
 			return <DoneDialog key={`${dialog.repository}\n${dialog.worktree}`} request={dialog} />;
 		case "rebase-worktree":
 			return <RebaseDialog key={`${dialog.repository}\n${dialog.worktree}`} request={dialog} />;
+		case "set-base":
+			return <SetBaseDialog key={`${dialog.repository}\n${dialog.worktree}`} request={dialog} />;
 		case "clean-up-merged":
 			// It closes itself when the repository is not listed or not there, so the request never lingers unseen.
 			return <CleanUpMergedDialog key={dialog.repository} request={dialog} />;

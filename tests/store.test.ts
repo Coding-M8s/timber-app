@@ -142,6 +142,7 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		}),
 		// Rebasing through a result file has its own tests in rebase-result.test.tsx.
 		rebaseWorktree: async () => ({ outcome: "failed", ran: false, failure: { command: null, diagnostic: "Not acted out here.", output: null } }),
+		setWorktreeBase: async () => ({ outcome: "failed", ran: false, failure: { command: null, diagnostic: "Not acted out here.", output: null } }),
 		createPullRequest: async () => ({ outcome: "failed", ran: false, published: false, failure: { command: null, diagnostic: "Not acted out here.", output: null } }),
 		readHeadSubject: async () => null,
 		previewDone: request => new Promise((resolve, reject) => {

@@ -185,6 +185,8 @@ export type DialogRequest =
 	| { kind: "done-worktree"; repository: string; worktree: string }
 	/** Rebase a worktree with Timber, in a new session. Named as for Done. */
 	| { kind: "rebase-worktree"; repository: string; worktree: string }
+	/** Save the base Timber keeps for a worktree, from the Changes tab. Named as for Done. */
+	| { kind: "set-base"; repository: string; worktree: string }
 	/** Remove every linked worktree of one repository whose pull request merged. `repository` is the path of the primary checkout. */
 	| { kind: "clean-up-merged"; repository: string }
 	/**

@@ -9,6 +9,7 @@ import {
 	NO_REFRESH, REFRESHING_CHANGES, type RefreshSpan, describeFileCounts, describeNoChanges, fileAfterKey, groupFileChanges, kindTone, listedOrder, nextRefreshSpan, splitPath,
 } from "../changes-format";
 import { chosenComparison } from "../../shared/layout";
+import { BASE_ACTION_TITLE, describeBaseAction } from "../base-change-format";
 import { ModeSwitch } from "./worktree-modes/ModeSwitch";
 import { OPEN_IN_EDITOR } from "../editor-format";
 import { useAppState, useStore } from "../store/react";
@@ -414,6 +415,15 @@ export function ChangesPanel({ repository, worktree }: { repository: Repository;
 						onSelect={index => void store.compareChanges(COMPARISONS[index]!)}
 					/>
 					{view?.compared != null && <span className="changes-compared" title={shown.title}>{shown.text}</span>}
+					<button
+						type="button"
+						className="text-button changes-base-action"
+						title={BASE_ACTION_TITLE}
+						aria-haspopup="dialog"
+						onClick={() => store.openDialog({ kind: "set-base", repository: repository.path, worktree: worktree.id })}
+					>
+						{describeBaseAction(worktree.base)}
+					</button>
 				</div>
 				{unavailable !== null && <p className="changes-base-note" id={baseNote}>{unavailable}</p>}
 				<div className="changes-bar">

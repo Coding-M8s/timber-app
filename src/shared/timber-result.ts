@@ -9,7 +9,7 @@ import { describeExit, readEnvelope } from "./timber-record";
  */
 
 /** The Timber commands that write a result file, as each record names its command. */
-export type ResultCommand = "new" | "open" | "done" | "rebase" | "pr" | "config" | "backup-restore" | "backup-delete" | "arena-new" | "arena-pick";
+export type ResultCommand = "new" | "open" | "done" | "rebase" | "base" | "pr" | "config" | "backup-restore" | "backup-delete" | "arena-new" | "arena-pick";
 
 /** How a command is named in messages, as a person would type it. A record names some commands otherwise. */
 export function resultCommandName(command: ResultCommand): string {
@@ -44,6 +44,9 @@ export const APPROVAL_FILE_PLACEHOLDER = "<approved preview>";
  */
 export const SETTINGS_DRAFT_PLACEHOLDER = "<settings draft>";
 
+/** Shown in place of the base while nothing is typed in the Set base dialog. */
+export const BASE_PLACEHOLDER = "<base>";
+
 /** Shown in place of a worktree's path before Timber has answered, so the path is not known yet. */
 export const WORKTREE_PLACEHOLDER = "<worktree>";
 
@@ -54,7 +57,7 @@ export const WORKTREE_PLACEHOLDER = "<worktree>";
  */
 export const TASK_FILE_PLACEHOLDER = "<task file>";
 
-const PLACEHOLDERS: readonly string[] = [RESULT_FILE_PLACEHOLDER, APPROVAL_FILE_PLACEHOLDER, SETTINGS_DRAFT_PLACEHOLDER, WORKTREE_PLACEHOLDER, TASK_FILE_PLACEHOLDER];
+const PLACEHOLDERS: readonly string[] = [RESULT_FILE_PLACEHOLDER, BASE_PLACEHOLDER, APPROVAL_FILE_PLACEHOLDER, SETTINGS_DRAFT_PLACEHOLDER, WORKTREE_PLACEHOLDER, TASK_FILE_PLACEHOLDER];
 
 /** A record that passed every check. */
 export interface ResultRecord {

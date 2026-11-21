@@ -3243,3 +3243,28 @@ Bun 1.4.5 and Git 2.43:
 - `bun run build:web`: built.
 - Not yet looked at in a window or with a screen reader: the 300 ms hold runs
   in an effect, which the markup tests do not run.
+
+Run for setting the base from the Changes tab (issue 190), Linux x64 with
+Bun 1.4.5, Git 2.43, and Timber 0.1.4:
+
+- `bun install --frozen-lockfile`, then `bun run typecheck` and `bun run
+  typecheck:desktop`: no errors. `bun run build:web`: built.
+- `bun test`: 3192 passed, 19 skipped, 0 failed.
+- `tests/fixtures/timber-base` was recorded from `timber base --set
+  --result-file` in temporary repositories: set from none, over another
+  base, over stale metadata, and to a commit; refused for a missing local
+  branch, the worktree's own branch, and malformed metadata; and failed for
+  a remote given by a relative URL that could not be checked.
+  `tests/timber-base-parse.test.ts` maps each one.
+- `tests/worktree-set-base.test.ts`, with the installed Timber: a base is
+  saved, changed, set to a commit, and replaces stale metadata, each read
+  back by the list; the worktree's files, its index as Git lists it, and
+  the refs are unchanged after a set; a refusal leaves those and the saved
+  metadata as they were; malformed metadata is refused and kept.
+- Timber was also asked by hand: it reads a plain name such as `main` as
+  a remote branch and saves `origin/main`, refuses one no remote has with
+  "Remote base is missing or ambiguous; use --set <remote/branch>.", and
+  refuses `refs/heads/main` for the primary checkout on `main` as the
+  worktree's own branch.
+- Not run: the installed desktop app by hand, and a remote base checked
+  over a real network.

@@ -7,6 +7,7 @@ import { windows } from "./runtime";
 const fixtures = join(import.meta.dir, "..", "fixtures", "timber-ls");
 const resultFixtures = join(import.meta.dir, "..", "fixtures", "timber-result");
 const rebaseFixtures = join(import.meta.dir, "..", "fixtures", "timber-rebase");
+const baseFixtures = join(import.meta.dir, "..", "fixtures", "timber-base");
 const doneFixtures = join(import.meta.dir, "..", "fixtures", "timber-done");
 const prFixture = (name: string) => readFileSync(join(import.meta.dir, "..", "fixtures", "timber-pr", name), "utf8");
 
@@ -55,6 +56,18 @@ export const recorded = {
 export const recordedResult = {
 	succeeded: readFileSync(join(resultFixtures, "succeeded.json"), "utf8"),
 	failed: readFileSync(join(resultFixtures, "failed.json"), "utf8"),
+};
+
+/** Result files of `timber base --set` recorded from Timber 0.1.4, with the paths under `/work`. */
+export const recordedBase = {
+	setFromNone: readFileSync(join(baseFixtures, "set-from-none.json"), "utf8"),
+	setChange: readFileSync(join(baseFixtures, "set-change.json"), "utf8"),
+	setOverStale: readFileSync(join(baseFixtures, "set-over-stale.json"), "utf8"),
+	setCommit: readFileSync(join(baseFixtures, "set-commit.json"), "utf8"),
+	refusedUnknown: readFileSync(join(baseFixtures, "refused-unknown.json"), "utf8"),
+	refusedOwnBranch: readFileSync(join(baseFixtures, "refused-own-branch.json"), "utf8"),
+	refusedInvalidMetadata: readFileSync(join(baseFixtures, "refused-invalid-metadata.json"), "utf8"),
+	failedRemote: readFileSync(join(baseFixtures, "failed-remote.json"), "utf8"),
 };
 
 /**

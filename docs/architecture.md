@@ -245,14 +245,15 @@ The sidebar shows exactly the worktrees Timber lists, in Timber's order
 
 ### Commands that report through a result file
 
-New, open, done, rebase, opening a pull request (`pr`), saving Timber's
-settings (`config`), restoring a backup (`backup-restore`), and deleting one
-(`backup-delete`) say how they
-ended in a result file, not on standard output. One helper runs all of them, so no dialog reads a result its
-own way: `runTimberWithResultFile` in `src/bun/timber-run.ts`. Creating and
+New, open, done, rebase, saving a worktree's base (`base`), opening a pull
+request (`pr`), saving Timber's settings (`config`), restoring a backup
+(`backup-restore`), and deleting one (`backup-delete`) say how they ended in
+a result file, not on standard output. One helper runs all of them, so no
+dialog reads a result its own way: `runTimberWithResultFile` in `src/bun/timber-run.ts`. Creating and
 opening worktrees use it (see [below](#creating-and-opening-worktrees)), and
-so do the Done dialog (see [removing a worktree](#removing-a-worktree)) and
-the Rebase dialog (see [rebasing a worktree](#rebasing-a-worktree)).
+so do the Done dialog (see [removing a worktree](#removing-a-worktree)),
+the Rebase dialog (see [rebasing a worktree](#rebasing-a-worktree)), and
+the Set base dialog (see [setting the base](#setting-the-base)).
 
 - **The file.** Each run gets a fresh file name in a new folder that only
   this user can open, made in the system's temporary folder. Timber creates
@@ -2804,6 +2805,13 @@ Comparing against a backup is a later step.
   saved layout as `uncommittedChanges`, the worktree identities set to
   Uncommitted. An identity stays there after its worktree is removed,
   which costs one short string.
+- **Setting the base.** Beside the switch, "Set base…" when the worktree
+  has no saved base (or metadata Timber cannot use) and "Change base…" when
+  it has one opens the Set base dialog (see [below](#setting-the-base)).
+  After Timber saves a base, the worktree compares with it, as if the person
+  had chosen Base, and the list is read again, so the header shows the new
+  `name @ hash`. Review notes taken under the old base stay, and are marked
+  outdated when their lines are no longer in the diff.
 - **In the window.** The file list sits beside the diff. Each file shows its
   name, its folder, and Git's letter (M, A, D, R, C, T, U, and ! for a
   conflict). The first file is selected, and the selection stays on a file
@@ -2831,6 +2839,71 @@ Comparing against a backup is a later step.
   branch. The pretend branch point is always `a1b2c3d`. `timberMock.failFileChanges("Git is busy")`
   makes reads fail (`null` to undo), and `timberMock.setFileChanges(path,
   files)` sets what a worktree lists.
+
+### Setting the base
+
+The Set base dialog (`src/mainview/components/SetBaseDialog.tsx`) runs
+`timber base --set <ref> --result-file` and reads the record, so it says
+how the command really ended: set, refused, or failed. Timber checks the
+base and saves it in the worktree's private Git metadata; it never touches
+the branch, the index, or files, and never fetches. Nothing in the app
+checks a ref.
+
+- **Entry.** The control beside "Compare with" in the Changes tab, for the
+  shown worktree. The tab shows nothing to compare when the worktree's
+  folder is missing, so the control is not offered then.
+- **The field.** A `BranchField` over `listBranches`, in the form Timber
+  takes (`rebaseBases`: `refs/heads/<name>` for a local branch,
+  `<remote>/<branch>` for a remote one), starting as the saved base
+  (`initialOnto`). The spaces around the text are left off
+  (`baseFromText`), and nothing typed cannot be submitted. Metadata Timber
+  cannot use shows Timber's reason as a warning: Timber replaces stale
+  metadata and refuses malformed or unreadable metadata, which is Timber's
+  call, not the app's. A remote base is checked against the remote without
+  fetching, so it needs the network, and Changes can use it only once it
+  has been fetched.
+- **One source for the command.** `setBaseResultArguments` in
+  `src/shared/timber-base.ts` builds `base --set <ref> --result-file <path>
+  -- <registered path>`. The footer words it from that function, with
+  `<base>` while nothing is typed, and the main process runs the same one.
+- **Running and checks.** `setWorktreeBase` on the `Engine` contract.
+  `WorktreeCommands.setBase` in `src/bun/worktree-commands.ts` runs in the
+  repository's turn, after the same checks as a rebase (a complete request,
+  a listed repository, a worktree Timber lists right now with its folder
+  there, and a ready Timber), each refusal saying nothing was run.
+- **Reading the record.** `readSetBaseResult` checks the `baseChange`
+  object strictly: action `set`, a known result that goes with Timber's
+  outcome, `previous` and `current` in the shape of a listed base, and on
+  `set` a `current` that is assigned. A record that names another worktree,
+  or anything else, is a failure that says what the command did is unknown.
+  On `set`, `current` is a ref or, for a full commit hash, a commit base,
+  which the toast names by its short hash.
+- **Outcomes.** A saved base closes the dialog with a toast that names it. A
+  refusal stays in the dialog with Timber's reason, keeps what was typed,
+  and says nothing changed. A failure stays with Timber's reason and says
+  the branch and files were not touched and the list was read again. The
+  store's `setWorktreeBase` reads the repository again after every outcome,
+  so the workspace header and the row's tooltip show the saved base; after
+  a set it also moves the worktree's Changes tab to Base and reads its list
+  again. So does an answer that was lost or unreadable when the list read
+  again shows a new base, since Timber may have saved it. `presentSetBase`
+  in `src/mainview/base-change-format.ts` maps each answer, and is tested
+  without a window.
+- **In the browser.** The mock engine writes the record Timber would
+  (`src/mainview/engine/mock-base.ts`), read by the same code. There is no
+  ending to choose: a listed branch is saved (a plain name as the one remote
+  branch of that name), a full hash as a commit base, and a branch the
+  pretend repository does not have, the worktree's own branch, and
+  malformed metadata are refused, as Timber does.
+- **Tests.** `tests/fixtures/timber-base` holds records from Timber 0.1.4
+  (set from none, set over another base, set over stale metadata, set to a
+  commit, three refusals, and a remote that could not be reached), mapped by
+  `tests/timber-base-parse.test.ts`. With the installed Timber,
+  `tests/worktree-set-base.test.ts` saves and changes a base, saves a
+  commit base, replaces
+  stale metadata, and checks that a refusal leaves the files, the refs, and
+  the saved base unchanged. `tests/set-base.test.tsx` covers the control,
+  the dialog, the mock, and the store.
 
 ## Review notes
 
