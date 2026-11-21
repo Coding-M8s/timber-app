@@ -58,7 +58,7 @@ describe("a group of Timber's settings as data", () => {
 		expect(git.editor).toEqual(READ.editor);
 	});
 
-	test("inherit leaves a table out, off writes false, and set writes every field", () => {
+	test("inherit leaves a table out, off writes false, and set writes every drawn field", () => {
 		const { editor, agent, scripts } = draftsOf(READ);
 		expect("editor" in valuesWith("editor", { ...editor, mode: "inherit" }, READ)).toBe(false);
 		expect(valuesWith("editor", { ...editor, mode: "off" }, READ).editor).toBe(false);
@@ -68,6 +68,45 @@ describe("a group of Timber's settings as data", () => {
 		// A script that spans lines stays one entry.
 		expect(valuesWith("scripts", { ...scripts, preDone: ["make clean"] }, READ).hooks).toEqual({ post_create: ["bun install", "echo 'one\ntwo'"], pre_delete: ["make clean"] });
 		expect(valuesWith("scripts", { ...scripts, mode: "off" }, READ).hooks).toBe(false);
+	});
+
+	/** Keys set by hand inside tables the app partly draws. */
+	const HAND_SET: TimberValues = {
+		...READ,
+		editor: { command: "code", args: [], enabled: false, integration: "orca", later_key: "kept" },
+		agent: { command: "claude", args: [], enabled: true, wait_for_setup: true, resolve_handoff: "ask", resolve_instructions: "Read NOTES.md" },
+		hooks: { post_create: ["bun install"], later_key: ["kept"] },
+		jira: { site_url: "https://example.atlassian.net", cloud_id: "abc", board: 123, sprint_jql: "sprint in openSprints()", project: "TIM" },
+	} as TimberValues;
+	const JIRA_EXTRAS = { board: 123, sprint_jql: "sprint in openSprints()", project: "TIM" };
+
+	test("keys a group does not draw inside a table it sets stay as read, and an untouched group has nothing to save", () => {
+		const drafts = draftsOf(HAND_SET);
+		for (const group of ["editor", "agent", "git", "scripts", "tracking"] as const) {
+			expect(valuesWith(group, drafts[group], HAND_SET)).toEqual(HAND_SET);
+			expect(groupChanged(group, drafts[group], HAND_SET)).toBe(false);
+		}
+		const tracking = valuesWith("tracking", { ...drafts.tracking, tracker: "jira", siteUrl: "https://other.atlassian.net", cloudId: "xyz" }, HAND_SET);
+		expect<unknown>(tracking.jira).toEqual({ site_url: "https://other.atlassian.net", cloud_id: "xyz", ...JIRA_EXTRAS });
+		expect(tracking.default_tracker).toBe("jira");
+		const noCloud = valuesWith("tracking", { ...drafts.tracking, cloudId: "" }, HAND_SET).jira as object;
+		expect(noCloud).toEqual({ site_url: "https://example.atlassian.net", ...JIRA_EXTRAS });
+		expect("cloud_id" in noCloud).toBe(false);
+		expect<unknown>(valuesWith("editor", { ...drafts.editor, orca: false, command: "zed" }, HAND_SET).editor).toEqual({ command: "zed", args: [], enabled: false, later_key: "kept" });
+		expect<unknown>(valuesWith("agent", { ...drafts.agent, waitForSetup: null, command: "codex" }, HAND_SET).agent)
+			.toEqual({ command: "codex", args: [], enabled: true, resolve_handoff: "ask", resolve_instructions: "Read NOTES.md" });
+		expect<unknown>(valuesWith("scripts", { ...drafts.scripts, preDone: ["make clean"] }, HAND_SET).hooks).toEqual({ post_create: ["bun install"], pre_delete: ["make clean"], later_key: ["kept"] });
+	});
+
+	test("switching a table with hand-set keys off or to inherit still replaces it", () => {
+		const { tracking, agent, editor } = draftsOf(HAND_SET);
+		expect(valuesWith("tracking", { ...tracking, jiraMode: "off" }, HAND_SET).jira).toBe(false);
+		expect("jira" in valuesWith("tracking", { ...tracking, jiraMode: "inherit" }, HAND_SET)).toBe(false);
+		expect(valuesWith("agent", { ...agent, mode: "off" }, HAND_SET).agent).toBe(false);
+		expect("editor" in valuesWith("editor", { ...editor, mode: "inherit" }, HAND_SET)).toBe(false);
+		// From off back to set, there is no table as read to keep keys from.
+		const off = { ...HAND_SET, jira: false as const };
+		expect(valuesWith("tracking", { ...draftsOf(off).tracking, jiraMode: "set", siteUrl: "https://example.atlassian.net" }, off).jira).toEqual({ site_url: "https://example.atlassian.net" });
 	});
 
 	test("a login typed is saved, removing one sends null, and neither is ever part of the settings", () => {

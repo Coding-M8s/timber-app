@@ -2066,10 +2066,13 @@ the private login stores stay Timber's.
   editable. A table can inherit, be off (`false`), or be set here. A group
   is held in the window as typed (`src/mainview/timber-settings-format.ts`)
   and saved as the whole scope: its own keys replaced in the settings as last
-  read, every other key sent back as it was read. Named workflows and arena
-  presets are not edited: they are left out of the draft and Timber carries
-  them over from the file as it is at save time, so a change made to them
-  outside the app is a conflict, not a refused field.
+  read, every other key sent back as it was read. Inside a table the group
+  sets, only the keys it draws are replaced: hand-set keys such as
+  `[jira].board`, `sprint_jql`, and `project`, or `[agent].resolve_handoff`,
+  stay as read. Named workflows and arena presets are not edited: they are
+  left out of the draft and Timber carries them over from the file as it is
+  at save time, so a change made to them outside the app is a conflict, not
+  a refused field.
 - **The command first.** Every group shows the exact save command, and every
   "Test connection" its check command, before they run, with
   `<settings draft>` and `<temporary file>` for the private files.

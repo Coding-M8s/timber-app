@@ -44,6 +44,21 @@ describe("the setup wizard as data", () => {
 		});
 	});
 
+	test("the one save keeps keys set by hand inside the tables the wizard draws", () => {
+		const read = {
+			...READ,
+			agent: { command: "claude", args: [], enabled: true, resolve_handoff: "ask" },
+			jira: { site_url: "https://example.atlassian.net", board: 123, sprint_jql: "sprint in openSprints()", project: "TIM" },
+		} as TimberValues;
+		const drafts = draftsOf(read);
+		expect(valuesWithAll(drafts, read)).toEqual(read);
+		drafts.agent = { ...drafts.agent, command: "codex" };
+		drafts.tracking = { ...drafts.tracking, tracker: "jira", cloudId: "abc" };
+		const values = valuesWithAll(drafts, read);
+		expect<unknown>(values.agent).toEqual({ command: "codex", args: [], enabled: true, resolve_handoff: "ask" });
+		expect<unknown>(values.jira).toEqual({ site_url: "https://example.atlassian.net", cloud_id: "abc", board: 123, sprint_jql: "sprint in openSprints()", project: "TIM" });
+	});
+
 	test("the save request carries the revision as read, the scope, the logins typed, and the tracked say-so only for a tracked file", () => {
 		const drafts = draftsOf({});
 		drafts.tracking = { ...drafts.tracking, linearKey: "lin_key" };
