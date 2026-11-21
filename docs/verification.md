@@ -2817,3 +2817,22 @@ with Bun 1.4.5, Timber 0.1.3 installed, and Timber's main branch at
   at `a279c08`.
 - `bun run build:web`: built.
 - Not run: the desktop window.
+
+Run for a workflow's agent in place of the app's agent (issue 54), Linux x64
+with Bun 1.4.5 and Git 2.56.1, after rebasing on main at `ca3607b`:
+
+- `bun run typecheck`: no errors.
+- `bun run typecheck:desktop`: no errors.
+- `bun test`: 2567 passed, 24 skipped, none failed.
+  `tests/workflow-agent-session.test.ts` starts real pretend agents in a
+  temporary Git repository and covers a workflow's command starting as
+  Timber reports it now, a command or token in the request never used,
+  `agent = false`, the picked agent named with the workflow starting when
+  Timber does not report a command (unset, gone, or unreadable), and an
+  arena attempt in the same request refused before either Timber read.
+  `tests/new-worktree-workflow.test.tsx` and
+  `tests/new-worktree-agent.test.tsx` cover the locked Agent field, the
+  footer, and what starts after creation in the mock engine.
+- `bun run build:web`: built.
+- Not run: the desktop window, and the Windows batch-file test for a
+  workflow's agent, which skips on Linux.

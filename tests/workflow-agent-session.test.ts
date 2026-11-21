@@ -133,7 +133,7 @@ describe.skipIf(!posix)("a workflow's agent in a terminal session", () => {
 		expect(reads).toBe(1);
 	});
 
-	test("a command or arguments in the request are never used: only the workflow's name is read", async () => {
+	test("a command or arguments in the request are never used: only names are read", async () => {
 		start();
 		const result = await sessions.open(request({ workflow: "review", command: "fake-codex", args: ["--evil"] }));
 		if (result.outcome !== "opened") throw new Error(`Not opened: ${JSON.stringify(result)}`);
@@ -147,7 +147,7 @@ describe.skipIf(!posix)("a workflow's agent in a terminal session", () => {
 		start();
 		const unreadable: [unknown, Record<string, unknown>][] = [
 			["review", {}], [null, {}], [{}, {}], [{ workflow: "--setup" }, {}], [{ workflow: "Review" }, {}], [{ workflow: 7 }, {}],
-			[{ workflow: "review" }, { agent: "Codex" }],
+			[{ workflow: "review" }, { agent: "Codex" }], [{ workflow: "review", agent: 7 }, {}],
 			[{ workflow: "review" }, { arenaAttempt: { arena: "login", attempt: "a1" } }],
 			[{ workflow: "review" }, { timberWorktreeSetup: {} }],
 		];
@@ -186,6 +186,35 @@ describe.skipIf(!posix)("a workflow's agent in a terminal session", () => {
 		const result = await sessions.open(request({ workflow: "explore" }));
 		expect(result).toEqual({ outcome: "not-configured", message: `The explore workflow no longer sets an agent. Nothing was started. Start one from the "+" menu.` });
 		expect(sessions.list()).toEqual([]);
+	});
+
+	test("a workflow that leaves the agent unset starts the saved agent the request names with it, named after that agent", async () => {
+		start();
+		const result = await sessions.open(request({ workflow: "explore", agent: "Codex" }));
+		if (result.outcome !== "opened") throw new Error(`Not opened: ${JSON.stringify(result)}`);
+		expect(result.session).toMatchObject({ kind: "agent", name: "Codex", shell: join(bin, "fake-codex") });
+		await seen(result.session.id, `fake-codex in ${worktree} args`);
+		expect(reads).toBe(1);
+	});
+
+	test("the saved agent named with a workflow gives way to what Timber reports: a command starts in its place, and agent = false starts nothing", async () => {
+		start();
+		const set = await sessions.open(request({ workflow: "review", agent: "Codex" }));
+		if (set.outcome !== "opened") throw new Error(`Not opened: ${JSON.stringify(set)}`);
+		expect(set.session).toMatchObject({ name: "review", shell: join(bin, "fake-claude") });
+		expect(await sessions.open(request({ workflow: "triage", agent: "Codex" }))).toEqual({ outcome: "not-configured", message: "The triage workflow now starts no agent (agent = false). Nothing was started." });
+		expect(await sessions.open(request({ workflow: "explore", agent: "Nobody" }))).toEqual({ outcome: "not-configured", message: 'No agent called "Nobody" is set in Settings, Agents. Nothing was started.' });
+		expect(sessions.list().map(session => session.name)).toEqual(["review"]);
+	});
+
+	test("the saved agent named with a workflow starts when Timber cannot say the workflow sets one: gone, or workflows that cannot be read", async () => {
+		start();
+		const gone = await sessions.open(request({ workflow: "gone", agent: "Codex" }));
+		expect(gone).toMatchObject({ outcome: "opened", session: { name: "Codex", shell: join(bin, "fake-codex") } });
+		list = { ok: false, message: "Timber could not be run." };
+		const unreadable = await sessions.open(request({ workflow: "review", agent: "Codex" }));
+		expect(unreadable).toMatchObject({ outcome: "opened", session: { name: "Codex 2", shell: join(bin, "fake-codex") } });
+		expect(reads).toBe(2);
 	});
 
 	test("a workflow that is gone, or workflows that cannot be read, start nothing", async () => {

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import {
-	addAgentDraft, agentDraftsOf, agentsDraftModel, describeSessionProblemTitle, editAgentDraft, menuIndexAfterKey, presetsToAdd, removeAgentDraft,
+	addAgentDraft, agentDraftsOf, agentsDraftModel, describeSessionProblemTitle, editAgentDraft, workflowAgentLabel, menuIndexAfterKey, presetsToAdd, removeAgentDraft,
 	sessionMenuChoice, sessionMenuItems,
 } from "../src/mainview/agent-format";
 import { AgentsSectionView } from "../src/mainview/components/settings/AgentsSection";
@@ -190,6 +190,9 @@ describe("agent sessions in the store", () => {
 		expect(problem).toMatchObject({ worktree: featureId, agent: "Codex", command: "codex" });
 		expect(problem.message).toContain('"codex" was not found on the PATH');
 		expect(describeSessionProblemTitle(problem)).toBe("Codex did not start");
+		// A workflow's agent is named by its workflow, and the title starts with a capital. A saved agent's name stays as typed.
+		expect(describeSessionProblemTitle({ agent: workflowAgentLabel("review") })).toBe("The review workflow's agent did not start");
+		expect(describeSessionProblemTitle({ agent: "aider" })).toBe("aider did not start");
 		const markup = render(store);
 		expect(markup).toContain('<p class="sidebar-error-title">Codex did not start</p>');
 		expect(markup).toContain('<pre class="dialog-command" aria-label="Command that failed">codex</pre>');

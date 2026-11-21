@@ -85,10 +85,13 @@ export interface OpenTerminalRequest {
 	/**
 	 * Start the agent of this named workflow instead of the shell. The main
 	 * process reads the workflow again from Timber and takes the command from
-	 * there only, never from the request. Not together with `agent`,
-	 * `timberWorktreeSetup`, or `arenaAttempt`.
+	 * there only, never from the request. With `agent`, the name of an agent
+	 * in the saved Settings, that agent starts unless Timber reports then
+	 * that the workflow sets an agent or turns it off, as the person saw in
+	 * the dialog. Not together with the
+	 * top-level `agent`, `timberWorktreeSetup`, or `arenaAttempt`.
 	 */
-	workflowAgent?: { workflow: string };
+	workflowAgent?: { workflow: string; agent?: string };
 }
 
 export type OpenTerminalResult =

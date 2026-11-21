@@ -90,7 +90,7 @@ describe("the agent to start", () => {
 	});
 
 	test("is shown under the Timber command as its own line, after setup, worded for when it starts", () => {
-		const codex = startingAgent({ source: "pick", agent: { name: "Codex", command: `codex --model "big one"` } });
+		const codex = startingAgent({ source: "pick", agent: { name: "Codex", command: `codex --model "big one"` }, workflow: null, unread: false });
 		const setup = { note: "Then, if Timber left setup scripts to run, runs them in a terminal in the worktree, without waiting for them:", command: "timber open --setup --no-editor --no-agent -- <worktree>" };
 		expect(followUps(codex, "always", "if-skipped")).toEqual([setup, { note: "And starts Codex in the new worktree, without waiting for setup:", command: "codex --model 'big one'" }]);
 		expect(followUps(codex, "always", "always")[1]?.note).toBe("And starts Codex beside setup, in the new worktree:");
@@ -98,7 +98,7 @@ describe("the agent to start", () => {
 		expect(followUps(codex, "never", "if-skipped")).toEqual([setup]);
 		expect(followUps(null, "always", "never")).toEqual([]);
 		// A command that cannot be read is shown as typed. The main process refuses it when it would start.
-		expect(followUps(startingAgent({ source: "pick", agent: { name: "Odd", command: `odd "open` } }), "always", "never")[0]?.command).toBe(`odd "open`);
+		expect(followUps(startingAgent({ source: "pick", agent: { name: "Odd", command: `odd "open` }, workflow: null, unread: false }), "always", "never")[0]?.command).toBe(`odd "open`);
 	});
 
 	test("names the worktree's path in the setup command once it is known", () => {
@@ -130,28 +130,37 @@ describe("the agent a workflow sets", () => {
 	});
 
 	test("no workflow, or one that sets no agent, leaves it to the pick", () => {
-		expect(plannedAgent(AGENT_PRESETS, "Codex", WORKFLOWS, null)).toEqual({ source: "pick", agent: AGENT_PRESETS[1]! });
-		expect(plannedAgent(AGENT_PRESETS, "Codex", WORKFLOWS, "explore")).toEqual({ source: "pick", agent: AGENT_PRESETS[1]! });
-		expect(plannedAgent(AGENT_PRESETS, null, WORKFLOWS, "explore")).toEqual({ source: "pick", agent: null });
-		expect(plannedAgent(AGENT_PRESETS, "Codex", undefined, null)).toEqual({ source: "pick", agent: AGENT_PRESETS[1]! });
+		expect(plannedAgent(AGENT_PRESETS, "Codex", WORKFLOWS, null)).toEqual({ source: "pick", agent: AGENT_PRESETS[1]!, workflow: null, unread: false });
+		expect(plannedAgent(AGENT_PRESETS, "Codex", WORKFLOWS, "explore")).toEqual({ source: "pick", agent: AGENT_PRESETS[1]!, workflow: "explore", unread: false });
+		expect(plannedAgent(AGENT_PRESETS, null, WORKFLOWS, "explore")).toEqual({ source: "pick", agent: null, workflow: "explore", unread: false });
+		expect(plannedAgent(AGENT_PRESETS, "Codex", undefined, null)).toEqual({ source: "pick", agent: AGENT_PRESETS[1]!, workflow: null, unread: false });
 	});
 
-	test("a workflow the list does not have, or any while there is no list, is unknown", () => {
-		expect(plannedAgent(AGENT_PRESETS, "Codex", WORKFLOWS, "gone")).toEqual({ source: "workflow", workflow: "gone", kind: "unknown" });
-		expect(plannedAgent(AGENT_PRESETS, "Codex", undefined, "review")).toEqual({ source: "workflow", workflow: "review", kind: "unknown" });
-		expect(plannedAgent(AGENT_PRESETS, "Codex", { ok: false, message: "no" }, "review")).toEqual({ source: "workflow", workflow: "review", kind: "unknown" });
+	test("a workflow the list does not have, or any while there is no list, leaves it to the pick, unread", () => {
+		const unread = (workflow: string) => ({ source: "pick" as const, agent: AGENT_PRESETS[1]!, workflow, unread: true });
+		expect(plannedAgent(AGENT_PRESETS, "Codex", WORKFLOWS, "gone")).toEqual(unread("gone"));
+		expect(plannedAgent(AGENT_PRESETS, "Codex", undefined, "review")).toEqual(unread("review"));
+		expect(plannedAgent(AGENT_PRESETS, "Codex", { ok: false, message: "no" }, "review")).toEqual(unread("review"));
 	});
 
 	test("each plan starts the agent it says, named by the request as a saved agent or a workflow", () => {
-		expect(startingAgent({ source: "pick", agent: { name: "Codex", command: `codex --model "big one"` } })).toEqual({
+		expect(startingAgent({ source: "pick", agent: { name: "Codex", command: `codex --model "big one"` }, workflow: null, unread: false })).toEqual({
 			label: "Codex", command: "codex --model 'big one'", session: { kind: "saved", name: "Codex" },
 		});
-		expect(startingAgent({ source: "pick", agent: null })).toBeNull();
+		expect(startingAgent({ source: "pick", agent: null, workflow: null, unread: false })).toBeNull();
 		expect(startingAgent({ source: "workflow", workflow: "review", kind: "command", command: "claude --permission-mode plan" })).toEqual({
 			label: "the review workflow's agent", command: "claude --permission-mode plan", session: { kind: "workflow", workflow: "review" },
 		});
 		expect(startingAgent({ source: "workflow", workflow: "triage", kind: "none" })).toBeNull();
-		expect(startingAgent({ source: "workflow", workflow: "gone", kind: "unknown" })).toBeNull();
+		// A pick made with a workflow names the workflow too, so the main process starts the workflow's agent if Timber reports one by then.
+		expect(startingAgent({ source: "pick", agent: { name: "Codex", command: "codex" }, workflow: "explore", unread: false })).toEqual({
+			label: "Codex", command: "codex", session: { kind: "workflow", workflow: "explore", agent: "Codex" },
+		});
+		expect(startingAgent({ source: "pick", agent: null, workflow: "gone", unread: true })).toBeNull();
+		// Unread, the footer says the workflow's agent may start instead.
+		expect(startingAgent({ source: "pick", agent: { name: "Codex", command: "codex" }, workflow: "review", unread: true })).toEqual({
+			label: "Codex (or the review workflow's agent, if it sets one)", command: "codex", session: { kind: "workflow", workflow: "review", agent: "Codex" },
+		});
 	});
 
 	test("is shown under the Timber command with the workflow's command as Timber reports it", () => {
@@ -378,7 +387,7 @@ describe("creating a worktree with an agent picked", () => {
 	test("the toast says setup started only once its session did", async () => {
 		const worktree = { id: "id", path: "/work/timber-worktrees/feat-login", branch: "feat/login" };
 		const run = async () => ({ outcome: { ok: true as const, toast: "Opened feat/login" }, created: worktree, setup: worktree, startedToast: "Setup started in feat/login" });
-		const agent = startingAgent({ source: "pick", agent: { name: "Codex", command: "codex" } });
+		const agent = startingAgent({ source: "pick", agent: { name: "Codex", command: "codex" }, workflow: null, unread: false });
 		expect(await runAndStart({ startSessionsIn: () => true }, TIMBER, run, agent)).toEqual({ ok: true, toast: "Setup started in feat/login" });
 		expect(await runAndStart({ startSessionsIn: () => false }, TIMBER, run, agent)).toEqual({
 			ok: true,

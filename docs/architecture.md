@@ -607,8 +607,9 @@ workflow's `post_create` scripts after the ordinary ones.
   (`agent = false`) starts none; one that leaves the agent unset leaves
   the pick as it was. While a workflow decides, the Agent field is locked
   to what it decided and says why. A workflow the dialog cannot look up,
-  such as a kept one the list has lost, starts no agent, and the field
-  says its agent could not be read.
+  such as a kept one the list has lost, leaves the field to the pick; the
+  field and the footer say that the workflow's agent starts instead if it
+  sets one.
 
 Both modes share an **Agent** field under their own fields: the agents from
 Settings, Agents, in menu order, the first one picked, then None. With no
@@ -636,13 +637,17 @@ with `--no-agent`. The app starts the picked agent itself
   tests drive the same wiring. That
   selects the worktree, shows the Workspace tab, and calls `openTerminal`
   with the agent's name, so the main process takes the command from the
-  saved Settings, never from the dialog, or, for a workflow's agent, with
-  `workflowAgent: { workflow }` only. The main process then reads the
-  workflow again from Timber, through the same read as `listWorkflows`,
-  and starts what it reports now: a changed command starts as changed, and
-  a workflow that is gone, that cannot be read, or that turns the agent off
-  or leaves it unset by then starts nothing, with the reason in the pane.
-  It never falls back to the picked agent. The session starts at 80 by 24 and
+  saved Settings, never from the dialog, or, with a workflow picked, with
+  `workflowAgent: { workflow, agent? }`. `agent` is the picked agent's
+  name, sent only when the dialog left the field to the pick. The main
+  process then reads the workflow again from Timber, through the same read
+  as `listWorkflows`, and starts what it reports now: a command starts as
+  Timber reports it, even if it changed or was unset when picked; a
+  workflow that turns the agent off starts nothing. Otherwise the picked
+  agent named with it starts, as the field showed, even when the workflow
+  is gone or cannot be read. A locked field names no picked agent, so then
+  nothing starts, with the reason in the pane: it never falls back to an
+  agent the person did not see. The session starts at 80 by 24 and
   the pane fits it once it shows. An agent that cannot start is shown in the
   worktree's pane as for the "+" menu, never as a failure of the dialog: the
   worktree stays, and the toast still says it was created. When the list

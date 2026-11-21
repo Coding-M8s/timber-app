@@ -104,9 +104,10 @@ export interface TerminalProblem {
 /**
  * The agent a new worktree's sessions start: one saved in Settings, by name,
  * or the agent of a named workflow, which the main process reads again from
- * Timber when it starts.
+ * Timber when it starts. With `agent`, that saved agent starts unless
+ * Timber reports then that the workflow sets an agent or turns it off.
  */
-export type SessionAgent = { kind: "saved"; name: string } | { kind: "workflow"; workflow: string };
+export type SessionAgent = { kind: "saved"; name: string } | { kind: "workflow"; workflow: string; agent?: string };
 
 /** Why the latest reload failed. `repository` is null when it was a reload of everything. */
 export interface ReloadError {

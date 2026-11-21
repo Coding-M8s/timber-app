@@ -54,9 +54,16 @@ export function sessionMenuChoice(items: readonly SessionMenuItem[], index: numb
 	return index < items.length ? { kind: "start", agent: items[index]!.agent } : { kind: "set-up" };
 }
 
+/** What a workflow's agent is called while it starts, or when it did not, before Timber has said what it runs. */
+export function workflowAgentLabel(workflow: string): string {
+	return `the ${workflow} workflow's agent`;
+}
+
 /** The title of the note in the pane when a session did not start. */
 export function describeSessionProblemTitle(problem: Pick<TerminalProblem, "agent">): string {
-	return problem.agent === null ? "The terminal did not start" : `${problem.agent} did not start`;
+	if (problem.agent === null) return "The terminal did not start";
+	// A workflow's agent is named in a phrase that starts the sentence; a saved agent's name is kept as typed.
+	return `${problem.agent.replace(/^the /, "The ")} did not start`;
 }
 
 /** What "+" says it does while a session starts, or when it can start one. */
