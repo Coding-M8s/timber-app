@@ -239,7 +239,7 @@ pre:focus-visible {
 	overflow-y: auto;
 	display: flex;
 	flex-direction: column;
-	gap: 8px;
+	gap: 12px;
 	padding: 0 6px 8px;
 }
 
@@ -247,6 +247,12 @@ pre:focus-visible {
 	display: flex;
 	flex-direction: column;
 	gap: 1px;
+}
+
+/* A hairline and more room than between rows mark where one repository ends and the next begins. */
+.group + .group {
+	padding-top: 6px;
+	border-top: 1px solid var(--line);
 }
 
 .group-header {
@@ -294,9 +300,14 @@ pre:focus-visible {
 	pointer-events: none;
 }
 
-/* In the middle of the gap between groups. The list scrolls, so the first line stays inside it. */
+/*
+ * In the middle of the gap between groups. A group after the first starts
+ * with its hairline, and a line before it is placed from inside that, so it
+ * sits 1px further up than a line after a group sits down. The list scrolls,
+ * so the first line stays inside it.
+ */
 .group.drop-before::before {
-	top: -5px;
+	top: -8px;
 }
 
 .group.drop-before:first-child::before {
@@ -304,7 +315,7 @@ pre:focus-visible {
 }
 
 .group.drop-after::after {
-	bottom: -5px;
+	bottom: -7px;
 }
 
 .group-head {
@@ -440,9 +451,11 @@ pre:focus-visible {
 	transform: rotate(90deg);
 }
 
+/* The repository's name is a step larger and heavier than a worktree's, in the main text color. */
 .group-name {
 	min-width: 0;
-	color: var(--text-2);
+	color: var(--text);
+	font-size: 13.5px;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
