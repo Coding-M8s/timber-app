@@ -196,17 +196,30 @@ change them here first when they change.
   or `Refs #102`, and `owner/repo#102` when the pull request opens in
   another repository, for GitHub; without a saved link there is no line,
   and the app never guesses from the branch name), Base (the saved base as Timber takes it, `origin/main`, or empty for
-  Timber's own choice when the saved base is a local branch or none), and
+  Timber's own choice when the saved base is a local branch or none),
+  Reviewers (logins or `org/team`, separated by commas or spaces; while it has the
+  focus, the people and teams the repository's pull requests already list
+  show under it, narrowed by the name being typed, without the ones already
+  typed, and a pick takes the place of that name), and
   an "Open as a draft" switch. A quiet line says
   Timber publishes the branch and opens the pull request, and the app never
   pushes on its own. The exact `timber pr` command shows above "Publish and
   open" and changes as the fields change. While Timber runs, the fields and
   the button are disabled and a progress bar shows; leaving the tab or the
   worktree keeps the run and what was typed, and never starts a second
-  run. Created: a toast, "Pull request #12 opened", and the tab shows the
+  run. Each reviewer is its own `--reviewer` in the command. Created: a
+  toast, "Pull request #12 opened", and the tab shows the
   pull request as soon as GitHub lists it, with its number and "Open in
   browser" until then. Already open: a quiet line above that pull request
-  says so, until the pull requests are read again. A new commit on the
+  says so, until the pull requests are read again. A reviewer Timber could
+  not request adds "1 reviewer could not be requested." to the toast, and
+  a red line in the tab, "Review could not be requested from bob." with
+  Timber's reason, under what says the pull request was opened or already
+  open and above the pull request once it shows, so it never hides that
+  the pull request was created. It stays, through later reads, until
+  "Dismiss" or the next run, and shows even while GitHub does not list the
+  pull request yet or the pull requests cannot be read. While Timber runs,
+  no reviewer is offered. A new commit on the
   branch puts its subject in the title, and a link attached, changed, or
   removed makes the title again, unless one was typed. Refused or failed:
   Timber's reason stays in the form with the fields as typed, ready for a

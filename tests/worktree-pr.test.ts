@@ -56,12 +56,12 @@ describe("WorktreeCommands.pullRequest, with a stand-in Timber", () => {
 	}
 
 	const ask = (change: Partial<CreatePullRequestRequest> = {}): CreatePullRequestRequest =>
-		({ repository, worktree, title: "Add login", body: "", base: null, draft: false, ...change });
+		({ repository, worktree, title: "Add login", body: "", base: null, draft: false, reviewers: [], ...change });
 
 	test("runs exactly the arguments the form shows, in the repository, and reads the record", async () => {
-		const given = ask({ body: "- first\n- second", base: "origin/main", draft: true, title: "-dash first" });
+		const given = ask({ body: "- first\n- second", base: "origin/main", draft: true, title: "-dash first", reviewers: ["alice", "-team", "example/core"] });
 		const { commands, timber } = commandsOn({ result: here(recordedPr.created), exitCode: 0 });
-		expect(await commands.pullRequest(given)).toEqual({ outcome: "created", number: 7, url: "https://github.com/example/sample/pull/7", base: "main", published: true });
+		expect(await commands.pullRequest(given)).toEqual({ outcome: "created", number: 7, url: "https://github.com/example/sample/pull/7", base: "main", published: true, reviewers: [] });
 		const notes = timber.notes();
 		expect(notes.arguments).toEqual(prResultArguments(given, notes.resultFile!));
 		expect(realpathSync(notes.cwd)).toBe(repository);
@@ -93,7 +93,8 @@ describe("WorktreeCommands.pullRequest, with a stand-in Timber", () => {
 	test("a request that is not complete runs nothing", async () => {
 		const on = commandsOn({ result: here(recordedPr.created), exitCode: 0 });
 		const full = ask();
-		for (const given of [null, {}, { ...full, title: undefined }, { ...full, title: 3 }, { ...full, body: null }, { ...full, base: "" }, { ...full, base: 5 }, { ...full, draft: "yes" }, { ...full, worktree: 2 }]) {
+		for (const given of [null, {}, { ...full, title: undefined }, { ...full, title: 3 }, { ...full, body: null }, { ...full, base: "" }, { ...full, base: 5 }, { ...full, draft: "yes" }, { ...full, worktree: 2 },
+			{ ...full, reviewers: undefined }, { ...full, reviewers: "alice" }, { ...full, reviewers: ["alice", 3] }, { ...full, reviewers: [""] }]) {
 			await expectNotRun(on, given, "is not complete");
 		}
 	});
@@ -131,6 +132,8 @@ describe("WorktreeCommands.pullRequest, with a stand-in Timber", () => {
 });
 
 const recentTimber = realTimber !== null && satisfiesTimberVersion(Bun.spawnSync([realTimber, "--version"]).stdout.toString().trim().split(/\s+/).at(-1) ?? "", "0.1.3");
+// The pr record has `reviewers` from the first Timber with `timber pr --reviewer` (Coding-M8s/timber#174), which its help lists.
+const reviewerTimber = recentTimber && Bun.spawnSync([realTimber!, "pr", "--help"]).stdout.toString().includes("--reviewer");
 
 describe.skipIf(!recentTimber)("WorktreeCommands.pullRequest and headSubject, with the installed Timber and Git", () => {
 	let work: string;
@@ -178,10 +181,20 @@ describe.skipIf(!recentTimber)("WorktreeCommands.pullRequest and headSubject, wi
 
 	test("a refusal pushes nothing and changes no file or ref, here or on the remote", async () => {
 		const before = fingerprint(feat) + fingerprint(primary) + fingerprint(remote);
-		const result = await commands.pullRequest({ repository: primary, worktree: feat, title: "Add the login form", body: "", base: "origin/main", draft: false });
-		expect(result).toMatchObject({ outcome: "refused", failure: { diagnostic: expect.stringContaining("github.com") } });
-		const missingTitle = await commands.pullRequest({ repository: primary, worktree: feat, title: "", body: "", base: "origin/main", draft: false });
-		expect(missingTitle).toMatchObject({ outcome: "refused", failure: { diagnostic: expect.stringContaining("title") } });
+		const asked = { repository: primary, worktree: feat, title: "Add the login form", body: "", base: "origin/main", draft: false, reviewers: [] };
+		const result = await commands.pullRequest(asked);
+		const missingTitle = await commands.pullRequest({ ...asked, title: "" });
+		// Before Timber writes `reviewers`, its record is one this app cannot read, so only what changed is checked.
+		if (reviewerTimber) {
+			expect(result).toMatchObject({ outcome: "refused", failure: { diagnostic: expect.stringContaining("github.com") } });
+			expect(missingTitle).toMatchObject({ outcome: "refused", failure: { diagnostic: expect.stringContaining("title") } });
+			// A reviewer Timber cannot take, and one that starts with a dash, which stays a value: refused before the login or the push.
+			for (const reviewers of [["not/a/team"], ["-alice"]]) {
+				expect(await commands.pullRequest({ ...asked, reviewers })).toMatchObject({ outcome: "refused", failure: { diagnostic: expect.stringContaining("--reviewer must be a GitHub user login or org/team") } });
+			}
+			// A valid reviewer on a remote that is not on github.com: refused as before.
+			expect(await commands.pullRequest({ ...asked, reviewers: ["alice", "example/core"] })).toMatchObject({ outcome: "refused" });
+		}
 		expect(fingerprint(feat) + fingerprint(primary) + fingerprint(remote)).toBe(before);
 		expect(git(remote, "for-each-ref", "--format=%(refname)").trim()).toBe("refs/heads/main");
 		expect(readdirSync(scratch)).toEqual([]);

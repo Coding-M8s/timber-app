@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { initialPullRequestBase, prResultArguments, pullRequestBaseFromText, readPrResult } from "../src/shared/timber-pr";
+import { type ReviewerRequestOutcome, initialPullRequestBase, prResultArguments, pullRequestBaseFromText, pullRequestReviewersFromText, readPrResult } from "../src/shared/timber-pr";
 import { RESULT_FILE_PLACEHOLDER, type TimberRun, describeTimberCommand, readTimberResult } from "../src/shared/timber-result";
 import { recordedPr } from "./support/timber";
 
@@ -27,7 +27,7 @@ function expectUnknown(result: ReturnType<typeof read>, detail: string) {
 	expect(result.failure.diagnostic).toContain("so what it did is unknown");
 }
 
-const base = { worktree: WORKTREE, title: "Add login", body: "", base: null, draft: false };
+const base = { worktree: WORKTREE, title: "Add login", body: "", base: null, draft: false, reviewers: [] as string[] };
 
 describe("prResultArguments", () => {
 	test("always passes the title, and only the options that were filled in", () => {
@@ -39,12 +39,21 @@ describe("prResultArguments", () => {
 	});
 
 	test("values that start with a dash stay values, and the worktree stays after `--`", () => {
-		const given = prResultArguments({ worktree: "--weird", title: "-x", body: "- item", base: "--b", draft: false }, "/tmp/r.json");
+		const given = prResultArguments({ worktree: "--weird", title: "-x", body: "- item", base: "--b", draft: false, reviewers: ["-r"] }, "/tmp/r.json");
 		expect(given.indexOf("--")).toBe(given.length - 2);
 		expect(given.at(-1)).toBe("--weird");
 		expect(given[given.indexOf("--title") + 1]).toBe("-x");
 		expect(given[given.indexOf("--body") + 1]).toBe("- item");
 		expect(given[given.indexOf("--base") + 1]).toBe("--b");
+		expect(given[given.indexOf("--reviewer") + 1]).toBe("-r");
+	});
+
+	test("each reviewer is its own --reviewer, in the order given, after --draft", () => {
+		expect(prResultArguments({ ...base, draft: true, reviewers: ["alice", "example/core", "Bob"] }, "/tmp/r.json")).toEqual([
+			"pr", "--title", "Add login", "--draft", "--reviewer", "alice", "--reviewer", "example/core", "--reviewer", "Bob", "--result-file", "/tmp/r.json", "--", WORKTREE,
+		]);
+		expect(describeTimberCommand(prResultArguments({ ...base, reviewers: ["alice", "example/core"] }, RESULT_FILE_PLACEHOLDER)))
+			.toBe(`timber pr --title 'Add login' --reviewer alice --reviewer example/core --result-file <temporary file> -- ${WORKTREE}`);
 	});
 
 	test("the shown command is the same arguments with the placeholder", () => {
@@ -74,13 +83,41 @@ describe("the Base field", () => {
 	});
 });
 
-describe("readPrResult, with records in Timber 0.1.3's form", () => {
+describe("the Reviewers field", () => {
+	test("each name between commas or spaces, in the order typed, with empty ones left out", () => {
+		expect(pullRequestReviewersFromText("")).toEqual([]);
+		expect(pullRequestReviewersFromText(" ,  , ")).toEqual([]);
+		expect(pullRequestReviewersFromText("alice, example/core,bob  carol\n")).toEqual(["alice", "example/core", "bob", "carol"]);
+	});
+
+	test("checks and merges nothing: that is Timber's", () => {
+		expect(pullRequestReviewersFromText("alice, Alice, not/a/team, @x")).toEqual(["alice", "Alice", "not/a/team", "@x"]);
+	});
+});
+
+describe("readPrResult, with records in Timber's form", () => {
 	test("created: the number, the link, the base, and that it was published", () => {
-		expect(read(recordedPr.created, 0)).toEqual({ outcome: "created", number: 7, url: "https://github.com/example/sample/pull/7", base: "main", published: true });
+		expect(read(recordedPr.created, 0)).toEqual({ outcome: "created", number: 7, url: "https://github.com/example/sample/pull/7", base: "main", published: true, reviewers: [] });
+	});
+
+	test("created with reviewers: each one requested or not, with Timber's reason, and the pull request still created", () => {
+		const reviewers: ReviewerRequestOutcome[] = [
+			{ name: "alice", kind: "user", result: "requested", diagnostic: null },
+			{ name: "example/core", kind: "team", result: "failed", diagnostic: "GitHub could not find the pull request or the team while requesting a reviewer." },
+		];
+		expect(read(changed(recordedPr.created, {}, { reviewers }), 0)).toEqual({
+			outcome: "created", number: 7, url: "https://github.com/example/sample/pull/7", base: "main", published: true, reviewers,
+		});
+		expect(read(changed(recordedPr.exists, {}, { reviewers }), 0)).toMatchObject({ outcome: "exists", reviewers });
+	});
+
+	test("a reviewer's name and reason are made safe to show", () => {
+		const result = read(changed(recordedPr.created, {}, { reviewers: [{ name: " al\u001bice ", kind: "user", result: "failed", diagnostic: "Bad\u0007 thing. " }] }), 0);
+		expect(result).toMatchObject({ outcome: "created", reviewers: [{ name: "al\uFFFDice", diagnostic: "Bad\uFFFD thing." }] });
 	});
 
 	test("exists: the one already open, and nothing created", () => {
-		expect(read(recordedPr.exists, 0)).toEqual({ outcome: "exists", number: 5, url: "https://github.com/example/sample/pull/5", base: "main", published: false });
+		expect(read(recordedPr.exists, 0)).toEqual({ outcome: "exists", number: 5, url: "https://github.com/example/sample/pull/5", base: "main", published: false, reviewers: [] });
 	});
 
 	test("refused, as recorded: Timber's diagnostic and what it printed", () => {
@@ -131,6 +168,34 @@ describe("readPrResult, with records it cannot use", () => {
 		expectUnknown(read(changed(recordedPr.created, {}, { url: null }), 0), "without a pull request");
 		expectUnknown(read(changed(recordedPr.refusedNotGithub, {}, { number: 3, url: "https://github.com/example/sample/pull/3" }), 1), "names a pull request");
 		expectUnknown(read(changed(recordedPr.refusedNotGithub, {}, { published: true }), 1), "refused run published");
+	});
+
+	test("reviewers that are missing or not a list this app can read", () => {
+		const record = JSON.parse(recordedPr.created);
+		delete record.pr.reviewers;
+		expectUnknown(read(JSON.stringify(record), 0), "reviewers are not a list");
+		const entry = { name: "alice", kind: "user", result: "requested", diagnostic: null };
+		for (const reviewers of [
+			null,
+			"alice",
+			[null],
+			[{ ...entry, name: "" }],
+			[{ ...entry, name: 7 }],
+			[{ ...entry, kind: "bot" }],
+			[{ ...entry, result: "pending" }],
+			[{ ...entry, diagnostic: "requested with a reason" }],
+			[{ ...entry, result: "failed", diagnostic: null }],
+			[{ ...entry, result: "failed", diagnostic: " " }],
+			[{ ...entry, result: "failed" }],
+		]) {
+			expectUnknown(read(changed(recordedPr.created, {}, { reviewers }), 0), "reviewers are not a list");
+		}
+	});
+
+	test("reviewers on a run that created and found nothing", () => {
+		const reviewers = [{ name: "alice", kind: "user", result: "requested", diagnostic: null }];
+		expectUnknown(read(changed(recordedPr.refusedNotGithub, {}, { reviewers }), 1), `it lists reviewers for a result of "refused"`);
+		expectUnknown(read(changed(recordedPr.failedAfterPush, {}, { reviewers }), 1), `it lists reviewers for a result of "failed"`);
 	});
 
 	test("a link that is not an https GitHub link", () => {

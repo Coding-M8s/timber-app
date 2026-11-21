@@ -2220,6 +2220,17 @@ pre:focus-visible {
 	overflow-y: auto;
 }
 
+/* The Reviewers field's suggestions: only as tall as they need, up to the branch list's height. */
+.reviewer-list {
+	max-height: 138px;
+	margin: 0;
+	padding: 4px;
+	border: 1px solid var(--line);
+	border-radius: 7px;
+	list-style: none;
+	overflow-y: auto;
+}
+
 .branch-option {
 	display: flex;
 	align-items: baseline;
@@ -4236,6 +4247,21 @@ pre:focus-visible {
 
 .pull-tab-existed {
 	padding-bottom: 12px;
+}
+
+/* Reviewers Timber could not request, under what was reported about the pull request. */
+.pull-tab-reviewer-failures {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 10px 0 12px;
+}
+
+.pull-tab-failure-lines {
+	margin: 0;
+	padding: 0;
+	list-style: none;
 }
 
 /* Settings, Notifications: a row for each state, with a Notify and a Sound box. */

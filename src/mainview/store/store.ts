@@ -27,7 +27,7 @@ import { REVIEW_COPIED, describeReviewSent } from "../review-format";
 import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "../../shared/timber-config";
 import type { DoneApplyRequest, DoneApplyResult, DonePreview, DonePreviewRequest, DonePreviewResult } from "../../shared/timber-done";
 import type { RebaseRequest, RebaseResult } from "../../shared/timber-rebase";
-import { type CreatePullRequestResult, initialPullRequestBase, pullRequestBaseFromText } from "../../shared/timber-pr";
+import { type CreatePullRequestResult, initialPullRequestBase, pullRequestBaseFromText, pullRequestReviewersFromText } from "../../shared/timber-pr";
 import { type PullRequestFields, defaultPullRequestTitle, presentPullRequestCreation, pullRequestTitleWithKey, titleKeyOf } from "../pull-request-create-format";
 import type { WorkflowList } from "../../shared/workflows";
 import type { IssueTrackers } from "../../shared/issue-trackers";
@@ -354,10 +354,14 @@ export interface AppStore {
 	 * call does nothing. The repository and its pull requests are read again
 	 * after every outcome that ran, since even a failure can come after the
 	 * push, so the tab shows a created pull request as soon as GitHub lists
-	 * it. Created: a toast. Already open: a note above it. Refused or failed:
-	 * the failure stays in the form for a retry. Never throws.
+	 * it. Created: a toast. Already open: a note above it. Reviewers Timber
+	 * could not request stay in the form under either, until put away or the
+	 * next run. Refused or failed: the failure stays in the form for a retry.
+	 * Never throws.
 	 */
 	createPullRequest(worktreeId: string): Promise<void>;
+	/** Put away the reviewers a worktree's last run could not request. */
+	dismissReviewerFailures(worktreeId: string): void;
 	/**
 	 * Restore a backup into a new worktree, once. The repository is read again
 	 * after every outcome, and a recovery worktree that is complete is
@@ -1846,9 +1850,11 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			body: "",
 			base: initialPullRequestBase(worktree.base),
 			draft: false,
+			reviewers: "",
 			running: false,
 			failure: null,
 			reported: null,
+			reviewerFailures: null,
 		};
 		update({ pullRequestForms: { ...state.pullRequestForms, [worktree.id]: form } });
 		readTitle(repository, worktree);
@@ -1860,14 +1866,18 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		changeForm(worktreeId, { ...change, ...(change.title === undefined ? {} : { titleEdited: true }), failure: null });
 	}
 
+	function dismissReviewerFailures(worktreeId: string): void {
+		if (state.pullRequestForms[worktreeId]?.reviewerFailures) changeForm(worktreeId, { reviewerFailures: null });
+	}
+
 	async function createPullRequest(worktreeId: string): Promise<void> {
 		const form = state.pullRequestForms[worktreeId];
 		if (!form || form.running) return;
-		changeForm(worktreeId, { running: true, failure: null, reported: null });
-		const { repository, worktree, title, body, base, draft } = form;
+		changeForm(worktreeId, { running: true, failure: null, reported: null, reviewerFailures: null });
+		const { repository, worktree, title, body, base, draft, reviewers } = form;
 		let result: CreatePullRequestResult;
 		try {
-			result = await engine.createPullRequest({ repository, worktree, title, body, base: pullRequestBaseFromText(base), draft });
+			result = await engine.createPullRequest({ repository, worktree, title, body, base: pullRequestBaseFromText(base), draft, reviewers: pullRequestReviewersFromText(reviewers) });
 		} catch (error) {
 			const failure = notHeardFailure("how timber pr ended", error, ". The engine did not answer, so what it did is unknown.");
 			result = { outcome: "failed", ran: true, published: null, failure };
@@ -1875,7 +1885,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		// Even a failure can come after the push, or after GitHub opened the pull request.
 		if (result.outcome !== "failed" || result.ran) await Promise.all([reloadOne(repository), refreshPullRequests(repository)]);
 		const shown = presentPullRequestCreation(result);
-		changeForm(worktreeId, { running: false, failure: shown.failure, reported: shown.reported });
+		changeForm(worktreeId, { running: false, failure: shown.failure, reported: shown.reported, reviewerFailures: shown.reviewerFailures });
 		if (shown.toast) showToast(shown.toast);
 	}
 
@@ -2391,6 +2401,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		startPullRequestForm,
 		editPullRequestForm,
 		createPullRequest,
+		dismissReviewerFailures,
 		restoreBackup,
 		listArenaPresets,
 		inspectArena,
