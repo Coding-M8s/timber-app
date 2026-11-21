@@ -2,12 +2,15 @@ import { useContext, useEffect, useState } from "react";
 import { RESTART_CONFIRM, RESTART_OFFER, RESTARTING, type RestartStep, restartStepAfterPlan, restartStepOf } from "../../restart-format";
 import { useAppState, useStore } from "../../store/react";
 import { describeEndingTerminals, liveTerminalCount } from "../../terminal-format";
+import { describeUnsavedFiles, unsavedFilePaths } from "../../file-view-format";
 import { SettingsSavingContext } from "./SettingsSection";
 
 export interface RestartPromptViewProps {
 	step: RestartStep;
 	/** How many terminals run, which end with the app. */
 	liveTerminals: number;
+	/** The files with unsaved edits, which a restart drops. */
+	unsavedFiles?: readonly string[];
 	onRestart: () => void;
 	onLater: () => void;
 	/** Restart while terminals run, after the person agreed. */
@@ -20,15 +23,15 @@ export interface RestartPromptViewProps {
  * preference the app reads only when it starts. Restart now asks first while
  * terminals run, with focus on Cancel, the button that changes nothing.
  */
-export function RestartPromptView({ step, liveTerminals, onRestart, onLater, onConfirm, onCancel }: RestartPromptViewProps) {
+export function RestartPromptView({ step, liveTerminals, unsavedFiles = [], onRestart, onLater, onConfirm, onCancel }: RestartPromptViewProps) {
 	if (step.kind === "later") return null;
 	if (step.kind === "restarting") return <p className="restart-prompt-text" role="status">{RESTARTING}</p>;
 	if (step.kind === "unavailable") return <p className="restart-prompt-text" role="note">{step.reason}</p>;
 	if (step.kind === "confirm") {
-		const ending = describeEndingTerminals(liveTerminals);
+		const ending = [describeEndingTerminals(liveTerminals), describeUnsavedFiles(unsavedFiles)].filter(line => line !== null).join(" ");
 		return (
 			<div className="restart-prompt" role="group" aria-label="Restart">
-				<p className="restart-prompt-text">{RESTART_CONFIRM}{ending === null ? "" : ` ${ending}`}</p>
+				<p className="restart-prompt-text">{RESTART_CONFIRM}{ending === "" ? "" : ` ${ending}`}</p>
 				<div className="restart-prompt-buttons">
 					<button type="button" className="button quiet" autoFocus onClick={onCancel}>Cancel</button>
 					<button type="button" className="button danger" onClick={onConfirm}>Restart</button>
@@ -63,12 +66,13 @@ export function RestartPromptView({ step, liveTerminals, onRestart, onLater, onC
  */
 export function RestartPrompt() {
 	const store = useStore();
-	const terminals = useAppState().terminals;
+	const { terminals, files } = useAppState();
 	const { reportSaving } = useContext(SettingsSavingContext);
 	const [step, setStep] = useState<RestartStep>({ kind: "offer" });
 	// Whether the restart request waits for its answer, which never comes when the app goes.
 	const [asking, setAsking] = useState(false);
 	const liveTerminals = liveTerminalCount(terminals);
+	const unsavedFiles = unsavedFilePaths(files);
 
 	// Keep the dialog open while a question to the main process waits, so its answer is never lost.
 	// Once answered, even with "restarting" (the mock never quits), the dialog can close again.
@@ -90,7 +94,8 @@ export function RestartPrompt() {
 	};
 	const onRestart = async () => {
 		setStep({ kind: "checking" });
-		const next = restartStepAfterPlan(await store.restartPlan(), liveTerminalCount(store.getState().terminals));
+		const now = store.getState();
+		const next = restartStepAfterPlan(await store.restartPlan(), liveTerminalCount(now.terminals), unsavedFilePaths(now.files).length);
 		if (next === "restart") await restart();
 		else setStep(next);
 	};
@@ -98,6 +103,7 @@ export function RestartPrompt() {
 		<RestartPromptView
 			step={step}
 			liveTerminals={liveTerminals}
+			unsavedFiles={unsavedFiles}
 			onRestart={() => void onRestart()}
 			onLater={() => setStep({ kind: "later" })}
 			onConfirm={() => void restart()}

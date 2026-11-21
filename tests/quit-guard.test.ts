@@ -38,6 +38,17 @@ describe("asking before quitting", () => {
 		expect(events).toEqual([]);
 	});
 
+	test("with nothing running but unsaved edits in the window, quitting waits and the window is asked", async () => {
+		let unsaved = 1;
+		const { guard, asked, setLive } = setup({ unsavedCount: () => unsaved });
+		setLive(0);
+		expect(guard.mayQuit()).toBe(false);
+		await settle();
+		expect(asked()).toBe(1);
+		unsaved = 0;
+		expect(guard.mayQuit()).toBe(true);
+	});
+
 	test("while a session runs, quitting waits and the window is asked once", async () => {
 		const { guard, asked } = setup();
 		expect(guard.mayQuit()).toBe(false);

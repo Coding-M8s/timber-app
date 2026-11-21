@@ -76,7 +76,22 @@ export interface ChopsView {
 	list: ChopList | null;
 }
 
-/** The file open in a worktree's File tab, read-only. */
+/**
+ * How the File tab shows its file. A Markdown file starts "rendered", any
+ * other file "source"; only a Markdown file can be put in "edit".
+ */
+export type FileMode = "rendered" | "source" | "edit";
+
+/** Why the last save of a file did not write it. */
+export type FileSaveProblem =
+	/** The file holds other text now, as an agent wrote it. Saving again overwrites it. */
+	| { kind: "changed"; message: string }
+	| { kind: "failed"; message: string };
+
+/** What a question about unsaved edits holds back until it is answered. */
+export type UnsavedFileStep = { kind: "close" } | { kind: "read-again" } | { kind: "open"; path: string };
+
+/** The file open in a worktree's File tab. */
 export interface FileView {
 	/** The path of the repository's primary checkout. */
 	repository: string;
@@ -88,6 +103,17 @@ export interface FileView {
 	from: Exclude<WorkspaceTab, "file">;
 	/** Null while the first read is under way. */
 	result: WorktreeFileResult | null;
+	mode: FileMode;
+	/**
+	 * The text being edited, with plain new lines, from the first Edit until
+	 * it is discarded. Kept while other tabs show, and shown in every mode.
+	 * It holds unsaved edits when it differs from the file as read (see
+	 * `hasUnsavedEdits`).
+	 */
+	draft: string | null;
+	/** True while a save is under way. */
+	saving: boolean;
+	saveProblem: FileSaveProblem | null;
 }
 
 export interface ChangesView {
@@ -217,6 +243,12 @@ export type DialogRequest =
 	| { kind: "palette" }
 	/** The setup wizard of a repository new to Timber, named by the path of its primary checkout. */
 	| { kind: "set-up-timber"; repository: string }
+	/**
+	 * A worktree's open file has unsaved edits, and something would drop
+	 * them: closing it, reading it again, or opening another file in its
+	 * place. Asks to save, discard, or keep editing. `worktree` is `Worktree.id`.
+	 */
+	| { kind: "unsaved-file"; worktree: string; then: UnsavedFileStep }
 	/** Preview a worktree's review notes as one message, and paste it into one of its agents or copy it. `worktree` is `Worktree.id`. */
 	| { kind: "send-review"; worktree: string }
 	/** Create an arena in a repository, named by the path of its primary checkout. Beta, as in Timber. */

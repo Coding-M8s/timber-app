@@ -171,6 +171,8 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		readFileChanges: async () => ({ outcome: "read", files: [], more: false, compared: "uncommitted", base: { usable: false, reason: "No base." } }),
 		readFileDiff: async () => ({ outcome: "read", file: null, diff: { kind: "unchanged" } }),
 		readWorktreeFile: async request => ({ outcome: "missing", path: request.path, message: `${request.path} is not in this worktree.` }),
+		writeWorktreeFile: async request => ({ outcome: "missing", path: request.path, message: `${request.path} is not in this worktree.` }),
+		reportUnsavedFiles: () => {},
 		listChops: async () => ({ outcome: "listed", file: { state: "missing" }, path: "/work/app/.timber/chops.json", chops: [], overridden: [] }),
 		onChopsChanged: () => () => {},
 		runChop: async () => ({ outcome: "no-chop", message: "No chops here." }),

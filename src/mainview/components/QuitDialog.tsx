@@ -1,24 +1,24 @@
 import { useEffect, useId, useRef } from "react";
 import { useAppState, useStore } from "../store/react";
-import { describeQuitRequest } from "../terminal-format";
+import { describeQuitQuestion, unsavedFilePaths } from "../file-view-format";
 
 /**
  * Asked when the app is about to quit, or its window to close, while
- * terminals run. Nothing quits until Quit is pressed. Focus starts on the
+ * terminals run or files hold unsaved edits. Nothing quits until Quit is pressed. Focus starts on the
  * button that keeps the app open, and Escape keeps it open too.
  */
 export function QuitDialog() {
 	const store = useStore();
-	const { quitRequest } = useAppState();
+	const { quitRequest, files } = useAppState();
 	if (quitRequest === null) return null;
-	return <QuitQuestion live={quitRequest} onQuit={() => void store.confirmQuit()} onStay={() => store.cancelQuit()} />;
+	return <QuitQuestion live={quitRequest} unsaved={unsavedFilePaths(files)} onQuit={() => void store.confirmQuit()} onStay={() => store.cancelQuit()} />;
 }
 
-function QuitQuestion({ live, onQuit, onStay }: { live: number; onQuit: () => void; onStay: () => void }) {
+function QuitQuestion({ live, unsaved, onQuit, onStay }: { live: number; unsaved: readonly string[]; onQuit: () => void; onStay: () => void }) {
 	const dialog = useRef<HTMLDialogElement>(null);
 	const titleId = useId();
 	const textId = useId();
-	const { title, text } = describeQuitRequest(live);
+	const { title, text, stay } = describeQuitQuestion(live, unsaved);
 
 	useEffect(() => {
 		const element = dialog.current;
@@ -45,7 +45,7 @@ function QuitQuestion({ live, onQuit, onStay }: { live: number; onQuit: () => vo
 				<p id={textId} className="dialog-note">{text}</p>
 				<footer className="dialog-foot">
 					<div className="dialog-buttons">
-						<button type="button" className="button quiet" autoFocus onClick={onStay}>Keep running</button>
+						<button type="button" className="button quiet" autoFocus onClick={onStay}>{stay}</button>
 						<button type="button" className="button danger" onClick={onQuit}>Quit</button>
 					</div>
 				</footer>

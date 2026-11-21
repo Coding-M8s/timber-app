@@ -485,6 +485,12 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	 * these reads fail too.
 	 */
 	setWorktreeFile(worktree: string, path: string, file: MockWorktreeFile | null): void;
+	/** The text of a file on the pretend disk, as a save left it, or null when it is not text there. */
+	readWorktreeFileNow(worktree: string, path: string): string | null;
+	/** Make every later save of a file take this long, to see the File tab while it saves. */
+	delayFileSaves(milliseconds: number): void;
+	/** How many files the window last said hold unsaved edits (`reportUnsavedFiles`). */
+	unsavedFilesReported(): number;
 	/**
 	 * Decide how fetches end from now on: "fetches" (the start), or failing as
 	 * "offline", "authentication", or "failed". The mock fetches nothing in the
@@ -637,6 +643,7 @@ export function createMockEngine(
 	const listeners = new Set<(path: string) => void>();
 	// The mock watches nothing: changes are acted out with `announceChange`. It only keeps what it was told.
 	let attended: Attention | null = null;
+	let unsaved = 0;
 	let ready = 0;
 	const notices: StatusNotice[] = [];
 	const alertSounds: string[] = [];
@@ -855,6 +862,7 @@ export function createMockEngine(
 	};
 	const filesOf = (worktree: Worktree) => fileChangeLists.get(worktree.path) ?? derivedFileChanges(worktree);
 	const worktreeFiles = createMockWorktreeFiles();
+	let writeDelay = 0;
 	const chopFiles = createMockChops();
 	/** As the main process: a repository in the list, its main checkout's file. The mock's main checkouts are always there. */
 	const listMockChops = (repositoryPath: string): ChopList => {
@@ -916,6 +924,7 @@ export function createMockEngine(
 	repository => workflows.listWorkflows(repository), {
 		...(options.savedSessions ? { savedSessions: options.savedSessions } : {}),
 		...(options.terminalMilliseconds ? { terminalMilliseconds: options.terminalMilliseconds } : {}),
+		unsavedFiles: () => unsaved,
 	});
 	// As the main process does, every change is weighed for a desktop notification and a sound, which are only kept here.
 	const alertSettings = (): AlertSettings => ({ notify: preferences.statusNotifications, notifyStates: preferences.notifyStates, soundStates: preferences.soundStates });
@@ -1117,6 +1126,10 @@ export function createMockEngine(
 			ready += 1;
 		},
 		readyCalls: () => ready,
+		reportUnsavedFiles(count) {
+			unsaved = count;
+		},
+		unsavedFilesReported: () => unsaved,
 		attend(attention) {
 			attended = attention;
 			// As the main process does, for the save at quit: the selected worktree and the chip that shows there.
@@ -1246,6 +1259,12 @@ export function createMockEngine(
 			if (!listed.ok) return { outcome: listed.outcome, message: listed.message.replace("No changes were read.", "The file was not read.").replace("so no changes were read", "so the file was not read") };
 			return worktreeFiles.read(listed.worktree.path, request.path, filesOf(listed.worktree));
 		},
+		async writeWorktreeFile(request) {
+			const listed = listedForChanges(request.repository, request.worktree);
+			if (!listed.ok) return { outcome: listed.outcome, message: listed.message.replace("No changes were read.", "Nothing was saved.").replace("so no changes were read", "so nothing was saved") };
+			if (writeDelay > 0) await new Promise(resolve => setTimeout(resolve, writeDelay));
+			return worktreeFiles.write(request, listed.worktree.path, filesOf(listed.worktree));
+		},
 		async listChops(request) {
 			return listMockChops(request.repository);
 		},
@@ -1274,6 +1293,13 @@ export function createMockEngine(
 		},
 		setWorktreeFile(worktree, path, file) {
 			worktreeFiles.set(worktree, path, structuredClone(file));
+		},
+		readWorktreeFileNow(worktree, path) {
+			const result = worktreeFiles.read(worktree, path, []);
+			return result.outcome === "read" && result.content.kind === "text" ? result.content.text : null;
+		},
+		delayFileSaves(milliseconds) {
+			writeDelay = milliseconds;
 		},
 		setChanges(path, files) {
 			if (files.ignored) ignored.set(path, files.ignored);

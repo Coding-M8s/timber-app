@@ -1,5 +1,6 @@
 /**
- * Asking before quitting while terminals run.
+ * Asking before quitting while terminals run, or while files have unsaved
+ * edits in the window.
  *
  * Electrobun asks the main process, without waiting, whether the app may quit
  * (`before-quit`) and whether the window may close (`will-close`). While a
@@ -19,6 +20,8 @@
 export interface QuitGuardDependencies {
 	/** How many terminal sessions still run. */
 	liveCount: () => number;
+	/** How many files the window holds unsaved edits of. Quitting asks while there are any, too. */
+	unsavedCount?: () => number;
 	/** Ask in the window. Answers whether the window shows the question; may throw or time out. */
 	ask: (live: number) => Promise<boolean>;
 	/** End every session. */
@@ -88,7 +91,7 @@ export function createQuitGuard(dependencies: QuitGuardDependencies): QuitGuard 
 	return {
 		mayQuit() {
 			const live = dependencies.liveCount();
-			if (agreed || live === 0) return true;
+			if (agreed || (live === 0 && (dependencies.unsavedCount?.() ?? 0) === 0)) return true;
 			if (!asking) {
 				asking = true;
 				void ask(live).finally(() => {

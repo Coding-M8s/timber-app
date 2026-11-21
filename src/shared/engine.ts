@@ -6,7 +6,7 @@ import type { BackupDeleteRequest, BackupDeleteResult, BackupList, BackupRestore
 import type { Attention } from "./attention";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "./git-fetch";
 import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffResult } from "./file-changes";
-import type { WorktreeFileRequest, WorktreeFileResult } from "./worktree-files";
+import type { WorktreeFileRequest, WorktreeFileResult, WorktreeFileWriteRequest, WorktreeFileWriteResult } from "./worktree-files";
 import type { WorktreeHandoff } from "./handoff";
 import type { Layout } from "./layout";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, RepositoryGroupsResult, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
@@ -505,6 +505,21 @@ export interface Engine {
 	 * Writes nothing and runs no Git. Safe to call again.
 	 */
 	readWorktreeFile(request: WorktreeFileRequest): Promise<WorktreeFileResult>;
+	/**
+	 * Save new text into one file of a worktree, from the File tab's edit
+	 * mode, under the same rules as `readWorktreeFile`: only a plain file
+	 * that is there already, inside the worktree, links included. Writes only
+	 * that file, in place, keeping a byte order mark it starts with, and
+	 * never creates one. When `expected` is given and the file holds other
+	 * text now, nothing is written and the answer is "changed". Runs no Git.
+	 */
+	writeWorktreeFile(request: WorktreeFileWriteRequest): Promise<WorktreeFileWriteResult>;
+	/**
+	 * How many files the window holds unsaved edits of. While there are any,
+	 * quitting or closing the window asks first, as while sessions run (see
+	 * `onQuitRequested`). Safe to call with the same number again.
+	 */
+	reportUnsavedFiles(count: number): void;
 	/**
 	 * The ports a worktree of a repository in the list has open: what the
 	 * running containers of its Compose project publish (`docker ps` and

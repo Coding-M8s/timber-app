@@ -7,7 +7,7 @@ import type { BackupDeleteRequest, BackupRestoreRequest } from "./backups";
 import type { Engine } from "./engine";
 import type { ForcePushSeen, RepositoryFetch } from "./git-fetch";
 import type { FileChangesRequest, FileDiffRequest } from "./file-changes";
-import type { WorktreeFileRequest } from "./worktree-files";
+import type { WorktreeFileRequest, WorktreeFileWriteRequest } from "./worktree-files";
 import type { Layout } from "./layout";
 import type { PortsRequest } from "./ports";
 import type { RebaseRequest } from "./timber-rebase";
@@ -115,6 +115,7 @@ export type AppRPC = {
 			readFileChanges: { params: FileChangesRequest; response: Answer<"readFileChanges"> };
 			readFileDiff: { params: FileDiffRequest; response: Answer<"readFileDiff"> };
 			readWorktreeFile: { params: WorktreeFileRequest; response: Answer<"readWorktreeFile"> };
+			writeWorktreeFile: { params: WorktreeFileWriteRequest; response: Answer<"writeWorktreeFile"> };
 			readPorts: { params: PortsRequest; response: Answer<"readPorts"> };
 			listChops: { params: ChopsRequest; response: Answer<"listChops"> };
 			runChop: { params: RunChopRequest; response: Answer<"runChop"> };
@@ -156,6 +157,8 @@ export type AppRPC = {
 			forcePushSeen: ForcePushSeen;
 			/** The interface has drawn itself, so the window can show (see `Engine.windowReady`). */
 			windowReady: {};
+			/** How many files the window holds unsaved edits of (see `Engine.reportUnsavedFiles`). */
+			unsavedFiles: { count: number };
 		};
 	}>;
 	webview: RPCSchema<{

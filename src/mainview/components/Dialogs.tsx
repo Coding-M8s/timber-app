@@ -15,6 +15,7 @@ import { SetBaseDialog } from "./SetBaseDialog";
 import { SendPromptDialog } from "./SendPromptDialog";
 import { SettingsDialog } from "./SettingsDialog";
 import { SetupWizardDialog } from "./SetupWizardDialog";
+import { UnsavedFileDialog } from "./UnsavedFileDialog";
 
 /**
  * The dialog the store says is open (`state.dialog`), over the window. One
@@ -56,6 +57,9 @@ export function Dialogs() {
 		case "settings":
 			// A key per section asked for, so asking for another one while Settings is open opens it there.
 			return <SettingsDialog key={dialog.section ?? ""} initialSection={dialog.section ?? SETTINGS_SECTIONS[0]} />;
+		case "unsaved-file":
+			// A key per worktree and step, so another question starts from nothing.
+			return <UnsavedFileDialog key={`${dialog.worktree}\n${JSON.stringify(dialog.then)}`} worktree={dialog.worktree} then={dialog.then} />;
 		case "send-review":
 			// A key per worktree, so another review starts from nothing.
 			return <SendReviewDialog key={dialog.worktree} worktree={dialog.worktree} />;

@@ -408,8 +408,11 @@ const terminals = createTerminalSessions({
 const ports = createPorts({ listWorktrees: createWorktreePaths({ targets: () => watchTargets }), leaders: () => terminals.leaders(), attention: () => attention });
 
 
+// Files with unsaved edits in the File tab, as the window last said. Quitting asks while there are any.
+let unsavedFiles = 0;
 const quitGuard = createQuitGuard({
 	liveCount: () => terminals.liveCount(),
+	unsavedCount: () => unsavedFiles,
 	// The window answers at once whether it shows the question. One that is broken, or no longer drawn because
 	// Electrobun's native side stopped it (as on SIGTERM), does not answer in time, and then the app quits.
 	ask: live => rpc.request.askQuit({ live }, { maxRequestTime: 2000 }),
@@ -562,6 +565,8 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			readFileDiff: request => fileChanges.diff(request),
 			// Reads one file, only inside a worktree Timber lists, links included (see ./worktree-files.ts). It holds file contents: never log it.
 			readWorktreeFile: request => worktreeFiles.read(request),
+			// Writes only that file, in place, and only a file that is there (see ./worktree-files.ts). It holds file contents: never log it.
+			writeWorktreeFile: request => worktreeFiles.write(request),
 			// Read-only Docker and process table, only in a worktree Timber lists, never while the window is hidden (see ./ports.ts).
 			readPorts: request => ports.read(request),
 			listChops: request => chops.list(request),
@@ -626,6 +631,9 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 				fetcher.setVisible(next.visible);
 			},
 			windowReady: () => windowReveal.ready(),
+			unsavedFiles: ({ count }) => {
+				unsavedFiles = Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
+			},
 			forcePushSeen: ({ repository, branch, at }) => {
 				if (fetcher.acknowledge(repository, branch, at)) refreshPolicy.changed(repository);
 			},
