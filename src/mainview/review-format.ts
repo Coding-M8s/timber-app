@@ -53,7 +53,16 @@ export function reviewTooLong(length: number): string {
 
 export const REVIEW_COPIED = "Review copied. The notes stay until sent or discarded.";
 
-/** The first line of a note, for the Review list. */
-export function noteSummary(text: string): string {
-	return text.split("\n", 1)[0]!;
+/** What a screen reader hears for a note's reference, which shows its lines in the diff. */
+export function describeReference(location: string, outdated: boolean): string {
+	return outdated ? `Show ${location}, outdated` : `Show ${location}`;
 }
+
+export const OUTDATED_REFERENCE = "These lines changed or left the diff since the note. It is sent with the lines as they were.";
+
+export const REVIEW_TOGGLE_TITLE = "Show the review notes over the diff";
+
+export const CLOSE_REVIEW = "Close the review";
+
+/** Shown for a reference whose first line is blank, so the line still shows. */
+export const EMPTY_LINE = "empty line";

@@ -29,7 +29,7 @@ import type { Theme } from "../../shared/theme";
 import type { ChooseSoundResult, SoundChoice, SoundOutcome } from "../../shared/sound-setting";
 import type { ExportThemeResult, ImportThemeResult } from "../../shared/theme-file";
 import { type OpenTerminalRequest, type OpenTerminalResult, type PasteResult, type TerminalChange, type TerminalSession, WORKTREE_SETUP_SESSION_NAME } from "../../shared/terminal";
-import { type ReviewNote, buildReviewMessage, markOutdated, normalizeNoteText, notedFiles, noteProblem } from "../../shared/review";
+import { type ReviewNote, buildReviewMessage, markOutdated, normalizeNoteText, notedFiles, noteLinesShown, noteProblem } from "../../shared/review";
 import {
 	REVIEW_COPIED, describeReviewAgentStarted, describeReviewNotPasted, describeReviewSent, reviewAlreadyWaiting,
 } from "../review-format";
@@ -1320,7 +1320,10 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	let lastNote = 0;
 	function changeNotes(worktreeId: string, notes: readonly ReviewNote[]): void {
 		const { [worktreeId]: _gone, ...others } = state.reviews;
-		update({ reviews: notes.length > 0 ? { ...others, [worktreeId]: notes } : others });
+		const chosen = state.chosenNote;
+		// A chosen note that went is no longer chosen.
+		const chosenGone = chosen !== null && chosen.worktree === worktreeId && !notes.some(note => note.id === chosen.id);
+		update({ reviews: notes.length > 0 ? { ...others, [worktreeId]: notes } : others, ...(chosenGone ? { chosenNote: null } : {}) });
 	}
 
 	/* The latest read of each worktree's open file wins, and an answer for a file no longer open there is dropped. */
@@ -1516,9 +1519,14 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const now = state.changes;
 		if (now?.worktree !== worktreeId || now.compared !== note.comparison) return null;
 		if (!now.files?.some(candidate => sameFileChange(candidate, note.file))) return `${note.file.path} is no longer listed in this comparison.`;
-		update({ noteInView: { worktree: worktreeId, id } });
+		update({ noteInView: { worktree: worktreeId, id }, chosenNote: { worktree: worktreeId, id } });
 		await selectChangedFile(note.file);
-		return note.outdated ? "Its lines changed or left the diff since the note, so they may not show." : null;
+		// Reading the diff marks the note outdated when its lines changed. Its old lines may still show in part.
+		const after = state.reviews[worktreeId]?.find(candidate => candidate.id === id);
+		const diff = state.changes?.diff;
+		if (!after?.outdated) return null;
+		const shown = diff?.outcome === "read" && noteLinesShown(after, diff.diff);
+		return shown ? null : "Its lines changed or left the diff since the note, so they may not show.";
 	}
 
 	function worktreeOf(repositoryPath: string, worktreeId: string) {
@@ -1727,6 +1735,10 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const worktree = worktreeOf(view.repository, view.worktree);
 		if (!worktree) return;
 		const selected = { area: file.area, path: file.path, previousPath: file.previousPath };
+		// Another file chosen while a note was coming into view: it is not brought into view later.
+		const inView = state.noteInView;
+		const pending = inView === null ? null : state.reviews[inView.worktree]?.find(note => note.id === inView.id);
+		if (inView !== null && (inView.worktree !== view.worktree || !pending || !sameFileChange(pending.file, selected))) update({ noteInView: null });
 		if (view.selected && sameFileChange(view.selected, selected) && view.diff !== null) return;
 		const next: ChangesView = { ...view, selected, diff: null };
 		update({ changes: next });
@@ -1736,6 +1748,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	async function compareChanges(compare: Comparison): Promise<void> {
 		const view = state.changes;
 		if (!view) return;
+		// A note on its way into view is let go: the diff it waited for is not coming.
+		if (state.noteInView !== null) update({ noteInView: null });
 		const layout = chooseComparison(state.layout, view.worktree, compare);
 		if (layout !== state.layout) {
 			changeLayout(layout);
@@ -2062,7 +2076,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const selection = selectionFor(state.repositories, worktreeId);
 		if (!selection) return;
 		// Choosing a worktree puts the issues board away, even the worktree that was selected under it.
-		if (selection.worktree !== state.selection?.worktree) update({ selection, board: null });
+		if (selection.worktree !== state.selection?.worktree) update({ selection, board: null, noteInView: null });
 		else if (state.board !== null) update({ board: null });
 	}
 

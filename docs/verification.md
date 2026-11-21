@@ -3344,3 +3344,47 @@ Git 2.56.1, and headless Chromium 158 over the mock engine:
 - Not run: the desktop window on any platform, a real network or sign-in
   failure (the unreachable remote was a missing local path), and a pull
   over SSH or HTTPS.
+
+Run for showing review notes in a panel beside the diff (issue 228), Linux
+x64 with Bun 1.4.5 and Git 2.43:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors. `bun run
+  build:web`: built.
+- `bun test`: 3396 passed, 19 skipped, 0 failed, after a rebase onto main.
+  `tests/review-notes.test.tsx` renders the panel after the diff and out of
+  the file list's column, with its count, Discard, and Send review; each
+  reference with its label (", outdated" when it is), folder, name and
+  lines, "removed line" or "removed lines", and its first line ("empty
+  line" when blank); the chosen reference with `aria-current`, and its
+  lines marked in the diff until the mark is cleared; the Review button
+  with `aria-expanded`, `aria-controls`, and the count; and no panel or
+  button without notes. The store tests cover the chosen note kept until
+  another is chosen or it goes, the outdated message only when none of the
+  old lines are left, and a note on its way into view let go when another
+  file, comparison, or worktree is chosen first. `tests/review.test.ts`
+  covers `noteSpan`, `quotedParts`, and `noteLinesShown`.
+  `tests/review-panel-browser.test.ts` in Chromium, at the harness's
+  1300 by 900, which is too narrow for the panel beside the diff: the panel
+  is hidden and the Review button names the count; the button opens the
+  panel over the diff with the keyboard on Close; Escape and Close each
+  close it and give the keyboard back to the button; choosing a reference
+  closes it, shows the file, marks the line, and the mark goes after a
+  moment; deleting a note gives the keyboard to the next reference, and the
+  last one going takes the panel and its button and gives the keyboard to
+  the diff.
+- `bun run dev:web` in headless Chrome 151, driven with puppeteer-core on
+  the sample data, nine notes on four files:
+  - 1440 by 900: the panel is 300px at the right of the diff. Scrolling its
+    list leaves the diff's scroll and the file list where they were.
+    Choosing a reference showed its file, marked its 3 lines, focused its
+    note, and the marks went after 1.5 seconds while the reference stayed
+    chosen. Delete gave the keyboard to the next reference, Cancel in Edit
+    to the note's reference, Keep to Discard, and Discard of the last
+    notes to the diff.
+  - 1100 by 760: the panel is hidden and the Review button shows. It opened
+    the panel over the diff with the keyboard on Close; Escape closed it
+    and gave the keyboard back to the button; choosing a reference closed
+    it and showed the lines.
+  - 620 by 760, the stacked layout: the panel opens over the diff, 300px.
+  - No page errors, and the page never scrolled sideways at any size.
+- Not yet checked: the desktop window by eye, and a screen reader.

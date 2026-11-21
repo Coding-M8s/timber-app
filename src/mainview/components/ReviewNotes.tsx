@@ -1,14 +1,16 @@
-import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import { type KeyboardEvent, type RefObject, useEffect, useId, useRef, useState } from "react";
 import { promptTarget, reviewWaiting, runningAgents, waitsOnPerson } from "../agent-sessions";
 import { AgentChoices } from "./AgentChoices";
 import { estimateTerminalSize } from "./TerminalPanel";
 import { describeAgentCommand } from "../../shared/agent";
-import { type ReviewNote, noteLocation } from "../../shared/review";
+import { type ReviewNote, noteLocation, noteSpan, quotedParts } from "../../shared/review";
+import { cleanLine } from "../../shared/safe-text";
+import { splitPath } from "../changes-format";
 import { PASTE_TEXT_LIMIT, type PasteResult } from "../../shared/terminal";
 import { useAppState, useStore } from "../store/react";
 import {
-	NEW_REVIEW_AGENT_NOTE, NO_REVIEW_AGENT, REVIEW_PASTE_NOTE, REVIEW_WAITS_WARNING, describeNewReviewAgent, describeNoteCount, noteSummary,
-	reviewAlreadyWaiting, reviewTooLong,
+	CLOSE_REVIEW, EMPTY_LINE, NEW_REVIEW_AGENT_NOTE, NO_REVIEW_AGENT, OUTDATED_REFERENCE, REVIEW_PASTE_NOTE, REVIEW_TOGGLE_TITLE, REVIEW_WAITS_WARNING,
+	describeNewReviewAgent, describeNoteCount, describeReference, reviewAlreadyWaiting, reviewTooLong,
 } from "../review-format";
 
 /** The radio value of the "new agent" choice; session ids never take this form. */
@@ -123,88 +125,185 @@ export function InlineNote({ worktree, note }: { worktree: string; note: ReviewN
 	);
 }
 
-/** One note in the Review list: where it is and its first line, which shows it in the diff, then Edit and Delete. */
-function ReviewItem({ worktree, note, onShow }: { worktree: string; note: ReviewNote; onShow: () => void }) {
+/** The reference a note leads with: where it is and its first line, as a button that shows those lines in the diff. */
+function NoteReference({ note, chosen, onShow }: { note: ReviewNote; chosen: boolean; onShow: () => void }) {
+	const location = noteLocation(note);
+	const { folder, name } = splitPath(cleanLine(note.file.path));
+	const { lines, removed } = noteSpan(note);
+	const first = quotedParts(note.lines[0]!);
+	return (
+		<button
+			type="button"
+			className={`review-ref${chosen ? " chosen" : ""}`}
+			data-note-id={note.id}
+			aria-current={chosen ? "true" : undefined}
+			aria-label={describeReference(location, note.outdated)}
+			title={note.outdated ? OUTDATED_REFERENCE : `Show ${location}`}
+			onClick={onShow}
+		>
+			<span className="review-ref-place">
+				<span className="review-ref-path">
+					{folder !== "" && <span className="review-ref-folder">{folder}/</span>}
+					<span className="review-ref-name">{name}:{lines}</span>
+				</span>
+				{note.outdated
+					? <span className="review-ref-tag outdated">outdated</span>
+					: removed && <span className="review-ref-tag">{note.lines.length === 1 ? "removed line" : "removed lines"}</span>}
+			</span>
+			<span className="review-ref-line">
+				<span className={`review-ref-marker ${note.lines[0]!.kind}`}>{first.marker}</span>
+				{first.text.trim() === "" ? <span className="review-ref-empty">{EMPTY_LINE}</span> : first.text}
+			</span>
+		</button>
+	);
+}
+
+/** One note in the Review panel: its reference, what was written, then Edit and Delete. */
+function ReviewItem({ worktree, note, chosen, problem, onShow, onDelete }: {
+	worktree: string;
+	note: ReviewNote;
+	chosen: boolean;
+	problem: string | null;
+	onShow: () => void;
+	onDelete: () => void;
+}) {
 	const store = useStore();
 	const [editing, setEditing] = useState(false);
+	const item = useRef<HTMLLIElement>(null);
 	const location = noteLocation(note);
-	if (editing) {
-		return (
-			<li className="review-item">
-				<p className="review-location">{location}</p>
+	// After editing, the keyboard comes back to the note's reference rather than falling to the top of the window.
+	const stopEditing = () => {
+		setEditing(false);
+		setTimeout(() => item.current?.querySelector<HTMLElement>(".review-ref")?.focus());
+	};
+	return (
+		<li ref={item} className="review-item">
+			<NoteReference note={note} chosen={chosen} onShow={onShow} />
+			{editing ? (
 				<NoteForm
 					label={`Note on ${location}`}
 					initial={note.text}
 					onSave={text => {
 						const problem = store.editReviewNote(worktree, note.id, text);
-						if (problem === null) setEditing(false);
+						if (problem === null) stopEditing();
 						return problem;
 					}}
-					onCancel={() => setEditing(false)}
+					onCancel={stopEditing}
 				/>
-			</li>
-		);
-	}
-	return (
-		<li className="review-item">
-			<button
-				type="button"
-				className="review-note"
-				title={note.outdated ? "These lines changed or left the diff since the note. It is sent with the lines as they were." : `Show ${location}`}
-				onClick={onShow}
-			>
-				<span className="review-location">{location}</span>
-				{note.outdated && <span className="note-outdated">outdated</span>}
-				<span className="review-summary">{noteSummary(note.text)}</span>
-			</button>
-			<div className="review-actions">
-				<button type="button" className="text-button" aria-label={`Edit the note on ${location}`} onClick={() => setEditing(true)}>Edit</button>
-				<button type="button" className="text-button" aria-label={`Delete the note on ${location}`} onClick={() => store.deleteReviewNote(worktree, note.id)}>Delete</button>
-			</div>
+			) : (
+				<>
+					<p className="review-text">{note.text}</p>
+					<div className="note-buttons">
+						<button type="button" className="text-button" aria-label={`Edit the note on ${location}`} onClick={() => setEditing(true)}>Edit</button>
+						<button type="button" className="text-button" aria-label={`Delete the note on ${location}`} onClick={onDelete}>Delete</button>
+					</div>
+				</>
+			)}
+			{problem !== null && <p className="review-problem" aria-hidden="true">{problem}</p>}
 		</li>
 	);
 }
 
 /**
- * The review of a worktree: every note it has, on any file and in either
- * comparison, with Send review and Discard. Nothing is sent from here: Send
- * review opens the preview.
+ * The review of a worktree, in a panel beside the diff: every note it has,
+ * on any file and in either comparison, each led by a reference to its
+ * lines, with Send review and Discard below. Nothing is sent from here:
+ * Send review opens the preview. In a narrow window the panel opens over
+ * the diff (`open`), and `onClose` closes it.
  */
-export function ReviewList({ worktree }: { worktree: string }) {
+export function ReviewPanel({ worktree, id, open, onClose, onShown, onGone }: {
+	worktree: string;
+	id: string;
+	open: boolean;
+	onClose: () => void;
+	/** A reference was chosen. */
+	onShown: () => void;
+	/** The last note went, and the keyboard needs somewhere to go. */
+	onGone: () => void;
+}) {
 	const store = useStore();
 	const state = useAppState();
 	const notes = state.reviews[worktree] ?? [];
-	const [problem, setProblem] = useState<string | null>(null);
+	const panel = useRef<HTMLElement>(null);
+	const closeButton = useRef<HTMLButtonElement>(null);
+	const discardButton = useRef<HTMLButtonElement>(null);
+	const [problem, setProblem] = useState<{ id: string; text: string } | null>(null);
 	const [discarding, setDiscarding] = useState(false);
+	const chosen = state.chosenNote?.worktree === worktree ? state.chosenNote.id : null;
+
+	// Opened over the diff, the keyboard goes into the panel.
+	useEffect(() => {
+		if (open) closeButton.current?.focus();
+	}, [open]);
+
+	// A review that went some other way, such as sent, does not come back asking to be discarded.
+	useEffect(() => {
+		if (notes.length === 0) setDiscarding(false);
+	}, [notes.length]);
+
 	if (notes.length === 0) return null;
+
+	const remove = (index: number) => {
+		const next = notes[index + 1] ?? notes[index - 1];
+		store.deleteReviewNote(worktree, notes[index]!.id);
+		// The keyboard goes to the next note's reference, or the one before, rather than falling to the top of the window.
+		if (next) setTimeout(() => panel.current?.querySelector<HTMLElement>(`.review-ref[data-note-id="${CSS.escape(next.id)}"]`)?.focus());
+		else onGone();
+	};
+
 	return (
-		<section className="review" aria-label="Review">
-			<h2 className="change-group-title">
-				Review
-				<span className="change-group-count" aria-hidden="true">{notes.length}</span>
-				<span className="visually-hidden">{describeNoteCount(notes.length)}</span>
-			</h2>
+		<aside ref={panel} id={id} className={`review-panel${open ? " open" : ""}`} aria-label="Review">
+			<div className="review-head">
+				<h2 className="change-group-title">
+					Review
+					<span className="change-group-count" aria-hidden="true">{notes.length}</span>
+					<span className="visually-hidden">{describeNoteCount(notes.length)}</span>
+				</h2>
+				<button ref={closeButton} type="button" className="text-button review-close" aria-label={CLOSE_REVIEW} onClick={onClose}>Close</button>
+			</div>
 			<ul className="review-items">
-				{notes.map(note => (
+				{notes.map((note, index) => (
 					<ReviewItem
 						key={note.id}
 						worktree={worktree}
 						note={note}
-						onShow={() => void store.showReviewNote(worktree, note.id).then(setProblem)}
+						chosen={note.id === chosen}
+						problem={problem?.id === note.id ? problem.text : null}
+						onShow={() => {
+							setProblem(null);
+							// Over the diff, the panel closes to show the lines; when they cannot show, it stays open to say why.
+							void store.showReviewNote(worktree, note.id).then(text => {
+								setProblem(text === null ? null : { id: note.id, text });
+								if (text === null) onShown();
+							});
+						}}
+						onDelete={() => remove(index)}
 					/>
 				))}
 			</ul>
-			{problem !== null && <p className="review-problem" role="status">{problem}</p>}
+			{/* Always there, so what choosing a reference found is heard; the note's box shows it too. */}
+			<p className="visually-hidden" role="status">{problem?.text ?? ""}</p>
 			{discarding ? (
 				<div className="review-bar">
 					<span className="review-question">Discard {describeNoteCount(notes.length)}?</span>
-					<button type="button" className="button quiet" autoFocus onClick={() => setDiscarding(false)}>Keep</button>
+					<button
+						type="button"
+						className="button quiet"
+						autoFocus
+						onClick={() => {
+							setDiscarding(false);
+							setTimeout(() => discardButton.current?.focus());
+						}}
+					>
+						Keep
+					</button>
 					<button
 						type="button"
 						className="button danger"
 						onClick={() => {
 							setDiscarding(false);
 							store.discardReview(worktree);
+							onGone();
 						}}
 					>
 						Discard
@@ -212,11 +311,39 @@ export function ReviewList({ worktree }: { worktree: string }) {
 				</div>
 			) : (
 				<div className="review-bar">
-					<button type="button" className="text-button" onClick={() => setDiscarding(true)}>Discard</button>
+					<button ref={discardButton} type="button" className="text-button" onClick={() => setDiscarding(true)}>Discard</button>
 					<button type="button" className="button primary" onClick={() => store.openDialog({ kind: "send-review", worktree })}>Send review</button>
 				</div>
 			)}
-		</section>
+		</aside>
+	);
+}
+
+/**
+ * The button that opens the Review panel over the diff. It shows only in a
+ * narrow window, where the panel does not fit beside the diff.
+ */
+export function ReviewToggle({ count, panel, open, onToggle, button }: {
+	count: number;
+	panel: string;
+	open: boolean;
+	onToggle: () => void;
+	button: RefObject<HTMLButtonElement | null>;
+}) {
+	return (
+		<button
+			ref={button}
+			type="button"
+			className="button quiet review-toggle"
+			aria-expanded={open}
+			aria-controls={panel}
+			aria-label={`Review, ${describeNoteCount(count)}`}
+			title={REVIEW_TOGGLE_TITLE}
+			onClick={onToggle}
+		>
+			Review
+			<span className="change-group-count" aria-hidden="true">{count}</span>
+		</button>
 	);
 }
 

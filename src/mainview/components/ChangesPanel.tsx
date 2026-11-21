@@ -1,7 +1,7 @@
-import { Fragment, type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import { Fragment, type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import type { Comparison, DiffLine, DiffSection, FileChange, FileChangeTarget, FileDiffResult } from "../../shared/file-changes";
-import { type NoteDraft, type NotedLine, type ReviewNote, chooseNoteLine, notableLine } from "../../shared/review";
-import { InlineNote, NoteForm, ReviewList } from "./ReviewNotes";
+import { type NoteDraft, type ReviewNote, chooseNoteLine, notableLine, sameNotedLine } from "../../shared/review";
+import { InlineNote, NoteForm, ReviewPanel, ReviewToggle } from "./ReviewNotes";
 import { sameFileChange } from "../../shared/file-changes";
 import type { Repository, Worktree } from "../../shared/model";
 import {
@@ -16,6 +16,9 @@ import { useAppState, useStore } from "../store/react";
 import { type ChangesView, changesBusy } from "../store/state";
 import { StatusGlyph } from "./StatusGlyph";
 import { EditorIcon, useOpenInEditor } from "./OpenInEditor";
+
+/** How long the lines of a chosen reference stay marked in the diff. */
+export const SHOWN_LINES_MS = 1500;
 
 export const FOLDER_MISSING_CHANGES = "The worktree's folder is missing, so there are no changes to read.";
 
@@ -125,6 +128,8 @@ interface Noting {
 	file: FileChangeTarget;
 	/** The kept notes on this file in this comparison. */
 	notes: readonly ReviewNote[];
+	/** The note whose reference was just chosen: its lines are marked for a moment. */
+	shown: ReviewNote | null;
 	draft: NoteDraft | null;
 	/** The first line that can take a note, the one tab stop among the line numbers; the arrows reach the others. */
 	tabStop: { section: number; hunk: number; line: number } | null;
@@ -138,9 +143,6 @@ interface Noting {
 
 /** Names a line number button, so the keyboard can be given back to it. */
 const lineTarget = (section: number, hunk: number, line: number) => `${section}-${hunk}-${line}`;
-
-const sameNotedLine = (noted: NotedLine, line: DiffLine) =>
-	noted.kind === line.kind && noted.text === line.text && noted.oldLine === line.oldLine && noted.newLine === line.newLine;
 
 /** Words for a line, to say what a note goes on. */
 function lineWords(line: DiffLine): string {
@@ -181,9 +183,10 @@ function Section({ section, index, noting }: { section: DiffSection; index: numb
 							const tabStop = stop !== null && stop.section === index && stop.hunk === hunkIndex && stop.line === lineIndex;
 							const here = noting.notes.filter(note => sameNotedLine(note.lines[note.lines.length - 1]!, line));
 							const chosen = drafting && lineIndex >= low && lineIndex <= high;
+							const shown = noting.shown !== null && noting.shown.lines.some(noted => sameNotedLine(noted, line));
 							return (
 								<Fragment key={lineIndex}>
-									<div className={`diff-line ${line.kind}${chosen ? " noting" : ""}`}>
+									<div className={`diff-line ${line.kind}${chosen ? " noting" : ""}${shown ? " shown" : ""}`}>
 										{notable ? (
 											<button
 												type="button"
@@ -291,33 +294,40 @@ function OpenFileButton({ repository, worktree, file }: { repository: string; wo
 	);
 }
 
-/** The diff of the selected file, under a line that names it. */
-function DiffPane({ repository, worktree, view }: { repository: string; worktree: Worktree; view: ChangesView }) {
+/** The diff of the selected file, under a line that names it. `toggle` opens the Review panel in a narrow window. */
+function DiffPane({ repository, worktree, view, toggle }: { repository: string; worktree: Worktree; view: ChangesView; toggle: ReactNode }) {
 	const store = useStore();
 	const state = useAppState();
 	const body = useRef<HTMLDivElement>(null);
 	const [draft, setDraft] = useState<NoteDraft | null>(null);
 	const selected = view.selected;
 	const inView = state.noteInView;
+	const inViewNote = inView !== null && inView.worktree === worktree.id
+		? state.reviews[worktree.id]?.find(note => note.id === inView.id) ?? null
+		: null;
+	// The note this effect brought into view last, so that reading the diff again does not scroll to it again.
+	const scrolled = useRef<object | null>(null);
 
-	// A note chosen in the Review list comes into view once its file's diff shows.
+	// A reference chosen in the Review panel comes into view once its file's diff shows, and its lines stay marked for a moment.
 	useEffect(() => {
-		if (inView === null || inView.worktree !== worktree.id || view.diff === null) return;
-		const element = body.current?.querySelector<HTMLElement>(`[data-note-id="${CSS.escape(inView.id)}"]`);
-		// An outdated note whose lines left the diff has nowhere to show: the Review list said so.
-		if (!element) {
-			store.reviewNoteShown();
-			return;
-		}
-		element.scrollIntoView({ block: "center" });
-		element.focus();
-		store.reviewNoteShown();
-	}, [inView, view.diff, worktree.id, store]);
+		if (inView === null || inView.worktree !== worktree.id || view.diff === null || scrolled.current === inView) return;
+		if (inViewNote !== null && (selected === null || !sameFileChange(selected, inViewNote.file))) return;
+		scrolled.current = inView;
+		const first = body.current?.querySelector<HTMLElement>(".diff-line.shown") ?? null;
+		const note = body.current?.querySelector<HTMLElement>(`[data-note-id="${CSS.escape(inView.id)}"]`) ?? null;
+		// An outdated note whose lines all left the diff has nowhere to show: the Review panel said so.
+		(first ?? note)?.scrollIntoView({ block: "center" });
+		(note ?? first?.querySelector<HTMLElement>(".diff-note-target") ?? null)?.focus({ preventScroll: true });
+		setTimeout(() => {
+			if (store.getState().noteInView === inView) store.reviewNoteShown();
+		}, SHOWN_LINES_MS);
+	}, [inView, inViewNote, selected, view.diff, worktree.id, store]);
 
 	const file = selected === null ? undefined : view.files?.find(candidate => sameFileChange(candidate, selected));
 	if (!file) {
 		return (
 			<section className="changes-diff empty" aria-label="Diff">
+				{toggle !== null && <div className="diff-title review-toggle-bar">{toggle}</div>}
 				<p className="empty-text">{view.files !== null && view.files.length > 0 ? "Select a file to see its changes." : ""}</p>
 			</section>
 		);
@@ -330,6 +340,7 @@ function DiffPane({ repository, worktree, view }: { repository: string; worktree
 		comparison,
 		file,
 		notes: (state.reviews[worktree.id] ?? []).filter(note => note.comparison === comparison && sameFileChange(note.file, file)),
+		shown: inViewNote !== null && inViewNote.comparison === comparison && sameFileChange(inViewNote.file, file) ? inViewNote : null,
 		draft: draft !== null && draft.key === fileKey(file) && draft.comparison === comparison ? draft : null,
 		tabStop: null,
 		choose(section, hunk, hunkIndex, line, extend) {
@@ -353,6 +364,7 @@ function DiffPane({ repository, worktree, view }: { repository: string; worktree
 					{file.path}
 				</span>
 				<span className="diff-area">{describeFileArea(file)}</span>
+				{toggle}
 				{onDisk && (
 					<button type="button" className="button quiet diff-editor" title={`Show ${file.path} as it is now, read-only`} onClick={() => store.openFile(worktree.id, file.path)}>
 						View file
@@ -381,11 +393,28 @@ export function ChangesPanel({ repository, worktree }: { repository: Repository;
 	const refreshing = useHeld(busy, REFRESH_HOLD_MS);
 	const listed = state.changes?.worktree === worktree.id && state.changes.files !== null;
 	const overList = useRefreshSpan(worktree.id, refreshing, listed).overList;
+	const panelId = useId();
+	const toggleButton = useRef<HTMLButtonElement>(null);
+	// The worktree whose panel is open over the diff: another worktree starts with its panel closed.
+	const [openFor, setOpenFor] = useState<string | null>(null);
+	const noteCount = state.reviews[worktree.id]?.length ?? 0;
+	// Over the diff only while there are notes: the next first note does not open it again.
+	const open = openFor === worktree.id && noteCount > 0;
+	useEffect(() => {
+		if (noteCount === 0) setOpenFor(null);
+	}, [noteCount]);
 
 	// `worktree` is a new object after every reload of its repository, so this follows the rest of the status.
 	useEffect(() => {
 		if (!missing) void store.readChanges(repository.path, worktree.id);
 	}, [store, repository.path, worktree, missing]);
+
+	/** Close the panel over the diff, and give the keyboard back to the button that opens it, when that shows. */
+	function closeReview() {
+		setOpenFor(null);
+		const button = toggleButton.current;
+		if (button !== null && button.offsetParent !== null) button.focus();
+	}
 
 	if (missing) {
 		return (
@@ -463,9 +492,41 @@ export function ChangesPanel({ repository, worktree }: { repository: Repository;
 					)
 					: <FileList view={{ ...view, files }} dimmed={dimmed} />)}
 				{view?.more === true && <p className="changes-more">{MORE_FILES_NOTE}</p>}
-				<ReviewList worktree={worktree.id} />
 			</div>
-			{view !== null && <DiffPane repository={repository.path} worktree={worktree} view={view} />}
+			{view !== null && (
+				<div
+					className="changes-main"
+					onKeyDown={event => {
+						// Escape closes the panel over the diff. A note's field takes Escape first, to cancel.
+						// Only while it shows: in a wide window the panel is beside the diff, and Escape is left alone.
+						if (event.key !== "Escape" || !open || toggleButton.current?.offsetParent == null) return;
+						event.preventDefault();
+						closeReview();
+					}}
+				>
+					<DiffPane
+						repository={repository.path}
+						worktree={worktree}
+						view={view}
+						toggle={noteCount > 0
+							? <ReviewToggle count={noteCount} panel={panelId} open={open} button={toggleButton} onToggle={() => (open ? closeReview() : setOpenFor(worktree.id))} />
+							: null}
+					/>
+					<ReviewPanel
+						key={worktree.id}
+						worktree={worktree.id}
+						id={panelId}
+						open={open}
+						onClose={closeReview}
+						onShown={() => setOpenFor(null)}
+						onGone={() => {
+							setOpenFor(null);
+							// The panel goes with its last note: the keyboard goes to the diff.
+							setTimeout(() => (document.querySelector<HTMLElement>(".changes-main .diff-body") ?? document.querySelector<HTMLElement>('.change-file[tabindex="0"]'))?.focus());
+						}}
+					/>
+				</div>
+			)}
 		</div>
 	);
 }

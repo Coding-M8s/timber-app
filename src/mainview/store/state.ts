@@ -433,8 +433,10 @@ export interface AppState {
 	 * takes its notes with it.
 	 */
 	reviews: Readonly<Record<string, readonly ReviewNote[]>>;
-	/** The note the Changes tab brings into view once its diff shows, after the person chose it in the Review list. */
+	/** The note the Changes tab brings into view once its diff shows, after the person chose its reference in the Review panel. Its lines are marked until it is cleared, a moment after. */
 	noteInView: { worktree: string; id: string } | null;
+	/** The note whose reference was chosen last in the Review panel. Its reference stays marked until another is chosen or it goes. */
+	chosenNote: { worktree: string; id: string } | null;
 	/** The chops of the selected worktree's repository as last read. Null before the first read. */
 	chops: ChopsView | null;
 	/**
@@ -574,6 +576,7 @@ export const initialState: AppState = {
 	files: {},
 	reviews: {},
 	noteInView: null,
+	chosenNote: null,
 	chops: null,
 	ports: {},
 	portClashes: [],

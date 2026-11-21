@@ -84,28 +84,44 @@ function span(numbers: readonly number[]): string {
 }
 
 /**
+ * The line numbers a note is on, as `3` or `3-5`, with the numbers of the
+ * file as it is now. Lines that are only removed have only old numbers:
+ * `removed` says so.
+ */
+export function noteSpan(note: Pick<ReviewNote, "lines">): { lines: string; removed: boolean } {
+	const now = note.lines.flatMap(line => line.newLine === null ? [] : [line.newLine]);
+	if (now.length > 0) return { lines: span(now), removed: false };
+	return { lines: span(note.lines.flatMap(line => line.oldLine === null ? [] : [line.oldLine])), removed: true };
+}
+
+/**
  * Where a note is, as `path:line` or `path:first-last`, with the numbers of
  * the file as it is now. Lines that are only removed have only old numbers,
  * and say so. The path is cleaned, since a file's name can hold anything.
  */
 export function noteLocation(note: Pick<ReviewNote, "file" | "lines">): string {
 	const path = cleanLine(note.file.path);
-	const now = note.lines.flatMap(line => line.newLine === null ? [] : [line.newLine]);
-	if (now.length > 0) return `${path}:${span(now)}`;
-	const before = note.lines.flatMap(line => line.oldLine === null ? [] : [line.oldLine]);
-	const removed = note.lines.length === 1 ? "removed line" : "removed lines";
-	return `${path}:${span(before)} (${removed}, numbered as before the change)`;
+	const { lines, removed } = noteSpan(note);
+	if (!removed) return `${path}:${lines}`;
+	const words = note.lines.length === 1 ? "removed line" : "removed lines";
+	return `${path}:${lines} (${words}, numbered as before the change)`;
 }
 
 const MARKERS: Record<NotedLine["kind"], string> = { context: " ", added: "+", removed: "-" };
 
-/** One noted line as it is quoted: `> ` and Git's marker, then the line, cleaned and cut. */
-export function quoteLine(line: NotedLine): string {
+/** One noted line as it is shown: Git's marker, and the line, cleaned and cut. */
+export function quotedParts(line: NotedLine): { marker: string; text: string } {
 	// A file with Windows line endings has a carriage return at the end of each line.
 	const text = cleanLine(line.text.endsWith("\r") ? line.text.slice(0, -1) : line.text);
 	// Half of a surrogate pair left by the cut becomes U+FFFD: a lone one would make the review unsendable.
 	const shown = text.length > QUOTE_LENGTH_LIMIT ? `${text.slice(0, QUOTE_LENGTH_LIMIT).toWellFormed()} [cut]` : text;
-	return `> ${MARKERS[line.kind]}${shown}`;
+	return { marker: MARKERS[line.kind], text: shown };
+}
+
+/** One noted line as it is quoted: `> ` and Git's marker, then the line, cleaned and cut. */
+export function quoteLine(line: NotedLine): string {
+	const { marker, text } = quotedParts(line);
+	return `> ${marker}${text}`;
 }
 
 export const OUTDATED_MARK = "(outdated: these lines changed or left the diff since the note)";
@@ -125,8 +141,24 @@ export function buildReviewMessage(notes: readonly ReviewNote[]): string {
 	return [title, ...blocks].join("\n\n");
 }
 
-const sameLine = (noted: NotedLine, line: DiffLine) =>
+/** Whether a line of a diff is a noted line as it was: the same kind, text, and numbers. */
+export const sameNotedLine = (noted: NotedLine, line: DiffLine) =>
 	noted.kind === line.kind && noted.text === line.text && noted.oldLine === line.oldLine && noted.newLine === line.newLine;
+
+/** Every line of a diff, in order. A binary or too large diff has none. */
+function diffLines(diff: FileDiff): DiffLine[] {
+	return diff.kind === "text" ? diff.sections.flatMap(section => section.hunks.flatMap(hunk => hunk.lines)) : [];
+}
+
+/**
+ * Whether any of a note's lines is in `diff` as it was. An outdated note's
+ * old lines may still be there in part; numbers that moved do not count, so
+ * a line elsewhere with the same text is never taken for it.
+ */
+export function noteLinesShown(note: Pick<ReviewNote, "lines">, diff: FileDiff): boolean {
+	const lines = diffLines(diff);
+	return note.lines.some(noted => lines.some(line => sameNotedLine(noted, line)));
+}
 
 /**
  * The notes after the diff of `file` in `comparison` was read again: a note
@@ -137,11 +169,11 @@ const sameLine = (noted: NotedLine, line: DiffLine) =>
  */
 export function markOutdated(notes: readonly ReviewNote[], comparison: Comparison, file: FileChangeTarget, diff: FileDiff): readonly ReviewNote[] {
 	if (diff.kind === "binary" || diff.kind === "too-large") return notes;
-	const lines = diff.kind === "text" ? diff.sections.flatMap(section => section.hunks.flatMap(hunk => hunk.lines)) : [];
+	const lines = diffLines(diff);
 	let changed = false;
 	const next = notes.map(note => {
 		if (note.outdated || note.comparison !== comparison || !sameFileChange(note.file, file)) return note;
-		const there = note.lines.every(noted => lines.some(line => sameLine(noted, line)));
+		const there = note.lines.every(noted => lines.some(line => sameNotedLine(noted, line)));
 		if (there) return note;
 		changed = true;
 		return { ...note, outdated: true };
