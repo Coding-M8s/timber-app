@@ -60,18 +60,24 @@ export interface TerminalSession {
 	 */
 	children: ChildStatus[];
 	/**
-	 * For an agent started with a prompt chop, how the prompt stands: waiting
-	 * for the agent to be ready, sent, or not sent with the reason. Left out
-	 * for every other session.
+	 * For an agent started with a prompt chop, or with a review to paste
+	 * (`OpenTerminalRequest.review`), how that text stands: waiting for the
+	 * agent to be ready, sent, or not sent with the reason. Left out for
+	 * every other session.
 	 */
 	prompt?: PromptDelivery;
 }
 
-/** How a prompt chop's text stands in the agent session started for it. */
-export type PromptDelivery =
+/**
+ * How a prompt chop's text, or a review, stands in the agent session started
+ * for it. `what` is "review" for a review, which is pasted with no Enter, so
+ * "sent" means pasted; it is left out for a prompt chop.
+ */
+export type PromptDelivery = (
 	| { state: "pending" }
 	| { state: "sent" }
-	| { state: "not-sent"; message: string };
+	| { state: "not-sent"; message: string }
+) & { what?: "review" };
 
 /** Start another session in a worktree. Named as for "Open in editor". */
 export interface OpenTerminalRequest {
@@ -134,6 +140,17 @@ export interface OpenTerminalRequest {
 	 * arena attempt.
 	 */
 	restore?: RestoreTag;
+	/**
+	 * A review to paste into the new agent's input once it is ready, as a
+	 * prompt chop waits for it (`isReadyForPrompt` in ./agent-prompt.ts): one
+	 * bracketed paste, with no Enter, so nothing is sent until the person
+	 * presses Enter there. Only with `agent`, an agent from Settings; not
+	 * with `timberWorktreeSetup`, `arenaAttempt`, `workflowAgent`, `resume`,
+	 * or `restore`. A text `pasteProblem` refuses, or longer than
+	 * `PASTE_TEXT_LIMIT`, starts nothing. The session's `prompt` says how it
+	 * stands, with `what: "review"`.
+	 */
+	review?: string;
 }
 
 export type OpenTerminalResult =
@@ -474,7 +491,12 @@ export type PasteResult =
 	| { outcome: "gone"; message: string }
 	/** The session is not an agent's, where only an agent's may take it, such as a review. */
 	| { outcome: "not-agent"; message: string }
-	/** The program has not asked for bracketed paste and the text has a line break, which would act as Enter. Nothing was written. */
+	/**
+	 * The program has not asked for bracketed paste and the text has a line
+	 * break, which would act as Enter, or the session is an agent still
+	 * waiting for the prompt chop or review it was started with, which may be
+	 * on a first-run screen. Nothing was written.
+	 */
 	| { outcome: "not-ready"; message: string }
 	/** The text cannot be pasted (`pasteProblem`). Nothing was written. */
 	| { outcome: "refused"; message: string };

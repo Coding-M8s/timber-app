@@ -12,7 +12,7 @@ import {
 	type OpenTerminalRequest, type PasteResult, chopRunBytes, createPasteModeScanner, pasteProblem, promptBytes,
 } from "../../shared/terminal";
 import { recordsForWindow } from "../../shared/session-status";
-import { PROMPT_STILL_STARTING } from "../../shared/agent-prompt";
+import { PROMPT_STILL_STARTING, promptEndedMessage } from "../../shared/agent-prompt";
 import { PROBE_ANSWER, type StatusRecords, type StatusScanner, createStatusRecords, createStatusScanner } from "../../shared/program-status";
 import {
 	type LiveSession, type RestoreTag, type SavedSessions, buildSavedSessions, createSavedCarry, isConversationId, isRestoreTag, parseSavedSessions, serializeSavedSessions,
@@ -30,7 +30,7 @@ export type TerminalCapabilities = Pick<Engine,
 >;
 
 /** A chop to start a session with, as the main process's `ChopInput`. */
-export type MockChopInput = { kind: "command"; name: string; text: string } | { kind: "prompt"; text: string };
+export type MockChopInput = { kind: "command"; name: string; text: string } | { kind: "prompt"; text: string; review?: boolean };
 
 /**
  * What `runChop` uses, as the main process's `TerminalSessions` does: start a
@@ -95,6 +95,14 @@ export interface TerminalControls {
 	conversationOf(id: string): string | null;
 	/** The most openTerminal requests that were being answered at once. */
 	mostOpeningAtOnce(): number;
+	/**
+	 * Act out new agents that are not ready at once, such as on a first-run
+	 * screen: while held, an agent started with a prompt chop or a review
+	 * keeps it pending until `agentReady`. Not held at first.
+	 */
+	holdNewAgents(hold: boolean): void;
+	/** Act out a held agent becoming ready: it gets its prompt or review now. */
+	agentReady(id: string): void;
 }
 
 export interface MockTerminalOptions {
@@ -128,6 +136,8 @@ interface Acted {
 	restored: RestoreTag | null;
 	/** Every prompt sent, with Enter after it, in order, as given. */
 	prompts: string[];
+	/** The prompt or review this agent was started with, while it waits to be ready. */
+	waiting: { text: string; review: boolean } | null;
 }
 
 /** What a pretend setup script prints when it fails. */
@@ -203,6 +213,7 @@ export function createMockTerminals(
 	let selectedId: string | null = null;
 	let opening = 0;
 	let mostOpening = 0;
+	let holdAgents = false;
 
 	function saveSessions(): void {
 		const running = [...sessions.values()].flatMap((acted): LiveSession[] => {
@@ -248,7 +259,10 @@ export function createMockTerminals(
 		if (acted.session.state.kind !== "running") return;
 		acted.records.exited();
 		acted.pasteMode.reset();
-		acted.session = { ...acted.session, state: { kind: "exited", exitCode, signal: null }, ...recordsForWindow(acted.records) };
+		const unsent = acted.waiting;
+		acted.waiting = null;
+		const dropped = unsent === null ? {} : { prompt: { state: "not-sent" as const, message: promptEndedMessage(acted.session.name, unsent.review ? "review" : "prompt"), ...(unsent.review ? { what: "review" as const } : {}) } };
+		acted.session = { ...acted.session, state: { kind: "exited", exitCode, signal: null }, ...recordsForWindow(acted.records), ...dropped };
 		announce({ id: acted.session.id, session: acted.session });
 	}
 
@@ -296,6 +310,15 @@ export function createMockTerminals(
 		}
 		if (chop?.kind === "command" && (request.agent !== undefined || request.timberWorktreeSetup !== undefined || request.arenaAttempt !== undefined || request.workflowAgent !== undefined)) {
 			return { outcome: "failed", message: "A chop runs in a shell, not with an agent, setup, a workflow, or an arena attempt. Nothing was started." };
+		}
+		// As the main process does: a review from the window goes to a fresh agent from Settings only, as a prompt with no Enter.
+		if (request.review !== undefined) {
+			const fresh = chop === undefined && typeof request.agent === "string" && request.timberWorktreeSetup === undefined && request.arenaAttempt === undefined
+				&& request.workflowAgent === undefined && request.resume === undefined && request.restore === undefined;
+			if (!fresh) return { outcome: "failed", message: "A review goes to a new agent from Settings only. Nothing was started." };
+			const problem = pasteProblem(request.review);
+			if (problem !== null) return { outcome: "failed", message: `The review cannot be pasted: ${problem} Nothing was started.` };
+			chop = { kind: "prompt", text: request.review, review: true };
 		}
 		// As the main process does: only names are read from the request, the workflow's and the pick's.
 		const workflowAgent = request.workflowAgent;
@@ -426,12 +449,13 @@ export function createMockTerminals(
 			state: { kind: "running" },
 			status: null,
 			children: [],
-			...(chop?.kind === "prompt" ? { prompt: { state: "pending" as const } } : {}),
+			...(chop?.kind === "prompt" ? { prompt: { state: "pending" as const, ...(chop.review ? { what: "review" as const } : {}) } } : {}),
 		};
 		const acted: Acted = {
 			session, scrollback: createScrollback(), line: "", typed: "", size: { cols: request.cols, rows: request.rows }, drawn: 0,
 			scanner: createStatusScanner(), records: createStatusRecords(), answers: [], pasteMode: createPasteModeScanner(), pasted: [], prompts: [],
 			agent: agent?.name ?? null, resumable, conversation, renamed: savedName !== null, restored,
+			waiting: chop?.kind === "prompt" ? { text: chop.text, review: chop.review === true } : null,
 		};
 		sessions.set(session.id, acted);
 		announce({ id: session.id, session });
@@ -448,21 +472,25 @@ export function createMockTerminals(
 		// A pretend agent asks for bracketed paste, as Claude Code and Codex do, so a pasted review keeps its line breaks.
 		print(acted, `${note}${greeting}${launch ? "\x1b[?2004h" : ""}${prompt(acted)}`);
 		// The pretend shell never asks for bracketed paste, so a chop is typed line by line, as into dash or PowerShell.
-		// The pretend agent is ready at once: bracketed paste is on and nothing more is printed. The prompt goes a moment later.
-		if (chop?.kind === "prompt") {
-			later(() => {
-				if (acted.session.state.kind !== "running" || !sessions.has(acted.session.id)) return;
-				const sent = deliver(acted, chop.text, true);
-				acted.session = { ...acted.session, prompt: sent.outcome === "pasted" ? { state: "sent" } : { state: "not-sent", message: sent.message } };
-				announce({ id: acted.session.id, session: acted.session });
-			});
-		}
+		// The pretend agent is ready at once, unless held: bracketed paste is on and nothing more is printed. The prompt goes a moment later.
+		if (chop?.kind === "prompt" && !holdAgents) later(() => sendWaiting(acted));
 		if (chop?.kind === "command") {
 			const bytes = chopRunBytes(chop.text, acted.pasteMode.on());
 			if (bytes === null) print(acted, `\r\n\x1b[2m${CHOP_NOT_TYPED}\x1b[0m\r\n`);
 			else type(acted, bytes);
 		}
 		return { outcome: "opened", session: structuredClone(session) };
+	}
+
+	/** Send an agent the prompt or review it waits for, as the main process does once it is ready: a review with no Enter. */
+	function sendWaiting(acted: Acted): void {
+		const waiting = acted.waiting;
+		if (waiting === null || acted.session.state.kind !== "running" || !sessions.has(acted.session.id)) return;
+		acted.waiting = null;
+		const sent = deliver(acted, waiting.text, !waiting.review);
+		const tag = waiting.review ? { what: "review" as const } : {};
+		acted.session = { ...acted.session, prompt: sent.outcome === "pasted" ? { state: "sent", ...tag } : { state: "not-sent", message: sent.message, ...tag } };
+		announce({ id: acted.session.id, session: acted.session });
 	}
 
 	/** Paste text in, as the main process's `deliver` does, and with `enter`, Enter after it. */
@@ -508,6 +536,13 @@ export function createMockTerminals(
 		},
 		conversationOf: id => sessions.get(id)?.conversation ?? null,
 		mostOpeningAtOnce: () => mostOpening,
+		holdNewAgents(hold) {
+			holdAgents = hold;
+		},
+		agentReady(id) {
+			const acted = sessions.get(id);
+			if (acted) sendWaiting(acted);
+		},
 		openTerminal(request) {
 			// Straight through when nothing is held back or counted, so a session starts as soon as it would without saved sessions.
 			if (!options.terminalMilliseconds && !isRestoreTag(request.restore)) return open(request);
@@ -539,7 +574,7 @@ export function createMockTerminals(
 			const acted = sessions.get(id);
 			if (!acted || acted.session.state.kind !== "running") return { outcome: "gone", message: "The session has ended." };
 			if (acted.session.kind !== "agent" || acted.session.path !== worktreePath || acted.session.repository !== repository) return { outcome: "not-agent", message: "That session is not an agent of this worktree." };
-			if (acted.session.prompt?.state === "pending") return { outcome: "not-ready", message: PROMPT_STILL_STARTING };
+			if (acted.waiting !== null) return { outcome: "not-ready", message: PROMPT_STILL_STARTING };
 			return deliver(acted, text, true);
 		},
 		sessionById: id => {
@@ -574,6 +609,8 @@ export function createMockTerminals(
 		async pasteTerminal(id, text) {
 			const acted = sessions.get(id);
 			if (!acted || acted.session.state.kind !== "running") return { outcome: "gone", message: "The session has ended." };
+			// As the main process does: an agent still waiting for the text it was started with may be on a first-run screen.
+			if (acted.waiting !== null) return { outcome: "not-ready", message: PROMPT_STILL_STARTING };
 			return deliver(acted, text, false);
 		},
 		pastedInto: id => [...(sessions.get(id)?.pasted ?? [])],

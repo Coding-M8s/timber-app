@@ -451,15 +451,27 @@ logins. The app never reads a tracker login and never signs in.
   use the old numbers), the quoted lines with Git's `+` and `-`, and the
   note. Before the preview the noted files are read again, and a note
   whose lines changed or left the diff is marked "outdated" and still sent
-  with its old lines. The dialog lists the worktree's running agents, the
-  only one picked, each with its state, and warns when the picked one is
+  with its old lines. The dialog lists the worktree's running agents,
+  each with its state, and warns when the picked one is
   waiting for an answer, which the paste would go into. Send pastes the
   review into the agent's input as one bracketed paste, so line breaks do
   not submit it, and presses no Enter: the toast says to press Enter there,
   and the agent's pane shows. An agent that has not turned on bracketed
   paste gets nothing, with the reason. Text already in the agent's input
-  stays in front of the review. With no agent running, Copy review puts
-  the same text on the clipboard. The notes stay with the worktree, also
+  stays in front of the review. The dialog also offers a new agent, the
+  first one saved in Settings, with the command that starts it, and picks
+  as a prompt chop does: the new agent when none runs, the only one when
+  it does not wait on the person and is not still starting, and otherwise
+  nothing, so the person
+  picks; Cancel sends nothing. Send with the new agent starts it in a new
+  session, which shows and says "Waiting to paste the review", and the
+  review is pasted once the agent is ready, with no Enter: an agent that
+  asks to trust the folder keeps waiting until it is answered. Its notes
+  go once it is pasted; one added or changed meanwhile stays. If it is not
+  ready in two minutes or ends first, a toast says so and the notes stay.
+  While it waits, Send review starts no second agent there. Copy review
+  puts the same text on the clipboard, and is the only way when no agent
+  runs and none is saved. The notes stay with the worktree, also
   while another one is selected, until sent or discarded, and go when the
   worktree leaves the list. They live in the window only: a reload or a
   quit drops them, since they quote the files. Files are never changed.

@@ -134,11 +134,16 @@ export function shortExit(state: TerminalSession["state"]): string | null {
 }
 
 /**
- * The words for a session's state beside its chips. A session with a status
- * mark says its status, such as "Needs you: approval"; another says whether
- * it runs or how it ended.
+ * The words for a session's state beside its chips. A running agent still
+ * waiting to be ready for its prompt chop or review says so, unless it waits
+ * on the person. A session with a status mark says its status, such as
+ * "Needs you: approval"; another says whether it runs or how it ended.
  */
-export function describeTerminalState(session: Pick<TerminalSession, "state"> & Partial<Pick<TerminalSession, "kind" | "status" | "children">>): string {
+export function describeTerminalState(session: Pick<TerminalSession, "state"> & Partial<Pick<TerminalSession, "kind" | "status" | "children" | "prompt">>): string {
+	// Waiting is said until the text went, unless the agent asks the person something meanwhile, such as whether to trust the folder.
+	if (session.state.kind === "running" && session.prompt?.state === "pending" && session.status?.state !== "blocked") {
+		return session.prompt.what === "review" ? "Waiting to paste the review" : "Waiting to send the prompt";
+	}
 	if (session.kind !== undefined && session.status !== undefined) {
 		const full = { kind: session.kind, state: session.state, status: session.status, children: session.children ?? [] };
 		if (hasStatusMark(full)) {

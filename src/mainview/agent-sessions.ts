@@ -2,8 +2,9 @@ import type { TerminalSession } from "../shared/terminal";
 
 /**
  * Which running agent gets text from the app: a review (see
- * ./review-format.ts) or a prompt chop (see ./chop-format.ts). Pure, so the
- * choice can be tested without a window.
+ * ./review-format.ts) or a prompt chop (see ./chop-format.ts), and when a
+ * new one starts for it (`promptTarget`). Pure, so the choice can be tested
+ * without a window.
  */
 
 /** The agent sessions of a worktree that text can go to: running, in the order they started. */
@@ -21,13 +22,18 @@ export function waitsOnPerson(session: Pick<TerminalSession, "status">): boolean
 	return session.status?.state === "blocked";
 }
 
-/** Whether an agent was started for a prompt chop that it has not been sent yet: it may still be on a first-run screen. */
+/** Whether an agent was started for a prompt chop or a review that it has not been sent yet: it may still be on a first-run screen. */
 export function awaitsItsPrompt(session: Pick<TerminalSession, "prompt">): boolean {
 	return session.prompt?.state === "pending";
 }
 
+/** The agent of the worktree started with a review that it still waits to paste, if any: a second review would go twice. */
+export function reviewWaiting(sessions: readonly TerminalSession[], worktree: string): TerminalSession | null {
+	return runningAgents(sessions, worktree).find(session => session.prompt?.state === "pending" && session.prompt.what === "review") ?? null;
+}
+
 /**
- * Where a prompt chop goes in a worktree, from its running agents: a new
+ * Where a prompt chop or a review goes in a worktree, from its running agents: a new
  * agent when none runs, the only one when one runs, does not wait on the
  * person, and is not still waiting to be ready for a prompt of its own, or a
  * question otherwise. Such an agent is never picked without asking, since

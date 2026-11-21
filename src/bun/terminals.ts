@@ -139,8 +139,12 @@ export interface TerminalDependencies {
 export type ChopInput =
 	/** `name` names the session. `text` is as `pasteProblem` accepts it. */
 	| { kind: "command"; name: string; text: string }
-	/** `text` is as `pasteProblem` accepts it. The session is named as any agent's. */
-	| { kind: "prompt"; text: string };
+	/**
+	 * `text` is as `pasteProblem` accepts it. The session is named as any
+	 * agent's. With `review`, the text is a review from the window
+	 * (`OpenTerminalRequest.review`), pasted with no Enter.
+	 */
+	| { kind: "prompt"; text: string; review?: boolean };
 
 /** The main process side of terminal sessions. A worktree can have several. */
 export interface TerminalSessions {
@@ -157,7 +161,8 @@ export interface TerminalSessions {
 	 * line, and the prompt is sent to it once it is ready
 	 * (`isReadyForPrompt`), as one paste and then Enter. The session's
 	 * `prompt` says how that stands. Only the main process passes `chop`; the
-	 * interface's `openTerminal` never does.
+	 * interface's `openTerminal` never does. A request's `review` is taken as
+	 * a prompt pasted with no Enter, once the agent is ready in the same way.
 	 */
 	open(request: OpenTerminalRequest, chop?: ChopInput): Promise<OpenTerminalResult>;
 	/** Give a session another name. Null for a session that is gone, or a name with nothing in it. */
@@ -281,11 +286,12 @@ interface Live {
 	renamed: boolean;
 	restored: RestoreTag | null;
 	/**
-	 * A prompt chop's text still to send to a new agent, with what tells when
-	 * it is ready: whether it probed, and when it last printed. Null once
-	 * sent or dropped, or for any other session.
+	 * A prompt chop's text, or a review, still to send to a new agent, with
+	 * what tells when it is ready: whether it probed, and when it last
+	 * printed. A review is pasted with no Enter. Null once sent or dropped,
+	 * or for any other session.
 	 */
-	prompt: { text: string; timer: ReturnType<typeof setTimeout> | null; deadline: number; probed: boolean; lastOutput: number; pasteOnSince: number | null } | null;
+	prompt: { text: string; review: boolean; timer: ReturnType<typeof setTimeout> | null; deadline: number; probed: boolean; lastOutput: number; pasteOnSince: number | null } | null;
 }
 
 /**
@@ -580,18 +586,22 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		if (!pasteOn) prompt.pasteOnSince = null;
 		else prompt.pasteOnSince ??= now;
 		const pasteOnFor = prompt.pasteOnSince === null ? 0 : now - prompt.pasteOnSince;
+		const what = prompt.review ? "review" : "prompt";
+		const tag = prompt.review ? { what: "review" as const } : {};
 		if (isReadyForPrompt({ probed: prompt.probed, status: live.records.root(), pasteOn, quietMilliseconds: quiet, pasteOnMilliseconds: pasteOnFor }, promptQuietMilliseconds, promptBusyMilliseconds)) {
-			const sent = deliver(live, prompt.text, true, entered => promptChanged(live, entered ? { state: "sent" } : { state: "not-sent", message: promptEndedMessage(live.session.name) }));
+			// A review is pasted with no Enter: it is sent once the paste is written.
+			const sent = deliver(live, prompt.text, !prompt.review, entered => promptChanged(live, entered ? { state: "sent" } : { state: "not-sent", message: promptEndedMessage(live.session.name) }));
 			// A prompt with a line break waits for bracketed paste, until the deadline.
 			if (sent.outcome === "pasted") {
 				live.prompt = null;
+				if (prompt.review) promptChanged(live, { state: "sent", ...tag });
 				return;
 			}
 		}
 		const left = prompt.deadline - now;
 		if (left <= 0) {
 			live.prompt = null;
-			promptChanged(live, { state: "not-sent", message: promptNotReadyMessage(live.session.name, promptWaitMilliseconds) });
+			promptChanged(live, { state: "not-sent", message: promptNotReadyMessage(live.session.name, promptWaitMilliseconds, what), ...tag });
 			return;
 		}
 		// An agent that never probed is looked at again once it may have gone quiet, or been on long enough.
@@ -785,6 +795,15 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			return { outcome: "failed", message: "A prompt goes to an agent from Settings only. Nothing was started." };
 		}
 		if (chop?.kind === "prompt" && pasteProblem(chop.text) !== null) return { outcome: "failed", message: "The prompt cannot be sent to an agent. Nothing was started." };
+		// A review from the window goes to a fresh agent from Settings only, with no Enter, and never with a chop of the main process.
+		if (request.review !== undefined) {
+			const fresh = chop === undefined && typeof request.agent === "string" && request.timberWorktreeSetup === undefined && request.arenaAttempt === undefined
+				&& request.workflowAgent === undefined && request.resume === undefined && request.restore === undefined;
+			if (!fresh) return { outcome: "failed", message: "A review goes to a new agent from Settings only. Nothing was started." };
+			const problem = pasteProblem(request.review);
+			if (problem !== null) return { outcome: "failed", message: `The review cannot be pasted: ${problem} Nothing was started.` };
+			chop = { kind: "prompt", text: request.review, review: true };
+		}
 		// Only names are read from the request, the workflow's and the pick's: the command comes from Timber, read again below.
 		const workflowAgent = request.workflowAgent;
 		if (workflowAgent !== undefined) {
@@ -901,7 +920,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			state: { kind: "running" },
 			status: null,
 			children: [],
-			...(chop?.kind === "prompt" ? { prompt: { state: "pending" as const } } : {}),
+			...(chop?.kind === "prompt" ? { prompt: { state: "pending" as const, ...(chop.review ? { what: "review" as const } : {}) } } : {}),
 		};
 		const ended = child.exited.then(async () => {
 			// Output can still be on its way after the shell ended. A program left in the background can hold the terminal open, so do not wait for long.
@@ -919,11 +938,11 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			// A session closed meanwhile is already gone and stays gone.
 			if (sessions.get(session.id) !== live) return;
 			const end = child.ended() ?? { exitCode: null, signal: null };
-			const unsent = live.prompt !== null;
+			const unsent = live.prompt;
 			dropChop(live);
 			noteEnded(live);
 			live.pasteMode.reset();
-			changed(live, { ...live.session, state: { kind: "exited", ...end }, ...recordsForWindow(live.records), ...(unsent ? { prompt: { state: "not-sent" as const, message: promptEndedMessage(live.session.name) } } : {}) });
+			changed(live, { ...live.session, state: { kind: "exited", ...end }, ...recordsForWindow(live.records), ...(unsent ? { prompt: { state: "not-sent" as const, message: promptEndedMessage(live.session.name, unsent.review ? "review" : "prompt"), ...(unsent.review ? { what: "review" as const } : {}) } } : {}) });
 		});
 		live = {
 			session, process: child, scrollback: createScrollback(), pending: "", flushTimer: null, undrawn: [], undrawnSize: 0, held: false, leftovers: null, ended,
@@ -936,7 +955,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		}
 		if (chop?.kind === "prompt") {
 			const now = Date.now();
-			live.prompt = { text: chop.text, timer: null, deadline: now + promptWaitMilliseconds, probed: false, lastOutput: now, pasteOnSince: null };
+			live.prompt = { text: chop.text, review: chop.review === true, timer: null, deadline: now + promptWaitMilliseconds, probed: false, lastOutput: now, pasteOnSince: null };
 		}
 		sessions.set(session.id, live);
 		changed(live, session);
@@ -1024,6 +1043,8 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		paste(id, text) {
 			const live = sessions.get(id);
 			if (!live || live.session.state.kind !== "running") return { outcome: "gone", message: "The session has ended." };
+			// An agent still waiting for the text it was started with may be on a first-run screen.
+			if (live.prompt !== null) return { outcome: "not-ready", message: PROMPT_STILL_STARTING };
 			return deliver(live, text, false);
 		},
 		sendPrompt(id, repository, worktreePath, text) {

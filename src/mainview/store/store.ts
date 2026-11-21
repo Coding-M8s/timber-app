@@ -11,7 +11,7 @@ import type { Engine } from "../../shared/engine";
 import type { WorktreeHandoff } from "../../shared/handoff";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "../../shared/git-fetch";
 import { type ChopList, type RunChopResult, commandChops, findListedChop, listedChops } from "../../shared/chops";
-import { promptTarget } from "../agent-sessions";
+import { promptTarget, reviewWaiting } from "../agent-sessions";
 import { describePromptCopied, describePromptSent } from "../chop-format";
 import { type Comparison, type FileChangeTarget, type FileChangesResult, type FileDiff, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
 import type { PortsResult } from "../../shared/ports";
@@ -28,9 +28,11 @@ import { type ZoomStep, stepZoom, zoomLabel } from "../../shared/zoom";
 import type { Theme } from "../../shared/theme";
 import type { ChooseSoundResult, SoundChoice, SoundOutcome } from "../../shared/sound-setting";
 import type { ExportThemeResult, ImportThemeResult } from "../../shared/theme-file";
-import { type OpenTerminalRequest, type PasteResult, type TerminalChange, type TerminalSession, WORKTREE_SETUP_SESSION_NAME } from "../../shared/terminal";
+import { type OpenTerminalRequest, type OpenTerminalResult, type PasteResult, type TerminalChange, type TerminalSession, WORKTREE_SETUP_SESSION_NAME } from "../../shared/terminal";
 import { type ReviewNote, buildReviewMessage, markOutdated, normalizeNoteText, notedFiles, noteProblem } from "../../shared/review";
-import { REVIEW_COPIED, describeReviewSent } from "../review-format";
+import {
+	REVIEW_COPIED, describeReviewAgentStarted, describeReviewNotPasted, describeReviewSent, reviewAlreadyWaiting,
+} from "../review-format";
 import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "../../shared/timber-config";
 import type { DoneApplyRequest, DoneApplyResult, DonePreview, DonePreviewRequest, DonePreviewResult } from "../../shared/timber-done";
 import type { RebaseRequest, RebaseResult } from "../../shared/timber-rebase";
@@ -308,6 +310,19 @@ export interface AppStore {
 	 * shows. Never throws.
 	 */
 	sendReview(worktreeId: string, sessionId: string, message: string): Promise<PasteResult>;
+	/**
+	 * Start the first agent saved in Settings as a new session of the
+	 * worktree, to paste `message`, as the preview showed it, once the agent
+	 * is ready, with no Enter (`OpenTerminalRequest.review`). Once started,
+	 * the dialog closes, the session shows, saying it waits, and a toast says
+	 * so. Once pasted, the notes that were sent are gone, unless changed
+	 * meanwhile, and a toast says to press Enter there; when it is not
+	 * pasted, the notes stay and a toast says why. Nothing starts while
+	 * another session starts in the worktree, while another agent there waits
+	 * to paste a review, or in a folder being deleted. Answers why nothing
+	 * started, or null. Never throws.
+	 */
+	startReviewAgent(worktreeId: string, message: string, size: { cols: number; rows: number }): Promise<string | null>;
 	/** Put `message` on the clipboard and close the dialog. The notes stay. Answers whether it was copied. */
 	copyReview(message: string): Promise<boolean>;
 	/**
@@ -1233,6 +1248,36 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		if (!notes) return;
 		const marked = markOutdated(notes, comparison, file, diff);
 		if (marked !== notes) update({ reviews: { ...state.reviews, [worktreeId]: marked } });
+	}
+
+	/**
+	 * The notes each new agent started with a review was given, by session,
+	 * until it pasted them or did not. Only these go once it pasted: a note
+	 * added or changed meanwhile stays. A reloaded window has none, and
+	 * neither has it the notes, which live in the window only.
+	 */
+	const reviewsGiven = new Map<string, { worktree: string; notes: readonly ReviewNote[] }>();
+	/** The worktrees whose new review agent's answer is on its way: what it did meanwhile is settled once the answer comes. */
+	const startingReview = new Set<string>();
+	/** Review agents, by session, whose review went or did not while the answer that started them was on its way, with their worktree. */
+	const reviewHeardEarly = new Map<string, string>();
+	/** Sessions that went while a review agent's answer was on its way, so a late answer does not bring one back. */
+	const goneWhileStarting = new Set<string>();
+
+	/** A new agent's review was pasted, or was not: drop the notes it was given, or say why. */
+	function reviewSettled(session: TerminalSession, given: { worktree: string; notes: readonly ReviewNote[] } | null): void {
+		reviewsGiven.delete(session.id);
+		const prompt = session.prompt;
+		if (prompt?.state === "sent") {
+			const notes = given === null ? undefined : state.reviews[given.worktree];
+			if (given !== null && notes) {
+				const sent = new Map(given.notes.map(note => [note.id, note.text]));
+				changeNotes(given.worktree, notes.filter(note => sent.get(note.id) !== note.text));
+			}
+			showToast(describeReviewSent(session.name));
+		} else if (prompt?.state === "not-sent") {
+			showToast(describeReviewNotPasted(prompt.message), true);
+		}
 	}
 
 	let lastNote = 0;
@@ -2678,8 +2723,18 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 					else update(withoutSession(state, change.id));
 					// A new agent's prompt went, or could not: say so, since the person may be looking elsewhere.
 					const prompt = change.session?.prompt;
+					if (change.session === null) {
+						reviewsGiven.delete(change.id);
+						reviewHeardEarly.delete(change.id);
+						if (startingReview.size > 0) goneWhileStarting.add(change.id);
+					}
 					if (prompt && promptBefore?.state === "pending" && prompt.state !== "pending") {
-						if (prompt.state === "sent") showToast(describePromptSent(null, change.session!.name));
+						// A new agent's review: settled here, or, while the answer that started it is on its way, once it comes.
+						if (prompt.what === "review") {
+							const given = reviewsGiven.get(change.id) ?? null;
+							if (given !== null || !startingReview.has(change.session!.worktree)) reviewSettled(change.session!, given);
+							else reviewHeardEarly.set(change.id, change.session!.worktree);
+						} else if (prompt.state === "sent") showToast(describePromptSent(null, change.session!.name));
 						else showToast(`The prompt was not sent: ${prompt.message}`, true);
 					}
 					// What a Timber session such as setup changed shows in the repositories. Read them all again,
@@ -2941,6 +2996,67 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			showToast(describeReviewSent(session.name));
 			revealSession(sessionId);
 			return result;
+		},
+		async startReviewAgent(worktreeId, message, size) {
+			const agent = state.preferences.agents[0];
+			if (!agent) return "No agent is saved in Settings, Agents. Copy the review instead.";
+			const listed = listedWorktree(worktreeId);
+			if (listed === null) return "The worktree is no longer listed.";
+			if (isBeingRemoved(state, listed.repository, listed.worktree.path)) return BEING_REMOVED_REASON;
+			if (startingReview.has(worktreeId) || state.operations.some(operation => operation.kind === "open-terminal" && operation.worktree === worktreeId)) {
+				return "Another session is starting there. Send the review again in a moment.";
+			}
+			const waiting = reviewWaiting(state.terminals, worktreeId);
+			if (waiting !== null) return reviewAlreadyWaiting(waiting.name);
+			// The notes as they are now are the ones the message holds.
+			const notes = state.reviews[worktreeId] ?? [];
+			let problem: string | null = null;
+			startingReview.add(worktreeId);
+			try {
+				await track({ kind: "open-terminal", worktree: worktreeId, agent: agent.name }, async () => {
+					let result: OpenTerminalResult;
+					try {
+						result = await engine.openTerminal({ repository: listed.repository, worktree: listed.worktree.path, ...size, agent: agent.name, review: message });
+					} catch (error) {
+						problem = notHeard("back about the new agent", error, ". It may have started: look at the worktree's sessions before you send the review again.");
+						return;
+					}
+					if (result.outcome !== "opened") {
+						problem = result.message;
+						return;
+					}
+					// A session closed meanwhile stays gone, and has nothing left to settle.
+					if (goneWhileStarting.has(result.session.id)) return;
+					// A change heard meanwhile, such as the review being pasted, is newer than this answer.
+					const known = state.terminals.find(candidate => candidate.id === result.session.id);
+					reviewHeardEarly.delete(result.session.id);
+					update({
+						terminals: known ? state.terminals : withTerminal(state.terminals, result.session.id, result.session),
+						unseenSessions: state.unseenSessions.filter(id => id !== result.session.id),
+						...(state.dialog?.kind === "send-review" ? { dialog: null } : {}),
+					});
+					revealSession(result.session.id);
+					const session = known ?? result.session;
+					const given = { worktree: worktreeId, notes };
+					if (session.prompt?.state === "pending") {
+						reviewsGiven.set(session.id, given);
+						showToast(describeReviewAgentStarted(session.name));
+					} else {
+						reviewSettled(session, given);
+					}
+				});
+			} finally {
+				startingReview.delete(worktreeId);
+				if (startingReview.size === 0) goneWhileStarting.clear();
+				// The answer was lost, but the agent was heard: settle what it did with the notes it was given.
+				for (const [id, worktree] of reviewHeardEarly) {
+					if (worktree !== worktreeId) continue;
+					reviewHeardEarly.delete(id);
+					const session = state.terminals.find(candidate => candidate.id === id);
+					if (session) reviewSettled(session, { worktree: worktreeId, notes });
+				}
+			}
+			return problem;
 		},
 		async copyReview(message) {
 			try {
