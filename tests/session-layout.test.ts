@@ -65,7 +65,8 @@ describe("the sessions saved at quit", () => {
 	});
 
 	test("the file is beside the settings file", () => {
-		expect(sessionsFilePath("/home/a/.config/timber-app/settings.json")).toBe("/home/a/.config/timber-app/sessions.json");
+		const folder = join("/home/a", ".config", "timber-app");
+		expect(sessionsFilePath(join(folder, "settings.json"))).toBe(join(folder, "sessions.json"));
 	});
 
 	test("what one run saves, the next takes once", async () => {
