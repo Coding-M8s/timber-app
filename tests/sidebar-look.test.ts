@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const styles = readFileSync(join(import.meta.dir, "..", "src/mainview/styles.css"), "utf8");
+// A Windows checkout may end lines with CRLF; the lookups below expect LF.
+const styles = readFileSync(join(import.meta.dir, "..", "src/mainview/styles.css"), "utf8").replace(/\r\n/g, "\n");
 
 /** The body of the rule with exactly this selector, which starts a line in styles.css and is not part of a list. */
 function rule(selector: string): string {
