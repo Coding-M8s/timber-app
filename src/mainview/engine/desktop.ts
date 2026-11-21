@@ -5,6 +5,7 @@ import type { AppUpdateState } from "../../shared/app-update";
 import type { RepositoryFetch } from "../../shared/git-fetch";
 import type { AppRPC } from "../../shared/rpc";
 import type { TerminalChange, TerminalOutput } from "../../shared/terminal";
+import type { WorktreeFolderChange } from "../../shared/worktree-folders";
 
 /** A set of listeners, and the function that adds one and returns how to take it away. */
 function listeners<Value>() {
@@ -33,6 +34,7 @@ export function createDesktopEngine(): Engine {
 	const shownSessions = listeners<string>();
 	const handoffs = listeners<WorktreeHandoff>();
 	const chopChanges = listeners<string>();
+	const folderChanges = listeners<WorktreeFolderChange>();
 	const rpc = Electroview.defineRPC<AppRPC>({
 		maxRequestTime: 15_000,
 		handlers: {
@@ -47,6 +49,7 @@ export function createDesktopEngine(): Engine {
 			messages: {
 				repositoryChanged: ({ path }) => changes.call(path),
 				chopsChanged: ({ repository }) => chopChanges.call(repository),
+				worktreeFolderChanged: change => folderChanges.call(change),
 				terminalOutput: output => terminalOutput.call(output),
 				terminalChanged: change => terminalChanges.call(change),
 				showSession: ({ id }) => shownSessions.call(id),
@@ -143,6 +146,9 @@ export function createDesktopEngine(): Engine {
 		readFileDiff: request => rpc.request.readFileDiff(request, { maxRequestTime: 60_000 }),
 		readWorktreeFile: request => rpc.request.readWorktreeFile(request, { maxRequestTime: 60_000 }),
 		writeWorktreeFile: request => rpc.request.writeWorktreeFile(request, { maxRequestTime: 60_000 }),
+		listWorktreeFolder: request => rpc.request.listWorktreeFolder(request, { maxRequestTime: 60_000 }),
+		watchWorktreeFolders: folders => rpc.send.watchWorktreeFolders({ folders }),
+		onWorktreeFolderChanged: folderChanges.add,
 		readPorts: request => rpc.request.readPorts(request, { maxRequestTime: 30_000 }),
 		listChops: request => rpc.request.listChops(request, { maxRequestTime: 60_000 }),
 		onChopsChanged: chopChanges.add,

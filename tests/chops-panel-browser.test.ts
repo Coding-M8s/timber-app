@@ -43,7 +43,11 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the chops
 		await page.until(PANEL_SHOWN, "the panel showed");
 		await page.until(FOCUS_IN_PANEL, "the panel took the keyboard");
 		expect(await page.evaluate<string | null>(`document.querySelector(${JSON.stringify(BUTTON)}).getAttribute("aria-pressed")`)).toBe("true");
-		// By keyboard: Tab reaches New chop, then the Close button inside the panel, and Enter hides it.
+		// By keyboard: Tab reaches the switch to the files, New chop, then the Close button inside the panel, and Enter hides it.
+		await page.press("Tab");
+		expect(await page.evaluate<string>(ACTIVE)).toBe("side-panel-view-chops");
+		await page.press("Tab");
+		expect(await page.evaluate<string>(ACTIVE)).toBe("side-panel-view-files");
 		await page.press("Tab");
 		expect(await page.evaluate<string>(ACTIVE)).toBe("New chop");
 		await page.press("Tab");

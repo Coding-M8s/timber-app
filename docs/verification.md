@@ -3480,3 +3480,27 @@ Run for keeping hand-set keys inside a table a settings group saves (issue
     became `"jira"`. A second file with `sprint_jql` kept it too.
 - Not yet checked: the same save through the desktop window, and the setup
   wizard against the real Timber (it saves through the same `valuesWith`).
+
+Run for the file explorer in the side panel (issue 239), Linux x64 with
+Bun 1.4.4, Git 2.56, and headless Google Chrome over the mock engine:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 3497 passed, 19 skipped, 0 failed, after a rebase onto main.
+  `tests/worktree-folders.test.ts` lists folders of a real temporary
+  repository with a linked worktree: folders first, `.git` left out,
+  ignored entries hidden or marked, a tracked file never ignored, an
+  ignored folder opened, links listed and never followed, a submodule asked
+  what it ignores, and paths outside, missing, a file, and unlisted
+  worktrees refused. Every listing, ignored entries shown and hidden,
+  leaves files, refs, worktrees, status, and both index files as they were.
+  A real watch hears an untracked and an ignored file made and removed, and
+  stops for a folder no longer asked for. `tests/files-panel.test.tsx`
+  covers the store over the mock engine (the two views, chops off, reading
+  and watching, changes, ignored entries, stale answers), and
+  `tests/files-panel-browser.test.ts` drives the Files button,
+  Ctrl+Shift+E, the switch, Ignored, clicks, and the tree's keys in Chrome.
+- Not run: the desktop window on any platform, a real terminal session
+  pressing Ctrl+Shift+E (the terminal's key handler uses the same tested
+  `takesFilesPanelKey`), and whether any desktop takes Ctrl+Shift+E or
+  Cmd+Shift+E before the app; some Linux input methods, such as IBus, use
+  Ctrl+Shift+E for emoji. The shortcut was chosen by analysis.

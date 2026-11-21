@@ -8,6 +8,7 @@ import type { Engine } from "./engine";
 import type { ForcePushSeen, RepositoryFetch } from "./git-fetch";
 import type { FileChangesRequest, FileDiffRequest } from "./file-changes";
 import type { WorktreeFileRequest, WorktreeFileWriteRequest } from "./worktree-files";
+import type { WorktreeFolderChange, WorktreeFolderRequest, WorktreeFolderWatch } from "./worktree-folders";
 import type { Layout } from "./layout";
 import type { PortsRequest } from "./ports";
 import type { RebaseRequest } from "./timber-rebase";
@@ -119,6 +120,7 @@ export type AppRPC = {
 			readFileDiff: { params: FileDiffRequest; response: Answer<"readFileDiff"> };
 			readWorktreeFile: { params: WorktreeFileRequest; response: Answer<"readWorktreeFile"> };
 			writeWorktreeFile: { params: WorktreeFileWriteRequest; response: Answer<"writeWorktreeFile"> };
+			listWorktreeFolder: { params: WorktreeFolderRequest; response: Answer<"listWorktreeFolder"> };
 			readPorts: { params: PortsRequest; response: Answer<"readPorts"> };
 			listChops: { params: ChopsRequest; response: Answer<"listChops"> };
 			runChop: { params: RunChopRequest; response: Answer<"runChop"> };
@@ -162,6 +164,8 @@ export type AppRPC = {
 			windowReady: {};
 			/** How many files the window holds unsaved edits of (see `Engine.reportUnsavedFiles`). */
 			unsavedFiles: { count: number };
+			/** The folders the file explorer shows (see `Engine.watchWorktreeFolders`). */
+			watchWorktreeFolders: { folders: WorktreeFolderWatch | null };
 		};
 	}>;
 	webview: RPCSchema<{
@@ -174,6 +178,8 @@ export type AppRPC = {
 			repositoryChanged: { path: string };
 			/** The chops file in a repository's main checkout may have changed. `repository` is its primary checkout. */
 			chopsChanged: { repository: string };
+			/** An entry of a folder the file explorer shows changed. */
+			worktreeFolderChanged: WorktreeFolderChange;
 			/** Part of what a session printed. */
 			terminalOutput: TerminalOutput;
 			terminalChanged: TerminalChange;
