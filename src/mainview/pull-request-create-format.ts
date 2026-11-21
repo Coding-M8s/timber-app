@@ -35,6 +35,35 @@ export function titleKeyOf(issue: IssueLink | null): string | null {
 	return key === "" ? null : key;
 }
 
+/**
+ * A quiet line under Description that says which issue Timber mentions in
+ * the body, from the worktree's saved link only: `Refs ENG-42` for Jira or
+ * Linear, `Refs #102` for GitHub. Timber writes `owner/repo#102` instead when
+ * the pull request opens in a repository other than the issue's, which only
+ * Timber knows, so the line names both. Null without a saved link, so the
+ * app never guesses from the branch name.
+ */
+export function issueMentionHint(issue: IssueLink | null): string | null {
+	if (issue?.kind !== "linked") return null;
+	const key = issue.key.trim();
+	if (key === "") return null;
+	const unless = "unless the description already mentions it";
+	if (issue.tracker !== "github") return `Timber adds Refs ${key} ${unless}.`;
+	const repository = githubRepositoryOf(issue.url);
+	const elsewhere = repository === null ? "" : `, or Refs ${repository}#${key} when the pull request opens in another repository`;
+	return `Timber adds Refs #${key} ${unless}${elsewhere}.`;
+}
+
+/** `owner/repo` from a saved `https://github.com/<owner>/<repo>/issues/<n>` link, or null. */
+function githubRepositoryOf(url: string): string | null {
+	try {
+		const [, owner, name] = new URL(url).pathname.split("/");
+		return owner && name ? `${owner}/${name}` : null;
+	} catch {
+		return null;
+	}
+}
+
 const isLetterOrDigit = (character: string) => /^[\p{L}\p{N}]$/u.test(character);
 
 /** The title already starts with the key, in any case, maybe after one `[` or `(`, and not as part of a longer key such as PROJ-1234 for PROJ-123. */

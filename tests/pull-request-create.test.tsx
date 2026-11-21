@@ -5,10 +5,10 @@ import { PullRequestFormView } from "../src/mainview/components/PullRequestPanel
 import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { actOutPullRequest, pullRequestEndings } from "../src/mainview/engine/mock-pr";
 import { sampleAnswer } from "../src/mainview/engine/mock-pull-requests";
-import { CREATE_RUNNING, CREATE_SUBMIT, defaultPullRequestTitle, presentPullRequestCreation, pullRequestCommandFor, titleKeyOf } from "../src/mainview/pull-request-create-format";
+import { CREATE_RUNNING, CREATE_SUBMIT, defaultPullRequestTitle, issueMentionHint, presentPullRequestCreation, pullRequestCommandFor, titleKeyOf } from "../src/mainview/pull-request-create-format";
 import type { PullRequestForm } from "../src/mainview/store/state";
 import { createAppStore } from "../src/mainview/store/store";
-import type { IssueLink, Worktree } from "../src/shared/model";
+import type { IssueLink, Repository, Worktree } from "../src/shared/model";
 import type { PullRequestList } from "../src/shared/pull-requests";
 import type { CreatePullRequestRequest, CreatePullRequestResult } from "../src/shared/timber-pr";
 
@@ -89,11 +89,31 @@ describe("the words and the command", () => {
 	});
 });
 
+describe("the issue Timber mentions in the body", () => {
+	test("a saved Jira or Linear link names its key as Timber writes it", () => {
+		expect(issueMentionHint(JIRA)).toBe("Timber adds Refs PROJ-123 unless the description already mentions it.");
+		expect(issueMentionHint(LINEAR)).toBe("Timber adds Refs ENG-12 unless the description already mentions it.");
+	});
+
+	test("a saved GitHub link names #n, and owner/repo#n for a pull request in another repository", () => {
+		expect(issueMentionHint(GITHUB)).toBe("Timber adds Refs #153 unless the description already mentions it, or Refs example/app#153 when the pull request opens in another repository.");
+		expect(issueMentionHint({ ...GITHUB, url: "not a url" })).toBe("Timber adds Refs #153 unless the description already mentions it.");
+	});
+
+	test("no line without a saved link, for invalid metadata, or a blank key", () => {
+		expect(issueMentionHint(null)).toBeNull();
+		expect(issueMentionHint({ kind: "none" })).toBeNull();
+		expect(issueMentionHint({ kind: "invalid", reason: "malformed" })).toBeNull();
+		expect(issueMentionHint({ ...JIRA, key: "  " })).toBeNull();
+	});
+});
+
 const form = (change: Partial<PullRequestForm> = {}): PullRequestForm => ({
 	repository: TIMBER, worktree: PORTABILITY, head: null, title: "Run on macOS", body: "", base: "origin/main", draft: false,
 	titleKey: null, subject: null, titleEdited: false, running: false, failure: null, reported: null, ...change,
 });
-const formMarkup = (shown: PullRequestForm) => renderToStaticMarkup(<PullRequestFormView form={shown} afterIssue={false} onChange={() => {}} onSubmit={() => {}} />);
+const formMarkup = (shown: PullRequestForm, mentionHint: string | null = null) =>
+	renderToStaticMarkup(<PullRequestFormView form={shown} afterIssue={false} mentionHint={mentionHint} onChange={() => {}} onSubmit={() => {}} />);
 
 describe("PullRequestFormView", () => {
 	test("title, description, base, and a draft switch, then the exact command", () => {
@@ -105,6 +125,13 @@ describe("PullRequestFormView", () => {
 		expect(markup).toContain(`timber pr --title &#x27;Run on macOS&#x27; --body &#x27;Closes #3&#x27; --base origin/main --draft --result-file &lt;temporary file&gt; -- ${PORTABILITY}`);
 		expect(markup).toContain(`>${CREATE_SUBMIT}</button>`);
 		expect(markup).not.toContain("progressbar");
+		expect(markup).not.toContain("Timber adds Refs");
+	});
+
+	test("the mention line shows as a quiet hint under Description", () => {
+		const markup = formMarkup(form(), issueMentionHint(LINEAR));
+		const description = markup.slice(markup.indexOf("<textarea"), markup.indexOf('name="base"'));
+		expect(description).toContain('<span class="field-hint">Timber adds Refs ENG-12 unless the description already mentions it.</span>');
 	});
 
 	test("while it runs: progress, every control disabled, and the button says so", () => {
@@ -154,8 +181,8 @@ function withoutPortability(): PullRequestList {
 	return { ok: true, worktrees: answer.worktrees.map(entry => entry.path === PORTABILITY ? { path: entry.path, branch: entry.branch, outcome: "none" } : entry) };
 }
 
-async function started(options: { delay?: number } = {}) {
-	const engine = createMockEngine(sampleRepositories, undefined, { commandMilliseconds: options.delay ?? 0 });
+async function started(options: { delay?: number; repositories?: Repository[] } = {}) {
+	const engine = createMockEngine(options.repositories ?? sampleRepositories, undefined, { commandMilliseconds: options.delay ?? 0 });
 	engine.setPullRequests(TIMBER, withoutPortability());
 	const calls: CreatePullRequestRequest[] = [];
 	const create = engine.createPullRequest.bind(engine);
@@ -192,6 +219,27 @@ describe("the Pull request tab's form", () => {
 		expect(store.getState().pullRequestForms[id]?.title).toBe("TIM-88: Use POSIX sed");
 		expect(panel()).toContain('name="title" value="TIM-88: Use POSIX sed"');
 		expect(panel()).toContain("timber pr --title &#x27;TIM-88: Use POSIX sed&#x27; --base origin/main --result-file");
+	});
+
+	test("a saved link puts the mention Timber adds under Description", async () => {
+		const { open, panel } = await started();
+		open(PORTABILITY);
+		await settle();
+		expect(panel()).toContain('<span class="field-hint">Timber adds Refs TIM-88 unless the description already mentions it.</span>');
+	});
+
+	test("without a saved link, no mention line, even on a branch named after an issue", async () => {
+		for (const branch of ["GH-154-run-on-macos", "ENG-42-run-on-macos"]) {
+			const repositories = sampleRepositories.map(repository => repository.path !== TIMBER ? repository : {
+				...repository,
+				worktrees: repository.worktrees.map(worktree => worktree.path === PORTABILITY ? { ...worktree, branch, issue: { kind: "none" } as const } : worktree),
+			});
+			const { open, panel } = await started({ repositories });
+			open(PORTABILITY);
+			await settle();
+			expect(panel()).toContain('name="title"');
+			expect(panel()).not.toContain("Timber adds Refs");
+		}
 	});
 
 	test("a branch without a commit keeps the branch, a local saved base leaves Base empty, and a typed title is never replaced", async () => {
