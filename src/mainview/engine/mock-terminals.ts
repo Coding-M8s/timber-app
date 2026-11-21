@@ -46,7 +46,8 @@ export interface ChopTerminals {
 export interface TerminalControls {
 	/**
 	 * Act out the person quitting the app or closing its window. As the main
-	 * process does, the interface is asked only while a terminal runs.
+	 * process does, the interface is asked only while a terminal runs or a
+	 * file has unsaved edits.
 	 * Answers whether the app quit right away.
 	 */
 	requestQuit(): boolean;
@@ -102,6 +103,8 @@ export interface MockTerminalOptions {
 	savedSessions?: MockSessionStorage;
 	/** How long an acted openTerminal takes. None by default. */
 	terminalMilliseconds?: number;
+	/** How many files the window last said it holds unsaved edits of. Quitting asks while there are any, as in the main process. */
+	unsavedFiles?: () => number;
 }
 
 interface Acted {
@@ -621,7 +624,7 @@ export function createMockTerminals(
 		},
 		requestQuit() {
 			const count = live();
-			if (confirmed || count === 0) {
+			if (confirmed || (count === 0 && (options.unsavedFiles?.() ?? 0) === 0)) {
 				// Quitting at once saves what runs, which is nothing, so closed sessions stay closed.
 				if (!confirmed) saveSessions();
 				confirmed = true;

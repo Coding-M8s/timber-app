@@ -1,5 +1,5 @@
 import { relativePathProblem } from "../../shared/file-changes";
-import { type WorktreeFileResult, fileContentOf } from "../../shared/worktree-files";
+import { type WorktreeFileResult, type WorktreeFileWriteRequest, type WorktreeFileWriteResult, fileContentOf, textToSaveProblem } from "../../shared/worktree-files";
 import type { MockFileChange } from "./mock-file-changes";
 
 /**
@@ -39,6 +39,8 @@ export function newSideOf(change: MockFileChange): string | null {
 export interface MockWorktreeFiles {
 	read(worktree: string, path: string, changes: readonly MockFileChange[]): WorktreeFileResult;
 	set(worktree: string, path: string, file: MockWorktreeFile | null): void;
+	/** Save text over a file that is there, as the main process does, refusing as it does. */
+	write(request: Pick<WorktreeFileWriteRequest, "path" | "text" | "expected">, worktree: string, changes: readonly MockFileChange[]): WorktreeFileWriteResult;
 }
 
 /** The pretend disk of the file viewer, with the same refusals as the main process (see src/bun/worktree-files.ts). */
@@ -51,7 +53,7 @@ export function createMockWorktreeFiles(): MockWorktreeFiles {
 		if (changed) return newSideOf(changed) ?? { kind: "bytes", bytes: [0, 1, 2] };
 		return SAMPLE_FILES[path] ?? null;
 	};
-	return {
+	const files: MockWorktreeFiles = {
 		read(worktree, path, changes) {
 			const problem = relativePathProblem(path);
 			if (problem !== null) return { outcome: "outside", path, message: `${problem} The file was not read.` };
@@ -61,10 +63,24 @@ export function createMockWorktreeFiles(): MockWorktreeFiles {
 			if (file.kind === "folder") return { outcome: "not-a-file", path, message: `${path} is a folder, not a file.` };
 			return { outcome: "read", path, content: fileContentOf(new Uint8Array(file.bytes), file.bytes.length) };
 		},
+		write({ path, text, expected }, worktree, changes) {
+			const tooLarge = textToSaveProblem(text);
+			if (tooLarge !== null) return { outcome: "too-large", path, message: `${tooLarge} Nothing was saved.` };
+			const read = files.read(worktree, path, changes);
+			if (read.outcome !== "read") return read.outcome === "outside" ? { ...read, message: read.message.replace("The file was not read.", "Nothing was saved.") } : read;
+			const now = read.content;
+			if (expected !== null && (now.kind !== "text" || now.text !== expected)) {
+				return { outcome: "changed", path, content: now, message: `${path} changed on disk since it was opened. Nothing was saved.` };
+			}
+			files.set(worktree, path, text);
+			const bytes = new TextEncoder().encode(text);
+			return { outcome: "saved", path, content: fileContentOf(bytes, bytes.length) };
+		},
 		set(worktree, path, file) {
 			const own = set.get(worktree) ?? new Map<string, MockWorktreeFile | null>();
 			own.set(path, file);
 			set.set(worktree, own);
 		},
 	};
+	return files;
 }

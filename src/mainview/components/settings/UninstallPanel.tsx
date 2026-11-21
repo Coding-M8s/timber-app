@@ -2,6 +2,7 @@ import { useContext, useEffect, useRef, useState } from "react";
 import type { UninstallPlan } from "../../../shared/uninstall";
 import { useAppState, useStore } from "../../store/react";
 import { describeEndingTerminals, liveTerminalCount } from "../../terminal-format";
+import { describeUnsavedFiles, unsavedFilePaths } from "../../file-view-format";
 import {
 	UNINSTALL_CHECKING,
 	UNINSTALL_DONE,
@@ -28,6 +29,8 @@ export interface UninstallPanelViewProps {
 	run: UninstallRun;
 	/** How many terminals run, which end with the app. */
 	liveTerminals: number;
+	/** The files with unsaved edits, which are lost with the app. */
+	unsavedFiles?: readonly string[];
 	onStart: () => void;
 	onCancel: () => void;
 	onForgetSettings: (forget: boolean) => void;
@@ -72,6 +75,7 @@ export function UninstallPanelView(props: UninstallPanelViewProps) {
 	}
 	const running = run.state === "running";
 	const ending = describeEndingTerminals(liveTerminals);
+	const unsaved = describeUnsavedFiles(props.unsavedFiles ?? []);
 	return (
 		<div className="uninstall-confirm" aria-busy={running}>
 			<p className="about-text">This will be removed:</p>
@@ -87,6 +91,7 @@ export function UninstallPanelView(props: UninstallPanelViewProps) {
 			</label>
 			<p className="about-text">{UNINSTALL_KEEPS} {UNINSTALL_NO_UNDO}</p>
 			{ending !== null && <p className="about-text" role="note">{ending}</p>}
+			{unsaved !== null && <p className="about-text" role="note">{unsaved}</p>}
 			<p className="about-text">The app runs this, then quits:</p>
 			<pre className="dialog-command">{describeUninstallCommand(plan)}</pre>
 			{run.state === "failed" && (
@@ -114,7 +119,7 @@ export function UninstallPanelView(props: UninstallPanelViewProps) {
  */
 export function UninstallPanel() {
 	const store = useStore();
-	const terminals = useAppState().terminals;
+	const { terminals, files } = useAppState();
 	const { reportSaving } = useContext(SettingsSavingContext);
 	const [plan, setPlan] = useState<UninstallPlan | undefined>(undefined);
 	const [confirming, setConfirming] = useState(false);
@@ -157,6 +162,7 @@ export function UninstallPanel() {
 			forgetSettings={forgetSettings}
 			run={run}
 			liveTerminals={liveTerminalCount(terminals)}
+			unsavedFiles={unsavedFilePaths(files)}
 			onStart={() => setConfirming(true)}
 			onCancel={() => {
 				setConfirming(false);

@@ -115,3 +115,63 @@ export function worktreeRelativePath(worktree: string, path: string): string | n
 	const relative = resolved.join("/");
 	return relativePathProblem(relative) === null ? relative : null;
 }
+
+/**
+ * Save new text into one file of a worktree, from the File tab's edit mode.
+ * Only a file that is there already, and only that file.
+ */
+export interface WorktreeFileWriteRequest extends WorktreeFileRequest {
+	/** The whole new text, as it goes on disk, line endings included. */
+	text: string;
+	/**
+	 * The text the window read and edited from, as `readWorktreeFile` gave
+	 * it. When the file holds something else now, nothing is written, so a
+	 * change made meanwhile, as by an agent, is not overwritten unasked.
+	 * Null overwrites whatever is there.
+	 */
+	expected: string | null;
+}
+
+export type WorktreeFileWriteResult =
+	/** The file now holds the text. `content` is the file as read back after the write. */
+	| { outcome: "saved"; path: string; content: FileContent }
+	/** The file holds something other than `expected`, so nothing was written. `content` is what it holds now. */
+	| { outcome: "changed"; path: string; content: FileContent; message: string }
+	/** The text is over `MAX_FILE_BYTES` or `MAX_FILE_LINES`, so the viewer could not open it again. Nothing was written. */
+	| { outcome: "too-large"; path: string; message: string }
+	| Exclude<WorktreeFileResult, { outcome: "read" }>;
+
+/** Whether a file is Markdown, by its name, so the File tab shows it rendered and lets it be edited. */
+export function isMarkdownPath(path: string): boolean {
+	return /\.(md|markdown|mdown|mkd)$/i.test(path);
+}
+
+/**
+ * Whether a text ends its lines with CR LF throughout. A text box gives back
+ * plain new lines, so such a text is edited with them and saved with CR LF
+ * again (`textToSave`).
+ */
+export function usesCrLf(text: string): boolean {
+	const crlf = text.split("\r\n").length - 1;
+	return crlf > 0 && crlf === text.split("\n").length - 1;
+}
+
+/** The text a file is edited as: its lines ended by plain new lines. */
+export function editableText(text: string): string {
+	return text.replace(/\r\n/g, "\n");
+}
+
+/** The text to save from an edited one, with the line endings the file had when it was read. */
+export function textToSave(original: string, edited: string): string {
+	const plain = edited.replace(/\r\n/g, "\n");
+	return usesCrLf(original) ? plain.replace(/\n/g, "\r\n") : plain;
+}
+
+/** Why a text may not be saved, or null when it may: over the limits the viewer reads. */
+export function textToSaveProblem(text: string): string | null {
+	const bytes = new TextEncoder().encode(text).length;
+	if (bytes > MAX_FILE_BYTES) return `The text is ${Math.ceil(bytes / 1024)} KB; files up to ${MAX_FILE_BYTES / 1024} KB can be saved here.`;
+	const lines = countLines(text);
+	if (lines > MAX_FILE_LINES) return `The text has ${lines.toLocaleString("en-US")} lines; files up to ${MAX_FILE_LINES.toLocaleString("en-US")} lines can be saved here.`;
+	return null;
+}

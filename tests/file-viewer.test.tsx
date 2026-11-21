@@ -42,10 +42,13 @@ describe("the File tab", () => {
 		const markup = render(store);
 		expect(tabs(markup)).toEqual(["Workspace", "Changes", "Pull request", "plan.md"]);
 		expect(markup).toContain('aria-label="Close plan.md"');
-		expect(markup).toContain("Read-only");
-		expect(markup).toContain("# Plan");
+		// Markdown opens rendered (see markdown-reader.test.tsx); its source shows the numbers.
+		expect(markup).toContain(">Plan</h1>");
+		store.showFileAs(FEATURE.id, "source");
+		const source = render(store);
+		expect(source).toContain("# Plan");
 		// The numbers are their own block, one per line.
-		expect(markup).toMatch(/file-viewer-numbers" aria-hidden="true">1\n2\n3\n4\n5\n6\n7<\/pre>/);
+		expect(source).toMatch(/file-viewer-numbers" aria-hidden="true">1\n2\n3\n4\n5\n6\n7<\/pre>/);
 
 		store.closeFile(FEATURE.id);
 		expect(store.getState().tab).toBe("changes");
@@ -135,7 +138,7 @@ describe("the File tab", () => {
 	});
 
 	test("an open file leaves with its worktree", () => {
-		const state = { ...initialState, tab: "file" as const, selection: { repository: TIMBER, worktree: FEATURE.id }, repositories: [], files: { [FEATURE.id]: { repository: TIMBER, worktreePath: FEATURE.path, path: "a.md", from: "workspace" as const, result: null } } };
+		const state = { ...initialState, tab: "file" as const, selection: { repository: TIMBER, worktree: FEATURE.id }, repositories: [], files: { [FEATURE.id]: { repository: TIMBER, worktreePath: FEATURE.path, path: "a.md", from: "workspace" as const, result: null, mode: "source" as const, draft: null, saving: false, saveProblem: null } } };
 		expect(settleFiles(state)).toEqual({ files: {}, tab: "workspace" });
 		expect(settleFiles({ ...state, repositories: sampleRepositories })).toBeNull();
 	});
@@ -161,6 +164,6 @@ describe("describeFileNotice", () => {
 
 	test("names the tab after the file", () => {
 		expect(fileTabLabel(undefined)).toBe("File");
-		expect(fileTabLabel({ repository: TIMBER, worktreePath: FEATURE.path, path: "docs/plan.md", from: "workspace", result: null })).toBe("plan.md");
+		expect(fileTabLabel({ repository: TIMBER, worktreePath: FEATURE.path, path: "docs/plan.md", from: "workspace", result: null, mode: "source", draft: null, saving: false, saveProblem: null })).toBe("plan.md");
 	});
 });

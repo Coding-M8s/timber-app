@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { type InstallStep, UPDATE_RESTARTING, appUpdateBannerText, appUpdateStatus, canCheckForUpdate, updateConfirmText } from "../app-update-format";
 import type { AppUpdateState } from "../../shared/app-update";
 import { useAppState, useStore } from "../store/react";
+import { unsavedFilePaths } from "../file-view-format";
 
 export interface InstallControlsViewProps {
 	step: InstallStep;
@@ -11,18 +12,20 @@ export interface InstallControlsViewProps {
 	onCancel: () => void;
 	/** Said beside Restart to update when there is one, such as Later in the banner. */
 	later?: () => void;
+	/** The files with unsaved edits, which a restart drops. */
+	unsavedFiles?: readonly string[];
 }
 
 /**
  * Restart to update, as drawn from its data. While sessions run it asks
  * first, with focus on Cancel, the button that changes nothing.
  */
-export function InstallControlsView({ step, onRestart, onConfirm, onCancel, later }: InstallControlsViewProps) {
+export function InstallControlsView({ step, onRestart, onConfirm, onCancel, later, unsavedFiles = [] }: InstallControlsViewProps) {
 	if (step.kind === "restarting") return <p className="update-banner-line" role="status">{UPDATE_RESTARTING}</p>;
 	if (step.kind === "confirm") {
 		return (
 			<div className="update-install" role="group" aria-label="Restart to update">
-				<p className="update-banner-line">{updateConfirmText(step.live)}</p>
+				<p className="update-banner-line">{updateConfirmText(step.live, unsavedFiles)}</p>
 				<div className="update-install-buttons">
 					<button type="button" className="button quiet" autoFocus onClick={onCancel}>Cancel</button>
 					<button type="button" className="button danger" onClick={onConfirm}>Restart</button>
@@ -53,10 +56,11 @@ export function InstallControlsView({ step, onRestart, onConfirm, onCancel, late
  */
 function InstallControls({ later }: { later?: () => void }) {
 	const store = useStore();
-	const step = useAppState().appUpdateStep;
+	const { appUpdateStep: step, files } = useAppState();
 	return (
 		<InstallControlsView
 			step={step}
+			unsavedFiles={unsavedFilePaths(files)}
 			onRestart={() => void store.restartForUpdate(false)}
 			onConfirm={() => void store.restartForUpdate(true)}
 			onCancel={() => store.cancelUpdateRestart()}

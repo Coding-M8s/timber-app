@@ -57,10 +57,10 @@ import { mergeOverlapping } from "./merge";
 import { keepEntries } from "./records";
 import { RESTORE_CONCURRENCY, RESTORE_QUIET_MILLISECONDS, type RestoreJob, goneSavedWorktrees, restoreJobs, restoreRequest, runLimited } from "./restore";
 import { type SavedSessions, pickShown } from "../../shared/saved-sessions";
-import type { WorktreeFileResult } from "../../shared/worktree-files";
-import { outsideResult, pathInWorktree, settleFiles } from "../file-view-format";
+import { type WorktreeFileResult, editableText, textToSave } from "../../shared/worktree-files";
+import { afterSave, canEditFile, fileText, hasUnsavedEdits, initialFileMode, outsideResult, pathInWorktree, settleFiles, unsavedFileCount } from "../file-view-format";
 import {
-	type AppState, type ChangesView, type DialogRequest, type FileView, type Operation, type PullRequestForm, type Removal, type SessionAgent, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood,
+	type AppState, type ChangesView, type DialogRequest, type FileMode, type FileView, type Operation, type PullRequestForm, type Removal, type SessionAgent, type UnsavedFileStep, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood,
 	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, canToggleChopsPanel, offeredChops, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, shownSession, timberReady, withTerminal, withoutSession } from "./state";
 
 /**
@@ -223,10 +223,26 @@ export interface AppStore {
 	 * it; anything else is refused without a read. Replaces the file open there.
 	 */
 	openFile(worktreeId: string, path: string): void;
-	/** Read the open file of a worktree again, as it is on disk now. */
+	/** Read the open file of a worktree again, as it is on disk now. With unsaved edits, asks first. */
 	readFileAgain(worktreeId: string): void;
-	/** Close the file of a worktree, which hides its File tab and shows the tab it was opened from. */
+	/** Close the file of a worktree, which hides its File tab and shows the tab it was opened from. With unsaved edits, asks first. */
 	closeFile(worktreeId: string): void;
+	/** Show the open file rendered or as its source. Any draft stays, and shows in either. */
+	showFileAs(worktreeId: string, mode: Exclude<FileMode, "edit">): void;
+	/** Edit the open Markdown file's source, starting from the file as read, or from the draft kept since. */
+	editFile(worktreeId: string): void;
+	/** The edited text of the open file, as typed. */
+	changeDraft(worktreeId: string, text: string): void;
+	/**
+	 * Save the draft of the open file, only that file, through the engine.
+	 * Nothing is written when the file changed on disk since it was read,
+	 * unless `overwrite` says to write over it. Answers whether it saved.
+	 */
+	saveFile(worktreeId: string, options?: { overwrite?: boolean }): Promise<boolean>;
+	/** Drop the draft of the open file, and show the file as it is on disk. */
+	discardEdits(worktreeId: string): void;
+	/** Answer the question about unsaved edits: save then go on, discard then go on, or keep editing. */
+	answerUnsavedFile(answer: "save" | "discard" | "keep"): Promise<void>;
 	/**
 	 * Read the changed files of a worktree, named by the path of its
 	 * repository and its identity, into `changes`, and then the diff of the
@@ -792,6 +808,9 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		void refreshIssues(repository);
 	}
 
+	/** How many files with unsaved edits the main process was last told of. */
+	let reportedUnsaved = 0;
+
 	function update(change: Partial<AppState>): void {
 		const shownBefore = sessionOnScreen(state)?.id ?? null;
 		const terminalsBefore = state.terminals;
@@ -800,6 +819,17 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		if (change.tab !== undefined || change.selection !== undefined || change.files !== undefined || change.repositories !== undefined) {
 			const settled = settleFiles(state);
 			if (settled) state = { ...state, ...settled };
+			// The main process asks before quitting while any file holds unsaved edits.
+			const unsaved = unsavedFileCount(state.files);
+			if (unsaved !== reportedUnsaved) {
+				reportedUnsaved = unsaved;
+				try {
+					engine.reportUnsavedFiles(unsaved);
+				} catch {
+					// Told again with the next change.
+					reportedUnsaved = -1;
+				}
+			}
 		}
 		// A change to the list, or to Timber, may bring links to read or take some away.
 		if (change.repositories || change.timber) catchUpIssues();
@@ -1260,24 +1290,129 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		update({ files: { ...state.files, [worktreeId]: { ...now, result } } });
 	}
 
+	/**
+	 * Whether a step that would drop the open file's draft may go ahead now.
+	 * With unsaved edits it may not: the File tab shows, and the person is
+	 * asked, unless another dialog is open, when the step is just not taken.
+	 */
+	function mayDropDraft(worktreeId: string, then: UnsavedFileStep): boolean {
+		const view = state.files[worktreeId];
+		if (!view || !hasUnsavedEdits(view)) return true;
+		if (state.dialog === null) {
+			const selection = selectionFor(state.repositories, worktreeId);
+			update({ ...(selection ? { selection, board: null, tab: "file" as const } : {}), dialog: { kind: "unsaved-file", worktree: worktreeId, then } });
+		}
+		return false;
+	}
+
 	function openFile(worktreeId: string, path: string): void {
 		const selection = selectionFor(state.repositories, worktreeId);
 		const worktree = state.repositories.find(repository => repository.path === selection?.repository)?.worktrees.find(candidate => candidate.id === worktreeId);
 		if (!selection || !worktree) return;
 		const relative = pathInWorktree(worktree, path);
+		const open = state.files[worktreeId];
+		// The file open already: shown as it is, edits and all, without reading it again.
+		if (open && relative !== null && open.path === relative && open.worktreePath === worktree.path) {
+			update({ selection, board: null, tab: "file" });
+			return;
+		}
+		if (!mayDropDraft(worktreeId, { kind: "open", path })) return;
 		const shownHere = state.selection?.worktree === worktreeId && state.board === null;
-		const from = shownHere && state.tab !== "file" ? state.tab : state.files[worktreeId]?.from ?? "workspace";
-		const view: FileView = { repository: selection.repository, worktreePath: worktree.path, path: relative ?? path, from, result: relative === null ? outsideResult(path) : null };
+		const from = shownHere && state.tab !== "file" ? state.tab : open?.from ?? "workspace";
+		const shownPath = relative ?? path;
+		const view: FileView = {
+			repository: selection.repository, worktreePath: worktree.path, path: shownPath, from, result: relative === null ? outsideResult(path) : null,
+			mode: initialFileMode(shownPath), draft: null, saving: false, saveProblem: null,
+		};
 		update({ selection, board: null, files: { ...state.files, [worktreeId]: view }, tab: "file" });
 		if (relative !== null) void readOpenFile(worktreeId);
 	}
 
 	function closeFile(worktreeId: string): void {
 		const view = state.files[worktreeId];
-		if (!view) return;
+		if (!view || !mayDropDraft(worktreeId, { kind: "close" })) return;
 		const { [worktreeId]: _closed, ...others } = state.files;
 		const shown = state.tab === "file" && state.selection?.worktree === worktreeId;
 		update(shown ? { files: others, tab: view.from } : { files: others });
+	}
+
+	function readFileAgain(worktreeId: string): void {
+		const view = state.files[worktreeId];
+		if (!view || !mayDropDraft(worktreeId, { kind: "read-again" })) return;
+		// Reading again drops the draft, which held nothing unsaved, and leaves edit mode.
+		if (view.draft !== null || view.mode === "edit" || view.saveProblem !== null) changeFile(worktreeId, { draft: null, mode: view.mode === "edit" ? "rendered" : view.mode, saveProblem: null });
+		void readOpenFile(worktreeId);
+	}
+
+	function changeFile(worktreeId: string, change: Partial<FileView>): void {
+		const view = state.files[worktreeId];
+		if (view) update({ files: { ...state.files, [worktreeId]: { ...view, ...change } } });
+	}
+
+	function editFile(worktreeId: string): void {
+		const view = state.files[worktreeId];
+		if (!view || !canEditFile(view)) return;
+		changeFile(worktreeId, { mode: "edit", draft: view.draft ?? editableText(fileText(view)!) });
+	}
+
+	function discardEdits(worktreeId: string): void {
+		const view = state.files[worktreeId];
+		if (!view) return;
+		changeFile(worktreeId, { draft: null, saveProblem: null, mode: view.mode === "edit" ? initialFileMode(view.path) : view.mode });
+	}
+
+	async function saveFile(worktreeId: string, options: { overwrite?: boolean } = {}): Promise<boolean> {
+		const view = state.files[worktreeId];
+		if (!view || view.draft === null || view.saving) return false;
+		const original = fileText(view);
+		// A file that is not text any more is saved over only when asked to.
+		if (original === null && !options.overwrite) {
+			changeFile(worktreeId, { saveProblem: { kind: "changed", message: `${view.path} is not the text it was when it was opened. Nothing was saved.` } });
+			return false;
+		}
+		const draft = view.draft;
+		const text = textToSave(original ?? "", draft);
+		changeFile(worktreeId, { saving: true, saveProblem: null });
+		let answer: Awaited<ReturnType<Engine["writeWorktreeFile"]>>;
+		try {
+			answer = await engine.writeWorktreeFile({ repository: view.repository, worktree: view.worktreePath, path: view.path, text, expected: options.overwrite ? null : original });
+		} catch (error) {
+			answer = { outcome: "failed", message: `${unheard(`the save of ${view.path}`, error)} It may or may not have been saved; read it again to see.` };
+		}
+		const now = state.files[worktreeId];
+		// Closed or replaced meanwhile: nothing here to tell.
+		if (!now || now.path !== view.path || now.worktreePath !== view.worktreePath) return answer.outcome === "saved";
+		update({ files: { ...state.files, [worktreeId]: afterSave(now, answer) } });
+		return answer.outcome === "saved";
+	}
+
+	/** Take the step a question about unsaved edits held back, now that the draft may go. */
+	function continueAfterDraft(worktreeId: string, then: UnsavedFileStep): void {
+		if (then.kind === "close") closeFile(worktreeId);
+		else if (then.kind === "read-again") readFileAgain(worktreeId);
+		else openFile(worktreeId, then.path);
+	}
+
+	async function answerUnsavedFile(answer: "save" | "discard" | "keep"): Promise<void> {
+		const dialog = state.dialog;
+		if (dialog?.kind !== "unsaved-file") return;
+		const { worktree, then } = dialog;
+		if (answer === "keep") {
+			update({ dialog: null });
+			return;
+		}
+		if (answer === "save") {
+			// The question stays while saving, and stays when the save did not write, so its reason shows in the File tab.
+			const saved = await saveFile(worktree);
+			if (!saved) {
+				if (state.dialog === dialog) update({ dialog: null });
+				return;
+			}
+		} else {
+			discardEdits(worktree);
+		}
+		if (state.dialog === dialog) update({ dialog: null });
+		continueAfterDraft(worktree, then);
 	}
 
 	/** Forget the notes of a worktree that left the list. */
@@ -2885,8 +3020,16 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			if (tab !== state.tab || state.board !== null) update({ tab, board: null });
 		},
 		openFile,
-		readFileAgain: worktreeId => void readOpenFile(worktreeId),
+		readFileAgain,
 		closeFile,
+		showFileAs: (worktreeId, mode) => changeFile(worktreeId, { mode }),
+		editFile,
+		changeDraft: (worktreeId, text) => {
+			if (state.files[worktreeId]?.draft !== undefined && state.files[worktreeId]?.draft !== null) changeFile(worktreeId, { draft: text });
+		},
+		saveFile,
+		discardEdits,
+		answerUnsavedFile,
 		readChanges,
 		readChops,
 		runChop,
@@ -3124,7 +3267,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		installAppUpdate: installUpdate,
 		async restartForUpdate(endSessions) {
 			const live = liveTerminalCount(state.terminals);
-			if (live > 0 && !endSessions) {
+			// Unsaved edits are lost with the restart too, so they are asked about as running sessions are.
+			if ((live > 0 || unsavedFileCount(state.files) > 0) && !endSessions) {
 				update({ appUpdateStep: { kind: "confirm", live } });
 				return;
 			}

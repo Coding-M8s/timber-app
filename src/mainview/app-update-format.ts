@@ -1,5 +1,6 @@
 import type { AppUpdateInstallResult, AppUpdateState } from "../shared/app-update";
 import { describeEndingTerminals } from "./terminal-format";
+import { describeUnsavedFiles } from "./file-view-format";
 
 /**
  * What the window says about updating the app. Pure, so it can be tested
@@ -23,10 +24,11 @@ export function appUpdateBannerText(state: AppUpdateState, later: string | null)
 	return null;
 }
 
-/** The question before restarting while sessions run. They are saved first, so they open again. */
-export function updateConfirmText(live: number): string {
+/** The question before restarting while sessions run or files hold unsaved edits. Sessions are saved first, so they open again. */
+export function updateConfirmText(live: number, unsavedFiles: readonly string[] = []): string {
 	const ending = describeEndingTerminals(live);
-	return `Restart to install the update now?${ending === null ? "" : ` ${ending} They open again when the app starts.`}`;
+	const unsaved = describeUnsavedFiles(unsavedFiles);
+	return `Restart to install the update now?${ending === null ? "" : ` ${ending} They open again when the app starts.`}${unsaved === null ? "" : ` ${unsaved}`}`;
 }
 
 /** What Restart to update leads to after the engine answered. */

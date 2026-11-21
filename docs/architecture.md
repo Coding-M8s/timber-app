@@ -2964,8 +2964,9 @@ checks a ref.
 
 ## The file viewer
 
-The File tab shows one file of a worktree, read-only, such as a plan or a
-report an agent wrote.
+The File tab shows one file of a worktree, such as a plan or a report an
+agent wrote. A Markdown file shows rendered, and its source can be edited
+and saved; any other file is read-only.
 
 - **The capability.** `readWorktreeFile({ repository, worktree, path })` on
   the `Engine` contract. Types and pure checks are in
@@ -3005,11 +3006,47 @@ report an agent wrote.
   worktree's folder, not the shell's current folder, which the app does
   not know. A path that wraps onto the next row is not found. An absolute
   path outside the worktree is refused in the window, without a read.
+- **Saving.** `writeWorktreeFile({ repository, worktree, path, text,
+  expected })` on the `Engine` contract goes through the same checks as a
+  read (`locate` in `src/bun/worktree-files.ts`): a listed worktree, a path
+  and real path inside it, a plain file that is there. It opens that file
+  without `O_CREAT`, reads it, and writes only when it still holds
+  `expected`, the text the window edited from; otherwise the answer is
+  "changed" with what it holds now, and `expected: null` writes over it.
+  The write is in place (truncate, then write), not a temporary file and a
+  rename, so no other file appears, a link stays a link, and the mode stays.
+  A byte order mark the file starts with is kept. Text over the read limits
+  is refused, so a saved file can always be opened again. It runs no Git; a
+  test on a real repository checks that Git then sees exactly that path
+  changed, refs, HEAD, and the index stay, no entry appears beside it, and
+  every refusal leaves every file as it was.
+- **Edits in the window.** The `FileView` holds `mode`, `draft`, `saving`,
+  and `saveProblem`, in the store, so a draft outlives the File tab's
+  component. A text box gives back plain new lines, so a file with CR LF is
+  edited as `editableText` and saved as `textToSave`, and saving unedited
+  text writes the same bytes. `hasUnsavedEdits` decides when to ask: before
+  `closeFile`, `readFileAgain`, and `openFile` of another path, which leave
+  an `unsaved-file` dialog instead. The store tells the main process how
+  many files hold unsaved edits (`reportUnsavedFiles`, the `unsavedFiles`
+  message); the quit guard asks while that is above zero as it does while
+  sessions run, and Restart now and restarting into an update ask in the
+  window.
+- **Rendering Markdown.** `markdownTokens` in
+  `src/mainview/markdown-format.ts` uses only the lexer of `marked`
+  (GitHub flavored) to turn the text into tokens, and
+  `src/mainview/components/MarkdownView.tsx` turns those into React
+  elements. No HTML string reaches the page: an HTML token is drawn as its
+  text, images are never loaded, and links have no `href`, so the page can
+  never follow one itself. `markdownLink` decides what a click does: a web
+  page (as `webLink` accepts) goes to `openLink`, a relative path inside the
+  worktree goes to `openFile`, a `#` link scrolls to the heading, and
+  anything else is not followed.
 - **Trying it.** In `bun run dev:web` every worktree has `docs/plan.md`,
   `report.txt`, `logo.png` (binary), and a `docs` folder, besides its
   changed files. `timberMock.setWorktreeFile(worktreePath, path, text)` puts
   a file there, `{ kind: "bytes", bytes: [0] }` a binary one, and `null`
-  removes it.
+  removes it. Changing a file while it is edited acts out an agent writing
+  it, and `timberMock.delayFileSaves(milliseconds)` slows saves down.
 
 ## Review notes
 

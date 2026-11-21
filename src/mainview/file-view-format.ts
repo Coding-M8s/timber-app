@@ -1,6 +1,7 @@
-import type { AppState, FileView, WorkspaceTab } from "./store/state";
+import type { AppState, FileMode, FileView, UnsavedFileStep, WorkspaceTab } from "./store/state";
 import type { Worktree } from "../shared/model";
-import { MAX_FILE_BYTES, MAX_FILE_LINES, type WorktreeFileResult, worktreeRelativePath } from "../shared/worktree-files";
+import { describeQuitRequest } from "../shared/terminal";
+import { MAX_FILE_BYTES, MAX_FILE_LINES, type WorktreeFileResult, type WorktreeFileWriteResult, editableText, isMarkdownPath, worktreeRelativePath } from "../shared/worktree-files";
 
 /**
  * The File tab's rules and words. Pure, so they can be tested without a
@@ -81,4 +82,82 @@ export function pathInWorktree(worktree: Pick<Worktree, "path" | "canonicalPath"
 /** Why the viewer was asked to open something that is not a path inside the worktree. */
 export function outsideResult(path: string): WorktreeFileResult {
 	return { outcome: "outside", path, message: `${path} is not inside this worktree.` };
+}
+
+/** The text of the file as last read or saved, or null when it is not text. */
+export function fileText(view: Pick<FileView, "result">): string | null {
+	const { result } = view;
+	return result?.outcome === "read" && result.content.kind === "text" ? result.content.text : null;
+}
+
+/** Whether the file can be edited here: a Markdown file read as text. */
+export function canEditFile(view: Pick<FileView, "path" | "result">): boolean {
+	return isMarkdownPath(view.path) && fileText(view) !== null;
+}
+
+/** The mode a file opens in: Markdown rendered, anything else as its source. */
+export function initialFileMode(path: string): FileMode {
+	return isMarkdownPath(path) ? "rendered" : "source";
+}
+
+/** Whether the file holds edits that are not saved: a draft that differs from the file as read, or any draft once the file is no longer text. */
+export function hasUnsavedEdits(view: Pick<FileView, "draft" | "result">): boolean {
+	if (view.draft === null) return false;
+	const text = fileText(view);
+	return text === null || editableText(text) !== view.draft;
+}
+
+/** How many open files hold unsaved edits, as quitting asks about. */
+export function unsavedFileCount(files: AppState["files"]): number {
+	return Object.values(files).filter(hasUnsavedEdits).length;
+}
+
+/** The paths of the open files that hold unsaved edits, in a stable order. */
+export function unsavedFilePaths(files: AppState["files"]): string[] {
+	return Object.values(files).filter(hasUnsavedEdits).map(view => view.path).sort();
+}
+
+/** A line about files whose unsaved edits would be lost, or null when there are none. */
+export function describeUnsavedFiles(paths: readonly string[]): string | null {
+	if (paths.length === 0) return null;
+	if (paths.length === 1) return `${fileName(paths[0]!)} has unsaved edits, which will be lost.`;
+	return `${paths.length} files have unsaved edits, which will be lost.`;
+}
+
+/** The question about one file's unsaved edits, by what would drop them. */
+export function describeUnsavedFileQuestion(path: string, then: UnsavedFileStep): { title: string; text: string } {
+	const name = fileName(path);
+	const what = then.kind === "close" ? "Closing it" : then.kind === "read-again" ? "Reading it again" : `Opening ${fileName(then.path)} in its place`;
+	return { title: `Save ${name}?`, text: `${path} has edits that are not saved. ${what} drops them unless you save first.` };
+}
+
+/** The view after a save answered: the file as saved, or why it was not. */
+export function afterSave(view: FileView, answer: WorktreeFileWriteResult): FileView {
+	switch (answer.outcome) {
+		case "saved":
+			return { ...view, saving: false, saveProblem: null, result: { outcome: "read", path: answer.path, content: answer.content } };
+		case "changed":
+			return { ...view, saving: false, saveProblem: { kind: "changed", message: answer.message } };
+		case "too-large":
+			return { ...view, saving: false, saveProblem: { kind: "failed", message: answer.message } };
+		case "missing":
+		case "not-a-file":
+		case "outside":
+			// Every refusal says nothing was written, once.
+			return { ...view, saving: false, saveProblem: { kind: "failed", message: /\bsaved\b/.test(answer.message) ? answer.message : `${answer.message} Nothing was saved.` } };
+		case "not-listed":
+		case "failed":
+			return { ...view, saving: false, saveProblem: { kind: "failed", message: answer.message } };
+	}
+}
+
+/**
+ * The question before quitting: about the sessions that still run, as the
+ * main process counted them, and the files with unsaved edits in the window.
+ */
+export function describeQuitQuestion(live: number, unsavedPaths: readonly string[]): { title: string; text: string; stay: string } {
+	const unsaved = describeUnsavedFiles(unsavedPaths);
+	if (live <= 0) return { title: "Quit Timber?", text: unsaved ?? "Nothing is running.", stay: "Keep editing" };
+	const sessions = describeQuitRequest(live);
+	return { title: sessions.title, text: unsaved === null ? sessions.text : `${sessions.text} ${unsaved}`, stay: "Keep running" };
 }

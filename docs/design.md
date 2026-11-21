@@ -435,8 +435,29 @@ logins. The app never reads a tracker login and never signs in.
   folder. A web link still needs Ctrl+click (Cmd+click on macOS), since it
   leaves the app; a file stays in it. Binary files, files over 1 MB or 20,000 lines,
   missing files, folders, and paths outside the worktree get a plain notice
-  in place of the text. "Read again" reads it as it is now. This is a
-  viewer, not an editor.
+  in place of the text. "Read again" reads it as it is now. Other files are
+  read-only: this is a viewer, not an editor.
+- Markdown reader: a `.md` or `.markdown` file opens rendered, in the
+  interface's font, with a Rendered / Source / Edit switch in the File tab's
+  title line. Source is the read-only view with line numbers. Edit is one
+  plain text box over the source (no search, highlighting, or undo history
+  beyond the text box's own), with Save (Ctrl+S, Cmd+S on macOS) and
+  Discard; once saved, Discard reads "Done". "Unsaved" shows while the text
+  differs from the file. The edits are kept when another tab or worktree
+  shows, and Rendered shows them before they are saved. Saving writes only
+  that file, with its own line endings. When the file changed on disk since
+  it was opened, as when an agent wrote it, nothing is written: the reason
+  shows above the text with "Save over it", and the edits stay. Closing the
+  file, Read again, or opening another file in its place asks first while
+  edits are unsaved (Save, Discard, or Keep editing, focus on Save), and so
+  do quitting, closing the window, Restart now in Settings, restarting into
+  an update, and uninstalling, even with no session running. An open file
+  whose worktree leaves the list is dropped with its edits. Rendered
+  Markdown runs nothing: HTML written in the file shows as text, images show
+  their description and are never loaded, a web link opens in the browser,
+  a relative link opens that file of the worktree in the File tab, a `#`
+  link goes to the heading, and any other link is plain text with its
+  address in the tooltip.
 - Review notes: in the Changes tab, clicking a line's numbers (or Enter on
   them) starts a note on that line, in either comparison, and Shift+click
   or Shift+Enter on another line of the same hunk makes it a range. A note

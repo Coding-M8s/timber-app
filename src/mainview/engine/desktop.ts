@@ -92,6 +92,7 @@ export function createDesktopEngine(): Engine {
 		onRepositoryChanged: changes.add,
 		attend: attention => rpc.send.attend(attention),
 		windowReady: () => rpc.send.windowReady({}),
+		reportUnsavedFiles: count => rpc.send.unsavedFiles({ count }),
 		fetchStatuses: () => rpc.request.fetchStatuses({}),
 		// A large fetch takes as long as it takes; the main process stops one after ten minutes.
 		fetchNow: repository => rpc.request.fetchNow({ repository }, { maxRequestTime: Infinity }),
@@ -139,6 +140,7 @@ export function createDesktopEngine(): Engine {
 		readFileChanges: request => rpc.request.readFileChanges(request, { maxRequestTime: 60_000 }),
 		readFileDiff: request => rpc.request.readFileDiff(request, { maxRequestTime: 60_000 }),
 		readWorktreeFile: request => rpc.request.readWorktreeFile(request, { maxRequestTime: 60_000 }),
+		writeWorktreeFile: request => rpc.request.writeWorktreeFile(request, { maxRequestTime: 60_000 }),
 		readPorts: request => rpc.request.readPorts(request, { maxRequestTime: 30_000 }),
 		listChops: request => rpc.request.listChops(request, { maxRequestTime: 60_000 }),
 		onChopsChanged: chopChanges.add,
