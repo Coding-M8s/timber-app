@@ -1,7 +1,7 @@
 import { type SubmitEvent, useEffect, useId } from "react";
 import type { Repository, Worktree } from "../../shared/model";
 import { pullRequestOf } from "../../shared/pull-requests";
-import { BASE_HINT, CREATE_HEADING, CREATE_NOTE, CREATE_RUNNING, CREATE_SUBMIT, type PullRequestFields, type ReportedPullRequestView, pullRequestCommandFor } from "../pull-request-create-format";
+import { BASE_HINT, CREATE_HEADING, CREATE_NOTE, CREATE_RUNNING, CREATE_SUBMIT, type PullRequestFields, issueMentionHint, type ReportedPullRequestView, pullRequestCommandFor } from "../pull-request-create-format";
 import { NO_DESCRIPTION, OPEN_IN_BROWSER, RUN_STATUS_LABELS, describePullRequestTab } from "../pull-request-tab-format";
 import { useAppState, useStore } from "../store/react";
 import type { PullRequestForm } from "../store/state";
@@ -44,6 +44,7 @@ export function PullRequestPanel({ repository, worktree }: { repository: Reposit
 							<PullRequestFormView
 								form={form}
 								afterIssue={issue !== null}
+								mentionHint={issueMentionHint(worktree.issue)}
 								onChange={change => store.editPullRequestForm(worktree.id, change)}
 								onSubmit={() => void store.createPullRequest(worktree.id)}
 							/>
@@ -158,6 +159,8 @@ export interface PullRequestFormViewProps {
 	form: PullRequestForm;
 	/** The Issue section shows above, so the form starts with a hairline. */
 	afterIssue: boolean;
+	/** Which issue Timber mentions in the body (`issueMentionHint` of the saved link), shown under Description. Null for none. */
+	mentionHint: string | null;
 	onChange: (change: Partial<PullRequestFields>) => void;
 	onSubmit: () => void;
 }
@@ -170,7 +173,7 @@ export interface PullRequestFormViewProps {
  * what Timber printed in a details area that starts closed, until a field
  * changes or the next run.
  */
-export function PullRequestFormView({ form, afterIssue, onChange, onSubmit }: PullRequestFormViewProps) {
+export function PullRequestFormView({ form, afterIssue, mentionHint, onChange, onSubmit }: PullRequestFormViewProps) {
 	const headingId = useId();
 	const { running, failure } = form;
 	const submit = (event: SubmitEvent<HTMLFormElement>) => {
@@ -189,6 +192,7 @@ export function PullRequestFormView({ form, afterIssue, onChange, onSubmit }: Pu
 				<label className="field">
 					<span className="field-label">Description</span>
 					<textarea className="field-input pull-create-body" name="body" rows={6} value={form.body} onChange={event => onChange({ body: event.target.value })} />
+					{mentionHint && <span className="field-hint">{mentionHint}</span>}
 				</label>
 				<label className="field">
 					<span className="field-label">Base</span>

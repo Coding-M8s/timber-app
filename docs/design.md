@@ -190,8 +190,12 @@ change them here first when they change.
   "Open a pull request": Title (the last commit's subject, else the
   branch; with a saved Jira or Linear link it starts with the issue's key,
   as `PROJ-123: subject`, unless it already does, and a GitHub link adds
-  nothing, since Timber mentions that issue in the body), Description,
-  Base (the saved base as Timber takes it, `origin/main`, or empty for
+  nothing, since Timber mentions that issue in the body), Description
+  (with a saved link, a quiet line under it says what Timber adds, such as
+  "Timber adds Refs ENG-42 unless the description already mentions it",
+  or `Refs #102`, and `owner/repo#102` when the pull request opens in
+  another repository, for GitHub; without a saved link there is no line,
+  and the app never guesses from the branch name), Base (the saved base as Timber takes it, `origin/main`, or empty for
   Timber's own choice when the saved base is a local branch or none), and
   an "Open as a draft" switch. A quiet line says
   Timber publishes the branch and opens the pull request, and the app never
