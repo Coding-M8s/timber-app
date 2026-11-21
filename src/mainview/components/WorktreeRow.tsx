@@ -126,14 +126,11 @@ interface WorktreeRowProps {
 	onSyncAction?: (action: SyncActionKind) => void;
 }
 
-/**
- * The marker each sync action's control takes the place of. Push is meant to
- * be one more entry here, with the ahead count.
- */
-const syncMarker: Record<SyncActionKind, RowMarkerKind> = { pull: "behind" };
+/** The marker each sync action's control takes the place of: Pull the behind count, Push the ahead count. */
+const syncMarker: Record<SyncActionKind, RowMarkerKind> = { pull: "behind", push: "ahead" };
 
 /** The arrow each sync action's control draws, as its marker does. */
-const syncArrow: Record<SyncActionKind, "up" | "down"> = { pull: "down" };
+const syncArrow: Record<SyncActionKind, "up" | "down"> = { pull: "down", push: "up" };
 
 /** A sync action's control: the arrow and count of the marker it replaces, as a button of its own. */
 function SyncActionButton({ control, onChoose }: { control: SyncControl; onChoose: () => void }) {
@@ -228,7 +225,7 @@ export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest =
 		</button>
 	);
 	if (actions === undefined && !onMenuChoice && syncControls.length === 0) return row;
-	const itemClass = ["row-item", selected ? "selected" : "", syncControls.length > 0 ? "with-sync" : "", removal?.kind === "failed" ? "removal-failed" : ""].filter(Boolean).join(" ");
+	const itemClass = ["row-item", selected ? "selected" : "", syncControls.length > 0 ? "with-sync" : "", removal?.kind === "failed" ? "removal-failed" : "", actions !== undefined ? "with-actions" : ""].filter(Boolean).join(" ");
 	return (
 		// A right-click anywhere on the row, its actions included, opens its menu.
 		// A removal that failed keeps its Details in view (see styles.css).

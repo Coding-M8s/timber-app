@@ -3504,3 +3504,59 @@ Bun 1.4.4, Git 2.56, and headless Google Chrome over the mock engine:
   `takesFilesPanelKey`), and whether any desktop takes Ctrl+Shift+E or
   Cmd+Shift+E before the app; some Linux input methods, such as IBus, use
   Ctrl+Shift+E for emoji. The shortcut was chosen by analysis.
+
+Run for Push from a worktree's row (issue 261), Linux x64 with Bun 1.4.5,
+Git 2.56.1, Timber 0.1.4 on the PATH, and headless Chromium over the mock
+engine:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun run build:web`: built.
+- `bun test`: 3541 passed, 19 skipped, 0 failed, after a rebase onto main.
+- By hand, `timber publish --result-file <file> -- <worktree>` in a
+  temporary repository with a local bare remote wrote records with
+  `publish.result` `published` and then `up-to-date` (outcome succeeded,
+  exit 0), `refused` when another clone had pushed first (outcome failed,
+  exit 1, "has moved on ... Nothing was pushed and no local ref changed"),
+  and `failed` with the remote URL set to an HTTPS host that does not
+  resolve (outcome failed, exit 1, "Git push to origin/main failed"). `tests/timber-publish.test.ts` reads
+  records of those shapes, plus a missing file, a record for another
+  worktree, and a publish object that is missing, unknown, or does not go
+  with the outcome.
+- `tests/sync-actions.test.ts`, with the real Timber against real temporary
+  repositories and a local bare remote: an ahead branch is pushed, the
+  remote's branch is the worktree's commit, the list reads the branch as
+  level with no fetch, the worktree's files are as they were, and the
+  remote's `main` did not move; a remote branch that moved on is refused
+  with Timber's words, and every ref of the clone and the remote is
+  unchanged; a remote that cannot be reached (its URL set to a missing
+  local path) fails with Timber's words and Git's in the details, and no
+  ref changed; a Timber that is not ready and a changed upstream run
+  nothing.
+- `tests/fetcher.test.ts`: a push waits for the fetch that runs, and the
+  next fetch waits for the push; a repository not in the list runs no push.
+- `tests/sync-action-ui.test.tsx`: the Push control replaces the ahead
+  marker; it and the menu entry are not offered for a behind, diverged,
+  level, force-pushed, gone, unpublished, or detached branch, nor while
+  Timber removes the worktree; the dialog shows the `timber publish`
+  command; through the store and the mock engine, a push leaves the row
+  level with no refresh, and a refusal, an offline or sign-in failure, and
+  a missing result leave the counts as they were.
+- `tests/sync-action-browser.test.ts` in Chromium: the Push control on
+  `feat/github-issue-lookup` shows the `timber publish` command, and after
+  the push the control goes, the toast says so, and the keyboard is on the
+  row; a moved-on refusal and an offline failure stay in the dialog with
+  Timber's words and the control stays; Shift+F10 on the row opens its
+  menu with Push first, and Enter opens the dialog. On a row that is not
+  selected, the point where the control is drawn is still the control once
+  the pointer is there. That test fails with the layout from issue 260, in
+  which the control moved left as the row's other controls showed and the
+  open-in-editor button took its place; now the control stays put on rows
+  with other controls, for Pull too.
+- `tests/sidebar-row-width-browser.test.ts`: every sample row still fits
+  with the two new Push controls, since only the first line keeps the
+  extra room.
+- `tests/palette.test.ts`: Push is listed for the ahead worktree with the
+  Timber command in its hint, and Pull only for the behind one.
+- Not run: the desktop window on any platform, a push over SSH or to a
+  real HTTPS host, and a real sign-in failure (the app's push tests used a
+  missing local path as the unreachable remote).

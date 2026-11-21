@@ -6,6 +6,7 @@ import {
 } from "../src/shared/sync-actions";
 
 const target = { remote: "origin", upstreamRef: "refs/remotes/origin/feat/login" };
+const worktreePath = "/work/app-worktrees/feat-login";
 const tracking = (ahead: number, behind: number, extra: Partial<Extract<SyncState, { kind: "tracking" }>> = {}): SyncState => ({
 	kind: "tracking", upstream: "origin/feat/login", ahead, behind, ...target, ...extra,
 });
@@ -23,26 +24,54 @@ describe("parseBranchSync, for sync actions", () => {
 });
 
 describe("the sync action table", () => {
-	test("knows pull, and nothing else yet", () => {
-		expect(SYNC_ACTION_KINDS).toEqual(["pull"]);
+	test("knows pull and push, and nothing else", () => {
+		expect(SYNC_ACTION_KINDS).toEqual(["pull", "push"]);
 		expect(isSyncActionKind("pull")).toBe(true);
-		expect(isSyncActionKind("push")).toBe(false);
+		expect(isSyncActionKind("push")).toBe(true);
+		expect(isSyncActionKind("shove")).toBe(false);
 		expect(isSyncActionKind(undefined)).toBe(false);
 	});
 
 	test("pull is a fetch of the remote, then a fast-forward to the upstream's full ref, never a merge commit or an autostash", () => {
-		const steps = syncActionSteps("pull", target);
+		const steps = syncActionSteps("pull", target, worktreePath);
 		expect(steps).toEqual([
-			{ args: ["fetch", "origin"], network: true },
-			{ args: ["merge", "--ff-only", "--no-autostash", "refs/remotes/origin/feat/login"], network: false },
+			{ program: "git", args: ["fetch", "origin"], network: true },
+			{ program: "git", args: ["merge", "--ff-only", "--no-autostash", "refs/remotes/origin/feat/login"], network: false },
 		]);
 		expect(steps.map(describeSyncStep)).toEqual(["git fetch origin", "git merge --ff-only --no-autostash refs/remotes/origin/feat/login"]);
 	});
 
 	test("shows a remote or a ref with a space quoted, while the arguments keep it as it is", () => {
-		const [fetchStep] = syncActionSteps("pull", { remote: "my remote", upstreamRef: "refs/remotes/my remote/main" });
+		const [fetchStep] = syncActionSteps("pull", { remote: "my remote", upstreamRef: "refs/remotes/my remote/main" }, worktreePath);
 		expect(fetchStep!.args).toEqual(["fetch", "my remote"]);
 		expect(describeSyncStep(fetchStep!)).toBe("git fetch 'my remote'");
+	});
+
+	test("push is one Timber command, timber publish, with a result file and the worktree's path after --", () => {
+		const steps = syncActionSteps("push", target, worktreePath);
+		expect(steps).toEqual([{ program: "timber", args: ["publish", "--result-file", "<temporary file>", "--", worktreePath], network: true }]);
+		expect(steps.map(describeSyncStep)).toEqual([`timber publish --result-file <temporary file> -- ${worktreePath}`]);
+		// A path that starts with a dash stays one argument after --, and is quoted when shown.
+		const [dashed] = syncActionSteps("push", target, "-my tree");
+		expect(dashed!.args.slice(-2)).toEqual(["--", "-my tree"]);
+		expect(describeSyncStep(dashed!)).toBe("timber publish --result-file <temporary file> -- '-my tree'");
+	});
+
+	test("push is offered only when ahead and not behind, with an upstream on a remote that was not rewritten", () => {
+		expect(syncActionApplies("push", tracking(2, 0))).toBe(true);
+		expect(applicableSyncActions(tracking(2, 0))).toEqual(["push"]);
+		const notOffered: (SyncState | null)[] = [
+			tracking(0, 0),
+			tracking(0, 3),
+			// Diverged: Timber would refuse, and Rebase is the way on.
+			tracking(1, 3),
+			tracking(2, 0, { forcePushed: { at: 1 } }),
+			{ kind: "gone", upstream: "origin/feat/login" },
+			{ kind: "unpublished" },
+			{ kind: "tracking", upstream: "main", ahead: 1, behind: 0 },
+			null,
+		];
+		for (const sync of notOffered) expect(syncActionApplies("push", sync)).toBe(false);
 	});
 
 	test("pull is offered only when behind and not ahead, with an upstream on a remote that was not rewritten", () => {
@@ -50,7 +79,6 @@ describe("the sync action table", () => {
 		expect(applicableSyncActions(tracking(0, 3))).toEqual(["pull"]);
 		const notOffered: (SyncState | null)[] = [
 			tracking(0, 0),
-			tracking(2, 0),
 			// Diverged: Rebase is the way on.
 			tracking(1, 3),
 			tracking(0, 3, { forcePushed: { at: 1 } }),
@@ -61,6 +89,8 @@ describe("the sync action table", () => {
 			null,
 		];
 		for (const sync of notOffered) expect(applicableSyncActions(sync)).toEqual([]);
+		// Ahead and not behind is Push's, never Pull's.
+		expect(syncActionApplies("pull", tracking(2, 0))).toBe(false);
 	});
 
 	test("a target is only one the commands can use as they are", () => {

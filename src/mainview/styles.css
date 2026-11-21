@@ -3531,18 +3531,18 @@ pre:focus-visible {
 }
 
 /*
- * A sync action's control, such as Pull, where its marker was: at the end of
- * the row's first line, always shown. The row keeps room for it, and it moves
- * left while the row's other controls show.
+ * A sync action's control, Pull or Push, where its marker was: at the end of
+ * the row's first line, always shown. The row keeps room for it. It never
+ * moves: on a row with other controls it always sits left of their place,
+ * so pointing at it never turns the pointer onto one of them as they show.
+ * Both sit on the first line only, so only that line keeps room for both.
  */
 .row-item.with-sync .row {
 	padding-right: 48px;
 }
 
-.row-item.with-sync:hover .row,
-.row-item.with-sync:focus-within .row,
-.row-item.with-sync.selected .row {
-	padding-right: 74px;
+.row-item.with-sync.with-actions .row > .row-line:not(.row-meta) {
+	padding-right: 26px;
 }
 
 .row-sync {
@@ -3553,15 +3553,17 @@ pre:focus-visible {
 	gap: 4px;
 }
 
-.row-item:hover .row-sync,
-.row-item:focus-within .row-sync,
-.row-item.selected .row-sync {
+.row-item.with-actions .row-sync {
 	right: 32px;
 }
 
 /* A failed removal puts the row's other controls under it, so the sync control keeps its place and room. */
 .row-item.with-sync.removal-failed .row {
 	padding-right: 48px;
+}
+
+.row-item.with-sync.removal-failed .row > .row-line:not(.row-meta) {
+	padding-right: 0;
 }
 
 .row-item.removal-failed .row-sync {

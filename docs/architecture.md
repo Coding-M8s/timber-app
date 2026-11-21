@@ -146,9 +146,10 @@ has no command for them:
   refs (`refs/remotes/`), which Timber neither owns nor checks, and never a
   local branch, a tag, the index, or a working tree.
 - **Sync actions** (see [sync actions](#sync-actions)), started from a
-  worktree's row: today Pull, which fetches and then fast-forwards the
-  worktree's branch to its upstream. It never creates, rebases, or removes
-  a worktree, never makes a merge commit, and never rewrites a branch.
+  worktree's row: Pull, which fetches and then fast-forwards the worktree's
+  branch to its upstream, and Push, which runs `timber publish`. Neither
+  creates, rebases, or removes a worktree, makes a merge commit, or
+  rewrites a branch, and Push never force-pushes.
 
 Everything else that writes still goes through Timber.
 
@@ -1153,17 +1154,19 @@ the remote's configured refspecs and may also fetch tags and write
 ## Sync actions
 
 A sync action brings a worktree's branch and its upstream together from the
-worktree's row. Pull is the first. The seam is built so push (issue 261) is
-one more entry in each table below, with its runner, and no new interface
-plumbing.
+worktree's row: Pull for a branch that is behind, Push for one that is
+ahead. Each is one entry in each table below, with its runner, on one
+engine call, one dialog, and one kind of row control.
 
 - **The table (`src/shared/sync-actions.ts`).** Pure. `SYNC_ACTIONS` gives,
-  for each action, its steps (`syncActionSteps`: Git arguments, and whether
-  a step reaches a remote) and when it is offered (`syncActionApplies`).
-  `readPullRuns` reads what Git printed into a `SyncActionResult`: done
-  (`moved` says whether the branch moved, and `fetchFailure` that the fetch
-  did not work), refused (diverged, local changes, or other, with Git's
-  words), or failed. The steps name the branch's remote and the upstream's
+  for each action, its steps (`syncActionSteps`: the program, Git or
+  Timber, its arguments, and whether a step reaches a remote) and when it
+  is offered (`syncActionApplies`). `readPullRuns` reads what Git printed
+  into a `SyncActionResult`, and `readPublishResult`
+  (`src/shared/timber-publish.ts`) reads Timber's record: done (`moved`
+  says whether the branch moved, and `fetchFailure` that a pull's fetch
+  did not work), refused (diverged, local changes, or refused by Timber,
+  with Git's or Timber's words), or failed. The steps name the branch's remote and the upstream's
   full ref, which the list reads with each branch's sync state (`remote` and
   `upstreamRef` on `SyncState`, from `%(upstream:remotename)` and
   `%(upstream)`).
@@ -1174,9 +1177,10 @@ plumbing.
   run is in the repository's turn (`src/bun/repository-turns.ts`), so it
   never overlaps a rebase or another command there, and only for a worktree
   Timber lists right now, on a branch whose remote and upstream are still
-  the ones shown: otherwise nothing runs and the result says so. Git runs
-  as an executable plus arguments in the worktree's folder, with the
-  never-asking environment of `src/bun/fetch-git.ts`.
+  the ones shown: otherwise nothing runs and the result says so. Pull's Git
+  runs as an executable plus arguments in the worktree's folder, with the
+  never-asking environment of `src/bun/fetch-git.ts`. Push's Timber runs as
+  every Timber command with a result file does (`src/bun/timber-run.ts`).
 - **Pull.** Two steps, shown before they run:
   1. `git fetch <remote>`, run through `Fetcher.fetchWith`: after the fetch
      of that repository that runs, never beside it, and followed by the
@@ -1202,22 +1206,38 @@ plumbing.
   Git's words and a note to check the worktree, never as "nothing changed". The
   fast-forward is stopped after 10 minutes, as a fetch is, since it
   updates files and runs hooks.
+- **Push.** One step, shown before it runs:
+  `timber publish --result-file <temporary file> -- <worktree>`, in the
+  repository's primary checkout. Timber pushes the branch under its own
+  name to its upstream, never force-pushes, never asks for a password, and
+  refuses a remote branch that has moved on; the app repeats none of these
+  rules. It runs through `Fetcher.whileNotFetching`, the same turn as
+  Pull's fetch, because a push moves the upstream's remote-tracking ref too:
+  it never runs beside a fetch of the repository. The record's `publish`
+  object decides the result: `published` is done and moved, `up-to-date`
+  done and not moved, `refused` a refusal (nothing pushed and no local ref
+  changed, as the contract says), and `failed` a failure, both with
+  Timber's diagnostic, which says what to do, such as signing in outside
+  the app. A missing or unreadable record is a failure whose effect is
+  unknown.
 - **When it is offered.** Pull is offered for a branch that is behind and not
-  ahead, whose upstream is a remote-tracking branch that was not marked
-  force-pushed. Not for a diverged, force-pushed, gone, unpublished, or
-  detached branch, and not while Timber removes the worktree.
+  ahead, Push for one that is ahead and not behind, each only when the
+  upstream is a remote-tracking branch that was not marked force-pushed.
+  Neither for a diverged, force-pushed, gone, unpublished, or detached
+  branch, nor while Timber removes the worktree.
 - **The interface.** `src/mainview/sync-action-format.ts` has each
   action's words, the row's control (`describeSyncControls`), the dialog's
-  commands, and how a result is told. On the row, the behind count becomes
-  a button beside the row's own button (the row is a button, so it cannot
-  hold one), drawn where the marker was; the marker's sentence stays in
-  the row's description. The worktree menu and the command palette list
-  Pull while it applies. Each opens `SyncActionDialog`, an `OperationDialog`
-  that shows both commands, the second as a follow-up. A pull that worked
-  closes it with a toast, marked as a problem when the fetch failed, and
-  gives the keyboard to the worktree's row, since the control that opened
-  it is gone. A
-  refusal stays in the dialog with Git's words. The store reads the
+  commands, and how a result is told. On the row, the behind count (Pull)
+  or the ahead count (Push) becomes a button beside the row's own button
+  (the row is a button, so it cannot hold one), drawn where the marker
+  was; the marker's sentence stays in the row's description. The worktree
+  menu and the command palette list each action while it applies. Each
+  opens `SyncActionDialog`, an `OperationDialog` that shows the commands,
+  Pull's second as a follow-up. One that worked closes it with a toast,
+  for a pull marked as a problem when the fetch failed, and gives the
+  keyboard to the worktree's row, since the control that opened it is
+  gone. A refusal or a failure stays in the dialog with Git's or Timber's
+  words. The store reads the
   repository again after every outcome, so the row's counts follow without
   a refresh.
 
@@ -1286,6 +1306,14 @@ then on: `"rebased"` (the start), `"up-to-date"`, `"conflicts"` (two sample
 paths, one with a space), `"refused"`, `"failed"`, or `"no-result"` (exit
 code 1 and no result file). A worktree with modified or untracked files is
 refused whatever the ending, as Timber does.
+`timberMock.endSyncActions(ending)` chooses how sync actions end from then
+on. For Pull: `"pulled"` (the start), `"fetch-failed"`, `"diverged"`, or
+`"local-changes"`; a branch that is ahead is refused as diverged whatever
+the ending. For Push: `"pushed"` (the start), `"push-up-to-date"`,
+`"remote-moved"`, `"offline"`, or `"sign-in"`, with Timber's wording; a
+branch that is behind is refused as moved on whatever the ending.
+`"failed"` decides both. In `/work/timber`, `main` offers Pull and
+`feat/github-issue-lookup` offers Push.
 `timberMock.endPullRequestResults(ending)` chooses how `timber pr` ends from
 then on: `"created"` (the start), `"created-reviewer-failed"` (the first
 reviewer cannot be requested, with Timber's wording), `"exists"`,

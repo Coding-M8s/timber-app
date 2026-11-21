@@ -9,7 +9,7 @@ import type { Repository } from "../shared/model";
 import { type AppState, type DialogRequest, isBeingRemoved, isRunning, offeredChops, finishedSessions, selectedWorktree, sessionsOf, waitingSessions } from "./store/state";
 import { type RowSessionMark, describeRowSessions } from "./terminal-format";
 import { NONE_WAITING, WAITING_LABEL, describeToVisit } from "./waiting";
-import { syncMenuEntries } from "./sync-action-format";
+import { SYNC_ACTION_WORDS, syncMenuEntries } from "./sync-action-format";
 
 /**
  * The command palette without React: what it lists for the state of the app,
@@ -41,7 +41,7 @@ export type PaletteSection = "worktree" | "repository" | "worktrees" | "app";
 
 /** The picture beside an entry's label. */
 export type PaletteIcon =
-	| "terminal" | "agent" | "rebase" | "done" | "editor" | "new" | "branch" | "arena" | "fetch" | "clean-up"
+	| "terminal" | "agent" | "rebase" | "done" | "editor" | "new" | "branch" | "arena" | "fetch" | "push" | "clean-up"
 	| "worktree" | "next" | "settings" | "add-repository";
 
 export interface PaletteEntry {
@@ -243,9 +243,10 @@ function actionEntries(state: AppState): PaletteEntry[] {
 		}
 		// A sync action is listed only while it applies to the branch, as on the row and in its menu.
 		for (const entry of syncMenuEntries(worktree)) {
-			add(inWorktree("fetch"), `sync:${entry.action}`, entry.label, `Opens ${entry.label} for ${name}, which shows the Git commands before they run.`,
+			const words = SYNC_ACTION_WORDS[entry.action];
+			add(inWorktree(entry.action === "push" ? "push" : "fetch"), `sync:${entry.action}`, entry.label, `Opens ${entry.label} for ${name}, which shows ${words.shows}.`,
 				isBeingRemoved(state, repository.path, worktree.path) ? BEING_REMOVED_REASON : null,
-				{ kind: "dialog", request: { kind: "sync-action", action: entry.action, repository: repository.path, worktree: worktree.id } }, ["git", "fast-forward", "update"]);
+				{ kind: "dialog", request: { kind: "sync-action", action: entry.action, repository: repository.path, worktree: worktree.id } }, words.keywords);
 		}
 		add(inWorktree("rebase"), "rebase", "Rebase", `Opens Rebase for ${name}, which shows the Timber command before it runs.`, worktree.pathExists ? null : REBASE_FOLDER_MISSING,
 			{ kind: "dialog", request: { kind: "rebase-worktree", repository: repository.path, worktree: worktree.id } });

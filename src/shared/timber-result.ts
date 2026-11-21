@@ -9,7 +9,7 @@ import { describeExit, readEnvelope } from "./timber-record";
  */
 
 /** The Timber commands that write a result file, as each record names its command. */
-export type ResultCommand = "new" | "open" | "done" | "rebase" | "base" | "pr" | "config" | "backup-restore" | "backup-delete" | "arena-new" | "arena-pick";
+export type ResultCommand = "new" | "open" | "done" | "rebase" | "base" | "publish" | "pr" | "config" | "backup-restore" | "backup-delete" | "arena-new" | "arena-pick";
 
 /** How a command is named in messages, as a person would type it. A record names some commands otherwise. */
 export function resultCommandName(command: ResultCommand): string {

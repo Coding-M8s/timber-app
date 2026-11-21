@@ -2,13 +2,16 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:tes
 import { type BrowserPage, browserPath, openSidebarPage } from "./support/browser";
 
 /**
- * Pull in a real browser, over the mock engine: the control beside the row,
- * the dialog's commands, the counts afterwards, where the keyboard goes, and
- * Pull from the row's menu by keyboard. The rest is tested without a window.
- * Skipped where no browser is installed.
+ * Pull and Push in a real browser, over the mock engine: the control beside
+ * the row, the dialog's commands, the counts afterwards, where the keyboard
+ * goes, and each from the row's menu by keyboard. The rest is tested without
+ * a window. Skipped where no browser is installed.
  */
 
-const CONTROL = ".row-sync-button";
+const CONTROL = ".sync.behind.row-sync-button";
+const PUSH_CONTROL = ".sync.ahead.row-sync-button";
+/** The sample worktree that is ahead of its upstream and not behind. */
+const AHEAD = "/work/timber-worktrees/feat-github-issue-lookup";
 const DIALOG_OPEN = `document.querySelector("dialog[open]") !== null`;
 const DIALOG_CLOSED = `document.querySelector("dialog[open]") === null`;
 
@@ -73,5 +76,71 @@ describe.skipIf(browserPath === null || process.platform === "win32")("Pull in a
 		await page.press("Enter");
 		await page.until(DIALOG_OPEN, "the dialog opened");
 		expect(await page.evaluate<string>(`document.querySelector("dialog[open] .dialog-title").textContent`)).toBe("Pull main");
+	}, 30_000);
+});
+
+describe.skipIf(browserPath === null || process.platform === "win32")("Push in a real browser", () => {
+	let page: BrowserPage;
+
+	beforeAll(async () => {
+		page = await openSidebarPage();
+	}, 60_000);
+
+	afterAll(async () => {
+		await page?.close();
+	});
+
+	beforeEach(async () => {
+		await page.reload();
+		await page.until(`document.querySelector(${JSON.stringify(PUSH_CONTROL)}) !== null`, "a Push control showed");
+	}, 30_000);
+
+	test("the control replaces the ahead count, shows the timber publish command, and after a push the counts follow", async () => {
+		expect(await page.evaluate<string>(`document.querySelector(${JSON.stringify(PUSH_CONTROL)}).closest("[data-worktree-path]").dataset.worktreePath`)).toBe(AHEAD);
+		expect(await page.evaluate<string>(`document.querySelector(${JSON.stringify(PUSH_CONTROL)}).getAttribute("aria-label")`)).toBe("Push 2 commits from feat/github-issue-lookup to origin/feat/github-issue-lookup");
+		await page.click(PUSH_CONTROL);
+		await page.until(DIALOG_OPEN, "the dialog opened");
+		const commands = await page.evaluate<string[]>(`[...document.querySelectorAll("dialog[open] .dialog-command")].map(command => command.textContent)`);
+		expect(commands).toEqual([`timber publish --result-file <temporary file> -- ${AHEAD}`]);
+		await page.click("dialog[open] button[type=submit]");
+		await page.until(DIALOG_CLOSED, "the dialog closed");
+		await page.until(`document.querySelector(${JSON.stringify(PUSH_CONTROL)}) === null`, "the control went once the branch was pushed");
+		await page.until(`[...document.querySelectorAll(".toast-text")].some(toast => toast.textContent === "Pushed feat/github-issue-lookup to origin/feat/github-issue-lookup.")`, "the toast said so");
+		await page.until(`document.activeElement?.classList.contains("row") === true`, "the keyboard went to the row");
+		expect(await page.evaluate<string>(`document.activeElement.closest("[data-worktree-path]").dataset.worktreePath`)).toBe(AHEAD);
+	}, 30_000);
+
+	test("the control stays where it is drawn when the pointer comes to it, so the row's other controls never take its click", async () => {
+		const middle = `(() => { const box = document.querySelector(${JSON.stringify(PUSH_CONTROL)}).getBoundingClientRect(); return [box.x + box.width / 2, box.y + box.height / 2]; })()`;
+		const [x, y] = await page.evaluate<[number, number]>(middle);
+		// Not selected, so its other controls show only once the pointer is on the row.
+		expect(await page.evaluate<boolean>(`document.querySelector('[data-worktree-path="${AHEAD}"]').classList.contains("selected")`)).toBe(false);
+		await page.hover(PUSH_CONTROL);
+		expect(await page.evaluate<[number, number]>(middle)).toEqual([x, y]);
+		expect(await page.evaluate<boolean>(`document.elementFromPoint(${x}, ${y}).closest("button")?.matches(${JSON.stringify(PUSH_CONTROL)}) === true`)).toBe(true);
+	}, 30_000);
+
+	test("a refusal and an offline failure stay in the dialog with Timber's words, and the control stays", async () => {
+		await page.evaluate(`window.timberTestEngine.endSyncActions("remote-moved")`);
+		await page.click(PUSH_CONTROL);
+		await page.until(DIALOG_OPEN, "the dialog opened");
+		await page.click("dialog[open] button[type=submit]");
+		await page.until(`document.querySelector("dialog[open]")?.textContent.includes("has moved on") === true`, "Timber's words showed");
+		expect(await page.evaluate<string>(`document.querySelector("dialog[open]").textContent`)).toContain("Timber refused, so nothing was pushed and no branch changed.");
+		await page.evaluate(`window.timberTestEngine.endSyncActions("offline")`);
+		await page.click("dialog[open] button[type=submit]");
+		await page.until(`document.querySelector("dialog[open]")?.textContent.includes("Git push to origin/feat/github-issue-lookup failed") === true`, "Timber's words for an offline push showed");
+		expect(await page.evaluate<boolean>(`document.querySelector(${JSON.stringify(PUSH_CONTROL)}) !== null`)).toBe(true);
+	}, 30_000);
+
+	test("Push is in the row's menu, by keyboard", async () => {
+		await page.evaluate(`document.querySelector('[data-worktree-path="${AHEAD}"] .row').focus()`);
+		await page.press("F10", "shift");
+		await page.until(`document.querySelector("[role=menu]") !== null`, "the menu opened");
+		expect(await page.evaluate<string[]>(`[...document.querySelectorAll("[role=menuitem]")].map(item => item.textContent.trim())`)).toEqual(["Push", "Done"]);
+		expect(await page.evaluate<string>(`document.activeElement.getAttribute("role") + " " + document.activeElement.textContent.trim()`)).toBe("menuitem Push");
+		await page.press("Enter");
+		await page.until(DIALOG_OPEN, "the dialog opened");
+		expect(await page.evaluate<string>(`document.querySelector("dialog[open] .dialog-title").textContent`)).toBe("Push feat/github-issue-lookup");
 	}, 30_000);
 });

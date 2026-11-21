@@ -26,13 +26,13 @@ export interface SyncActionDialogViewProps {
 
 /**
  * What a sync action's dialog shows for a given state. It holds no state of
- * its own. It shows every Git command before it runs, worded from the same
- * table the main process runs them from.
+ * its own. It shows every command before it runs, worded from the same
+ * table the main process runs them from: Git's for Pull, Timber's for Push.
  */
 export function SyncActionDialogView({ action, worktree, path, result, submission, onSubmit, onClose }: SyncActionDialogViewProps) {
 	const words = SYNC_ACTION_WORDS[action];
 	const target = syncTargetOfWorktree(worktree);
-	const commands = target ? describeSyncCommands(action, target) : null;
+	const commands = target && worktree ? describeSyncCommands(action, target, worktree.path) : null;
 	const note = result ? describeSyncRefusalNote(result) : null;
 	return (
 		<OperationDialog
@@ -59,11 +59,11 @@ export function SyncActionDialogView({ action, worktree, path, result, submissio
 }
 
 /**
- * The dialog of a sync action such as Pull, for one worktree. Submitting
+ * The dialog of a sync action, Pull or Push, for one worktree. Submitting
  * runs the commands shown, with the remote and upstream they name; the main
- * process runs nothing when those changed since. A pull that worked closes
- * the dialog with a toast, which also says when the fetch failed. A refusal
- * or a failure stays in the dialog with Git's words. The repository is read
+ * process runs nothing when those changed since. One that worked closes the
+ * dialog with a toast, which for a pull also says when the fetch failed. A
+ * refusal or a failure stays in the dialog with Git's or Timber's words. The repository is read
  * again after every outcome (`runSyncAction` in ../store/store.ts).
  */
 export function SyncActionDialog({ request }: { request: Extract<DialogRequest, { kind: "sync-action" }> }) {

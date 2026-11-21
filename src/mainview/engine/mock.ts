@@ -35,8 +35,8 @@ import { type TimberChoice, sameTimberChoice } from "../../shared/timber-choice"
 import { TIMBER_PIN } from "../../shared/timber-pin";
 import { type CommandEnding, actOutNew, actOutOpen, isCommandEnding } from "./mock-commands";
 import { type RebaseEnding, actOutRebase, isRebaseEnding } from "./mock-rebase";
-import { type SyncEnding, actOutSyncAction, isSyncEnding, withSampleTarget } from "./mock-sync";
-import { type SyncActionRequest, isSyncActionKind, syncNotRun } from "../../shared/sync-actions";
+import { type SyncEnding, actOutSyncAction, actionsOfEnding, isSyncEnding, withSampleTarget } from "./mock-sync";
+import { type SyncActionKind, type SyncActionRequest, isSyncActionKind, syncNotRun } from "../../shared/sync-actions";
 import { actOutSetBase } from "./mock-base";
 import { type PullRequestEnding, actOutPullRequest, isPullRequestEnding } from "./mock-pr";
 import type { CreatePullRequestResult } from "../../shared/timber-pr";
@@ -391,10 +391,12 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	 */
 	endRebaseResults(ending: RebaseEnding): void;
 	/**
-	 * Decide how a sync action such as Pull ends from now on: "pulled" (the
-	 * start), "fetch-failed", "diverged", "local-changes", or "failed". A branch
-	 * that is ahead is refused as diverged whatever the ending. See
-	 * ./mock-sync.ts for what each one acts out.
+	 * Decide how a sync action ends from now on. For Pull: "pulled" (the
+	 * start), "fetch-failed", "diverged", or "local-changes"; a branch that is
+	 * ahead is refused as diverged whatever the ending. For Push: "pushed" (the
+	 * start), "push-up-to-date", "remote-moved", "offline", or "sign-in"; a
+	 * branch that is behind is refused as moved on whatever the ending.
+	 * "failed" decides both. See ./mock-sync.ts for what each one acts out.
 	 */
 	endSyncActions(ending: SyncEnding): void;
 	/** Every sync action asked for, in order. */
@@ -909,7 +911,7 @@ export function createMockEngine(
 	};
 	let ending: CommandEnding = "succeeds";
 	let rebaseEnding: RebaseEnding = "rebased";
-	let syncEnding: SyncEnding = "pulled";
+	const syncEndingOf: Record<SyncActionKind, SyncEnding> = { pull: "pulled", push: "pushed" };
 	const syncRequests: SyncActionRequest[] = [];
 	let pullRequestEnding: PullRequestEnding = "created";
 	const headSubjects = new Map<string, string | null>();
@@ -1102,7 +1104,12 @@ export function createMockEngine(
 			const worktree = timberFailures.has(repository.path) ? undefined : repository.worktrees.find(candidate => candidate.path === request.worktree);
 			if (!worktree) return syncNotRun(request.action, `Timber lists no worktree at ${request.worktree} in ${request.repository}. Refresh the list.`);
 			if (!worktree.pathExists) return syncNotRun(request.action, `The folder ${worktree.path} is missing.`);
-			const acted = actOutSyncAction[request.action](worktree, request, syncEnding, Date.now());
+			if (request.action === "push") {
+				// Push runs Timber, as the main process does, once it found the worktree.
+				const status = await look();
+				if (status.state !== "ready") return syncNotRun("push", "Timber is not ready.");
+			}
+			const acted = actOutSyncAction[request.action](worktree, request, syncEndingOf[request.action], Date.now());
 			if (acted.sync !== null && worktree.branch !== null) {
 				const after = acted.sync;
 				changeSync(repository.path, worktree.branch, () => after);
@@ -1197,7 +1204,7 @@ export function createMockEngine(
 		endSyncActions(next) {
 			// Called from the browser console too, where nothing checks the word.
 			if (!isSyncEnding(next)) throw new Error(`Unknown ending: ${String(next)}`);
-			syncEnding = next;
+			for (const action of actionsOfEnding(next)) syncEndingOf[action] = next;
 		},
 		syncActionRequests: () => structuredClone(syncRequests),
 		endRebaseResults(next) {

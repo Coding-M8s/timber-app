@@ -481,7 +481,7 @@ export interface AppStore {
 	 */
 	rebaseWorktree(request: RebaseRequest): Promise<RebaseResult>;
 	/**
-	 * Run a sync action such as Pull and answer how it ended (see
+	 * Run a sync action, Pull or Push, and answer how it ended (see
 	 * `SyncActionResult`). The engine is asked once. The repository is read
 	 * again after every outcome, so the row's counts follow at once.
 	 */
@@ -2607,7 +2607,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		try {
 			result = await engine.runSyncAction(request);
 		} catch (error) {
-			const diagnostic = `The app did not hear how the ${request.action} ended: ${messageOf(error)}. The engine did not answer, so what Git did is unknown. Check the worktree before trying again.`;
+			const diagnostic = `The app did not hear how the ${request.action} ended: ${messageOf(error)}. The engine did not answer, so what ${request.action === "push" ? "Timber" : "Git"} did is unknown. Check the worktree before trying again.`;
 			result = { outcome: "failed", action: request.action, ran: true, failure: { command: null, diagnostic, output: null } };
 		} finally {
 			await reloadOne(request.repository);
