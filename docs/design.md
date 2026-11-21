@@ -422,8 +422,9 @@ logins. The app never reads a tracker login and never signs in.
   while a file is open in that worktree, named after the file, with a close
   button beside it; closing goes back to the tab the file was opened from.
   A file opens from "View file" beside the diff in the Changes tab, or by
-  Ctrl+click (Cmd+click on macOS) on a file path in a terminal, read from
-  the worktree's folder. Binary files, files over 1 MB or 20,000 lines,
+  a plain click on a file path in a terminal, read from the worktree's
+  folder. A web link still needs Ctrl+click (Cmd+click on macOS), since it
+  leaves the app; a file stays in it. Binary files, files over 1 MB or 20,000 lines,
   missing files, folders, and paths outside the worktree get a plain notice
   in place of the text. "Read again" reads it as it is now. This is a
   viewer, not an editor.

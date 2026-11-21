@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { terminalLinks } from "../src/mainview/terminal-links";
 
-const press = (modifiers: Partial<Record<"ctrlKey" | "metaKey", boolean>> = {}) => ({ ctrlKey: false, metaKey: false, ...modifiers });
+const press = (modifiers: Partial<Record<"ctrlKey" | "metaKey", boolean>> & { button?: number } = {}) => ({ ctrlKey: false, metaKey: false, ...modifiers });
 
 /** The links of one terminal, with a stand-in opener that records every link it is asked to open. */
 function links(mac = false) {
@@ -78,5 +78,28 @@ describe("terminal links", () => {
 		terminal.hover();
 		expect(terminal.keepsFromProgram(press({ metaKey: true }), true)).toBe(true);
 		expect(terminal.keepsFromProgram(press({ ctrlKey: true }), true)).toBe(false);
+	});
+
+	test("a plain left click opens a file path, which stays in the app", () => {
+		const { links: terminal } = links();
+		let opened = 0;
+		terminal.hover("file");
+		terminal.activateFile(press(), () => opened++);
+		terminal.activateFile(press({ ctrlKey: true }), () => opened++);
+		terminal.activateFile(press({ button: 2 }), () => opened++);
+		expect(opened).toBe(2);
+	});
+
+	test("a program that tracks the mouse is not told of a left click on a file path, and hears every other press", () => {
+		const { links: terminal } = links();
+		terminal.hover("file");
+		expect(terminal.keepsFromProgram(press(), true)).toBe(true);
+		expect(terminal.keepsFromProgram(press({ button: 2 }), true)).toBe(false);
+		expect(terminal.keepsFromProgram(press(), false)).toBe(false);
+		terminal.leave();
+		expect(terminal.keepsFromProgram(press(), true)).toBe(false);
+		// Over a web link again, a plain click still reaches the program.
+		terminal.hover();
+		expect(terminal.keepsFromProgram(press(), true)).toBe(false);
 	});
 });
