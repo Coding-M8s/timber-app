@@ -1,5 +1,5 @@
 import { NEW_ARENA_LABEL, arenasUnavailable } from "./arena-format";
-import { chopAction, chopEntries, runChopLabel } from "./chop-format";
+import { type ChopAction, chopAction, chopEntries, runChopLabel } from "./chop-format";
 import { type EditorAction, OPEN_IN_EDITOR, describeEditorAction } from "./editor-format";
 import { CLEAN_UP_LABEL, CLEAN_UP_TITLE, cleanUpUnavailableReason, mergedCandidates } from "./clean-up-format";
 import { BEING_REMOVED_REASON, DONE_PRIMARY_NOTE } from "./done-format";
@@ -81,6 +81,41 @@ export const OPENING_IN_EDITOR = "The editor is being opened for this worktree."
 export const FOLDER_MISSING_FOR_SESSION = "The worktree's folder is missing, so a terminal cannot start there.";
 export const OTHER_REPOSITORIES = "Other repositories";
 export const NOTHING_MATCHES = "Nothing matches.";
+
+/** The selected worktree as a chop sees it: whether its folder is there, a session is starting there, or Timber is removing it. */
+export interface ChopPlace {
+	pathExists: boolean;
+	starting: boolean;
+	removing: boolean;
+}
+
+/** Where a chop would run now: the selected worktree, or null with none selected. */
+export function chopPlace(state: AppState): ChopPlace | null {
+	const selection = selectedWorktree(state);
+	if (!selection) return null;
+	const { repository, worktree } = selection;
+	return {
+		pathExists: worktree.pathExists,
+		starting: state.operations.some(operation => operation.kind === "open-terminal" && operation.worktree === worktree.id),
+		removing: isBeingRemoved(state, repository.path, worktree.path),
+	};
+}
+
+/**
+ * Why a chop cannot be chosen now, or null when it can. The palette and the
+ * chops panel both ask this, so they agree. With no worktree selected nothing
+ * runs. A command needs a new session, so it waits for one already starting
+ * there. A prompt that goes to a running agent waits for no session to
+ * start; one that needs a new agent says why in a toast when it cannot.
+ * Copying needs neither the folder nor a session.
+ */
+export function chopBlockedReason(action: ChopAction, place: ChopPlace | null): string | null {
+	if (place === null) return NO_WORKTREE_SELECTED;
+	if (action === "copy") return null;
+	if (!place.pathExists) return FOLDER_MISSING_FOR_SESSION;
+	if (action === "run" && place.starting) return STARTING_SESSION;
+	return place.removing ? BEING_REMOVED_REASON : null;
+}
 
 /** The shortcut that opens the palette, as shown on the title bar button. */
 export const PALETTE_SHORTCUT = "Ctrl+Shift+P";
@@ -195,16 +230,14 @@ function actionEntries(state: AppState): PaletteEntry[] {
 			add(inWorktree("agent"), `agent:${agent.name}`, `Start ${agent.name}`, `Starts ${agent.name} in ${worktree.path}.`, sessionReason, session(agent.name), ["agent", "session"]);
 		}
 		// A chop runs in the active worktree only, as the "+" menu's do.
-		const chopReason = sessionReason ?? (isBeingRemoved(state, repository.path, worktree.path) ? BEING_REMOVED_REASON : null);
+		const place = chopPlace(state);
 		const offered = offeredChops(state);
 		const chops = offered?.repository === repository.path ? chopEntries(offered.list) : [];
-		// A prompt that goes to a running agent waits for no session to start; one that needs a new agent says why in a toast when it cannot.
-		const promptReason = !worktree.pathExists ? FOLDER_MISSING_FOR_SESSION : isBeingRemoved(state, repository.path, worktree.path) ? BEING_REMOVED_REASON : null;
 		for (const chop of chops) {
 			const action = chopAction(chop.kind, state.preferences.agents.length);
 			const what = chop.title === "" ? chop.name : chop.title.replace(/\.$/, "");
 			const hint = action === "run" ? (chop.title === "" ? `Runs ${chop.name} in ${worktree.path}.` : `${what}. Runs in ${worktree.path}.`) : action === "send" ? `${what}. Goes to an agent in ${worktree.path}.` : `${what}. No agent is saved, so this copies the prompt.`;
-			add(inWorktree(chop.kind === "prompt" ? "agent" : "terminal"), `chop:${chop.name}`, runChopLabel(chop.name, action), hint, action === "run" ? chopReason : action === "send" ? promptReason : null,
+			add(inWorktree(chop.kind === "prompt" ? "agent" : "terminal"), `chop:${chop.name}`, runChopLabel(chop.name, action), hint, chopBlockedReason(action, place),
 				{ kind: "chop", repository: repository.path, worktree: worktree.id, chop: chop.name }, [chop.title, "chop", chop.kind]);
 		}
 		add(inWorktree("rebase"), "rebase", "Rebase", `Opens Rebase for ${name}, which shows the Timber command before it runs.`, worktree.pathExists ? null : REBASE_FOLDER_MISSING,

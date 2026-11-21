@@ -46,9 +46,18 @@ change them here first when they change.
   goes back where it was, or to the Chops button when that is gone. Its
   Close button only hides it. Its left edge resizes it like the sidebar's
   (240 to 560 pixels, never above a third of the window), and whether it
-  shows and its width are remembered. For now it lists the selected
-  worktree's repository's chops by name, kind, source, and text; running,
-  making, and ordering them from the panel come later. "Use chops" in
+  shows and its width are remembered. It has a Commands and a Prompts
+  tab, each with its count, and a filter over names and text that says
+  when nothing matches. Each row shows the chop's name, where it comes from
+  (`.timber`, this repository, every repository), its text in mono, so what
+  runs shows before it runs, and Run, Send, or Copy, which go through the
+  palette's path and ask before a `.timber/chops.json` chop's first run.
+  The footer says where the next run goes: a new terminal in the selected
+  worktree, the agent a prompt goes to, a new agent, or the person's pick;
+  or, when nothing can run, why. With no worktree selected the chops last
+  read stay listed, and Run is disabled with the reason. Running a command
+  or sending a prompt shows the Workspace tab; copying leaves the view as
+  it is. Making and ordering chops from the panel come later. "Use chops" in
   Settings, Chops, turns the feature off: no button, panel, or chop
   shortcut, and no chops in the palette, the "+" menu, the empty pane, or
   "Insert chop". The saved chops are kept. The mock's Ctrl+Alt+C was a
@@ -628,7 +637,8 @@ logins. The app never reads a tracker login and never signs in.
   run it elsewhere, switch worktree first. The Workspace "+" menu has a
   Chops part listing the repository's command chops by name, with the
   description in the tooltip, and a worktree with no session yet has a
-  "Run" button for each. The command palette lists "Run chop: <name>",
+  "Run" button for each. The chops panel runs or sends each with one
+  click. The command palette lists "Run chop: <name>",
   found by name and description, and shows one that cannot run now with
   the reason. Running one opens a new session named after it, types the
   text into the shell, and runs it; the shell stays when the command ends,
