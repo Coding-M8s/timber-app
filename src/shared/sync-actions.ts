@@ -1,20 +1,24 @@
 import { readFetchFailure, type FetchFailure, withoutCredentials } from "./git-fetch";
 import { describeCommandLine } from "./command-line";
 import type { SyncState, TimberFailure } from "./model";
+import { publishResultArguments } from "./timber-publish";
+import { RESULT_FILE_PLACEHOLDER, describeTimberCommand } from "./timber-result";
 
 /**
- * Sync actions: Git commands that bring a worktree's branch and its upstream
- * together, started from the worktree's row. Pull is the first; push is meant
- * to be one more entry in `SYNC_ACTIONS`. Pure: the interface words the
- * commands from the same functions the main process runs them from (see
- * src/bun/sync-actions.ts), so the commands shown are the commands that run.
+ * Sync actions: commands that bring a worktree's branch and its upstream
+ * together, started from the worktree's row. Pull fast-forwards a branch that
+ * is behind; Push publishes a branch that is ahead. Each is one entry in
+ * `SYNC_ACTIONS`. Pure: the interface words the commands from the same
+ * functions the main process runs them from (see src/bun/sync-actions.ts), so
+ * the commands shown are the commands that run.
  *
- * Sync actions run Git directly, not Timber: Timber has no command for them,
- * and they never create, rebase, or remove a worktree. They never ask for
- * credentials, never create a merge commit, and never rewrite a branch.
+ * Pull runs Git directly: Timber has no command for it, and it never creates,
+ * rebases, or removes a worktree. Push runs `timber publish`, which owns every
+ * rule about what may be pushed. Neither ever asks for credentials, creates a
+ * merge commit, or rewrites a branch, and Push never force-pushes.
  */
 
-export const SYNC_ACTION_KINDS = ["pull"] as const;
+export const SYNC_ACTION_KINDS = ["pull", "push"] as const;
 export type SyncActionKind = typeof SYNC_ACTION_KINDS[number];
 
 export const isSyncActionKind = (value: unknown): value is SyncActionKind => typeof value === "string" && (SYNC_ACTION_KINDS as readonly string[]).includes(value);
@@ -41,8 +45,13 @@ export interface SyncActionRequest {
 	target: SyncTarget;
 }
 
-/** One Git command of an action: everything after `git`, and whether it reaches a remote. */
+/**
+ * One command of an action: the program it runs, everything after the
+ * program's name, and whether it reaches a remote. A Timber step shows
+ * `RESULT_FILE_PLACEHOLDER` where the real run puts a fresh result file.
+ */
 export interface SyncStep {
+	program: "git" | "timber";
 	args: string[];
 	network: boolean;
 }
@@ -78,8 +87,8 @@ export function syncTargetOf(sync: SyncState | null): SyncTarget | null {
  */
 function pullSteps(target: SyncTarget): SyncStep[] {
 	return [
-		{ args: ["fetch", target.remote], network: true },
-		{ args: ["merge", "--ff-only", "--no-autostash", target.upstreamRef], network: false },
+		{ program: "git", args: ["fetch", target.remote], network: true },
+		{ program: "git", args: ["merge", "--ff-only", "--no-autostash", target.upstreamRef], network: false },
 	];
 }
 
@@ -88,19 +97,38 @@ function pullApplies(sync: SyncState | null): boolean {
 	return sync?.kind === "tracking" && sync.behind > 0 && sync.ahead === 0 && sync.forcePushed === undefined && syncTargetOf(sync) !== null;
 }
 
-/** What each sync action runs and when it is offered. Push is meant to be one more entry here, with its runner. */
+/**
+ * Push: `timber publish` for the worktree's registered path. Timber pushes the
+ * branch under its own name to its upstream, never forces, never prompts, and
+ * refuses a remote branch that has moved on.
+ */
+function pushSteps(_target: SyncTarget, worktree: string): SyncStep[] {
+	return [{ program: "timber", args: publishResultArguments(worktree, RESULT_FILE_PLACEHOLDER), network: true }];
+}
+
+/**
+ * Push is offered only to a branch that is ahead and not behind, whose
+ * upstream was not rewritten: one that is behind or diverged would be refused,
+ * and one whose upstream was force-pushed needs a look first.
+ */
+function pushApplies(sync: SyncState | null): boolean {
+	return sync?.kind === "tracking" && sync.ahead > 0 && sync.behind === 0 && sync.forcePushed === undefined && syncTargetOf(sync) !== null;
+}
+
+/** What each sync action runs, for a target and the worktree's registered path, and when it is offered. Each has a runner in the main process. */
 export interface SyncActionSpec {
-	steps(target: SyncTarget): SyncStep[];
+	steps(target: SyncTarget, worktree: string): SyncStep[];
 	applies(sync: SyncState | null): boolean;
 }
 
 export const SYNC_ACTIONS: Readonly<Record<SyncActionKind, SyncActionSpec>> = {
 	pull: { steps: pullSteps, applies: pullApplies },
+	push: { steps: pushSteps, applies: pushApplies },
 };
 
-/** The steps of an action for a target. */
-export function syncActionSteps(action: SyncActionKind, target: SyncTarget): SyncStep[] {
-	return SYNC_ACTIONS[action].steps(target);
+/** The steps of an action for a target, in the worktree at this registered path. */
+export function syncActionSteps(action: SyncActionKind, target: SyncTarget, worktree: string): SyncStep[] {
+	return SYNC_ACTIONS[action].steps(target, worktree);
 }
 
 /** Whether an action is offered for a branch in this sync state. */
@@ -115,16 +143,19 @@ export function applicableSyncActions(sync: SyncState | null): SyncActionKind[] 
 
 /** One step as a command line, for showing before it runs. */
 export function describeSyncStep(step: SyncStep): string {
-	return describeCommandLine(["git", ...step.args]);
+	return step.program === "timber" ? describeTimberCommand(step.args) : describeCommandLine(["git", ...step.args]);
 }
 
 /**
- * Why Git refused a fast-forward before changing anything:
- * - `diverged`: the branch has commits its upstream does not, so it cannot
- *   be fast-forwarded. Rebase is the way on.
- * - `local-changes`: changed or untracked files would be overwritten.
+ * Why an action was refused before it changed anything:
+ * - `diverged`: Git refused a fast-forward because the branch has commits its
+ *   upstream does not. Rebase is the way on.
+ * - `local-changes`: Git refused a fast-forward because changed or untracked
+ *   files would be overwritten.
+ * - `timber-refused`: Timber refused a push, such as one to a remote branch
+ *   that moved on. Its diagnostic says why.
  */
-export type SyncRefusal = "diverged" | "local-changes";
+export type SyncRefusal = "diverged" | "local-changes" | "timber-refused";
 
 /** How one sync action ended. */
 export type SyncActionResult =
@@ -134,7 +165,7 @@ export type SyncActionResult =
 	 * not work and the branch moved to the commits of the last fetch instead.
 	 */
 	| { outcome: "done"; action: SyncActionKind; moved: boolean; fetchFailure: FetchFailure | null }
-	/** Git refused for a reason it checks before changing anything, so nothing changed. `failure` holds what Git said. */
+	/** Git or Timber refused for a reason it checks before changing anything, so nothing changed. `failure` holds what it said. */
 	| { outcome: "refused"; action: SyncActionKind; reason: SyncRefusal; fetchFailure: FetchFailure | null; failure: TimberFailure }
 	/**
 	 * It failed. `ran` is false only when the app refused before it ran

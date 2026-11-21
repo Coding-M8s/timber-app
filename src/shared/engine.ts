@@ -164,15 +164,17 @@ export interface Engine {
 	 */
 	rebaseWorktree(request: RebaseRequest): Promise<RebaseResult>;
 	/**
-	 * Run a sync action, such as Pull, in a worktree Timber lists, in the same
+	 * Run a sync action, Pull or Push, in a worktree Timber lists, in the same
 	 * turn as the other commands of its repository, and answer how it ended.
 	 * The commands are `syncActionSteps` in ./sync-actions.ts, so the interface
-	 * can show them before asking. They run Git directly, as an executable plus
-	 * arguments in the worktree's folder, and nothing ever prompts. Pull's fetch
-	 * runs as one fetch of the repository, never beside another, and a
-	 * force-push it brings in is marked. Nothing runs when the branch's remote
-	 * or upstream is no longer the one in `request.target`. It runs once and is
-	 * never retried here. Read the list after every outcome.
+	 * can show them before asking. Each runs as an executable plus arguments,
+	 * and nothing ever prompts. Pull runs Git in the worktree's folder; its
+	 * fetch runs as one fetch of the repository, never beside another, and a
+	 * force-push it brings in is marked. Push runs `timber publish` with a
+	 * result file, never beside a fetch; Timber decides what may be pushed and
+	 * never force-pushes. Nothing runs when the branch's remote or upstream is
+	 * no longer the one in `request.target`. It runs once and is never retried
+	 * here. Read the list after every outcome.
 	 */
 	runSyncAction(request: SyncActionRequest): Promise<SyncActionResult>;
 	/**

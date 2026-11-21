@@ -80,6 +80,14 @@ export interface Fetcher {
 	 * repository is not in the list, and nothing ran.
 	 */
 	fetchWith(path: string, args: readonly string[], cwd: string): Promise<GitRun | null>;
+	/**
+	 * Run a task that writes the remote-tracking refs of a listed repository,
+	 * such as Push, in the same turn as `fetchWith`: after the fetch that runs,
+	 * never beside one, and taking one of the places that limit how many
+	 * repositories reach the network at once. Null when the repository is not
+	 * in the list, and the task did not run.
+	 */
+	whileNotFetching<Result>(path: string, task: () => Promise<Result>): Promise<Result | null>;
 	/** Where fetching stands for every repository. */
 	statuses(): RepositoryFetch[];
 	/** The force-push marks of a repository, by branch. */
@@ -107,7 +115,7 @@ interface Entry {
 	due: boolean;
 	/** The person asked for the fetch that is running or waiting its turn, so it runs even when background fetching was turned off meanwhile. */
 	asked: boolean;
-	/** A fetch for a sync action (`fetchWith`) that runs. Other fetches of the repository wait for it. */
+	/** A fetch or a push for a sync action (`fetchWith`, `whileNotFetching`) that runs. Other fetches of the repository wait for it. */
 	single: Promise<unknown> | null;
 }
 
@@ -278,27 +286,14 @@ export function createFetcher(options: FetcherOptions): Fetcher {
 		return "done";
 	}
 
-	/** One fetch for a sync action, with the person's own arguments, in its turn (see `fetchWith`). */
-	async function fetchSingle(entry: Entry, args: readonly string[], cwd: string): Promise<GitRun> {
+	/** One task of a sync action, in the repository's single turn: after every fetch and sync action of it that runs, never beside one. */
+	async function inSingleTurn<Result>(entry: Entry, task: () => Promise<Result>): Promise<Result> {
 		for (let busy = entry.single ?? entry.running; busy !== null; busy = entry.single ?? entry.running) await busy.catch(() => {});
-		const job = (async (): Promise<GitRun> => {
+		const job = (async (): Promise<Result> => {
 			await draining.get(entry.target.path)?.catch(() => {});
 			const release = await slot();
 			try {
-				const gitDir = entry.target.commonDir;
-				const listed = await read(["--git-dir", gitDir, "for-each-ref", `--format=${BRANCH_UPSTREAM_FORMAT}`, "refs/heads"]);
-				const before = listed === null ? null : await remoteRefs(gitDir);
-				const sshCommand = await runGit(["--git-dir", gitDir, "config", "--get", "core.sshCommand"], { network: false, signal: stopping.signal });
-				const env = batchSshCommand(environment, sshCommand.exitCode === 0 ? sshCommand.stdout : null);
-				const answer = await runGit(args, { network: true, signal: stopping.signal, env, cwd });
-				if (listed !== null && before !== null) await afterFetch(entry, parseTrackedBranches(listed), before);
-				// A failure shows on the repository's header as any fetch's does, until a fetch works. One that worked
-				// fetched a single remote, so it neither counts as a fetch of all of them nor clears an earlier failure.
-				if (answer.exitCode !== 0 && !stopped() && current(entry)) {
-					entry.failure = readFetchFailure(answer.stderr, now());
-					tell(entry);
-				}
-				return answer;
+				return await task();
 			} finally {
 				release();
 			}
@@ -308,6 +303,26 @@ export function createFetcher(options: FetcherOptions): Fetcher {
 		});
 		entry.single = single;
 		return job;
+	}
+
+	/** One fetch for a sync action, with the person's own arguments, in its turn (see `fetchWith`). */
+	function fetchSingle(entry: Entry, args: readonly string[], cwd: string): Promise<GitRun> {
+		return inSingleTurn(entry, async (): Promise<GitRun> => {
+			const gitDir = entry.target.commonDir;
+			const listed = await read(["--git-dir", gitDir, "for-each-ref", `--format=${BRANCH_UPSTREAM_FORMAT}`, "refs/heads"]);
+			const before = listed === null ? null : await remoteRefs(gitDir);
+			const sshCommand = await runGit(["--git-dir", gitDir, "config", "--get", "core.sshCommand"], { network: false, signal: stopping.signal });
+			const env = batchSshCommand(environment, sshCommand.exitCode === 0 ? sshCommand.stdout : null);
+			const answer = await runGit(args, { network: true, signal: stopping.signal, env, cwd });
+			if (listed !== null && before !== null) await afterFetch(entry, parseTrackedBranches(listed), before);
+			// A failure shows on the repository's header as any fetch's does, until a fetch works. One that worked
+			// fetched a single remote, so it neither counts as a fetch of all of them nor clears an earlier failure.
+			if (answer.exitCode !== 0 && !stopped() && current(entry)) {
+				entry.failure = readFetchFailure(answer.stderr, now());
+				tell(entry);
+			}
+			return answer;
+		});
 	}
 
 	/**
@@ -470,6 +485,12 @@ export function createFetcher(options: FetcherOptions): Fetcher {
 			const entry = entries.get(path);
 			if (!entry || stopped()) return null;
 			return fetchSingle(entry, args, cwd);
+		},
+
+		async whileNotFetching(path, task) {
+			const entry = entries.get(path);
+			if (!entry || stopped()) return null;
+			return inSingleTurn(entry, task);
 		},
 
 		statuses: () => [...entries.values()].map(statusOf),

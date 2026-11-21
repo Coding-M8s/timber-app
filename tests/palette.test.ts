@@ -45,6 +45,20 @@ describe("palette entries", () => {
 		]);
 	});
 
+	test("Push is listed for a worktree that is ahead, and Pull for one that is behind, each saying what its dialog shows", async () => {
+		const { store } = await sampleState();
+		store.select(FEATURE_ID);
+		const push = byLabel(store.getState(), "Push");
+		expect(push).toMatchObject({ section: "worktree", icon: "push", repository: TIMBER });
+		expect(push.hint).toBe("Opens Push for feat/github-issue-lookup, which shows the Timber command before it runs.");
+		expect(push.keywords).toEqual(expect.arrayContaining(["git", "publish"]));
+		expect(push.action).toEqual({ kind: "dialog", request: { kind: "sync-action", action: "push", repository: TIMBER, worktree: FEATURE_ID } });
+		expect(paletteEntries(store.getState()).some(entry => entry.label === "Pull")).toBe(false);
+		const { state } = await sampleState();
+		expect(byLabel(state, "Pull")).toMatchObject({ icon: "fetch", hint: "Opens Pull for main, which shows the Git commands before they run." });
+		expect(paletteEntries(state).some(entry => entry.label === "Push")).toBe(false);
+	});
+
 	test("actions for a worktree are in its section and say what they do to it", async () => {
 		const { store } = await sampleState();
 		store.select(FEATURE_ID);

@@ -32,6 +32,7 @@ const ICON_PATHS: Record<Exclude<PaletteIcon, "worktree">, ReactNode> = {
 	"branch": <><circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M6 9v6" /><path d="M15 6h3a2 2 0 0 1 2 2v7" /><circle cx="20" cy="18" r="2" /></>,
 	"arena": <><path d="M5 4h4v16H5z" /><path d="M15 4h4v16h-4z" /></>,
 	"fetch": <><path d="M12 4v12" /><path d="M7 11l5 5 5-5" /><path d="M5 20h14" /></>,
+	"push": <><path d="M12 20V8" /><path d="M7 13l5-5 5 5" /><path d="M5 4h14" /></>,
 	"clean-up": <><path d="M4 7h16" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M6 7l1 13h10l1-13" /><path d="M9 7V4h6v3" /></>,
 	"next": <><path d="M5 12h14" /><path d="M13 6l6 6-6 6" /></>,
 	"settings": <><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1" /></>,

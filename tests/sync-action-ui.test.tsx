@@ -8,7 +8,7 @@ import { createAppStore } from "../src/mainview/store/store";
 import { describeSyncCommands, describeSyncControls, describeSyncRefusalNote, presentSyncResult } from "../src/mainview/sync-action-format";
 import { worktreeMenuChoice, worktreeMenuItems } from "../src/mainview/worktree-menu-format";
 import { BEING_REMOVED_REASON } from "../src/mainview/done-format";
-import type { SyncState, Worktree } from "../src/shared/model";
+import type { SyncState, TimberStatus, Worktree } from "../src/shared/model";
 import type { SyncActionResult } from "../src/shared/sync-actions";
 
 const settle = async () => {
@@ -69,10 +69,9 @@ describe("the Pull control on a row", () => {
 		expect(markup).toContain("<span class=\"sync behind\"");
 	});
 
-	test("is not offered for a diverged, ahead, level, force-pushed, gone, unpublished, or detached branch, nor while Timber removes the worktree", () => {
+	test("is not offered for a diverged, level, force-pushed, gone, unpublished, or detached branch, nor while Timber removes the worktree", () => {
 		const cases: Worktree[] = [
 			{ ...behind, sync: tracking(1, 3) },
-			{ ...behind, sync: tracking(2, 0) },
 			{ ...behind, sync: tracking(0, 0) },
 			{ ...behind, sync: tracking(0, 3, { forcePushed: { at: 5 } }) },
 			{ ...behind, sync: { kind: "gone", upstream: "origin/feat/x" } },
@@ -109,7 +108,7 @@ describe("the Pull dialog", () => {
 	);
 
 	test("shows both commands before they run, and says the second runs even when the fetch fails", () => {
-		expect(describeSyncCommands("pull", target)).toEqual({
+		expect(describeSyncCommands("pull", target, behind.path)).toEqual({
 			command: "git fetch origin",
 			followUps: [{ note: "Then, even when the fetch fails, on the commits fetched last:", command: "git merge --ff-only --no-autostash refs/remotes/origin/feat/x" }],
 		});
@@ -191,5 +190,149 @@ describe("a pull through the store and the mock engine", () => {
 		const moved = await started();
 		expect(await moved.store.runSyncAction({ ...request, target: { remote: "origin", upstreamRef: "refs/remotes/origin/other" } })).toMatchObject({ outcome: "failed", ran: false });
 		expect(listed(moved.store).sync).toMatchObject({ behind: 2 });
+	});
+});
+
+const ahead: Worktree = { ...behind, sync: tracking(2, 0) };
+
+describe("the Push control on a row", () => {
+	test("a branch that is ahead and not behind gets a Push control with its count, in place of the ahead marker", () => {
+		const markup = renderRow(ahead);
+		const control = /<span class="row-sync"><button type="button" class="sync ahead row-sync-button" aria-haspopup="dialog" aria-label="([^"]+)" title="([^"]+)">(.*?)<\/button><\/span>/.exec(markup);
+		expect(control).not.toBeNull();
+		expect(control![1]).toBe("Push 2 commits from feat/x to origin/feat/x");
+		expect(control![2]).toBe("2 commits to push to origin/feat/x. Click to see the Timber command, then push.");
+		expect(control![3]!.replace(/<svg.*?<\/svg>/, "")).toBe("2");
+		// The ahead count is drawn once, and its sentence stays in the row's description.
+		expect(markup.match(/class="sync ahead/g)?.length).toBe(1);
+		expect(markup).toContain("2 commits to push to origin/feat/x, as of the last fetch.");
+	});
+
+	test("without a way to act, the ahead count stays a marker", () => {
+		expect(renderRow(ahead, false)).toContain("<span class=\"sync ahead\"");
+	});
+
+	test("is not offered for a behind, diverged, level, force-pushed, gone, unpublished, or detached branch, nor while Timber removes the worktree", () => {
+		const cases: Worktree[] = [
+			behind,
+			{ ...behind, sync: tracking(1, 3) },
+			{ ...behind, sync: tracking(0, 0) },
+			{ ...behind, sync: tracking(2, 0, { forcePushed: { at: 5 } }) },
+			{ ...behind, sync: { kind: "gone", upstream: "origin/feat/x" } },
+			{ ...behind, sync: { kind: "unpublished" } },
+			{ ...behind, branch: null, detached: true, sync: null },
+		];
+		for (const worktree of cases) {
+			expect(describeSyncControls(worktree).map(control => control.action)).not.toContain("push");
+			expect(renderRow(worktree)).not.toContain("sync ahead row-sync-button");
+		}
+		expect(renderRow(ahead, true, true)).not.toContain("row-sync");
+	});
+});
+
+describe("Push in the worktree menu", () => {
+	test("comes before Done while it applies, and opens the dialog for the row's worktree", () => {
+		expect(worktreeMenuItems(ahead).map(item => item.id)).toEqual(["sync:push", "done"]);
+		expect(worktreeMenuItems(ahead)[0]).toMatchObject({ label: "Push", disabled: false, note: null });
+		expect(worktreeMenuChoice("/work/app", ahead, "sync:push")).toEqual({ kind: "sync-action", action: "push", repository: "/work/app", worktree: ahead.id });
+	});
+
+	test("is not listed for a branch that is behind or diverged, and is off while Timber removes the worktree", () => {
+		expect(worktreeMenuItems(behind).map(item => item.id)).toEqual(["sync:pull", "done"]);
+		expect(worktreeMenuChoice("/work/app", behind, "sync:push")).toBeNull();
+		expect(worktreeMenuItems({ ...behind, sync: tracking(1, 3) }).map(item => item.id)).toEqual(["done"]);
+		expect(worktreeMenuItems(ahead, true)[0]).toMatchObject({ id: "sync:push", disabled: true, note: BEING_REMOVED_REASON });
+		expect(worktreeMenuChoice("/work/app", ahead, "sync:push", true)).toBeNull();
+	});
+});
+
+describe("the Push dialog", () => {
+	const view = (props: Partial<SyncActionDialogViewProps> = {}) => renderToStaticMarkup(
+		<SyncActionDialogView action="push" worktree={ahead} path={ahead.path} result={null} submission={{ running: false, failure: null }} onSubmit={() => {}} onClose={() => {}} {...props} />,
+	);
+
+	test("shows the timber publish command before it runs", () => {
+		expect(describeSyncCommands("push", target, ahead.path)).toEqual({ command: `timber publish --result-file <temporary file> -- ${ahead.path}`, followUps: [] });
+		const markup = view();
+		expect(markup).toContain("Push feat/x");
+		expect(markup).toContain(`<pre class="dialog-command" aria-label="Command that will run">timber publish --result-file &lt;temporary file&gt; -- ${ahead.path}</pre>`);
+		expect(markup).toContain("2 commits ahead of origin/feat/x.");
+		expect(markup).toContain("never force-pushes, never asks for a password");
+	});
+
+	test("a refusal or a failure shows Timber's words", () => {
+		const command = `timber publish --result-file <temporary file> -- ${ahead.path}`;
+		const refused: SyncActionResult = {
+			outcome: "refused", action: "push", reason: "timber-refused", fetchFailure: null,
+			failure: { command, diagnostic: "The remote branch origin/feat/x has moved on: it has commits this branch does not contain.", output: null },
+		};
+		const refusedMarkup = view({ result: refused, submission: { running: false, failure: refused.failure } });
+		expect(refusedMarkup).toContain("Could not push");
+		expect(refusedMarkup).toContain("has moved on");
+		expect(refusedMarkup).toContain("Timber refused, so nothing was pushed and no branch changed.");
+		const failed: SyncActionResult = { outcome: "failed", action: "push", ran: true, failure: { command, diagnostic: "Git push to origin/feat/x failed (network, remote, hook or another Git error).", output: null } };
+		expect(view({ result: failed, submission: { running: false, failure: failed.failure } })).toContain("Git push to origin/feat/x failed");
+		expect(describeSyncRefusalNote(failed)).toBeNull();
+	});
+
+	test("a push that worked closes with a toast", () => {
+		expect(presentSyncResult("push", "feat/x", "origin/feat/x", { outcome: "done", action: "push", moved: true, fetchFailure: null }))
+			.toEqual({ ok: true, toast: "Pushed feat/x to origin/feat/x.", problem: false });
+		expect(presentSyncResult("push", "feat/x", "origin/feat/x", { outcome: "done", action: "push", moved: false, fetchFailure: null }))
+			.toEqual({ ok: true, toast: "origin/feat/x already has every commit of feat/x.", problem: false });
+	});
+});
+
+describe("a push through the store and the mock engine", () => {
+	const TIMBER = "/work/timber";
+	const lookup = sampleRepositories[0]!.worktrees.find(worktree => worktree.branch === "feat/github-issue-lookup")!;
+	const request = { action: "push" as const, repository: TIMBER, worktree: lookup.path, target: { remote: "origin", upstreamRef: "refs/remotes/origin/feat/github-issue-lookup" } };
+
+	async function started(ending: SyncEnding = "pushed", timber: TimberStatus = sampleTimberStatuses.ready) {
+		const engine = createMockEngine(structuredClone(sampleRepositories), timber);
+		engine.endSyncActions(ending);
+		const store = createAppStore(engine, () => () => {});
+		store.start();
+		await settle();
+		return { store, engine };
+	}
+	const listed = (store: Awaited<ReturnType<typeof started>>["store"]) => store.getState().repositories[0]!.worktrees.find(worktree => worktree.id === lookup.id)!;
+
+	test("the sample's feat/github-issue-lookup is ahead, so it offers Push", () => {
+		expect(lookup.sync).toMatchObject({ kind: "tracking", ahead: 2, behind: 0 });
+		expect(describeSyncControls(lookup).map(control => control.action)).toEqual(["push"]);
+	});
+
+	test("the row's counts follow a push without a manual refresh, and the control goes", async () => {
+		const { store, engine } = await started();
+		expect(await store.runSyncAction(request)).toEqual({ outcome: "done", action: "push", moved: true, fetchFailure: null });
+		expect(listed(store).sync).toMatchObject({ ahead: 0, behind: 0 });
+		expect(describeSyncControls(listed(store))).toEqual([]);
+		expect(engine.syncActionRequests()).toEqual([request]);
+	});
+
+	test("a refusal or a failure, offline included, leaves the counts as they were", async () => {
+		for (const ending of ["remote-moved", "offline", "sign-in", "failed"] as const) {
+			const { store } = await started(ending);
+			const result = await store.runSyncAction(request);
+			expect(result.outcome).toBe(ending === "remote-moved" ? "refused" : "failed");
+			if (result.outcome === "done") throw new Error("unreachable");
+			expect(result.failure.command).toBe(`timber publish --result-file <temporary file> -- ${lookup.path}`);
+			expect(listed(store).sync).toMatchObject({ ahead: 2, behind: 0 });
+		}
+	});
+
+	test("a pull ending does not decide a push, nor a push ending a pull", async () => {
+		const { store } = await started("diverged");
+		expect(await store.runSyncAction(request)).toMatchObject({ outcome: "done", action: "push" });
+		const main = sampleRepositories[0]!.worktrees.find(worktree => worktree.primary)!;
+		const pushEnding = await started("remote-moved");
+		expect(await pushEnding.store.runSyncAction({ action: "pull", repository: TIMBER, worktree: main.path, target: { remote: "origin", upstreamRef: "refs/remotes/origin/main" } }))
+			.toMatchObject({ outcome: "done", action: "pull" });
+	});
+
+	test("runs nothing when Timber is not ready", async () => {
+		const { store } = await started("pushed", sampleTimberStatuses["not-found"]);
+		expect(await store.runSyncAction(request)).toMatchObject({ outcome: "failed", action: "push", ran: false, failure: { diagnostic: "Timber is not ready. Nothing was run." } });
 	});
 });

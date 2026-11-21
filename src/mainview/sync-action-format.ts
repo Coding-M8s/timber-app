@@ -6,13 +6,13 @@ import { worktreeLabel } from "./format";
 import type { SubmissionOutcome } from "./store/submission";
 
 /**
- * Words for sync actions, such as Pull: the control on a worktree's row, its
+ * Words for sync actions, Pull and Push: the control on a worktree's row, its
  * menu entry, the dialog that shows the commands, and how a result is told.
  * Pure, so they can be tested without a window. What runs, and when an
  * action is offered, come from ../shared/sync-actions.ts.
  */
 
-/** The words of one action. Push is meant to be one more entry here. */
+/** The words of one action. */
 export interface SyncActionWords {
 	/** On the control, the menu entry, and the dialog's button, such as "Pull". */
 	label: string;
@@ -20,10 +20,15 @@ export interface SyncActionWords {
 	running: string;
 	/** Above a refusal or a failure. */
 	failureTitle: string;
+	/** What the dialog shows first, for the palette's hint, such as "the Git commands before they run". */
+	shows: string;
+	/** More words the palette finds the action by. */
+	keywords: string[];
 }
 
 export const SYNC_ACTION_WORDS: Readonly<Record<SyncActionKind, SyncActionWords>> = {
-	pull: { label: "Pull", running: "Pulling", failureTitle: "Could not pull" },
+	pull: { label: "Pull", running: "Pulling", failureTitle: "Could not pull", shows: "the Git commands before they run", keywords: ["git", "fast-forward", "update"] },
+	push: { label: "Push", running: "Pushing", failureTitle: "Could not push", shows: "the Timber command before it runs", keywords: ["git", "publish", "upload"] },
 };
 
 const counted = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
@@ -53,6 +58,13 @@ export function describeSyncControls(worktree: Worktree): SyncControl[] {
 					label: `Pull ${counted(sync.behind, "commit")} into ${name} from ${sync.upstream}`,
 					title: `${counted(sync.behind, "commit")} to pull from ${sync.upstream}, as of the last fetch. Click to see the commands, then pull.`,
 				};
+			case "push":
+				return {
+					action,
+					text: String(sync.ahead),
+					label: `Push ${counted(sync.ahead, "commit")} from ${name} to ${sync.upstream}`,
+					title: `${counted(sync.ahead, "commit")} to push to ${sync.upstream}. Click to see the Timber command, then push.`,
+				};
 		}
 	});
 }
@@ -68,11 +80,14 @@ export interface SyncDialogCommands {
 	followUps: { note: string; command: string }[];
 }
 
-export function describeSyncCommands(action: SyncActionKind, target: SyncTarget): SyncDialogCommands {
-	const [first, ...rest] = syncActionSteps(action, target).map(describeSyncStep);
+/** `worktree` is the worktree's registered path, which Push names. */
+export function describeSyncCommands(action: SyncActionKind, target: SyncTarget, worktree: string): SyncDialogCommands {
+	const [first, ...rest] = syncActionSteps(action, target, worktree).map(describeSyncStep);
 	switch (action) {
 		case "pull":
 			return { command: first ?? "", followUps: rest.map(command => ({ note: "Then, even when the fetch fails, on the commits fetched last:", command })) };
+		case "push":
+			return { command: first ?? "", followUps: [] };
 	}
 }
 
@@ -93,10 +108,17 @@ export function describeSyncIntro(action: SyncActionKind, worktree: Worktree): s
 				`Both commands run in ${worktree.path}.`,
 			];
 		}
+		case "push": {
+			const upstream = sync?.kind === "tracking" ? sync.upstream : "its upstream";
+			const ahead = sync?.kind === "tracking" ? `${counted(sync.ahead, "commit")} ahead of ${upstream}. ` : "";
+			return [
+				`${ahead}Push runs timber publish, which pushes ${worktreeLabel(worktree)} to ${upstream} under its own name. It never force-pushes, never asks for a password, and refuses when ${upstream} has commits this branch does not.`,
+			];
+		}
 	}
 }
 
-/** The note under a refusal: for a branch that diverged, the way on is Rebase. */
+/** The note under a refusal: for a branch that diverged, the way on is Rebase. Timber's own words say why it refused a push. */
 export function describeSyncRefusalNote(result: SyncActionResult): string | null {
 	if (result.outcome !== "refused") return null;
 	switch (result.reason) {
@@ -104,6 +126,8 @@ export function describeSyncRefusalNote(result: SyncActionResult): string | null
 			return "The branch has commits its upstream does not, so it cannot be fast-forwarded. Rebase it onto its upstream instead, from Rebase in the worktree's header or the command palette. Nothing was changed.";
 		case "local-changes":
 			return "Commit or put away the changes Git names, then pull again. Nothing was changed, and your files are as they were.";
+		case "timber-refused":
+			return "Timber refused, so nothing was pushed and no branch changed.";
 	}
 }
 
@@ -118,6 +142,8 @@ export function presentSyncResult(action: SyncActionKind, label: string, upstrea
 			const moved = result.moved ? `Pulled ${upstream} into ${label}.` : `${label} already has every commit of ${upstream}.`;
 			return { ok: true, toast: `${moved}${fetched}`, problem: result.fetchFailure !== null };
 		}
+		case "push":
+			return { ok: true, toast: result.moved ? `Pushed ${label} to ${upstream}.` : `${upstream} already has every commit of ${label}.`, problem: false };
 	}
 }
 

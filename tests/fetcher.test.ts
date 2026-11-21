@@ -555,6 +555,47 @@ describe("createFetcher, a fetch for a sync action", () => {
 		expect(scripted.calls).toEqual([]);
 	});
 
+	test("a push waits for the fetch that runs, and the next fetch waits for the push: never beside either", async () => {
+		const order: string[] = [];
+		const releases: (() => void)[] = [];
+		const plain = plainAnswer();
+		const runGit: RunGit = async (args, options) => {
+			if (options.network) {
+				order.push("fetch starts");
+				await new Promise<void>(resolve => releases.push(resolve));
+				order.push("fetch ends");
+			}
+			return { exitCode: 0, stdout: "", stderr: "", timedOut: false, ...plain(args, options.network) };
+		};
+		const { fetcher } = scheduled(runGit);
+		fetcher.sync([REPO]);
+		const first = fetcher.fetchNow(REPO.path);
+		await settle();
+		const pushed = fetcher.whileNotFetching(REPO.path, async () => {
+			order.push("push starts");
+			await new Promise<void>(resolve => releases.push(resolve));
+			order.push("push ends");
+			return "pushed";
+		});
+		await settle();
+		const next = fetcher.fetchNow(REPO.path);
+		for (let round = 0; round < 6; round++) {
+			for (const release of releases.splice(0)) release();
+			await settle();
+		}
+		await Promise.all([first, pushed, next]);
+		for (let index = 0; index < order.length; index += 2) expect(order[index + 1]).toBe(order[index]!.replace("starts", "ends"));
+		expect(order.slice(0, 4)).toEqual(["fetch starts", "fetch ends", "push starts", "push ends"]);
+		expect(await pushed).toBe("pushed");
+	});
+
+	test("runs no push for a repository that is not in the list", async () => {
+		const { fetcher } = scheduled(plainRepository().runGit);
+		let ran = false;
+		expect(await fetcher.whileNotFetching("/work/nowhere", async () => { ran = true; })).toBeNull();
+		expect(ran).toBe(false);
+	});
+
 	test("a failure becomes the repository's latest one, and one that worked neither counts as a fetch of every remote nor clears it", async () => {
 		const state = { offline: true };
 		const scripted = scriptedGit((args, network) => network && state.offline ? { exitCode: 128, stderr: "fatal: unable to access 'https://example.com/x.git/': Could not resolve host: example.com\n" } : plainAnswer()(args, network));

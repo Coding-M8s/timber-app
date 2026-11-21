@@ -32,7 +32,8 @@ export async function createEngine(): Promise<Engine> {
 	// For the Rebase dialog: timberMock.endRebaseResults("conflicts") chooses how timber rebase ends: "rebased", "up-to-date",
 	// "conflicts", "refused", "failed", or "no-result".
 	// For Pull: timberMock.endSyncActions("diverged") chooses how a pull ends: "pulled", "fetch-failed", "diverged",
-	// "local-changes", or "failed".
+	// "local-changes", or "failed". For Push: timberMock.endSyncActions("remote-moved") chooses how a push ends: "pushed",
+	// "push-up-to-date", "remote-moved", "offline", "sign-in", or "failed".
 	// For the Done dialog: timberMock.setChanges(path, { modified: ["a.ts"] }),
 	// timberMock.expirePreviewsAfter(5000), timberMock.failBranchDeletion(true), and
 	// timberMock.setDoneDelay(3000) to close the dialog while a removal runs.

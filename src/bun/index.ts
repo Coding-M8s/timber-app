@@ -218,15 +218,18 @@ const fetcher = createFetcher({
 	saveMarks: marks => void savedForcePushes.save(marks),
 });
 /*
- * Sync actions, such as Pull (see ./sync-actions.ts): Git in a listed worktree, in the repository's turn, with its
- * fetch as one fetch of the fetcher's, so it never runs beside another and a force-push it brings in is marked.
- * What Git printed is private: it goes back to the window and is never logged.
+ * Sync actions, Pull and Push (see ./sync-actions.ts), for a listed worktree, in the repository's turn. Pull's fetch
+ * runs as one fetch of the fetcher's, so it never runs beside another and a force-push it brings in is marked. Push
+ * runs `timber publish` while no fetch runs, since it moves a remote-tracking ref too. What Git and Timber printed is
+ * private: it goes back to the window and is never logged.
  */
 const syncActions = createSyncActions({
 	findRepository: path => repositories.find(path),
 	turns,
 	runGit: gitRunner,
 	fetch: (repository, args, cwd) => fetcher.fetchWith(repository, args, cwd),
+	whileNotFetching: (repository, task) => fetcher.whileNotFetching(repository, task),
+	timber: () => timber.current(),
 });
 // Nothing is fetched in the background until the preferences say whether to.
 void preferences.load().then(

@@ -181,6 +181,13 @@ change them here first when they change.
   beside the row. It opens a dialog that shows `git fetch <remote>` and
   `git merge --ff-only --no-autostash <upstream>` before they run. Pull is
   also in the row's menu and the command palette while it applies.
+- A branch that is ahead and not behind gets a Push control in place of its
+  up arrow and count, drawn the same way. It opens a dialog that shows
+  `timber publish --result-file <temporary file> -- <worktree>` before it
+  runs. Push is also in the row's menu and the command palette while it
+  applies. Neither control shows for a diverged or force-pushed branch.
+  A sync control never moves when the row is pointed at: the row's other
+  controls show to its right, in room the first line always keeps.
 - A row whose branch has a pull request shows it with its state, on the
   line under the branch: `#42` while open, or `#42 draft`, `#42 merged`,
   `#42 closed`. An open or draft one adds its checks ("checks pass",
