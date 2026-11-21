@@ -884,7 +884,7 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 			const session = await openWith({ agent: "Claude Code" });
 			await shows(session.id, `ARGS:--session-id ${NEW} --model opus`);
 			expect(session.command).toBe(`'${join(root, "resume bin", "claude")}' --session-id ${NEW} --model opus`);
-			expect(sessions.running()).toEqual([{ id: session.id, worktree: `id:${worktree}`, path: worktree, kind: "agent", agent: "Claude Code", resumable: "claude", conversation: NEW, startedAt: 1234, name: null, restored: null }]);
+			expect(sessions.running()).toEqual([{ id: session.id, worktree: `id:${worktree}`, path: worktree, kind: "agent", agent: "Claude Code", resumable: "claude", program: "claude", conversation: NEW, startedAt: 1234, name: null, restored: null }]);
 		});
 
 		test("Claude Code goes back to a conversation that is there", async () => {
@@ -999,6 +999,15 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 			expect(await until(() => sessions.endedCodex().get(`id:${worktree}`) === 1234)).toBe(true);
 			const second = await openWith({ agent: "Codex" });
 			await sessions.close(second.id);
+			expect([...sessions.endedCodex()]).toEqual([[`id:${worktree}`, 1234]]);
+		});
+
+		test("a Codex started as typed is not resumed, and still counts when it ends", async () => {
+			startResumable([{ name: "Codex fix", command: "codex \"fix it\"" }]);
+			const typed = await openWith({ agent: "Codex fix" });
+			await shows(typed.id, "ARGS:fix it");
+			expect(sessions.running().map(session => [session.resumable, session.program, session.conversation])).toEqual([[null, "codex", null]]);
+			await sessions.close(typed.id);
 			expect([...sessions.endedCodex()]).toEqual([[`id:${worktree}`, 1234]]);
 		});
 

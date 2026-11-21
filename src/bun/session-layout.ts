@@ -50,7 +50,7 @@ const CODEX_START_SLACK_MILLISECONDS = 2000;
 export interface SessionLayoutDependencies {
 	file: string;
 	running: () => RunningSession[];
-	/** When the last Codex session of each worktree ended or closed in this run, by worktree id. */
+	/** When the last Codex session of each worktree, however it was started, ended or closed in this run, by worktree id. */
 	endedCodex?: () => ReadonlyMap<string, number>;
 	/** For a Codex session with nothing newer known (see ./agent-conversations.ts). */
 	findCodex: (options: { cwd: string; since: number; taken: ReadonlySet<string>; budget: number }) => string | null;
@@ -99,15 +99,29 @@ export function createSessionLayout(dependencies: SessionLayoutDependencies): Se
 	function withConversations(live: RunningSession[]): RunningSession[] {
 		const taken = new Set(live.flatMap(session => session.conversation === null ? [] : [session.conversation]));
 		const deadline = now() + CODEX_SEARCH_MILLISECONDS;
-		const codex = new Map<string, RunningSession[]>();
-		for (const session of live) if (session.resumable === "codex") codex.set(session.worktree, [...codex.get(session.worktree) ?? [], session]);
-		const ended = endedCodex();
 		const found = new Map<string, string | null>();
+		// First the Claude Code ids, which are quick to check: a Claude Code id the app chose is only a conversation once Claude Code wrote it.
+		for (const session of live) {
+			if (session.resumable !== "claude" || session.conversation === null) continue;
+			if (deadline - now() <= 0) break;
+			let exists = true;
+			try {
+				exists = claudeExists(session.conversation);
+			} catch {
+				// Then it keeps what it has.
+			}
+			if (!exists) found.set(session.id, null);
+		}
+		// Every Codex of a worktree, however it was started, so one started as typed is never taken for another.
+		const codex = new Map<string, RunningSession[]>();
+		for (const session of live) if (session.program === "codex") codex.set(session.worktree, [...codex.get(session.worktree) ?? [], session]);
+		const ended = endedCodex();
 		for (const sessions of codex.values()) {
 			if (sessions.length !== 1) continue;
 			const [session] = sessions as [RunningSession];
+			if (session.resumable !== "codex") continue;
 			const since = session.startedAt - CODEX_START_SLACK_MILLISECONDS;
-			// Another Codex of the app ran here meanwhile and ended: its conversation could be taken for this one's.
+			// Another Codex ran here meanwhile and ended: its conversation could be taken for this one's.
 			const rival = ended.get(session.worktree);
 			if (rival !== undefined && rival >= since) continue;
 			const budget = deadline - now();
@@ -123,18 +137,6 @@ export function createSessionLayout(dependencies: SessionLayoutDependencies): Se
 			if (id === null || own.has(id)) continue;
 			found.set(session.id, id);
 			taken.add(id);
-		}
-		// A Claude Code id the app chose is only a conversation once Claude Code wrote it.
-		for (const session of live) {
-			if (session.resumable !== "claude" || session.conversation === null) continue;
-			if (deadline - now() <= 0) break;
-			let exists = true;
-			try {
-				exists = claudeExists(session.conversation);
-			} catch {
-				// Then it keeps what it has.
-			}
-			if (!exists) found.set(session.id, null);
 		}
 		return live.map(session => found.has(session.id) ? { ...session, conversation: found.get(session.id)! } : session);
 	}

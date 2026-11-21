@@ -2,7 +2,7 @@ import { accessSync, constants } from "node:fs";
 import { type ArenaLaunch, isArenaName, isAttemptLabel } from "../shared/arenas";
 import { homedir } from "node:os";
 import { type AgentSetting, agentCommand, findAgent } from "../shared/agent";
-import { type ResumableAgent, agentStartArguments, conversationMissingNote, resumableAgent } from "../shared/agent-resume";
+import { type ResumableAgent, agentProgram, agentStartArguments, conversationMissingNote, resumableAgent } from "../shared/agent-resume";
 import { describeCommandLine } from "../shared/command-line";
 import type { TimberStatus } from "../shared/model";
 import {
@@ -207,6 +207,8 @@ export interface RunningSession {
 	agent: string | null;
 	/** Whether, and how, the agent can go back to its conversation. */
 	resumable: ResumableAgent | null;
+	/** Claude Code or Codex by the executable's name, however it was started: a Codex started as typed still counts when Codex conversations are told apart. */
+	program: ResumableAgent | null;
 	/** The agent's own conversation id, when it is known. */
 	conversation: string | null;
 	startedAt: number;
@@ -249,6 +251,7 @@ interface Live {
 	/** The agent's name in Settings, or null for a shell or a Timber command. */
 	agent: string | null;
 	resumable: ResumableAgent | null;
+	program: ResumableAgent | null;
 	/** The agent's own conversation id, when it is known. */
 	conversation: string | null;
 	startedAt: number;
@@ -560,12 +563,14 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		| {
 			ok: true; kind: TerminalSession["kind"]; base: string; argv: string[]; command: string; environment?: Record<string, string>; unset?: string[];
 			resumable: ResumableAgent | null; conversation: string | null;
+			/** Claude Code or Codex by the executable's name, however it was started. */
+			program: ResumableAgent | null;
 			/** A conversation was asked for and could not be gone back to. */
 			missing: boolean;
 		}
 		| { ok: false; result: OpenTerminalResult };
 
-	const plain = { resumable: null, conversation: null, missing: false } as const;
+	const plain = { resumable: null, conversation: null, missing: false, program: null } as const;
 
 	/**
 	 * What a session starts with. `resume` is a saved conversation, and
@@ -604,7 +609,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			};
 		}
 		const extra = { ...(launch.environment ? { environment: launch.environment } : {}), ...(launch.unset ? { unset: launch.unset } : {}) };
-		if (!settings) return { ok: true, kind: "agent", base: launch.name, argv, command: describeCommandLine(argv), ...extra, ...plain };
+		if (!settings) return { ok: true, kind: "agent", base: launch.name, argv, command: describeCommandLine(argv), ...extra, ...plain, program: agentProgram(launch.executable) };
 		// The conversation is only ever checked in the agent's own folder, and only a UUID gets that far.
 		const resumable = resumableAgent(launch.executable, launch.arguments);
 		let conversation: string | null = null;
@@ -621,7 +626,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			conversation = resume;
 		}
 		const started = [lookup.path, ...args];
-		return { ok: true, kind: "agent", base: launch.name, argv: started, command: describeCommandLine(started), ...extra, resumable, conversation, missing: resume !== null && conversation !== resume };
+		return { ok: true, kind: "agent", base: launch.name, argv: started, command: describeCommandLine(started), ...extra, resumable, conversation, missing: resume !== null && conversation !== resume, program: agentProgram(launch.executable) };
 	}
 
 	/** A Timber command to run in place of the shell: a worktree's setup, with the Timber the app found. */
@@ -816,7 +821,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		live = {
 			session, process: child, scrollback: createScrollback(), pending: "", flushTimer: null, undrawn: [], undrawnSize: 0, held: false, leftovers: null, ended,
 			scanner: createStatusScanner(), records: createStatusRecords(), pasteMode: createPasteModeScanner(), statusChanged: false, probedAt: Number.NEGATIVE_INFINITY, chop: null,
-			agent: agent?.name ?? null, resumable: start.resumable, conversation: start.conversation, startedAt: now(), renamed: savedName !== null, restored,
+			agent: agent?.name ?? null, resumable: start.resumable, program: start.program, conversation: start.conversation, startedAt: now(), renamed: savedName !== null, restored,
 		};
 		if (chop !== undefined) {
 			live.chop = { text: chop.text, timer: null, deadline: Date.now() + chopWaitMilliseconds };
@@ -848,7 +853,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 	const codexEnded = new Map<string, number>();
 
 	function noteEnded(live: Live): void {
-		if (live.resumable === "codex" && live.session.state.kind === "running") codexEnded.set(live.session.worktree, now());
+		if (live.program === "codex" && live.session.state.kind === "running") codexEnded.set(live.session.worktree, now());
 	}
 
 	async function close(id: string): Promise<void> {
@@ -941,7 +946,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			const { session } = live;
 			if (session.state.kind !== "running" || (session.kind !== "terminal" && session.kind !== "agent")) return [];
 			return [{
-				id: session.id, worktree: session.worktree, path: session.path, kind: session.kind, agent: live.agent, resumable: live.resumable,
+				id: session.id, worktree: session.worktree, path: session.path, kind: session.kind, agent: live.agent, resumable: live.resumable, program: live.program,
 				conversation: live.conversation, startedAt: live.startedAt, name: live.renamed ? session.name : null, restored: live.restored,
 			}];
 		}),
