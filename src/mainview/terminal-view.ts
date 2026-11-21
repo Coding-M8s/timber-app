@@ -11,8 +11,9 @@ import type { AppStore } from "./store/store";
 import { TERMINAL_LINE_HEIGHT, type TerminalAppearance, terminalFontStack } from "../shared/terminal-appearance";
 import { TERMINAL_MINIMUM_CONTRAST, terminalColors, watchTerminalColors } from "./terminal-colors";
 import { terminalAppearance, watchTerminalAppearance } from "./terminal-look";
-import { NEW_LINE_INPUT, clipboardKey, leftInAlternateScreen, newLineKey, sessionChipId, sessionKey } from "./terminal-format";
+import { NEW_LINE_INPUT, clipboardKey, leftInAlternateScreen, newLineKey, opensLink, sessionChipId, sessionKey } from "./terminal-format";
 import { terminalLinks } from "./terminal-links";
+import { type Cell, findFilePaths, rowText } from "./terminal-paths";
 
 /**
  * The drawn terminal of one session.
@@ -73,7 +74,8 @@ let webglWorks = true;
 function createView(store: AppStore, id: string): TerminalView {
 	const host = document.createElement("div");
 	host.className = "terminal-host";
-	const links = terminalLinks(url => void store.openLink(url), isMac());
+	const mac = isMac();
+	const links = terminalLinks(url => void store.openLink(url), mac);
 	const terminal = new Terminal({
 		...appearanceOptions(terminalAppearance()),
 		fontWeight: "400",
@@ -104,9 +106,35 @@ function createView(store: AppStore, id: string): TerminalView {
 		event.preventDefault();
 		links.activate(event, uri);
 	}, { hover: () => links.hover(), leave: () => links.leave() }));
+	// File paths, such as `docs/plan.md` an agent wrote, open in the file viewer of the session's worktree, with the same key as a link.
+	// A path that wraps onto the next row is not found: each row is read on its own.
+	terminal.registerLinkProvider({
+		provideLinks(row, callback) {
+			const line = terminal.buffer.active.getLine(row - 1);
+			if (!line) return callback(undefined);
+			const cells: Cell[] = [];
+			for (let column = 0; column < line.length; column++) {
+				const cell = line.getCell(column);
+				cells.push({ chars: cell?.getChars() ?? "", width: cell?.getWidth() ?? 1 });
+			}
+			const { text, columns } = rowText(cells);
+			const found = findFilePaths(text);
+			callback(found.length === 0 ? undefined : found.map(path => ({
+				range: { start: { x: columns[path.start]!, y: row }, end: { x: columns[path.end - 1]!, y: row } },
+				text: path.path,
+				activate: (event: MouseEvent) => {
+					if (!opensLink(event, mac)) return;
+					event.preventDefault();
+					const worktree = store.getState().terminals.find(session => session.id === id)?.worktree;
+					if (worktree) store.openFile(worktree, path.path);
+				},
+				hover: () => links.hover(),
+				leave: () => links.leave(),
+			})));
+		},
+	});
 	terminal.onData(data => store.writeTerminal(id, data));
 	terminal.onResize(({ cols, rows }) => store.resizeTerminal(id, cols, rows));
-	const mac = isMac();
 	terminal.attachCustomKeyEventHandler(event => {
 		// The palette shortcut is the app's key, so it is never sent to the program.
 		if (isPaletteShortcut(event)) return false;

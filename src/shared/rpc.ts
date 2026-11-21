@@ -7,6 +7,7 @@ import type { BackupDeleteRequest, BackupRestoreRequest } from "./backups";
 import type { Engine } from "./engine";
 import type { ForcePushSeen, RepositoryFetch } from "./git-fetch";
 import type { FileChangesRequest, FileDiffRequest } from "./file-changes";
+import type { WorktreeFileRequest } from "./worktree-files";
 import type { Layout } from "./layout";
 import type { PortsRequest } from "./ports";
 import type { RebaseRequest } from "./timber-rebase";
@@ -113,6 +114,7 @@ export type AppRPC = {
 			applyDone: { params: DoneApplyRequest; response: Answer<"applyDone"> };
 			readFileChanges: { params: FileChangesRequest; response: Answer<"readFileChanges"> };
 			readFileDiff: { params: FileDiffRequest; response: Answer<"readFileDiff"> };
+			readWorktreeFile: { params: WorktreeFileRequest; response: Answer<"readWorktreeFile"> };
 			readPorts: { params: PortsRequest; response: Answer<"readPorts"> };
 			listChops: { params: ChopsRequest; response: Answer<"listChops"> };
 			runChop: { params: RunChopRequest; response: Answer<"runChop"> };

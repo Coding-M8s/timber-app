@@ -353,6 +353,11 @@ function DiffPane({ repository, worktree, view }: { repository: string; worktree
 					{file.path}
 				</span>
 				<span className="diff-area">{describeFileArea(file)}</span>
+				{onDisk && (
+					<button type="button" className="button quiet diff-editor" title={`Show ${file.path} as it is now, read-only`} onClick={() => store.openFile(worktree.id, file.path)}>
+						View file
+					</button>
+				)}
 				{onDisk && <OpenFileButton repository={repository} worktree={worktree} file={file} />}
 			</div>
 			<div className="diff-body" ref={body} tabIndex={0} aria-label={`Changes of ${file.path}`}>

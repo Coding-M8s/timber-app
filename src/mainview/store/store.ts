@@ -57,8 +57,10 @@ import { mergeOverlapping } from "./merge";
 import { keepEntries } from "./records";
 import { RESTORE_CONCURRENCY, RESTORE_QUIET_MILLISECONDS, type RestoreJob, goneSavedWorktrees, restoreJobs, restoreRequest, runLimited } from "./restore";
 import { type SavedSessions, pickShown } from "../../shared/saved-sessions";
+import type { WorktreeFileResult } from "../../shared/worktree-files";
+import { outsideResult, pathInWorktree, settleFiles } from "../file-view-format";
 import {
-	type AppState, type ChangesView, type DialogRequest, type Operation, type PullRequestForm, type Removal, type SessionAgent, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood,
+	type AppState, type ChangesView, type DialogRequest, type FileView, type Operation, type PullRequestForm, type Removal, type SessionAgent, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood,
 	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, canToggleChopsPanel, offeredChops, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, shownSession, timberReady, withTerminal, withoutSession } from "./state";
 
 /**
@@ -213,8 +215,18 @@ export interface AppStore {
 	openInEditor(request: OpenInEditorRequest): Promise<OpenInEditorResult | null>;
 	/** Put away the note about the last "Open in editor". */
 	dismissEditorProblem(): void;
-	/** Show one of the views of the selected worktree. */
+	/** Show one of the views of the selected worktree. The File tab shows only while a file is open there. */
 	showTab(tab: WorkspaceTab): void;
+	/**
+	 * Open a file of a worktree, named by its identity, in its File tab, and
+	 * show that tab. The path is relative to the worktree, or absolute inside
+	 * it; anything else is refused without a read. Replaces the file open there.
+	 */
+	openFile(worktreeId: string, path: string): void;
+	/** Read the open file of a worktree again, as it is on disk now. */
+	readFileAgain(worktreeId: string): void;
+	/** Close the file of a worktree, which hides its File tab and shows the tab it was opened from. */
+	closeFile(worktreeId: string): void;
 	/**
 	 * Read the changed files of a worktree, named by the path of its
 	 * repository and its identity, into `changes`, and then the diff of the
@@ -784,6 +796,11 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const shownBefore = sessionOnScreen(state)?.id ?? null;
 		const terminalsBefore = state.terminals;
 		state = { ...state, ...change };
+		// The File tab never shows without a file, and open files leave with their worktree.
+		if (change.tab !== undefined || change.selection !== undefined || change.files !== undefined || change.repositories !== undefined) {
+			const settled = settleFiles(state);
+			if (settled) state = { ...state, ...settled };
+		}
 		// A change to the list, or to Timber, may bring links to read or take some away.
 		if (change.repositories || change.timber) catchUpIssues();
 		// A failed removal that no longer matches the list goes with the list change that ended it.
@@ -1222,6 +1239,45 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	function changeNotes(worktreeId: string, notes: readonly ReviewNote[]): void {
 		const { [worktreeId]: _gone, ...others } = state.reviews;
 		update({ reviews: notes.length > 0 ? { ...others, [worktreeId]: notes } : others });
+	}
+
+	/* The latest read of each worktree's open file wins, and an answer for a file no longer open there is dropped. */
+	const fileTickets = new Map<string, number>();
+
+	async function readOpenFile(worktreeId: string): Promise<void> {
+		const view = state.files[worktreeId];
+		if (!view) return;
+		const ticket = (fileTickets.get(worktreeId) ?? 0) + 1;
+		fileTickets.set(worktreeId, ticket);
+		let result: WorktreeFileResult;
+		try {
+			result = await engine.readWorktreeFile({ repository: view.repository, worktree: view.worktreePath, path: view.path });
+		} catch (error) {
+			result = { outcome: "failed", message: unheard(`the file ${view.path}`, error) };
+		}
+		const now = state.files[worktreeId];
+		if (fileTickets.get(worktreeId) !== ticket || !now || now.path !== view.path || now.worktreePath !== view.worktreePath) return;
+		update({ files: { ...state.files, [worktreeId]: { ...now, result } } });
+	}
+
+	function openFile(worktreeId: string, path: string): void {
+		const selection = selectionFor(state.repositories, worktreeId);
+		const worktree = state.repositories.find(repository => repository.path === selection?.repository)?.worktrees.find(candidate => candidate.id === worktreeId);
+		if (!selection || !worktree) return;
+		const relative = pathInWorktree(worktree, path);
+		const shownHere = state.selection?.worktree === worktreeId && state.board === null;
+		const from = shownHere && state.tab !== "file" ? state.tab : state.files[worktreeId]?.from ?? "workspace";
+		const view: FileView = { repository: selection.repository, worktreePath: worktree.path, path: relative ?? path, from, result: relative === null ? outsideResult(path) : null };
+		update({ selection, board: null, files: { ...state.files, [worktreeId]: view }, tab: "file" });
+		if (relative !== null) void readOpenFile(worktreeId);
+	}
+
+	function closeFile(worktreeId: string): void {
+		const view = state.files[worktreeId];
+		if (!view) return;
+		const { [worktreeId]: _closed, ...others } = state.files;
+		const shown = state.tab === "file" && state.selection?.worktree === worktreeId;
+		update(shown ? { files: others, tab: view.from } : { files: others });
 	}
 
 	/** Forget the notes of a worktree that left the list. */
@@ -2825,8 +2881,12 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		},
 		showTab(tab) {
 			// A worktree's tab is asked for, so the worktree shows in place of any issues board.
+			if (tab === "file" && (state.selection === null || state.files[state.selection.worktree] === undefined)) return;
 			if (tab !== state.tab || state.board !== null) update({ tab, board: null });
 		},
+		openFile,
+		readFileAgain: worktreeId => void readOpenFile(worktreeId),
+		closeFile,
 		readChanges,
 		readChops,
 		runChop,

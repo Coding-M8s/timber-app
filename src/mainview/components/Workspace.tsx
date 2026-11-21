@@ -5,9 +5,11 @@ import { describeSavedBase } from "../base-format";
 import { describeChanges, describeWorktreeSync, worktreeLabel } from "../format";
 import { OPEN_PULL_REQUEST, describeOpenPullRequest, describePullRequestMarkers, describeWorktreePullRequestProblem } from "../pull-request-format";
 import { pullRequestOf } from "../../shared/pull-requests";
-import { TAB_LABELS, tabAfterKey } from "../shell";
+import { TAB_LABELS, tabAfterKey, visibleTabs } from "../shell";
+import { fileTabLabel } from "../file-view-format";
+import { FileViewer } from "./FileViewer";
 import { useAppState, useStore } from "../store/react";
-import { WORKSPACE_TABS, type WorkspaceTab, isBeingRemoved, isRunning, selectedWorktree } from "../store/state";
+import { type WorkspaceTab, isBeingRemoved, isRunning, selectedWorktree } from "../store/state";
 import { ChangesPanel } from "./ChangesPanel";
 import { describeNoteCount } from "../review-format";
 import { IssueHeaderLink, issueOf } from "./IssueSummary";
@@ -67,10 +69,12 @@ export function Workspace() {
 	// While Timber removes the worktree, nothing new starts in it.
 	const removing = isBeingRemoved(state, repository.path, worktree.path);
 	const notes = state.reviews[worktree.id]?.length ?? 0;
+	const file = state.files[worktree.id];
+	const tabs = visibleTabs(file !== undefined);
 
 	// As in any tab list: the arrows, Home, and End move between tabs, and the tab reached shows at once.
 	const onTabKey = (event: KeyboardEvent<HTMLDivElement>) => {
-		const next = tabAfterKey(state.tab, event.key);
+		const next = tabAfterKey(state.tab, event.key, tabs);
 		if (next === null) return;
 		event.preventDefault();
 		store.showTab(next);
@@ -132,7 +136,7 @@ export function Workspace() {
 			</header>
 			<SetupPrompt repository={repository} />
 			<div className="tabs" role="tablist" aria-label="Views of this worktree" onKeyDown={onTabKey}>
-				{WORKSPACE_TABS.map(tab => (
+				{tabs.map(tab => (
 					<button
 						key={tab}
 						type="button"
@@ -145,7 +149,7 @@ export function Workspace() {
 						tabIndex={tab === state.tab ? 0 : -1}
 						onClick={() => store.showTab(tab)}
 					>
-						{TAB_LABELS[tab]}
+						{tab === "file" ? <span title={file?.path}>{fileTabLabel(file)}</span> : TAB_LABELS[tab]}
 						{tab === "changes" && notes > 0 && (
 							<>
 								<span className="tab-count" aria-hidden="true">{notes}</span>
@@ -154,11 +158,18 @@ export function Workspace() {
 						)}
 					</button>
 				))}
+				{/* Beside the tab, not inside it: a button may not hold another. The viewer's own Close reaches it by keyboard. */}
+				{file && (
+					<button type="button" className="tab-close" tabIndex={-1} aria-label={`Close ${fileTabLabel(file)}`} title={`Close ${file.path}`} onClick={() => store.closeFile(worktree.id)}>
+						<span aria-hidden="true">×</span>
+					</button>
+				)}
 			</div>
 			<div className="tabpanel workspace-panel" role="tabpanel" id={PANEL_ID} aria-labelledby={tabId(state.tab)}>
 				{state.tab === "workspace" && <TerminalPanel repository={repository} worktree={worktree} />}
 				{state.tab === "changes" && <ChangesPanel repository={repository} worktree={worktree} />}
 				{state.tab === "pull-request" && <PullRequestPanel repository={repository} worktree={worktree} />}
+				{state.tab === "file" && file && <FileViewer key={`${worktree.id} ${file.path}`} repository={repository.path} worktree={worktree} view={file} />}
 			</div>
 		</main>
 	);

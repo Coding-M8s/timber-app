@@ -5,6 +5,7 @@ import type { PullRequestCreationFailure, PullRequestFields, ReportedPullRequest
 import type { ChopList, ListedChop } from "../../shared/chops";
 import type { PortClash, PortsResult } from "../../shared/ports";
 import type { BaseComparison, Comparison, FileChange, FileChangeTarget, FileDiffResult } from "../../shared/file-changes";
+import type { WorktreeFileResult } from "../../shared/worktree-files";
 import type { ReviewNote } from "../../shared/review";
 import { type Layout, defaultLayout } from "../../shared/layout";
 import type { RepositoryFetch } from "../../shared/git-fetch";
@@ -73,6 +74,20 @@ export interface ChopsView {
 	repository: string;
 	/** Null until the first read answered. */
 	list: ChopList | null;
+}
+
+/** The file open in a worktree's File tab, read-only. */
+export interface FileView {
+	/** The path of the repository's primary checkout. */
+	repository: string;
+	/** The worktree's registered path, as Timber lists it. */
+	worktreePath: string;
+	/** Relative to the worktree, with `/` between folders. */
+	path: string;
+	/** The tab that showed when the file was opened, shown again when it is closed. */
+	from: Exclude<WorkspaceTab, "file">;
+	/** Null while the first read is under way. */
+	result: WorktreeFileResult | null;
 }
 
 export interface ChangesView {
@@ -231,7 +246,8 @@ export const SETTINGS_SECTIONS = ["layout", "theme", "terminal", "rendering", "e
 export type SettingsSection = typeof SETTINGS_SECTIONS[number];
 
 /** The views of the selected worktree, in the order of their tabs. */
-export const WORKSPACE_TABS = ["workspace", "changes", "pull-request"] as const;
+/** Every view of a worktree. "file" is a tab only while a file is open there (see `visibleTabs`). */
+export const WORKSPACE_TABS = ["workspace", "changes", "pull-request", "file"] as const;
 export type WorkspaceTab = typeof WORKSPACE_TABS[number];
 
 /** Why the layout could not be read on start, or could not be saved. What is on screen stays as it is. */
@@ -369,6 +385,12 @@ export interface AppState {
 	tab: WorkspaceTab;
 	/** The Changes tab as last read. Null before it was first shown. */
 	changes: ChangesView | null;
+	/**
+	 * The file open in the File tab of each worktree, by its identity. A
+	 * worktree with none has no File tab. Kept in the window only, never
+	 * saved, and forgotten when the worktree leaves the list.
+	 */
+	files: Readonly<Record<string, FileView>>;
 	/**
 	 * The review notes of each worktree, by its identity, in the order they
 	 * were written. Kept in the window only, until sent or discarded, and
@@ -514,6 +536,7 @@ export const initialState: AppState = {
 	quitRequest: null,
 	tab: "workspace",
 	changes: null,
+	files: {},
 	reviews: {},
 	noteInView: null,
 	chops: null,

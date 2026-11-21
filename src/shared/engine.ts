@@ -6,6 +6,7 @@ import type { BackupDeleteRequest, BackupDeleteResult, BackupList, BackupRestore
 import type { Attention } from "./attention";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "./git-fetch";
 import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffResult } from "./file-changes";
+import type { WorktreeFileRequest, WorktreeFileResult } from "./worktree-files";
 import type { WorktreeHandoff } from "./handoff";
 import type { Layout } from "./layout";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, RepositoryGroupsResult, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
@@ -496,6 +497,14 @@ export interface Engine {
 	 * diff comes without its text. Read-only and safe to call again.
 	 */
 	readFileDiff(request: FileDiffRequest): Promise<FileDiffResult>;
+	/**
+	 * One file of a worktree of a repository in the list, for the read-only
+	 * file viewer. The path is relative to the worktree, and neither it nor a
+	 * link it is may lead outside the worktree. Only a plain file is read, up
+	 * to `MAX_FILE_BYTES`; a larger or binary file comes without its text.
+	 * Writes nothing and runs no Git. Safe to call again.
+	 */
+	readWorktreeFile(request: WorktreeFileRequest): Promise<WorktreeFileResult>;
 	/**
 	 * The ports a worktree of a repository in the list has open: what the
 	 * running containers of its Compose project publish (`docker ps` and
