@@ -11,7 +11,7 @@ import type { AppStore } from "./store/store";
 import { TERMINAL_LINE_HEIGHT, type TerminalAppearance, terminalFontStack } from "../shared/terminal-appearance";
 import { TERMINAL_MINIMUM_CONTRAST, terminalColors, watchTerminalColors } from "./terminal-colors";
 import { terminalAppearance, watchTerminalAppearance } from "./terminal-look";
-import { NEW_LINE_INPUT, clipboardKey, leftInAlternateScreen, newLineKey, opensLink, sessionChipId, sessionKey } from "./terminal-format";
+import { NEW_LINE_INPUT, clipboardKey, leftInAlternateScreen, newLineKey, sessionChipId, sessionKey } from "./terminal-format";
 import { terminalLinks } from "./terminal-links";
 import { type Cell, findFilePaths, rowText } from "./terminal-paths";
 
@@ -106,7 +106,7 @@ function createView(store: AppStore, id: string): TerminalView {
 		event.preventDefault();
 		links.activate(event, uri);
 	}, { hover: () => links.hover(), leave: () => links.leave() }));
-	// File paths, such as `docs/plan.md` an agent wrote, open in the file viewer of the session's worktree, with the same key as a link.
+	// File paths, such as `docs/plan.md` an agent wrote, open in the file viewer of the session's worktree with a plain click: they stay in the app.
 	// A path that wraps onto the next row is not found: each row is read on its own.
 	terminal.registerLinkProvider({
 		provideLinks(row, callback) {
@@ -122,13 +122,12 @@ function createView(store: AppStore, id: string): TerminalView {
 			callback(found.length === 0 ? undefined : found.map(path => ({
 				range: { start: { x: columns[path.start]!, y: row }, end: { x: columns[path.end - 1]!, y: row } },
 				text: path.path,
-				activate: (event: MouseEvent) => {
-					if (!opensLink(event, mac)) return;
+				activate: (event: MouseEvent) => links.activateFile(event, () => {
 					event.preventDefault();
 					const worktree = store.getState().terminals.find(session => session.id === id)?.worktree;
 					if (worktree) store.openFile(worktree, path.path);
-				},
-				hover: () => links.hover(),
+				}),
+				hover: () => links.hover("file"),
 				leave: () => links.leave(),
 			})));
 		},

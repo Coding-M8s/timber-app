@@ -2978,9 +2978,11 @@ report an agent wrote.
   file that is on disk. In a terminal, a link provider finds paths in each
   row (`findFilePaths` in `src/mainview/terminal-paths.ts`): a name with an
   extension, with or without folders, relative or absolute, maybe followed
-  by `:line` or `:line:column`, never inside a web address. Ctrl+click (Cmd
-  on macOS) opens it, as for links, and hovering it keeps the click from a
-  program that tracks the mouse. A relative path is taken from the
+  by `:line` or `:line:column`, never inside a web address. A plain left
+  click opens it, since it stays in the app; web links still take Ctrl (Cmd
+  on macOS). Over a path, a left click is kept from a program that tracks
+  the mouse, such as Claude Code in fullscreen, so it does not act on the
+  same click. A relative path is taken from the
   worktree's folder, not the shell's current folder, which the app does
   not know. A path that wraps onto the next row is not found. An absolute
   path outside the worktree is refused in the window, without a read.
