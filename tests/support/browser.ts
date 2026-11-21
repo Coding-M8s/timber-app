@@ -64,11 +64,15 @@ export interface BrowserPage {
 	close(): Promise<void>;
 }
 
-/** Start the page server and the browser, and open the test page. */
-export async function openSidebarPage(): Promise<BrowserPage> {
+/**
+ * Start the page server and the browser, and open the test page: by default
+ * the app over the mock engine's usual sample (./sidebar-page.tsx), or
+ * another page in this folder.
+ */
+export async function openSidebarPage(page = "sidebar-page.tsx"): Promise<BrowserPage> {
 	if (browserPath === null) throw new Error("No browser is installed.");
 	const root = resolve(import.meta.dirname, "../..");
-	const entry = `/@fs/${resolve(import.meta.dirname, "sidebar-page.tsx").replaceAll("\\", "/").replace(/^\//, "")}`;
+	const entry = `/@fs/${resolve(import.meta.dirname, page).replaceAll("\\", "/").replace(/^\//, "")}`;
 	const html = `<!doctype html><html><head><meta charset="utf-8"><title>Timber test</title></head><body><div id="root"></div><script type="module" src="${entry}"></script></body></html>`;
 	const server = await createServer({
 		configFile: join(root, "vite.config.ts"),

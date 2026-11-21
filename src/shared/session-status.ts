@@ -228,6 +228,12 @@ export function summarizeStatuses(statuses: readonly ShownStatus[]): string {
 	return URGENCY.filter(kind => counts.has(kind)).map(kind => `${counts.get(kind)} ${SUMMARY_WORDS[kind]}`).join(", ");
 }
 
+/** Where a status stands among the others, most urgent first: 0 for Needs you. Stopped and unknown come after every other. */
+export function urgencyRank(kind: ShownStatusKind): number {
+	const rank = URGENCY.indexOf(kind);
+	return rank === -1 ? URGENCY.length : rank;
+}
+
 /** The most urgent of several statuses, for the color of a summary. Null when there is none to sum up. */
 export function mostUrgent(statuses: readonly ShownStatus[]): ShownStatusKind | null {
 	return URGENCY.find(kind => statuses.some(status => status.kind === kind)) ?? null;

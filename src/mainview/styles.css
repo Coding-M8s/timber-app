@@ -820,11 +820,18 @@ pre:focus-visible {
 
 .row-name {
 	flex: 1 1 0;
-	min-width: 0;
+	/* Short of this, the markers beside it go to a line of their own instead of out of the row. */
+	min-width: min(4em, 100%);
 	font-weight: 500;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+
+/* The lines of a row wrap instead of reaching past the sidebar's edge (issue 240). */
+.row-line {
+	flex-wrap: wrap;
+	row-gap: 2px;
 }
 
 .row-meta {
@@ -846,14 +853,19 @@ pre:focus-visible {
 
 /* What is unusual about the worktree, in words. They wrap instead of being cut off. */
 .row-flags {
-	flex: 1 1 0;
+	/* Beside the kind while the widest flag fits there, else on a line of their own. */
+	flex: 1 1 min-content;
 	min-width: 0;
 	display: flex;
 	flex-wrap: wrap;
 	gap: 0 6px;
 }
 
+/* A flag wider than the whole row is cut short. Its sentence is in its tooltip and the row's description. */
 .row-flag {
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
 	color: var(--text-2);
 	white-space: nowrap;
 }
@@ -881,6 +893,17 @@ pre:focus-visible {
 	height: 6px;
 	border-radius: 50%;
 	background: var(--ahead);
+}
+
+/* With a child count or a shell count beside the agents, they wrap rather than pass the row's edge. */
+.row-sessions {
+	flex-wrap: wrap;
+	max-width: 100%;
+}
+
+/* The agents past the first few, as "+4". Their names and states are in its tooltip and the row's description. */
+.row-agents-more {
+	color: var(--text-2);
 }
 
 /* Running sessions with no status of their own, such as plain shells: a dot and a count. */
@@ -3324,6 +3347,15 @@ pre:focus-visible {
 	right: 32px;
 }
 
+/* A failed removal puts the row's other controls under it, so the sync control keeps its place and room. */
+.row-item.with-sync.removal-failed .row {
+	padding-right: 48px;
+}
+
+.row-item.removal-failed .row-sync {
+	right: 6px;
+}
+
 .row-sync-button {
 	height: 20px;
 	padding: 0 5px;
@@ -3343,6 +3375,35 @@ pre:focus-visible {
 .row-removal-details {
 	align-self: center;
 	margin: 0 4px 0 0;
+}
+
+/*
+ * A removal that failed keeps its Details, and the row's other controls, in
+ * view without pointing at the row: on a line of their own under it, so they
+ * cover nothing in a narrow sidebar. The highlight goes around both.
+ */
+.row-item.removal-failed {
+	border-radius: 7px;
+}
+
+.row-item.removal-failed:hover {
+	background: var(--fill-hover);
+}
+
+.row-item.removal-failed.selected {
+	background: var(--fill-selected);
+}
+
+.row-item.removal-failed .row {
+	padding-right: 10px;
+	background: transparent;
+}
+
+.row-item.removal-failed .row-actions {
+	position: static;
+	align-items: center;
+	padding: 0 10px 6px 23px;
+	opacity: 1;
 }
 
 .removal-failure-actions {
