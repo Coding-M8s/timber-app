@@ -1,7 +1,9 @@
-import { Fragment, type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { Fragment, type KeyboardEvent, type PointerEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Comparison, DiffLine, DiffSection, FileChange, FileChangeTarget, FileDiffResult } from "../../shared/file-changes";
-import { type NoteDraft, type ReviewNote, chooseNoteLine, notableLine, sameNotedLine } from "../../shared/review";
+import { NOTE_LINE_LIMIT, type NoteDraft, type ReviewNote, chooseNoteLine, notableLine, sameNotedLine } from "../../shared/review";
 import { InlineNote, NoteForm, ReviewPanel, ReviewToggle } from "./ReviewNotes";
+import { type DragStop, describeDraggedRange, dragNoteEnd, rowAtY } from "../review-drag";
 import { sameFileChange } from "../../shared/file-changes";
 import type { Repository, Worktree } from "../../shared/model";
 import {
@@ -139,7 +141,46 @@ interface Noting {
 	type(text: string): void;
 	/** Put the draft away, and give the keyboard back to the line it ended on. */
 	close(): void;
+	/** The range the `+` of a line is being dragged over, in this file and comparison, if it is. */
+	drag: Drag | null;
+	/** The `+` of a line was pressed: start dragging a range from it. */
+	startDrag(event: PointerEvent<HTMLButtonElement>, section: number, hunk: readonly DiffLine[], hunkIndex: number, line: number): void;
+	/** The pointer moved while dragging. */
+	moveDrag(event: PointerEvent<HTMLButtonElement>): void;
+	/** The pointer was let go: start the note on the line pressed, or on the range dragged over. */
+	endDrag(event: PointerEvent<HTMLButtonElement>): void;
+	/** The drag was cut short: nothing starts. */
+	cancelDrag(): void;
+	/** Whether to ignore this click, since letting go of a drag already started the note. */
+	afterDrag(): boolean;
 }
+
+/** A range the `+` of a line is dragged over, in one hunk of one file and comparison, with the label beside the pointer. */
+interface Drag {
+	key: string;
+	comparison: Comparison;
+	section: number;
+	hunk: number;
+	anchor: number;
+	end: number;
+	stop: DragStop | null;
+	/** Whether the range has reached another line yet. Until then a press is a click, and there is no label. */
+	moved: boolean;
+	label: string;
+}
+
+/** A drag as the pointer events follow it: the hunk's lines as they showed when it started, the button that holds the pointer, and where the pointer is. */
+interface LiveDrag {
+	drag: Drag;
+	lines: readonly DiffLine[];
+	button: HTMLButtonElement;
+	pointer: number;
+	x: number;
+	y: number;
+}
+
+/** The pointer must press the `+` itself to drag; the rest of the numbers button only clicks. */
+const onPlus = (target: EventTarget) => target instanceof Element && target.closest(".diff-note-plus") !== null;
 
 /** Names a line number button, so the keyboard can be given back to it. */
 const lineTarget = (section: number, hunk: number, line: number) => `${section}-${hunk}-${line}`;
@@ -174,19 +215,24 @@ function Section({ section, index, noting }: { section: DiffSection; index: numb
 				const drafting = draft !== null && draft.section === index && draft.hunk === hunkIndex;
 				const low = drafting ? Math.min(draft.anchor, draft.end) : -1;
 				const high = drafting ? Math.max(draft.anchor, draft.end) : -1;
+				const drag = noting.drag !== null && noting.drag.section === index && noting.drag.hunk === hunkIndex ? noting.drag : null;
+				const dragLow = drag === null ? -1 : Math.min(drag.anchor, drag.end);
+				const dragHigh = drag === null ? -1 : Math.max(drag.anchor, drag.end);
 				return (
-					<div key={hunkIndex} className="diff-hunk">
+					<div key={hunkIndex} className="diff-hunk" data-hunk={`${index}-${hunkIndex}`}>
 						<div className="diff-hunk-header">{hunk.header}</div>
 						{hunk.lines.map((line, lineIndex) => {
 							const notable = notableLine(line);
 							const stop = noting.tabStop;
 							const tabStop = stop !== null && stop.section === index && stop.hunk === hunkIndex && stop.line === lineIndex;
 							const here = noting.notes.filter(note => sameNotedLine(note.lines[note.lines.length - 1]!, line));
-							const chosen = drafting && lineIndex >= low && lineIndex <= high;
+							// While the `+` is dragged in this hunk, the bar follows the drag instead of the note being written.
+							const chosen = drag !== null ? lineIndex >= dragLow && lineIndex <= dragHigh : drafting && lineIndex >= low && lineIndex <= high;
+							const anchored = drag !== null && drag.anchor === lineIndex;
 							const shown = noting.shown !== null && noting.shown.lines.some(noted => sameNotedLine(noted, line));
 							return (
 								<Fragment key={lineIndex}>
-									<div className={`diff-line ${line.kind}${chosen ? " noting" : ""}${shown ? " shown" : ""}`}>
+									<div className={`diff-line ${line.kind}${notable ? " notable" : ""}${chosen ? " noting" : ""}${anchored ? " drag-anchor" : ""}${shown ? " shown" : ""}`}>
 										{notable ? (
 											<button
 												type="button"
@@ -194,8 +240,19 @@ function Section({ section, index, noting }: { section: DiffSection; index: numb
 												tabIndex={tabStop ? 0 : -1}
 												data-line={lineTarget(index, hunkIndex, lineIndex)}
 												aria-label={`Add a note on ${lineWords(line)}`}
-												title="Add a note. Shift+click another line of this hunk for a range."
-												onClick={event => noting.choose(index, hunk.lines, hunkIndex, lineIndex, event.shiftKey)}
+												title="Add a note. Drag the + over more lines of this hunk, or Shift+click one, for a range."
+												onPointerDown={event => {
+													if (event.button !== 0 || event.shiftKey || !onPlus(event.target)) return;
+													noting.startDrag(event, index, hunk.lines, hunkIndex, lineIndex);
+												}}
+												onPointerMove={noting.moveDrag}
+												onPointerUp={noting.endDrag}
+												onPointerCancel={noting.cancelDrag}
+												onLostPointerCapture={noting.cancelDrag}
+												onClick={event => {
+													if (noting.afterDrag()) return;
+													noting.choose(index, hunk.lines, hunkIndex, lineIndex, event.shiftKey);
+												}}
 												onKeyDown={event => {
 													if (stepLineTarget(event.currentTarget, event.key)) event.preventDefault();
 													else if (event.key === "Enter" && event.shiftKey) {
@@ -204,6 +261,7 @@ function Section({ section, index, noting }: { section: DiffSection; index: numb
 													}
 												}}
 											>
+												<span className="diff-note-plus" aria-hidden="true">+</span>
 												<span className="diff-number">{line.oldLine ?? ""}</span>
 												<span className="diff-number">{line.newLine ?? ""}</span>
 											</button>
@@ -307,6 +365,74 @@ function DiffPane({ repository, worktree, view, toggle }: { repository: string; 
 		: null;
 	// The note this effect brought into view last, so that reading the diff again does not scroll to it again.
 	const scrolled = useRef<object | null>(null);
+	// The range the `+` of a line is dragged over. Drawn again only when its end changes, never on every move of the pointer.
+	const [drag, setDrag] = useState<Drag | null>(null);
+	// The drag as the pointer events see it, with what they need between renders.
+	const dragging = useRef<LiveDrag | null>(null);
+	const dragLabel = useRef<HTMLDivElement | null>(null);
+	// Set when letting go of a drag started a note, or Escape let go of it, so the click that may follow neither starts another nor makes it one line again.
+	const dragged = useRef(false);
+	const dragActive = drag !== null;
+
+	/** Put the drag's label beside the pointer. Moved here, not through React, so a long diff is not drawn again on every move. */
+	function placeDragLabel() {
+		const live = dragging.current;
+		if (live !== null && dragLabel.current !== null) dragLabel.current.style.transform = `translate(${live.x + 14}px, ${live.y + 16}px)`;
+	}
+
+	/** Ignore the click that may follow the pointer being let go: where it lands depends on the engine, and the next click after that counts again. */
+	function skipClick() {
+		dragged.current = true;
+		setTimeout(() => {
+			dragged.current = false;
+		});
+	}
+
+	/**
+	 * Stop dragging without starting a note. With `held`, the pointer is still
+	 * pressed, as after Escape: the click that comes once it is let go starts
+	 * nothing either.
+	 */
+	function dropDrag(held = false) {
+		const live = dragging.current;
+		if (live === null) return;
+		dragging.current = null;
+		setDrag(null);
+		if (live.button.hasPointerCapture(live.pointer)) live.button.releasePointerCapture(live.pointer);
+		if (held) window.addEventListener("pointerup", skipClick, { capture: true, once: true });
+	}
+
+	/** Find the line of the hunk under the pointer and where the range ends, from the rows on screen near the anchor. */
+	function measureDrag() {
+		const live = dragging.current;
+		if (live === null) return;
+		const { section, hunk, anchor } = live.drag;
+		const rows = [...(body.current?.querySelector(`[data-hunk="${section}-${hunk}"]`)?.querySelectorAll<HTMLElement>(":scope > .diff-line") ?? [])];
+		// The hunk was drawn again with other lines since the drag started: it ends.
+		if (rows.length !== live.lines.length) return dropDrag();
+		const from = Math.max(0, anchor - NOTE_LINE_LIMIT);
+		const near = rows.slice(from, anchor + NOTE_LINE_LIMIT + 1).map(row => row.getBoundingClientRect());
+		const range = dragNoteEnd(live.lines, anchor, from + rowAtY(near, live.y));
+		if (range.end === live.drag.end && range.stop === live.drag.stop) return;
+		live.drag = { ...live.drag, ...range, moved: true, label: describeDraggedRange(live.lines, anchor, range) };
+		setDrag(live.drag);
+	}
+
+	// Escape lets go of a drag before anything else sees it, so it neither cancels the note being written nor closes the Review panel.
+	useEffect(() => {
+		if (!dragActive) return;
+		const onKey = (event: globalThis.KeyboardEvent) => {
+			if (event.key !== "Escape") return;
+			event.preventDefault();
+			event.stopPropagation();
+			dropDrag(true);
+		};
+		window.addEventListener("keydown", onKey, true);
+		return () => window.removeEventListener("keydown", onKey, true);
+	}, [dragActive]);
+
+	// The diff read again, or another file or comparison, ends a drag: its lines may be gone.
+	useEffect(() => () => dropDrag(), [view.diff, selected, view.compared]);
 
 	// A reference chosen in the Review panel comes into view once its file's diff shows, and its lines stay marked for a moment.
 	useEffect(() => {
@@ -354,6 +480,46 @@ function DiffPane({ repository, worktree, view, toggle }: { repository: string; 
 			// After the form is gone, the keyboard goes back to the line the note ended on.
 			setTimeout(() => body.current?.querySelector<HTMLElement>(`[data-line="${lineTarget(ended.section, ended.hunk, ended.end)}"]`)?.focus());
 		},
+		drag: drag !== null && drag.key === fileKey(file) && drag.comparison === comparison ? drag : null,
+		startDrag(event, section, lines, hunkIndex, line) {
+			// No text selection and no focus on the button: letting go gives the keyboard to the note's field.
+			event.preventDefault();
+			event.currentTarget.setPointerCapture(event.pointerId);
+			dragged.current = false;
+			const start: Drag = { key: fileKey(file), comparison, section, hunk: hunkIndex, anchor: line, end: line, stop: null, moved: false, label: describeDraggedRange(lines, line, { end: line, stop: null }) };
+			dragging.current = { drag: start, lines, button: event.currentTarget, pointer: event.pointerId, x: event.clientX, y: event.clientY };
+			setDrag(start);
+		},
+		moveDrag(event) {
+			const live = dragging.current;
+			// Only the pointer that pressed the `+` drags.
+			if (live === null || event.pointerId !== live.pointer) return;
+			live.x = event.clientX;
+			live.y = event.clientY;
+			placeDragLabel();
+			measureDrag();
+		},
+		endDrag(event) {
+			const live = dragging.current;
+			if (live === null || event.pointerId !== live.pointer) return;
+			dragging.current = null;
+			setDrag(null);
+			const { key, section, hunk, anchor, end } = live.drag;
+			// The note starts here, also on one line, so it does not wait on a click the engine may send elsewhere.
+			skipClick();
+			const at = (at: number) => ({ key, comparison, section, hunk, line: at });
+			setDraft(current => {
+				const here = current !== null && current.key === key && current.comparison === comparison ? current : null;
+				// As a click on the first line and a Shift+click on the last: the text typed so far is kept.
+				return chooseNoteLine(chooseNoteLine(here, at(anchor), live.lines, false), at(end), live.lines, true);
+			});
+		},
+		cancelDrag: () => dropDrag(),
+		afterDrag() {
+			if (!dragged.current) return false;
+			dragged.current = false;
+			return true;
+		},
 	};
 	return (
 		<section className="changes-diff" aria-label={`Diff of ${file.path}`}>
@@ -372,9 +538,30 @@ function DiffPane({ repository, worktree, view, toggle }: { repository: string; 
 				)}
 				{onDisk && <OpenFileButton repository={repository} worktree={worktree} file={file} />}
 			</div>
-			<div className="diff-body" ref={body} tabIndex={0} aria-label={`Changes of ${file.path}`}>
+			<div
+				className={noting.drag === null ? "diff-body" : "diff-body dragging"}
+				ref={body}
+				tabIndex={0}
+				aria-label={`Changes of ${file.path}`}
+				// A wheel turned while dragging moves the lines under a pointer that stands still.
+				onScroll={measureDrag}
+			>
 				<DiffBody file={file} result={view.diff} commit={view.compared === "base" && view.base?.usable ? view.base.commit : null} noting={noting} />
 			</div>
+			{noting.drag?.moved === true && createPortal(
+				// Only for the eye: the note's field says the range once the pointer is let go.
+				<div
+					className="diff-drag-label"
+					aria-hidden="true"
+					ref={element => {
+						dragLabel.current = element;
+						placeDragLabel();
+					}}
+				>
+					{noting.drag.label}
+				</div>,
+				document.body,
+			)}
 		</section>
 	);
 }

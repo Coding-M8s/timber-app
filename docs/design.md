@@ -483,12 +483,24 @@ logins. The app never reads a tracker login and never signs in.
   a relative link opens that file of the worktree in the File tab, a `#`
   link goes to the heading, and any other link is plain text with its
   address in the tooltip.
-- Review notes: in the Changes tab, clicking a line's numbers (or Enter on
-  them) starts a note on that line, in either comparison, and Shift+click
-  or Shift+Enter on another line of the same hunk makes it a range. A note
-  shows under its lines. Lines without numbers, such as Git's own notes or
-  a conflict's combined diff, and binary or very large files, take no
-  notes. Notes collect in a Review panel on the right of the diff, shown
+- Review notes: in the Changes tab, in either comparison, hovering a line
+  that takes notes lights its row and shows a small `+` in the focus color
+  at the left edge of its numbers. A click on `+` starts a note on that
+  line. Pressing `+` and dragging over more lines marks them with a range's
+  bar, and a small label beside the pointer says which, such as "Lines
+  69-71". The range stops at the hunk's edge and at 30 lines, and the label
+  says so ("end of the hunk", "30 lines at most"). The diff does not scroll
+  by itself during a drag; the wheel does. Letting go opens the note's
+  field under the last line; Escape lets go of the drag and starts
+  nothing. For the keyboard, clicking a line's numbers (or Enter on them)
+  starts a note on that line, and Shift+click or Shift+Enter on another
+  line of the same hunk makes it a range. The `+` is part of the numbers
+  button, so it also shows while that button has the keyboard, and a
+  screen reader hears the button as before, "Add a note on line 69". A
+  note shows under its lines. Lines without numbers, such as Git's own
+  notes or a conflict's combined diff, hunk headers, and binary or very
+  large files, take no notes, show no `+`, and do not light up. Notes
+  collect in a Review panel on the right of the diff, shown
   while the worktree has notes, with a count on the Changes tab and in the
   panel's heading. The panel is 300px wide and does not grow: many notes
   scroll inside it, while the diff, the file list, and the panel's Discard

@@ -51,6 +51,8 @@ export interface BrowserPage {
 	click(selector: string): Promise<void>;
 	/** Press at one point, move in steps to another, and stop there, still pressed. */
 	dragTo(from: { x: number; y: number }, to: { x: number; y: number }): Promise<void>;
+	/** Move the pointer, still pressed, in steps to another point. */
+	moveTo(to: { x: number; y: number }): Promise<void>;
 	/** Let go of the pointer where it is. */
 	release(): Promise<void>;
 	/** Press and release a key, as the keyboard would. */
@@ -206,6 +208,13 @@ export async function openSidebarPage(page = "sidebar-page.tsx"): Promise<Browse
 		async dragTo(from, to) {
 			await mouse("mouseMoved", from, false);
 			await mouse("mousePressed", from, true);
+			for (let step = 1; step <= 6; step += 1) {
+				await mouse("mouseMoved", { x: from.x + (to.x - from.x) * step / 6, y: from.y + (to.y - from.y) * step / 6 }, true);
+			}
+			pointer = to;
+		},
+		async moveTo(to) {
+			const from = pointer;
 			for (let step = 1; step <= 6; step += 1) {
 				await mouse("mouseMoved", { x: from.x + (to.x - from.x) * step / 6, y: from.y + (to.y - from.y) * step / 6 }, true);
 			}
