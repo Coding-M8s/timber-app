@@ -6,16 +6,48 @@ import { sameFileChange } from "../../shared/file-changes";
 import type { Repository, Worktree } from "../../shared/model";
 import {
 	AREA_TITLES, COMPARISONS, COMPARISON_LABELS, KIND_LABELS, KIND_LETTERS, MORE_FILES_NOTE, baseUnavailable, describeComparison, describeDiffNotice, describeFileArea,
-	describeFileCounts, describeNoChanges, fileAfterKey, groupFileChanges, kindTone, listedOrder, splitPath,
+	NO_REFRESH, REFRESHING_CHANGES, type RefreshSpan, describeFileCounts, describeNoChanges, fileAfterKey, groupFileChanges, kindTone, listedOrder, nextRefreshSpan, splitPath,
 } from "../changes-format";
 import { chosenComparison } from "../../shared/layout";
 import { ModeSwitch } from "./worktree-modes/ModeSwitch";
 import { OPEN_IN_EDITOR } from "../editor-format";
 import { useAppState, useStore } from "../store/react";
-import { type ChangesView, isRunning } from "../store/state";
+import { type ChangesView, changesBusy } from "../store/state";
+import { StatusGlyph } from "./StatusGlyph";
 import { EditorIcon, useOpenInEditor } from "./OpenInEditor";
 
 export const FOLDER_MISSING_CHANGES = "The worktree's folder is missing, so there are no changes to read.";
+
+/** How long the refresh indicator stays after a read ends, so reads one after another show as one refresh. */
+export const REFRESH_HOLD_MS = 300;
+
+/**
+ * True while `busy`, and for `holdMs` after it ends. A Refresh reloads the
+ * repository and then reads the changes; between the two nothing runs for a
+ * moment. Held, they show one spinner and make one announcement, and a quick
+ * read still shows long enough to be seen.
+ */
+function useHeld(busy: boolean, holdMs: number): boolean {
+	const [held, setHeld] = useState(busy);
+	useEffect(() => {
+		if (busy) {
+			setHeld(true);
+			return;
+		}
+		const timer = setTimeout(() => setHeld(false), holdMs);
+		return () => clearTimeout(timer);
+	}, [busy, holdMs]);
+	return busy || held;
+}
+
+/** The refresh this render is part of, kept from render to render (see `nextRefreshSpan`). */
+function useRefreshSpan(worktree: string, active: boolean, listShown: boolean): RefreshSpan {
+	const [span, setSpan] = useState(() => nextRefreshSpan(NO_REFRESH, worktree, active, listShown));
+	const next = nextRefreshSpan(span, worktree, active, listShown);
+	// Set while rendering, as React allows for state that follows props: it renders again at once with `next`.
+	if (next !== span) setSpan(next);
+	return next;
+}
 
 const fileKey = (file: FileChangeTarget) => `${file.area}\0${file.path}\0${file.previousPath ?? ""}`;
 
@@ -28,7 +60,7 @@ function KindLetter({ file }: { file: FileChange }) {
 }
 
 /** The list of changed files, grouped as `git status` groups them. Only the selected file is a tab stop; the arrows reach the others. */
-function FileList({ view }: { view: ChangesView & { files: readonly FileChange[] } }) {
+function FileList({ view, dimmed }: { view: ChangesView & { files: readonly FileChange[] }; dimmed: string }) {
 	const store = useStore();
 	const buttons = useRef(new Map<string, HTMLButtonElement>());
 	const order = listedOrder(view.files);
@@ -44,7 +76,7 @@ function FileList({ view }: { view: ChangesView & { files: readonly FileChange[]
 	// With nothing selected yet, the first file takes the tab stop.
 	const tabStop = view.selected ?? order[0] ?? null;
 	return (
-		<div className="change-groups" onKeyDown={onKey}>
+		<div className={`change-groups${dimmed}`} onKeyDown={onKey}>
 			{groupFileChanges(view.files).map(group => (
 				<section key={group.area} className="change-group" aria-label={AREA_TITLES[group.area]}>
 					<h2 className="change-group-title">
@@ -339,6 +371,10 @@ export function ChangesPanel({ repository, worktree }: { repository: Repository;
 	const state = useAppState();
 	const missing = !worktree.pathExists;
 	const baseNote = useId();
+	const busy = changesBusy(state, repository.path, worktree.id);
+	const refreshing = useHeld(busy, REFRESH_HOLD_MS);
+	const listed = state.changes?.worktree === worktree.id && state.changes.files !== null;
+	const overList = useRefreshSpan(worktree.id, refreshing, listed).overList;
 
 	// `worktree` is a new object after every reload of its repository, so this follows the rest of the status.
 	useEffect(() => {
@@ -359,9 +395,9 @@ export function ChangesPanel({ repository, worktree }: { repository: Repository;
 	const base = view?.base ?? null;
 	const unavailable = baseUnavailable(base);
 	const shown = describeComparison(compared, base);
-	const reading = state.operations.some(operation => operation.kind === "read-changes" && operation.worktree === worktree.id);
-	const reloading = isRunning(state, "reload-all") || state.operations.some(operation => operation.kind === "reload-repository" && operation.repository === repository.path);
 	const files = view?.files ?? null;
+	// The list on screen stays while it is read again, dimmed, so nothing jumps.
+	const dimmed = overList ? " refreshing" : "";
 
 	return (
 		<div className="changes">
@@ -381,15 +417,20 @@ export function ChangesPanel({ repository, worktree }: { repository: Repository;
 				</div>
 				{unavailable !== null && <p className="changes-base-note" id={baseNote}>{unavailable}</p>}
 				<div className="changes-bar">
-					<span className="changes-count" role="status">{files === null ? "Reading changes" : describeFileCounts(files, view?.more ?? false)}</span>
+					<span className="changes-state">
+						{refreshing && <span className="changes-spinner"><StatusGlyph status={{ kind: "working", progress: null }} /></span>}
+						<span className="changes-count" role="status">{files === null ? "Reading changes" : describeFileCounts(files, view?.more ?? false)}</span>
+					</span>
+					{/* Always there, so it speaks once when a refresh starts; "Reading changes" already speaks for an empty list. */}
+					<span className="visually-hidden" role="status">{overList ? REFRESHING_CHANGES : ""}</span>
 					<button
 						type="button"
 						className="text-button"
-						disabled={reading || reloading}
+						disabled={refreshing}
 						title="Read this repository's worktrees and their changes again"
 						onClick={() => void store.reloadRepository(repository.path)}
 					>
-						{reading || reloading ? "Refreshing" : "Refresh"}
+						Refresh
 					</button>
 				</div>
 				{view?.problem != null && (
@@ -400,12 +441,12 @@ export function ChangesPanel({ repository, worktree }: { repository: Repository;
 				)}
 				{view !== null && files !== null && (files.length === 0
 					? (
-						<div className="changes-clean">
+						<div className={`changes-clean${dimmed}`}>
 							<p className="empty-title">No changes</p>
 							<p className="empty-text">{describeNoChanges(compared, base)}</p>
 						</div>
 					)
-					: <FileList view={{ ...view, files }} />)}
+					: <FileList view={{ ...view, files }} dimmed={dimmed} />)}
 				{view?.more === true && <p className="changes-more">{MORE_FILES_NOTE}</p>}
 				<ReviewList worktree={worktree.id} />
 			</div>

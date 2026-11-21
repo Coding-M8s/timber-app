@@ -379,6 +379,18 @@ logins. The app never reads a tracker login and never signs in.
   no shared history), Base is disabled, a quiet line under the switch gives the
   reason, and the tab shows Uncommitted. The choice is remembered for each
   worktree. Comparing with a backup comes later.
+- While the Changes tab reads again (its Refresh, the sidebar's Refresh, a
+  change the repository watcher reports, or a switch of "Compare with"), a
+  small spinner shows beside the counts in the bar: the working ring of a
+  session, turning, and standing still when the system asks for less
+  motion. The list on screen stays, slightly dimmed, so nothing jumps. The
+  first read, and a switch of "Compare with", which reads a different list,
+  have no list to keep: the bar says "Reading changes" instead, and nothing
+  is dimmed or announced as a refresh. Refresh keeps its label and is
+  disabled while the spinner shows. A hidden polite status says
+  "Refreshing…" once for each refresh: the spinner stays a moment after a
+  read ends, so the reload of the repository and the read of its changes
+  that follows count as one.
 - Review notes: in the Changes tab, clicking a line's numbers (or Enter on
   them) starts a note on that line, in either comparison, and Shift+click
   or Shift+Enter on another line of the same hunk makes it a range. A note

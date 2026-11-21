@@ -2816,6 +2816,16 @@ Comparing against a backup is a later step.
   the sidebar's Refresh, the tab's own Refresh, or a reported change. The
   selected file's diff is read again with it. The view is in the store
   (`changes`), and the latest read wins.
+- **Showing a refresh.** `changesBusy` in the store's state says whether a
+  worktree's tab is being read again: its `read-changes`, its repository's
+  `reload-repository`, or `reload-all`. A switch of "Compare with" is a
+  `read-changes` too. The panel holds that for `REFRESH_HOLD_MS` (300 ms)
+  after it ends, so the reload and the read that its effect starts next are
+  one refresh, with one spinner. `nextRefreshSpan` (pure, in
+  `changes-format.ts`) remembers whether that refresh began over a list on
+  screen; only then is the list dimmed and the hidden polite status set to
+  "Refreshing…", so a first read or a new comparison is never announced
+  as a refresh. The counts keep their own status, unchanged.
 - **Trying it.** In `bun run dev:web` the billing worktree feat/tax-rules
   shows every kind of change, and with Base two files committed on the
   branch. The pretend branch point is always `a1b2c3d`. `timberMock.failFileChanges("Git is busy")`

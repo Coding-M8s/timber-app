@@ -3229,3 +3229,17 @@ Run for comparing with a commit base (issue 192), Linux x64 with Bun
   since four runs of Timber took about 1.7 seconds each here.
 - Not run: the installed desktop app by hand, a SHA-256 repository with
   real Git, and a partial clone.
+
+Run for showing that the Changes tab refreshes (issue 191), Linux x64 with
+Bun 1.4.5 and Git 2.43:
+
+- `bun run typecheck`: no errors.
+- `bun test`: 3142 passed, 19 skipped, none failed.
+  `tests/changes-tab.test.tsx` renders the bar at rest and during each kind
+  of read (the tab's Refresh, the sidebar's Refresh, a reported change, a
+  read of the changes, and a switch of "Compare with"), checks the pure
+  refresh span for a first read, a refresh, and a switch mid-refresh, and
+  checks the reduced-motion rules in `styles.css`.
+- `bun run build:web`: built.
+- Not yet looked at in a window or with a screen reader: the 300 ms hold runs
+  in an effect, which the markup tests do not run.
