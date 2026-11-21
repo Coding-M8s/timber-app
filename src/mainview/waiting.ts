@@ -1,4 +1,4 @@
-import { shownStatus } from "../shared/session-status";
+import { alertStatus, shownStatus } from "../shared/session-status";
 import type { TerminalSession } from "../shared/terminal";
 
 /**
@@ -13,9 +13,9 @@ import type { TerminalSession } from "../shared/terminal";
  * order they started, which is the best that is known then.
  */
 
-/** Whether a session is shown as Needs you, agent or not. */
-export function isWaiting(session: Pick<TerminalSession, "state" | "status">): boolean {
-	return shownStatus(session).kind === "needs-you";
+/** Whether a session is shown as Needs you, agent or not, itself or through one of its children. */
+export function isWaiting(session: Pick<TerminalSession, "state" | "status"> & Partial<Pick<TerminalSession, "children">>): boolean {
+	return alertStatus(session).status.kind === "needs-you";
 }
 
 /**

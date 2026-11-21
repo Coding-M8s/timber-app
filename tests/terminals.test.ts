@@ -190,6 +190,28 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 			expect(changes.filter(change => change.session?.state.kind === "exited")).toHaveLength(1);
 		});
 
+		test("child records reach the window in one change per part, with long messages cut, and working ones end with the process", async () => {
+			start();
+			const { session } = await opened();
+			const childrenOf = () => changes.filter(change => change.id === session.id).at(-1)?.session?.children ?? [];
+			const long = Buffer.from("x".repeat(500)).toString("base64");
+			const before = changes.length;
+			// Three reports in one part: the root and two children, told as one change.
+			await run(session.id, `printf '\\033]7501;state=working\\007\\033]7501;state=working:id=a:msg=${long}\\007\\033]7501;state=done:id=a/b\\007'; echo sent1`, "sent1\r\n");
+			expect(await until(() => childrenOf().length === 2)).toBe(true);
+			expect(changes.slice(before).filter(change => change.id === session.id)).toHaveLength(1);
+			expect(childrenOf().map(child => [child.id, child.state])).toEqual([["a", "working"], ["a/b", "done"]]);
+			expect(Array.from(childrenOf()[0]!.message!)).toHaveLength(200);
+			// The same child report again is no change at all.
+			const told = changes.length;
+			await run(session.id, `printf '\\033]7501;state=working:id=a:msg=${long}\\007'; echo sent2`, "sent2\r\n");
+			await Bun.sleep(50);
+			expect(changes.length).toBe(told);
+			sessions.write(session.id, "exit 0\r");
+			expect(await until(() => changes.at(-1)?.session?.state.kind === "exited")).toBe(true);
+			expect(changes.at(-1)!.session!.children.map(child => child.id)).toEqual(["a/b"]);
+		});
+
 		test("a report that breaks the rules changes nothing", async () => {
 			start();
 			const { session } = await opened();

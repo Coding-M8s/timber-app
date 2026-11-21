@@ -3251,10 +3251,78 @@ What the agent prints on screen is still never read, parsed, or answered.
   shell with no OSC 133 prompt marks keeps it until the shell exits, as the
   spec allows.
 - **To the window.** The root record goes out as `TerminalSession.status`
-  (state, kind, progress, app, title, and decoded message) through
-  `onTerminalChanged`, at most once per 4 ms output part, so a stream of
-  progress does not flood the window. The exit is told in the same change
-  as the status it leaves. Child records are kept and not shown yet.
+  (state, kind, progress, app, title, and decoded message), and the child
+  records as `TerminalSession.children`, ordered by path so a record comes
+  right before its descendants, each with its `id` and its message already
+  cut to 200 characters (`recordsForWindow` in
+  `src/shared/session-status.ts`). A change carries every child, so with
+  255 children of the longest titles and ids it is about 300 KB, and about
+  85 KB with plain short ones; Claude Code sends at most 32. Both go through `onTerminalChanged` in one change, at most
+  once per 4 ms output part, so a stream of progress from many children
+  does not flood the window. A record is compared with what it was, so a
+  report repeating itself is no change and sends nothing. The exit is told
+  in the same change as the status it leaves. No `Engine` or `rpc.ts`
+  change was needed: the field rides on `TerminalSession`.
+- **Tasks (child records).** A child record is a subagent's or a background
+  task's, and the protocol does not say which, so the app calls them all
+  tasks. Read from the strings of the installed executables: Claude Code
+  2.1.330 reports its background tasks this way: one
+  flat `id` per task (the task id with other characters made `-`, at most
+  32 of them), its description as `title`, an agent task's own state, any
+  other background task (a shell, a monitor) as `working`, and `clear` for
+  a task that went away. Codex 0.169 reports only the root.
+  - *Counted.* A task runs while it is Working or Needs you and its session
+    runs (`runningChildren`). The count and the descriptions take in the
+    running ones and those that reported an error (`notableChildren`), so a
+    task in Error shows on the row as well as in a collapsed header. Done
+    and Idle tasks are only listed, and an exited session shows none of its
+    tasks.
+  - *Lifetime.* As for the root: `working`, `blocked`, and `idle` tasks end
+    with the process or a new prompt, `clear` on a path removes it and its
+    descendants, and `done` and `error` stay until then. A Done task does
+    not fade on a timer; Claude Code clears its own.
+  - *Count.* A session with running tasks gets a small count beside its
+    mark, on its sidebar row and its chip (`ChildBadge` in
+    `src/mainview/components/ChildTasks.tsx`): the shape and color of the
+    most urgent counted task's state, and how many are counted, so a task
+    that needs you shows its diamond. A shell whose program reports only
+    tasks gets a mark while any is counted (`hasStatusMark`). The descriptions say it
+    in words, such as "Claude Code: Working. 3 tasks: 1 needs you, 2
+    working"; the command palette gets the same words and keeps its marks
+    without the count.
+  - *Still working.* A root that says Done or Idle while tasks run reads
+    "Done, tasks still running" beside the chips and in the descriptions.
+    The words beside the chips are a live region, so they hold no count
+    and are not spoken again at every change of the tasks.
+  - *List.* Beside the shown session's state, a button such as "4 tasks"
+    opens a list of its tasks over the terminal (`ChildTasks`): nested
+    lists by path, each task under the nearest record above it on its path
+    (with none, at the top, named by its whole path), with its state shape,
+    title or path, state and progress in words, and message, all as text.
+    At most 50 are listed, those that need you or reported an error first
+    (with the records they sit under), then how many more. The list takes
+    the keyboard when it opens, so a long one scrolls by keys; Escape, the
+    button again, or a click elsewhere puts it away. A list rather than a hover on the chip,
+    since the chip is a tab and a hover cannot be reached by keyboard.
+  - *Header, waiting list, and notifications.* All three use one status
+    per session (`alertStatus`): an exited session's exit; else a root
+    that needs you; else the first task, by path, that needs you; else a
+    root that is done or reported an error; else the first task that
+    reported an error; else the root. So a collapsed repository header
+    counts a working agent with a task that needs you under "needs you"
+    (the summary stays one count per session, with no count of tasks), the
+    session joins the waiting list (Ctrl+Shift+J), and a notification says
+    so, such as "Claude Code: task Run the tests needs you", under the same
+    settings, rate limit, and one notification per session. Tasks never
+    make a session Working, so a background server cannot hold back a
+    Done, and a task moving to Done never notifies. A second task that
+    needs you while the first still does is not told again, whatever its
+    path, as for the root; another task taking over after the first stopped
+    needing you is. A task already told about is not told again while it
+    stays in that state, so a task left in Error, or still waiting, is not
+    told each time the root moves away and back.
+    A task error after the root said Done is not told, so a stale error
+    cannot swallow every later Done.
 - **States as shown** (`shownStatus` in `src/shared/session-status.ts`).
   The process exit is the source of truth: an exited session is Stopped
   (code 0) or crashed (another code, or a signal, named), whatever its last
@@ -3399,16 +3467,18 @@ What the agent prints on screen is still never read, parsed, or answered.
   - *Not told again.* A session that stays in a state, such as Needs you
     for a second approval with a new message, gets no new notification, and
     the one on screen keeps its first message.
-- **Not built.** Child records (subagents) beyond keeping them, and hooks
-  for agents that do not send OSC 7501, which can also carry the prompt and
-  the agent's reply.
+- **Not built.** Hooks for agents that do not send OSC 7501, which can
+  also carry the prompt and the agent's reply.
 
 In `bun run dev:web`, `timberMock.agentStatus(id, "state=blocked:kind=permission:msg=YXBwcm92ZQ==")`
 acts out a report from the program in a session (`"?"` for the probe), read
 by the same scanner as in the main process. `timberMock.notices()` lists the
 desktop notifications the main process would have on screen,
 `timberMock.alertSounds()` the sessions a sound played for, and
-`timberMock.clickNotice(id)` acts out a click on one.
+`timberMock.clickNotice(id)` acts out a click on one. Typing `subagents` in
+a session acts out four tasks, one of them with a task that needs you under
+it (Claude Code's own ids are flat; the nested one shows the tree), and
+`subagents clear` clears every record.
 
 ## First-run setup
 

@@ -8,6 +8,7 @@ import {
 	type TerminalSnapshot, TERMINAL_UNSUPPORTED_REASON, WORKTREE_SETUP_SESSION_NAME, clampTerminalSize, cleanSessionName, createScrollback, defaultSessionName, pickShell,
 	pickWindowsShell, sessionNameBase, PASTE_NOT_READY, CHOP_NOT_TYPED, chopRunBytes, createPasteModeScanner, pasteBytes, pasteProblem,
 } from "../shared/terminal";
+import { recordsForWindow } from "../shared/session-status";
 import { PROBE_ANSWER, type StatusRecords, type StatusScanner, createStatusRecords, createStatusScanner } from "../shared/program-status";
 import { HANDOFF_VARIABLE } from "../shared/handoff";
 import { asWin32KeyEvents } from "../shared/win32-input";
@@ -200,7 +201,7 @@ interface Live {
 	pasteMode: PasteModeScanner;
 	/** When the last probe was answered. A flood of probes, such as from a file shown with `cat`, gets one answer at a time. */
 	probedAt: number;
-	/** The root record changed since the window was last told. Told with the next flush, so a stream of progress is one change per part. */
+	/** A record, the root or a child, changed since the window was last told. Told with the next flush, so a stream of progress is one change per part. */
 	statusChanged: boolean;
 	/** A chop's text still to type, and the timer that types it line by line if bracketed paste never comes. Null once typed, or for any other session. */
 	chop: { text: string; timer: ReturnType<typeof setTimeout> | null; deadline: number } | null;
@@ -475,7 +476,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		if (live.statusChanged) {
 			live.statusChanged = false;
 			// A session closed meanwhile is already gone and stays gone.
-			if (sessions.get(live.session.id) === live) changed(live, { ...live.session, status: live.records.root() });
+			if (sessions.get(live.session.id) === live) changed(live, { ...live.session, ...recordsForWindow(live.records) });
 		}
 		if (live.pending === "") return;
 		const data = live.pending;
@@ -688,6 +689,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			command: start.command,
 			state: { kind: "running" },
 			status: null,
+			children: [],
 		};
 		const ended = child.exited.then(async () => {
 			// Output can still be on its way after the shell ended. A program left in the background can hold the terminal open, so do not wait for long.
@@ -707,7 +709,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			const end = child.ended() ?? { exitCode: null, signal: null };
 			dropChop(live);
 			live.pasteMode.reset();
-			changed(live, { ...live.session, state: { kind: "exited", ...end }, status: live.records.root() });
+			changed(live, { ...live.session, state: { kind: "exited", ...end }, ...recordsForWindow(live.records) });
 		});
 		live = { session, process: child, scrollback: createScrollback(), pending: "", flushTimer: null, undrawn: [], undrawnSize: 0, held: false, leftovers: null, ended, scanner: createStatusScanner(), records: createStatusRecords(), pasteMode: createPasteModeScanner(), statusChanged: false, probedAt: Number.NEGATIVE_INFINITY, chop: null };
 		if (chop !== undefined) {

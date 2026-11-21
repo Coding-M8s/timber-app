@@ -1,4 +1,4 @@
-import { type AgentBrand, type ShownStatus, agentBrand, describeSessionStatus, describeShownStatus, hasStatusMark, sessionInitials, shortMessage, shownStatus } from "../shared/session-status";
+import { type AgentBrand, type ShownStatus, agentBrand, childBadge, describeNotableChildren, describeSessionState, describeSessionStatus, hasStatusMark, sessionInitials, shortMessage, shownStatus } from "../shared/session-status";
 import { type TerminalSession, describeTerminalExit, sessionKindName } from "../shared/terminal";
 
 export { describeQuitRequest } from "../shared/terminal";
@@ -137,14 +137,15 @@ export function shortExit(state: TerminalSession["state"]): string | null {
  * mark says its status, such as "Needs you: approval"; another says whether
  * it runs or how it ended.
  */
-export function describeTerminalState(session: Pick<TerminalSession, "state"> & Partial<Pick<TerminalSession, "kind" | "status">>): string {
+export function describeTerminalState(session: Pick<TerminalSession, "state"> & Partial<Pick<TerminalSession, "kind" | "status" | "children">>): string {
 	if (session.kind !== undefined && session.status !== undefined) {
-		const full = { kind: session.kind, state: session.state, status: session.status };
+		const full = { kind: session.kind, state: session.state, status: session.status, children: session.children ?? [] };
 		if (hasStatusMark(full)) {
 			const status = shownStatus(full);
 			// How it ended is said in the same words as for any session, so a crash names its code.
 			if (status.kind === "crashed" && session.state.kind === "exited") return `Crashed. ${describeTerminalExit(session.state)}`;
-			return describeShownStatus(status);
+			// No count here: this is a live region, and a count would be spoken at every change of the children.
+			return describeSessionState(full);
 		}
 	}
 	return session.state.kind === "running" ? "Running" : describeTerminalExit(session.state);
@@ -165,15 +166,18 @@ export function closeTerminalLabel(session: Pick<TerminalSession, "state" | "nam
  * it ended, and whether it printed since it was last on screen. The same
  * words are the chip's tooltip.
  */
-export function describeSessionChip(session: Pick<TerminalSession, "kind" | "name" | "state" | "shell"> & Partial<Pick<TerminalSession, "status">>, unseen: boolean): string {
+export function describeSessionChip(session: Pick<TerminalSession, "kind" | "name" | "state" | "shell"> & Partial<Pick<TerminalSession, "status" | "children">>, unseen: boolean): string {
 	const parts = [`${sessionKindName(session.kind)}, ${shellName(session.shell)}`];
-	const status = session.status === undefined ? null : { kind: session.kind, state: session.state, status: session.status };
+	const status = session.status === undefined ? null : { kind: session.kind, state: session.state, status: session.status, children: session.children ?? [] };
 	if (status !== null && hasStatusMark(status) && session.state.kind === "running") {
 		// A running agent that never reported says nothing more, as before the protocol.
 		const shown = shownStatus(status);
-		if (shown.kind !== "unknown") parts.push(describeShownStatus(shown));
+		if (shown.kind !== "unknown") parts.push(describeSessionState(status));
 		// What the program said, such as "approve Write: src/a.ts". It was cleaned up when it was read.
 		if (session.status?.message) parts.push(shortMessage(session.status.message));
+		// Its children that run or reported an error, such as "3 tasks: 1 needs you, 2 working".
+		const children = describeNotableChildren(status);
+		if (children !== "") parts.push(children);
 	} else if (status !== null && hasStatusMark(status) && shownStatus(status).kind === "crashed" && session.state.kind === "exited") {
 		parts.push(`Crashed. ${describeTerminalExit(session.state)}`);
 	} else if (session.state.kind === "exited") parts.push(describeTerminalExit(session.state));
@@ -189,7 +193,9 @@ export interface RowSessionMark {
 	/** The agent's icon to show instead of `initial`, or null for letters. */
 	brand: AgentBrand | null;
 	status: ShownStatus;
-	/** Such as "Codex: Needs you: approval. approve Write: src/a.ts". */
+	/** How many of its children run or reported an error, and the most urgent of their statuses, or null when there are none. */
+	badge: { count: number; status: ShownStatus } | null;
+	/** Such as "Codex: Needs you: approval. approve Write: src/a.ts. 2 tasks: 2 working". */
 	words: string;
 }
 
@@ -210,6 +216,7 @@ export function describeRowSessions(sessions: readonly TerminalSession[]): { mar
 		initial: brands[index] === null ? initials[lettered.indexOf(session)]! : "",
 		brand: brands[index]!,
 		status: shownStatus(session),
+		badge: childBadge(session),
 		words: describeSessionStatus(session),
 	}));
 	const others = sessions.filter(session => !hasStatusMark(session) && session.state.kind === "running").length;

@@ -46,7 +46,7 @@ async function withAgent() {
 
 const session = (change: Partial<TerminalSession> = {}): TerminalSession => ({
 	id: "s", kind: "agent", name: "Codex", repository: TIMBER, worktree: featureId, path: FEATURE, shell: "/usr/local/bin/codex", command: "codex",
-	state: { kind: "running" }, status: null, ...change,
+	state: { kind: "running" }, status: null, children: [], ...change,
 });
 const status = (state: "idle" | "working" | "done" | "blocked" | "error", more: Partial<NonNullable<TerminalSession["status"]>> = {}) =>
 	({ state, kind: null, progress: null, app: null, title: null, message: null, ...more });

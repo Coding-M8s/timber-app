@@ -267,6 +267,7 @@ describe("choosing the agent", () => {
 		id, worktree, kind, name: id, repository: TIMBER, path: "/p", shell: "/bin/x", command: "x",
 		state: running ? { kind: "running" as const } : { kind: "exited" as const, exitCode: 0, signal: null },
 		status: blocked ? { state: "blocked" as const, kind: "permission" as const, message: null, progress: null, updated: 0 } as never : null,
+		children: [],
 	});
 
 	test("only running agents of the worktree, and the only one is picked", () => {

@@ -100,8 +100,14 @@ change them here first when they change.
   color holds the shape and the agent's initial; the tooltip names the
   agent. Claude Code and Codex show their makers' official marks there
   instead of letters (Claude's spark, OpenAI's mark), and on their chip. An agent that reports nothing shows as running.
+- An agent's tasks (subagents and background tasks) that still run, or
+  reported an error, show as a small count beside its mark, on the row and
+  the chip, in the shape and color of the most urgent one, so a task that
+  needs you shows its diamond. An agent that says Done or Idle while tasks
+  run says "tasks still running".
 - A collapsed repository header sums up its agents, such as "1 needs you, 2
-  working", Needs you first. An expanded one adds nothing.
+  working", Needs you first; an agent with a task that needs you counts as
+  needing you. An expanded one adds nothing.
 - When an agent needs you, is done, reports an error, or crashes in a
   worktree that is not on screen, a desktop notification says so; clicking
   it shows that session. Never for the worktree on screen in a focused
@@ -146,7 +152,9 @@ change them here first when they change.
   and terminals. Each session has a chip that shows or hides its pane; a hidden
   session keeps running. Closing an agent pane stops the agent. An agent's
   chip shows its state as on the sidebar, with its message, such as "approve
-  Write: src/a.ts", in the tooltip.
+  Write: src/a.ts", in the tooltip. Beside the shown agent's state, a button
+  such as "4 tasks" opens the list of its tasks as a tree, each with its
+  state, progress, title, and message.
 - The header names the worktree's saved base beside its sync state and
   changes, in the same words as the row's tooltip.
 - The header shows the worktree's pull request with the same words as its

@@ -6,7 +6,8 @@
  * clock is passed in.
  */
 import type { Attention } from "./attention";
-import { type ShownStatus, describeShownStatus, hasStatusMark, shortMessage, shownStatus } from "./session-status";
+import type { ChildStatus } from "./program-status";
+import { type ShownStatus, alertStatus, childName, describeShownStatus, hasStatusMark, shortMessage, shownChildStatus } from "./session-status";
 import type { TerminalChange, TerminalSession } from "./terminal";
 
 /**
@@ -73,12 +74,22 @@ export function onScreen(session: Pick<TerminalSession, "repository" | "path">, 
 		&& attention.selected?.repository === session.repository && attention.selected.worktree === session.path;
 }
 
-/** The words of a notification for a session that reached a notable status. */
-export function describeNotice(session: TerminalSession, status: ShownStatus): Omit<StatusNotice, "session"> {
-	const message = session.state.kind === "running" ? session.status?.message ?? null : null;
+/** The most of a child's name a notification title shows, in characters. */
+const CHILD_NAME_LIMIT = 60;
+
+/**
+ * The words of a notification for a session that reached a notable status,
+ * itself or through one of its children, such as "Claude Code: task review
+ * needs you".
+ */
+export function describeNotice(session: TerminalSession, status: ShownStatus, child: ChildStatus | null = null): Omit<StatusNotice, "session"> {
+	const message = session.state.kind !== "running" ? null : child !== null ? child.message : session.status?.message ?? null;
 	const detail = message === null ? describeShownStatus(status) : shortMessage(message);
 	const headline = isAlertState(status.kind) ? HEADLINES[status.kind] : describeShownStatus(status).toLowerCase();
-	return { title: `${session.name} ${headline}`, body: `In ${folderName(session.path)}: ${detail}` };
+	if (child === null) return { title: `${session.name} ${headline}`, body: `In ${folderName(session.path)}: ${detail}` };
+	const name = Array.from(childName(child));
+	const shortName = name.length <= CHILD_NAME_LIMIT ? name.join("") : `${name.slice(0, CHILD_NAME_LIMIT - 3).join("").trimEnd()}...`;
+	return { title: `${session.name}: task ${shortName} ${headline}`, body: `In ${folderName(session.path)}: ${detail}` };
 }
 
 export interface StatusAlerts {
@@ -105,7 +116,17 @@ export interface StatusAlerts {
 
 interface Tracked {
 	session: TerminalSession;
+	/** The status that counts for alerts (`alertStatus`): the root's, or a child's that needs you or reported an error. */
 	status: ShownStatus;
+	/** The path of the child `status` comes from, or null for the root. */
+	child: string | null;
+	/**
+	 * The children already told about, with the status they were told for.
+	 * One stays here while it holds that status, so a task left in Error, or
+	 * still waiting for the person, is not told again each time the root
+	 * moves away and back.
+	 */
+	toldChildren: Map<string, AlertState>;
 	/** The status of the notification on screen, or null. */
 	shown: AlertState | null;
 	/** When each status was last told about, by notification or sound. */
@@ -130,9 +151,11 @@ export function createStatusAlerts(interval: number = NOTICE_INTERVAL_MILLISECON
 		entry.waiting = null;
 		entry.last.set(state, now);
 		const sound = wantsSound(settings, state);
+		if (entry.child !== null) entry.toldChildren.set(entry.child, state);
 		if (wantsNotice(settings, state)) {
 			entry.shown = state;
-			return [{ kind: "show", notice: { session: id, ...describeNotice(entry.session, entry.status) }, sound }];
+			const child = entry.child === null ? null : entry.session.children.find(task => task.id === entry.child) ?? null;
+			return [{ kind: "show", notice: { session: id, ...describeNotice(entry.session, entry.status, child) }, sound }];
 		}
 		const actions: AlertAction[] = [];
 		if (entry.shown !== null) {
@@ -157,17 +180,32 @@ export function createStatusAlerts(interval: number = NOTICE_INTERVAL_MILLISECON
 				tracked.delete(change.id);
 				return entry?.shown != null ? [{ kind: "withdraw", session: change.id }] : [];
 			}
-			const status = shownStatus(session);
+			const counted = alertStatus(session);
+			let status = counted.status;
+			let child = counted.child?.id ?? null;
 			if (entry === undefined) {
 				// The first sight of a session is never told about: it may be one that was already there.
-				tracked.set(change.id, { session, status, shown: null, last: new Map(), waiting: null });
+				tracked.set(change.id, { session, status, child, toldChildren: new Map(), shown: null, last: new Map(), waiting: null });
 				return [];
+			}
+			// The child that counted before keeps counting while it holds the same status, so a second task needing you is not told again, whatever its path.
+			const kept = entry.child === null ? undefined : session.children.find(task => task.id === entry.child);
+			if (child !== null && kept !== undefined && session.state.kind === "running" && shownChildStatus(kept).kind === status.kind) {
+				child = kept.id;
+				status = shownChildStatus(kept);
+			}
+			// A child that left the status it was told for may be told again later.
+			for (const [path, told] of entry.toldChildren) {
+				const task = session.state.kind === "running" ? session.children.find(each => each.id === path) : undefined;
+				if (task === undefined || shownChildStatus(task).kind !== told) entry.toldChildren.delete(path);
 			}
 			const before = entry;
 			const marked = hasStatusMark(session) || hasStatusMark(before.session);
-			const moved = before.status.kind !== status.kind;
+			// Another child taking over the same status is a move too: the notification on screen was about the one before.
+			const moved = before.status.kind !== status.kind || before.child !== child;
 			entry.session = session;
 			entry.status = status;
+			entry.child = child;
 			if (!moved) return [];
 			// The notification on screen, and any waiting one, were for the status it just left.
 			entry.waiting = null;
@@ -176,6 +214,8 @@ export function createStatusAlerts(interval: number = NOTICE_INTERVAL_MILLISECON
 			const state = status.kind;
 			// A session with no status mark, such as a plain shell, is never told about, not even when it ends badly.
 			if (!wantsNotice(settings, state) && !wantsSound(settings, state)) return actions;
+			// A child already told about for this status, which never left it, is not told again.
+			if (child !== null && entry.toldChildren.get(child) === state) return actions;
 			if (onScreen(session, attention)) return actions;
 			const last = entry.last.get(state);
 			if (last !== undefined && now - last < interval) {

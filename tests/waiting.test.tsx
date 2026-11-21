@@ -30,7 +30,7 @@ const working = { ...blocked, state: "working", kind: null } as const;
 const done = { ...blocked, state: "done", kind: null } as const;
 const session = (id: string, change: Partial<TerminalSession> = {}): TerminalSession => ({
 	id, kind: "agent", name: "Codex", repository: TIMBER, worktree: featureId, path: FEATURE, shell: "/usr/local/bin/codex", command: "codex",
-	state: { kind: "running" }, status: null, ...change,
+	state: { kind: "running" }, status: null, children: [], ...change,
 });
 
 describe("the waiting order", () => {

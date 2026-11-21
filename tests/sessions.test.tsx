@@ -111,7 +111,7 @@ describe("words for sessions", () => {
 describe("several sessions in one worktree", () => {
 	test("a session that changes keeps its place among the others", () => {
 		const make = (id: string, name: string): TerminalSession =>
-			({ id, kind: "terminal", name, repository: TIMBER, worktree: featureId, path: FEATURE, shell: "/bin/sh", command: "/bin/sh", state: { kind: "running" }, status: null });
+			({ id, kind: "terminal", name, repository: TIMBER, worktree: featureId, path: FEATURE, shell: "/bin/sh", command: "/bin/sh", state: { kind: "running" }, status: null, children: [] });
 		const list = [make("a", "A"), make("b", "B"), make("c", "C")];
 		expect(withTerminal(list, "a", make("a", "A2")).map(session => session.name)).toEqual(["A2", "B", "C"]);
 		expect(withTerminal(list, "d", make("d", "D")).map(session => session.id)).toEqual(["a", "b", "c", "d"]);

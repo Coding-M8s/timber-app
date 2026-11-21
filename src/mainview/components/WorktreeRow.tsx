@@ -9,6 +9,7 @@ import { type RowMarker, type RowMarkerKind, describeRow, describeRowMarkers, de
 import { type RowSessionMark, describeRowSessions } from "../terminal-format";
 import { WORKTREE_MENU_SHORTCUTS, type WorktreeMenuItemId, describeWorktreeMenu, opensWorktreeMenu, worktreeMenuItems } from "../worktree-menu-format";
 import { AgentIcon } from "./AgentIcon";
+import { ChildBadge } from "./ChildTasks";
 import { StatusGlyph } from "./StatusGlyph";
 import { WorktreeMenu } from "./WorktreeMenu";
 
@@ -74,6 +75,7 @@ function SessionMark({ mark }: { mark: RowSessionMark }) {
 		<span className={`row-agent status-${mark.status.kind}${mark.brand ? " branded" : ""}`} title={mark.words} aria-hidden="true">
 			<StatusGlyph status={mark.status} />
 			{mark.brand ? <AgentIcon brand={mark.brand} /> : <span className="row-agent-letters">{mark.initial}</span>}
+			{mark.badge !== null && <ChildBadge badge={mark.badge} />}
 		</span>
 	);
 }
