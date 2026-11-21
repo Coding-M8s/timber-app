@@ -4119,8 +4119,8 @@ other `X11 Error:` line is not explained by it. See the issue 64 run under
   Timber's main branch still calls itself 0.1.1. If that release gets
   another number, change `REQUIRED_TIMBER_VERSION` in
   `src/shared/timber-version.ts`, its test, the line in
-  [Finding Timber](#finding-timber), the README, and `TIMBER_VERSION` in CI
-  together.
+  [Finding Timber](#finding-timber), the README, and `TIMBER_VERSION` in the CI and release
+  workflows together.
 - **The Timber that pull requests need.** `__app-pr` is on Timber's main
   branch only. With Timber 0.1.2 every repository says "PRs unknown", with
   Timber's "unknown command" in the tooltip. The required version is not
