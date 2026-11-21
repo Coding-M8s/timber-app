@@ -27,12 +27,16 @@ const KEYS: Record<string, { code: string; keyCode: number; text?: string }> = {
 	" ": { code: "Space", keyCode: 32, text: " " },
 	ArrowUp: { code: "ArrowUp", keyCode: 38 },
 	ArrowDown: { code: "ArrowDown", keyCode: 40 },
+	ArrowLeft: { code: "ArrowLeft", keyCode: 37 },
+	ArrowRight: { code: "ArrowRight", keyCode: 39 },
+	Tab: { code: "Tab", keyCode: 9 },
+	K: { code: "KeyK", keyCode: 75 },
 	Home: { code: "Home", keyCode: 36 },
 	End: { code: "End", keyCode: 35 },
 	F10: { code: "F10", keyCode: 121 },
 };
 
-const MODIFIERS = { alt: 1, shift: 8 } as const;
+const MODIFIERS = { alt: 1, shift: 8, ctrlShift: 10 } as const;
 
 export interface BrowserPage {
 	/** Load the test page again, with the app as it starts. */

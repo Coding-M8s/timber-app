@@ -6,7 +6,7 @@ import { BEING_REMOVED_REASON, DONE_PRIMARY_NOTE } from "./done-format";
 import { worktreeLabel } from "./format";
 import { REBASE_FOLDER_MISSING } from "./rebase-format";
 import type { Repository } from "../shared/model";
-import { type AppState, type DialogRequest, isBeingRemoved, isRunning, finishedSessions, selectedWorktree, sessionsOf, waitingSessions } from "./store/state";
+import { type AppState, type DialogRequest, isBeingRemoved, isRunning, offeredChops, finishedSessions, selectedWorktree, sessionsOf, waitingSessions } from "./store/state";
 import { type RowSessionMark, describeRowSessions } from "./terminal-format";
 import { NONE_WAITING, WAITING_LABEL, describeToVisit } from "./waiting";
 
@@ -177,7 +177,7 @@ function actionEntries(state: AppState): PaletteEntry[] {
 		add(inWorktree("editor"), "editor", OPEN_IN_EDITOR, "", none, idle, ["code"]);
 		add(inWorktree("done"), "done", "Done", "", none, idle, ["remove", "finish", "delete"]);
 		// The chops last read stay listed, so they can be found and say why they cannot run.
-		for (const chop of chopEntries(state.chops?.list)) {
+		for (const chop of chopEntries(offeredChops(state)?.list)) {
 			add(inWorktree(chop.kind === "prompt" ? "agent" : "terminal"), `chop:${chop.name}`, runChopLabel(chop.name, chopAction(chop.kind, state.preferences.agents.length)), "", none, idle, [chop.title, "chop", chop.kind]);
 		}
 		add(inRepository("new"), "new", "New worktree", "", none, idle, ["create", "branch"]);
@@ -196,7 +196,8 @@ function actionEntries(state: AppState): PaletteEntry[] {
 		}
 		// A chop runs in the active worktree only, as the "+" menu's do.
 		const chopReason = sessionReason ?? (isBeingRemoved(state, repository.path, worktree.path) ? BEING_REMOVED_REASON : null);
-		const chops = state.chops?.repository === repository.path ? chopEntries(state.chops.list) : [];
+		const offered = offeredChops(state);
+		const chops = offered?.repository === repository.path ? chopEntries(offered.list) : [];
 		// A prompt that goes to a running agent waits for no session to start; one that needs a new agent says why in a toast when it cannot.
 		const promptReason = !worktree.pathExists ? FOLDER_MISSING_FOR_SESSION : isBeingRemoved(state, repository.path, worktree.path) ? BEING_REMOVED_REASON : null;
 		for (const chop of chops) {

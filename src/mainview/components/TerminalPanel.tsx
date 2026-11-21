@@ -10,7 +10,7 @@ import { isSeen } from "../seen-status";
 import { StatusGlyph } from "./StatusGlyph";
 import { terminalAppearance } from "../terminal-look";
 import { useAppState, useStore } from "../store/react";
-import { isBeingRemoved, sessionsOf, shownSession } from "../store/state";
+import { isBeingRemoved, offeredChops, sessionsOf, shownSession } from "../store/state";
 import { type ChopEntry, chopAction, chopButtonLabel, chopEntries, chopTitle, describeSessionChipMenu, sessionChipMenuChop, sessionChipMenuItems } from "../chop-format";
 import type { ChopList } from "../../shared/chops";
 import { WORKTREE_MENU_SHORTCUTS, opensWorktreeMenu } from "../worktree-menu-format";
@@ -600,7 +600,8 @@ export function TerminalPanel({ repository, worktree }: { repository: Repository
 	const start = (agent: string | null = null) =>
 		void store.openTerminal({ repository: repository.path, worktree: worktree.path, ...estimateTerminalSize(panel.current), ...(agent === null ? {} : { agent }) });
 	const setUpAgents = () => store.openDialog({ kind: "settings", section: "agents" });
-	const chops = state.chops?.repository === repository.path ? chopEntries(state.chops.list) : [];
+	const offered = offeredChops(state);
+	const chops = offered?.repository === repository.path ? chopEntries(offered.list) : [];
 	const runChop = (name: string) => void store.runChop(repository.path, worktree.id, name, estimateTerminalSize(panel.current));
 
 	if (!shown) {
@@ -675,7 +676,7 @@ export function TerminalPanel({ repository, worktree }: { repository: Repository
 								shownId={shown.id}
 								closing={closingIds.includes(session.id)}
 								closingIds={closingIds}
-								chops={state.chops?.repository === session.repository ? state.chops.list : null}
+								chops={offered?.repository === session.repository ? offered.list : null}
 								onRename={() => setRenaming(session.id)}
 							/>
 						),

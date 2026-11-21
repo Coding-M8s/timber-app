@@ -3268,3 +3268,24 @@ Bun 1.4.5, Git 2.43, and Timber 0.1.4:
   worktree's own branch.
 - Not run: the installed desktop app by hand, and a remote base checked
   over a real network.
+
+Run for the chops panel (issue 250), Linux x64 with Bun 1.4.5, Git 2.43,
+and headless Google Chrome over the mock engine:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 3231 passed, 19 skipped, 0 failed, after a rebase onto main. The
+  layout and the `useChops` preference round-trip through the settings
+  file in the main process (`tests/saved-layout.test.ts`,
+  `tests/preferences.test.ts`), the store over the mock engine remembers
+  them across a new store (`tests/chops-panel.test.tsx`), and
+  `tests/chops-panel-browser.test.ts` drives the button, Ctrl+Shift+K,
+  Close, focus return, the edge's keys, a dialog blocking the key, and the
+  "Use chops" switch in Settings in Chrome. With it off, the palette,
+  "Insert chop", and `runChop` offer and run no chop
+  (`tests/chop-run.test.tsx`).
+- `bun run build:web`: built.
+- Not run: the desktop window on any platform, a real terminal session
+  pressing Ctrl+Shift+K (the terminal's key handler uses the same tested
+  `takesChopsPanelKey`), a pointer drag of the panel's edge, and whether
+  any desktop on Linux, macOS, or Windows takes Ctrl+Shift+K or
+  Cmd+Shift+K before the app. The shortcut was chosen by analysis.

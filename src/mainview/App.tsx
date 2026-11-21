@@ -1,3 +1,4 @@
+import { ChopsPanel, ChopsResizer, ChopsShortcut } from "./components/ChopsPanel";
 import { Dialogs } from "./components/Dialogs";
 import { PaletteShortcut } from "./components/PaletteShortcut";
 import { WaitingShortcut } from "./components/WaitingShortcut";
@@ -16,7 +17,7 @@ import { ChopsKeeper } from "./components/settings/ChopsSection";
 import { Toasts } from "./components/Toasts";
 import { Workspace } from "./components/Workspace";
 import { StoreProvider, useAppState, useStore } from "./store/react";
-import { isRunning, timberReady } from "./store/state";
+import { chopsPanelShown, isRunning, timberReady } from "./store/state";
 import type { AppStore } from "./store/store";
 import { setTerminalAppearance } from "./terminal-look";
 import { applySavedTheme } from "./theme-apply";
@@ -47,17 +48,21 @@ function Body() {
 		);
 	}
 	// The sidebar takes its width from here, so a narrow window can still overrule it in the stylesheet.
-	const widths = { "--sidebar-width": `${state.layout.sidebarWidth}px` } as CSSProperties;
+	const shown = chopsPanelShown(state);
+	const widths = { "--sidebar-width": `${state.layout.sidebarWidth}px`, ...(shown ? { "--chops-width": `${state.layout.chopsWidth}px` } : {}) } as CSSProperties;
 	// The parts are put in the order they are seen, so the keyboard reaches them in that order too.
 	// Keys keep each part mounted when the side changes, with whatever it holds, such as the filter.
-	const parts = [<Sidebar key="sidebar" />, <SidebarResizer key="resizer" />, <Workspace key="workspace" />];
+	// The chops panel is always on the workspace's right, wherever the sidebar is.
+	const chops = shown ? [<ChopsResizer key="chops-resizer" />, <ChopsPanel key="chops" />] : [];
+	const sidebar = [<Sidebar key="sidebar" />, <SidebarResizer key="resizer" />];
+	const main = [<Workspace key="workspace" />, ...chops];
 	const right = state.preferences.sidebarSide === "right";
 	return (
 		<>
 			<AppUpdateBanner />
 			<TimberUpdateBanner />
 			<div className={right ? "body sidebar-right" : "body"} style={widths}>
-				{right ? parts.reverse() : parts}
+				{right ? [...main, ...sidebar.reverse()] : [...sidebar, ...main]}
 			</div>
 		</>
 	);
@@ -125,6 +130,7 @@ export function App({ store, children }: { store: AppStore; children?: ReactNode
 				<Dialogs />
 				<PaletteShortcut />
 				<WaitingShortcut />
+				<ChopsShortcut />
 				{children}
 				{/* Over any other dialog: the app is about to quit. */}
 				<QuitDialog />

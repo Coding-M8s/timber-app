@@ -15,7 +15,7 @@ import { promptTarget } from "../agent-sessions";
 import { describePromptCopied, describePromptSent } from "../chop-format";
 import { type Comparison, type FileChangeTarget, type FileChangesResult, type FileDiff, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
 import type { PortsResult } from "../../shared/ports";
-import { type Layout, chooseComparison, chooseIssueList, chosenComparison, clampSidebarWidth, dismissSetup, forgetGroup, forgetRepository, sameLayout, toggleCollapsed, toggleGroupCollapsed } from "../../shared/layout";
+import { type Layout, chooseComparison, chooseIssueList, chosenComparison, clampChopsWidth, clampSidebarWidth, dismissSetup, forgetGroup, forgetRepository, sameLayout, toggleCollapsed, toggleGroupCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RepositoryGroupsResult, ReportedWorktree, SavePreferencesResult, TimberFailure, TimberStatus, Worktree, WorktreeCommandResult } from "../../shared/model";
 import { type Preferences, defaultPreferences } from "../../shared/preferences";
 import type { IssueLookup } from "../../shared/issues";
@@ -59,7 +59,7 @@ import { RESTORE_CONCURRENCY, RESTORE_QUIET_MILLISECONDS, type RestoreJob, goneS
 import { type SavedSessions, pickShown } from "../../shared/saved-sessions";
 import {
 	type AppState, type ChangesView, type DialogRequest, type Operation, type PullRequestForm, type Removal, type SessionAgent, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood,
-	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, shownSession, timberReady, withTerminal, withoutSession } from "./state";
+	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, canToggleChopsPanel, offeredChops, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, shownSession, timberReady, withTerminal, withoutSession } from "./state";
 
 /**
  * The single holder of what the interface shows: Timber's status, the
@@ -165,6 +165,21 @@ export interface AppStore {
 	 * call `saveLayout` when the resize ends.
 	 */
 	resizeSidebar(width: number): void;
+	/**
+	 * Show the chops panel when it is hidden and hide it when it shows, and
+	 * remember that. Does nothing, and answers false, while chops are not in
+	 * use, a dialog or the quit question is open, or Timber is not ready
+	 * (`canToggleChopsPanel`). Answers whether the panel now shows or hides
+	 * because of this call.
+	 */
+	toggleChopsPanel(): boolean;
+	/** Hide the chops panel, as its Close button does, and remember that. The saved chops stay. */
+	hideChopsPanel(): void;
+	/**
+	 * Set the chops panel's width on screen, kept within its limits. Nothing
+	 * is saved: call `saveLayout` when the resize ends.
+	 */
+	resizeChopsPanel(width: number): void;
 	/**
 	 * Remember the layout on screen for the next run. A save that fails leaves
 	 * the screen alone and is noted in `layoutProblem`.
@@ -1337,7 +1352,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 
 	/** Put a prompt chop's text, as listed, on the clipboard. */
 	async function copyPrompt(repositoryPath: string, name: string): Promise<void> {
-		const list = state.chops?.repository === repositoryPath ? state.chops.list : null;
+		const offered = offeredChops(state);
+		const list = offered?.repository === repositoryPath ? offered.list : null;
 		const chop = findListedChop(listedChops(list), name);
 		if (chop === null || chop.kind !== "prompt") {
 			showToast(`No prompt chop called "${name}" is listed for this repository now.`, true);
@@ -1377,6 +1393,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	}
 
 	async function runChop(repositoryPath: string, worktreeId: string, name: string, size: { cols: number; rows: number }, approve?: string, target?: { session: string | null }): Promise<void> {
+		// With "Use chops" off, nothing runs a chop, whatever asked.
+		if (!state.preferences.useChops) return;
 		const listed = findListedChop(listedChops(state.chops?.repository === repositoryPath ? state.chops.list : null), name);
 		if (listed?.kind === "prompt") {
 			// With no agent saved, the prompt has nowhere to go: it is copied instead.
@@ -1440,7 +1458,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	async function insertChop(sessionId: string, name: string): Promise<void> {
 		const session = state.terminals.find(candidate => candidate.id === sessionId);
 		if (!session || session.state.kind !== "running") return;
-		const list = state.chops?.repository === session.repository ? state.chops.list : null;
+		const offered = offeredChops(state);
+		const list = offered?.repository === session.repository ? offered.list : null;
 		const chop = findListedChop(commandChops(list), name);
 		if (chop === null) {
 			showToast(`No command chop called "${name}" is listed for this repository now.`, true);
@@ -2778,6 +2797,21 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		resizeSidebar(width) {
 			const sidebarWidth = clampSidebarWidth(width);
 			if (sidebarWidth !== state.layout.sidebarWidth) changeLayout({ ...state.layout, sidebarWidth });
+		},
+		toggleChopsPanel() {
+			if (!canToggleChopsPanel(state)) return false;
+			changeLayout({ ...state.layout, chopsOpen: !state.layout.chopsOpen });
+			void saveLayout("layout");
+			return true;
+		},
+		hideChopsPanel() {
+			if (!state.layout.chopsOpen) return;
+			changeLayout({ ...state.layout, chopsOpen: false });
+			void saveLayout("layout");
+		},
+		resizeChopsPanel(width) {
+			const chopsWidth = clampChopsWidth(width);
+			if (chopsWidth !== state.layout.chopsWidth) changeLayout({ ...state.layout, chopsWidth });
 		},
 		saveLayout: () => saveLayout("layout"),
 		dismissLayoutProblem() {

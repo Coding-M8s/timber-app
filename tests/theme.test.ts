@@ -201,7 +201,7 @@ describe("the theme's stylesheet", () => {
 	});
 
 	test("defines every custom property the stylesheet uses, and the stylesheet has no color of its own", () => {
-		const defined = new Set([...Object.values(UI_COLOR_PROPERTIES), "--font-ui", "--font-mono", "--font-terminal", "--sidebar-width"]);
+		const defined = new Set([...Object.values(UI_COLOR_PROPERTIES), "--font-ui", "--font-mono", "--font-terminal", "--sidebar-width", "--chops-width"]);
 		const used = new Set([...STYLES.matchAll(/var\((--[a-z0-9-]+)/g)].map(match => match[1]!));
 		expect([...used].filter(name => !defined.has(name))).toEqual([]);
 		const withoutComments = STYLES.replace(/\/\*[\s\S]*?\*\//g, "");

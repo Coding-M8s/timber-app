@@ -535,6 +535,40 @@ export function timberReady(state: AppState): boolean {
 	return state.timber?.known === true && state.timber.status.state === "ready";
 }
 
+/**
+ * Whether chops are in use and offered in the window: the "Use chops"
+ * setting is on and Timber is ready. The title bar's Chops button, the chops
+ * panel, and every chop shortcut ask this, so turning chops off in Settings
+ * removes them all at once and keeps the saved chops.
+ */
+export function chopsEnabled(state: AppState): boolean {
+	return state.preferences.useChops && timberReady(state);
+}
+
+/**
+ * The chops the window offers anywhere: the palette, the "+" menu and the
+ * empty pane, "Insert chop", and running one. Null while "Use chops" is off,
+ * so turning chops off removes every way to see or run one. The list is
+ * still read and kept, so it is back at once when chops are turned on.
+ */
+export function offeredChops(state: AppState): AppState["chops"] {
+	return state.preferences.useChops ? state.chops : null;
+}
+
+/** Whether the chops panel is drawn beside the workspace: chops are in use and the person showed it. */
+export function chopsPanelShown(state: AppState): boolean {
+	return chopsEnabled(state) && state.layout.chopsOpen;
+}
+
+/**
+ * Whether the Chops button or its shortcut may show or hide the panel now:
+ * chops are in use, and no dialog or quit question has the keyboard, as for
+ * the command palette.
+ */
+export function canToggleChopsPanel(state: AppState): boolean {
+	return chopsEnabled(state) && state.dialog === null && state.quitRequest === null;
+}
+
 export function isRunning(state: AppState, kind: Operation["kind"]): boolean {
 	return state.operations.some(operation => operation.kind === kind);
 }

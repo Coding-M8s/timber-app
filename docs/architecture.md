@@ -1212,7 +1212,8 @@ The window is a title bar over a sidebar and a workspace
 pure functions in `src/mainview/shell.ts`.
 
 - **Title bar.** The logo, a breadcrumb of the selected repository and
-  worktree, and the command palette button.
+  worktree, the Chops button while chops are in use, and the command
+  palette button.
 - **Sidebar.** The filter, Refresh, and New group, one collapsible section per
   repository with a "+" for a new worktree and a More menu, the repository
   groups, "Add repository" after the list, and the Settings cog fixed at the
@@ -1280,6 +1281,34 @@ pure functions in `src/mainview/shell.ts`.
   needs you" or "2 need you", a sentence, where a collapsed header's summary
   keeps "2 needs you", and its accessible name joins the parts with a comma.
   Not verified that a desktop webview leaves Ctrl+Shift+J to the page.
+- **Chops panel.** `src/mainview/components/ChopsPanel.tsx`, with its
+  words and key in `src/mainview/chops-panel-format.ts`. Drawn on the
+  workspace's right, after it in the page, with its own edge
+  (`ChopsResizer`), whichever side the sidebar is on: on the right the body
+  is workspace, chops edge, panel, sidebar edge, sidebar. The edge works as
+  a sidebar's on the right (`chopsWidthAfterKey`, `chopsWidthAfterDrag` in
+  `shell.ts`), between 240 and 560 pixels, and CSS keeps the panel under a
+  third of the window; keys and drags step from the width on screen, so
+  each one changes what is seen. Stacked in the narrow layout, it sits below the
+  workspace. The title bar's Chops button (`aria-pressed`) and Ctrl+Shift+K
+  (Cmd+Shift+K) call `toggleChopsPanel` in the panel's module, which asks
+  the store and moves the keyboard: shown that way, the panel takes focus
+  and remembers what had it; hidden while focus is inside it, focus goes
+  back there, or to the Chops button. Focus elsewhere stays where it is,
+  and a panel shown from the saved layout at start takes nothing. The
+  store knows nothing of focus. Its Close button only hides it.
+  `ChopsShortcut` listens on the window in the capture phase and takes the
+  key only when it acts (`takesChopsPanelKey`): with chops off, a dialog
+  or the quit question open, or Timber not ready, the key goes on to the
+  page, and a drawn terminal passes it to its program then too.
+  `chopsEnabled` in `src/mainview/store/state.ts` is the one gate: the
+  `useChops` preference and a ready Timber. The button, the panel, and
+  every chop shortcut, including the search-and-run one still to come,
+  ask it. Everywhere else the window offers chops (the palette, the "+"
+  menu and the empty pane's buttons, "Insert chop") reads them through
+  `offeredChops`, which has none while `useChops` is off, and `runChop`
+  and `insertChop` in the store do nothing then. The list is still read,
+  so turning chops on shows it at once.
 - **Sidebar side.** The sidebar sits on the left or on the right, as chosen
   in Settings (see [preferences](#preferences-and-the-settings-dialog)). The
   window has no control for it. On the right the body is drawn workspace,
@@ -1297,9 +1326,11 @@ pure functions in `src/mainview/shell.ts`.
   cut a long name short and carry the whole name in their `title`.
 - **The saved layout.** The sidebar width, the collapsed repositories, and the
   dismissed setup prompts (see [first-run setup](#first-run-setup)), each
-  repository named by the path of its primary checkout, and the folded
+  repository named by the path of its primary checkout, the folded
   repository groups (`collapsedGroups`, by group id, written only once one is
-  folded), are the `layout` part of the
+  folded), and whether the chops panel shows and its width (`chopsOpen` and
+  `chopsWidth`, each written only once it differs from its default), are
+  the `layout` part of the
   settings file (`Layout` in `src/shared/layout.ts`). The interface never
   keeps them itself: it reads them once through `loadLayout` and hands the
   whole layout to `saveLayout`. A file without a `layout` part is valid and
@@ -1310,7 +1341,8 @@ pure functions in `src/mainview/shell.ts`.
   the same `SettingsHolder` (`src/bun/settings.ts`), one change at a time,
   each building on what the last one saved. Removing a repository also
   forgets its collapsed group and its dismissed setup prompt.
-- **When it is saved.** Collapsing or opening a group saves at once. A resize
+- **When it is saved.** Collapsing or opening a group, and showing or
+  hiding the chops panel, save at once. A resize
   shows at once and saves when the drag ends or the key is let go, never
   while it moves. One save runs at a time, and saves asked for meanwhile share
   one follow-up save of whatever is on screen by then.
@@ -1403,8 +1435,13 @@ Settings dialog and kept by the app. They are never Timber's configuration.
   Editor: the editor that "Open in editor" starts (see
   [opening a worktree in an editor](#opening-a-worktree-in-an-editor)).
   Agents: the coding agents the "+" menu starts (see
-  [agent sessions](#agent-sessions)). Chops: the person's saved commands
-  and prompts (see [chops](#chops)). Fetching: whether the app fetches in
+  [agent sessions](#agent-sessions)). Chops: "Use chops" (`useChops`, on by
+  default) and the person's saved commands and prompts (see
+  [chops](#chops)); the switch saves with the section's Save, on its own
+  while the rows are as saved (`chopsSectionChange`), so it never waits on
+  rows nobody touched; with a changed row that cannot be saved, nothing is
+  saved until the row is fixed or removed. Turning it off never touches
+  `chops`. Fetching: whether the app fetches in
   the background and how often (see [fetching](#fetching)). Under a
   "Timber" heading, Executable picks which Timber the app runs (see
   [finding Timber](#finding-timber)), and Machine and Repository edit
@@ -1563,6 +1600,7 @@ every machine agrees. The rules are pure, in
 - **In the window.** The store keeps one answer in `chops`: the selected
   worktree's repository's, the latest read winning. `ChopsKeeper` reads it
   when another repository is selected and when the saved chops change. The
+  chops panel (see [the shell](#the-shell-and-the-saved-layout)) lists it. The
   Workspace "+" menu lists the chops after the agents, under "Chops",
   commands and prompts, a prompt marked "Prompt", or "Copy prompt" when no
   agent is saved in Settings, with the description, or the text's first

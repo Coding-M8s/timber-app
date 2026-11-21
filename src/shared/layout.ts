@@ -30,20 +30,57 @@ export interface Layout {
 	issueLists: Record<string, IssueList>;
 	/** The repository groups that are folded, each named by its id. */
 	collapsedGroups: string[];
+	/** Whether the chops panel shows beside the workspace. Hidden until the person shows it. */
+	chopsOpen: boolean;
+	/** Width of the chops panel in pixels, always within the limits below, kept while the panel is hidden. */
+	chopsWidth: number;
 }
 
 export const DEFAULT_SIDEBAR_WIDTH = 272;
 export const MIN_SIDEBAR_WIDTH = 200;
 export const MAX_SIDEBAR_WIDTH = 480;
 
+export const DEFAULT_CHOPS_WIDTH = 320;
+export const MIN_CHOPS_WIDTH = 240;
+export const MAX_CHOPS_WIDTH = 560;
+
+/** The narrowest and widest a resizable part may be, and the width it takes when nothing usable is saved. */
+export interface WidthLimits {
+	min: number;
+	max: number;
+	fallback: number;
+}
+
+export const SIDEBAR_LIMITS: WidthLimits = { min: MIN_SIDEBAR_WIDTH, max: MAX_SIDEBAR_WIDTH, fallback: DEFAULT_SIDEBAR_WIDTH };
+export const CHOPS_LIMITS: WidthLimits = { min: MIN_CHOPS_WIDTH, max: MAX_CHOPS_WIDTH, fallback: DEFAULT_CHOPS_WIDTH };
+
 export function defaultLayout(): Layout {
-	return { sidebarWidth: DEFAULT_SIDEBAR_WIDTH, collapsed: [], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [] };
+	return {
+		sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
+		collapsed: [],
+		setupDismissed: [],
+		uncommittedChanges: [],
+		issueLists: {},
+		collapsedGroups: [],
+		chopsOpen: false,
+		chopsWidth: DEFAULT_CHOPS_WIDTH,
+	};
+}
+
+/** A whole number of pixels within the limits. Anything that is not a number gives the fallback width. */
+export function clampWidth(width: number, limits: WidthLimits): number {
+	if (!Number.isFinite(width)) return limits.fallback;
+	return Math.min(limits.max, Math.max(limits.min, Math.round(width)));
 }
 
 /** A whole number of pixels within the limits. Anything that is not a number gives the default width. */
 export function clampSidebarWidth(width: number): number {
-	if (!Number.isFinite(width)) return DEFAULT_SIDEBAR_WIDTH;
-	return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, Math.round(width)));
+	return clampWidth(width, SIDEBAR_LIMITS);
+}
+
+/** The chops panel's width within its limits. Anything that is not a number gives the default width. */
+export function clampChopsWidth(width: number): number {
+	return clampWidth(width, CHOPS_LIMITS);
 }
 
 /**
@@ -54,8 +91,10 @@ export function clampSidebarWidth(width: number): number {
 export function readLayout(value: unknown): Layout {
 	const layout = defaultLayout();
 	if (typeof value !== "object" || value === null || Array.isArray(value)) return layout;
-	const { sidebarWidth, collapsed, setupDismissed, uncommittedChanges, issueLists, collapsedGroups } = value as Record<string, unknown>;
+	const { sidebarWidth, collapsed, setupDismissed, uncommittedChanges, issueLists, collapsedGroups, chopsOpen, chopsWidth } = value as Record<string, unknown>;
 	if (typeof sidebarWidth === "number") layout.sidebarWidth = clampSidebarWidth(sidebarWidth);
+	if (typeof chopsOpen === "boolean") layout.chopsOpen = chopsOpen;
+	if (typeof chopsWidth === "number") layout.chopsWidth = clampChopsWidth(chopsWidth);
 	layout.collapsed = readPaths(collapsed);
 	layout.setupDismissed = readPaths(setupDismissed);
 	layout.uncommittedChanges = readPaths(uncommittedChanges);
@@ -96,7 +135,9 @@ export function sameLayout(one: Layout, other: Layout): boolean {
 		&& samePaths(one.setupDismissed, other.setupDismissed)
 		&& samePaths(one.uncommittedChanges, other.uncommittedChanges)
 		&& sameIssueLists(one.issueLists, other.issueLists)
-		&& samePaths(one.collapsedGroups, other.collapsedGroups);
+		&& samePaths(one.collapsedGroups, other.collapsedGroups)
+		&& one.chopsOpen === other.chopsOpen
+		&& one.chopsWidth === other.chopsWidth;
 }
 
 /** What the Changes tab of a worktree asks to compare with: its base, unless the person chose Uncommitted there. */

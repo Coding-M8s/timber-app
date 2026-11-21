@@ -1,4 +1,4 @@
-import { MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, clampSidebarWidth } from "../shared/layout";
+import { CHOPS_LIMITS, SIDEBAR_LIMITS, type WidthLimits, clampWidth } from "../shared/layout";
 import type { SidebarSide } from "../shared/preferences";
 import type { Repository } from "../shared/model";
 import { type LayoutProblem, type SettingsSection, WORKSPACE_TABS, type WorkspaceTab } from "./store/state";
@@ -85,18 +85,18 @@ export const SIDEBAR_KEY_STEP = 16;
  * whichever side it is on. Home and End go to the narrowest and the widest.
  * Null for any other key.
  */
-export function sidebarWidthAfterKey(width: number, key: string, side: SidebarSide = "left"): number | null {
+export function sidebarWidthAfterKey(width: number, key: string, side: SidebarSide = "left", limits: WidthLimits = SIDEBAR_LIMITS): number | null {
 	const widen = side === "left" ? "ArrowRight" : "ArrowLeft";
 	const narrow = side === "left" ? "ArrowLeft" : "ArrowRight";
 	switch (key) {
 		case narrow:
-			return clampSidebarWidth(width - SIDEBAR_KEY_STEP);
+			return clampWidth(width - SIDEBAR_KEY_STEP, limits);
 		case widen:
-			return clampSidebarWidth(width + SIDEBAR_KEY_STEP);
+			return clampWidth(width + SIDEBAR_KEY_STEP, limits);
 		case "Home":
-			return MIN_SIDEBAR_WIDTH;
+			return limits.min;
 		case "End":
-			return MAX_SIDEBAR_WIDTH;
+			return limits.max;
 		default:
 			return null;
 	}
@@ -107,8 +107,23 @@ export function sidebarWidthAfterKey(width: number, key: string, side: SidebarSi
  * from where the drag started. The edge follows the pointer, so on the right
  * a drag to the left widens the sidebar.
  */
-export function sidebarWidthAfterDrag(startWidth: number, deltaX: number, side: SidebarSide = "left"): number {
-	return clampSidebarWidth(side === "left" ? startWidth + deltaX : startWidth - deltaX);
+export function sidebarWidthAfterDrag(startWidth: number, deltaX: number, side: SidebarSide = "left", limits: WidthLimits = SIDEBAR_LIMITS): number {
+	return clampWidth(side === "left" ? startWidth + deltaX : startWidth - deltaX, limits);
+}
+
+/**
+ * The chops panel's width after a key on its edge. The panel is always to
+ * the right of the workspace, so its edge works as a sidebar's on the right
+ * does: the arrow pointing at the workspace widens it, within the panel's
+ * own limits.
+ */
+export function chopsWidthAfterKey(width: number, key: string): number | null {
+	return sidebarWidthAfterKey(width, key, "right", CHOPS_LIMITS);
+}
+
+/** The chops panel's width while its edge is dragged `deltaX` pixels to the right: a drag to the left widens it. */
+export function chopsWidthAfterDrag(startWidth: number, deltaX: number): number {
+	return sidebarWidthAfterDrag(startWidth, deltaX, "right", CHOPS_LIMITS);
 }
 
 /** The tooltip of a repository header: the whole name, which the header may cut short, and where it is. */
