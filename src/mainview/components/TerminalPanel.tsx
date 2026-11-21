@@ -12,7 +12,7 @@ import { isBeingRemoved, sessionsOf, shownSession } from "../store/state";
 import { BEING_REMOVED_REASON } from "../done-format";
 import { dropTerminalFocus, onTerminalFocusWish, takeTerminalFocus, wantTerminalFocus } from "../terminal-focus";
 import {
-	chipAfterKey, chipCommand, closeTerminalLabel, describeSessionChip, describeTerminalState, sessionChipId, shellName, shortExit,
+	chipAfterClose, chipAfterKey, chipButtonCommand, chipCommand, closeTerminalLabel, describeSessionChip, describeTerminalState, sessionChipId, shellName, shortExit,
 } from "../terminal-format";
 
 /** The drawn terminals load with xterm.js, the first time one shows, and stay loaded. */
@@ -245,14 +245,10 @@ function Chip({ session, selected, unseen, ids, shownId, closing, closingIds, on
 
 	const close = () => {
 		// Closing the chosen chip shows the one beside it, which takes the focus, or "+" when it was the last one.
-		if (closing) return;
-		const at = ids.indexOf(session.id);
-		const open = (id: string | undefined) => id !== undefined && !closingIds.includes(id);
-		const after = ids.slice(at + 1).find(open);
-		const before = ids.slice(0, at).reverse().find(open);
-		const next = selected ? after ?? before : shownId;
-		if (selected && next) store.showSession(next);
-		focusSoon(next ? sessionChipId(next) : ADD_SESSION_ID);
+		const after = chipAfterClose(ids, session.id, { shownId, closing, closingIds });
+		if (after === null) return;
+		if (after.show !== null) store.showSession(after.show);
+		focusSoon(after.focus !== null ? sessionChipId(after.focus) : ADD_SESSION_ID);
 		void store.closeTerminal(session.id);
 	};
 
@@ -273,7 +269,19 @@ function Chip({ session, selected, unseen, ids, shownId, closing, closingIds, on
 
 	const className = ["session-chip", selected ? "selected" : "", running ? "running" : "exited", unseen ? "unseen" : "", closing ? "closing" : ""].filter(Boolean).join(" ");
 	return (
-		<span className={className} role="presentation">
+		<span
+			className={className}
+			role="presentation"
+			// A middle click closes the chip, as for tabs in a browser. Its press must not start autoscroll or paste the primary selection on Linux.
+			onMouseDown={event => {
+				if (chipButtonCommand(event.button) !== null) event.preventDefault();
+			}}
+			onAuxClick={event => {
+				if (chipButtonCommand(event.button) !== "close") return;
+				event.preventDefault();
+				close();
+			}}
+		>
 			<button
 				type="button"
 				role="tab"
@@ -498,6 +506,12 @@ export function TerminalPanel({ repository, worktree }: { repository: Repository
 	useEffect(() => {
 		if (!shown && !starting) dropTerminalFocus(worktree.id);
 	}, [worktree.id, shown, starting]);
+	// The chips scroll sideways once they fill the row. The shown one stays in view however it was chosen: a click, the keyboard, or the sidebar.
+	const shownId = shown?.id;
+	useEffect(() => {
+		// The whole chip, its close control too, not only its tab.
+		if (shownId !== undefined) document.getElementById(sessionChipId(shownId))?.closest(".session-chip")?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+	}, [shownId]);
 	const startingAgent = startingOperation?.kind === "open-terminal" ? startingOperation.agent : undefined;
 	// Nothing starts in a folder that is missing, or that Timber is deleting.
 	const unavailable = !worktree.pathExists ? FOLDER_MISSING_TERMINAL : isBeingRemoved(state, repository.path, worktree.path) ? BEING_REMOVED_REASON : null;
