@@ -4,6 +4,7 @@ import { createMockTerminals } from "../src/mainview/engine/mock-terminals";
 import { createMockTimberConfig } from "../src/mainview/engine/mock-timber-config";
 import { createMockWorkflows } from "../src/mainview/engine/mock-workflows";
 import { createMockIssues } from "../src/mainview/engine/mock-issues";
+import { createMockIssueLists } from "../src/mainview/engine/mock-issue-lists";
 import { createMockArenas } from "../src/mainview/engine/mock-arenas";
 import { createMockBackups } from "../src/mainview/engine/mock-backups";
 import { createMockPullRequests } from "../src/mainview/engine/mock-pull-requests";
@@ -93,6 +94,7 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		// Pull requests as the mock acts them out. Their own tests are in pull-requests.test.ts.
 		...createMockPullRequests(() => undefined, () => timber),
 		...createMockIssues(() => undefined, () => timber),
+		...createMockIssueLists(() => undefined, () => timber),
 		// Backups as the mock acts them out. Their own tests are in backups.test.ts.
 		...createMockBackups({ listed: () => undefined, timber: () => timber, addWorktree: () => {}, delay: () => 0 }),
 		// Arenas as the mock acts them out. Their own tests are in arenas.test.ts and arenas-view.test.tsx.

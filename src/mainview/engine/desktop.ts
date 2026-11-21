@@ -112,6 +112,7 @@ export function createDesktopEngine(): Engine {
 		readPullRequests: repository => rpc.request.readPullRequests({ repository }, { maxRequestTime: 60_000 }),
 		readIssue: request => rpc.request.readIssue(request, { maxRequestTime: 60_000 }),
 		searchIssues: request => rpc.request.searchIssues(request, { maxRequestTime: 60_000 }),
+		listIssues: request => rpc.request.listIssues(request, { maxRequestTime: 60_000 }),
 		// The main process stops a stuck list after 30 seconds.
 		readBackups: repository => rpc.request.readBackups({ repository }, { maxRequestTime: 60_000 }),
 		// Copying every file back, and deleting, take as long as they take.

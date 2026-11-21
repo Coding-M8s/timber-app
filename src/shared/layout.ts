@@ -1,4 +1,5 @@
 import type { Comparison } from "./file-changes";
+import { ISSUE_LISTS, type IssueList } from "./issue-lists";
 
 /**
  * How the person arranged the window: the part of the layout that is
@@ -21,6 +22,12 @@ export interface Layout {
 	 * its base when it can.
 	 */
 	uncommittedChanges: string[];
+	/**
+	 * The list each repository's issues board was last set to, by the path of
+	 * its primary checkout. A repository not named here starts on the
+	 * current sprint.
+	 */
+	issueLists: Record<string, IssueList>;
 }
 
 export const DEFAULT_SIDEBAR_WIDTH = 272;
@@ -28,7 +35,7 @@ export const MIN_SIDEBAR_WIDTH = 200;
 export const MAX_SIDEBAR_WIDTH = 480;
 
 export function defaultLayout(): Layout {
-	return { sidebarWidth: DEFAULT_SIDEBAR_WIDTH, collapsed: [], setupDismissed: [], uncommittedChanges: [] };
+	return { sidebarWidth: DEFAULT_SIDEBAR_WIDTH, collapsed: [], setupDismissed: [], uncommittedChanges: [], issueLists: {} };
 }
 
 /** A whole number of pixels within the limits. Anything that is not a number gives the default width. */
@@ -45,13 +52,27 @@ export function clampSidebarWidth(width: number): number {
 export function readLayout(value: unknown): Layout {
 	const layout = defaultLayout();
 	if (typeof value !== "object" || value === null || Array.isArray(value)) return layout;
-	const { sidebarWidth, collapsed, setupDismissed, uncommittedChanges } = value as Record<string, unknown>;
+	const { sidebarWidth, collapsed, setupDismissed, uncommittedChanges, issueLists } = value as Record<string, unknown>;
 	if (typeof sidebarWidth === "number") layout.sidebarWidth = clampSidebarWidth(sidebarWidth);
 	layout.collapsed = readPaths(collapsed);
 	layout.setupDismissed = readPaths(setupDismissed);
 	layout.uncommittedChanges = readPaths(uncommittedChanges);
+	layout.issueLists = readIssueLists(issueLists);
 	return layout;
 }
+
+/** The lists remembered for each repository. A path that is empty, or a list this app does not know, is left out. */
+function readIssueLists(value: unknown): Record<string, IssueList> {
+	const lists: Record<string, IssueList> = {};
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return lists;
+	for (const [path, list] of Object.entries(value)) {
+		if (path !== "" && typeof list === "string" && (ISSUE_LISTS as readonly string[]).includes(list)) lists[path] = list as IssueList;
+	}
+	return lists;
+}
+
+const sameIssueLists = (one: Readonly<Record<string, IssueList>>, other: Readonly<Record<string, IssueList>>) =>
+	Object.keys(one).length === Object.keys(other).length && Object.entries(one).every(([path, list]) => other[path] === list);
 
 /** The distinct non-empty paths of a list from outside. Anything else in it is left out. */
 function readPaths(value: unknown): string[] {
@@ -70,7 +91,8 @@ export function sameLayout(one: Layout, other: Layout): boolean {
 	return one.sidebarWidth === other.sidebarWidth
 		&& samePaths(one.collapsed, other.collapsed)
 		&& samePaths(one.setupDismissed, other.setupDismissed)
-		&& samePaths(one.uncommittedChanges, other.uncommittedChanges);
+		&& samePaths(one.uncommittedChanges, other.uncommittedChanges)
+		&& sameIssueLists(one.issueLists, other.issueLists);
 }
 
 /** What the Changes tab of a worktree asks to compare with: its base, unless the person chose Uncommitted there. */
@@ -100,12 +122,19 @@ export function dismissSetup(layout: Layout, repository: string): Layout {
 	return layout.setupDismissed.includes(repository) ? layout : { ...layout, setupDismissed: [...layout.setupDismissed, repository] };
 }
 
+/** The layout with this list remembered for the repository's issues board. */
+export function chooseIssueList(layout: Layout, repository: string, list: IssueList): Layout {
+	return layout.issueLists[repository] === list ? layout : { ...layout, issueLists: { ...layout.issueLists, [repository]: list } };
+}
+
 /** The layout without anything remembered about this repository, for when it leaves the list. */
 export function forgetRepository(layout: Layout, repository: string): Layout {
-	if (!layout.collapsed.includes(repository) && !layout.setupDismissed.includes(repository)) return layout;
+	if (!layout.collapsed.includes(repository) && !layout.setupDismissed.includes(repository) && !(repository in layout.issueLists)) return layout;
+	const { [repository]: _forgotten, ...issueLists } = layout.issueLists;
 	return {
 		...layout,
 		collapsed: layout.collapsed.filter(path => path !== repository),
 		setupDismissed: layout.setupDismissed.filter(path => path !== repository),
+		issueLists,
 	};
 }

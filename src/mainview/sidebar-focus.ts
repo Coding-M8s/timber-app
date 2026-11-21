@@ -22,7 +22,8 @@ export interface FocusRoot {
 export function focusFirstWorktree(repository: string, root: FocusRoot = document as unknown as FocusRoot): boolean {
 	for (const group of root.querySelectorAll("[data-repository]")) {
 		if (group.dataset.repository !== repository) continue;
-		const target = group.querySelector(".row") ?? group.querySelector(".group-header");
+		// The Issues row comes first in each group, and is not a worktree.
+		const target = group.querySelector(".row:not(.issues-row)") ?? group.querySelector(".group-header");
 		target?.focus();
 		return target !== null;
 	}

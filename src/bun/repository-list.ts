@@ -203,7 +203,7 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 				const current = await settings();
 				const repositories = current.repositories.filter(entry => entry.path !== path);
 				if (repositories.length === current.repositories.length) return { outcome: "removed" };
-				// A collapsed group and a dismissed setup prompt are remembered by this path, so they go with the entry.
+				// A collapsed group, a dismissed setup prompt, and the board's list are remembered by this path, so they go with the entry.
 				const next: Settings = { ...current, repositories };
 				if (current.layout) next.layout = forgetRepository(current.layout, path);
 				try {

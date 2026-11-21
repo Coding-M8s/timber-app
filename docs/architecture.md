@@ -2234,6 +2234,54 @@ Linear issues (`sampleIssueSearch` in `src/mainview/engine/mock-issues.ts`);
 TIM-88 and #41 have worktrees. `timberMock.setIssueSearch(result)` makes
 every search answer `result` (`null` for the samples).
 
+### Issues board
+
+Each repository's board lists issues that Timber reads with its own logins.
+
+- **Asking.** `listIssues` on the `Engine`, answered by
+  `src/bun/issue-lists.ts`, with a repository in the list, a list
+  (`sprint`, `assigned`, or `open`), and a tracker. Only while Timber is
+  ready, the main process runs `timber __app-issues <list> --tracker
+  <tracker>` (with `--limit 50` for `assigned` and `open`) in the
+  repository's primary checkout, as an executable plus an argument array,
+  with standard input closed and a limit of thirty seconds. It reads up to 8
+  MB of record: a 500-issue sprint is far less. It changes no file, ref, or
+  issue and does not take the repository's turn. The tracker is always
+  named, so the board never depends on a default it did not see; with no
+  default and none named, Timber answers not configured.
+- **Reading.** `readIssueListRecord` in `src/shared/issue-lists.ts` is pure.
+  It accepts one version 1 record of the list and tracker asked about, whose
+  outcome agrees with its fields and its exit code, reading each issue as a
+  search does (`readListedIssue`). A found sprint must say its sprint and
+  source; other lists must not. An empty list is `found` with no issues.
+  `pullRequests` is not read yet (issue 211). A Timber without the command
+  is `unsupported`.
+- **Holding.** `src/mainview/store/issue-board.ts` keeps each answer by
+  tracker and list, and the latest good one apart, so an answer that comes
+  late lands on its own list and a failed read leaves the last good list on
+  screen. `boardView` derives what shows: the tracker (picked, else Timber's
+  default, else the first set up), the lists not set up (whose latest answer
+  is `not-configured`), and the list shown (`shownList`: the one remembered
+  in the layout's `issueLists`, else the next set up). A read whose list
+  turns out not to be set up reads the next list. Opening the board and
+  Refresh read the trackers (`readIssueTrackers`), the list shown, and each
+  list not set up, so one set up since comes back; that read contacts
+  nothing when the setting is still missing. Nothing reads on a timer.
+- **Showing.** `IssuesBoard` and `IssuesRow` in
+  `src/mainview/components/IssuesBoard.tsx`; `state.board` names the
+  repository whose board replaces the workspace, and `select` clears it.
+  Columns come from `boardColumns` in `src/mainview/issue-board-format.ts`,
+  which never drops an issue. Cards are keyed by address, since a GitHub
+  project can hold issues of several repositories. Cards use
+  `content-visibility: auto`, so a long column draws only what is in view.
+
+In `bun run dev:web`, the samples' trackers have a GitHub milestone and a
+Jira board sprint; Linear has no team, so its sprint and open issues are not
+set up (`src/mainview/engine/mock-issue-lists.ts`).
+`timberMock.setIssueList(result, list?)` makes every list, or one, answer
+`result` (`null` for the samples), `timberMock.setIssueListDelay(ms)` slows
+them, and `timberMock.sampleBigSprint(n)` builds a sprint of `n` issues.
+
 ## Recovery backups
 
 Timber can keep a private backup of a worktree: its commit, pinned by a ref
@@ -4195,7 +4243,8 @@ other `X11 Error:` line is not explained by it. See the issue 64 run under
 - **The Timber that issue suggestions need.** `__app-issues` is on Timber's
   main branch only. With Timber 0.1.3 the New worktree dialog shows no
   suggestions and a quiet hint that they need a Timber built from its main
-  branch. Raise the required version with the next Timber release.
+  branch, and the issues board says the same. Raise the required version
+  with the next Timber release, and name it in the board's message.
 - **The Timber that backups need.** `backup list --json`, `backup restore
   --result-file`, and `__app-backup delete` are on Timber's main branch
   only, which still calls itself 0.1.2. With released Timber 0.1.2 the

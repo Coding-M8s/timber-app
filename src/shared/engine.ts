@@ -11,6 +11,7 @@ import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInE
 import type { Preferences } from "./preferences";
 import type { RestartPlan, RestartResult } from "./restart";
 import type { IssueSearchRequest, IssueSearchResult } from "./issue-search";
+import type { IssueListRequest, IssueListResult } from "./issue-lists";
 import type { IssueLookup, IssueRequest } from "./issues";
 import type { PortsRequest, PortsResult } from "./ports";
 import type { PullRequestList } from "./pull-requests";
@@ -324,6 +325,19 @@ export interface Engine {
 	 * only. Read-only: no file, ref, or issue changes. Safe to call again.
 	 */
 	searchIssues(request: IssueSearchRequest): Promise<IssueSearchResult>;
+	/**
+	 * One list of a tracker's issues for the issues board: the current
+	 * sprint, the issues assigned to the signed-in person, or the open issues,
+	 * read by `timber __app-issues <list>` with Timber's own tracker login
+	 * (./issue-lists.ts). Each issue says which worktree is already linked to
+	 * it. The answer is found (possibly empty, and for a sprint with the
+	 * sprint's name), none (no current sprint), failed with a reason as for a
+	 * search (`not-configured` when the list is not set up), or a failure with
+	 * a message, marked unsupported when the Timber found has no
+	 * `__app-issues`. Titles are text from the tracker: show them as text
+	 * only. Read-only: no file, ref, or issue changes. Safe to call again.
+	 */
+	listIssues(request: IssueListRequest): Promise<IssueListResult>;
 	/**
 	 * Timber's recovery backups of a repository in the list, named by the path
 	 * of its primary checkout, read by `timber backup list --json`
