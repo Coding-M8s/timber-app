@@ -13,6 +13,7 @@ import { SendReviewDialog } from "./ReviewNotes";
 import { SetBaseDialog } from "./SetBaseDialog";
 import { SendPromptDialog } from "./SendPromptDialog";
 import { SettingsDialog } from "./SettingsDialog";
+import { StartWorkDialog } from "./StartWorkDialog";
 import { SetupWizardDialog } from "./SetupWizardDialog";
 import { SyncActionDialog } from "./SyncActionDialog";
 import { UnsavedFileDialog } from "./UnsavedFileDialog";
@@ -81,6 +82,11 @@ export function Dialogs() {
 			// Timber runs in the repository's folder, so the repository has to be listed and there. A key per issue, so another starts from nothing.
 			const repository = state.repositories.find(candidate => candidate.path === dialog.repository && candidate.available);
 			return repository ? <CheckOutPullRequestDialog key={`${dialog.repository}\n${dialog.issue.url}`} request={dialog} /> : null;
+		}
+		case "start-work": {
+			// Timber runs in the repository's folder, so the repository has to be listed and there. A key per issue, so another starts from nothing.
+			const repository = state.repositories.find(candidate => candidate.path === dialog.repository && candidate.available);
+			return repository ? <StartWorkDialog key={`${dialog.repository}\n${dialog.issue.url}`} request={dialog} repository={repository} /> : null;
 		}
 		case "set-up-timber": {
 			// Timber reads and saves the repository's settings in its folder, so it has to be listed and there.

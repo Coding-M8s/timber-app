@@ -6,7 +6,7 @@ import { manualClock } from "./support/clock";
 const settle = () => Bun.sleep(0);
 
 const issue = (key: string, worktree: SuggestedIssue["worktree"] = null): SuggestedIssue => ({
-	tracker: "jira", key, url: `https://example.atlassian.net/browse/${key}`, title: `Title of ${key}`, status: { name: "To Do", category: "open" }, assignee: null, worktree, pullRequests: [],
+	tracker: "jira", key, url: `https://example.atlassian.net/browse/${key}`, title: `Title of ${key}`, status: { name: "To Do", category: "open" }, assignee: null, worktree, pullRequests: [], assignedToMe: false,
 });
 const found = (...keys: string[]): IssueSearchResult => ({ ok: true, outcome: "found", issues: keys.map(key => issue(key)), truncated: false });
 

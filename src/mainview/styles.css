@@ -6784,11 +6784,44 @@ pre:focus-visible {
 	cursor: default;
 }
 
-.issue-card-branch {
+.issue-card-label {
 	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+
+/* Start work and Check out PR sit side by side; a narrow card wraps them under the assignee. */
+.issue-card-actions {
+	flex-wrap: wrap;
+	row-gap: 4px;
+}
+
+.issue-card-start-work:hover:not(:disabled) {
+	background: var(--fill-hover);
+	color: var(--text);
+}
+
+/* Start work dialog (issue 156): the issue it starts, and what must be agreed to first. */
+.start-work-issue {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+.start-work-title {
+	overflow-wrap: anywhere;
+}
+
+.start-work-question {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 6px;
+	padding: 8px 10px;
+	border: 1px solid var(--line);
+	border-radius: 6px;
 }
 
 .board-quiet {

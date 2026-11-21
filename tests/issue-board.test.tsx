@@ -30,7 +30,7 @@ async function startedStore(engine = createMockEngine()) {
 const render = (store: ReturnType<typeof createAppStore>) => renderToStaticMarkup(<App store={store} />);
 
 const card = (key: string, category: "open" | "in-progress" | "closed", name: string, tracker: SuggestedIssue["tracker"] = "jira"): SuggestedIssue => ({
-	tracker, key, url: `https://example.atlassian.net/browse/${key}`, title: key, status: { name, category }, assignee: null, worktree: null, pullRequests: [],
+	tracker, key, url: `https://example.atlassian.net/browse/${key}`, title: key, status: { name, category }, assignee: null, worktree: null, pullRequests: [], assignedToMe: false,
 });
 
 describe("boardColumns", () => {
@@ -147,12 +147,14 @@ describe("the board in the window", () => {
 		const markup = render(store);
 		expect(markup).toContain('class="row issues-row selected"');
 		expect(markup).toContain("v0.3, GitHub milestone, 4 issues");
-		expect(markup).toContain('<span class="issue-card-branch">feat/github-issue-lookup</span>');
+		// A card with a worktree offers Open worktree, with the branch in its tooltip.
+		expect(markup).toContain('title="Open the worktree feat/github-issue-lookup"');
+		expect(markup).toContain('<span class="issue-card-label">Open worktree</span>');
 		expect(markup).toContain('<span class="issues-row-sprint" title="v0.3">v0.3</span>');
 		// GitHub and Jira are set up, so the Tracker field shows.
 		expect(markup).toContain('<span>Tracker</span>');
-		// Start work is a placeholder until issue 156.
-		expect(markup).toMatch(/<button type="button" class="issue-card-start" disabled=""/);
+		// Every card without a worktree offers Start work, done ones too.
+		expect(markup.match(/class="issue-card-start issue-card-start-work" title=/g)?.length).toBe(3);
 		// No worktree row is the shown one, and the title bar names the board.
 		expect(markup).not.toContain('class="row selected"');
 		expect(markup).toContain('<span class="titlebar-branch" title="Issues">Issues</span>');

@@ -1,8 +1,9 @@
-import { type BranchSuggestion, type NewWorktreeRequest, type OpenWorktreeRequest, type Repository, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
+import { type Assignment, type BranchSuggestion, type NewWorktreeRequest, type OpenWorktreeRequest, type Repository, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
 import { isCommitHash } from "../../shared/file-changes";
 import { RESULT_FILE_PLACEHOLDER, type ResultCommand, type TimberRun, describeTimberCommand, readTimberResult } from "../../shared/timber-result";
 import { newWorktreeArguments, openWorktreeArguments, worktreeCommandResult } from "../../shared/worktree-commands";
-import { sampleIssueLink } from "./mock-issue-lists";
+import { TRACKER_NAMES } from "../issue-format";
+import { sampleIssue, sampleIssueLink, sampleLogin } from "./mock-issue-lists";
 
 /**
  * Acting out `timber new` and `timber open` for the mock engine. Nothing
@@ -124,23 +125,45 @@ export function actOutNew(
 	const acted = stage("new", repository, describeTimberCommand(newWorktreeArguments(request, RESULT_FILE_PLACEHOLDER)));
 	const refused = (diagnostic: string) => ({ result: acted.failed(diagnostic), created: null });
 	if (request.workflow !== undefined && !workflows.includes(request.workflow)) return refused(UNKNOWN_WORKFLOW_DIAGNOSTIC);
-	const branch = branchFor(request.name);
+	// An issue the samples know is looked up once, before anything is created, as Timber does, and the new worktree is linked to it.
+	const issue = /^(github|jira|linear):/.test(request.name.trim()) ? sampleIssue(request.name.trim()) : null;
+	const forIssue = request.branch !== undefined || request.assign !== undefined || request.allowClosed === true;
+	if (forIssue && issue === null) return refused(`Could not find ${request.name}. Nothing was created.`);
+	let assignment: Assignment | undefined;
+	if (issue !== null) {
+		const id = issue.tracker === "github" ? `GH-${issue.key}` : issue.key;
+		if (issue.status.category === "closed" && request.allowClosed !== true) return refused(`${TRACKER_NAMES[issue.tracker]} issue ${id} is ${issue.status.name.toLowerCase()}. Rerun with -c to start work on it anyway. Nothing was created.`);
+		if (request.branch !== undefined && !request.branch.startsWith(`${id}-`)) return refused(`Branch name ${request.branch} must start with ${id}-. No worktree was created.`);
+		if (request.assign !== undefined) {
+			const me = sampleLogin[issue.tracker];
+			const previous = issue.assignee === null ? [] : [issue.assignee];
+			if (issue.assignee !== null && issue.assignee !== me && request.assign === "assign") {
+				const notAttempted = { tracker: issue.tracker, key: issue.key, result: "not-attempted", me, previous, diagnostic: null };
+				return { result: acted.failed(`${TRACKER_NAMES[issue.tracker]} issue ${id} is assigned to ${issue.assignee}. Nothing was created.`, { assignment: notAttempted }), created: null };
+			}
+			assignment = { result: issue.assignee === me ? "already-mine" : issue.assignee === null ? "assigned" : "reassigned", me, previous, diagnostic: null };
+		}
+	}
+	const branch = request.branch ?? branchFor(request.name);
 	if (branch === "") return refused("Invalid branch name: branch name must not be blank.");
 	const existing = repository.worktrees.find(worktree => worktree.branch === branch);
 	if (existing) return refused(`Branch ${branch} is already checked out at ${existing.path}. Use timber open instead.`);
 	if (ending === "refused") return refused(`Base branch ${request.base ?? "main"} is missing or ambiguous. Select an exact branch.`);
 	if (ending === "ambiguous") return refused(ambiguousDiagnostic(request.name));
 
-	const created = newWorktreeIn(repository, branch, savedBaseFor(request.base));
+	const link = issue === null ? null : sampleIssueLink(request.name.trim());
+	const created = { ...newWorktreeIn(repository, branch, savedBaseFor(request.base)), issue: link };
 	const fields = { materialized: true, worktree: worktreeRecord(created) };
+	const recorded = (written: Assignment | undefined) => (written === undefined || issue === null ? {} : { assignment: { tracker: issue.tracker, key: issue.key, ...written } });
 	const printed = `Created ${branch} at ${created.path}\n`;
 	switch (ending) {
 		case "succeeds":
 		case "setup-fails":
 			// With --no-setup Timber answers before setup, which fails later, in its session.
-			return { result: acted.succeeded({ ...fields, setupSkipped: true }, printed + skippedNote(created.path, request.workflow)), created };
+			return { result: acted.succeeded({ ...fields, setupSkipped: true, ...recorded(assignment) }, printed + skippedNote(created.path, request.workflow)), created };
 		case "stops-after-create":
-			return { result: acted.failed(stoppedDiagnostic(created.path), fields, printed), created };
+			// Timber stops before it writes the assignee, so nothing was assigned.
+			return { result: acted.failed(stoppedDiagnostic(created.path), { ...fields, ...recorded(assignment && { ...assignment, result: "not-attempted" }) }, printed), created };
 		case "no-result":
 			return { result: acted.noResult(printed), created };
 	}

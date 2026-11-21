@@ -47,12 +47,12 @@ const otherRepository = (repository: string) => `It is a pull request of ${repos
 const GITHUB_LINK = /^https:\/\/github\.com\/([^/]+\/[^/]+)\/(issues|pull)\/[1-9][0-9]*\/?$/i;
 
 /** The "owner/name" and kind of a github.com issue or pull request address, or null for any other address. */
-function githubLink(url: string): { repository: string; kind: "issues" | "pull" } | null {
+export function githubLink(url: string): { repository: string; kind: "issues" | "pull" } | null {
 	const match = GITHUB_LINK.exec(url);
 	return match ? { repository: match[1]!, kind: match[2]!.toLowerCase() as "issues" | "pull" } : null;
 }
 
-const sameRepository = (one: string, other: string) => one.toLowerCase() === other.toLowerCase();
+export const sameRepository = (one: string, other: string) => one.toLowerCase() === other.toLowerCase();
 
 function refusalOf(pullRequest: LinkedPullRequest, githubRepository: string | null): string | null {
 	if (pullRequest.fromFork === true) return FORK_REFUSAL;

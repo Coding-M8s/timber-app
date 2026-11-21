@@ -101,6 +101,15 @@ export function sampleLinks(issue: Pick<Issue, "tracker" | "key">): LinkedPullRe
 	return structuredClone(samplePullRequests[issue.tracker][issue.key] ?? []);
 }
 
+/** The sample issue a selector such as `jira:TIM-90` names, or null when the tracker has no such issue. */
+export function sampleIssue(selector: string): Issue | null {
+	const colon = selector.indexOf(":");
+	const tracker = selector.slice(0, colon) as IssueTracker;
+	const key = selector.slice(colon + 1).toUpperCase();
+	const all = [...(sampleSprints[tracker]?.issues ?? []), ...(sampleOpen[tracker] ?? [])];
+	return all.find(candidate => candidate.key === key) ?? null;
+}
+
 /**
  * The link `timber open --issue <selector>` would save for a sample issue,
  * or null when the tracker has no such issue, as Timber's one lookup finds.
@@ -114,11 +123,14 @@ export function sampleIssueLink(selector: string): Extract<IssueLink, { kind: "l
 	return issue ? { kind: "linked", tracker, key, url: issue.url } : null;
 }
 
-/** A sample issue as a list holds it, before worktrees are marked. */
-const listed = (issue: Issue): SuggestedIssue => ({ ...issue, worktree: null, pullRequests: sampleLinks(issue) });
-
 /** The signed-in person of each sample tracker. */
-const sampleLogin: Readonly<Record<IssueTracker, string>> = { github: "octo-sam", jira: "Alex Doe", linear: "Alex Doe" };
+export const sampleLogin: Readonly<Record<IssueTracker, string>> = { github: "octo-sam", jira: "Alex Doe", linear: "Alex Doe" };
+
+/** Whether a sample issue is assigned to the signed-in person of its tracker, as Timber's `assignedToMe` says. */
+export const sampleAssignedToMe = (issue: Pick<Issue, "tracker" | "assignee">): boolean => issue.assignee === sampleLogin[issue.tracker];
+
+/** A sample issue as a list holds it, before worktrees are marked. */
+const listed = (issue: Issue): SuggestedIssue => ({ ...issue, worktree: null, pullRequests: sampleLinks(issue), assignedToMe: sampleAssignedToMe(issue) });
 
 /** Linear's sprint and open issues need its team, which the samples do not set. */
 const NOT_CONFIGURED: IssueListResult = { ok: true, outcome: "failed", reason: "not-configured", diagnostic: "No Linear team is configured. Set [linear].team to a team key." };
@@ -147,7 +159,7 @@ export function bigSprint(count: number, tracker: IssueTracker = "jira"): IssueL
 		const status = tracker === "github" ? (index % 3 === 0 ? { name: "Closed", category: "closed" as const } : { name: "Open", category: "open" as const }) : STATUSES[index % STATUSES.length]!;
 		const key = tracker === "github" ? String(number) : `TIM-${number}`;
 		const url = tracker === "github" ? `https://github.com/example/timber/issues/${number}` : `https://example.atlassian.net/browse/TIM-${number}`;
-		return { tracker, key, url, title, status, assignee: index % 4 === 0 ? null : ["Sam Okafor", "Jo Park", "Alex Doe"][index % 3]!, worktree: null, pullRequests: [] };
+		return { tracker, key, url, title, status, assignee: index % 4 === 0 ? null : ["Sam Okafor", "Jo Park", "Alex Doe"][index % 3]!, worktree: null, pullRequests: [], assignedToMe: null };
 	});
 	return { ok: true, outcome: "found", issues, truncated: false, sprint: { name: "Big sprint", source: tracker === "github" ? "github-milestone" : "jira-board" } };
 }

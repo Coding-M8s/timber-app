@@ -6,10 +6,11 @@ import { CHECK_OUT_LABEL, allRefused, checkOutChoice } from "../check-out-format
 import { describeAgo } from "../fetch-format";
 import { TRACKER_NAMES, describeOpenIssue, issueKeyLabel } from "../issue-format";
 import {
-	ISSUES_ROW_LABEL, LIST_LABELS, LIST_NOT_READ, NO_CURRENT_SPRINT, NO_TRACKER, START_WORK_LABEL, START_WORK_PLACEHOLDER,
+	ISSUES_ROW_LABEL, LIST_LABELS, LIST_NOT_READ, NO_CURRENT_SPRINT, NO_TRACKER,
 	boardColumns, boardTrackerChoices, boardTrackerOption, describeEmptyList, describeHiddenList, describeListFailure,
 	describeListSummary, describeTruncated, sprintLabel,
 } from "../issue-board-format";
+import { OPEN_WORKTREE_LABEL, START_WORK_LABEL, startWorkChoice } from "../start-work-format";
 import { type BoardView, boardKey, boardView, emptyBoard } from "../store/issue-board";
 import { useAppState, useStore } from "../store/react";
 
@@ -57,7 +58,19 @@ function useNow(every = 30_000): number {
 	return now;
 }
 
-function IssueCard({ issue, onOpen, onJump, onCheckOut }: { issue: SuggestedIssue; onOpen: () => void; onJump: (() => void) | null; onCheckOut: { open: () => void; title: string } | null }) {
+/** A card's action: what it does, or why it cannot, as its tooltip. */
+interface CardAction {
+	open: (() => void) | null;
+	title: string;
+}
+
+function IssueCard({ issue, onOpen, onJump, onCheckOut, onStart }: {
+	issue: SuggestedIssue;
+	onOpen: () => void;
+	onJump: (() => void) | null;
+	onCheckOut: CardAction | null;
+	onStart: CardAction | null;
+}) {
 	const unassigned = issue.assignee === null;
 	return (
 		<li className="issue-card">
@@ -71,28 +84,32 @@ function IssueCard({ issue, onOpen, onJump, onCheckOut }: { issue: SuggestedIssu
 				</button>
 			</div>
 			<p className="issue-card-title">{issue.title}</p>
-			<div className="issue-card-line">
+			<div className="issue-card-line issue-card-actions">
 				<span className={unassigned ? "issue-card-assignee unassigned" : "issue-card-assignee"}>{issue.assignee ?? "Unassigned"}</span>
 				{issue.worktree !== null ? (
 					<button
 						type="button"
 						className="issue-card-worktree"
 						disabled={onJump === null}
-						title={onJump === null ? `The worktree ${issue.worktree.path} is not in the list.` : `Show the worktree ${issue.worktree.branch ?? issue.worktree.path}`}
+						title={onJump === null ? `The worktree ${issue.worktree.path} is not in the list.` : `Open the worktree ${issue.worktree.branch ?? issue.worktree.path}`}
 						onClick={onJump ?? undefined}
 					>
 						<svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2">
 							<circle cx="2.5" cy="2" r="1.2" /><circle cx="2.5" cy="8" r="1.2" /><circle cx="7.5" cy="3.5" r="1.2" />
 							<path d="M2.5 3.2v3.6M7.5 4.7c0 2-5 1.3-5 2.1" />
 						</svg>
-						<span className="issue-card-branch">{issue.worktree.branch ?? issue.worktree.path}</span>
+						<span className="issue-card-label">{OPEN_WORKTREE_LABEL}</span>
 					</button>
-				) : onCheckOut !== null ? (
-					// The issue has an open pull request and no worktree here: check that out instead of starting anew.
-					<button type="button" className="issue-card-start issue-card-check-out" title={onCheckOut.title} onClick={onCheckOut.open}>{CHECK_OUT_LABEL}</button>
 				) : (
-					// A placeholder until starting work from the board is wired up (issue 156).
-					<button type="button" className="issue-card-start" disabled title={START_WORK_PLACEHOLDER}>+ {START_WORK_LABEL}</button>
+					<>
+						{onCheckOut !== null && (
+							// The issue has an open pull request and no worktree here: it can be checked out for review.
+							<button type="button" className="issue-card-start issue-card-check-out" title={onCheckOut.title} onClick={onCheckOut.open ?? undefined}>{CHECK_OUT_LABEL}</button>
+						)}
+						{onStart !== null && (
+							<button type="button" className="issue-card-start issue-card-start-work" disabled={onStart.open === null} title={onStart.title} onClick={onStart.open ?? undefined}>+ {START_WORK_LABEL}</button>
+						)}
+					</>
 				)}
 			</div>
 		</li>
@@ -110,14 +127,15 @@ function Quiet({ title, text, detail, command }: { title: string; text?: string 
 	);
 }
 
-function Columns({ issues, list, tracker, truncated, onOpen, onJump, onCheckOut }: {
+function Columns({ issues, list, tracker, truncated, onOpen, onJump, onCheckOut, onStart }: {
 	issues: readonly SuggestedIssue[];
 	list: IssueList;
 	tracker: IssueTracker;
 	truncated: boolean;
 	onOpen: (issue: SuggestedIssue) => void;
 	onJump: (issue: SuggestedIssue) => (() => void) | null;
-	onCheckOut: (issue: SuggestedIssue) => { open: () => void; title: string } | null;
+	onCheckOut: (issue: SuggestedIssue) => CardAction | null;
+	onStart: (issue: SuggestedIssue) => CardAction | null;
 }) {
 	const columns = boardColumns(issues, list, tracker);
 	return (
@@ -131,7 +149,7 @@ function Columns({ issues, list, tracker, truncated, onOpen, onJump, onCheckOut 
 							<span className="board-column-statuses" title={column.statuses.join(", ")}>{column.statuses.join(", ")}</span>
 						</header>
 						<ul className="board-cards">
-							{column.issues.map(issue => <IssueCard key={issue.url} issue={issue} onOpen={() => onOpen(issue)} onJump={onJump(issue)} onCheckOut={onCheckOut(issue)} />)}
+							{column.issues.map(issue => <IssueCard key={issue.url} issue={issue} onOpen={() => onOpen(issue)} onJump={onJump(issue)} onCheckOut={onCheckOut(issue)} onStart={onStart(issue)} />)}
 						</ul>
 					</section>
 				))}
@@ -166,6 +184,12 @@ export function IssuesBoard({ repository }: { repository: string }) {
 		const title = allRefused(choice) ? "Its pull requests cannot be opened here: see why" : "Open the pull request's branch in a new worktree";
 		return { open: () => store.openDialog({ kind: "check-out-pull-request", repository, issue }), title };
 	};
+	const startWork = (issue: SuggestedIssue): CardAction | null => {
+		const choice = startWorkChoice(issue, githubRepository);
+		if (choice === null) return null;
+		if (!choice.ok) return { open: null, title: choice.reason };
+		return { open: () => store.openDialog({ kind: "start-work", repository, issue }), title: "Create a worktree for this issue, linked to it, and assign it to you" };
+	};
 
 	// The quiet word beside the title: the latest read failed, and the last good list stays on screen.
 	let word: { text: string; title: string } | null = null;
@@ -198,7 +222,7 @@ export function IssuesBoard({ repository }: { repository: string }) {
 		} else if (good.result.issues.length === 0) {
 			body = <Quiet {...describeEmptyList(list, tracker)} />;
 		} else {
-			body = <Columns issues={good.result.issues} list={list} tracker={tracker} truncated={good.result.truncated} onOpen={openIssue} onJump={jumpTo} onCheckOut={checkOut} />;
+			body = <Columns issues={good.result.issues} list={list} tracker={tracker} truncated={good.result.truncated} onOpen={openIssue} onJump={jumpTo} onCheckOut={checkOut} onStart={startWork} />;
 		}
 	} else if (latest !== null && latest.result.ok && latest.result.outcome === "failed") {
 		const failure = describeListFailure(latest.result.reason, tracker);

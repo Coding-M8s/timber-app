@@ -55,10 +55,14 @@ export interface LinkedPullRequest {
  * One issue Timber found, the worktree already linked to it, if any, and the
  * open pull requests the tracker links to it. `pullRequests` is null when
  * they could not be read, including from a Timber older than the field.
+ * `assignedToMe` says whether the issue is assigned to the signed-in
+ * account of its tracker: false also when it is unassigned, null when
+ * Timber could not tell or is older than the field.
  */
 export interface SuggestedIssue extends Issue {
 	worktree: { path: string; branch: string | null } | null;
 	pullRequests: LinkedPullRequest[] | null;
+	assignedToMe: boolean | null;
 }
 
 /** What to search: a repository in the app's list, by its primary checkout, one tracker, and the typed text. */
@@ -122,10 +126,12 @@ export function readListedIssue(value: unknown): SuggestedIssue | null {
 	if (issue === null || !isFields(value)) return null;
 	const { worktree } = value;
 	const pullRequests = readLinkedPullRequests(value.pullRequests);
-	if (worktree === null) return { ...issue, worktree: null, pullRequests };
+	// Additive like the links: missing or unreadable is unknown, never a list that cannot be read.
+	const assignedToMe = typeof value.assignedToMe === "boolean" ? value.assignedToMe : null;
+	if (worktree === null) return { ...issue, worktree: null, pullRequests, assignedToMe };
 	if (!isFields(worktree) || typeof worktree.path !== "string" || worktree.path === "") return null;
 	if (worktree.branch !== null && typeof worktree.branch !== "string") return null;
-	return { ...issue, worktree: { path: worktree.path, branch: worktree.branch }, pullRequests };
+	return { ...issue, worktree: { path: worktree.path, branch: worktree.branch }, pullRequests, assignedToMe };
 }
 
 /**

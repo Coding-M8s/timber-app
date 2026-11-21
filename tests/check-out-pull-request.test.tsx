@@ -37,7 +37,7 @@ const pr = (number: number, branch: string, change: Partial<LinkedPullRequest> =
 
 const issue = (change: Partial<SuggestedIssue> = {}): SuggestedIssue => ({
 	tracker: "github", key: "42", url: `https://github.com/${HERE}/issues/42`, title: "Title", status: { name: "Open", category: "open" }, assignee: null,
-	worktree: null, pullRequests: [pr(48, "feat/header")], ...change,
+	worktree: null, pullRequests: [pr(48, "feat/header")], assignedToMe: false, ...change,
 });
 
 /** The keys of the cards on screen that offer Check out PR, and those that show a worktree's pill. */
@@ -119,7 +119,8 @@ describe("Check out PR on the board", () => {
 		// 41 has a worktree and a pull request: it keeps its pill. 7 is done. 42 and 44 have pull requests.
 		expect(cards(markup)).toEqual({ checkOut: ["#42", "#44"], pill: ["#41"] });
 		expect(markup).toContain(`>${CHECK_OUT_LABEL}</button>`);
-		expect(markup.match(/class="issue-card-start" disabled=""/g)?.length).toBe(1);
+		// Start work stays beside it, so the issue can still be started anew.
+		expect(markup.match(/class="issue-card-start issue-card-start-work"/g)?.length).toBe(3);
 	});
 
 	test("links that could not be read leave the card as it is", async () => {
@@ -172,7 +173,7 @@ describe("Check out PR on the board", () => {
 		await settle();
 		const markup = render(store);
 		expect(cards(markup)).toEqual({ checkOut: ["#44"], pill: ["#41", "#42"] });
-		expect(markup).toContain('<span class="issue-card-branch">feat/linked-issue-header</span>');
+		expect(markup).toContain('title="Open the worktree feat/linked-issue-header"');
 	});
 
 	test("a Jira pull request opens its branch too", async () => {

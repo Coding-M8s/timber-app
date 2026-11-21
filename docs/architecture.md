@@ -483,12 +483,15 @@ capabilities of the `Engine` contract.
   the same function with the real result file, so the command shown is the
   command that runs.
 - **The arguments.** Options first, then `--`, then what the person typed as
-  one argument: `new [--base <ref>] [--workflow <name>] --no-setup
-  --result-file <path> --no-editor --no-agent -- <name>` and `open
+  one argument: `new [--base <ref>] [--workflow <name>] [--branch <name>]
+  [-c] [--assign | --reassign] --no-setup --result-file <path> --no-editor
+  --no-agent -- <name>` and `open
   [--workflow <name>] --no-setup --result-file <path> --no-editor --no-agent
   -- <selector>`. Text that starts with a dash is therefore never read as an
   option. Both launch flags are always passed, so an editor or an agent
-  configured in Timber does not start.
+  configured in Timber does not start. `--branch`, `-c`, `--assign`, and
+  `--reassign` come only from Start work on the issues board, beside an
+  issue selector (see [Issues board](#issues-board)).
 - **Setup never holds the window.** `--no-setup` makes Timber answer as soon
   as the worktree exists, so the dialog never waits for setup scripts, however
   long they take. When Timber skipped configured scripts, its record says
@@ -511,7 +514,11 @@ capabilities of the `Engine` contract.
   command printed or what it answered. It checks nothing about a name, a
   base, or a folder: those rules are Timber's. A workflow must have the form
   of a workflow name, so it can never read as an option; whether one by that
-  name exists is Timber's to say.
+  name exists is Timber's to say. `branch` must be text that is not empty
+  and does not start with a dash, since it is an option's value before `--`,
+  `assign` one of `assign` and `reassign`, and `allowClosed` true, and any
+  of them only with a name `isIssueLinkSelector` accepts; Timber judges the
+  branch name.
 - **The answer.** A `WorktreeCommandResult` (`src/shared/model.ts`).
   Succeeded needs a checked record with exit code 0 that names a worktree.
   A failure says whether the worktree was created all the same
@@ -553,7 +560,9 @@ keeps what was typed in each mode, and is not possible while a command runs.
   them. So with Jira or Linear picked, a key-shaped branch name such as
   `fix-2` is read as a key too; Default or `feature/fix-2` keeps it a branch.
   A pick the field no longer offers is Default. No setting is saved.
-  Prefilling the dialog from an issue (#156) should use `issueSelector` too.
+  Start work on the issues board does not prefill this dialog: it has its
+  own (below), and names the issue with `issueLinkSelector`, never
+  `issueSelector`, which would pass a bare key to Timber's default tracker.
   (`worktree-modes/tracker-choice.tsx`.)
 
 - A failure before anything was created keeps the form open with Timber's
@@ -2695,6 +2704,53 @@ Each repository's board lists issues that Timber reads with its own logins.
   branch it opened (`describeCheckedOut`).
   Opening the board again reads it, and Timber's `worktree` field, from the
   link `--issue` saved, gives the card its pill.
+- **Starting work.** A card with a worktree here offers Open worktree, which
+  selects it. Every other card offers Start work, beside Check out PR when
+  that shows. `startWorkChoice` in `src/mainview/start-work-format.ts`
+  decides, purely: the selector `issueLinkSelector` makes, or a reason the
+  button is off (a key Timber cannot be given whole, a GitHub issue of
+  another repository). It opens `StartWorkDialog`
+  (`src/mainview/components/StartWorkDialog.tsx`, DialogRequest
+  `start-work`), which reuses the New worktree dialog's frame and
+  controller, so the Agent field, workflows, setup, and the agent that
+  starts afterwards are the same. Its one mode
+  (`worktree-modes/start-work-model.ts`) runs `timber new` with the
+  issue's selector as the name, so the worktree is always linked to it, and
+  shows the command first (`startWorkRequest`):
+  - **Branch.** Empty passes nothing, and Timber names the branch. The app
+    does not show the name Timber would generate: Timber's contract says
+    not to duplicate its branch resolution, and nothing in it reports the
+    name before creation. A typed name passes `--branch <name>`; the hint
+    names the prefix Timber requires (`branchPrefix`), and Timber checks it.
+  - **Assignee.** Always `--assign`. `initialQuestion` reads the card:
+    `assignedToMe` false with an assignee asks, from the moment the dialog
+    opens, whether to replace them, naming them, and the command shows
+    `--reassign` (on GitHub the card has the first assignee only, which
+    the question says). Cancel is the dialog's own, so nothing runs. When
+    the card could not tell (`assignedToMe` null), Timber refuses
+    `--assign` on someone else's issue with `assignment.result:
+    "not-attempted"` and their names; `assigneeRefusal` turns that into the
+    same question, with the failure on screen. It counts only a run that
+    passed `--assign`, created nothing, and whose card did not say the issue
+    is the person's, and never names the signed-in account, because Timber
+    also reports `not-attempted` when a later step failed.
+  - **An open pull request.** With someone else assigned and a pull
+    request `checkOutChoice` can open, the question also offers "Check out
+    their pull request", which opens Check out PR for the same card.
+  - **A closed issue** asks the same way and passes `-c`. An issue closed
+    since the board read it fails with Timber's reason, as does an issue a
+    stale card called the person's that someone else took since: Refresh
+    the board and start again. Timber's record names assignees by display
+    name only, so a Jira or Linear assignee who shares the person's
+    display name is not asked about.
+  - **Afterwards.** As for New branch. The toast adds what Timber did about
+    the assignee (`describeAssignment`, from the record's `assignment`),
+    marked as a problem when the write failed: Timber keeps the worktree
+    then. When Timber stopped before setup, the "Run setup" step says the
+    issue was not assigned if Timber had not written it yet.
+  - **An older Timber** answers "unknown option" without a record; the
+    dialog says Start work needs a Timber with `--branch` and `--assign`
+    (`unknownStartWorkOption`).
 
 In `bun run dev:web`, the samples' trackers have a GitHub milestone and a
 Jira board sprint; Linear has no team, so its sprint and open issues are not
@@ -2703,7 +2759,11 @@ one issue with a pull request, one with two (one from a fork), one with a
 worktree and a pull request, and a done one with a pull request; Jira's
 TIM-80 has one, and two issues' links could not be read. Their head branches
 are remote branches of the sample repository, and the mock's `timber open
---issue` saves the link.
+--issue` saves the link. The mock's `timber new` with an issue selector
+saves the link too, takes `--branch` only with the issue's prefix, refuses
+a closed issue without `-c`, and refuses `--assign` on an issue assigned to
+someone other than the sample tracker's login (`sampleLogin`) as Timber
+does; Jira's TIM-90 and GitHub's 44 are someone else's.
 `timberMock.setIssueList(result, list?)` makes every list, or one, answer
 `result` (`null` for the samples), `timberMock.setIssueListDelay(ms)` slows
 them, and `timberMock.sampleBigSprint(n)` builds a sprint of `n` issues.
@@ -5117,6 +5177,14 @@ Electrobun's updater (`src/bun/app-updates.ts`, issue 32).
   suggestions and a quiet hint that they need a Timber built from its main
   branch, and the issues board says the same. Raise the required version
   with the next Timber release, and name it in the board's message.
+- **The Timber that Start work needs.** `timber new --branch`, `--assign`,
+  and `--reassign`, the record's `assignment`, and `assignedToMe` in
+  `__app-issues` are on Timber's main branch only (Timber's issues 214 and
+  215). With Timber 0.1.4, Start work fails with "This Timber does not know
+  --assign" and creates nothing, and no card can tell whose an issue is,
+  so the question about another assignee comes only from Timber's refusal.
+  Raise `REQUIRED_TIMBER_VERSION` to the first release that has them, as
+  for `listWorkflows` above.
 - **The Timber that backups need.** `backup list --json`, `backup restore
   --result-file`, and `__app-backup delete` are on Timber's main branch
   only, which still calls itself 0.1.2. With released Timber 0.1.2 the

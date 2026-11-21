@@ -170,9 +170,10 @@ export async function runAndStart(
 	if (worktree === null) return outcome;
 	// Setup and the agent start in the same worktree: the one the run reported.
 	if (store.startSessionsIn(repository, worktree, { setup: setup !== null, ...(workflow === null ? {} : { workflow }), agent: startsAgent ? agent.session : null })) {
-		return startedToast === undefined ? outcome : { ok: true, toast: startedToast };
+		return startedToast === undefined ? outcome : { ...outcome, toast: startedToast };
 	}
 	const joined = [setup !== null ? "Setup" : null, startsAgent ? agent.label : null].filter(name => name !== null).join(" and ");
 	const missed = `${joined.charAt(0).toUpperCase()}${joined.slice(1)}`;
-	return { ok: true, toast: `${outcome.toast}. ${missed} did not start: the worktree is not in the list yet. Refresh, then start it from the worktree.` };
+	// A problem the outcome already had, such as an issue that could not be assigned, stays marked.
+	return { ...outcome, toast: `${outcome.toast}. ${missed} did not start: the worktree is not in the list yet. Refresh, then start it from the worktree.` };
 }

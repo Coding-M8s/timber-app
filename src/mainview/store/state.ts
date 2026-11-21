@@ -279,7 +279,13 @@ export type DialogRequest =
 	 * `repository` is the path of the primary checkout; `issue` is the card as
 	 * the board listed it, with the pull requests the tracker links to it.
 	 */
-	| { kind: "check-out-pull-request"; repository: string; issue: SuggestedIssue };
+	| { kind: "check-out-pull-request"; repository: string; issue: SuggestedIssue }
+	/**
+	 * Start work on an issue from the issues board: `timber new` for it,
+	 * linked and assigned. `repository` is the path of the primary checkout;
+	 * `issue` is the card as the board listed it.
+	 */
+	| { kind: "start-work"; repository: string; issue: SuggestedIssue };
 
 /** The sections of the Settings dialog, in the order they are listed. */
 export const SETTINGS_SECTIONS = ["layout", "theme", "terminal", "rendering", "editor", "agents", "chops", "notifications", "fetch", "about", "executable", "machine", "repository"] as const;
