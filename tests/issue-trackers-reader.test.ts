@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createIssueTrackerReader, hasGithubRemote } from "../src/bun/issue-trackers";
+import { createIssueTrackerReader, githubRemoteRepository } from "../src/bun/issue-trackers";
 import type { TimberSettingsReadResult, TimberSettingsRequest, TimberValues } from "../src/shared/timber-config";
 import { fingerprint, git, makeRepository } from "./support/timber";
 
@@ -41,36 +41,36 @@ function settingsRead(effective: TimberValues, asked: TimberSettingsRequest[] = 
 	};
 }
 
-describe("hasGithubRemote in a real repository", () => {
-	test("is yes for one github.com URL, and leaves files and refs as they were", async () => {
+describe("githubRemoteRepository in a real repository", () => {
+	test("is owner/name for one github.com URL, and leaves files and refs as they were", async () => {
 		const folder = repositoryWith("github", { origin: ["git@github.com:Coding-M8s/timber-app.git"] });
 		const before = fingerprint(folder);
-		expect(await hasGithubRemote(folder, "origin")).toBe(true);
+		expect(await githubRemoteRepository(folder, "origin")).toBe("Coding-M8s/timber-app");
 		expect(fingerprint(folder)).toBe(before);
 	});
 
-	test("is no for a remote elsewhere, a missing remote, or two URLs", async () => {
+	test("is null for a remote elsewhere, a missing remote, or two URLs", async () => {
 		const folder = repositoryWith("mixed", {
 			origin: ["https://gitlab.com/group/project.git"],
 			both: ["https://github.com/a/b.git", "https://github.com/a/c.git"],
 			upstream: ["https://github.com/a/b.git"],
 		});
 		const before = fingerprint(folder);
-		expect(await hasGithubRemote(folder, "origin")).toBe(false);
-		expect(await hasGithubRemote(folder, "both")).toBe(false);
-		expect(await hasGithubRemote(folder, "missing")).toBe(false);
-		expect(await hasGithubRemote(folder, "upstream")).toBe(true);
+		expect(await githubRemoteRepository(folder, "origin")).toBeNull();
+		expect(await githubRemoteRepository(folder, "both")).toBeNull();
+		expect(await githubRemoteRepository(folder, "missing")).toBeNull();
+		expect(await githubRemoteRepository(folder, "upstream")).toBe("a/b");
 		expect(fingerprint(folder)).toBe(before);
 	});
 
 	test("never reads a remote name as an option", async () => {
 		const folder = repositoryWith("option", { origin: ["https://github.com/a/b.git"] });
-		expect(await hasGithubRemote(folder, "--help")).toBe(false);
+		expect(await githubRemoteRepository(folder, "--help")).toBeNull();
 	});
 
-	test("is no when Git cannot be started", async () => {
+	test("is null when Git cannot be started", async () => {
 		const folder = repositoryWith("no-git", { origin: ["https://github.com/a/b.git"] });
-		expect(await hasGithubRemote(folder, "origin", join(root, "no-such-git"))).toBe(false);
+		expect(await githubRemoteRepository(folder, "origin", join(root, "no-such-git"))).toBeNull();
 	});
 });
 
@@ -80,7 +80,7 @@ describe("createIssueTrackerReader", () => {
 		const asked: TimberSettingsRequest[] = [];
 		const before = fingerprint(folder);
 		const reader = createIssueTrackerReader({ readSettings: settingsRead({ remote: "upstream", default_tracker: "github" }, asked) });
-		expect(await reader.read(folder)).toEqual({ ok: true, defaultTracker: "github", available: ["github", "jira"] });
+		expect(await reader.read(folder)).toEqual({ ok: true, defaultTracker: "github", available: ["github", "jira"], githubRepository: "a/b" });
 		expect(asked).toEqual([{ scope: "repository", repository: folder }]);
 		expect(fingerprint(folder)).toBe(before);
 	});
@@ -88,7 +88,7 @@ describe("createIssueTrackerReader", () => {
 	test("uses origin when Timber names no remote", async () => {
 		const folder = repositoryWith("origin-only", { origin: ["https://gitlab.com/group/project.git"], upstream: ["https://github.com/a/b.git"] });
 		const reader = createIssueTrackerReader({ readSettings: settingsRead({}) });
-		expect(await reader.read(folder)).toEqual({ ok: true, defaultTracker: null, available: ["jira"] });
+		expect(await reader.read(folder)).toEqual({ ok: true, defaultTracker: null, available: ["jira"], githubRepository: null });
 	});
 
 	test("answers Timber's diagnostic when its read failed, and runs no Git", async () => {

@@ -2364,8 +2364,17 @@ Each repository's board lists issues that Timber reads with its own logins.
   outcome agrees with its fields and its exit code, reading each issue as a
   search does (`readListedIssue`). A found sprint must say its sprint and
   source; other lists must not. An empty list is `found` with no issues.
-  `pullRequests` is not read yet (issue 211). A Timber without the command
-  is `unsupported`.
+  A Timber without the command is `unsupported`. Each issue's
+  `pullRequests` (the open pull requests the tracker links to it: number,
+  address, head branch, `fromFork`, `draft`) is the one lenient read: Timber
+  never fails a list over its links and an older Timber leaves the field
+  out, so a field that is missing, null, or cannot be read makes that
+  issue's `pullRequests` null and leaves the rest of the list as read.
+  Within the field it is strict: one entry that cannot be read (a number
+  that is not a positive whole number, an address that is not `https`, an
+  empty branch, one with a control character or over 255 characters, or a
+  flag that is not true, false, or null) makes the whole field null, never
+  a partial list. The head branch is kept exactly as the tracker gave it.
 - **Holding.** `src/mainview/store/issue-board.ts` keeps each answer by
   tracker and list, and the latest good one apart, so an answer that comes
   late lands on its own list and a failed read leaves the last good list on
@@ -2384,10 +2393,43 @@ Each repository's board lists issues that Timber reads with its own logins.
   which never drops an issue. Cards are keyed by address, since a GitHub
   project can hold issues of several repositories. Cards use
   `content-visibility: auto`, so a long column draws only what is in view.
+- **Checking out a pull request.** `checkOutChoice` in
+  `src/mainview/check-out-format.ts` decides, purely, whether a card offers
+  Check out PR: no worktree here, not done, links read and not empty, and a
+  key `issueLinkSelector` (`src/shared/issue-trackers.ts`) can name to
+  Timber whole (`github:<n>`, `jira:<KEY>`, `linear:<KEY>`; never a bare key,
+  which Timber would read with its default tracker). It also refuses, with
+  the reason, a pull request whose `fromFork` is true, a github.com pull
+  request of another repository (any, when this repository has no
+  github.com remote), and every pull request of a GitHub issue of another
+  repository, because `timber open` resolves a bare branch name
+  in this repository only and `github:<n>` names issue n of this
+  repository. This repository's github.com "owner/name" comes from
+  `readIssueTrackers` (`githubRepository`, read from the same
+  `git remote get-url --all` as before). `CheckOutPullRequestDialog`
+  (DialogRequest `check-out-pull-request`) shows the exact command from
+  `openWorktreeArguments`, then `runCheckOut` calls `openWorktree` once with
+  the head branch as the selector and `issue`, which adds `--issue
+  <selector>` among the options. The main process accepts `issue` only when
+  `isIssueLinkSelector` says it is whole. The store reads the repository
+  again and selects the worktree Timber reported; setup Timber left starts
+  in a session (`startSessionsIn`), and then the Pull request tab shows.
+  When that read does not list the worktree, neither starts and the toast
+  says so (`describeUnlisted`). A failure, also one where Timber kept a
+  worktree, stays in the dialog with Timber's reason. If no branch has the
+  exact name, Timber may open one by its ticket prefix; the toast names the
+  branch it opened (`describeCheckedOut`).
+  Opening the board again reads it, and Timber's `worktree` field, from the
+  link `--issue` saved, gives the card its pill.
 
 In `bun run dev:web`, the samples' trackers have a GitHub milestone and a
 Jira board sprint; Linear has no team, so its sprint and open issues are not
-set up (`src/mainview/engine/mock-issue-lists.ts`).
+set up (`src/mainview/engine/mock-issue-lists.ts`). The GitHub sprint has
+one issue with a pull request, one with two (one from a fork), one with a
+worktree and a pull request, and a done one with a pull request; Jira's
+TIM-80 has one, and two issues' links could not be read. Their head branches
+are remote branches of the sample repository, and the mock's `timber open
+--issue` saves the link.
 `timberMock.setIssueList(result, list?)` makes every list, or one, answer
 `result` (`null` for the samples), `timberMock.setIssueListDelay(ms)` slows
 them, and `timberMock.sampleBigSprint(n)` builds a sprint of `n` issues.

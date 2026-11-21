@@ -4,6 +4,7 @@ import { type RebaseRequest, type RebaseResult, readRebaseResult, rebaseResultAr
 import { type CreatePullRequestRequest, type CreatePullRequestResult, type HeadSubjectRequest, prResultArguments, readPrResult } from "../shared/timber-pr";
 import { readHeadSubject } from "./git-engine";
 import { isWorkflowName } from "../shared/workflows";
+import { isIssueLinkSelector } from "../shared/issue-trackers";
 import { newWorktreeArguments, openWorktreeArguments, worktreeCommandResult } from "../shared/worktree-commands";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
 import { type RepositoryTurns, createRepositoryTurns } from "./repository-turns";
@@ -180,9 +181,9 @@ export function createWorktreeCommands(options: WorktreeCommandsOptions): Worktr
 			return run(repository, "new", resultFile => newWorktreeArguments({ repository, name, base, ...picked(workflow) }, resultFile));
 		},
 		open(request) {
-			const { repository, selector, workflow } = request;
-			if (typeof selector !== "string" || !isPickedWorkflow(workflow)) return incomplete("open");
-			return run(repository, "open", resultFile => openWorktreeArguments({ repository, selector, ...picked(workflow) }, resultFile));
+			const { repository, selector, workflow, issue } = request;
+			if (typeof selector !== "string" || !isPickedWorkflow(workflow) || (issue !== undefined && !isIssueLinkSelector(issue))) return incomplete("open");
+			return run(repository, "open", resultFile => openWorktreeArguments({ repository, selector, ...picked(workflow), ...(issue === undefined ? {} : { issue }) }, resultFile));
 		},
 	};
 }

@@ -12,6 +12,11 @@ export interface IssueTrackerControls {
 /** Sample repositories with no GitHub remote, as their pull requests say (./mock-pull-requests.ts). Every other one has one. */
 const NOT_ON_GITHUB = new Set<string>(["/work/docs-site"]);
 
+/** The sample github.com repository of a checkout: "example/" and its folder's name, as the sample issues' addresses say. */
+export function sampleGithubRepository(repository: string): string {
+	return `example/${repository.split("/").filter(part => part !== "").pop() ?? "repository"}`;
+}
+
 /**
  * Issue trackers acted out from the mock's Timber settings
  * (./mock-timber-config.ts), so the dialog and Settings agree: a Jira login
@@ -26,7 +31,7 @@ export function createMockIssueTrackers(readTimberSettings: Engine["readTimberSe
 			const read = await readTimberSettings({ scope: "repository", repository });
 			if (read.outcome === "failed") return { ok: false, message: read.failure.diagnostic };
 			const github = chosen.get(repository) ?? !NOT_ON_GITHUB.has(repository);
-			return issueTrackersOf(read.settings, github);
+			return issueTrackersOf(read.settings, github ? sampleGithubRepository(repository) : null);
 		},
 		setGithubRemote(repository, github) {
 			if (github === null) chosen.delete(repository);

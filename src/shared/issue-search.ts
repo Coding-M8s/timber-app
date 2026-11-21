@@ -1,4 +1,5 @@
 import { type Issue, readIssueValue } from "./issues";
+import { isHttpsLink } from "./timber-ls";
 import type { IssueTracker } from "./model";
 import { describeExit, describeFailedRun, displayText, isFields, readEnvelope } from "./timber-record";
 
@@ -35,9 +36,29 @@ export function issueSearchArguments(tracker: IssueTracker, text: string, limit:
  */
 export type IssueSearchFailureReason = "offline" | "sign-in-needed" | "not-configured" | "not-found" | "forbidden" | "failed";
 
-/** One issue Timber found, and the worktree already linked to it, if any. */
+/**
+ * An open pull request the tracker itself links to an issue, as Timber
+ * lists it. `branch` is the pull request's head branch, untrusted text from
+ * the tracker: it is passed to Timber as one argument after `--`, and shown
+ * through `displayText`. `fromFork` and `draft` are null when the tracker
+ * cannot tell.
+ */
+export interface LinkedPullRequest {
+	number: number;
+	url: string;
+	branch: string;
+	fromFork: boolean | null;
+	draft: boolean | null;
+}
+
+/**
+ * One issue Timber found, the worktree already linked to it, if any, and the
+ * open pull requests the tracker links to it. `pullRequests` is null when
+ * they could not be read, including from a Timber older than the field.
+ */
 export interface SuggestedIssue extends Issue {
 	worktree: { path: string; branch: string | null } | null;
+	pullRequests: LinkedPullRequest[] | null;
 }
 
 /** What to search: a repository in the app's list, by its primary checkout, one tracker, and the typed text. */
@@ -66,15 +87,45 @@ const oneOf = <Value extends string>(values: readonly Value[], value: unknown): 
 const failed = (message: string): IssueSearchResult => ({ ok: false, unsupported: false, message });
 const unreadable = (detail: string) => failed(`${APP_ISSUES_COMMAND} did not answer with a record this app can read: ${detail}.`);
 
+/** Git allows no control character in a branch name, and no tracker branch is longer than this. */
+const BRANCH_LIMIT = 255;
+const CONTROL = /[\u0000-\u001f\u007f]/;
+const optionalFlag = (value: unknown): value is boolean | null => value === null || typeof value === "boolean";
+
+function readLinkedPullRequest(value: unknown): LinkedPullRequest | null {
+	if (!isFields(value)) return null;
+	const { number, url, branch, fromFork, draft } = value;
+	if (typeof number !== "number" || !Number.isSafeInteger(number) || number <= 0) return null;
+	if (typeof url !== "string" || !isHttpsLink(url)) return null;
+	if (typeof branch !== "string" || branch.trim() === "" || branch.length > BRANCH_LIMIT || CONTROL.test(branch)) return null;
+	if (!optionalFlag(fromFork) || !optionalFlag(draft)) return null;
+	return { number, url, branch, fromFork, draft };
+}
+
+/**
+ * The open pull requests the tracker links to an issue, or null when they
+ * could not be read. This is the one lenient read in the record: Timber
+ * never fails a list over its links and an older Timber leaves the field
+ * out, so a field that is missing or cannot be read leaves only this issue
+ * without links, never the list unread. Within the field it is strict: one
+ * entry that cannot be read makes the whole field null, never a partial list.
+ */
+function readLinkedPullRequests(value: unknown): LinkedPullRequest[] | null {
+	if (!Array.isArray(value)) return null;
+	const read = value.map(readLinkedPullRequest);
+	return read.some(entry => entry === null) ? null : read as LinkedPullRequest[];
+}
+
 /** Null when the value is not one listed issue. Shared with the board's lists (./issue-lists.ts). */
 export function readListedIssue(value: unknown): SuggestedIssue | null {
 	const issue = readIssueValue(value);
 	if (issue === null || !isFields(value)) return null;
 	const { worktree } = value;
-	if (worktree === null) return { ...issue, worktree: null };
+	const pullRequests = readLinkedPullRequests(value.pullRequests);
+	if (worktree === null) return { ...issue, worktree: null, pullRequests };
 	if (!isFields(worktree) || typeof worktree.path !== "string" || worktree.path === "") return null;
 	if (worktree.branch !== null && typeof worktree.branch !== "string") return null;
-	return { ...issue, worktree: { path: worktree.path, branch: worktree.branch } };
+	return { ...issue, worktree: { path: worktree.path, branch: worktree.branch }, pullRequests };
 }
 
 /**

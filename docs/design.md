@@ -217,17 +217,49 @@ logins. The app never reads a tracker login and never signs in.
 - Each card shows the key, the tracker's status (blue while in progress,
   always with its words), a control that opens the issue in the browser,
   the title, and the assignee, or "Unassigned". A card whose issue has a
-  worktree has a pill with its branch that shows that worktree. The others
-  have Start work, which is off for now; starting work from the board is
-  its own issue (156).
+  worktree has a pill with its branch that shows that worktree. A card
+  whose issue has an open pull request and no worktree here has Check out
+  PR (below). The others have Start work, which is off for now; starting
+  work from the board is its own issue (156).
+- Check out PR opens a pull request someone is already working on, for
+  review. The pull requests are the ones the tracker itself links to the
+  issue, as Timber lists them; the app never guesses them from branch
+  names. A done card, a card whose links could not be read, and a card
+  with a worktree here have no Check out PR. It opens a small dialog like
+  New worktree: the pull request by number and branch (a list to pick from
+  when there are several, with draft and fork marked), and the exact
+  command, `timber open --issue <tracker>:<key> --no-setup --result-file
+  <temporary file> --no-editor --no-agent -- <branch>`, before anything
+  runs. `--issue` links the worktree to the issue, so the card shows its
+  pill on the next read. Timber never asks anything there: an ambiguous
+  branch, a worktree linked to another issue, or an issue it cannot look up
+  fails with Timber's reason, which stays in the dialog. Once the worktree
+  exists it is selected on its Pull request tab, and setup scripts Timber
+  left run in a terminal beside it, as for Existing branch.
+- A fork's pull request, a github.com pull request of another repository
+  (any, when this repository is not on github.com), and every pull request
+  of a GitHub issue from another repository (a project's sprint can hold
+  them) shows in the dialog with the reason it cannot be opened here, and
+  its button stays off. A card whose pull requests are all refused still
+  opens the dialog, so the reason can be read; its tooltip says so. This is the app's reason, not Timber's: `timber open`
+  resolves a bare branch name in this repository only, so it could open an
+  unrelated branch of the same name and link it to the issue. Where the
+  tracker cannot tell a fork (Jira here, Linear always), Timber is asked
+  and its answer stands. When no branch has the exact name, Timber may open
+  one by its ticket prefix and link that; the toast then names the branch
+  Timber opened. Linking needs one tracker lookup, so offline or signed
+  out, Check out PR fails with Timber's reason where a plain open would
+  not. When the list read afterwards does not show the worktree, the toast
+  says so, and neither its tab nor setup starts.
 - The board reads when it opens, when another list or tracker is picked,
   and on Refresh. There is no timer. "Read 2 minutes ago" says when. Each
   column scrolls on its own and a long sprint draws only the cards in view.
   A sprint comes whole, up to Timber's 500; the other lists show the first
   50, and a cut-off list says so at its end.
-- Each failure is a quiet word or line in the view, never a dialog. A
-  failed refresh keeps the last list on screen with a grey word beside the
-  title ("offline", "sign-in needed", "no access", "not found") and Timber's
+- Each failure to read is a quiet word or line in the view, never a
+  dialog. (Check out PR runs a Timber command, so like New worktree it is a
+  dialog, and its failure stays in it.) A failed refresh keeps the last
+  list on screen with a grey word beside the title ("offline", "sign-in needed", "no access", "not found") and Timber's
   reason in its tooltip. A first read that fails says so in a line, with
   Timber's reason, and `timber setup` when a login is missing. No current
   sprint, an empty list, and no tracker set up each say so in one line.

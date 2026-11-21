@@ -152,8 +152,54 @@ describe("readIssueListRecord refuses what it cannot trust", () => {
 		expect(readIssueListRecord("", "", null, "open", "github")).toMatchObject({ ok: false, unsupported: false });
 	});
 
-	test("an older Timber's record without pull requests is still read", () => {
+	test("an older Timber's record without pull requests is still read, with links unread", () => {
 		const older = altered(record => { for (const issue of record.issues) delete issue.pullRequests; });
-		expect(readIssueListRecord(older, "", 0, "assigned", "github")).toMatchObject({ ok: true, outcome: "found" });
+		const result = readIssueListRecord(older, "", 0, "assigned", "github");
+		if (!result.ok || result.outcome !== "found") throw new Error("not found");
+		expect(result.issues.map(issue => issue.pullRequests)).toEqual([null, null, null]);
+	});
+});
+
+describe("the open pull requests the tracker links to each issue", () => {
+	const issuesOf = (stdout: string, name = "assigned") => {
+		const result = readIssueListRecord(stdout, "", 0, name === "sprint" ? "sprint" : "assigned", "github");
+		if (!result.ok || result.outcome !== "found") throw new Error("not found");
+		return result.issues;
+	};
+	const withLinks = (links: unknown) => altered(record => { record.issues[0].pullRequests = links; });
+	const good = { number: 7, url: "https://github.com/Coding-M8s/timber-app/pull/7", branch: "feat/x", fromFork: false, draft: null };
+
+	test("are read as Timber listed them: none, or each with its number, address, head branch, and flags", () => {
+		expect(issuesOf(fixture("assigned.json")).map(issue => issue.pullRequests)).toEqual([[], [], []]);
+		const sprint = readIssueListRecord(fixture("sprint-iteration.json"), "", 0, "sprint", "github");
+		if (!sprint.ok || sprint.outcome !== "found") throw new Error("not found");
+		expect(sprint.issues.flatMap(issue => issue.pullRequests ?? [])).toEqual([
+			{ number: 139, url: "https://github.com/Coding-M8s/timber/pull/139", branch: "GH-103-multiple-linear-and-jira-credentials", fromFork: false, draft: true },
+		]);
+	});
+
+	test("links that could not be read are null for that issue, and the list is still read", () => {
+		expect(issuesOf(withLinks(null))[0]!.pullRequests).toBeNull();
+		expect(issuesOf(withLinks([good]))[0]!.pullRequests).toEqual([good]);
+	});
+
+	test("a field that cannot be read is null for that issue only, never a partial list or a failed one", () => {
+		const bad: unknown[] = [
+			"none", {}, [good, null],
+			[{ ...good, number: 0 }], [{ ...good, number: 1.5 }], [{ ...good, number: "7" }],
+			[{ ...good, url: "http://github.com/a/b/pull/7" }], [{ ...good, url: "javascript:alert(1)" }],
+			[{ ...good, branch: "" }], [{ ...good, branch: "  " }], [{ ...good, branch: "a\nb" }], [{ ...good, branch: "x".repeat(256) }], [{ ...good, branch: 7 }],
+			[{ ...good, fromFork: "no" }], [{ ...good, draft: 0 }], [{ number: 7, url: good.url, branch: "feat/x" }],
+		];
+		for (const links of bad) {
+			const issues = issuesOf(withLinks(links));
+			expect(issues[0]!.pullRequests).toBeNull();
+			expect(issues[1]!.pullRequests).toEqual([]);
+		}
+	});
+
+	test("a head branch is kept exactly, even one that looks like an option", () => {
+		const odd = { ...good, branch: "--force" };
+		expect(issuesOf(withLinks([odd]))[0]!.pullRequests).toEqual([odd]);
 	});
 });

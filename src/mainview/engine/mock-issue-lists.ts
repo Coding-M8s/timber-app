@@ -1,8 +1,8 @@
 import type { Engine } from "../../shared/engine";
-import type { SuggestedIssue } from "../../shared/issue-search";
+import type { LinkedPullRequest, SuggestedIssue } from "../../shared/issue-search";
 import type { IssueList, IssueListRequest, IssueListResult, Sprint } from "../../shared/issue-lists";
 import type { Issue } from "../../shared/issues";
-import type { IssueTracker, Repository, TimberStatus } from "../../shared/model";
+import type { IssueLink, IssueTracker, Repository, TimberStatus } from "../../shared/model";
 
 /** The part of the engine about the issues board's lists. */
 export type IssueListCapabilities = Pick<Engine, "listIssues">;
@@ -69,6 +69,54 @@ const sampleOpen: Readonly<Record<IssueTracker, Issue[]>> = {
 	linear: [linear("API-21", "Rotate login tokens", { name: "Backlog", category: "open" }, null), linear("API-19", "Retry failed webhooks", { name: "In Progress", category: "in-progress" }, "Alex Doe")],
 };
 
+const pr = (number: number, branch: string, fromFork: boolean | null = false, draft: boolean | null = false, repository = "example/timber"): LinkedPullRequest => ({
+	number, url: `https://github.com/${repository}/pull/${number}`, branch, fromFork, draft,
+});
+
+/**
+ * The open pull requests each sample tracker links to an issue, by key, as
+ * Timber would list them. Every other issue has none (`[]`), except those
+ * named in `UNREAD_LINKS`, whose links could not be read. 42 has one, 44 has
+ * two, one of them from a fork, 41 has a worktree too, and 7 is done. Jira's
+ * development panel cannot tell a draft or, here, a fork.
+ */
+export const samplePullRequests: Readonly<Record<IssueTracker, Readonly<Record<string, LinkedPullRequest[]>>>> = {
+	github: {
+		"41": [pr(42, "feat/github-issue-lookup")],
+		"42": [pr(48, "feat/linked-issue-header")],
+		"44": [pr(50, "fix/explain-arena", false, true), pr(51, "patch-1", true)],
+		"7": [pr(9, "fix/login-redirect")],
+	},
+	jira: {
+		"TIM-80": [{ number: 12, url: "https://bitbucket.org/example/timber/pull-requests/12", branch: "TIM-80-saved-base", fromFork: null, draft: null }],
+	},
+	linear: {},
+};
+/** Issues whose links Timber could not read, by tracker and key. */
+const UNREAD_LINKS = new Set(["github:45", "jira:TIM-95"]);
+
+/** The links Timber would list for a sample issue. */
+export function sampleLinks(issue: Pick<Issue, "tracker" | "key">): LinkedPullRequest[] | null {
+	if (UNREAD_LINKS.has(`${issue.tracker}:${issue.key}`)) return null;
+	return structuredClone(samplePullRequests[issue.tracker][issue.key] ?? []);
+}
+
+/**
+ * The link `timber open --issue <selector>` would save for a sample issue,
+ * or null when the tracker has no such issue, as Timber's one lookup finds.
+ */
+export function sampleIssueLink(selector: string): Extract<IssueLink, { kind: "linked" }> | null {
+	const colon = selector.indexOf(":");
+	const tracker = selector.slice(0, colon) as IssueTracker;
+	const key = selector.slice(colon + 1);
+	const all = [...(sampleSprints[tracker]?.issues ?? []), ...(sampleOpen[tracker] ?? [])];
+	const issue = all.find(candidate => candidate.key === key);
+	return issue ? { kind: "linked", tracker, key, url: issue.url } : null;
+}
+
+/** A sample issue as a list holds it, before worktrees are marked. */
+const listed = (issue: Issue): SuggestedIssue => ({ ...issue, worktree: null, pullRequests: sampleLinks(issue) });
+
 /** The signed-in person of each sample tracker. */
 const sampleLogin: Readonly<Record<IssueTracker, string>> = { github: "octo-sam", jira: "Alex Doe", linear: "Alex Doe" };
 
@@ -80,12 +128,12 @@ export function sampleIssueList(list: IssueList, tracker: IssueTracker): IssueLi
 	const sprint = sampleSprints[tracker];
 	if (list === "sprint") {
 		if (sprint === null) return NOT_CONFIGURED;
-		return { ok: true, outcome: "found", issues: sprint.issues.map(issue => ({ ...issue, worktree: null })), truncated: false, sprint: sprint.sprint };
+		return { ok: true, outcome: "found", issues: sprint.issues.map(listed), truncated: false, sprint: sprint.sprint };
 	}
 	const all = [...sampleOpen[tracker], ...(sprint?.issues ?? [])].filter(issue => issue.status.category !== "closed");
 	if (list === "open" && tracker === "linear") return NOT_CONFIGURED;
 	const issues = list === "assigned" ? all.filter(issue => issue.assignee === sampleLogin[tracker]) : all;
-	return { ok: true, outcome: "found", issues: issues.map(issue => ({ ...issue, worktree: null })), truncated: false, sprint: null };
+	return { ok: true, outcome: "found", issues: issues.map(listed), truncated: false, sprint: null };
 }
 
 const WORDS = ["Show", "Keep", "Read", "Fix", "Explain", "Fold", "Check", "Remember", "Quiet", "Ports", "Theme", "Sessions", "the", "base", "list", "header", "after", "reload"];
@@ -99,7 +147,7 @@ export function bigSprint(count: number, tracker: IssueTracker = "jira"): IssueL
 		const status = tracker === "github" ? (index % 3 === 0 ? { name: "Closed", category: "closed" as const } : { name: "Open", category: "open" as const }) : STATUSES[index % STATUSES.length]!;
 		const key = tracker === "github" ? String(number) : `TIM-${number}`;
 		const url = tracker === "github" ? `https://github.com/example/timber/issues/${number}` : `https://example.atlassian.net/browse/TIM-${number}`;
-		return { tracker, key, url, title, status, assignee: index % 4 === 0 ? null : ["Sam Okafor", "Jo Park", "Alex Doe"][index % 3]!, worktree: null };
+		return { tracker, key, url, title, status, assignee: index % 4 === 0 ? null : ["Sam Okafor", "Jo Park", "Alex Doe"][index % 3]!, worktree: null, pullRequests: [] };
 	});
 	return { ok: true, outcome: "found", issues, truncated: false, sprint: { name: "Big sprint", source: tracker === "github" ? "github-milestone" : "jira-board" } };
 }

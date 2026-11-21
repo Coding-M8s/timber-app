@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ISSUE_LISTS, type IssueList } from "../../shared/issue-lists";
 import type { SuggestedIssue } from "../../shared/issue-search";
 import type { IssueTracker } from "../../shared/model";
+import { CHECK_OUT_LABEL, allRefused, checkOutChoice } from "../check-out-format";
 import { describeAgo } from "../fetch-format";
 import { TRACKER_NAMES, describeOpenIssue, issueKeyLabel } from "../issue-format";
 import {
@@ -56,7 +57,7 @@ function useNow(every = 30_000): number {
 	return now;
 }
 
-function IssueCard({ issue, onOpen, onJump }: { issue: SuggestedIssue; onOpen: () => void; onJump: (() => void) | null }) {
+function IssueCard({ issue, onOpen, onJump, onCheckOut }: { issue: SuggestedIssue; onOpen: () => void; onJump: (() => void) | null; onCheckOut: { open: () => void; title: string } | null }) {
 	const unassigned = issue.assignee === null;
 	return (
 		<li className="issue-card">
@@ -86,6 +87,9 @@ function IssueCard({ issue, onOpen, onJump }: { issue: SuggestedIssue; onOpen: (
 						</svg>
 						<span className="issue-card-branch">{issue.worktree.branch ?? issue.worktree.path}</span>
 					</button>
+				) : onCheckOut !== null ? (
+					// The issue has an open pull request and no worktree here: check that out instead of starting anew.
+					<button type="button" className="issue-card-start issue-card-check-out" title={onCheckOut.title} onClick={onCheckOut.open}>{CHECK_OUT_LABEL}</button>
 				) : (
 					// A placeholder until starting work from the board is wired up (issue 156).
 					<button type="button" className="issue-card-start" disabled title={START_WORK_PLACEHOLDER}>+ {START_WORK_LABEL}</button>
@@ -106,13 +110,14 @@ function Quiet({ title, text, detail, command }: { title: string; text?: string 
 	);
 }
 
-function Columns({ issues, list, tracker, truncated, onOpen, onJump }: {
+function Columns({ issues, list, tracker, truncated, onOpen, onJump, onCheckOut }: {
 	issues: readonly SuggestedIssue[];
 	list: IssueList;
 	tracker: IssueTracker;
 	truncated: boolean;
 	onOpen: (issue: SuggestedIssue) => void;
 	onJump: (issue: SuggestedIssue) => (() => void) | null;
+	onCheckOut: (issue: SuggestedIssue) => { open: () => void; title: string } | null;
 }) {
 	const columns = boardColumns(issues, list, tracker);
 	return (
@@ -126,7 +131,7 @@ function Columns({ issues, list, tracker, truncated, onOpen, onJump }: {
 							<span className="board-column-statuses" title={column.statuses.join(", ")}>{column.statuses.join(", ")}</span>
 						</header>
 						<ul className="board-cards">
-							{column.issues.map(issue => <IssueCard key={issue.url} issue={issue} onOpen={() => onOpen(issue)} onJump={onJump(issue)} />)}
+							{column.issues.map(issue => <IssueCard key={issue.url} issue={issue} onOpen={() => onOpen(issue)} onJump={onJump(issue)} onCheckOut={onCheckOut(issue)} />)}
 						</ul>
 					</section>
 				))}
@@ -154,6 +159,13 @@ export function IssuesBoard({ repository }: { repository: string }) {
 		return worktree ? () => store.select(worktree.id) : null;
 	};
 	const openIssue = (issue: SuggestedIssue) => void store.openLink(issue.url);
+	const githubRepository = trackers?.ok ? trackers.githubRepository : null;
+	const checkOut = (issue: SuggestedIssue) => {
+		const choice = checkOutChoice(issue, githubRepository);
+		if (choice === null) return null;
+		const title = allRefused(choice) ? "Its pull requests cannot be opened here: see why" : "Open the pull request's branch in a new worktree";
+		return { open: () => store.openDialog({ kind: "check-out-pull-request", repository, issue }), title };
+	};
 
 	// The quiet word beside the title: the latest read failed, and the last good list stays on screen.
 	let word: { text: string; title: string } | null = null;
@@ -186,7 +198,7 @@ export function IssuesBoard({ repository }: { repository: string }) {
 		} else if (good.result.issues.length === 0) {
 			body = <Quiet {...describeEmptyList(list, tracker)} />;
 		} else {
-			body = <Columns issues={good.result.issues} list={list} tracker={tracker} truncated={good.result.truncated} onOpen={openIssue} onJump={jumpTo} />;
+			body = <Columns issues={good.result.issues} list={list} tracker={tracker} truncated={good.result.truncated} onOpen={openIssue} onJump={jumpTo} onCheckOut={checkOut} />;
 		}
 	} else if (latest !== null && latest.result.ok && latest.result.outcome === "failed") {
 		const failure = describeListFailure(latest.result.reason, tracker);
