@@ -430,7 +430,24 @@ change them here first when they change.
   repository's file is code from the repository: the first time it runs,
   and again whenever its text changes, a dialog shows the exact text and
   the file it comes from, with Cancel first, and runs it only on Run.
-  Personal chops run straight away. Right-clicking a session's chip, or
+  Personal chops run straight away. A prompt chop is listed beside the
+  commands, marked "Prompt", and the palette says "Send prompt: <name>". It
+  always goes to an agent in the active worktree, as typed input: one
+  paste, so its line breaks do not submit it early, then Enter. With no
+  agent running there, it starts the chop's agent, or the first saved
+  agent, in a new session, with nothing added to its command line, and
+  sends the prompt once the agent is ready: when it reports it is idle, or,
+  for an agent that reports nothing, once it has drawn its input and gone
+  quiet. A toast says when it was sent, or why not. With one agent running,
+  the prompt goes there, also while it is busy. With several, or one that
+  waits for an answer or is still starting for a prompt of its own, a
+  dialog lists them with their state and "A new
+  <agent>", with nothing picked, and warns when the picked agent waits for
+  an answer. With no agent saved in Settings, the chop shows "Copy prompt",
+  which puts exactly its text on the clipboard. A prompt from the
+  repository's file asks first, as a command does, with Send, and says
+  where it goes, naming the agent a new session starts; a change to its
+  text or its agent asks again. Right-clicking a session's chip, or
   Shift+F10 or the context menu key on it, offers "Insert chop: <name>",
   which types the chop's text into that session without Enter, so it can be
   edited first.

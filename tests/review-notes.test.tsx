@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { type MockFileChange, samplePatch } from "../src/mainview/engine/mock-file-changes";
-import { NO_REVIEW_AGENT, REVIEW_COPIED, describeReviewSent, firstReviewSession, reviewSessions, reviewTooLong, waitsOnPerson } from "../src/mainview/review-format";
+import { NO_REVIEW_AGENT, REVIEW_COPIED, describeReviewSent, reviewTooLong } from "../src/mainview/review-format";
+import { onlyAgent, runningAgents, waitsOnPerson } from "../src/mainview/agent-sessions";
 import { sessionsOf } from "../src/mainview/store/state";
 import { createAppStore } from "../src/mainview/store/store";
 import { defaultLayout } from "../src/shared/layout";
@@ -272,9 +273,9 @@ describe("choosing the agent", () => {
 
 	test("only running agents of the worktree, and the only one is picked", () => {
 		const all = [session("a", "w", "agent"), session("b", "w", "terminal"), session("c", "w", "agent", false), session("d", "x", "agent")];
-		expect(reviewSessions(all, "w").map(entry => entry.id)).toEqual(["a"]);
-		expect(firstReviewSession(reviewSessions(all, "w"))).toBe("a");
-		expect(firstReviewSession([session("a", "w", "agent"), session("e", "w", "agent")])).toBeNull();
+		expect(runningAgents(all, "w").map(entry => entry.id)).toEqual(["a"]);
+		expect(onlyAgent(runningAgents(all, "w"))).toBe("a");
+		expect(onlyAgent([session("a", "w", "agent"), session("e", "w", "agent")])).toBeNull();
 	});
 
 	test("a review longer than one paste says so", () => {

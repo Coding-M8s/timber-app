@@ -253,6 +253,10 @@ const chops = createChops({
 	approvals: () => chopApprovals.load(),
 	approve: (repository, digest) => chopApprovals.approve(repository, digest),
 	openTerminal: (request, chop) => terminals.open(request, chop),
+	sendPrompt: (id, repository, worktree, text) => terminals.sendPrompt(id, repository, worktree, text),
+	session: id => terminals.list().find(session => session.id === id) ?? null,
+	// A prompt chop's agent comes from the saved Settings only, as any agent's does.
+	agents: async () => (await preferences.load()).agents,
 });
 // Timber reads and writes its own settings and logins. The app never opens those files (see ./timber-settings.ts).
 const timberSettings = createTimberSettings({ timber: () => timber.current(), isListed: path => repositories.includes(path) });

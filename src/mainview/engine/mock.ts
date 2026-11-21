@@ -1064,7 +1064,7 @@ export function createMockEngine(
 		onChopsChanged: listener => chopFiles.onChopsChanged(listener),
 		async runChop(request) {
 			// The pretend terminals check the worktree is listed, with its folder there, as the main process does.
-			return chopFiles.run(structuredClone(request), listMockChops(request.repository), (open, chop) => terminals.openChopTerminal(open, chop));
+			return chopFiles.run(structuredClone(request), listMockChops(request.repository), terminals, preferences.agents);
 		},
 		...chopFiles.controls,
 		async readPorts(request) {

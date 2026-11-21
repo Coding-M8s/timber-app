@@ -8,10 +8,13 @@ import { type TerminalDependencies, type TerminalSessions, createTerminalSession
 import type { Repository } from "../src/shared/model";
 import { describeSearchPath } from "../src/shared/search-path";
 import { PROBE_ANSWER } from "../src/shared/program-status";
+import { PROMPT_STILL_STARTING } from "../src/shared/agent-prompt";
 import { CHOP_NOT_TYPED, type OpenTerminalRequest, PASTE_NOT_READY, type SessionNaming, type TerminalChange, type TerminalOutput, TERMINAL_UNSUPPORTED_REASON, WORKTREE_SETUP_SESSION_NAME, bracketedPaste } from "../src/shared/terminal";
 
 /** A short review as it is pasted. */
 const PASTED = "Review notes\n\nsrc/a.ts:2\n> +x\nFix this.";
+/** A prompt chop's text, with a line break that must not submit it early. */
+const PROMPT = "Write tests for what changed.\nRun them before you stop.";
 import { until } from "./support/runtime";
 import { git } from "./support/timber";
 
@@ -468,7 +471,7 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 
 	describe("a command chop", () => {
 		async function openedChop(name: string, text: string) {
-			const result = await sessions.open({ repository, worktree, cols: 80, rows: 24 }, { name, text });
+			const result = await sessions.open({ repository, worktree, cols: 80, rows: 24 }, { kind: "command", name, text });
 			if (result.outcome !== "opened") throw new Error(`Not opened: ${JSON.stringify(result)}`);
 			return result.session;
 		}
@@ -532,8 +535,8 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 
 		test("is refused with an agent, or with text a paste must not hold", async () => {
 			start();
-			expect(await sessions.open({ repository, worktree, cols: 80, rows: 24, agent: "Claude Code" }, { name: "x", text: "true" })).toMatchObject({ outcome: "failed" });
-			expect(await sessions.open({ repository, worktree, cols: 80, rows: 24 }, { name: "x", text: "a\x1b[201~b" })).toMatchObject({ outcome: "failed" });
+			expect(await sessions.open({ repository, worktree, cols: 80, rows: 24, agent: "Claude Code" }, { kind: "command", name: "x", text: "true" })).toMatchObject({ outcome: "failed" });
+			expect(await sessions.open({ repository, worktree, cols: 80, rows: 24 }, { kind: "command", name: "x", text: "a\x1b[201~b" })).toMatchObject({ outcome: "failed" });
 			expect(sessions.list()).toEqual([]);
 		});
 
@@ -573,6 +576,21 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 			const paster = join(bin, "fake-paster");
 			writeFileSync(paster, `#!/bin/sh\nstty raw -echo\nprintf '\\033[?2004hpaster ready\\r\\n'\nhead -c "$1" | od -An -tx1 | tr -d ' \\n'\nprintf ' done\\r\\n'\nsleep 5\n`);
 			chmodSync(paster, 0o755);
+			// Probes for the Program Status Protocol and reads the answer, waits on the person (blocked), then says it is idle,
+			// and prints in hex the first bytes it is given after that.
+			const reporter = join(bin, "fake-reporter");
+			writeFileSync(reporter, String.raw`#!/bin/sh
+stty raw -echo
+printf '\033[?2004h\033]7501;?\033\\'
+head -c ${PROBE_ANSWER.length} > /dev/null
+printf '\033]7501;state=blocked:kind=permission\033\\trust this folder?\r\n'
+sleep 0.6
+printf '\033]7501;state=idle\033\\reporter ready\r\n'
+head -c "$1" | od -An -tx1 | tr -d ' \n'
+printf ' done\r\n'
+sleep 5
+`);
+			chmodSync(reporter, 0o755);
 			return bin;
 		}
 
@@ -581,6 +599,9 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 			{ name: "Codex", command: `fake-codex --model "big one" --sandbox=workspace-write` },
 			{ name: "Missing", command: "no-such-agent --flag" },
 			{ name: "Paster", command: `fake-paster ${bracketedPaste(PASTED).length}` },
+			// The paste and the Enter after it.
+			{ name: "Prompted", command: `fake-paster ${bracketedPaste(PROMPT).length + 1}` },
+			{ name: "Reporter", command: `fake-reporter ${bracketedPaste(PROMPT).length + 1}` },
 		];
 
 		function startWithAgents(overrides: Partial<TerminalDependencies> = {}): TerminalSessions {
@@ -784,6 +805,96 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 				await sessions.close(paster.id);
 				expect(sessions.paste(paster.id, PASTED).outcome).toBe("gone");
 				expect(sessions.paste("no-such-session", PASTED).outcome).toBe("gone");
+			});
+		});
+
+		describe("a prompt chop", () => {
+			const prompt = { kind: "prompt" as const, text: PROMPT };
+			const sent = `${Buffer.from(`${bracketedPaste(PROMPT)}\r`).toString("hex")} done`;
+			const promptOf = (id: string) => sessions.list().find(session => session.id === id)?.prompt;
+
+			async function openedWithPrompt(agent: string) {
+				const result = await sessions.open({ repository, worktree, cols: 80, rows: 24, agent }, prompt);
+				if (result.outcome !== "opened") throw new Error(`Not opened: ${JSON.stringify(result)}`);
+				return result.session;
+			}
+
+			test("an agent that never probes gets it once it asked for bracketed paste and went quiet: one paste, then Enter, never on its command line", async () => {
+				startWithAgents({ promptQuietMilliseconds: 100, promptEnterMilliseconds: 20 });
+				const plain = await openedAgent("Prompted");
+				const session = await openedWithPrompt("Prompted");
+				expect(session.prompt).toEqual({ state: "pending" });
+				// Started exactly as the agent starts without a prompt.
+				expect(session.command).toBe(plain.command);
+				expect(session.name).toBe("Prompted 2");
+				await seen(session.id, " done");
+				expect(printed(session.id)).toContain(sent);
+				expect(await until(() => promptOf(session.id)?.state === "sent")).toBe(true);
+			});
+
+			test("an agent that probes waits while it is blocked, such as on a trust question, and gets it once it says it is idle", async () => {
+				startWithAgents({ promptQuietMilliseconds: 50, promptEnterMilliseconds: 20 });
+				const session = await openedWithPrompt("Reporter");
+				await seen(session.id, "trust this folder?");
+				// Quiet long enough for an agent that never probed, but this one is blocked.
+				await Bun.sleep(250);
+				expect(printed(session.id)).not.toContain("done");
+				expect(promptOf(session.id)).toEqual({ state: "pending" });
+				await seen(session.id, " done");
+				expect(printed(session.id)).toContain(sent);
+				expect(await until(() => promptOf(session.id)?.state === "sent")).toBe(true);
+			});
+
+			test("an agent that is never ready gets nothing, and the session says why", async () => {
+				startWithAgents({ promptWaitMilliseconds: 300 });
+				const session = await openedWithPrompt("Claude Code");
+				expect(await until(() => promptOf(session.id)?.state === "not-sent")).toBe(true);
+				expect(promptOf(session.id)).toMatchObject({ message: expect.stringContaining("Claude Code was not ready for the prompt") });
+				sessions.write(session.id, "after\n");
+				await seen(session.id, "fake-claude got after");
+				expect(printed(session.id)).not.toContain("Write tests");
+			});
+
+			test("an agent that ends first gets nothing, and the session says so", async () => {
+				startWithAgents();
+				const session = await openedWithPrompt("Claude Code");
+				await seen(session.id, "fake-claude in");
+				sessions.write(session.id, "\x04");
+				expect(await until(() => promptOf(session.id)?.state === "not-sent")).toBe(true);
+				expect(promptOf(session.id)).toMatchObject({ message: expect.stringContaining("ended before it was ready") });
+			});
+
+			test("never goes to a shell, setup, or a workflow, and never with text a paste must not hold", async () => {
+				startWithAgents();
+				expect(await sessions.open({ repository, worktree, cols: 80, rows: 24 }, prompt)).toMatchObject({ outcome: "failed" });
+				expect(await sessions.open({ repository, worktree, cols: 80, rows: 24, timberWorktreeSetup: {} }, prompt)).toMatchObject({ outcome: "failed" });
+				expect(await sessions.open({ repository, worktree, cols: 80, rows: 24, agent: "Codex" }, { kind: "prompt", text: "a\x1b[201~b" })).toMatchObject({ outcome: "failed" });
+				expect(sessions.list()).toEqual([]);
+			});
+
+			test("goes to a running agent at once, as a paste then Enter; a shell, another worktree, or a session that is gone get nothing", async () => {
+				startWithAgents({ promptEnterMilliseconds: 20 });
+				const agent = await openedAgent("Prompted");
+				await seen(agent.id, "paster ready");
+				// Another worktree, or the right folder named under another repository.
+				expect(sessions.sendPrompt(agent.id, repository, repository, PROMPT)).toMatchObject({ outcome: "not-agent" });
+				expect(sessions.sendPrompt(agent.id, unlisted, worktree, PROMPT)).toMatchObject({ outcome: "not-agent" });
+				expect(sessions.sendPrompt(agent.id, repository, worktree, PROMPT)).toEqual({ outcome: "pasted" });
+				await seen(agent.id, " done");
+				expect(printed(agent.id)).toContain(sent);
+				const shell = await opened();
+				expect(sessions.sendPrompt(shell.session.id, repository, worktree, PROMPT)).toMatchObject({ outcome: "not-agent" });
+				expect(sessions.sendPrompt("no-such-session", repository, worktree, PROMPT).outcome).toBe("gone");
+				// An agent that has not asked for bracketed paste gets no text with a line break.
+				const claude = await openedAgent("Claude Code");
+				await seen(claude.id, "fake-claude in");
+				expect(sessions.sendPrompt(claude.id, repository, worktree, PROMPT)).toEqual({ outcome: "not-ready", message: PASTE_NOT_READY });
+			});
+
+			test("an agent still waiting for its own prompt takes no other, since it may be on a first-run screen", async () => {
+				startWithAgents();
+				const session = await openedWithPrompt("Claude Code");
+				expect(sessions.sendPrompt(session.id, repository, worktree, "one line")).toEqual({ outcome: "not-ready", message: PROMPT_STILL_STARTING });
 			});
 		});
 

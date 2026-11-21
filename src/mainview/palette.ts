@@ -1,5 +1,5 @@
 import { NEW_ARENA_LABEL, arenasUnavailable } from "./arena-format";
-import { chopEntries, runChopLabel } from "./chop-format";
+import { chopAction, chopEntries, runChopLabel } from "./chop-format";
 import { type EditorAction, OPEN_IN_EDITOR, describeEditorAction } from "./editor-format";
 import { CLEAN_UP_LABEL, CLEAN_UP_TITLE, cleanUpUnavailableReason, mergedCandidates } from "./clean-up-format";
 import { BEING_REMOVED_REASON, DONE_PRIMARY_NOTE } from "./done-format";
@@ -177,7 +177,9 @@ function actionEntries(state: AppState): PaletteEntry[] {
 		add(inWorktree("editor"), "editor", OPEN_IN_EDITOR, "", none, idle, ["code"]);
 		add(inWorktree("done"), "done", "Done", "", none, idle, ["remove", "finish", "delete"]);
 		// The chops last read stay listed, so they can be found and say why they cannot run.
-		for (const chop of chopEntries(state.chops?.list)) add(inWorktree("terminal"), `chop:${chop.name}`, runChopLabel(chop.name), "", none, idle, [chop.title, "chop", "run"]);
+		for (const chop of chopEntries(state.chops?.list)) {
+			add(inWorktree(chop.kind === "prompt" ? "agent" : "terminal"), `chop:${chop.name}`, runChopLabel(chop.name, chopAction(chop.kind, state.preferences.agents.length)), "", none, idle, [chop.title, "chop", chop.kind]);
+		}
 		add(inRepository("new"), "new", "New worktree", "", none, idle, ["create", "branch"]);
 		add(inRepository("branch"), "open", "Open existing branch", "", none, idle, ["worktree", "checkout"]);
 		add(inRepository("arena"), "arena", NEW_ARENA_LABEL, "", none, idle, ["attempts", "agents", "compare"]);
@@ -195,9 +197,14 @@ function actionEntries(state: AppState): PaletteEntry[] {
 		// A chop runs in the active worktree only, as the "+" menu's do.
 		const chopReason = sessionReason ?? (isBeingRemoved(state, repository.path, worktree.path) ? BEING_REMOVED_REASON : null);
 		const chops = state.chops?.repository === repository.path ? chopEntries(state.chops.list) : [];
+		// A prompt that goes to a running agent waits for no session to start; one that needs a new agent says why in a toast when it cannot.
+		const promptReason = !worktree.pathExists ? FOLDER_MISSING_FOR_SESSION : isBeingRemoved(state, repository.path, worktree.path) ? BEING_REMOVED_REASON : null;
 		for (const chop of chops) {
-			add(inWorktree("terminal"), `chop:${chop.name}`, runChopLabel(chop.name), chop.title === "" ? `Runs ${chop.name} in ${worktree.path}.` : `${chop.title.replace(/\.$/, "")}. Runs in ${worktree.path}.`, chopReason,
-				{ kind: "chop", repository: repository.path, worktree: worktree.id, chop: chop.name }, [chop.title, "chop", "run"]);
+			const action = chopAction(chop.kind, state.preferences.agents.length);
+			const what = chop.title === "" ? chop.name : chop.title.replace(/\.$/, "");
+			const hint = action === "run" ? (chop.title === "" ? `Runs ${chop.name} in ${worktree.path}.` : `${what}. Runs in ${worktree.path}.`) : action === "send" ? `${what}. Goes to an agent in ${worktree.path}.` : `${what}. No agent is saved, so this copies the prompt.`;
+			add(inWorktree(chop.kind === "prompt" ? "agent" : "terminal"), `chop:${chop.name}`, runChopLabel(chop.name, action), hint, action === "run" ? chopReason : action === "send" ? promptReason : null,
+				{ kind: "chop", repository: repository.path, worktree: worktree.id, chop: chop.name }, [chop.title, "chop", chop.kind]);
 		}
 		add(inWorktree("rebase"), "rebase", "Rebase", `Opens Rebase for ${name}, which shows the Timber command before it runs.`, worktree.pathExists ? null : REBASE_FOLDER_MISSING,
 			{ kind: "dialog", request: { kind: "rebase-worktree", repository: repository.path, worktree: worktree.id } });

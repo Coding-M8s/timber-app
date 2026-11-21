@@ -1,4 +1,4 @@
-import { CHOP_LIMIT, type ChopKind, type ChopList, type ChopSource, type ChopsFileState, type ListedChop, type PersonalChop, chopProblem, commandChops, normalizeChopText, samePersonalChops } from "../shared/chops";
+import { CHOP_LIMIT, type ChopKind, type ChopList, type ChopSource, type ChopsFileState, type ListedChop, type PersonalChop, chopProblem, commandChops, listedChops, normalizeChopText, samePersonalChops } from "../shared/chops";
 import { cleanSessionName } from "../shared/terminal";
 import type { WorktreeMenuItem, WorktreeMenuItemId } from "./worktree-menu-format";
 
@@ -158,10 +158,11 @@ export function describeChopsFile(file: ChopsFileState, path: string): { tone: "
 	}
 }
 
-/** One command chop as the "+" menu, the palette, or "Insert chop" offers it. */
+/** One chop as the "+" menu, the palette, or "Insert chop" offers it. */
 export interface ChopEntry {
 	/** The chop's name, which the request names. */
 	name: string;
+	kind: ChopKind;
 	/** What its tooltip says: the description, or the text's first line when it has none. */
 	title: string;
 	source: ChopSource;
@@ -173,14 +174,82 @@ function firstLine(text: string): string {
 	return rest.length > 0 ? `${first} ...` : first;
 }
 
-/** The command chops of a list, in listed order, for the "+" menu and "Insert chop". None until the list was read. */
+const entryOf = (chop: ListedChop): ChopEntry => ({ name: chop.name, kind: chop.kind, title: chop.description !== "" ? chop.description : firstLine(chop.text), source: chop.source });
+
+/** The chops of a list, commands and prompts, in listed order, for the "+" menu and the palette. None until the list was read. */
 export function chopEntries(list: ChopList | null | undefined): ChopEntry[] {
-	return commandChops(list).map(chop => ({ name: chop.name, title: chop.description !== "" ? chop.description : firstLine(chop.text), source: chop.source }));
+	return listedChops(list).map(entryOf);
+}
+
+/** The command chops of a list, in listed order, for "Insert chop". */
+export function commandChopEntries(list: ChopList | null | undefined): ChopEntry[] {
+	return commandChops(list).map(entryOf);
+}
+
+/**
+ * What choosing a chop does: run a command, send a prompt to an agent, or,
+ * with no agent saved in Settings, copy the prompt.
+ */
+export type ChopAction = "run" | "send" | "copy";
+
+export function chopAction(kind: ChopKind, agentsSaved: number): ChopAction {
+	if (kind === "command") return "run";
+	return agentsSaved > 0 ? "send" : "copy";
 }
 
 /** The label of a chop's palette entry. */
-export function runChopLabel(name: string): string {
-	return `Run chop: ${name}`;
+export function runChopLabel(name: string, action: ChopAction = "run"): string {
+	switch (action) {
+		case "run":
+			return `Run chop: ${name}`;
+		case "send":
+			return `Send prompt: ${name}`;
+		case "copy":
+			return `Copy prompt: ${name}`;
+	}
+}
+
+/** The label of a chop's button in an empty session pane. */
+export function chopButtonLabel(name: string, action: ChopAction): string {
+	switch (action) {
+		case "run":
+			return `Run ${name}`;
+		case "send":
+			return `Send ${name}`;
+		case "copy":
+			return `Copy ${name}`;
+	}
+}
+
+/** The tooltip of a chop in the "+" menu or an empty session pane. */
+export function chopTitle(entry: Pick<ChopEntry, "title">, action: ChopAction): string {
+	switch (action) {
+		case "run":
+			return entry.title;
+		case "send":
+			return `Prompt for an agent: ${entry.title}`;
+		case "copy":
+			return `No agent is saved in Settings, Agents, so this copies the prompt: ${entry.title}`;
+	}
+}
+
+/** The toast after a prompt was put on the clipboard. */
+export function describePromptCopied(name: string): string {
+	return `${name} copied. Paste it where you want it.`;
+}
+
+/** The toast after a prompt went to a running agent, or to a new one once it was ready. */
+export function describePromptSent(chop: string | null, session: string): string {
+	return chop === null ? `Prompt sent to ${session}.` : `${chop} sent to ${session}.`;
+}
+
+/** What the Send prompt dialog says when the picked agent waits on the person. */
+export const PROMPT_WAITS_WARNING =
+	"This agent is waiting for you, such as for an approval. The prompt and its Enter would go into that answer. Answer it first, or pick another agent.";
+
+/** What the "New agent" choice of the Send prompt dialog says. */
+export function describeNewAgentChoice(agent: string | null): string {
+	return agent === null ? "A new agent" : `A new ${agent}`;
 }
 
 /** The label of a chop in a session's menu. */
@@ -193,10 +262,20 @@ export const SESSION_ENDED_FOR_CHOP = "The session has ended, so nothing can be 
 export const NO_CHOPS_FOR_SESSION = "This repository has no command chops. Add some in Settings, Chops.";
 
 /** What the dialog before a repository chop runs says. */
-export function describeChopApproval(chop: Pick<ListedChop, "name">, path: string): { title: string; text: string } {
+export function describeChopApproval(chop: Pick<ListedChop, "name" | "kind"> & { agent?: string | null }, path: string, target: string | null = null): { title: string; text: string; submit: string } {
+	if (chop.kind === "prompt") {
+		// A new agent is named, since the file picks it: the chop's, or the first saved one.
+		const where = target !== null ? target : chop.agent ? `a new ${chop.agent}` : "a new session of your first saved agent";
+		return {
+			title: `Send ${chop.name} from the repository?`,
+			text: `This prompt comes from ${path}, which anyone who can change the repository can change. It goes to ${where} exactly as shown, and is submitted. The app asks the first time a chop's text is used, and again whenever it changes.`,
+			submit: "Send",
+		};
+	}
 	return {
 		title: `Run ${chop.name} from the repository?`,
 		text: `This chop comes from ${path}, which anyone who can change the repository can change. It runs in your shell exactly as shown. The app asks the first time a chop's text runs, and again whenever it changes.`,
+		submit: "Run",
 	};
 }
 
@@ -209,7 +288,7 @@ const INSERT_PREFIX = "insert-chop:";
  * chop to offer, one disabled entry says why.
  */
 export function sessionChipMenuItems(running: boolean, list: ChopList | null | undefined): WorktreeMenuItem[] {
-	const chops = chopEntries(list);
+	const chops = commandChopEntries(list);
 	if (chops.length === 0) {
 		const note = list == null ? CHOPS_NOT_READ : list.outcome === "listed" ? NO_CHOPS_FOR_SESSION : list.message;
 		return [{ id: `${INSERT_PREFIX}`, label: "Insert chop", disabled: true, note, title: note }];

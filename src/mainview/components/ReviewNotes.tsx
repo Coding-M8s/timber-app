@@ -1,11 +1,12 @@
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import { onlyAgent, runningAgents, waitsOnPerson } from "../agent-sessions";
+import { AgentChoices } from "./AgentChoices";
 import { type ReviewNote, noteLocation } from "../../shared/review";
 import { PASTE_TEXT_LIMIT, type PasteResult } from "../../shared/terminal";
 import { useAppState, useStore } from "../store/react";
 import {
-	NO_REVIEW_AGENT, REVIEW_PASTE_NOTE, REVIEW_WAITS_WARNING, describeNoteCount, firstReviewSession, noteSummary, reviewSessions, reviewTooLong, waitsOnPerson,
+	NO_REVIEW_AGENT, REVIEW_PASTE_NOTE, REVIEW_WAITS_WARNING, describeNoteCount, noteSummary, reviewTooLong,
 } from "../review-format";
-import { describeTerminalState } from "../terminal-format";
 
 /** Ctrl+Enter, or Cmd+Enter, saves a note from its text field; Escape cancels. */
 function noteKeys(event: KeyboardEvent<HTMLTextAreaElement>, save: () => void, cancel: () => void): void {
@@ -226,8 +227,8 @@ export function SendReviewDialog({ worktree }: { worktree: string }) {
 	const titleId = useId();
 	const [message, setMessage] = useState<string | null>(null);
 	const [prepared, setPrepared] = useState(false);
-	const sessions = reviewSessions(state.terminals, worktree);
-	const [picked, setPicked] = useState<string | null>(() => firstReviewSession(sessions));
+	const sessions = runningAgents(state.terminals, worktree);
+	const [picked, setPicked] = useState<string | null>(() => onlyAgent(sessions));
 	const [sending, setSending] = useState(false);
 	const [problem, setProblem] = useState<string | null>(null);
 	const chosen = sessions.find(session => session.id === picked) ?? null;
@@ -288,16 +289,7 @@ export function SendReviewDialog({ worktree }: { worktree: string }) {
 					{sessions.length === 0 ? (
 						<p className="dialog-note">{NO_REVIEW_AGENT}</p>
 					) : (
-						<fieldset className="review-agents" disabled={sending}>
-							<legend className="field-label">Paste into</legend>
-							{sessions.map(session => (
-								<label key={session.id} className="review-agent">
-									<input type="radio" name="review-agent" checked={picked === session.id} onChange={() => setPicked(session.id)} />
-									<span className="review-agent-name">{session.name}</span>
-									<span className="review-agent-state">{describeTerminalState(session)}</span>
-								</label>
-							))}
-						</fieldset>
+						<AgentChoices sessions={sessions} picked={picked} onPick={setPicked} name="review-agent" legend="Paste into" disabled={sending} />
 					)}
 					{chosen !== null && waitsOnPerson(chosen) && <p className="review-warning" role="alert">{REVIEW_WAITS_WARNING}</p>}
 					{message === null ? (

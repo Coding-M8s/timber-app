@@ -1,8 +1,9 @@
 import {
 	CHOPS_FILE, type ChopApprovals, type ChopList, type ChopsFileState, type Chop, type PersonalChop, type RunChopRequest, type RunChopResult,
-	chopDigestInput, commandChops, findListedChop, isChopApproved, mergeChops, parseChopsFile, withChopApproval,
+	chopDigestInput, findListedChop, isChopApproved, listedChops, mergeChops, parseChopsFile, withChopApproval,
 } from "../../shared/chops";
-import type { OpenTerminalRequest, OpenTerminalResult } from "../../shared/terminal";
+import { type AgentSetting, findAgent } from "../../shared/agent";
+import type { ChopTerminals } from "./mock-terminals";
 
 /**
  * The repository chops files of the sample repositories, by the path of the
@@ -52,22 +53,41 @@ export function createMockChops() {
 		return { outcome: "listed", file, path: `${repository}/${CHOPS_FILE}`, ...mergeChops(personal, repository, chops) };
 	}
 
-	/** As the main process: the chop is read once, a repository chop runs once its text is approved, and the shell is named after it. */
-	async function run(
-		request: RunChopRequest,
-		listed: ChopList,
-		open: (request: OpenTerminalRequest, chop: { name: string; text: string }) => Promise<OpenTerminalResult>,
-	): Promise<RunChopResult> {
+	/**
+	 * As the main process: the chop is read once, a repository chop runs once
+	 * its text is approved, a command's shell is named after it, and a prompt
+	 * goes to the session named or to a new agent: the chop's, or the first
+	 * saved one.
+	 */
+	async function run(request: RunChopRequest, listed: ChopList, terminals: ChopTerminals, agents: readonly AgentSetting[]): Promise<RunChopResult> {
 		if (listed.outcome !== "listed") return { outcome: listed.outcome === "not-listed" ? "not-listed" : "failed", message: listed.message };
-		const chop = findListedChop(commandChops(listed), request.chop);
-		if (chop === null) return { outcome: "no-chop", message: `No command chop called "${request.chop}" is in ${request.repository} now. Nothing was started.` };
+		const chop = findListedChop(listedChops(listed), request.chop);
+		if (chop === null) return { outcome: "no-chop", message: `No chop called "${request.chop}" is in ${request.repository} now. Nothing was started.` };
+		if (request.session !== undefined && (chop.kind !== "prompt" || typeof request.session !== "string")) {
+			const message = chop.kind === "prompt" ? "The request names no session. Nothing was sent." : `${chop.name} is a command, which runs in a new session only. Nothing was started.`;
+			return { outcome: "no-chop", message };
+		}
+		let agent: AgentSetting | null = null;
+		if (chop.kind === "prompt" && request.session === undefined) {
+			agent = chop.agent === null ? agents[0] ?? null : findAgent(agents, chop.agent);
+			if (agent === null) {
+				const message = chop.agent === null ? "No agent is saved in Settings, Agents, so the prompt has no agent to go to. Copy it instead." : `No agent called "${chop.agent}" is saved in Settings, Agents, so ${chop.name} cannot start it. Nothing was started.`;
+				return { outcome: "not-configured", message };
+			}
+		}
 		// The browser has no SHA-256 to call at once; the digest input stands in, in memory only.
 		const digest = chopDigestInput(chop);
 		if (!isChopApproved(approvals, request.repository, chop, digest)) {
 			if (request.approve !== chop.text) return { outcome: "needs-approval", chop: structuredClone(chop), path: listed.path };
 			approvals = withChopApproval(approvals, request.repository, digest);
 		}
-		return open({ repository: request.repository, worktree: request.worktree, cols: request.cols, rows: request.rows }, { name: chop.name, text: chop.text });
+		const where = { repository: request.repository, worktree: request.worktree, cols: request.cols, rows: request.rows };
+		if (chop.kind === "command") return terminals.openChopTerminal(where, { kind: "command", name: chop.name, text: chop.text });
+		if (agent !== null) return terminals.openChopTerminal({ ...where, agent: agent.name }, { kind: "prompt", text: chop.text });
+		const sent = terminals.sendPrompt(request.session!, request.repository, request.worktree, chop.text);
+		if (sent.outcome !== "pasted") return sent;
+		const target = terminals.sessionById(request.session!);
+		return target === null ? { outcome: "gone", message: "The session has ended." } : { outcome: "sent", session: target };
 	}
 
 	return {

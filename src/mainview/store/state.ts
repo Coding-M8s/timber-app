@@ -203,7 +203,12 @@ export type DialogRequest =
 	 * after it changed, and run it only on confirm. `worktree` is `Worktree.id`.
 	 * `chop` is as the main process read it, kept as it was.
 	 */
-	| { kind: "approve-chop"; repository: string; worktree: string; chop: ListedChop; path: string };
+	| { kind: "approve-chop"; repository: string; worktree: string; chop: ListedChop; path: string; /** For a prompt sent to a running agent: its session id. */ session?: string }
+	/**
+	 * Ask where a prompt chop goes: one of the worktree's running agents, or a
+	 * new agent. `worktree` is `Worktree.id`; `chop` is the chop's name.
+	 */
+	| { kind: "send-prompt"; repository: string; worktree: string; chop: string };
 
 /** The sections of the Settings dialog, in the order they are listed. */
 export const SETTINGS_SECTIONS = ["layout", "theme", "terminal", "rendering", "editor", "agents", "chops", "notifications", "fetch", "about", "machine", "repository"] as const;

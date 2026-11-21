@@ -1449,20 +1449,23 @@ every machine agrees. The rules are pure, in
 - **In the window.** The store keeps one answer in `chops`: the selected
   worktree's repository's, the latest read winning. `ChopsKeeper` reads it
   when another repository is selected and when the saved chops change. The
-  Workspace "+" menu lists the command chops after the agents, under
-  "Chops", with the description, or the text's first line, as the tooltip;
-  with no session yet the empty pane has a "Run" button for each. The
-  command palette has "Run chop: <name>" for each, found by name and
-  description, for the active worktree, and lists them with the reason when
-  they cannot run: no worktree selected, the folder missing or being
-  removed, or a session already starting there. The words, the menu
-  entries, and the palette entries are pure (`src/mainview/chop-format.ts`,
+  Workspace "+" menu lists the chops after the agents, under "Chops",
+  commands and prompts, a prompt marked "Prompt", or "Copy prompt" when no
+  agent is saved in Settings, with the description, or the text's first
+  line, as the tooltip; with no session yet the empty pane has a "Run",
+  "Send", or "Copy" button for each. The command palette has "Run chop:
+  <name>" for a command and "Send prompt: <name>" or "Copy prompt: <name>"
+  for a prompt (`chopAction`), found by name and description, for the
+  active worktree, and lists them with the reason when they cannot run: no
+  worktree selected, the folder missing or being removed, or, for a
+  command, a session already starting there. The words, the menu entries,
+  and the palette entries are pure (`src/mainview/chop-format.ts`,
   `src/mainview/agent-format.ts`, `src/mainview/palette.ts`).
 - **Running a command chop** (`runChop`). The request names the
   repository, the worktree's registered path, the chop by name, and the
   pane's size, never the text. The main process lists the chops once, finds
-  the command chop by name, ignoring case, and runs the text from that same
-  read. A prompt chop is not run here. It starts the person's shell in the
+  the chop by name, ignoring case, and uses the text from that same read. A
+  command chop starts the person's shell in the
   worktree as a new session named after the chop (`defaultSessionName`, so
   a second run is "Test 2"), whatever Settings says about naming, as Setup
   is. The text is then typed in (`chopRunBytes` in
@@ -1477,6 +1480,56 @@ every machine agrees. The rules are pure, in
   read, and the shell's history runs it again. Only the main process can
   pass a chop to `TerminalSessions.open`; the `openTerminal` request
   cannot.
+- **Sending a prompt chop** (`runChop` too). A prompt always goes to an
+  agent in the active worktree, as typed input: one paste, then Enter. The
+  window picks where (`promptTarget` in `src/mainview/agent-sessions.ts`):
+  with no agent running in the worktree, a new one; with one that does not
+  wait on the person (`blocked`) and is not still waiting for a prompt of
+  its own (`prompt` is `pending`), that one; otherwise the Send prompt
+  dialog lists the running agents with their state, and "A new <agent>",
+  with nothing picked, and warns when the picked agent waits on the
+  person, since the Enter would answer it. The request then names the
+  session in `session`, or leaves it out for a new agent. `runChop`
+  refuses `session` for a command.
+  - *To a running agent* (`TerminalSessions.sendPrompt`): only a running
+    session of kind `agent` in that worktree of that repository takes it,
+    at once, also while it is busy, which is how the agent would get it from
+    the keyboard. One still waiting for a prompt of its own takes no other
+    (`not-ready`), since it may be on a first-run screen. The
+    answer is `sent` with the session, or why nothing was written, as for
+    a paste (`gone`, `not-agent`, `not-ready`, `refused`). A session that
+    ended meanwhile is `gone`; no agent starts in its place.
+  - *To a new agent*: the agent is the one the chop names, or the first
+    saved one, from the saved Settings, never from the request. A chop that
+    names an agent not saved starts nothing (`not-configured`), never
+    another agent or a shell. It starts as any agent does, with nothing
+    added to its command line, so the prompt is never on a command line.
+    `TerminalSessions.open` takes the prompt only with an agent from
+    Settings, and refuses it for a shell, setup, a workflow, or an arena
+    attempt, so Enter can never run it in a shell. The session's `prompt`
+    is `pending`, then `sent`, or `not-sent` with the reason, told through
+    the usual session change; the window shows a toast for either.
+  - *When a new agent is ready* (`isReadyForPrompt` in
+    `src/shared/agent-prompt.ts`). An agent that probed for the Program
+    Status Protocol gets the prompt once its root record is `idle`: Claude
+    Code 2.1 reports `idle` at its input, and `blocked` with "trust this
+    folder" on its first-run question in a folder it does not trust, where
+    the prompt waits. An agent that never probed, such as Codex, gets it
+    once it turned bracketed paste on and its output stayed quiet for 500
+    ms, or, if it keeps redrawing, once bracketed paste was on for 5
+    seconds. The app never reads what an agent prints, so it cannot tell that
+    first prompt from a first-run screen that also takes Enter, such as a
+    sign-in. A prompt with a line break also waits for bracketed paste. An
+    agent not ready after two minutes, or that ended first, gets nothing,
+    and `prompt` says why.
+  - *The bytes* (`promptBytes` in `src/shared/terminal.ts`): the paste as
+    `pasteBytes` builds it, so a text with a line break goes only as one
+    bracketed paste, then Enter written 100 ms later, once the agent read
+    the paste whole. Reviews and prompts both write through one function
+    in `src/bun/terminals.ts` (`deliver`); a review sends no Enter.
+  - *No agent saved*: the window offers "Copy prompt", which puts the
+    listed chop's text on the clipboard as it is (`writeClipboard`) and
+    sends nothing, also when an agent of a workflow or an arena runs.
 - **Approving a repository chop.** A chop from the file is code from the
   repository. It runs only once its text was approved for that repository:
   otherwise `runChop` starts nothing and answers `needs-approval` with the
@@ -1488,11 +1541,17 @@ every machine agrees. The rules are pure, in
   A run after Run that cannot start, such as while another session starts
   there, says why in a toast. Approvals are kept app-side in
   the settings file under `chopApprovals`, by primary checkout, as
-  SHA-256 digests of the kind and the text (`chopDigestInput`), at most 200
+  SHA-256 digests of the kind and the text, and a prompt's agent
+  (`chopDigestInput`), at most 200
   per repository, newest kept. A changed text has another digest and asks
   again; a rename does not. A save that fails still runs that once, and
-  the next run asks again. Personal chops run straight away. The mock keeps
-  approvals in memory.
+  the next run asks again. Personal chops run straight away. A prompt asks
+  the same way, its dialog says "Send" and where it goes, and the dialog
+  keeps the target picked before, so a confirmed prompt goes there, and
+  names the agent a new session would start. The digest covers the kind, so
+  an approved prompt never runs as a command, and for a prompt the agent it
+  names, so a changed agent asks again.
+  The mock keeps approvals in memory.
 - **Insert chop.** Right-clicking a session's chip, or Shift+F10 or the
   context menu key on it, opens its menu: "Insert chop: <name>" for each
   command chop of its repository, disabled with the reason once the session
@@ -2550,8 +2609,11 @@ Comparing against a backup is a later step.
 
 Notes on lines of a diff in the Changes tab, sent to an agent as one
 message. The rules are pure, in `src/shared/review.ts`; the words and the
-choice of agent are in `src/mainview/review-format.ts`, and the views in
-`src/mainview/components/ReviewNotes.tsx`.
+choice of agent are in `src/mainview/review-format.ts` and
+`src/mainview/agent-sessions.ts` (which running agents can take text,
+shared with prompt chops), and the views in
+`src/mainview/components/ReviewNotes.tsx` and the agent list it shares with
+the Send prompt dialog, `src/mainview/components/AgentChoices.tsx`.
 
 - **A note.** One line, or a run of at most 30 lines of one hunk, of one
   file (`FileChangeTarget`) in one comparison, with the lines as Git

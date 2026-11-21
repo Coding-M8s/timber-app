@@ -10,6 +10,7 @@ import { NewArenaDialog } from "./NewArenaDialog";
 import { NewWorktreeDialog } from "./NewWorktreeDialog";
 import { RebaseDialog } from "./RebaseDialog";
 import { SendReviewDialog } from "./ReviewNotes";
+import { SendPromptDialog } from "./SendPromptDialog";
 import { SettingsDialog } from "./SettingsDialog";
 import { SetupWizardDialog } from "./SetupWizardDialog";
 
@@ -64,6 +65,9 @@ export function Dialogs() {
 		case "approve-chop":
 			// A key per chop text, so a changed text is a new question.
 			return <ApproveChopDialog key={`${dialog.repository}\n${dialog.chop.name}\n${dialog.chop.text}`} request={dialog} />;
+		case "send-prompt":
+			// A key per chop and worktree, so another prompt starts from nothing.
+			return <SendPromptDialog key={`${dialog.worktree}\n${dialog.chop}`} request={dialog} />;
 		case "set-up-timber": {
 			// Timber reads and saves the repository's settings in its folder, so it has to be listed and there.
 			const repository = state.repositories.find(candidate => candidate.path === dialog.repository && candidate.available);

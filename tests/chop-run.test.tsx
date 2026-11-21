@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { sessionMenuChoice, sessionMenuItems } from "../src/mainview/agent-format";
-import { CHOPS_NOT_READ, NO_CHOPS_FOR_SESSION, SESSION_ENDED_FOR_CHOP, chopEntries, sessionChipMenuChop, sessionChipMenuItems } from "../src/mainview/chop-format";
+import { CHOPS_NOT_READ, NO_CHOPS_FOR_SESSION, SESSION_ENDED_FOR_CHOP, chopEntries, commandChopEntries, sessionChipMenuChop, sessionChipMenuItems } from "../src/mainview/chop-format";
 import { ApproveChopView } from "../src/mainview/components/ApproveChopDialog";
 import { BEING_REMOVED_REASON } from "../src/mainview/done-format";
 import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
@@ -90,7 +90,7 @@ describe("the bytes typed for a chop", () => {
 });
 
 describe("menu entries for chops", () => {
-	test("only command chops are offered, in listed order, with the description or the first line as the tooltip", () => {
+	test("the menu and palette offer every chop and Insert chop only commands, in listed order, with the description or the first line as the tooltip", () => {
 		const list = listed([
 			chop("Test", { description: "Every test" }),
 			chop("Review", { kind: "prompt", agent: "Codex" }),
@@ -98,9 +98,11 @@ describe("menu entries for chops", () => {
 		]);
 		expect(commandChops(list).map(entry => entry.name)).toEqual(["Test", "Two"]);
 		expect(chopEntries(list)).toEqual([
-			{ name: "Test", title: "Every test", source: "repository-file" },
-			{ name: "Two", title: "one ...", source: "personal-every" },
+			{ name: "Test", kind: "command", title: "Every test", source: "repository-file" },
+			{ name: "Review", kind: "prompt", title: "run Review", source: "repository-file" },
+			{ name: "Two", kind: "command", title: "one ...", source: "personal-every" },
 		]);
+		expect(commandChopEntries(list).map(entry => entry.name)).toEqual(["Test", "Two"]);
 		expect(chopEntries(null)).toEqual([]);
 		expect(chopEntries({ outcome: "failed", message: "x" })).toEqual([]);
 		expect(findListedChop(commandChops(list), "test")?.name).toBe("Test");
@@ -242,10 +244,10 @@ describe("running chops in the app (mock engine)", () => {
 		expect(markup).toContain(">Run</button>");
 	});
 
-	test("a chop that is gone, or a prompt, starts nothing and says why", async () => {
+	test("a chop that is gone starts nothing and says why", async () => {
 		const { store } = await startedStore();
-		await store.runChop(TIMBER, FEATURE.id, "Review the diff", size(), "x");
-		expect(store.getState().terminalProblem).toMatchObject({ worktree: FEATURE.id, agent: "Review the diff", message: expect.stringContaining("No command chop") });
+		await store.runChop(TIMBER, FEATURE.id, "Nope", size(), "x");
+		expect(store.getState().terminalProblem).toMatchObject({ worktree: FEATURE.id, agent: "Nope", message: expect.stringContaining("No chop called") });
 		expect(store.getState().terminals).toEqual([]);
 	});
 
@@ -276,5 +278,166 @@ describe("running chops in the app (mock engine)", () => {
 		expect(markup).toContain(">Run Test</button>");
 		expect(markup).toContain(">Run Dev server</button>");
 		expect(markup).not.toContain(">Run Review the diff</button>");
+	});
+});
+
+const ASK = "Write tests for what changed.\nRun them before you stop.";
+const askChop = (agent: string | null = "Codex") => ({ name: "Ask", kind: "prompt" as const, text: ASK, description: "", agent, repository: null });
+
+async function promptStore(agent: string | null = "Codex") {
+	const started = await startedStore();
+	expect(await started.store.savePreferences({ chops: [askChop(agent)] })).toMatchObject({ outcome: "saved" });
+	started.store.select(FEATURE.id);
+	await started.store.readChops(TIMBER);
+	return started;
+}
+
+const toastTexts = (store: ReturnType<typeof createAppStore>) => store.getState().toasts.map(toast => toast.text);
+
+describe("prompt chops in the app (mock engine)", () => {
+	test("with no agent running, the chop's agent starts with nothing added to its command line, and gets the prompt once ready, then Enter", async () => {
+		const { engine, store } = await promptStore();
+		const entry = paletteEntries(store.getState()).find(candidate => candidate.label === "Send prompt: Ask")!;
+		expect(entry.disabledReason).toBeNull();
+		runPaletteEntry(store, entry, size);
+		await settle();
+		const session = store.getState().terminals.find(candidate => candidate.kind === "agent")!;
+		expect(session).toMatchObject({ name: "Codex", worktree: FEATURE.id, prompt: { state: "sent" } });
+		// The prompt never appears on a command line.
+		expect(session.command).toBe("/usr/local/bin/codex");
+		expect(session.command).not.toContain("Write tests");
+		expect(engine.promptsSentTo(session.id)).toEqual([ASK]);
+		// One bracketed paste, so the line break does not submit early, then Enter.
+		expect(engine.typedInto(session.id)).toBe(`${bracketedPaste(ASK)}\r`);
+		expect(toastTexts(store)).toContain("Prompt sent to Codex.");
+	});
+
+	test("a chop that names no agent starts the first saved one; one that names an agent not saved starts nothing", async () => {
+		const { store } = await promptStore(null);
+		await store.runChop(TIMBER, FEATURE.id, "Ask", size());
+		await settle();
+		expect(store.getState().terminals.map(session => session.name)).toEqual(["Claude Code"]);
+
+		const other = await promptStore("Aider");
+		await other.store.runChop(TIMBER, FEATURE.id, "Ask", size());
+		await settle();
+		expect(other.store.getState().terminals).toEqual([]);
+		expect(other.store.getState().terminalProblem?.message).toContain('No agent called "Aider"');
+	});
+
+	test("with one agent running, it goes there as typed input, and no agent starts", async () => {
+		const { engine, store } = await promptStore();
+		await store.openTerminal({ repository: TIMBER, worktree: FEATURE.path, ...size(), agent: "Claude Code" });
+		await settle();
+		const running = store.getState().terminals[0]!;
+		await store.runChop(TIMBER, FEATURE.id, "Ask", size());
+		await settle();
+		expect(store.getState().terminals).toHaveLength(1);
+		expect(engine.promptsSentTo(running.id)).toEqual([ASK]);
+		expect(store.getState().shownSessions[FEATURE.id]).toBe(running.id);
+		expect(toastTexts(store)).toContain("Ask sent to Claude Code.");
+	});
+
+	test("with several agents running, the dialog asks; the picked one gets it, or a new one starts", async () => {
+		const { engine, store } = await promptStore();
+		await store.openTerminal({ repository: TIMBER, worktree: FEATURE.path, ...size(), agent: "Claude Code" });
+		await store.openTerminal({ repository: TIMBER, worktree: FEATURE.path, ...size(), agent: "Codex" });
+		await settle();
+		const [claude, codex] = store.getState().terminals;
+		await store.runChop(TIMBER, FEATURE.id, "Ask", size());
+		expect(store.getState().dialog).toEqual({ kind: "send-prompt", repository: TIMBER, worktree: FEATURE.id, chop: "Ask" });
+		const markup = renderToStaticMarkup(<App store={store} />);
+		expect(markup).toContain("Send Ask");
+		expect(markup).toContain("A new Codex");
+		expect(engine.promptsSentTo(claude!.id)).toEqual([]);
+
+		store.closeDialog();
+		await store.runChop(TIMBER, FEATURE.id, "Ask", size(), undefined, { session: codex!.id });
+		await settle();
+		expect(engine.promptsSentTo(codex!.id)).toEqual([ASK]);
+		expect(engine.promptsSentTo(claude!.id)).toEqual([]);
+
+		await store.runChop(TIMBER, FEATURE.id, "Ask", size(), undefined, { session: null });
+		await settle();
+		expect(store.getState().terminals).toHaveLength(3);
+		expect(engine.promptsSentTo(store.getState().terminals[2]!.id)).toEqual([ASK]);
+	});
+
+	test("an only agent that waits on the person is never picked without asking", async () => {
+		const { engine, store } = await promptStore();
+		await store.openTerminal({ repository: TIMBER, worktree: FEATURE.path, ...size(), agent: "Claude Code" });
+		await settle();
+		const running = store.getState().terminals[0]!;
+		engine.agentStatus(running.id, "state=blocked:kind=permission");
+		await settle();
+		await store.runChop(TIMBER, FEATURE.id, "Ask", size());
+		expect(store.getState().dialog).toMatchObject({ kind: "send-prompt" });
+		expect(engine.promptsSentTo(running.id)).toEqual([]);
+		expect(renderToStaticMarkup(<App store={store} />)).toContain("A new Codex");
+	});
+
+	test("a prompt to an agent that has ended says so, and starts nothing", async () => {
+		const { engine, store } = await promptStore();
+		await store.openTerminal({ repository: TIMBER, worktree: FEATURE.path, ...size(), agent: "Claude Code" });
+		await settle();
+		const running = store.getState().terminals[0]!;
+		engine.endTerminal(running.id, 0);
+		await settle();
+		await store.runChop(TIMBER, FEATURE.id, "Ask", size(), undefined, { session: running.id });
+		await settle();
+		expect(store.getState().terminals).toHaveLength(1);
+		expect(toastTexts(store).at(-1)).toContain("Ask was not sent: The session has ended.");
+	});
+
+	test("with no agent saved, Copy prompt puts exactly the chop's text on the clipboard", async () => {
+		const { engine, store } = await promptStore();
+		expect(await store.savePreferences({ agents: [] })).toMatchObject({ outcome: "saved" });
+		const entry = paletteEntries(store.getState()).find(candidate => candidate.label === "Copy prompt: Ask")!;
+		expect(entry.disabledReason).toBeNull();
+		runPaletteEntry(store, entry, size);
+		await settle();
+		expect(await engine.readClipboard()).toBe(ASK);
+		expect(store.getState().terminals).toEqual([]);
+		expect(toastTexts(store)).toContain("Ask copied. Paste it where you want it.");
+	});
+
+	test("a repository prompt asks before it is sent, says where it goes, and Send sends it there", async () => {
+		const { engine, store } = await startedStore();
+		store.select(FEATURE.id);
+		await store.readChops(TIMBER);
+		await store.runChop(TIMBER, FEATURE.id, "Review the diff", size());
+		await settle();
+		expect(store.getState().terminals).toEqual([]);
+		const dialog = store.getState().dialog;
+		expect(dialog).toMatchObject({ kind: "approve-chop", chop: { name: "Review the diff", kind: "prompt" } });
+		const markup = renderToStaticMarkup(<App store={store} />);
+		expect(markup).toContain("Send Review the diff from the repository?");
+		expect(markup).toContain("goes to a new Claude Code exactly as shown");
+		expect(markup).toContain(">Send</button>");
+		const text = dialog?.kind === "approve-chop" ? dialog.chop.text : "";
+		store.closeDialog();
+		await store.runChop(TIMBER, FEATURE.id, "Review the diff", size(), text, { session: null });
+		await settle();
+		const session = store.getState().terminals[0]!;
+		expect(session.name).toBe("Claude Code");
+		expect(engine.promptsSentTo(session.id)).toEqual([text]);
+	});
+
+	test("a prompt that needs a new agent while another session starts there says why", async () => {
+		const { store } = await promptStore();
+		// Act out a session starting: the store refuses a second start in the worktree.
+		const starting = store.openTerminal({ repository: TIMBER, worktree: FEATURE.path, ...size() });
+		await store.runChop(TIMBER, FEATURE.id, "Ask", size(), undefined, { session: null });
+		await starting;
+		await settle();
+		expect(toastTexts(store).at(-1)).toContain("Ask was not started: another session is starting there.");
+	});
+
+	test("the menu marks prompts, and the empty pane offers Send, or Copy with no agent saved", async () => {
+		const { store } = await promptStore();
+		const markup = renderToStaticMarkup(<App store={store} />);
+		expect(markup).toContain(">Send Ask</button>");
+		expect(await store.savePreferences({ agents: [] })).toMatchObject({ outcome: "saved" });
+		expect(renderToStaticMarkup(<App store={store} />)).toContain(">Copy Ask</button>");
 	});
 });

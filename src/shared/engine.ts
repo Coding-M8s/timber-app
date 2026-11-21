@@ -459,18 +459,27 @@ export interface Engine {
 	 */
 	onChopsChanged(listener: (repository: string) => void): () => void;
 	/**
-	 * Run a command chop in a worktree of a repository in the list: the
-	 * person's shell starts there as a new session named after the chop
+	 * Run a chop in a worktree of a repository in the list. A command chop:
+	 * the person's shell starts there as a new session named after the chop
 	 * (never after the branch), and the chop's text is typed into it and
 	 * run. The shell stays when the command ends, so its output can be read
-	 * and the command run again. The text comes from the chop list as the
-	 * machine reads it for this call, once, never from the request. A chop
+	 * and the command run again. A prompt chop: with `session`, the text
+	 * goes at once to that running agent session of the worktree, as one
+	 * paste and then Enter, and the answer is `sent`; without it, the chop's
+	 * agent, or the first saved agent, starts as a new session with nothing
+	 * added to its command line, and gets the text once it is ready
+	 * (`TerminalSession.prompt` says how that stands, see
+	 * ./agent-prompt.ts). A chop that names an agent not saved, or with no
+	 * agent saved, starts nothing (`not-configured`). The text comes from
+	 * the chop list as the machine reads it for this call, once, never from
+	 * the request. A chop
 	 * from the repository's file runs only when its text was approved for
 	 * this repository (`isChopApproved` in ./chops.ts); otherwise nothing
 	 * starts and the answer is `needs-approval` with the exact text. A
 	 * request whose `approve` is that exact text approves it, keeps the
 	 * approval app-side, and runs it. Personal chops run straight away. Not
-	 * safe to call again blindly: each call starts a session.
+	 * safe to call again blindly: each call starts a session or sends the
+	 * prompt again.
 	 */
 	runChop(request: RunChopRequest): Promise<RunChopResult>;
 	/**
