@@ -1,5 +1,6 @@
-import { CHOP_LIMIT, type ChopKind, type ChopSource, type ChopsFileState, type PersonalChop, chopProblem, normalizeChopText, samePersonalChops } from "../shared/chops";
+import { CHOP_LIMIT, type ChopKind, type ChopList, type ChopSource, type ChopsFileState, type ListedChop, type PersonalChop, chopProblem, commandChops, normalizeChopText, samePersonalChops } from "../shared/chops";
 import { cleanSessionName } from "../shared/terminal";
+import type { WorktreeMenuItem, WorktreeMenuItemId } from "./worktree-menu-format";
 
 /**
  * Words and rules for Settings, Chops. Pure, so they can be tested without a
@@ -145,14 +146,89 @@ export function describeOverride(by: "personal-every" | "personal-repository"): 
 	return by === "personal-repository" ? "Overridden by your chop for this repository" : "Overridden by your chop for every repository";
 }
 
-/** The quiet line about the repository file of a worktree: none when it was read, a hint when it is missing, the reason when it is damaged. */
+/** The quiet line about the repository file of a main checkout: none when it was read, a hint when it is missing, the reason when it is damaged. */
 export function describeChopsFile(file: ChopsFileState, path: string): { tone: "hint" | "problem"; text: string } | null {
 	switch (file.state) {
 		case "read":
 			return null;
 		case "missing":
-			return { tone: "hint", text: `A repository can share chops with everyone who works on it in ${path}. This worktree has none.` };
+			return { tone: "hint", text: `A repository can share chops with everyone who works on it in ${path}. Its main checkout has none.` };
 		case "damaged":
 			return { tone: "problem", text: `The app could not use ${path}: ${file.message} Your own chops still work.` };
 	}
+}
+
+/** One command chop as the "+" menu, the palette, or "Insert chop" offers it. */
+export interface ChopEntry {
+	/** The chop's name, which the request names. */
+	name: string;
+	/** What its tooltip says: the description, or the text's first line when it has none. */
+	title: string;
+	source: ChopSource;
+}
+
+/** The first line of a chop's text, with an ellipsis when more follows. */
+function firstLine(text: string): string {
+	const [first = "", ...rest] = text.split("\n");
+	return rest.length > 0 ? `${first} ...` : first;
+}
+
+/** The command chops of a list, in listed order, for the "+" menu and "Insert chop". None until the list was read. */
+export function chopEntries(list: ChopList | null | undefined): ChopEntry[] {
+	return commandChops(list).map(chop => ({ name: chop.name, title: chop.description !== "" ? chop.description : firstLine(chop.text), source: chop.source }));
+}
+
+/** The label of a chop's palette entry. */
+export function runChopLabel(name: string): string {
+	return `Run chop: ${name}`;
+}
+
+/** The label of a chop in a session's menu. */
+export function insertChopLabel(name: string): string {
+	return `Insert chop: ${name}`;
+}
+
+export const CHOPS_NOT_READ = "The chops of this repository are being read.";
+export const SESSION_ENDED_FOR_CHOP = "The session has ended, so nothing can be typed into it.";
+export const NO_CHOPS_FOR_SESSION = "This repository has no command chops. Add some in Settings, Chops.";
+
+/** What the dialog before a repository chop runs says. */
+export function describeChopApproval(chop: Pick<ListedChop, "name">, path: string): { title: string; text: string } {
+	return {
+		title: `Run ${chop.name} from the repository?`,
+		text: `This chop comes from ${path}, which anyone who can change the repository can change. It runs in your shell exactly as shown. The app asks the first time a chop's text runs, and again whenever it changes.`,
+	};
+}
+
+const INSERT_PREFIX = "insert-chop:";
+
+/**
+ * The entries of a session chip's menu: "Insert chop" for each command chop
+ * of the session's repository, which types its text into the session with
+ * no Enter. Disabled, with the reason, while the session has ended. With no
+ * chop to offer, one disabled entry says why.
+ */
+export function sessionChipMenuItems(running: boolean, list: ChopList | null | undefined): WorktreeMenuItem[] {
+	const chops = chopEntries(list);
+	if (chops.length === 0) {
+		const note = list == null ? CHOPS_NOT_READ : list.outcome === "listed" ? NO_CHOPS_FOR_SESSION : list.message;
+		return [{ id: `${INSERT_PREFIX}`, label: "Insert chop", disabled: true, note, title: note }];
+	}
+	return chops.map(chop => ({
+		id: `${INSERT_PREFIX}${chop.name}`,
+		label: insertChopLabel(chop.name),
+		disabled: !running,
+		note: running ? null : SESSION_ENDED_FOR_CHOP,
+		title: running ? `Type it into the session without running it: ${chop.title}` : SESSION_ENDED_FOR_CHOP,
+	}));
+}
+
+/** The chop a session chip's menu entry inserts, by name, or null for any other entry. */
+export function sessionChipMenuChop(id: WorktreeMenuItemId): string | null {
+	return id.startsWith(INSERT_PREFIX) && id.length > INSERT_PREFIX.length ? id.slice(INSERT_PREFIX.length) : null;
+}
+
+/** The name of a session chip's menu, for assistive technology. */
+export function describeSessionChipMenu(name: string): string {
+	return `Actions for ${name}`;
 }

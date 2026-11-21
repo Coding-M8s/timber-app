@@ -46,12 +46,18 @@ export function menuIndexAfterKey(count: number, index: number, key: string): nu
 	}
 }
 
-/** What choosing entry `index` of the "+" menu does: start the shell or an agent, or open Settings at Agents, the entry after them. */
-export type SessionMenuChoice = { kind: "start"; agent: string | null } | { kind: "set-up" };
+/**
+ * What choosing entry `index` of the "+" menu does. The entries are the
+ * shell and the agents (`items`), then the repository's command chops by
+ * name (`chops`), then "Set up agents", which opens Settings at Agents.
+ */
+export type SessionMenuChoice = { kind: "start"; agent: string | null } | { kind: "chop"; name: string } | { kind: "set-up" };
 
-export function sessionMenuChoice(items: readonly SessionMenuItem[], index: number): SessionMenuChoice | null {
-	if (!Number.isInteger(index) || index < 0 || index > items.length) return null;
-	return index < items.length ? { kind: "start", agent: items[index]!.agent } : { kind: "set-up" };
+export function sessionMenuChoice(items: readonly SessionMenuItem[], index: number, chops: readonly { name: string }[] = []): SessionMenuChoice | null {
+	if (!Number.isInteger(index) || index < 0 || index > items.length + chops.length) return null;
+	if (index < items.length) return { kind: "start", agent: items[index]!.agent };
+	if (index < items.length + chops.length) return { kind: "chop", name: chops[index - items.length]!.name };
+	return { kind: "set-up" };
 }
 
 /** What a workflow's agent is called while it starts, or when it did not, before Timber has said what it runs. */

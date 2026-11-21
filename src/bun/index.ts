@@ -21,6 +21,8 @@ import { createFetcher } from "./fetcher";
 import { type HandoffFolder, openHandoffFolder } from "./handoffs";
 import { createSavedForcePushes } from "./force-pushes";
 import { createChops } from "./chops";
+import { createSavedChopApprovals } from "./chop-approvals";
+import { createChopsWatcher } from "./chops-watcher";
 import { createFileChanges } from "./file-changes";
 import { createPorts } from "./ports";
 import { createWorktreePaths } from "./worktree-paths";
@@ -173,6 +175,8 @@ function heard(path: string): void {
 	refreshPolicy.changed(path);
 }
 const watcher = createRepositoryWatcher({ onChange: heard });
+// The chops file of each main checkout, and nothing else in it (see ./chops-watcher.ts). The window lists the chops again.
+const chopsWatcher = createChopsWatcher({ onChange: repository => tell(`a change to the chops of ${repository}`, () => rpc.send.chopsChanged({ repository })) });
 
 /*
  * Fetching (see docs/architecture.md, "Fetching"). Every repository in the list is fetched in the background on the
@@ -213,6 +217,7 @@ function watchRepositories(): Promise<void> {
 		try {
 			watchTargets = await repositories.watchTargets();
 			watcher.sync(watchTargets);
+			chopsWatcher.sync(watchTargets.map(target => target.path));
 			fetcher.sync(watchTargets);
 		} catch (error) {
 			console.warn(`Could not read which repositories to watch: ${messageOf(error)}`);
@@ -224,8 +229,16 @@ void watchRepositories();
 
 const done = createDone({ timber: () => timber.current(), findRepository: path => repositories.find(path) });
 const fileChanges = createFileChanges({ findRepository: path => repositories.findRecent(path) });
-// Personal chops come from the saved preferences only; the repository's are read from its file on every request.
-const chops = createChops({ findRepository: path => repositories.findRecent(path), personal: async () => (await preferences.load()).chops });
+// Personal chops come from the saved preferences only; the repository's are read from its main checkout's file on every request.
+// A chop's text comes from that read only, never from the window; a repository chop runs once its text is approved (see ./chops.ts).
+const chopApprovals = createSavedChopApprovals(settings);
+const chops = createChops({
+	findRepository: path => repositories.findRecent(path),
+	personal: async () => (await preferences.load()).chops,
+	approvals: () => chopApprovals.load(),
+	approve: (repository, digest) => chopApprovals.approve(repository, digest),
+	openTerminal: (request, chop) => terminals.open(request, chop),
+});
 // Timber reads and writes its own settings and logins. The app never opens those files (see ./timber-settings.ts).
 const timberSettings = createTimberSettings({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
 // Runs Timber's settings read and keeps only the workflows. What it prints is private: never log it (see ./workflows.ts).
@@ -472,6 +485,8 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			// Read-only Docker and process table, only in a worktree Timber lists, never while the window is hidden (see ./ports.ts).
 			readPorts: request => ports.read(request),
 			listChops: request => chops.list(request),
+			// Starts the person's shell with a chop's text typed in, the text read here, never sent by the window (see ./chops.ts).
+			runChop: request => chops.run(request),
 			listTerminals: () => terminals.list(),
 			// Starts a shell, an agent from the saved Settings, or timber rebase, only in a worktree Timber lists (see ./terminals.ts).
 			openTerminal: request => terminals.open(request),
@@ -532,6 +547,7 @@ function guardQuit(event: unknown): void {
 		refreshPolicy.stop();
 		pace.stop();
 		watcher.stop();
+		chopsWatcher.stop();
 		quitting = true;
 		handoffFolder?.close();
 		// Asks a running Git to stop, so it can remove its lock files before the app goes.

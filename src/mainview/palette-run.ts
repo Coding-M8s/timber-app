@@ -43,5 +43,10 @@ export function runPaletteEntry(store: AppStore, entry: PaletteEntry, size: Sess
 				...(action.agent === null ? {} : { agent: action.agent }),
 			});
 			return;
+		case "chop":
+			store.select(action.worktree);
+			store.showTab("workspace");
+			void store.runChop(action.repository, action.worktree, action.chop, size());
+			return;
 	}
 }

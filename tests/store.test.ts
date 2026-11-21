@@ -157,6 +157,8 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		readFileChanges: async () => ({ outcome: "read", files: [], more: false, compared: "uncommitted", base: { usable: false, reason: "No base." } }),
 		readFileDiff: async () => ({ outcome: "read", file: null, diff: { kind: "unchanged" } }),
 		listChops: async () => ({ outcome: "listed", file: { state: "missing" }, path: "/work/app/.timber/chops.json", chops: [], overridden: [] }),
+		onChopsChanged: () => () => {},
+		runChop: async () => ({ outcome: "no-chop", message: "No chops here." }),
 		readPorts: async () => ({ outcome: "read", docker: { state: "read", ports: [] }, sessions: { state: "read", ports: [] }, clashes: [] }),
 	};
 	const push = (path: string) => {

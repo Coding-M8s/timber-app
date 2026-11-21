@@ -1,7 +1,7 @@
 import type { WorktreeHandoff } from "./handoff";
 import type { RPCSchema } from "electrobun/view";
 import type { NewArenaRequest, PickArenaRequest } from "./arenas";
-import type { ChopsRequest } from "./chops";
+import type { ChopsRequest, RunChopRequest } from "./chops";
 import type { Attention } from "./attention";
 import type { BackupDeleteRequest, BackupRestoreRequest } from "./backups";
 import type { Engine } from "./engine";
@@ -102,6 +102,7 @@ export type AppRPC = {
 			readFileDiff: { params: FileDiffRequest; response: Answer<"readFileDiff"> };
 			readPorts: { params: PortsRequest; response: Answer<"readPorts"> };
 			listChops: { params: ChopsRequest; response: Answer<"listChops"> };
+			runChop: { params: RunChopRequest; response: Answer<"runChop"> };
 			listTerminals: { params: {}; response: Answer<"listTerminals"> };
 			openTerminal: { params: OpenTerminalRequest; response: Answer<"openTerminal"> };
 			readTerminal: { params: { id: string }; response: Answer<"readTerminal"> };
@@ -144,6 +145,8 @@ export type AppRPC = {
 		messages: {
 			/** A repository changed. `path` is its primary checkout. */
 			repositoryChanged: { path: string };
+			/** The chops file in a repository's main checkout may have changed. `repository` is its primary checkout. */
+			chopsChanged: { repository: string };
 			/** Part of what a session printed. */
 			terminalOutput: TerminalOutput;
 			terminalChanged: TerminalChange;

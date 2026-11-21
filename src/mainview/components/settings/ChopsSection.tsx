@@ -10,11 +10,9 @@ import { useAppState, useStore } from "../../store/react";
 import { selectedWorktree } from "../../store/state";
 import { type SectionSave, SettingsSection, useDraftSection } from "./SettingsSection";
 
-/** The worktree whose repository chops show, as drawn. */
-export interface ChopsWorktree {
+/** The repository whose chops show, as drawn: the selected worktree's. */
+export interface ChopsRepository {
 	repositoryName: string;
-	/** The worktree's branch, or null when it is detached. */
-	branch: string | null;
 	/** Null until the first read answered. */
 	list: ChopList | null;
 }
@@ -25,7 +23,7 @@ export interface ChopsSectionViewProps {
 	repositories: readonly { path: string; name: string }[];
 	agents: readonly AgentSetting[];
 	/** Null when no worktree is selected. */
-	worktree: ChopsWorktree | null;
+	repository: ChopsRepository | null;
 	save: SectionSave;
 	onAdd: () => void;
 	onEdit: (key: string, change: ChopDraftChange) => void;
@@ -34,14 +32,14 @@ export interface ChopsSectionViewProps {
 	onReadAgain: () => void;
 }
 
-/** The chops a worktree's repository shares, read-only, with the ones a personal chop overrides. */
-function RepositoryChops({ worktree, onReadAgain }: { worktree: ChopsWorktree | null; onReadAgain: () => void }) {
+/** The chops a repository shares in its main checkout, read-only, with the ones a personal chop overrides. */
+function RepositoryChops({ repository, onReadAgain }: { repository: ChopsRepository | null; onReadAgain: () => void }) {
 	const titleId = useId();
-	if (worktree === null) {
+	if (repository === null) {
 		return <p className="dialog-note">Select a worktree to see the chops its repository shares.</p>;
 	}
-	const { list } = worktree;
-	const where = worktree.branch === null ? worktree.repositoryName : `${worktree.repositoryName}, branch ${worktree.branch}`;
+	const { list } = repository;
+	const where = repository.repositoryName;
 	const fromFile = list?.outcome === "listed" ? list.chops.filter(chop => chop.source === "repository-file") : [];
 	const line = list?.outcome === "listed" ? describeChopsFile(list.file, list.path) : null;
 	return (
@@ -51,7 +49,7 @@ function RepositoryChops({ worktree, onReadAgain }: { worktree: ChopsWorktree | 
 				<button type="button" className="button quiet" onClick={onReadAgain}>Read again</button>
 			</div>
 			<p className="field-hint">
-				{where}{list?.outcome === "listed" ? `: ${list.path}` : ""}. The app reads this file from the selected worktree and never changes it. Your chop with the same name wins.
+				{where}{list?.outcome === "listed" ? `: ${list.path}` : ""}. The app reads this file from the repository's main checkout, for every worktree, and never changes it. A branch's change to it shows once it reaches the main checkout. Your chop with the same name wins.
 			</p>
 			{list === null && <p className="dialog-note" role="status">Reading the chops</p>}
 			{list !== null && list.outcome !== "listed" && <p className="dialog-note">{list.message}</p>}
@@ -79,7 +77,7 @@ function RepositoryChops({ worktree, onReadAgain }: { worktree: ChopsWorktree | 
 }
 
 /** Settings, Chops as drawn from its data, so it can be tested without a window. */
-export function ChopsSectionView({ drafts, saved, repositories, agents, worktree, save, onAdd, onEdit, onRemove, onSave, onReadAgain }: ChopsSectionViewProps) {
+export function ChopsSectionView({ drafts, saved, repositories, agents, repository, save, onAdd, onEdit, onRemove, onSave, onReadAgain }: ChopsSectionViewProps) {
 	const idPrefix = useId();
 	const model = chopsDraftModel(drafts, saved);
 	const addId = `${idPrefix}-add`;
@@ -201,17 +199,17 @@ export function ChopsSectionView({ drafts, saved, repositories, agents, worktree
 			<div className="chop-add">
 				<button type="button" id={addId} className="button quiet" onClick={add}>Add a chop</button>
 			</div>
-			<RepositoryChops worktree={worktree} onReadAgain={onReadAgain} />
+			<RepositoryChops repository={repository} onReadAgain={onReadAgain} />
 		</SettingsSection>
 	);
 }
 
 /**
  * Settings, Chops: the person's own chops, edited row by row and saved with
- * the section's Save, and the selected worktree's repository chops,
- * read-only. Those are read when the section is drawn, after every reload
- * of the worktree's repository, when the saved chops change, and on "Read
- * again", so an edit to the file shows without a restart or a watch.
+ * the section's Save, and the chops the selected worktree's repository
+ * shares in its main checkout, read-only. The store reads those for the
+ * selected repository (`ChopsKeeper`), again when the file changes, and on
+ * "Read again".
  */
 export function ChopsSection() {
 	const store = useStore();
@@ -226,20 +224,13 @@ export function ChopsSection() {
 
 	const selected = selectedWorktree(state);
 	const repositoryPath = selected?.repository.path ?? null;
-	const worktree = selected?.worktree ?? null;
-	const worktreeId = worktree?.id ?? null;
-	const readable = worktree?.pathExists ?? false;
-	// The store reads them again after every reload of the repository, which follows changes to the file.
-	useEffect(() => {
-		if (repositoryPath !== null && worktreeId !== null && readable) void store.readChops(repositoryPath, worktreeId);
-	}, [store, repositoryPath, worktreeId, readable, saved]);
 
 	const onSave = async () => {
 		const { chops, canSave } = chopsDraftModel(drafts, saved);
 		if (!canSave) return;
 		await commit({ chops });
 	};
-	const view = state.chops !== null && worktree !== null && state.chops.worktree === worktree.id ? state.chops.list : null;
+	const view = state.chops !== null && state.chops.repository === repositoryPath ? state.chops.list : null;
 
 	return (
 		<ChopsSectionView
@@ -247,19 +238,31 @@ export function ChopsSection() {
 			saved={saved}
 			repositories={state.repositories}
 			agents={state.preferences.agents}
-			worktree={selected === null ? null : {
-				repositoryName: selected.repository.name,
-				branch: selected.worktree.branch,
-				list: selected.worktree.pathExists ? view : { outcome: "not-listed", message: `The folder ${selected.worktree.path} is missing, so its chops cannot be read.` },
-			}}
+			repository={selected === null ? null : { repositoryName: selected.repository.name, list: view }}
 			save={save}
 			onAdd={() => change(addChopDraft(drafts))}
 			onEdit={(key, edit) => change(editChopDraft(drafts, key, edit))}
 			onRemove={key => change(removeChopDraft(drafts, key))}
 			onSave={() => void onSave()}
 			onReadAgain={() => {
-				if (repositoryPath !== null && worktree !== null && worktree.pathExists) void store.readChops(repositoryPath, worktree.id);
+				if (repositoryPath !== null) void store.readChops(repositoryPath);
 			}}
 		/>
 	);
+}
+
+/**
+ * Reads the chops of the selected worktree's repository whenever another
+ * repository is selected or the saved chops change, for the "+" menu, the
+ * palette, "Insert chop", and Settings, Chops. It draws nothing.
+ */
+export function ChopsKeeper() {
+	const store = useStore();
+	const state = useAppState();
+	const repositoryPath = selectedWorktree(state)?.repository.path ?? null;
+	const saved = state.preferences.chops;
+	useEffect(() => {
+		if (repositoryPath !== null) void store.readChops(repositoryPath);
+	}, [store, repositoryPath, saved]);
+	return null;
 }

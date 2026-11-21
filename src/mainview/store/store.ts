@@ -6,7 +6,7 @@ import { readableEditorSetting } from "../../shared/editor";
 import type { Engine } from "../../shared/engine";
 import type { WorktreeHandoff } from "../../shared/handoff";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "../../shared/git-fetch";
-import type { ChopList } from "../../shared/chops";
+import { type ChopList, commandChops, findListedChop } from "../../shared/chops";
 import { type Comparison, type FileChangeTarget, type FileChangesResult, type FileDiff, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
 import type { PortsResult } from "../../shared/ports";
 import { type Layout, chooseComparison, chosenComparison, clampSidebarWidth, dismissSetup, forgetRepository, sameLayout, toggleCollapsed } from "../../shared/layout";
@@ -33,7 +33,7 @@ import type { WorkflowList } from "../../shared/workflows";
 import type { IssueTrackers } from "../../shared/issue-trackers";
 import { type Draw, createTerminalFeed } from "../terminal-feed";
 import { describeOrphanTerminal } from "../terminal-format";
-import { describeDone, describeRemovalFailed } from "../done-format";
+import { BEING_REMOVED_REASON, describeDone, describeRemovalFailed } from "../done-format";
 import { SESSION_STARTED_DIAGNOSTIC, describeCleanUpEnded } from "../clean-up-format";
 import { listedOrder } from "../changes-format";
 import { describeOpenedInEditor } from "../editor-format";
@@ -159,11 +159,26 @@ export interface AppStore {
 	 */
 	readChanges(repository: string, worktreeId: string): Promise<void>;
 	/**
-	 * Read the chops of a worktree, named by the path of its repository and
-	 * its identity, into `chops`. The latest read wins, and another
-	 * worktree starts afresh. Never throws.
+	 * Read the chops of a repository, named by the path of its primary
+	 * checkout, into `chops`. The latest read wins, and another repository
+	 * starts afresh. Never throws.
 	 */
-	readChops(repository: string, worktreeId: string): Promise<void>;
+	readChops(repository: string): Promise<void>;
+	/**
+	 * Run a command chop in a worktree, named by its repository and identity,
+	 * in a new session named after it, as `Engine.runChop` does, and show it.
+	 * A repository chop whose text was not approved opens the dialog that
+	 * shows it; `approve` is the text confirmed there. Nothing starts while
+	 * another session starts in the worktree, or in a folder being deleted.
+	 * Why it did not start shows in `terminalProblem`. Never throws.
+	 */
+	runChop(repository: string, worktreeId: string, chop: string, size: { cols: number; rows: number }, approve?: string): Promise<void>;
+	/**
+	 * Type a command chop of the session's repository into a running session,
+	 * with no Enter, as `Engine.pasteTerminal` does. A toast says when it
+	 * could not. Never throws.
+	 */
+	insertChop(sessionId: string, chop: string): Promise<void>;
 	/**
 	 * Read the ports of a worktree, named by the path of its repository and
 	 * its identity, into `ports` and `portClashes`. A hidden window's answer
@@ -922,8 +937,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			forgetGoneReviews();
 			requestBackups(path);
 			requestArenas(path);
-			// The file may have changed with the worktree's branch or files: read the chops on screen again.
-			if (state.chops?.repository === path) void readChops(path, state.chops.worktree);
+			// The main checkout's file may have changed with its branch: read the chops on screen again.
+			if (state.chops?.repository === path) void readChops(path);
 		} catch (error) {
 			if (stale()) return;
 			update({ error: { repository: path, message: messageOf(error) } });
@@ -1183,21 +1198,75 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	}
 
 	let chopsTicket = 0;
-	async function readChops(repositoryPath: string, worktreeId: string): Promise<void> {
-		const worktree = worktreeOf(repositoryPath, worktreeId);
-		if (!worktree) return;
+	async function readChops(repositoryPath: string): Promise<void> {
 		const ticket = ++chopsTicket;
-		if (state.chops?.worktree !== worktreeId || state.chops.repository !== repositoryPath) {
-			update({ chops: { repository: repositoryPath, worktree: worktreeId, list: null } });
-		}
+		if (state.chops?.repository !== repositoryPath) update({ chops: { repository: repositoryPath, list: null } });
 		let answer: ChopList;
 		try {
-			answer = await engine.listChops({ repository: repositoryPath, worktree: worktree.path });
+			answer = await engine.listChops({ repository: repositoryPath });
 		} catch (error) {
 			answer = { outcome: "failed", message: unheard("the chops", error) };
 		}
-		if (ticket !== chopsTicket || state.chops?.worktree !== worktreeId || state.chops.repository !== repositoryPath) return;
-		update({ chops: { repository: repositoryPath, worktree: worktreeId, list: answer } });
+		if (ticket !== chopsTicket || state.chops?.repository !== repositoryPath) return;
+		update({ chops: { repository: repositoryPath, list: answer } });
+	}
+
+	async function runChop(repositoryPath: string, worktreeId: string, name: string, size: { cols: number; rows: number }, approve?: string): Promise<void> {
+		const worktree = worktreeOf(repositoryPath, worktreeId);
+		// After the approval dialog closed, a run that cannot start says so: nothing else would.
+		const blocked = (why: string) => {
+			if (approve !== undefined) showToast(`${name} was not started: ${why}`, true);
+		};
+		if (!worktree) return blocked("the worktree is no longer listed.");
+		if (isBeingRemoved(state, repositoryPath, worktree.path)) return blocked(BEING_REMOVED_REASON);
+		if (state.operations.some(operation => operation.kind === "open-terminal" && operation.worktree === worktreeId)) return blocked("another session is starting there. Run it again in a moment.");
+		await track({ kind: "open-terminal", worktree: worktreeId, agent: name }, async () => {
+			let message: string;
+			let command: string | null = null;
+			try {
+				const result = await engine.runChop({ repository: repositoryPath, worktree: worktree.path, chop: name, ...size, ...(approve === undefined ? {} : { approve }) });
+				if (result.outcome === "opened") {
+					const { session } = result;
+					update({
+						terminals: withTerminal(state.terminals, session.id, session),
+						shownSessions: { ...state.shownSessions, [session.worktree]: session.id },
+						unseenSessions: state.unseenSessions.filter(id => id !== session.id),
+						terminalProblem: state.terminalProblem?.worktree === worktreeId ? null : state.terminalProblem,
+					});
+					return;
+				}
+				if (result.outcome === "needs-approval") {
+					// Never over a dialog the person opened meanwhile.
+					if (state.dialog === null || state.dialog.kind === "palette") update({ dialog: { kind: "approve-chop", repository: repositoryPath, worktree: worktreeId, chop: result.chop, path: result.path } });
+					else showToast(`${name} comes from the repository and needs your approval. Run it again once this dialog is closed.`, true);
+					return;
+				}
+				message = result.message;
+				if ((result.outcome === "not-found" || result.outcome === "failed") && result.command !== undefined) command = result.command;
+			} catch (error) {
+				message = `The app did not hear whether ${name} started: ${messageOf(error)}`;
+			}
+			update({ terminalProblem: { worktree: worktreeId, agent: name, message, command } });
+		});
+	}
+
+	async function insertChop(sessionId: string, name: string): Promise<void> {
+		const session = state.terminals.find(candidate => candidate.id === sessionId);
+		if (!session || session.state.kind !== "running") return;
+		const list = state.chops?.repository === session.repository ? state.chops.list : null;
+		const chop = findListedChop(commandChops(list), name);
+		if (chop === null) {
+			showToast(`No command chop called "${name}" is listed for this repository now.`, true);
+			return;
+		}
+		let result: PasteResult;
+		try {
+			result = await engine.pasteTerminal(sessionId, chop.text);
+		} catch (error) {
+			showToast(notHeard("back about the chop", error, ". It may have been typed: look at the session before you insert it again."), true);
+			return;
+		}
+		if (result.outcome !== "pasted") showToast(`${chop.name} was not inserted: ${result.message}`, true);
 	}
 
 	async function selectChangedFile(file: FileChangeTarget): Promise<void> {
@@ -2059,6 +2128,10 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		start() {
 			let heard: TerminalChange[] | null = [];
 			const stops = [
+				// The main checkout's chops file changed: list them again, if they are on screen.
+				engine.onChopsChanged(repository => {
+					if (state.chops?.repository === repository) void readChops(repository);
+				}),
 				engine.onRepositoryChanged(path => {
 					// Only a repository on screen can be refreshed. Reload everything to pick up a new one.
 					if (state.repositories.some(repository => repository.path === path)) void reloadOne(path);
@@ -2201,6 +2274,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		},
 		readChanges,
 		readChops,
+		runChop,
+		insertChop,
 		readPorts,
 		selectChangedFile,
 		compareChanges,

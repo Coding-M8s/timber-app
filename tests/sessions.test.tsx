@@ -223,7 +223,7 @@ describe("several sessions in one worktree", () => {
 		expect(selected[0]![1]).toBe(three.id);
 		expect(selected[0]![0]).toContain('tabindex="0"');
 		expect(tabs.filter(match => match[0].includes('tabindex="-1"'))).toHaveLength(2);
-		expect(markup).toContain('aria-keyshortcuts="Delete F2"');
+		expect(markup).toContain('aria-keyshortcuts="Delete F2 Shift+F10 ContextMenu"');
 		expect(markup).toContain(`role="tabpanel" id="session-panel" aria-labelledby="session-chip-${three.id}"`);
 		expect(markup.match(/class="terminal-screen"/g)).toHaveLength(1);
 		expect(markup).toContain('aria-label="New session" aria-haspopup="menu" aria-expanded="false"');
