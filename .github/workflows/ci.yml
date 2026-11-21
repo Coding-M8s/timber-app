@@ -24,13 +24,10 @@ jobs:
         with:
           bun-version-file: .bun-version
       - run: bun install --frozen-lockfile
-      # The tests that list real repositories run the real Timber.
+      # The tests that list real repositories run the real Timber: the one
+      # the app bundles (timber-pin.json), checked against its SHA-256.
       - name: Install Timber
-        env:
-          TIMBER_VERSION: v0.1.3
-        run: |
-          curl -fsSL "https://github.com/Coding-M8s/timber/releases/download/$TIMBER_VERSION/install.sh" | sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        run: bun scripts/fetch-timber.ts --add-to-path
       - run: bun run typecheck
       - run: bun test
       - run: bun run build:web

@@ -216,7 +216,7 @@ export type DialogRequest =
 	| { kind: "send-prompt"; repository: string; worktree: string; chop: string };
 
 /** The sections of the Settings dialog, in the order they are listed. */
-export const SETTINGS_SECTIONS = ["layout", "theme", "terminal", "rendering", "editor", "agents", "chops", "notifications", "fetch", "about", "machine", "repository"] as const;
+export const SETTINGS_SECTIONS = ["layout", "theme", "terminal", "rendering", "editor", "agents", "chops", "notifications", "fetch", "about", "executable", "machine", "repository"] as const;
 export type SettingsSection = typeof SETTINGS_SECTIONS[number];
 
 /** The views of the selected worktree, in the order of their tabs. */

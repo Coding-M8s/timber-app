@@ -3067,3 +3067,28 @@ sway) with Bun 1.4.2, Git 2.56.1, Timber 0.1.3, and Google Chrome 157:
   `bun run build:web`: built. `bun test`: 3002 passed, 27 skipped, none
   failed, the nine browser tests among them. Not run again after this: the
   desktop app by hand.
+
+Run for shipping Timber inside the app (issue 30), on 2026-11-21, Linux x64
+(Omarchy) with Bun 1.4.5, Git 2.56.1, and Timber 0.1.4:
+
+- `bun scripts/fetch-timber.ts`: downloaded `timber-v0.1.4-linux-x64`,
+  `LICENSE`, and `THIRD_PARTY_NOTICES.txt` from the v0.1.4 release, each
+  matching `timber-pin.json`, into `vendor/timber/v0.1.4/linux-x64`. The
+  binary printed 0.1.4. A run with a wrong checksum fails and keeps nothing
+  (`tests/fetch-timber.test.ts`, against a fake download).
+- `bun run build`: built. The packed app holds `Resources/app/timber/` with
+  `timber` (executable), `LICENSE`, and `THIRD_PARTY_NOTICES.txt`, and the
+  `timber` there printed 0.1.4. A first build left the folder out, because
+  Electrobun reads `electrobun.config.ts` from a folder of its own; the check
+  now starts from the config's own folder, and
+  `tests/bundled-timber-build.test.ts` reads the config from another folder.
+- The built app's bundled Timber, through `chooseTimber` and `checkTimber`
+  with `PATH=/usr/bin:/bin` and no timber on it: ready, source `bundled`,
+  0.1.4. `listWorktrees` with it listed a new temporary repository.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+  `bun run build:web`: built. `bun test`: 3046 passed, 19 skipped, none
+  failed. Again with only the pinned binary on PATH (no `~/.local/bin`), as
+  CI now runs: 3046 passed, 19 skipped, none failed.
+- Not run: the installed desktop app by hand (New, Open, Done, and Rebase
+  through the window with no Timber installed, switching Settings, Timber,
+  Executable, and About), the Windows build, and macOS, which is not built.

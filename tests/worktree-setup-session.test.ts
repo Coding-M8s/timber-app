@@ -117,7 +117,7 @@ describe.skipIf(!posix)("a worktree's setup in a terminal session", () => {
 	});
 
 	test("nothing runs while Timber is not ready, for a worktree Timber does not list, or for a request of the wrong shape", async () => {
-		let start = setUp({ state: "not-found", override: null });
+		let start = setUp({ state: "not-found", source: "path", path: null });
 		expect((await start({ repository, worktree, cols: 80, rows: 24 })).outcome).toBe("not-configured");
 		start = setUp(ready(standIn));
 		expect((await start({ repository, worktree: join(root, "elsewhere"), cols: 80, rows: 24 })).outcome).toBe("not-listed");

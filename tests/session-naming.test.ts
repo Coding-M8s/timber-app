@@ -139,7 +139,7 @@ describe("the mock engine names sessions as Settings says", () => {
 		const terminals = createMockTerminals(
 			(_repository, path) => worktrees.find(candidate => candidate.path === path) ?? null,
 			() => [{ name: "Codex", command: "codex" }],
-			() => ({ state: "ready", path: "/usr/local/bin/timber", version: "0.1.1" }),
+			() => ({ state: "ready", source: "path", path: "/usr/local/bin/timber", version: "0.1.1" }),
 			() => naming,
 		);
 		const open = async (path: string, extra: { agent?: string; timberWorktreeSetup?: Record<string, never> } = {}) => {

@@ -13,6 +13,8 @@ const ICON_PATHS: Record<SettingsSection, ReactNode> = {
 	notifications: <path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15L6 16zM10 20a2 2 0 0 0 4 0" />,
 	fetch: <path d="M20 11a8 8 0 0 0-14.6-4.4M4 4v4h4M4 13a8 8 0 0 0 14.6 4.4M20 20v-4h-4" />,
 	about: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8v.01" /></>,
+	// A program with a prompt: which Timber executable runs.
+	executable: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 9h18M7 13l2 2-2 2" /></>,
 	machine: <><rect x="4" y="5" width="16" height="11" rx="1.5" /><path d="M2 19h20" /></>,
 	repository: <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />,
 };

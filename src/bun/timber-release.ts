@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { TimberStatus } from "../shared/model";
+import type { TimberSource, TimberStatus } from "../shared/model";
 import { REQUIRED_TIMBER_VERSION, newerTimberVersion, parseTimberVersion, readReleaseLocation, satisfiesTimberVersion } from "../shared/timber-version";
 import { messageOf } from "../shared/error-message";
 
@@ -86,33 +86,48 @@ export function createReleaseWatcher(options: {
 }
 
 /**
+ * Whether a Timber needs only the built-in minimum, not the newest release:
+ * the bundled one, which is the release the app was tested with, and the
+ * development override, because a local build may carry any version number.
+ */
+export function needsOnlyMinimum(source: TimberSource): boolean {
+	return source === "bundled" || source === "override";
+}
+
+/**
  * How the app looks for Timber with the newest release required. The version
  * required is fixed while Timber is usable, so a release that comes out while
  * the app runs never takes Timber away mid-task: it is named in
  * `newerRelease` instead, and required from the next start. While Timber is
- * not usable, each look requires the newest release known. With the
- * development override, only the built-in minimum is required.
+ * not usable, or once another Timber is chosen, each look requires the
+ * newest release known. The bundled Timber and the development override
+ * need only the built-in minimum, and get no banner (`needsOnlyMinimum`).
  */
-export function timberFinder(options: {
-	look: (required: string) => Promise<TimberStatus>;
+export function timberFinder<Candidate extends { source: TimberSource; path: string | null }>(options: {
+	/** Which Timber to ask, read again on every look, so a change in Settings counts at once. */
+	choose: () => Candidate | Promise<Candidate>;
+	look: (candidate: Candidate, required: string) => Promise<TimberStatus>;
 	latest: () => string | null;
-	override: boolean;
 	/** Waited for before the first look, such as the lookup at start. */
 	before?: Promise<unknown>;
 	minimum?: string;
 }): () => Promise<TimberStatus> {
-	const { look, latest, override, minimum = REQUIRED_TIMBER_VERSION } = options;
+	const { choose, look, latest, minimum = REQUIRED_TIMBER_VERSION } = options;
 	let before = options.before;
 	let required: string | null = null;
 	let usable = false;
+	let last: { source: TimberSource; path: string | null } | null = null;
 	return async () => {
 		if (before) {
 			await before.catch(() => {});
 			before = undefined;
 		}
-		const newest = override ? null : latest();
-		if (!usable || required === null) required = newerTimberVersion(minimum, newest);
-		const status = await look(required);
+		const candidate = await choose();
+		const changed = last === null || last.source !== candidate.source || last.path !== candidate.path;
+		last = { source: candidate.source, path: candidate.path };
+		const newest = needsOnlyMinimum(candidate.source) ? null : latest();
+		if (!usable || changed || required === null) required = newerTimberVersion(minimum, newest);
+		const status = await look(candidate, required);
 		usable = status.state === "ready";
 		if (status.state === "too-old") return newest !== null && required === newest && required !== minimum ? { ...status, latestRelease: true } : status;
 		if (status.state === "ready" && newest !== null && !satisfiesTimberVersion(status.version, newest)) {

@@ -8,7 +8,7 @@ import { existingBranchMode } from "../src/mainview/components/worktree-modes/ex
 import { createExistingBranchForm } from "../src/mainview/components/worktree-modes/existing-branch-form";
 import { newBranchMode } from "../src/mainview/components/worktree-modes/new-branch";
 import { createNewBranchModel } from "../src/mainview/components/worktree-modes/new-branch-model";
-import { type MockEngine, createMockEngine } from "../src/mainview/engine/mock";
+import { MOCK_BUNDLED_TIMBER, type MockEngine, createMockEngine } from "../src/mainview/engine/mock";
 import { selectedWorktree } from "../src/mainview/store/state";
 import { createAppStore } from "../src/mainview/store/store";
 import { createSubmission } from "../src/mainview/store/submission";
@@ -283,7 +283,7 @@ describe("creating a worktree with an agent picked", () => {
 		expect(sessions()).toHaveLength(2);
 		expect(sessions()[0]).toMatchObject({
 			kind: "timber", name: "Setup", worktree: worktree.id, state: { kind: "running" },
-			command: `/home/sam/.local/bin/timber open --setup --no-editor --no-agent -- ${worktree.path}`,
+			command: `${MOCK_BUNDLED_TIMBER} open --setup --no-editor --no-agent -- ${worktree.path}`,
 		});
 		expect(sessions()[1]).toMatchObject({ kind: "agent", name: "Codex", worktree: worktree.id, path: worktree.path, state: { kind: "running" } });
 		expect(shown()?.name).toBe("Codex");

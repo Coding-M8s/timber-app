@@ -145,7 +145,7 @@ describe("WorktreeCommands.rebase, with a stand-in Timber", () => {
 	});
 
 	test("a Timber that is not ready runs nothing", async () => {
-		await expectNotRun(commandsOn({ result: null }, { status: { state: "not-found", override: null } }), ask(), /\.$/);
+		await expectNotRun(commandsOn({ result: null }, { status: { state: "not-found", source: "path", path: null } }), ask(), /\.$/);
 	});
 
 	test("rebases in one repository run one after another", async () => {

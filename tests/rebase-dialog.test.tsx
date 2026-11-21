@@ -80,7 +80,7 @@ describe("the Rebase dialog", () => {
 	});
 
 	test("while Timber is not ready, no Rebase dialog shows, only the window's Timber notice", async () => {
-		const { store } = await startedStore(createMockEngine(sampleRepositories, { state: "too-old", path: "/usr/bin/timber", found: "0.1.1", required: "0.1.3" }));
+		const { store } = await startedStore(createMockEngine(sampleRepositories, { state: "too-old", source: "path", path: "/usr/bin/timber", found: "0.1.1", required: "0.1.3" }));
 		store.openDialog({ kind: "rebase-worktree", repository: TIMBER, worktree: feature.id });
 		await settle();
 		const markup = renderToStaticMarkup(<App store={store} />);

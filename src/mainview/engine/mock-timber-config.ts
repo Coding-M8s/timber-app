@@ -90,7 +90,7 @@ const same = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.st
  */
 export function createMockTimberConfig(
 	isListed: (path: string) => boolean,
-	timber: () => TimberStatus = () => ({ state: "ready", path: "/home/sam/.local/bin/timber", version: "0.1.2" }),
+	timber: () => TimberStatus = () => ({ state: "ready", source: "path", path: "/home/sam/.local/bin/timber", version: "0.1.2" }),
 	onSaved: (scope: TimberConfigScope, repository: string | null) => void = () => {},
 ): TimberConfigCapabilities & TimberConfigControls {
 	const files = new Map<string, { values: TimberValues | null; version: number }>();

@@ -36,7 +36,10 @@ export function AboutSectionView({ rows, uninstall }: { rows: readonly AboutRow[
 			<p className="about-text">
 				The Timber logo is copyright Coding-M8s, all rights reserved. The license of the app's code does not cover it.
 			</p>
-			<p className="about-text">The full texts are in the licenses folder inside the installed app.</p>
+			<p className="about-text">
+				The Timber that comes with the app is copyright Coding-M8s, under the MIT License with the Commons Clause condition. The libraries built into it keep their own licenses, listed in its third-party notices.
+			</p>
+			<p className="about-text">The full texts are in the licenses folder inside the installed app, and Timber's beside it in the timber folder.</p>
 			{uninstall !== undefined && (
 				<>
 					<h4 className="about-subtitle">Uninstall</h4>

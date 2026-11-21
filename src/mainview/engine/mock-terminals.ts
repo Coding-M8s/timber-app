@@ -172,7 +172,7 @@ const SUBAGENT_CLEAR = osc7501("state=clear");
 export function createMockTerminals(
 	findWorktree: (repository: string, path: string) => Worktree | null,
 	agents: () => readonly AgentSetting[] = () => [],
-	timber: () => TimberStatus = () => ({ state: "not-found", override: null }),
+	timber: () => TimberStatus = () => ({ state: "not-found", source: "path", path: null }),
 	sessionNaming: () => SessionNaming = () => "plain",
 	arenaLaunch: (repository: string, worktree: string, arena: string, attempt: string) => ArenaLaunch = () => ({ outcome: "failed", message: "Arena attempts cannot start here. Nothing was started." }),
 	workflows: (repository: string) => Promise<WorkflowList> = async () => ({ ok: false, message: "Workflows cannot be read here." }),

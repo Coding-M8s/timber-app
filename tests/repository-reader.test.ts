@@ -171,10 +171,10 @@ describe("when Timber does not give a list", () => {
 	});
 
 	test("says so when Timber is not ready, without running anything", async () => {
-		const missing = createRepositoryReader(async () => ({ state: "not-found", override: null }));
+		const missing = createRepositoryReader(async () => ({ state: "not-found", source: "path", path: null }));
 		expect(await missing.reload(primary)).toMatchObject({ failure: "Timber was not found on PATH", worktrees: [] });
-		const old = createRepositoryReader(async () => ({ state: "too-old", path: "/bin/timber", found: "0.1.0", required: "0.1.1" }));
-		expect(await old.find(primary)).toEqual({ outcome: "failed", message: "Timber 0.1.0 at /bin/timber is older than the required 0.1.1" });
+		const old = createRepositoryReader(async () => ({ state: "too-old", source: "path", path: "/bin/timber", found: "0.1.0", required: "0.1.1" }));
+		expect(await old.find(primary)).toEqual({ outcome: "failed", message: "Timber 0.1.0 at /bin/timber, found on PATH, is older than the required 0.1.1" });
 	});
 
 	test("a folder outside any repository is not a repository, whatever Timber would say", async () => {

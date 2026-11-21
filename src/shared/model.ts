@@ -5,17 +5,24 @@ import type { RepositoryGroups } from "./repository-groups";
  * Whether a usable Timber is installed. Everything that runs Timber depends on
  * this being "ready".
  */
+/**
+ * Where the Timber in use came from: the one that comes with the app, the
+ * file chosen in Settings, the timber on PATH, or the development override
+ * `TIMBER_APP_TIMBER_PATH`.
+ */
+export type TimberSource = "bundled" | "setting" | "path" | "override";
+
 export type TimberStatus =
 	/**
 	 * `newerRelease` is set while a Timber release newer than this one is out,
 	 * learned while the app was running. Timber stays usable until the next
 	 * start, when the newest release is required.
 	 */
-	| { state: "ready"; path: string; version: string; newerRelease?: string }
-	/** No Timber answered. `override` is the development override's value when it was set. */
-	| { state: "not-found"; override: string | null }
+	| { state: "ready"; source: TimberSource; path: string; version: string; newerRelease?: string }
+	/** No Timber answered. `path` is where the app looked, or null when there was no timber on PATH. */
+	| { state: "not-found"; source: TimberSource; path: string | null }
 	/** `required` is the newest Timber release when `latestRelease` is true, and otherwise the built-in minimum. */
-	| { state: "too-old"; path: string; found: string; required: string; latestRelease?: boolean };
+	| { state: "too-old"; source: TimberSource; path: string; found: string; required: string; latestRelease?: boolean };
 
 /** How a branch stands against its upstream, as of the last fetch. */
 export type SyncState =

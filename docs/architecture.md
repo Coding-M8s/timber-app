@@ -666,9 +666,21 @@ with `--no-agent`. The app starts the picked agent itself
 
 Nothing that depends on Timber is offered until a usable one is found.
 
-- On start the main process resolves `timber` from PATH and runs
-  `timber --version`, as an executable plus an argument array
-  (`src/bun/timber.ts`). It logs the result.
+- **Which Timber.** The app ships a pinned Timber release inside it (see
+  [the bundled Timber](#the-bundled-timber)) and runs it by default.
+  Settings, Timber, Executable picks another: the timber on PATH, or one
+  executable by its full path (the `timber` preference,
+  `src/shared/timber-choice.ts`). `chooseTimber` in `src/bun/timber.ts`
+  decides, in this order: the development override, a chosen file, the
+  bundled Timber, then the timber on PATH. The bundled choice falls back to
+  PATH only on a platform the app ships no Timber for, or in a development
+  build that never fetched it. A chosen file is the only candidate: when it
+  does not answer, that is reported, and nothing else is tried.
+- On start the main process runs the chosen Timber with `--version`, as an
+  executable plus an argument array, and logs the result with where it came
+  from. Every Timber command then runs that executable.
+- Saving another choice makes the main process look again at once and tell
+  the window (`timberChanged`), with no restart.
 - The app requires the newest Timber release (see
   [the newest Timber release is required](#the-newest-timber-release-is-required)),
   and never less than 0.1.3, the first release with the machine interface,
@@ -677,23 +689,55 @@ Nothing that depends on Timber is offered until a usable one is found.
   number and the comparison live in `src/shared/timber-version.ts`. A
   pre-release sorts before its release.
 - The `Engine` contract reports one of three states: ready (path and version),
-  not found, or too old (found and required versions). An executable that
-  fails, or does not print a version, counts as not found.
-- When Timber is not ready, the interface shows a full-window notice with
-  install guidance instead of the worktree list. Retry looks again, so a Timber
+  not found, or too old (found and required versions), each with the
+  `source` the Timber came from: bundled, setting, path, or override. An
+  executable that fails, or does not print a version, counts as not found.
+  About and Settings, Timber, Executable show the version, the source, and
+  the path.
+- When Timber is not ready, the interface shows a full-window notice instead
+  of the worktree list. It gives install guidance for the timber on PATH,
+  and for a bundled or chosen Timber points to reinstalling the app or to
+  Settings instead. Retry looks again, so a Timber
   installed into a folder already on PATH is picked up without a restart. A
   change to PATH itself still needs a restart, because the app keeps the
   environment it was started with.
 - For development, `TIMBER_APP_TIMBER_PATH` names the Timber executable to use.
-  It takes precedence over PATH, and a broken value is reported instead of
-  silently falling back.
+  It takes precedence over the choice in Settings, and a broken value is
+  reported instead of silently falling back.
 - In `bun run dev:web`, add `?timber=not-found` or `?timber=too-old` to the
   address to see the notice, or `?timber=newer-release` to see the banner.
+
+### The bundled Timber
+
+- **One pin.** `timber-pin.json` holds the Timber version the app ships and
+  the SHA-256 of each platform's binary and of Timber's `LICENSE` and
+  `THIRD_PARTY_NOTICES.txt`, read by `src/shared/timber-pin.ts`. Nothing
+  else names the version: CI and the release workflow test with the same
+  pinned binary.
+- **Fetched and checked at build time.** `bun run build` first runs
+  `scripts/fetch-timber.ts`, which downloads the pinned files for this
+  platform from the Timber release into
+  `vendor/timber/v<version>/<platform>/` (ignored by Git), checks each
+  against the pin, and stops the build when one does not match. Files that
+  already match are kept. `electrobun.config.ts` copies that folder into the
+  app as `Resources/app/timber`, beside the main process's `bun` folder,
+  only when the pinned version's folder is there.
+- **Platforms.** Timber publishes binaries for Linux x64, Windows x64, and
+  macOS on x64 and arm64. Elsewhere, such as Linux on arm64, the app has no
+  bundled Timber and uses the timber on PATH.
+- **Development.** `bun run dev` and `bun run start` do not fetch it, so
+  they use the timber on PATH unless `bun run fetch:timber` ran first.
+- **Raising the version** is a reviewed change; the steps are in
+  [releasing](releasing.md#raising-the-bundled-timber).
 
 ### The newest Timber release is required
 
 A Timber older than the newest release may lack what the app uses, so the
-app requires the newest release (`src/bun/timber-release.ts`).
+app requires the newest release of a Timber the person installed: the one
+on PATH or the one chosen in Settings (`src/bun/timber-release.ts`). The
+bundled Timber is exempt: it is the release this version of the app was
+tested with, so it needs only the built-in minimum and gets no banner. A
+newer Timber reaches people who use it with the next app release.
 
 - **Looking it up.** The main process sends a `HEAD` request to
   `https://github.com/Coding-M8s/timber/releases/latest` without following
@@ -720,6 +764,8 @@ app requires the newest release (`src/bun/timber-release.ts`).
 - **The development override.** With `TIMBER_APP_TIMBER_PATH` set, only the
   built-in minimum is required and there is no banner, because a local build
   may carry any version number.
+- **Another choice.** When another Timber is chosen, the newest release is
+  required of it at once, even if the last one was usable.
 
 ## Saved repository list
 

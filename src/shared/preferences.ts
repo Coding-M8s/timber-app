@@ -14,6 +14,7 @@ import { type SoundChoice, defaultSoundChoice, readSoundChoice, sameSoundChoice,
 import { ALERT_STATES, type AlertState } from "./status-notices";
 import { type SessionNaming, readSessionNaming } from "./terminal";
 import { type DmabufChoice, readDmabufChoice } from "./rendering";
+import { type TimberChoice, defaultTimberChoice, readTimberChoice, sameTimberChoice, writeTimberChoice } from "./timber-choice";
 import { type TerminalAppearance, defaultTerminalAppearance, readTerminalAppearance, salvageTerminalAppearance, sameTerminalAppearance, writeTerminalAppearance } from "./terminal-appearance";
 
 /** The sides of the window the sidebar can be on. */
@@ -83,6 +84,12 @@ export interface Preferences {
 	 * so a change takes effect the next time the app starts.
 	 */
 	dmabuf: DmabufChoice;
+	/**
+	 * Which Timber the app runs: the one that comes with the app, the one on
+	 * PATH, or a file (see ./timber-choice.ts). Bundled by default. A saved
+	 * change makes the app look for Timber again at once.
+	 */
+	timber: TimberChoice;
 }
 
 /**
@@ -219,6 +226,12 @@ export const PREFERENCE_PARTS: { [Key in keyof Preferences]: PreferencePart<Pref
 		write: value => value,
 		// WebKitGTK reads its variable once, before the window is made.
 		restart: true,
+	},
+	timber: {
+		fallback: defaultTimberChoice,
+		read: readTimberChoice,
+		same: sameTimberChoice,
+		write: writeTimberChoice,
 	},
 };
 

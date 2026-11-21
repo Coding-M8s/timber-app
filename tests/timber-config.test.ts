@@ -164,7 +164,7 @@ describe("running Timber's settings commands", () => {
 		expect(unlisted).toMatchObject({ outcome: "failed", failure: { command: null, diagnostic: expect.stringContaining("not a repository in this app's list") } });
 		const odd = await service(timber.path).save({ scope: "repository", repository, revision: "nope", values: {}, editTracked: false });
 		expect(odd).toMatchObject({ outcome: "failed", failure: { command: null } });
-		const missing = createTimberSettings({ timber: async () => ({ state: "not-found", override: null }), isListed: async () => true, temporaryRoot: temporary });
+		const missing = createTimberSettings({ timber: async () => ({ state: "not-found", source: "path", path: null }), isListed: async () => true, temporaryRoot: temporary });
 		expect(await missing.read({ scope: "machine", repository: null })).toMatchObject({ outcome: "failed", failure: { command: null } });
 		expect(() => timber.notes()).toThrow();
 	});
@@ -284,7 +284,7 @@ describe.skipIf(realTimber === null)("with the real Timber", () => {
 	afterAll(() => rmSync(root, { recursive: true, force: true }));
 
 	const service = () => createTimberSettings({
-		timber: async () => ({ state: "ready", path: realTimber!, version: "0.1.2" }),
+		timber: async () => ({ state: "ready", source: "path", path: realTimber!, version: "0.1.2" }),
 		isListed: async candidate => candidate === repository,
 		environment,
 		temporaryRoot: temporary,

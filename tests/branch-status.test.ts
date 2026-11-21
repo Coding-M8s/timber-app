@@ -136,7 +136,7 @@ function revListCounts(branch: string): { ahead: number; behind: number } {
 }
 
 describe.skipIf(realTimber === null)("branch status with the installed Timber, on a real repository", () => {
-	const reader = () => createRepositoryReader(async () => ({ state: "ready", path: realTimber!, version: "0.1.1" }));
+	const reader = () => createRepositoryReader(async () => ({ state: "ready", source: "path", path: realTimber!, version: "0.1.1" }));
 	const read = async (): Promise<Repository> => (await reader().reload(primary))!;
 	const at = (repository: Repository, name: string): Worktree => repository.worktrees.find(worktree => worktree.path === (name === "main" ? primary : tree(name)))!;
 	const shown = (worktree: Worktree) => describeRowMarkers(worktree).map(marker => marker.kind === "ahead" ? `up ${marker.text}` : marker.kind === "behind" ? `down ${marker.text}` : marker.text);

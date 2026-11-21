@@ -108,7 +108,7 @@ describe("createWorktreeCommands, with a stand-in Timber", () => {
 	});
 
 	test("runs nothing while Timber is not ready", async () => {
-		for (const status of [{ state: "not-found", override: null }, { state: "too-old", path: "/usr/bin/timber", found: "0.1.0", required: "0.1.1" }] as const) {
+		for (const status of [{ state: "not-found", source: "path", path: null }, { state: "too-old", source: "path", path: "/usr/bin/timber", found: "0.1.0", required: "0.1.1" }] as const) {
 			const { commands, timber } = commandsOn({ result: recordedResult.succeeded }, { status });
 			const result = await commands.create({ repository, name: "feat/login", base: null });
 			expect(result).toMatchObject({ outcome: "failed", worktree: null, created: false, failure: { command: null, output: null } });
@@ -186,7 +186,7 @@ describe("createWorktreeCommands, with a stand-in Timber", () => {
 		});
 		let asked = 0;
 		const commands = createWorktreeCommands({
-			timber: async () => ({ state: "not-found", override: null }),
+			timber: async () => ({ state: "not-found", source: "path", path: null }),
 			findRepository: async () => null,
 			isListed: async path => {
 				const turn = `${path === repository ? "same" : "other"}-${++asked}`;

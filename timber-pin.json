@@ -1,0 +1,13 @@
+{
+	"version": "0.1.4",
+	"binaries": {
+		"linux-x64": "406a84617dc11b01f0b6414bbc1959c38d8b617b3a80bbf39312ecaf8d17201a",
+		"windows-x64": "babaa81fbd3a45396cfea7dd7feaf27dfb3ce8da33ab5bb99dc2c9b507d0fc40",
+		"darwin-arm64": "b5928c4f3bf95617b7ce4f5367f11ee528d60fbef4443ad02676ac4ada823407",
+		"darwin-x64": "47c911be4b938f2c37c9756b3448b5d1b5ad159128e4b452a0bfbd27400fd661"
+	},
+	"notices": {
+		"LICENSE": "9dafb7c85861158d07c21c3609e8673f87f45eb54ba88b8e4c39ac080a7d935b",
+		"THIRD_PARTY_NOTICES.txt": "cdb7800e8386e786c0734669f6d079546b455727279dcade3ee969de8831380a"
+	}
+}

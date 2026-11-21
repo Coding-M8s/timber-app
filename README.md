@@ -28,9 +28,11 @@ Comparing against the base is designed but not built. See the
 
 ## Quick start
 
-You need Git, Bun 1.4.4, and for the desktop app
-the newest [Timber](https://github.com/Coding-M8s/timber#quick-start) release
-on your PATH.
+You need Git and Bun 1.4.4. An installed app brings its own Timber. A
+development build uses the newest
+[Timber](https://github.com/Coding-M8s/timber#quick-start) release on your
+PATH, or the pinned one after `bun run fetch:timber` (see
+[the bundled Timber](docs/architecture.md#the-bundled-timber)).
 
 ```bash
 bun install --frozen-lockfile

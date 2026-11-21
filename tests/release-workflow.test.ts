@@ -46,7 +46,7 @@ test("the tag check exits with 1 and names the mismatch, and 0 on a match", () =
 test("a version tag starts the release, and changes to the workflow, version, or dependencies build without releasing", () => {
 	expect(release.on.push).toEqual({ tags: ["v*"] });
 	expect(release.on.pull_request).toEqual({
-		paths: [".github/workflows/release.yml", "scripts/check-release-tag.ts", "package.json", "bun.lock"],
+		paths: [".github/workflows/release.yml", "scripts/check-release-tag.ts", "scripts/fetch-timber.ts", "timber-pin.json", "package.json", "bun.lock"],
 	});
 	expect(release.jobs.release!.if).toBe("startsWith(github.ref, 'refs/tags/v')");
 });
@@ -115,11 +115,24 @@ test("every action in every workflow is pinned to a commit", () => {
 	}
 });
 
-test("CI and the release install the same Timber", () => {
-	const timber = (name: string) => Object.values(workflow(name).jobs)
+test("CI and the release test with the Timber the app bundles", () => {
+	const installs = (name: string) => Object.values(workflow(name).jobs)
 		.flatMap(job => job.steps)
-		.flatMap(step => step.env?.TIMBER_VERSION === undefined ? [] : [step.env.TIMBER_VERSION]);
-	const ci = timber("ci.yml");
-	expect(ci.length).toBe(1);
-	expect(timber("release.yml")).toEqual(ci);
+		.filter(step => step.name === "Install Timber");
+	for (const name of ["ci.yml", "release.yml"]) {
+		const steps = installs(name);
+		expect(steps).toHaveLength(1);
+		expect(steps[0]!.run?.trim()).toBe("bun scripts/fetch-timber.ts --add-to-path");
+		expect(steps[0]!.env?.TIMBER_VERSION).toBeUndefined();
+	}
+});
+
+test("every desktop build fetches and checks the pinned Timber before it builds", () => {
+	const scripts = (JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { scripts: Record<string, string> }).scripts;
+	for (const name of ["build", "build:canary"]) {
+		const steps = scripts[name]!.split(" && ");
+		expect(steps).toContain("bun scripts/fetch-timber.ts");
+		expect(steps.indexOf("bun scripts/fetch-timber.ts")).toBeLessThan(steps.findIndex(step => step.startsWith("electrobun build")));
+	}
+	expect(release.on.pull_request).toMatchObject({ paths: expect.arrayContaining(["timber-pin.json", "scripts/fetch-timber.ts"]) });
 });

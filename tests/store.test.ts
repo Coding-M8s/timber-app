@@ -13,7 +13,7 @@ import { type Layout, defaultLayout } from "../src/shared/layout";
 import { defaultPreferences } from "../src/shared/preferences";
 import type { AddRepositoryResult, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, RepositoryGroupsResult, TimberStatus, WorktreeCommandResult } from "../src/shared/model";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "../src/shared/timber-done";
-import { createMockEngine, sampleChanges, samplePickableRepository, sampleRepositories, sampleTimberStatuses, sampleUnavailableRepository } from "../src/mainview/engine/mock";
+import { createMockEngine, mockTimberFor, sampleChanges, samplePickableRepository, sampleRepositories, sampleTimberStatuses, sampleUnavailableRepository } from "../src/mainview/engine/mock";
 import { isRunning, selectedWorktree } from "../src/mainview/store/state";
 import { createAppStore } from "../src/mainview/store/store";
 
@@ -196,7 +196,7 @@ describe("starting", () => {
 		expect(isRunning(store.getState(), "find-timber")).toBe(true);
 		await settle();
 		const state = store.getState();
-		expect(state.timber).toEqual({ known: true, status: sampleTimberStatuses.ready });
+		expect(state.timber).toEqual({ known: true, status: mockTimberFor({ kind: "bundled" }) });
 		expect(state.loaded).toBe(true);
 		expect(state.repositories.map(repository => repository.name)).toEqual(["timber", "api-server"]);
 		expect(state.selection).toEqual({ repository: TIMBER, worktree: TIMBER_ID });

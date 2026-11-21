@@ -3,6 +3,8 @@ node_modules/
 dist/
 build/
 artifacts/
+# The pinned Timber release, downloaded by scripts/fetch-timber.ts
+vendor/
 coverage/
 *.tsbuildinfo
 *.log
