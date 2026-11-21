@@ -39,6 +39,7 @@ import { listedOrder } from "../changes-format";
 import { describeOpenedInEditor } from "../editor-format";
 import { HANDOFF_NO_AGENT, describeHandoffNotListed, handoffAgent } from "../handoff-format";
 import { describeAdded, describeRemoved, folderName, worktreeLabel } from "../format";
+import { workflowAgentLabel } from "../agent-format";
 import { describeFetched } from "../fetch-format";
 import { wantTerminalFocus } from "../terminal-focus";
 import { nextWaitingSession, withFinishedOrder, withWaitingOrder } from "../waiting";
@@ -516,6 +517,12 @@ export const BACKUP_READ_SPACING_MS = 15_000;
 
 /** As `BACKUP_READ_SPACING_MS`, for arenas: listing them asks Git about every attempt. */
 export const ARENA_READ_SPACING_MS = 15_000;
+
+/** The part of a request that names a new worktree's agent: a saved one, or a workflow's, with the pick it falls back to. */
+function agentRequest(agent: SessionAgent): Pick<OpenTerminalRequest, "agent" | "workflowAgent"> {
+	if (agent.kind === "saved") return { agent: agent.name };
+	return { workflowAgent: { workflow: agent.workflow, ...(agent.agent === undefined ? {} : { agent: agent.agent }) } };
+}
 
 export function createAppStore(engine: Engine, schedule: Schedule = scheduleWithTimer): AppStore {
 	let state = initialState;
@@ -1654,7 +1661,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const key = terminalKey(request);
 		if (state.operations.some(operation => operation.kind === "open-terminal" && operation.worktree === key)) return;
 		// What did not start, for the problem shown in the pane: the agent, the workflow whose agent it is, or setup.
-		const agent = request.agent ?? request.workflowAgent?.workflow ?? (request.timberWorktreeSetup ? WORKTREE_SETUP_SESSION_NAME : null);
+		const agent = request.agent ?? (request.workflowAgent ? workflowAgentLabel(request.workflowAgent.workflow) : null)
+			?? (request.timberWorktreeSetup ? WORKTREE_SETUP_SESSION_NAME : null);
 		const asking = track({ kind: "open-terminal", worktree: key, agent }, async () => {
 			let message: string;
 			let command: string | null = null;
@@ -1944,7 +1952,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			// One request at a time per worktree, so the agent is asked for once the setup session is there. Setup keeps running.
 			if (sessions.setup) await openTerminalInTurn({ ...request, timberWorktreeSetup: sessions.workflow === undefined ? {} : { workflow: sessions.workflow } });
 			const agent = sessions.agent;
-			if (agent !== null) await openTerminalInTurn({ ...request, ...(agent.kind === "saved" ? { agent: agent.name } : { workflowAgent: { workflow: agent.workflow } }) });
+			if (agent !== null) await openTerminalInTurn({ ...request, ...agentRequest(agent) });
 		})();
 		return true;
 	}

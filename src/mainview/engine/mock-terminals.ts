@@ -193,10 +193,11 @@ export function createMockTerminals(
 		listTerminals: async () => [...sessions.values()].map(acted => structuredClone(acted.session)),
 		async openTerminal(request) {
 			if (failing) return structuredClone(failing);
-			// As the main process does: only the workflow's name is read from the request.
+			// As the main process does: only names are read from the request, the workflow's and the pick's.
 			const workflowAgent = request.workflowAgent;
 			if (workflowAgent !== undefined) {
 				const readable = typeof workflowAgent === "object" && workflowAgent !== null && isWorkflowName(workflowAgent.workflow)
+					&& (workflowAgent.agent === undefined || typeof workflowAgent.agent === "string")
 					&& request.agent === undefined && request.timberWorktreeSetup === undefined && request.arenaAttempt === undefined;
 				if (!readable) return { outcome: "failed", message: "The request for a workflow's agent cannot be read. Nothing was started." };
 			}
@@ -233,15 +234,20 @@ export function createMockTerminals(
 			if (workflowAgent !== undefined) {
 				const name = workflowAgent.workflow;
 				const list = await workflows(request.repository).catch((error): WorkflowList => ({ ok: false, message: `${error instanceof Error ? error.message : String(error)}.` }));
-				if (!list.ok) return { outcome: "failed", message: `Could not read the agent of the ${name} workflow: ${list.message} Nothing was started.` };
-				const workflow = list.workflows.find(candidate => candidate.name === name);
-				if (workflow === undefined) return { outcome: "not-configured", message: `Timber lists no workflow called "${name}" for ${request.repository} now. Nothing was started.` };
-				if (workflow.agent.kind === "none") return { outcome: "not-configured", message: `The ${name} workflow now starts no agent (agent = false). Nothing was started.` };
-				if (workflow.agent.kind === "not-set") return { outcome: "not-configured", message: `The ${name} workflow no longer sets an agent. Nothing was started. Start one from the "+" menu.` };
-				launch = {
-					name, executable: workflow.agent.command, arguments: [...workflow.agent.args],
-					command: `The agent command of the ${name} workflow`, section: "Timber's settings",
-				};
+				const workflow = list.ok ? list.workflows.find(candidate => candidate.name === name) : undefined;
+				if (workflow?.agent.kind === "command") {
+					launch = {
+						name, executable: workflow.agent.command, arguments: [...workflow.agent.args],
+						command: `The agent command of the ${name} workflow`, section: "Timber's settings",
+					};
+				} else if (workflow?.agent.kind === "none") return { outcome: "not-configured", message: `The ${name} workflow now starts no agent (agent = false). Nothing was started.` };
+				else if (workflowAgent.agent !== undefined) {
+					// Timber does not say the workflow sets an agent: the one the person picked starts, as the dialog showed it.
+					agent = findAgent(agents(), workflowAgent.agent);
+					if (agent === null) return { outcome: "not-configured", message: `No agent called "${workflowAgent.agent}" is set in Settings, Agents. Nothing was started.` };
+				} else if (!list.ok) return { outcome: "failed", message: `Could not read the agent of the ${name} workflow: ${list.message} Nothing was started.` };
+				else if (workflow === undefined) return { outcome: "not-configured", message: `Timber lists no workflow called "${name}" for ${request.repository} now. Nothing was started.` };
+				else return { outcome: "not-configured", message: `The ${name} workflow no longer sets an agent. Nothing was started. Start one from the "+" menu.` };
 			}
 			const worktree = findWorktree(request.repository, request.worktree);
 			const notStarted = attempt ? `${attempt.label} was not started.` : agent ? `${agent.name} was not started.` : workflowAgent !== undefined ? `The agent of the ${workflowAgent.workflow} workflow was not started.` : worktreeSetup ? "Setup was not started." : "No terminal was started.";
@@ -312,7 +318,7 @@ export function createMockTerminals(
 				? `A pretend ${session.name} in ${session.path}, started as ${session.command}. Nothing runs in the browser. Try exit.\r\n`
 				: `A pretend shell in ${session.path}. Try pwd, clear, or exit.\r\n`;
 			// A pretend agent asks for bracketed paste, as Claude Code and Codex do, so a pasted review keeps its line breaks.
-			print(acted, `${greeting}${agent ? "\x1b[?2004h" : ""}${prompt(acted)}`);
+			print(acted, `${greeting}${launch ? "\x1b[?2004h" : ""}${prompt(acted)}`);
 			return { outcome: "opened", session: structuredClone(session) };
 		},
 		async renameTerminal(id, name) {

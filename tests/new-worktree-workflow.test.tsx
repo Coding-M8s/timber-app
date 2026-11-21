@@ -434,10 +434,42 @@ describe("a workflow that sets the agent", () => {
 			await sessionCommands(store);
 			expect(names(store)).toEqual(["Setup"]);
 			const worktree = store.getState().repositories.find(candidate => candidate.path === TIMBER)!.worktrees.find(candidate => candidate.path === NEW_PATH)!;
-			expect(store.getState().terminalProblem).toMatchObject({ worktree: worktree.id, agent: "review", message: expect.stringContaining(words) });
+			expect(store.getState().terminalProblem).toMatchObject({ worktree: worktree.id, agent: "the review workflow's agent", message: expect.stringContaining(words) });
 			expect(toasts(store)).toEqual(["Created worktree feat/login"]);
 		});
 	}
+
+	test("a workflow that leaves the agent to the pick, but sets one by the time it starts, starts the one Timber reports now", async () => {
+		const engine = createMockEngine();
+		const { newWorktree } = engine;
+		engine.newWorktree = async request => {
+			const result = await newWorktree(request);
+			engine.setWorkflows(TIMBER, {
+				ok: true,
+				workflows: sampleWorkflows.map(workflow => workflow.name === "explore" ? { ...workflow, agent: { kind: "command" as const, command: "claude", args: ["--resume"] } } : workflow),
+			});
+			return result;
+		};
+		const { model, submit, store } = await withCodex(engine);
+		model.edit({ name: "feat/login", workflow: "explore" });
+		expect(await submit()).toBe(true);
+		await sessionCommands(store);
+		expect(store.getState().terminals.map(session => [session.name, session.command])).toEqual([
+			["Setup", expect.stringContaining("timber open --setup --workflow explore")],
+			["explore", "/usr/local/bin/claude --resume"],
+		]);
+	});
+
+	test("a workflow that still leaves the agent to the pick when it starts starts the pick", async () => {
+		const { model, submit, store } = await withCodex();
+		model.edit({ name: "feat/login", workflow: "explore" });
+		expect(await submit()).toBe(true);
+		await sessionCommands(store);
+		expect(store.getState().terminals.map(session => [session.name, session.command])).toEqual([
+			["Setup", expect.stringContaining("timber open --setup --workflow explore")],
+			["Codex", "/usr/local/bin/codex"],
+		]);
+	});
 
 	test("a run that fails starts no session at all", async () => {
 		const { engine, model, submit, store, requests } = await withCodex();
@@ -481,7 +513,7 @@ describe("a workflow that sets the agent", () => {
 		expect(names(created.store)).toEqual(["Setup", "review"]);
 	});
 
-	test("a kept workflow the list no longer has starts no agent, and the field says it could not be read", async () => {
+	test("a kept workflow the list no longer has leaves the field to the pick, says so, and starts the pick", async () => {
 		const { engine, model, submit, store, controller, render } = await withCodex();
 		engine.endCommands("stops-after-create");
 		model.edit({ name: "feat/login", workflow: "review" });
@@ -489,12 +521,13 @@ describe("a workflow that sets the agent", () => {
 		engine.setWorkflows(TIMBER, { ok: true, workflows: sampleWorkflows.filter(workflow => workflow.name !== "review") });
 		await controller.readWorkflows();
 		const markup = render();
-		expect(markup).toContain('<select class="field-input" name="agent" disabled=""><option value="" selected="">None</option></select>');
-		expect(markup).toContain("The agent of the review workflow could not be read, so none starts. Start one later from the worktree.");
+		expect(markup).toContain('<option value="Codex" selected="">Codex</option>');
+		expect(markup).not.toContain('name="agent" disabled');
+		expect(markup).toContain("The review workflow could not be read yet. If it sets an agent, that one starts instead, once this dialog has created the worktree.");
 		engine.endCommands("succeeds");
 		expect(await submit()).toBe(true);
 		await sessionCommands(store);
-		expect(names(store)).toEqual(["Setup"]);
+		expect(names(store)).toEqual(["Setup", "Codex"]);
 	});
 
 	test("a workflow's agent whose executable is not found shows why in the pane and keeps the worktree and its setup", async () => {
@@ -504,7 +537,7 @@ describe("a workflow that sets the agent", () => {
 		expect(await submit()).toBe(true);
 		await sessionCommands(store);
 		expect(names(store)).toEqual(["Setup"]);
-		expect(store.getState().terminalProblem).toMatchObject({ agent: "review", command: "claude --permission-mode plan" });
+		expect(store.getState().terminalProblem).toMatchObject({ agent: "the review workflow's agent", command: "claude --permission-mode plan" });
 		expect(store.getState().terminalProblem?.message).toContain("Could not start the agent of the review workflow.");
 		expect(toasts(store)).toEqual(["Created worktree feat/login"]);
 	});

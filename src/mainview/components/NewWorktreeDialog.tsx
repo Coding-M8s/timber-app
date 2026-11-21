@@ -29,9 +29,7 @@ export function AgentField({ agents, plan, onPick }: AgentFieldProps) {
 		const { workflow } = plan;
 		const [option, hint] = plan.kind === "command"
 			? [plan.command, `Set by the ${workflow} workflow, so it cannot be changed here. It starts in place of the app's agents, once this dialog has created the worktree.`]
-			: plan.kind === "none"
-				? ["None (set by the workflow)", `The ${workflow} workflow turns the agent off, so none starts. It cannot be changed here.`]
-				: ["None", `The agent of the ${workflow} workflow could not be read, so none starts. Start one later from the worktree.`];
+			: ["None (set by the workflow)", `The ${workflow} workflow turns the agent off, so none starts. It cannot be changed here.`];
 		return (
 			<label className="field">
 				<span className="field-label">Agent</span>
@@ -55,7 +53,9 @@ export function AgentField({ agents, plan, onPick }: AgentFieldProps) {
 					? "No agents are set up. Add one in Settings, Agents."
 					: chosen === null
 						? "No agent starts. Start one later from the worktree."
-						: "Starts in the worktree once this dialog has created it, never in one that was already there."}
+						: plan.unread && plan.workflow !== null
+							? `The ${plan.workflow} workflow could not be read yet. If it sets an agent, that one starts instead, once this dialog has created the worktree.`
+							: "Starts in the worktree once this dialog has created it, never in one that was already there."}
 			</span>
 		</label>
 	);

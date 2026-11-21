@@ -460,8 +460,11 @@ export interface Engine {
 	 * executable is not found, starts nothing and keeps no session. With
 	 * `workflowAgent`, the agent of that named workflow starts instead, its
 	 * command read again from Timber through the same read as
-	 * `listWorkflows`, never taken from the request. A workflow that is gone,
-	 * that cannot be read, or that sets no agent now starts nothing. Nothing
+	 * `listWorkflows`, never taken from the request. A workflow that turns
+	 * the agent off now starts nothing. Otherwise, unless Timber reports a
+	 * command, the saved agent the request names with it starts; with none
+	 * named, a workflow that is gone, cannot be read, or sets no agent starts
+	 * nothing. Nothing
 	 * else starts an agent: Timber's New and Open never do. With
 	 * `timberWorktreeSetup`, the worktree's setup scripts run with
 	 * `timber open --setup` instead (`worktreeSetupArguments` in

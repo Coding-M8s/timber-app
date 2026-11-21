@@ -300,8 +300,11 @@ export function sessionEnvironment(environment: Record<string, string | undefine
  *   place of the shell, read again from Timber when it opens (see
  *   ./workflows.ts). A request names the workflow, never the command. The
  *   executable and its arguments are used as Timber reports them, never
- *   split again, and found as an agent's are. A workflow that is gone, that
- *   cannot be read, or that sets no agent now starts nothing. Its arguments
+ *   split again, and found as an agent's are. A workflow that turns the
+ *   agent off now starts nothing. Otherwise, unless Timber reports a command,
+ *   the saved agent the request names with the workflow starts, as the
+ *   dialog showed it; with none named, a workflow that is gone, that cannot
+ *   be read, or that leaves the agent unset starts nothing. Its arguments
  *   can hold tokens, so nothing about it is logged.
  * - Every session's output, shown or not, passes a scanner for the Program
  *   Status Protocol (OSC 7501, see ../shared/program-status.ts) before it is
@@ -479,12 +482,26 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		return { launch: launchOfAttempt(wanted.attempt, launch.argv, launch.environment, launch.unset), refused: null };
 	}
 
+	/** An agent saved in Settings, by name. */
+	async function savedAgent(name: string): Promise<{ ok: true; agent: AgentSetting } | { ok: false; result: OpenTerminalResult }> {
+		let saved: readonly AgentSetting[];
+		try {
+			saved = await agents();
+		} catch (error) {
+			return { ok: false, result: { outcome: "failed", message: `Could not read the agents in Settings: ${messageOf(error)}. Nothing was started.` } };
+		}
+		const agent = findAgent(saved, name);
+		if (agent === null) return { ok: false, result: { outcome: "not-configured", message: `No agent called "${name}" is set in Settings, Agents. Nothing was started.` } };
+		return { ok: true, agent };
+	}
+
 	async function open(request: OpenTerminalRequest): Promise<OpenTerminalResult> {
 		if (startTerminal === null) return { outcome: "unsupported", message: TERMINAL_UNSUPPORTED_REASON };
-		// Only the workflow's name is read from the request: the command comes from Timber, read again below.
+		// Only names are read from the request, the workflow's and the pick's: the command comes from Timber, read again below.
 		const workflowAgent = request.workflowAgent;
 		if (workflowAgent !== undefined) {
 			const readable = typeof workflowAgent === "object" && workflowAgent !== null && isWorkflowName(workflowAgent.workflow)
+				&& (workflowAgent.agent === undefined || typeof workflowAgent.agent === "string")
 				&& request.agent === undefined && request.timberWorktreeSetup === undefined && request.arenaAttempt === undefined;
 			if (!readable) return { outcome: "failed", message: "The request for a workflow's agent cannot be read. Nothing was started." };
 		}
@@ -495,14 +512,9 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		let agent: AgentSetting | null = null;
 		if (request.agent !== undefined) {
 			if (typeof request.agent !== "string") return { outcome: "not-configured", message: "The request names no agent. Nothing was started." };
-			let saved: readonly AgentSetting[];
-			try {
-				saved = await agents();
-			} catch (error) {
-				return { outcome: "failed", message: `Could not read the agents in Settings: ${messageOf(error)}. Nothing was started.` };
-			}
-			agent = findAgent(saved, request.agent);
-			if (agent === null) return { outcome: "not-configured", message: `No agent called "${request.agent}" is set in Settings, Agents. Nothing was started.` };
+			const found = await savedAgent(request.agent);
+			if (!found.ok) return found.result;
+			agent = found.agent;
 		}
 		// A worktree's setup runs the Timber the app found, and only that one.
 		let run: TimberRun | null = null;
@@ -526,12 +538,17 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		if (workflowAgent !== undefined) {
 			const name = workflowAgent.workflow;
 			const list = await workflows(request.repository).catch((error): WorkflowList => ({ ok: false, message: `${messageOf(error)}.` }));
-			if (!list.ok) return { outcome: "failed", message: `Could not read the agent of the ${name} workflow: ${list.message} Nothing was started.` };
-			const workflow = list.workflows.find(candidate => candidate.name === name);
-			if (workflow === undefined) return { outcome: "not-configured", message: `Timber lists no workflow called "${name}" for ${request.repository} now. Nothing was started.` };
-			if (workflow.agent.kind === "none") return { outcome: "not-configured", message: `The ${name} workflow now starts no agent (agent = false). Nothing was started.` };
-			if (workflow.agent.kind === "not-set") return { outcome: "not-configured", message: `The ${name} workflow no longer sets an agent. Nothing was started. Start one from the "+" menu.` };
-			workflowLaunch = launchOfWorkflow(name, workflow.agent);
+			const workflow = list.ok ? list.workflows.find(candidate => candidate.name === name) : undefined;
+			if (workflow?.agent.kind === "command") workflowLaunch = launchOfWorkflow(name, workflow.agent);
+			else if (workflow?.agent.kind === "none") return { outcome: "not-configured", message: `The ${name} workflow now starts no agent (agent = false). Nothing was started.` };
+			else if (workflowAgent.agent !== undefined) {
+				// Timber does not say the workflow sets an agent: the one the person picked starts, as the dialog showed it.
+				const found = await savedAgent(workflowAgent.agent);
+				if (!found.ok) return found.result;
+				agent = found.agent;
+			} else if (!list.ok) return { outcome: "failed", message: `Could not read the agent of the ${name} workflow: ${list.message} Nothing was started.` };
+			else if (workflow === undefined) return { outcome: "not-configured", message: `Timber lists no workflow called "${name}" for ${request.repository} now. Nothing was started.` };
+			else return { outcome: "not-configured", message: `The ${name} workflow no longer sets an agent. Nothing was started. Start one from the "+" menu.` };
 		}
 		// Naming is a convenience: when it cannot be read, the session is named as it always was.
 		const naming = run === null ? await sessionNaming().catch((): SessionNaming => "plain") : "plain";

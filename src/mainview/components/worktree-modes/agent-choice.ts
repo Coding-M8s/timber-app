@@ -39,29 +39,31 @@ export function chosenAgent(agents: readonly AgentSetting[], pick: AgentPick): A
 /**
  * Where the agent comes from, for the Agent field and the footer: the pick,
  * or the workflow, which then decides. `command` is the workflow's command as
- * Timber reports it, as one line for showing. `unknown` is a workflow the
- * list cannot say anything about, so no agent starts.
+ * Timber reports it, as one line for showing. A pick made with a workflow
+ * names it in `workflow`, so the main process can still start the
+ * workflow's agent if Timber reports one when it starts; `unread` is true
+ * when the list cannot say yet whether the workflow sets an agent.
  */
 export type AgentPlan =
-	| { source: "pick"; agent: AgentSetting | null }
+	| { source: "pick"; agent: AgentSetting | null; workflow: string | null; unread: boolean }
 	| { source: "workflow"; workflow: string; kind: "command"; command: string }
-	| { source: "workflow"; workflow: string; kind: "none" }
-	| { source: "workflow"; workflow: string; kind: "unknown" };
+	| { source: "workflow"; workflow: string; kind: "none" };
 
 /**
  * The agent plan for a run with `workflow`, or with none when null. A
  * workflow that sets a command, or turns the agent off, decides; one that
  * leaves the agent unset leaves it to the pick. A workflow the list does not
- * have, or any workflow while the list is not there, is `unknown`.
+ * have, or any workflow while the list is not there, leaves it to the pick
+ * too, marked `unread`: the main process reads the workflow when it starts.
  */
 export function plannedAgent(agents: readonly AgentSetting[], pick: AgentPick, workflows: WorkflowOptions, workflow: string | null): AgentPlan {
-	const picked: AgentPlan = { source: "pick", agent: chosenAgent(agents, pick) };
-	if (workflow === null) return picked;
+	const agent = chosenAgent(agents, pick);
+	if (workflow === null) return { source: "pick", agent, workflow: null, unread: false };
 	const found = workflows?.ok ? workflows.workflows.find(candidate => candidate.name === workflow) : undefined;
-	if (found === undefined) return { source: "workflow", workflow, kind: "unknown" };
+	if (found === undefined) return { source: "pick", agent, workflow, unread: true };
 	if (found.agent.kind === "command") return { source: "workflow", workflow, kind: "command", command: describeCommandLine([found.agent.command, ...found.agent.args]) };
 	if (found.agent.kind === "none") return { source: "workflow", workflow, kind: "none" };
-	return picked;
+	return { source: "pick", agent, workflow, unread: false };
 }
 
 /** The agent that starts: what to call it in the footer and toasts, its command for showing, and what the request names. */
@@ -74,8 +76,12 @@ export interface StartingAgent {
 /** The agent a plan starts, or null when it starts none. */
 export function startingAgent(plan: AgentPlan): StartingAgent | null {
 	if (plan.source === "pick") {
-		const { agent } = plan;
-		return agent === null ? null : { label: agent.name, command: describeAgentCommand(agent) ?? agent.command, session: { kind: "saved", name: agent.name } };
+		const { agent, workflow } = plan;
+		if (agent === null) return null;
+		const session: SessionAgent = workflow === null ? { kind: "saved", name: agent.name } : { kind: "workflow", workflow, agent: agent.name };
+		// Unread, the workflow may still set an agent, which then starts instead: the footer says so.
+		const label = plan.unread && workflow !== null ? `${agent.name} (or the ${workflow} workflow's agent, if it sets one)` : agent.name;
+		return { label, command: describeAgentCommand(agent) ?? agent.command, session };
 	}
 	if (plan.kind !== "command") return null;
 	return { label: `the ${plan.workflow} workflow's agent`, command: plan.command, session: { kind: "workflow", workflow: plan.workflow } };
