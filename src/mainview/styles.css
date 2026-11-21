@@ -2617,10 +2617,17 @@ pre:focus-visible {
 	flex-direction: column;
 }
 
-/* The shown session's shell, state, Rename, and Close, at the right end of the chips. */
+/*
+ * The shown session's shell, state, Rename, and Close, at the right end of the chips.
+ * They keep their width, so a full row of chips gives up the space and scrolls instead.
+ * They never take more than the row leaves beside "+" (26px and two 4px gaps):
+ * in a row that narrow, the shell and state shorten before Rename and Close.
+ */
 .session-controls {
-	flex: 1 1 0;
-	min-width: 0;
+	flex: 0 0 auto;
+	max-width: calc(100% - 34px);
+	margin-left: auto;
+	box-sizing: border-box;
 	display: flex;
 	align-items: center;
 	justify-content: flex-end;
@@ -2774,8 +2781,15 @@ pre:focus-visible {
 	background: var(--ahead);
 }
 
-.session-shell {
+.session-controls > button {
 	flex: none;
+}
+
+.session-shell {
+	flex: 0 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
 	font-family: var(--font-mono);
 	font-size: 11.5px;
 	color: var(--text-3);

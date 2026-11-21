@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { runningSessionCount, sessionsOf, shownSession, withTerminal } from "../src/mainview/store/state";
 import { createAppStore } from "../src/mainview/store/store";
 import {
-	chipAfterKey, chipCommand, describeDoneSessionsWarning, describeOrphanTerminal, describeRunningSessions, describeSessionChip, sessionKey, shortExit,
+	chipAfterClose, chipAfterKey, chipButtonCommand, chipCommand, describeDoneSessionsWarning, describeOrphanTerminal, describeRunningSessions, describeSessionChip, sessionKey, shortExit,
 } from "../src/mainview/terminal-format";
 import { type TerminalSession, cleanSessionName, defaultSessionName } from "../src/shared/terminal";
 
@@ -315,5 +317,58 @@ describe("review fixes", () => {
 		expect(markup).toContain("Terminal, mock-shell. Closing");
 		finish();
 		await closing;
+	});
+});
+
+describe("a full row of chips, and a middle click", () => {
+	const styles = readFileSync(join(import.meta.dir, "..", "src/mainview/styles.css"), "utf8");
+	const rule = (selector: string) => {
+		const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+		return new RegExp(`(?:^|\\n)${escaped} \\{([^}]*)\\}`).exec(styles)?.[1] ?? "";
+	};
+
+	test("a middle click on a chip closes it, other buttons do not", () => {
+		expect(chipButtonCommand(1)).toBe("close");
+		expect(chipButtonCommand(0)).toBeNull();
+		expect(chipButtonCommand(2)).toBeNull();
+		expect(chipButtonCommand(3)).toBeNull();
+	});
+
+	test("closing the shown chip shows the next open one, or the one before, or none", () => {
+		const ids = ["a", "b", "c"];
+		expect(chipAfterClose(ids, "b", { shownId: "b", closing: false, closingIds: [] })).toEqual({ show: "c", focus: "c" });
+		expect(chipAfterClose(ids, "c", { shownId: "c", closing: false, closingIds: [] })).toEqual({ show: "b", focus: "b" });
+		expect(chipAfterClose(ids, "a", { shownId: "a", closing: false, closingIds: ["b"] })).toEqual({ show: "c", focus: "c" });
+		expect(chipAfterClose(["a"], "a", { shownId: "a", closing: false, closingIds: [] })).toEqual({ show: null, focus: null });
+	});
+
+	test("closing a chip that is not shown keeps the shown one and gives it the focus", () => {
+		expect(chipAfterClose(["a", "b", "c"], "c", { shownId: "a", closing: false, closingIds: [] })).toEqual({ show: null, focus: "a" });
+	});
+
+	test("a chip that is already closing does nothing", () => {
+		expect(chipAfterClose(["a", "b"], "a", { shownId: "a", closing: true, closingIds: ["a"] })).toBeNull();
+	});
+
+	test("the controls keep their width and sit at the right end, so the chips give up the space and scroll", () => {
+		const controls = rule(".session-controls");
+		expect(controls).toMatch(/flex:\s*0 0 auto/);
+		expect(controls).toMatch(/margin-left:\s*auto/);
+		// Never wider than the row leaves beside "+", so they never draw over it or a chip.
+		expect(controls).toMatch(/max-width:\s*calc\(100% - /);
+		const chips = rule(".session-chips");
+		expect(chips).toMatch(/flex:\s*0 1 auto/);
+		expect(chips).toMatch(/min-width:\s*0/);
+		expect(chips).toMatch(/overflow-x:\s*auto/);
+	});
+
+	test("in a narrow row the shell and state shorten with an ellipsis, and Rename and Close keep their size", () => {
+		for (const selector of [".session-shell", ".session-state"]) {
+			const text = rule(selector);
+			expect(text).toMatch(/min-width:\s*0/);
+			expect(text).toMatch(/text-overflow:\s*ellipsis/);
+			expect(text).toMatch(/overflow:\s*hidden/);
+		}
+		expect(rule(".session-controls > button")).toMatch(/flex:\s*none/);
 	});
 });

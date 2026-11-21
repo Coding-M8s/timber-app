@@ -95,6 +95,31 @@ export function chipCommand(key: string): "close" | "rename" | null {
 	return key === "Delete" ? "close" : key === "F2" ? "rename" : null;
 }
 
+/** What a mouse button other than the main one does on a chip: a middle click closes it, as for tabs in a browser. */
+export function chipButtonCommand(button: number): "close" | null {
+	return button === 1 ? "close" : null;
+}
+
+/**
+ * What closing a chip shows and where the keyboard goes. Closing the shown
+ * chip shows the next open one after it, else the one before; closing another
+ * keeps the shown one, which takes the focus. `show` is null when the shown
+ * session stays, `focus` is null when no chip is left (then "+" takes it).
+ * Null for a chip already being closed: that close does nothing.
+ */
+export function chipAfterClose(
+	ids: readonly string[],
+	id: string,
+	{ shownId, closing, closingIds }: { shownId: string; closing: boolean; closingIds: readonly string[] },
+): { show: string | null; focus: string | null } | null {
+	if (closing) return null;
+	if (id !== shownId) return { show: null, focus: shownId };
+	const at = ids.indexOf(id);
+	const open = (candidate: string) => !closingIds.includes(candidate);
+	const next = ids.slice(at + 1).find(open) ?? ids.slice(0, at).reverse().find(open) ?? null;
+	return { show: next, focus: next };
+}
+
 /** The element id of a session's chip, so focus can be put on it from anywhere. */
 export function sessionChipId(id: string): string {
 	return `session-chip-${id}`;
