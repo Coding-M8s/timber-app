@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpath
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { findCodexConversation } from "../src/bun/agent-conversations";
-import { createSessionLayout, sessionsFilePath, type SessionLayoutDependencies } from "../src/bun/session-layout";
+import { SESSIONS_FILE_LIMIT, createSessionLayout, sessionsFilePath, type SessionLayoutDependencies } from "../src/bun/session-layout";
 import type { RunningSession } from "../src/bun/terminals";
 import type { Attention } from "../src/shared/attention";
 
@@ -44,7 +44,7 @@ function layout(overrides: Partial<SessionLayoutDependencies> = {}) {
 }
 
 const session = (id: string, worktree: string, more: Partial<RunningSession> = {}): RunningSession => ({
-	id, worktree, path: `/r/${worktree}`, kind: "terminal", agent: null, resumable: null, conversation: null, startedAt: 10_000, name: null, ...more,
+	id, worktree, path: `/r/${worktree}`, kind: "terminal", agent: null, resumable: null, conversation: null, startedAt: 10_000, name: null, restored: null, ...more,
 });
 const claude = (id: string, worktree: string, more: Partial<RunningSession> = {}) => session(id, worktree, { kind: "agent", agent: "Claude Code", resumable: "claude", conversation: CLAUDE, ...more });
 const codex = (id: string, worktree: string, more: Partial<RunningSession> = {}) => session(id, worktree, { kind: "agent", agent: "Codex", resumable: "codex", ...more });
@@ -148,10 +148,12 @@ describe("the sessions saved at quit", () => {
 		expect(JSON.parse(readFileSync(file, "utf8")).worktrees).toEqual({});
 	});
 
-	test("with nothing running the file says so, and the next run restores nothing", async () => {
+	test("a saved session opened again and then closed does not come back", async () => {
 		writeFileSync(file, "{\"version\":1,\"worktrees\":{\"w1\":{\"shown\":0,\"sessions\":[{\"kind\":\"terminal\"}]}}}");
 		const first = layout();
 		await first.load();
+		first.take();
+		first.restored({ worktree: "w1", index: 0 }, "opened");
 		first.save();
 		expect(await reopened()).toBeNull();
 	});
@@ -159,7 +161,8 @@ describe("the sessions saved at quit", () => {
 	test("the one Codex session of a worktree gets the conversation found for its folder", async () => {
 		live = [session("1", "w1"), codex("2", "w1", { conversation: CODEX, startedAt: 50_000 })];
 		answer = () => FOUND;
-		const first = layout();
+		// A clock that stands still, so the budget is exactly what is left.
+		const first = layout({ now: () => 1_000 });
 		first.save();
 		expect(searches).toEqual([{ cwd: "/r/w1", since: 48_000, taken: [], budget: 300 }]);
 		expect((await reopened())?.worktrees.w1!.sessions[1]).toEqual({ kind: "agent", agent: "Codex", conversation: FOUND });
@@ -276,5 +279,179 @@ describe("the sessions saved at quit", () => {
 		console.log(`worst case quit save, real Codex search in 200 worktrees over 600 files: ${took.toFixed(1)} ms`);
 		expect(took).toBeLessThan(500);
 		expect(existsSync(file)).toBe(true);
+	});
+});
+
+describe("saved sessions that did not open again in this run", () => {
+	const saved = (worktrees: Record<string, unknown>, selected?: string) => writeFileSync(file, JSON.stringify({ version: 1, ...(selected ? { selected } : {}), worktrees }));
+	const T = (name: string) => ({ kind: "terminal" as const, name });
+
+	async function loaded(overrides: Partial<SessionLayoutDependencies> = {}) {
+		const first = layout(overrides);
+		await first.load();
+		first.take();
+		return first;
+	}
+
+	test("quitting before any opened keeps them all, with the selection", async () => {
+		saved({ w1: { shown: 1, sessions: [T("a"), T("b")] }, w2: { shown: 0, sessions: [T("c")] } }, "w2");
+		(await loaded()).save();
+		expect(await reopened()).toEqual({ selected: "w2", worktrees: { w1: { shown: 1, sessions: [T("a"), T("b")] }, w2: { shown: 0, sessions: [T("c")] } } });
+	});
+
+	test("quitting while a worktree still opens keeps the rest in their saved order", async () => {
+		saved({ w1: { shown: 2, sessions: [T("a"), T("b"), T("c")] } });
+		const first = await loaded();
+		live = [session("1", "w1", { name: "a", restored: { worktree: "w1", index: 0 } })];
+		first.restored({ worktree: "w1", index: 0 }, "opened");
+		first.save();
+		expect(await reopened()).toEqual({ worktrees: { w1: { shown: 2, sessions: [T("a"), T("b"), T("c")] } } });
+	});
+
+	test("a session that runs counts even before its answer was noted", async () => {
+		saved({ w1: { shown: 0, sessions: [T("a")] } });
+		const first = await loaded();
+		live = [session("1", "w1", { name: "a", restored: { worktree: "w1", index: 0 } })];
+		first.save();
+		expect((await reopened())?.worktrees.w1!.sessions).toEqual([T("a")]);
+	});
+
+	test("a session opened in this run goes after the saved ones still to come", async () => {
+		saved({ w1: { shown: 0, sessions: [T("a"), T("b")] } });
+		const first = await loaded();
+		live = [session("1", "w1", { name: "a", restored: { worktree: "w1", index: 0 } }), session("2", "w1", { name: "new" })];
+		first.restored({ worktree: "w1", index: 0 }, "opened");
+		first.save();
+		expect((await reopened())?.worktrees.w1!.sessions).toEqual([T("a"), T("b"), T("new")]);
+	});
+
+	test("one that failed to start is kept with a miss, and dropped after three launches in a row", async () => {
+		saved({ w1: { shown: 0, sessions: [{ kind: "agent", agent: "Codex" }] } });
+		for (const missed of [1, 2]) {
+			const run = await loaded();
+			run.restored({ worktree: "w1", index: 0 }, "not-found");
+			run.restored({ worktree: "w1", index: 0 }, "not-found");
+			run.save();
+			expect((await reopened())?.worktrees.w1!.sessions).toEqual([{ kind: "agent", agent: "Codex", missed }]);
+		}
+		const last = await loaded();
+		last.restored({ worktree: "w1", index: 0 }, "failed");
+		last.save();
+		expect(await reopened()).toBeNull();
+	});
+
+	test("one whose agent left Settings is dropped at once", async () => {
+		saved({ w1: { shown: 0, sessions: [{ kind: "agent", agent: "Gone" }, T("a")] } });
+		const first = await loaded();
+		first.restored({ worktree: "w1", index: 0 }, "not-configured");
+		first.save();
+		expect((await reopened())?.worktrees.w1!.sessions).toEqual([T("a")]);
+	});
+
+	test("a worktree the window found gone is dropped; only strings are read", async () => {
+		saved({ w1: { shown: 0, sessions: [T("a")] }, w2: { shown: 0, sessions: [T("b")] } });
+		const first = await loaded();
+		first.forget(["w1", 7]);
+		first.forget("w2");
+		first.save();
+		expect(Object.keys((await reopened())!.worktrees)).toEqual(["w2"]);
+	});
+
+	test("a tag that is not one, or names nothing saved, changes nothing", async () => {
+		saved({ w1: { shown: 0, sessions: [T("a")] } });
+		const first = await loaded();
+		for (const tag of [null, "w1", { worktree: "w1", index: -1 }, { worktree: "w1", index: 0.5 }, { worktree: "w9", index: 0 }, { worktree: "w1", index: 4 }]) first.restored(tag, "opened");
+		first.save();
+		expect((await reopened())?.worktrees.w1!.sessions).toEqual([T("a")]);
+	});
+
+	test("a worktree not visited in this run keeps its shown chip over a second restart", async () => {
+		saved({ w1: { shown: 0, sessions: [T("a")] }, w2: { shown: 2, sessions: [T("b"), T("c"), T("d")] } }, "w1");
+		const first = await loaded();
+		live = [
+			session("1", "w1", { name: "a", restored: { worktree: "w1", index: 0 } }),
+			...["b", "c", "d"].map((name, index) => session(`w2-${index}`, "w2", { name, restored: { worktree: "w2", index } })),
+		];
+		for (const index of [0, 1, 2]) first.restored({ worktree: "w2", index }, "opened");
+		first.restored({ worktree: "w1", index: 0 }, "opened");
+		first.attend(attention("w1", "1"));
+		first.save();
+		expect((await reopened())?.worktrees.w2!.shown).toBe(2);
+	});
+
+	test("when the saved shown chip did not open, the nearest one before it shows", async () => {
+		saved({ w1: { shown: 2, sessions: [T("a"), T("b"), { kind: "agent", agent: "Gone" }] } });
+		const first = await loaded();
+		live = [0, 1].map(index => session(`${index}`, "w1", { name: ["a", "b"][index]!, restored: { worktree: "w1", index } }));
+		for (const index of [0, 1]) first.restored({ worktree: "w1", index }, "opened");
+		first.restored({ worktree: "w1", index: 2 }, "not-configured");
+		first.save();
+		expect((await reopened())?.worktrees.w1).toEqual({ shown: 1, sessions: [T("a"), T("b")] });
+	});
+
+	test("a worktree id like __proto__ is only a key", async () => {
+		writeFileSync(file, '{"version":1,"worktrees":{"__proto__":{"shown":0,"sessions":[{"kind":"terminal"}]}}}');
+		const read = await reopened();
+		expect(Object.getPrototypeOf(read!.worktrees)).toBeNull();
+		expect(Object.keys(read!.worktrees)).toEqual(["__proto__"]);
+		const first = await loaded();
+		first.save();
+		expect(readFileSync(file, "utf8")).toContain('"__proto__"');
+	});
+
+	test("a file over the limit is not read, and is moved aside", async () => {
+		writeFileSync(file, `{"version":1,"worktrees":{},"pad":"${"x".repeat(SESSIONS_FILE_LIMIT)}"}`);
+		expect(await reopened()).toBeNull();
+		expect(existsSync(`${file}.damaged`)).toBe(true);
+	});
+});
+
+describe("conversations checked at quit", () => {
+	test("a Codex session is not given the conversation of a sibling that ran meanwhile and closed", () => {
+		live = [codex("A", "w1", { startedAt: 50_000 })];
+		answer = () => FOUND;
+		layout({ endedCodex: () => new Map([["w1", 60_000]]), now: () => 1_000 }).save();
+		expect(searches).toEqual([]);
+	});
+
+	test("a sibling that ended before this one started does not stop the search", () => {
+		live = [codex("A", "w1", { startedAt: 50_000 })];
+		answer = () => FOUND;
+		layout({ endedCodex: () => new Map([["w1", 40_000], ["w2", 90_000]]), now: () => 1_000 }).save();
+		expect(searches.map(search => search.cwd)).toEqual(["/r/w1"]);
+	});
+
+	test("with real Codex files: open A, open B, close B, quit, and A keeps its own", async () => {
+		const home = join(root, "codex");
+		const at = (seconds: number) => Date.UTC(2026, 10, 20, 12, 0, seconds);
+		const write = (id: string, seconds: number) => {
+			const day = new Date(at(seconds));
+			const folder = join(home, "sessions", String(day.getFullYear()), String(day.getMonth() + 1).padStart(2, "0"), String(day.getDate()).padStart(2, "0"));
+			mkdirSync(folder, { recursive: true });
+			writeFileSync(join(folder, `rollout-${seconds}-${id}.jsonl`), `${JSON.stringify({ type: "session_meta", payload: { id, cwd: "/r/w1", source: "cli", timestamp: new Date(at(seconds)).toISOString() } })}\n`);
+		};
+		write(CODEX, 10);
+		write(FOUND, 20);
+		live = [codex("A", "w1", { startedAt: at(10) })];
+		const real = (ended: Map<string, number>) => layout({
+			endedCodex: () => ended,
+			findCodex: options => findCodexConversation({ homeFolder: home, ...options }),
+		});
+		real(new Map([["w1", at(30)]])).save();
+		expect((await reopened())?.worktrees.w1!.sessions[0]).toEqual({ kind: "agent", agent: "Codex" });
+		real(new Map()).save();
+		expect((await reopened())?.worktrees.w1!.sessions[0]).toEqual({ kind: "agent", agent: "Codex", conversation: FOUND });
+	});
+
+	test("a Claude Code id is saved only when Claude Code wrote that conversation", async () => {
+		live = [claude("1", "w1"), claude("2", "w1", { conversation: FOUND })];
+		layout({ claudeExists: id => id === FOUND }).save();
+		expect((await reopened())?.worktrees.w1!.sessions).toEqual([{ kind: "agent", agent: "Claude Code" }, { kind: "agent", agent: "Claude Code", conversation: FOUND }]);
+	});
+
+	test("a Claude Code check that throws keeps the id", async () => {
+		live = [claude("1", "w1")];
+		layout({ claudeExists: () => { throw new Error("no"); } }).save();
+		expect((await reopened())?.worktrees.w1!.sessions[0]).toEqual({ kind: "agent", agent: "Claude Code", conversation: CLAUDE });
 	});
 });

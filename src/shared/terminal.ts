@@ -4,6 +4,7 @@
  * interface only draws what it prints and passes on what is typed.
  */
 
+import type { RestoreTag } from "./saved-sessions";
 import type { ChildStatus, ProgramStatus } from "./program-status";
 import { isSafeText } from "./safe-text";
 
@@ -114,6 +115,13 @@ export interface OpenTerminalRequest {
 	 * the default. Cleaned as a rename is. Not for a Timber command.
 	 */
 	name?: string;
+	/**
+	 * The saved session this opens again, so the save at quit knows it came
+	 * back and keeps the saved ones that did not (see ./saved-sessions.ts).
+	 * Read only as a worktree id and an index. Not for a Timber command or an
+	 * arena attempt.
+	 */
+	restore?: RestoreTag;
 }
 
 export type OpenTerminalResult =

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { type MockEngine, type MockEngineOptions, createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { type MockSessionStorage, memorySessionStorage } from "../src/mainview/engine/mock-session-storage";
-import { RESTORE_CONCURRENCY, restoreJobs, restoreRequest, runLimited } from "../src/mainview/store/restore";
+import { RESTORE_CONCURRENCY, goneSavedWorktrees, restoreJobs, restoreRequest, runLimited } from "../src/mainview/store/restore";
 import { sessionsOf, shownSession } from "../src/mainview/store/state";
 import { createAppStore } from "../src/mainview/store/store";
 import type { Attention } from "../src/shared/attention";
@@ -91,13 +91,30 @@ describe("which saved sessions open, and how", () => {
 		expect(restoreJobs({ selected: "gone", worktrees: saved.worktrees }, repositories).map(job => job.worktreeId)).toEqual([primaryId, featureId, "api"]);
 	});
 
-	test("the request for a terminal names only where it opens; an agent's names the agent, its conversation, and its name", () => {
+	test("only saved worktrees known to be gone are forgotten", () => {
+		const id = (common: string, path: string) => [common, "verified", path].join("\0");
+		const repo = (path: string, worktrees: { id: string; pathExists?: boolean }[], more: Partial<Repository> = {}): Repository =>
+			({ ...timberRepository, path, worktrees: worktrees.map(entry => ({ ...timberRepository.worktrees[0]!, id: entry.id, path: entry.id, pathExists: entry.pathExists ?? true })), ...more });
+		const store = { shown: 0, sessions: [{ kind: "terminal" as const }] };
+		const saved: SavedSessions = { worktrees: { [id("/a/.git", "/a")]: store, [id("/a/.git", "/a-old")]: store, [id("/b/.git", "/b-old")]: store, [id("/c/.git", "/c")]: store } };
+		const a = repo("/a", [{ id: id("/a/.git", "/a") }]);
+		const b = repo("/b", [{ id: id("/b/.git", "/b") }]);
+		// Every repository read and every folder there: an unlisted worktree is gone, and so is one of a repository no longer listed.
+		expect(goneSavedWorktrees(saved, [a, b]).sort()).toEqual([id("/a/.git", "/a-old"), id("/b/.git", "/b-old"), id("/c/.git", "/c")].sort());
+		// A repository that cannot be read may hold any of the others.
+		expect(goneSavedWorktrees(saved, [a, repo("/b", [], { available: false })])).toEqual([id("/a/.git", "/a-old")]);
+		expect(goneSavedWorktrees(saved, [a, repo("/b", [], { failure: "Timber failed" })])).toEqual([id("/a/.git", "/a-old")]);
+		// A missing folder changes its worktree's id, so nothing of that repository is forgotten.
+		expect(goneSavedWorktrees(saved, [a, repo("/b", [{ id: ["/b/.git", "registered", "/b"].join("\0"), pathExists: false }])])).toEqual([id("/a/.git", "/a-old")]);
+	});
+
+	test("the request for a terminal names where it opens and which saved session it is; an agent's names the agent, its conversation, and its name", () => {
 		const job = { repository: TIMBER, worktreeId: featureId, path: FEATURE, shown: 0, sessions: [] };
-		expect(restoreRequest(job, { kind: "terminal" })).toEqual({ repository: TIMBER, worktree: FEATURE, cols: 80, rows: 24 });
-		expect(restoreRequest(job, { kind: "terminal", name: "dev" })).toEqual({ repository: TIMBER, worktree: FEATURE, cols: 80, rows: 24, name: "dev" });
-		expect(restoreRequest(job, { kind: "agent", agent: "Codex", conversation: "01a17995-a303-7160-8d6d-d7587e0d5d50", name: "review" }))
-			.toEqual({ repository: TIMBER, worktree: FEATURE, cols: 80, rows: 24, agent: "Codex", resume: "01a17995-a303-7160-8d6d-d7587e0d5d50", name: "review" });
-		expect(restoreRequest(job, { kind: "agent", agent: "Aider" })).toEqual({ repository: TIMBER, worktree: FEATURE, cols: 80, rows: 24, agent: "Aider" });
+		expect(restoreRequest(job, { kind: "terminal" }, 0)).toEqual({ repository: TIMBER, worktree: FEATURE, cols: 80, rows: 24, restore: { worktree: featureId, index: 0 } });
+		expect(restoreRequest(job, { kind: "terminal", name: "dev" }, 1)).toEqual({ repository: TIMBER, worktree: FEATURE, cols: 80, rows: 24, restore: { worktree: featureId, index: 1 }, name: "dev" });
+		expect(restoreRequest(job, { kind: "agent", agent: "Codex", conversation: "01a17995-a303-7160-8d6d-d7587e0d5d50", name: "review" }, 2))
+			.toEqual({ repository: TIMBER, worktree: FEATURE, cols: 80, rows: 24, restore: { worktree: featureId, index: 2 }, agent: "Codex", resume: "01a17995-a303-7160-8d6d-d7587e0d5d50", name: "review" });
+		expect(restoreRequest(job, { kind: "agent", agent: "Aider" }, 3)).toEqual({ repository: TIMBER, worktree: FEATURE, cols: 80, rows: 24, restore: { worktree: featureId, index: 3 }, agent: "Aider" });
 	});
 
 	test("at most a few run at once, all run, in order, and one that fails does not stop the rest", async () => {
@@ -277,6 +294,75 @@ describe("sessions after a restart", () => {
 		// The selected worktree says why.
 		expect(store.getState().terminalProblem).toMatchObject({ worktree: featureId, agent: "Gone" });
 		expect(store.getState().terminalProblem!.message).toContain("No agent called \"Gone\"");
+	});
+
+	test("a repository that is unavailable keeps its saved sessions for a later launch", async () => {
+		const storage = memorySessionStorage();
+		const first = await firstRun(storage);
+		await quit(first.engine, first.store);
+		const away: Repository[] = [{ ...timberRepository, available: false, worktrees: [] }, sampleRepositories[1]!];
+		const second = run(storage, away);
+		await until(() => second.store.getState().loaded);
+		await settle(20);
+		expect(second.store.getState().terminals).toEqual([]);
+		await quit(second.engine, second.store);
+		const third = run(storage);
+		await until(() => sessionsOf(third.store.getState(), featureId).length === 3 && sessionsOf(third.store.getState(), primaryId).length === 1);
+	});
+
+	test("a repository removed from the list keeps its sessions while another worktree's folder is missing, and drops them once every one is read", async () => {
+		const storage = memorySessionStorage();
+		const first = await firstRun(storage);
+		await quit(first.engine, first.store);
+		// The api-server sample has a worktree whose folder is missing, so the timber worktrees may still be among its ids.
+		const unsure = run(storage, [sampleRepositories[1]!]);
+		await until(() => unsure.store.getState().loaded);
+		await settle(20);
+		await quit(unsure.engine, unsure.store);
+		const kept = parseSavedSessions(storage.read()!);
+		expect(kept.ok && Object.keys(kept.saved.worktrees).sort()).toEqual([featureId, primaryId].sort());
+		const allThere: Repository[] = [{ ...sampleRepositories[1]!, worktrees: sampleRepositories[1]!.worktrees.filter(worktree => worktree.pathExists) }];
+		const sure = run(storage, allThere);
+		await until(() => sure.store.getState().loaded);
+		await settle(20);
+		await quit(sure.engine, sure.store);
+		const dropped = parseSavedSessions(storage.read()!);
+		expect(dropped.ok && dropped.saved.worktrees).toEqual({});
+	});
+
+	test("quitting while sessions still open keeps the ones not opened yet, in their order", async () => {
+		const storage = memorySessionStorage();
+		const first = await firstRun(storage);
+		await quit(first.engine, first.store);
+		const before = parseSavedSessions(storage.read()!);
+		const second = run(storage, sampleRepositories, { terminalMilliseconds: 50 });
+		await until(() => second.store.getState().terminals.length >= 1, 2000);
+		expect(second.store.getState().terminals.length).toBeLessThan(4);
+		await quit(second.engine, second.store);
+		const after = parseSavedSessions(storage.read()!);
+		expect(after.ok && after.saved).toEqual(before.ok && before.saved);
+	});
+
+	test("a worktree not visited after a restart keeps its shown chip over the next restart", async () => {
+		const storage = memorySessionStorage();
+		storage.write(serializeSavedSessions({
+			selected: primaryId,
+			worktrees: {
+				[primaryId]: { shown: 0, sessions: [{ kind: "terminal" }] },
+				[featureId]: { shown: 2, sessions: [{ kind: "terminal", name: "one" }, { kind: "terminal", name: "two" }, { kind: "terminal", name: "three" }] },
+			},
+		}));
+		const second = run(storage);
+		await until(() => sessionsOf(second.store.getState(), featureId).length === 3);
+		await settle(20);
+		expect(second.store.getState().selection!.worktree).toBe(primaryId);
+		await quit(second.engine, second.store);
+		const read = parseSavedSessions(storage.read()!);
+		expect(read.ok && read.saved.worktrees[featureId]!.shown).toBe(2);
+		const third = run(storage);
+		await until(() => sessionsOf(third.store.getState(), featureId).length === 3);
+		await settle(20);
+		expect(shownSession(third.store.getState(), featureId)!.name).toBe("three");
 	});
 
 	test("the sessions are opened once per run", async () => {

@@ -13,7 +13,9 @@ import {
 } from "../../shared/terminal";
 import { recordsForWindow } from "../../shared/session-status";
 import { PROBE_ANSWER, type StatusRecords, type StatusScanner, createStatusRecords, createStatusScanner } from "../../shared/program-status";
-import { type LiveSession, type SavedSessions, buildSavedSessions, isConversationId, parseSavedSessions, serializeSavedSessions } from "../../shared/saved-sessions";
+import {
+	type LiveSession, type RestoreTag, type SavedSessions, buildSavedSessions, createSavedCarry, isConversationId, isRestoreTag, parseSavedSessions, serializeSavedSessions,
+} from "../../shared/saved-sessions";
 import { notFoundOnPath } from "../../shared/search-path";
 import { type WorkflowList, isWorkflowName } from "../../shared/workflows";
 import { worktreeSetupArguments } from "../../shared/worktree-commands";
@@ -23,6 +25,7 @@ import { type MockSessionStorage, memorySessionStorage } from "./mock-session-st
 export type TerminalCapabilities = Pick<Engine,
 	| "listTerminals" | "openTerminal" | "renameTerminal" | "readTerminal" | "drawnTerminal" | "writeTerminal" | "pasteTerminal" | "resizeTerminal" | "closeTerminal"
 	| "onTerminalOutput" | "onTerminalChanged" | "onQuitRequested" | "confirmQuit" | "writeClipboard" | "readClipboard" | "openLink" | "takeSavedSessions"
+	| "forgetSavedSessions"
 >;
 
 /** Start a shell with a chop typed into it, as the main process's `TerminalSessions.open` does. Not part of the engine: only `runChop` calls it. */
@@ -109,6 +112,8 @@ interface Acted {
 	conversation: string | null;
 	/** Whether the person gave the session its name. */
 	renamed: boolean;
+	/** The saved session it opened again, when it did. */
+	restored: RestoreTag | null;
 }
 
 /** What a pretend setup script prints when it fails. */
@@ -176,6 +181,8 @@ export function createMockTerminals(
 		const read = text === null ? null : parseSavedSessions(text);
 		return read?.ok && Object.keys(read.saved.worktrees).length > 0 ? read.saved : null;
 	})();
+	// What became of those in this run, so the save keeps what did not open again, as the main process does.
+	const carry = createSavedCarry(saved);
 	let goneConversations: readonly string[] = [];
 	// The shown chip of each worktree and the selected worktree, from what the window attends to.
 	const shown: Record<string, string> = {};
@@ -187,9 +194,9 @@ export function createMockTerminals(
 		const running = [...sessions.values()].flatMap((acted): LiveSession[] => {
 			const { session } = acted;
 			if (session.state.kind !== "running" || (session.kind !== "terminal" && session.kind !== "agent")) return [];
-			return [{ id: session.id, worktree: session.worktree, kind: session.kind, agent: acted.agent, conversation: acted.conversation, name: acted.renamed ? session.name : null }];
+			return [{ id: session.id, worktree: session.worktree, kind: session.kind, agent: acted.agent, conversation: acted.conversation, name: acted.renamed ? session.name : null, restored: acted.restored }];
 		});
-		storage.write(serializeSavedSessions(buildSavedSessions(running, shown, selectedId)));
+		storage.write(serializeSavedSessions(buildSavedSessions(running, shown, selectedId, carry)));
 	}
 
 	const later = (task: () => void) => void Promise.resolve().then(task);
@@ -337,6 +344,8 @@ export function createMockTerminals(
 		// As the main process reads them: a conversation only as a UUID and for an agent from Settings, a name only cleaned, and neither for a Timber command, an arena attempt, or a workflow's own agent.
 		const resume = agent !== null && isConversationId(request.resume) ? request.resume : null;
 		const savedName = chop === undefined && setup === null && attempt === null && (agent !== null || workflowAgent === undefined) ? cleanSessionName(request.name) : null;
+		const restored: RestoreTag | null = setup === null && attempt === null && (agent !== null || workflowAgent === undefined) && isRestoreTag(request.restore)
+			? { worktree: request.restore.worktree, index: request.restore.index } : null;
 		let resumable: ResumableAgent | null = null;
 		let conversation: string | null = null;
 		if (agent) {
@@ -404,7 +413,7 @@ export function createMockTerminals(
 		const acted: Acted = {
 			session, scrollback: createScrollback(), line: "", typed: "", size: { cols: request.cols, rows: request.rows }, drawn: 0,
 			scanner: createStatusScanner(), records: createStatusRecords(), answers: [], pasteMode: createPasteModeScanner(), pasted: [],
-			agent: agent?.name ?? null, resumable, conversation, renamed: savedName !== null,
+			agent: agent?.name ?? null, resumable, conversation, renamed: savedName !== null, restored,
 		};
 		sessions.set(session.id, acted);
 		announce({ id: session.id, session });
@@ -431,6 +440,9 @@ export function createMockTerminals(
 
 	return {
 		listTerminals: async () => [...sessions.values()].map(acted => structuredClone(acted.session)),
+		async forgetSavedSessions(worktrees) {
+			carry.forget(worktrees);
+		},
 		async takeSavedSessions() {
 			const taken = saved;
 			saved = null;
@@ -452,7 +464,19 @@ export function createMockTerminals(
 			mostOpening = Math.max(mostOpening, opening);
 			try {
 				if (options.terminalMilliseconds) await new Promise(resolve => setTimeout(resolve, options.terminalMilliseconds));
-				return await open(request);
+				// As the main process does: what came of opening a saved session tells the save whether to keep the saved one.
+				let result: OpenTerminalResult;
+				try {
+					result = await open(request);
+				} catch (error) {
+					if (isRestoreTag(request.restore)) carry.miss(request.restore);
+					throw error;
+				}
+				if (isRestoreTag(request.restore)) {
+					if (result.outcome === "opened" || result.outcome === "not-configured") carry.settle(request.restore);
+					else carry.miss(request.restore);
+				}
+				return result;
 			} finally {
 				opening -= 1;
 			}

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
-	type LiveSession, type SavedSessions, SAVED_SESSIONS_PER_WORKTREE, SAVED_WORKTREE_LIMIT, buildSavedSessions, isConversationId, parseSavedSessions,
-	serializeSavedSessions,
+	type LiveSession, type SavedSessions, SAVED_MISS_LIMIT, SAVED_SESSIONS_PER_WORKTREE, SAVED_WORKTREE_LIMIT, buildSavedSessions, isConversationId, isRestoreTag,
+	parseSavedSessions, pickShown, serializeSavedSessions,
 } from "../src/shared/saved-sessions";
 
 const claude = { kind: "agent", agent: "Claude Code", conversation: "0b6f1c1e-7a52-4f0e-9d53-2f1f6f0c7a11" } as const;
@@ -94,5 +94,40 @@ describe("the saved sessions file", () => {
 		expect(Buffer.byteLength(text)).toBeLessThan(100 * 1024);
 		const read = parseSavedSessions(text);
 		expect(read.ok && Object.keys(read.saved.worktrees)).toHaveLength(200);
+	});
+});
+
+describe("misses, tags, and the shown chip", () => {
+	test("a miss count is read only from 1 up to the limit", () => {
+		const read = parseSavedSessions(JSON.stringify({ version: 1, worktrees: { w: { shown: 0, sessions: [
+			{ kind: "terminal", missed: 1 }, { kind: "terminal", missed: SAVED_MISS_LIMIT }, { kind: "terminal", missed: 0 }, { kind: "terminal", missed: "2" }, { kind: "agent", agent: "Codex", missed: 2 },
+		] } } }));
+		expect(read.ok && read.saved.worktrees.w!.sessions).toEqual([{ kind: "terminal", missed: 1 }, { kind: "terminal" }, { kind: "terminal" }, { kind: "terminal" }, { kind: "agent", agent: "Codex", missed: 2 }]);
+	});
+
+	test("the worktrees read have no prototype, so __proto__ is only a key", () => {
+		const read = parseSavedSessions('{"version":1,"worktrees":{"__proto__":{"shown":0,"sessions":[{"kind":"terminal"}]},"constructor":{"shown":0,"sessions":[{"kind":"terminal"}]}}}');
+		expect(read.ok).toBe(true);
+		if (!read.ok) return;
+		expect(Object.getPrototypeOf(read.saved.worktrees)).toBeNull();
+		expect(Object.keys(read.saved.worktrees)).toEqual(["__proto__", "constructor"]);
+		expect(Object.getPrototypeOf(buildSavedSessions([], { constructor: "x" }, null).worktrees)).toBeNull();
+	});
+
+	test("a restore tag is a worktree id and an index within the cap", () => {
+		expect(isRestoreTag({ worktree: "w", index: 0 })).toBe(true);
+		expect(isRestoreTag({ worktree: "w", index: SAVED_SESSIONS_PER_WORKTREE - 1 })).toBe(true);
+		for (const value of [null, "w", { worktree: "", index: 0 }, { worktree: "w", index: -1 }, { worktree: "w", index: 1.5 }, { worktree: "w", index: SAVED_SESSIONS_PER_WORKTREE }, { worktree: 3, index: 0 }]) {
+			expect(isRestoreTag(value)).toBe(false);
+		}
+	});
+
+	test("the shown chip: the saved one, else the nearest before it, else the first that came from a saved one", () => {
+		expect(pickShown([0, 1, 2], 1)).toBe(1);
+		expect(pickShown([0, null, 2], 1)).toBe(0);
+		expect(pickShown([null, 2, 3], 1)).toBe(1);
+		expect(pickShown([3, 0, 2], 2)).toBe(2);
+		expect(pickShown([null, null], 0)).toBe(-1);
+		expect(pickShown([], 0)).toBe(-1);
 	});
 });
