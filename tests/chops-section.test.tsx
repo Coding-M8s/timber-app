@@ -193,8 +193,8 @@ describe("chops in the app", () => {
 		store.openDialog({ kind: "settings", section: "chops" });
 		await store.readChops(TIMBER);
 		const markup = renderToStaticMarkup(<App store={store} />);
-		expect(markup).toMatch(/>Agents<\/button><button[^>]*>Chops<\/button>/);
-		expect(markup).toMatch(/class="settings-nav-item selected" aria-current="page"[^>]*>Chops</);
+		expect(markup).toMatch(/>Agents<\/button><button[^>]*><svg class="settings-nav-icon"[^]*?<\/svg>Chops<\/button>/);
+		expect(markup).toMatch(/class="settings-nav-item selected" aria-current="page"[^>]*><svg class="settings-nav-icon"[^]*?<\/svg>Chops</);
 		expect(markup).toContain(">Review the diff</span>");
 	});
 });

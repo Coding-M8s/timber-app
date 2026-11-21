@@ -1267,26 +1267,54 @@ pre:focus-visible {
 }
 
 /* Settings: the sections down the side, the one that shows beside them. */
+/* Settings keeps one size whatever the section, so nothing jumps when switching; only the section scrolls. */
 .settings-dialog {
-	width: min(680px, calc(100% - 32px));
-}
-
-.settings-head {
-	padding: 14px 14px 12px 18px;
-	border-bottom: 1px solid var(--line);
-}
-
-.settings-head .button {
-	margin-top: 0;
+	position: relative;
+	width: min(1040px, calc(100% - 32px));
+	height: min(748px, calc(100% - 48px));
+	overflow: hidden;
 }
 
 .settings-body {
 	display: flex;
-	min-height: 280px;
+	height: 100%;
+}
+
+.settings-main {
+	flex: 1 1 auto;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+}
+
+.settings-close {
+	position: absolute;
+	top: 16px;
+	right: 16px;
+	display: grid;
+	place-items: center;
+	width: 32px;
+	height: 32px;
+	padding: 0;
+	border: 0;
+	border-radius: 8px;
+	background: transparent;
+	color: var(--text-2);
+}
+
+.settings-close:hover {
+	background: var(--fill-hover);
+	color: var(--text);
+}
+
+.settings-close:disabled {
+	color: var(--text-3);
+	background: transparent;
+	cursor: default;
 }
 
 .settings-problem {
-	margin: 12px 18px 0;
+	margin: 16px 32px 0;
 }
 
 .button.primary[aria-disabled="true"] {
@@ -1297,26 +1325,44 @@ pre:focus-visible {
 
 .settings-nav {
 	flex: none;
-	width: 160px;
+	width: 236px;
 	display: flex;
 	flex-direction: column;
-	gap: 2px;
-	padding: 10px 8px;
+	gap: 1px;
+	padding: 16px 10px 12px;
 	border-right: 1px solid var(--line);
+	background: var(--bg-app);
+	overflow-y: auto;
+}
+
+.settings-nav .dialog-title {
+	padding: 2px 10px 6px;
+}
+
+.settings-nav-section {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
 }
 
 .settings-nav-item {
-	padding: 6px 10px;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	width: 100%;
+	height: 32px;
+	padding: 0 10px;
 	border: 0;
-	border-radius: 6px;
+	border-radius: 7px;
 	background: transparent;
 	color: var(--text-2);
-	font-size: 12.5px;
+	font-size: 13px;
 	text-align: left;
 }
 
 .settings-nav-item:hover {
 	background: var(--fill-hover);
+	color: var(--text);
 }
 
 .settings-nav-item.selected {
@@ -1324,28 +1370,234 @@ pre:focus-visible {
 	color: var(--text);
 }
 
-.settings-panel {
-	flex: 1 1 auto;
-	min-width: 0;
+.settings-nav-icon {
+	flex: none;
 }
 
+.settings-nav-foot {
+	margin-top: auto;
+	padding-top: 8px;
+	border-top: 1px solid var(--line);
+}
+
+.settings-panel {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+}
+
+/* A section: its title and what it is for, then its settings, then its Save in a bar that stays in view. */
 .settings-section {
 	display: flex;
 	flex-direction: column;
-	gap: 12px;
-	padding: 16px 18px;
+	gap: 16px;
+	min-height: 100%;
+}
+
+.settings-section > :not(.settings-section-head):not(.settings-section-foot) {
+	margin-inline: 32px;
+	max-width: 680px;
+}
+
+.settings-section > :nth-child(2) {
+	margin-top: 8px;
+}
+
+.settings-section > :last-child:not(.settings-section-foot) {
+	margin-bottom: 32px;
+}
+
+.settings-section-head {
+	padding: 22px 64px 18px 32px;
+	border-bottom: 1px solid var(--line);
 }
 
 .settings-section-title {
 	margin: 0;
-	font-size: 13.5px;
+	font-size: 20px;
 	font-weight: 600;
+	letter-spacing: -0.01em;
 }
 
 .settings-section-text {
-	margin: -6px 0 0;
-	font-size: 12px;
-	color: var(--text-3);
+	max-width: 600px;
+	margin: 6px 0 0;
+	font-size: 13px;
+	line-height: 1.5;
+	color: var(--text-2);
+}
+
+.settings-section > .settings-section-foot {
+	position: sticky;
+	bottom: 0;
+	margin-top: auto;
+	padding: 12px 24px 12px 32px;
+	border-top: 1px solid var(--line);
+	background: var(--bg-main);
+}
+
+/*
+ * A section's settings sit in one panel, a row each. Errors keep their own
+ * look inside it, set in from the panel's edges.
+ */
+.settings-section > .dialog-fields {
+	gap: 0;
+	border: 1px solid var(--line-raised);
+	border-radius: 10px;
+}
+
+.settings-section > .dialog-fields > :not(.sidebar-error) {
+	padding: 14px 16px;
+}
+
+.settings-section > .dialog-fields > * + * {
+	border-top: 1px solid var(--line);
+}
+
+.settings-section > .dialog-fields > .sidebar-error {
+	margin: 12px 16px;
+}
+
+.settings-section > .dialog-fields > :empty {
+	display: none;
+}
+
+/* A fieldset's legend sits in its top edge, so the row's top space goes on the legend instead. */
+.settings-section > .dialog-fields > fieldset {
+	padding-top: 0;
+}
+
+.settings-section > .dialog-fields > fieldset > legend {
+	padding: 14px 0 0;
+}
+
+.settings-dialog fieldset > legend.field-label {
+	margin-bottom: 8px;
+}
+
+/* Secondary buttons carry an edge, so they read as buttons beside the text around them. */
+.settings-dialog .button.quiet {
+	border: 1px solid var(--line-raised);
+	padding: 0 12px;
+}
+
+.settings-dialog .button.quiet:disabled {
+	border-color: var(--line);
+}
+
+.settings-section > .dialog-fields > .sidebar-error + *,
+.settings-section > .dialog-fields > * + .sidebar-error {
+	border-top: 0;
+}
+
+.settings-section .dialog-fields .field-label,
+.settings-section .dialog-fields .check-text {
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--text);
+}
+
+.settings-section .dialog-fields .check-hint,
+.settings-section .dialog-fields .field-hint {
+	font-weight: 400;
+	line-height: 1.45;
+}
+
+.settings-dialog .field-input {
+	height: 34px;
+	padding: 0 10px;
+	border-color: var(--line-raised);
+	background: var(--fill-field);
+}
+
+.settings-dialog .field-input:focus {
+	border-color: var(--focus);
+}
+
+/* A setting that is on or off: its words on the left and a switch on the right. */
+.settings-dialog .check:has(> input[type="checkbox"]) {
+	flex-direction: row-reverse;
+	justify-content: space-between;
+	align-items: center;
+	gap: 24px;
+}
+
+.settings-dialog .check > input[type="checkbox"] {
+	appearance: none;
+	flex: none;
+	width: 34px;
+	height: 20px;
+	margin: 0;
+	border-radius: 999px;
+	background-color: var(--fill-strong);
+	background-image: radial-gradient(circle, var(--text) 0 7px, transparent 7.5px);
+	background-position: left center;
+	background-repeat: no-repeat;
+	background-size: 20px 20px;
+	cursor: pointer;
+	transition: background-position 0.15s, background-color 0.15s;
+}
+
+.settings-dialog .check > input[type="checkbox"]:checked {
+	background-color: var(--ahead);
+	background-image: radial-gradient(circle, var(--bg-pane) 0 7px, transparent 7.5px);
+	background-position: right center;
+}
+
+.settings-dialog .check > input[type="checkbox"]:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+
+/* One choice of a few: each choice a chip, the chosen one marked, in a row that wraps. */
+.settings-dialog fieldset:has(> .check > input[type="radio"]) {
+	flex-direction: row;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.settings-dialog .check:has(> input[type="radio"]) {
+	position: relative;
+	align-items: center;
+	padding: 7px 12px;
+	border: 1px solid var(--line-raised);
+	border-radius: 8px;
+	color: var(--text-2);
+	cursor: pointer;
+}
+
+.settings-dialog .check:has(> input[type="radio"]):hover {
+	background: var(--fill-hover);
+}
+
+.settings-dialog .check:has(> input[type="radio"]:checked) {
+	border-color: var(--ahead);
+	background: var(--fill-selected);
+	color: var(--text);
+}
+
+.settings-dialog .check:has(> input[type="radio"]:focus-visible) {
+	outline: 2px solid var(--focus);
+	outline-offset: 2px;
+}
+
+.settings-dialog .check:has(> input[type="radio"]:disabled) {
+	opacity: 0.55;
+	cursor: default;
+}
+
+.settings-dialog .check > input[type="radio"] {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: 0;
+	opacity: 0;
+}
+
+.settings-dialog .check:has(> input[type="radio"]) .check-text {
+	font-size: 12.5px;
+	font-weight: 500;
+	color: inherit;
 }
 
 /* Settings: a setting with its label and hint on the left and a segmented choice on the right. */
@@ -1927,11 +2179,10 @@ pre:focus-visible {
 }
 
 .settings-nav-group {
-	margin: 10px 10px 2px;
+	margin: 0;
+	padding: 14px 10px 6px;
 	font-size: 11px;
-	font-weight: 600;
-	letter-spacing: 0.04em;
-	text-transform: uppercase;
+	font-weight: 500;
 	color: var(--text-3);
 }
 
@@ -2057,17 +2308,53 @@ pre:focus-visible {
 	color: var(--text-2);
 }
 
-@media (max-width: 560px) {
+@media (max-width: 720px) {
 	.settings-body {
 		flex-direction: column;
 	}
 
 	.settings-nav {
 		width: auto;
+		flex: none;
 		flex-direction: row;
 		flex-wrap: wrap;
+		padding: 12px 56px 12px 10px;
 		border-right: 0;
 		border-bottom: 1px solid var(--line);
+	}
+
+	.settings-nav-section,
+	.settings-nav-foot {
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+
+	.settings-nav-group,
+	.settings-nav .dialog-title {
+		display: none;
+	}
+
+	.settings-nav-foot {
+		margin-top: 0;
+		padding-top: 0;
+		border-top: 0;
+	}
+
+	.settings-nav-item {
+		width: auto;
+	}
+
+	.settings-main {
+		min-height: 0;
+		flex: 1 1 auto;
+	}
+
+	.settings-section > :not(.settings-section-head):not(.settings-section-foot) {
+		margin-inline: 16px;
+	}
+
+	.settings-section-head {
+		padding-inline: 16px;
 	}
 }
 
@@ -3868,8 +4155,13 @@ pre:focus-visible {
 	display: flex;
 	flex-direction: column;
 	gap: 12px;
-	padding-top: 14px;
-	border-top: 1px solid var(--line);
+	padding: 16px;
+	border: 1px solid var(--line-raised);
+	border-radius: 10px;
+}
+
+.timber-group .timber-block-title {
+	font-size: 13.5px;
 }
 
 .timber-group .dialog-fields {

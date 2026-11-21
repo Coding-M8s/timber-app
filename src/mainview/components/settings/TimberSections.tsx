@@ -622,11 +622,13 @@ export function MachineSection() {
 	const titleId = useId();
 	return (
 		<section className="settings-section" aria-labelledby={titleId}>
-			<h3 id={titleId} className="settings-section-title">Machine</h3>
-			<p className="settings-section-text">
-				Timber's defaults for every repository on this machine. A repository's own settings take their place where it sets them.
-				Timber checks and saves every change; each group saves on its own.
-			</p>
+			<header className="settings-section-head">
+				<h3 id={titleId} className="settings-section-title">Machine</h3>
+				<p className="settings-section-text">
+					Timber's defaults for every repository on this machine. A repository's own settings take their place where it sets them.
+					Timber checks and saves every change; each group saves on its own.
+				</p>
+			</header>
 			<TimberScopeSettings scope="machine" repository={null} />
 		</section>
 	);
@@ -644,11 +646,13 @@ export function RepositorySection() {
 	const repository = chosen !== null && repositories.some(candidate => candidate.path === chosen) ? chosen : fallback;
 	return (
 		<section className="settings-section" aria-labelledby={titleId}>
-			<h3 id={titleId} className="settings-section-title">Repository</h3>
-			<p className="settings-section-text">
-				Timber's settings for one repository, from {REPOSITORY_CONFIG_FILE} in its primary checkout. What it does not set comes from the machine defaults.
-				Timber checks and saves every change; each group saves on its own.
-			</p>
+			<header className="settings-section-head">
+				<h3 id={titleId} className="settings-section-title">Repository</h3>
+				<p className="settings-section-text">
+					Timber's settings for one repository, from {REPOSITORY_CONFIG_FILE} in its primary checkout. What it does not set comes from the machine defaults.
+					Timber checks and saves every change; each group saves on its own.
+				</p>
+			</header>
 			{repository === null ? (
 				<p className="dialog-note">Add a repository to change its settings.</p>
 			) : (

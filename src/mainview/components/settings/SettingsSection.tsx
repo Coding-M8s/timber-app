@@ -127,8 +127,10 @@ export function SettingsSection({ title, description, save, canSave, onSave, sec
 	};
 	return (
 		<form ref={form} className="settings-section" aria-labelledby={titleId} aria-busy={saving} onSubmit={submit}>
-			<h3 id={titleId} className="settings-section-title">{title}</h3>
-			<p className="settings-section-text">{description}</p>
+			<header className="settings-section-head">
+				<h3 id={titleId} className="settings-section-title">{title}</h3>
+				<p className="settings-section-text">{description}</p>
+			</header>
 			<fieldset className="dialog-fields" disabled={saving}>{children}</fieldset>
 			{save.state === "failed" && (
 				<div className="sidebar-error" role="alert">

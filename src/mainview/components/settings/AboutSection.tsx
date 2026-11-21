@@ -9,7 +9,9 @@ export function AboutSectionView({ rows, uninstall }: { rows: readonly AboutRow[
 	const titleId = useId();
 	return (
 		<section className="settings-section" aria-labelledby={titleId}>
-			<h3 id={titleId} className="settings-section-title">About</h3>
+			<header className="settings-section-head">
+				<h3 id={titleId} className="settings-section-title">About</h3>
+			</header>
 			<div className="about-head">
 				<img className="about-logo" src={logoUrl} alt="" width={48} height={48} />
 				<dl className="about-rows">

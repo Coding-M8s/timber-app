@@ -113,7 +113,7 @@ describe("Open in editor in the window", () => {
 		expect(await store.openInEditor({ repository: TIMBER, worktree: FEATURE })).toBeNull();
 		expect(store.getState().dialog).toEqual({ kind: "settings", section: "editor" });
 		expect(engine.launchedEditors()).toEqual([]);
-		expect(render(store)).toMatch(/class="settings-nav-item selected" aria-current="page"[^>]*>Editor</);
+		expect(render(store)).toMatch(/class="settings-nav-item selected" aria-current="page"[^>]*><svg class="settings-nav-icon"[^]*?<\/svg>Editor</);
 	});
 
 	test("a started editor is a toast, and the command was the saved one with the worktree's path", async () => {
@@ -274,8 +274,8 @@ describe("the Editor section of Settings", () => {
 		const { store, engine } = await startedStore();
 		store.openDialog({ kind: "settings", section: "editor" });
 		const markup = render(store);
-		expect(markup).toMatch(/class="settings-nav-item"[^>]*>Layout</);
-		expect(markup).toMatch(/class="settings-nav-item selected" aria-current="page"[^>]*>Editor</);
+		expect(markup).toMatch(/class="settings-nav-item"[^>]*><svg class="settings-nav-icon"[^]*?<\/svg>Layout</);
+		expect(markup).toMatch(/class="settings-nav-item selected" aria-current="page"[^>]*><svg class="settings-nav-icon"[^]*?<\/svg>Editor</);
 		expect(markup).toContain('<h3 id="');
 		expect(markup).toMatch(/class="settings-section-title">Editor</);
 		await store.savePreferences({ editor: { command: "zed", terminal: false } });
