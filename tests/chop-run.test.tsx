@@ -441,3 +441,32 @@ describe("prompt chops in the app (mock engine)", () => {
 		expect(renderToStaticMarkup(<App store={store} />)).toContain(">Copy Ask</button>");
 	});
 });
+
+describe("chops with \"Use chops\" off", () => {
+	test("the palette lists none, none runs, and none is inserted; turned on again, they are back", async () => {
+		const { engine, store } = await startedStore();
+		await store.savePreferences({ chops: [{ name: "Mine", kind: "command", text: "make", description: "", agent: null, repository: null }] });
+		store.select(FEATURE.id);
+		await store.readChops(TIMBER);
+		expect(paletteEntries(store.getState()).some(entry => entry.label.startsWith("Run chop:"))).toBe(true);
+		await store.openTerminal({ repository: TIMBER, worktree: FEATURE.path, cols: 80, rows: 24 });
+		await settle();
+		const session = store.getState().terminals[0]!;
+
+		await store.savePreferences({ useChops: false });
+		expect(paletteEntries(store.getState()).some(entry => entry.label.startsWith("Run chop:") || entry.label.startsWith("Send prompt:") || entry.label.startsWith("Copy prompt:"))).toBe(false);
+		const markup = renderToStaticMarkup(<App store={store} />);
+		expect(markup).not.toContain("Insert chop");
+		await store.runChop(TIMBER, FEATURE.id, "Mine", size());
+		expect(store.getState().terminals).toHaveLength(1);
+		expect(store.getState().dialog).toBeNull();
+		await store.insertChop(session.id, "Mine");
+		expect(engine.typedInto(session.id)).toBe("");
+
+		await store.savePreferences({ useChops: true });
+		expect(store.getState().preferences.chops.map(chop => chop.name)).toEqual(["Mine"]);
+		expect(paletteEntries(store.getState()).some(entry => entry.label === "Run chop: Mine")).toBe(true);
+		await store.insertChop(session.id, "Mine");
+		expect(engine.typedInto(session.id)).toBe("make");
+	});
+});

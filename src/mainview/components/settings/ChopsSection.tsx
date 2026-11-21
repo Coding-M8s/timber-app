@@ -3,7 +3,7 @@ import type { AgentSetting } from "../../../shared/agent";
 import { CHOP_DESCRIPTION_LIMIT, CHOP_KINDS, CHOP_TEXT_LIMIT, type ChopKind, type ChopList, type PersonalChop, chopKindWord } from "../../../shared/chops";
 import { SESSION_NAME_LIMIT } from "../../../shared/terminal";
 import {
-	type ChopDraft, type ChopDraftChange, addChopDraft, chopAgentOptions, chopDraftsOf, chopScopeOptions, chopsDraftModel, describeChopSource, describeChopsFile,
+	type ChopDraft, type ChopDraftChange, addChopDraft, chopAgentOptions, chopsSectionChange, chopDraftsOf, chopScopeOptions, chopsDraftModel, describeChopSource, describeChopsFile,
 	describeOverride, editChopDraft, isBlankChopDraft, removeChopDraft,
 } from "../../chop-format";
 import { useAppState, useStore } from "../../store/react";
@@ -20,11 +20,16 @@ export interface ChopsRepository {
 export interface ChopsSectionViewProps {
 	drafts: readonly ChopDraft[];
 	saved: readonly PersonalChop[];
+	/** The "Use chops" switch as shown: what is saved, or what the person switched it to. */
+	useChops: boolean;
+	/** Whether the section's Save has something it can save: the switch, the rows, or both. */
+	canSave: boolean;
 	repositories: readonly { path: string; name: string }[];
 	agents: readonly AgentSetting[];
 	/** Null when no worktree is selected. */
 	repository: ChopsRepository | null;
 	save: SectionSave;
+	onUseChops: (on: boolean) => void;
 	onAdd: () => void;
 	onEdit: (key: string, change: ChopDraftChange) => void;
 	onRemove: (key: string) => void;
@@ -77,8 +82,9 @@ function RepositoryChops({ repository, onReadAgain }: { repository: ChopsReposit
 }
 
 /** Settings, Chops as drawn from its data, so it can be tested without a window. */
-export function ChopsSectionView({ drafts, saved, repositories, agents, repository, save, onAdd, onEdit, onRemove, onSave, onReadAgain }: ChopsSectionViewProps) {
+export function ChopsSectionView({ drafts, saved, useChops, canSave, repositories, agents, repository, save, onUseChops, onAdd, onEdit, onRemove, onSave, onReadAgain }: ChopsSectionViewProps) {
 	const idPrefix = useId();
+	const useHintId = `${idPrefix}-use-hint`;
 	const model = chopsDraftModel(drafts, saved);
 	const addId = `${idPrefix}-add`;
 	const removeId = (key: string) => `${idPrefix}-remove-${key}`;
@@ -109,11 +115,20 @@ export function ChopsSectionView({ drafts, saved, repositories, agents, reposito
 	return (
 		<SettingsSection
 			title="Chops"
-			description="Saved commands and prompts to run in a worktree. Yours are kept in the app's settings, for every repository or for one. A repository can share more in .timber/chops.json, which the app only reads."
+			description="Saved commands and prompts to run in a worktree, listed in the chops panel beside the workspace while Use chops is on. Yours are kept in the app's settings, for every repository or for one. A repository can share more in .timber/chops.json, which the app only reads."
 			save={save}
-			canSave={model.canSave}
+			canSave={canSave}
 			onSave={onSave}
 		>
+			<div className="field">
+				<label className="check">
+					<input type="checkbox" role="switch" checked={useChops} aria-describedby={useHintId} onChange={event => onUseChops(event.target.checked)} />
+					<span className="check-text">Use chops</span>
+				</label>
+				<span id={useHintId} className="field-hint">
+					Off, chops are gone from the app: the title bar's Chops button, the chops panel, the chop shortcuts, the palette, and the session menus. Your chops stay saved here and come back when you turn it on.
+				</span>
+			</div>
 			{drafts.length === 0 && <p className="dialog-note">You have no chops of your own.</p>}
 			<ul className="chop-rows" aria-label="Your chops">
 				{drafts.map((draft, index) => {
@@ -220,15 +235,20 @@ export function ChopsSection() {
 	const fromSaved = shown.saved === saved ? shown.drafts : chopDraftsOf(saved);
 	if (shown.saved !== saved) setShown({ saved, drafts: fromSaved });
 	// The rows only ever differ from what is saved by what the person did.
-	const { draft: drafts, save, change, commit } = useDraftSection(fromSaved);
+	const { draft: drafts, save, change, commit, reset } = useDraftSection(fromSaved);
+	// Null follows what is saved, so the switch only differs from it by what the person did.
+	const [chosenUse, setChosenUse] = useState<boolean | null>(null);
+	const savedUse = state.preferences.useChops;
+	const useChops = chosenUse ?? savedUse;
+	const pending = chopsSectionChange(chopsDraftModel(drafts, saved), saved, useChops, savedUse);
+	const canSave = pending !== null;
 
 	const selected = selectedWorktree(state);
 	const repositoryPath = selected?.repository.path ?? null;
 
 	const onSave = async () => {
-		const { chops, canSave } = chopsDraftModel(drafts, saved);
-		if (!canSave) return;
-		await commit({ chops });
+		if (pending === null) return;
+		await commit(pending, () => setChosenUse(null));
 	};
 	const view = state.chops !== null && state.chops.repository === repositoryPath ? state.chops.list : null;
 
@@ -236,10 +256,16 @@ export function ChopsSection() {
 		<ChopsSectionView
 			drafts={drafts}
 			saved={saved}
+			useChops={useChops}
+			canSave={canSave}
 			repositories={state.repositories}
 			agents={state.preferences.agents}
 			repository={selected === null ? null : { repositoryName: selected.repository.name, list: view }}
 			save={save}
+			onUseChops={on => {
+				setChosenUse(on);
+				reset();
+			}}
 			onAdd={() => change(addChopDraft(drafts))}
 			onEdit={(key, edit) => change(editChopDraft(drafts, key, edit))}
 			onRemove={key => change(removeChopDraft(drafts, key))}
@@ -254,7 +280,8 @@ export function ChopsSection() {
 /**
  * Reads the chops of the selected worktree's repository whenever another
  * repository is selected or the saved chops change, for the "+" menu, the
- * palette, "Insert chop", and Settings, Chops. It draws nothing.
+ * palette, "Insert chop", the chops panel, and Settings, Chops. It draws
+ * nothing.
  */
 export function ChopsKeeper() {
 	const store = useStore();

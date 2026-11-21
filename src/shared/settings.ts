@@ -1,6 +1,6 @@
 import { type ChopApprovals, readChopApprovals } from "./chops";
 import { type ForcePushMarks, readForcePushMarks } from "./git-fetch";
-import { type Layout, readLayout } from "./layout";
+import { DEFAULT_CHOPS_WIDTH, type Layout, readLayout } from "./layout";
 import { type RepositoryGroup, readGroups } from "./repository-groups";
 import { type Preferences, readPreferences, writePreferences } from "./preferences";
 import { type SavedWindow, readSavedWindow } from "./window-frame";
@@ -135,6 +135,9 @@ export function serializeSettings(settings: Settings): string {
 		issueLists: { ...settings.layout.issueLists },
 		// Written only once a group is folded, so a file without groups stays as it was.
 		...(settings.layout.collapsedGroups.length > 0 ? { collapsedGroups: [...settings.layout.collapsedGroups] } : {}),
+		// Written only once the chops panel was shown or resized, so an older file stays as it was until then.
+		...(settings.layout.chopsOpen ? { chopsOpen: true } : {}),
+		...(settings.layout.chopsWidth !== DEFAULT_CHOPS_WIDTH ? { chopsWidth: settings.layout.chopsWidth } : {}),
 	};
 	const preferences = settings.preferences && writePreferences(settings.preferences);
 	const forcePushes = settings.forcePushes && Object.keys(settings.forcePushes).length > 0 ? readForcePushMarks(settings.forcePushes) : null;

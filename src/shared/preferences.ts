@@ -40,6 +40,13 @@ export interface Preferences {
 	 * not cost the others.
 	 */
 	chops: readonly PersonalChop[];
+	/**
+	 * Whether chops are in use: the title bar's Chops button, the chops
+	 * panel, the chop shortcuts, and chops anywhere else in the window. On
+	 * by default. Turning it off hides them
+	 * and keeps `chops` as it is, so turning it on again brings them back.
+	 */
+	useChops: boolean;
 	/** Whether and how often the app fetches every repository in the background. */
 	fetch: FetchSetting;
 	/** How large the interface is drawn, where 1 is the size the window system gives. */
@@ -165,6 +172,12 @@ export const PREFERENCE_PARTS: { [Key in keyof Preferences]: PreferencePart<Pref
 		same: samePersonalChops,
 		write: writePersonalChops,
 		salvage: salvagePersonalChops,
+	},
+	useChops: {
+		fallback: () => true,
+		read: value => typeof value === "boolean" ? value : undefined,
+		same: (one, other) => one === other,
+		write: value => value,
 	},
 	fetch: {
 		fallback: defaultFetchSetting,

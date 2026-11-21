@@ -507,13 +507,13 @@ describe("groups", () => {
 	});
 
 	test("deleting a group keeps its repositories in the list, loose, and forgets that it was folded", async () => {
-		const layout = { sidebarWidth: 300, collapsed: [one.path], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: ["g1", "g2"] };
+		const layout = { sidebarWidth: 300, collapsed: [one.path], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: ["g1", "g2"], chopsOpen: false, chopsWidth: 320 };
 		savedWith({ repositories: [{ ...one, group: "g1" }, { ...two, group: "g1" }, { ...three, group: "g2" }], groups: [{ id: "g1", name: "Work" }, { id: "g2", name: "Personal" }], layout });
 		expect(await groupsOn().deleteGroup("g1")).toEqual({ outcome: "saved", groups: { groups: [{ id: "g2", name: "Personal" }], membership: { [three.path]: "g2" } } });
 		expect(onDisk()).toEqual({
 			repositories: [one, two, { ...three, group: "g2" }],
 			groups: [{ id: "g2", name: "Personal" }],
-			layout: { ...layout, collapsedGroups: ["g2"] },
+			layout: { ...layout, collapsedGroups: ["g2"], chopsOpen: false, chopsWidth: 320 },
 		});
 	});
 

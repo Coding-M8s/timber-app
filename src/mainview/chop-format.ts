@@ -89,6 +89,20 @@ export function chopsDraftModel(drafts: readonly ChopDraft[], saved: readonly Pe
 	return { rows, chops, error, canSave: valid && !samePersonalChops(chops, saved) };
 }
 
+/**
+ * What Settings, Chops saves, from the rows and the "Use chops" switch: the
+ * switch when it differs from what is saved, and the rows when they differ
+ * and can be saved. The switch saves on its own while the rows are as
+ * saved, so chops can always be turned off; with rows changed but not
+ * savable, nothing is. Null when there is nothing to save.
+ */
+export function chopsSectionChange(model: Pick<ChopsDraftModel, "chops" | "canSave">, saved: readonly PersonalChop[], useChops: boolean, savedUseChops: boolean): { useChops?: boolean; chops?: PersonalChop[] } | null {
+	const useChanged = useChops !== savedUseChops;
+	if (model.canSave) return { ...(useChanged ? { useChops } : {}), chops: model.chops };
+	if (useChanged && samePersonalChops(model.chops, saved)) return { useChops };
+	return null;
+}
+
 /** Whether a row has nothing typed in it yet, so it says what it needs without an alert. */
 export function isBlankChopDraft(draft: ChopDraft): boolean {
 	return draft.name.trim() === "" && draft.text.trim() === "";

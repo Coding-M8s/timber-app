@@ -39,6 +39,26 @@ change them here first when they change.
   click does the same as the shortcut. With none the key does nothing and
   the title bar shows nothing. The command palette has "Show next session
   that needs you or is done", with the shortcut beside it.
+- The chops panel sits on the workspace's right, wherever the sidebar is.
+  The title bar's Chops button, or Ctrl+Shift+K (Cmd+Shift+K on macOS),
+  shows or hides it from any focus, also from a terminal. Shown that way,
+  it takes the keyboard; hidden while it has the keyboard, the keyboard
+  goes back where it was, or to the Chops button when that is gone. Its
+  Close button only hides it. Its left edge resizes it like the sidebar's
+  (240 to 560 pixels, never above a third of the window), and whether it
+  shows and its width are remembered. For now it lists the selected
+  worktree's repository's chops by name, kind, source, and text; running,
+  making, and ordering them from the panel come later. "Use chops" in
+  Settings, Chops, turns the feature off: no button, panel, or chop
+  shortcut, and no chops in the palette, the "+" menu, the empty pane, or
+  "Insert chop". The saved chops are kept. The mock's Ctrl+Alt+C was a
+  placeholder: on Windows AltGr reaches the page as Ctrl+Alt, so it would
+  take characters such as the Polish "ć", and in a terminal it is Escape
+  then Ctrl+C to the program. Ctrl+Shift+K keeps the app's pattern and
+  takes nothing from a terminal program, which cannot tell it from Ctrl+K.
+  Chosen by analysis; not yet checked against each desktop. The design
+  mock's "can be changed in Settings" is not built: no shortcut in the app
+  can be changed yet (#258).
 
 ## Sidebar
 
@@ -576,7 +596,10 @@ logins. The app never reads a tracker login and never signs in.
   person ticks the box for that save. Issue tracking has "Test connection"
   for GitHub, Jira, and Linear.
 - **Chops:** a Settings section for saved commands and prompts to run in a
-  worktree. A chop has a name, a kind (Command or Prompt), its text, and an
+  worktree. A "Use chops" switch at its top, on by default, saved with the
+  section's Save (on its own while the rows are as saved), removes the
+  chops panel, its title bar button, the chop shortcuts, and every other
+  place chops are offered when off, and keeps the saved chops. A chop has a name, a kind (Command or Prompt), its text, and an
   optional description; a prompt can name the agent that gets it, or the
   first saved agent. The person's own chops are rows with Remove and "Add a
   chop", each for every repository or for one, saved with the section's

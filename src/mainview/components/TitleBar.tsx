@@ -3,9 +3,11 @@ import { worktreeLabel } from "../format";
 import { paletteHint } from "../palette";
 import { ISSUES_ROW_LABEL } from "../issue-board-format";
 import { useAppState, useStore } from "../store/react";
-import { finishedSessions, selectedWorktree, timberReady, waitingSessions } from "../store/state";
+import { chopsEnabled, finishedSessions, selectedWorktree, timberReady, waitingSessions } from "../store/state";
 import { describeFinished, describeToVisit, describeWaiting, waitingHint } from "../waiting";
 import { StatusGlyph } from "./StatusGlyph";
+import { CHOPS_BUTTON_ID, CHOPS_BUTTON_LABEL, CHOPS_PANEL_ID, chopsButtonHint } from "../chops-panel-format";
+import { toggleChopsPanel } from "./ChopsPanel";
 
 export function TitleBar() {
 	const store = useStore();
@@ -53,6 +55,24 @@ export function TitleBar() {
 							{finished}
 						</span>
 					)}
+				</button>
+			)}
+			{/* Shows or hides the chops panel, as its shortcut does. Gone, with the panel and the shortcut, while "Use chops" is off. */}
+			{chopsEnabled(state) && (
+				<button
+					type="button"
+					id={CHOPS_BUTTON_ID}
+					className="titlebar-chops"
+					aria-pressed={state.layout.chopsOpen}
+					aria-controls={state.layout.chopsOpen ? CHOPS_PANEL_ID : undefined}
+					title={chopsButtonHint(state.layout.chopsOpen, mac)}
+					onClick={() => void toggleChopsPanel(store)}
+				>
+					<svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+						<rect x="2.5" y="2.5" width="11" height="11" rx="2" />
+						<path d="M10 2.5v11" />
+					</svg>
+					{CHOPS_BUTTON_LABEL}
 				</button>
 			)}
 			{/* Opens the palette, as its shortcut does. The tooltip names the shortcut for this platform. */}

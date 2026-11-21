@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
-import { addChopDraft, chopDraftsOf } from "../src/mainview/chop-format";
+import { addChopDraft, chopDraftsOf, chopsDraftModel, chopsSectionChange, editChopDraft } from "../src/mainview/chop-format";
 import { type ChopsRepository, ChopsSectionView } from "../src/mainview/components/settings/ChopsSection";
 import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { createAppStore } from "../src/mainview/store/store";
@@ -29,10 +29,13 @@ const view = (drafts: ReturnType<typeof chopDraftsOf>, repository: ChopsReposito
 		<ChopsSectionView
 			drafts={drafts}
 			saved={saved}
+			useChops={true}
+			canSave={false}
 			repositories={[{ path: TIMBER, name: "timber" }]}
 			agents={AGENT_PRESETS}
 			repository={repository}
 			save={{ state: "idle" }}
+			onUseChops={noop}
 			onAdd={noop}
 			onEdit={noop}
 			onRemove={noop}
@@ -40,6 +43,31 @@ const view = (drafts: ReturnType<typeof chopDraftsOf>, repository: ChopsReposito
 			onReadAgain={noop}
 		/>,
 	);
+
+describe("the Use chops switch in Settings, Chops", () => {
+	const test1 = { name: "Test", kind: "command" as const, text: "bun test", description: "", agent: null, repository: null };
+
+	test("is drawn as a switch, on by default, and says the saved chops are kept", () => {
+		const markup = view(chopDraftsOf([]), null);
+		expect(markup).toMatch(/<input type="checkbox" role="switch"[^>]*checked=""/);
+		expect(markup).toContain("Use chops");
+		expect(markup).toContain("Your chops stay saved here and come back when you turn it on.");
+	});
+
+	test("saves on its own while the rows are as saved", () => {
+		const drafts = chopDraftsOf([test1]);
+		expect(chopsSectionChange(chopsDraftModel(drafts, [test1]), [test1], false, true)).toEqual({ useChops: false });
+		expect(chopsSectionChange(chopsDraftModel(drafts, [test1]), [test1], true, true)).toBeNull();
+	});
+
+	test("saves with the rows when both changed, and not at all while a changed row cannot be saved", () => {
+		const drafts = chopDraftsOf([test1]);
+		const renamed = editChopDraft(drafts, drafts[0]!.key, { name: "Check" });
+		expect(chopsSectionChange(chopsDraftModel(renamed, [test1]), [test1], false, true)).toEqual({ useChops: false, chops: [{ ...test1, name: "Check" }] });
+		const blank = addChopDraft(chopDraftsOf([test1]));
+		expect(chopsSectionChange(chopsDraftModel(blank, [test1]), [test1], false, true)).toBeNull();
+	});
+});
 
 describe("Settings, Chops as drawn", () => {
 	test("shows each personal chop's fields, and the agent only for a prompt", () => {

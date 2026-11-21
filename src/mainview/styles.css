@@ -141,6 +141,97 @@ pre:focus-visible {
 	background: var(--fill-hover);
 }
 
+/* Shows or hides the chops panel. Pressed while the panel shows. */
+.titlebar-chops {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 3px 9px;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: none;
+	color: var(--text-2);
+	font: inherit;
+	font-size: 12px;
+	cursor: pointer;
+}
+
+.titlebar-chops:hover {
+	background: var(--fill-hover);
+	color: var(--text);
+}
+
+.titlebar-chops[aria-pressed="true"] {
+	background: var(--fill-hover);
+	color: var(--text);
+}
+
+.titlebar-chops:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: 1px;
+}
+
+/* On the workspace's right. A third of the window at most, so the workspace keeps its room beside the sidebar. */
+.chops-panel {
+	flex: none;
+	width: var(--chops-width, 320px);
+	max-width: 33%;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	background: var(--bg-app);
+	overflow: hidden;
+}
+
+.chops-panel:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: -2px;
+}
+
+.chops-panel-head {
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 10px 8px 8px 14px;
+	border-bottom: 1px solid var(--line);
+}
+
+.chops-panel-title {
+	flex: 1 1 auto;
+	margin: 0;
+	font-size: 13px;
+	font-weight: 600;
+}
+
+.chops-panel-body {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+	padding: 10px 14px;
+}
+
+.chops-panel-list {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.chops-panel-text {
+	margin: 4px 0 0;
+	font-family: var(--font-mono);
+	color: var(--text-2);
+	font-size: 12px;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	max-height: 6em;
+	overflow: hidden;
+}
+
 .body {
 	flex: 1 1 auto;
 	min-height: 0;
@@ -2686,6 +2777,14 @@ pre:focus-visible {
 	/* Stacked, the sidebar is as wide as the window, so there is no edge to drag. */
 	.resizer {
 		display: none;
+	}
+
+	/* Stacked, the chops panel sits below the workspace, as wide as the window. */
+	.chops-panel {
+		width: auto;
+		max-width: none;
+		max-height: 40%;
+		border-top: 1px solid var(--line);
 	}
 }
 
