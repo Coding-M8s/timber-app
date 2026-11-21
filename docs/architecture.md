@@ -722,7 +722,8 @@ Nothing that depends on Timber is offered until a usable one is found.
   else names the version: CI and the release workflow test with the same
   pinned binary.
 - **Fetched and checked at build time.** `bun run build` first runs
-  `scripts/fetch-timber.ts`, which downloads the pinned files for this
+  `scripts/fetch-timber.ts`, before `electrobun prepare`, which already
+  reads the config. It downloads the pinned files for this
   platform from the Timber release into
   `vendor/timber/v<version>/<platform>/` (ignored by Git), checks each
   against the pin, and stops the build when one does not match. Files that

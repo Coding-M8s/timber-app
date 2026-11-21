@@ -132,7 +132,8 @@ test("every desktop build fetches and checks the pinned Timber before it builds"
 	for (const name of ["build", "build:canary"]) {
 		const steps = scripts[name]!.split(" && ");
 		expect(steps).toContain("bun scripts/fetch-timber.ts");
-		expect(steps.indexOf("bun scripts/fetch-timber.ts")).toBeLessThan(steps.findIndex(step => step.startsWith("electrobun build")));
+		// First: `electrobun prepare` already reads electrobun.config.ts, which looks for the fetched Timber.
+		expect(steps[0]).toBe("bun scripts/fetch-timber.ts");
 	}
 	expect(release.on.pull_request).toMatchObject({ paths: expect.arrayContaining(["timber-pin.json", "scripts/fetch-timber.ts", "scripts/bundled-timber-copy.ts"]) });
 });
