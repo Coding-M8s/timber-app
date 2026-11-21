@@ -1,3 +1,4 @@
+import type { IssueSearchRequest, IssueSearchResult } from "../../shared/issue-search";
 import { type Attention, sameAttention } from "../../shared/attention";
 import type { UninstallPlan, UninstallRequest, UninstallResult } from "../../shared/uninstall";
 import type { RestartPlan, RestartResult } from "../../shared/restart";
@@ -231,6 +232,8 @@ export interface AppStore {
 	listWorkflows(repository: string): Promise<WorkflowList>;
 	/** The issue trackers a repository has set up, for the New worktree dialog. Never throws: a failed request is a failure with a message. */
 	readIssueTrackers(repository: string): Promise<IssueTrackers>;
+	/** Issues matching typed text, for suggestions in the New worktree dialog. Never throws: a failed request is a failure with a message. */
+	searchIssues(request: IssueSearchRequest): Promise<IssueSearchResult>;
 	/**
 	 * Timber's settings for one scope, for the Settings dialog, read by
 	 * Timber. Read-only. Never throws: an engine that could not answer is a
@@ -2155,6 +2158,13 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				return await engine.readIssueTrackers(repository);
 			} catch (error) {
 				return { ok: false, message: unheard("the issue trackers", error) };
+			}
+		},
+		async searchIssues(request) {
+			try {
+				return await engine.searchIssues(request);
+			} catch (error) {
+				return { ok: false, unsupported: false, message: unheard("the issue search", error) };
 			}
 		},
 		toggleGroup(repository) {

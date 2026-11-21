@@ -465,7 +465,7 @@ describe("the two modes together", () => {
 		expect(created).toContain(`>${escaped("timber new --base origin/main --no-setup --result-file <temporary file> --no-editor --no-agent -- 'Fix login bug'")}</pre>`);
 		expect(created).toContain(">Create worktree</button>");
 		expect(created).toContain('value="Fix login bug"');
-		expect(created).not.toContain('role="combobox"');
+		expect(created).not.toContain('aria-label="Branches to pick from"');
 
 		// Switching back finds what was typed still there.
 		select(1);

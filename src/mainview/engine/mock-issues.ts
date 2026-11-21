@@ -1,15 +1,20 @@
 import type { Engine } from "../../shared/engine";
+import type { IssueSearchRequest, IssueSearchResult, SuggestedIssue } from "../../shared/issue-search";
 import type { Issue, IssueFailureReason, IssueLookup } from "../../shared/issues";
 import type { IssueLink, Repository, TimberStatus } from "../../shared/model";
 
 /** The part of the engine about linked issues. */
-export type IssueCapabilities = Pick<Engine, "readIssue">;
+export type IssueCapabilities = Pick<Engine, "readIssue" | "searchIssues">;
 
 export interface IssueControls {
 	/** Decide what the issue of one worktree, by its path, answers from now on: an answer, or null for the sample. */
 	setIssue(worktree: string, lookup: IssueLookup | null): void;
 	/** How many times the issue of a worktree was read. */
 	issueReads(worktree: string): number;
+	/** Decide what every issue search answers from now on, or null for the samples. */
+	setIssueSearch(result: IssueSearchResult | null): void;
+	/** Every search that reached Timber, in order. */
+	issueSearches(): IssueSearchRequest[];
 }
 
 const link = (tracker: Issue["tracker"], key: string, url: string): IssueLink => ({ kind: "linked", tracker, key, url });
@@ -61,6 +66,32 @@ export function sampleIssueAnswer(saved: IssueLink | null): IssueLookup {
 	return found ? { ok: true, outcome: "found", issue: found(saved) } : { ok: true, outcome: "failed", reason: "not-found", diagnostic: "The tracker has no such issue." };
 }
 
+/** The issues each sample tracker holds, for searches. Every repository searches the same ones. */
+const searchableIssues: readonly Issue[] = [
+	{ tracker: "github", key: "41", url: "https://github.com/example/timber/issues/41", title: "Look up GitHub issues by number", status: { name: "Open", category: "open" }, assignee: "octo-sam" },
+	{ tracker: "github", key: "42", url: "https://github.com/example/timber/issues/42", title: "Show the linked issue in the header", status: { name: "Open", category: "open" }, assignee: null },
+	{ tracker: "github", key: "7", url: "https://github.com/example/timber/issues/7", title: "Fix the login redirect loop", status: { name: "Closed", category: "closed" }, assignee: "octo-sam" },
+	{ tracker: "jira", key: "TIM-8", url: "https://example.atlassian.net/browse/TIM-8", title: "Support Windows paths in the listing", status: { name: "To Do", category: "open" }, assignee: null },
+	{ tracker: "jira", key: "TIM-80", url: "https://example.atlassian.net/browse/TIM-80", title: "Read the base from the saved record", status: { name: "In Progress", category: "in-progress" }, assignee: "Alex Doe" },
+	{ tracker: "jira", key: "TIM-88", url: "https://example.atlassian.net/browse/TIM-88", title: "Timber fails on macOS without GNU tools", status: { name: "In Review", category: "in-progress" }, assignee: "Alex Doe" },
+	{ tracker: "jira", key: "TIM-91", url: "https://example.atlassian.net/browse/TIM-91", title: "Login fails behind a proxy", status: { name: "To Do", category: "open" }, assignee: null },
+	{ tracker: "linear", key: "API-17", url: "https://linear.app/example/issue/API-17/send-rate-limit-headers", title: "Send rate limit headers", status: { name: "Done", category: "closed" }, assignee: null },
+	{ tracker: "linear", key: "API-21", url: "https://linear.app/example/issue/API-21/login-tokens", title: "Rotate login tokens", status: { name: "Backlog", category: "open" }, assignee: null },
+];
+
+/** Words of a text as Timber matches them: letters and digits, in lower case. */
+const wordsOf = (text: string) => text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(word => word !== "");
+
+/** Roughly what Timber's search does: key prefixes first, then titles that hold every word. */
+export function sampleIssueSearch(tracker: Issue["tracker"], text: string): Issue[] {
+	const mine = searchableIssues.filter(issue => issue.tracker === tracker);
+	const typed = text.trim().replace(/^#/, "").toLowerCase();
+	const byKey = mine.filter(issue => issue.key.toLowerCase().startsWith(typed));
+	const words = wordsOf(text);
+	const byTitle = words.length === 0 ? [] : mine.filter(issue => !byKey.includes(issue) && words.every(word => issue.title.toLowerCase().includes(word)));
+	return [...byKey, ...byTitle];
+}
+
 /**
  * Linked issues acted out from sample data, for the browser build and tests.
  * As the main process does, a repository must be in the list, the path must
@@ -71,7 +102,28 @@ export function sampleIssueAnswer(saved: IssueLink | null): IssueLookup {
 export function createMockIssues(listed: (path: string) => Repository | undefined, timber: () => TimberStatus): IssueCapabilities & IssueControls {
 	const chosen = new Map<string, IssueLookup>();
 	const reads = new Map<string, number>();
+	let searchAnswer: IssueSearchResult | null = null;
+	const searches: IssueSearchRequest[] = [];
 	return {
+		async searchIssues(request) {
+			const { repository, tracker, text } = request;
+			const found = listed(repository);
+			if (!found) return { ok: false, unsupported: false, message: `${repository} is not a repository in the app's list.` };
+			const status = timber();
+			if (status.state === "not-found") return { ok: false, unsupported: false, message: "Timber was not found on PATH." };
+			if (status.state === "too-old") return { ok: false, unsupported: false, message: `Timber ${status.found} at ${status.path} is older than the required ${status.required}.` };
+			searches.push({ repository, tracker, text });
+			if (searchAnswer) return structuredClone(searchAnswer);
+			const issues: SuggestedIssue[] = sampleIssueSearch(tracker, text).slice(0, 10).map(issue => {
+				const tree = found.worktrees.find(candidate => candidate.issue?.kind === "linked" && candidate.issue.tracker === issue.tracker && candidate.issue.key === issue.key);
+				return { ...issue, worktree: tree ? { path: tree.path, branch: tree.branch } : null };
+			});
+			return { ok: true, outcome: "found", issues, truncated: false };
+		},
+		setIssueSearch(result) {
+			searchAnswer = result === null ? null : structuredClone(result);
+		},
+		issueSearches: () => [...searches],
 		async readIssue(request) {
 			// In the main process's order: the request's shape, the list, then Timber. Only a read that reaches Timber counts.
 			const { repository, worktree } = request;

@@ -10,6 +10,7 @@ import type { Layout } from "./layout";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
 import type { Preferences } from "./preferences";
 import type { RestartPlan, RestartResult } from "./restart";
+import type { IssueSearchRequest, IssueSearchResult } from "./issue-search";
 import type { IssueLookup, IssueRequest } from "./issues";
 import type { PortsRequest, PortsResult } from "./ports";
 import type { PullRequestList } from "./pull-requests";
@@ -306,6 +307,18 @@ export interface Engine {
 	 * Read-only: no file, ref, or issue changes. Safe to call again.
 	 */
 	readIssue(request: IssueRequest): Promise<IssueLookup>;
+	/**
+	 * Issues of one tracker that match typed text, for suggestions in the New
+	 * worktree dialog, found by `timber __app-issues search` with Timber's own
+	 * tracker login (./issue-search.ts). Timber matches key prefixes and title
+	 * words. Each issue says which worktree is already linked to it. The answer
+	 * is found (possibly empty), failed with a reason (offline, sign-in needed,
+	 * not configured, not found, forbidden, failed), or a failure with a
+	 * message, marked unsupported when the Timber found has no
+	 * `__app-issues`. Titles are text from the tracker: show them as text
+	 * only. Read-only: no file, ref, or issue changes. Safe to call again.
+	 */
+	searchIssues(request: IssueSearchRequest): Promise<IssueSearchResult>;
 	/**
 	 * Timber's recovery backups of a repository in the list, named by the path
 	 * of its primary checkout, read by `timber backup list --json`

@@ -2776,3 +2776,44 @@ with Bun 1.4.5:
   highlight to fix/macos-portability. With moves at the same place ignored,
   Add repository kept it, and a real move still took it.
 - Not run: the desktop window.
+
+Run for issue suggestions in the New worktree dialog (issue 161), Linux x64
+with Bun 1.4.5, Timber 0.1.3 installed, and Timber's main branch at
+`d64021f` built with `bun build src/index.ts --compile`:
+
+- New tests: `tests/issue-search-parse.test.ts` reads records recorded from
+  Timber's main branch (found with a linked worktree, truncated, no matches,
+  Jira sign-in needed, offline, and 0.1.3's "unknown command") and refuses
+  records that do not add up. `tests/issue-search.test.ts` runs a stand-in
+  Timber (arguments, text after `--`, standard input closed, timeout,
+  refusals, nothing logged) and the mock engine.
+  `tests/issue-suggestions.test.ts` covers debouncing, one search at a time
+  with only the latest waiting, older answers never shown, kept lists,
+  hints, the keys, and closing on blur. `tests/new-worktree-suggestions.test.tsx` covers the
+  dialog, including a search that never answers while Name, the footer, and
+  Create still work.
+- `TIMBER_APP_TIMBER_PATH=<main build> bun test tests/issue-search.test.ts`:
+  12 passed, including the real-Timber test on a temporary repository (Jira
+  sign-in needed, GitHub without a GitHub remote failed, files and refs
+  unchanged).
+- `timber __app-issues search --tracker github -- <text>` from the main build
+  in this repository took 742, 714, 746, 620, and 621 ms for `16`, `1`,
+  `worktree`, `sugg iss`, and `zzzqqq` (`timber --version` alone: 56 ms, so
+  most of it is GitHub). `16` found #16 and #161, and #161 was marked with
+  its worktree. Suggestions therefore show about 0.9 s after typing pauses
+  (250 ms pause plus the search). Jira and Linear answered sign-in needed
+  here, so their matching was not tried against a real tracker.
+- In the mock engine (`vite --port 5173`) in Chrome, with every search held
+  700 ms: typing "issue look" started one search, not ten, and listed #41
+  with "Has a worktree". Event handling per key press: keydown median
+  0.2 ms (max 2.3), keypress 2.1 ms (max 3.6), input 1.6 ms (max 2.6),
+  over 10 key presses. ArrowDown highlighted #41. A keydown of Escape in
+  Name closed the list, was marked handled, and left the dialog open. (The
+  automation's own Escape key did not reach the page, so a real Escape was
+  not checked here.)
+- `bun run typecheck`: no errors.
+- `bun run typecheck:desktop`: no errors.
+- `bun test`: 2528 passed, 23 skipped, none failed, after rebasing on main
+  at `a279c08`.
+- `bun run build:web`: built.
+- Not run: the desktop window.

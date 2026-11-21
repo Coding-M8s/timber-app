@@ -1974,6 +1974,59 @@ Timber cannot use. docs-site, once added, has a GitHub issue that is not
 found. `timberMock.setIssue(worktreePath, lookup)` changes one
 (`null` for the sample).
 
+### Issue suggestions
+
+The New worktree dialog suggests issues while a Name is typed, found by
+Timber with its own logins.
+
+- **Asking.** `searchIssues` on the `Engine`, answered by
+  `src/bun/issue-search.ts`, with a repository in the list, a tracker, and
+  the typed text (1 to 200 characters). Only while Timber is ready, the main
+  process runs `timber __app-issues search --tracker <tracker> --limit 10 --
+  <text>` in the repository's primary checkout, as an executable plus an
+  argument array, the text after `--`, with standard input closed and a
+  limit of thirty seconds. Timber stops its own network part after fifteen,
+  never prompts, and changes no file, ref, or issue. It does not take the
+  repository's turn, so it never waits behind a command that changes the
+  repository. Timber matches key prefixes and title words: Jira through its
+  issue picker, GitHub against the 300 most recently updated open issues,
+  locally. `__app-issues` is on Timber's main branch and in no release yet.
+- **Reading.** `readIssueSearchRecord` in `src/shared/issue-search.ts` is
+  pure. It accepts one version 1 search record for the tracker asked about,
+  whose outcome agrees with its fields and its exit code, with every issue
+  readable (as `readIssueValue` in `src/shared/issues.ts`), and keeps the
+  worktree Timber says is linked to each issue. `none` reads as an empty
+  list. A Timber without the command (exit 1, nothing printed, "unknown
+  command '__app-issues'") is `unsupported`, never confused with a crash.
+- **Typing.** `createIssueSuggestions` in
+  `src/mainview/components/worktree-modes/issue-suggestions.ts` holds the
+  list, apart from the form, so a key press never waits for a search. A
+  search starts once typing pauses for 250 ms, at most one runs at a time,
+  and only the latest text waits behind it. Lists are kept by tracker and
+  text for the dialog's life, so typing back to earlier text shows its list
+  at once. An answer for text no longer in the field is kept but not shown.
+  The tracker is the one picked in the Tracker field, else Timber's default,
+  else the only one set up. A Name that already names a tracker
+  (`jira:ENG-4`) is not searched. Sign-in needed, not configured, not
+  found, forbidden, and a Timber without the command stop the searches of
+  that tracker (or of all, for the last) until the dialog opens again;
+  offline and failed ask again on the next text. Each shows a quiet hint
+  under Name, never a dialog.
+- **Showing.** `NameField` in
+  `src/mainview/components/worktree-modes/name-field.tsx` draws the list
+  over the fields below Name. Nothing is highlighted at first, so Enter on
+  typed text still creates. Arrow keys move the highlight, Enter or a click
+  fills Name with `github:42` or `jira:ENG-42`, and Escape closes the list
+  without closing the dialog. Leaving Name closes it too, so it never covers
+  the fields below; another tracker's list is dropped at once. Each row shows the key, the title, the
+  tracker's status name, and "Has a worktree" for an issue already linked
+  to one.
+
+In `bun run dev:web`, the samples' trackers hold a few GitHub, Jira, and
+Linear issues (`sampleIssueSearch` in `src/mainview/engine/mock-issues.ts`);
+TIM-88 and #41 have worktrees. `timberMock.setIssueSearch(result)` makes
+every search answer `result` (`null` for the samples).
+
 ## Recovery backups
 
 Timber can keep a private backup of a worktree: its commit, pinned by a ref
@@ -3610,6 +3663,10 @@ other `X11 Error:` line is not explained by it. See the issue 64 run under
   and `__app-issue` are on Timber's main branch only. With Timber 0.1.2 no
   issue shows at all, since its records have no `issue` field. Raise the
   required version with the next Timber release, as for pull requests.
+- **The Timber that issue suggestions need.** `__app-issues` is on Timber's
+  main branch only. With Timber 0.1.3 the New worktree dialog shows no
+  suggestions and a quiet hint that they need a Timber built from its main
+  branch. Raise the required version with the next Timber release.
 - **The Timber that backups need.** `backup list --json`, `backup restore
   --result-file`, and `__app-backup delete` are on Timber's main branch
   only, which still calls itself 0.1.2. With released Timber 0.1.2 the
