@@ -45,8 +45,8 @@ import { wantTerminalFocus } from "../terminal-focus";
 import { nextWaitingSession, withFinishedOrder, withWaitingOrder } from "../waiting";
 import { mergeOverlapping } from "./merge";
 import { keepEntries } from "./records";
-import { RESTORE_CONCURRENCY, RESTORE_QUIET_MILLISECONDS, type RestoreJob, restoreJobs, restoreRequest, runLimited } from "./restore";
-import type { SavedSessions } from "../../shared/saved-sessions";
+import { RESTORE_CONCURRENCY, RESTORE_QUIET_MILLISECONDS, type RestoreJob, goneSavedWorktrees, restoreJobs, restoreRequest, runLimited } from "./restore";
+import { type SavedSessions, pickShown } from "../../shared/saved-sessions";
 import {
 	type AppState, type ChangesView, type DialogRequest, type Operation, type PullRequestForm, type Removal, type SessionAgent, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood,
 	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, shownSession, timberReady, withTerminal, withoutSession } from "./state";
@@ -563,8 +563,9 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const next: Attention = {
 			...windowState,
 			selected: selected ? { repository: selected.repository.path, worktree: selected.worktree.path, id: selected.worktree.id } : null,
-			// The main process keeps the shown chip of each worktree from these, for the save at quit.
-			session: selected ? shownSession(state, selected.worktree.id)?.id ?? null : null,
+			// The main process keeps the shown chip of each worktree from these, for the save at quit. Only once a chip was
+			// chosen there: until then the first one shows by default, and the saved choice still opening must not lose to it.
+			session: selected && Object.hasOwn(state.shownSessions, selected.worktree.id) ? shownSession(state, selected.worktree.id)?.id ?? null : null,
 		};
 		if (attended && sameAttention(attended, next)) return;
 		attended = next;
@@ -1761,6 +1762,11 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			wantTerminalFocus(saved.selected);
 		}
 		const failures: RestoreFailure[] = [];
+		// The rest of what was saved and not opened now is kept for the next launch by the engine.
+		const gone = goneSavedWorktrees(saved, state.repositories);
+		if (gone.length > 0) engine.forgetSavedSessions(gone).catch(() => {
+			// Then they are kept, and the next launch skips them again.
+		});
 		const jobs = restoreJobs(saved, state.repositories);
 		await runLimited(jobs.map(job => () => restoreWorktree(job, failures)), RESTORE_CONCURRENCY);
 		if (failures.length === 0) return;
@@ -1773,14 +1779,14 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	async function restoreWorktree(job: RestoreJob, failures: RestoreFailure[]): Promise<void> {
 		const chosen = state.shownSessions[job.worktreeId];
 		const opened: (string | null)[] = [];
-		for (const saved of job.sessions) {
+		for (const [index, saved] of job.sessions.entries()) {
 			// Nothing new starts in a folder that is being deleted.
 			if (isBeingRemoved(state, job.repository, job.path)) return;
 			const agent = saved.kind === "agent" ? saved.agent : null;
 			let message: string;
 			try {
 				// Straight to the engine: the store's own openTerminal would show each new chip and report each problem.
-				const result = await engine.openTerminal(restoreRequest(job, saved));
+				const result = await engine.openTerminal(restoreRequest(job, saved, index));
 				if (result.outcome === "opened") {
 					const { session } = result;
 					quietUntil.set(session.id, Date.now() + RESTORE_QUIET_MILLISECONDS);
@@ -1799,7 +1805,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		}
 		// The person's own choice of chip meanwhile wins. Otherwise the saved one shows, or the nearest one before it that opened.
 		if (state.shownSessions[job.worktreeId] !== chosen) return;
-		const shown = opened[job.shown] ?? opened.slice(0, job.shown).reverse().find(id => id !== null) ?? opened.find(id => id !== null);
+		const shown = opened[pickShown(opened.map((id, index) => id === null ? null : index), job.shown)];
 		const exists = shown && state.terminals.some(session => session.id === shown);
 		if (exists) update({ shownSessions: { ...state.shownSessions, [job.worktreeId]: shown } });
 	}

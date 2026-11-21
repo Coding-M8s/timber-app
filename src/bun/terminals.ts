@@ -14,7 +14,7 @@ import { recordsForWindow } from "../shared/session-status";
 import { PROBE_ANSWER, type StatusRecords, type StatusScanner, createStatusRecords, createStatusScanner } from "../shared/program-status";
 import { HANDOFF_VARIABLE } from "../shared/handoff";
 import { asWin32KeyEvents } from "../shared/win32-input";
-import { isConversationId } from "../shared/saved-sessions";
+import { type RestoreTag, isConversationId, isRestoreTag } from "../shared/saved-sessions";
 import { type Workflow, type WorkflowList, isWorkflowName } from "../shared/workflows";
 import { worktreeSetupArguments } from "../shared/worktree-commands";
 import { claudeConfigFolder, claudeConversationExists, codexConversationExists, codexHomeFolder } from "./agent-conversations";
@@ -182,6 +182,8 @@ export interface TerminalSessions {
 	leaders(): SessionLeader[];
 	/** Every running terminal and agent session in chip order, as the quit save needs them. */
 	running(): RunningSession[];
+	/** When the last Codex session of each worktree ended or closed in this run, by worktree id, for the quit save. */
+	endedCodex(): ReadonlyMap<string, number>;
 }
 
 /** A running session and the process that leads its process session. */
@@ -210,6 +212,8 @@ export interface RunningSession {
 	startedAt: number;
 	/** The session's name, only when the person gave it one. */
 	name: string | null;
+	/** The saved session it opened again, when it did. */
+	restored: RestoreTag | null;
 }
 
 interface Live {
@@ -250,6 +254,7 @@ interface Live {
 	startedAt: number;
 	/** Whether the name is one the person gave, not a default. */
 	renamed: boolean;
+	restored: RestoreTag | null;
 }
 
 /**
@@ -740,10 +745,11 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			if (!setting.ok) return setting.result;
 			launch = setting.launch;
 		}
-		// A conversation and a name from before a restart are read only as a UUID and as a clean name, only for an agent from Settings or a shell, and never for a Timber command, an arena attempt, or a workflow's own agent.
+		// A conversation, a name, and a restore tag from before a restart are read only as a UUID, a clean name, and a tag, only for an agent from Settings or a shell, and never for a Timber command, an arena attempt, or a workflow's own agent.
 		const ownLaunch = run === null && attempt.launch === null && (agent !== null || workflowLaunch === null);
 		const resume = ownLaunch && agent !== null && isConversationId(request.resume) ? request.resume : null;
 		const savedName = ownLaunch && chop === undefined ? cleanSessionName(request.name) : null;
+		const restored = ownLaunch && isRestoreTag(request.restore) ? { worktree: request.restore.worktree, index: request.restore.index } : null;
 		const start = startOf(launch, run, resume, agent !== null);
 		if (!start.ok) return start.result;
 		// An attempt's session is named after its label, which is how the arena names it everywhere.
@@ -803,13 +809,14 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			if (sessions.get(session.id) !== live) return;
 			const end = child.ended() ?? { exitCode: null, signal: null };
 			dropChop(live);
+			noteEnded(live);
 			live.pasteMode.reset();
 			changed(live, { ...live.session, state: { kind: "exited", ...end }, ...recordsForWindow(live.records) });
 		});
 		live = {
 			session, process: child, scrollback: createScrollback(), pending: "", flushTimer: null, undrawn: [], undrawnSize: 0, held: false, leftovers: null, ended,
 			scanner: createStatusScanner(), records: createStatusRecords(), pasteMode: createPasteModeScanner(), statusChanged: false, probedAt: Number.NEGATIVE_INFINITY, chop: null,
-			agent: agent?.name ?? null, resumable: start.resumable, conversation: start.conversation, startedAt: now(), renamed: savedName !== null,
+			agent: agent?.name ?? null, resumable: start.resumable, conversation: start.conversation, startedAt: now(), renamed: savedName !== null, restored,
 		};
 		if (chop !== undefined) {
 			live.chop = { text: chop.text, timer: null, deadline: Date.now() + chopWaitMilliseconds };
@@ -837,9 +844,17 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 	/** Whether the shell ended and nothing is left in its session that may be signalled. */
 	const settled = (live: Live) => !running(live.process) && (members(live)?.length ?? 0) === 0;
 
+	/** When the last Codex session of each worktree stopped running, by worktree id (see `endedCodex`). */
+	const codexEnded = new Map<string, number>();
+
+	function noteEnded(live: Live): void {
+		if (live.resumable === "codex" && live.session.state.kind === "running") codexEnded.set(live.session.worktree, now());
+	}
+
 	async function close(id: string): Promise<void> {
 		const live = sessions.get(id);
 		if (!live) return;
+		noteEnded(live);
 		sessions.delete(id);
 		dropChop(live);
 		if (live.flushTimer !== null) clearTimeout(live.flushTimer);
@@ -927,8 +942,9 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			if (session.state.kind !== "running" || (session.kind !== "terminal" && session.kind !== "agent")) return [];
 			return [{
 				id: session.id, worktree: session.worktree, path: session.path, kind: session.kind, agent: live.agent, resumable: live.resumable,
-				conversation: live.conversation, startedAt: live.startedAt, name: live.renamed ? session.name : null,
+				conversation: live.conversation, startedAt: live.startedAt, name: live.renamed ? session.name : null, restored: live.restored,
 			}];
 		}),
+		endedCodex: () => new Map(codexEnded),
 	};
 }

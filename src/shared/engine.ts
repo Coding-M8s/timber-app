@@ -487,6 +487,13 @@ export interface Engine {
 	 */
 	takeSavedSessions(): Promise<SavedSessions | null>;
 	/**
+	 * The saved worktrees of `takeSavedSessions` that the window found gone
+	 * from the list, so the save at quit drops them. A saved session that was
+	 * not opened again in this run for any other reason is kept for the next
+	 * launch. Nothing is written until quit.
+	 */
+	forgetSavedSessions(worktrees: string[]): Promise<void>;
+	/**
 	 * Start the person's shell in a worktree of a repository in the list, as
 	 * a new session beside any it has. Each call starts one. `cols` and
 	 * `rows` are the pane's size. With `agent`, the agent of that name from
@@ -511,7 +518,9 @@ export interface Engine {
 	 * With `resume`, an agent goes back to that conversation of its own when
 	 * it can and it is still there, and otherwise starts fresh and says so in
 	 * its terminal; only a UUID is read. With `name`, the session gets that
-	 * name, cleaned, in place of the default. Both are for opening a saved
+	 * name, cleaned, in place of the default. With `restore`, the session is
+	 * the saved one at that worktree id and index, so the save at quit does
+	 * not keep that saved one as well. All three are for opening a saved
 	 * session again (see `takeSavedSessions`).
 	 */
 	openTerminal(request: OpenTerminalRequest): Promise<OpenTerminalResult>;

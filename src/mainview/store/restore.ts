@@ -46,9 +46,45 @@ export function restoreJobs(saved: SavedSessions, repositories: readonly Reposit
 	return jobs;
 }
 
+/**
+ * The saved worktrees that are gone for good: in a repository that was read
+ * well, with every worktree's folder there, and not listed in it; or, when
+ * every repository was read well, in none of them, so its repository left
+ * the list. A worktree whose folder is missing changes its id (see
+ * `worktreeId`), so while any folder is missing, or any repository cannot be
+ * read, the saved worktrees it may hold are kept.
+ */
+export function goneSavedWorktrees(saved: SavedSessions, repositories: readonly Repository[]): string[] {
+	const listed = new Set<string>();
+	/** The common Git folder of each repository that was read well and has every folder, which starts each of its worktree ids. */
+	const settled = new Set<string>();
+	let allRead = true;
+	for (const repository of repositories) {
+		for (const worktree of repository.worktrees) listed.add(worktree.id);
+		const read = repository.available && repository.failure === null && repository.worktrees.length > 0;
+		if (!read) {
+			allRead = false;
+			continue;
+		}
+		const folders = new Set(repository.worktrees.map(worktree => commonFolderOf(worktree.id)));
+		if (folders.size !== 1 || repository.worktrees.some(worktree => !worktree.pathExists)) {
+			allRead = false;
+			continue;
+		}
+		settled.add([...folders][0]!);
+	}
+	return Object.keys(saved.worktrees).filter(id => !listed.has(id) && (settled.has(commonFolderOf(id)) || allRead));
+}
+
+/** The common Git folder an id starts with (see `worktreeId`). */
+function commonFolderOf(id: string): string {
+	const end = id.indexOf("\0");
+	return end < 0 ? id : id.slice(0, end);
+}
+
 /** The request that opens a saved session again, at the size every new session starts with until its pane fits it. */
-export function restoreRequest(job: RestoreJob, session: SavedSession): OpenTerminalRequest {
-	const request: OpenTerminalRequest = { repository: job.repository, worktree: job.path, cols: 80, rows: 24 };
+export function restoreRequest(job: RestoreJob, session: SavedSession, index: number): OpenTerminalRequest {
+	const request: OpenTerminalRequest = { repository: job.repository, worktree: job.path, cols: 80, rows: 24, restore: { worktree: job.worktreeId, index } };
 	if (session.kind === "agent") {
 		request.agent = session.agent;
 		if (session.conversation !== undefined) request.resume = session.conversation;

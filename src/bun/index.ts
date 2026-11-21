@@ -148,7 +148,9 @@ const layout = createSavedLayout(settings);
 const sessionLayout = createSessionLayout({
 	file: sessionsFilePath(settingsFile),
 	running: () => terminals.running(),
+	endedCodex: () => terminals.endedCodex(),
 	findCodex: options => findCodexConversation({ homeFolder: codexHomeFolder(process.env, homedir()), ...options }),
+	claudeExists: id => claudeConversationExists(id, claudeConfigFolder(process.env, homedir())),
 });
 await sessionLayout.load();
 const preferences = createSavedPreferences(settings);
@@ -517,7 +519,18 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			// Answered once per run, so a reloaded window opens nothing twice. Each is opened with openTerminal, which checks it.
 			takeSavedSessions: () => sessionLayout.take(),
 			// Starts a shell, an agent from the saved Settings, or timber rebase, only in a worktree Timber lists (see ./terminals.ts).
-			openTerminal: request => terminals.open(request),
+			forgetSavedSessions: ({ worktrees }) => sessionLayout.forget(worktrees),
+			async openTerminal(request) {
+				// What came of opening a saved session again tells the quit save whether to keep the saved one.
+				try {
+					const result = await terminals.open(request);
+					sessionLayout.restored(request.restore, result.outcome);
+					return result;
+				} catch (error) {
+					sessionLayout.restored(request.restore, "failed");
+					throw error;
+				}
+			},
 			readTerminal: ({ id }) => terminals.read(id),
 			renameTerminal: ({ id, name }) => terminals.rename(id, name),
 			closeTerminal: ({ id }) => terminals.close(id),

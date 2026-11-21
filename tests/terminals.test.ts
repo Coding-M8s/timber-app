@@ -8,7 +8,7 @@ import { type TerminalDependencies, type TerminalSessions, createTerminalSession
 import type { Repository } from "../src/shared/model";
 import { describeSearchPath } from "../src/shared/search-path";
 import { PROBE_ANSWER } from "../src/shared/program-status";
-import { CHOP_NOT_TYPED, PASTE_NOT_READY, type SessionNaming, type TerminalChange, type TerminalOutput, TERMINAL_UNSUPPORTED_REASON, WORKTREE_SETUP_SESSION_NAME, bracketedPaste } from "../src/shared/terminal";
+import { CHOP_NOT_TYPED, type OpenTerminalRequest, PASTE_NOT_READY, type SessionNaming, type TerminalChange, type TerminalOutput, TERMINAL_UNSUPPORTED_REASON, WORKTREE_SETUP_SESSION_NAME, bracketedPaste } from "../src/shared/terminal";
 
 /** A short review as it is pasted. */
 const PASTED = "Review notes\n\nsrc/a.ts:2\n> +x\nFix this.";
@@ -868,8 +868,8 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 			return { asked };
 		}
 
-		async function openWith(extra: { agent?: string; resume?: string; name?: string; timberWorktreeSetup?: Record<string, never> }) {
-			const result = await sessions.open({ repository, worktree, cols: 80, rows: 24, ...extra });
+		async function openWith(extra: { agent?: string; resume?: string; name?: string; timberWorktreeSetup?: Record<string, never>; restore?: unknown }) {
+			const result = await sessions.open({ repository, worktree, cols: 80, rows: 24, ...extra } as OpenTerminalRequest);
 			if (result.outcome !== "opened") throw new Error(`Not opened: ${JSON.stringify(result)}`);
 			return result.session;
 		}
@@ -882,15 +882,15 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 		test("a fresh Claude Code gets an id of the app's choosing", async () => {
 			startResumable();
 			const session = await openWith({ agent: "Claude Code" });
-			await shows(session.id, `ARGS:--model opus --session-id ${NEW}`);
-			expect(session.command).toBe(`'${join(root, "resume bin", "claude")}' --model opus --session-id ${NEW}`);
-			expect(sessions.running()).toEqual([{ id: session.id, worktree: `id:${worktree}`, path: worktree, kind: "agent", agent: "Claude Code", resumable: "claude", conversation: NEW, startedAt: 1234, name: null }]);
+			await shows(session.id, `ARGS:--session-id ${NEW} --model opus`);
+			expect(session.command).toBe(`'${join(root, "resume bin", "claude")}' --session-id ${NEW} --model opus`);
+			expect(sessions.running()).toEqual([{ id: session.id, worktree: `id:${worktree}`, path: worktree, kind: "agent", agent: "Claude Code", resumable: "claude", conversation: NEW, startedAt: 1234, name: null, restored: null }]);
 		});
 
 		test("Claude Code goes back to a conversation that is there", async () => {
 			startResumable();
 			const session = await openWith({ agent: "Claude Code", resume: OLD });
-			await shows(session.id, `ARGS:--model opus --resume ${OLD}`);
+			await shows(session.id, `ARGS:--resume ${OLD} --model opus`);
 			expect(sessions.running()[0]!.conversation).toBe(OLD);
 			expect(printed(session.id)).not.toContain("started fresh");
 			expect(printed(session.id)).not.toContain("--session-id");
@@ -976,6 +976,30 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 			sessions.write(terminal.id, "exit\r");
 			expect(await until(() => sessions.list().find(session => session.id === terminal.id)?.state.kind === "exited")).toBe(true);
 			expect(sessions.running().map(session => session.id)).toEqual([agent.id]);
+		});
+
+		test("a session opened again knows which saved one it is; a Timber command or a tag that is not one does not", async () => {
+			startResumable();
+			const tagged = await openWith({ restore: { worktree: "w1", index: 2 } });
+			const agent = await openWith({ agent: "Codex", restore: { worktree: "w1", index: 3 } });
+			await openWith({ restore: { worktree: "w1", index: -1 } });
+			await openWith({ restore: "w1" });
+			await openWith({ timberWorktreeSetup: {}, restore: { worktree: "w1", index: 4 } });
+			expect(sessions.running().map(session => session.restored)).toEqual([{ worktree: "w1", index: 2 }, { worktree: "w1", index: 3 }, null, null]);
+			expect([tagged.kind, agent.kind]).toEqual(["terminal", "agent"]);
+		});
+
+		test("when a Codex session ends or closes is kept by worktree, and nothing for another agent", async () => {
+			startResumable();
+			const claude = await openWith({ agent: "Claude Code" });
+			await sessions.close(claude.id);
+			expect(sessions.endedCodex().size).toBe(0);
+			const first = await openWith({ agent: "Codex" });
+			sessions.write(first.id, "exit\r");
+			expect(await until(() => sessions.endedCodex().get(`id:${worktree}`) === 1234)).toBe(true);
+			const second = await openWith({ agent: "Codex" });
+			await sessions.close(second.id);
+			expect([...sessions.endedCodex()]).toEqual([[`id:${worktree}`, 1234]]);
 		});
 
 		test("the shell needs no conversation", async () => {

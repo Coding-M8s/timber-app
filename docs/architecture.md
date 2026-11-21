@@ -2949,8 +2949,9 @@ that run when the app quits open again when it starts.
     the kinds of its running sessions in chip order, a name only when the
     person renamed the chip, an agent's name in Settings and the id of its
     own conversation when one is known, and the index of the chip that
-    showed. Then the id of the selected worktree. A worktree with nothing
-    running is left out, so a closed session stays closed. An example:
+    showed. Then the id of the selected worktree. A closed session is left
+    out, so it stays closed; saved sessions that did not open again in this
+    run are kept (see *What is carried* below). An example:
 
     ```json
     {
@@ -2974,14 +2975,17 @@ that run when the app quits open again when it starts.
     shells, commands (always built again from Settings), states, exit
     codes, times, default names (made again by the naming Settings choose),
     and anything a session printed. Only running sessions of kind
-    `terminal` and `agent` are saved; a Timber session such as a rebase,
-    and a session whose process had ended, are not.
+    `terminal` and `agent` are saved; a Timber session such as setup, an
+    arena attempt (its agent comes from Timber, not Settings), and a
+    session whose process had ended, are not.
   - *The shown chip and the selected worktree.* The window's `attend`
     message names the selected worktree's id and the session whose chip
-    shows there (`Attention` in `src/shared/attention.ts`). Chips are
-    switched only in the selected worktree, so the main process keeps the
-    shown chip of every worktree from these reports, with no request at
-    quit, which also works when the window no longer answers.
+    shows there once one was chosen there (`Attention` in
+    `src/shared/attention.ts`). Chips are switched only in the selected
+    worktree, so the main process keeps the shown chip of every worktree
+    from these reports, with no request at quit, which also works when the
+    window no longer answers. A worktree the window never reported in this
+    run keeps the chip that showed before, through the restore tags below.
   - *How it opens again.* The file is read once at launch. The window takes
     it once (`takeSavedSessions`, null after that, so a reloaded window
     opens nothing twice), after its first list of repositories was read and
@@ -2992,7 +2996,8 @@ that run when the app quits open again when it starts.
     worktrees at a time, the sessions of one worktree one after another so
     chips keep their order. Each opens through the ordinary
     `openTerminal`, where every check is made, with `resume` for an
-    agent's conversation and `name` for a renamed chip. A shell is a fresh
+    agent's conversation, `name` for a renamed chip, and `restore`, the
+    saved worktree id and index it opens again. A shell is a fresh
     one in the worktree's folder. When a worktree's sessions are open, its
     saved chip shows, or the nearest one before it that opened, unless the
     person chose a chip there meanwhile. Session ids are new. A restored
@@ -3001,18 +3006,38 @@ that run when the app quits open again when it starts.
     waits for the restore: the window is usable while the sessions start.
   - *What is skipped.* A saved worktree that Timber no longer lists, whose
     folder is gone, or whose repository was removed or is unavailable, is
-    skipped without a word, and is not in the next save. An agent that
-    Settings no longer has does not open: one toast, "Could not open a
-    session from the last time again" (with a count for more), and, in the
-    selected worktree, the pane says why, as for any session that did not
-    start.
+    skipped without a word. An agent that Settings no longer has does not
+    open: one toast, "Could not open a session from the last time again"
+    (with a count for more), and, in the selected worktree, the pane says
+    why, as for any session that did not start.
+  - *What is carried.* The main process keeps, in memory, what came of each
+    saved session in this run, from the `restore` tag and the outcome of
+    its `openTerminal` (`SavedCarry` in `src/shared/saved-sessions.ts`).
+    At quit every saved session is either running again, or carried to the
+    next save in its saved order among the others: one the window had not
+    reached by quit or by a reload, one in a repository that was
+    unavailable or a worktree whose folder was missing, and one that failed
+    to start (its agent not on the PATH that day), which counts a miss and
+    is dropped after three launches in a row, so nothing fails at every
+    launch. A saved session is dropped when it opened again (from then on
+    its running session counts, and closing it closes it), when its agent
+    left Settings, or when the window found its worktree gone
+    (`forgetSavedSessions`, `goneSavedWorktrees` in
+    `src/mainview/store/restore.ts`): not listed in a repository that was
+    read well with every worktree's folder there, or, with every repository
+    read well, in none of them. A missing folder changes a worktree's id
+    (`worktreeId`), so while one is missing nothing of that repository is
+    forgotten. Nothing is written until quit.
   - *Versions.* The file has `version: 1`. One that cannot be read is moved
     to `sessions.json.damaged`, with a warning in the log, and nothing
     opens. One of a later version is left as it is, nothing opens, and
     nothing is saved in that run, so the newer app finds it again. Inside a
     good file nothing is fatal: what cannot be trusted is dropped piece by
     piece, a conversation id is kept only as a UUID, names are cleaned as a
-    rename is, and at most 200 worktrees of 50 sessions are read.
+    rename is, and at most 200 worktrees of 50 sessions are read. A file
+    over 4 MiB is not read at all and is treated as damaged. Worktree ids
+    are keys of an object with no prototype, so an id such as `__proto__`
+    is only a key.
   - *Cost.* The save is one small write: 200 worktrees of 5 sessions are
     under 100 KB and under 10 ms in the tests, after a Codex search that
     may take 300 ms in all (see below), so a quit waits under half a
@@ -3290,19 +3315,28 @@ Verified on Linux on 2026-11-20:
 
 | Agent | Fresh start | Going back | Source |
 |---|---|---|---|
-| Claude Code 2.1.329 | `claude <args> --session-id <uuid>`, with a UUID the app makes | `claude <args> --resume <uuid>` | `claude --help`: "`--session-id <uuid>` Use a specific session ID for the conversation (must be a valid UUID)"; "`-r, --resume [value]` Resume a conversation by session ID or name" |
-| Codex CLI 0.170.0 | `codex <args>`; no flag sets or prints the id | `codex <args> resume <uuid>` | `codex resume --help`: "Usage: codex resume [OPTIONS] [SESSION_ID] [PROMPT]" |
+| Claude Code 2.1.329, 2.1.330 | `claude --session-id <uuid> <args>`, with a UUID the app makes | `claude --resume <uuid> <args>` | `claude --help`: "`--session-id <uuid>` Use a specific session ID for the conversation (must be a valid UUID)"; "`-r, --resume [value]` Resume a conversation by session ID or name" |
+| Codex CLI 0.170.0, 0.171.0 | `codex <args>`; no flag sets or prints the id | `codex resume <uuid> <args>` | `codex resume --help`: "Usage: codex resume [OPTIONS] [SESSION_ID] [PROMPT]", with the same options as `codex --help` |
+
+What the app adds goes first, before the arguments from Settings, so no
+option that takes several values (Codex's `-i, --image <FILE>...`) and no
+`--` can take it for one of theirs.
 
 - **Which agents.** By the executable's last path part as typed in
   Settings: `claude` or `codex` (`.exe` cut, in any case, on Windows).
   Anything else, a wrapper script included, starts exactly as typed and
   fresh after a restart. So when an agent's command now runs another
   program, it gets no resume flag, and one agent never gets another's id.
-- **A command that already picks a conversation** is started exactly as
-  typed, fresh, with no id saved: for Claude Code `--session-id`,
-  `--resume`, `-r`, `--continue`, `-c`, `--from-pr`, `--teleport`,
-  `--print`, `-p`; for Codex `resume`, `fork`, `exec`, `e`, `review`. Words
-  are matched whole.
+- **A command that already picks a conversation, or runs without one,** is
+  started exactly as typed, fresh, with no id saved: for Claude Code
+  `--session-id`, `--resume`, `-r`, `--continue`, `-c`, `--from-pr`,
+  `--teleport`, `--print`, `-p`, `--fork-session`, `--cloud`, `--bg`,
+  `--background`, `--help`, `-h`, `--version`, `-v`, also as `--resume=<id>`
+  and inside a group of short options such as `-cp`; for Codex `resume`,
+  `fork`, `exec`, `e`, `review`, `--help`, `-h`, `--version`, `-V`. So is a
+  command with `--`, or whose first argument is not an option, which names
+  a subcommand (`claude mcp list`) or a prompt (`codex "fix the bug"`).
+  Words are matched whole.
 - **Where the conversations are.** Claude Code keeps each as
   `<config>/projects/<folder>/<uuid>.jsonl`, `<config>` being
   `$CLAUDE_CONFIG_DIR` or `~/.claude`. Codex keeps each as
@@ -3313,7 +3347,7 @@ Verified on Linux on 2026-11-20:
   never writes there, and of a conversation it reads nothing but the first
   line of a Codex session file.
 - **The check before going back.** The id comes back from the window only
-  as a UUID and only follows a flag the main process adds itself. It is
+  as a UUID and only follows a word the main process adds itself. It is
   used only when the conversation's file is found in that agent's own
   folder, because both agents refuse an id they do not know: Claude Code
   prints "No conversation found with session ID" and exits, Codex "No
@@ -3324,7 +3358,9 @@ Verified on Linux on 2026-11-20:
   together with `--resume`, so the two are never combined.
 - **Claude Code** gets `--session-id` with a new UUID on every fresh start,
   so its id is exact from the first moment. It shows in the command beside
-  the chips.
+  the chips. At quit the id is saved only when Claude Code wrote that
+  conversation, so a session that never got a message starts fresh after a
+  restart, without a note that it was not found.
 - **Codex** has no such flag, so its id is read at quit from its own files:
   the newest session file whose first line has the worktree's folder as
   `cwd`, `source` `"cli"`, no `parent_thread_id`, and a start at or after
@@ -3333,8 +3369,12 @@ Verified on Linux on 2026-11-20:
   session started on are opened, at most 1 MiB of a first line is read,
   newest file first, and the search of all worktrees together stops after
   300 ms with what it has. It is made only for a worktree with exactly one
-  running Codex session; with two or more, nothing tells them apart, so
-  each keeps the id it was opened with, or starts fresh. An id is never
+  running Codex session, and none of the app's other Codex sessions there
+  ended after that one started, less the two seconds: otherwise nothing
+  tells their conversations apart (open A, open B, close B, quit would
+  give A the conversation of B), so it keeps the id it was opened with, or
+  starts fresh. When the last Codex session of each worktree ended is kept
+  in memory (`endedCodex` in `src/bun/terminals.ts`). An id is never
   given to two sessions. What was seen on this machine: an interactive
   Codex has `source` `"cli"`; `codex exec` runs have `"exec"`, the editor
   extension `"vscode"`, and a subagent an object with a parent, so none of
@@ -3345,8 +3385,10 @@ Verified on Linux on 2026-11-20:
   conversation was asked for.
 - **Known limits.** After `/clear`, Claude Code comes back in the
   conversation from before it: following it would need Claude Code hooks
-  in the person's own config. Two Codex sessions in one worktree are not
-  told apart. A Codex started by hand in the same folder after the app's
+  in the person's own config. Two Codex sessions in one worktree, running
+  together or one after the other, are not told apart. A prompt typed in
+  Settings after options (`codex -m o3 "fix it"`) is sent again when the
+  agent goes back. A Codex started by hand in the same folder after the app's
   Codex session started can be taken for it. When an agent changes where
   or how it keeps conversations, nothing is found and it starts fresh,
   never with an error.
