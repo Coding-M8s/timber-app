@@ -1,4 +1,5 @@
 import { type BranchSuggestion, type NewWorktreeRequest, type OpenWorktreeRequest, type Repository, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
+import { isCommitHash } from "../../shared/file-changes";
 import { RESULT_FILE_PLACEHOLDER, type ResultCommand, type TimberRun, describeTimberCommand, readTimberResult } from "../../shared/timber-result";
 import { newWorktreeArguments, openWorktreeArguments, worktreeCommandResult } from "../../shared/worktree-commands";
 import { sampleIssueLink } from "./mock-issue-lists";
@@ -77,9 +78,14 @@ function branchFor(name: string): string {
 const ambiguousDiagnostic = (input: string) =>
 	`Input "${input}" matches 2 targets. Did you mean one of these exact branches or paths?\n  fork/${input}\n  origin/${input}`;
 
-/** The base the pretend Timber saves for a new worktree: the one asked for, or `origin/main`, as a canonical ref. */
+/**
+ * The base the pretend Timber saves for a new worktree: the one asked for, or
+ * `origin/main`, as a canonical ref. A full commit hash, in any case, is saved
+ * as a commit base in lowercase, as Timber does.
+ */
 function savedBaseFor(base: string | null): Worktree["base"] {
 	const chosen = base ?? "origin/main";
+	if (isCommitHash(chosen.toLowerCase())) return { kind: "commit", commit: chosen.toLowerCase() };
 	return { kind: "assigned", ref: chosen.startsWith("refs/") ? chosen : `refs/remotes/${chosen}` };
 }
 

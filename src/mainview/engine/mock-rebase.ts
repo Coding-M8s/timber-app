@@ -1,3 +1,4 @@
+import { isCommitHash } from "../../shared/file-changes";
 import type { Repository, Worktree } from "../../shared/model";
 import { type RebaseRequest, type RebaseResult, readRebaseResult, rebaseResultArguments } from "../../shared/timber-rebase";
 import { RESULT_FILE_PLACEHOLDER, type TimberRun, describeTimberCommand, readTimberResult } from "../../shared/timber-result";
@@ -44,13 +45,16 @@ function worktreeRecord(worktree: Worktree): object {
  * Act out one `timber rebase`. The repository is the one from the pretend
  * list and `worktree` is one it lists whose folder is there. A worktree with
  * modified or untracked files is refused whatever the ending, as Timber does.
- * The base is what was typed, or `refs/heads/main` for the saved one.
+ * The base is what was typed, or `refs/heads/main` for the saved one. A full
+ * commit hash stays a hash, in lowercase, as Timber reports a commit base.
  */
 export function actOutRebase(repository: Repository, worktree: Worktree, request: RebaseRequest, ending: RebaseEnding): RebaseResult {
 	const shown = describeTimberCommand(rebaseResultArguments(request, RESULT_FILE_PLACEHOLDER));
 	const dirty = worktree.changes.kind === "known" && (worktree.changes.modified.length > 0 || worktree.changes.untracked.length > 0);
 	const requested = request.onto;
-	const base = requested === null ? "refs/heads/main" : requested.startsWith("refs/") ? requested : requested.includes("/") ? `refs/remotes/${requested}` : `refs/remotes/origin/${requested}`;
+	const base = requested === null ? "refs/heads/main"
+		: isCommitHash(requested.toLowerCase()) ? requested.toLowerCase()
+		: requested.startsWith("refs/") ? requested : requested.includes("/") ? `refs/remotes/${requested}` : `refs/remotes/origin/${requested}`;
 	const baseFields = { base, baseCommit: BASE_COMMIT, originalTip: TIP, conflicts: [] as string[], baseSaved: true };
 
 	const written = (rebase: Record<string, unknown>, outcome: "succeeded" | "failed", diagnostic: string | null, printed: string): RebaseResult => {

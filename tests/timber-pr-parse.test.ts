@@ -73,6 +73,8 @@ describe("the Base field", () => {
 		expect(initialPullRequestBase({ kind: "assigned", ref: "refs/heads/main" })).toBe("");
 		expect(initialPullRequestBase({ kind: "unassigned" })).toBe("");
 		expect(initialPullRequestBase({ kind: "invalid", reason: "malformed" })).toBe("");
+		// timber pr --base takes a branch, so a commit base is not offered.
+		expect(initialPullRequestBase({ kind: "commit", commit: "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432" })).toBe("");
 		expect(initialPullRequestBase(null)).toBe("");
 	});
 

@@ -1,3 +1,4 @@
+import { isCommitHash, shortCommit } from "./file-changes";
 import type { TimberFailure } from "./model";
 import { type Fields, isFields, isTextOrNull } from "./timber-ls";
 import { type TimberRun, failureOf } from "./timber-result";
@@ -36,7 +37,8 @@ export function rebaseResultArguments(request: Pick<RebaseRequest, "worktree" | 
 
 /**
  * How one rebase ended, as the record says. `base` is the canonical ref
- * Timber used, `refs/remotes/<remote>/<branch>` or `refs/heads/<branch>`.
+ * Timber used, `refs/remotes/<remote>/<branch>` or `refs/heads/<branch>`, or
+ * the full hash of a commit base.
  */
 export type RebaseResult =
 	/** The branch was rebased onto `base`. */
@@ -137,12 +139,14 @@ function unknownResult(run: TimberRun, detail: string, exitCode: number | undefi
 }
 
 /**
- * A base ref as a person says it: `refs/remotes/origin/main` is `origin/main`
- * and `refs/heads/main` is `main`. Null, which means the base Timber saved for
- * the worktree, reads as "its saved base".
+ * A base ref as a person says it: `refs/remotes/origin/main` is `origin/main`,
+ * `refs/heads/main` is `main`, and a commit's full hash is `a1b2c3d`. Null,
+ * which means the base Timber saved for the worktree, reads as "its saved
+ * base".
  */
 export function shortBase(ref: string | null): string {
 	if (ref === null) return "its saved base";
+	if (isCommitHash(ref)) return shortCommit(ref);
 	if (ref.startsWith("refs/remotes/")) return ref.slice("refs/remotes/".length);
 	if (ref.startsWith("refs/heads/")) return ref.slice("refs/heads/".length);
 	return ref;

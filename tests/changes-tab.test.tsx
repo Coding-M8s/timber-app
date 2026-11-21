@@ -404,6 +404,19 @@ describe("words of comparing with the base", () => {
 		expect(baseUnavailable({ usable: false, reason: "Timber has no base saved for this worktree." })).toBe("Base is not available: Timber has no base saved for this worktree.");
 	});
 
+	test("a commit base that is the branch point shows once, and one the branch left earlier shows both", () => {
+		const atCommit = { usable: true as const, ref: MOCK_BRANCH_POINT, name: "a1b2c3d", commit: MOCK_BRANCH_POINT };
+		expect(describeComparison("base", atCommit)).toEqual({ text: "a1b2c3d", title: "Everything this branch changed since commit a1b2c3d, its saved base, committed or not." });
+		expect(describeNoChanges("base", atCommit)).toBe("This branch matches commit a1b2c3d, its saved base. Nothing is untracked.");
+
+		const leftEarlier = { usable: true as const, ref: "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432", name: "9f8e7d6", commit: MOCK_BRANCH_POINT };
+		expect(describeComparison("base", leftEarlier)).toEqual({
+			text: "9f8e7d6 @ a1b2c3d",
+			title: "Everything this branch changed since it left the history of commit 9f8e7d6 at a1b2c3d, committed or not. Commits between a1b2c3d and 9f8e7d6 are left out.",
+		});
+		expect(describeNoChanges("base", leftEarlier)).toBe("This branch matches a1b2c3d, where it left the history of commit 9f8e7d6. Nothing is untracked.");
+	});
+
 	test("counts, commands, and the empty list speak of the base", () => {
 		expect(describeFileCounts([file("base", "modified", "a.ts"), file("untracked", "untracked", "n.ts"), file("conflicted", "conflicted", "c.ts")], false)).toBe("1 conflicted, 1 changed, 1 untracked");
 		expect(diffCommand(file("base", "renamed", "new.ts", "old.ts"), MOCK_BRANCH_POINT)).toBe(`git diff ${MOCK_BRANCH_POINT} -- old.ts new.ts`);

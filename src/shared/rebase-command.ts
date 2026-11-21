@@ -36,10 +36,12 @@ export function savedBaseSelector(ref: string): string {
 
 /**
  * What the Rebase dialog's Onto field starts as: the saved base, in the form
- * Timber takes, or nothing. Only a base Timber reported as assigned is ever
- * filled in. No saved base, unusable metadata, and a Timber that does not
- * report bases all leave the field empty.
+ * Timber takes, or nothing. Only a base Timber reported as assigned or as a
+ * commit is ever filled in, a commit by its full hash, since Timber refuses
+ * an abbreviated one. No saved base, unusable metadata, and a Timber that
+ * does not report bases all leave the field empty.
  */
 export function initialOnto(base: SavedBase | null): string {
-	return base?.kind === "assigned" ? savedBaseSelector(base.ref) : "";
+	if (base?.kind === "assigned") return savedBaseSelector(base.ref);
+	return base?.kind === "commit" ? base.commit : "";
 }

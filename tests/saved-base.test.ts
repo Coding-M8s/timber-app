@@ -19,6 +19,7 @@ describe.skipIf(realTimber === null)("saved bases, with the installed Timber on 
 	let primary: string;
 	let trees: string;
 	let environment: Record<string, string | undefined>;
+	let loose: string;
 
 	const tree = (name: string) => join(trees, name);
 	const timber = (...timberArguments: string[]) => {
@@ -45,10 +46,18 @@ describe.skipIf(realTimber === null)("saved bases, with the installed Timber on 
 		timber("new", "feat/based", "--base", "origin/main", "--no-editor", "--no-agent");
 		timber("new", "feat/local", "--base", "refs/heads/main", "--no-editor", "--no-agent");
 		timber("new", "feat/broken", "--base", "origin/main", "--no-editor", "--no-agent");
+		// A commit made on a detached HEAD, which no branch contains once main is checked out again.
+		git(primary, "checkout", "--quiet", "--detach");
+		git(primary, "commit", "--quiet", "--allow-empty", "-m", "On no branch");
+		loose = git(primary, "rev-parse", "HEAD").trim();
+		git(primary, "checkout", "--quiet", "main");
+		expect(git(primary, "for-each-ref", "--contains", loose).trim()).toBe("");
+		timber("new", "feat/commit", "--base", loose, "--no-editor", "--no-agent");
 		// Timber keeps the saved base in the worktree's private Git metadata. Text that is not JSON is malformed.
 		writeFileSync(join(primary, ".git", "worktrees", "feat-broken", "timber", "base.json"), "not json\n");
 		git(primary, "worktree", "add", "-b", "plain", tree("plain"));
-	});
+		// Four runs of Timber, each of which can take the time one test is given.
+	}, 4 * REAL_TIMBER_TIMEOUT_MS);
 
 	afterAll(() => {
 		rmSync(work, { recursive: true, force: true });
@@ -67,6 +76,15 @@ describe.skipIf(realTimber === null)("saved bases, with the installed Timber on 
 		expect(initialOnto(local.base)).toBe("refs/heads/main");
 	});
 
+	test("a worktree based on a commit no branch contains shows that commit, and the Rebase dialog would start from its full hash", async () => {
+		// Only the worktree's own new branch, which starts there.
+		expect(git(primary, "for-each-ref", "--format=%(refname)", "--contains", loose).trim()).toBe("refs/heads/feat/commit");
+		const based = byBranch(await read(), "feat/commit");
+		expect(based.base).toEqual({ kind: "commit", commit: loose });
+		expect(describeSavedBase(based.base)?.text).toBe(`Base ${loose.slice(0, 7)}`);
+		expect(initialOnto(based.base)).toBe(loose);
+	});
+
 	test("the primary checkout and a worktree added with plain Git have no saved base", async () => {
 		const repository = await read();
 		expect(byBranch(repository, "main").base).toEqual({ kind: "unassigned" });
@@ -76,7 +94,7 @@ describe.skipIf(realTimber === null)("saved bases, with the installed Timber on 
 
 	test("broken metadata is reported as invalid, the worktree stays listed, and nothing is filled in", async () => {
 		const repository = await read();
-		expect(repository.worktrees.length).toBe(5);
+		expect(repository.worktrees.length).toBe(6);
 		const broken = byBranch(repository, "feat/broken");
 		expect(broken.base).toEqual({ kind: "invalid", reason: "malformed" });
 		expect(describeSavedBase(broken.base)).toMatchObject({ text: "Base unknown", warning: true });
@@ -84,7 +102,7 @@ describe.skipIf(realTimber === null)("saved bases, with the installed Timber on 
 	});
 
 	test("reading the bases leaves every file, ref, and index untouched", async () => {
-		const folders = [primary, tree("feat-based"), tree("feat-local"), tree("feat-broken"), tree("plain")];
+		const folders = [primary, tree("feat-based"), tree("feat-local"), tree("feat-broken"), tree("feat-commit"), tree("plain")];
 		const before = folders.map(fingerprint);
 		await read();
 		await read();

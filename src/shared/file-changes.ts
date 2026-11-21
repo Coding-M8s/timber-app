@@ -78,7 +78,11 @@ export const MAX_STATUS_BYTES = 8 * 1024 * 1024;
  * it out from the base Timber saved, never from anything the window sent.
  */
 export type BaseComparison =
-	/** `ref` as Timber saved it, `name` as the tab shows it (`baseName`), and `commit` the full hash of the branch point. */
+	/**
+	 * `ref` as Timber saved it, the full hash for a commit base, `name` as the
+	 * tab shows it (`baseName`), and `commit` the full hash of the branch
+	 * point. For a commit base that HEAD descends from, `commit` is `ref`.
+	 */
 	| { usable: true; ref: string; name: string; commit: string }
 	/** No saved base, one Timber cannot use, a ref that is not there, or no shared history. `reason` says which. */
 	| { usable: false; reason: string };
@@ -172,6 +176,9 @@ const COMMIT = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
 /** Whether a text is a full commit hash, safe to give Git as a revision. */
 export const isCommitHash = (text: string) => COMMIT.test(text);
 
+/** A commit as the app shows it: the first seven characters of its hash, such as `a1b2c3d`. */
+export const shortCommit = (commit: string) => commit.slice(0, 7);
+
 /**
  * The Git arguments that print the diff of one listed file, run in the
  * worktree. Exit code 1 means "there are differences" for `--no-index`. A
@@ -195,9 +202,9 @@ export function diffArguments(file: FileChange, commit: string | null = null): {
 }
 
 /**
- * The ref to compare with, from the base Timber saved, or why there is none.
- * Only a canonical ref under `refs/` is taken, so it can never be read as an
- * option.
+ * The revision to compare with, from the base Timber saved, or why there is
+ * none. Only a canonical ref under `refs/` or a full commit hash is taken, so
+ * it can never be read as an option. A commit base gives its hash.
  */
 export function savedBaseRef(base: SavedBase | null): { ok: true; ref: string } | { ok: false; reason: string } {
 	if (base === null) return { ok: false, reason: "Timber did not report a base for this worktree." };
@@ -209,11 +216,19 @@ export function savedBaseRef(base: SavedBase | null): { ok: true; ref: string } 
 		case "assigned":
 			if (!base.ref.startsWith("refs/") || base.ref.includes("\0") || /\s/.test(base.ref)) return { ok: false, reason: `The saved base ${base.ref} is not a ref Git can compare with.` };
 			return { ok: true, ref: base.ref };
+		case "commit":
+			if (!isCommitHash(base.commit)) return { ok: false, reason: `The saved base ${base.commit} is not a full commit hash Git can compare with.` };
+			return { ok: true, ref: base.commit };
 	}
 }
 
-/** A saved base as the Changes tab names it: `origin/main` for a remote branch, `main` for a local one, the ref itself otherwise. */
+/**
+ * A saved base as the Changes tab names it: `origin/main` for a remote
+ * branch, `main` for a local one, `a1b2c3d` for a commit, the ref itself
+ * otherwise.
+ */
 export function baseName(ref: string): string {
+	if (isCommitHash(ref)) return shortCommit(ref);
 	for (const prefix of ["refs/remotes/", "refs/heads/"]) {
 		if (ref.startsWith(prefix) && ref.length > prefix.length) return ref.slice(prefix.length);
 	}

@@ -232,6 +232,57 @@ describe.skipIf(windows)("comparing a worktree with its base, in real repositori
 		}
 	});
 
+	describe("a commit as the base", () => {
+		const commitBase = (commit: string): SavedBase => ({ kind: "commit", commit });
+		const branchListing = () => plainGit(primary, "for-each-ref", "--format=%(refname) %(objectname)");
+
+		test("a commit that no branch contains compares from its merge base with HEAD, and changes no file, index, or ref", async () => {
+			// Made on a detached HEAD, so that once main is checked out again no branch or tag contains it.
+			git(primary, "checkout", "--quiet", "--detach", branchPoint);
+			writeFileSync(join(primary, "keep.txt"), "one\ntwo\nonly on a loose commit\n");
+			git(primary, "commit", "--quiet", "-am", "On no branch");
+			const loose = git(primary, "rev-parse", "HEAD").trim();
+			git(primary, "checkout", "--quiet", "main");
+			expect(plainGit(primary, "for-each-ref", "--contains", loose).trim()).toBe("");
+			expect(plainGit(feature, "merge-base", loose, "HEAD").trim()).toBe(branchPoint);
+
+			const before = [fingerprint(feature), fingerprint(primary)];
+			const refs = branchListing();
+			const answer = await read("base", commitBase(loose));
+			expect(answer.compared).toBe("base");
+			expect(answer.base).toEqual({ usable: true, ref: loose, name: loose.slice(0, 7), commit: branchPoint });
+			expect(entries(answer.files)).toEqual(entries((await read("base")).files));
+			const diff = await reader(commitBase(loose)).diff({ repository: primary, worktree: feature, compare: "base", file: { area: "base", path: "keep.txt", previousPath: null } });
+			expect(diff.outcome === "read" && diff.diff).toEqual(parseDiff(plainGit(feature, "diff", "--no-color", "--no-ext-diff", "--no-textconv", branchPoint, "--", "keep.txt")));
+			expect([fingerprint(feature), fingerprint(primary)]).toEqual(before);
+			expect(branchListing()).toBe(refs);
+		});
+
+		test("a commit that HEAD descends from is the branch point itself", async () => {
+			const answer = await read("base", commitBase(branchPoint));
+			expect(answer.base).toEqual({ usable: true, ref: branchPoint, name: branchPoint.slice(0, 7), commit: branchPoint });
+			expect(entries(answer.files)).toEqual(entries((await read("base")).files));
+		});
+
+		test("a hash that is not in the repository, or names a tag or a tree rather than a commit, cannot be used", async () => {
+			const absent = "0123456789abcdef0123456789abcdef01234567";
+			git(primary, "tag", "-a", "-m", "A tag", "annotated", branchPoint);
+			const tagObject = git(primary, "rev-parse", "refs/tags/annotated").trim();
+			git(primary, "tag", "-d", "annotated");
+			const tree = git(primary, "rev-parse", `${branchPoint}^{tree}`).trim();
+			const cases: [string, string][] = [
+				[absent, "The saved base 0123456 is not a commit in this repository. Check the base Timber saved."],
+				[tree, `The saved base ${tree.slice(0, 7)} is not a commit in this repository. Check the base Timber saved.`],
+				[tagObject, `The saved base ${tagObject.slice(0, 7)} is not a commit. Check the base Timber saved.`],
+			];
+			for (const [commit, reason] of cases) {
+				const answer = await read("base", commitBase(commit));
+				expect(answer.compared).toBe("uncommitted");
+				expect(answer.base).toEqual({ usable: false, reason });
+			}
+		});
+	});
+
 	test("lists a conflicted file once, as a conflict, with Git's combined diff", async () => {
 		const ask = reader(ORIGIN_MAIN, () => conflicted);
 		const answer = await ask.read({ repository: primary, worktree: conflicted, compare: "base" });

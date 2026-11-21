@@ -222,8 +222,19 @@ describe("the saved base", () => {
 			.toEqual({ kind: "assigned", ref: "refs/remotes/fork/feat/zażółć x" });
 	});
 
+	test("a commit base is kept by its full hash, SHA-1 or SHA-256", () => {
+		for (const commit of ["9f8e7d6c5b4a39281706f5e4d3c2b1a098765432", "9f8e7d6c5b4a39281706f5e4d3c2b1a0987654329f8e7d6c5b4a39281706f5e4"]) {
+			expect(listed(readTimberListing(withBase({ kind: "commit", commit }), 0)).worktrees[1]!.base).toEqual({ kind: "commit", commit });
+		}
+	});
+
 	test("a base field the contract does not describe refuses the list, so no base is ever guessed", () => {
-		for (const base of [null, "origin/main", [], {}, { kind: "assigned" }, { kind: "assigned", ref: "" }, { kind: "assigned", ref: 7 }, { kind: "invalid" }, { kind: "invalid", reason: "odd" }, { kind: "inferred", ref: "refs/heads/main" }]) {
+		const commitBases = [
+			{ kind: "commit" }, { kind: "commit", commit: "" }, { kind: "commit", commit: 7 }, { kind: "commit", commit: "9f8e7d6" },
+			{ kind: "commit", commit: "9F8E7D6C5B4A39281706F5E4D3C2B1A098765432" }, { kind: "commit", commit: "9f8e7d6c5b4a39281706f5e4d3c2b1a0987654320" }, { kind: "commit", commit: "9f8e7d6c5b4a39281706f5e4d3c2b1a0987654329f8e7d6c5b4a39281706f5e" },
+			{ kind: "commit", commit: "refs/heads/main" }, { kind: "commit", ref: "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432" },
+		];
+		for (const base of [null, "origin/main", [], {}, { kind: "assigned" }, { kind: "assigned", ref: "" }, { kind: "assigned", ref: 7 }, { kind: "invalid" }, { kind: "invalid", reason: "odd" }, { kind: "inferred", ref: "refs/heads/main" }, ...commitBases]) {
 			expect(messageOf(readTimberListing(withBase(base), 0))).toContain("worktree 2 of 7 is not a worktree record");
 		}
 	});

@@ -80,9 +80,9 @@ export function pullRequestReviewersFromText(text: string): string[] {
 
 /**
  * What the Base field starts as: the saved base in the form `timber pr
- * --base` takes, `<remote>/<branch>`. A saved local branch is not a base
- * Timber opens a pull request into, and nothing saved is not one either, so
- * those leave the field empty and Timber says what it needs.
+ * --base` takes, `<remote>/<branch>`. A saved local branch or commit is not
+ * a base Timber opens a pull request into, and nothing saved is not one
+ * either, so those leave the field empty and Timber says what it needs.
  */
 export function initialPullRequestBase(base: SavedBase | null): string {
 	if (base?.kind !== "assigned" || !base.ref.startsWith("refs/remotes/")) return "";
