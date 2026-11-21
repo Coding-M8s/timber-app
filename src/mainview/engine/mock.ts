@@ -147,7 +147,8 @@ export const sampleRepositories: Repository[] = [
  * A repository with the row states the two above do not have: a detached
  * HEAD, a locked worktree, a prunable one whose folder is still there, a
  * status Timber could not read, an upstream state Git could not read, saved
- * base metadata Timber cannot use, a record with no base at all, and a row
+ * base metadata Timber cannot use, a record with no base at all, a base that
+ * is a commit rather than a branch, and a row
  * with everything at once. The browser build lists it; most tests do not.
  */
 export const sampleStatesRepository: Repository = {
@@ -178,6 +179,11 @@ export const sampleStatesRepository: Repository = {
 			changes: sampleChanges(2, 0),
 			base: { kind: "invalid", reason: "stale" },
 			sync: null,
+		}),
+		worktree("billing", "hotfix/from-release", {
+			// Based on a commit, which Timber saves by its full hash.
+			base: { kind: "commit", commit: "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432" },
+			sync: { kind: "unpublished" },
 		}),
 		worktree("billing", "feat/tax-rules", {
 			locked: true,

@@ -3200,3 +3200,32 @@ Run for Check out PR on the issues board (issue 211), Linux x64 with Bun
   drawn (the GitHub check out above ran the app's logic and the exact
   command, not the window); Jira and Linear against real trackers; Windows
   and macOS.
+
+Run for comparing with a commit base (issue 192), Linux x64 with Bun
+1.4.5, Git 2.43.0, and Timber 0.1.4:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+  `bun run build:web`: built.
+- `bun test`, after rebasing onto main: 3134 passed, 19 skipped, none
+  failed. One earlier full run had `tests/worktree-pr.test.ts` stop at its
+  5 second limit while running the installed Timber; it passed alone twice
+  and in the next full run, and this change touches only a comment in the
+  code it covers.
+  `tests/timber-ls-parse.test.ts` reads a commit base by its full SHA-1
+  or SHA-256 hash and refuses the list for an abbreviated, uppercase, or
+  misnamed one.
+- `tests/file-changes-base.test.ts`, in a real temporary repository: a
+  commit made on a detached HEAD, which `git for-each-ref --contains`
+  shows no branch or tag contains, compares from `git merge-base <commit>
+  HEAD`, the same files and diffs as the branch's own base, and leaves
+  files, index, and refs as they were. A commit HEAD descends from is its
+  own branch point. A hash not in the repository, a tag object's hash,
+  and a tree's hash cannot be used, each with its reason.
+- `tests/saved-base.test.ts`, with the installed Timber 0.1.4:
+  `timber new feat/commit --base <hash>` of a commit no branch contained
+  is listed by `timber ls --json` as a commit base, shown as `Base
+  <first seven characters>`, and starts the Rebase dialog's Onto as the
+  full hash. Its `beforeAll` now allows four times the per-test limit,
+  since four runs of Timber took about 1.7 seconds each here.
+- Not run: the installed desktop app by hand, a SHA-256 repository with
+  real Git, and a partial clone.

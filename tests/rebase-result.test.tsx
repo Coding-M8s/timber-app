@@ -56,6 +56,12 @@ describe("how the dialog shows each recorded outcome", () => {
 		expect(shown(text, 0).outcome).toEqual({ ok: true, toast: "Rebased feat onto origin/main" });
 	});
 
+	test("a commit base, which Timber reports by its full hash, is named by its first seven characters", () => {
+		const text = JSON.stringify({ ...JSON.parse(recordedRebase.rebased), rebase: { ...JSON.parse(recordedRebase.rebased).rebase, base: "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432" } });
+		expect(shown(text, 0).outcome).toEqual({ ok: true, toast: "Rebased feat onto 9f8e7d6" });
+		expect(describeConflictsAdvice("9f8e7d6c5b4a39281706f5e4d3c2b1a098765432")).toContain("rebase onto 9f8e7d6,");
+	});
+
 	test("conflicts switch to the conflicts view and keep Timber's failure for the details", () => {
 		const result = shown(recordedRebase.conflicts, 1);
 		expect(result.conflicts).toMatchObject({ outcome: "conflicts", conflicts: ["a.txt", "my file.txt"] });
@@ -157,6 +163,12 @@ describe("the mock engine's rebase endings", () => {
 		const command = noResult.outcome === "failed" ? noResult.failure.command : null;
 		expect(command).toBe(`timber rebase --base origin/main --result-file <temporary file> -- ${FEATURE}`);
 		expect(command).toBe(rebaseResultCommandFor(FEATURE, "origin/main"));
+	});
+
+	test("a full commit hash as Onto is reported back as that commit, in lowercase, as Timber does", async () => {
+		const engine = cleanEngine();
+		engine.endRebaseResults("rebased");
+		expect(await engine.rebaseWorktree({ repository: TIMBER, worktree: FEATURE, onto: "9F8E7D6C5B4A39281706F5E4D3C2B1A098765432" })).toMatchObject({ outcome: "rebased", base: "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432" });
 	});
 
 	test("a worktree with modified or untracked files is refused whatever the ending", async () => {

@@ -1,6 +1,6 @@
 import { describeCommandLine } from "../shared/command-line";
 import {
-	type BaseComparison, type ChangeArea, type ChangeKind, type Comparison, type FileChange, type FileChangeTarget, type FileDiff, MAX_DIFF_BYTES, MAX_DIFF_LINES, MAX_LISTED_FILES, sameFileChange,
+	type BaseComparison, type ChangeArea, type ChangeKind, type Comparison, type FileChange, type FileChangeTarget, type FileDiff, isCommitHash, MAX_DIFF_BYTES, MAX_DIFF_LINES, MAX_LISTED_FILES, sameFileChange, shortCommit,
 } from "../shared/file-changes";
 
 /**
@@ -41,18 +41,29 @@ export const COMPARISON_LABELS: Record<Comparison, string> = {
 };
 
 /** A commit as the list's header and the commands show it. */
-export const shortCommit = (commit: string) => commit.slice(0, 7);
+export { shortCommit };
 
 /**
  * What the list's header says is compared, such as `origin/main @ a1b2c3d`,
  * with a sentence for its tooltip. `compared` is the comparison the files
- * came from.
+ * came from. A commit base that is the branch point itself shows once, as
+ * `a1b2c3d`; one the branch left earlier shows both, as `a1b2c3d @ 9f8e7d6`.
  */
 export function describeComparison(compared: Comparison, base: BaseComparison | null): { text: string; title: string } {
 	if (compared === "base" && base?.usable) {
+		const point = shortCommit(base.commit);
+		if (isCommitHash(base.ref)) {
+			if (base.ref === base.commit) {
+				return { text: base.name, title: `Everything this branch changed since commit ${base.name}, its saved base, committed or not.` };
+			}
+			return {
+				text: `${base.name} @ ${point}`,
+				title: `Everything this branch changed since it left the history of commit ${base.name} at ${point}, committed or not. Commits between ${point} and ${base.name} are left out.`,
+			};
+		}
 		return {
-			text: `${base.name} @ ${shortCommit(base.commit)}`,
-			title: `Everything this branch changed since it left ${base.name} at ${shortCommit(base.commit)}, committed or not. Later commits on ${base.name} are left out.`,
+			text: `${base.name} @ ${point}`,
+			title: `Everything this branch changed since it left ${base.name} at ${point}, committed or not. Later commits on ${base.name} are left out.`,
 		};
 	}
 	return { text: "Last commit", title: "What changed since the last commit: staged, unstaged, and untracked files." };
@@ -65,7 +76,14 @@ export function baseUnavailable(base: BaseComparison | null): string | null {
 
 /** What the tab says when nothing changed. */
 export function describeNoChanges(compared: Comparison, base: BaseComparison | null): string {
-	if (compared === "base" && base?.usable) return `This branch matches ${base.name} at ${shortCommit(base.commit)}, where it started. Nothing is untracked.`;
+	if (compared === "base" && base?.usable) {
+		const point = shortCommit(base.commit);
+		if (isCommitHash(base.ref)) {
+			if (base.ref === base.commit) return `This branch matches commit ${base.name}, its saved base. Nothing is untracked.`;
+			return `This branch matches ${point}, where it left the history of commit ${base.name}. Nothing is untracked.`;
+		}
+		return `This branch matches ${base.name} at ${point}, where it started. Nothing is untracked.`;
+	}
 	return "This worktree matches its last commit. Nothing is staged or untracked.";
 }
 

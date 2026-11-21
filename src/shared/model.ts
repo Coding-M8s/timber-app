@@ -55,11 +55,13 @@ export type WorktreeChanges =
 /**
  * The base Timber saved for a worktree: what `timber rebase` rebases it onto
  * and `timber done` checks it against. Timber reads it offline, so an
- * assigned ref is a saved choice, not proof that the ref still exists.
+ * assigned ref or a commit is a saved choice, not proof that it still exists.
  */
 export type SavedBase =
 	/** The canonical ref exactly as saved: `refs/remotes/<remote>/<branch>` or `refs/heads/<branch>`. */
 	| { kind: "assigned"; ref: string }
+	/** A commit, which no branch has to contain: its full lowercase hash, as saved. */
+	| { kind: "commit"; commit: string }
 	/** Nothing is saved, as for the primary checkout or a worktree added with plain Git. */
 	| { kind: "unassigned" }
 	/**

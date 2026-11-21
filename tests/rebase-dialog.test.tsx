@@ -6,6 +6,7 @@ import { createMockEngine, sampleRepositories } from "../src/mainview/engine/moc
 import { REBASE_DIRTY_NOTE } from "../src/mainview/rebase-format";
 import { createAppStore } from "../src/mainview/store/store";
 import type { Worktree } from "../src/shared/model";
+import { initialOnto } from "../src/shared/rebase-command";
 
 const settle = async () => {
 	for (let round = 0; round < 5; round += 1) await Bun.sleep(0);
@@ -109,6 +110,14 @@ describe("the Rebase dialog", () => {
 		expect(local.worktree.base).toEqual({ kind: "assigned", ref: "refs/heads/main" });
 		expect(ontoValue(local.markup)).toBe("refs/heads/main");
 		expect(local.markup).toContain("timber rebase --base refs/heads/main --result-file &lt;temporary file&gt; -- /work/timber-worktrees/spike-new-idea");
+	});
+
+	test("a commit base starts Onto as its full hash, which Timber takes, and is named by its first seven characters", () => {
+		const worktree: Worktree = { ...feature, base: { kind: "commit", commit: "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432" } };
+		const markup = render({ worktree, onto: initialOnto(worktree.base) });
+		expect(ontoValue(markup)).toBe("9f8e7d6c5b4a39281706f5e4d3c2b1a098765432");
+		expect(markup).toContain("Timber saved commit 9f8e7d6 as the base of this worktree, so Onto starts from its full hash.");
+		expect(markup).toContain(`timber rebase --base 9f8e7d6c5b4a39281706f5e4d3c2b1a098765432 --result-file &lt;temporary file&gt; -- ${FEATURE}`);
 	});
 
 	test("a worktree with no saved base says so, starts empty, and passes no base", async () => {

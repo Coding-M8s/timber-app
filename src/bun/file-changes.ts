@@ -101,7 +101,14 @@ export function createFileChanges(dependencies: FileChangesDependencies): FileCh
 		if (head.commit === null) return { usable: false, reason: "This worktree has no commit yet, so there is no branch point to compare with." };
 		const base = await commitOf(worktree.path, saved.ref);
 		if (!base.ok) return { usable: false, reason: `Git could not read the base ${name}: ${base.message}` };
-		if (base.commit === null) return { usable: false, reason: `The saved base ${name} is not in this repository. Fetch, or check the base Timber saved.` };
+		const savedCommit = isCommitHash(saved.ref);
+		if (base.commit === null) {
+			// Missing, or a tree or blob. Timber never fetches a commit base, and a commit no branch contains does not arrive with a fetch.
+			if (savedCommit) return { usable: false, reason: `The saved base ${name} is not a commit in this repository. Check the base Timber saved.` };
+			return { usable: false, reason: `The saved base ${name} is not in this repository. Fetch, or check the base Timber saved.` };
+		}
+		// Git peels a tag's hash to the commit it names; Timber saves only a commit, so anything else is refused.
+		if (savedCommit && base.commit !== saved.ref) return { usable: false, reason: `The saved base ${name} is not a commit. Check the base Timber saved.` };
 		const answer = await run(worktree.path, ["merge-base", base.commit, head.commit], HASH_BYTES, [0, 1]);
 		if (!answer.ok) return { usable: false, reason: `Git could not find where this branch left ${name}: ${answer.message}` };
 		const commit = answer.text.trim();

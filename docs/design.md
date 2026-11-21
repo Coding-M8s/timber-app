@@ -329,7 +329,8 @@ logins. The app never reads a tracker login and never signs in.
   or `Refs #102`, and `owner/repo#102` when the pull request opens in
   another repository, for GitHub; without a saved link there is no line,
   and the app never guesses from the branch name), Base (the saved base as Timber takes it, `origin/main`, or empty for
-  Timber's own choice when the saved base is a local branch or none),
+  Timber's own choice when the saved base is a local branch, a commit, or
+  none),
   Reviewers (logins or `org/team`, separated by commas or spaces; while it has the
   focus, the people and teams the repository's pull requests already list
   show under it, narrowed by the name being typed, without the ones already
@@ -370,10 +371,12 @@ logins. The app never reads a tracker login and never signs in.
   not, so the work stays visible after an agent commits; commits on the base
   after the branch point do not show. Uncommitted is what `git status`
   lists. The list's header says what is compared, such as
-  `origin/main @ a1b2c3d`, or "Last commit". Base is the default when the
+  `origin/main @ a1b2c3d`, or "Last commit". A commit base shows as
+  `a1b2c3d` when the branch starts there, or as `a1b2c3d @ 9f8e7d6` when
+  the branch left its history earlier. Base is the default when the
   worktree has a saved base Timber and Git can use. Without one (no saved
-  base, metadata Timber cannot use, a ref that is not there, or no shared
-  history), Base is disabled, a quiet line under the switch gives the
+  base, metadata Timber cannot use, a ref or commit that is not there, or
+  no shared history), Base is disabled, a quiet line under the switch gives the
   reason, and the tab shows Uncommitted. The choice is remembered for each
   worktree. Comparing with a backup comes later.
 - Review notes: in the Changes tab, clicking a line's numbers (or Enter on

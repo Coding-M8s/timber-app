@@ -319,11 +319,23 @@ describe("comparing with the base", () => {
 		expect(savedBaseRef({ kind: "unassigned" })).toEqual({ ok: false, reason: "Timber has no base saved for this worktree." });
 	});
 
+	test("savedBaseRef takes a commit base by its full hash, and refuses one that is not a full hash", () => {
+		expect(savedBaseRef({ kind: "commit", commit: "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432" })).toEqual({ ok: true, ref: "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432" });
+		for (const commit of ["9f8e7d6", "9F8E7D6C5B4A39281706F5E4D3C2B1A098765432", "--output=x", "refs/heads/main"]) {
+			expect(savedBaseRef({ kind: "commit", commit })).toEqual({ ok: false, reason: `The saved base ${commit} is not a full commit hash Git can compare with.` });
+		}
+	});
+
 	test("names a remote base by remote and branch, and a local one by its branch", () => {
 		expect(baseName("refs/remotes/origin/main")).toBe("origin/main");
 		expect(baseName("refs/heads/main")).toBe("main");
 		expect(baseName("refs/heads/release/2.4")).toBe("release/2.4");
 		expect(baseName("refs/tags/v1")).toBe("refs/tags/v1");
+	});
+
+	test("names a commit base by the first seven characters of its hash", () => {
+		expect(baseName("9f8e7d6c5b4a39281706f5e4d3c2b1a098765432")).toBe("9f8e7d6");
+		expect(baseName("refs/heads/9f8e7d6c5b4a39281706f5e4d3c2b1a098765432")).toBe("9f8e7d6c5b4a39281706f5e4d3c2b1a098765432");
 	});
 
 	test("a commit is resolved after the end of options", () => {

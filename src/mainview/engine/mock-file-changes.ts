@@ -190,7 +190,7 @@ export function derivedFileChanges(worktree: Worktree): MockFileChange[] {
 	if (worktree.path === GALLERY_WORKTREE) return gallery();
 	if (worktree.changes.kind !== "known") return [];
 	return [
-		...(worktree.base?.kind === "assigned" ? [tracked("base", "modified", "README.md", samplePatch("README.md"))] : []),
+		...(worktree.base?.kind === "assigned" || worktree.base?.kind === "commit" ? [tracked("base", "modified", "README.md", samplePatch("README.md"))] : []),
 		...worktree.changes.modified.map(path => tracked("unstaged", "modified", path, samplePatch(path))),
 		...worktree.changes.untracked.map(path => tracked("unstaged", "untracked", path, sampleNewFilePatch(path))),
 	];

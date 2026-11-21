@@ -54,6 +54,13 @@ describe("shortBase", () => {
 		expect(shortBase("something")).toBe("something");
 		expect(shortBase(null)).toBe("its saved base");
 	});
+
+	test("a commit base, which Timber reports by its full hash, is its first seven characters", () => {
+		expect(shortBase("9f8e7d6c5b4a39281706f5e4d3c2b1a098765432")).toBe("9f8e7d6");
+		expect(shortBase("9f8e7d6c5b4a39281706f5e4d3c2b1a0987654329f8e7d6c5b4a39281706f5e4")).toBe("9f8e7d6");
+		// A branch whose name looks like a hash is still a ref.
+		expect(shortBase("refs/heads/9f8e7d6c5b4a39281706f5e4d3c2b1a098765432")).toBe("9f8e7d6c5b4a39281706f5e4d3c2b1a098765432");
+	});
 });
 
 describe("readRebaseResult, with records Timber 0.1.2 wrote", () => {

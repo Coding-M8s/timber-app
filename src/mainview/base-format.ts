@@ -1,4 +1,5 @@
 import type { SavedBase, SavedBaseProblem } from "../shared/model";
+import { shortCommit } from "../shared/file-changes";
 import { savedBaseSelector } from "../shared/rebase-command";
 
 /**
@@ -40,6 +41,10 @@ export function describeSavedBase(base: SavedBase | null): SavedBaseDescription 
 			const selector = savedBaseSelector(base.ref);
 			return { text: `Base ${selector}`, sentence: `Timber rebases this worktree onto ${selector}, the base saved for it.`, warning: false };
 		}
+		case "commit": {
+			const commit = shortCommit(base.commit);
+			return { text: `Base ${commit}`, sentence: `Timber rebases this worktree onto commit ${commit}, the base saved for it.`, warning: false };
+		}
 		case "unassigned":
 			return { text: "No saved base", sentence: "Timber has no base saved for this worktree.", warning: false };
 		case "invalid":
@@ -63,6 +68,8 @@ export function describeRebaseBase(base: SavedBase | null): { text: string; warn
 	switch (base.kind) {
 		case "assigned":
 			return { text: `Timber saved ${savedBaseSelector(base.ref)} as the base of this worktree, so Onto starts from it.`, warning: false };
+		case "commit":
+			return { text: `Timber saved commit ${shortCommit(base.commit)} as the base of this worktree, so Onto starts from its full hash.`, warning: false };
 		case "unassigned":
 			return { text: "No saved base: Timber has none for this worktree. With Onto left empty, Timber picks a base from its settings.", warning: false };
 		case "invalid":

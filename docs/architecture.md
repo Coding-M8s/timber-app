@@ -172,20 +172,24 @@ The sidebar shows exactly the worktrees Timber lists, in Timber's order
   saved base (below). Ignored files are left out.
 - **Saved base.** The record's `base` field becomes `Worktree.base`, a
   `SavedBase`: assigned with the canonical ref exactly as Timber saved it,
-  unassigned, or invalid with Timber's reason (malformed, stale, or
-  unreadable). A record without the field, as from a Timber before it, reads
-  as null and the app shows no base at all. A field of any other shape
-  refuses the list like any unreadable record. The app never infers a base
-  from branches or history, and never checks that the saved ref still
-  exists: Timber reads it offline, so it is a saved choice. Its words come
-  from `src/mainview/base-format.ts`, which is pure. A base is worded in the
-  form Timber takes for `--base` and prints in its own list
-  (`savedBaseSelector` in `src/shared/rebase-command.ts`):
-  `refs/remotes/origin/main` as `origin/main`, and a local branch by its
-  full ref, `refs/heads/main`. The row's tooltip is its path followed by
-  "(Base origin/main)", "(No saved base)", or "(Base unknown)". The workspace
-  header shows the same words after the changes, with the whole sentence as a
-  tooltip, and "Base unknown" in the error color.
+  a commit with its full lowercase hash (SHA-1 or SHA-256), unassigned, or
+  invalid with Timber's reason (malformed, stale, or unreadable). A record
+  without the field, as from a Timber before it, reads as null and the app
+  shows no base at all. A field of any other shape, including a commit
+  whose hash is abbreviated or not lowercase, refuses the list like any
+  unreadable record. The app never infers a base from branches or history,
+  and never checks that the saved ref or commit still exists: Timber reads
+  it offline, so it is a saved choice. Its words come from
+  `src/mainview/base-format.ts`, which is pure. A ref is worded in the form
+  Timber takes for `--base` and prints in its own list (`savedBaseSelector`
+  in `src/shared/rebase-command.ts`): `refs/remotes/origin/main` as
+  `origin/main`, and a local branch by its full ref, `refs/heads/main`. A
+  commit is worded by the first seven characters of its hash, `a1b2c3d`,
+  and the sentences call it a commit. The row's tooltip is its path
+  followed by "(Base origin/main)", "(Base a1b2c3d)", "(No saved base)", or
+  "(Base unknown)". The workspace header shows the same words after the
+  changes, with the whole sentence as a tooltip, and "Base unknown" in the
+  error color.
 - **Saved issue link.** The record's `issue` field becomes `Worktree.issue`,
   an `IssueLink`: linked with the tracker (`github`, `jira`, `linear`), the
   key as saved, and the `https` address; none; or invalid with Timber's
@@ -2122,9 +2126,10 @@ that finishes this.
   whose worktree left the list is forgotten when the list is read again,
   so one made again at that path starts afresh. Base as `initialPullRequestBase` of the
   saved base, which gives `<remote>/<branch>` for a saved
-  `refs/remotes/<remote>/<branch>` and nothing for a saved local branch,
-  none, or invalid metadata, since `timber pr --base` refuses a local
-  branch. Empty Base passes no `--base`, and Timber takes the saved base and
+  `refs/remotes/<remote>/<branch>` and nothing for a saved local branch, a
+  commit, none, or invalid metadata, since `timber pr --base` takes only a
+  branch on a remote. Empty Base passes no `--base`, and Timber takes the
+  saved base and
   says what it needs. The app checks no title, length, or base itself:
   Title is always passed, even empty, and Timber refuses it.
 - **Reviewers.** `ReviewersField` in
@@ -2727,12 +2732,20 @@ Comparing against a backup is a later step.
   conflicts, changed, and untracked (below). Kinds: modified, added, deleted, renamed, copied, type changed,
   untracked, and conflicted. At most 5,000 files are listed, with a note
   when there are more.
-- **Comparing with the base.** The ref is the base Timber saved for the
-  listed worktree (`Worktree.base`), read in the main process, never sent by
-  the window, and only a canonical ref under `refs/`. The main process
-  resolves it and `HEAD` with `git rev-parse --verify --quiet
+- **Comparing with the base.** The revision is the base Timber saved for
+  the listed worktree (`Worktree.base`), read in the main process, never
+  sent by the window, and only a canonical ref under `refs/` or a commit's
+  full hash (`savedBaseRef` in `src/shared/file-changes.ts`). The main
+  process resolves it and `HEAD` with `git rev-parse --verify --quiet
   --end-of-options <rev>^{commit}`, then finds the branch point with `git
-  merge-base <base> <head>`. The list is `git diff --name-status -z -M
+  merge-base <base> <head>`. For a commit base the resolved hash must be the
+  saved one, so a hash that names a tag, which Git would peel to its commit,
+  is not used. A commit that HEAD descends from is its own branch point; a
+  commit the branch left earlier, such as one no branch contains, gives the
+  commit where their histories part. In a partial clone, resolving a saved
+  commit that is not there can make Git fetch it from the promisor remote,
+  as any read of a missing object does. The list is `git diff --name-status
+  -z -M
   <branch point>`, which compares that commit with the files on disk, so
   committed, staged, and unstaged changes are one entry each and commits on
   the base after the branch point do not show. Since the index is not
@@ -2750,7 +2763,8 @@ Comparing against a backup is a later step.
   deleted and as untracked. Every answer says which comparison its files
   come from (`compared`) and whether the base can be used, with its name
   and branch point, or the reason it cannot: no saved base, metadata Timber
-  cannot use, a ref Git does not have, no commit yet, or no shared history.
+  cannot use, a ref or commit Git does not have, a hash that is not a
+  commit, no commit yet, or no shared history.
   A base that cannot be used is never a failure: the answer is the
   uncommitted list. The branch point is worked out again for every list
   and diff.
@@ -2779,7 +2793,10 @@ Comparing against a backup is a later step.
   to run in a terminal. Git is stopped after 20 seconds.
 - **Compare with.** A switch above the list, Base or Uncommitted. The view
   in the store keeps the comparison its files came from, and the header
-  shows `origin/main @ a1b2c3d` or "Last commit". Base is disabled, with
+  shows `origin/main @ a1b2c3d` or "Last commit". A commit base shows as
+  `a1b2c3d` when it is the branch point itself, and as `a1b2c3d @ 9f8e7d6`
+  when the branch left its history at an earlier commit. Base is disabled,
+  with
   the reason under the switch, when the latest answer says the base cannot
   be used. Switching clears the list and reads it again, so no file of one
   comparison shows under the other's header. A worktree compares with its
@@ -3403,7 +3420,9 @@ notice instead.
 - **Starting from the saved base.** The field starts as the worktree's saved
   base in that same form (`initialOnto`), as the list had it when the dialog
   opened, and a line above the field says so. Only a base Timber reported as
-  assigned is filled in. A worktree with no saved base says "No saved base",
+  assigned or as a commit is filled in, a commit by its full hash, since
+  Timber refuses an abbreviated one; the line names it as `a1b2c3d`. A
+  worktree with no saved base says "No saved base",
   invalid metadata shows Timber's reason as a warning, and both leave the
   field empty, as does a Timber that reports no base, for which the dialog
   says nothing. What the person types after that stays.
@@ -3434,8 +3453,9 @@ notice instead.
   empty unless the result is conflicts and not empty for it, and a record
   that names another worktree is not used. Anything else is a failure that
   says what the rebase did is unknown and keeps what Timber printed. The
-  record's `base` is a canonical ref, and the dialog says it as a person
-  does (`shortBase`: `origin/main`, `main`).
+  record's `base` is a canonical ref or a commit's full hash, and the dialog
+  says it as a person does (`shortBase`: `origin/main`, `main`,
+  `a1b2c3d`).
 - **Outcomes.** Rebased and up to date close the dialog with a toast that
   names the base. A refusal stays in the dialog with Timber's diagnostic and
   says nothing was changed. A failure stays with Timber's diagnostic and

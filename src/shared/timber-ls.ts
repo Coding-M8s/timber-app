@@ -1,4 +1,5 @@
 import type { IssueLink, IssueTracker, SavedBase, SavedBaseProblem, WorktreeChanges } from "./model";
+import { isCommitHash } from "./file-changes";
 import { describeExit, isFields, readEnvelope } from "./timber-record";
 
 /**
@@ -65,13 +66,15 @@ function readChanges(value: unknown): WorktreeChanges | null {
 /**
  * The `base` field of a record. A record without the field comes from a
  * Timber before it, and reads as null: the app then shows no base. A field
- * that is there must be one of the three kinds the contract names; anything
- * else answers "unreadable", so that a base is never guessed.
+ * that is there must be one of the four kinds the contract names, a commit
+ * with its full lowercase hash; anything else answers "unreadable", so that a
+ * base is never guessed.
  */
 function readBase(value: unknown): SavedBase | null | "unreadable" {
 	if (value === undefined) return null;
 	if (!isFields(value)) return "unreadable";
 	if (value.kind === "assigned" && isText(value.ref) && value.ref !== "") return { kind: "assigned", ref: value.ref };
+	if (value.kind === "commit" && isText(value.commit) && isCommitHash(value.commit)) return { kind: "commit", commit: value.commit };
 	if (value.kind === "unassigned") return { kind: "unassigned" };
 	if (value.kind === "invalid" && (value.reason === "malformed" || value.reason === "stale" || value.reason === "unreadable")) {
 		return { kind: "invalid", reason: value.reason };
