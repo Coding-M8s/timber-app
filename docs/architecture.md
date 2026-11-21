@@ -1379,9 +1379,13 @@ pure functions in `src/mainview/shell.ts`.
   keeps "2 needs you", and its accessible name joins the parts with a comma.
   Not verified that a desktop webview leaves Ctrl+Shift+J to the page.
 - **Chops panel.** `src/mainview/components/ChopsPanel.tsx`, with its
-  words and key in `src/mainview/chops-panel-format.ts`. Drawn on the
+  words and key in `src/mainview/chops-panel-format.ts`. It is one of the
+  side panel's two views; the other is [the file explorer](#the-file-explorer),
+  and what they share (the keyboard as the panel shows, switches, and hides,
+  its edge, and the switch in its header) is in
+  `src/mainview/components/SidePanel.tsx`. Drawn on the
   workspace's right, after it in the page, with its own edge
-  (`ChopsResizer`), whichever side the sidebar is on: on the right the body
+  (`SidePanelResizer`), whichever side the sidebar is on: on the right the body
   is workspace, chops edge, panel, sidebar edge, sidebar. The edge works as
   a sidebar's on the right (`chopsWidthAfterKey`, `chopsWidthAfterDrag` in
   `shell.ts`), between 240 and 560 pixels, and CSS keeps the panel under a
@@ -1459,8 +1463,9 @@ pure functions in `src/mainview/shell.ts`.
   dismissed setup prompts (see [first-run setup](#first-run-setup)), each
   repository named by the path of its primary checkout, the folded
   repository groups (`collapsedGroups`, by group id, written only once one is
-  folded), and whether the chops panel shows and its width (`chopsOpen` and
-  `chopsWidth`, each written only once it differs from its default), are
+  folded), and whether the side panel shows, its width, and whether it shows
+  the chops or the files (`chopsOpen`, `chopsWidth`, and `sidePanel`, each
+  written only once it differs from its default), are
   the `layout` part of the
   settings file (`Layout` in `src/shared/layout.ts`). The interface never
   keeps them itself: it reads them once through `loadLayout` and hands the
@@ -3112,7 +3117,8 @@ and saved; any other file is read-only.
   side, not an element per line, so 20,000 lines draw quickly. The latest
   read of each worktree's file wins.
 - **Opening a file.** "View file" beside a diff in the Changes tab, for a
-  file that is on disk. In a terminal, a link provider finds paths in each
+  file that is on disk, or a file in the file explorer (see
+  [the file explorer](#the-file-explorer)). In a terminal, a link provider finds paths in each
   row (`findFilePaths` in `src/mainview/terminal-paths.ts`): a name with an
   extension, with or without folders, relative or absolute, maybe followed
   by `:line` or `:line:column`, never inside a web address. A plain left
@@ -3164,6 +3170,88 @@ and saved; any other file is read-only.
   a file there, `{ kind: "bytes", bytes: [0] }` a binary one, and `null`
   removes it. Changing a file while it is edited acts out an agent writing
   it, and `timberMock.delayFileSaves(milliseconds)` slows saves down.
+
+## The file explorer
+
+The side panel beside the workspace shows the chops or the selected
+worktree's files, as the person chooses. The files are a tree of the
+worktree's folders that opens a file in the File tab, so a file an agent
+wrote and never mentioned can be found.
+
+- **The capability.** `listWorktreeFolder({ repository, worktree, folder,
+  ignored })` on the `Engine` contract lists one folder, "" for the
+  worktree's own. Types and pure rules are in
+  `src/shared/worktree-folders.ts`, the main process side is
+  `src/bun/worktree-folders.ts`. One folder per request, so a large ignored
+  folder such as `node_modules` is read only when it is opened.
+- **Staying inside.** As for a file (`locateFolder`): a worktree Timber
+  lists, in a repository in the app's list, whose folder is there; a path
+  that is relative and does not step out (`folderPathProblem`); and a real
+  path, every link followed, that is the worktree's own or inside it. A link
+  in a folder is listed as a link and never followed, so the tree cannot
+  lead out of the worktree or around in a circle; opening one goes through
+  the file viewer's own checks. `.git` is never listed.
+- **What Git ignores.** Each entry is marked with `git check-ignore
+  --stdin -z`, the paths on standard input (`readGit`'s `input`), so no
+  name is taken as an option or a pathspec. A tracked file is never
+  ignored, and an entry inside an ignored folder is. Inside a submodule, or
+  any folder with its own `.git`, that repository is asked, with paths
+  relative to it, since the worktree's Git refuses paths in a submodule. Git runs without
+  optional locks and with `core.fsmonitor` off. Ignored entries are left
+  out unless asked for. Entries are sorted folders first, then by name as a
+  person reads it (`compareEntries`), and at most `MAX_FOLDER_ENTRIES`
+  (1,000) are answered, with how many more there are. Listing writes
+  nothing; a test on a real repository compares files, refs, worktrees,
+  status, and both index files before and after every kind of listing,
+  ignored entries shown and hidden.
+- **Hearing changes.** `watchWorktreeFolders({ repository, worktree, folders
+  })` tells the main process which folders show; null when none do. Each is
+  watched alone, never what is below it, at most `MAX_WATCHED_FOLDERS`
+  (100), shallowest first, and a change is reported through
+  `onWorktreeFolderChanged` once its events settle (`QUIET_MILLISECONDS`),
+  or `MOST_MILLISECONDS` after the first while they keep coming, `.git`
+  left out. The store reads that folder again. It also reads every
+  folder that shows again when the repository changes, since what Git
+  ignores may have changed with it, and when the panel shows a worktree
+  again after it was hidden or another worktree was selected.
+- **In the window.** `fileTree` in the store holds, for each worktree by its
+  identity, which folders are open and what each showed when last read, and
+  whether ignored entries show (not saved). The pure model is
+  `src/mainview/file-tree.ts`: the rows that show (`treeRows`), opening and
+  closing a folder (`withFolder`, which forgets what is open below a closed
+  one), and where each key goes (`treeKeyAction`). Each read of a folder
+  counts, so only the latest answer for it lands, and an answer for a
+  folder closed meanwhile is dropped. A folder that went away closes; a
+  failure says why and keeps what showed. A tree of a worktree that left
+  the list is forgotten.
+- **The panel.** `src/mainview/components/FilesPanel.tsx`, with its words
+  and shortcut in `src/mainview/files-panel-format.ts`. It is a WAI-ARIA
+  tree: the rows are `treeitem`s with their level, place, and whether a
+  folder is open, and one row is the tab stop. Down and Up move, Home and
+  End go to the ends, Right opens a folder and then moves into it, Left
+  closes it and then moves out, and Enter or a click opens a file through
+  the store's `openFile`, the path every other way of opening a file takes,
+  so unsaved edits are asked about first. The keyboard stays in the tree.
+  The open file's row is `aria-current`. Ignored entries are dimmed.
+- **One side panel, two views.** `chopsOpen` and `chopsWidth` in the layout
+  are the side panel's, whichever view it shows, and `sidePanel` ("chops"
+  or "files", written only when it is "files") is the view. The title
+  bar's Files button and Ctrl+Shift+E (Cmd+Shift+E) call `toggleSidePanel`
+  in `src/mainview/components/SidePanel.tsx`, as the Chops button and its
+  shortcut do with the chops: the panel shows with that view, switches to
+  it, or hides when it shows it already, and the keyboard moves as it does
+  for the chops panel. The switch in the panel's header changes the view
+  and keeps the keyboard on the switch. With "Use chops" off, the files
+  still show and the switch is gone (`sidePanelView`); a panel left on the
+  chops stays hidden then rather than showing the files unasked
+  (`sidePanelShown`). A drawn terminal keeps Ctrl+Shift+E from its program
+  only while it shows or hides the files (`takesFilesPanelKey`), as for the
+  chops key.
+- **Trying it.** In `bun run dev:web` every worktree also has a
+  `.gitignore`, a `debug.log`, and `node_modules/left-pad/index.js`, which
+  the mock counts as ignored. `timberMock.setWorktreeFile` tells the window
+  that the folder changed, as the main process does, when that folder is
+  watched.
 
 ## Review notes
 

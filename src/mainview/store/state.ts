@@ -7,7 +7,8 @@ import type { PortClash, PortsResult } from "../../shared/ports";
 import type { BaseComparison, Comparison, FileChange, FileChangeTarget, FileDiffResult } from "../../shared/file-changes";
 import type { WorktreeFileResult } from "../../shared/worktree-files";
 import type { ReviewNote } from "../../shared/review";
-import { type Layout, defaultLayout } from "../../shared/layout";
+import { type Layout, type SidePanelView, defaultLayout } from "../../shared/layout";
+import { type FileTreeState, emptyFileTree } from "../file-tree";
 import type { RepositoryFetch } from "../../shared/git-fetch";
 import type { IssueLookup } from "../../shared/issues";
 import type { IssueBoard } from "./issue-board";
@@ -440,6 +441,8 @@ export interface AppState {
 	chosenNote: { worktree: string; id: string } | null;
 	/** The chops of the selected worktree's repository as last read. Null before the first read. */
 	chops: ChopsView | null;
+	/** The file explorer's folders, as last read, and which are open, for each worktree it showed. */
+	fileTree: FileTreeState;
 	/**
 	 * The ports of each worktree read so far, by its registered path, as last
 	 * read. A worktree missing here was never read. Read when it is selected,
@@ -579,6 +582,7 @@ export const initialState: AppState = {
 	noteInView: null,
 	chosenNote: null,
 	chops: null,
+	fileTree: emptyFileTree(),
 	ports: {},
 	portClashes: [],
 	dialog: null,
@@ -617,18 +621,46 @@ export function offeredChops(state: AppState): AppState["chops"] {
 	return state.preferences.useChops ? state.chops : null;
 }
 
-/** Whether the chops panel is drawn beside the workspace: chops are in use and the person showed it. */
-export function chopsPanelShown(state: AppState): boolean {
-	return chopsEnabled(state) && state.layout.chopsOpen;
+/**
+ * What the side panel beside the workspace shows: the chops or the files, as
+ * the person last chose. With chops off, only the files can show.
+ */
+export function sidePanelView(state: AppState): SidePanelView {
+	return chopsEnabled(state) ? state.layout.sidePanel : "files";
 }
 
 /**
- * Whether the Chops button or its shortcut may show or hide the panel now:
- * chops are in use, and no dialog or quit question has the keyboard, as for
+ * Whether the side panel is drawn beside the workspace: Timber is ready, the
+ * person showed it, and what it shows is offered. A panel left on the chops
+ * stays hidden while chops are off, rather than showing the files unasked.
+ */
+export function sidePanelShown(state: AppState): boolean {
+	return timberReady(state) && state.layout.chopsOpen && (chopsEnabled(state) || state.layout.sidePanel === "files");
+}
+
+/** Whether the chops panel is drawn beside the workspace: chops are in use and the person showed it. */
+export function chopsPanelShown(state: AppState): boolean {
+	return sidePanelShown(state) && sidePanelView(state) === "chops";
+}
+
+/** Whether the file explorer is drawn beside the workspace. */
+export function filesPanelShown(state: AppState): boolean {
+	return sidePanelShown(state) && sidePanelView(state) === "files";
+}
+
+/**
+ * Whether a button or a shortcut may show, switch, or hide the side panel
+ * with this view now: Timber is ready, the view is offered (chops in use,
+ * for the chops), and no dialog or quit question has the keyboard, as for
  * the command palette.
  */
+export function canToggleSidePanel(state: AppState, view: SidePanelView): boolean {
+	return timberReady(state) && (view === "files" || chopsEnabled(state)) && state.dialog === null && state.quitRequest === null;
+}
+
+/** Whether the Chops button or its shortcut may show or hide the chops panel now (`canToggleSidePanel`). */
 export function canToggleChopsPanel(state: AppState): boolean {
-	return chopsEnabled(state) && state.dialog === null && state.quitRequest === null;
+	return canToggleSidePanel(state, "chops");
 }
 
 export function isRunning(state: AppState, kind: Operation["kind"]): boolean {

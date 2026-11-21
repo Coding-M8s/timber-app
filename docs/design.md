@@ -39,7 +39,24 @@ change them here first when they change.
   click does the same as the shortcut. With none the key does nothing and
   the title bar shows nothing. The command palette has "Show next session
   that needs you or is done", with the shortcut beside it.
-- The chops panel sits on the workspace's right, wherever the sidebar is.
+- The side panel sits on the workspace's right, wherever the sidebar is,
+  and shows the chops or the selected worktree's files. A switch in its
+  header, Chops and Files, swaps between them, and the panel remembers
+  which one showed. The title bar's Files button, or Ctrl+Shift+E
+  (Cmd+Shift+E on macOS), shows or hides the files from any focus, as the
+  Chops button and its shortcut do for the chops; pressed while the panel
+  shows the other view, it switches. With "Use chops" off, the panel shows
+  only the files, without the switch. The files are a tree of the
+  worktree's folders, folders first, `.git` left out. A click or Enter on a
+  file opens it in the File tab, and its row stays marked while it is
+  open; a click, Enter, or the Right and Left arrows open and close a
+  folder. Up, Down, Home, and End move through the rows, and Tab reaches
+  the tree as one stop. The Ignored button shows what Git ignores, dimmed,
+  and an ignored folder such as `node_modules` opens too. A folder with
+  more than 1,000 entries shows the first ones and says how many more there
+  are. What shows updates when files are made or removed in a folder that
+  is open. Links are listed as links and never opened as folders.
+- The chops panel is the side panel's other view.
   The title bar's Chops button, or Ctrl+Shift+K (Cmd+Shift+K on macOS),
   shows or hides it from any focus, also from a terminal. Shown that way,
   it takes the keyboard; hidden while it has the keyboard, the keyboard

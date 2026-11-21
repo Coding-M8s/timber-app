@@ -56,6 +56,7 @@ import { type BackupControls, createMockBackups } from "./mock-backups";
 import { type ArenaControls, createMockArenas } from "./mock-arenas";
 import { type ThemeFileControls, createMockThemeFiles } from "./mock-theme-files";
 import type { ChopList } from "../../shared/chops";
+import type { WorktreeFolderChange, WorktreeFolderWatch } from "../../shared/worktree-folders";
 import { type ChopsControls, createMockChops } from "./mock-chops";
 import { type PortControls, createMockPorts } from "./mock-ports";
 
@@ -498,6 +499,14 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	setWorktreeFile(worktree: string, path: string, file: MockWorktreeFile | null): void;
 	/** The text of a file on the pretend disk, as a save left it, or null when it is not text there. */
 	readWorktreeFileNow(worktree: string, path: string): string | null;
+	/** The folders the window last asked to be watched (`watchWorktreeFolders`). */
+	watchedWorktreeFolders(): WorktreeFolderWatch | null;
+	/**
+	 * Say that an entry of a folder of a worktree changed, as the main
+	 * process does once its events settle, when the window watches that
+	 * folder. `setWorktreeFile` says so by itself.
+	 */
+	changeWorktreeFolder(worktree: string, folder: string): void;
 	/** Make every later save of a file take this long, to see the File tab while it saves. */
 	delayFileSaves(milliseconds: number): void;
 	/** How many files the window last said hold unsaved edits (`reportUnsavedFiles`). */
@@ -873,6 +882,14 @@ export function createMockEngine(
 	};
 	const filesOf = (worktree: Worktree) => fileChangeLists.get(worktree.path) ?? derivedFileChanges(worktree);
 	const worktreeFiles = createMockWorktreeFiles();
+	let watchedFolders: WorktreeFolderWatch | null = null;
+	const folderListeners = new Set<(change: WorktreeFolderChange) => void>();
+	/** As the main process: only a folder the window watches is heard. */
+	const changeWorktreeFolder = (worktree: string, folder: string) => {
+		if (!watchedFolders || watchedFolders.worktree !== worktree || !watchedFolders.folders.includes(folder)) return;
+		const change = { repository: watchedFolders.repository, worktree, folder };
+		for (const listener of [...folderListeners]) listener(change);
+	};
 	let writeDelay = 0;
 	const chopFiles = createMockChops();
 	/** As the main process: a repository in the list, its main checkout's file. The mock's main checkouts are always there. */
@@ -1301,6 +1318,20 @@ export function createMockEngine(
 			if (writeDelay > 0) await new Promise(resolve => setTimeout(resolve, writeDelay));
 			return worktreeFiles.write(request, listed.worktree.path, filesOf(listed.worktree));
 		},
+		async listWorktreeFolder(request) {
+			const listed = listedForChanges(request.repository, request.worktree);
+			if (!listed.ok) return { outcome: listed.outcome, message: listed.message.replace("No changes were read.", "The folder was not listed.").replace("so no changes were read", "so the folder was not listed") };
+			return worktreeFiles.list(listed.worktree.path, request.folder, filesOf(listed.worktree), request.ignored);
+		},
+		watchWorktreeFolders(folders) {
+			watchedFolders = folders === null ? null : structuredClone(folders);
+		},
+		onWorktreeFolderChanged(listener) {
+			folderListeners.add(listener);
+			return () => void folderListeners.delete(listener);
+		},
+		watchedWorktreeFolders: () => structuredClone(watchedFolders),
+		changeWorktreeFolder,
 		async listChops(request) {
 			return listMockChops(request.repository);
 		},
@@ -1329,6 +1360,8 @@ export function createMockEngine(
 		},
 		setWorktreeFile(worktree, path, file) {
 			worktreeFiles.set(worktree, path, structuredClone(file));
+			const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+			changeWorktreeFolder(worktree, folder);
 		},
 		readWorktreeFileNow(worktree, path) {
 			const result = worktreeFiles.read(worktree, path, []);

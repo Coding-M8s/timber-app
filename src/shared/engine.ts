@@ -7,6 +7,7 @@ import type { Attention } from "./attention";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "./git-fetch";
 import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffResult } from "./file-changes";
 import type { WorktreeFileRequest, WorktreeFileResult, WorktreeFileWriteRequest, WorktreeFileWriteResult } from "./worktree-files";
+import type { WorktreeFolderChange, WorktreeFolderRequest, WorktreeFolderResult, WorktreeFolderWatch } from "./worktree-folders";
 import type { WorktreeHandoff } from "./handoff";
 import type { Layout } from "./layout";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, RepositoryGroupsResult, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
@@ -526,6 +527,26 @@ export interface Engine {
 	 * text now, nothing is written and the answer is "changed". Runs no Git.
 	 */
 	writeWorktreeFile(request: WorktreeFileWriteRequest): Promise<WorktreeFileWriteResult>;
+	/**
+	 * The entries of one folder of a worktree of a repository in the list,
+	 * for the file explorer: folders first, `.git` left out, each marked when
+	 * Git ignores it, and ignored ones only when asked. Neither the folder
+	 * nor a link on the way may lead outside the worktree, and a link is
+	 * listed as a link, never followed. At most `MAX_FOLDER_ENTRIES`, with how
+	 * many more there are. Writes nothing; Git runs only as `git
+	 * check-ignore`, without optional locks. Safe to call again.
+	 */
+	listWorktreeFolder(request: WorktreeFolderRequest): Promise<WorktreeFolderResult>;
+	/**
+	 * The folders of a worktree the file explorer shows, whenever they
+	 * change; null when it shows none. The machine watches each of them,
+	 * never what is below, at most `MAX_WATCHED_FOLDERS`, and reports a
+	 * change in one through `onWorktreeFolderChanged` once its events settle.
+	 * Nothing comes back. Safe to call with the same folders again.
+	 */
+	watchWorktreeFolders(folders: WorktreeFolderWatch | null): void;
+	/** Hear when an entry of a watched folder was made, changed, or removed. Returns a function that stops listening. */
+	onWorktreeFolderChanged(listener: (change: WorktreeFolderChange) => void): () => void;
 	/**
 	 * How many files the window holds unsaved edits of. While there are any,
 	 * quitting or closing the window asks first, as while sessions run (see

@@ -97,7 +97,7 @@ describe("repository groups", () => {
 	});
 
 	test("the folded groups round-trip in the layout", () => {
-		const settings = { repositories: [{ ...one, group: work.id }], groups: [work], layout: { sidebarWidth: 300, collapsed: [], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [work.id], chopsOpen: false, chopsWidth: 320 } };
+		const settings = { repositories: [{ ...one, group: work.id }], groups: [work], layout: { sidebarWidth: 300, collapsed: [], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [work.id], chopsOpen: false, chopsWidth: 320, sidePanel: "chops" as const } };
 		expect(parseSettings(serializeSettings(settings))).toEqual(settings);
 		expect(JSON.parse(serializeSettings(settings)).layout.collapsedGroups).toEqual([work.id]);
 	});

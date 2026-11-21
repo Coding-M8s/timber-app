@@ -8,6 +8,8 @@ import type { RestartPlan, RestartResult } from "../../shared/restart";
 import type { AppUpdateInstallRequest, AppUpdateInstallResult } from "../../shared/app-update";
 import { readableEditorSetting } from "../../shared/editor";
 import type { Engine } from "../../shared/engine";
+import { type FolderListing, type WorktreeTree, readingListing, shownFolders, withFolder } from "../file-tree";
+import type { WorktreeFolderResult, WorktreeFolderWatch } from "../../shared/worktree-folders";
 import type { WorktreeHandoff } from "../../shared/handoff";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "../../shared/git-fetch";
 import { type ChopList, type RunChopResult, commandChops, findListedChop, listedChops } from "../../shared/chops";
@@ -15,7 +17,7 @@ import { promptTarget, reviewWaiting } from "../agent-sessions";
 import { describePromptCopied, describePromptSent } from "../chop-format";
 import { type Comparison, type FileChangeTarget, type FileChangesResult, type FileDiff, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
 import type { PortsResult } from "../../shared/ports";
-import { type Layout, chooseComparison, chooseIssueList, chosenComparison, clampChopsWidth, clampSidebarWidth, dismissSetup, forgetGroup, forgetRepository, sameLayout, toggleCollapsed, toggleGroupCollapsed } from "../../shared/layout";
+import { type Layout, type SidePanelView, chooseComparison, chooseIssueList, chosenComparison, clampChopsWidth, clampSidebarWidth, dismissSetup, forgetGroup, forgetRepository, sameLayout, toggleCollapsed, toggleGroupCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RepositoryGroupsResult, ReportedWorktree, SavePreferencesResult, TimberFailure, TimberStatus, Worktree, WorktreeCommandResult } from "../../shared/model";
 import { type Preferences, defaultPreferences } from "../../shared/preferences";
 import type { IssueLookup } from "../../shared/issues";
@@ -64,7 +66,7 @@ import { type WorktreeFileResult, editableText, textToSave } from "../../shared/
 import { afterSave, canEditFile, fileText, hasUnsavedEdits, initialFileMode, outsideResult, pathInWorktree, settleFiles, unsavedFileCount } from "../file-view-format";
 import {
 	type AppState, type ChangesView, type DialogRequest, type FileMode, type FileView, type Operation, type PullRequestForm, type Removal, type SessionAgent, type UnsavedFileStep, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood,
-	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, canToggleChopsPanel, offeredChops, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, shownSession, timberReady, withTerminal, withoutSession } from "./state";
+	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, canToggleSidePanel, filesPanelShown, offeredChops, sidePanelShown, sidePanelView, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, shownSession, timberReady, withTerminal, withoutSession } from "./state";
 
 /**
  * The single holder of what the interface shows: Timber's status, the
@@ -178,8 +180,30 @@ export interface AppStore {
 	 * because of this call.
 	 */
 	toggleChopsPanel(): boolean;
-	/** Hide the chops panel, as its Close button does, and remember that. The saved chops stay. */
+	/**
+	 * Show the side panel with this view, the chops or the files, or hide it
+	 * when it shows that view already, and remember that. Does nothing, and
+	 * answers false, when `canToggleSidePanel` says no. Answers whether the
+	 * panel changed because of this call.
+	 */
+	toggleSidePanel(view: SidePanelView): boolean;
+	/**
+	 * Show this view in the side panel, from the switch in its header, and
+	 * remember it. Never hides the panel. Answers whether the view changed.
+	 */
+	switchSidePanel(view: SidePanelView): boolean;
+	/** Hide the side panel, as its Close button does, and remember that. The saved chops stay. */
 	hideChopsPanel(): void;
+	/**
+	 * Open or close a folder in the file explorer of a worktree, by its
+	 * identity. An opened folder is read, and watched while it shows. A closed
+	 * one forgets its entries and its open folders.
+	 */
+	setFolderOpen(worktreeId: string, folder: string, open: boolean): void;
+	/** Show or hide the entries Git ignores in the file explorer, and read the folders that show again. */
+	toggleIgnoredFiles(): void;
+	/** Read every folder the file explorer shows for a worktree again, as after a failure. */
+	readFoldersAgain(worktreeId: string): void;
 	/**
 	 * Set the chops panel's width on screen, kept within its limits. Nothing
 	 * is saved: call `saveLayout` when the resize ends.
@@ -885,6 +909,107 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		for (const listener of [...listeners]) listener();
 		attend();
 		noteForcePush();
+		followFileTree();
+	}
+
+	/*
+	 * The file explorer (see docs/architecture.md, "File explorer"). Each
+	 * read of a folder counts, so only the latest answer for it lands. What
+	 * the engine was last asked to watch is kept, so it is told only of a
+	 * change, and the worktree it watched, so folders shown again after the
+	 * panel was hidden or another worktree selected are read again.
+	 */
+	const folderReads = new Map<string, number>();
+	let watchedFolders: string | null = null;
+	let watchedTree: string | null = null;
+	let followingTree = false;
+
+	function toggleSidePanel(view: SidePanelView): boolean {
+		if (!canToggleSidePanel(state, view)) return false;
+		const hide = sidePanelShown(state) && sidePanelView(state) === view;
+		changeLayout({ ...state.layout, chopsOpen: !hide, sidePanel: view });
+		void saveLayout("layout");
+		return true;
+	}
+
+	function changeTree(worktreeId: string, tree: WorktreeTree): void {
+		update({ fileTree: { ...state.fileTree, trees: { ...state.fileTree.trees, [worktreeId]: tree } } });
+	}
+
+	async function readFolder(worktreeId: string, folder: string): Promise<void> {
+		const tree = state.fileTree.trees[worktreeId];
+		if (!tree) return;
+		const key = `${worktreeId}\0${folder}`;
+		const read = (folderReads.get(key) ?? 0) + 1;
+		folderReads.set(key, read);
+		changeTree(worktreeId, { ...tree, listings: { ...tree.listings, [folder]: readingListing(tree.listings[folder]) } });
+		let answer: WorktreeFolderResult;
+		try {
+			answer = await engine.listWorktreeFolder({ repository: tree.repository, worktree: tree.worktree, folder, ignored: state.fileTree.showIgnored });
+		} catch (error) {
+			answer = { outcome: "failed", message: unheard(`the files in ${folder === "" ? tree.worktree : folder}`, error) };
+		}
+		const now = state.fileTree.trees[worktreeId];
+		// A newer read of it, another worktree at that identity, or the folder closed meanwhile: this answer is old.
+		if (folderReads.get(key) !== read || !now || now.worktree !== tree.worktree || !(folder in now.listings)) return;
+		const before = now.listings[folder];
+		// A folder that went away closes. The worktree's own folder says why instead.
+		if (answer.outcome === "missing" && folder !== "") return changeTree(worktreeId, withFolder(now, folder, false));
+		const listing: FolderListing = answer.outcome === "listed"
+			? { entries: answer.entries, more: answer.more, reading: false, failure: null }
+			: { entries: before?.entries ?? null, more: before?.more ?? 0, reading: false, failure: answer.message };
+		changeTree(worktreeId, { ...now, listings: { ...now.listings, [folder]: listing } });
+	}
+
+	/** Read the folders that show for a worktree again. */
+	function readShownFolders(worktreeId: string): void {
+		const tree = state.fileTree.trees[worktreeId];
+		if (tree) for (const folder of shownFolders(tree)) void readFolder(worktreeId, folder);
+	}
+
+	/**
+	 * After every change: while the file explorer shows a worktree, keep its
+	 * tree, read its own folder the first time, read what shows again when it
+	 * comes back into view, and keep the engine watching the folders that
+	 * show. Otherwise nothing is watched. Trees of worktrees that left the
+	 * list are forgotten.
+	 */
+	function followFileTree(): void {
+		if (!attending || followingTree) return;
+		followingTree = true;
+		try {
+			const known = new Set(state.repositories.flatMap(repository => repository.worktrees.map(worktree => worktree.id)));
+			const gone = Object.keys(state.fileTree.trees).filter(id => !known.has(id));
+			if (gone.length > 0) update({ fileTree: { ...state.fileTree, trees: Object.fromEntries(Object.entries(state.fileTree.trees).filter(([id]) => known.has(id))) } });
+			const found = filesPanelShown(state) ? selectedWorktree(state) : null;
+			const target = found && found.worktree.pathExists ? found : null;
+			let watch: WorktreeFolderWatch | null = null;
+			if (target) {
+				const id = target.worktree.id;
+				const tree = state.fileTree.trees[id];
+				if (!tree || tree.worktree !== target.worktree.path || tree.repository !== target.repository.path) {
+					changeTree(id, { repository: target.repository.path, worktree: target.worktree.path, expanded: [], listings: {} });
+					void readFolder(id, "");
+				} else if (watchedTree !== id) {
+					readShownFolders(id);
+				}
+				watchedTree = id;
+				watch = { repository: target.repository.path, worktree: target.worktree.path, folders: shownFolders(state.fileTree.trees[id]!) };
+			} else {
+				watchedTree = null;
+			}
+			const key = watch === null ? null : JSON.stringify(watch);
+			if (key === watchedFolders) return;
+			try {
+				engine.watchWorktreeFolders(watch);
+				watchedFolders = key;
+			} catch {
+				// The bridge may not be up yet. The next change tells the engine again.
+				watchedFolders = null;
+			}
+		} finally {
+			followingTree = false;
+		}
 	}
 
 	function dismissToast(id: number): void {
@@ -2885,6 +3010,14 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				engine.onRepositoryChanged(path => {
 					// Only a repository on screen can be refreshed. Reload everything to pick up a new one.
 					if (state.repositories.some(repository => repository.path === path)) void reloadOne(path);
+					// What Git ignores may have changed with it, in folders the watch does not see.
+					if (watchedTree !== null && state.fileTree.trees[watchedTree]?.repository === path) readShownFolders(watchedTree);
+				}),
+				// A folder the file explorer shows changed: read it again, if it still shows.
+				engine.onWorktreeFolderChanged(change => {
+					const id = watchedTree;
+					const tree = id === null ? undefined : state.fileTree.trees[id];
+					if (id !== null && tree?.worktree === change.worktree && shownFolders(tree).includes(change.folder)) void readFolder(id, change.folder);
 				}),
 				engine.onTerminalChanged(change => {
 					// Until the first list answers, changes wait, and are applied on top of it.
@@ -3081,12 +3214,28 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			const sidebarWidth = clampSidebarWidth(width);
 			if (sidebarWidth !== state.layout.sidebarWidth) changeLayout({ ...state.layout, sidebarWidth });
 		},
-		toggleChopsPanel() {
-			if (!canToggleChopsPanel(state)) return false;
-			changeLayout({ ...state.layout, chopsOpen: !state.layout.chopsOpen });
+		toggleChopsPanel: () => toggleSidePanel("chops"),
+		toggleSidePanel,
+		switchSidePanel(view) {
+			if (!canToggleSidePanel(state, view) || !sidePanelShown(state) || sidePanelView(state) === view) return false;
+			changeLayout({ ...state.layout, sidePanel: view });
 			void saveLayout("layout");
 			return true;
 		},
+		setFolderOpen(worktreeId, folder, open) {
+			const tree = state.fileTree.trees[worktreeId];
+			if (!tree) return;
+			const next = withFolder(tree, folder, open);
+			if (next === tree) return;
+			changeTree(worktreeId, next);
+			if (open) void readFolder(worktreeId, folder);
+		},
+		toggleIgnoredFiles() {
+			update({ fileTree: { ...state.fileTree, showIgnored: !state.fileTree.showIgnored } });
+			// Only the worktree on screen is read again now. Another one is read again when it shows (`followFileTree`).
+			if (watchedTree !== null) readShownFolders(watchedTree);
+		},
+		readFoldersAgain: readShownFolders,
 		hideChopsPanel() {
 			if (!state.layout.chopsOpen) return;
 			changeLayout({ ...state.layout, chopsOpen: false });

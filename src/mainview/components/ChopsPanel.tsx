@@ -1,153 +1,28 @@
-import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, type ReactNode, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
-import { MAX_CHOPS_WIDTH, MIN_CHOPS_WIDTH } from "../../shared/layout";
+import { type KeyboardEvent as ReactKeyboardEvent, type ReactNode, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { type ChopKind, type ChopList, type ListedChop, type PersonalChop, sameChopName } from "../../shared/chops";
 import {
 	type ChopForm, type ChopTarget, blankChopForm, chopEditBlockedReason, chopFormNotes, chopFormOf, chopTargetOf, chopsWithSaved, chopsWithout, describeChopDelete, panelChopScopeOptions,
 } from "../chop-format";
 import {
-	CHOPS_BUTTON_ID, CHOPS_CLOSE_LABEL, CHOPS_FILTER_LABEL, CHOPS_NEW_LABEL, CHOPS_PANEL_ID, CHOPS_PANEL_TITLE, CHOPS_TABS, CHOPS_WIDTH_LABEL, type ChopRowMenuId, type ChopsPanelRow,
+	CHOPS_CLOSE_LABEL, CHOPS_FILTER_LABEL, CHOPS_NEW_LABEL, CHOPS_PANEL_ID, CHOPS_PANEL_TITLE, CHOPS_TABS, type ChopRowMenuId, type ChopsPanelRow,
 	chopMatches, chopRowMenuItems, chopRowMenuLabel, chopsNewBlockedReason, chopsPanelModel, chopsTabAfterKey, chopsTabLabel, takesChopsPanelKey,
 } from "../chops-panel-format";
 import { runChopIn } from "../palette-run";
-import { chopsWidthAfterDrag, chopsWidthAfterKey } from "../shell";
 import { useAppState, useStore } from "../store/react";
 import type { AppStore } from "../store/store";
 import { WORKTREE_MENU_SHORTCUTS, opensWorktreeMenu } from "../worktree-menu-format";
 import { ChopFormView, DeleteChopView, FileChopView } from "./ChopEditor";
 import { estimateTerminalSize } from "./TerminalPanel";
 import { WorktreeMenu } from "./WorktreeMenu";
-
-/*
- * Where the keyboard goes as the panel shows and hides. The store knows
- * nothing of the page, so this is kept here: the element that had focus
- * when the button or the shortcut showed the panel, and whether the panel
- * should take focus once it is drawn. A panel shown again at start-up,
- * from the saved layout, takes nothing.
- */
-let returnTo: HTMLElement | null = null;
-let focusOnShow = false;
+import { SidePanelTitle, hideSidePanel, toggleSidePanel, useSidePanelFocus } from "./SidePanel";
 
 function panelElement(): HTMLElement | null {
 	return document.getElementById(CHOPS_PANEL_ID);
 }
 
-/**
- * Show the chops panel when it is hidden and hide it when it shows, from the
- * title bar button or the shortcut. Shown, it takes the keyboard and
- * remembers where it came from. Hidden while it had the keyboard, the
- * keyboard goes back there, or to the Chops button when that is gone.
- * Hidden while the keyboard is elsewhere, the keyboard stays where it is.
- * Answers whether the panel showed or hid.
- */
+/** Show the chops panel when it is hidden and hide it when it shows, from the title bar button or the shortcut (see ./SidePanel.tsx). */
 export function toggleChopsPanel(store: AppStore): boolean {
-	const wasOpen = store.getState().layout.chopsOpen;
-	if (!wasOpen) {
-		const active = document.activeElement;
-		if (!store.toggleChopsPanel()) return false;
-		returnTo = active instanceof HTMLElement && active !== document.body ? active : null;
-		focusOnShow = true;
-		// Drawn already when React rendered at once; otherwise the panel takes focus as it mounts.
-		takeFocus();
-		return true;
-	}
-	const hadFocus = panelElement()?.contains(document.activeElement) ?? false;
-	if (!store.toggleChopsPanel()) return false;
-	if (hadFocus) giveFocusBack();
-	return true;
-}
-
-/** Hide the panel from its Close button, which only hides it. The keyboard goes back where it came from. */
-export function hideChopsPanel(store: AppStore): void {
-	const hadFocus = panelElement()?.contains(document.activeElement) ?? false;
-	store.hideChopsPanel();
-	if (hadFocus) giveFocusBack();
-}
-
-function takeFocus(): void {
-	const panel = panelElement();
-	if (!focusOnShow || panel === null) return;
-	focusOnShow = false;
-	panel.focus();
-}
-
-function giveFocusBack(): void {
-	const target = returnTo !== null && returnTo.isConnected ? returnTo : document.getElementById(CHOPS_BUTTON_ID);
-	returnTo = null;
-	focusOnShow = false;
-	target?.focus();
-}
-
-/**
- * The panel's width as drawn, which the stylesheet keeps under a third of
- * the window, or the saved width when it is not drawn. A resize steps from
- * this, so a key or a drag always changes what is on screen.
- */
-function drawnWidth(saved: number): number {
-	const drawn = panelElement()?.getBoundingClientRect().width;
-	return drawn === undefined || drawn <= 0 ? saved : Math.min(saved, Math.round(drawn));
-}
-
-/**
- * The chops panel's left edge, between the workspace and the panel. Drag it,
- * or focus it and use the arrow keys, Home, and End, as the sidebar's edge.
- * The width follows at once and is saved when the drag ends or the key is
- * let go.
- */
-export function ChopsResizer() {
-	const store = useStore();
-	const width = useAppState().layout.chopsWidth;
-	const drag = useRef<{ x: number; width: number } | null>(null);
-	const [dragging, setDragging] = useState(false);
-
-	const startDrag = (event: PointerEvent<HTMLDivElement>) => {
-		if (event.button !== 0) return;
-		event.preventDefault();
-		event.currentTarget.setPointerCapture(event.pointerId);
-		// From the width on screen: a narrow window can draw the panel narrower than the saved width.
-		drag.current = { x: event.clientX, width: drawnWidth(store.getState().layout.chopsWidth) };
-		setDragging(true);
-	};
-	const moveDrag = (event: PointerEvent<HTMLDivElement>) => {
-		const start = drag.current;
-		if (start) store.resizeChopsPanel(chopsWidthAfterDrag(start.width, event.clientX - start.x));
-	};
-	const endDrag = () => {
-		if (!drag.current) return;
-		drag.current = null;
-		setDragging(false);
-		void store.saveLayout();
-	};
-	const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-		// From the store, not from the last render: keys can arrive faster than the window is drawn again.
-		const next = chopsWidthAfterKey(drawnWidth(store.getState().layout.chopsWidth), event.key);
-		if (next === null) return;
-		event.preventDefault();
-		store.resizeChopsPanel(next);
-	};
-
-	return (
-		<div
-			className={dragging ? "resizer chops-resizer dragging" : "resizer chops-resizer"}
-			role="separator"
-			aria-orientation="vertical"
-			aria-label={CHOPS_WIDTH_LABEL}
-			aria-controls={CHOPS_PANEL_ID}
-			aria-valuemin={MIN_CHOPS_WIDTH}
-			aria-valuemax={MAX_CHOPS_WIDTH}
-			aria-valuenow={width}
-			aria-valuetext={`${width} pixels`}
-			title="Drag to resize the chops panel, or focus this and use the arrow keys"
-			tabIndex={0}
-			onPointerDown={startDrag}
-			onPointerMove={moveDrag}
-			onPointerUp={endDrag}
-			onPointerCancel={endDrag}
-			onLostPointerCapture={endDrag}
-			onKeyDown={onKeyDown}
-			onKeyUp={() => void store.saveLayout()}
-			onBlur={() => void store.saveLayout()}
-		/>
-	);
+	return toggleSidePanel(store, "chops");
 }
 
 /** A repository as the panel's form names it: its primary checkout and its name. */
@@ -239,7 +114,7 @@ export function ChopsPanel() {
 	const closeRef = useRef<HTMLButtonElement>(null);
 	const newRef = useRef<HTMLButtonElement>(null);
 	// Shown by the button or the shortcut before React drew it: take the keyboard now.
-	useEffect(() => takeFocus(), []);
+	useSidePanelFocus("chops");
 	const model = chopsPanelModel(state, tab, query);
 	const repositoryName = state.repositories.find(repository => repository.path === model.repository)?.name ?? "the repository";
 	const listedRepository = model.repository === null ? null : { path: model.repository, name: repositoryName };
@@ -473,9 +348,9 @@ export function ChopsPanel() {
 
 	const listed = model.failure === null && model.empty === null;
 	return (
-		<aside id={CHOPS_PANEL_ID} className="chops-panel" aria-labelledby={titleId} tabIndex={-1}>
+		<aside id={CHOPS_PANEL_ID} className="chops-panel" data-view="chops" aria-labelledby={titleId} tabIndex={-1}>
 			<div className="chops-panel-head">
-				<h2 id={titleId} className="chops-panel-title">{CHOPS_PANEL_TITLE}</h2>
+				<SidePanelTitle view="chops" titleId={titleId} title={CHOPS_PANEL_TITLE} />
 				<button
 					ref={newRef}
 					type="button"
@@ -489,7 +364,7 @@ export function ChopsPanel() {
 						<path d="M8 3v10M3 8h10" />
 					</svg>
 				</button>
-				<button type="button" className="icon-button chops-panel-close" aria-label={CHOPS_CLOSE_LABEL} title={CHOPS_CLOSE_LABEL} onClick={() => hideChopsPanel(store)}>
+				<button type="button" className="icon-button chops-panel-close" aria-label={CHOPS_CLOSE_LABEL} title={CHOPS_CLOSE_LABEL} onClick={() => hideSidePanel(store)}>
 					<svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
 						<path d="M4 4l8 8M12 4l-8 8" />
 					</svg>

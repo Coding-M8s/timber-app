@@ -30,11 +30,20 @@ export interface Layout {
 	issueLists: Record<string, IssueList>;
 	/** The repository groups that are folded, each named by its id. */
 	collapsedGroups: string[];
-	/** Whether the chops panel shows beside the workspace. Hidden until the person shows it. */
+	/**
+	 * Whether the side panel shows beside the workspace, with the chops or
+	 * the files (`sidePanel`). Hidden until the person shows it. Named for
+	 * the chops panel it was first, so a saved layout keeps working.
+	 */
 	chopsOpen: boolean;
-	/** Width of the chops panel in pixels, always within the limits below, kept while the panel is hidden. */
+	/** Width of the side panel in pixels, always within the limits below, kept while the panel is hidden. */
 	chopsWidth: number;
+	/** What the side panel shows: the chops, or the selected worktree's files. */
+	sidePanel: SidePanelView;
 }
+
+export type SidePanelView = "chops" | "files";
+export const SIDE_PANEL_VIEWS: readonly SidePanelView[] = ["chops", "files"];
 
 export const DEFAULT_SIDEBAR_WIDTH = 272;
 export const MIN_SIDEBAR_WIDTH = 200;
@@ -64,6 +73,7 @@ export function defaultLayout(): Layout {
 		collapsedGroups: [],
 		chopsOpen: false,
 		chopsWidth: DEFAULT_CHOPS_WIDTH,
+		sidePanel: "chops",
 	};
 }
 
@@ -91,10 +101,11 @@ export function clampChopsWidth(width: number): number {
 export function readLayout(value: unknown): Layout {
 	const layout = defaultLayout();
 	if (typeof value !== "object" || value === null || Array.isArray(value)) return layout;
-	const { sidebarWidth, collapsed, setupDismissed, uncommittedChanges, issueLists, collapsedGroups, chopsOpen, chopsWidth } = value as Record<string, unknown>;
+	const { sidebarWidth, collapsed, setupDismissed, uncommittedChanges, issueLists, collapsedGroups, chopsOpen, chopsWidth, sidePanel } = value as Record<string, unknown>;
 	if (typeof sidebarWidth === "number") layout.sidebarWidth = clampSidebarWidth(sidebarWidth);
 	if (typeof chopsOpen === "boolean") layout.chopsOpen = chopsOpen;
 	if (typeof chopsWidth === "number") layout.chopsWidth = clampChopsWidth(chopsWidth);
+	if ((SIDE_PANEL_VIEWS as readonly unknown[]).includes(sidePanel)) layout.sidePanel = sidePanel as SidePanelView;
 	layout.collapsed = readPaths(collapsed);
 	layout.setupDismissed = readPaths(setupDismissed);
 	layout.uncommittedChanges = readPaths(uncommittedChanges);
@@ -137,7 +148,8 @@ export function sameLayout(one: Layout, other: Layout): boolean {
 		&& sameIssueLists(one.issueLists, other.issueLists)
 		&& samePaths(one.collapsedGroups, other.collapsedGroups)
 		&& one.chopsOpen === other.chopsOpen
-		&& one.chopsWidth === other.chopsWidth;
+		&& one.chopsWidth === other.chopsWidth
+		&& one.sidePanel === other.sidePanel;
 }
 
 /** What the Changes tab of a worktree asks to compare with: its base, unless the person chose Uncommitted there. */

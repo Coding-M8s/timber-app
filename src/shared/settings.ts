@@ -138,6 +138,7 @@ export function serializeSettings(settings: Settings): string {
 		// Written only once the chops panel was shown or resized, so an older file stays as it was until then.
 		...(settings.layout.chopsOpen ? { chopsOpen: true } : {}),
 		...(settings.layout.chopsWidth !== DEFAULT_CHOPS_WIDTH ? { chopsWidth: settings.layout.chopsWidth } : {}),
+		...(settings.layout.sidePanel !== "chops" ? { sidePanel: settings.layout.sidePanel } : {}),
 	};
 	const preferences = settings.preferences && writePreferences(settings.preferences);
 	const forcePushes = settings.forcePushes && Object.keys(settings.forcePushes).length > 0 ? readForcePushMarks(settings.forcePushes) : null;

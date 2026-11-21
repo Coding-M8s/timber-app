@@ -1,6 +1,7 @@
 /**
  * Running Git for a read-only query. Git is run as an executable plus an
- * argument array, never through a shell, with standard input closed and:
+ * argument array, never through a shell, with standard input closed unless
+ * the query is given `input`, and:
  *
  * - `GIT_OPTIONAL_LOCKS=0`, so a query never rewrites the index to refresh
  *   it, and never takes its lock from under a command the person runs;
@@ -20,6 +21,8 @@ export interface ReadGitOptions {
 	limitBytes?: number;
 	/** Standard error is kept up to this many bytes, for a failure's message. Not read by default. */
 	stderrBytes?: number;
+	/** Given to Git on standard input, such as the paths for `--stdin`. Standard input is closed without it. */
+	input?: string;
 }
 
 export type ReadGitRun =
@@ -77,12 +80,12 @@ async function readUpTo(stream: ReadableStream<Uint8Array>, limit: number, onOve
 
 /** Run one read-only Git query. Nothing it printed is logged here. */
 export async function readGit(args: readonly string[], options: ReadGitOptions = {}): Promise<ReadGitRun> {
-	const { git = "git", cwd, timeoutMs, limitBytes = Number.POSITIVE_INFINITY, stderrBytes } = options;
-	let child: Bun.Subprocess<"ignore", "pipe", "pipe" | "ignore">;
+	const { git = "git", cwd, timeoutMs, limitBytes = Number.POSITIVE_INFINITY, stderrBytes, input } = options;
+	let child: Bun.Subprocess<"ignore" | Blob, "pipe", "pipe" | "ignore">;
 	try {
 		child = Bun.spawn([git, ...args], {
 			...(cwd === undefined ? {} : { cwd }),
-			stdin: "ignore",
+			stdin: input === undefined ? "ignore" : new Blob([input]),
 			stdout: "pipe",
 			stderr: stderrBytes === undefined ? "ignore" : "pipe",
 			env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C" },

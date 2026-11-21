@@ -1,4 +1,6 @@
-import { ChopsPanel, ChopsResizer, ChopsShortcut } from "./components/ChopsPanel";
+import { ChopsPanel, ChopsShortcut } from "./components/ChopsPanel";
+import { FilesPanel, FilesShortcut } from "./components/FilesPanel";
+import { SidePanelResizer } from "./components/SidePanel";
 import { Dialogs } from "./components/Dialogs";
 import { PaletteShortcut } from "./components/PaletteShortcut";
 import { WaitingShortcut } from "./components/WaitingShortcut";
@@ -17,7 +19,7 @@ import { ChopsKeeper } from "./components/settings/ChopsSection";
 import { Toasts } from "./components/Toasts";
 import { Workspace } from "./components/Workspace";
 import { StoreProvider, useAppState, useStore } from "./store/react";
-import { chopsPanelShown, isRunning, timberReady } from "./store/state";
+import { isRunning, sidePanelShown, sidePanelView, timberReady } from "./store/state";
 import type { AppStore } from "./store/store";
 import { setTerminalAppearance } from "./terminal-look";
 import { applySavedTheme } from "./theme-apply";
@@ -48,12 +50,13 @@ function Body() {
 		);
 	}
 	// The sidebar takes its width from here, so a narrow window can still overrule it in the stylesheet.
-	const shown = chopsPanelShown(state);
+	const shown = sidePanelShown(state);
 	const widths = { "--sidebar-width": `${state.layout.sidebarWidth}px`, ...(shown ? { "--chops-width": `${state.layout.chopsWidth}px` } : {}) } as CSSProperties;
 	// The parts are put in the order they are seen, so the keyboard reaches them in that order too.
 	// Keys keep each part mounted when the side changes, with whatever it holds, such as the filter.
-	// The chops panel is always on the workspace's right, wherever the sidebar is.
-	const chops = shown ? [<ChopsResizer key="chops-resizer" />, <ChopsPanel key="chops" />] : [];
+	// The side panel, with the chops or the files, is always on the workspace's right, wherever the sidebar is.
+	const panel = sidePanelView(state) === "files" ? <FilesPanel key="files" /> : <ChopsPanel key="chops" />;
+	const chops = shown ? [<SidePanelResizer key="chops-resizer" />, panel] : [];
 	const sidebar = [<Sidebar key="sidebar" />, <SidebarResizer key="resizer" />];
 	const main = [<Workspace key="workspace" />, ...chops];
 	const right = state.preferences.sidebarSide === "right";
@@ -131,6 +134,7 @@ export function App({ store, children }: { store: AppStore; children?: ReactNode
 				<PaletteShortcut />
 				<WaitingShortcut />
 				<ChopsShortcut />
+				<FilesShortcut />
 				{children}
 				{/* Over any other dialog: the app is about to quit. */}
 				<QuitDialog />

@@ -31,6 +31,7 @@ const KEYS: Record<string, { code: string; keyCode: number; text?: string }> = {
 	ArrowRight: { code: "ArrowRight", keyCode: 39 },
 	Tab: { code: "Tab", keyCode: 9 },
 	K: { code: "KeyK", keyCode: 75 },
+	E: { code: "KeyE", keyCode: 69 },
 	Home: { code: "Home", keyCode: 36 },
 	End: { code: "End", keyCode: 35 },
 	F10: { code: "F10", keyCode: 121 },

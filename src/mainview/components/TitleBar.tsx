@@ -3,11 +3,13 @@ import { worktreeLabel } from "../format";
 import { paletteHint } from "../palette";
 import { ISSUES_ROW_LABEL } from "../issue-board-format";
 import { useAppState, useStore } from "../store/react";
-import { chopsEnabled, finishedSessions, selectedWorktree, timberReady, waitingSessions } from "../store/state";
+import { chopsEnabled, chopsPanelShown, filesPanelShown, finishedSessions, selectedWorktree, timberReady, waitingSessions } from "../store/state";
 import { describeFinished, describeToVisit, describeWaiting, waitingHint } from "../waiting";
 import { StatusGlyph } from "./StatusGlyph";
 import { CHOPS_BUTTON_ID, CHOPS_BUTTON_LABEL, CHOPS_PANEL_ID, chopsButtonHint } from "../chops-panel-format";
 import { toggleChopsPanel } from "./ChopsPanel";
+import { toggleFilesPanel } from "./FilesPanel";
+import { FILES_BUTTON_ID, FILES_BUTTON_LABEL, filesButtonHint } from "../files-panel-format";
 
 export function TitleBar() {
 	const store = useStore();
@@ -63,9 +65,9 @@ export function TitleBar() {
 					type="button"
 					id={CHOPS_BUTTON_ID}
 					className="titlebar-chops"
-					aria-pressed={state.layout.chopsOpen}
-					aria-controls={state.layout.chopsOpen ? CHOPS_PANEL_ID : undefined}
-					title={chopsButtonHint(state.layout.chopsOpen, mac)}
+					aria-pressed={chopsPanelShown(state)}
+					aria-controls={chopsPanelShown(state) ? CHOPS_PANEL_ID : undefined}
+					title={chopsButtonHint(chopsPanelShown(state), mac)}
 					onClick={() => void toggleChopsPanel(store)}
 				>
 					<svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -73,6 +75,23 @@ export function TitleBar() {
 						<path d="M10 2.5v11" />
 					</svg>
 					{CHOPS_BUTTON_LABEL}
+				</button>
+			)}
+			{/* Shows or hides the selected worktree's files in the same panel, as its shortcut does. Offered with chops off too. */}
+			{timberReady(state) && (
+				<button
+					type="button"
+					id={FILES_BUTTON_ID}
+					className="titlebar-files"
+					aria-pressed={filesPanelShown(state)}
+					aria-controls={filesPanelShown(state) ? CHOPS_PANEL_ID : undefined}
+					title={filesButtonHint(filesPanelShown(state), mac)}
+					onClick={() => void toggleFilesPanel(store)}
+				>
+					<svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+						<path d="M2.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h4.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z" />
+					</svg>
+					{FILES_BUTTON_LABEL}
 				</button>
 			)}
 			{/* Opens the palette, as its shortcut does. The tooltip names the shortcut for this platform. */}

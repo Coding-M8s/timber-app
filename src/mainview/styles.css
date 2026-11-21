@@ -141,8 +141,9 @@ pre:focus-visible {
 	background: var(--fill-hover);
 }
 
-/* Shows or hides the chops panel. Pressed while the panel shows. */
-.titlebar-chops {
+/* Shows or hides the chops panel, or the files. Pressed while the panel shows that. */
+.titlebar-chops,
+.titlebar-files {
 	flex: none;
 	display: inline-flex;
 	align-items: center;
@@ -157,17 +158,20 @@ pre:focus-visible {
 	cursor: pointer;
 }
 
-.titlebar-chops:hover {
+.titlebar-chops:hover,
+.titlebar-files:hover {
 	background: var(--fill-hover);
 	color: var(--text);
 }
 
-.titlebar-chops[aria-pressed="true"] {
+.titlebar-chops[aria-pressed="true"],
+.titlebar-files[aria-pressed="true"] {
 	background: var(--fill-hover);
 	color: var(--text);
 }
 
-.titlebar-chops:focus-visible {
+.titlebar-chops:focus-visible,
+.titlebar-files:focus-visible {
 	outline: 2px solid var(--focus);
 	outline-offset: 1px;
 }
@@ -379,6 +383,139 @@ pre:focus-visible {
 
 .chops-panel-empty-new {
 	margin-top: 8px;
+}
+
+/* The switch between the chops and the files, in the side panel's header, where the title would be. */
+.side-panel-switch {
+	flex: 1 1 auto;
+	display: flex;
+	gap: 2px;
+	padding: 2px;
+	border-radius: 7px;
+	background: var(--bg-pane);
+	min-width: 0;
+}
+
+.side-panel-view {
+	flex: 1 1 0;
+	height: 24px;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--text-3);
+	font: inherit;
+	font-size: 12.5px;
+	font-weight: 500;
+	cursor: pointer;
+}
+
+.side-panel-view:hover,
+.side-panel-view[aria-pressed="true"] {
+	color: var(--text);
+}
+
+.side-panel-view[aria-pressed="true"] {
+	background: var(--bg-raised);
+}
+
+.side-panel-view:focus-visible,
+.files-panel-ignored:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: -2px;
+}
+
+/* Shows or hides what Git ignores. Pressed while it shows. */
+.files-panel-ignored {
+	flex: none;
+	padding: 3px 8px;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: none;
+	color: var(--text-3);
+	font: inherit;
+	font-size: 12px;
+	cursor: pointer;
+}
+
+.files-panel-ignored:hover,
+.files-panel-ignored[aria-pressed="true"] {
+	background: var(--fill-hover);
+	color: var(--text);
+}
+
+.files-panel-body {
+	padding: 6px 0;
+}
+
+.files-panel-body > .dialog-note,
+.files-panel-body > .button {
+	margin-inline: 14px;
+}
+
+.files-tree {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.files-tree-row {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	min-height: 24px;
+	padding-inline-end: 10px;
+	font-size: 12.5px;
+	white-space: nowrap;
+	cursor: pointer;
+	user-select: none;
+}
+
+.files-tree-row:hover {
+	background: var(--fill-hover);
+}
+
+.files-tree-row.current {
+	background: var(--bg-raised);
+}
+
+.files-tree-row:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: -2px;
+}
+
+/* What Git ignores is dimmed, as an editor's explorer shows it. */
+.files-tree-row.ignored {
+	color: var(--text-3);
+}
+
+.files-tree-note {
+	color: var(--text-3);
+	cursor: default;
+}
+
+.files-tree-note.failure {
+	color: var(--error);
+	white-space: normal;
+}
+
+.files-tree-mark {
+	flex: none;
+	width: 12px;
+	display: inline-flex;
+	justify-content: center;
+	color: var(--text-3);
+}
+
+.files-tree-name {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.files-tree-tag {
+	flex: none;
+	color: var(--text-3);
+	font-size: 11px;
 }
 
 .chops-panel-footer {

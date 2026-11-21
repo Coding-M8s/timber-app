@@ -27,6 +27,7 @@ import { createSavedChopApprovals } from "./chop-approvals";
 import { createChopsWatcher } from "./chops-watcher";
 import { createFileChanges } from "./file-changes";
 import { createWorktreeFiles } from "./worktree-files";
+import { createWorktreeFolders } from "./worktree-folders";
 import { createPorts } from "./ports";
 import { createWorktreePaths } from "./worktree-paths";
 import { readBranches } from "./git-engine";
@@ -266,6 +267,11 @@ void watchRepositories();
 const done = createDone({ timber: () => timber.current(), findRepository: path => repositories.find(path) });
 const fileChanges = createFileChanges({ findRepository: path => repositories.findRecent(path) });
 const worktreeFiles = createWorktreeFiles({ findRepository: path => repositories.findRecent(path) });
+// The folders the file explorer shows, each watched alone, never what is below (see ./worktree-folders.ts).
+const worktreeFolders = createWorktreeFolders({
+	findRepository: path => repositories.findRecent(path),
+	onChange: change => tell(`a change in ${change.folder || "the folder"} of ${change.worktree}`, () => rpc.send.worktreeFolderChanged(change)),
+});
 // Personal chops come from the saved preferences only; the repository's are read from its main checkout's file on every request.
 // A chop's text comes from that read only, never from the window; a repository chop runs once its text is approved (see ./chops.ts).
 const chopApprovals = createSavedChopApprovals(settings);
@@ -581,6 +587,8 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			readWorktreeFile: request => worktreeFiles.read(request),
 			// Writes only that file, in place, and only a file that is there (see ./worktree-files.ts). It holds file contents: never log it.
 			writeWorktreeFile: request => worktreeFiles.write(request),
+			// Lists one folder, only inside a worktree Timber lists, never following a link (see ./worktree-folders.ts). Git runs only to ask what it ignores.
+			listWorktreeFolder: request => worktreeFolders.list(request),
 			// Read-only Docker and process table, only in a worktree Timber lists, never while the window is hidden (see ./ports.ts).
 			readPorts: request => ports.read(request),
 			listChops: request => chops.list(request),
@@ -645,6 +653,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 				fetcher.setVisible(next.visible);
 			},
 			windowReady: () => windowReveal.ready(),
+			watchWorktreeFolders: ({ folders }) => void worktreeFolders.watch(folders),
 			unsavedFiles: ({ count }) => {
 				unsavedFiles = Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
 			},
@@ -677,6 +686,7 @@ function guardQuit(event: unknown): void {
 		pace.stop();
 		watcher.stop();
 		chopsWatcher.stop();
+		worktreeFolders.close();
 		quitting = true;
 		handoffFolder?.close();
 		// Asks a running Git to stop, so it can remove its lock files before the app goes.
