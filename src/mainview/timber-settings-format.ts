@@ -12,7 +12,9 @@ import {
  *
  * Each group saves on its own: its fields replace only its own keys in the
  * settings as last read, and every other key, including ones this app does
- * not edit such as named workflows, goes back to Timber as it was read.
+ * not edit such as named workflows, goes back to Timber as it was read. The
+ * same holds inside a table a group sets, such as `[jira]`: the group
+ * replaces only the keys it draws, and keys such as `board` stay as read.
  */
 
 export const TIMBER_GROUPS = ["editor", "agent", "git", "scripts", "tracking"] as const;
@@ -139,24 +141,41 @@ function put(values: TimberValues, key: string, value: unknown): void {
 	else values[key] = value;
 }
 
-function launcherValue(draft: LauncherDraft, kind: "editor" | "agent"): unknown {
-	if (draft.mode === "inherit") return undefined;
-	if (draft.mode === "off") return false;
-	if (kind === "editor") return { command: draft.command, args: [...draft.args], enabled: draft.enabled, ...(draft.orca ? { integration: "orca" } : {}) };
-	return { command: draft.command, args: [...draft.args], enabled: draft.enabled, ...(draft.waitForSetup === null ? {} : { wait_for_setup: draft.waitForSetup }) };
+/**
+ * A table as a group saves it: left out to inherit, false when off, and when
+ * set, the table as read with the keys the group draws in place. A drawn key
+ * that is undefined is removed; every key the group does not draw is kept.
+ */
+function tableValue(mode: Mode, read: unknown, drawn: Record<string, unknown>): unknown {
+	if (mode === "inherit") return undefined;
+	if (mode === "off") return false;
+	const table: Record<string, unknown> = typeof read === "object" && read !== null && !Array.isArray(read) ? { ...read } : {};
+	for (const [key, value] of Object.entries(drawn)) {
+		if (value === undefined) delete table[key];
+		else table[key] = value;
+	}
+	return table;
+}
+
+function launcherValue(draft: LauncherDraft, kind: "editor" | "agent", read: unknown): unknown {
+	const common = { command: draft.command, args: [...draft.args], enabled: draft.enabled };
+	return tableValue(draft.mode, read, kind === "editor"
+		? { ...common, integration: draft.orca ? "orca" : undefined }
+		: { ...common, wait_for_setup: draft.waitForSetup ?? undefined });
 }
 
 /**
  * The scope's settings with one group's fields in place of its keys. Every
- * other key is kept as it was read. Values are passed as typed: Timber
- * decides what is valid.
+ * other key is kept as it was read, and so is every key the group does not
+ * draw inside a table it sets. Values are passed as typed: Timber decides
+ * what is valid.
  */
 export function valuesWith<Group extends TimberGroup>(group: Group, draft: GroupDrafts[Group], values: TimberValues): TimberValues {
 	const next = structuredClone(values);
 	switch (group) {
 		case "editor":
 		case "agent":
-			put(next, group, launcherValue(draft as LauncherDraft, group));
+			put(next, group, launcherValue(draft as LauncherDraft, group, next[group]));
 			break;
 		case "git": {
 			const git = draft as GitDraft;
@@ -165,19 +184,19 @@ export function valuesWith<Group extends TimberGroup>(group: Group, draft: Group
 		}
 		case "scripts": {
 			const scripts = draft as ScriptsDraft;
-			put(next, "hooks", scripts.mode === "inherit" ? undefined : scripts.mode === "off" ? false : {
+			put(next, "hooks", tableValue(scripts.mode, next.hooks, {
 				post_create: [...scripts.setup],
-				...(scripts.preDone.length > 0 || scripts.preDoneSet ? { pre_delete: [...scripts.preDone] } : {}),
-			});
+				pre_delete: scripts.preDone.length > 0 || scripts.preDoneSet ? [...scripts.preDone] : undefined,
+			}));
 			break;
 		}
 		case "tracking": {
 			const tracking = draft as TrackingDraft;
 			put(next, "default_tracker", tracking.tracker === "" ? undefined : tracking.tracker);
-			put(next, "jira", tracking.jiraMode === "inherit" ? undefined : tracking.jiraMode === "off" ? false : {
+			put(next, "jira", tableValue(tracking.jiraMode, next.jira, {
 				site_url: tracking.siteUrl,
-				...(tracking.cloudId === "" ? {} : { cloud_id: tracking.cloudId }),
-			});
+				cloud_id: tracking.cloudId === "" ? undefined : tracking.cloudId,
+			}));
 			break;
 		}
 	}

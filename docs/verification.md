@@ -3456,3 +3456,27 @@ Linux x64 with Bun 1.4.5, Git 2.43, and Google Chrome 151:
 - Not yet checked: the desktop window by eye, which draws with WebKitGTK,
   not Chrome; whether the `+` hides the first digit of 3 and 4 digit old
   line numbers there; and a screen reader.
+
+Run for keeping hand-set keys inside a table a settings group saves (issue
+275), Linux x64 with Bun 1.4.5, Git 2.43, and Timber 0.1.4:
+
+- `bun install --frozen-lockfile`, then `bun test` before the change: 3447
+  passed, 19 skipped, 0 failed.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 3450 passed, 19 skipped, 0 failed. The two new tests in
+  `tests/timber-settings.test.tsx` and the new one in
+  `tests/setup-wizard.test.ts` failed with the old `valuesWith` and pass
+  with the new one. After rebasing onto main: 3457 passed, 19 skipped, 0
+  failed, and both typechecks without errors.
+- Against the real Timber 0.1.4, in a temporary repository with an
+  untracked `.timber.toml` and a temporary `HOME`: a script read the
+  repository scope with `timber __app-config read`, set the default tracker
+  to Jira through `draftsOf` and `valuesWith("tracking", ...)`, and saved
+  with `timber __app-config apply`, as Settings does.
+  - With the old code, the saved `[jira]` lost `board = 123` and
+    `project = "TIM"`.
+  - With the change, `[jira]` kept `board` and `project`, `[agent]` kept
+    `resolve_handoff` and `resolve_instructions`, and `default_tracker`
+    became `"jira"`. A second file with `sprint_jql` kept it too.
+- Not yet checked: the same save through the desktop window, and the setup
+  wizard against the real Timber (it saves through the same `valuesWith`).

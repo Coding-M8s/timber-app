@@ -76,7 +76,8 @@ export interface JiraValue {
  * repository from the machine defaults, the machine from Timber's built-in
  * defaults. `false` switches a table off. Keys this app does not edit, such
  * as `workflows` and `arena`, are kept exactly as Timber gave them and sent
- * back unchanged.
+ * back unchanged, and so are keys inside a table the app does not draw, such
+ * as `[jira].board`.
  */
 export interface TimberValues {
 	default_tracker?: Tracker;
