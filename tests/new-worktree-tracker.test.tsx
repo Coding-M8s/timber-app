@@ -103,6 +103,15 @@ describe("the Tracker field with GitHub and Jira set up", () => {
 		expect(asked).toEqual([{ repository: TIMBER, name: "jira:ENG-42", base: null }]);
 	});
 
+	test("picking Jira prefixes a lowercase key as typed, shown in the footer before it runs", async () => {
+		const { model, mode, submit, asked } = await newBranch();
+		model.edit({ name: "eng-42", tracker: "jira" });
+		expect(mode().command).toBe(`${COMMAND} jira:eng-42`);
+		expect(asked).toEqual([]);
+		expect(await submit()).toBe(true);
+		expect(asked).toEqual([{ repository: TIMBER, name: "jira:eng-42", base: null }]);
+	});
+
 	test("picking GitHub shows the github: prefix for an issue number", async () => {
 		const { model, mode, submit, asked } = await newBranch();
 		model.edit({ name: "42", tracker: "github" });
@@ -172,10 +181,14 @@ describe("the Tracker field in other repositories", () => {
 			scope: "machine", repository: null, revision: machine.settings.revision, values: machine.settings.values, credentials: { linear: { token: "lin_api_sample" } }, editTracked: false,
 		});
 		expect(saved.outcome).toBe("saved");
-		const { fields, model, mode } = await newBranch(API, engine);
+		const { fields, model, mode, submit, asked } = await newBranch(API, engine);
 		expect(fields()).toContain('<option value="" selected="">Default (GitHub)</option><option value="github">GitHub</option><option value="linear">Linear</option>');
 		model.edit({ name: "ENG-7", tracker: "linear" });
 		expect(mode().command).toBe(`${COMMAND} linear:ENG-7`);
+		model.edit({ name: "eng-7" });
+		expect(mode().command).toBe(`${COMMAND} linear:eng-7`);
+		expect(await submit()).toBe(true);
+		expect(asked).toEqual([{ repository: API, name: "linear:eng-7", base: null }]);
 	});
 
 	test("an engine that throws while reading is no field, not a broken dialog", async () => {

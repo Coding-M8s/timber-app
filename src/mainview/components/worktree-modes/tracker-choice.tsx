@@ -7,8 +7,9 @@ import { TRACKER_NAMES } from "../../issue-format";
  * Pure, so all of it is tested without a window.
  *
  * The pick applies to one creation only: it turns a Name with the shape of
- * an issue into `github:42`, `jira:ENG-42`, or `linear:ENG-42` (see
- * `issueSelector`), and never changes Timber's default tracker. Default, the
+ * an issue into `github:42`, `jira:ENG-42`, or `linear:ENG-42`, a key in
+ * any case as typed, such as `jira:eng-42` (see `issueSelector`), and never
+ * changes Timber's default tracker. Default, the
  * first option, passes the Name unchanged. The list comes from
  * `readIssueTrackers` and is a help, never a gate: while it is read, when it
  * cannot be read, or with fewer than two trackers set up, there is no field.

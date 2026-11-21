@@ -118,7 +118,7 @@ describe("timberFinder", () => {
 
 	test("requires the newest release known on start", async () => {
 		const { look } = timberOf({ current: "0.1.3" });
-		const find = timberFinder({ look, latest: () => "0.1.4", choose: onPath });
+		const find = timberFinder({ look, latest: () => "0.1.4", choose: onPath, minimum: "0.1.3" });
 		expect(await find()).toEqual({ state: "too-old", source: "path", path: "/bin/timber", found: "0.1.3", required: "0.1.4", latestRelease: true });
 	});
 
@@ -133,7 +133,7 @@ describe("timberFinder", () => {
 		const version = { current: "0.1.3" };
 		let latest = "0.1.3";
 		const { look } = timberOf(version);
-		const find = timberFinder({ look, latest: () => latest, choose: onPath });
+		const find = timberFinder({ look, latest: () => latest, choose: onPath, minimum: "0.1.3" });
 		expect(await find()).toEqual({ state: "ready", source: "path", path: "/bin/timber", version: "0.1.3" });
 
 		latest = "0.1.4";
@@ -147,7 +147,7 @@ describe("timberFinder", () => {
 		const version = { current: "0.1.2" };
 		let latest = "0.1.3";
 		const { look, asked } = timberOf(version);
-		const find = timberFinder({ look, latest: () => latest, choose: onPath });
+		const find = timberFinder({ look, latest: () => latest, choose: onPath, minimum: "0.1.3" });
 		expect((await find()).state).toBe("too-old");
 		latest = "0.1.4";
 		version.current = "0.1.3";

@@ -18,6 +18,7 @@ describe("issueSelector", () => {
 	test("Default passes the name unchanged", () => {
 		expect(issueSelector(null, "42")).toBe("42");
 		expect(issueSelector(null, "ENG-42")).toBe("ENG-42");
+		expect(issueSelector(null, "eng-42")).toBe("eng-42");
 	});
 
 	test("prefixes an issue number for GitHub", () => {
@@ -31,10 +32,25 @@ describe("issueSelector", () => {
 		expect(issueSelector("jira", "A1-7")).toBe("jira:A1-7");
 	});
 
+	test("prefixes a Jira or Linear key in any case, as typed, since Timber uppercases it", () => {
+		expect(issueSelector("jira", "eng-42")).toBe("jira:eng-42");
+		expect(issueSelector("linear", "eng-42")).toBe("linear:eng-42");
+		expect(issueSelector("jira", "Eng-42")).toBe("jira:Eng-42");
+		expect(issueSelector("linear", "a1-7")).toBe("linear:a1-7");
+	});
+
+	test("reads a key-shaped branch name as a key with Jira or Linear picked, as Timber would", () => {
+		expect(issueSelector("jira", "fix-2")).toBe("jira:fix-2");
+		expect(issueSelector("linear", "fix-2")).toBe("linear:fix-2");
+		expect(issueSelector("jira", "feature/fix-2")).toBe("feature/fix-2");
+		expect(issueSelector(null, "fix-2")).toBe("fix-2");
+	});
+
 	test("passes a sentence or a branch name unchanged", () => {
 		for (const tracker of ["github", "jira", "linear"] as const) {
 			expect(issueSelector(tracker, "Fix login bug")).toBe("Fix login bug");
 			expect(issueSelector(tracker, "feature/ENG-42-login")).toBe("feature/ENG-42-login");
+			expect(issueSelector(tracker, "feature/eng-42-login")).toBe("feature/eng-42-login");
 			expect(issueSelector(tracker, "")).toBe("");
 		}
 	});
@@ -46,9 +62,11 @@ describe("issueSelector", () => {
 		expect(issueSelector("github", "#42")).toBe("#42");
 		expect(issueSelector("github", "99999999999999999999")).toBe("99999999999999999999");
 		expect(issueSelector("github", "ENG-42")).toBe("ENG-42");
+		expect(issueSelector("github", "eng-42")).toBe("eng-42");
 		expect(issueSelector("jira", "42")).toBe("42");
-		expect(issueSelector("jira", "eng-42")).toBe("eng-42");
+		expect(issueSelector("jira", "eng")).toBe("eng");
 		expect(issueSelector("jira", "ENG-42a")).toBe("ENG-42a");
+		expect(issueSelector("jira", "eng-42a")).toBe("eng-42a");
 		expect(issueSelector("linear", "-42")).toBe("-42");
 	});
 
@@ -56,6 +74,8 @@ describe("issueSelector", () => {
 		expect(issueSelector("jira", "github:42")).toBe("github:42");
 		expect(issueSelector("github", "github:42")).toBe("github:42");
 		expect(issueSelector("linear", "jira:ENG-1")).toBe("jira:ENG-1");
+		expect(issueSelector("jira", "jira:eng-42")).toBe("jira:eng-42");
+		expect(issueSelector("linear", "linear:eng-42")).toBe("linear:eng-42");
 	});
 });
 
@@ -92,8 +112,9 @@ describe("issueTrackersOf", () => {
 		expect(issueTrackersOf(settings({ effective: { default_tracker: "none" } }), true)).toMatchObject({ defaultTracker: null });
 	});
 
-	test("with no default set, a Jira site is the default, as Timber reads a bare key then", () => {
-		expect(issueTrackersOf(settings({ jira: { configured: true } }), true)).toMatchObject({ defaultTracker: "jira" });
+	test("with no default set, there is none, even with a Jira site, as Timber then reads a bare name as a branch", () => {
+		expect(issueTrackersOf(settings({ jira: { configured: true } }), true)).toMatchObject({ defaultTracker: null });
+		expect(issueTrackersOf(settings({ jira: { configured: true, state: "saved" } }), true)).toMatchObject({ defaultTracker: null });
 		expect(issueTrackersOf(settings({ effective: { default_tracker: "none" }, jira: { configured: true } }), true)).toMatchObject({ defaultTracker: null });
 	});
 });
