@@ -47,6 +47,12 @@ function startsAsTyped(args: readonly string[], picks: ReadonlySet<string>, lett
 		|| (SHORT_GROUP.test(arg) && letters.test(arg.slice(1))));
 }
 
+/** Which agent an executable is by its name alone, whatever its arguments, or null. */
+export function agentProgram(executable: string): ResumableAgent | null {
+	const name = programName(executable);
+	return name === "claude" || name === "codex" ? name : null;
+}
+
 /**
  * The agent an executable is, from its last path part (`claude`, `codex`,
  * with `.exe` cut on Windows), and only when the arguments leave room for

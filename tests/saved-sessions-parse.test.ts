@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
-	type LiveSession, type SavedSessions, SAVED_MISS_LIMIT, SAVED_SESSIONS_PER_WORKTREE, SAVED_WORKTREE_LIMIT, buildSavedSessions, isConversationId, isRestoreTag,
+	type LiveSession, type SavedSessions, SAVED_MISS_LIMIT, SAVED_SESSIONS_PER_WORKTREE, SAVED_WORKTREE_LIMIT, buildSavedSessions, createSavedCarry, isConversationId, isRestoreTag,
 	parseSavedSessions, pickShown, serializeSavedSessions,
 } from "../src/shared/saved-sessions";
 
@@ -129,5 +129,17 @@ describe("misses, tags, and the shown chip", () => {
 		expect(pickShown([3, 0, 2], 2)).toBe(2);
 		expect(pickShown([null, null], 0)).toBe(-1);
 		expect(pickShown([], 0)).toBe(-1);
+	});
+});
+
+describe("what is written stays within what is read", () => {
+	test("at most 50 sessions of a worktree and 200 worktrees, running ones first", () => {
+		const live: LiveSession[] = Array.from({ length: SAVED_SESSIONS_PER_WORKTREE + 5 }, (_, index) => ({ id: `s${index}`, worktree: "w", kind: "terminal", agent: null, conversation: null, name: null }));
+		const carried: SavedSessions = { worktrees: Object.fromEntries(Array.from({ length: SAVED_WORKTREE_LIMIT + 5 }, (_, index) => [`c${index}`, { shown: 0, sessions: [{ kind: "terminal" as const }] }])) };
+		const built = buildSavedSessions(live, { w: `s${SAVED_SESSIONS_PER_WORKTREE + 2}` }, null, createSavedCarry(carried));
+		expect(built.worktrees.w!.sessions).toHaveLength(SAVED_SESSIONS_PER_WORKTREE);
+		expect(built.worktrees.w!.shown).toBe(0);
+		expect(Object.keys(built.worktrees)).toHaveLength(SAVED_WORKTREE_LIMIT);
+		expect(Object.keys(built.worktrees)[0]).toBe("w");
 	});
 });

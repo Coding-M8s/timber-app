@@ -2861,3 +2861,27 @@ Run for running command chops (issue 174), Linux x64 with Bun 1.4.5, bash
 - Not run: the desktop window or the browser build by eye, so the "+" menu,
   the chip's menu, and the approval dialog were not seen drawn. Windows and
   macOS were not tested: how PowerShell and ConPTY take a chop is unknown.
+
+Run for sessions after a restart (issue 137), Linux x64 with Bun 1.4.5,
+Claude Code 2.1.330, and Codex CLI 0.171.0 installed, after rebasing on
+main at `0ba893c` and addressing the review:
+
+- `claude --help`, `codex --help`, and `codex resume --help` read on this
+  machine: `codex resume` takes the same options as `codex`, and
+  `-i, --image <FILE>...` takes several values, so the app's words go first.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test`: 2695 passed, 24 skipped, none failed. Timings the tests
+  printed: the quit save of 200 worktrees of 5 sessions 5.2 ms and 86 KB;
+  the worst case, a real Codex search in 200 worktrees over 600 session
+  files, 299.6 ms in all, stopped by its budget; the Codex search of 300
+  files 4.5 ms; the restore of 20 sessions in 5 worktrees with each start
+  taking 30 ms: `start()` 0.1 ms, all running after 243 ms, at most 3 starts
+  at once, and no gap in the event loop over 5.5 ms.
+- `bun run build:web`: built.
+- Read only, without starting an agent: the first lines of the Codex
+  session files on this machine, which gave the `source` values in
+  docs/architecture.md.
+- Not run: the desktop window, so quitting and starting the real app with
+  real Claude Code and Codex sessions, and the reload check in
+  `bun run dev:web`, were seen only through the tests of the main process
+  parts, the store, and the mock engine. Windows and macOS.

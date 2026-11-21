@@ -44,10 +44,10 @@ function layout(overrides: Partial<SessionLayoutDependencies> = {}) {
 }
 
 const session = (id: string, worktree: string, more: Partial<RunningSession> = {}): RunningSession => ({
-	id, worktree, path: `/r/${worktree}`, kind: "terminal", agent: null, resumable: null, conversation: null, startedAt: 10_000, name: null, restored: null, ...more,
+	id, worktree, path: `/r/${worktree}`, kind: "terminal", agent: null, resumable: null, conversation: null, startedAt: 10_000, name: null, restored: null, program: null, ...more,
 });
-const claude = (id: string, worktree: string, more: Partial<RunningSession> = {}) => session(id, worktree, { kind: "agent", agent: "Claude Code", resumable: "claude", conversation: CLAUDE, ...more });
-const codex = (id: string, worktree: string, more: Partial<RunningSession> = {}) => session(id, worktree, { kind: "agent", agent: "Codex", resumable: "codex", ...more });
+const claude = (id: string, worktree: string, more: Partial<RunningSession> = {}) => session(id, worktree, { kind: "agent", agent: "Claude Code", resumable: "claude", program: "claude", conversation: CLAUDE, ...more });
+const codex = (id: string, worktree: string, more: Partial<RunningSession> = {}) => session(id, worktree, { kind: "agent", agent: "Codex", resumable: "codex", program: "codex", ...more });
 const attention = (worktree: string | null, chip: string | null): Attention => ({
 	visible: true, focused: true, selected: worktree === null ? null : { repository: "/r", worktree: `/r/${worktree}`, id: worktree }, session: chip,
 });
@@ -441,6 +441,31 @@ describe("conversations checked at quit", () => {
 		expect((await reopened())?.worktrees.w1!.sessions[0]).toEqual({ kind: "agent", agent: "Codex" });
 		real(new Map()).save();
 		expect((await reopened())?.worktrees.w1!.sessions[0]).toEqual({ kind: "agent", agent: "Codex", conversation: FOUND });
+	});
+
+	test("a Codex started as typed counts when Codex conversations are told apart, running or ended", () => {
+		answer = () => FOUND;
+		live = [codex("A", "w1", { startedAt: 50_000 }), session("B", "w1", { kind: "agent", agent: "Codex fix", program: "codex" })];
+		layout({ now: () => 1_000 }).save();
+		expect(searches).toEqual([]);
+		// The one Codex of the worktree started as typed: it has no conversation of its own to look for.
+		live = [session("B", "w1", { kind: "agent", agent: "Codex fix", program: "codex" })];
+		layout({ now: () => 1_000 }).save();
+		expect(searches).toEqual([]);
+	});
+
+	test("the Claude Code ids are checked before the Codex search can use up the time", async () => {
+		let clock = 0;
+		live = [codex("A", "w1"), claude("C", "w2")];
+		layout({
+			now: () => clock,
+			findCodex: () => {
+				clock += 1_000;
+				return null;
+			},
+			claudeExists: () => false,
+		}).save();
+		expect((await reopened())?.worktrees.w2!.sessions[0]).toEqual({ kind: "agent", agent: "Claude Code" });
 	});
 
 	test("a Claude Code id is saved only when Claude Code wrote that conversation", async () => {

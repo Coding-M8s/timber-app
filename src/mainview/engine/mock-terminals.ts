@@ -459,27 +459,31 @@ export function createMockTerminals(
 		},
 		conversationOf: id => sessions.get(id)?.conversation ?? null,
 		mostOpeningAtOnce: () => mostOpening,
-		async openTerminal(request) {
-			opening += 1;
-			mostOpening = Math.max(mostOpening, opening);
-			try {
-				if (options.terminalMilliseconds) await new Promise(resolve => setTimeout(resolve, options.terminalMilliseconds));
-				// As the main process does: what came of opening a saved session tells the save whether to keep the saved one.
-				let result: OpenTerminalResult;
+		openTerminal(request) {
+			// Straight through when nothing is held back or counted, so a session starts as soon as it would without saved sessions.
+			if (!options.terminalMilliseconds && !isRestoreTag(request.restore)) return open(request);
+			return (async () => {
+				opening += 1;
+				mostOpening = Math.max(mostOpening, opening);
 				try {
-					result = await open(request);
-				} catch (error) {
-					if (isRestoreTag(request.restore)) carry.miss(request.restore);
-					throw error;
+					if (options.terminalMilliseconds) await new Promise(resolve => setTimeout(resolve, options.terminalMilliseconds));
+					// As the main process does: what came of opening a saved session tells the save whether to keep the saved one.
+					let result: OpenTerminalResult;
+					try {
+						result = await open(request);
+					} catch (error) {
+						if (isRestoreTag(request.restore)) carry.miss(request.restore);
+						throw error;
+					}
+					if (isRestoreTag(request.restore)) {
+						if (result.outcome === "opened" || result.outcome === "not-configured") carry.settle(request.restore);
+						else carry.miss(request.restore);
+					}
+					return result;
+				} finally {
+					opening -= 1;
 				}
-				if (isRestoreTag(request.restore)) {
-					if (result.outcome === "opened" || result.outcome === "not-configured") carry.settle(request.restore);
-					else carry.miss(request.restore);
-				}
-				return result;
-			} finally {
-				opening -= 1;
-			}
+			})();
 		},
 		openChopTerminal: (request, chop) => open(request, chop),
 		async renameTerminal(id, name) {

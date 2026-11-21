@@ -2976,8 +2976,9 @@ that run when the app quits open again when it starts.
     codes, times, default names (made again by the naming Settings choose),
     and anything a session printed. Only running sessions of kind
     `terminal` and `agent` are saved; a Timber session such as setup, an
-    arena attempt (its agent comes from Timber, not Settings), and a
-    session whose process had ended, are not.
+    arena attempt or a workflow's own agent (their commands come from
+    Timber, not Settings), and a session whose process had ended, are not.
+    A workflow that started an agent picked in Settings saves that agent.
   - *The shown chip and the selected worktree.* The window's `attend`
     message names the selected worktree's id and the session whose chip
     shows there once one was chosen there (`Attention` in
@@ -3037,7 +3038,9 @@ that run when the app quits open again when it starts.
     rename is, and at most 200 worktrees of 50 sessions are read. A file
     over 4 MiB is not read at all and is treated as damaged. Worktree ids
     are keys of an object with no prototype, so an id such as `__proto__`
-    is only a key.
+    is only a key. A save never holds more than is read: at most 50
+    sessions of a worktree and 200 worktrees, those with running sessions
+    first.
   - *Cost.* The save is one small write: 200 worktrees of 5 sessions are
     under 100 KB and under 10 ms in the tests, after a Codex search that
     may take 300 ms in all (see below), so a quit waits under half a
@@ -3368,9 +3371,11 @@ option that takes several values (Codex's `-i, --image <FILE>...`) and no
   inside Codex is followed. Only day folders from the day before the
   session started on are opened, at most 1 MiB of a first line is read,
   newest file first, and the search of all worktrees together stops after
-  300 ms with what it has. It is made only for a worktree with exactly one
-  running Codex session, and none of the app's other Codex sessions there
-  ended after that one started, less the two seconds: otherwise nothing
+  300 ms with what it has, after the Claude Code checks. It is made only
+  for a worktree with exactly one running Codex session, and none of the
+  app's other Codex sessions there ended after that one started, less the
+  two seconds. Every session whose executable is `codex` counts, also one
+  started as typed, from a workflow, or for an arena attempt: otherwise nothing
   tells their conversations apart (open A, open B, close B, quit would
   give A the conversation of B), so it keeps the id it was opened with, or
   starts fresh. When the last Codex session of each worktree ended is kept
@@ -3388,7 +3393,9 @@ option that takes several values (Codex's `-i, --image <FILE>...`) and no
   in the person's own config. Two Codex sessions in one worktree, running
   together or one after the other, are not told apart. A prompt typed in
   Settings after options (`codex -m o3 "fix it"`) is sent again when the
-  agent goes back. A Codex started by hand in the same folder after the app's
+  agent goes back. A subcommand after an option (`claude --model opus mcp
+  list`) is not told from a prompt, so it gets the app's words. A Codex
+  started by hand in the same folder after the app's
   Codex session started can be taken for it. When an agent changes where
   or how it keeps conversations, nothing is found and it starts fresh,
   never with an error.

@@ -285,7 +285,9 @@ export function buildSavedSessions(live: readonly LiveSession[], shown: Readonly
 	}
 	const worktrees: Record<string, SavedWorktree> = Object.create(null);
 	const previous = carry?.previous ?? null;
-	for (const [worktree, list] of items) {
+	// Within what a file is read with: the worktrees with running sessions come first, then those only carried.
+	for (const [worktree, whole] of [...items].slice(0, SAVED_WORKTREE_LIMIT)) {
+		const list = whole.slice(0, SAVED_SESSIONS_PER_WORKTREE);
 		let at = -1;
 		if (Object.hasOwn(shown, worktree)) at = list.findIndex(item => item.id === shown[worktree]);
 		else if (previous !== null && Object.hasOwn(previous.worktrees, worktree)) at = pickShown(list.map(item => item.index), previous.worktrees[worktree]!.shown);
