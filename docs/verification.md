@@ -2748,18 +2748,26 @@ with Bun 1.4.5:
   worktree marked), unavailable actions left out and named in one line,
   typing finding them with their reason, other repositories' worktrees
   after this repository's and never their actions, unscoped and no
-  selection, Clean up merged with its count, and the limit never dropping
-  this repository's matches. `tests/command-palette.test.tsx` checks the
+  selection, Clean up merged with its count, the limit never dropping
+  this repository's matches or, with nothing typed, the actions and the
+  app's entries (500 worktrees), and what each row names when no chip or
+  heading does. `tests/command-palette.test.tsx` checks the
   chip, the headings, the line under the list, and that only rows are
   options, numbered in order.
 - `bun run typecheck`: no errors.
 - `bun run typecheck:desktop`: no errors.
-- `bun test`: 2460 passed, 20 skipped, none failed.
+- `bun test`: 2462 passed, 20 skipped, none failed.
 - `bun run build:web`: built.
 - In the mock engine (`vite --port 5174`) in headless Chromium: Ctrl+Shift+P
   opened the palette scoped to timber with the box focused; typing "rate"
   listed New worktree, then feat/rate-limit-headers under Other
   repositories; Backspace in the empty box removed the chip and listed every
   repository's worktrees; typing "done" showed Done dimmed with "The primary
-  checkout is never removed." under the list.
+  checkout is never removed." under the list. ArrowDown went through rows 0
+  to 6 across the "In timber" heading with `aria-activedescendant` moving by
+  one each time and the box keeping focus; End went to the last row, Add
+  repository, in view; Home went back to Open terminal. Enter on Start
+  Claude Code started it, and the palette opened again showed main's
+  session mark. Enter on feat/github-issue-lookup selected it and closed the
+  palette.
 - Not run: the desktop window.

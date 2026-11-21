@@ -1,7 +1,7 @@
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
-	NOTHING_MATCHES, PALETTE_LABEL, PALETTE_PLACEHOLDER, type PaletteEntry, type PaletteIcon, type PaletteMatch, type PaletteScope, describeHighlighted, paletteEntries,
-	paletteScope, paletteView, rowAfterKey,
+	NOTHING_MATCHES, PALETTE_LABEL, PALETTE_PLACEHOLDER, type PaletteIcon, type PaletteMatch, describeHighlighted, paletteEntries,
+	paletteScope, paletteView, rowAfterKey, rowTarget,
 } from "../palette";
 import { runPaletteEntry } from "../palette-run";
 import { waitingShortcut } from "../waiting";
@@ -45,14 +45,6 @@ function Icon({ icon, current }: { icon: PaletteIcon; current: boolean }) {
 			{ICON_PATHS[icon]}
 		</svg>
 	);
-}
-
-/** Whether a row names its repository: only when the chip or a heading does not already. */
-function namesRepository(entry: PaletteEntry, context: PaletteScope | null, scoped: boolean): boolean {
-	if (entry.repository === null) return false;
-	if (entry.kind === "worktree") return !(scoped && entry.repository === context?.repository);
-	// Unscoped, Clean up merged is listed for every repository, so each names its own.
-	return entry.repository !== context?.repository || (!scoped && entry.action.kind === "dialog" && entry.action.request.kind === "clean-up-merged");
 }
 
 /**
@@ -178,8 +170,8 @@ export function CommandPalette() {
 				/>
 			</div>
 			<ul className="palette-list" id={`${id}-list`} role="listbox" aria-label="Results">
-				{view.groups.map(group => (
-					<li key={group.heading ?? "results"} role="presentation" className="palette-group">
+				{view.groups.map((group, groupIndex) => (
+					<li key={groupIndex} role="presentation" className="palette-group">
 						{group.heading !== null && <div className="palette-heading" aria-hidden="true">{group.heading}</div>}
 						<ul role="group" aria-label={group.heading ?? "Results"} className="palette-group-list">
 							{group.matches.map(match => {
@@ -187,6 +179,7 @@ export function CommandPalette() {
 								const index = position;
 								const { entry } = match;
 								const reason = entry.disabledReason;
+								const target = rowTarget(entry, context, scoped, group.heading !== null);
 								return (
 									<li
 										key={entry.id}
@@ -205,7 +198,7 @@ export function CommandPalette() {
 												{entry.sessions.map(mark => <StatusGlyph key={mark.id} status={mark.status} />)}
 											</span>
 										)}
-										{namesRepository(entry, context, scoped) && <span className="palette-repository">{entry.repositoryName}</span>}
+										{target !== null && <span className="palette-repository">{target}</span>}
 										{entry.current && <span className="palette-detail">Current</span>}
 										{entry.detail !== "" && <span className="palette-detail">{entry.detail}</span>}
 										{entry.action.kind === "next-waiting" && <kbd className="palette-shortcut">{waitingShortcut(mac)}</kbd>}

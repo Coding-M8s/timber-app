@@ -356,7 +356,8 @@ export function describeUnavailable(labels: readonly string[]): string | null {
  * With nothing typed, entries are in sections, and actions that cannot run
  * are left out and named in one line instead. With something typed, they are
  * found like any other entry, and the best match comes first. At most
- * `limit` entries are listed, and the scoped repository's come first, so
+ * `limit` entries are listed: with nothing typed only the worktrees give
+ * way, and with something typed the scoped repository's come first, so
  * other repositories never push them out.
  */
 export function paletteView(entries: readonly PaletteEntry[], query: string, context: PaletteScope | null, scoped: boolean, limit = PALETTE_LIMIT): PaletteView {
@@ -380,13 +381,35 @@ export function paletteView(entries: readonly PaletteEntry[], query: string, con
 		const elsewhere = matchEntries(entries.filter(entry => !inScope(entry) && entry.kind === "worktree"), query, Number.POSITIVE_INFINITY);
 		groups = [{ heading: `In ${context!.repositoryName}`, matches: here }, { heading: OTHER_REPOSITORIES, matches: elsewhere }];
 	}
-	let room = limit;
-	groups = groups.map(group => {
-		const kept = group.matches.slice(0, Math.max(0, room));
-		room -= kept.length;
-		return { ...group, matches: kept };
-	}).filter(group => group.matches.length > 0);
+	if (!typed) {
+		// Only the worktrees are many, so only they give way: the actions and the app's entries always show.
+		const fixed = groups.reduce((sum, group, index) => sum + (SECTIONS[index] === "worktrees" ? 0 : group.matches.length), 0);
+		groups = groups.map((group, index) => SECTIONS[index] === "worktrees" ? { ...group, matches: group.matches.slice(0, Math.max(0, limit - fixed)) } : group);
+	} else {
+		let room = limit;
+		groups = groups.map(group => {
+			const kept = group.matches.slice(0, Math.max(0, room));
+			room -= kept.length;
+			return { ...group, matches: kept };
+		});
+	}
+	groups = groups.filter(group => group.matches.length > 0);
 	return { groups, options: groups.flatMap(group => group.matches), unavailable };
+}
+
+/**
+ * What a row names at its end so it says what it is for, or null: the
+ * repository of a worktree outside the scope, and, with no heading to say
+ * it, the worktree or repository an action is for. Unscoped, each
+ * repository's Clean up merged names its repository.
+ */
+export function rowTarget(entry: PaletteEntry, context: PaletteScope | null, scoped: boolean, headed: boolean): string | null {
+	if (entry.repository === null) return null;
+	if (entry.kind === "worktree") return scoped && entry.repository === context?.repository ? null : entry.repositoryName;
+	if (entry.repository !== context?.repository) return entry.repositoryName;
+	if (!headed && context) return entry.section === "worktree" ? `${context.worktreeName} in ${context.repositoryName}` : context.repositoryName;
+	if (!scoped && entry.action.kind === "dialog" && entry.action.request.kind === "clean-up-merged") return entry.repositoryName;
+	return null;
 }
 
 /** What the line under the list says for the highlighted entry: why it cannot run, or what it does. */

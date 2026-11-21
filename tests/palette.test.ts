@@ -3,7 +3,7 @@ import { createMockEngine, sampleRepositories } from "../src/mainview/engine/moc
 import { DONE_PRIMARY_NOTE } from "../src/mainview/done-format";
 import {
 	ADDING_REPOSITORY, FETCHING_NOW, FOLDER_MISSING_FOR_SESSION, NO_WORKTREE_SELECTED, OTHER_REPOSITORIES, STARTING_SESSION, describeHighlighted, describeUnavailable,
-	isPaletteShortcut, matchEntries, paletteEntries, paletteHint, paletteScope, paletteView, rowAfterKey,
+	isPaletteShortcut, matchEntries, paletteEntries, paletteHint, paletteScope, paletteView, rowAfterKey, rowTarget,
 } from "../src/mainview/palette";
 import { REBASE_FOLDER_MISSING } from "../src/mainview/rebase-format";
 import { type AppState, initialState } from "../src/mainview/store/state";
@@ -284,6 +284,36 @@ describe("the view: scoped to the repository, in sections", () => {
 		const view = paletteView(paletteEntries(state), "e", paletteScope(state), true, 3);
 		expect(view.options.length).toBe(3);
 		expect(view.options.every(match => match.entry.repository !== API)).toBe(true);
+	});
+
+	test("with nothing typed and many worktrees, only the worktrees give way to the limit", () => {
+		const state = manyWorktrees(500);
+		const view = paletteView(paletteEntries(state), "", paletteScope(state), true);
+		expect(view.options.length).toBe(50);
+		expect(view.groups.map(group => group.heading)).toEqual(["In feature/topic-0", "In big", "Worktrees in big", "App"]);
+		expect(labelsOf(view)).toContain("Settings");
+		expect(labelsOf(view)).toContain("Add repository");
+	});
+
+	test("rows say what they are for when no chip or heading does", async () => {
+		const { state } = await sampleState();
+		const context = paletteScope(state);
+		const entries = paletteEntries(state);
+		const of = (label: string) => entries.find(entry => entry.label === label)!;
+		const apiWorktree = entries.find(entry => entry.kind === "worktree" && entry.repository === API)!;
+		const timberWorktree = entries.find(entry => entry.kind === "worktree" && entry.repository === TIMBER)!;
+		expect(rowTarget(of("Rebase"), context, true, true)).toBeNull();
+		expect(rowTarget(timberWorktree, context, true, true)).toBeNull();
+		expect(rowTarget(apiWorktree, context, true, true)).toBe("api-server");
+		expect(rowTarget(timberWorktree, context, false, true)).toBe("timber");
+		expect(rowTarget(of("Rebase"), context, false, false)).toBe("main in timber");
+		expect(rowTarget(of("Fetch now"), context, false, false)).toBe("timber");
+		expect(rowTarget(of("Settings"), context, false, false)).toBeNull();
+		const apiCleanUp = entries.find(entry => entry.label === "Clean up merged" && entry.repository === API)!;
+		const timberCleanUp = entries.find(entry => entry.label === "Clean up merged" && entry.repository === TIMBER)!;
+		expect(rowTarget(apiCleanUp, context, false, true)).toBe("api-server");
+		expect(rowTarget(timberCleanUp, context, false, true)).toBe("timber");
+		expect(rowTarget(timberCleanUp, context, true, true)).toBeNull();
 	});
 
 	test("the line for left-out actions", () => {
