@@ -3,7 +3,8 @@ import { type BrowserPage, browserPath, openSidebarPage } from "./support/browse
 
 /**
  * The chops panel in a real browser, over the mock engine: the button, the
- * shortcut, where the keyboard goes, and the "Use chops" switch. The rest is
+ * shortcut, where the keyboard goes, the "Use chops" switch, and running a
+ * chop from it with its filter and tabs. The rest is
  * tested without a window. Skipped where no browser is installed.
  */
 
@@ -143,5 +144,54 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the chops
 		await page.evaluate(`${STORE}.savePreferences({ useChops: true })`);
 		await page.until(`document.querySelector(${JSON.stringify(BUTTON)}) !== null`, "the button came back");
 		expect(await page.evaluate<boolean>(PANEL_SHOWN)).toBe(true);
+	}, 30_000);
+	test("Run starts a personal chop in the selected worktree and keeps the keyboard in the panel; the filter and the tabs narrow the list", async () => {
+		await page.evaluate(`${STORE}.savePreferences({ chops: [{ name: "Hello", kind: "command", text: "pwd", description: "", agent: null, repository: null }] })`);
+		await page.evaluate(`${STORE}.select(${STORE}.getState().repositories[0].worktrees[1].id)`);
+		await page.click(BUTTON);
+		await page.until(`document.querySelector('#chops-panel [aria-label="Run Hello"]') !== null`, "the panel listed Hello");
+		// The filter matches text as well as names, and says so when nothing matches.
+		await page.click(`#chops-panel input[type="search"]`);
+		await page.type("dev:web");
+		await page.until(`document.querySelectorAll("#chops-panel .chops-panel-item").length === 1`, "the filter narrowed the list");
+		expect(await page.evaluate<string>(`document.querySelector("#chops-panel .chop-item-name").textContent`)).toBe("Dev server");
+		await page.type(" and more");
+		await page.until(`document.querySelector("#chops-panel .chops-panel-none").textContent === 'No commands match "dev:web and more".'`, "the panel said nothing matches");
+		// The tabs by keyboard: the arrow shows Prompts.
+		await page.evaluate(`document.querySelector('#chops-panel [role="tab"][aria-selected="true"]').focus()`);
+		await page.press("ArrowRight");
+		await page.until(`document.querySelector('#chops-panel [role="tab"][aria-selected="true"]').textContent.startsWith("Prompts")`, "the Prompts tab showed");
+		expect(await page.evaluate<boolean>(`document.activeElement.textContent.startsWith("Prompts")`)).toBe(true);
+		await page.press("ArrowLeft");
+		await page.until(`document.querySelector('#chops-panel [role="tab"][aria-selected="true"]').textContent.startsWith("Commands")`, "the Commands tab showed");
+		await page.evaluate(`(() => { const field = document.querySelector('#chops-panel input[type="search"]'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set; set.call(field, ""); field.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+		await page.until(`document.querySelector('#chops-panel [aria-label="Run Hello"]') !== null`, "the filter was cleared");
+		await page.click(`#chops-panel [aria-label="Run Hello"]`);
+		await page.until(`${STORE}.getState().terminals.some(session => session.name === "Hello" && session.state.kind === "running")`, "Hello started");
+		expect(await page.evaluate<boolean>(`${STORE}.getState().terminals.find(session => session.name === "Hello").worktree === ${STORE}.getState().repositories[0].worktrees[1].id`)).toBe(true);
+		expect(await page.evaluate<boolean>(FOCUS_IN_PANEL)).toBe(true);
+	}, 30_000);
+
+	test("a chop from .timber/chops.json asks before its first run, from the panel too", async () => {
+		await page.evaluate(`${STORE}.select(${STORE}.getState().repositories[0].worktrees[1].id)`);
+		await page.click(BUTTON);
+		await page.until(`document.querySelector('#chops-panel [aria-label="Run Dev server"]') !== null`, "the panel listed Dev server");
+		await page.click(`#chops-panel [aria-label="Run Dev server"]`);
+		await page.until(`${STORE}.getState().dialog?.kind === "approve-chop"`, "the approval was asked");
+		expect(await page.evaluate<number>(`${STORE}.getState().terminals.length`)).toBe(0);
+	}, 30_000);
+	test("a click on a blocked Run does nothing: no session and no dialog", async () => {
+		await page.evaluate(`${STORE}.savePreferences({ chops: [{ name: "Hello", kind: "command", text: "pwd", description: "", agent: null, repository: null }] })`);
+		await page.evaluate(`${STORE}.select(${STORE}.getState().repositories[0].worktrees[1].id)`);
+		await page.click(BUTTON);
+		await page.until(`document.querySelector('#chops-panel [aria-label="Run Hello"]') !== null`, "the panel listed Hello");
+		// Removing the worktree blocks a run, as the palette's rule says.
+		await page.evaluate(`(() => { const state = ${STORE}.getState(); const worktree = state.repositories[0].worktrees[1]; state.removals = [{ repository: state.repositories[0].path, worktree, toast: "", status: { kind: "running" } }]; ${STORE}.showTab("changes"); })()`);
+		await page.until(`document.querySelector('#chops-panel [aria-label="Run Hello"]').getAttribute("aria-disabled") === "true"`, "Run was blocked");
+		await page.click(`#chops-panel [aria-label="Run Hello"]`);
+		await Bun.sleep(200);
+		expect(await page.evaluate<number>(`${STORE}.getState().terminals.length`)).toBe(0);
+		expect(await page.evaluate<boolean>(`${STORE}.getState().dialog === null`)).toBe(true);
+		expect(await page.evaluate<string>(`${STORE}.getState().tab`)).toBe("changes");
 	}, 30_000);
 });

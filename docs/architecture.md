@@ -1296,7 +1296,24 @@ pure functions in `src/mainview/shell.ts`.
   and remembers what had it; hidden while focus is inside it, focus goes
   back there, or to the Chops button. Focus elsewhere stays where it is,
   and a panel shown from the saved layout at start takes nothing. The
-  store knows nothing of focus. Its Close button only hides it.
+  store knows nothing of focus. Its Close button only hides it. What it
+  shows is `chopsPanelModel` in `chops-panel-format.ts`, pure: the counts
+  of each kind, the rows of the tab that match the filter (`chopMatches`,
+  name or text, ignoring case), what a tab says when it lists nothing, and
+  the footer. Its chops are the selected worktree's repository's, or, with
+  none selected, the ones last read, as in the palette. Whether a row can
+  run is `chopBlockedReason` in `palette.ts`, the palette's own rule, so the
+  two agree: no worktree selected, the folder missing, being removed, or,
+  for a command, a session already starting. The buttons use
+  `aria-disabled`, not `disabled`, so the keyboard stays on them while a
+  session starts, and name the chop's text and the footer with
+  `aria-describedby`; a double click chooses once, so a prompt is not sent
+  twice. The text is a tab stop, so a long one that scrolls can be read by
+  keyboard. A click
+  calls `runChopIn` in `palette-run.ts`, the palette's own path, which
+  selects the worktree and shows the Workspace tab (not for Copy) and calls
+  the store's `runChop`. The tab and the filter are the component's state
+  and are not remembered.
   `ChopsShortcut` listens on the window in the capture phase and takes the
   key only when it acts (`takesChopsPanelKey`): with chops off, a dialog
   or the quit question open, or Timber not ready, the key goes on to the
@@ -1600,7 +1617,9 @@ every machine agrees. The rules are pure, in
 - **In the window.** The store keeps one answer in `chops`: the selected
   worktree's repository's, the latest read winning. `ChopsKeeper` reads it
   when another repository is selected and when the saved chops change. The
-  chops panel (see [the shell](#the-shell-and-the-saved-layout)) lists it. The
+  chops panel (see [the shell](#the-shell-and-the-saved-layout)) lists it
+  in a Commands and a Prompts tab, with a filter, and runs each through
+  the palette's path. The
   Workspace "+" menu lists the chops after the agents, under "Chops",
   commands and prompts, a prompt marked "Prompt", or "Copy prompt" when no
   agent is saved in Settings, with the description, or the text's first
