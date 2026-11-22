@@ -43,7 +43,9 @@ change them here first when they change.
 - The side panel sits on the workspace's right, wherever the sidebar is,
   and shows the chops, the selected worktree's files, or its changes. A
   switch in its header, Chops, Files, and Changes, swaps between them, and
-  the panel remembers which one showed. Changes on the switch counts the
+  the panel remembers which one showed. Chops on the switch, the panel's
+  title, says what a chop is in its tooltip: "Chops are saved commands and
+  agent prompts to run in a worktree." Changes on the switch counts the
   worktree's review notes. The title bar's Files button, or Ctrl+Shift+E
   (Cmd+Shift+E on macOS), shows or hides the files from any focus, as the
   Chops button and its shortcut do for the chops; pressed while the panel
@@ -110,7 +112,9 @@ change them here first when they change.
   never the repository file; with the saved settings unreadable, the panel
   changes nothing and says why. A chop for every repository hidden by one
   of the same name for this repository is not listed, so it is changed in
-  Settings. With no chops, the panel says so and offers New chop. Each
+  Settings. With no chops, the panel says what a chop is, in the same
+  sentence as the switch's tooltip, then that there are none and how to
+  make one, and offers New chop. Each
   row starts with a drag handle and a star. The star pins a chop to
   Favorites, listed first under a "Favorites" heading, with the rest under
   "Other chops" (shown with nothing under it only while dragging, as a

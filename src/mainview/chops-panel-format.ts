@@ -25,6 +25,12 @@ export const CHOPS_PANEL_ID = "chops-panel";
 export const CHOPS_BUTTON_ID = "titlebar-chops";
 
 export const CHOPS_PANEL_TITLE = "Chops";
+/**
+ * What a chop is, in one sentence: the tooltip of the side panel switch's
+ * Chops button, the panel's visible title, and the first sentence the panel
+ * says while it has no chops.
+ */
+export const CHOPS_DEFINITION = "Chops are saved commands and agent prompts to run in a worktree.";
 export const CHOPS_BUTTON_LABEL = "Chops";
 export const CHOPS_CLOSE_LABEL = "Hide the chops panel";
 export const CHOPS_NEW_LABEL = "New chop";
@@ -75,11 +81,12 @@ export function takesChopsPanelKey(event: Keys, state: AppState): boolean {
 /**
  * What the panel says while it has nothing to list: with no worktree
  * selected and no chops read yet, that one should be selected; with one
- * selected, that they are being read; then that there are none.
+ * selected, that they are being read; then what a chop is, that there are
+ * none, and how to make one.
  */
 export function describeChopsPanelEmpty(selected: boolean, listed: number | null): string | null {
 	if (listed === null) return selected ? "Reading the chops" : "Select a worktree to see the chops of its repository.";
-	if (listed === 0) return "No chops yet. Make one with New chop, or share some with everyone in .timber/chops.json.";
+	if (listed === 0) return `${CHOPS_DEFINITION} None yet. Make one with New chop, or share some with everyone in .timber/chops.json.`;
 	return null;
 }
 
