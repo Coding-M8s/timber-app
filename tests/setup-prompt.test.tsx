@@ -15,7 +15,8 @@ const settle = async () => {
 const DOCS = samplePickableRepository.path;
 const DOCS_MAIN = samplePickableRepository.worktrees[0]!;
 const DOCS_FEATURE = samplePickableRepository.worktrees[1]!;
-const PROMPT = "docs-site is not set up for Timber yet";
+const PROMPT = "docs-site is not set up for Timber. Setup is optional.";
+const ANY_PROMPT = "is not set up for Timber.";
 const WIZARD = "Set up Timber for docs-site";
 
 type Store = ReturnType<typeof createAppStore>;
@@ -56,6 +57,8 @@ describe("a repository that was never set up for Timber", () => {
 		expect(markup).toContain(PROMPT);
 		expect(markup).toMatch(/class="button"[^>]*>Set up Timber</);
 		expect(markup).toContain("Not now");
+		// One sentence shows; the tooltip gives it whole with the longer explanation.
+		expect(markup).toContain(`title="${PROMPT} Everything works with Timber&#x27;s defaults. Setup saves your editor, agent, setup scripts, and starting branch for this repository."`);
 		expect(markup).not.toContain("timber setup");
 		expect(markup).not.toContain('role="alert"');
 		expect(markup).toContain(DOCS_FEATURE.path);
@@ -65,7 +68,7 @@ describe("a repository that was never set up for Timber", () => {
 		const { store } = await startedStore(createMockEngine([...sampleRepositories, sampleStatesRepository]));
 		for (const repository of [...sampleRepositories, sampleStatesRepository]) {
 			store.select(repository.worktrees[0]!.id);
-			expect(render(store)).not.toContain("is not set up for Timber yet");
+			expect(render(store)).not.toContain(ANY_PROMPT);
 		}
 	});
 
@@ -87,6 +90,8 @@ describe("Set up Timber", () => {
 		const markup = render(store);
 		expect(markup).toContain(WIZARD);
 		expect(markup).toContain("Step 1 of 7: Where to save");
+		// The longer explanation the prompt leaves to its tooltip is here too.
+		expect(markup).toContain("Everything works with Timber&#x27;s defaults.");
 		await settle();
 		expect(store.getState().terminals).toEqual([]);
 		expect(store.getState().operations.some(operation => operation.kind === "open-terminal")).toBe(false);
@@ -196,6 +201,6 @@ describe("a fresh install with no repositories", () => {
 		expect(markup).toContain("No repository yet");
 		expect(markup).toContain("Start by adding a Git repository.");
 		expect(markup).toMatch(/class="button"[^>]*>Add repository</);
-		expect(markup).not.toContain("is not set up for Timber yet");
+		expect(markup).not.toContain(ANY_PROMPT);
 	});
 });

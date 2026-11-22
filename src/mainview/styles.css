@@ -3960,42 +3960,42 @@ pre:focus-visible {
 	max-width: 640px;
 }
 
-/* First-run setup: a quiet prompt between the header and the tabs. It is an offer, not an error. */
+/*
+ * First-run setup: a quiet prompt between the header and the tabs. It is an offer, not an error.
+ * One line: the sentence, then the buttons. Where both do not fit, the buttons wrap below and
+ * the sentence is cut with an ellipsis, so the prompt never takes more than two lines.
+ */
 .setup-prompt {
 	flex: none;
 	display: flex;
 	flex-wrap: wrap;
-	align-items: flex-start;
-	gap: 8px 16px;
-	margin: 4px 18px 10px;
-	padding: 10px 12px;
+	align-items: center;
+	gap: 6px 12px;
+	margin: 2px 18px 8px;
+	padding: 5px 6px 5px 12px;
 	border: 1px solid var(--line);
 	border-radius: 6px;
 }
 
-.setup-prompt-body {
-	flex: 1 1 320px;
-	display: flex;
-	flex-direction: column;
-	gap: 3px;
-	min-width: 0;
-}
-
-.setup-prompt-title {
-	margin: 0;
-	font-weight: 500;
-}
-
 .setup-prompt-text {
+	flex: 1 1 auto;
+	min-width: 0;
 	margin: 0;
-	font-size: 12.5px;
-	color: var(--text-3);
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	color: var(--text-2);
 }
 
 .setup-prompt-actions {
 	flex: none;
 	display: flex;
 	gap: 6px;
+}
+
+/* Level with the sentence: a button's usual space above would make the line taller. */
+.setup-prompt-actions .button {
+	margin-top: 0;
 }
 
 /* The setup wizard: one step of Timber's settings at a time, then a last look before the one save. */
