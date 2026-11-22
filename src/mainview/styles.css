@@ -3998,11 +3998,15 @@ pre:focus-visible {
 }
 
 /* Drawn inside, as a tab's is: the scrolling row clips a ring drawn outside. */
-.session-chip-tab:focus-visible,
-.session-chip-close:focus-visible,
+.session-chip:has(> button:focus-visible),
 .session-rename:focus-visible {
 	outline: 2px solid var(--focus);
 	outline-offset: -2px;
+}
+
+/* The ring goes around the whole chip, its name and its close button together, so they read as one. */
+.session-chip > button:focus-visible {
+	outline: none;
 }
 
 .session-add {
