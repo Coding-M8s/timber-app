@@ -103,7 +103,7 @@ export function UninstallPanelView(props: UninstallPanelViewProps) {
 			)}
 			<div className="uninstall-buttons">
 				<button type="button" className="button quiet" autoFocus disabled={running} onClick={onCancel}>Cancel</button>
-				<button type="button" className="button danger" disabled={running} onClick={onConfirm}>
+				<button type="button" className="button danger" data-reserve="Uninstall and quit" disabled={running} onClick={onConfirm}>
 					{running ? "Uninstalling" : "Uninstall and quit"}
 				</button>
 			</div>

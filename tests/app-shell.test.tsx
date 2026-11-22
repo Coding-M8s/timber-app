@@ -430,7 +430,7 @@ describe("settings dialog", () => {
 	test("Save is marked unavailable while nothing differs from what is saved, and stays focusable", async () => {
 		const { store } = await startedStore();
 		store.openDialog({ kind: "settings", section: "layout" });
-		expect(render(store)).toContain('<button type="submit" class="button primary" aria-disabled="true">Save</button>');
+		expect(render(store)).toContain('<button type="submit" class="button primary" data-reserve="Saving" aria-disabled="true">Save</button>');
 	});
 
 	test("each section is a panel named by its entry in the list, and only the chosen one shows", async () => {

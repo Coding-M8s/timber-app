@@ -111,7 +111,7 @@ export function AppUpdatePanelView({ state, onCheck, install, at = milliseconds 
 			</p>
 			{state.kind !== "unavailable" && (
 				<div className="update-install-buttons">
-					<button type="button" className="button" disabled={!canCheckForUpdate(state)} onClick={onCheck}>
+					<button type="button" className="button" data-reserve="Check for updates" disabled={!canCheckForUpdate(state)} onClick={onCheck}>
 						{state.kind === "checking" ? "Looking" : "Check for updates"}
 					</button>
 				</div>
