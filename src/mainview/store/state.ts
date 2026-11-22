@@ -23,6 +23,7 @@ import type { TerminalSession } from "../../shared/terminal";
 import type { RenderingStatus } from "../../shared/rendering";
 import type { SeenStatuses } from "../seen-status";
 import { type RepositoryGroups, emptyGroups } from "../../shared/repository-groups";
+import { type IconTarget, type SidebarIcons, emptyIcons } from "../../shared/sidebar-icons";
 import type { SyncActionKind, SyncActionResult } from "../../shared/sync-actions";
 import { confirmsPull } from "../../shared/pull-confirm-setting";
 import type { SyncOptions } from "../sync-action-format";
@@ -292,6 +293,8 @@ export type DialogRequest =
 	| { kind: "settings"; section?: SettingsSection; repository?: string; group?: "tracking" }
 	/** The command palette: every worktree and action, searched by typing. */
 	| { kind: "palette" }
+	/** Set, change, or remove the icon of a repository or a group, from its menu. */
+	| { kind: "sidebar-icon"; target: IconTarget }
 	/** The setup wizard of a repository new to Timber, named by the path of its primary checkout. */
 	| { kind: "set-up-timber"; repository: string }
 	/**
@@ -395,6 +398,8 @@ export interface AppState {
 	repositoryGroups: RepositoryGroups;
 	/** Why the last group name typed was not saved. Null once one saved, or when editing again. */
 	groupNameProblem: GroupNameProblem | null;
+	/** The icons of repositories and groups, as the engine last saved them. */
+	sidebarIcons: SidebarIcons;
 	/**
 	 * Outcomes, oldest first. A failure is never only a toast: it stays where
 	 * the person can act on it, and a toast can at most point there.
@@ -648,6 +653,7 @@ export const initialState: AppState = {
 	notice: null,
 	repositoryGroups: emptyGroups(),
 	groupNameProblem: null,
+	sidebarIcons: emptyIcons(),
 	toasts: [],
 	removals: [],
 	layout: defaultLayout(),

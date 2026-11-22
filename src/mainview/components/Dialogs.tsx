@@ -14,6 +14,7 @@ import { SendReviewDialog } from "./ReviewNotes";
 import { SetBaseDialog } from "./SetBaseDialog";
 import { SendPromptDialog } from "./SendPromptDialog";
 import { SettingsDialog } from "./SettingsDialog";
+import { SidebarIconDialog } from "./SidebarIconDialog";
 import { StartWorkDialog } from "./StartWorkDialog";
 import { SetupWizardDialog } from "./SetupWizardDialog";
 import { SyncActionDialog } from "./SyncActionDialog";
@@ -50,6 +51,9 @@ export function Dialogs() {
 			return <CleanUpMergedDialog key={dialog.repository} request={dialog} />;
 		case "palette":
 			return <CommandPalette />;
+		case "sidebar-icon":
+			// A key per repository or group, so another one starts from nothing. It closes itself when that leaves the list.
+			return <SidebarIconDialog key={JSON.stringify(dialog.target)} target={dialog.target} />;
 		case "run-chop":
 			return <RunChopDialog />;
 		case "restore-backup":

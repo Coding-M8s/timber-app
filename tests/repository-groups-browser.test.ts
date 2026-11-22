@@ -159,7 +159,7 @@ describe.skipIf(browserPath === null || process.platform === "win32")("repositor
 		await page.press("F10", "shift");
 		await page.until(MENU_OPEN, "the menu opened again");
 		expect(await page.evaluate<string[]>(`[...document.querySelectorAll('[role="menuitem"]')].map(item => item.textContent)`))
-			.toEqual(["Clean up merged", "New group...", "Take out of Work", "Remove from the list"]);
+			.toEqual(["Clean up merged", "New group...", "Take out of Work", "Icon...", "Remove from the list"]);
 	}, 30_000);
 
 	test("a group is renamed from its menu with the old name selected", async () => {

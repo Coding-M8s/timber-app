@@ -15,6 +15,7 @@ export type RepositoryMenuChoice =
 	| { kind: "place"; group: string }
 	| { kind: "new-group" }
 	| { kind: "take-out" }
+	| { kind: "icon" }
 	| { kind: "remove" };
 
 export interface RepositoryMenuItem {
@@ -32,7 +33,7 @@ export interface RepositoryMenuItem {
  * sidebar gives it (see `repositoryMenuItems` in worktree-menu-format.ts),
  * then one per group it can go to, in the order shown, each named with the
  * groups around it ("Work › Client A"), then New group..., Take out of its
- * group when it is in one, and Remove from the list last.
+ * group when it is in one, Icon..., and Remove from the list last.
  */
 export function repositoryMenuItems(groups: RepositoryGroups, repository: string, cleanUp?: WorktreeMenuItem): RepositoryMenuItem[] {
 	const own = groups.groups.find(group => Object.hasOwn(groups.membership, repository) && group.id === groups.membership[repository]) ?? null;
@@ -44,11 +45,12 @@ export function repositoryMenuItems(groups: RepositoryGroups, repository: string
 		...places,
 		{ id: "new-group", label: "New group...", choice: { kind: "new-group" } },
 		...(own ? [{ id: "take-out", label: `Take out of ${own.name}`, choice: { kind: "take-out" } } satisfies RepositoryMenuItem] : []),
+		{ id: "icon", label: "Icon...", title: "Set, change, or remove the icon before its name", choice: { kind: "icon" } },
 		{ id: "remove", label: "Remove from the list", title: REMOVE_REPOSITORY_HINT, choice: { kind: "remove" } },
 	];
 }
 
-export type GroupMenuChoice = { kind: "rename" } | { kind: "new-subgroup" } | { kind: "step"; step: -1 | 1 } | { kind: "move"; parent: string | null } | { kind: "delete" };
+export type GroupMenuChoice = { kind: "rename" } | { kind: "icon" } | { kind: "new-subgroup" } | { kind: "step"; step: -1 | 1 } | { kind: "move"; parent: string | null } | { kind: "delete" };
 
 export interface GroupMenuItem {
 	id: string;
@@ -61,7 +63,7 @@ export interface GroupMenuItem {
 }
 
 /**
- * The entries of a group header's menu: Rename, New subgroup..., Move up and
+ * The entries of a group header's menu: Rename, Icon..., New subgroup..., Move up and
  * Move down among the groups with the same parent, each only where there is a
  * place to go, then Move into each other group it can go inside, in the order shown and named with
  * the groups around it, then Move to the top level when it sits inside one,
@@ -85,6 +87,7 @@ export function groupMenuItems(groups: readonly RepositoryGroup[], id: string): 
 	const deepest = depthOf(groups, id) >= MAX_GROUP_DEPTH;
 	return [
 		{ id: "rename", label: "Rename", choice: { kind: "rename" } },
+		{ id: "icon", label: "Icon...", title: "Set, change, or remove the icon before its name", choice: { kind: "icon" } },
 		{ id: "new-subgroup", label: "New subgroup...", ...(deepest ? { disabled: true, note: GROUP_TOO_DEEP } : {}), choice: { kind: "new-subgroup" } },
 		...(stepGroupAmongSiblings(groups, id, -1) ? [{ id: "move-up", label: "Move up", choice: { kind: "step", step: -1 } } satisfies GroupMenuItem] : []),
 		...(stepGroupAmongSiblings(groups, id, 1) ? [{ id: "move-down", label: "Move down", choice: { kind: "step", step: 1 } } satisfies GroupMenuItem] : []),

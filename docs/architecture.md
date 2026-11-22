@@ -920,6 +920,65 @@ The app keeps its own list of repositories, so it is the same after a restart.
   fold. A group, parent, or repository that is not listed changes nothing and
   answers `saved`, so a request that raced a delete is safe.
   Removing a repository takes its `group` with it; the group stays.
+- **Icons.** A repository, by the path of its primary checkout, or a group,
+  by id, can have an icon, in an `icons` part of the file written only once
+  one is set:
+
+  ```json
+  "icons": {
+  	"repositories": { "/work/timber": { "kind": "image", "source": "github", "type": "image/png", "data": "iVBORw0..." } },
+  	"groups": { "4f6c1d2e-...": { "kind": "bundled", "name": "briefcase" } }
+  }
+  ```
+
+  A bundled icon is one of twelve names drawn by the interface. An image
+  keeps its bytes in base64, with `source` `file`, `github`, or `bitbucket`,
+  at most `MAX_ICON_BYTES` (32 KB) and `MAX_ICON_PIXELS` (512) on a side.
+  Its type is read from its first bytes (`sniffImage` in
+  `src/shared/sidebar-icons.ts`): PNG, JPEG, or WebP, never SVG. Like the
+  groups, icons are a convenience: an icon that cannot be read, whose
+  bytes are no such image, or whose repository or group is not listed, is
+  dropped on its own when the file is read, and the repositories always
+  load. The bytes are checked when the file is read and when an icon is
+  set, not on every save, since the layout and window save the whole file
+  often. Removing a repository and deleting a group drop its icon in the
+  same save.
+- **Icon methods.** `Engine.listSidebarIcons` answers the icons from the
+  settings, never from Git or the network, and none under the development
+  override. `readRemoteIconSource(path)` runs one read-only `git remote
+  get-url --all -- origin` in a listed repository, as an argument array
+  with the limits of the issue tracker read, and answers where its icon can
+  come from: the owner of a github.com repository (`githubRepositoryOf`, the
+  shapes Timber reads) or a bitbucket.org repository in its HTTPS, SSH, or
+  short SSH form, a user name in the URL dropped. Only `origin` is read,
+  so it works while Timber is not ready. `setSidebarIcon(target, choice)`
+  takes a bundled name, `file`, which opens the native file picker offering
+  PNG, JPEG, and WebP, refuses a file over the limit by its size before
+  reading it, and checks the bytes read, or `remote`, which fetches. Null
+  removes the icon. The picker and the fetch happen before the change takes
+  its turn with the other changes to the file, so they never hold a save up;
+  in its turn the repository or group is looked for again, and one that left
+  meanwhile answers `unknown`. A refusal (`refused`) or failure (`failed`)
+  says why for the person and changes nothing on disk. The request's shape
+  is checked in the main process, and maps are read with `Object.hasOwn`.
+  The interface asks with no time limit, as Add repository does, because the
+  picker stays open as long as the person likes.
+- **Fetching a remote icon.** Only when the person chooses it, or chooses it
+  again to refresh it, the main process sends a `GET` to
+  `https://github.com/<owner>.png?size=64` or
+  `https://bitbucket.org/<workspace>/<repository>/avatar/64`, with no login.
+  The URL carries the owner, or the workspace and repository name, from the
+  repository's `origin`; nothing else about the person or the machine is
+  sent. Redirects are followed one at a time, at most five, and only to
+  another HTTPS address, so nothing is ever asked for in the clear. The
+  whole fetch, body included, must end within 15 seconds. The answer's type
+  counts for nothing; its body is read up to the limit and no further, then
+  checked as a file is. A 404 is refused with its own words (Bitbucket shows
+  no icon for a private repository without a login), another status, no
+  answer within 15 seconds, or no connection fail with the reason, and in
+  each case the icon stays as it was. The app never reads Timber's
+  credential stores for this, so Jira and Linear images, which need a login,
+  are not offered.
 - **No reload.** Grouping changes only the settings file, never the set of
   repositories, so no Git or Timber command runs, nothing is watched or
   fetched anew, and the interface never reads the repositories again for it.

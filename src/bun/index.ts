@@ -74,6 +74,7 @@ import { createArenaCommands } from "./arenas";
 import { createRepositoryTurns } from "./repository-turns";
 import { createWorkflowReader } from "./workflows";
 import { createIssueTrackerReader } from "./issue-trackers";
+import { createSidebarIcons } from "./sidebar-icons";
 import { messageOf } from "../shared/error-message";
 
 const DEV_SERVER_URL = "http://localhost:5173";
@@ -113,13 +114,14 @@ async function pickFolder(): Promise<string | null> {
 	return folder || null;
 }
 
-/** The native file picker, for one file. Null when it was closed without a choice. */
-async function pickFile(): Promise<string | null> {
+/** The native file picker, for one file, offering every type or only those named, as "png,jpg". Null when it was closed without a choice. */
+async function pickFile(types?: string): Promise<string | null> {
 	const [file] = await Utils.openFileDialog({
 		startingFolder: homedir(),
 		canChooseFiles: true,
 		canChooseDirectory: false,
 		allowsMultipleSelection: false,
+		...(types === undefined ? {} : { allowedFileTypes: types }),
 	});
 	return file || null;
 }
@@ -138,6 +140,7 @@ const pace = createListingPace({
 });
 const listings = createRecentListings(createRepositoryReader(() => timber.current()), { listing: pace.listing });
 const repositories = createRepositoryList({ settingsFile, settings, pickFolder, reader: listings });
+const sidebarIcons = createSidebarIcons({ settings, pickFile });
 const layout = createSavedLayout(settings);
 /*
  * The sessions that ran when the app last quit open again (see ./session-layout.ts and docs/architecture.md, "After a
@@ -513,6 +516,10 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			deleteRepositoryGroup: ({ id }) => repositories.deleteGroup(id),
 			moveRepositoryGroup: ({ id, parent, before }) => repositories.moveGroup(id, parent, before),
 			placeRepository: ({ path, group, order }) => repositories.place(path, group, order ?? undefined),
+			// Icons only change the settings file too. Setting one waits on the file picker or the network, so it is not timed out.
+			listSidebarIcons: () => sidebarIcons.list(),
+			readRemoteIconSource: ({ path }) => sidebarIcons.remoteSource(path),
+			setSidebarIcon: ({ target, choice }) => sidebarIcons.set(target, choice),
 			loadRepository: async ({ path }) => {
 				const marks = fetcher.marks(path);
 				const repository = await repositories.reload(path);

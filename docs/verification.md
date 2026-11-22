@@ -4101,3 +4101,41 @@ the row (issue 241), Linux x64 with Bun 1.4.5 and Git 2.43:
   issue 305 (skipping the Pull dialog) and issue 316 (nested groups): 4092
   pass, 19 skip, 0 fail.
 - Not run by me: the desktop window on any platform.
+
+Run for repository and group icons (issue 246), on 2026-11-22, Linux x64
+with Bun 1.4.5, Git 2.43.0, and Google Chrome 151:
+
+- Scope as agreed for the issue: a remote icon comes from the repository's
+  `origin` URL, GitHub (the owner's avatar) or Bitbucket (the repository's
+  own icon), with no login. Jira and Linear are not offered, since their
+  images need a login only Timber holds.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun run build:web`: built.
+- `bun run test`: 4121 pass, 19 skip, 0 fail. On the base it started from,
+  the same machine ran 4073 pass, 19 skip, 0 fail. Rebased onto main after
+  issue 241 (a worktree's progress at a glance): 4140 pass, 19 skip, 0 fail,
+  with both type checks and the web build again clean.
+- `tests/sidebar-icons-browser.test.ts`, on the mock engine in the installed
+  Chrome: 3 passed. Icon... from a repository's menu and a group's menu, a
+  bundled icon and then the GitHub avatar (a 16 pixel PNG, drawn from its
+  data URL) shown before the name at once, the button turning to Refresh,
+  Remove icon, and a repository's icon beside its name on the palette's rows
+  of another repository. `tests/repository-groups-browser.test.ts`: 12
+  passed, with Icon... in the menu.
+- `tests/sidebar-icons-store.test.ts` sets icons in a real settings file on
+  real temporary repositories with GitHub, Bitbucket (with a user name in
+  the URL), and no `origin` remote, and asserts the read of `origin` leaves
+  files and refs as they were. A stand-in network covers a 404, a 503, no
+  connection, a body that is no image, a body over the limit with and
+  without a length, a body that stalls, redirects (relative, to HTTP, with
+  no address, and in a loop), and each leaves the icon in place.
+- `tests/sidebar-icons-ui.test.tsx` includes an icon set while the whole
+  list is read again; it failed before the store kept such a read from
+  showing an older set of icons, and passes after.
+- Fetched once by hand with `fetchRemoteIcon` against the live hosts, for a
+  public GitHub owner and a public Bitbucket repository: a 2 KB JPEG and a
+  6 KB PNG, both taken; a Bitbucket repository that does not exist was
+  refused with "Bitbucket shows no icon for ... without a login".
+- Not run: the desktop app by hand on any platform, so the native file
+  picker's type filter and the icons in the real window were not seen;
+  icons were seen only in headless Chrome over the mock engine.

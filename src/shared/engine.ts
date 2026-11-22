@@ -13,6 +13,7 @@ import type { Layout } from "./layout";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, RepositoryGroupsResult, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
 import type { Preferences } from "./preferences";
 import type { RepositoryGroups } from "./repository-groups";
+import type { IconChoice, IconTarget, RemoteIconSource, SidebarIconResult, SidebarIcons } from "./sidebar-icons";
 import type { RestartPlan, RestartResult } from "./restart";
 import type { IssueSearchRequest, IssueSearchResult } from "./issue-search";
 import type { IssueListRequest, IssueListResult } from "./issue-lists";
@@ -129,6 +130,32 @@ export interface Engine {
 	 * anything in a repository or its folder.
 	 */
 	placeRepository(path: string, group: string | null, order?: string[]): Promise<RepositoryGroupsResult>;
+	/**
+	 * The icons of repositories, by the path of their primary checkout, and of
+	 * groups, by id. None while the development override is set. Read from the
+	 * app's settings, never from Git, a repository, or the network.
+	 */
+	listSidebarIcons(): Promise<SidebarIcons>;
+	/**
+	 * Where a repository in the list can take its icon from: its origin
+	 * remote, when that is one github.com or bitbucket.org repository. Null
+	 * otherwise, and for a repository not in the list. One read-only Git
+	 * query; nothing is fetched.
+	 */
+	readRemoteIconSource(path: string): Promise<RemoteIconSource | null>;
+	/**
+	 * Set the icon of a repository or a group, or with null remove it. A
+	 * bundled icon is set at once. `file` opens the native file picker and
+	 * takes the image picked; `remote` fetches the icon of the repository's
+	 * origin from GitHub or Bitbucket, with no login, and asking for it again
+	 * refreshes it. The image is kept in the settings, so it is never fetched
+	 * again to be shown. An image that is too big or is not a PNG, JPEG, or
+	 * WebP is refused, and a fetch that fails says why; both leave the icon
+	 * as it was. Answers only when the picker closes or the fetch ends. This
+	 * only changes the app's settings, never anything in a repository or its
+	 * folder.
+	 */
+	setSidebarIcon(target: IconTarget, choice: IconChoice | null): Promise<SidebarIconResult>;
 	/**
 	 * Read one repository again, named by the path of its primary checkout.
 	 * Null when Git could not read it there. As in `listRepositories`, a

@@ -230,8 +230,8 @@ change them here first when they change.
   repository's menu, as do a right-click on the header and Shift+F10 or the
   context menu key on it: "Clean up merged" first, then "Add to" or "Move to"
   each group, named with the groups around it ("Work › Client A"), "New
-  group...", "Take out of" its group, and "Remove from the list", which only
-  changes the app's list. A missing folder still offers its
+  group...", "Take out of" its group, "Icon...", and "Remove from the list",
+  which only changes the app's list. A missing folder still offers its
   own Remove.
 - Repositories can be gathered into named groups, such as Work and Personal.
   There are none until the person makes one, and with none the sidebar looks
@@ -254,7 +254,7 @@ change them here first when they change.
   when anything inside it, at any depth, has a match, and a group without
   one is hidden.
 - The group's More button, which always shows, a right-click, or Shift+F10
-  opens Rename, "New subgroup...", "Move up" and "Move down" among the
+  opens Rename, "Icon...", "New subgroup...", "Move up" and "Move down" among the
   groups with the same parent where there is room, "Move into" each other
   group it can go inside, "Move to the top level" for a subgroup, and Delete group. A group
   is never offered itself or its own subgroups; a place that would nest it
@@ -279,6 +279,32 @@ change them here first when they change.
   groups with the same parent.
 - Grouping only changes the app's saved list. No Git or Timber command runs,
   and nothing in a repository is touched.
+- A repository or a group can show a small icon before its name, and a
+  repository's icon also shows beside its name in the command palette: in
+  the scope chip and on rows that name it. Groups have no rows in the
+  palette, so a group's icon shows only in the sidebar. "Icon..." in the
+  repository's or group's menu opens a dialog with what is set now, twelve
+  bundled icons drawn in the text color, "Choose image file...", and
+  "Remove icon". A choice is saved and shown at once, and the dialog stays
+  open; Done or Escape closes it. Without an icon the header looks as
+  before.
+- An image file is a PNG, JPEG, or WebP of at most 32 KB and 512 pixels on
+  a side, known by its bytes, never its name. A bigger file or anything else
+  is refused with the reason in the dialog ("That image is 2.4 MB. An icon
+  can be at most 32 KB."), and the icon stays as it was. SVG is not taken:
+  it can hold scripts.
+- A repository whose `origin` remote is one github.com or bitbucket.org
+  repository is also offered its icon there: "Use the GitHub avatar of
+  <owner>", since GitHub has no icon for one repository, or "Use the
+  Bitbucket icon of <workspace>/<repository>". It is fetched once, when
+  chosen, with no login, and a copy is kept, so the sidebar never waits on
+  the network. While that copy is the icon, the button reads "Refresh the
+  GitHub avatar" (or Bitbucket icon) and fetches it again. A fetch that
+  fails, such as a private Bitbucket repository, which shows no icon without
+  a login, says why in the dialog and leaves the icon in place. Jira and
+  Linear are not offered: their images need a login only Timber holds.
+- Icons are kept in the app's settings, never in the repository. Removing a
+  repository or deleting a group drops its icon.
 - The app fetches every repository in the background, on an interval from
   Settings that can be turned off. A failed fetch, such as while offline or
   without stored credentials, shows a quiet grey word beside the
