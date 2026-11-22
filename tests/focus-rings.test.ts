@@ -40,11 +40,15 @@ describe("focus rings inside a scrolling container", () => {
 		expect(reach(controlRing)).toBeGreaterThan(0);
 	});
 
-	test("draw a session chip's ring, its close button's, and the rename field's inside them, as a tab's is, so the scrolling row shows the whole ring", () => {
-		const chipRing = rule(".session-chip-tab:focus-visible,\n.session-chip-close:focus-visible,\n.session-rename:focus-visible");
+	test("draw a session chip's ring and the rename field's inside them, as a tab's is, so the scrolling row shows the whole ring", () => {
+		const chipRing = rule(".session-chip:has(> button:focus-visible),\n.session-rename:focus-visible");
 		expect(chipRing).toContain("outline: 2px solid var(--focus);");
 		expect(reach(chipRing)).toBeLessThanOrEqual(0);
 		expect(reach(chipRing)).toBe(reach(rule(".tab:focus-visible,\n.tabpanel:focus-visible")));
+	});
+
+	test("ring a session chip whole, its name and close button together, rather than each button alone", () => {
+		expect(rule(".session-chip > button:focus-visible")).toContain("outline: none;");
 	});
 
 	test("leave room above the sidebar's first repository header for its whole ring", () => {
