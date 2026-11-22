@@ -52,7 +52,7 @@ import { createRefreshPolicy } from "./refresh-policy";
 import { type WatchTarget, createRepositoryWatcher } from "./repository-watcher";
 import { createWorktreeStamps } from "./worktree-stamp";
 import { createTerminalSessions } from "./terminals";
-import { claudeConfigFolder, claudeConversationExists, codexConversationExists, codexHomeFolder, findCodexConversation } from "./agent-conversations";
+import { claudeConversationExists, codexConversationExists, findCodexConversation } from "./agent-conversations";
 import { createSessionLayout, sessionsFilePath } from "./session-layout";
 import { createDesktopNotices } from "./desktop-notices";
 import { type AlertSettings, createAlertRunner } from "../shared/status-notices";
@@ -151,8 +151,9 @@ const sessionLayout = createSessionLayout({
 	file: sessionsFilePath(settingsFile),
 	running: () => terminals.running(),
 	endedCodex: () => terminals.endedCodex(),
-	findCodex: options => findCodexConversation({ homeFolder: codexHomeFolder(process.env, homedir()), ...options }),
-	claudeExists: id => claudeConversationExists(id, claudeConfigFolder(process.env, homedir())),
+	// Each session is checked in the folder its agent kept its conversations in when it started (see ./terminals.ts).
+	findCodex: options => findCodexConversation(options),
+	claudeExists: (id, folder) => claudeConversationExists(id, folder),
 });
 await sessionLayout.load();
 const preferences = createSavedPreferences(settings);
@@ -421,8 +422,8 @@ const terminals = createTerminalSessions({
 	workflows: repository => workflows.list(repository),
 	// An agent goes back to its own conversation only when that is still in the agent's own folder. Nothing there is written.
 	conversations: {
-		claudeExists: id => claudeConversationExists(id, claudeConfigFolder(process.env, homedir())),
-		codexExists: id => codexConversationExists(id, codexHomeFolder(process.env, homedir())),
+		claudeExists: (id, folder) => claudeConversationExists(id, folder),
+		codexExists: (id, folder) => codexConversationExists(id, folder),
 		newId: () => crypto.randomUUID(),
 	},
 	onOutput: output => tell("terminal output", () => rpc.send.terminalOutput(output)),

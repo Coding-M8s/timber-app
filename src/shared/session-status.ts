@@ -257,7 +257,9 @@ export type AgentBrand = AgentId;
 
 /**
  * The agent a session runs, when the registry has it: known by the
- * `program` the main process gave an agent session, or by its executable,
+ * `program` the main process gave an agent session, which is the agent
+ * picked for its row in Settings when one was and then the executable's
+ * name is not read, or else by its executable,
  * as the last part of its path (`claude`, `codex`, with `.exe` cut on
  * Windows; never a name other programs install too, such as `agent`), or by
  * the `app` a program reports, such as `claude-code`, each agent in the
@@ -269,7 +271,8 @@ export function agentBrand(session: Pick<TerminalSession, "kind" | "shell" | "st
 	const app = session.status?.app?.toLowerCase() ?? "";
 	for (const agent of AGENTS) {
 		const reported = agent.status.app !== null && app.startsWith(agent.status.app);
-		const runs = session.kind === "agent" && (session.program === agent.id || agent.executables.includes(executable));
+		// The agent the main process gave the session takes the place of the executable's name, so a row picked as Codex whose command runs `claude` shows Codex.
+		const runs = session.kind === "agent" && (session.program !== undefined ? session.program === agent.id : agent.executables.includes(executable));
 		if (runs || reported) return agent.id;
 	}
 	// A shell an agent left behind keeps the agent's icon.

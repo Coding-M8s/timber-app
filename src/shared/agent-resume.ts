@@ -32,24 +32,32 @@ function startsAsTyped(args: readonly string[], recipe: AgentResume): boolean {
 		|| (SHORT_GROUP.test(arg) && Array.from(arg.slice(1)).some(letter => recipe.pickingLetters.includes(letter))));
 }
 
+/** The agent picked in Settings, or else the one the executable is by its name. */
+function agentOf(executable: string, realPath: string | null | undefined, chosen: AgentId | null | undefined) {
+	return chosen !== undefined && chosen !== null ? agentById(chosen) : agentByExecutable(executable, realPath);
+}
+
 /**
  * Which agent an executable is by its name, whatever its arguments, or null.
  * `realPath` is the file it leads to with every link followed, which tells a
  * name other programs install too, such as `agent` (see `agentByExecutable`).
+ * `chosen` is the agent picked for the row in Settings, which takes the
+ * place of the name, so a wrapper such as `claude-work` is Claude Code.
  */
-export function agentProgram(executable: string, realPath?: string | null): ResumableAgent | null {
-	return agentByExecutable(executable, realPath)?.id ?? null;
+export function agentProgram(executable: string, realPath?: string | null, chosen?: AgentId | null): ResumableAgent | null {
+	return agentOf(executable, realPath, chosen)?.id ?? null;
 }
 
 /**
  * The agent an executable is, from its last path part (`claude`, `codex`,
  * with `.exe` cut on Windows), and only when it can go back to a
  * conversation and the arguments leave room for the app's own (see above).
- * Words are matched exactly, so a flag that only starts the same way does
- * not count. Null for anything else.
+ * An agent picked in Settings (`chosen`) is used in place of the name; its
+ * arguments are read by the same rules. Words are matched exactly, so a
+ * flag that only starts the same way does not count. Null for anything else.
  */
-export function resumableAgent(executable: string, args: readonly string[], realPath?: string | null): ResumableAgent | null {
-	const agent = agentByExecutable(executable, realPath);
+export function resumableAgent(executable: string, args: readonly string[], realPath?: string | null, chosen?: AgentId | null): ResumableAgent | null {
+	const agent = agentOf(executable, realPath, chosen);
 	if (agent === null || agent.resume === null) return null;
 	return startsAsTyped(args, agent.resume) ? null : agent.id;
 }

@@ -4748,7 +4748,31 @@ as a control sequence, as it would a window title or a bell (see
   shell's entry in the same menu. The list holds 20 agents at most, and a
   command 1000 characters. The list is read whole: one entry in the file that
   cannot be read puts the presets back, and the next save of the section
-  writes them.
+  writes them. The one exception is an `agent` this version does not know,
+  which is read as "Detect from command".
+- **Agent and Config folder.** Each row may also pick its `agent` (an `id`
+  of the [agent registry](#the-agent-registry)), and its `configFolder`.
+  Both are optional, so older settings load and save unchanged. The picker
+  in Settings, Agents offers "Detect from command", which names what it
+  detected, "not recognized", or for a name other programs install too
+  such as `agent` "known once it starts", and then every agent of the
+  registry. A picked agent takes the place of the lookup by the
+  executable's name (`rowAgent` in `src/shared/agent.ts`, the `chosen`
+  argument of `agentProgram` and `resumableAgent`): its mark, its status,
+  and its way back to a conversation. An `app` the program itself reports
+  still gives its mark first, as before. Config folder shows only
+  when the row's agent, picked or detected, keeps its conversations in a
+  folder (`resume.conversations`), and names its variable beside the
+  label: `CLAUDE_CONFIG_DIR` for Claude Code, `CODEX_HOME` for Codex. It
+  is a full path, on any platform, or starts with `~/`; anything else,
+  such as `claude-spare` or `~` alone, is refused under the row. It is
+  kept as typed and expanded only in the main process, against the
+  `HOME` the app was started with. A folder typed for an agent that keeps
+  none is dropped on save, and one left in the file is ignored. For
+  example, a wrapper `claude-personal` that runs
+  `CLAUDE_CONFIG_DIR="$HOME/.claude-personal" exec claude "$@"` is a row
+  with command `claude-personal`, Agent Claude Code, and Config folder
+  `~/.claude-personal`.
 - **The command.** Split by `splitCommandLine`, never by a shell, as for the
   editor: quotes group words, nothing is expanded. Nothing is added to it
   but the arguments that pick its conversation (see
@@ -4880,7 +4904,9 @@ for its mark. Each row has:
   `.exe` in any case, so `/usr/local/bin/codex` and `C:\tools\CLAUDE.EXE`
   are found, while `Claude` on Linux, `claude.sh`, and `mycodex` are not.
   This one lookup gives a session its agent (`agentProgram`), its chance to
-  go back to a conversation (`resumableAgent`), and its mark (`agentBrand`).
+  go back to a conversation (`resumableAgent`), and its mark (`agentBrand`),
+  unless the row picked its agent in Settings, which takes its place (see
+  [agent sessions](#agent-sessions), "Agent and Config folder").
 - **`sharedExecutables`**: names other programs install too, such as
   `agent`, which both Cursor and Grok Build put on the PATH. Such a name is
   the agent only when the file it was found at leads, with every link
@@ -4961,12 +4987,17 @@ What the app adds goes first, before the arguments from Settings, so no
 option that takes several values (Codex's `-i, --image <FILE>...`) and no
 `--` can take it for one of theirs.
 
-- **Which agents.** By the executable's last path part as typed in
-  Settings: `claude` or `codex` (`.exe` cut, in any case, on Windows), the
-  agents of the registry with a `resume`.
-  Anything else, a wrapper script included, starts exactly as typed and
-  fresh after a restart. So when an agent's command now runs another
-  program, it gets no resume flag, and one agent never gets another's id.
+- **Which agents.** The agent picked for the row in Settings, when one
+  was, else the one the executable's last path part as typed in Settings
+  is: `claude` or `codex` (`.exe` cut, in any case, on Windows). Only the
+  agents of the registry with a `resume` go back. With Detect, anything
+  else, a wrapper script included, starts exactly as typed and fresh after
+  a restart. So when an agent's command now runs another program, it gets
+  no resume flag, and one agent never gets another's id. A wrapper such as
+  `claude-personal` goes back once its row picks Claude Code: it gets
+  `--session-id <uuid>` on a fresh start and `--resume <uuid>` after a
+  restart, ahead of its own arguments, and the rules below still read
+  those arguments.
 - **A command that already picks a conversation, or runs without one,** is
   started exactly as typed, fresh, with no id saved: for Claude Code
   `--session-id`, `--resume`, `-r`, `--continue`, `-c`, `--from-pr`,
@@ -4983,9 +5014,20 @@ option that takes several values (Codex's `-i, --image <FILE>...`) and no
   `<home>/sessions/YYYY/MM/DD/rollout-<local time>-<uuid>.jsonl`, `<home>`
   being `$CODEX_HOME` or `~/.codex`, with a first line of type
   `session_meta` that names its id, folder (`cwd`), start time, and
-  `source` (`src/bun/agent-conversations.ts`). The app only looks: it
-  never writes there, and of a conversation it reads nothing but the first
-  line of a Codex session file.
+  `source` (`src/bun/agent-conversations.ts`). A row's Config folder
+  takes the place of `<config>` or `<home>`: the agent starts with
+  `CLAUDE_CONFIG_DIR` or `CODEX_HOME` set to it, also when its arguments
+  start it as typed, and its conversation is looked for there, at start
+  and at quit. Without one, the variable is left as the app has it, and
+  the folder is the one it names or the default. The folder is fixed when
+  the session starts (`RunningSession.conversationFolder` in
+  `src/bun/terminals.ts`), so a save in Settings while it runs does not
+  move it. The shell an ended agent leaves does not get the variable. A
+  wrapper that sets the variable to another folder itself wins inside the
+  agent, so the app looks in the wrong place and the agent starts fresh,
+  with the note. The app only looks: it never writes there, and of a
+  conversation it reads nothing but the first line of a Codex session
+  file.
 - **The check before going back.** The id comes back from the window only
   as a UUID and only follows a word the main process adds itself. It is
   used only when the conversation's file is found in that agent's own
@@ -5004,14 +5046,16 @@ option that takes several values (Codex's `-i, --image <FILE>...`) and no
 - **Codex** has no such flag, so its id is read at quit from its own files:
   the newest session file whose first line has the worktree's folder as
   `cwd`, `source` `"cli"`, no `parent_thread_id`, and a start at or after
-  the session's own start, less two seconds. The newest wins, so a `/new`
+  the session's own start, less two seconds, in the Codex home folder the
+  session started with. The newest wins, so a `/new`
   inside Codex is followed. Only day folders from the day before the
   session started on are opened, at most 1 MiB of a first line is read,
   newest file first, and the search of all worktrees together stops after
   300 ms with what it has, after the Claude Code checks. It is made only
-  for a worktree with exactly one running Codex session, and none of the
-  app's other Codex sessions there ended after that one started, less the
-  two seconds. Every session whose executable is `codex` counts, also one
+  for a worktree with exactly one running Codex session with that home
+  folder, and none of the app's other Codex sessions there, whatever their
+  home folder, ended after that one started, less the two seconds. Every
+  session that runs Codex counts, picked or by its executable `codex`, also one
   started as typed, from a workflow, or for an arena attempt: otherwise nothing
   tells their conversations apart (open A, open B, close B, quit would
   give A the conversation of B), so it keeps the id it was opened with, or

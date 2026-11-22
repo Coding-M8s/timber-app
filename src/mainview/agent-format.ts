@@ -1,4 +1,6 @@
-import { AGENT_LIMIT, AGENT_PRESETS, type AgentSetting, agentCommand, agentProblem, describeAgentCommand, sameAgentName, sameAgentSettings } from "../shared/agent";
+import { AGENT_LIMIT, AGENT_PRESETS, type AgentSetting, agentCommand, agentProblem, conversationsOf, describeAgentCommand, rowAgent, sameAgentName, sameAgentSettings } from "../shared/agent";
+import { AGENTS, type AgentId, executableName } from "../shared/agent-registry";
+import { resumableAgent } from "../shared/agent-resume";
 import { type AgentLocation, describeAgentLookup, lookupOf } from "../shared/agent-lookup";
 import { cleanSessionName } from "../shared/terminal";
 import type { TerminalProblem } from "./store/state";
@@ -83,22 +85,29 @@ export interface AgentDraft {
 	key: string;
 	name: string;
 	command: string;
+	/** The agent picked for the row, or "" for "Detect from command". */
+	agent: AgentId | "";
+	/** Its config folder as typed, or "" for the agent's default. */
+	configFolder: string;
 }
+
+/** What a row's fields can change. */
+export type AgentDraftChange = Partial<Pick<AgentDraft, "name" | "command" | "agent" | "configFolder">>;
 
 let lastKey = 0;
 const nextKey = () => `agent-${++lastKey}`;
 
 /** The rows that show what is saved. */
 export function agentDraftsOf(saved: readonly AgentSetting[]): AgentDraft[] {
-	return saved.map(agent => ({ key: nextKey(), name: agent.name, command: agent.command }));
+	return saved.map(agent => ({ key: nextKey(), name: agent.name, command: agent.command, agent: agent.agent ?? "", configFolder: agent.configFolder ?? "" }));
 }
 
 /** The rows with one more at the end: a preset, or an empty one to fill in. */
 export function addAgentDraft(drafts: readonly AgentDraft[], preset?: AgentSetting): AgentDraft[] {
-	return [...drafts, { key: nextKey(), name: preset?.name ?? "", command: preset?.command ?? "" }];
+	return [...drafts, { key: nextKey(), name: preset?.name ?? "", command: preset?.command ?? "", agent: "", configFolder: "" }];
 }
 
-export function editAgentDraft(drafts: readonly AgentDraft[], key: string, change: { name?: string; command?: string }): AgentDraft[] {
+export function editAgentDraft(drafts: readonly AgentDraft[], key: string, change: AgentDraftChange): AgentDraft[] {
 	return drafts.map(draft => draft.key === key ? { ...draft, ...change } : draft);
 }
 
@@ -117,6 +126,44 @@ export interface AgentRowModel {
 	problem: string | null;
 	/** The exact command it runs, or null when it cannot be read. */
 	example: string | null;
+	/** The words of the Agent picker's first choice, such as "Detect from command (Claude Code)". */
+	detectLabel: string;
+	/**
+	 * The Config folder field, shown only when the row's agent, picked or
+	 * detected, keeps its conversations in a folder: the variable the agent
+	 * starts with, and the agent's own folder for the placeholder.
+	 */
+	folder: { variable: string; placeholder: string } | null;
+	/** What the row says under its fields about going back to a conversation, or null. */
+	hint: string | null;
+}
+
+/** The choices of a row's Agent picker after "Detect from command": each agent of the registry, by its name. */
+export const AGENT_CHOICES: readonly { id: AgentId; name: string }[] = AGENTS.map(agent => ({ id: agent.id, name: agent.name }));
+
+/** Whether an executable is a name other programs install too, such as `agent`, which only the main process can tell apart by the file it leads to. */
+function sharedName(executable: string): boolean {
+	const name = executableName(executable);
+	return AGENTS.some(agent => agent.sharedExecutables.includes(name));
+}
+
+/** What a row's Agent picker, Config folder, and hint show, from the row as typed. */
+function rowExtras(draft: AgentDraft, setting: AgentSetting): Pick<AgentRowModel, "detectLabel" | "folder" | "hint"> & { kept: boolean } {
+	const command = agentCommand(setting);
+	const executable = command.ok ? command.executable : "";
+	const detected = command.ok ? rowAgent({}, executable) : null;
+	const shared = command.ok && detected === null && sharedName(executable);
+	const detectLabel = `Detect from command (${detected?.name ?? (shared ? "known once it starts" : "not recognized")})`;
+	const agent = draft.agent === "" ? detected : rowAgent({ agent: draft.agent }, executable);
+	const conversations = conversationsOf(agent);
+	const folder = conversations === null ? null : { variable: conversations.folderVariable, placeholder: `Default: ~/${conversations.folder}` };
+	const typed = draft.configFolder.trim();
+	let hint: string | null = null;
+	// A command that starts as typed, such as `claude --continue`, still gets the folder, but the app does not take it back to a conversation.
+	const resumes = command.ok && resumableAgent(executable, command.arguments, null, agent?.id ?? null) !== null;
+	if (folder !== null && typed !== "") hint = resumes ? `Starts with ${folder.variable} set to this folder, and goes back to its conversation from there after a restart.` : `Starts with ${folder.variable} set to this folder.`;
+	else if (draft.agent === "" && command.ok && detected === null && !shared) hint = "Not recognized from its command, so it starts fresh after a restart. Pick its agent to go back to its conversation.";
+	return { detectLabel, folder, hint, kept: folder !== null && typed !== "" };
 }
 
 export interface AgentsDraftModel {
@@ -135,10 +182,14 @@ export interface AgentsDraftModel {
 export function agentsDraftModel(drafts: readonly AgentDraft[], saved: readonly AgentSetting[]): AgentsDraftModel {
 	const agents: AgentSetting[] = [];
 	const rows: AgentRowModel[] = drafts.map(draft => {
-		const setting = { name: cleanSessionName(draft.name) ?? "", command: draft.command.trim() };
+		const setting: AgentSetting = { name: cleanSessionName(draft.name) ?? "", command: draft.command.trim() };
+		if (draft.agent !== "") setting.agent = draft.agent;
+		const { kept, ...extras } = rowExtras(draft, setting);
+		// A folder is kept only while its field shows: one typed for an agent that keeps no conversations in a folder is dropped.
+		if (kept) setting.configFolder = draft.configFolder.trim();
 		const problem = agentProblem(setting, agents.map(agent => agent.name));
 		agents.push(setting);
-		return { key: draft.key, problem, example: describeAgentCommand(setting) };
+		return { key: draft.key, problem, example: describeAgentCommand(setting), ...extras, hint: problem === null ? extras.hint : null };
 	});
 	const error = drafts.length > AGENT_LIMIT ? `The list can hold ${AGENT_LIMIT} agents at most. Remove ${drafts.length - AGENT_LIMIT}.` : null;
 	const valid = error === null && rows.every(row => row.problem === null);

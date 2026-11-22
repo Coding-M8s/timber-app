@@ -1,4 +1,5 @@
-import { AGENTS } from "./agent-registry";
+import { AGENTS, type AgentDefinition, type AgentId, type AgentResume, agentByExecutable } from "./agent-registry";
+import { isFullPath } from "./agent-lookup";
 import { describeCommandLine, splitCommandLine } from "./command-line";
 import { cleanSessionName, sessionKindName } from "./terminal";
 
@@ -22,6 +23,23 @@ export interface AgentSetting {
 	 * starts in the worktree's folder, and nothing is added to it.
 	 */
 	command: string;
+	/**
+	 * Which agent of the registry the command runs, picked in Settings, or
+	 * left out to know it by the executable's name ("Detect from command").
+	 * A picked agent gives the session its mark, its status source, and its
+	 * way back to a conversation whatever the executable is called, so a
+	 * wrapper such as `claude-work` resumes as Claude Code.
+	 */
+	agent?: AgentId;
+	/**
+	 * Where the row's agent keeps its conversations, as typed: a full path,
+	 * or one that starts with `~/`. Left out for the agent's default. Used
+	 * only when the row's agent keeps its conversations in a folder
+	 * (`resume.conversations` in the registry): the session starts with that
+	 * agent's folder variable, such as `CLAUDE_CONFIG_DIR`, set to it, and its
+	 * conversation is looked for there. Expanded only in the main process.
+	 */
+	configFolder?: string;
 }
 
 /** Agents offered as a starting point in Settings, Agents: each agent of the registry, by its name and command. */
@@ -74,7 +92,8 @@ export function agentProblem(setting: AgentSetting, others: readonly string[]): 
 	if (sameAgentName(name, sessionKindName("terminal"))) return `"${name}" is the plain shell's name in the menu. Choose another.`;
 	if (others.some(other => sameAgentName(other, name))) return `Another agent is already called "${name}".`;
 	const command = agentCommand(setting);
-	return command.ok ? null : command.message;
+	if (!command.ok) return command.message;
+	return configFolderProblem(setting.configFolder);
 }
 
 /** The agent of a list with exactly this name, or null. */
@@ -90,17 +109,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * The agents preference from outside, such as the settings file or a save
  * from the interface, or undefined when the value is not one. The list is
  * taken whole or not at all: one entry that cannot be read, a name that is
- * not clean, a repeated name, or more than `AGENT_LIMIT` entries make it
- * unreadable, so a save never keeps half of what was asked.
+ * not clean, a repeated name, a config folder that is not a full path or
+ * `~/`, or more than `AGENT_LIMIT` entries make it unreadable, so a save
+ * never keeps half of what was asked. The one exception is an `agent` this
+ * version does not know, which is read as detected from the command. A
+ * config folder is kept whatever the row's agent is: the main process
+ * ignores it for an agent that keeps no conversations in a folder.
  */
 export function readAgentSettings(value: unknown): AgentSetting[] | undefined {
 	if (!Array.isArray(value) || value.length > AGENT_LIMIT) return undefined;
 	const agents: AgentSetting[] = [];
 	for (const entry of value) {
 		if (!isRecord(entry)) return undefined;
-		const { name, command } = entry;
+		const { name, command, agent, configFolder } = entry;
 		if (typeof name !== "string" || typeof command !== "string") return undefined;
-		const setting = { name, command };
+		if ((agent !== undefined && typeof agent !== "string") || (configFolder !== undefined && typeof configFolder !== "string")) return undefined;
+		const setting: AgentSetting = { name, command };
+		// An agent this version does not know, such as one a newer version added, is detected from the command instead: the one exception to reading the list whole.
+		const known = AGENTS.find(candidate => candidate.id === agent);
+		if (known !== undefined) setting.agent = known.id;
+		const folder = configFolder?.trim();
+		if (folder !== undefined && folder !== "") setting.configFolder = folder;
 		if (cleanSessionName(name) !== name) return undefined;
 		if (agentProblem(setting, agents.map(agent => agent.name)) !== null) return undefined;
 		agents.push(setting);
@@ -109,10 +138,47 @@ export function readAgentSettings(value: unknown): AgentSetting[] | undefined {
 }
 
 /** The agents preference as it is written to the settings file. */
-export function writeAgentSettings(agents: readonly AgentSetting[]): { name: string; command: string }[] {
-	return agents.map(agent => ({ name: agent.name, command: agent.command }));
+export function writeAgentSettings(agents: readonly AgentSetting[]): { name: string; command: string; agent?: AgentId; configFolder?: string }[] {
+	return agents.map(agent => ({
+		name: agent.name,
+		command: agent.command,
+		...(agent.agent !== undefined ? { agent: agent.agent } : {}),
+		...(agent.configFolder ? { configFolder: agent.configFolder } : {}),
+	}));
 }
 
 export function sameAgentSettings(one: readonly AgentSetting[], other: readonly AgentSetting[]): boolean {
-	return one.length === other.length && one.every((agent, index) => agent.name === other[index]!.name && agent.command === other[index]!.command);
+	return one.length === other.length && one.every((agent, index) => {
+		const twin = other[index]!;
+		return agent.name === twin.name && agent.command === twin.command && agent.agent === twin.agent && (agent.configFolder ?? "") === (twin.configFolder ?? "");
+	});
+}
+
+/** Why a config folder cannot be used, or null when it can: empty, a full path on any platform, or one that starts with `~/`. */
+export function configFolderProblem(folder: string | undefined): string | null {
+	if (folder === undefined || folder === "") return null;
+	return isFullPath(folder) || folder.startsWith("~/") ? null : "The config folder must be a full path or start with ~/.";
+}
+
+/** A config folder as a full path: `~/` is the home folder. Null for none or one that cannot be used. */
+export function expandConfigFolder(folder: string | undefined, home: string): string | null {
+	if (folder === undefined || folder === "" || configFolderProblem(folder) !== null) return null;
+	if (!folder.startsWith("~/")) return folder;
+	const rest = folder.slice(2);
+	return home.endsWith("/") || home.endsWith("\\") ? `${home}${rest}` : `${home}/${rest}`;
+}
+
+/**
+ * The agent of the registry a row runs: the one picked in Settings, else
+ * the one its executable is by name (`agentByExecutable`, which `realPath`
+ * helps tell a name other programs install too). Null when neither.
+ */
+export function rowAgent(setting: Pick<AgentSetting, "agent">, executable: string, realPath?: string | null): (AgentDefinition & { id: AgentId }) | null {
+	if (setting.agent !== undefined) return AGENTS.find(agent => agent.id === setting.agent) ?? null;
+	return agentByExecutable(executable, realPath);
+}
+
+/** Where a row's agent keeps its conversations, from the registry, or null when it keeps none the app reads. */
+export function conversationsOf(agent: AgentDefinition | null): AgentResume["conversations"] | null {
+	return agent?.resume?.conversations ?? null;
 }

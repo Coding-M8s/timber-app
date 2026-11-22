@@ -43,10 +43,11 @@ export interface TerminalSession {
 	/** The executable that runs, as a full path: the shell, or the agent's executable as found on the PATH. */
 	shell: string;
 	/**
-	 * For an agent session, the agent of the registry its executable is, as
-	 * the main process knew it from the file it found (see
-	 * `agentByExecutable`), which tells a name other programs install too,
-	 * such as `agent`. Left out for any other program and for a shell.
+	 * For an agent session, the agent of the registry it runs: the one picked
+	 * for its row in Settings, else the one its executable is, as the main
+	 * process knew it from the file it found (see `agentByExecutable`), which
+	 * tells a name other programs install too, such as `agent`. Left out for
+	 * any other program and for a shell.
 	 */
 	program?: ResumableAgent;
 	/** What was started, as one line for showing, such as `/usr/bin/zsh` or `/usr/local/bin/codex --full-auto`. */
