@@ -3,6 +3,7 @@
  * through the Program Status Protocol (see ./program-status.ts), and
  * for how the session ended. Everything here is pure.
  */
+import { AGENTS, type AgentId, executableName } from "./agent-registry";
 import type { ChildStatus, StatusKind, StatusRecords } from "./program-status";
 import type { TerminalSession } from "./terminal";
 
@@ -251,22 +252,23 @@ export function mostUrgent(statuses: readonly ShownStatus[]): ShownStatusKind | 
 	return URGENCY.find(kind => statuses.some(status => status.kind === kind)) ?? null;
 }
 
-/** Agents the interface draws with their own icon instead of letters. */
-export const AGENT_BRANDS = ["claude", "codex"] as const;
-export type AgentBrand = typeof AGENT_BRANDS[number];
+/** An agent of the registry, which the interface draws with its own mark instead of letters. */
+export type AgentBrand = AgentId;
 
 /**
- * The agent a session runs, when the app has an icon for it: Claude Code or
- * Codex, known by the executable of an agent session (`claude`, `codex`) or
- * by the `app` a program reports, such as `claude-code`. Null for anything
- * else, which keeps its letters. A shell that an ended Claude Code or Codex
- * left behind keeps the brand of the agent.
+ * The agent a session runs, when the registry has it: known by the
+ * executable of an agent session, as the last part of its path (`claude`,
+ * `codex`, with `.exe` cut on Windows), or by the `app` a program reports,
+ * such as `claude-code`, each agent in the registry's order. Null for
+ * anything else, which keeps its letters. A shell that an ended agent left
+ * behind keeps the brand of the agent.
  */
 export function agentBrand(session: Pick<TerminalSession, "kind" | "shell" | "status"> & Partial<Pick<TerminalSession, "endedAgent">>): AgentBrand | null {
-	const executable = session.shell.split(/[\\/]/).filter(Boolean).at(-1) ?? "";
+	const executable = executableName(session.shell);
 	const app = session.status?.app?.toLowerCase() ?? "";
-	for (const brand of AGENT_BRANDS) {
-		if ((session.kind === "agent" && executable === brand) || app.startsWith(brand)) return brand;
+	for (const agent of AGENTS) {
+		const reported = agent.status.app !== null && app.startsWith(agent.status.app);
+		if ((session.kind === "agent" && agent.executables.includes(executable)) || reported) return agent.id;
 	}
 	// A shell an agent left behind keeps the agent's icon.
 	return session.endedAgent?.program ?? null;

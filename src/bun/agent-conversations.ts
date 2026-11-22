@@ -1,5 +1,6 @@
 import { closeSync, existsSync, openSync, readSync, readdirSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
+import { type AgentResume, agentById } from "../shared/agent-registry";
 import { isConversationId } from "../shared/saved-sessions";
 
 /**
@@ -16,16 +17,24 @@ import { isConversationId } from "../shared/saved-sessions";
 
 type Environment = Record<string, string | undefined>;
 
+/**
+ * Where an agent keeps its conversations, from its `resume` in the agent
+ * registry: its folder variable when that is a full path, else its folder
+ * in the home folder.
+ */
+export function conversationFolder(conversations: AgentResume["conversations"], environment: Environment, home: string): string {
+	const configured = environment[conversations.folderVariable]?.trim();
+	return configured && isAbsolute(configured) ? configured : join(home, conversations.folder);
+}
+
 /** Claude Code's configuration folder: `CLAUDE_CONFIG_DIR` when it is a full path, else `~/.claude`. */
 export function claudeConfigFolder(environment: Environment, home: string): string {
-	const configured = environment.CLAUDE_CONFIG_DIR?.trim();
-	return configured && isAbsolute(configured) ? configured : join(home, ".claude");
+	return conversationFolder(agentById("claude").resume!.conversations, environment, home);
 }
 
 /** Codex's home folder: `CODEX_HOME` when it is a full path, else `~/.codex`. */
 export function codexHomeFolder(environment: Environment, home: string): string {
-	const configured = environment.CODEX_HOME?.trim();
-	return configured && isAbsolute(configured) ? configured : join(home, ".codex");
+	return conversationFolder(agentById("codex").resume!.conversations, environment, home);
 }
 
 /** The names in a folder, or none when it cannot be read. */

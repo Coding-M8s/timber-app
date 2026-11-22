@@ -3,6 +3,7 @@ import { type ArenaLaunch, isArenaName, isAttemptLabel } from "../shared/arenas"
 import { homedir } from "node:os";
 import { type AgentSetting, agentCommand, findAgent } from "../shared/agent";
 import type { AgentLocation } from "../shared/agent-lookup";
+import { type ConversationStore, agentById } from "../shared/agent-registry";
 import { type ResumableAgent, agentProgram, agentStartArguments, conversationMissingNote, resumableAgent } from "../shared/agent-resume";
 import { describeCommandLine } from "../shared/command-line";
 import type { TimberStatus } from "../shared/model";
@@ -237,7 +238,7 @@ export interface RunningSession {
 	agent: string | null;
 	/** Whether, and how, the agent can go back to its conversation. */
 	resumable: ResumableAgent | null;
-	/** Claude Code or Codex by the executable's name, however it was started: a Codex started as typed still counts when Codex conversations are told apart. */
+	/** The agent of the registry the executable is by its name, however it was started: a Codex started as typed still counts when Codex conversations are told apart. */
 	program: ResumableAgent | null;
 	/** The agent's own conversation id, when it is known. */
 	conversation: string | null;
@@ -523,6 +524,11 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		codexExists: (id: string) => codexConversationExists(id, codexHomeFolder(environment, environment.HOME || homedir())),
 		newId: () => crypto.randomUUID(),
 	};
+	/** Whether a conversation is still there, for each layout of conversation folders an agent of the registry uses. */
+	const conversationExists: Record<ConversationStore, (id: string) => boolean> = {
+		"claude-projects": id => conversations.claudeExists(id),
+		"codex-sessions": id => conversations.codexExists(id),
+	};
 	const windows = platform === "win32";
 	/** ConPTY drops an OSC written as it is, so on Windows the answer goes in as typed keys. */
 	const probeAnswer = windows ? asWin32KeyEvents(PROBE_ANSWER) : PROBE_ANSWER;
@@ -708,7 +714,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		| {
 			ok: true; kind: TerminalSession["kind"]; base: string; argv: string[]; command: string; environment?: Record<string, string>; unset?: string[];
 			resumable: ResumableAgent | null; conversation: string | null;
-			/** Claude Code or Codex by the executable's name, however it was started. */
+			/** The agent of the registry the executable is by its name, however it was started. */
 			program: ResumableAgent | null;
 			/** A conversation was asked for and could not be gone back to. */
 			missing: boolean;
@@ -757,18 +763,16 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		if (!settings) return { ok: true, kind: "agent", base: launch.name, argv, command: describeCommandLine(argv), ...extra, ...plain, program: agentProgram(launch.executable) };
 		// The conversation is only ever checked in the agent's own folder, and only a UUID gets that far.
 		const resumable = resumableAgent(launch.executable, launch.arguments);
+		const recipe = resumable === null ? null : agentById(resumable).resume;
 		let conversation: string | null = null;
 		let args = launch.arguments;
-		if (resumable === "claude" && resume !== null && conversations.claudeExists(resume)) {
-			args = agentStartArguments("claude", args, { resume });
+		if (recipe !== null && resume !== null && conversationExists[recipe.conversations.store](resume)) {
+			args = agentStartArguments(resumable, args, { resume });
 			conversation = resume;
-		} else if (resumable === "claude") {
+		} else if (recipe?.fresh) {
 			const fresh = conversations.newId();
-			args = agentStartArguments("claude", args, { fresh });
+			args = agentStartArguments(resumable, args, { fresh });
 			conversation = fresh;
-		} else if (resumable === "codex" && resume !== null && conversations.codexExists(resume)) {
-			args = agentStartArguments("codex", args, { resume });
-			conversation = resume;
 		}
 		const started = [lookup.path, ...args];
 		return { ok: true, kind: "agent", base: launch.name, argv: started, command: describeCommandLine(started), ...extra, resumable, conversation, missing: resume !== null && conversation !== resume, program: agentProgram(launch.executable) };
