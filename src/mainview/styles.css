@@ -753,6 +753,15 @@ pre:focus-visible {
 
 .group-header:hover {
 	background: var(--fill-hover);
+	color: var(--text-2);
+}
+
+/* Under the pointer the header's faint words take the secondary color, so they stay readable on the deeper tint. */
+.group-header:hover .group-flag.fetch-failed,
+.group-header:hover .group-flag.pulls-failed,
+.group-header:hover .group-flag.backups-failed,
+.group-head.unavailable .group-header:hover .group-name {
+	color: var(--text-2);
 }
 
 /* Moving a group: the dragged one fades, and a line shows where it will land. */
@@ -799,10 +808,20 @@ pre:focus-visible {
 	bottom: -7px;
 }
 
+/*
+ * A repository's header row sits on its own quiet surface, the whole row with
+ * its controls, so it stands apart from the worktree rows on the sidebar
+ * below it. The fill is a light tint over the sidebar, so it differs from it
+ * in every theme and stays quieter than a selected row; pointing at the
+ * header or a control tints it one step more.
+ */
 .group-head {
 	display: flex;
 	align-items: center;
 	gap: 2px;
+	padding-right: 2px;
+	border-radius: 6px;
+	background: var(--fill-field);
 }
 
 .group-head .group-header {
@@ -810,22 +829,11 @@ pre:focus-visible {
 	min-width: 0;
 }
 
-/* More stays out of the way until the header is pointed at or reached by keyboard, or its menu is open. */
+/* More always shows on repository and group headers, so it can be seen and reached without pointing first. */
 .group-more,
 .repository-group-more {
 	width: 24px;
 	height: 24px;
-	opacity: 0;
-}
-
-.group-head:hover .group-more,
-.group-head:focus-within .group-more,
-.group-head.unavailable .group-more,
-.group-more[aria-expanded="true"],
-.repository-group-head:hover .repository-group-more,
-.repository-group-head:focus-within .repository-group-more,
-.repository-group-more[aria-expanded="true"] {
-	opacity: 1;
 }
 
 /*
@@ -4793,17 +4801,10 @@ pre:focus-visible {
 	font-variant-numeric: tabular-nums;
 }
 
-/* Fetching (issue 25): Fetch now on each repository, the quiet marker of a failed fetch, and a rewritten upstream. */
+/* Fetching (issue 25): Fetch now on each repository, always shown, the quiet marker of a failed fetch, and a rewritten upstream. */
 .group-fetch {
 	width: 24px;
 	height: 24px;
-	opacity: 0;
-}
-
-.group-head:hover .group-fetch,
-.group-head:focus-within .group-fetch,
-.group-fetch.fetching {
-	opacity: 1;
 }
 
 .group-fetch[aria-disabled="true"] {

@@ -39,7 +39,7 @@ export const UI_COLOR_LABELS: Record<UiColor, string> = {
 	bgRaised: "Toasts",
 	line: "Dividers",
 	lineRaised: "Edges of dialogs and toasts",
-	fillField: "Filter field",
+	fillField: "Filter field and repository headers",
 	fillHover: "Under the pointer",
 	fillSelected: "Selected",
 	fillStrong: "Button under the pointer",

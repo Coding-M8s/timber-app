@@ -172,7 +172,7 @@ const SOLARIZED_LIGHT = theme("solarized-light", "Solarized Light", "light", {
 	line: "#e4ddc8",
 	text: "#073642",
 	text2: "#4c5f66",
-	text3: "#55676e",
+	text3: "#52646b",
 	primaryHover: "#002b36",
 	behind: "#b5400f",
 	ahead: "#1f74b0",

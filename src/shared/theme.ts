@@ -296,7 +296,8 @@ export interface ContrastWarning {
 
 const TEXT_COLORS: readonly UiColor[] = ["text", "text2", "text3"];
 const MEANING_COLORS: readonly UiColor[] = ["behind", "ahead", "modified", "untracked", "error", "focus"];
-const SURFACES: readonly UiColor[] = ["bgApp", "bgMain", "bgPane", "bgRaised"];
+/** The fill of a text field is also the tint of a repository's header row in the sidebar, drawn over bgApp. */
+const SURFACES: readonly UiColor[] = ["bgApp", "bgMain", "bgPane", "bgRaised", "fillField"];
 
 /**
  * The colors of a theme that fall under the minimums on the surfaces they
