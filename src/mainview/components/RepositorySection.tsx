@@ -238,6 +238,7 @@ export function RepositorySection({ state, store, repository, matches, open, que
 								store.select(worktree.id);
 							}}
 							pullRequest={pullRequestOf(pullRequests, worktree.path)}
+							pullRequestHost={pullRequests?.ok ? pullRequests.host : undefined}
 							issue={state.issues[worktree.id]}
 							removal={removal?.status ?? null}
 							sessions={sessionsOf(state, worktree.id)}

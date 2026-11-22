@@ -6,19 +6,35 @@ import { describeExit, describeFailedRun, displayText, isFields, readEnvelope } 
  * repository). Pure: the main process runs Timber and hands the output here
  * (see src/bun/pull-requests.ts).
  *
- * Timber reads GitHub with its own login, so the app never holds a token.
- * Reviewers come from Timber 0.1.3, the first release with the command.
+ * Timber reads GitHub or Bitbucket Cloud, whichever holds the repository's
+ * remote, with its own login, so the app never holds a token. Reviewers come
+ * from Timber 0.1.3, the first release with the command, and the host from
+ * Timber 0.1.4, the first that reads Bitbucket.
  */
 export const APP_PR_ARGUMENTS = ["__app-pr"] as const;
 export const APP_PR_COMMAND = `timber ${APP_PR_ARGUMENTS.join(" ")}`;
 export const SUPPORTED_APP_PR_SCHEMA_VERSION = 1;
 
 export type PullRequestState = "open" | "draft" | "merged" | "closed";
-/** GitHub's combined state of the checks on the head commit. `none` means none were reported. */
+/**
+ * Where the pull requests are read from, after the repository's remote: a
+ * github.com or a bitbucket.org repository. Not the issue tracker.
+ */
+export type PullRequestHost = "github" | "bitbucket";
+/**
+ * The combined state of the checks on the head commit: GitHub's, or worked
+ * out by Timber from Bitbucket's build statuses. `none` means none were
+ * reported, and is always so for a merged or closed Bitbucket pull request.
+ */
 export type ChecksSummary = "passing" | "failing" | "pending" | "none";
-/** GitHub's review decision. `none` means the repository asks for no review decision on it. */
-/** How one check run or commit status ended, or that it has not yet. */
+/** How one check run, commit status, or Bitbucket build status ended, or that it has not yet. */
 export type CheckRunStatus = "passing" | "failing" | "pending" | "skipped";
+/**
+ * GitHub's review decision, where `none` means the repository asks for no
+ * review decision on it. On Bitbucket, which has none, Timber works it out
+ * from the reviewers: `review-required` means someone was asked and no one
+ * approved or asked for changes, and `none` means there are no reviewers.
+ */
 export type ReviewDecision = "approved" | "changes-requested" | "review-required" | "none";
 /** A person, a team (which can only be requested), or a bot such as Copilot. */
 export type ReviewerKind = "user" | "team" | "bot";
@@ -31,16 +47,17 @@ export type ReviewerState = "requested" | "approved" | "changes-requested" | "co
 /**
  * Why Timber could not look pull requests up. One lookup answers for the
  * whole repository, so a failure applies to every branch in it.
- * - `offline`: GitHub could not be reached, or did not answer in time.
- * - `sign-in-needed`: no usable GitHub login, or GitHub refused it.
- * - `not-github`: the repository's remote is not on github.com.
+ * - `offline`: the host could not be reached, or did not answer in time.
+ * - `sign-in-needed`: no usable login for the host, or the host refused it.
+ * - `not-github`: the repository's remote is on neither github.com nor
+ *   bitbucket.org, or there is none.
  * - `failed`: anything else, such as denied access or a rate limit.
  */
 export type PullRequestFailureReason = "offline" | "sign-in-needed" | "not-github" | "failed";
 
 /** One check run or commit status on the pull request's head commit. */
 export interface CheckRun {
-	/** Text from GitHub, made safe to show. */
+	/** Text from the host, made safe to show. */
 	name: string;
 	status: CheckRunStatus;
 	/** An `https` link to the run, or null when there is none to follow. */
@@ -50,7 +67,7 @@ export interface CheckRun {
 /** One reviewer of a pull request. */
 export interface Reviewer {
 	kind: ReviewerKind;
-	/** A login, or `org/team-slug` for a team. Text from GitHub, made safe to show. */
+	/** A GitHub login, `org/team-slug` for a team, or a Bitbucket display name, which is not unique. Text from the host, made safe to show. */
 	name: string;
 	state: ReviewerState;
 	/** An `https` link to the profile or team, or null when there is none to follow. */
@@ -60,12 +77,12 @@ export interface Reviewer {
 /** One pull request, as much of it as the interface shows. */
 export interface PullRequest {
 	number: number;
-	/** An `https` link to the pull request on GitHub. */
+	/** An `https` link to the pull request on the host. */
 	url: string;
-	/** Text from GitHub, made safe to show. Never trusted markup. */
+	/** Text from the host, made safe to show. Never trusted markup. */
 	title: string;
 	state: PullRequestState;
-	/** The branch it merges into, by its name on GitHub. Made safe to show. */
+	/** The branch it merges into, by its name on the host. Made safe to show. */
 	baseBranch: string;
 	checks: {
 		summary: ChecksSummary;
@@ -79,7 +96,7 @@ export interface PullRequest {
 	review: ReviewDecision;
 	/** Requested reviewers first, then people who reviewed, each once, in Timber's order. */
 	reviewers: Reviewer[];
-	/** False when GitHub did not let Timber's login read some reviewers; the ones it could read are listed. */
+	/** False when some reviewers could not be read: GitHub did not let Timber's login see them, or Bitbucket left some out; the ones it could read are listed. */
 	reviewersComplete: boolean;
 	/** The body as written, made safe to show as plain text: line breaks and tabs kept, other control characters replaced. Never trusted markup. May be empty. */
 	description: string;
@@ -94,7 +111,12 @@ export type PullRequestEntry =
 
 /** Every worktree's pull request in Timber's order, or the reason there is no answer. Never part of one. */
 export type PullRequestList =
-	| { ok: true; worktrees: PullRequestEntry[] }
+	/**
+	 * `host` is where they were read from. Absent when Timber did not say,
+	 * as when the remote is on neither host, and then the words are
+	 * GitHub's, as before Bitbucket.
+	 */
+	| { ok: true; host?: PullRequestHost; worktrees: PullRequestEntry[] }
 	| { ok: false; message: string };
 
 const STATES: readonly PullRequestState[] = ["open", "draft", "merged", "closed"];
@@ -104,6 +126,7 @@ const REVIEWS: readonly ReviewDecision[] = ["approved", "changes-requested", "re
 const REVIEWER_KINDS: readonly ReviewerKind[] = ["user", "team", "bot"];
 const REVIEWER_STATES: readonly ReviewerState[] = ["requested", "approved", "changes-requested", "commented", "dismissed"];
 const REASONS: readonly PullRequestFailureReason[] = ["offline", "sign-in-needed", "not-github", "failed"];
+const HOSTS: readonly PullRequestHost[] = ["github", "bitbucket"];
 
 /** How much of a diagnostic is passed on. */
 const DIAGNOSTIC_LIMIT = 300;
@@ -128,7 +151,7 @@ function readLink(value: unknown): string | null {
 /**
  * A description as plain text that keeps its lines: Windows line endings
  * become one break, and every control character other than a line break or
- * a tab is replaced, as in any other text from GitHub. Pure.
+ * a tab is replaced, as in any other text from the host. Pure.
  */
 export function descriptionText(value: string, limit = DESCRIPTION_LIMIT): string {
 	const clean = value
@@ -229,6 +252,16 @@ export function readPullRequestList(stdout: string, stderr: string, exitCode: nu
 	if (record.diagnostic !== null) return unreadable("its diagnostic is not text");
 	if (!Array.isArray(record.worktrees)) return unreadable("it has no list of worktrees");
 
+	// Missing from a Timber before 0.1.4, and null when the remote is on neither host.
+	const repository = record.pullRequestRepository;
+	let host: PullRequestHost | undefined;
+	if (repository !== undefined && repository !== null) {
+		if (!isFields(repository)) return unreadable("its pull request repository is not one");
+		// A host this app does not know would be named as GitHub, so the answer is not trusted.
+		if (!oneOf(HOSTS, repository.host)) return unreadable("its pull request repository is on a host this app does not know");
+		host = repository.host;
+	}
+
 	const worktrees: PullRequestEntry[] = [];
 	for (const [index, value] of record.worktrees.entries()) {
 		const entry = readEntry(value);
@@ -238,7 +271,7 @@ export function readPullRequestList(stdout: string, stderr: string, exitCode: nu
 	// Timber exits with 1 exactly when a lookup failed, so an answer that says otherwise is not trusted.
 	const anyFailed = worktrees.some(entry => entry.outcome === "failed");
 	if (anyFailed !== (exitCode === 1)) return unreadable(`it ${describeExit(exitCode)}, which does not match its entries`);
-	return { ok: true, worktrees };
+	return host === undefined ? { ok: true, worktrees } : { ok: true, host, worktrees };
 }
 
 /** The entry for one worktree, by its Git-registered path, or null when the answer has none for it. */

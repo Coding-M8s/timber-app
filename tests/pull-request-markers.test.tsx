@@ -4,7 +4,7 @@ import { App } from "../src/mainview/App";
 import { WorktreeRow } from "../src/mainview/components/WorktreeRow";
 import { createMockEngine, samplePickableRepository, sampleRepositories } from "../src/mainview/engine/mock";
 import { describeRowMarkers } from "../src/mainview/format";
-import { describePullRequestMarkers, describeRepositoryPullRequestProblem, describeWorktreePullRequestProblem } from "../src/mainview/pull-request-format";
+import { describeOpenPullRequest, describePullRequestMarkers, describeRepositoryPullRequestProblem, describeWorktreePullRequestProblem } from "../src/mainview/pull-request-format";
 import { createAppStore } from "../src/mainview/store/store";
 import type { PullRequest, PullRequestEntry, PullRequestList } from "../src/shared/pull-requests";
 
@@ -57,6 +57,20 @@ describe("pull request markers", () => {
 		expect(describePullRequestMarkers(found({ state: "closed" }))[0]!.tooltip).toBe("Pull request #42 into main was closed without merging: Look up GitHub issues.");
 	});
 
+	test("a Bitbucket pull request shows the same way, with its review in Bitbucket's terms and Open naming Bitbucket", () => {
+		const bitbucket = found({ url: "https://bitbucket.org/example/timber/pull-requests/42", checks: { summary: "failing", passing: 1, failing: 1, pending: 0, runs: [] } });
+		const markers = describePullRequestMarkers(bitbucket, "bitbucket");
+		expect(markers.map(marker => marker.text)).toEqual(["#42", "checks fail", "review required"]);
+		expect(markers[2]!.tooltip).toBe("Pull request #42 waits for its reviewers: none has approved it yet.");
+		expect(describePullRequestMarkers(found({ review: "changes-requested" }), "bitbucket").map(marker => marker.text)).toEqual(["#42", "checks pass", "changes requested"]);
+		if (bitbucket.outcome !== "found") throw new Error(bitbucket.outcome);
+		expect(describeOpenPullRequest(bitbucket.pullRequest, "bitbucket")).toBe("Open pull request #42 on Bitbucket in the browser");
+		// GitHub, or no host said, is as before.
+		expect(describeOpenPullRequest(bitbucket.pullRequest, "github")).toBe("Open pull request #42 on GitHub in the browser");
+		expect(describeOpenPullRequest(bitbucket.pullRequest)).toBe("Open pull request #42 on GitHub in the browser");
+		expect(describePullRequestMarkers(found(), "github")[2]!.tooltip).toBe("Pull request #42 needs an approving review before it can merge.");
+	});
+
 	test("a branch with no pull request, or one that could not be read, shows nothing on its row", () => {
 		expect(shown(null)).toEqual([]);
 		expect(shown({ path: LOOKUP, branch: "feat/github-issue-lookup", outcome: "none" })).toEqual([]);
@@ -85,6 +99,13 @@ describe("pull request markers", () => {
 	});
 });
 
+test("a Bitbucket row says its review in Bitbucket's terms", () => {
+	const worktree = sampleRepositories[0]!.worktrees[1]!;
+	const markup = renderToStaticMarkup(<WorktreeRow worktree={worktree} selected={false} onSelect={() => {}} pullRequest={found()} pullRequestHost="bitbucket" />);
+	expect(markup).toContain('<span class="row-flag pr" title="Pull request #42 waits for its reviewers: none has approved it yet." aria-hidden="true">review required</span>');
+	expect(markup).not.toContain("before it can merge");
+});
+
 describe("pull requests that could not be read", () => {
 	const list = (entry: PullRequestEntry): PullRequestList => ({ ok: true, worktrees: [entry] });
 
@@ -98,7 +119,20 @@ describe("pull requests that could not be read", () => {
 		expect(describeRepositoryPullRequestProblem(list(failed("sign-in-needed")))!.text).toBe("PRs need sign-in");
 		expect(describeRepositoryPullRequestProblem(list(failed("sign-in-needed")))!.tooltip).toContain("The app never asks");
 		expect(describeRepositoryPullRequestProblem(list(failed("not-github")))!.text).toBe("not on GitHub");
+		expect(describeRepositoryPullRequestProblem(list(failed("sign-in-needed")))!.tooltip).toContain("gh auth login");
 		expect(describeRepositoryPullRequestProblem(list(failed("failed")))!.text).toBe("PRs failed");
+	});
+
+	test("on Bitbucket, name Bitbucket and how to sign in through Timber", () => {
+		const bitbucket = (entry: PullRequestEntry): PullRequestList => ({ ok: true, host: "bitbucket", worktrees: [entry] });
+		expect(describeRepositoryPullRequestProblem(bitbucket(failed("sign-in-needed")))).toEqual({
+			text: "PRs need Bitbucket sign-in",
+			tooltip: "Pull requests could not be read: Timber has no Bitbucket login, or Bitbucket refused it. The app never asks: sign in once with timber setup in a terminal, or set BITBUCKET_EMAIL and BITBUCKET_API_TOKEN. Timber says: Timber's words.",
+		});
+		expect(describeWorktreePullRequestProblem(bitbucket(failed("sign-in-needed")), failed("sign-in-needed"))!.text).toBe("PRs need Bitbucket sign-in");
+		expect(describeRepositoryPullRequestProblem(bitbucket(failed("offline")))!.tooltip).toStartWith("Pull requests could not be read: Bitbucket could not be reached.");
+		// A remote on neither host has no host, and says both.
+		expect(describeRepositoryPullRequestProblem(list(failed("not-github")))!.tooltip).toStartWith("Pull requests are read from github.com or bitbucket.org only, and this repository's remote is on neither.");
 	});
 
 	test("an answer that could not be read at all is said too, never taken for no pull requests", () => {
@@ -165,6 +199,54 @@ describe("the store and the window", () => {
 		expect(opened).toEqual(["https://github.com/example/timber/pull/42"]);
 	});
 
+	test("a Bitbucket repository with Jira as its tracker shows its pull request in the header, and its link names Bitbucket", async () => {
+		const engine = createMockEngine();
+		const url = "https://bitbucket.org/example/timber/pull-requests/42";
+		const bitbucket: PullRequestList = {
+			ok: true,
+			host: "bitbucket",
+			worktrees: [{ path: LOOKUP, branch: "feat/github-issue-lookup", outcome: "found", pullRequest: pull({ url, title: "TIM-80 Sign in", checks: { summary: "failing", passing: 1, failing: 1, pending: 0, runs: [] }, review: "changes-requested" }) }],
+		};
+		engine.setPullRequests(TIMBER, bitbucket);
+		const { store } = await startedStore(engine);
+		const lookup = store.getState().repositories[0]!.worktrees.find(worktree => worktree.path === LOOKUP)!;
+		store.select(lookup.id);
+		const markup = render(store);
+		const sentence = "Pull request #42 into main is open: TIM-80 Sign in. Open pull request #42 on Bitbucket in the browser.";
+		expect(markup).toContain(`<button type="button" class="issue-link pull-link" title="${sentence}" aria-label="${sentence}">#42</button>`);
+		expect(markup).toContain('<span class="pull-marker failing" title="Checks fail on pull request #42: 1 failing, 1 passing." aria-hidden="true">checks fail</span>');
+		expect(markup).toContain('<span class="pull-marker failing" title="A reviewer asked for changes on pull request #42." aria-hidden="true">changes requested</span>');
+		expect(markup).not.toContain("on GitHub in the browser");
+		const opened: string[] = [];
+		engine.openLink = async link => {
+			opened.push(link);
+			return true;
+		};
+		await store.openLink(url);
+		expect(opened).toEqual([url]);
+	});
+
+	test("a missing Bitbucket login names Bitbucket in the sidebar and the header, never a GitHub sign-in", async () => {
+		const engine = createMockEngine();
+		const diagnostic = "No usable Bitbucket login. Run timber setup to save an Atlassian email and Bitbucket API token, or set BITBUCKET_EMAIL and BITBUCKET_API_TOKEN.";
+		engine.setPullRequests(TIMBER, {
+			ok: true,
+			host: "bitbucket",
+			worktrees: sampleRepositories[0]!.worktrees.map((worktree): PullRequestEntry => worktree.branch === null
+				? { path: worktree.path, branch: null, outcome: "none" }
+				: { path: worktree.path, branch: worktree.branch, outcome: "failed", reason: "sign-in-needed", diagnostic }),
+		});
+		const { store } = await startedStore(engine);
+		const lookup = store.getState().repositories[0]!.worktrees.find(worktree => worktree.path === LOOKUP)!;
+		store.select(lookup.id);
+		const markup = render(store);
+		expect(markup).toContain(">PRs need Bitbucket sign-in</span>");
+		expect(markup).not.toContain(">PRs need sign-in</span>");
+		expect(markup).not.toContain("gh auth login");
+		expect(markup).toContain("Timber has no Bitbucket login, or Bitbucket refused it. The app never asks: sign in once with timber setup in a terminal, or set BITBUCKET_EMAIL and BITBUCKET_API_TOKEN.");
+		expect(store.getState().dialog).toBeNull();
+	});
+
 	test("a branch with no pull request shows nothing, and no Open pull request", async () => {
 		const { store } = await startedStore();
 		// The primary checkout is selected first; main has no pull request.
@@ -177,7 +259,7 @@ describe("the store and the window", () => {
 		const engine = createMockEngine([...sampleRepositories, samplePickableRepository]);
 		const { store } = await startedStore(engine);
 		const markup = render(store);
-		expect(markup).toContain('<span class="group-flag pulls-failed" title="Pull requests are read from github.com only, and this repository&#x27;s remote is not there. Timber says: The selected remote is not a github.com repository.');
+		expect(markup).toContain('<span class="group-flag pulls-failed" title="Pull requests are read from github.com or bitbucket.org only, and this repository&#x27;s remote is on neither. Timber says: The selected remote is not a github.com or bitbucket.org repository.');
 		expect(markup).toContain(">not on GitHub</span>");
 		expect(store.getState().dialog).toBeNull();
 	});

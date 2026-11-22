@@ -364,11 +364,12 @@ export interface Engine {
 	/**
 	 * The pull request of each worktree of a repository in the list, named by
 	 * the path of its primary checkout, read by `timber __app-pr` with
-	 * Timber's own GitHub login (./pull-requests.ts). The app holds no token
+	 * Timber's own GitHub or Bitbucket login, whichever host the remote is on,
+	 * which the answer names (./pull-requests.ts). The app holds no token
 	 * and never signs in. Each entry is found, none, or failed with a reason
-	 * (offline, sign-in needed, not on GitHub, failed). A record that cannot
-	 * be read is a failure with a message, never an empty answer. Titles are
-	 * text from GitHub: show them as text only. Read-only: no file or ref
+	 * (offline, sign-in needed, on neither host, failed). A record that
+	 * cannot be read is a failure with a message, never an empty answer.
+	 * Titles are text from the host: show them as text only. Read-only: no file or ref
 	 * changes, and nothing acts on a pull request. Safe to call again.
 	 */
 	readPullRequests(repository: string): Promise<PullRequestList>;

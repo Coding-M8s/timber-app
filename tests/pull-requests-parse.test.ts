@@ -12,6 +12,10 @@ import { type PullRequestEntry, type PullRequestList, descriptionText, pullReque
  * against a real run: the repository it was recorded from is private. Its
  * reviewers follow Timber 0.1.3's contract (docs/ide-contract.md in the
  * Timber repository); the real run they were checked against had none.
+ * `not-github` has Timber 0.1.4's wording and `pullRequestRepository`, and
+ * `bitbucket-sign-in-needed` was recorded from Timber 0.1.4 with no
+ * Bitbucket login. `bitbucket-found` is written by hand to Timber 0.1.4's
+ * contract for Bitbucket Cloud: display names, a bot, and no team.
  */
 const fixture = (name: string) => readFileSync(join(import.meta.dir, "fixtures", "timber-app-pr", name), "utf8");
 
@@ -165,7 +169,7 @@ describe("readPullRequestList", () => {
 			["offline.json", "offline", "Cannot reach GitHub; check connectivity and try again."],
 			["sign-in-needed.json", "sign-in-needed", "GitHub rejected the login; check your environment token or sign in with gh auth login."],
 			["no-login.json", "sign-in-needed", "No usable GitHub login. Sign in with gh auth login, or set GH_TOKEN or GITHUB_TOKEN to a valid token."],
-			["not-github.json", "not-github", "The selected remote is not a github.com repository. Pull requests are read from github.com only; check the remote setting or the origin fetch URL."],
+			["not-github.json", "not-github", "The selected remote is not a github.com or bitbucket.org repository. Pull requests are read from github.com and bitbucket.org only; check the remote setting or the origin fetch URL."],
 		] as const;
 		for (const [name, reason, diagnostic] of cases) {
 			expect(ok(readPullRequestList(fixture(name), "", 1))).toEqual([
@@ -174,6 +178,80 @@ describe("readPullRequestList", () => {
 				{ path: "/work/sample-worktrees/review", branch: null, outcome: "none" },
 			]);
 		}
+	});
+
+	test("the host comes from the pull request repository: GitHub, Bitbucket, or none when the remote is on neither", () => {
+		const host = (list: PullRequestList) => list.ok ? list.host : "not read";
+		const record = JSON.parse(fixture("found.json"));
+		// A record from before Timber 0.1.4 names no host.
+		expect(host(readPullRequestList(fixture("found.json"), "", 0))).toBeUndefined();
+		record.pullRequestRepository = { host: "github", owner: "example", name: "sample" };
+		expect(host(readPullRequestList(JSON.stringify(record), "", 0))).toBe("github");
+		expect(host(readPullRequestList(fixture("bitbucket-found.json"), "", 0))).toBe("bitbucket");
+		expect(host(readPullRequestList(fixture("bitbucket-sign-in-needed.json"), "", 1))).toBe("bitbucket");
+		expect(host(readPullRequestList(fixture("not-github.json"), "", 1))).toBeUndefined();
+	});
+
+	test("a pull request repository on a host this app does not know, or not one at all, refuses the list", () => {
+		const record = JSON.parse(fixture("bitbucket-found.json"));
+		for (const repository of [{ host: "gitlab", owner: "example", name: "sample" }, { owner: "example", name: "sample" }, "bitbucket"]) {
+			record.pullRequestRepository = repository;
+			const list = readPullRequestList(JSON.stringify(record), "", 0);
+			expect(list.ok).toBe(false);
+			if (!list.ok) expect(list.message).toStartWith("timber __app-pr did not answer with a record this app can read: its pull request repository");
+		}
+	});
+
+	test("reads a Bitbucket pull request: build statuses as checks, display names and a bot as reviewers, and its description as text", () => {
+		const list = readPullRequestList(fixture("bitbucket-found.json"), "", 0);
+		expect(list.ok && list.host).toBe("bitbucket");
+		const entries = ok(list);
+		expect(entries.map(entry => [entry.branch, entry.outcome])).toEqual([["main", "none"], ["TIM-80-login", "found"], ["TIM-81-old", "found"]]);
+		expect(entries[1]).toEqual({
+			path: "/work/sample-worktrees/tim-80-login",
+			branch: "TIM-80-login",
+			outcome: "found",
+			pullRequest: {
+				number: 7,
+				url: "https://bitbucket.org/example/sample/pull-requests/7",
+				title: "TIM-80 Sign in with a saved login",
+				state: "open",
+				baseBranch: "main",
+				checks: {
+					summary: "failing",
+					passing: 1,
+					failing: 1,
+					pending: 1,
+					runs: [
+						{ name: "Pipeline #41", status: "failing", url: "https://bitbucket.org/example/sample/pipelines/results/41" },
+						{ name: "lint", status: "passing", url: "https://bitbucket.org/example/sample/pipelines/results/41/steps/lint" },
+						{ name: "deploy preview", status: "pending", url: null },
+					],
+				},
+				review: "changes-requested",
+				reviewers: [
+					{ kind: "user", name: "Alex Example", state: "changes-requested", url: "https://bitbucket.org/alex-example/" },
+					{ kind: "user", name: "Sam Example", state: "approved", url: "https://bitbucket.org/sam-example/" },
+					{ kind: "bot", name: "Example CI", state: "commented", url: "https://bitbucket.org/example-ci/" },
+					{ kind: "user", name: "Robin Example", state: "requested", url: "https://bitbucket.org/robin-example/" },
+				],
+				reviewersComplete: true,
+				description: "Closes **TIM-80**.\n\n* Reads the saved login",
+			},
+		});
+		expect(entries[2]).toMatchObject({ outcome: "found", pullRequest: { number: 3, state: "closed", checks: { summary: "none", runs: [] }, review: "none", reviewers: [] } });
+	});
+
+	test("a missing Bitbucket login fails every branch with sign-in-needed and Timber's diagnostic", () => {
+		const diagnostic = "No usable Bitbucket login. Run timber setup to save an Atlassian email and Bitbucket API token, or set BITBUCKET_EMAIL and BITBUCKET_API_TOKEN.";
+		expect(readPullRequestList(fixture("bitbucket-sign-in-needed.json"), "", 1)).toEqual({
+			ok: true,
+			host: "bitbucket",
+			worktrees: [
+				{ path: "/work/sample", branch: "main", outcome: "failed", reason: "sign-in-needed", diagnostic },
+				{ path: "/work/sample-worktrees/feat-login", branch: "feat/login", outcome: "failed", reason: "sign-in-needed", diagnostic },
+			],
+		});
 	});
 
 	test("a repository Timber could not read is a failure with its diagnostic, never an empty answer", () => {

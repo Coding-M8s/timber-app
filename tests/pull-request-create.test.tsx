@@ -5,7 +5,7 @@ import { PullRequestFormView } from "../src/mainview/components/PullRequestPanel
 import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { REVIEWER_REFUSED, actOutPullRequest, pullRequestEndings } from "../src/mainview/engine/mock-pr";
 import { sampleAnswer } from "../src/mainview/engine/mock-pull-requests";
-import { CREATE_RUNNING, CREATE_SUBMIT, REVIEWERS_HINT, defaultPullRequestTitle, issueMentionHint, matchReviewers, presentPullRequestCreation, pullRequestCommandFor, reviewerSuggestions, reviewerToken, titleKeyOf, withReviewerPicked } from "../src/mainview/pull-request-create-format";
+import { BITBUCKET_REVIEWERS_NOTE, CREATE_RUNNING, CREATE_SUBMIT, REVIEWERS_HINT, defaultPullRequestTitle, issueMentionHint, matchReviewers, presentPullRequestCreation, pullRequestCommandFor, reviewerSuggestions, reviewerToken, titleKeyOf, withReviewerPicked } from "../src/mainview/pull-request-create-format";
 import type { PullRequestForm } from "../src/mainview/store/state";
 import { createAppStore } from "../src/mainview/store/store";
 import type { IssueLink, Repository, Worktree } from "../src/shared/model";
@@ -98,6 +98,9 @@ describe("the words and the command", () => {
 		] };
 		expect(reviewerSuggestions(list).map(suggestion => suggestion.name)).toEqual(["alice", "Zed"]);
 		expect(reviewerSuggestions(undefined)).toEqual([]);
+		// Bitbucket's reviewers are display names, and Timber refuses --reviewer there.
+		expect(reviewerSuggestions({ ...list, host: "bitbucket" })).toEqual([]);
+		expect(reviewerSuggestions({ ...list, host: "github" }).map(suggestion => suggestion.name)).toEqual(["alice", "Zed"]);
 		expect(reviewerSuggestions({ ok: false, message: "offline" })).toEqual([]);
 	});
 
@@ -191,6 +194,7 @@ describe("PullRequestFormView", () => {
 		expect(markup).toContain(`>${CREATE_SUBMIT}</button>`);
 		expect(markup).not.toContain("progressbar");
 		expect(markup).not.toContain("Timber adds Refs");
+		expect(markup).toContain("opens the pull request on GitHub with its own login");
 	});
 
 	test("the mention line shows as a quiet hint under Description", () => {
@@ -405,6 +409,33 @@ describe("the Pull request tab's form", () => {
 		engine.createPullRequest = async () => result;
 		await store.createPullRequest(id);
 		expect(panel()).toContain("Pull request #9 opened.</span> It shows here once GitHub lists it");
+	});
+
+	test("on Bitbucket the form names Bitbucket, has no Reviewers field, and a created pull request's note names Bitbucket", async () => {
+		const { engine, store, open, panel, calls } = await started();
+		const answer = withoutPortability();
+		if (!answer.ok) throw new Error("sample");
+		engine.setPullRequests(TIMBER, { ...answer, host: "bitbucket" });
+		await store.fetchNow(TIMBER);
+		await settle();
+		const id = open(PORTABILITY);
+		await settle();
+		const shown = panel();
+		expect(shown).toContain("Timber publishes the branch, then opens the pull request on Bitbucket with its own login.");
+		expect(shown).toContain(BITBUCKET_REVIEWERS_NOTE);
+		expect(shown).not.toContain('name="reviewers"');
+		expect(shown).not.toContain("--reviewer");
+		const result: CreatePullRequestResult = { outcome: "created", number: 9, url: "https://bitbucket.org/example/timber/pull-requests/9", base: "main", published: true, reviewers: [] };
+		engine.createPullRequest = async request => {
+			calls.push(request);
+			return result;
+		};
+		await store.createPullRequest(id);
+		expect(calls.at(-1)!.reviewers).toEqual([]);
+		const after = panel();
+		expect(after).toContain("Pull request #9 opened.</span> It shows here once Bitbucket lists it");
+		expect(after).toContain('title="Open pull request #9 on Bitbucket in the browser"');
+		expect(after).not.toContain("GitHub");
 	});
 
 	test("refused and failed keep the fields and Timber's diagnostic for a retry; editing puts the failure away", async () => {

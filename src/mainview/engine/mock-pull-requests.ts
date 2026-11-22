@@ -1,6 +1,6 @@
 import type { Engine } from "../../shared/engine";
 import type { Repository, TimberStatus } from "../../shared/model";
-import type { CheckRun, PullRequest, PullRequestEntry, PullRequestFailureReason, PullRequestList, Reviewer } from "../../shared/pull-requests";
+import type { CheckRun, PullRequest, PullRequestEntry, PullRequestFailureReason, PullRequestHost, PullRequestList, Reviewer } from "../../shared/pull-requests";
 
 /** The part of the engine about pull requests. */
 export type PullRequestCapabilities = Pick<Engine, "readPullRequests">;
@@ -34,6 +34,21 @@ const reviewer = (name: string, state: Reviewer["state"], kind: Reviewer["kind"]
 	name,
 	state,
 	url: kind === "bot" ? null : kind === "team" ? `https://github.com/orgs/${name.replace("/", "/teams/")}` : `https://github.com/${name}`,
+});
+
+/** A Bitbucket reviewer: a display name, which may hold spaces, and the account's page. */
+const bitbucketReviewer = (name: string, state: Reviewer["state"], account: string): Reviewer => ({
+	kind: "user",
+	name,
+	state,
+	url: `https://bitbucket.org/${account}/`,
+});
+
+/** A Bitbucket build status on the head commit. */
+const build = (name: string, status: CheckRun["status"]): CheckRun => ({
+	name,
+	status,
+	url: `https://bitbucket.org/example/billing/pipelines/results/${encodeURIComponent(name)}`,
 });
 
 const SAMPLE_RUNS: CheckRun[] = [run("test", "passing"), run("lint", "passing"), run("typecheck", "passing")];
@@ -78,17 +93,19 @@ export const samplePullRequests: Readonly<Record<string, PullRequest>> = {
 		reviewers: [reviewer("dana", "approved")],
 		description: "Sends `RateLimit-Remaining` and `RateLimit-Reset` on every answer.",
 	}),
+	// billing is on Bitbucket, beside its Jira issue (see samplePullRequestHosts).
 	"feat/invoices": pullRequest(8, "billing", "Draft invoices", {
+		url: "https://bitbucket.org/example/billing/pull-requests/8",
 		state: "draft",
 		summary: "pending",
-		reviewers: [reviewer("erin", "requested")],
+		reviewers: [bitbucketReviewer("Erin Example", "requested", "erin-example")],
 		reviewersComplete: false,
-		runs: [run("test", "passing"), run("build", "pending"), run("deploy preview", "pending")],
+		runs: [build("test", "passing"), build("build", "pending"), build("deploy preview", "pending")],
 	}),
 	// The head branches of pull requests the sample trackers link to issues (./mock-issue-lists.ts), once checked out from the board.
 	"feat/linked-issue-header": pullRequest(48, "timber", "Show the linked issue in the header", { description: "Closes #42." }),
 	"fix/explain-arena": pullRequest(50, "timber", "Explain why New arena is disabled", { state: "draft", summary: "pending" }),
-	"release/2.4": pullRequest(5, "billing", "Release 2.4", { state: "closed", summary: "none", runs: [], review: "none" }),
+	"release/2.4": pullRequest(5, "billing", "Release 2.4", { url: "https://bitbucket.org/example/billing/pull-requests/5", state: "closed", summary: "none", runs: [], review: "none" }),
 	// The storefront repository, after several pull requests merged (issue 162).
 	"feat/coupons": pullRequest(61, "storefront", "Apply coupons at checkout", { state: "merged", review: "approved" }),
 	"chore/ci-cache": pullRequest(62, "storefront", "Cache dependencies in CI", { state: "merged", review: "approved" }),
@@ -97,11 +114,16 @@ export const samplePullRequests: Readonly<Record<string, PullRequest>> = {
 	"feat/wishlist": pullRequest(65, "storefront", "Save items to a wishlist", { review: "review-required" }),
 };
 
+/** Where Timber reads each sample repository's pull requests from, by primary checkout. Any other is on GitHub. */
+export const samplePullRequestHosts: Readonly<Record<string, PullRequestHost>> = {
+	"/work/billing": "bitbucket",
+};
+
 /** Sample failures by primary checkout: every branch in it gets the reason, as from Timber. */
 export const samplePullRequestFailures: Readonly<Record<string, { reason: PullRequestFailureReason; diagnostic: string }>> = {
 	"/work/docs-site": {
 		reason: "not-github",
-		diagnostic: "The selected remote is not a github.com repository. Pull requests are read from github.com only; check the remote setting or the origin fetch URL.",
+		diagnostic: "The selected remote is not a github.com or bitbucket.org repository. Pull requests are read from github.com and bitbucket.org only; check the remote setting or the origin fetch URL.",
 	},
 };
 
@@ -115,7 +137,9 @@ export function sampleAnswer(repository: Repository): PullRequestList {
 		const found = samplePullRequests[branch];
 		return found ? { path, branch, outcome: "found", pullRequest: found } : { path, branch, outcome: "none" };
 	});
-	return { ok: true, worktrees };
+	// As Timber says it: the host of a remote on github.com or bitbucket.org, and none for any other.
+	if (failure?.reason === "not-github") return { ok: true, worktrees };
+	return { ok: true, host: samplePullRequestHosts[repository.path] ?? "github", worktrees };
 }
 
 /**
@@ -132,7 +156,7 @@ export function createMockPullRequests(listed: (path: string) => Repository | un
 		const mine = opened.get(repository);
 		if (!list.ok || !mine) return list;
 		return {
-			ok: true,
+			...list,
 			worktrees: list.worktrees.map(entry => {
 				const pull = entry.outcome === "none" ? mine.get(entry.path) : undefined;
 				return pull ? { path: entry.path, branch: entry.branch, outcome: "found", pullRequest: pull } : entry;

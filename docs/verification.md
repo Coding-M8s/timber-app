@@ -3949,3 +3949,44 @@ Run for Changes in the side panel and each file's diff in its own tab
   line once the panel was hidden.
 - Not run: the desktop window on any platform, any theme's colors, Cmd+Shift+G
   on macOS, and a screen reader.
+
+Run for Bitbucket pull requests in the header (issue 273), Linux x64 with
+Bun 1.4.5, Git 2.43.0, and Timber 0.1.4 on the PATH:
+
+- Timber 0.1.4 run by hand as `timber __app-pr` with stdin closed and an
+  empty home folder, in a temporary repository whose origin is
+  `https://bitbucket.org/example/sample.git`: it exited with 1 and named
+  `pullRequestRepository` `bitbucket`, with every branch `sign-in-needed`
+  and "No usable Bitbucket login. Run timber setup ...". With origin on
+  gitlab.com it exited with 1, `pullRequestRepository` null, and every
+  branch `not-github` with the 0.1.4 wording. Both are recorded in
+  `tests/fixtures/timber-app-pr/` (`bitbucket-sign-in-needed.json`, and
+  `not-github.json` brought to 0.1.4), with the temporary folder written
+  `/work`. `bitbucket-found.json` is written by hand to the 0.1.4
+  contract; no real Bitbucket pull request was read.
+- `bun test tests/pull-requests-parse.test.ts tests/pull-request-markers.test.tsx tests/pull-request-tab.test.tsx tests/pull-request-create.test.tsx tests/timber-pr-parse.test.ts`:
+  the host read from `pullRequestRepository` (GitHub, Bitbucket, none
+  before 0.1.4 or for a remote on neither host), an unknown host or a
+  repository that is not one refusing the answer, a Bitbucket pull request
+  with build statuses, display names, and a bot; the header and rows
+  showing a Bitbucket pull request's number, state, checks, and review,
+  with "Open pull request #42 on Bitbucket in the browser"; a missing
+  Bitbucket login as "PRs need Bitbucket sign-in" naming `timber setup`,
+  never "PRs need sign-in" or `gh auth login`; "not on GitHub" naming both
+  hosts in its tooltip; the tab's review, missing checks, reviewer, and
+  "no pull request" words for Bitbucket; the form to open a pull request
+  naming Bitbucket, with no Reviewers field and no `--reviewer` sent; a
+  `timber pr` record with a `https://bitbucket.org/.../pull-requests/N`
+  link read as created, and its note and Open naming Bitbucket; and the
+  GitHub words unchanged.
+- `bun run typecheck`: no errors.
+- `bun run build:web`: built.
+- `bun run test`: 3794 pass, 19 skip, 0 fail; after rebasing onto main,
+  which requires Timber 0.2.0 (its `__app-pr` contract is unchanged from
+  0.1.4), 3893 pass, 19 skip, 0 fail. The reviewer's run of an
+  earlier version had one failure, `tests/arenas.test.ts` at its 30
+  second limit under load (real Timber, not touched here), which passed
+  when run alone.
+- Not run: the desktop window on any platform, and a real Bitbucket
+  repository with a login, so no real Bitbucket pull request, build
+  status, or reviewer was read.
