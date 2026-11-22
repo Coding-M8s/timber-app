@@ -133,15 +133,19 @@ change them here first when they change.
 
 - Worktrees are grouped under collapsible repository headers. Selecting a
   worktree in another repository switches to it.
-- A repository's header stands apart from its worktree rows: its name is
-  in the main text color, a step larger and heavier than a worktree's, and
-  each repository after the first has a hairline and extra space above it.
-  An unavailable repository's name stays faint.
+- A repository's header stands apart from its worktree rows: the whole row,
+  with its controls, sits on a quiet tint of its own, in every theme quieter
+  than a selected row and a step deeper under the pointer; its name is in
+  the main text color, a step larger and heavier than a worktree's; and each
+  repository after the first has a hairline and extra space above it. An
+  unavailable repository's name stays faint.
 - Drag a repository header to move it; a line shows where it will land.
   Alt+Up and Alt+Down move a focused header one place. The order is
   remembered between runs.
 - Each repository header has a "+" that opens the New worktree dialog
-  directly, and a "Fetch now" control. An "Add repository" control sits
+  directly, and a "Fetch now" control. Both, and More, always show, without
+  pointing at the header first. An unavailable repository's header has
+  only More. An "Add repository" control sits
   below the list. The dialog's Arena (Beta) mode is disabled, with the reason
   as its tooltip, when the Timber found has no arenas for apps.
 - An arena's attempts sit together under its header, "Arena <name>" with a
@@ -169,9 +173,9 @@ change them here first when they change.
   repository does, and says "check" when one of its repositories has a
   removal, a failed listing, or a missing folder. While a filter is typed, a
   group with a match opens and a group without one is hidden.
-- The group's More button, a right-click, or Shift+F10 opens Rename and
-  Delete group. Deleting never asks, because its repositories stay in the
-  list, loose.
+- The group's More button, which always shows, a right-click, or Shift+F10
+  opens Rename and Delete group. Deleting never asks, because its
+  repositories stay in the list, loose.
 - Dragging a repository header can reorder it, put it in a group (over the
   group's header, or anywhere in an open one), or take it out (above the
   first group). Alt+Up and Alt+Down move it among the repositories of its

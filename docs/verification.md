@@ -3703,3 +3703,35 @@ PATH:
 - Not run: the desktop window on any platform, a browser over the mock
   engine, a screen reader, and a live Jira, GitHub iteration, or Linear
   sprint.
+
+Run for repository header rows apart from worktree rows, with Fetch now and
+More always shown (issue 293), on Linux x64 with Bun 1.4.5, Git 2.43.0, and
+Google Chrome:
+
+- `bun run typecheck`: no errors.
+- `bun run build:web`: built.
+- `bun run test`, after rebasing onto main: 3709 passed, 19 skipped, 0 failed.
+- `tests/sidebar-look.test.ts` reads the stylesheet: the header row
+  (`.group-head`) has the `--fill-field` tint while a worktree row is
+  transparent on the sidebar; in every built-in theme the tint differs
+  from the sidebar, is quieter than a selected row, and keeps the text
+  colors at 4.5:1 and the meaning colors at 3:1 on it; the header and its
+  controls still change under the pointer, where the header's faint words
+  take the secondary color, 4.5:1 or more on the deeper tint in every
+  built-in theme (the faint color fell to 4.10:1 in Timber Light there); nothing clips the row; no rule
+  naming Fetch now or either More sets `opacity: 0` or hides it; and Fetch
+  now's disabled color and pulse are unchanged. Solarized Light's faint
+  text was 4.43:1 on the tint, so it is a step darker (`#52646b` from
+  `#55676e`), 4.63:1. `tests/theme.test.ts`: the contrast check now also
+  measures text and meaning colors on `fillField`, so a custom theme hears
+  when its header text is too faint, and every built-in theme passes.
+- `tests/repository-header-look-browser.test.ts` in Chrome, in Timber Dark
+  and Timber Light: the header row's computed background differs from a
+  worktree row's and the sidebar's; Fetch now and More have opacity 1 with
+  the pointer away and nothing focused; the header's background changes
+  under the pointer; and a new group's More has opacity 1 the same way.
+  Both test files failed against the stylesheet from before the change.
+- Seen by eye in screenshots of the browser test page in Timber Dark,
+  Timber Light, Solarized Light, and Gruvbox Dark: each repository's header
+  is a tinted row with its controls in view.
+- Not run: the desktop window on any platform.

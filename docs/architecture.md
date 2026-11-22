@@ -2080,7 +2080,9 @@ the `theme` preference says which.
   its screen, and its scrollback. It is a module of its own so that applying
   a theme does not load xterm, which loads only once a terminal shows.
 - **Contrast.** `contrastWarnings` measures each text color and meaning
-  color (focus included) on every surface, and the terminal's text on its
+  color (focus included) on every surface (the four backgrounds, and
+  `fillField`, which is also the tint of a repository's header row in the
+  sidebar), and the terminal's text on its
   background, as WCAG 2 does, laying see-through colors over the app's
   background first. The minimums are WCAG AA (text 4.5:1, meaning colors
   3:1) unless the maker asks for AAA (7:1 and 4.5:1). The sixteen ANSI
