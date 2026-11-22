@@ -1,7 +1,8 @@
 import { describeCommandLine } from "../shared/command-line";
 import { type TimberConfigScope, type TimberSettingsSaveRequest, type TimberSettingsSnapshot, invalidFieldsAt } from "../shared/timber-config";
 import {
-	type GroupDrafts, type LauncherDraft, type TimberGroup, DRAWN_PATHS, TIMBER_GROUPS, TIMBER_GROUP_TITLES, TRACKER_CHOICES, credentialsToSave, valuesWithAll,
+	type GroupDrafts, type LauncherDraft, type TimberGroup, type TrackingDraft, DRAWN_PATHS, TIMBER_GROUPS, TIMBER_GROUP_TITLES, TRACKER_CHOICES, credentialsToSave,
+	describeJiraSprint, valuesWithAll,
 } from "./timber-settings-format";
 
 /**
@@ -46,6 +47,19 @@ function describeLauncher(draft: LauncherDraft, inherit: string, automatic: stri
 	return draft.enabled ? `${line}, ${automatic}` : line;
 }
 
+/** The Jira site with its sprint source and project, as one part of the tracking line. */
+function describeJira(tracking: TrackingDraft): string | null {
+	if (tracking.jiraMode === "off") return "Jira off";
+	if (tracking.jiraMode !== "set") return null;
+	const typed = (text: string) => text.trim() === "" ? undefined : text.trim();
+	const sprint = describeJiraSprint({
+		board: tracking.sprintSource === "board" ? typed(tracking.board) : undefined,
+		sprint_jql: tracking.sprintSource === "jql" ? typed(tracking.sprintJql) : undefined,
+		project: typed(tracking.jiraProject),
+	});
+	return [`Jira at ${tracking.siteUrl || "(no site)"}`, ...sprint].join(", ");
+}
+
 /**
  * Each group's choice in one line, for the last step. Logins are only said
  * to change, never shown. `inherit` names what a value left alone falls
@@ -64,7 +78,10 @@ export function describeChoices(drafts: GroupDrafts, scope: TimberConfigScope): 
 	const credentials = credentialsToSave(tracking);
 	const trackingParts = [
 		tracker !== undefined ? `${tracker} issues` : null,
-		tracking.jiraMode === "set" ? `Jira at ${tracking.siteUrl || "(no site)"}` : tracking.jiraMode === "off" ? "Jira off" : null,
+		describeJira(tracking),
+		tracking.githubProject.trim() !== "" ? `GitHub project ${tracking.githubProject.trim()}` : null,
+		tracking.githubMilestone.trim() !== "" ? `milestone ${tracking.githubMilestone.trim()}` : null,
+		tracking.linearTeam.trim() !== "" ? `Linear team ${tracking.linearTeam.trim()}` : null,
 		credentials !== undefined ? "logins change" : null,
 	].filter(part => part !== null);
 	return [

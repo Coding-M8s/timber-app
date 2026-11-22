@@ -204,7 +204,7 @@ export function SetupWizardDialog({ repository }: { repository: Repository }) {
 				{step === "agent" && <LauncherFields kind="agent" {...groupProps("agent")} />}
 				{step === "git" && <GitFields {...groupProps("git")} />}
 				{step === "scripts" && <ScriptsFields {...groupProps("scripts")} />}
-				{step === "tracking" && <TrackingFields {...groupProps("tracking")} credentials={settings!.credentials} checks={checks} onCheck={integration => void check(integration)} busy={busy} />}
+				{step === "tracking" && <TrackingFields {...groupProps("tracking")} values={settings!.values} credentials={settings!.credentials} checks={checks} onCheck={integration => void check(integration)} busy={busy} />}
 			</>
 		);
 	}

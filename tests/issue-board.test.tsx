@@ -5,8 +5,9 @@ import { createMockEngine } from "../src/mainview/engine/mock";
 import { bigSprint } from "../src/mainview/engine/mock-issue-lists";
 import {
 	boardColumns, boardTracker, boardTrackerChoices, describeBlockedToggle, describeEmptyList, describeHiddenList, describeListFailure,
-	describeListSummary, describePartial, describeTruncated, shownList,
+	describeListSummary, describePartial, describeTruncated, fixedInTrackingSettings, shownList,
 } from "../src/mainview/issue-board-format";
+import { draftsOf, valuesWith } from "../src/mainview/timber-settings-format";
 import { type IssueBoard, boardKey, boardToggles, boardView, emptyBoard, hiddenDiagnostic, hiddenLists, listsToRead, withRead } from "../src/mainview/store/issue-board";
 import { createAppStore } from "../src/mainview/store/store";
 import type { IssueListResult } from "../src/shared/issue-lists";
@@ -320,6 +321,53 @@ describe("the board in the window", () => {
 		expect(toggleIn(render(store), "Current sprint")).toMatchObject({ on: true, disabled: false });
 	});
 
+	test("a Jira sprint not set up links to Issue tracking, and once a board is saved there the sprint list reads its active sprint", async () => {
+		const engine = createMockEngine();
+		engine.setTimberConfig(TIMBER, { default_tracker: "jira", jira: { site_url: "https://example.atlassian.net" } });
+		const { store } = await startedStore(engine);
+		store.openBoard(TIMBER);
+		await settle();
+		let markup = render(store);
+		expect(markup).toContain("Current sprint is not set up for Jira. No Jira sprint is configured. Set [jira].board to a Scrum board, or [jira].sprint_jql.");
+		expect(markup).toContain('class="button quiet board-settings">Open Issue tracking settings</button>');
+		const read = await store.readTimberSettings({ scope: "repository", repository: TIMBER });
+		if (read.outcome !== "read") throw new Error("not read");
+		const tracking = { ...draftsOf(read.settings.values).tracking, sprintSource: "board" as const, board: "14" };
+		const saved = await store.saveTimberSettings({ scope: "repository", repository: TIMBER, revision: read.settings.revision, values: valuesWith("tracking", tracking, read.settings.values), editTracked: true });
+		expect(saved).toMatchObject({ outcome: "saved" });
+		await settle();
+		markup = render(store);
+		expect(markup).toContain("TIM Sprint 14");
+		expect(markup).not.toContain("not set up");
+		expect(toggleIn(markup, "Current sprint")).toMatchObject({ on: true, disabled: false });
+	});
+
+	test("Linear with no team links to Issue tracking, a team saved there sets up its lists, and the link opens the board's repository", async () => {
+		const engine = createMockEngine();
+		engine.setTimberConfig(API, { default_tracker: "linear" });
+		const { store } = await startedStore(engine);
+		store.openBoard(API);
+		await settle();
+		let markup = render(store);
+		expect(markup).toContain("Current sprint is not set up for Linear. No Linear team is configured.");
+		expect(markup).toContain('class="button quiet board-settings">Open Issue tracking settings</button>');
+		const read = await store.readTimberSettings({ scope: "repository", repository: API });
+		if (read.outcome !== "read") throw new Error("not read");
+		const values = valuesWith("tracking", { ...draftsOf(read.settings.values).tracking, linearTeam: "eng" }, read.settings.values);
+		expect(await store.saveTimberSettings({ scope: "repository", repository: API, revision: read.settings.revision, values, editTracked: false })).toMatchObject({ outcome: "saved" });
+		await settle();
+		markup = render(store);
+		expect(toggleIn(markup, "Current sprint")).toMatchObject({ disabled: false });
+		expect(markup).not.toContain("not set up for Linear");
+		// What the link opens: Settings at Repository, on the board's repository rather than the selected worktree's.
+		store.openDialog({ kind: "settings", section: "repository", repository: API, group: "tracking" });
+		await settle();
+		const settings = render(store);
+		expect(settings).toMatch(/<option value="\/work\/api-server" selected="">/);
+		expect(fixedInTrackingSettings("not-configured") && fixedInTrackingSettings("not-found")).toBe(true);
+		expect(fixedInTrackingSettings("offline") || fixedInTrackingSettings("sign-in-needed")).toBe(false);
+	});
+
 	test("turning a toggle to a list not set up comes back, and then that toggle is disabled with the list's hint", async () => {
 		const engine = createMockEngine();
 		const notSetUp = (diagnostic: string): IssueListResult => ({ ok: true, outcome: "failed", reason: "not-configured", diagnostic });
@@ -390,7 +438,7 @@ describe("the board in the window", () => {
 		expect(render(store)).toContain("v0.3, GitHub milestone, assigned to you, 2 issues");
 	});
 
-	test("with no list set up, both toggles stay, disabled, with their hints", async () => {
+	test("with no list set up, both toggles stay, disabled, with their hints, and the list links to Issue tracking", async () => {
 		const engine = createMockEngine();
 		engine.setIssueList({ ok: true, outcome: "failed", reason: "not-configured", diagnostic: "Nothing set up." });
 		const { store } = await startedStore(engine);
@@ -404,6 +452,8 @@ describe("the board in the window", () => {
 		expect(toggleIn(markup, "Assigned to me")?.disabled).toBe(true);
 		expect(markup).toContain("Current sprint is not set up for GitHub.");
 		expect(markup).toContain("Assigned to me is not set up for GitHub.");
+		// The link shows once, with the list's own line, not again under the hints.
+		expect(markup.match(/>Open Issue tracking settings<\/button>/g)).toHaveLength(1);
 	});
 
 	test("a repository that remembered a list shows it as the matching toggles", async () => {

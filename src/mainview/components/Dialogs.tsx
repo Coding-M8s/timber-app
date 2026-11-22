@@ -59,7 +59,7 @@ export function Dialogs() {
 		}
 		case "settings":
 			// A key per section asked for, so asking for another one while Settings is open opens it there.
-			return <SettingsDialog key={dialog.section ?? ""} initialSection={dialog.section ?? SETTINGS_SECTIONS[0]} />;
+			return <SettingsDialog key={`${dialog.section ?? ""}\n${dialog.repository ?? ""}\n${dialog.group ?? ""}`} initialSection={dialog.section ?? SETTINGS_SECTIONS[0]} />;
 		case "unsaved-file":
 			// A key per worktree and step, so another question starts from nothing.
 			return <UnsavedFileDialog key={`${dialog.worktree}\n${JSON.stringify(dialog.then)}`} worktree={dialog.worktree} then={dialog.then} />;

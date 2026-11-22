@@ -6,9 +6,9 @@ import { CHECK_OUT_LABEL, allRefused, checkOutChoice } from "../check-out-format
 import { describeAgo } from "../fetch-format";
 import { TRACKER_NAMES, describeOpenIssue, issueKeyLabel } from "../issue-format";
 import {
-	ISSUES_ROW_LABEL, LIST_NOT_READ, NO_CURRENT_SPRINT, NO_TRACKER, TOGGLE_LABELS,
+	ISSUES_ROW_LABEL, LIST_NOT_READ, NO_CURRENT_SPRINT, NO_TRACKER, OPEN_TRACKING_SETTINGS, TOGGLE_LABELS,
 	boardColumns, boardTrackerChoices, boardTrackerOption, describeBlockedToggle, describeEmptyList, describeHiddenList, describeListFailure,
-	describeListSummary, describePartial, describeTruncated, shownList, sprintLabel,
+	describeListSummary, describePartial, describeTruncated, fixedInTrackingSettings, shownList, sprintLabel,
 } from "../issue-board-format";
 import { OPEN_WORKTREE_LABEL, START_WORK_LABEL, startWorkChoice } from "../start-work-format";
 import { type BoardView, boardToggles, boardView, emptyBoard, hiddenDiagnostic } from "../store/issue-board";
@@ -116,13 +116,28 @@ function IssueCard({ issue, onOpen, onJump, onCheckOut, onStart }: {
 	);
 }
 
-function Quiet({ title, text, detail, command }: { title: string; text?: string | undefined; detail?: string | null | undefined; command?: string | null | undefined }) {
-	return (
+function Quiet({ title, text, detail, command, onSettings }: {
+	title: string;
+	text?: string | undefined;
+	detail?: string | null | undefined;
+	command?: string | null | undefined;
+	/** Opens the repository's Issue tracking settings, where what is missing is set. */
+	onSettings?: (() => void) | null | undefined;
+}) {
+	// The button sits beside the status, not in it, so a screen reader announcing the status does not read it as text.
+	const status = (
 		<div className="board-quiet" role="status">
 			<p className="board-quiet-title">{title}</p>
 			{text && <p className="board-quiet-text">{text}</p>}
 			{detail && <p className="board-quiet-text board-quiet-detail">{detail}</p>}
 			{command && <code className="board-quiet-command">{command}</code>}
+		</div>
+	);
+	if (!onSettings) return status;
+	return (
+		<div className="board-quiet-with-action">
+			{status}
+			<button type="button" className="button quiet board-settings" onClick={onSettings}>{OPEN_TRACKING_SETTINGS}</button>
 		</div>
 	);
 }
@@ -193,6 +208,8 @@ export function IssuesBoard({ repository }: { repository: string }) {
 		return { open: () => store.openDialog({ kind: "start-work", repository, issue }), title: "Create a worktree for this issue, linked to it, and assign it to you" };
 	};
 
+	const openTrackingSettings = () => store.openDialog({ kind: "settings", section: "repository", repository, group: "tracking" });
+
 	// The quiet word beside the title: the latest read failed, and the last good list stays on screen.
 	let word: { text: string; title: string } | null = null;
 	if (good !== null && latest !== null && latest !== good && tracker !== null) {
@@ -208,6 +225,8 @@ export function IssuesBoard({ repository }: { repository: string }) {
 	}
 
 	let body;
+	// Whether the body offers Issue tracking itself, so the hints do not offer it a second time.
+	let bodyLinks = false;
 	if (tracker === null) {
 		if (trackers === undefined) body = <BoardLoading />;
 		else if (!trackers.ok) body = <Quiet title="The issue trackers could not be read." detail={trackers.message} />;
@@ -217,7 +236,8 @@ export function IssuesBoard({ repository }: { repository: string }) {
 		body = <Quiet title="The issues board needs a Timber built from its main branch." text={version === null ? undefined : `This Timber is ${version}. No Timber release has timber __app-issues yet.`} />;
 	} else if (list === null) {
 		const reason = latest?.result.ok && latest.result.outcome === "failed" ? latest.result.diagnostic : null;
-		body = <Quiet title={`No list is set up for ${TRACKER_NAMES[tracker]}.`} detail={reason} />;
+		body = <Quiet title={`No list is set up for ${TRACKER_NAMES[tracker]}.`} detail={reason} onSettings={openTrackingSettings} />;
+		bodyLinks = true;
 	} else if (good !== null) {
 		if (good.result.outcome === "none") {
 			body = isSprintList(list) ? <Quiet title={NO_CURRENT_SPRINT.title} text={NO_CURRENT_SPRINT.text} /> : <Quiet {...describeEmptyList(list, tracker)} />;
@@ -230,7 +250,8 @@ export function IssuesBoard({ repository }: { repository: string }) {
 		}
 	} else if (latest !== null && latest.result.ok && latest.result.outcome === "failed") {
 		const failure = describeListFailure(latest.result.reason, tracker);
-		body = <Quiet title={failure.title} text={failure.text} detail={latest.result.diagnostic} command={failure.command} />;
+		bodyLinks = fixedInTrackingSettings(latest.result.reason);
+		body = <Quiet title={failure.title} text={failure.text} detail={latest.result.diagnostic} command={failure.command} onSettings={bodyLinks ? openTrackingSettings : null} />;
 	} else if (latest !== null && !latest.result.ok) {
 		body = <Quiet title="Timber could not list the issues." detail={latest.result.message} />;
 	} else {
@@ -301,6 +322,9 @@ export function IssuesBoard({ repository }: { repository: string }) {
 					</div>
 				)}
 				{hints.map(hint => <p key={hint.id} id={hint.id} className="board-hint">{hint.text}</p>)}
+				{hints.length > 0 && !bodyLinks && (
+					<div><button type="button" className="button quiet board-settings" onClick={openTrackingSettings}>{OPEN_TRACKING_SETTINGS}</button></div>
+				)}
 			</header>
 			<div className="board-body">{body}</div>
 		</main>

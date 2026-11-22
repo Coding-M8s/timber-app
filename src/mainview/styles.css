@@ -6597,6 +6597,14 @@ pre:focus-visible {
 	color: var(--text-3);
 }
 
+/* Opens the repository's Issue tracking settings, from a hint or a list not set up. */
+.board-settings {
+	align-self: flex-start;
+	margin-top: 4px;
+	height: 26px;
+	padding: 0 10px;
+}
+
 .board-pickers {
 	display: flex;
 	flex-wrap: wrap;
@@ -6860,6 +6868,17 @@ pre:focus-visible {
 	padding: 8px 10px;
 	border: 1px solid var(--line);
 	border-radius: 6px;
+}
+
+/* A quiet line with its Issue tracking button below it, outside the status. */
+.board-quiet-with-action {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+}
+
+.board-quiet-with-action > .board-settings {
+	margin: 0 4px 12px;
 }
 
 .board-quiet {

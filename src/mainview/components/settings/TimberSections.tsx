@@ -9,7 +9,8 @@ import {
 	type CheckOutcome, type GitDraft, type GroupDrafts, type GroupOutcome, type LauncherDraft, type LauncherPreset, type Mode, type ScriptsDraft, type TimberGroup,
 	type TrackingDraft, AGENT_PRESETS, DRAWN_PATHS, EDITOR_PRESETS, IDLE_OUTCOME as IDLE, INTEGRATION_LABELS, TIMBER_GROUPS, TIMBER_GROUP_TITLES, TRACKER_CHOICES,
 	credentialsToCheck, credentialsToSave, describeCheck, describeJiraLogin, describeLinearLogin, draftsOf, fieldMessage, groupChanged, groupMessages, inheritLabel,
-	jiraDefault, machineDefault, outcomeOfSave, placeholderFor, trackerPlaceholder, typingPutsAway, valuesWith, withPreset,
+	jiraDefault, machineDefault, outcomeOfSave, placeholderFor, scopePlaceholder, trackerPlaceholder, typingPutsAway, valuesWith, withJiraMode, withPreset,
+	type SprintSource,
 } from "../../timber-settings-format";
 import { TimberFailureDetails } from "../TimberFailureDetails";
 import { SettingsSavingContext } from "./SettingsSection";
@@ -90,10 +91,12 @@ interface FieldProps {
 	hint?: string;
 	mono?: boolean;
 	secret?: boolean;
+	/** The keyboard a touch screen shows, such as "numeric" for a board number. */
+	inputMode?: "numeric" | "text";
 }
 
 /** One text field, with Timber's words about it beside it. */
-function TextField({ label, value, onChange, messages, placeholder, hint, mono = true, secret = false }: FieldProps) {
+function TextField({ label, value, onChange, messages, placeholder, hint, mono = true, secret = false, inputMode }: FieldProps) {
 	const id = useId();
 	const hintId = useId();
 	const errorId = useId();
@@ -108,6 +111,7 @@ function TextField({ label, value, onChange, messages, placeholder, hint, mono =
 				spellCheck={false}
 				autoComplete={secret ? "new-password" : "off"}
 				placeholder={placeholder}
+				inputMode={inputMode}
 				aria-invalid={messages.length > 0}
 				aria-describedby={described}
 				value={value}
@@ -318,6 +322,8 @@ export function ScriptsFields({ draft, onChange, scope, machine, messages }: Gro
 }
 
 export interface TrackingFieldsProps extends GroupViewProps<TrackingDraft> {
+	/** The scope's settings as read, for whether it has a GitHub or Linear table of its own. */
+	values: TimberValues;
 	credentials: TimberSettingsSnapshot["credentials"];
 	checks: Partial<Record<Integration, CheckOutcome>>;
 	onCheck: (integration: Integration) => void;
@@ -342,8 +348,44 @@ function ConnectionTest({ integration, scope, outcome, onCheck, busy }: { integr
 	);
 }
 
-/** The default tracker, the Jira site, the logins, and their checks. A login is typed only to save or check it. */
-export function TrackingFields({ draft, onChange, scope, machine, messages, credentials, checks, onCheck, busy }: TrackingFieldsProps) {
+const SPRINT_SOURCES: readonly { value: SprintSource; label: string; hint: string }[] = [
+	{ value: "none", label: "Not set", hint: "The Issues board has no Current sprint for Jira." },
+	{ value: "board", label: "Scrum board", hint: "The board's active sprint." },
+	{ value: "jql", label: "JQL", hint: "The issues a JQL query finds." },
+];
+
+/** Where Jira's current sprint comes from: a Scrum board or a JQL query, never both, and the Jira project. */
+function JiraSprintFields({ draft, set, at }: { draft: TrackingDraft; set: (change: Partial<TrackingDraft>) => void; at: (path: string) => string[] }) {
+	const name = useId();
+	// The not-both message names sprint_jql; with a board chosen it shows at the board.
+	const sourceMessages = draft.sprintSource === "board" ? [...at("jira.board"), ...at("jira.sprint_jql")] : at("jira.sprint_jql");
+	return (
+		<>
+			<fieldset className="settings-choice">
+				<legend className="field-label">Current sprint from</legend>
+				{SPRINT_SOURCES.map(option => (
+					<label key={option.value} className="check">
+						<input type="radio" name={name} value={option.value} checked={draft.sprintSource === option.value} onChange={() => set({ sprintSource: option.value })} />
+						<span className="check-text">
+							{option.label}
+							<span className="check-hint">{option.hint}</span>
+						</span>
+					</label>
+				))}
+			</fieldset>
+			{draft.sprintSource === "board" && (
+				<TextField label="Board ID" value={draft.board} onChange={board => set({ board })} messages={sourceMessages} inputMode="numeric" hint="The number in the board's address, after /boards/." />
+			)}
+			{draft.sprintSource === "jql" && (
+				<TextField label="Sprint JQL" value={draft.sprintJql} onChange={sprintJql => set({ sprintJql })} messages={sourceMessages} placeholder="project = TIM AND sprint in openSprints()" hint="Up to 2000 characters." />
+			)}
+			<TextField label="Jira project" value={draft.jiraProject} onChange={jiraProject => set({ jiraProject })} messages={at("jira.project")} placeholder="Not set" hint="A project key, such as TIM." />
+		</>
+	);
+}
+
+/** The default tracker, the Jira site and sprint, GitHub's and Linear's scope, the logins, and their checks. A login is typed only to save or check it. */
+export function TrackingFields({ draft, onChange, scope, machine, messages, values, credentials, checks, onCheck, busy }: TrackingFieldsProps) {
 	const { at } = groupMessages(messages, []);
 	const trackerId = useId();
 	const set = (change: Partial<TrackingDraft>) => onChange({ ...draft, ...change });
@@ -359,17 +401,36 @@ export function TrackingFields({ draft, onChange, scope, machine, messages, cred
 			</div>
 
 			<h5 className="timber-subtitle">GitHub</h5>
+			<TextField
+				label="Project"
+				value={draft.githubProject}
+				onChange={githubProject => set({ githubProject })}
+				messages={at("github.project")}
+				placeholder={scopePlaceholder("github", "project", draft, scope, machine, values)}
+				hint="A Projects board with an iteration field, as owner/number. Its current iteration is the sprint."
+			/>
+			<TextField
+				label="Milestone"
+				value={draft.githubMilestone}
+				onChange={githubMilestone => set({ githubMilestone })}
+				messages={at("github.milestone")}
+				placeholder={scopePlaceholder("github", "milestone", draft, scope, machine, values)}
+				mono={false}
+				hint={scope === "repository" ? "A milestone's title. Setting either field here replaces both of the machine's." : "A milestone's title."}
+			/>
 			<p className="field-hint">Timber uses the GitHub CLI login, or GH_TOKEN or GITHUB_TOKEN. It stores no GitHub token. Sign in with gh auth login.</p>
 			<ConnectionTest integration="github" scope={scope} outcome={checks.github} onCheck={() => onCheck("github")} busy={busy} />
 
 			<h5 className="timber-subtitle">Jira</h5>
-			<ModeChoice legend="Jira site" mode={draft.jiraMode} onChange={jiraMode => set({ jiraMode })} scope={scope} setLabel="This site" inherited={jiraDefault(scope, machine)} />
+			<ModeChoice legend="Jira site" mode={draft.jiraMode} onChange={jiraMode => onChange(withJiraMode(draft, jiraMode, scope, machine))} scope={scope} setLabel="This site" inherited={jiraDefault(scope, machine)} />
 			{draft.jiraMode === "set" && (
 				<>
 					<TextField label="Site address" value={draft.siteUrl} onChange={siteUrl => set({ siteUrl })} messages={at("jira.site_url")} placeholder="https://your-team.atlassian.net" />
 					<TextField label="Cloud ID" value={draft.cloudId} onChange={cloudId => set({ cloudId })} messages={at("jira.cloud_id")} hint="Only for a scoped API token. Leave blank otherwise." />
+					<JiraSprintFields draft={draft} set={set} at={at} />
 				</>
 			)}
+			{draft.jiraMode !== "set" && <p className="field-hint">The sprint board or JQL and the project are set with the site: choose "This site" to set them.</p>}
 			<p className="dialog-note">{describeJiraLogin(credentials)}</p>
 			<TextField label="Jira email" value={draft.jiraEmail} onChange={jiraEmail => set({ jiraEmail, removeJira: false })} messages={[]} mono={false} secret hint="Kept by Timber in its private store, for this site, on this machine." />
 			<TextField label="Jira API token" value={draft.jiraToken} onChange={jiraToken => set({ jiraToken, removeJira: false })} messages={at("credentials.jira")} secret />
@@ -382,6 +443,14 @@ export function TrackingFields({ draft, onChange, scope, machine, messages, cred
 			<ConnectionTest integration="jira" scope={scope} outcome={checks.jira} onCheck={() => onCheck("jira")} busy={busy} />
 
 			<h5 className="timber-subtitle">Linear</h5>
+			<TextField
+				label="Team"
+				value={draft.linearTeam}
+				onChange={linearTeam => set({ linearTeam })}
+				messages={at("linear.team")}
+				placeholder={scopePlaceholder("linear", "team", draft, scope, machine, values)}
+				hint="A team key, such as ENG: up to 7 letters and digits. Its current cycle is the sprint."
+			/>
 			<p className="dialog-note">{describeLinearLogin(credentials)}</p>
 			<TextField label="Linear API key" value={draft.linearKey} onChange={linearKey => set({ linearKey, removeLinear: false })} messages={at("credentials.linear")} secret hint="Kept by Timber in its private store, for every repository on this machine." />
 			{credentials.linear.state === "saved" && (
@@ -406,6 +475,8 @@ export interface TimberGroupFormProps {
 	editTracked: boolean;
 	onSave: () => void;
 	onReadAgain: () => void;
+	/** Receives the group's title, which can take the focus. */
+	titleRef?: (element: HTMLHeadingElement | null) => void;
 	children: ReactNode;
 }
 
@@ -444,7 +515,7 @@ export function SaveOutcomeNotes({ outcome, rest, onReadAgain, marked = "The fie
 }
 
 /** One group of Timber's settings: its fields, what came of the last save, the exact command, and its own Save. */
-export function TimberGroupForm({ group, scope, outcome, canSave, blocked, editTracked, onSave, onReadAgain, children }: TimberGroupFormProps) {
+export function TimberGroupForm({ group, scope, outcome, canSave, blocked, editTracked, onSave, onReadAgain, titleRef, children }: TimberGroupFormProps) {
 	const titleId = useId();
 	const blockedId = useId();
 	const saving = outcome.state === "saving";
@@ -455,7 +526,7 @@ export function TimberGroupForm({ group, scope, outcome, canSave, blocked, editT
 	const rest = outcome.state === "invalid" ? groupMessages(outcome.fields, DRAWN_PATHS[group]).rest : [];
 	return (
 		<form className="timber-group" aria-labelledby={titleId} aria-busy={saving} onSubmit={submit}>
-			<h4 id={titleId} className="timber-block-title">{TIMBER_GROUP_TITLES[group]}</h4>
+			<h4 id={titleId} ref={titleRef} tabIndex={titleRef ? -1 : undefined} className="timber-block-title">{TIMBER_GROUP_TITLES[group]}</h4>
 			<fieldset className="dialog-fields" disabled={saving}>{children}</fieldset>
 			<SaveOutcomeNotes outcome={outcome} rest={rest} onReadAgain={onReadAgain} />
 			<div className="field">
@@ -485,7 +556,12 @@ function FileNote({ settings }: { settings: TimberSettingsSnapshot }) {
  * what was typed in it until it is saved, also across reading again, and
  * saves only its own fields on top of what was last read.
  */
-export function TimberScopeSettings({ scope, repository }: { scope: TimberConfigScope; repository: string | null }) {
+export function TimberScopeSettings({ scope, repository, focusGroup = null }: {
+	scope: TimberConfigScope;
+	repository: string | null;
+	/** A group to bring into view and focus once the settings are read, such as Issue tracking when opened from the Issues board. */
+	focusGroup?: TimberGroup | null;
+}) {
 	const store = useStore();
 	const { reportSaving } = useContext(SettingsSavingContext);
 	const key = `${scope}:${repository ?? ""}`;
@@ -497,6 +573,18 @@ export function TimberScopeSettings({ scope, repository }: { scope: TimberConfig
 	const trackedId = useId();
 	// A ref, not the state: a second Enter can arrive before the next render.
 	const running = useRef(false);
+	const focused = useRef(false);
+	const groupTitles = useRef<Partial<Record<TimberGroup, HTMLHeadingElement | null>>>({});
+	const readOk = read.result?.outcome === "read";
+	// Once, when the settings first show: the group asked for scrolls into view and takes the focus on its title.
+	useEffect(() => {
+		if (focusGroup === null || focused.current || !readOk) return;
+		const title = groupTitles.current[focusGroup];
+		if (!title) return;
+		focused.current = true;
+		title.scrollIntoView?.({ block: "start" });
+		title.focus();
+	}, [focusGroup, readOk]);
 
 	const result = read.result;
 	if (result === null) return <p className="settings-section-text" role="status">Reading</p>;
@@ -601,13 +689,16 @@ export function TimberScopeSettings({ scope, repository }: { scope: TimberConfig
 						editTracked={settings.tracked && editTracked}
 						onSave={() => void save(group)}
 						onReadAgain={() => readAgainFor(group)}
+						titleRef={element => {
+							groupTitles.current[group] = element;
+						}}
 					>
 						{group === "editor" && <LauncherFields kind="editor" {...groupProps("editor")} />}
 						{group === "agent" && <LauncherFields kind="agent" {...groupProps("agent")} />}
 						{group === "git" && <GitFields {...groupProps("git")} />}
 						{group === "scripts" && <ScriptsFields {...groupProps("scripts")} />}
 						{group === "tracking" && (
-							<TrackingFields {...groupProps("tracking")} credentials={settings.credentials} checks={checks} onCheck={integration => void check(integration, { scope, repository, tracking: drafts.tracking, values: settings.values })} busy={anySaving} />
+							<TrackingFields {...groupProps("tracking")} values={settings.values} credentials={settings.credentials} checks={checks} onCheck={integration => void check(integration, { scope, repository, tracking: drafts.tracking, values: settings.values })} busy={anySaving} />
 						)}
 					</TimberGroupForm>
 				);
@@ -640,10 +731,15 @@ export function RepositorySection() {
 	const pickerId = useId();
 	const titleId = useId();
 	const { repositories } = state;
-	const [chosen, setChosen] = useState<string | null>(null);
+	// Opened at a repository, such as from its Issues board: that one, until another is chosen.
+	const asked = state.dialog?.kind === "settings" ? state.dialog : null;
+	const [chosen, setChosen] = useState<string | null>(asked?.repository ?? null);
+	// The group asked for takes the focus once: coming back to the repository later leaves the focus on the picker.
+	const [askedShown, setAskedShown] = useState(true);
 	// The repository of the selected worktree until another is chosen.
 	const fallback = state.selection?.repository ?? repositories[0]?.path ?? null;
 	const repository = chosen !== null && repositories.some(candidate => candidate.path === chosen) ? chosen : fallback;
+	const focusGroup = askedShown && asked?.repository !== undefined && asked.repository === repository ? asked.group ?? null : null;
 	return (
 		<section className="settings-section" aria-labelledby={titleId}>
 			<header className="settings-section-head">
@@ -659,12 +755,15 @@ export function RepositorySection() {
 				<>
 					<div className="field">
 						<label className="field-label" htmlFor={pickerId}>Repository</label>
-						<select id={pickerId} className="field-input" value={repository} onChange={event => setChosen(event.target.value)}>
+						<select id={pickerId} className="field-input" value={repository} onChange={event => {
+								setChosen(event.target.value);
+								setAskedShown(false);
+							}}>
 							{repositories.map(candidate => <option key={candidate.path} value={candidate.path}>{candidate.name}</option>)}
 						</select>
 					</div>
 					{/* A new repository starts afresh: nothing typed for another one carries over. */}
-					<TimberScopeSettings key={repository} scope="repository" repository={repository} />
+					<TimberScopeSettings key={repository} scope="repository" repository={repository} focusGroup={focusGroup} />
 				</>
 			)}
 		</section>

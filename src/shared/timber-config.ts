@@ -69,6 +69,21 @@ export interface HooksValue {
 export interface JiraValue {
 	site_url: string;
 	cloud_id?: string;
+	/** The Scrum board whose active sprint is the current sprint. Not together with `sprint_jql`. */
+	board?: number;
+	/** JQL for the current sprint's issues. Not together with `board`. */
+	sprint_jql?: string;
+	project?: string;
+}
+/** Where Timber finds GitHub's current sprint: a Projects board's iteration, or a milestone. */
+export interface GithubValue {
+	/** A Projects board, as `owner/number`. */
+	project?: string;
+	milestone?: string;
+}
+export interface LinearValue {
+	/** A team key, such as `ENG`. */
+	team?: string;
 }
 
 /**
@@ -77,7 +92,7 @@ export interface JiraValue {
  * defaults. `false` switches a table off. Keys this app does not edit, such
  * as `workflows` and `arena`, are kept exactly as Timber gave them and sent
  * back unchanged, and so are keys inside a table the app does not draw, such
- * as `[jira].board`.
+ * as `[agent].resolve_handoff`.
  */
 export interface TimberValues {
 	default_tracker?: Tracker;
@@ -88,6 +103,8 @@ export interface TimberValues {
 	agent?: false | AgentValue;
 	hooks?: false | HooksValue;
 	jira?: false | JiraValue;
+	github?: false | GithubValue;
+	linear?: false | LinearValue;
 	[other: string]: unknown;
 }
 
@@ -236,7 +253,10 @@ const SHAPES: Record<string, (value: unknown) => boolean> = {
 	editor: value => value === false || (isLauncher(value) && optional(value, "integration", integration => integration === "orca")),
 	agent: value => value === false || (isLauncher(value) && optional(value, "wait_for_setup", wait => typeof wait === "boolean")),
 	hooks: value => value === false || (isTable(value) && isTextList(value.post_create) && optional(value, "pre_delete", isTextList)),
-	jira: value => value === false || (isTable(value) && isText(value.site_url) && optional(value, "cloud_id", isText)),
+	jira: value => value === false || (isTable(value) && isText(value.site_url) && optional(value, "cloud_id", isText)
+		&& optional(value, "board", board => typeof board === "number") && optional(value, "sprint_jql", isText) && optional(value, "project", isText)),
+	github: value => value === false || (isTable(value) && optional(value, "project", isText) && optional(value, "milestone", isText)),
+	linear: value => value === false || (isTable(value) && optional(value, "team", isText)),
 };
 
 /** A scope's settings as Timber gave them, or null when a key this app edits has a shape it does not know. */

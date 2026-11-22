@@ -22,14 +22,17 @@ export interface TimberConfigControls {
 	breakTimberConfig(file: "machine" | string, diagnostic: string | null): void;
 	/** Decide what checking a login answers from now on: whether it works, or null for the sample answers. */
 	setConnection(ok: boolean | null): void;
+	/** What applies to a repository after inheritance, as Timber would resolve it, so the mock's issue lists follow saved settings. */
+	effectiveTimberSettings(repository: string): TimberValues;
 }
 
 /** Where the mock's machine settings are. */
 export const MOCK_MACHINE_CONFIG = "/home/sam/.config/timber/config.toml";
 
-/** The sample machine defaults: an agent that starts by itself, and the editor turned off. */
+/** The sample machine defaults: an agent that starts by itself, the editor turned off, and GitHub's sprint as a milestone. */
 export const sampleMachineValues: TimberValues = {
 	default_tracker: "github",
+	github: { milestone: "v0.3" },
 	editor: false,
 	agent: { command: "claude", args: [], enabled: true },
 };
@@ -42,7 +45,7 @@ export const sampleRepositoryValues: Readonly<Record<string, TimberValues>> = {
 		hooks: { post_create: ["bun install", "bun run build"], pre_delete: ["bun run cleanup"] },
 		editor: { command: "code", args: ["--new-window"], enabled: false },
 		workflows: { review: { description: "Check out a pull request to review", post_create: ["gh pr checkout"] } },
-		jira: { site_url: "https://example.atlassian.net" },
+		jira: { site_url: "https://example.atlassian.net", board: 14 },
 	},
 };
 
@@ -75,7 +78,16 @@ function invalidFields(values: Record<string, unknown>): string[] {
 	}
 	if (isTable(jira) && !/^https:\/\/[a-z0-9-]+\.atlassian\.net\/?$/.test(String(jira.site_url))) fields.push("jira.site_url is invalid");
 	if (isTable(jira) && jira.cloud_id !== undefined && !/^[0-9a-f-]{36}$/i.test(String(jira.cloud_id))) fields.push("jira.cloud_id is invalid");
-	return fields;
+	if (isTable(jira) && jira.board !== undefined && !(Number.isInteger(jira.board) && (jira.board as number) > 0)) fields.push("jira.board is invalid");
+	if (isTable(jira) && jira.sprint_jql !== undefined && (blank(jira.sprint_jql) || String(jira.sprint_jql).length > 2000)) fields.push("jira.sprint_jql is invalid");
+	// Timber names the second of the two when both are set.
+	if (isTable(jira) && jira.board !== undefined && jira.sprint_jql !== undefined) fields.push("jira.sprint_jql is invalid");
+	if (isTable(jira) && jira.project !== undefined && !/^[A-Za-z][A-Za-z0-9_]{0,254}$/.test(String(jira.project))) fields.push("jira.project is invalid");
+	const { github, linear } = values;
+	if (isTable(github) && github.project !== undefined && !/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[1-9][0-9]{0,8}$/.test(String(github.project))) fields.push("github.project is invalid");
+	if (isTable(github) && github.milestone !== undefined && (blank(github.milestone) || String(github.milestone).length > 255)) fields.push("github.milestone is invalid");
+	if (isTable(linear) && linear.team !== undefined && !/^[A-Za-z][A-Za-z0-9]{0,6}$/.test(String(linear.team))) fields.push("linear.team is invalid");
+	return [...new Set(fields)];
 }
 
 const same = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
@@ -188,6 +200,11 @@ export function createMockTimberConfig(
 			if (changes.jira !== "unchanged") credentials.jira = changes.jira === "saved" ? "saved" : "none";
 			if (changes.linear !== "unchanged") credentials.linear = changes.linear === "saved" ? "saved" : "none";
 			const values = structuredClone(draft!);
+			// As Timber does: project and team keys are kept in capitals, and a query and a milestone without the spaces around them.
+			if (isTable(values.jira) && typeof values.jira.project === "string") values.jira.project = values.jira.project.toUpperCase();
+			if (isTable(values.jira) && typeof values.jira.sprint_jql === "string") values.jira.sprint_jql = values.jira.sprint_jql.trim();
+			if (isTable(values.github) && typeof values.github.milestone === "string") values.github.milestone = values.github.milestone.trim();
+			if (isTable(values.linear) && typeof values.linear.team === "string") values.linear.team = values.linear.team.toUpperCase();
 			for (const kept of PRESERVED_KEYS) if (saved[kept] !== undefined) values[kept] = structuredClone(saved[kept]);
 			files.set(key, { values, version: file.version + 1 });
 			onSaved(request.scope, request.repository);
@@ -224,6 +241,9 @@ export function createMockTimberConfig(
 		},
 		setConnection(ok) {
 			connection = ok;
+		},
+		effectiveTimberSettings(repository) {
+			return effectiveOf(repository);
 		},
 	};
 }

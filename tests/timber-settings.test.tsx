@@ -8,8 +8,8 @@ import { createMockEngine, sampleTimberStatuses } from "../src/mainview/engine/m
 import { MOCK_MACHINE_CONFIG, sampleMachineValues } from "../src/mainview/engine/mock-timber-config";
 import { createAppStore } from "../src/mainview/store/store";
 import {
-	type GroupOutcome, type TrackingDraft, credentialsToCheck, credentialsToSave, describeCheck, draftsOf, groupChanged, groupMessages, outcomeOfSave, typingPutsAway,
-	valuesWith, withPreset, EDITOR_PRESETS,
+	type GroupOutcome, type TrackingDraft, credentialsToCheck, credentialsToSave, describeCheck, draftsOf, groupChanged, groupMessages, jiraDefault, outcomeOfSave,
+	scopePlaceholder, typingPutsAway, valuesWith, withJiraMode, withPreset, EDITOR_PRESETS,
 } from "../src/mainview/timber-settings-format";
 import type { TimberCredentialStates, TimberValues } from "../src/shared/timber-config";
 
@@ -76,9 +76,10 @@ describe("a group of Timber's settings as data", () => {
 		editor: { command: "code", args: [], enabled: false, integration: "orca", later_key: "kept" },
 		agent: { command: "claude", args: [], enabled: true, wait_for_setup: true, resolve_handoff: "ask", resolve_instructions: "Read NOTES.md" },
 		hooks: { post_create: ["bun install"], later_key: ["kept"] },
-		jira: { site_url: "https://example.atlassian.net", cloud_id: "abc", board: 123, sprint_jql: "sprint in openSprints()", project: "TIM" },
+		jira: { site_url: "https://example.atlassian.net", cloud_id: "abc", board: 123, project: "TIM", later_key: "kept" },
+		github: { project: "octo/2", later_key: "kept" },
 	} as TimberValues;
-	const JIRA_EXTRAS = { board: 123, sprint_jql: "sprint in openSprints()", project: "TIM" };
+	const JIRA_EXTRAS = { board: 123, project: "TIM", later_key: "kept" };
 
 	test("keys a group does not draw inside a table it sets stay as read, and an untouched group has nothing to save", () => {
 		const drafts = draftsOf(HAND_SET);
@@ -179,7 +180,7 @@ describe("the fields of a group on screen", () => {
 
 	test("logins are never filled in: only whether one is saved, and each check shows its command", () => {
 		const draft: TrackingDraft = { ...draftsOf(READ).tracking, linearKey: SECRET };
-		const markup = renderToStaticMarkup(<TrackingFields draft={{ ...draft, linearKey: "" }} onChange={noop} scope="machine" machine={null} messages={[]} credentials={CREDENTIALS} checks={{}} onCheck={noop} busy={false} />);
+		const markup = renderToStaticMarkup(<TrackingFields draft={{ ...draft, linearKey: "" }} onChange={noop} scope="machine" machine={null} messages={[]} values={READ} credentials={CREDENTIALS} checks={{}} onCheck={noop} busy={false} />);
 		expect(markup).toContain("A login is saved for this Jira site.");
 		expect(markup).toContain("LINEAR_API_KEY is set for the app");
 		expect(markup).toContain('type="password"');
@@ -212,6 +213,92 @@ describe("the fields of a group on screen", () => {
 		expect(markup).toContain("&lt;root&gt; is invalid");
 		expect(markup).toContain("Nothing was saved.");
 		expect(markup).toMatch(/aria-disabled="true" aria-describedby="[^"]+">Save</);
+	});
+});
+
+describe("the sprint source and tracker scope as data", () => {
+	const JIRA = { site_url: "https://example.atlassian.net" };
+	const tracking = (change: Partial<TrackingDraft>, read: TimberValues = { jira: JIRA }) => valuesWith("tracking", { ...draftsOf(read).tracking, ...change }, read);
+
+	test("a board or sprint JQL is set, changed, and cleared, and never both", () => {
+		expect<unknown>(tracking({ sprintSource: "board", board: " 12 " }).jira).toEqual({ ...JIRA, board: 12 });
+		// Text typed in the other field is never sent.
+		expect<unknown>(tracking({ sprintSource: "jql", sprintJql: "sprint in openSprints()", board: "12" }).jira).toEqual({ ...JIRA, sprint_jql: "sprint in openSprints()" });
+		const read: TimberValues = { jira: { ...JIRA, board: 12 } };
+		const draft = draftsOf(read).tracking;
+		expect(draft).toMatchObject({ sprintSource: "board", board: "12", sprintJql: "" });
+		expect<unknown>(valuesWith("tracking", { ...draft, board: "34" }, read).jira).toEqual({ ...JIRA, board: 34 });
+		expect<unknown>(valuesWith("tracking", { ...draft, sprintSource: "jql", sprintJql: "project = TIM" }, read).jira).toEqual({ ...JIRA, sprint_jql: "project = TIM" });
+		expect<unknown>(valuesWith("tracking", { ...draft, sprintSource: "none" }, read).jira).toEqual(JIRA);
+		expect<unknown>(valuesWith("tracking", { ...draft, board: "  " }, read).jira).toEqual(JIRA);
+		expect<unknown>(tracking({ sprintSource: "jql", sprintJql: "   " }).jira).toEqual(JIRA);
+		expect(draftsOf({ jira: { ...JIRA, sprint_jql: "project = TIM" } }).tracking).toMatchObject({ sprintSource: "jql", sprintJql: "project = TIM", board: "" });
+		// A board that is not a number goes to Timber as typed, for Timber to refuse at the field.
+		expect<unknown>(tracking({ sprintSource: "board", board: "twelve" }).jira).toEqual({ ...JIRA, board: "twelve" });
+		expect<unknown>(tracking({ sprintSource: "board", board: "1.5" }).jira).toEqual({ ...JIRA, board: "1.5" });
+		// Zero is a whole number, sent for Timber to refuse; one past what JSON keeps exactly goes as text.
+		expect<unknown>(tracking({ sprintSource: "board", board: "0" }).jira).toEqual({ ...JIRA, board: 0 });
+		expect<unknown>(tracking({ sprintSource: "board", board: "99999999999999999999" }).jira).toEqual({ ...JIRA, board: "99999999999999999999" });
+		// Spaces around a key are left out, as Timber's checks of keys would refuse them.
+		expect(tracking({ jiraProject: " TIM ", githubProject: " octo/2 ", linearTeam: " ENG " })).toMatchObject({ jira: { project: "TIM" }, github: { project: "octo/2" }, linear: { team: "ENG" } });
+	});
+
+	test("the Jira project, GitHub's project and milestone, and Linear's team are set, changed, and cleared", () => {
+		expect<unknown>(tracking({ jiraProject: "TIM" }).jira).toEqual({ ...JIRA, project: "TIM" });
+		expect<unknown>(valuesWith("tracking", { ...draftsOf({ jira: { ...JIRA, project: "TIM" } }).tracking, jiraProject: "" }, { jira: { ...JIRA, project: "TIM" } }).jira).toEqual(JIRA);
+		expect(tracking({ githubProject: "octo/2", githubMilestone: "v0.3", linearTeam: "ENG" }, {})).toEqual({ github: { project: "octo/2", milestone: "v0.3" }, linear: { team: "ENG" } });
+		const set: TimberValues = { github: { project: "octo/2", milestone: "v0.3" }, linear: { team: "ENG" } };
+		expect<unknown>(tracking({ githubMilestone: "v0.4" }, set).github).toEqual({ project: "octo/2", milestone: "v0.4" });
+		expect<unknown>(tracking({ githubProject: "" }, set).github).toEqual({ milestone: "v0.3" });
+		// Every field cleared: the table goes, so the machine's applies again.
+		const cleared = tracking({ githubProject: "", githubMilestone: "", linearTeam: "" }, set);
+		expect("github" in cleared || "linear" in cleared).toBe(false);
+		// A table switched off, or left empty by hand, stays as read while nothing is typed in it.
+		for (const read of [{ github: false, linear: false }, { github: {}, linear: {} }] as TimberValues[]) {
+			expect(tracking({}, read)).toEqual(read);
+			expect(groupChanged("tracking", draftsOf(read).tracking, read)).toBe(false);
+		}
+		expect<unknown>(tracking({ githubMilestone: "v0.3" }, { github: false }).github).toEqual({ milestone: "v0.3" });
+	});
+
+	const MACHINE: TimberValues = { jira: { site_url: "https://machine.atlassian.net", board: 7, project: "OPS" }, github: { milestone: "v1" }, linear: { team: "OPS" } };
+
+	test("a repository shows what it inherits, and its own Jira site starts from the machine's", () => {
+		expect(jiraDefault("repository", MACHINE)).toBe("https://machine.atlassian.net, board 7, project OPS");
+		const fresh = draftsOf({}).tracking;
+		expect(withJiraMode(fresh, "set", "repository", MACHINE)).toMatchObject({ jiraMode: "set", siteUrl: "https://machine.atlassian.net", sprintSource: "board", board: "7", jiraProject: "OPS" });
+		expect(withJiraMode(fresh, "set", "machine", null)).toEqual({ ...fresh, jiraMode: "set" });
+		expect(withJiraMode({ ...fresh, siteUrl: "https://mine.atlassian.net" }, "set", "repository", MACHINE)).toMatchObject({ siteUrl: "https://mine.atlassian.net", board: "" });
+		expect(scopePlaceholder("github", "milestone", fresh, "repository", MACHINE, {})).toBe("v1 (machine default)");
+		expect(scopePlaceholder("github", "project", fresh, "repository", MACHINE, {})).toBe("Not set");
+		// One GitHub field set here replaces the machine's table, milestone included.
+		expect(scopePlaceholder("github", "milestone", { ...fresh, githubProject: "octo/2" }, "repository", MACHINE, {})).toBe("Not set");
+		expect(scopePlaceholder("linear", "team", fresh, "repository", MACHINE, {})).toBe("OPS (machine default)");
+		expect(scopePlaceholder("linear", "team", fresh, "machine", MACHINE, {})).toBe("Not set");
+		// A table of the repository's own, switched off or left empty by hand, shadows the machine's.
+		for (const own of [false, {}] as const) {
+			const values: TimberValues = { github: own, linear: own };
+			expect(scopePlaceholder("github", "milestone", draftsOf(values).tracking, "repository", MACHINE, values)).toBe("Not set");
+			expect(scopePlaceholder("linear", "team", draftsOf(values).tracking, "repository", MACHINE, values)).toBe("Not set");
+		}
+	});
+
+	test("the fields draw only the chosen sprint source, and Timber's messages land on them", () => {
+		const draft: TrackingDraft = { ...draftsOf({ jira: { ...JIRA, board: 12 } }).tracking, githubProject: "octo" };
+		const markup = renderToStaticMarkup(
+			<TrackingFields draft={draft} onChange={noop} scope="repository" machine={MACHINE} messages={["jira.sprint_jql is invalid", "github.project is invalid"]} values={{ jira: { ...JIRA, board: 12 } }} credentials={CREDENTIALS} checks={{}} onCheck={noop} busy={false} />,
+		);
+		expect(markup).toContain(">Current sprint from</legend>");
+		expect(markup).toMatch(/>Board ID<\/label><input[^>]*inputMode="numeric" aria-invalid="true"[^>]*value="12"\/>.*?<span[^>]*class="field-error" role="alert">Timber does not accept this value.<\/span>/);
+		expect(markup).not.toContain(">Sprint JQL<");
+		expect(markup).toMatch(/>Project<\/label><input[^>]*aria-invalid="true"[^>]*value="octo"/);
+		expect(markup).toMatch(/>Team<\/label><input[^>]*placeholder="OPS \(machine default\)"/);
+		const inherited = renderToStaticMarkup(
+			<TrackingFields draft={draftsOf({}).tracking} onChange={noop} scope="repository" machine={MACHINE} messages={[]} values={{}} credentials={CREDENTIALS} checks={{}} onCheck={noop} busy={false} />,
+		);
+		expect(inherited).toContain("Use the machine default: https://machine.atlassian.net, board 7, project OPS");
+		expect(inherited).not.toContain(">Board ID<");
+		expect(inherited).toContain("choose &quot;This site&quot; to set them");
 	});
 });
 
@@ -257,6 +344,25 @@ describe("Timber's settings through the store and the mock engine", () => {
 		const result = await store.saveTimberSettings({ scope: "machine", repository: null, revision: read.settings.revision, values: { ...read.settings.values, agent: { command: " ", args: [], enabled: false } }, editTracked: false });
 		expect(result).toMatchObject({ outcome: "invalid", invalidFields: ["agent.command is invalid"] });
 		expect(await store.readTimberSettings({ scope: "machine", repository: null })).toEqual(read);
+	});
+
+	test("a board that is not a number, or a board with JQL, is refused at its field, and nothing is written", async () => {
+		const { store } = await startedStore();
+		const read = await store.readTimberSettings({ scope: "repository", repository: TIMBER });
+		if (read.outcome !== "read") throw new Error("not read");
+		const draft = draftsOf(read.settings.values).tracking;
+		const request = { scope: "repository" as const, repository: TIMBER, revision: read.settings.revision, editTracked: true };
+		const word = await store.saveTimberSettings({ ...request, values: valuesWith("tracking", { ...draft, board: "twelve" }, read.settings.values) });
+		expect(word).toMatchObject({ outcome: "invalid", invalidFields: ["jira.board is invalid"] });
+		const both = await store.saveTimberSettings({ ...request, values: { ...read.settings.values, jira: { site_url: "https://example.atlassian.net", board: 3, sprint_jql: "x" } } });
+		expect(both).toMatchObject({ outcome: "invalid", invalidFields: ["jira.sprint_jql is invalid"] });
+		expect(await store.readTimberSettings({ scope: "repository", repository: TIMBER })).toEqual(read);
+		// Accepted, a project key and a team come back as Timber keeps them, in capitals.
+		const saved = await store.saveTimberSettings({ ...request, values: valuesWith("tracking", { ...draft, jiraProject: "tim", linearTeam: "eng", githubMilestone: "v0.3" }, read.settings.values) });
+		expect(saved).toMatchObject({ outcome: "saved" });
+		expect(await store.readTimberSettings({ scope: "repository", repository: TIMBER })).toMatchObject({
+			settings: { values: { jira: { site_url: "https://example.atlassian.net", board: 14, project: "TIM" }, linear: { team: "ENG" }, github: { milestone: "v0.3" } } },
+		});
 	});
 
 	test("a login saved is only ever said to be saved, and a check saves nothing", async () => {
