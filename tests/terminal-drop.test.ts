@@ -46,8 +46,8 @@ describe("pathsFromUriList", () => {
 
 describe("pathsFromHtml", () => {
 	test("reads the file URI that WebKitGTK writes as a link's text", () => {
-		const html = `<a style="caret-color: rgb(0, 0, 0); text-decoration: none;">file:///home/rafipafi/timber-drop-test/a%20folder</a>`;
-		expect(pathsFromHtml(html)).toEqual(["/home/rafipafi/timber-drop-test/a folder"]);
+		const html = `<a style="caret-color: rgb(0, 0, 0); text-decoration: none;">file:///home/me/drop-test/a%20folder</a>`;
+		expect(pathsFromHtml(html)).toEqual(["/home/me/drop-test/a folder"]);
 	});
 
 	test("keeps a quote that the URI leaves unescaped, and reads characters written as entities", () => {

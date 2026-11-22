@@ -4,8 +4,8 @@
  *
  * WebKitGTK, the Linux window's webview, gives a page an empty
  * `text/uri-list` for files dragged from a file manager and writes one of
- * them, the one under the pointer, as a link's text in `text/html`. A drop
- * of several files there brings only that one path. Rows dragged from the
+ * them as a link's text in `text/html`, so a drop of several files there
+ * brings only that one path. Rows dragged from the
  * Files panel carry their paths in `FILE_PATHS_TYPE`.
  */
 
