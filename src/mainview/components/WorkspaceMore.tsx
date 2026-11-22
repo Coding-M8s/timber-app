@@ -41,7 +41,8 @@ export function WorkspaceMore({ repository, worktree, removing }: { repository: 
 				type="button"
 				className="icon-button workspace-more"
 				aria-label={describeWorkspaceMore(worktree)}
-				title={describeWorkspaceMore(worktree)}
+				// No tooltip while its menu is open: it would cover the menu.
+				title={menu !== null ? undefined : describeWorkspaceMore(worktree)}
 				aria-haspopup="menu"
 				aria-expanded={menu !== null}
 				onClick={() => open("first")}

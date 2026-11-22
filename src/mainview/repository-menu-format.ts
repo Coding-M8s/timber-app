@@ -21,7 +21,8 @@ export type RepositoryMenuChoice =
 export interface RepositoryMenuItem {
 	id: string;
 	label: string;
-	title?: string;
+	/** What the entry does, for assistive technology. Menu entries have no tooltip. */
+	description?: string | null;
 	/** A disabled entry does nothing, and says why in `note`, shown under it. */
 	disabled?: boolean;
 	note?: string | null;
@@ -41,12 +42,12 @@ export function repositoryMenuItems(groups: RepositoryGroups, repository: string
 		.filter(group => group !== own)
 		.map(group => ({ id: `place-${group.id}`, label: `${own ? "Move" : "Add"} to ${groupLabel(groups.groups, group.id)}`, choice: { kind: "place", group: group.id } }));
 	return [
-		...(cleanUp ? [{ id: cleanUp.id, label: cleanUp.label, title: cleanUp.title, disabled: cleanUp.disabled, note: cleanUp.note, choice: { kind: "clean-up-merged" } } satisfies RepositoryMenuItem] : []),
+		...(cleanUp ? [{ id: cleanUp.id, label: cleanUp.label, description: cleanUp.description, disabled: cleanUp.disabled, note: cleanUp.note, choice: { kind: "clean-up-merged" } } satisfies RepositoryMenuItem] : []),
 		...places,
 		{ id: "new-group", label: "New group...", choice: { kind: "new-group" } },
 		...(own ? [{ id: "take-out", label: `Take out of ${own.name}`, choice: { kind: "take-out" } } satisfies RepositoryMenuItem] : []),
-		{ id: "icon", label: "Icon...", title: "Set, change, or remove the icon before its name", choice: { kind: "icon" } },
-		{ id: "remove", label: "Remove from the list", title: REMOVE_REPOSITORY_HINT, choice: { kind: "remove" } },
+		{ id: "icon", label: "Icon...", description: "Set, change, or remove the icon before its name", choice: { kind: "icon" } },
+		{ id: "remove", label: "Remove from the list", description: REMOVE_REPOSITORY_HINT, choice: { kind: "remove" } },
 	];
 }
 
@@ -55,7 +56,8 @@ export type GroupMenuChoice = { kind: "rename" } | { kind: "icon" } | { kind: "n
 export interface GroupMenuItem {
 	id: string;
 	label: string;
-	title?: string;
+	/** What the entry does, for assistive technology. Menu entries have no tooltip. */
+	description?: string | null;
 	/** A disabled entry does nothing, and says why in `note`, shown under it. */
 	disabled?: boolean;
 	note?: string | null;
@@ -87,13 +89,13 @@ export function groupMenuItems(groups: readonly RepositoryGroup[], id: string): 
 	const deepest = depthOf(groups, id) >= MAX_GROUP_DEPTH;
 	return [
 		{ id: "rename", label: "Rename", choice: { kind: "rename" } },
-		{ id: "icon", label: "Icon...", title: "Set, change, or remove the icon before its name", choice: { kind: "icon" } },
+		{ id: "icon", label: "Icon...", description: "Set, change, or remove the icon before its name", choice: { kind: "icon" } },
 		{ id: "new-subgroup", label: "New subgroup...", ...(deepest ? { disabled: true, note: GROUP_TOO_DEEP } : {}), choice: { kind: "new-subgroup" } },
 		...(stepGroupAmongSiblings(groups, id, -1) ? [{ id: "move-up", label: "Move up", choice: { kind: "step", step: -1 } } satisfies GroupMenuItem] : []),
 		...(stepGroupAmongSiblings(groups, id, 1) ? [{ id: "move-down", label: "Move down", choice: { kind: "step", step: 1 } } satisfies GroupMenuItem] : []),
 		...into,
 		...(group?.parent !== undefined ? [{ id: "move-top", label: "Move to the top level", ...why(null), choice: { kind: "move", parent: null } } satisfies GroupMenuItem] : []),
-		{ id: "delete", label: "Delete group", title: DELETE_GROUP_HINT, choice: { kind: "delete" } },
+		{ id: "delete", label: "Delete group", description: DELETE_GROUP_HINT, choice: { kind: "delete" } },
 	];
 }
 

@@ -258,7 +258,8 @@ export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest =
 			? <PullRequestMarker key={marker.kind} marker={marker} pull={pull} host={pullRequestHost} progress={progress} onOpen={onOpenPullRequest} />
 			: <Marker key={marker.kind} marker={marker} />);
 	const flags = [...at("state"), ...at("pull-request")];
-	const title = describeRowTitle(worktree, linked && issueTitlePart(linked));
+	// No tooltip while the row's menu is open: it would cover the menu.
+	const title = menuAt !== null ? undefined : describeRowTitle(worktree, linked && issueTitlePart(linked));
 	const name = label ?? worktreeLabel(worktree);
 	const kind = describeWorktreeKind(worktree);
 	const row = (

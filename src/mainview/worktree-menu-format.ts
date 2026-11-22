@@ -32,7 +32,12 @@ export interface WorktreeMenuItem {
 	label: string;
 	disabled: boolean;
 	note: string | null;
-	title: string;
+	/**
+	 * What the entry does, for assistive technology, or null. A disabled
+	 * entry's note says why instead. Menu entries have no tooltip: it would
+	 * cover the menu.
+	 */
+	description: string | null;
 }
 
 /**
@@ -46,9 +51,9 @@ export function worktreeMenuItems(worktree: Worktree, removing = false, options:
 	const reason = worktree.primary ? DONE_PRIMARY_NOTE : removing ? BEING_REMOVED_REASON : null;
 	const sync = syncMenuEntries(worktree, options).map((entry): WorktreeMenuItem => {
 		const off = removing ? BEING_REMOVED_REASON : entry.busy ? PULLING_REASON : null;
-		return { id: `sync:${entry.action}`, label: entry.label, disabled: off !== null, note: off, title: off ?? entry.title };
+		return { id: `sync:${entry.action}`, label: entry.label, disabled: off !== null, note: off, description: off === null ? entry.title : null };
 	});
-	return [...sync, { id: "done", label: "Done", disabled: reason !== null, note: reason, title: reason ?? DONE_CONTROL_TITLE }];
+	return [...sync, { id: "done", label: "Done", disabled: reason !== null, note: reason, description: reason === null ? DONE_CONTROL_TITLE : null }];
 }
 
 /**
@@ -57,7 +62,7 @@ export function worktreeMenuItems(worktree: Worktree, removing = false, options:
  */
 export function repositoryMenuItems(repository: Repository, pullRequests: PullRequestList | undefined): WorktreeMenuItem[] {
 	const reason = cleanUpUnavailableReason(repository, pullRequests);
-	return [{ id: "clean-up-merged", label: CLEAN_UP_LABEL, disabled: reason !== null, note: reason, title: reason ?? CLEAN_UP_TITLE }];
+	return [{ id: "clean-up-merged", label: CLEAN_UP_LABEL, disabled: reason !== null, note: reason, description: reason === null ? CLEAN_UP_TITLE : null }];
 }
 
 /** The name of a repository's menu, for assistive technology. */

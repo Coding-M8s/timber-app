@@ -683,7 +683,8 @@ export function ChopsPanel() {
 								aria-haspopup="menu"
 								aria-expanded={menu?.name === row.chop.name}
 								aria-keyshortcuts={WORKTREE_MENU_SHORTCUTS}
-								title={chopRowMenuLabel(row.chop.name)}
+								// No tooltip while its menu is open: it would cover the menu.
+								title={menu?.name === row.chop.name ? undefined : chopRowMenuLabel(row.chop.name)}
 								onClick={event => {
 									const box = event.currentTarget.getBoundingClientRect();
 									openMenuAt(row, { left: box.left, top: box.bottom }, false);

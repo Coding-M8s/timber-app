@@ -308,12 +308,12 @@ export function chopRowMenuLabel(name: string): string {
  * off with the reason while changes are blocked, and View for a chop from
  * the repository file, which the app never changes.
  */
-export function chopRowMenuItems(source: ChopSource, editBlocked: string | null): { id: ChopRowMenuId; label: string; disabled: boolean; note: string | null; title: string }[] {
-	if (source === "repository-file") return [{ id: "view", label: "View", disabled: false, note: null, title: "Show it whole. The app never changes .timber/chops.json." }];
+export function chopRowMenuItems(source: ChopSource, editBlocked: string | null): { id: ChopRowMenuId; label: string; disabled: boolean; note: string | null; description: string | null }[] {
+	if (source === "repository-file") return [{ id: "view", label: "View", disabled: false, note: null, description: "Show it whole. The app never changes .timber/chops.json." }];
 	const off = editBlocked !== null;
 	return [
-		{ id: "edit", label: "Edit", disabled: off, note: editBlocked, title: editBlocked ?? "Change it here. Settings shows the same chops." },
-		{ id: "delete", label: "Delete", disabled: off, note: null, title: editBlocked ?? "Asks first." },
+		{ id: "edit", label: "Edit", disabled: off, note: editBlocked, description: off ? null : "Change it here. Settings shows the same chops." },
+		{ id: "delete", label: "Delete", disabled: off, note: null, description: editBlocked ?? "Asks first." },
 	];
 }
 

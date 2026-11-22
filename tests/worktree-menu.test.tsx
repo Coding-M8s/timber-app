@@ -31,16 +31,16 @@ const key = (name: string, change: Partial<{ shiftKey: boolean; altKey: boolean;
 	({ key: name, shiftKey: false, altKey: false, ctrlKey: false, metaKey: false, ...change });
 
 describe("a worktree row's menu", () => {
-	test("offers Done for a linked worktree, with the same tooltip as the workspace header", () => {
-		expect(worktreeMenuItems(linked)).toEqual([{ id: "done", label: "Done", disabled: false, note: null, title: DONE_CONTROL_TITLE }]);
+	test("offers Done for a linked worktree, described as the workspace header's Done is", () => {
+		expect(worktreeMenuItems(linked)).toEqual([{ id: "done", label: "Done", disabled: false, note: null, description: DONE_CONTROL_TITLE }]);
 	});
 
 	test("offers Done disabled for a primary checkout, with the reason the header gives", () => {
-		expect(worktreeMenuItems(primary)).toEqual([{ id: "done", label: "Done", disabled: true, note: DONE_PRIMARY_NOTE, title: DONE_PRIMARY_NOTE }]);
+		expect(worktreeMenuItems(primary)).toEqual([{ id: "done", label: "Done", disabled: true, note: DONE_PRIMARY_NOTE, description: null }]);
 	});
 
 	test("offers Done disabled while Timber removes the worktree, saying so", () => {
-		expect(worktreeMenuItems(linked, true)).toEqual([{ id: "done", label: "Done", disabled: true, note: BEING_REMOVED_REASON, title: BEING_REMOVED_REASON }]);
+		expect(worktreeMenuItems(linked, true)).toEqual([{ id: "done", label: "Done", disabled: true, note: BEING_REMOVED_REASON, description: null }]);
 		expect(worktreeMenuChoice("/work/app", linked, "done", true)).toBeNull();
 	});
 
@@ -97,15 +97,23 @@ describe("WorktreeMenuView", () => {
 		const markup = render(linked);
 		expect(markup).toContain('role="menu" aria-label="Actions for feat/x"');
 		expect(markup).toContain('style="left:10px;top:20px"');
-		expect(markup).toContain(`<button type="button" role="menuitem" id="m-item-0" class="session-menu-item worktree-menu-item" tabindex="-1" title="${DONE_CONTROL_TITLE}"><span class="session-menu-label">Done</span></button>`);
+		expect(markup).toContain('<button type="button" role="menuitem" id="m-item-0" class="session-menu-item worktree-menu-item" tabindex="-1" aria-describedby="m-description-0"><span class="session-menu-label">Done</span></button>');
 		expect(markup).not.toContain("aria-disabled");
 		expect(markup).not.toContain("worktree-menu-note");
 	});
 
-	test("shows Done disabled for a primary checkout, with the reason under it", () => {
+	test("has no tooltip over the menu: what an entry does is its description, for assistive technology", () => {
+		const markup = render(linked);
+		expect(markup).not.toContain("title=");
+		expect(markup).toContain(`<span id="m-description-0" hidden="">${DONE_CONTROL_TITLE}</span>`);
+	});
+
+	test("shows Done disabled for a primary checkout, with the reason under it and no tooltip", () => {
 		const markup = render(primary);
 		expect(markup).toContain('aria-disabled="true" aria-describedby="m-note-0"');
 		expect(markup).toContain(`<p id="m-note-0" class="worktree-menu-note" role="none">${DONE_PRIMARY_NOTE}</p>`);
+		expect(markup).not.toContain("title=");
+		expect(markup).not.toContain("m-description-0");
 	});
 });
 

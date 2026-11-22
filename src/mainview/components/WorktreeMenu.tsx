@@ -21,6 +21,8 @@ export const worktreeMenuItemId = (idBase: string, index: number) => `${idBase}-
 /**
  * How a worktree row's menu looks. Stateless, so it can be drawn without a
  * window. A disabled entry stays focusable, as menus do, and says why under it.
+ * No entry has a tooltip, which would cover the menu; what an entry does is
+ * its description, for assistive technology.
  */
 export function WorktreeMenuView<Id extends string = WorktreeMenuItemId>({ label, items, at, menuRef, idBase, onChoose, onKeyDown }: WorktreeMenuViewProps<Id>) {
 	return (
@@ -39,6 +41,9 @@ export function WorktreeMenuView<Id extends string = WorktreeMenuItemId>({ label
 		>
 			{items.map((item, index) => {
 				const noteId = `${idBase}-note-${index}`;
+				// No tooltip: it would cover the menu. The note shows; the description is for assistive technology only.
+				const description = item.note === null ? item.description : null;
+				const descriptionId = `${idBase}-description-${index}`;
 				return (
 					// Only menu items and their notes are inside a menu; the wrapper and the note have no role of their own.
 					<div key={item.id} className="worktree-menu-entry" role="none">
@@ -48,14 +53,14 @@ export function WorktreeMenuView<Id extends string = WorktreeMenuItemId>({ label
 							id={worktreeMenuItemId(idBase, index)}
 							className="session-menu-item worktree-menu-item"
 							tabIndex={-1}
-							title={item.title}
 							aria-disabled={item.disabled || undefined}
-							aria-describedby={item.note === null ? undefined : noteId}
+							aria-describedby={item.note !== null ? noteId : description !== null ? descriptionId : undefined}
 							onClick={() => onChoose?.(item.id)}
 						>
 							<span className="session-menu-label">{item.label}</span>
 						</button>
 						{item.note !== null && <p id={noteId} className="worktree-menu-note" role="none">{item.note}</p>}
+						{description !== null && <span id={descriptionId} hidden>{description}</span>}
 					</div>
 				);
 			})}

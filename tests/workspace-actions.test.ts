@@ -14,22 +14,22 @@ const linked = worktrees.find(worktree => !worktree.primary && worktree.pathExis
 const missing: Worktree = { ...linked, pathExists: false };
 
 describe("the workspace header's More menu", () => {
-	test("a linked worktree offers Rebase and Done, each with today's tooltip", () => {
+	test("a linked worktree offers Rebase and Done, each with today's tooltip as its description", () => {
 		expect(workspaceMenuItems(linked)).toEqual([
-			{ id: "rebase", label: "Rebase…", disabled: false, note: null, title: REBASE_CONTROL_TITLE },
-			{ id: "done", label: "Done…", disabled: false, note: null, title: DONE_CONTROL_TITLE },
+			{ id: "rebase", label: "Rebase…", disabled: false, note: null, description: REBASE_CONTROL_TITLE },
+			{ id: "done", label: "Done…", disabled: false, note: null, description: DONE_CONTROL_TITLE },
 		]);
 	});
 
 	test("a primary checkout's Done is off and says it is never removed", () => {
 		const [rebase, done] = workspaceMenuItems(primary);
 		expect(rebase!.disabled).toBe(false);
-		expect(done).toEqual({ id: "done", label: "Done…", disabled: true, note: DONE_PRIMARY_NOTE, title: DONE_PRIMARY_NOTE });
+		expect(done).toEqual({ id: "done", label: "Done…", disabled: true, note: DONE_PRIMARY_NOTE, description: null });
 	});
 
 	test("a missing folder turns Rebase off with its reason, and leaves Done on", () => {
 		const [rebase, done] = workspaceMenuItems(missing);
-		expect(rebase).toEqual({ id: "rebase", label: "Rebase…", disabled: true, note: REBASE_FOLDER_MISSING, title: REBASE_FOLDER_MISSING });
+		expect(rebase).toEqual({ id: "rebase", label: "Rebase…", disabled: true, note: REBASE_FOLDER_MISSING, description: null });
 		expect(done!.disabled).toBe(false);
 	});
 

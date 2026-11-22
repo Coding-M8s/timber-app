@@ -19,7 +19,8 @@ export interface WorkspaceMenuItem {
 	label: string;
 	disabled: boolean;
 	note: string | null;
-	title: string;
+	/** What the entry does, for assistive technology, when it has no note. Menu entries have no tooltip. */
+	description: string | null;
 }
 
 /**
@@ -30,8 +31,8 @@ export function workspaceMenuItems(worktree: Worktree, removing = false): Worksp
 	const rebaseReason = removing ? BEING_REMOVED_REASON : worktree.pathExists ? null : REBASE_FOLDER_MISSING;
 	const doneReason = worktree.primary ? DONE_PRIMARY_NOTE : removing ? BEING_REMOVED_REASON : null;
 	return [
-		{ id: "rebase", label: "Rebase…", disabled: rebaseReason !== null, note: rebaseReason, title: rebaseReason ?? REBASE_CONTROL_TITLE },
-		{ id: "done", label: "Done…", disabled: doneReason !== null, note: doneReason, title: doneReason ?? DONE_CONTROL_TITLE },
+		{ id: "rebase", label: "Rebase…", disabled: rebaseReason !== null, note: rebaseReason, description: rebaseReason === null ? REBASE_CONTROL_TITLE : null },
+		{ id: "done", label: "Done…", disabled: doneReason !== null, note: doneReason, description: doneReason === null ? DONE_CONTROL_TITLE : null },
 	];
 }
 

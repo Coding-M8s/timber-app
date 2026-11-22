@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type MouseEvent, useEffect, useId, useRef, useState } from "react";
+import { Fragment, type KeyboardEvent, type MouseEvent, useEffect, useId, useRef, useState } from "react";
 import { type SessionMenuItem, describeSessionProblemTitle, describeStarting, menuIndexAfterKey, sessionMenuChoice, sessionMenuItems } from "../agent-format";
 import type { Repository, Worktree } from "../../shared/model";
 import { SESSION_NAME_LIMIT, type TerminalSession } from "../../shared/terminal";
@@ -348,7 +348,8 @@ function Chip({ session, selected, unseen, seen, ids, shownId, closing, closingI
 				aria-haspopup="menu"
 				// Only the chosen chip is a tab stop. The arrows reach the others.
 				tabIndex={selected ? 0 : -1}
-				title={`${description}. Double-click or F2 renames, Delete closes, a right-click inserts a chop.`}
+				// No tooltip while its menu is open: it would cover the menu.
+				title={menuAt !== null ? undefined : `${description}. Double-click or F2 renames, Delete closes, a right-click inserts a chop.`}
 				onClick={() => {
 					// The chip that shows already has its terminal on screen: hand it the keyboard now.
 					if (selected) views?.terminalView(store, session.id).focus();
@@ -519,7 +520,8 @@ function SessionMenu({ items, chops, agentsSaved, disabled, title, onStart, onRu
 				aria-haspopup="menu"
 				aria-expanded={open}
 				aria-controls={open ? menuId : undefined}
-				title={title}
+				// No tooltip while its menu is open: it would cover the menu.
+				title={open ? undefined : title}
 				disabled={disabled}
 				onClick={() => (open ? close(false) : show(0))}
 				onKeyDown={onButtonKey}
@@ -536,7 +538,6 @@ function SessionMenu({ items, chops, agentsSaved, disabled, title, onStart, onRu
 							id={itemId(index)}
 							className="session-menu-item"
 							tabIndex={-1}
-							title={item.agent === null ? "Start your shell in this worktree" : `Start ${item.label}: ${item.detail}`}
 							onClick={() => choose(index)}
 						>
 							<span className="session-kind" aria-hidden="true">{item.agent === null ? ">_" : "\u2726"}</span>
@@ -548,22 +549,29 @@ function SessionMenu({ items, chops, agentsSaved, disabled, title, onStart, onRu
 						<div role="group" aria-label="Chops">
 							<div className="session-menu-separator" role="separator" />
 							<p className="session-menu-heading" aria-hidden="true">Chops</p>
-							{chops.map((chop, offset) => (
-								<button
-									key={`chop:${chop.name}`}
-									type="button"
-									role="menuitem"
-									id={itemId(items.length + offset)}
-									className="session-menu-item"
-									tabIndex={-1}
-									title={chopTitle(chop, chopAction(chop.kind, agentsSaved))}
-									onClick={() => choose(items.length + offset)}
-								>
-									<span className="session-kind" aria-hidden="true">{"\u25B8"}</span>
-									<span className="session-menu-label">{chop.name}</span>
-									{chop.kind === "prompt" && <span className="session-menu-detail">{chopAction(chop.kind, agentsSaved) === "copy" ? "Copy prompt" : "Prompt"}</span>}
-								</button>
-							))}
+							{chops.map((chop, offset) => {
+								const id = itemId(items.length + offset);
+								const action = chopAction(chop.kind, agentsSaved);
+								return (
+									<Fragment key={`chop:${chop.name}`}>
+										<button
+											type="button"
+											role="menuitem"
+											id={id}
+											className="session-menu-item"
+											tabIndex={-1}
+											// No tooltip: it would cover the menu. What the chop does is its description.
+											aria-describedby={`${id}-description`}
+											onClick={() => choose(items.length + offset)}
+										>
+											<span className="session-kind" aria-hidden="true">{"\u25B8"}</span>
+											<span className="session-menu-label">{chop.name}</span>
+											{chop.kind === "prompt" && <span className="session-menu-detail">{action === "copy" ? "Copy prompt" : "Prompt"}</span>}
+										</button>
+										<span id={`${id}-description`} hidden>{chopTitle(chop, action)}</span>
+									</Fragment>
+								);
+							})}
 						</div>
 					)}
 					<div className="session-menu-separator" role="separator" />

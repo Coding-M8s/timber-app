@@ -17,7 +17,7 @@ describe("repositoryMenuItems", () => {
 			{ kind: "icon" },
 			{ kind: "remove" },
 		]);
-		expect(items.at(-1)!.title).toBe(REMOVE_REPOSITORY_HINT);
+		expect(items.at(-1)!.description).toBe(REMOVE_REPOSITORY_HINT);
 		expect(new Set(items.map(item => item.id)).size).toBe(items.length);
 	});
 
@@ -28,10 +28,10 @@ describe("repositoryMenuItems", () => {
 	});
 
 	test("Clean up merged comes first when the sidebar gives it, disabled with its reason when there is nothing to clean up", () => {
-		const cleanUp = { id: "clean-up-merged" as const, label: "Clean up merged", disabled: true, note: "No merged worktrees.", title: "No merged worktrees." };
+		const cleanUp = { id: "clean-up-merged" as const, label: "Clean up merged", disabled: true, note: "No merged worktrees.", description: null };
 		const items = repositoryMenuItems({ groups: [work], membership: {} }, "/work/timber", cleanUp);
 		expect(labels(items)).toEqual(["Clean up merged", "Add to Work", "New group...", "Icon...", "Remove from the list"]);
-		expect(items[0]).toEqual({ id: "clean-up-merged", label: "Clean up merged", title: "No merged worktrees.", disabled: true, note: "No merged worktrees.", choice: { kind: "clean-up-merged" } });
+		expect(items[0]).toEqual({ id: "clean-up-merged", label: "Clean up merged", description: null, disabled: true, note: "No merged worktrees.", choice: { kind: "clean-up-merged" } });
 		expect(repositoryMenuItems({ groups: [], membership: {} }, "/work/timber", { ...cleanUp, disabled: false, note: null })[0]!.disabled).toBe(false);
 	});
 
@@ -49,7 +49,7 @@ describe("groupMenuItems", () => {
 		const items = groupMenuItems([work], "g2");
 		expect(labels(items)).toEqual(["Rename", "Icon...", "New subgroup...", "Delete group"]);
 		expect(items.map(item => item.choice)).toEqual([{ kind: "rename" }, { kind: "icon" }, { kind: "new-subgroup" }, { kind: "delete" }]);
-		expect(items.at(-1)!.title).toBe(DELETE_GROUP_HINT);
+		expect(items.at(-1)!.description).toBe(DELETE_GROUP_HINT);
 	});
 
 	// Work holds Client, which holds Deep. Personal and Misc are at the top level, and Client holds a Misc too.

@@ -307,7 +307,7 @@ export function chopButtonLabel(name: string, action: ChopAction): string {
 	}
 }
 
-/** The tooltip of a chop in the "+" menu or an empty session pane. */
+/** What a chop does: the tooltip of its button in an empty session pane, and its description for assistive technology in the "+" menu. */
 export function chopTitle(entry: Pick<ChopEntry, "title">, action: ChopAction): string {
 	switch (action) {
 		case "run":
@@ -400,14 +400,14 @@ export function sessionChipMenuItems(running: boolean, list: ChopList | null | u
 	const chops = commandChopEntries(list);
 	if (chops.length === 0) {
 		const note = list == null ? CHOPS_NOT_READ : list.outcome === "listed" ? NO_CHOPS_FOR_SESSION : list.message;
-		return [{ id: `${INSERT_PREFIX}`, label: "Insert chop", disabled: true, note, title: note }];
+		return [{ id: `${INSERT_PREFIX}`, label: "Insert chop", disabled: true, note, description: null }];
 	}
 	return chops.map(chop => ({
 		id: `${INSERT_PREFIX}${chop.name}`,
 		label: insertChopLabel(chop.name),
 		disabled: !running,
 		note: running ? null : SESSION_ENDED_FOR_CHOP,
-		title: running ? `Type it into the session without running it: ${chop.title}` : SESSION_ENDED_FOR_CHOP,
+		description: running ? `Type it into the session without running it: ${chop.title}` : null,
 	}));
 }
 
