@@ -12,7 +12,7 @@ import { readCustomThemes, salvageCustomThemes, sameCustomThemes, writeCustomThe
 import { type Theme, type ThemeChoice, defaultThemeChoice, readThemeChoice, sameThemeChoice, writeThemeChoice } from "./theme";
 import { DEFAULT_ZOOM, readZoom } from "./zoom";
 import { type FetchSetting, defaultFetchSetting, readFetchSetting, salvageFetchSetting, sameFetchSetting, writeFetchSetting } from "./fetch-setting";
-import { type SoundChoice, defaultSoundChoice, readSoundChoice, sameSoundChoice, writeSoundChoice } from "./sound-setting";
+import { type StateSounds, defaultStateSounds, legacyStateSounds, readStateSounds, salvageStateSounds, sameStateSounds, writeStateSounds } from "./sound-setting";
 import { ALERT_STATES, type AlertState } from "./status-notices";
 import { type SessionNaming, readSessionNaming } from "./terminal";
 import { type DmabufChoice, readDmabufChoice } from "./rendering";
@@ -89,10 +89,13 @@ export interface Preferences {
 	statusNotifications: boolean;
 	/** The statuses that get a desktop notification while `statusNotifications` is on. All four by default. */
 	notifyStates: readonly AlertState[];
-	/** The statuses that play a sound. None by default, so the app is quiet until asked. */
-	soundStates: readonly AlertState[];
-	/** The sound that plays: one that comes with the app, the system's, or a file the person chose. */
-	sound: SoundChoice;
+	/**
+	 * The sound each status plays: one that comes with the app, the system's,
+	 * a file the person chose, or none. None for every status by default, so
+	 * the app is quiet until asked. A file from before each status had its
+	 * own sound is carried over (see `legacyStateSounds` in ./sound-setting.ts).
+	 */
+	sounds: StateSounds;
 	/**
 	 * Whether WebKitGTK uses its DMA-BUF renderer on Linux: Auto decides by the
 	 * graphics found (see `autoDmabuf` in ./rendering.ts). Read once at start,
@@ -142,6 +145,12 @@ interface PreferencePart<Value> {
 	 * file: a change that cannot be read is always refused.
 	 */
 	salvage?(value: unknown): Value | undefined;
+	/**
+	 * The value from the parts an older app saved in its place, read only from
+	 * the settings file and only when this part is not there, or undefined for
+	 * the default.
+	 */
+	legacy?(saved: Record<string, unknown>): Value | undefined;
 	/**
 	 * True when the app reads the preference only as it starts, so a saved
 	 * change waits for a restart. Settings then offers to restart the app
@@ -240,12 +249,13 @@ export const PREFERENCE_PARTS: { [Key in keyof Preferences]: PreferencePart<Pref
 		write: value => value,
 	},
 	notifyStates: alertStatesPart(() => [...ALERT_STATES]),
-	soundStates: alertStatesPart(() => []),
-	sound: {
-		fallback: defaultSoundChoice,
-		read: readSoundChoice,
-		same: sameSoundChoice,
-		write: writeSoundChoice,
+	sounds: {
+		fallback: defaultStateSounds,
+		read: readStateSounds,
+		same: sameStateSounds,
+		write: writeStateSounds,
+		salvage: salvageStateSounds,
+		legacy: legacyStateSounds,
 	},
 	dmabuf: {
 		fallback: () => "auto",
@@ -284,15 +294,29 @@ export function defaultPreferences(): Preferences {
  * Read preferences from a value that came from outside, such as the settings
  * file. Like the layout, they are a convenience, so this never fails: each
  * part that is missing or unreadable falls back to its default, or to what
- * its `salvage` keeps of it, and the rest is kept. Parts this version of the app does not know are left out, so they
+ * its `salvage` keeps of it, and the rest is kept. A part that is missing
+ * takes what its `legacy` reads from the parts an older app saved in its
+ * place, if any, and so does one that is there but neither read nor salvaged. Parts this version of the app does not know are left out, so they
  * are lost on the next save, for example after going back to an older build.
  */
 export function readPreferences(value: unknown): Preferences {
 	const { preferences, unreadable } = applyPreferenceChange(defaultPreferences(), value);
 	const read = preferences as Record<keyof Preferences, unknown>;
+	const salvaged = new Set<keyof Preferences>();
 	for (const key of unreadable) {
-		const salvaged = partOf(key).salvage?.((value as Record<string, unknown>)[key]);
-		if (salvaged !== undefined) read[key] = salvaged;
+		const kept = partOf(key).salvage?.((value as Record<string, unknown>)[key]);
+		if (kept !== undefined) {
+			read[key] = kept;
+			salvaged.add(key);
+		}
+	}
+	if (isRecord(value)) {
+		for (const key of PREFERENCE_KEYS) {
+			// Read whole or salvaged, the part itself wins over what an older app saved.
+			if (value[key] !== undefined && (!unreadable.includes(key) || salvaged.has(key))) continue;
+			const carried = partOf(key).legacy?.(value);
+			if (carried !== undefined) read[key] = carried;
+		}
 	}
 	return preferences;
 }

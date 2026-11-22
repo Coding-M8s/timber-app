@@ -59,6 +59,7 @@ import { type AlertSettings, createAlertRunner } from "../shared/status-notices"
 import { sessionBusAddress } from "./dbus";
 import { connectNotificationServer } from "./notification-server";
 import { chooseSoundFile, createSoundPlayer } from "./sounds";
+import { carryAlert } from "./alert-actions";
 import { createThemeFiles } from "./theme-files";
 import { themePreload } from "./theme-preload";
 import { createTimberSettings } from "./timber-settings";
@@ -359,25 +360,16 @@ const sounds = createSoundPlayer({ path: searchPath, cacheFolder: join(Utils.pat
 
 /** The saved settings, kept here so each change is decided at once, in the order the changes came. Read on start and after each save. */
 let alertSettings: AlertSettings = settingsForAlerts(defaultPreferences());
-let alertSound = defaultPreferences().sound;
 function settingsForAlerts(saved: Preferences): AlertSettings {
-	return { notify: saved.statusNotifications, notifyStates: saved.notifyStates, soundStates: saved.soundStates };
+	return { notify: saved.statusNotifications, notifyStates: saved.notifyStates, sounds: saved.sounds };
 }
 const alerts = createAlertRunner({
 	attention: () => attention,
 	settings: () => alertSettings,
-	act: action => {
-		if (action.kind === "withdraw") desktopNotices.withdraw(action.session);
-		else if (action.kind === "show") desktopNotices.show(action.notice, { withSound: action.sound });
-		if ((action.kind === "show" && action.sound) || action.kind === "sound") {
-			// An automatic sound whose own file is gone plays the chime instead. The outcome is not logged: it may name the file.
-			void sounds.play(alertSound, { fallBackToChime: true });
-		}
-	},
+	act: action => carryAlert(action, desktopNotices, sounds),
 });
 function applyAlertPreferences(saved: Preferences): void {
 	alertSettings = settingsForAlerts(saved);
-	alertSound = saved.sound;
 	alerts.review();
 }
 void preferences.load().then(applyAlertPreferences, () => {

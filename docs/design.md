@@ -257,10 +257,10 @@ change them here first when they change.
   it shows that session. Never for the worktree on screen in a focused
   window. A session has at most one: its next one takes its place, and it
   goes away once it no longer holds, such as when its worktree comes on
-  screen. A sound can say it too: off until a state is ticked for it.
-  Settings, Notifications chooses which states notify, which play a sound,
-  and the sound: one of three that come with the app, the system's, or a
-  file of the person's own, with Play to hear it.
+  screen. A sound can say it too, each state its own: none until one is
+  chosen. Settings, Notifications chooses which states notify and, for each
+  state, its sound: one of three that come with the app, the system's, a
+  file of the person's own, or none, with Play to hear it.
 - Right-clicking a worktree row, or Shift+F10 or the context menu key on a
   focused row, opens a menu for that worktree, whichever one is selected.
   It holds Done, which opens the same Done dialog as the workspace header.
