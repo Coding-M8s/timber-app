@@ -4358,6 +4358,23 @@ that run when the app quits open again when it starts.
   is hung up on, as a terminal does when it closes, and the session stays
   with its exit code until it is dismissed. A program started with `nohup`
   then goes on, and dismissing the session ends it.
+- **An agent that ends.** When an agent session's process ends by itself, its
+  chip does not go dead. In the same step, with no wait between them,
+  the session swaps to the person's shell (`shellOf()`) in the worktree's
+  folder, started with the session's own environment and last pane size. It
+  keeps its id and name. What the agent printed stays in the scrollback,
+  followed by a reset of the terminal modes the agent may have left on and a
+  one-line note. The session becomes a terminal: one change tells the window
+  its kind is now terminal, with the agent's name, program, conversation,
+  command, and exit in `endedAgent` (kept for Resume, #284). What the agent
+  left running is hung up on as above, and closing the session still ends it,
+  through the agent's recorded leftovers. A prompt that was waiting is
+  dropped as not sent, and its Enter never reaches the shell. A shell that
+  exits later stays exited, with no second shell. Sessions closed from the
+  app, killed on quit, or ended by removing the worktree end as before. A
+  Timber setup session and a terminal never fall back. Workflow agents and
+  arena attempts do. If the shell cannot start, the session ends as an
+  agent's did before.
 - **Worktrees that go.** After a list read, the store ends every session of
   a worktree that a full read no longer lists, such as one removed from
   inside its own terminal, or of a repository that left the app's list, with

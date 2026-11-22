@@ -88,6 +88,12 @@ describe("arena words and rules", () => {
 		expect(describeAttemptSession([session({ kind: "running" })])).toEqual({ text: "Agent running", running: true });
 		expect(describeAttemptSession([session({ kind: "exited", exitCode: 0, signal: null })])).toEqual({ text: "Agent exited with 0", running: false });
 		expect(describeAttemptSession([])).toEqual({ text: "No agent", running: false });
+		// An agent that ended and left a shell in its chip still counts as the attempt's agent, and the chip runs.
+		const ended = (exitCode: number | null, signal: string | null, state: TerminalSession["state"] = { kind: "running" }): TerminalSession =>
+			({ ...session(state), kind: "terminal", endedAgent: { name: "codex-1", agent: null, program: "codex", resumable: null, conversation: null, command: "codex", exitCode, signal } });
+		expect(describeAttemptSession([ended(3, null)])).toEqual({ text: "Agent exited with 3", running: true });
+		expect(describeAttemptSession([ended(null, "SIGKILL")])).toEqual({ text: "Agent stopped by SIGKILL", running: true });
+		expect(describeAttemptSession([ended(0, null, { kind: "exited", exitCode: 1, signal: null })])).toEqual({ text: "Agent exited with 0", running: false });
 	});
 
 	test("the dialog opens on Arena when asked, or on New branch when the Timber found has no arenas", () => {

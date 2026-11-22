@@ -376,7 +376,7 @@ describe("prompt chops in the app (mock engine)", () => {
 		expect(renderToStaticMarkup(<App store={store} />)).toContain("A new Codex");
 	});
 
-	test("a prompt to an agent that has ended says so, and starts nothing", async () => {
+	test("a prompt to an agent that ended, and left a shell in its chip, is refused, and starts nothing", async () => {
 		const { engine, store } = await promptStore();
 		await store.openTerminal({ repository: TIMBER, worktree: FEATURE.path, ...size(), agent: "Claude Code" });
 		await settle();
@@ -386,7 +386,7 @@ describe("prompt chops in the app (mock engine)", () => {
 		await store.runChop(TIMBER, FEATURE.id, "Ask", size(), { target: { session: running.id } });
 		await settle();
 		expect(store.getState().terminals).toHaveLength(1);
-		expect(toastTexts(store).at(-1)).toContain("Ask was not sent: The session has ended.");
+		expect(toastTexts(store).at(-1)).toContain("Ask was not sent: That session is not an agent of this worktree.");
 	});
 
 	test("with no agent saved, Copy prompt puts exactly the chop's text on the clipboard", async () => {

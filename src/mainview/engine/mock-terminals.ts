@@ -1,14 +1,14 @@
 import { terminalSample } from "../terminal-sample";
 import { type AgentSetting, agentCommand, findAgent } from "../../shared/agent";
 import { type ArenaLaunch, isArenaName, isAttemptLabel } from "../../shared/arenas";
-import { type ResumableAgent, agentStartArguments, conversationMissingNote, resumableAgent } from "../../shared/agent-resume";
+import { type ResumableAgent, agentProgram, agentStartArguments, conversationMissingNote, resumableAgent } from "../../shared/agent-resume";
 import type { Attention } from "../../shared/attention";
 import { describeCommandLine } from "../../shared/command-line";
 import type { Engine } from "../../shared/engine";
 import type { TimberStatus, Worktree } from "../../shared/model";
 import {
-	type OpenTerminalResult, type Scrollback, type TerminalChange, type TerminalOutput, type TerminalSession, cleanSessionName, createScrollback,
-	defaultSessionName, isWebLink, type SessionNaming, sessionNameBase, WORKTREE_SETUP_SESSION_NAME, type PasteModeScanner, PASTE_NOT_READY, CHOP_NOT_TYPED,
+	type EndedAgent, type OpenTerminalResult, type Scrollback, type TerminalChange, type TerminalOutput, type TerminalSession, cleanSessionName, createScrollback,
+	agentEndedNote, defaultSessionName, isWebLink, type SessionNaming, sessionNameBase, WORKTREE_SETUP_SESSION_NAME, type PasteModeScanner, PASTE_NOT_READY, CHOP_NOT_TYPED,
 	type OpenTerminalRequest, type PasteResult, chopRunBytes, createPasteModeScanner, pasteProblem, promptBytes,
 } from "../../shared/terminal";
 import { recordsForWindow } from "../../shared/session-status";
@@ -131,6 +131,8 @@ interface Acted {
 	pasted: string[];
 	/** The agent's name in Settings, or null. */
 	agent: string | null;
+	/** What the session was launched as: the agent's name, the workflow's, or the attempt's label. */
+	launchName: string;
 	resumable: ResumableAgent | null;
 	conversation: string | null;
 	/** Whether the person gave the session its name. */
@@ -265,6 +267,25 @@ export function createMockTerminals(
 		const unsent = acted.waiting;
 		acted.waiting = null;
 		const dropped = unsent === null ? {} : { prompt: { state: "not-sent" as const, message: promptEndedMessage(acted.session.name, unsent.review ? "review" : "prompt"), ...(unsent.review ? { what: "review" as const } : {}) } };
+		// An agent goes on as the person's shell in the same session, as the main process has it do.
+		if (acted.session.kind === "agent") {
+			const endedAgent: EndedAgent = {
+				name: acted.launchName, agent: acted.agent, program: agentProgram(acted.session.shell), resumable: acted.resumable, conversation: acted.conversation,
+				command: acted.session.command, exitCode, signal: null,
+			};
+			acted.records = createStatusRecords();
+			acted.scanner = createStatusScanner();
+			acted.agent = null;
+			acted.resumable = null;
+			acted.conversation = null;
+			acted.line = "";
+			const shell = "/bin/mock-shell";
+			print(acted, agentEndedNote(acted.launchName, endedAgent, acted.session.path));
+			acted.session = { ...acted.session, kind: "terminal", shell, command: describeCommandLine([shell]), state: { kind: "running" }, status: null, children: [], endedAgent, ...dropped };
+			announce({ id: acted.session.id, session: acted.session });
+			print(acted, prompt(acted));
+			return;
+		}
 		acted.session = { ...acted.session, state: { kind: "exited", exitCode, signal: null }, ...recordsForWindow(acted.records), ...dropped };
 		announce({ id: acted.session.id, session: acted.session });
 	}
@@ -457,7 +478,7 @@ export function createMockTerminals(
 		const acted: Acted = {
 			session, scrollback: createScrollback(), line: "", typed: "", size: { cols: request.cols, rows: request.rows }, drawn: 0,
 			scanner: createStatusScanner(), records: createStatusRecords(), answers: [], pasteMode: createPasteModeScanner(), pasted: [], prompts: [],
-			agent: agent?.name ?? null, resumable, conversation, renamed: savedName !== null, restored,
+			agent: agent?.name ?? null, launchName: attempt ? attempt.label : launch ? launch.name : "", resumable, conversation, renamed: savedName !== null, restored,
 			waiting: chop?.kind === "prompt" ? { text: chop.text, review: chop.review === true } : null,
 		};
 		sessions.set(session.id, acted);

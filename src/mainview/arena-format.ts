@@ -96,16 +96,28 @@ export function describeAttemptState(state: AttemptState): string {
 	return STATE_WORDS[state];
 }
 
-/** Where an attempt's agent stands in this app: its newest agent session, running or ended, or none. */
+/**
+ * Where an attempt's agent stands in this app: its newest agent session,
+ * running or ended, or none. An agent that ended and left a shell in its
+ * chip (`endedAgent`) counts as the agent, and still counts as running, since
+ * its chip is a working shell.
+ */
 export function describeAttemptSession(sessions: readonly TerminalSession[]): { text: string; running: boolean } {
-	const agents = sessions.filter(session => session.kind === "agent");
+	const agents = sessions.filter(session => session.kind === "agent" || session.endedAgent !== undefined);
 	const newest = agents.at(-1);
 	const running = sessions.some(session => session.state.kind === "running");
 	if (!newest) return { text: running ? "A terminal runs" : "No agent", running };
-	if (newest.state.kind === "running") return { text: "Agent running", running: true };
+	if (newest.state.kind === "running") {
+		if (newest.endedAgent === undefined) return { text: "Agent running", running: true };
+		return { text: describeEndedAgent(newest.endedAgent), running: true };
+	}
+	if (newest.endedAgent !== undefined) return { text: describeEndedAgent(newest.endedAgent), running };
 	const { exitCode, signal } = newest.state;
 	return { text: exitCode === null ? `Agent stopped by ${signal ?? "a signal"}` : `Agent exited with ${exitCode}`, running };
 }
+
+const describeEndedAgent = ({ exitCode, signal }: { exitCode: number | null; signal: string | null }) =>
+	exitCode === null ? `Agent stopped by ${signal ?? "a signal"}` : `Agent exited with ${exitCode}`;
 
 const plural = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
 

@@ -578,6 +578,22 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 				writeFileSync(script, `#!/bin/sh\nprintf '${name} in %s args' "$(pwd)"\nfor arg in "$@"; do printf ' [%s]' "$arg"; done\necho\nwhile read line; do echo "${name} got $line"; done\n`);
 				chmodSync(script, 0o755);
 			}
+			// Ends at once with code 3.
+			const quitter = join(bin, "fake-quitter");
+			writeFileSync(quitter, `#!/bin/sh\necho quitter-out\nexit 3\n`);
+			chmodSync(quitter, 0o755);
+			// Waits for a line, then ends with code 0.
+			const leaver = join(bin, "fake-leaver");
+			writeFileSync(leaver, `#!/bin/sh\necho leaver ready\nread line\necho "leaver got $line"\nexit 0\n`);
+			chmodSync(leaver, 0o755);
+			// Named as Claude Code is, so it gets a conversation of the app's choosing. Prints its arguments, waits for a line, then ends.
+			const claude = join(bin, "claude");
+			writeFileSync(claude, `#!/bin/sh\nprintf 'claude args'\nfor arg in "$@"; do printf ' [%s]' "$arg"; done\necho\nread line\nexit 0\n`);
+			chmodSync(claude, 0o755);
+			// Leaves a program running with nohup, then ends when it gets a line.
+			const nohupper = join(bin, "fake-nohupper");
+			writeFileSync(nohupper, `#!/bin/sh\nnohup sleep 304 >/dev/null 2>&1 &\necho "nohupper pid:$!"\nread line\nexit 0\n`);
+			chmodSync(nohupper, 0o755);
 			// Asks for bracketed paste, as Claude Code and Codex do, then prints the bytes of the first paste it is given, in hex.
 			const paster = join(bin, "fake-paster");
 			writeFileSync(paster, `#!/bin/sh\nstty raw -echo\nprintf '\\033[?2004hpaster ready\\r\\n'\nhead -c "$1" | od -An -tx1 | tr -d ' \\n'\nprintf ' done\\r\\n'\nsleep 5\n`);
@@ -604,6 +620,10 @@ sleep 5
 			{ name: "Claude Code", command: "fake-claude" },
 			{ name: "Codex", command: `fake-codex --model "big one" --sandbox=workspace-write` },
 			{ name: "Missing", command: "no-such-agent --flag" },
+			{ name: "Quitter", command: "fake-quitter" },
+			{ name: "Leaver", command: "fake-leaver" },
+			{ name: "Claude Leaves", command: "claude" },
+			{ name: "Nohupper", command: "fake-nohupper" },
 			{ name: "Paster", command: `fake-paster ${bracketedPaste(PASTED).length}` },
 			// The paste and the Enter after it.
 			{ name: "Prompted", command: `fake-paster ${bracketedPaste(PROMPT).length + 1}` },
@@ -760,7 +780,7 @@ sleep 5
 			expect(sessions.list()).toEqual([]);
 		});
 
-		test("closing an agent session ends the agent, and an agent that exits stays with its exit code", async () => {
+		test("closing an agent session ends the agent, and an agent that exits goes on as a shell with its exit code kept", async () => {
 			startWithAgents();
 			const claude = await openedAgent("Claude Code");
 			await seen(claude.id, "fake-claude in");
@@ -772,8 +792,9 @@ sleep 5
 			await seen(codex.id, "fake-codex in");
 			// End of input ends the pretend agent's loop, and the script with it.
 			sessions.write(codex.id, "\x04");
-			expect(await until(() => sessions.list().find(session => session.id === codex.id)?.state.kind === "exited")).toBe(true);
-			expect(sessions.list()[0]!.state).toEqual({ kind: "exited", exitCode: 0, signal: null });
+			expect(await until(() => sessions.list().find(session => session.id === codex.id)?.kind === "terminal")).toBe(true);
+			expect(sessions.list()[0]!.state).toEqual({ kind: "running" });
+			expect(sessions.list()[0]!.endedAgent).toMatchObject({ exitCode: 0, signal: null });
 		});
 
 		describe("pasting a review", () => {
@@ -982,6 +1003,115 @@ sleep 5
 			});
 		});
 
+		describe("an agent that ends by itself", () => {
+			const fallen = (id: string) => until(() => sessions.list().find(session => session.id === id)?.kind === "terminal");
+			const changesOf = (id: string) => changes.filter(change => change.id === id);
+
+			test("goes on as a shell in the worktree's folder, in the same session, with what it printed above", async () => {
+				startWithAgents();
+				const quitter = await openedAgent("Quitter");
+				expect(await fallen(quitter.id)).toBe(true);
+				const session = sessions.list()[0]!;
+				expect(session).toMatchObject({
+					id: quitter.id, name: "Quitter", kind: "terminal", path: worktree, shell: "/bin/sh", state: { kind: "running" }, status: null, children: [],
+					endedAgent: { name: "Quitter", agent: "Quitter", program: null, resumable: null, conversation: null, exitCode: 3, signal: null },
+				});
+				expect(session.endedAgent!.command).toContain("fake-quitter");
+				expect(session.command).not.toContain("fake-quitter");
+				expect(printed(quitter.id)).toContain("quitter-out");
+				expect(printed(quitter.id)).toContain(`Quitter exited with code 3. This is now a shell in ${worktree}.`);
+				// The shell is the person's, in the worktree's folder.
+				await run(quitter.id, "pwd", `${worktree}\r\n`);
+				// The person's shell took the session over in one change, and the session never showed as exited.
+				expect(changesOf(quitter.id).filter(change => change.session?.state.kind === "exited")).toEqual([]);
+				expect(changesOf(quitter.id).filter(change => change.session?.kind === "terminal")).toHaveLength(1);
+				expect(sessions.liveCount()).toBe(1);
+				expect(sessions.leaders()).toHaveLength(1);
+				expect(sessions.read(quitter.id)!.data).toContain("quitter-out");
+			});
+
+			test("keeps the conversation of Claude Code, and then is a terminal that restarts as one", async () => {
+				const ID = "dddddddd-0000-4000-8000-000000000004";
+				startWithAgents({ conversations: { claudeExists: () => false, codexExists: () => false, newId: () => ID } });
+				const claude = await openedAgent("Claude Leaves");
+				expect(sessions.running()).toMatchObject([{ kind: "agent", agent: "Claude Leaves", resumable: "claude", program: "claude", conversation: ID }]);
+				await seen(claude.id, `claude args [--session-id] [${ID}]`);
+				sessions.write(claude.id, "bye\n");
+				expect(await fallen(claude.id)).toBe(true);
+				expect(sessions.list()[0]!.endedAgent).toMatchObject({ name: "Claude Leaves", agent: "Claude Leaves", program: "claude", resumable: "claude", conversation: ID, exitCode: 0 });
+				expect(sessions.liveCount()).toBe(1);
+				expect(sessions.running()).toMatchObject([{ id: claude.id, kind: "terminal", agent: null, resumable: null, program: null, conversation: null, name: null }]);
+			});
+
+			test("never starts a shell when the session is closed meanwhile, by close or by killAll", async () => {
+				startWithAgents();
+				const closed = await openedAgent("Leaver");
+				await seen(closed.id, "leaver ready");
+				sessions.write(closed.id, "go\n");
+				await sessions.close(closed.id);
+				const killed = await openedAgent("Leaver");
+				await seen(killed.id, "leaver ready");
+				sessions.write(killed.id, "go\n");
+				sessions.killAll();
+				await Bun.sleep(600);
+				expect(sessions.list()).toEqual([]);
+				expect(changes.filter(change => change.session?.kind === "terminal")).toEqual([]);
+				expect(changesOf(closed.id).at(-1)).toEqual({ id: closed.id, session: null });
+			});
+
+			test("stays exited when the shell ends later, with the agent's end kept", async () => {
+				startWithAgents();
+				const quitter = await openedAgent("Quitter");
+				expect(await fallen(quitter.id)).toBe(true);
+				sessions.write(quitter.id, "exit 5\r");
+				expect(await until(() => sessions.list()[0]?.state.kind === "exited")).toBe(true);
+				await Bun.sleep(300);
+				expect(sessions.list()).toHaveLength(1);
+				expect(sessions.list()[0]).toMatchObject({ kind: "terminal", state: { kind: "exited", exitCode: 5, signal: null }, endedAgent: { exitCode: 3 } });
+				expect(sessions.liveCount()).toBe(0);
+				expect(sessions.running()).toEqual([]);
+			});
+
+			test("drops a prompt it never sent, and nothing it was to be sent reaches the shell", async () => {
+				startWithAgents();
+				const result = await sessions.open({ repository, worktree, cols: 80, rows: 24, agent: "Quitter" }, { kind: "prompt", text: PROMPT });
+				if (result.outcome !== "opened") throw new Error(JSON.stringify(result));
+				expect(await fallen(result.session.id)).toBe(true);
+				await Bun.sleep(400);
+				expect(sessions.list()[0]!.prompt).toMatchObject({ state: "not-sent" });
+				expect(printed(result.session.id)).not.toContain("Write tests");
+				expect(sessions.list()[0]!.state).toEqual({ kind: "running" });
+			});
+
+			test.skipIf(!linux)("leaves nothing behind when closed: what the agent left running ends with the session", async () => {
+				startWithAgents();
+				const agent = await openedAgent("Nohupper");
+				await seen(agent.id, "nohupper pid:");
+				const pid = Number(/pid:(\d+)/.exec(printed(agent.id))![1]);
+				sessions.write(agent.id, "go\n");
+				expect(await fallen(agent.id)).toBe(true);
+				await Bun.sleep(300);
+				expect(alive(pid)).toBe(true);
+				await sessions.close(agent.id);
+				expect(await until(() => !alive(pid))).toBe(true);
+			});
+
+			test("never happens to a Timber command, which stays exited", async () => {
+				const bin = join(root, "setup bin");
+				mkdirSync(bin, { recursive: true });
+				const timber = join(bin, "timber");
+				writeFileSync(timber, "#!/bin/sh\necho setup-out\nexit 2\n");
+				chmodSync(timber, 0o755);
+				startWithAgents({ timber: async () => ({ state: "ready", source: "path", path: timber, version: "0.1.1" }) });
+				const result = await sessions.open({ repository, worktree, cols: 80, rows: 24, timberWorktreeSetup: {} });
+				if (result.outcome !== "opened") throw new Error(JSON.stringify(result));
+				expect(await until(() => sessions.list()[0]?.state.kind === "exited")).toBe(true);
+				await Bun.sleep(300);
+				expect(sessions.list()[0]).toMatchObject({ kind: "timber", state: { kind: "exited", exitCode: 2 } });
+				expect(sessions.list()[0]!.endedAgent).toBeUndefined();
+			});
+		});
+
 		/** Whether a pretend agent of this temporary folder still runs. */
 		function running(name: string): boolean {
 			return Bun.spawnSync(["pgrep", "-f", join(root, "agent bin", name)], { stdout: "pipe" }).exitCode === 0;
@@ -1042,6 +1172,18 @@ sleep 5
 				startWithLaunch({ outcome: "ready", argv: ["fake-codex"], cwd: unlisted, environment: {}, unset: [] });
 				const result = await sessions.open({ repository, worktree: unlisted, cols: 80, rows: 24, arenaAttempt: wanted });
 				expect(result.outcome === "not-listed" && result.message).toContain("codex-1 was not started.");
+			});
+
+			test("an attempt whose agent ends goes on as a shell in its chip, named after its label", async () => {
+				startWithLaunch({ outcome: "ready", argv: ["fake-quitter"], cwd: worktree, environment: { TIMBER_ARENA: "demo" }, unset: [] });
+				const result = await sessions.open({ repository, worktree, cols: 80, rows: 24, arenaAttempt: wanted });
+				if (result.outcome !== "opened") throw new Error(JSON.stringify(result));
+				expect(await until(() => sessions.list()[0]?.kind === "terminal")).toBe(true);
+				expect(sessions.list()[0]).toMatchObject({ id: result.session.id, name: "codex-1", state: { kind: "running" }, endedAgent: { name: "codex-1", agent: null, exitCode: 3 } });
+				expect(printed(result.session.id)).toContain("codex-1 exited with code 3.");
+				// The shell does not get the attempt's own environment changes.
+				sessions.write(result.session.id, "echo arena=${TIMBER_ARENA-unset}\r");
+				expect(await until(() => printed(result.session.id).includes("arena=unset\r\n"))).toBe(true);
 			});
 		});
 	});

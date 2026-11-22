@@ -50,7 +50,7 @@ export function withSeenStatuses(seen: SeenStatuses, terminals: readonly Termina
 }
 
 /** Whether a session's status as shown now was seen. */
-export function isSeen(seen: SeenStatuses, session: Pick<TerminalSession, "id" | "state" | "status">): boolean {
+export function isSeen(seen: SeenStatuses, session: Pick<TerminalSession, "id" | "state" | "status"> & Partial<Pick<TerminalSession, "endedAgent">>): boolean {
 	const kind = shownStatus(session).kind;
 	return canBeSeen(kind) && seen[session.id] === kind;
 }

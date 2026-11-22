@@ -1,5 +1,5 @@
 import { type AgentBrand, type ShownStatus, agentBrand, childBadge, describeNotableChildren, describeSessionState, describeSessionStatus, hasStatusMark, sessionInitials, shortMessage, shownStatus, urgencyRank } from "../shared/session-status";
-import { type TerminalSession, describeTerminalExit, sessionKindName } from "../shared/terminal";
+import { type EndedAgent, type TerminalSession, describeAgentExit, describeTerminalExit, sessionKindName } from "../shared/terminal";
 import { type SeenStatuses, isSeen } from "./seen-status";
 
 export { describeQuitRequest } from "../shared/terminal";
@@ -126,9 +126,13 @@ export function sessionChipId(id: string): string {
 	return `session-chip-${id}`;
 }
 
-/** The short mark on the chip of a session that ended, such as "exit 0". */
-export function shortExit(state: TerminalSession["state"]): string | null {
-	if (state.kind === "running") return null;
+/**
+ * The short mark on the chip of a session that ended, such as "exit 0". A
+ * running session that went on as a shell after its agent ended
+ * (`endedAgent`) shows how the agent ended, until the shell itself ends.
+ */
+export function shortExit(state: TerminalSession["state"], endedAgent?: Pick<EndedAgent, "exitCode" | "signal">): string | null {
+	if (state.kind === "running") return endedAgent === undefined ? null : shortExit({ kind: "exited", exitCode: endedAgent.exitCode, signal: endedAgent.signal });
 	if (state.exitCode !== null) return `exit ${state.exitCode}`;
 	return state.signal ?? "ended";
 }
@@ -139,17 +143,18 @@ export function shortExit(state: TerminalSession["state"]): string | null {
  * on the person. A session with a status mark says its status, such as
  * "Needs you: approval"; another says whether it runs or how it ended.
  */
-export function describeTerminalState(session: Pick<TerminalSession, "state"> & Partial<Pick<TerminalSession, "kind" | "status" | "children" | "prompt">>): string {
+export function describeTerminalState(session: Pick<TerminalSession, "state"> & Partial<Pick<TerminalSession, "kind" | "status" | "children" | "prompt" | "endedAgent">>): string {
 	// Waiting is said until the text went, unless the agent asks the person something meanwhile, such as whether to trust the folder.
 	if (session.state.kind === "running" && session.prompt?.state === "pending" && session.status?.state !== "blocked") {
 		return session.prompt.what === "review" ? "Waiting to paste the review" : "Waiting to send the prompt";
 	}
 	if (session.kind !== undefined && session.status !== undefined) {
-		const full = { kind: session.kind, state: session.state, status: session.status, children: session.children ?? [] };
+		const full = { kind: session.kind, state: session.state, status: session.status, children: session.children ?? [], ...(session.endedAgent ? { endedAgent: session.endedAgent } : {}) };
 		if (hasStatusMark(full)) {
 			const status = shownStatus(full);
 			// How it ended is said in the same words as for any session, so a crash names its code.
 			if (status.kind === "crashed" && session.state.kind === "exited") return `Crashed. ${describeTerminalExit(session.state)}`;
+			if (status.kind === "crashed" && session.endedAgent !== undefined) return `Crashed. ${describeAgentExit(session.endedAgent)}`;
 			// No count here: this is a live region, and a count would be spoken at every change of the children.
 			return describeSessionState(full);
 		}
@@ -172,13 +177,16 @@ export function closeTerminalLabel(session: Pick<TerminalSession, "state" | "nam
  * it ended, whether the person has seen its status, and whether it printed
  * since it was last on screen. The same words are the chip's tooltip.
  */
-export function describeSessionChip(session: Pick<TerminalSession, "kind" | "name" | "state" | "shell"> & Partial<Pick<TerminalSession, "status" | "children">>, unseen: boolean, seen = false): string {
+export function describeSessionChip(session: Pick<TerminalSession, "kind" | "name" | "state" | "shell"> & Partial<Pick<TerminalSession, "status" | "children" | "endedAgent">>, unseen: boolean, seen = false): string {
 	const parts = [`${sessionKindName(session.kind)}, ${shellName(session.shell)}`];
-	const status = session.status === undefined ? null : { kind: session.kind, state: session.state, status: session.status, children: session.children ?? [] };
+	const status = session.status === undefined ? null : { kind: session.kind, state: session.state, status: session.status, children: session.children ?? [], ...(session.endedAgent ? { endedAgent: session.endedAgent } : {}) };
+	const ended = session.state.kind === "running" ? session.endedAgent : undefined;
+	// A shell that took over from an agent says so, in the words the agent's end has everywhere else.
+	if (ended !== undefined) parts.push(`${ended.name} ended`, describeAgentExit(ended), "Now a shell");
 	if (status !== null && hasStatusMark(status) && session.state.kind === "running") {
-		// A running agent that never reported says nothing more, as before the protocol.
+		// A running agent that never reported says nothing more, as before the protocol. The end of an agent was said just above.
 		const shown = shownStatus(status);
-		if (shown.kind !== "unknown") parts.push(describeSessionState(status, seen));
+		if (shown.kind !== "unknown" && !(ended !== undefined && session.status === null)) parts.push(describeSessionState(status, seen));
 		// What the program said, such as "approve Write: src/a.ts". It was cleaned up when it was read.
 		if (session.status?.message) parts.push(shortMessage(session.status.message));
 		// Its children that run or reported an error, such as "3 tasks: 1 needs you, 2 working".
