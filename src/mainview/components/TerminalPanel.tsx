@@ -12,8 +12,10 @@ import { terminalAppearance } from "../terminal-look";
 import { useAppState, useStore } from "../store/react";
 import { DROP_SESSION_ATTRIBUTE, watchPathDrops } from "../path-drop";
 import type { AppStore } from "../store/store";
-import { isBeingRemoved, offeredChops, sessionsOf, shownSession } from "../store/state";
-import { type ChopEntry, chopAction, chopButtonLabel, chopEntries, chopTitle, describeSessionChipMenu, sessionChipMenuChop, sessionChipMenuItems } from "../chop-format";
+import { chopsEnabled, isBeingRemoved, offeredChops, sessionsOf, shownSession } from "../store/state";
+import { ALL_CHOPS_HINT, ALL_CHOPS_LABEL, type ChopEntry, chopAction, chopButtonLabel, chopEntries, chopTitle, describeSessionChipMenu, emptyPaneChops, sessionChipMenuChop, sessionChipMenuItems } from "../chop-format";
+import { listedChopArrangement } from "../chops-panel-format";
+import { showSidePanel } from "./SidePanel";
 import type { ChopList } from "../../shared/chops";
 import { WORKTREE_MENU_SHORTCUTS, opensWorktreeMenu } from "../worktree-menu-format";
 import { WorktreeMenu } from "./WorktreeMenu";
@@ -619,7 +621,10 @@ export function TerminalPanel({ repository, worktree }: { repository: Repository
 		void store.openTerminal({ repository: repository.path, worktree: worktree.path, ...estimateTerminalSize(panel.current), ...(agent === null ? {} : { agent }) });
 	const setUpAgents = () => store.openDialog({ kind: "settings", section: "agents" });
 	const offered = offeredChops(state);
-	const chops = offered?.repository === repository.path ? chopEntries(offered.list) : [];
+	const ownList = offered?.repository === repository.path ? offered.list : null;
+	const chops = chopEntries(ownList);
+	// The empty pane offers a few, in the chops panel's order: favorites first. The "+" menu keeps them all.
+	const pane = emptyPaneChops(ownList, listedChopArrangement(state, repository.path, ownList));
 	const runChop = (name: string) => void store.runChop(repository.path, worktree.id, name, estimateTerminalSize(panel.current));
 
 	if (!shown) {
@@ -646,9 +651,9 @@ export function TerminalPanel({ repository, worktree }: { repository: Repository
 						</button>
 					))}
 				</div>
-				{chops.length > 0 && (
+				{pane.chops.length > 0 && (
 					<div className="empty-actions" role="group" aria-label="Chops">
-						{chops.map(chop => {
+						{pane.chops.map(chop => {
 							const action = chopAction(chop.kind, agents.length);
 							// Copying needs no session to start, nor the folder.
 							const blocked = action === "copy" ? null : unavailable;
@@ -665,6 +670,12 @@ export function TerminalPanel({ repository, worktree }: { repository: Repository
 								</button>
 							);
 						})}
+						{/* Opens a panel and starts nothing, so it is never blocked. Only while the panel can show. */}
+						{pane.more && chopsEnabled(state) && (
+							<button type="button" className="button quiet" title={ALL_CHOPS_HINT} onClick={() => void showSidePanel(store, "chops")}>
+								{ALL_CHOPS_LABEL}
+							</button>
+						)}
 					</div>
 				)}
 				<button type="button" className="text-button" onClick={setUpAgents}>{SET_UP_AGENTS}</button>

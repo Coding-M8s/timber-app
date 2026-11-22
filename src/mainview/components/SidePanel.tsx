@@ -73,6 +73,25 @@ export function toggleSidePanel(store: AppStore, view: SidePanelView): boolean {
 	return true;
 }
 
+/**
+ * Show the side panel with this view, from a button that only ever shows
+ * it, such as "All chops" in an empty session pane. Shown already, the
+ * panel takes the keyboard rather than hiding. Otherwise as
+ * `toggleSidePanel`. Answers whether the panel shows this view now.
+ */
+export function showSidePanel(store: AppStore, view: SidePanelView): boolean {
+	const state = store.getState();
+	if (sidePanelShown(state) && sidePanelView(state) === view) {
+		const panel = panelElement();
+		const active = document.activeElement;
+		// Hidden later, the keyboard goes back to the button that asked, as when it showed the panel.
+		if (active instanceof HTMLElement && active !== document.body && !(panel?.contains(active) ?? false)) returnTo = active;
+		panel?.focus();
+		return true;
+	}
+	return toggleSidePanel(store, view);
+}
+
 /** Switch the side panel to this view from the switch in its header. The keyboard stays on the switch. */
 export function switchSidePanel(store: AppStore, view: SidePanelView): void {
 	if (!store.switchSidePanel(view)) return;
