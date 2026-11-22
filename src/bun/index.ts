@@ -292,6 +292,8 @@ const chops = createChops({
 	session: id => terminals.list().find(session => session.id === id) ?? null,
 	// A prompt chop's agent comes from the saved Settings only, as any agent's does.
 	agents: async () => (await preferences.load()).agents,
+	// The default agent is the first saved one found, looked for as its session will look for it.
+	locate: agent => terminals.locateAgent(agent),
 	// A chop's sound comes from the saved preferences only, never from the window.
 	chopSounds: async () => {
 		const saved = await preferences.load();

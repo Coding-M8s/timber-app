@@ -1366,7 +1366,9 @@ export function createMockEngine(
 		onChopsChanged: listener => chopFiles.onChopsChanged(listener),
 		async runChop(request) {
 			// The pretend terminals check the worktree is listed, with its folder there, as the main process does.
-			return chopFiles.run(structuredClone(request), listMockChops(request.repository), terminals, preferences.agents, preferences.playChopSounds);
+			// The default agent is looked for as the pretend terminals look (their `missing` executables), with the agents as saved now.
+			const agents = preferences.agents;
+			return chopFiles.run(structuredClone(request), listMockChops(request.repository), terminals, agents, await terminals.locateAgents(), preferences.playChopSounds);
 		},
 		...chopFiles.controls,
 		async readPorts(request) {

@@ -59,7 +59,41 @@ describe("timber new typed in an app terminal", () => {
 		await settle();
 		const selected = selectedWorktree(store.getState())!.worktree;
 		expect(store.getState().terminals.filter(session => session.worktree === selected.id).map(session => session.kind)).toEqual(["terminal"]);
-		expect(store.getState().toasts.map(toast => toast.text)).toEqual([HANDOFF_NO_AGENT]);
+		expect(store.getState().toasts.map(toast => toast.text)).toEqual([HANDOFF_NO_AGENT["none-saved"]]);
+	});
+
+	test("starts the first saved agent that is found, never a missing one ahead of it", async () => {
+		const { engine, store } = await started();
+		// Claude Code goes missing after the app looked at start: the handoff looks again.
+		engine.missingExecutables(["claude"]);
+		engine.typeTimberNew(TIMBER, "feat/codex", true);
+		await settle();
+		const selected = selectedWorktree(store.getState())!.worktree;
+		expect(store.getState().terminals.filter(session => session.worktree === selected.id).map(session => [session.kind, session.name])).toEqual([["agent", "Codex"]]);
+		expect(store.getState().toasts).toEqual([]);
+	});
+
+	test("with none of the saved agents found, opens a shell and says why", async () => {
+		const { engine, store } = await started();
+		engine.missingExecutables(["claude", "codex"]);
+		engine.typeTimberNew(TIMBER, "feat/none-found", true);
+		await settle();
+		const selected = selectedWorktree(store.getState())!.worktree;
+		expect(store.getState().terminals.filter(session => session.worktree === selected.id).map(session => session.kind)).toEqual(["terminal"]);
+		expect(store.getState().toasts.map(toast => toast.text)).toEqual([HANDOFF_NO_AGENT["none-found"]]);
+	});
+
+	test("when the app cannot find out which agents are installed, opens a shell and says so, starting no agent", async () => {
+		const engine = createMockEngine();
+		engine.locateAgents = () => Promise.reject(new Error("gone"));
+		const store = createAppStore(engine, () => () => {});
+		store.start();
+		await settle();
+		engine.typeTimberNew(TIMBER, "feat/not-known", true);
+		await settle();
+		const selected = selectedWorktree(store.getState())!.worktree;
+		expect(store.getState().terminals.filter(session => session.worktree === selected.id).map(session => session.kind)).toEqual(["terminal"]);
+		expect(store.getState().toasts.map(toast => toast.text)).toEqual([HANDOFF_NO_AGENT["not-known"]]);
 	});
 
 	test("in a repository that is not in the list, opens nothing, keeps the selection, and says how to start the agent", async () => {

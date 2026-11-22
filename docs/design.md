@@ -961,7 +961,8 @@ logins. The app never reads a tracker login and never signs in.
   and the agent's pane shows. An agent that has not turned on bracketed
   paste gets nothing, with the reason. Text already in the agent's input
   stays in front of the review. The dialog also offers a new agent, the
-  first one saved in Settings, with the command that starts it, and picks
+  first one saved in Settings that was found, with the command that starts
+  it (none when none was found, and the dialog says so), and picks
   as a prompt chop does: the new agent when none runs, the only one when
   it does not wait on the person and is not still starting, and otherwise
   nothing, so the person
@@ -1148,7 +1149,7 @@ logins. The app never reads a tracker login and never signs in.
   chops panel, its title bar button, the chop shortcuts, and every other
   place chops are offered when off, and keeps the saved chops. A chop has a name, a kind (Command or Prompt), its text, and an
   optional description; a prompt can name the agent that gets it, or the
-  first saved agent. The person's own chops are rows with Remove and "Add a
+  first saved agent that was found ("First agent found"). The person's own chops are rows with Remove and "Add a
   chop", each for every repository or for one, saved with the section's
   Save. The chops panel makes, changes, and deletes the same chops. Below, "From the repository" lists the chops the selected
   worktree's repository shares in `.timber/chops.json` in its main
@@ -1178,8 +1179,8 @@ logins. The app never reads a tracker login and never signs in.
   commands, marked "Prompt", and the palette says "Send prompt: <name>". It
   always goes to an agent in the active worktree, as typed input: one
   paste, so its line breaks do not submit it early, then Enter. With no
-  agent running there, it starts the chop's agent, or the first saved
-  agent, in a new session, with nothing added to its command line, and
+  agent running there, it starts the chop's agent, found or not, or the
+  first saved agent that was found, in a new session, with nothing added to its command line, and
   sends the prompt once the agent is ready: when it reports it is idle, or,
   for an agent that reports nothing, once it has drawn its input and gone
   quiet. A toast says when it was sent, or why not. With one agent running,
@@ -1188,7 +1189,9 @@ logins. The app never reads a tracker login and never signs in.
   dialog lists them with their state and "A new
   <agent>", with nothing picked, and warns when the picked agent waits for
   an answer. With no agent saved in Settings, the chop shows "Copy prompt",
-  which puts exactly its text on the clipboard. A prompt from the
+  which puts exactly its text on the clipboard. A chop that names no agent,
+  sent where a new agent would start while none of the saved agents was
+  found, is copied the same way, and the toast says why. A prompt from the
   repository's file asks first, as a command does, with Send, and says
   where it goes, naming the agent a new session starts; a change to its
   text or its agent asks again. Right-clicking a session's chip, or

@@ -1,8 +1,9 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { findAgent } from "../../shared/agent";
+import { defaultAgent, whyNoDefaultAgent } from "../../shared/agent-lookup";
 import { findListedChop, listedChops } from "../../shared/chops";
 import { runningAgents, waitsOnPerson } from "../agent-sessions";
-import { PROMPT_WAITS_WARNING, describeNewAgentChoice } from "../chop-format";
+import { PROMPT_WAITS_WARNING, describeNewAgentChoice, noNewPromptAgent } from "../chop-format";
 import { useAppState, useStore } from "../store/react";
 import { AgentChoices } from "./AgentChoices";
 import { estimateTerminalSize } from "./TerminalPanel";
@@ -13,7 +14,7 @@ const NEW_AGENT = "\0new";
 /**
  * Where a prompt chop goes, asked when the worktree has several running
  * agents, or only one that waits on the person: one of them, or a new agent,
- * the chop's or the first saved one. Nothing is picked at first, so Send
+ * the chop's or the default agent, the first saved one found. Nothing is picked at first, so Send
  * needs a choice. The prompt is shown as it is listed, or as the person
  * edited it for this run in the chop search, which is then what is sent;
  * otherwise the main process sends the text it reads, never this one.
@@ -28,9 +29,17 @@ export function SendPromptDialog({ request }: { request: { repository: string; w
 	const list = state.chops?.repository === request.repository ? state.chops.list : null;
 	const chop = findListedChop(listedChops(list), request.chop);
 	const agents = state.preferences.agents;
-	const newAgent = chop?.agent ? findAgent(agents, chop.agent) : agents[0] ?? null;
-	const newReason = newAgent === null ? `No agent called "${chop?.agent ?? ""}" is saved in Settings, Agents.` : null;
+	// The chop's agent, found or not, or the default agent: the first saved one found.
+	const newAgent = chop?.agent ? findAgent(agents, chop.agent) : defaultAgent(agents, state.agentLocations);
+	// While the app does not know which agents are installed, a new agent can still be picked: the main process looks, and decides.
+	const why = whyNoDefaultAgent(agents, state.agentLocations);
+	const newReason = newAgent === null && (chop?.agent || why !== "not-known") ? noNewPromptAgent(chop?.agent || null, why) : null;
 	const chosen = sessions.find(session => session.id === picked) ?? null;
+
+	// A new agent that names none is the default one: look again for which agents are installed.
+	useEffect(() => {
+		void store.locateAgents();
+	}, [store]);
 
 	useEffect(() => {
 		const element = dialog.current;

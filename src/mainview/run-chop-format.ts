@@ -1,4 +1,5 @@
 import type { ArrangedChop } from "../shared/chop-order";
+import { defaultAgent, whyNoDefaultAgent } from "../shared/agent-lookup";
 import { type ChopKind, type ListedChop, chopKindWord, sameChopName } from "../shared/chops";
 import { type ShortcutLetter, describeChord, matchesChord, shortcutLetter } from "../shared/shortcuts";
 import { promptTarget } from "./agent-sessions";
@@ -152,18 +153,35 @@ export interface RunChopModel {
 	empty: string | null;
 }
 
+/** A prompt row's words when it is copied because none of the saved agents was found. */
+const COPIED_NONE_FOUND = "copied: no agent was found";
+
+/**
+ * Whether a prompt that names no agent is copied now, as the store does
+ * (`runChop`): it would start a new agent in the selected worktree, and
+ * every saved agent was looked for and none was found.
+ */
+function copiedForNoneFound(state: AppState, chop: ListedChop): boolean {
+	const selection = selectedWorktree(state);
+	if (chop.kind !== "prompt" || chop.agent !== null || selection === null) return false;
+	const { agents } = state.preferences;
+	return agents.length > 0 && whyNoDefaultAgent(agents, state.agentLocations) === "none-found" && defaultAgent(agents, state.agentLocations) === null
+		&& promptTarget(state.terminals, selection.worktree.id).kind === "new";
+}
+
 /** Where a prompt goes now, in the few words of its row. */
 function promptWords(state: AppState, chop: ListedChop, action: ChopAction): string {
-	if (action === "copy") return "copied: no agent is saved";
+	if (action === "copy") return copiedForNoneFound(state, chop) ? COPIED_NONE_FOUND : "copied: no agent is saved";
 	const selection = selectedWorktree(state);
-	const named = chop.agent ?? state.preferences.agents[0]?.name ?? "an agent";
-	if (selection === null) return `to ${named}`;
+	// The chop's agent, or the default agent: the first saved one found, or, while not known, whichever that turns out to be.
+	const found = chop.agent ?? defaultAgent(state.preferences.agents, state.agentLocations)?.name ?? null;
+	if (selection === null) return found === null ? "to the first agent found" : `to ${found}`;
 	const target = promptTarget(state.terminals, selection.worktree.id);
 	switch (target.kind) {
 		case "session":
-			return `to ${state.terminals.find(session => session.id === target.session)?.name ?? named}`;
+			return `to ${state.terminals.find(session => session.id === target.session)?.name ?? found ?? "the agent running"}`;
 		case "new":
-			return `to a new ${named}`;
+			return found === null ? "to a new session of the first agent found" : `to a new ${found}`;
 		case "ask":
 			return "to the agent you pick";
 	}
@@ -182,7 +200,8 @@ export function runChopModel(state: AppState, query: string, filter: RunChopFilt
 	const agents = state.preferences.agents.length;
 	const last = panel.repository === null ? null : state.lastChops[panel.repository] ?? null;
 	const rows = findChops(panel.arranged, query, filter, last).map(found => {
-		const action = chopAction(found.chop.kind, agents);
+		// With none of the saved agents found, a prompt that would start the default agent is copied, as the store does.
+		const action = copiedForNoneFound(state, found.chop) ? "copy" : chopAction(found.chop.kind, agents);
 		return {
 			...found,
 			kindWord: chopKindWord(found.chop.kind),
@@ -211,7 +230,9 @@ export function describeRunChopRow(row: RunChopRow | undefined, worktree: string
 		case "send":
 			return `Enter sends ${row.chop.name} ${row.target}.`;
 		case "copy":
-			return `Enter copies ${row.chop.name}: no agent is saved in Settings, Agents.`;
+			return row.target === COPIED_NONE_FOUND
+				? `Enter copies ${row.chop.name}: none of the agents in Settings, Agents was found.`
+				: `Enter copies ${row.chop.name}: no agent is saved in Settings, Agents.`;
 	}
 }
 

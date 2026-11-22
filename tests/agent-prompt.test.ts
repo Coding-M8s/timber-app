@@ -95,7 +95,9 @@ describe("words for prompt chops", () => {
 		expect(describeChopApproval({ name: "Review", kind: "prompt" }, "/r/.timber/chops.json", "Codex")).toMatchObject({ title: "Send Review from the repository?", submit: "Send", text: expect.stringContaining("goes to Codex exactly as shown") });
 		// A new agent is named, since the file picks it.
 		expect(describeChopApproval({ name: "Review", kind: "prompt", agent: "Codex" }, "/r/.timber/chops.json").text).toContain("goes to a new Codex exactly as shown");
-		expect(describeChopApproval({ name: "Review", kind: "prompt", agent: null }, "/r/.timber/chops.json").text).toContain("goes to a new session of your first saved agent");
+		expect(describeChopApproval({ name: "Review", kind: "prompt", agent: null }, "/r/.timber/chops.json").text).toContain("goes to a new session of the first agent found");
+		expect(describeChopApproval({ name: "Review", kind: "prompt", agent: null }, "/r/.timber/chops.json", null, "Codex").text).toContain("goes to a new Codex exactly");
+		expect(describeChopApproval({ name: "Review", kind: "prompt", agent: "Claude Code" }, "/r/.timber/chops.json", null, "Codex").text).toContain("goes to a new Claude Code exactly");
 		expect(describeChopApproval({ name: "Test", kind: "command" }, "/r/.timber/chops.json")).toMatchObject({ title: "Run Test from the repository?", submit: "Run" });
 	});
 });

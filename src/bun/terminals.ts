@@ -2,7 +2,7 @@ import { accessSync, constants } from "node:fs";
 import { type ArenaLaunch, isArenaName, isAttemptLabel } from "../shared/arenas";
 import { homedir } from "node:os";
 import { type AgentSetting, agentCommand, findAgent } from "../shared/agent";
-import type { AgentLocation } from "../shared/agent-lookup";
+import type { AgentLocation, AgentLookup } from "../shared/agent-lookup";
 import { type ConversationStore, agentById } from "../shared/agent-registry";
 import { type ResumableAgent, agentProgram, agentStartArguments, conversationMissingNote, resumableAgent } from "../shared/agent-resume";
 import { describeCommandLine } from "../shared/command-line";
@@ -169,6 +169,8 @@ export interface TerminalSessions {
 	open(request: OpenTerminalRequest, chop?: ChopInput): Promise<OpenTerminalResult>;
 	/** Whether each saved agent's executable is there to start, looked for as `open` looks for it. Nothing starts. */
 	locateAgents(): Promise<AgentLocation[]>;
+	/** Whether one agent's executable is there to start, looked for as `open` looks for it, on the PATH the app was started with. Nothing starts. */
+	locateAgent(agent: AgentSetting): AgentLookup;
 	/** Give a session another name. Null for a session that is gone, or a name with nothing in it. */
 	rename(id: string, name: string): TerminalSession | null;
 	/** The end of what a session printed. Null for a session that is gone. */
@@ -533,6 +535,11 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 	/** ConPTY drops an OSC written as it is, so on Windows the answer goes in as typed keys. */
 	const probeAnswer = windows ? asWin32KeyEvents(PROBE_ANSWER) : PROBE_ANSWER;
 	const sessions = new Map<string, Live>();
+
+	/** Whether an agent can start, as `open` would find it: on the PATH the app was started with. */
+	function lookAt(agent: AgentSetting): AgentLookup {
+		return locateAgent(agent, environment.PATH ?? environment.Path ?? "", windows);
+	}
 
 	/** Hang up on what runs in a session. On Windows closing the pseudo console does that, and there is nothing to signal. */
 	function hangUp(live: Live): void {
@@ -1111,9 +1118,9 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		list: () => [...sessions.values()].map(live => ({ ...live.session })),
 		open,
 		async locateAgents() {
-			const searchPath = environment.PATH ?? environment.Path ?? "";
-			return (await agents()).map(agent => ({ name: agent.name, command: agent.command, lookup: locateAgent(agent, searchPath, windows) }));
+			return (await agents()).map(agent => ({ name: agent.name, command: agent.command, lookup: lookAt(agent) }));
 		},
+		locateAgent: agent => lookAt(agent),
 		rename(id, name) {
 			const live = sessions.get(id);
 			const clean = cleanSessionName(name);

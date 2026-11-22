@@ -279,6 +279,7 @@ describe.skipIf(windows)("saving chops leaves a real repository's file as it is"
 		const chops = createChops({
 			findRepository: async folder => folder === primary || folder === lone ? repository(folder) : null,
 			personal: async () => (await preferences.load()).chops,
+			locate: () => ({ state: "not-found" }),
 		});
 
 		const made = chopsWithSaved((await preferences.load()).chops, null, { ...blankChopForm("command", primary), name: "test", text: "bun test --watch" });
@@ -304,7 +305,7 @@ describe.skipIf(windows)("saving chops leaves a real repository's file as it is"
 		const made = chopsWithSaved([], null, { ...blankChopForm("command", lone), name: "Mine", text: "make" });
 		if (!made.ok) throw new Error(made.problem);
 		await preferences.save({ chops: made.chops });
-		const listed = await createChops({ findRepository: async folder => folder === lone ? repository(lone) : null, personal: async () => (await preferences.load()).chops }).list({ repository: lone });
+		const listed = await createChops({ findRepository: async folder => folder === lone ? repository(lone) : null, personal: async () => (await preferences.load()).chops, locate: () => ({ state: "not-found" }) }).list({ repository: lone });
 		expect(listed).toMatchObject({ outcome: "listed", file: { state: "missing" } });
 		expect(existsSync(join(lone, ".timber"))).toBe(false);
 	});

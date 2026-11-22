@@ -408,7 +408,7 @@ describe("the chop order on disk", () => {
 		const before = fingerprint(primary);
 		const settingsFile = join(root, "settings.json");
 		const preferences = createSavedPreferences(createSettingsHolder(settingsFile, () => {}));
-		const chops = createChops({ findRepository: async folder => folder === primary ? repository(folder) : null, personal: async () => (await preferences.load()).chops });
+		const chops = createChops({ findRepository: async folder => folder === primary ? repository(folder) : null, personal: async () => (await preferences.load()).chops, locate: () => ({ state: "not-found" }) });
 		const listed = await chops.list({ repository: primary });
 		if (listed.outcome !== "listed") throw new Error("not listed");
 		const starred = toggleChopFavorite(listed.chops, NO_CHOP_ARRANGEMENT, "Lint");
