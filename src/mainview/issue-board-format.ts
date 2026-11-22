@@ -105,12 +105,34 @@ export function describeEmptyList(list: IssueList, tracker: IssueTracker): { tit
 	return { title: "No open issues", text: `Open ${TRACKER_NAMES[tracker]} issues show here, newest first.` };
 }
 
-/** The button that opens Settings at the repository's Issue tracking, where the sprint, project, milestone, and team are set. */
+/** The button that opens Settings at the repository's Issue tracking, where the default tracker, the Jira site, the sprint, project, milestone, and team, and the Jira and Linear logins are set. */
 export const OPEN_TRACKING_SETTINGS = "Open Issue tracking settings";
 
-/** Whether a list that failed for this reason is fixed in Issue tracking settings: one not set up, or one whose board, project, milestone, or team Timber cannot find. */
-export function fixedInTrackingSettings(reason: IssueListFailureReason): boolean {
-	return reason === "not-configured" || reason === "not-found";
+/** Where Issue tracking is, in words, for text that points there. */
+export const TRACKING_SETTINGS_PLACE = "Settings, Repository, Issue tracking";
+
+/**
+ * Whether a list that failed for this reason offers Issue tracking
+ * settings: one not set up, one whose board, project, milestone, or team
+ * Timber cannot find, and one with no usable login, which is saved or
+ * replaced there for Jira and Linear, and tested there for GitHub.
+ */
+export function offersTrackingSettings(reason: IssueListFailureReason): boolean {
+	return reason === "not-configured" || reason === "not-found" || reason === "sign-in-needed";
+}
+
+/**
+ * The line for a tracker with no usable login, and the command to run in a
+ * terminal when Settings cannot sign in: Jira and Linear logins are saved
+ * in Settings, and saving there reads the board again; a GitHub login comes
+ * from the GitHub CLI, which Settings can only test. For Jira, Timber says
+ * the same when no site is set. Saving in Settings reads an open board
+ * again, but a test of the login saves nothing, so each ends with Refresh.
+ */
+function signInNeeded(tracker: IssueTracker): { text: string; command: string | null } {
+	if (tracker === "github") return { text: `${TRACKING_SETTINGS_PLACE} can test the GitHub login. To sign in, run gh auth login in a terminal, or set GH_TOKEN, then Refresh.`, command: "gh auth login" };
+	if (tracker === "jira") return { text: `Check the Jira site and its login in ${TRACKING_SETTINGS_PLACE}, then Refresh.`, command: null };
+	return { text: `Check or replace the Linear key in ${TRACKING_SETTINGS_PLACE}, then Refresh.`, command: null };
 }
 
 export const NO_CURRENT_SPRINT = { title: "No current sprint", text: "The sprint is set up, and nothing is running in it right now." };
@@ -120,7 +142,7 @@ export function describeListFailure(reason: IssueListFailureReason, tracker: Iss
 	const name = TRACKER_NAMES[tracker];
 	switch (reason) {
 		case "offline": return { word: "offline", title: `Could not reach ${name}.`, text: "Check the connection, then Refresh.", command: null };
-		case "sign-in-needed": return { word: "sign-in needed", title: `Timber has no login for ${name}.`, text: "Sign in through Timber, then Refresh.", command: "timber setup" };
+		case "sign-in-needed": return { word: "sign-in needed", title: tracker === "jira" ? "Timber has no usable Jira site or login." : `Timber has no usable login for ${name}.`, ...signInNeeded(tracker) };
 		case "not-found": return { word: "not found", title: `Timber cannot find what this list reads in ${name}.`, text: "Check the board, project, milestone, or team in Timber's settings.", command: null };
 		case "forbidden": return { word: "no access", title: `Timber's ${name} login may not read this list.`, text: "Timber's reason is below.", command: null };
 		case "not-configured": return { word: "not set up", title: `This list is not set up for ${name}.`, text: "Timber's reason is below.", command: null };
@@ -179,7 +201,7 @@ export function boardTrackerOption(trackers: IssueTrackers | undefined, tracker:
 
 export const NO_TRACKER = {
 	title: "No issue tracker is set up",
-	text: "Timber reads GitHub issues through a GitHub remote, and Jira or Linear issues once it has a login. Set one up with timber setup, then Refresh.",
+	text: `Set up Jira or Linear in ${TRACKING_SETTINGS_PLACE}: a Jira site and its login, or a Linear key. GitHub issues need a github.com remote on this repository. Then Refresh.`,
 };
 
 /** The quiet word for when the latest read ended in a failure that is not a tracker's reason, such as a Timber that could not be run. */

@@ -2979,9 +2979,16 @@ Each repository's board lists issues that Timber reads with its own logins.
   `src/mainview/components/IssuesBoard.tsx`; `state.board` names the
   repository whose board replaces the workspace, and `select` clears it.
   A list not set up (its hint under the toggles, or the board's own line
-  when no list is), and a list whose board, project, milestone, or team
-  Timber cannot find (`fixedInTrackingSettings`), offer "Open Issue
-  tracking settings": the settings dialog request names the section
+  when no list is), and a first read that failed because Timber cannot
+  find the list's board, project, milestone, or team, or has no usable
+  login (all three in `offersTrackingSettings`), offer "Open Issue
+  tracking settings", as does a repository with no tracker set up
+  (`NO_TRACKER`). Their text names `TRACKING_SETTINGS_PLACE` first; only a
+  GitHub sign-in adds a command, `gh auth login`, since Settings can test
+  that login but not make it, and the New worktree dialog's
+  `suggestionHint` says the same. Saving in Settings reads the open board
+  again, but a test of a login or a read already running does not, so the
+  text still ends with Refresh. The settings dialog request names the section
   (`repository`), the board's repository, and the group (`tracking`), so
   Settings opens on that repository, not the selected worktree's, and
   Issue tracking scrolls into view and takes the focus once read.

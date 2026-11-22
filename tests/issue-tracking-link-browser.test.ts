@@ -50,3 +50,46 @@ describe.skipIf(browserPath === null || process.platform === "win32")("Issue tra
 		expect(await page.evaluate<boolean>(`document.querySelector(".board-settings") === null`)).toBe(true);
 	}, 30_000);
 });
+
+/**
+ * No tracker set up, and then a first read with no usable login (issue 332):
+ * both offer the same button, and it opens Settings at the board's
+ * repository with Issue tracking focused.
+ */
+describe.skipIf(browserPath === null || process.platform === "win32")("Issue tracking from the Issues board's no tracker and sign-in states in a real browser", () => {
+	let page: BrowserPage;
+	const opensTracking = async () => {
+		await page.click(".board-settings");
+		await page.until(`document.activeElement?.textContent === "Issue tracking"`, "Issue tracking took the focus");
+		expect(await page.evaluate<string>(`document.querySelector(".settings-nav-item.selected").textContent`)).toBe("Repository");
+		expect(await page.evaluate<string>(`[...document.querySelectorAll(".settings-panel:not([hidden]) select")][0].value`)).toBe(REPOSITORY);
+		await page.evaluate(`${STORE}.closeDialog()`);
+	};
+
+	beforeAll(async () => {
+		page = await openSidebarPage();
+	}, 60_000);
+
+	afterAll(async () => {
+		await page?.close();
+	});
+
+	test("with no tracker set up, and then with no usable GitHub login, the button opens Issue tracking", async () => {
+		await page.evaluate(`(async () => {
+			${ENGINE}.setGithubRemote(${JSON.stringify(REPOSITORY)}, false);
+			${ENGINE}.setTimberConfig(${JSON.stringify(REPOSITORY)}, { default_tracker: "none" });
+			${STORE}.openBoard(${JSON.stringify(REPOSITORY)});
+		})()`);
+		await page.until(`document.querySelector(".board-quiet-title")?.textContent === "No issue tracker is set up" && document.querySelector(".board-settings")`, "the board said no tracker is set up, with the button");
+		await opensTracking();
+
+		await page.evaluate(`(async () => {
+			${ENGINE}.setGithubRemote(${JSON.stringify(REPOSITORY)}, true);
+			${ENGINE}.setTimberConfig(${JSON.stringify(REPOSITORY)}, null);
+			${ENGINE}.setIssueList({ ok: true, outcome: "failed", reason: "sign-in-needed", diagnostic: "No GitHub login." });
+			await ${STORE}.refreshBoard(${JSON.stringify(REPOSITORY)});
+		})()`);
+		await page.until(`document.querySelector(".board-quiet-command")?.textContent === "gh auth login" && document.querySelector(".board-settings")`, "the board asked for a GitHub sign-in, with the button");
+		await opensTracking();
+	}, 30_000);
+});

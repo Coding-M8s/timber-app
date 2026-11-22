@@ -146,7 +146,7 @@ describe("when there is nothing to suggest", () => {
 		suggestions.type("ENG-4", "jira");
 		clock.advance(SUGGEST_DEBOUNCE_MS);
 		expect(hand.asked).toHaveLength(1);
-		expect(state().hint).toBe("No suggestions: Jira needs a sign-in. Run timber setup.");
+		expect(state().hint).toBe("No suggestions: Jira needs a sign-in. Set it up in Settings, Repository, Issue tracking.");
 		suggestions.type("ENG-4", "github");
 		clock.advance(SUGGEST_DEBOUNCE_MS);
 		expect(hand.asked).toHaveLength(2);
@@ -173,11 +173,14 @@ describe("when there is nothing to suggest", () => {
 	});
 
 	test("each reason has its own quiet words", () => {
-		const failedWith = (reason: "not-configured" | "forbidden" | "failed"): IssueSearchResult => ({ ok: true, outcome: "failed", reason, diagnostic: "x" });
+		const failedWith = (reason: "not-configured" | "forbidden" | "failed" | "sign-in-needed"): IssueSearchResult => ({ ok: true, outcome: "failed", reason, diagnostic: "x" });
 		expect(suggestionHint("linear", failedWith("not-configured"))).toBe("No suggestions: Linear is not set up for searching.");
 		expect(suggestionHint("github", failedWith("forbidden"))).toBe("No suggestions: this GitHub login cannot search these issues.");
 		expect(suggestionHint("jira", failedWith("failed"))).toBe("No suggestions: Jira did not answer the search.");
 		expect(suggestionHint("jira", found("ENG-1"))).toBeNull();
+		// A sign-in names Settings first where Settings can do it, and gh auth login for GitHub, where it cannot.
+		expect(suggestionHint("linear", failedWith("sign-in-needed"))).toBe("No suggestions: Linear needs a sign-in. Set it up in Settings, Repository, Issue tracking.");
+		expect(suggestionHint("github", failedWith("sign-in-needed"))).toBe("No suggestions: GitHub needs a sign-in. Run gh auth login.");
 	});
 });
 

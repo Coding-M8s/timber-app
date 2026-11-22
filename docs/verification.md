@@ -4169,3 +4169,25 @@ Chrome 151:
 - Counts against bases run at most four at once per repository
   (`BASE_COUNTS_AT_ONCE`), so a repository with many worktrees does not
   start as many Git processes on each reload.
+
+Run for the no tracker and sign-in needed states pointing at Issue
+tracking settings (issue 332), Linux x64 with Bun 1.4.5 and Git 2.43.0:
+
+- `bun test tests/issue-board.test.tsx tests/issue-suggestions.test.ts
+  tests/new-worktree-suggestions.test.tsx
+  tests/issue-tracking-link-browser.test.ts`: 71 pass, 0 fail. Over the
+  mock engine, a repository with no GitHub remote and no default tracker
+  shows "No issue tracker is set up", text naming Settings, Repository,
+  Issue tracking, one "Open Issue tracking settings" button, and no
+  command; a first read with no usable Jira site or login shows the button
+  once and no command; one with no usable GitHub login shows the button
+  and `gh auth login`. The suggestion hints name Settings for Linear and
+  Jira and `gh auth login` for GitHub. In headless Chrome, the button in
+  the no tracker state, and then in the GitHub sign-in state, opened
+  Settings at Repository on the board's repository with Issue tracking
+  focused.
+- `bun run typecheck`: no errors.
+- `bun run build:web`: built.
+- `bun run test`: 4220 pass, 19 skip, 0 fail, after rebasing on main.
+- Not run: the desktop window on any platform, and a real tracker that
+  refused a login.

@@ -5,7 +5,7 @@ import { createMockEngine } from "../src/mainview/engine/mock";
 import { bigSprint } from "../src/mainview/engine/mock-issue-lists";
 import {
 	boardColumns, boardTracker, boardTrackerChoices, describeBlockedToggle, describeEmptyList, describeHiddenList, describeListFailure,
-	describeListSummary, describePartial, describeTruncated, fixedInTrackingSettings, shownList,
+	describeListSummary, describePartial, describeTruncated, offersTrackingSettings, shownList,
 } from "../src/mainview/issue-board-format";
 import { draftsOf, valuesWith } from "../src/mainview/timber-settings-format";
 import { type IssueBoard, boardKey, boardToggles, boardView, emptyBoard, hiddenDiagnostic, hiddenLists, listsToRead, withRead } from "../src/mainview/store/issue-board";
@@ -106,10 +106,74 @@ describe("the board's words", () => {
 
 	test("each failure has a quiet word and never asks to sign in here", () => {
 		expect(describeListFailure("offline", "jira").word).toBe("offline");
-		expect(describeListFailure("sign-in-needed", "jira")).toMatchObject({ word: "sign-in needed", command: "timber setup" });
+		expect(describeListFailure("sign-in-needed", "jira").word).toBe("sign-in needed");
 		expect(describeListFailure("forbidden", "github").word).toBe("no access");
 		expect(describeHiddenList("sprint", "jira", "No Jira sprint is configured. Set [jira].board or [jira].sprint_jql."))
 			.toBe("Current sprint is not set up for Jira. No Jira sprint is configured. Set [jira].board or [jira].sprint_jql.");
+	});
+});
+
+describe("no tracker and no usable login point at Issue tracking settings first", () => {
+	test("a Jira site and login, or a Linear key, is checked in Settings, with no command to run", () => {
+		expect(describeListFailure("sign-in-needed", "jira")).toEqual({
+			word: "sign-in needed",
+			title: "Timber has no usable Jira site or login.",
+			text: "Check the Jira site and its login in Settings, Repository, Issue tracking, then Refresh.",
+			command: null,
+		});
+		expect(describeListFailure("sign-in-needed", "linear")).toMatchObject({ title: "Timber has no usable login for Linear.", text: "Check or replace the Linear key in Settings, Repository, Issue tracking, then Refresh.", command: null });
+	});
+
+	test("a GitHub login is tested in Settings first, and signed in with gh auth login, which Settings cannot do", () => {
+		expect(describeListFailure("sign-in-needed", "github")).toEqual({
+			word: "sign-in needed",
+			title: "Timber has no usable login for GitHub.",
+			text: "Settings, Repository, Issue tracking can test the GitHub login. To sign in, run gh auth login in a terminal, or set GH_TOKEN, then Refresh.",
+			command: "gh auth login",
+		});
+	});
+
+	test("with no tracker set up, the board names Settings first, offers the button, and shows no command", async () => {
+		// api-server has no Jira or Linear login; with no GitHub remote and no default tracker, nothing is set up.
+		const engine = createMockEngine();
+		engine.setGithubRemote(API, false);
+		engine.setTimberConfig(API, { default_tracker: "none" });
+		const { store } = await startedStore(engine);
+		store.openBoard(API);
+		await settle();
+		const markup = render(store);
+		expect(markup).toContain("No issue tracker is set up");
+		expect(markup).toContain("Set up Jira or Linear in Settings, Repository, Issue tracking: a Jira site and its login, or a Linear key. GitHub issues need a github.com remote on this repository. Then Refresh.");
+		expect(markup.match(/>Open Issue tracking settings<\/button>/g)).toHaveLength(1);
+		expect(markup).not.toContain("board-quiet-command");
+		expect(markup).not.toContain("timber setup");
+	});
+
+	test("a first read with no usable Jira login offers the button once, and no command", async () => {
+		const engine = createMockEngine();
+		engine.setTimberConfig(TIMBER, { default_tracker: "jira" });
+		engine.setIssueList({ ok: true, outcome: "failed", reason: "sign-in-needed", diagnostic: "Jira rejected the saved login." });
+		const { store } = await startedStore(engine);
+		store.openBoard(TIMBER);
+		await settle();
+		const markup = render(store);
+		expect(markup).toContain("Timber has no usable Jira site or login.");
+		expect(markup).toContain("Check the Jira site and its login in Settings, Repository, Issue tracking, then Refresh.");
+		expect(markup).toContain("Jira rejected the saved login.");
+		expect(markup.match(/>Open Issue tracking settings<\/button>/g)).toHaveLength(1);
+		expect(markup).not.toContain("board-quiet-command");
+	});
+
+	test("a first read with no usable GitHub login offers the button, and gh auth login beside it", async () => {
+		const engine = createMockEngine();
+		engine.setIssueList({ ok: true, outcome: "failed", reason: "sign-in-needed", diagnostic: "No GitHub login." });
+		const { store } = await startedStore(engine);
+		store.openBoard(API);
+		await settle();
+		const markup = render(store);
+		expect(markup).toContain("Timber has no usable login for GitHub.");
+		expect(markup).toContain('<code class="board-quiet-command">gh auth login</code>');
+		expect(markup.match(/>Open Issue tracking settings<\/button>/g)).toHaveLength(1);
 	});
 });
 
@@ -364,8 +428,8 @@ describe("the board in the window", () => {
 		await settle();
 		const settings = render(store);
 		expect(settings).toMatch(/<option value="\/work\/api-server" selected="">/);
-		expect(fixedInTrackingSettings("not-configured") && fixedInTrackingSettings("not-found")).toBe(true);
-		expect(fixedInTrackingSettings("offline") || fixedInTrackingSettings("sign-in-needed")).toBe(false);
+		expect(offersTrackingSettings("not-configured") && offersTrackingSettings("not-found") && offersTrackingSettings("sign-in-needed")).toBe(true);
+		expect(offersTrackingSettings("offline") || offersTrackingSettings("forbidden") || offersTrackingSettings("failed")).toBe(false);
 	});
 
 	test("turning a toggle to a list not set up comes back, and then that toggle is disabled with the list's hint", async () => {
