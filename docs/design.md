@@ -608,8 +608,9 @@ logins. The app never reads a tracker login and never signs in.
   be read it shows the key, the quiet word, and Timber's reason. Text from
   the tracker is plain text, never markup.
 - The side panel's Changes view holds, top to bottom: "Compare with", the
-  compared base with "Change base…", the counts and Refresh, the changed
-  files in their groups, and the Review section (see Review notes). A
+  compared base with "Change base…", a "Filter files" box, the counts with
+  the lines added and removed in all, and Refresh, the changed files in
+  their groups, and the Review section (see Review notes). A
   click or Enter on a file opens its diff in the diff tab, after Pull
   request, named after the file with a small "diff" before the name and a
   close button beside it, as the File tab is; the file's row stays marked
@@ -620,6 +621,37 @@ logins. The app never reads a tracker login and never signs in.
   longer changed, and when "Compare with" switches, since the other
   comparison lists other files. Each worktree keeps its own diff tab. A
   layout saved before the Changes view moved here reads as it was.
+- Each file's row shows its lines added and removed, `+12 -3`, as Git
+  counts them for its diff; an untracked file counts all its lines as
+  added. A binary file, and a conflict, show none. A screen reader hears
+  them with the row, "12 lines added, 3 removed".
+- "Filter files" keeps the files whose path holds the typed text, ignoring
+  case, and the groups show only those. A hidden polite status says how
+  many match, such as "2 of 12 files match", and "No changed file matches"
+  takes the list's place when none does. Down goes from the box into the
+  list; Escape empties it. The filter is kept for each worktree while the
+  window is open.
+- The diff tab's title line starts with Previous file and Next file, which
+  go through the files the list shows, in its order and through the filter,
+  going round at either end. Alt+Up and Alt+Down do the same from anywhere
+  in the window while the diff tab shows, except in a field that edits
+  text, where they move the cursor. A hidden polite status says where the
+  keyboard went, such as "src/a.ts, file 3 of 12". After the file's area
+  come its counts, then a "Viewed" box. Ticking it dims the file's row,
+  marks it with a check (", viewed" for a screen reader), and opens the
+  next file; the same status says "Viewed" and where the keyboard went. A file stays viewed while the window is open, for that
+  comparison, until its diff changes, for example when an agent edits it
+  again, even with the same counts; the main process gives each file a
+  version from the objects Git compares and the size and time of the file
+  on disk, and a new version clears the mark.
+- Between the hunks of a diff, and before the first, a row says "Show 12
+  unchanged lines". Choosing it shows them, with both line numbers, and
+  gives the keyboard to the first; they take notes like any line, and a
+  gap that holds a noted line shows by itself. The lines come from the file
+  on disk, so they show only where the file is the diff's new side: not for
+  a deleted file, a conflict, a type change, or a staged change whose file
+  was edited again on disk, and not when the file changed since the diff
+  was read, until it is read again.
 - Changes has a "Compare with" switch: Base or Uncommitted. Base is
   everything the branch changed since it left its saved base, committed or
   not, so the work stays visible after an agent commits; commits on the base

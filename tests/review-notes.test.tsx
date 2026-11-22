@@ -22,7 +22,7 @@ const TIMBER = "/work/timber";
 const FEATURE = sampleRepositories[0]!.worktrees[1]!;
 const OTHER = sampleRepositories[0]!.worktrees[0]!;
 
-const file = (path: string): FileChange => ({ area: "unstaged", kind: "modified", path, previousPath: null });
+const file = (path: string): FileChange => ({ area: "unstaged", kind: "modified", path, previousPath: null, added: null, removed: null, version: "" });
 const mock = (change: FileChange, patch = samplePatch(change.path)): MockFileChange => ({ change, patch });
 const render = (store: ReturnType<typeof createAppStore>) => renderToStaticMarkup(<App store={store} />);
 
@@ -303,7 +303,7 @@ describe("the Changes view with notes", () => {
 		// Eight numbered lines, each a lit row with a + first in its button, named as before.
 		expect(markup.split('<div class="diff-line context notable">').length - 1 + markup.split('<div class="diff-line added notable">').length - 1 + markup.split('<div class="diff-line removed notable">').length - 1).toBe(8);
 		expect(markup.split(plus).length - 1).toBe(8);
-		expect(markup).toMatch(/<button type="button" class="diff-note-target" tabindex="0" data-line="0-0-0" aria-label="Add a note on line 1" title="[^"]*Drag the \+[^"]*"><span class="diff-note-plus" aria-hidden="true">\+<\/span>/);
+		expect(markup).toMatch(/<button type="button" class="diff-note-target" tabindex="0" data-line="0-1-0" aria-label="Add a note on line 1" title="[^"]*Drag the \+[^"]*"><span class="diff-note-plus" aria-hidden="true">\+<\/span>/);
 		// Git's note and the hunk's header take no note: no lit row, no +.
 		expect(markup).toContain('<div class="diff-line note"><span class="diff-number"></span><span class="diff-number"></span>');
 		expect(markup).toMatch(/<div class="diff-hunk-header">@@ -1,6 \+1,7 @@<\/div><div class="diff-line context notable">/);

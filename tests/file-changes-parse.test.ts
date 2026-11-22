@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
-	type FileChange, MAX_DIFF_LINES, baseName, baseContentArguments, baseNamesArguments, commitArguments, diffArguments, filePathIn, parseDiff, parseNameStatus, parseNumstatPaths, parseStatus, readDiffOutput, relativePathProblem, savedBaseRef, sinceBase, statusArguments, withChangedContent,
+	type FileChange, MAX_DIFF_LINES, baseName, baseContentArguments, baseNamesArguments, commitArguments, diffArguments, filePathIn, parseDiff, parseNameStatus, parseNumstat, parseNumstatPaths, parseStatus, countAddedLines, uncommittedContentArguments, withLineCounts, readDiffOutput, relativePathProblem, savedBaseRef, sinceBase, statusArguments, withChangedContent,
 } from "../src/shared/file-changes";
 
 /** Every diff of tracked files leaves the index alone (see `NO_INDEX_REFRESH`). */
@@ -10,9 +10,26 @@ const noRefresh = ["-c", "diff.autoRefreshIndex=false"];
 const status = (...records: string[]) => records.map(record => `${record}\0`).join("");
 const HASH = "587be6b4c3f93f93c489c0111bba5596147a26cb";
 const ZERO = "0000000000000000000000000000000000000000";
+/** What names a change, without its counts and version. */
+const identity = (files: readonly FileChange[]) => files.map(({ area, kind, path, previousPath }) => ({ area, kind, path, previousPath }));
 const ordinary = (xy: string, path: string) => `1 ${xy} N... 100644 100644 100644 ${HASH} ${HASH} ${path}`;
 
 describe("parseStatus", () => {
+	test("starts each change's version with the modes and objects Git compares for it", () => {
+		const other = "1111111111111111111111111111111111111111";
+		const output = status(
+			`1 MM N... 100644 100644 100644 ${HASH} ${other} both.txt`,
+			`u UU N... 100644 100644 100644 100644 ${HASH} ${other} ${ZERO} c.txt`,
+			"? new.txt",
+		);
+		expect(parseStatus(output).map(file => [file.area, file.version, file.added, file.removed])).toEqual([
+			["staged", `100644 ${HASH} 100644 ${other}`, null, null],
+			["unstaged", `100644 ${other}`, null, null],
+			["conflicted", `100644 100644 100644 100644 ${HASH} ${other} ${ZERO}`, null, null],
+			["unstaged", "", null, null],
+		]);
+	});
+
 	test("reads each kind of change into its area", () => {
 		const output = status(
 			ordinary(".M", "keep.txt"),
@@ -27,7 +44,7 @@ describe("parseStatus", () => {
 			"? d/new file.txt",
 			"! ignored.log",
 		);
-		expect(parseStatus(output)).toEqual<FileChange[]>([
+		expect(identity(parseStatus(output))).toEqual([
 			{ area: "unstaged", kind: "modified", path: "keep.txt", previousPath: null },
 			{ area: "staged", kind: "modified", path: "staged.txt", previousPath: null },
 			{ area: "staged", kind: "added", path: "added.txt", previousPath: null },
@@ -42,21 +59,21 @@ describe("parseStatus", () => {
 	});
 
 	test("lists a file staged and edited again once in each area", () => {
-		expect(parseStatus(status(`1 AM N... 000000 100644 100644 ${ZERO} ${HASH} staged.txt`))).toEqual([
+		expect(identity(parseStatus(status(`1 AM N... 000000 100644 100644 ${ZERO} ${HASH} staged.txt`)))).toEqual([
 			{ area: "staged", kind: "added", path: "staged.txt", previousPath: null },
 			{ area: "unstaged", kind: "modified", path: "staged.txt", previousPath: null },
 		]);
 	});
 
 	test("keeps the original path only with the staged rename, not with an edit after it", () => {
-		expect(parseStatus(status(`2 RM N... 100644 100644 100644 ${HASH} ${HASH} R90 b.txt`, "a.txt"))).toEqual([
+		expect(identity(parseStatus(status(`2 RM N... 100644 100644 100644 ${HASH} ${HASH} R90 b.txt`, "a.txt")))).toEqual([
 			{ area: "staged", kind: "renamed", path: "b.txt", previousPath: "a.txt" },
 			{ area: "unstaged", kind: "modified", path: "b.txt", previousPath: null },
 		]);
 	});
 
 	test("reads a rename in the work tree of a file added with intent to add", () => {
-		expect(parseStatus(status(`2 .R N... 100644 100644 100644 ${HASH} ${HASH} R100 moved.txt`, "intent.txt"))).toEqual([
+		expect(identity(parseStatus(status(`2 .R N... 100644 100644 100644 ${HASH} ${HASH} R100 moved.txt`, "intent.txt")))).toEqual([
 			{ area: "unstaged", kind: "renamed", path: "moved.txt", previousPath: "intent.txt" },
 		]);
 	});
@@ -67,7 +84,7 @@ describe("parseStatus", () => {
 	});
 
 	test("reads a submodule entry like any other file", () => {
-		expect(parseStatus(status(`1 .M SC.. 160000 160000 160000 ${HASH} ${HASH} vendor/lib`))).toEqual([
+		expect(identity(parseStatus(status(`1 .M SC.. 160000 160000 160000 ${HASH} ${HASH} vendor/lib`)))).toEqual([
 			{ area: "unstaged", kind: "modified", path: "vendor/lib", previousPath: null },
 		]);
 	});
@@ -78,8 +95,8 @@ describe("parseStatus", () => {
 
 	test("drops a record that was cut off, and a rename that lost its original path", () => {
 		const whole = status(ordinary(".M", "a.txt"), `2 R. N... 100644 100644 100644 ${HASH} ${HASH} R100 b.txt`, "old.txt");
-		expect(parseStatus(whole.slice(0, whole.length - 4))).toEqual([{ area: "unstaged", kind: "modified", path: "a.txt", previousPath: null }]);
-		expect(parseStatus(status(ordinary(".M", "a.txt")) + "1 .M N... 1006")).toEqual([{ area: "unstaged", kind: "modified", path: "a.txt", previousPath: null }]);
+		expect(identity(parseStatus(whole.slice(0, whole.length - 4)))).toEqual([{ area: "unstaged", kind: "modified", path: "a.txt", previousPath: null }]);
+		expect(identity(parseStatus(status(ordinary(".M", "a.txt")) + "1 .M N... 1006"))).toEqual([{ area: "unstaged", kind: "modified", path: "a.txt", previousPath: null }]);
 	});
 
 	test("skips records that do not fit", () => {
@@ -94,7 +111,7 @@ describe("statusArguments and diffArguments", () => {
 	});
 
 	const plain = ["--no-color", "--no-ext-diff", "--no-textconv"];
-	const file = (area: FileChange["area"], kind: FileChange["kind"], previousPath: string | null = null): FileChange => ({ area, kind, path: "-p.txt", previousPath });
+	const file = (area: FileChange["area"], kind: FileChange["kind"], previousPath: string | null = null): FileChange => ({ area, kind, path: "-p.txt", previousPath, added: null, removed: null, version: "" });
 
 	test("compare the index with the last commit for staged changes, and the files with the index otherwise", () => {
 		expect(diffArguments(file("staged", "modified"))).toEqual({ args: [...noRefresh, "--literal-pathspecs", "diff", ...plain, "--cached", "--", "-p.txt"], differencesExit: false });
@@ -238,41 +255,41 @@ describe("comparing with the base", () => {
 	test("parseNameStatus reads each kind, renames and copies with both paths", () => {
 		const output = names("M", "keep.txt", "A", "new.txt", "D", "gone.txt", "T", "lnk", "R087", "old name.txt", "new name.txt", "C075", "source.txt", "copy.txt");
 		expect(parseNameStatus(output)).toEqual<FileChange[]>([
-			{ area: "base", kind: "modified", path: "keep.txt", previousPath: null },
-			{ area: "base", kind: "added", path: "new.txt", previousPath: null },
-			{ area: "base", kind: "deleted", path: "gone.txt", previousPath: null },
-			{ area: "base", kind: "type-changed", path: "lnk", previousPath: null },
-			{ area: "base", kind: "renamed", path: "new name.txt", previousPath: "old name.txt" },
-			{ area: "base", kind: "copied", path: "copy.txt", previousPath: "source.txt" },
+			{ area: "base", kind: "modified", path: "keep.txt", previousPath: null, added: null, removed: null, version: "" },
+			{ area: "base", kind: "added", path: "new.txt", previousPath: null, added: null, removed: null, version: "" },
+			{ area: "base", kind: "deleted", path: "gone.txt", previousPath: null, added: null, removed: null, version: "" },
+			{ area: "base", kind: "type-changed", path: "lnk", previousPath: null, added: null, removed: null, version: "" },
+			{ area: "base", kind: "renamed", path: "new name.txt", previousPath: "old name.txt", added: null, removed: null, version: "" },
+			{ area: "base", kind: "copied", path: "copy.txt", previousPath: "source.txt", added: null, removed: null, version: "" },
 		]);
 	});
 
 	test("parseNameStatus drops an unmerged entry, an unknown letter, and a record cut short", () => {
-		expect(parseNameStatus(names("U", "both.txt", "X", "odd.txt", "M", "kept.txt"))).toEqual([{ area: "base", kind: "modified", path: "kept.txt", previousPath: null }]);
+		expect(parseNameStatus(names("U", "both.txt", "X", "odd.txt", "M", "kept.txt"))).toEqual([{ area: "base", kind: "modified", path: "kept.txt", previousPath: null, added: null, removed: null, version: "" }]);
 		// Cut inside a rename: the new path never came.
-		expect(parseNameStatus(`${names("M", "a.txt", "R100", "old.txt")}new`)).toEqual([{ area: "base", kind: "modified", path: "a.txt", previousPath: null }]);
+		expect(parseNameStatus(`${names("M", "a.txt", "R100", "old.txt")}new`)).toEqual([{ area: "base", kind: "modified", path: "a.txt", previousPath: null, added: null, removed: null, version: "" }]);
 		expect(parseNameStatus("M\0a.t")).toEqual([]);
 		expect(parseNameStatus("")).toEqual([]);
 	});
 
 	test("sinceBase keeps conflicts from the status, the base diff for the rest, and untracked files on their own", () => {
 		const status: FileChange[] = [
-			{ area: "conflicted", kind: "conflicted", path: "both.txt", previousPath: null },
-			{ area: "staged", kind: "modified", path: "a.txt", previousPath: null },
-			{ area: "unstaged", kind: "untracked", path: "a.txt", previousPath: null },
-			{ area: "unstaged", kind: "untracked", path: "new.txt", previousPath: null },
+			{ area: "conflicted", kind: "conflicted", path: "both.txt", previousPath: null, added: null, removed: null, version: "" },
+			{ area: "staged", kind: "modified", path: "a.txt", previousPath: null, added: null, removed: null, version: "" },
+			{ area: "unstaged", kind: "untracked", path: "a.txt", previousPath: null, added: null, removed: null, version: "" },
+			{ area: "unstaged", kind: "untracked", path: "new.txt", previousPath: null, added: null, removed: null, version: "" },
 		];
 		const since: FileChange[] = [
-			{ area: "base", kind: "modified", path: "both.txt", previousPath: null },
-			{ area: "base", kind: "deleted", path: "a.txt", previousPath: null },
-			{ area: "base", kind: "modified", path: "committed.txt", previousPath: null },
+			{ area: "base", kind: "modified", path: "both.txt", previousPath: null, added: null, removed: null, version: "" },
+			{ area: "base", kind: "deleted", path: "a.txt", previousPath: null, added: null, removed: null, version: "" },
+			{ area: "base", kind: "modified", path: "committed.txt", previousPath: null, added: null, removed: null, version: "" },
 		];
 		expect(sinceBase(status, since)).toEqual<FileChange[]>([
-			{ area: "conflicted", kind: "conflicted", path: "both.txt", previousPath: null },
-			{ area: "base", kind: "deleted", path: "a.txt", previousPath: null },
-			{ area: "base", kind: "modified", path: "committed.txt", previousPath: null },
-			{ area: "untracked", kind: "untracked", path: "a.txt", previousPath: null },
-			{ area: "untracked", kind: "untracked", path: "new.txt", previousPath: null },
+			{ area: "conflicted", kind: "conflicted", path: "both.txt", previousPath: null, added: null, removed: null, version: "" },
+			{ area: "base", kind: "deleted", path: "a.txt", previousPath: null, added: null, removed: null, version: "" },
+			{ area: "base", kind: "modified", path: "committed.txt", previousPath: null, added: null, removed: null, version: "" },
+			{ area: "untracked", kind: "untracked", path: "a.txt", previousPath: null, added: null, removed: null, version: "" },
+			{ area: "untracked", kind: "untracked", path: "new.txt", previousPath: null, added: null, removed: null, version: "" },
 		]);
 	});
 
@@ -284,10 +301,46 @@ describe("comparing with the base", () => {
 		expect([...parseNumstatPaths("")]).toEqual([]);
 	});
 
+	test("parseNumstat reads each path's counts, none for a binary file, and a rename's counts under where it went", () => {
+		const output = "12\t3\tedited.txt\0-\t-\timage.png\x002\t1\t\0old.txt\0new.txt\x000\t1\ttab\tin name.txt\0";
+		expect([...parseNumstat(output)]).toEqual([
+			["edited.txt", { added: 12, removed: 3 }],
+			["image.png", { added: null, removed: null }],
+			["new.txt", { added: 2, removed: 1 }],
+			["tab\tin name.txt", { added: 0, removed: 1 }],
+		]);
+		expect([...parseNumstat("1\t0\ta.txt\0" + "2\t0\tcut")]).toEqual([["a.txt", { added: 1, removed: 0 }]]);
+	});
+
+	test("withLineCounts gives each file the counts found for it, and keeps null where none were", () => {
+		const files: FileChange[] = [
+			{ area: "staged", kind: "modified", path: "a.txt", previousPath: null, added: null, removed: null, version: "v" },
+			{ area: "unstaged", kind: "modified", path: "a.txt", previousPath: null, added: null, removed: null, version: "w" },
+		];
+		const counted = withLineCounts(files, file => (file.area === "staged" ? { added: 4, removed: 2 } : undefined));
+		expect(counted.map(file => [file.area, file.added, file.removed, file.version])).toEqual([["staged", 4, 2, "v"], ["unstaged", null, null, "w"]]);
+	});
+
+	test("countAddedLines counts lines as Git does for a new file, and none for binary bytes", () => {
+		const bytes = (text: string) => new TextEncoder().encode(text);
+		expect(countAddedLines(bytes(""))).toEqual({ added: 0, removed: 0 });
+		expect(countAddedLines(bytes("one\ntwo\n"))).toEqual({ added: 2, removed: 0 });
+		expect(countAddedLines(bytes("one\ntwo"))).toEqual({ added: 2, removed: 0 });
+		expect(countAddedLines(bytes("\n\n"))).toEqual({ added: 2, removed: 0 });
+		expect(countAddedLines(bytes("a\r\nb\r\n"))).toEqual({ added: 2, removed: 0 });
+		expect(countAddedLines(new Uint8Array([65, 0, 10]))).toEqual({ added: null, removed: null });
+	});
+
+	test("uncommittedContentArguments counts as the diffs do, staged or on disk, for literal paths", () => {
+		const plain = ["--no-color", "--no-ext-diff", "--no-textconv"];
+		expect(uncommittedContentArguments(true)).toEqual([...noRefresh, "--literal-pathspecs", "diff", ...plain, "--numstat", "-z", "-M", "--cached", "--"]);
+		expect(uncommittedContentArguments(false, ["-a.txt"])).toEqual([...noRefresh, "--literal-pathspecs", "diff", ...plain, "--numstat", "-z", "-M", "--", "-a.txt"]);
+	});
+
 	test("withChangedContent leaves out files whose content did not change, unless the counts were cut short", () => {
 		const names: FileChange[] = [
-			{ area: "base", kind: "modified", path: "touched.txt", previousPath: null },
-			{ area: "base", kind: "renamed", path: "new.txt", previousPath: "old.txt" },
+			{ area: "base", kind: "modified", path: "touched.txt", previousPath: null, added: null, removed: null, version: "" },
+			{ area: "base", kind: "renamed", path: "new.txt", previousPath: "old.txt", added: null, removed: null, version: "" },
 		];
 		expect(withChangedContent(names, new Set(["new.txt"]))).toEqual([names[1]!]);
 		expect(withChangedContent(names, null)).toEqual(names);
@@ -296,16 +349,16 @@ describe("comparing with the base", () => {
 	test("the base diff names the commit, literal paths, and plain output", () => {
 		expect(baseNamesArguments(COMMIT)).toEqual([...noRefresh, "--literal-pathspecs", "diff", "--no-color", "--no-ext-diff", "--name-status", "-z", "-M", COMMIT, "--"]);
 		expect(baseNamesArguments(COMMIT, ["a b.txt"])).toEqual([...noRefresh, "--literal-pathspecs", "diff", "--no-color", "--no-ext-diff", "--name-status", "-z", "-M", COMMIT, "--", "a b.txt"]);
-		const renamed: FileChange = { area: "base", kind: "renamed", path: "new.txt", previousPath: "old.txt" };
+		const renamed: FileChange = { area: "base", kind: "renamed", path: "new.txt", previousPath: "old.txt", added: null, removed: null, version: "" };
 		expect(baseContentArguments(COMMIT, ["a b.txt"])).toEqual([...noRefresh, "--literal-pathspecs", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--numstat", "-z", "-M", COMMIT, "--", "a b.txt"]);
 		expect(diffArguments(renamed, COMMIT)).toEqual({ args: [...noRefresh, "--literal-pathspecs", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "-M", COMMIT, "--", "old.txt", "new.txt"], differencesExit: false });
-		const untracked: FileChange = { area: "untracked", kind: "untracked", path: "n.txt", previousPath: null };
+		const untracked: FileChange = { area: "untracked", kind: "untracked", path: "n.txt", previousPath: null, added: null, removed: null, version: "" };
 		expect(diffArguments(untracked, COMMIT).args).toEqual(["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--no-index", "--", "/dev/null", "n.txt"]);
 	});
 
 	test("a base diff needs a commit", () => {
-		expect(() => diffArguments({ area: "base", kind: "modified", path: "a.txt", previousPath: null })).toThrow();
-		expect(() => diffArguments({ area: "base", kind: "modified", path: "a.txt", previousPath: null }, "--output=x")).toThrow();
+		expect(() => diffArguments({ area: "base", kind: "modified", path: "a.txt", previousPath: null, added: null, removed: null, version: "" })).toThrow();
+		expect(() => diffArguments({ area: "base", kind: "modified", path: "a.txt", previousPath: null, added: null, removed: null, version: "" }, "--output=x")).toThrow();
 	});
 
 	test("savedBaseRef takes only an assigned ref under refs/, and says why otherwise", () => {

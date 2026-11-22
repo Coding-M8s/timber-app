@@ -3320,6 +3320,32 @@ discards, or commits. Comparing against a backup is a later step.
   --no-ext-diff --no-textconv`, so the person's diff configuration cannot
   start a program or change the text, and with `LC_ALL=C`, so Git's "Binary
   files ... differ" is in English for the parser.
+- **Line counts.** Each `FileChange` has `added` and `removed`, as `git
+  diff --numstat -z -M` counts them with the diff's own options
+  (`uncommittedContentArguments`): `--cached` for the staged group, plain
+  for the unstaged one, and, comparing with the base, the numstat that
+  already checks the names. A rename's counts are under where it went
+  (`parseNumstat`). An untracked file is read from disk and counted as Git
+  counts a new file (`countAddedLines`), up to 16 MiB each and 64 MiB in
+  all for one list, a link as the one
+  line of its target, never followed; a NUL in its first 8,000 bytes, as
+  Git checks, makes it binary. A binary file, a conflict, and a numstat
+  that failed or was cut short give null counts, never a failed list.
+  Only the files that are listed (at most 5,000) are counted and looked at
+  on disk.
+  Tests on real repositories check that every listed file's counts are
+  its diff's added and removed lines and that reading them changes no
+  file, ref, or index byte.
+- **Versions.** Each `FileChange` also has a `version`, never shown: a hash
+  of what its diff is made from, so the window can tell that a file marked
+  Viewed changed again even when its counts did not. `parseStatus` starts it
+  with the modes and objects `git status` reports (the last commit's and
+  the index's for a staged change, the index's for an unstaged one, the
+  stages' for a conflict), and the main process adds the branch point for
+  the base and, for every diff that reads the file on disk, its size and
+  modification time from `lstat`, as the stamp of the periodic check does.
+  Touching a file without changing it gives a new version, which only
+  clears a Viewed mark.
 - **Large and binary.** Git's output is read up to 512 KiB, and Git is
   stopped beyond that. A diff of more than 5,000 lines is not drawn. Either
   way, and for a binary file, a notice shows instead, with the Git command
@@ -3369,10 +3395,13 @@ discards, or commits. Comparing against a backup is a later step.
   `name @ hash`. Review notes taken under the old base stay, and are marked
   outdated when their lines are no longer in the diff.
 - **In the window.** `src/mainview/components/ChangesList.tsx` draws the
-  view: Compare with, the base, the counts and Refresh, the file list, and
-  the Review section (see [review notes](#review-notes)). Each file shows
-  its name, its folder, and Git's letter (M, A, D, R, C, T, U, and ! for a
-  conflict). The arrows, Home, and End move the keyboard through the list
+  view: Compare with, the base, "Filter files", the counts with the total
+  lines and Refresh, the file list, and the Review section (see
+  [review notes](#review-notes)). Each file shows its name, its folder, a
+  check when it is marked Viewed, its `+n -m`, and Git's letter (M, A, D,
+  R, C, T, U, and ! for a conflict). The filter is `changeFilters` in the
+  store, by worktree, and `filterFiles` in `src/mainview/changes-format.ts`
+  matches paths ignoring case. The arrows, Home, and End move the keyboard through the list
   without opening anything; a click or Enter opens the file's diff
   (`selectChangedFile`). Its words and Ctrl+Shift+G are in
   `src/mainview/changes-panel-format.ts`, and the rest of the side panel is
@@ -3394,8 +3423,36 @@ discards, or commits. Comparing against a backup is a later step.
   and outdated notes. "Open in editor" opens the file, and is not offered
   for a deleted one. Each line is drawn in two parts, `lineTone` for its
   background and `LineContent` for its text, and `DiffView` takes how the
-  lines are laid out as `layout` ("unified" only so far), so colors, a side
-  by side layout, and more lines around a hunk plug in there.
+  lines are laid out as `layout` ("unified" only so far), so colors and a
+  side by side layout plug in there.
+- **Previous, next, and Viewed.** `stepChangedFile` opens the file before
+  or after the diff tab's, among the files the list shows through its
+  filter, going round (`steppedFile`); the title line's buttons and
+  Alt+Up and Alt+Down (`takesFileStepKey`, not from a field that edits
+  text) call it. `viewed` in the store keeps, by worktree, each file marked
+  Viewed by its comparison and file (`viewedKey`) with the version it had;
+  `fileViewed` is true only while the listed version is the same, and a
+  read of the list drops the marks whose file left it or has a new version.
+  Kept in the window only.
+- **Unchanged lines.** `src/mainview/diff-unchanged.ts` works out, from
+  Git's hunk lines, the unchanged lines before each hunk, and fills them
+  from the file on disk, since unchanged lines are the same on both sides.
+  That holds only where the file on disk is the diff's new side
+  (`unchangedReadable`): not for a deletion, a conflict, a type change, an
+  untracked file, or a staged change whose file also has unstaged edits.
+  For those, the store reads the file with `readWorktreeFile` beside the
+  diff and keeps its lines in `changes.unchanged` only when every new-side
+  line of the diff is there at its number (`linesMatchDiff`), so a file
+  that changed between the two reads fills nothing until the next read.
+  `shownSections` gives the diff a slot before each hunk, empty or not, so
+  opening a gap never moves the index of a hunk or a line, and a note being
+  written keeps its place. A note can be on an unchanged line: outdated
+  notes are judged against the diff with every gap filled
+  (`fillUnchanged`), a read that could not check the file judges none, and
+  a gap that holds a noted line shows by itself, so its reference can mark
+  it. Send review and Copy review read each noted file again the same way
+  (`readJudgedDiff` in the store), so a note on an unchanged line is not
+  sent as outdated.
 - **Refreshing.** `ChangesReader` reads the list while the Changes view
   shows or the diff tab does (`changesWanted`), and again whenever the
   worktree's status on screen is read again, which is whenever its

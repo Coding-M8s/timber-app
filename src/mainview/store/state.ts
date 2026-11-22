@@ -140,6 +140,20 @@ export interface ChangesView {
 	selected: FileChangeTarget | null;
 	/** The diff of `selected`. Null while the first read of it runs. A newer read replaces it when it answers. */
 	diff: FileDiffResult | null;
+	/**
+	 * The lines of `selected` on disk, read with its diff, when they are the
+	 * new side of that diff: the unchanged lines between its hunks come from
+	 * them (see ../diff-unchanged.ts). Null when they cannot be, or were not.
+	 */
+	unchanged: readonly string[] | null;
+}
+
+/** How a viewed file is kept: its comparison and the file. */
+export const viewedKey = (comparison: Comparison, file: FileChangeTarget) => `${comparison}\0${file.area}\0${file.path}\0${file.previousPath ?? ""}`;
+
+/** Whether a listed file is marked Viewed in its worktree, and has not changed since. */
+export function fileViewed(state: Pick<AppState, "viewed">, worktree: string, comparison: Comparison | null, file: FileChange): boolean {
+	return comparison !== null && state.viewed[worktree]?.[viewedKey(comparison, file)] === file.version;
 }
 
 /** A worktree's diff tab: the changed file whose diff it shows, and the tab to go back to when it closes. */
@@ -481,6 +495,14 @@ export interface AppState {
 	 */
 	diffs: Readonly<Record<string, DiffTab>>;
 	/**
+	 * The changed files marked Viewed in each worktree, by its identity: each
+	 * by `viewedKey`, with the version the file had when it was marked. A file
+	 * whose version changed since is no longer viewed. Kept in the window only.
+	 */
+	viewed: Readonly<Record<string, Readonly<Record<string, string>>>>;
+	/** What is typed in the Changes view's "Filter files" box, by worktree. Kept in the window only. */
+	changeFilters: Readonly<Record<string, string>>;
+	/**
 	 * The file open in the File tab of each worktree, by its identity. A
 	 * worktree with none has no File tab. Kept in the window only, never
 	 * saved, and forgotten when the worktree leaves the list.
@@ -639,6 +661,8 @@ export const initialState: AppState = {
 	tab: "workspace",
 	changes: null,
 	diffs: {},
+	viewed: {},
+	changeFilters: {},
 	files: {},
 	reviews: {},
 	noteInView: null,

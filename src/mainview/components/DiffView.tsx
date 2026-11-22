@@ -1,6 +1,6 @@
-import { Fragment, type PointerEvent, type ReactNode, useEffect, useRef, useState } from "react";
+import { Fragment, type PointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Comparison, DiffLine, DiffSection, FileChange, FileChangeTarget, FileDiffResult } from "../../shared/file-changes";
+import type { Comparison, DiffLine, FileChange, FileChangeTarget, FileDiffResult } from "../../shared/file-changes";
 import { NOTE_LINE_LIMIT, type NoteDraft, type ReviewNote, chooseNoteLine, notableLine, sameNotedLine } from "../../shared/review";
 import { InlineNote, NoteForm } from "./ReviewNotes";
 import { type DragStop, describeDraggedRange, dragNoteEnd, rowAtY } from "../review-drag";
@@ -15,6 +15,9 @@ import { type DiffMarks, DiffText, useDiffMarks } from "./DiffText";
 import type { CodeSpan } from "../diff-highlight";
 import type { WordRange } from "../diff-words";
 import { KindLetter, fileKey } from "./KindLetter";
+import { LineCounts } from "./ChangesList";
+import { type ShownSection, type UnchangedGap, describeUnchangedLines, gapHoldsLine, shownSections } from "../diff-unchanged";
+import { speakLineCounts } from "../changes-format";
 
 /*
  * The diff of one changed file, with review notes on its lines: a click or
@@ -87,6 +90,8 @@ interface Noting {
 	cancelDrag(): void;
 	/** Whether to ignore this click, since letting go of a drag already started the note. */
 	afterDrag(): boolean;
+	/** Show the unchanged lines from new line `from`, in the slot `hunk` of `section`, and give the keyboard to the first of them. */
+	expand(from: number, section: number, hunk: number): void;
 }
 
 /** A range the `+` of a line is dragged over, in one hunk of one file and comparison, with the label beside the pointer. */
@@ -126,8 +131,9 @@ function lineWords(line: DiffLine): string {
 }
 
 /** The next or previous line number button of the diff, for the arrows. */
-function stepLineTarget(from: HTMLElement, key: string): boolean {
-	if (key !== "ArrowDown" && key !== "ArrowUp") return false;
+function stepLineTarget(from: HTMLElement, key: string, altKey: boolean): boolean {
+	// Alt+Up and Alt+Down open the previous and next file instead.
+	if ((key !== "ArrowDown" && key !== "ArrowUp") || altKey) return false;
 	const all = [...(from.closest(".diff-body")?.querySelectorAll<HTMLButtonElement>(".diff-note-target") ?? [])];
 	const at = all.indexOf(from as HTMLButtonElement);
 	const next = all[at + (key === "ArrowDown" ? 1 : -1)];
@@ -135,7 +141,19 @@ function stepLineTarget(from: HTMLElement, key: string): boolean {
 	return true;
 }
 
-function Section({ section, index, noting, marks }: { section: DiffSection; index: number; noting: Noting; marks: DiffMarks }) {
+/** The row that shows the unchanged lines before a hunk. */
+function UnchangedRow({ count, onExpand }: { count: number; onExpand: () => void }) {
+	return (
+		<button type="button" className="diff-gap" onClick={onExpand}>
+			<svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+				<path d="m7 15 5 5 5-5M7 9l5-5 5 5" />
+			</svg>
+			{describeUnchangedLines(count)}
+		</button>
+	);
+}
+
+function Section({ section, index, noting, marks }: { section: ShownSection; index: number; noting: Noting; marks: DiffMarks }) {
 	const store = useStore();
 	const { draft } = noting;
 	return (
@@ -152,9 +170,13 @@ function Section({ section, index, noting, marks }: { section: DiffSection; inde
 				const drag = noting.drag !== null && noting.drag.section === index && noting.drag.hunk === hunkIndex ? noting.drag : null;
 				const dragLow = drag === null ? -1 : Math.min(drag.anchor, drag.end);
 				const dragHigh = drag === null ? -1 : Math.max(drag.anchor, drag.end);
+				const gap = hunk.unchanged;
+				if (gap !== null && !gap.shown) return <UnchangedRow key={hunkIndex} count={gap.count} onExpand={() => noting.expand(gap.from, index, hunkIndex)} />;
+				// The slot of unchanged lines before a hunk, with nothing to show.
+				if (hunk.lines.length === 0 && hunk.header === "") return null;
 				return (
-					<div key={hunkIndex} className="diff-hunk" data-hunk={`${index}-${hunkIndex}`}>
-						<div className="diff-hunk-header">{hunk.header}</div>
+					<div key={hunkIndex} className={gap === null ? "diff-hunk" : "diff-hunk unchanged"} data-hunk={`${index}-${hunkIndex}`}>
+						{hunk.header !== "" && <div className="diff-hunk-header">{hunk.header}</div>}
 						{hunk.lines.map((line, lineIndex) => {
 							const notable = notableLine(line);
 							const stop = noting.tabStop;
@@ -188,7 +210,7 @@ function Section({ section, index, noting, marks }: { section: DiffSection; inde
 													noting.choose(index, hunk.lines, hunkIndex, lineIndex, event.shiftKey);
 												}}
 												onKeyDown={event => {
-													if (stepLineTarget(event.currentTarget, event.key)) event.preventDefault();
+													if (stepLineTarget(event.currentTarget, event.key, event.altKey)) event.preventDefault();
 													else if (event.key === "Enter" && event.shiftKey) {
 														event.preventDefault();
 														noting.choose(index, hunk.lines, hunkIndex, lineIndex, true);
@@ -235,11 +257,24 @@ function Section({ section, index, noting, marks }: { section: DiffSection; inde
 	);
 }
 
-/** A diff with no text, so its marks have nothing to color. */
-const NO_SECTIONS: readonly DiffSection[] = [];
+const NOTHING_OPENED: readonly number[] = [];
 
-function DiffBody({ file, result, commit, noting }: { file: FileChange; result: FileDiffResult | null; commit: string | null; noting: Noting }) {
-	const marks = useDiffMarks(file.path, result?.outcome === "read" && result.diff.kind === "text" ? result.diff.sections : NO_SECTIONS);
+/** A diff with no text, so its marks have nothing to color. */
+const NO_SECTIONS: readonly ShownSection[] = [];
+
+function DiffBody({ file, result, commit, noting, unchanged, gapShown }: {
+	file: FileChange;
+	result: FileDiffResult | null;
+	commit: string | null;
+	noting: Noting;
+	/** The file's lines on disk, when they are its diff's new side. */
+	unchanged: readonly string[] | null;
+	/** Whether the unchanged lines of a gap show. */
+	gapShown: (gap: UnchangedGap) => boolean;
+}) {
+	const diff = result?.outcome === "read" ? result.diff : null;
+	const sections = useMemo(() => (diff === null ? NO_SECTIONS : shownSections(diff, unchanged, gapShown)), [diff, unchanged, gapShown]);
+	const marks = useDiffMarks(file.path, sections);
 	if (result === null) return <p className="diff-reading" role="status">Reading the diff</p>;
 	if (result.outcome !== "read") {
 		return (
@@ -251,7 +286,6 @@ function DiffBody({ file, result, commit, noting }: { file: FileChange; result: 
 	}
 	const shown = result.file ?? file;
 	const notice = describeDiffNotice(result.diff, shown, commit);
-	const sections = result.diff.kind === "text" ? result.diff.sections : [];
 	let tabStop: Noting["tabStop"] = null;
 	for (const [section, part] of sections.entries()) {
 		for (const [hunk, { lines }] of part.hunks.entries()) {
@@ -268,7 +302,7 @@ function DiffBody({ file, result, commit, noting }: { file: FileChange; result: 
 					<p className="empty-text">{notice.text}</p>
 				</div>
 			)}
-			{result.diff.kind === "text" && result.diff.sections.map((section, index) => <Section key={index} section={section} index={index} noting={withStop} marks={marks} />)}
+			{sections.map((section, index) => <Section key={index} section={section} index={index} noting={withStop} marks={marks} />)}
 		</>
 	);
 }
@@ -292,16 +326,19 @@ function OpenFileButton({ repository, worktree, file }: { repository: string; wo
 
 /**
  * The diff of a changed file of `view`, under a line that names it, with
- * View file and Open in editor. `review` goes in that line, before them:
- * the diff tab's Review button, when it shows.
+ * its line counts, View file and Open in editor. `steps` goes first in that
+ * line: the previous and next file buttons. `review` and `viewed` go before
+ * View file: the diff tab's Review button, when it shows, and its Viewed box.
  */
-export function DiffView({ repository, worktree, view, file, layout, review, onClose }: {
+export function DiffView({ repository, worktree, view, file, layout, steps, review, viewed, onClose }: {
 	repository: string;
 	worktree: Worktree;
 	view: ChangesView;
 	file: FileChange;
 	layout: DiffLayout;
+	steps: ReactNode;
 	review: ReactNode;
+	viewed: ReactNode;
 	/** Close the diff, from the Close button at the end of its title line. */
 	onClose: () => void;
 }) {
@@ -324,6 +361,10 @@ export function DiffView({ repository, worktree, view, file, layout, review, onC
 	// Set when letting go of a drag started a note, or Escape let go of it, so the click that may follow neither starts another nor makes it one line again.
 	const dragged = useRef(false);
 	const dragActive = drag !== null;
+	// The gaps of unchanged lines shown in this file and comparison, by their first new line. Another file starts with none.
+	const here = `${view.compared ?? ""}\0${fileKey(file)}`;
+	const [opened, setOpened] = useState<{ key: string; from: readonly number[] }>({ key: here, from: [] });
+	const openedHere = opened.key === here ? opened.from : NOTHING_OPENED;
 
 	/** Put the drag's label beside the pointer. Moved here, not through React, so a long diff is not drawn again on every move. */
 	function placeDragLabel() {
@@ -403,11 +444,20 @@ export function DiffView({ repository, worktree, view, file, layout, review, onC
 	// A deleted file is not on disk, so there is nothing to open.
 	const onDisk = file.kind !== "deleted";
 	const comparison = view.compared ?? "uncommitted";
+	// A gap that holds a noted line shows by itself, so the note shows under its line and its reference can mark it.
+	const fileNotes = (state.reviews[worktree.id] ?? []).filter(note => note.comparison === comparison && sameFileChange(note.file, file));
+	const notedLines = fileNotes.flatMap(note => note.lines.map(line => line.newLine).filter((number): number is number => number !== null));
+	const openKey = `${openedHere.join(",")}|${notedLines.join(",")}`;
+	const gapShown = useMemo(() => {
+		const open = new Set(openedHere);
+		return (gap: UnchangedGap) => open.has(gap.from) || gapHoldsLine(gap, notedLines);
+		// The key holds both lists, so the check changes only when they do.
+	}, [openKey]);
 	const noting: Noting = {
 		worktree: worktree.id,
 		comparison,
 		file,
-		notes: (state.reviews[worktree.id] ?? []).filter(note => note.comparison === comparison && sameFileChange(note.file, file)),
+		notes: fileNotes,
 		shown: inViewNote !== null && inViewNote.comparison === comparison && sameFileChange(inViewNote.file, file) ? inViewNote : null,
 		draft: draft !== null && draft.key === fileKey(file) && draft.comparison === comparison ? draft : null,
 		tabStop: null,
@@ -462,17 +512,27 @@ export function DiffView({ repository, worktree, view, file, layout, review, onC
 			dragged.current = false;
 			return true;
 		},
+		expand(from, section, hunk) {
+			setOpened({ key: here, from: [...openedHere, from] });
+			// The row goes; the keyboard goes to the first line it showed.
+			setTimeout(() => body.current?.querySelector<HTMLElement>(`[data-line="${lineTarget(section, hunk, 0)}"]`)?.focus());
+		},
 	};
+	const counts = speakLineCounts(file);
 	return (
 		<section className="changes-diff" data-layout={layout} aria-label={`Diff of ${file.path}`}>
 			<div className="diff-title">
+				{steps}
 				<KindLetter file={file} />
 				<span className="diff-path" title={file.path}>
 					{file.previousPath !== null && <span className="diff-previous">{file.previousPath} → </span>}
 					{file.path}
 				</span>
 				<span className="diff-area">{describeFileArea(file)}</span>
+				<LineCounts file={file} />
+				{counts !== "" && <span className="visually-hidden">{counts}</span>}
 				{review}
+				{viewed}
 				{onDisk && (
 					<button type="button" className="button quiet diff-editor" title={`Show ${file.path} as it is now, read-only`} onClick={() => store.openFile(worktree.id, file.path)}>
 						View file
@@ -489,7 +549,14 @@ export function DiffView({ repository, worktree, view, file, layout, review, onC
 				// A wheel turned while dragging moves the lines under a pointer that stands still.
 				onScroll={measureDrag}
 			>
-				<DiffBody file={file} result={view.diff} commit={view.compared === "base" && view.base?.usable ? view.base.commit : null} noting={noting} />
+				<DiffBody
+					file={file}
+					result={view.diff}
+					commit={view.compared === "base" && view.base?.usable ? view.base.commit : null}
+					noting={noting}
+					unchanged={view.unchanged}
+					gapShown={gapShown}
+				/>
 			</div>
 			{noting.drag?.moved === true && createPortal(
 				// Only for the eye: the note's field says the range once the pointer is let go.

@@ -49,7 +49,9 @@ async function uncommittedEngine() {
 	return engine;
 }
 
-const file = (area: FileChange["area"], kind: FileChange["kind"], path: string, previousPath: string | null = null): FileChange => ({ area, kind, path, previousPath });
+const file = (area: FileChange["area"], kind: FileChange["kind"], path: string, previousPath: string | null = null): FileChange => ({ area, kind, path, previousPath, added: null, removed: null, version: "" });
+/** A listed file as the engine answers it, whatever its counts and version. */
+const named = (area: FileChange["area"], kind: FileChange["kind"], path: string, previousPath: string | null = null) => ({ area, kind, path, previousPath });
 const mock = (change: FileChange, patch = samplePatch(change.path)): MockFileChange => ({ change, patch });
 
 describe("the store's Changes view", () => {
@@ -128,7 +130,7 @@ describe("the store's Changes view", () => {
 		await store.readChanges(TIMBER, FEATURE.id);
 		engine.failFileChanges("Git is busy");
 		await store.readChanges(TIMBER, FEATURE.id);
-		expect(store.getState().changes).toMatchObject({ problem: "Git is busy", files: [file("unstaged", "modified", "a.ts")] });
+		expect(store.getState().changes).toMatchObject({ problem: "Git is busy", files: [named("unstaged", "modified", "a.ts")] });
 		engine.failFileChanges(null);
 		await store.readChanges(TIMBER, FEATURE.id);
 		expect(store.getState().changes?.problem).toBeNull();
@@ -194,10 +196,10 @@ describe("the Changes tab", () => {
 	test("lists conflicts, staged, and unstaged files apart, each with its letter", async () => {
 		const markup = render(await gallery());
 		const titles = [...markup.matchAll(/<h3 class="change-group-title">([^<]+)<span class="change-group-count">(\d+)<\/span><\/h3>/g)].map(match => `${match[1]} ${match[2]}`);
-		expect(titles).toEqual(["Merge conflicts 1", "Staged 4", "Unstaged 12"]);
-		expect(markup).toContain("1 conflicted, 4 staged, 12 unstaged");
-		expect(markup).toContain('aria-label="src/tax/brackets.ts, Renamed from src/tax/bands.ts, Staged"');
-		expect(markup).toContain('aria-label="src/tax/zażółć.ts, Untracked, Unstaged"');
+		expect(titles).toEqual(["Merge conflicts 1", "Staged 4", "Unstaged 13"]);
+		expect(markup).toContain("1 conflicted, 4 staged, 13 unstaged");
+		expect(markup).toContain('aria-label="src/tax/brackets.ts, Renamed from src/tax/bands.ts, Staged, 1 line added, 1 removed"');
+		expect(markup).toContain('aria-label="src/tax/zażółć.ts, Untracked, Unstaged, 2 lines added, 0 removed"');
 		for (const letter of ["!", "M", "R", "A", "D", "T", "U"]) expect(markup).toContain(`aria-hidden="true">${letter}</span>`);
 		// Nothing is open yet: the first file listed is the only tab stop of the list, and none is marked.
 		expect(markup).not.toContain('class="change-file selected"');
@@ -223,8 +225,8 @@ describe("the Changes tab", () => {
 		const markup = render(store);
 		expect(markup).toContain('<div class="diff-hunk-header">@@ -1,6 +1,7 @@</div>');
 		// Each numbered line's numbers are a button that starts a review note on it.
-		expect(markup).toContain('<div class="diff-line removed notable"><button type="button" class="diff-note-target" tabindex="-1" data-line="0-0-2" aria-label="Add a note on removed line 3" title="Add a note. Drag the + over more lines of this hunk, or Shift+click one, for a range."><span class="diff-note-plus" aria-hidden="true">+</span><span class="diff-number">3</span><span class="diff-number"></span></button><span class="diff-marker" aria-hidden="true">-</span><span class="diff-text">');
-		expect(markup).toContain('<div class="diff-line added notable"><button type="button" class="diff-note-target" tabindex="-1" data-line="0-0-3" aria-label="Add a note on line 3" title="Add a note. Drag the + over more lines of this hunk, or Shift+click one, for a range."><span class="diff-note-plus" aria-hidden="true">+</span><span class="diff-number"></span><span class="diff-number">3</span></button><span class="diff-marker" aria-hidden="true">+</span><span class="diff-text">');
+		expect(markup).toContain('<div class="diff-line removed notable"><button type="button" class="diff-note-target" tabindex="-1" data-line="0-1-2" aria-label="Add a note on removed line 3" title="Add a note. Drag the + over more lines of this hunk, or Shift+click one, for a range."><span class="diff-note-plus" aria-hidden="true">+</span><span class="diff-number">3</span><span class="diff-number"></span></button><span class="diff-marker" aria-hidden="true">-</span><span class="diff-text">');
+		expect(markup).toContain('<div class="diff-line added notable"><button type="button" class="diff-note-target" tabindex="-1" data-line="0-1-3" aria-label="Add a note on line 3" title="Add a note. Drag the + over more lines of this hunk, or Shift+click one, for a range."><span class="diff-note-plus" aria-hidden="true">+</span><span class="diff-number"></span><span class="diff-number">3</span></button><span class="diff-marker" aria-hidden="true">+</span><span class="diff-text">');
 	});
 
 	test("colors a diff's code as the editor does, and marks the words that changed", async () => {
@@ -352,7 +354,7 @@ describe("refreshing the Changes tab", () => {
 		const settled = bar(markup);
 		expect(settled).not.toContain("changes-spinner");
 		expect(settled).toContain(QUIET);
-		expect(settled).toContain('<span class="changes-count" role="status">1 conflicted, 4 staged, 12 unstaged</span>');
+		expect(settled).toContain('<span class="changes-count" role="status">1 conflicted, 4 staged, 13 unstaged<span class="visually-hidden">, 6020 lines added, 11 removed</span></span>');
 		expect(settled).toMatch(/<button type="button" class="text-button" title="[^"]+">Refresh<\/button>/);
 		expect(markup).toContain('<div class="change-groups">');
 	});
@@ -363,7 +365,7 @@ describe("refreshing the Changes tab", () => {
 		const markup = render(store);
 		const busy = bar(markup);
 		expect(busy).toContain(SPINNER);
-		expect(busy).toContain("1 conflicted, 4 staged, 12 unstaged");
+		expect(busy).toContain("1 conflicted, 4 staged, 13 unstaged");
 		// One live region says it; the counts' own does not change.
 		expect(busy.split(REFRESHING_CHANGES)).toHaveLength(2);
 		expect(busy).toContain(ANNOUNCED);
@@ -534,7 +536,7 @@ describe("comparing with the base", () => {
 		await store.selectChangedFile(file("base", "modified", "committed.ts"));
 		await store.compareChanges("uncommitted");
 		// The diff tab showed a file of the other list, so it closed.
-		expect(store.getState().changes).toMatchObject({ compared: "uncommitted", files: [file("unstaged", "modified", "b.ts")], selected: null });
+		expect(store.getState().changes).toMatchObject({ compared: "uncommitted", files: [named("unstaged", "modified", "b.ts")], selected: null });
 		expect(store.getState().diffs).toEqual({});
 		expect(store.getState().layout.uncommittedChanges).toEqual([FEATURE.id]);
 		await settle();
@@ -572,9 +574,9 @@ describe("comparing with the base", () => {
 		await store.readChanges(repository.path, worktree.id);
 		const markup = render(store);
 		const titles = [...markup.matchAll(/<h3 class="change-group-title">([^<]+)<span class="change-group-count">(\d+)<\/span><\/h3>/g)].map(match => `${match[1]} ${match[2]}`);
-		expect(titles).toEqual(["Merge conflicts 1", "Changed 12", "Untracked 5"]);
+		expect(titles).toEqual(["Merge conflicts 1", "Changed 13", "Untracked 5"]);
 		expect(markup).toContain(`>origin/main @ ${MOCK_BRANCH_POINT.slice(0, 7)}</span>`);
-		expect(markup).toContain('aria-label="src/tax/report.ts, Modified, Changed"');
+		expect(markup).toContain('aria-label="src/tax/report.ts, Modified, Changed, 2 lines added, 1 removed"');
 		expect(markup).not.toContain("Base is not available");
 
 		await store.selectChangedFile(file("base", "modified", "src/generated/rows.ts"));

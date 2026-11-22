@@ -3,6 +3,8 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFileChanges } from "../src/bun/file-changes";
+import { createWorktreeFiles } from "../src/bun/worktree-files";
+import { fileLines, fillUnchanged, linesMatchDiff, shownSections } from "../src/mainview/diff-unchanged";
 import { type ChangeArea, type FileChange, type FileDiffResult, MAX_DIFF_BYTES, MAX_DIFF_LINES, parseDiff } from "../src/shared/file-changes";
 import type { Repository } from "../src/shared/model";
 import { windows } from "./support/runtime";
@@ -169,13 +171,100 @@ describe.skipIf(windows)("reading changes from real repositories", () => {
 
 		const conflict = await changes().read({ repository: primary, compare: "uncommitted", worktree: conflicted });
 		expect(conflict.outcome === "read" && asEntries(conflict.files)).toEqual(statusEntries(conflicted));
-		expect(conflict.outcome === "read" && conflict.files).toEqual([{ area: "conflicted", kind: "conflicted", path: "conflict.txt", previousPath: null }]);
+		expect(conflict.outcome === "read" && conflict.files).toEqual([{ area: "conflicted", kind: "conflicted", path: "conflict.txt", previousPath: null, added: null, removed: null, version: expect.any(String) }]);
 
 		// Every diff too, and then nothing at all may have changed.
 		for (const file of read.files) await diff(linked, file.area, file.path, file.previousPath);
 		await diff(conflicted, "conflicted", "conflict.txt");
 		expect([fingerprint(linked), fingerprint(conflicted), fingerprint(primary)]).toEqual(before);
 		expect(readFileSync(indexFile).equals(index)).toBe(true);
+	});
+
+	test("each file's line counts are its diff's added and removed lines, none for binary files, and reading them changes nothing", async () => {
+		const before = [fingerprint(linked), fingerprint(conflicted), fingerprint(primary)];
+		const read = await changes().read({ repository: primary, compare: "uncommitted", worktree: linked });
+		if (read.outcome !== "read") throw new Error(read.outcome);
+		const counts = Object.fromEntries(read.files.map(file => [`${file.area} ${file.path}`, [file.added, file.removed]]));
+		expect(counts).toEqual({
+			"unstaged keep.txt": [1, 1],
+			"staged staged.txt": [1, 0],
+			"unstaged staged.txt": [1, 0],
+			"unstaged gone.txt": [0, 1],
+			"staged removed.txt": [0, 1],
+			"staged new name.txt": [0, 0],
+			"unstaged b.bin": [null, null],
+			"unstaged star*.txt": [1, 1],
+			"unstaged star-other.txt": [1, 1],
+			"unstaged lnk": [1, 1],
+			"unstaged new folder/deeper/new file.txt": [2, 0],
+			"unstaged zażółć.txt": [1, 0],
+			"unstaged empty.txt": [0, 0],
+			"unstaged new.bin": [null, null],
+			"unstaged long.txt": [MAX_DIFF_LINES + 10, 0],
+			"unstaged huge.txt": [1, 0],
+		});
+		// The counts agree with every diff the tab draws.
+		for (const file of read.files) {
+			const answer = await diff(linked, file.area, file.path, file.previousPath);
+			if (answer.outcome !== "read" || answer.diff.kind !== "text") continue;
+			const all = answer.diff.sections.flatMap(section => section.hunks.flatMap(hunk => hunk.lines));
+			expect([file.path, file.added, file.removed]).toEqual([file.path, all.filter(line => line.kind === "added").length, all.filter(line => line.kind === "removed").length]);
+		}
+		const conflict = await changes().read({ repository: primary, compare: "uncommitted", worktree: conflicted });
+		expect(conflict.outcome === "read" && conflict.files.map(file => [file.added, file.removed])).toEqual([[null, null]]);
+		expect([fingerprint(linked), fingerprint(conflicted), fingerprint(primary)]).toEqual(before);
+	});
+
+	test("a file's version stays while nothing changes, and changes with an edit that keeps its counts", async () => {
+		const versionOf = async (area: ChangeArea, path: string) => {
+			const read = await changes().read({ repository: primary, compare: "uncommitted", worktree: linked });
+			return read.outcome === "read" ? read.files.find(file => file.area === area && file.path === path) : undefined;
+		};
+		const first = await versionOf("unstaged", "keep.txt");
+		const staged = await versionOf("staged", "staged.txt");
+		expect(first?.version).not.toBe("");
+		expect((await versionOf("unstaged", "keep.txt"))?.version).toBe(first!.version);
+		const text = readFileSync(join(linked, "keep.txt"), "utf8");
+		try {
+			writeFileSync(join(linked, "keep.txt"), "one\nTOO\nthree\n");
+			const edited = await versionOf("unstaged", "keep.txt");
+			expect([edited?.added, edited?.removed]).toEqual([first!.added, first!.removed]);
+			expect(edited?.version).not.toBe(first!.version);
+			// Editing the file on disk leaves the staged diff, and its version, as they were.
+			writeFileSync(join(linked, "staged.txt"), "base\nstaged\nedited once more\n");
+			expect((await versionOf("staged", "staged.txt"))?.version).toBe(staged!.version);
+		} finally {
+			writeFileSync(join(linked, "keep.txt"), text);
+			writeFileSync(join(linked, "staged.txt"), "base\nstaged\nthen edited\n");
+		}
+	});
+
+	test("the unchanged lines between hunks fill in from the file on disk, with Windows line endings and no line break at the end", async () => {
+		const folder = join(root, "spread");
+		git(root, "init", "--initial-branch=main", folder);
+		const old = Array.from({ length: 30 }, (_, index) => `line ${index + 1}`);
+		writeFileSync(join(folder, "crlf.txt"), old.join("\r\n"));
+		git(folder, "add", "--all");
+		git(folder, "commit", "-m", "Lines");
+		const now = old.map((line, index) => (index === 4 || index === 22 ? `${line} changed` : line));
+		writeFileSync(join(folder, "crlf.txt"), now.join("\r\n"));
+		const repository: Repository = { ...listed([folder]), path: folder };
+		const reader = createFileChanges({ findRepository: async path => (path === folder ? repository : null) });
+		const files = createWorktreeFiles({ findRepository: async path => (path === folder ? repository : null) });
+		const answer = await reader.diff({ repository: folder, compare: "uncommitted", worktree: folder, file: { area: "unstaged", path: "crlf.txt", previousPath: null } });
+		const read = await files.read({ repository: folder, worktree: folder, path: "crlf.txt" });
+		if (answer.outcome !== "read" || read.outcome !== "read" || read.content.kind !== "text") throw new Error("not read");
+		const lines = fileLines(read.content.text);
+		expect(linesMatchDiff(answer.diff, lines)).toBe(true);
+		const filled = fillUnchanged(answer.diff, lines);
+		const all = filled.kind === "text" ? filled.sections[0]!.hunks.flatMap(hunk => hunk.lines) : [];
+		// Lines 1 and 9 to 19 were not in Git's hunks; each keeps its carriage return, and the last line has none.
+		expect(all.find(line => line.newLine === 1)).toEqual({ kind: "context", text: "line 1\r", oldLine: 1, newLine: 1 });
+		expect(all.find(line => line.newLine === 15)).toEqual({ kind: "context", text: "line 15\r", oldLine: 15, newLine: 15 });
+		const gaps = shownSections(answer.diff, lines, () => false)[0]!.hunks.flatMap(hunk => (hunk.unchanged ? [hunk.unchanged.count] : []));
+		expect(gaps).toEqual([1, 11]);
+		// A file changed after the diff was read fills in nothing.
+		expect(linesMatchDiff(answer.diff, lines.map((line, index) => (index === 5 ? "edited since" : line)))).toBe(false);
 	});
 
 	test("a staged diff matches git diff --cached, and an unstaged one matches git diff", async () => {
@@ -193,7 +282,7 @@ describe.skipIf(windows)("reading changes from real repositories", () => {
 
 	test("shows a staged rename as one file, from its old name", async () => {
 		const answer = await diff(linked, "staged", "new name.txt", "old name.txt");
-		expect(answer.outcome === "read" && answer.file).toEqual({ area: "staged", kind: "renamed", path: "new name.txt", previousPath: "old name.txt" });
+		expect(answer.outcome === "read" && answer.file).toEqual({ area: "staged", kind: "renamed", path: "new name.txt", previousPath: "old name.txt", added: 0, removed: 0, version: expect.any(String) });
 		expect(answer.outcome === "read" && answer.diff).toEqual({ kind: "text", sections: [{ header: ["similarity index 100%", "rename from old name.txt", "rename to new name.txt"], hunks: [] }] });
 	});
 
@@ -298,7 +387,7 @@ describe.skipIf(windows)("reading changes from real repositories", () => {
 			findRepository: async () => ({ ...listed([fresh]), path: fresh }),
 		});
 		const read = await reader.read({ repository: fresh, compare: "uncommitted", worktree: fresh });
-		expect(read).toEqual({ outcome: "read", files: [{ area: "staged", kind: "added", path: "first.txt", previousPath: null }], more: false, compared: "uncommitted", base: { usable: false, reason: "Timber did not report a base for this worktree." } });
+		expect(read).toEqual({ outcome: "read", files: [{ area: "staged", kind: "added", path: "first.txt", previousPath: null, added: 1, removed: 0, version: expect.any(String) }], more: false, compared: "uncommitted", base: { usable: false, reason: "Timber did not report a base for this worktree." } });
 		const answer = await reader.diff({ repository: fresh, compare: "uncommitted", worktree: fresh, file: { area: "staged", path: "first.txt", previousPath: null } });
 		expect(answer.outcome === "read" && answer.diff.kind === "text" && answer.diff.sections[0]!.hunks[0]!.lines.map(line => line.text)).toEqual(["hello"]);
 	});

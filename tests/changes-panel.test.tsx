@@ -22,7 +22,7 @@ const TIMBER = "/work/timber";
 const PRIMARY = sampleRepositories[0]!.worktrees[0]!;
 const FEATURE = sampleRepositories[0]!.worktrees[1]!;
 
-const file = (path: string): FileChange => ({ area: "unstaged", kind: "modified", path, previousPath: null });
+const file = (path: string): FileChange => ({ area: "unstaged", kind: "modified", path, previousPath: null, added: null, removed: null, version: "" });
 const mock = (change: FileChange): MockFileChange => ({ change, patch: samplePatch(change.path) });
 const render = (store: ReturnType<typeof createAppStore>) => renderToStaticMarkup(<App store={store} />);
 const tabIds = (markup: string) => [...markup.matchAll(/role="tab" id="tab-([a-z-]+)"/g)].map(match => match[1]);
@@ -82,9 +82,9 @@ describe("the side panel's Changes view", () => {
 		expect(markup).toContain('data-view="changes"');
 		expect(markup).toContain('<span class="changes-compare-label" aria-hidden="true">Compare with</span>');
 		expect(markup).toContain(">Change base…</button>");
-		expect(markup).toContain('<span class="changes-count" role="status">2 unstaged</span>');
+		expect(markup).toContain('<span class="changes-count" role="status">2 unstaged<span class="visually-hidden">, 4 lines added, 2 removed</span></span>');
 		expect(markup).toMatch(/>Refresh<\/button>/);
-		expect(markup).toContain('aria-label="src/deep/b.ts, Modified, Unstaged"');
+		expect(markup).toContain('aria-label="src/deep/b.ts, Modified, Unstaged, 2 lines added, 1 removed"');
 		expect(markup).toContain('<section class="review-panel" aria-label="Review">');
 		expect(markup).toContain('aria-label="Changes panel width"');
 		expect(markup).toContain(`id="${CHANGES_BUTTON_ID}"`);

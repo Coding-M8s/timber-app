@@ -40,6 +40,7 @@ export function mockIgnored(path: string): boolean {
 /** The new side of a changed file, from the text `git diff` would print for it. Null for a deleted or binary one. */
 export function newSideOf(change: MockFileChange): string | null {
 	if (change.change.kind === "deleted" || change.patch.includes("Binary files")) return null;
+	if (change.text !== undefined) return change.text;
 	const lines = change.patch.split("\n");
 	const start = lines.findIndex(line => line.startsWith("@@"));
 	if (start === -1) return null;

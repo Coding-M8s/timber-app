@@ -40,6 +40,19 @@ export interface FileChange {
 	path: string;
 	/** Where a renamed or copied file came from. Null for every other kind. */
 	previousPath: string | null;
+	/**
+	 * Lines added and removed, as `git diff --numstat` counts them for the
+	 * file's diff, or as many lines as an untracked file has. Null for a
+	 * binary file, a conflicted one, and when Git's count could not be read.
+	 */
+	added: number | null;
+	removed: number | null;
+	/**
+	 * A short text that changes whenever the file's diff may have changed: the
+	 * objects Git compares, the branch point, and the size and modification
+	 * time of the file on disk. Never shown. Empty when nothing is known.
+	 */
+	version: string;
 }
 
 /** Names one file of the list, to ask for its diff. */
@@ -259,31 +272,80 @@ export function baseContentArguments(commit: string, paths: readonly string[] = 
 }
 
 /**
- * The paths in `git diff --numstat -z` (see `baseContentArguments`): for a
- * rename or copy, where it went. Counts are not read, since a binary file has
- * `-` for both. A record that was cut short is left out.
+ * The line counts of the uncommitted changes, with the options of
+ * `diffArguments`: `staged` for the index against the last commit, otherwise
+ * the files on disk against the index. `paths` limits it to those files.
  */
-export function parseNumstatPaths(output: string): Set<string> {
+export function uncommittedContentArguments(staged: boolean, paths: readonly string[] = []): string[] {
+	return [...NO_INDEX_REFRESH, ...LITERAL, "diff", ...PLAIN_DIFF, "--numstat", "-z", "-M", ...(staged ? ["--cached"] : []), "--", ...paths];
+}
+
+/** Lines added and removed in one file. Null for both when Git counted none, as for a binary file. */
+export interface LineCounts {
+	added: number | null;
+	removed: number | null;
+}
+
+const COUNT = /^\d+$/;
+
+/**
+ * Parse `git diff --numstat -z` (see `baseContentArguments` and
+ * `uncommittedContentArguments`) into the counts of each path: for a rename
+ * or copy, where it went. A binary file has `-` for both, which is null. A
+ * record that was cut short is left out.
+ */
+export function parseNumstat(output: string): Map<string, LineCounts> {
 	const records = output.split("\0");
 	records.pop();
-	const paths = new Set<string>();
+	const counts = new Map<string, LineCounts>();
 	for (let index = 0; index < records.length; index++) {
 		const record = records[index]!;
 		// The path may hold tabs, so only the first two separate fields.
 		const first = record.indexOf("\t");
 		const second = first < 0 ? -1 : record.indexOf("\t", first + 1);
 		if (second < 0) continue;
+		const [added, removed] = [record.slice(0, first), record.slice(first + 1, second)];
+		const lines = COUNT.test(added) && COUNT.test(removed) ? { added: Number(added), removed: Number(removed) } : { added: null, removed: null };
 		const path = record.slice(second + 1);
 		if (path !== "") {
-			paths.add(path);
+			counts.set(path, lines);
 			continue;
 		}
 		// A rename or copy: the original and the new path follow, each ended by a NUL.
 		index += 2;
 		const moved = records[index];
-		if (moved !== undefined && moved !== "") paths.add(moved);
+		if (moved !== undefined && moved !== "") counts.set(moved, lines);
 	}
-	return paths;
+	return counts;
+}
+
+/** The paths in `git diff --numstat -z`, as `parseNumstat` reads them. */
+export const parseNumstatPaths = (output: string): Set<string> => new Set(parseNumstat(output).keys());
+
+/**
+ * The changes with their line counts from `counts`, by path. A file Git did
+ * not count keeps null. An untracked or conflicted file is never taken from
+ * a numstat: give `untracked` its counts, from reading it.
+ */
+export function withLineCounts(files: readonly FileChange[], counts: (file: FileChange) => LineCounts | undefined): FileChange[] {
+	return files.map(file => {
+		const lines = counts(file);
+		return lines === undefined ? file : { ...file, added: lines.added, removed: lines.removed };
+	});
+}
+
+/**
+ * The lines of an untracked file as `git diff --no-index` counts them: each
+ * line break ends a line, and a last line without one counts too. Null for
+ * binary bytes: a NUL in the first 8000 bytes, as Git checks.
+ */
+export function countAddedLines(bytes: Uint8Array): LineCounts {
+	const checked = Math.min(bytes.length, 8000);
+	for (let index = 0; index < checked; index++) if (bytes[index] === 0) return { added: null, removed: null };
+	let lines = 0;
+	for (const byte of bytes) if (byte === 10) lines++;
+	if (bytes.length > 0 && bytes[bytes.length - 1] !== 10) lines++;
+	return { added: lines, removed: 0 };
 }
 
 /**
@@ -317,7 +379,7 @@ export function parseNameStatus(output: string): FileChange[] {
 		const previous = moved ? records[++index] : null;
 		const path = records[++index];
 		if (!kind || path === undefined || path === "" || previous === "" || previous === undefined) continue;
-		files.push({ area: "base", kind, path, previousPath: moved ? previous : null });
+		files.push({ area: "base", kind, path, previousPath: moved ? previous : null, added: null, removed: null, version: "" });
 	}
 	return files;
 }
@@ -378,38 +440,47 @@ export function parseStatus(output: string): FileChange[] {
 		const type = record.charAt(0);
 		if (type === "?") {
 			const path = record.slice(2);
-			if (record.charAt(1) === " " && path !== "") files.push({ area: "unstaged", kind: "untracked", path, previousPath: null });
+			if (record.charAt(1) === " " && path !== "") files.push({ area: "unstaged", kind: "untracked", path, previousPath: null, added: null, removed: null, version: "" });
 		} else if (type === "1") {
 			const entry = splitEntry(record, 8);
-			if (entry) pushTracked(files, entry.fields[1]!, entry.path, null);
+			if (entry) pushTracked(files, entry.fields, entry.path, null);
 		} else if (type === "2") {
 			const entry = splitEntry(record, 9);
 			// The original path is the next record. Without it the entry cannot be read.
 			const previous = records[index + 1];
 			index++;
-			if (entry && previous !== undefined && previous !== "") pushTracked(files, entry.fields[1]!, entry.path, previous);
+			if (entry && previous !== undefined && previous !== "") pushTracked(files, entry.fields, entry.path, previous);
 		} else if (type === "u") {
 			const entry = splitEntry(record, 10);
-			if (entry) files.push({ area: "conflicted", kind: "conflicted", path: entry.path, previousPath: null });
+			// The stage objects, then the file on disk, which the main process adds.
+			if (entry) files.push({ area: "conflicted", kind: "conflicted", path: entry.path, previousPath: null, added: null, removed: null, version: entry.fields.slice(3).join(" ") });
 		}
 	}
 	return files;
 }
 
-/** One `1` or `2` entry: XY is the index status, then the worktree status, `.` for unchanged. */
-function pushTracked(files: FileChange[], xy: string, path: string, previousPath: string | null): void {
+/**
+ * One `1` or `2` entry: XY is the index status, then the worktree status, `.`
+ * for unchanged, and the modes and objects of the last commit and the index
+ * follow. They start each change's version: the staged diff compares the
+ * two, and the unstaged diff the index with the file on disk.
+ */
+function pushTracked(files: FileChange[], fields: readonly string[], path: string, previousPath: string | null): void {
+	const xy = fields[1]!;
 	if (xy.length !== 2) return;
+	const [modeHead, modeIndex, objectHead, objectIndex] = [fields[3], fields[4], fields[6], fields[7]];
 	const [staged, unstaged] = [xy.charAt(0), xy.charAt(1)];
 	const stagedKind = KINDS[staged];
+	const counts = { added: null, removed: null };
 	if (stagedKind) {
 		const moved = stagedKind === "renamed" || stagedKind === "copied";
-		files.push({ area: "staged", kind: stagedKind, path, previousPath: moved ? previousPath : null });
+		files.push({ area: "staged", kind: stagedKind, path, previousPath: moved ? previousPath : null, ...counts, version: `${modeHead} ${objectHead} ${modeIndex} ${objectIndex}` });
 	}
 	const unstagedKind = KINDS[unstaged];
 	if (unstagedKind) {
 		// A rename in the work tree only shows for a file added with intent to add. Otherwise the original path belongs to the staged rename.
 		const moved = unstagedKind === "renamed" || unstagedKind === "copied";
-		files.push({ area: "unstaged", kind: unstagedKind, path, previousPath: moved ? previousPath : null });
+		files.push({ area: "unstaged", kind: unstagedKind, path, previousPath: moved ? previousPath : null, ...counts, version: `${modeIndex} ${objectIndex}` });
 	}
 }
 

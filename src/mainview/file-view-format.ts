@@ -49,7 +49,7 @@ export function describeFileNotice(result: WorktreeFileResult): { title: string;
 }
 
 /** The entries of a record by worktree whose worktree is still listed, or undefined when every one is. */
-function listedOnly<T>(record: Readonly<Record<string, T>>, listed: ReadonlySet<string>): Record<string, T> | undefined {
+export function listedOnly<T>(record: Readonly<Record<string, T>>, listed: ReadonlySet<string>): Record<string, T> | undefined {
 	const ids = Object.keys(record);
 	const kept = ids.filter(id => listed.has(id));
 	return kept.length === ids.length ? undefined : Object.fromEntries(kept.map(id => [id, record[id]!]));

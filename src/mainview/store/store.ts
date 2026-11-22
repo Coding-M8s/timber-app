@@ -15,7 +15,7 @@ import type { FetchResult, ForcePushSeen, RepositoryFetch } from "../../shared/g
 import { type ChopList, type RunChopResult, commandChops, findListedChop, listedChops } from "../../shared/chops";
 import { promptTarget, reviewWaiting } from "../agent-sessions";
 import { describePromptCopied, describePromptSent } from "../chop-format";
-import { type Comparison, type FileChangeTarget, type FileChangesResult, type FileDiff, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
+import { type Comparison, type FileChange, type FileChangeTarget, type FileChangesResult, type FileDiff, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
 import type { PortsResult } from "../../shared/ports";
 import { type Layout, type SidePanelView, chooseComparison, chooseIssueList, chosenComparison, clampChopsWidth, clampSidebarWidth, dismissSetup, forgetGroup, forgetRepository, sameLayout, toggleCollapsed, toggleGroupCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RepositoryGroupsResult, ReportedWorktree, SavePreferencesResult, TimberFailure, TimberStatus, Worktree, WorktreeCommandResult } from "../../shared/model";
@@ -63,11 +63,13 @@ import { keepEntries } from "./records";
 import { RESTORE_CONCURRENCY, RESTORE_QUIET_MILLISECONDS, type RestoreJob, goneSavedWorktrees, restoreJobs, restoreRequest, runLimited } from "./restore";
 import { type SavedSessions, pickShown } from "../../shared/saved-sessions";
 import { type WorktreeFileResult, textToSave } from "../../shared/worktree-files";
+import { fileLines, fillUnchanged, linesMatchDiff, unchangedReadable } from "../diff-unchanged";
+import { filterFiles, listedOrder, steppedFile } from "../changes-format";
 import { type FileEditMemory, createFileEditMemory } from "../text-editor-format";
-import { afterSave, canEditFile, editableFileText, fileText, hasUnsavedEdits, initialFileMode, outsideResult, pathInWorktree, settleTabs, unsavedFileCount } from "../file-view-format";
+import { afterSave, canEditFile, editableFileText, fileText, hasUnsavedEdits, initialFileMode, listedOnly, outsideResult, pathInWorktree, settleTabs, unsavedFileCount } from "../file-view-format";
 import {
 	type AppState, type ChangesView, type DialogRequest, type FileMode, type FileView, type Operation, type PullRequestForm, type Removal, type SessionAgent, type UnsavedFileStep, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood,
-	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, canToggleSidePanel, chopsEnabled, filesPanelShown, offeredChops, sidePanelShown, sidePanelView, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, shownSession, timberReady, withTerminal, withoutSession } from "./state";
+	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, canToggleSidePanel, chopsEnabled, filesPanelShown, offeredChops, sidePanelShown, sidePanelView, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, shownSession, timberReady, withTerminal, withoutSession, fileViewed, viewedKey } from "./state";
 
 /** How `AppStore.runChop` runs a chop, beyond which one and where. */
 export interface RunChopOptions {
@@ -360,6 +362,22 @@ export interface AppStore {
 	 * that tab, and read the diff. Replaces the diff open there. Never throws.
 	 */
 	selectChangedFile(file: FileChangeTarget): Promise<void>;
+	/**
+	 * Open the diff of the file after (`1`) or before (`-1`) the diff tab's
+	 * file, among the files the Changes view lists through its filter, going
+	 * round at either end. Answers the file opened, or null when there is no
+	 * other. Never throws.
+	 */
+	stepChangedFile(step: 1 | -1): Promise<FileChange | null>;
+	/**
+	 * Mark a listed file of `changes` Viewed, or not, as it was not. Marking
+	 * it opens the next file (see `stepChangedFile`), which it answers; null
+	 * when it opened none. It stays viewed until its version changes, while
+	 * the window is open.
+	 */
+	toggleViewed(file: FileChange): Promise<FileChange | null>;
+	/** Keep what is typed in the Changes view's "Filter files" box for a worktree. */
+	setChangesFilter(worktreeId: string, text: string): void;
 	/**
 	 * Compare the worktree of `changes` with its base or with its last commit,
 	 * remember that for the worktree in the layout, and read the files again.
@@ -934,6 +952,13 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				}
 			}
 		}
+		// Viewed marks and filters leave with their worktree.
+		if (change.repositories && (Object.keys(state.viewed).length > 0 || Object.keys(state.changeFilters).length > 0)) {
+			const listed = new Set(state.repositories.flatMap(repository => repository.worktrees.map(worktree => worktree.id)));
+			const viewed = listedOnly(state.viewed, listed);
+			const changeFilters = listedOnly(state.changeFilters, listed);
+			if (viewed || changeFilters) state = { ...state, ...(viewed ? { viewed } : {}), ...(changeFilters ? { changeFilters } : {}) };
+		}
 		// A change to the list, or to Timber, may bring links to read or take some away.
 		if (change.repositories || change.timber) catchUpIssues();
 		// A failed removal that no longer matches the list goes with the list change that ended it.
@@ -1455,20 +1480,55 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	let diffTicket = 0;
 	const unheard = (what: string, error: unknown) => notHeard(`back about ${what}`, error);
 
+	/**
+	 * A file's diff read again, with its lines on disk where they are its new
+	 * side (see ../diff-unchanged.ts), and the diff its notes are judged
+	 * against: filled with the unchanged lines, so a note on one is not
+	 * outdated, or null when the file should have been read and could not
+	 * be checked, so nothing is judged until the next read. `listed` is the
+	 * file's comparison as listed, when the window has it: without it, only
+	 * a file whose diff compares with the disk is read.
+	 */
+	async function readJudgedDiff(repository: string, worktreePath: string, comparison: Comparison, file: FileChangeTarget, listed: readonly FileChange[] | null): Promise<{ answer: FileDiffResult; unchanged: readonly string[] | null; judged: FileDiff | null }> {
+		const known = listed?.find(candidate => sameFileChange(candidate, file));
+		const mayRead = known ? unchangedReadable(known, listed!) : listed === null && (file.area === "unstaged" || file.area === "base");
+		const readText = async (): Promise<WorktreeFileResult | null> => {
+			try {
+				return await engine.readWorktreeFile({ repository, worktree: worktreePath, path: file.path });
+			} catch {
+				return null;
+			}
+		};
+		const readChangesOf = async (): Promise<FileDiffResult> => {
+			try {
+				return await engine.readFileDiff({ repository, worktree: worktreePath, compare: comparison, file });
+			} catch (error) {
+				return { outcome: "failed", message: unheard(`the changes of ${file.path}`, error) };
+			}
+		};
+		const [answer, read] = await Promise.all([readChangesOf(), mayRead ? readText() : Promise.resolve(null)]);
+		if (answer.outcome !== "read") return { answer, unchanged: null, judged: null };
+		// The kind as Git says it now: a file deleted since has nothing on disk to fill in.
+		const readable = mayRead && answer.file !== null && unchangedReadable(answer.file, listed ?? []);
+		const lines = readable && read?.outcome === "read" && read.content.kind === "text" ? fileLines(read.content.text) : null;
+		const unchanged = lines !== null && linesMatchDiff(answer.diff, lines) ? lines : null;
+		// A text diff of a file that should have been read, and was not or changed between the two reads, says nothing of notes on its unchanged lines.
+		const unsure = answer.diff.kind === "text" && readable && unchanged === null && !(read?.outcome === "read" && read.content.kind !== "text");
+		return { answer, unchanged, judged: unsure ? null : fillUnchanged(answer.diff, unchanged) };
+	}
+
 	async function readDiff(view: ChangesView, file: FileChangeTarget, worktreePath: string): Promise<void> {
 		const ticket = ++diffTicket;
-		let answer!: FileDiffResult;
+		const comparison = view.compared ?? "uncommitted";
+		let read!: Awaited<ReturnType<typeof readJudgedDiff>>;
 		await track({ kind: "read-diff", worktree: view.worktree }, async () => {
-			try {
-				answer = await engine.readFileDiff({ repository: view.repository, worktree: worktreePath, compare: view.compared ?? "uncommitted", file });
-			} catch (error) {
-				answer = { outcome: "failed", message: unheard(`the changes of ${file.path}`, error) };
-			}
+			read = await readJudgedDiff(view.repository, worktreePath, comparison, file, view.files);
 		});
-		if (answer.outcome === "read" && view.compared !== null) markNotes(view.worktree, view.compared, file, answer.diff);
+		const { answer, unchanged, judged } = read;
+		if (judged !== null && view.compared !== null) markNotes(view.worktree, view.compared, file, judged);
 		const now = state.changes;
 		if (ticket !== diffTicket || now?.worktree !== view.worktree || now.selected === null || !sameFileChange(now.selected, file)) return;
-		update({ changes: { ...now, diff: answer } });
+		update({ changes: { ...now, diff: answer, unchanged } });
 	}
 
 	/** Mark the notes on a file outdated when its diff, read again, no longer has their lines as they were. */
@@ -1707,13 +1767,12 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		if (!notes || notes.length === 0) return null;
 		if (found) {
 			// Each noted file is read again, so a line that changed since is marked before the preview shows.
+			// A note on an unchanged line is judged against the diff with those lines filled in, as in the diff tab. Not heard: the note stays as it was.
+			const view = state.changes;
 			await Promise.all(notedFiles(notes).map(async ({ comparison, file }) => {
-				try {
-					const answer = await engine.readFileDiff({ repository: found.repository, worktree: found.worktree.path, compare: comparison, file });
-					if (answer.outcome === "read") markNotes(worktreeId, comparison, file, answer.diff);
-				} catch {
-					// Not heard: the note stays as it was.
-				}
+				const listed = view?.worktree === worktreeId && view.compared === comparison ? view.files : null;
+				const { judged } = await readJudgedDiff(found.repository, found.worktree.path, comparison, file, listed);
+				if (judged !== null) markNotes(worktreeId, comparison, file, judged);
 			}));
 		}
 		const now = state.reviews[worktreeId];
@@ -1737,7 +1796,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const after = state.reviews[worktreeId]?.find(candidate => candidate.id === id);
 		const diff = state.changes?.diff;
 		if (!after?.outdated) return null;
-		const shown = diff?.outcome === "read" && noteLinesShown(after, diff.diff);
+		const shown = diff?.outcome === "read" && noteLinesShown(after, fillUnchanged(diff.diff, state.changes?.unchanged ?? null));
 		return shown ? null : "Its lines changed or left the diff since the note, so they may not show.";
 	}
 
@@ -1755,7 +1814,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		if (!worktree) return;
 		const ticket = ++changesTicket;
 		if (state.changes?.worktree !== worktreeId || state.changes.repository !== repositoryPath) {
-			update({ changes: { repository: repositoryPath, worktree: worktreeId, files: null, more: false, compared: null, base: null, problem: null, selected: null, diff: null } });
+			update({ changes: { repository: repositoryPath, worktree: worktreeId, files: null, more: false, compared: null, base: null, problem: null, selected: null, diff: null, unchanged: null } });
 		}
 		const compare = chosenComparison(state.layout, worktreeId);
 		let answer!: FileChangesResult;
@@ -1780,7 +1839,10 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		// The same file keeps its diff on screen until the new one answers, so it does not flicker.
 		const sameComparison = view.compared === answer.compared;
 		const keptDiff = kept && view.selected !== null && sameFileChange(view.selected, kept) && sameComparison ? view.diff : null;
-		const next: ChangesView = { ...view, files: answer.files, more: answer.more, compared: answer.compared, base: answer.base, problem: null, selected, diff: keptDiff };
+		const next: ChangesView = { ...view, files: answer.files, more: answer.more, compared: answer.compared, base: answer.base, problem: null, selected, diff: keptDiff, unchanged: keptDiff === null ? null : view.unchanged };
+		// A viewed file whose diff changed since, or that left the list, is no longer viewed.
+		const viewed = keptViewed(worktreeId, answer.compared, answer.files);
+		if (viewed !== state.viewed) update({ viewed });
 		// A diff tab whose file is no longer changed has nothing to show: it closes, back to where it was opened from.
 		update(open && !kept ? { ...closedDiff(worktreeId), changes: next } : { changes: next });
 		if (selected) await readDiff(next, selected, worktree.path);
@@ -1967,9 +2029,50 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			update(tab);
 			return;
 		}
-		const next: ChangesView = { ...view, selected, diff: null };
+		const next: ChangesView = { ...view, selected, diff: null, unchanged: null };
 		update({ ...tab, changes: next });
 		await readDiff(next, selected, worktree.path);
+	}
+
+	/** The files of `changes` as the list shows them, in its order, through the worktree's filter. */
+	function shownFiles(view: ChangesView): FileChange[] {
+		return filterFiles(listedOrder(view.files ?? []), state.changeFilters[view.worktree] ?? "");
+	}
+
+	async function stepChangedFile(step: 1 | -1): Promise<FileChange | null> {
+		const view = state.changes;
+		if (!view?.files) return null;
+		const next = steppedFile(shownFiles(view), state.diffs[view.worktree]?.file ?? null, step);
+		if (next === null) return null;
+		await selectChangedFile(next);
+		return next;
+	}
+
+	/** The viewed files of a worktree after its list in `comparison` was read again: those whose version changed, or that left the list, go. */
+	function keptViewed(worktreeId: string, comparison: Comparison, files: readonly FileChange[]): AppState["viewed"] {
+		const marked = state.viewed[worktreeId];
+		if (!marked) return state.viewed;
+		const prefix = `${comparison}\0`;
+		const listed = new Map(files.map(file => [viewedKey(comparison, file), file.version]));
+		const kept = Object.fromEntries(Object.entries(marked).filter(([key, version]) => !key.startsWith(prefix) || listed.get(key) === version));
+		return Object.keys(kept).length === Object.keys(marked).length ? state.viewed : { ...state.viewed, [worktreeId]: kept };
+	}
+
+	async function toggleViewed(file: FileChange): Promise<FileChange | null> {
+		const view = state.changes;
+		if (!view?.files || view.compared === null) return null;
+		const listed = view.files.find(candidate => sameFileChange(candidate, file));
+		if (!listed) return null;
+		const key = viewedKey(view.compared, listed);
+		const { [key]: _was, ...others } = state.viewed[view.worktree] ?? {};
+		const viewing = !fileViewed(state, view.worktree, view.compared, listed);
+		update({ viewed: { ...state.viewed, [view.worktree]: viewing ? { ...others, [key]: listed.version } : others } });
+		return viewing ? stepChangedFile(1) : null;
+	}
+
+	function setChangesFilter(worktreeId: string, text: string): void {
+		if ((state.changeFilters[worktreeId] ?? "") === text) return;
+		update({ changeFilters: { ...state.changeFilters, [worktreeId]: text } });
 	}
 
 	/** What closing the diff tab of a worktree changes: the tab goes, and the tab it came from shows when it showed. */
@@ -1978,7 +2081,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		if (!open) return {};
 		const { [worktreeId]: _closed, ...diffs } = state.diffs;
 		const shown = state.tab === "diff" && state.selection?.worktree === worktreeId;
-		const changes = state.changes?.worktree === worktreeId ? { ...state.changes, selected: null, diff: null } : state.changes;
+		const changes = state.changes?.worktree === worktreeId ? { ...state.changes, selected: null, diff: null, unchanged: null } : state.changes;
 		return { diffs, changes, ...(shown ? { tab: open.from } : {}) };
 	}
 
@@ -2001,7 +2104,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		if (view.compared === compare) return;
 		// The list of the other comparison is a different list: read it afresh, so nothing of the old one shows under the new header.
 		// The diff tab shows a file of the old list, so it closes.
-		update({ ...closedDiff(view.worktree), changes: { ...view, files: null, more: false, compared: null, problem: null, selected: null, diff: null } });
+		update({ ...closedDiff(view.worktree), changes: { ...view, files: null, more: false, compared: null, problem: null, selected: null, diff: null, unchanged: null } });
 		await readChanges(view.repository, view.worktree);
 	}
 
@@ -2770,7 +2873,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		// A new base is a different list: read it afresh, so nothing of the old one shows under the new header.
 		const view = state.changes;
 		if (view?.worktree === worktree.id && view.repository === request.repository) {
-			update({ changes: { ...view, files: null, more: false, compared: null, problem: null, selected: null, diff: null } });
+			update({ changes: { ...view, files: null, more: false, compared: null, problem: null, selected: null, diff: null, unchanged: null } });
 			await readChanges(request.repository, worktree.id);
 		}
 		return result;
@@ -3405,6 +3508,9 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			if (tab !== state.tab || state.board !== null) update({ tab, board: null });
 		},
 		closeDiff,
+		stepChangedFile,
+		toggleViewed,
+		setChangesFilter,
 		openFile,
 		readFileAgain,
 		closeFile,
