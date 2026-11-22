@@ -78,6 +78,7 @@ export type AppRPC = {
 			saveLayout: { params: { layout: Layout }; response: Answer<"saveLayout"> };
 			loadPreferences: { params: {}; response: Answer<"loadPreferences"> };
 			savePreferences: { params: { change: Partial<Preferences> }; response: Answer<"savePreferences"> };
+			locateAgents: { params: {}; response: Answer<"locateAgents"> };
 			/** Waits for the person to pick a folder, so the caller must not time it out. */
 			exportTheme: { params: { theme: Theme }; response: Answer<"exportTheme"> };
 			/** Waits for the person to pick a file, so the caller must not time it out. */

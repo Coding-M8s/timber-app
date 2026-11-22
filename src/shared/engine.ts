@@ -1,3 +1,4 @@
+import type { AgentLocation } from "./agent-lookup";
 import type { AppInfo } from "./app-info";
 import type { AppUpdateInstallRequest, AppUpdateInstallResult, AppUpdateState } from "./app-update";
 import type { ArenaInspection, ArenaList, ArenaPresetList, NewArenaRequest, NewArenaResult, PickArenaRequest, PickArenaResult } from "./arenas";
@@ -332,6 +333,14 @@ export interface Engine {
 	 * Saved answers with every preference as it now is. Safe to call again.
 	 */
 	savePreferences(change: Partial<Preferences>): Promise<SavePreferencesResult>;
+	/**
+	 * Whether each agent saved in Settings, Agents can start: its executable
+	 * found on the PATH the app was started with, or at its full path, and
+	 * where (./agent-lookup.ts). Looked for as an agent session looks for it,
+	 * from the saved agents only, never a command from the interface. Nothing
+	 * starts. Safe to call again, as after installing an agent.
+	 */
+	locateAgents(): Promise<AgentLocation[]>;
 	/**
 	 * Write a theme to a new file, in a folder the person picks
 	 * (`themeFileText` and `themeFileName` in ./theme-file.ts). A theme that

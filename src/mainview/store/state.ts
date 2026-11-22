@@ -1,3 +1,4 @@
+import type { AgentLocation } from "../../shared/agent-lookup";
 import type { ChopArrangements, ChopRename } from "../../shared/chop-order";
 import type { SuggestedIssue } from "../../shared/issue-search";
 import type { AppUpdateState } from "../../shared/app-update";
@@ -427,6 +428,13 @@ export interface AppState {
 	/** Why the saved preferences could not be read on start. Null once a save worked. */
 	preferencesProblem: string | null;
 	/**
+	 * Whether each saved agent's executable was found, as the engine last
+	 * said (`Engine.locateAgents`), by name and command. Null until it has
+	 * answered. An agent whose command changed since is not known
+	 * (`lookupOf` in src/shared/agent-lookup.ts).
+	 */
+	agentLocations: readonly AgentLocation[] | null;
+	/**
 	 * The chop order the latest move or star in the chops panel asked for,
 	 * shown until its save answers, so quick moves add up. Null when none
 	 * waits: the saved `preferences.chopOrder` shows (`shownChopOrder`).
@@ -660,6 +668,7 @@ export const initialState: AppState = {
 	layoutProblem: null,
 	preferences: defaultPreferences(),
 	preferencesProblem: null,
+	agentLocations: null,
 	chopOrderAim: null,
 	chopRenaming: null,
 	lastChops: {},

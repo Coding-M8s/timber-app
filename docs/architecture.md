@@ -674,8 +674,18 @@ workflow's `post_create` scripts after the ordinary ones.
   sets one.
 
 Both modes share an **Agent** field under their own fields: the agents from
-Settings, Agents, in menu order, the first one picked, then None. With no
-saved agents it offers only None and points to Settings. Timber still runs
+Settings, Agents, in menu order, then None. The first agent whose
+executable was found is picked (`defaultAgent`); with none found, or while
+any agent is not known yet, None is. An agent not found is marked "(not
+found)", one found but refused (a relative path, or a Windows batch file)
+"(cannot start)", and either can still be picked, with a hint that it will
+not start; started anyway, it fails in its pane as before. The dialog looks
+for the agents again as it opens (`locateAgents` in its controller). Until
+that look answers, the pick follows what the app knew, and may change once
+when it does; then the dialog holds the pick it made as if the person had
+made it, so a later look changes only the marks. A look that got no answer,
+or an answer older than one already shown, holds nothing. With no saved agents it offers only None and
+points to Settings. Timber still runs
 with `--no-agent`. The app starts the picked agent itself
 (`src/mainview/components/worktree-modes/agent-choice.ts`).
 
@@ -4723,6 +4733,19 @@ as a control sequence, as it would a window title or a bell (see
   "Open in editor"). An app started from a desktop launcher can have a
   shorter PATH than a terminal, so an agent that a terminal finds may need
   its full path here.
+- **Found or not.** `Engine.locateAgents` looks for each saved agent's
+  executable as a session would (`locateAgent` in
+  `src/bun/find-executable.ts`, called from `src/bun/terminals.ts`), from
+  the saved agents only, and starts nothing. It answers, by name and
+  command, found with the path, not found, or found but refused: a
+  relative path, or on Windows a `.cmd` or `.bat` file
+  (`src/shared/agent-lookup.ts`). The store keeps the answer in
+  `agentLocations`, looks at start, after a save that changes the agents,
+  and whenever Settings, Agents or the New worktree or Start work dialog
+  opens, as an agent may have been installed since. Settings, Agents says
+  under each saved row "Found at <path>", "Not found on PATH", "No
+  executable file at <path>", or why it cannot start; a row changed since
+  the save says to save first.
 - **Starting.** `openTerminal` with `agent` set to the agent's name. The main
   process takes the command from the saved preferences only, never from the
   request. A name that is not saved starts nothing, not even a shell. Or

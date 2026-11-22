@@ -56,7 +56,7 @@ async function openedDialog(engine = createMockEngine()) {
 		render: () => renderToStaticMarkup(
 			<WorktreeDialogFrame
 				repository={repository} modes={[mode()]} selected={0} submission={submission.getState()}
-				agents={store.getState().preferences.agents} plan={controller.plan}
+				agents={store.getState().preferences.agents} agentLocations={store.getState().agentLocations} plan={controller.plan}
 				onSelect={controller.select} onPickAgent={controller.pickAgent} onSubmit={mode => void controller.submit(mode)} onClose={() => {}}
 			/>,
 		),
@@ -388,7 +388,7 @@ describe("the mode switch", () => {
 	const modes = [fake("New branch"), fake("Existing branch")];
 	const repository = sampleRepositories[0]!;
 	const frame = (selected: number, running = false, shown = modes) => renderToStaticMarkup(
-		<WorktreeDialogFrame repository={repository} modes={shown} selected={selected} submission={{ running, failure: null }} agents={[]} plan={() => ({ source: "pick", agent: null, workflow: null, unread: false })} onSelect={() => {}} onPickAgent={() => {}} onSubmit={() => {}} onClose={() => {}} />,
+		<WorktreeDialogFrame repository={repository} modes={shown} selected={selected} submission={{ running, failure: null }} agents={[]} agentLocations={[]} plan={() => ({ source: "pick", agent: null, workflow: null, unread: false })} onSelect={() => {}} onPickAgent={() => {}} onSubmit={() => {}} onClose={() => {}} />,
 	);
 
 	test("is a group of radio buttons, one per mode, with the selected one checked", () => {
@@ -521,7 +521,7 @@ describe("the keyboard when the dialog opens", () => {
 		return renderToStaticMarkup(
 			<WorktreeDialogFrame
 				repository={repository} modes={modes} selected={selected} submission={submission.getState()}
-				agents={[]} plan={() => ({ source: "pick", agent: null, workflow: null, unread: false })} onSelect={() => {}} onPickAgent={() => {}} onSubmit={() => {}} onClose={() => {}}
+				agents={[]} agentLocations={[]} plan={() => ({ source: "pick", agent: null, workflow: null, unread: false })} onSelect={() => {}} onPickAgent={() => {}} onSubmit={() => {}} onClose={() => {}}
 			/>,
 		);
 	}

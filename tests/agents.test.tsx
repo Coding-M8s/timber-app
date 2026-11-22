@@ -13,6 +13,7 @@ import { describeSessionChip } from "../src/mainview/terminal-format";
 import {
 	AGENT_LIMIT, AGENT_PRESETS, agentCommand, agentProblem, describeAgentCommand, findAgent, readAgentSettings, sameAgentSettings, writeAgentSettings,
 } from "../src/shared/agent";
+import type { AgentLocation } from "../src/shared/agent-lookup";
 import { defaultPreferences, readPreferences } from "../src/shared/preferences";
 import { SESSION_NAME_LIMIT, defaultSessionName } from "../src/shared/terminal";
 
@@ -254,8 +255,36 @@ describe("agent sessions in the store", () => {
 
 describe("the Agents section of Settings", () => {
 	const noop = () => {};
-	const view = (drafts: ReturnType<typeof agentDraftsOf>, saved = AGENT_PRESETS) =>
-		renderToStaticMarkup(<AgentsSectionView drafts={drafts} saved={saved} save={{ state: "idle" }} onAdd={noop} onEdit={noop} onRemove={noop} onSave={noop} />);
+	const view = (drafts: ReturnType<typeof agentDraftsOf>, saved = AGENT_PRESETS, locations: AgentLocation[] | null = null) =>
+		renderToStaticMarkup(<AgentsSectionView drafts={drafts} saved={saved} locations={locations} save={{ state: "idle" }} onAdd={noop} onEdit={noop} onRemove={noop} onSave={noop} />);
+
+	test("says beside each saved agent where it was found, or that it was not, and asks for a save before a changed one is looked for", () => {
+		const locations: AgentLocation[] = [
+			{ name: "Claude Code", command: "claude", lookup: { state: "found", path: "/usr/local/bin/claude" } },
+			{ name: "Codex", command: "codex", lookup: { state: "not-found" } },
+		];
+		const drafts = agentDraftsOf(AGENT_PRESETS);
+		const markup = view(drafts, AGENT_PRESETS, locations);
+		expect(markup).toContain('<pre class="dialog-command" aria-label="Command of Claude Code">claude</pre><p class="field-hint">Found at /usr/local/bin/claude</p>');
+		expect(markup).toContain('<pre class="dialog-command" aria-label="Command of Codex">codex</pre><p class="field-error">Not found on PATH</p>');
+		const edited = editAgentDraft(drafts, drafts[1]!.key, { command: "codex --model big" });
+		expect(view(edited, AGENT_PRESETS, locations)).toContain('<p class="field-hint">Save to check whether it is installed.</p>');
+		// Before the first look, nothing is claimed.
+		expect(view(drafts, AGENT_PRESETS, null)).not.toContain("Found at");
+		expect(view(drafts, AGENT_PRESETS, null)).not.toContain("Not found");
+	});
+
+	test("the agents are looked for at start, and again when asked, as after an install", async () => {
+		const engine = createMockEngine();
+		engine.missingExecutables(["codex"]);
+		const store = createAppStore(engine, () => () => {});
+		store.start();
+		for (let round = 0; round < 5; round += 1) await Bun.sleep(0);
+		expect(store.getState().agentLocations?.map(location => location.lookup.state)).toEqual(["found", "not-found"]);
+		engine.missingExecutables([]);
+		await store.locateAgents();
+		expect(store.getState().agentLocations?.map(location => location.lookup.state)).toEqual(["found", "found"]);
+	});
 
 	test("shows each agent's name and command, and the exact command it runs", () => {
 		const markup = view(agentDraftsOf([{ name: "Codex", command: `codex --model "big one"` }]));

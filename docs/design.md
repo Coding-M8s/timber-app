@@ -1043,8 +1043,13 @@ logins. The app never reads a tracker login and never signs in.
   their descriptions; a pick adds `--workflow <name>`, and the Setup
   terminal and "Run setup" repeat it. With no workflows there is no field,
   and a list that cannot be read leaves a short note. An Agent field, the
-  first saved agent by default or None, starts that agent beside setup,
-  without waiting for it, once the dialog has created the worktree. A
+  first saved agent whose executable was found by default or None, starts
+  that agent beside setup, without waiting for it, once the dialog has
+  created the worktree. An agent that was not found is marked "(not
+  found)", or "(cannot start)" for a relative path or a batch file on
+  Windows, and can still be picked; the hint then says it will not start.
+  With none that can start, or before the app has looked, None is picked
+  and the hint says why. A
   workflow that sets an agent, or turns it off, decides instead: the Agent
   field follows it, locked, and says why. The footer shows each command
   that follows under Timber's. The Name hint names

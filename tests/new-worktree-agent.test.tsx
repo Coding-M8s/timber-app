@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { WorktreeDialogFrame } from "../src/mainview/components/NewWorktreeDialog";
-import { chosenAgent, followUps, plannedAgent, runAndStart, startingAgent } from "../src/mainview/components/worktree-modes/agent-choice";
+import { agentOptionLabel, agentPickHint, chosenAgent, followUps, plannedAgent, runAndStart, startingAgent } from "../src/mainview/components/worktree-modes/agent-choice";
 import { createWorktreeDialogController, pickOfOption } from "../src/mainview/components/worktree-modes/dialog-controller";
 import { existingBranchMode } from "../src/mainview/components/worktree-modes/existing-branch";
 import { createExistingBranchForm } from "../src/mainview/components/worktree-modes/existing-branch-form";
@@ -13,7 +13,18 @@ import { selectedWorktree } from "../src/mainview/store/state";
 import { createAppStore } from "../src/mainview/store/store";
 import { createSubmission } from "../src/mainview/store/submission";
 import { AGENT_PRESETS } from "../src/shared/agent";
+import type { AgentLocation, AgentLookup } from "../src/shared/agent-lookup";
 import type { NewWorktreeRequest, OpenWorktreeRequest } from "../src/shared/model";
+
+/** The presets as looked for: found, unless `states` says otherwise. */
+function locations(states: Record<string, "not-found" | "unusable"> = {}): AgentLocation[] {
+	return AGENT_PRESETS.map(agent => {
+		const state = states[agent.name];
+		const lookup: AgentLookup = state === "not-found" ? { state } : state === "unusable" ? { state, message: `Found C:\\npm\\${agent.command}.cmd, a batch file.` } : { state: "found", path: `/usr/local/bin/${agent.command}` };
+		return { name: agent.name, command: agent.command, lookup };
+	});
+}
+const FOUND = locations();
 
 const settle = async () => {
 	for (let round = 0; round < 5; round += 1) await Bun.sleep(0);
@@ -60,7 +71,7 @@ async function openedDialog(engine: MockEngine = createMockEngine()) {
 	const render = () => renderToStaticMarkup(
 		<WorktreeDialogFrame
 			repository={repository} modes={modes()} selected={controller.getState().selected} submission={submission.getState()}
-			agents={store.getState().preferences.agents} plan={controller.plan}
+			agents={store.getState().preferences.agents} agentLocations={store.getState().agentLocations} plan={controller.plan}
 			onSelect={controller.select} onPickAgent={controller.pickAgent} onSubmit={mode => void controller.submit(mode)} onClose={() => {}}
 		/>,
 	);
@@ -77,16 +88,53 @@ async function openedDialog(engine: MockEngine = createMockEngine()) {
 }
 
 describe("the agent to start", () => {
-	test("is the first saved agent until the person picks one, and None is no agent", () => {
-		expect(chosenAgent(AGENT_PRESETS, undefined)).toEqual(AGENT_PRESETS[0]!);
-		expect(chosenAgent(AGENT_PRESETS, "Codex")).toEqual(AGENT_PRESETS[1]!);
-		expect(chosenAgent(AGENT_PRESETS, null)).toBeNull();
+	test("is the first saved agent found until the person picks one, and None is no agent", () => {
+		expect(chosenAgent(AGENT_PRESETS, undefined, FOUND)).toEqual(AGENT_PRESETS[0]!);
+		expect(chosenAgent(AGENT_PRESETS, "Codex", FOUND)).toEqual(AGENT_PRESETS[1]!);
+		expect(chosenAgent(AGENT_PRESETS, null, FOUND)).toBeNull();
 	});
 
-	test("falls back to the first agent when the picked one is no longer saved, and is none with no agents", () => {
-		expect(chosenAgent(AGENT_PRESETS, "Removed")).toEqual(AGENT_PRESETS[0]!);
-		expect(chosenAgent([], undefined)).toBeNull();
-		expect(chosenAgent([], "Codex")).toBeNull();
+	test("falls back to the first agent found when the picked one is no longer saved, and is none with no agents", () => {
+		expect(chosenAgent(AGENT_PRESETS, "Removed", FOUND)).toEqual(AGENT_PRESETS[0]!);
+		expect(chosenAgent(AGENT_PRESETS, "Removed", locations({ "Claude Code": "not-found" }))).toEqual(AGENT_PRESETS[1]!);
+		expect(chosenAgent([], undefined, FOUND)).toBeNull();
+		expect(chosenAgent([], "Codex", FOUND)).toBeNull();
+	});
+
+	test("never picks on its own an agent that was not found, or cannot start, and picks none when none was found", () => {
+		expect(chosenAgent(AGENT_PRESETS, undefined, locations({ "Claude Code": "not-found" }))).toEqual(AGENT_PRESETS[1]!);
+		expect(chosenAgent(AGENT_PRESETS, undefined, locations({ "Claude Code": "unusable" }))).toEqual(AGENT_PRESETS[1]!);
+		expect(chosenAgent(AGENT_PRESETS, undefined, locations({ "Claude Code": "not-found", Codex: "not-found" }))).toBeNull();
+	});
+
+	test("picks none while an agent is not known yet: before the first look, or after its command changed", () => {
+		expect(chosenAgent(AGENT_PRESETS, undefined, null)).toBeNull();
+		expect(chosenAgent(AGENT_PRESETS, undefined, [FOUND[1]!])).toBeNull();
+		const changed = [{ name: "Claude Code", command: "claude --old", lookup: FOUND[0]!.lookup }, FOUND[1]!];
+		expect(chosenAgent(AGENT_PRESETS, undefined, changed)).toBeNull();
+	});
+
+	test("an agent that was not found can still be picked, and is marked in its option and the hint", () => {
+		const missing = locations({ "Claude Code": "not-found", Codex: "unusable" });
+		expect(chosenAgent(AGENT_PRESETS, "Claude Code", missing)).toEqual(AGENT_PRESETS[0]!);
+		expect(agentOptionLabel(AGENT_PRESETS[0]!, missing)).toBe("Claude Code (not found)");
+		expect(agentOptionLabel(AGENT_PRESETS[1]!, missing)).toBe("Codex (cannot start)");
+		expect(agentOptionLabel(AGENT_PRESETS[0]!, FOUND)).toBe("Claude Code");
+		// Not known yet is not marked: it may well be there.
+		expect(agentOptionLabel(AGENT_PRESETS[0]!, null)).toBe("Claude Code");
+		const pick = (agent: (typeof AGENT_PRESETS)[number] | null) => ({ source: "pick" as const, agent, workflow: null, unread: false });
+		expect(agentPickHint(AGENT_PRESETS, missing, pick(AGENT_PRESETS[0]!))).toBe("Claude Code was not found on the PATH the app was started with, so it will not start. Install it, or give its full path in Settings, Agents. A change to PATH needs a restart of the app.");
+		const fullPath = { name: "Tool", command: "/opt/tool/bin/tool --x" };
+		expect(agentPickHint([fullPath], [{ ...fullPath, lookup: { state: "not-found" } }], pick(fullPath))).toBe("There is no executable file at /opt/tool/bin/tool, so Tool will not start. Change its command in Settings, Agents.");
+		expect(agentPickHint(AGENT_PRESETS, missing, pick(AGENT_PRESETS[1]!))).toBe("Codex cannot start: Found C:\\npm\\codex.cmd, a batch file.");
+		expect(agentPickHint(AGENT_PRESETS, locations({ "Claude Code": "not-found", Codex: "not-found" }), pick(null))).toBe(
+			"None of the agents was found on the PATH the app was started with, so none is picked. Install one, or give its full path in Settings, Agents. A change to PATH needs a restart of the app.",
+		);
+		// Found but refused, as npm's .cmd files on Windows: not said to be missing.
+		expect(agentPickHint(AGENT_PRESETS, locations({ "Claude Code": "unusable", Codex: "not-found" }), pick(null))).toBe("None of the agents can start, so none is picked. Settings, Agents says why for each.");
+		expect(agentPickHint(AGENT_PRESETS, null, pick(null))).toBe("The app has not found out yet which agents are installed, so none is picked. Pick one to start it.");
+		expect(agentPickHint(AGENT_PRESETS, FOUND, pick(null))).toBe("No agent starts. Start one later from the worktree.");
+		expect(agentPickHint(AGENT_PRESETS, FOUND, pick(AGENT_PRESETS[0]!))).toBe("Starts in the worktree once this dialog has created it, never in one that was already there.");
 	});
 
 	test("is shown under the Timber command as its own line, after setup, worded for when it starts", () => {
@@ -120,27 +168,27 @@ describe("the agent a workflow sets", () => {
 	};
 
 	test("a workflow with a command decides, and the pick does not count", () => {
-		expect(plannedAgent(AGENT_PRESETS, "Codex", WORKFLOWS, "review")).toEqual({
+		expect(plannedAgent(AGENT_PRESETS, FOUND, "Codex", WORKFLOWS, "review")).toEqual({
 			source: "workflow", workflow: "review", kind: "command", command: "claude --permission-mode plan --note 'two words'",
 		});
 	});
 
 	test("a workflow that turns the agent off decides too: no agent", () => {
-		expect(plannedAgent(AGENT_PRESETS, "Codex", WORKFLOWS, "triage")).toEqual({ source: "workflow", workflow: "triage", kind: "none" });
+		expect(plannedAgent(AGENT_PRESETS, FOUND, "Codex", WORKFLOWS, "triage")).toEqual({ source: "workflow", workflow: "triage", kind: "none" });
 	});
 
 	test("no workflow, or one that sets no agent, leaves it to the pick", () => {
-		expect(plannedAgent(AGENT_PRESETS, "Codex", WORKFLOWS, null)).toEqual({ source: "pick", agent: AGENT_PRESETS[1]!, workflow: null, unread: false });
-		expect(plannedAgent(AGENT_PRESETS, "Codex", WORKFLOWS, "explore")).toEqual({ source: "pick", agent: AGENT_PRESETS[1]!, workflow: "explore", unread: false });
-		expect(plannedAgent(AGENT_PRESETS, null, WORKFLOWS, "explore")).toEqual({ source: "pick", agent: null, workflow: "explore", unread: false });
-		expect(plannedAgent(AGENT_PRESETS, "Codex", undefined, null)).toEqual({ source: "pick", agent: AGENT_PRESETS[1]!, workflow: null, unread: false });
+		expect(plannedAgent(AGENT_PRESETS, FOUND, "Codex", WORKFLOWS, null)).toEqual({ source: "pick", agent: AGENT_PRESETS[1]!, workflow: null, unread: false });
+		expect(plannedAgent(AGENT_PRESETS, FOUND, "Codex", WORKFLOWS, "explore")).toEqual({ source: "pick", agent: AGENT_PRESETS[1]!, workflow: "explore", unread: false });
+		expect(plannedAgent(AGENT_PRESETS, FOUND, null, WORKFLOWS, "explore")).toEqual({ source: "pick", agent: null, workflow: "explore", unread: false });
+		expect(plannedAgent(AGENT_PRESETS, FOUND, "Codex", undefined, null)).toEqual({ source: "pick", agent: AGENT_PRESETS[1]!, workflow: null, unread: false });
 	});
 
 	test("a workflow the list does not have, or any while there is no list, leaves it to the pick, unread", () => {
 		const unread = (workflow: string) => ({ source: "pick" as const, agent: AGENT_PRESETS[1]!, workflow, unread: true });
-		expect(plannedAgent(AGENT_PRESETS, "Codex", WORKFLOWS, "gone")).toEqual(unread("gone"));
-		expect(plannedAgent(AGENT_PRESETS, "Codex", undefined, "review")).toEqual(unread("review"));
-		expect(plannedAgent(AGENT_PRESETS, "Codex", { ok: false, message: "no" }, "review")).toEqual(unread("review"));
+		expect(plannedAgent(AGENT_PRESETS, FOUND, "Codex", WORKFLOWS, "gone")).toEqual(unread("gone"));
+		expect(plannedAgent(AGENT_PRESETS, FOUND, "Codex", undefined, "review")).toEqual(unread("review"));
+		expect(plannedAgent(AGENT_PRESETS, FOUND, "Codex", { ok: false, message: "no" }, "review")).toEqual(unread("review"));
 	});
 
 	test("each plan starts the agent it says, named by the request as a saved agent or a workflow", () => {
@@ -164,7 +212,7 @@ describe("the agent a workflow sets", () => {
 	});
 
 	test("is shown under the Timber command with the workflow's command as Timber reports it", () => {
-		const agent = startingAgent(plannedAgent(AGENT_PRESETS, "Codex", WORKFLOWS, "review"));
+		const agent = startingAgent(plannedAgent(AGENT_PRESETS, FOUND, "Codex", WORKFLOWS, "review"));
 		expect(followUps(agent, "always", "always", null, "review")).toEqual([
 			{ note: "Then runs setup in a terminal in the worktree, without waiting for it:", command: "timber open --setup --workflow review --no-editor --no-agent -- <worktree>" },
 			{ note: "And starts the review workflow's agent beside setup, in the new worktree:", command: "claude --permission-mode plan --note 'two words'" },
@@ -265,6 +313,100 @@ describe("the Agent field", () => {
 		expect(markup).toContain('<select class="field-input" name="agent"><option value="" selected="">None</option></select>');
 		expect(markup).toContain("No agents are set up. Add one in Settings, Agents.");
 		expect(markup.split("Command that will start next").length).toBe(2);
+	});
+});
+
+describe("agents that are not installed", () => {
+	const missing = (executables: string[]) => {
+		const engine = createMockEngine();
+		engine.missingExecutables(executables);
+		return engine;
+	};
+
+	test("the first agent found is picked, and the one not found is marked but can still be picked", async () => {
+		const { render, pickAgent, submit, model, store, sessions, selected } = await openedDialog(missing(["claude"]));
+		expect(render()).toContain('<select class="field-input" name="agent"><option value="Claude Code">Claude Code (not found)</option><option value="Codex" selected="">Codex</option><option value="">None</option></select>');
+		pickAgent("Claude Code");
+		const markup = render();
+		expect(markup).toContain('<option value="Claude Code" selected="">Claude Code (not found)</option>');
+		expect(markup).toContain("Claude Code was not found on the PATH the app was started with, so it will not start.");
+		// Started anyway, it fails as before, with the same message in the pane.
+		model.edit({ name: "feat/login" });
+		expect(await submit()).toBe(true);
+		expect(sessions().map(session => session.name)).toEqual(["Setup"]);
+		expect(store.getState().terminalProblem).toMatchObject({ worktree: selected()!.id, agent: "Claude Code", command: "claude" });
+		expect(store.getState().terminalProblem?.message).toStartWith("Could not start Claude Code.");
+	});
+
+	test("with none found, None is picked and the hint says why", async () => {
+		const { render } = await openedDialog(missing(["claude", "codex"]));
+		const markup = render();
+		expect(markup).toContain('<option value="Claude Code">Claude Code (not found)</option><option value="Codex">Codex (not found)</option><option value="" selected="">None</option>');
+		expect(markup).toContain("None of the agents was found on the PATH the app was started with, so none is picked.");
+		expect(markup).not.toContain(">claude</pre>");
+	});
+
+	test("the look as the dialog opens finds an agent installed since, and then holds the pick", async () => {
+		const engine = missing(["claude"]);
+		const { render, controller } = await openedDialog(engine);
+		engine.missingExecutables([]);
+		await controller.locateAgents();
+		expect(render()).toContain('<option value="Claude Code" selected="">Claude Code</option>');
+		// A later look changes the marks, never the pick under the person.
+		engine.missingExecutables(["claude"]);
+		await controller.locateAgents();
+		expect(controller.getState().pick).toBe("Claude Code");
+		expect(render()).toContain('<option value="Claude Code" selected="">Claude Code (not found)</option>');
+	});
+
+	test("a look that got no fresh answer holds nothing, and the one that answers decides", async () => {
+		const engine = missing(["claude"]);
+		const { render, controller, store } = await openedDialog(engine);
+		// Installed since the app looked at start, but the dialog's look fails: nothing is held from the old answer.
+		engine.missingExecutables([]);
+		const real = engine.locateAgents;
+		engine.locateAgents = () => Promise.reject(new Error("gone"));
+		await controller.locateAgents();
+		expect(controller.getState().pick).toBeUndefined();
+		// Two looks at once, as a dialog opened twice: the older answer arriving last is dropped, and the newer one is held.
+		let answerFirst!: () => void;
+		engine.locateAgents = () => new Promise(resolve => {
+			answerFirst = () => void real().then(found => resolve(found.map(location => ({ ...location, lookup: { state: "not-found" as const } }))));
+		});
+		const first = controller.locateAgents();
+		engine.locateAgents = real;
+		await controller.locateAgents();
+		expect(controller.getState().pick).toBe("Claude Code");
+		answerFirst();
+		await first;
+		expect(store.getState().agentLocations?.map(location => location.lookup.state)).toEqual(["found", "found"]);
+		expect(render()).toContain('<option value="Claude Code" selected="">Claude Code</option>');
+	});
+
+	test("before the engine has answered, no agent is picked or marked", async () => {
+		const engine = createMockEngine();
+		engine.locateAgents = () => new Promise(() => {});
+		const { render } = await openedDialog(engine);
+		const markup = render();
+		expect(markup).toContain('<option value="Claude Code">Claude Code</option><option value="Codex">Codex</option><option value="" selected="">None</option>');
+		expect(markup).toContain("The app has not found out yet which agents are installed, so none is picked.");
+	});
+
+	test("an engine that cannot answer leaves what was known", async () => {
+		const engine = createMockEngine();
+		const { store, controller } = await openedDialog(engine);
+		const known = store.getState().agentLocations;
+		expect(known).not.toBeNull();
+		engine.locateAgents = () => Promise.reject(new Error("gone"));
+		await controller.locateAgents();
+		expect(store.getState().agentLocations).toBe(known);
+	});
+
+	test("a save that changes the agents looks for them again", async () => {
+		const { store } = await openedDialog(missing(["aider"]));
+		await store.savePreferences({ agents: [{ name: "Aider", command: "aider --yes" }] });
+		await settle();
+		expect(store.getState().agentLocations).toEqual([{ name: "Aider", command: "aider --yes", lookup: { state: "not-found" } }]);
 	});
 });
 

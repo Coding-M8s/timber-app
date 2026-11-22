@@ -1,4 +1,5 @@
-import { AGENT_LIMIT, AGENT_PRESETS, type AgentSetting, agentProblem, describeAgentCommand, sameAgentName, sameAgentSettings } from "../shared/agent";
+import { AGENT_LIMIT, AGENT_PRESETS, type AgentSetting, agentCommand, agentProblem, describeAgentCommand, sameAgentName, sameAgentSettings } from "../shared/agent";
+import { type AgentLocation, describeAgentLookup, lookupOf } from "../shared/agent-lookup";
 import { cleanSessionName } from "../shared/terminal";
 import type { TerminalProblem } from "./store/state";
 
@@ -142,4 +143,24 @@ export function agentsDraftModel(drafts: readonly AgentDraft[], saved: readonly 
 	const error = drafts.length > AGENT_LIMIT ? `The list can hold ${AGENT_LIMIT} agents at most. Remove ${drafts.length - AGENT_LIMIT}.` : null;
 	const valid = error === null && rows.every(row => row.problem === null);
 	return { rows, agents, error, canSave: valid && !sameAgentSettings(agents, saved) };
+}
+
+/** What a row of the Agents section says about its agent's executable, and whether that is a problem. */
+export interface AgentLookupLine {
+	text: string;
+	missing: boolean;
+}
+
+/**
+ * Whether a row's agent was found, as it was saved and last looked for. A
+ * row that differs from what is saved was not looked for: it says to save
+ * first. Null while the saved agent is not known yet.
+ */
+export function agentLookupLine(setting: AgentSetting, saved: readonly AgentSetting[], locations: readonly AgentLocation[] | null): AgentLookupLine | null {
+	const isSaved = saved.some(agent => agent.name === setting.name && agent.command === setting.command);
+	if (!isSaved) return { text: "Save to check whether it is installed.", missing: false };
+	const lookup = lookupOf(locations, setting);
+	if (lookup === null) return null;
+	const command = agentCommand(setting);
+	return { text: describeAgentLookup(command.ok ? command.executable : setting.command, lookup), missing: lookup.state !== "found" };
 }

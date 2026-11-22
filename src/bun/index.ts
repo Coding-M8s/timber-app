@@ -550,6 +550,8 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 				}
 				return result;
 			},
+			// Looks for the saved agents' executables only; nothing starts (see ./terminals.ts).
+			locateAgents: () => terminals.locateAgents(),
 			exportTheme: ({ theme }) => themeFiles.exportTheme(theme),
 			importTheme: () => themeFiles.importTheme(),
 			// Answers the path the person picked, which is private: never log it.

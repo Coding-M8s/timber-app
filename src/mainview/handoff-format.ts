@@ -10,7 +10,7 @@ import { displayText } from "../shared/timber-record";
 
 /** The session to open: the first saved agent when Timber wanted its agent and one is saved, else a shell. */
 export function handoffAgent(handoff: WorktreeHandoff, agents: readonly AgentSetting[]): AgentSetting | null {
-	// As the New worktree dialog does when nobody picked one: the first saved agent (`chosenAgent`).
+	// The first saved agent, as prompts and reviews start. The New worktree dialog instead picks the first one found (`defaultAgent`).
 	return handoff.agent ? agents[0] ?? null : null;
 }
 

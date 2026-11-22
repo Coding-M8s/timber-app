@@ -1,4 +1,5 @@
-import { type AgentSetting, describeAgentCommand, findAgent } from "../../../shared/agent";
+import { type AgentSetting, agentCommand, describeAgentCommand, findAgent } from "../../../shared/agent";
+import { type AgentLocation, agentFound, agentMark, agentsLocated, isFullPath, lookupOf } from "../../../shared/agent-lookup";
 import { describeCommandLine } from "../../../shared/command-line";
 import type { ReportedWorktree } from "../../../shared/model";
 import { WORKTREE_PLACEHOLDER, describeTimberCommand } from "../../../shared/timber-result";
@@ -22,18 +23,34 @@ import type { WorkflowOptions } from "./workflow-choice";
 
 /**
  * What the person picked in the Agent field: a name, null for None, or
- * undefined while they have not touched it, which means the first agent.
+ * undefined while they have not touched it, which means the default agent
+ * (`defaultAgent`).
  */
 export type AgentPick = string | null | undefined;
 
-/** The agent that will start, or null for none. A picked name that is no longer saved falls back to the first agent. */
-export function chosenAgent(agents: readonly AgentSetting[], pick: AgentPick): AgentSetting | null {
+/**
+ * The agent the Agent field picks on its own: the first saved agent whose
+ * executable was found. None when no agent was found, and none while any
+ * agent is not known yet, so an agent that turns out to be missing is never
+ * picked, and a known one is never passed over for a later one.
+ */
+export function defaultAgent(agents: readonly AgentSetting[], locations: readonly AgentLocation[] | null): AgentSetting | null {
+	if (!agentsLocated(locations, agents)) return null;
+	return agents.find(agent => agentFound(locations, agent)) ?? null;
+}
+
+/**
+ * The agent that will start, or null for none. Any saved agent can be
+ * picked, found or not. A picked name that is no longer saved falls back to
+ * the default agent.
+ */
+export function chosenAgent(agents: readonly AgentSetting[], pick: AgentPick, locations: readonly AgentLocation[] | null): AgentSetting | null {
 	if (pick === null) return null;
 	if (pick !== undefined) {
 		const picked = findAgent(agents, pick);
 		if (picked) return picked;
 	}
-	return agents[0] ?? null;
+	return defaultAgent(agents, locations);
 }
 
 /**
@@ -56,14 +73,47 @@ export type AgentPlan =
  * have, or any workflow while the list is not there, leaves it to the pick
  * too, marked `unread`: the main process reads the workflow when it starts.
  */
-export function plannedAgent(agents: readonly AgentSetting[], pick: AgentPick, workflows: WorkflowOptions, workflow: string | null): AgentPlan {
-	const agent = chosenAgent(agents, pick);
+export function plannedAgent(agents: readonly AgentSetting[], locations: readonly AgentLocation[] | null, pick: AgentPick, workflows: WorkflowOptions, workflow: string | null): AgentPlan {
+	const agent = chosenAgent(agents, pick, locations);
 	if (workflow === null) return { source: "pick", agent, workflow: null, unread: false };
 	const found = workflows?.ok ? workflows.workflows.find(candidate => candidate.name === workflow) : undefined;
 	if (found === undefined) return { source: "pick", agent, workflow, unread: true };
 	if (found.agent.kind === "command") return { source: "workflow", workflow, kind: "command", command: describeCommandLine([found.agent.command, ...found.agent.args]) };
 	if (found.agent.kind === "none") return { source: "workflow", workflow, kind: "none" };
 	return { source: "pick", agent, workflow, unread: false };
+}
+
+const PATH_RESTART = "A change to PATH needs a restart of the app.";
+
+/** An agent's option in the Agent field: its name, marked when its executable was not found or cannot start. */
+export function agentOptionLabel(agent: AgentSetting, locations: readonly AgentLocation[] | null): string {
+	const mark = agentMark(lookupOf(locations, agent));
+	return mark === null ? agent.name : `${agent.name} (${mark})`;
+}
+
+/** The hint under the Agent field while the pick decides (`plan.source` is "pick"). */
+export function agentPickHint(agents: readonly AgentSetting[], locations: readonly AgentLocation[] | null, plan: Extract<AgentPlan, { source: "pick" }>): string {
+	if (agents.length === 0) return "No agents are set up. Add one in Settings, Agents.";
+	const chosen = plan.agent;
+	if (chosen === null) {
+		if (agents.some(agent => agentFound(locations, agent))) return "No agent starts. Start one later from the worktree.";
+		if (agentsLocated(locations, agents)) {
+			if (agents.every(agent => lookupOf(locations, agent)?.state === "not-found")) {
+				return `None of the agents was found on the PATH the app was started with, so none is picked. Install one, or give its full path in Settings, Agents. ${PATH_RESTART}`;
+			}
+			return "None of the agents can start, so none is picked. Settings, Agents says why for each.";
+		}
+		return "The app has not found out yet which agents are installed, so none is picked. Pick one to start it.";
+	}
+	const lookup = lookupOf(locations, chosen);
+	if (lookup?.state === "not-found") {
+		const command = agentCommand(chosen);
+		if (command.ok && isFullPath(command.executable)) return `There is no executable file at ${command.executable}, so ${chosen.name} will not start. Change its command in Settings, Agents.`;
+		return `${chosen.name} was not found on the PATH the app was started with, so it will not start. Install it, or give its full path in Settings, Agents. ${PATH_RESTART}`;
+	}
+	if (lookup?.state === "unusable") return `${chosen.name} cannot start: ${lookup.message}`;
+	if (plan.unread && plan.workflow !== null) return `The ${plan.workflow} workflow could not be read yet. If it sets an agent, that one starts instead, once this dialog has created the worktree.`;
+	return "Starts in the worktree once this dialog has created it, never in one that was already there.";
 }
 
 /** The agent that starts: what to call it in the footer and toasts, its command for showing, and what the request names. */

@@ -2,6 +2,7 @@ import { accessSync, constants } from "node:fs";
 import { type ArenaLaunch, isArenaName, isAttemptLabel } from "../shared/arenas";
 import { homedir } from "node:os";
 import { type AgentSetting, agentCommand, findAgent } from "../shared/agent";
+import type { AgentLocation } from "../shared/agent-lookup";
 import { type ResumableAgent, agentProgram, agentStartArguments, conversationMissingNote, resumableAgent } from "../shared/agent-resume";
 import { describeCommandLine } from "../shared/command-line";
 import type { TimberStatus } from "../shared/model";
@@ -19,7 +20,7 @@ import { type RestoreTag, isConversationId, isRestoreTag } from "../shared/saved
 import { type Workflow, type WorkflowList, isWorkflowName } from "../shared/workflows";
 import { worktreeSetupArguments } from "../shared/worktree-commands";
 import { claudeConfigFolder, claudeConversationExists, codexConversationExists, codexHomeFolder } from "./agent-conversations";
-import { type ExecutableWords, findExecutable, isWindowsBatch } from "./find-executable";
+import { type ExecutableWords, findExecutable, isWindowsBatch, locateAgent } from "./find-executable";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
 import { killProcessTree, sessionMembers, signalEach, signalGroup } from "./process-session";
 import { type PseudoTerminal, type StartPseudoTerminal, startPseudoTerminal } from "./pseudo-terminal";
@@ -165,6 +166,8 @@ export interface TerminalSessions {
 	 * a prompt pasted with no Enter, once the agent is ready in the same way.
 	 */
 	open(request: OpenTerminalRequest, chop?: ChopInput): Promise<OpenTerminalResult>;
+	/** Whether each saved agent's executable is there to start, looked for as `open` looks for it. Nothing starts. */
+	locateAgents(): Promise<AgentLocation[]>;
 	/** Give a session another name. Null for a session that is gone, or a name with nothing in it. */
 	rename(id: string, name: string): TerminalSession | null;
 	/** The end of what a session printed. Null for a session that is gone. */
@@ -1103,6 +1106,10 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 	return {
 		list: () => [...sessions.values()].map(live => ({ ...live.session })),
 		open,
+		async locateAgents() {
+			const searchPath = environment.PATH ?? environment.Path ?? "";
+			return (await agents()).map(agent => ({ name: agent.name, command: agent.command, lookup: locateAgent(agent, searchPath, windows) }));
+		},
 		rename(id, name) {
 			const live = sessions.get(id);
 			const clean = cleanSessionName(name);
