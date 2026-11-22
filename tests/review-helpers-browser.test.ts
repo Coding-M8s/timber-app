@@ -73,6 +73,21 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the revie
 		expect(await page.evaluate<boolean>(`document.querySelector('.change-file[title="src/spread.ts"]').classList.contains("viewed")`)).toBe(true);
 	});
 
+	test("the diff's title line wraps where the diff is narrow, so its buttons stay inside it", async () => {
+		await page.click('.change-file[title="src/spread.ts"]');
+		await page.until(`document.querySelector(".diff-close") !== null`, "the diff opened");
+		try {
+			for (const width of [1400, 1100, 900]) {
+				await page.resize(width, 700);
+				const [diff, close, previous] = await page.evaluate<[number, number, number]>(`[document.querySelector(".changes-diff").getBoundingClientRect().right, document.querySelector(".diff-close").getBoundingClientRect().right, document.querySelector(".diff-steps").getBoundingClientRect().left]`);
+				expect(close).toBeLessThanOrEqual(diff);
+				expect(previous).toBeGreaterThan(0);
+			}
+		} finally {
+			await page.resize(1280, 800);
+		}
+	});
+
 	test("the filter narrows the list as it is typed, says how many match, and Down goes into the list", async () => {
 		await page.click(".changes-filter-input");
 		await page.type("SPREAD");

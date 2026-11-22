@@ -533,13 +533,16 @@ export function DiffView({ repository, worktree, view, file, layout, steps, revi
 				{counts !== "" && <span className="visually-hidden">{counts}</span>}
 				{review}
 				{viewed}
-				{onDisk && (
-					<button type="button" className="button quiet diff-editor" title={`Show ${file.path} as it is now, read-only`} onClick={() => store.openFile(worktree.id, file.path)}>
-						View file
-					</button>
-				)}
-				{onDisk && <OpenFileButton repository={repository} worktree={worktree} file={file} />}
-				<button type="button" className="button quiet diff-close" title={`Close the diff of ${file.path}`} onClick={onClose}>Close</button>
+				{/* One group at the end of the line, which wraps as a whole where the diff is narrow. */}
+				<span className="diff-actions">
+					{onDisk && (
+						<button type="button" className="button quiet diff-editor" title={`Show ${file.path} as it is now, read-only`} onClick={() => store.openFile(worktree.id, file.path)}>
+							View file
+						</button>
+					)}
+					{onDisk && <OpenFileButton repository={repository} worktree={worktree} file={file} />}
+					<button type="button" className="button quiet diff-close" title={`Close the diff of ${file.path}`} onClick={onClose}>Close</button>
+				</span>
 			</div>
 			<div
 				className={noting.drag === null ? "diff-body" : "diff-body dragging"}

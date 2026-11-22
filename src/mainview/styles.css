@@ -4544,10 +4544,12 @@ pre:focus-visible {
 	background: var(--bg-pane);
 }
 
+/* The title line wraps where the diff is narrow, so its buttons never spill over the side panel. */
 .diff-title {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
-	gap: 8px;
+	gap: 4px 8px;
 	min-height: 34px;
 	padding: 2px 8px 2px 12px;
 	border-bottom: 1px solid var(--line);
@@ -4558,7 +4560,9 @@ pre:focus-visible {
 	margin-left: 0;
 }
 
+/* Starts short, so the path is cut with an ellipsis before the line wraps, and takes the room left. */
 .diff-path {
+	flex: 1 1 12ch;
 	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -4574,6 +4578,20 @@ pre:focus-visible {
 
 .diff-area {
 	flex: none;
+}
+
+.diff-actions {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	margin-left: auto;
+}
+
+/* The group goes to the end of the line; its buttons follow one another in it. */
+.diff-actions > .diff-editor,
+.diff-actions > .diff-close {
+	margin: 0;
 }
 
 .diff-editor,
