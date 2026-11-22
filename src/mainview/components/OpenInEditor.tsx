@@ -52,25 +52,33 @@ export function OpenInEditorIconButton({ repository, worktree }: { repository: s
 	);
 }
 
-/** "Open in editor" in the workspace header, with the reason beside it when it cannot open anything. */
+/** Where the workspace header says why its "Open in editor" cannot open anything. There is one header, so one id. */
+export const WORKSPACE_EDITOR_REASON_ID = "workspace-editor-reason";
+
+/** "Open in editor" on the workspace header's title line. Its tooltip shows the exact command; why it cannot open shows under the details. */
 export function OpenInEditorButton({ repository, worktree }: { repository: string; worktree: Worktree }) {
 	const { action, open } = useOpenInEditor(repository, worktree);
 	return (
-		<>
-			<button
-				type="button"
-				className="button workspace-editor"
-				title={action.tooltip}
-				aria-haspopup={action.opensSettings ? "dialog" : undefined}
-				disabled={!action.available}
-				onClick={open}
-			>
-				<EditorIcon />
-				{OPEN_IN_EDITOR}
-			</button>
-			{action.reason !== null && <span className="workspace-done-note">{action.reason}</span>}
-		</>
+		<button
+			type="button"
+			className="button workspace-editor"
+			title={action.tooltip}
+			aria-describedby={action.reason === null ? undefined : WORKSPACE_EDITOR_REASON_ID}
+			aria-haspopup={action.opensSettings ? "dialog" : undefined}
+			disabled={!action.available}
+			onClick={open}
+		>
+			<EditorIcon />
+			{OPEN_IN_EDITOR}
+		</button>
 	);
+}
+
+/** Why the workspace header's "Open in editor" cannot open anything, as one quiet line. Nothing when it can. */
+export function OpenInEditorReason({ repository, worktree }: { repository: string; worktree: Worktree }) {
+	const { action } = useOpenInEditor(repository, worktree);
+	if (action.reason === null) return null;
+	return <p id={WORKSPACE_EDITOR_REASON_ID} className="workspace-note">{action.reason}</p>;
 }
 
 /** Why the last "Open in editor" opened nothing, with the command, until it is dismissed. */

@@ -292,7 +292,7 @@ change them here first when they change.
   file of the person's own, or none, with Play to hear it.
 - Right-clicking a worktree row, or Shift+F10 or the context menu key on a
   focused row, opens a menu for that worktree, whichever one is selected.
-  It holds Done, which opens the same Done dialog as the workspace header.
+  It holds Done, which opens the same Done dialog as the workspace header's More menu.
   For a primary checkout, or while Timber removes the worktree, Done is
   disabled, and the menu says why. The arrows
   move through the menu; Escape and Tab give the keyboard back to the row,
@@ -439,6 +439,18 @@ logins. The app never reads a tracker login and never signs in.
 ## Workspace
 
 - Three tabs: Workspace (panes), Changes (diff), and Pull request.
+- The header's first line is the worktree's name, a quiet label after it
+  ("Primary checkout" for the primary checkout, "Removing" while Timber
+  removes the worktree), and one action bar at its end: "Open in editor",
+  then More (three dots), whose menu holds "Rebase…" and "Done…". Each
+  menu entry opens its dialog, which shows the Timber command before
+  anything runs. A disabled entry says why under it, such as "The primary
+  checkout is never removed." Enter, Space, or Down on More opens the menu
+  on its first entry, Up on its last; the menu moves and closes as a row's
+  menu does, and gives the keyboard back to More, as does a dialog opened
+  from it when it closes. When Open in editor cannot open anything, why
+  shows as one quiet line under the details. In a narrow window the name
+  shortens first.
 - A worktree holds any number of sessions: agents such as codex and claude,
   and terminals. Each session has a chip that shows or hides its pane; a hidden
   session keeps running. Closing an agent pane stops the agent. An agent's
@@ -460,7 +472,8 @@ logins. The app never reads a tracker login and never signs in.
 - The header names the worktree's saved base beside its sync state and
   changes, in the same words as the row's tooltip.
 - The header shows the worktree's pull request with the same words as its
-  row, and "Open pull request" opens it in the browser. When pull requests
+  row. Its number, such as "#42", is a quiet underlined link, as the issue
+  is, that opens it in the browser. When pull requests
   could not be read, the header has the same quiet word as the repository.
 - The header shows the issue the worktree belongs to, after the base, as a
   quiet underlined link: "PROJ-123 · In Review", the key and the tracker's

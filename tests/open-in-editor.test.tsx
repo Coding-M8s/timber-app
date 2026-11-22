@@ -105,7 +105,8 @@ describe("Open in editor in the window", () => {
 		expect(rowEditor(markup, FEATURE)).toContain("disabled");
 		const [header] = tagsOf(markup, "button workspace-editor");
 		expect(header).toContain("disabled");
-		expect(markup).toContain(`<span class="workspace-done-note">${TERMINAL_EDITOR_REASON}</span>`);
+		expect(header).toContain('aria-describedby="workspace-editor-reason"');
+		expect(markup).toContain(`<p id="workspace-editor-reason" class="workspace-note">${TERMINAL_EDITOR_REASON}</p>`);
 	});
 
 	test("with no editor set, pressing it opens Settings at Editor and starts nothing", async () => {

@@ -307,8 +307,9 @@ then a removal that is tied to that one preview. The app never works out by
 itself what is safe to delete. It shows what the preview says, and Timber
 decides, both when it previews and again when it removes.
 
-- **Entry.** The Done control in the workspace header opens the dialog for
-  the selected worktree, and Done in a sidebar row's menu (right-click,
+- **Entry.** Done in the workspace header's More menu opens the dialog for
+  the selected worktree (`workspaceMenuChoice` in
+  `src/mainview/workspace-actions-format.ts`), and Done in a sidebar row's menu (right-click,
   Shift+F10, or the context menu key) opens it for that row's worktree,
   without selecting it (`worktreeMenuChoice` in
   `src/mainview/worktree-menu-format.ts`). For the primary checkout, and
@@ -381,8 +382,8 @@ decides, both when it previews and again when it removes.
   "removing", and Done, Rebase, Open in editor, and new sessions are off for
   that worktree. The store refuses them as well: Done and Rebase by not
   opening their dialogs, the others by running nothing. Closing the dialog
-  would leave the keyboard nowhere, because the Done button is disabled, or
-  gone once the removal worked, so it goes to the first worktree row of the
+  would leave the keyboard nowhere, because Done in the More menu is
+  disabled, or gone once the removal worked, so it goes to the first worktree row of the
   repository's group, or to the group's header while it is collapsed
   (`focusFirstWorktree` in `src/mainview/sidebar-focus.ts`). A second removal of the
   same worktree runs nothing. Other worktrees, sessions, and dialogs keep
@@ -1286,7 +1287,7 @@ Every operation reports how it ended in the same way.
   worktree dialog against the mock engine, which acts out `timber new` and
   `timber open` and runs nothing; `timberMock.endCommands` below chooses how
   they end. In `/work/timber` the mock has a few branches without a worktree
-  to open. The Done button in the workspace header opens the Done dialog,
+  to open. Done in the workspace header's More menu opens the Done dialog,
   which the mock engine acts out as well. Adding `?feedback=demo` to the address still shows the older
   sample dialog. The desktop app never loads that one.
 
@@ -2402,8 +2403,9 @@ there is one sign-in, Timber's, and the app holds no token.
   from `src/mainview/pull-request-format.ts` after the row's state flags.
   A failure is shown once, as a quiet word on the repository's header, and
   in the workspace header of a selected worktree in it, never on every row
-  and never as a dialog. "Open pull request" in the workspace header goes
-  through `openLink`, which opens only `http` and `https` links.
+  and never as a dialog. The pull request's number in the workspace header
+  is a link that goes through `openLink`, which opens only `http` and
+  `https` links.
 - **The Pull request tab.** `PullRequestPanel` shows the selected
   worktree's entry from the same answer, with its words from the pure
   `describePullRequestTab` in `src/mainview/pull-request-tab-format.ts`:
@@ -3141,7 +3143,8 @@ Open always pass `--no-editor` to Timber (see
   never covers the branch markers. The workspace header has it too. The
   tooltip is the exact command. With no editor set it opens Settings at
   Editor. With an editor that runs in a terminal, or a worktree whose folder
-  is missing, it is disabled with the reason: starting a terminal editor in
+  is missing, it is disabled with the reason, which the workspace header
+  shows as one quiet line under its details (`OpenInEditorReason`): starting a terminal editor in
   the worktree's terminal is a later step. A started editor is a toast. Any
   other answer is a note under the workspace header that names the command,
   until it is dismissed or the next open works (`editorProblem` in the store).

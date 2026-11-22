@@ -75,6 +75,8 @@ interface WorktreeMenuProps<Id extends string> {
 	onClose: (backToRow: boolean) => void;
 	/** An enabled entry was chosen. The menu is already closed and the row has the keyboard. */
 	onChoose: (id: Id) => void;
+	/** The entry that has the keyboard when it opens: the first, unless it was opened with Up. */
+	start?: "first" | "last";
 }
 
 /**
@@ -83,7 +85,7 @@ interface WorktreeMenuProps<Id extends string> {
  * elsewhere, scrolling, resizing, or leaving the window put it away. A
  * disabled entry does nothing and leaves the menu open.
  */
-export function WorktreeMenu<Id extends string = WorktreeMenuItemId>({ label, items, at, onClose, onChoose }: WorktreeMenuProps<Id>) {
+export function WorktreeMenu<Id extends string = WorktreeMenuItemId>({ label, items, at, onClose, onChoose, start = "first" }: WorktreeMenuProps<Id>) {
 	const idBase = useId();
 	const menu = useRef<HTMLDivElement>(null);
 	const close = useRef(onClose);
@@ -99,8 +101,10 @@ export function WorktreeMenu<Id extends string = WorktreeMenuItemId>({ label, it
 		element.style.top = `${placed.top}px`;
 	}, [at]);
 
+	const first = start === "last" ? Math.max(0, items.length - 1) : 0;
 	useEffect(() => {
-		document.getElementById(worktreeMenuItemId(idBase, 0))?.focus();
+		document.getElementById(worktreeMenuItemId(idBase, first))?.focus();
+		// Only on opening: the entries may change while it is open, and the keyboard stays where it is.
 	}, [idBase]);
 
 	useEffect(() => {

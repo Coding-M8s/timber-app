@@ -682,13 +682,16 @@ describe("from the Done button to the list", () => {
 	test("the workspace offers Done for a linked worktree, and not for the primary checkout", async () => {
 		const { store } = await startedStore();
 		const primary = renderToStaticMarkup(<App store={store} />);
-		expect(primary).toContain(`<button type="button" class="button" disabled="" title="${DONE_PRIMARY_NOTE}">Done</button><span class="workspace-done-note">${DONE_PRIMARY_NOTE}</span>`);
+		// A quiet label after the name says what it is; Done in the More menu is off with DONE_PRIMARY_NOTE (tests/workspace-actions.test.ts).
+		expect(primary).toContain('<span class="workspace-kind">Primary checkout</span>');
+		expect(primary).toContain('aria-label="More for main"');
+		expect(primary).not.toContain(">Done</button>");
 		expect(DONE_PRIMARY_NOTE).toBe("The primary checkout is never removed.");
 
 		store.select(sample(FEATURE).id);
 		const linked = renderToStaticMarkup(<App store={store} />);
-		expect(linked).toContain('<button type="button" class="button" title="Remove this worktree, after a preview of what would be lost">Done</button>');
-		expect(linked).not.toContain("workspace-done-note");
+		expect(linked).toContain('aria-label="More for feat/github-issue-lookup"');
+		expect(linked).not.toContain("workspace-kind");
 		// No dialog until Done is pressed.
 		expect(linked).not.toContain("<dialog");
 	});
