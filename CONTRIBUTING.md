@@ -47,8 +47,9 @@ bun run test tests/terminals.test.ts  # one file, or a few
 bun run test:serial                   # one process, for debugging
 ```
 
-`bun run test` is `bun test --parallel --timeout=30000 --timings
-tests/timings.json`. Bun starts one worker per CPU core, and each test file
+`bun run test` is `bun test --parallel=4 --timeout=30000 --timings
+tests/timings.json`. Bun starts four workers, so several runs at once, such as
+one per worktree, do not saturate the machine, and each test file
 gets a fresh global, module registry, and environment. The tests in one file
 still run one after another. So a test file must not depend on another: make
 its own temporary folders with `mkdtemp`, listen on port 0, and wait for what
