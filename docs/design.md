@@ -571,8 +571,13 @@ logins. The app never reads a tracker login and never signs in.
   dialogs, and their failures stay in them.) A failed refresh keeps the last
   list on screen with a grey word beside the title ("offline", "sign-in needed", "no access", "not found") and Timber's
   reason in its tooltip. A first read that fails says so in a line, with
-  Timber's reason, and `timber setup` when a login is missing. No current
-  sprint, an empty list, and no tracker set up each say so in one line; an
+  Timber's reason. One with no usable login points at Settings, Repository,
+  Issue tracking first and offers "Open Issue tracking settings": a Jira
+  site and login, or a Linear key, is checked or replaced there, and a GitHub login is tested
+  there, with `gh auth login` beside it, since Settings cannot sign in to
+  GitHub. No tracker set up says the same place sets up Jira or Linear, and
+  that GitHub issues need a github.com remote, with the same button. No current
+  sprint and an empty list each say so in one line; an
   empty list names the toggles ("Nothing assigned to you in the current
   sprint").
 - A Timber without `__app-issues` shows that the board needs a Timber built
@@ -1068,7 +1073,8 @@ logins. The app never reads a tracker login and never signs in.
   `github:42`, and Timber still decides the branch. Escape closes the list
   and leaves the dialog open. Typing never waits for the list. Offline,
   sign-in needed, or a Timber without issue search shows no list, only a
-  quiet line under Name. The dialog opens with the keyboard in Name, so
+  quiet line under Name. Sign-in needed names Settings, Repository, Issue
+  tracking for Jira and Linear, and `gh auth login` for GitHub. The dialog opens with the keyboard in Name, so
   typing at once fills it. Switching mode puts the keyboard in that mode's
   first field, unless New branch is offering "Run setup", which has none; Shift+Tab goes
   back to the switch, whose arrow keys change the mode. A run that failed
@@ -1129,8 +1135,8 @@ logins. The app never reads a tracker login and never signs in.
   for GitHub, Jira, and Linear, and sets where each one's current sprint
   comes from: a Jira Scrum board or JQL (one or the other) and project, a
   GitHub project or milestone, a Linear team. The Issues board's "not set
-  up" lines offer "Open Issue tracking settings", which opens that group
-  for the board's repository.
+  up", no tracker, and sign-in needed lines offer "Open Issue tracking
+  settings", which opens that group for the board's repository.
 - **Chops:** a Settings section for saved commands and prompts to run in a
   worktree. A "Use chops" switch at its top, on by default, saved with the
   section's Save (on its own while the rows are as saved), removes the

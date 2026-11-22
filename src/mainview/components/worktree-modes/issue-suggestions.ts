@@ -1,6 +1,7 @@
 import type { IssueTrackers } from "../../../shared/issue-trackers";
 import { type IssueSearchRequest, type IssueSearchResult, SEARCH_TEXT_LIMIT, type SuggestedIssue } from "../../../shared/issue-search";
 import type { IssueTracker } from "../../../shared/model";
+import { TRACKING_SETTINGS_PLACE } from "../../issue-board-format";
 import { TRACKER_NAMES } from "../../issue-format";
 import { chosenTracker } from "./tracker-choice";
 
@@ -106,7 +107,9 @@ export function suggestionHint(tracker: IssueTracker, result: IssueSearchResult)
 	if (result.outcome === "found") return null;
 	switch (result.reason) {
 		case "offline": return `No suggestions: ${name} could not be reached.`;
-		case "sign-in-needed": return `No suggestions: ${name} needs a sign-in. Run timber setup.`;
+		case "sign-in-needed": return tracker === "github"
+			? "No suggestions: GitHub needs a sign-in. Run gh auth login."
+			: `No suggestions: ${name} needs a sign-in. Set it up in ${TRACKING_SETTINGS_PLACE}.`;
 		case "not-configured": return `No suggestions: ${name} is not set up for searching.`;
 		case "not-found":
 		case "forbidden": return `No suggestions: this ${name} login cannot search these issues.`;

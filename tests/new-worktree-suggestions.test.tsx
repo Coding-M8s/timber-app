@@ -109,7 +109,7 @@ describe("issue suggestions in the New branch form", () => {
 		await type("login");
 		const markup = fields();
 		expect(markup).not.toContain('role="listbox"');
-		expect(markup).toContain('<span class="suggestion-hint"> No suggestions: GitHub needs a sign-in. Run timber setup.</span>');
+		expect(markup).toContain('<span class="suggestion-hint"> No suggestions: GitHub needs a sign-in. Run gh auth login.</span>');
 		await submit();
 		expect(asked.map(request => request.name)).toEqual(["login"]);
 	});

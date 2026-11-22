@@ -8,7 +8,7 @@ import { TRACKER_NAMES, describeOpenIssue, issueKeyLabel } from "../issue-format
 import {
 	ISSUES_ROW_LABEL, LIST_NOT_READ, NO_CURRENT_SPRINT, NO_TRACKER, OPEN_TRACKING_SETTINGS, TOGGLE_LABELS,
 	boardColumns, boardTrackerChoices, boardTrackerOption, describeBlockedToggle, describeEmptyList, describeHiddenList, describeListFailure,
-	describeListSummary, describePartial, describeTruncated, fixedInTrackingSettings, shownList, sprintLabel,
+	describeListSummary, describePartial, describeTruncated, offersTrackingSettings, shownList, sprintLabel,
 } from "../issue-board-format";
 import { OPEN_WORKTREE_LABEL, START_WORK_LABEL, startWorkChoice } from "../start-work-format";
 import { type BoardView, boardToggles, boardView, emptyBoard, hiddenDiagnostic } from "../store/issue-board";
@@ -230,7 +230,7 @@ export function IssuesBoard({ repository }: { repository: string }) {
 	if (tracker === null) {
 		if (trackers === undefined) body = <BoardLoading />;
 		else if (!trackers.ok) body = <Quiet title="The issue trackers could not be read." detail={trackers.message} />;
-		else body = <Quiet title={NO_TRACKER.title} text={NO_TRACKER.text} command="timber setup" />;
+		else body = <Quiet title={NO_TRACKER.title} text={NO_TRACKER.text} onSettings={openTrackingSettings} />;
 	} else if (latest !== null && !latest.result.ok && latest.result.unsupported) {
 		const version = state.timber?.known && state.timber.status.state === "ready" ? state.timber.status.version : null;
 		body = <Quiet title="The issues board needs a Timber built from its main branch." text={version === null ? undefined : `This Timber is ${version}. No Timber release has timber __app-issues yet.`} />;
@@ -250,7 +250,7 @@ export function IssuesBoard({ repository }: { repository: string }) {
 		}
 	} else if (latest !== null && latest.result.ok && latest.result.outcome === "failed") {
 		const failure = describeListFailure(latest.result.reason, tracker);
-		bodyLinks = fixedInTrackingSettings(latest.result.reason);
+		bodyLinks = offersTrackingSettings(latest.result.reason);
 		body = <Quiet title={failure.title} text={failure.text} detail={latest.result.diagnostic} command={failure.command} onSettings={bodyLinks ? openTrackingSettings : null} />;
 	} else if (latest !== null && !latest.result.ok) {
 		body = <Quiet title="Timber could not list the issues." detail={latest.result.message} />;
