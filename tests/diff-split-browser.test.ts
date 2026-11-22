@@ -271,6 +271,21 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the Split
 		expect(boxes.note).toBeGreaterThanOrEqual(boxes.bottom - 1);
 	}, 30_000);
 
+	test("in Unified, a line wider than the tab scrolls sideways with every row's tint as wide as the widest line", async () => {
+		const long = `export const message = "${"word ".repeat(60)}";`;
+		await showSplit(PATCH.replace("+export const name = \"new\";", `+${long}`));
+		await page.evaluate(`${STORE}.chooseDiffLayout("unified")`);
+		await page.until(`document.querySelectorAll('[data-hunk="0-1"] > .diff-line').length === 7`, "the diff showed in Unified");
+		const widths = await page.evaluate<{ rows: number[]; scroll: number; client: number }>(`(() => {
+			const body = document.querySelector(".diff-body");
+			return { rows: [...document.querySelectorAll('[data-hunk="0-1"] > .diff-line, [data-hunk="0-1"] > .diff-hunk-header')].map(row => Math.round(row.getBoundingClientRect().width)), scroll: body.scrollWidth, client: body.clientWidth };
+		})()`);
+		expect(widths.scroll).toBeGreaterThan(widths.client);
+		// Every row, short or long, and the hunk's header, reaches the end of the widest line.
+		expect(new Set(widths.rows).size).toBe(1);
+		expect(widths.rows[0]).toBeGreaterThanOrEqual(widths.scroll - 1);
+	}, 30_000);
+
 	test("a tab too narrow for two columns shows Unified and says why, and keeps Split chosen", async () => {
 		await showSplit();
 		await page.resize(1000, 900);
