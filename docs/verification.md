@@ -4254,3 +4254,23 @@ and GitHub Copilot CLI (issue 345), Linux x64 (Pop!_OS 24.04) with Bun
 - Not run: the desktop app by hand, so no real session of these agents was
   started from it, and macOS and Windows, where the links of an `agent`
   were not checked.
+
+Run for the compact setup prompt (issue 341), Linux x64 (Pop!_OS 24.04) with
+Bun 1.4.5:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun run test`: 4279 pass, 19 skip, 0 fail.
+- `bun run build:web`: built.
+- `tests/setup-prompt-browser.test.ts`, in headless Chrome over the mock
+  engine with docs-site added: at 1280 by 820 the prompt took one line,
+  42 px high, with the chops panel closed and with it open at its default
+  width, its sentence whole; at 860 by 820 with the panel open, the buttons
+  wrapped below and the sentence was cut with an ellipsis, two lines and
+  66 px high. The same in Timber Light and Timber Dark, with the sentence
+  in each theme's own color. Before this change the prompt was 78 px high
+  with the panel closed and 96 px with it open, at 1280 by 820.
+- `tests/setup-prompt.test.tsx`: the sentence, its tooltip with the longer
+  explanation, and the wizard's first step saying the defaults work.
+- Screenshots of both themes, panel open and closed, at 1280 and 860 wide,
+  were looked at by eye.
+- Not run: the desktop app by hand, and macOS and Windows.

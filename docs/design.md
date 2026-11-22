@@ -986,8 +986,13 @@ logins. The app never reads a tracker login and never signs in.
   worktree leaves the list. They live in the window only: a reload or a
   quit drops them, since they quote the files. Files are never changed.
 - A repository that was never set up for Timber shows a quiet prompt above
-  the tabs: Timber's defaults work, setup is optional, "Set up Timber", and
-  "Not now". The button opens the setup wizard: the choices of
+  the tabs, on one line: "<repository> is not set up for Timber. Setup is
+  optional.", "Set up Timber", and "Not now". Where they do not fit, the
+  buttons wrap below and the sentence is cut short with an ellipsis, so the
+  prompt never takes more than two lines. The sentence's tooltip gives it
+  whole with the longer explanation (Timber's defaults work; setup saves the
+  editor, agent, setup scripts, and starting branch). The wizard's first
+  step also says that the defaults work and what setup sets. The button opens the setup wizard: the choices of
   `timber setup`, one step at a time (where to save, editor, coding
   assistant, branch and remote and folder, scripts, issue tracking), and a
   last step that lists them and shows the exact save command before Save.

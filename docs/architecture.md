@@ -5434,8 +5434,13 @@ surprise, and never insists on it.
 - **The prompt (`SetupPrompt.tsx`).** Between the workspace header and the
   tabs, for a selected worktree of a repository whose setup is `none` and
   whose prompt was not dismissed (`showsSetupPrompt` in
-  `src/shared/timber-setup.ts`): one sentence that Timber's defaults work
-  and setup is optional, "Set up Timber", and "Not now". It is an offer, styled as one, never as an error.
+  `src/shared/timber-setup.ts`): one sentence that the repository is not
+  set up and setup is optional (`setupSentence`), "Set up Timber", and "Not
+  now", on one line. Where they do not fit, the buttons wrap below and the
+  sentence is cut with an ellipsis, so it never takes more than two lines.
+  The sentence's tooltip is the sentence and `SETUP_EXPLANATION`, the
+  longer explanation. The wizard's first step also says that the defaults
+  work and what setup sets. It is an offer, styled as one, never as an error.
 - **Set up Timber (`SetupWizardDialog.tsx`).** The setup wizard for the
   repository (`set-up-timber` in `DialogRequest`), never a terminal
   session. It asks what `timber setup` asks, one step at a time: where to
