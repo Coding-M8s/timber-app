@@ -3914,7 +3914,7 @@ that run when the app quits open again when it starts.
   `src/mainview/terminal-drop.ts`: the app's own list first, then the URI
   list, then the `file:` URIs in `text/html`. WebKitGTK gives a page an
   empty `text/uri-list` for a drop from a file manager and writes one URI,
-  the item under the pointer, as a link's text in `text/html`, so on Linux
+  one of the items, as a link's text in `text/html`, so on Linux
   a drop of several files brings one path (seen with WebKitGTK through
   Electrobun 2.0.6). Such a drop can also make the webview open a file
   whatever the page does, so the window is made with the navigation rule
