@@ -41,13 +41,16 @@ change them here first when they change.
   the title bar shows nothing. The command palette has "Show next session
   that needs you or is done", with the shortcut beside it.
 - The side panel sits on the workspace's right, wherever the sidebar is,
-  and shows the chops or the selected worktree's files. A switch in its
-  header, Chops and Files, swaps between them, and the panel remembers
-  which one showed. The title bar's Files button, or Ctrl+Shift+E
+  and shows the chops, the selected worktree's files, or its changes. A
+  switch in its header, Chops, Files, and Changes, swaps between them, and
+  the panel remembers which one showed. Changes on the switch counts the
+  worktree's review notes. The title bar's Files button, or Ctrl+Shift+E
   (Cmd+Shift+E on macOS), shows or hides the files from any focus, as the
   Chops button and its shortcut do for the chops; pressed while the panel
-  shows the other view, it switches. With "Use chops" off, the panel shows
-  only the files, without the switch. The files are a tree of the
+  shows another view, it switches. The Changes button, Ctrl+Shift+G
+  (Cmd+Shift+G on macOS), and "Show changes" in the command palette do the
+  same for the changes (see Workspace). With "Use chops" off, the switch
+  offers Files and Changes. The files are a tree of the
   worktree's folders, folders first, `.git` left out. A click or Enter on a
   file opens it in the File tab, and its row stays marked while it is
   open; a click, Enter, or the Right and Left arrows open and close a
@@ -481,7 +484,10 @@ logins. The app never reads a tracker login and never signs in.
 
 ## Workspace
 
-- Three tabs: Workspace (panes), Changes (diff), and Pull request.
+- Two tabs, Workspace (panes) and Pull request, then a diff tab while a
+  changed file's diff is open, and a File tab while a file is. The changed
+  files are in the side panel's Changes view, so the agent stays in sight
+  while they are read.
 - The header's first line is the worktree's name, a quiet label after it
   ("Primary checkout" for the primary checkout, "Removing" while Timber
   removes the worktree), and one action bar at its end: "Open in editor",
@@ -599,6 +605,19 @@ logins. The app never reads a tracker login and never signs in.
   assignee or "Unassigned", and "Open in browser". When the status could not
   be read it shows the key, the quiet word, and Timber's reason. Text from
   the tracker is plain text, never markup.
+- The side panel's Changes view holds, top to bottom: "Compare with", the
+  compared base with "Change base…", the counts and Refresh, the changed
+  files in their groups, and the Review section (see Review notes). A
+  click or Enter on a file opens its diff in the diff tab, after Pull
+  request, named after the file with a small "diff" before the name and a
+  close button beside it, as the File tab is; the file's row stays marked
+  while it is open. Up, Down, Home, and End move through the files without
+  opening them. Another file replaces the diff. Closing it, from its close
+  button or the Close at the end of its title line, goes back to the tab it
+  was opened from. The diff tab closes by itself when its file is no
+  longer changed, and when "Compare with" switches, since the other
+  comparison lists other files. Each worktree keeps its own diff tab. A
+  layout saved before the Changes view moved here reads as it was.
 - Changes has a "Compare with" switch: Base or Uncommitted. Base is
   everything the branch changed since it left its saved base, committed or
   not, so the work stays visible after an agent commits; commits on the base
@@ -612,7 +631,7 @@ logins. The app never reads a tracker login and never signs in.
   no shared history), Base is disabled, a quiet line under the switch gives the
   reason, and the tab shows Uncommitted. The choice is remembered for each
   worktree. Comparing with a backup comes later.
-- While the Changes tab reads again (its Refresh, the sidebar's Refresh, a
+- While the Changes view reads again (its Refresh, the sidebar's Refresh, a
   change the repository watcher reports, or a switch of "Compare with"), a
   small spinner shows beside the counts in the bar: the working ring of a
   session, turning, and standing still when the system asks for less
@@ -626,7 +645,7 @@ logins. The app never reads a tracker login and never signs in.
   that follows count as one.
 - At the end of the Compare with row, a quiet "Set base…" (no saved base,
   or one Timber cannot use) or "Change base…" (a saved base) opens the Set
-  base dialog. Once Timber saves the base, the tab moves to Base, its header
+  base dialog. Once Timber saves the base, the view moves to Base, its header
   shows the new base as elsewhere in Changes (`name @ hash`, or a commit
   base by its short hash), and the workspace header and the row's tooltip
   name the new base. A remote base shows there only once it is fetched.
@@ -634,7 +653,7 @@ logins. The app never reads a tracker login and never signs in.
   read-only, with line numbers, in the terminal's font. The tab is there only
   while a file is open in that worktree, named after the file, with a close
   button beside it; closing goes back to the tab the file was opened from.
-  A file opens from "View file" beside the diff in the Changes tab, or by
+  A file opens from "View file" beside the diff in the diff tab, or by
   a plain click on a file path in a terminal, read from the worktree's
   folder. A web link still needs Ctrl+click (Cmd+click on macOS), since it
   leaves the app; a file stays in it. Binary files, files over 1 MB or 20,000 lines,
@@ -698,7 +717,7 @@ logins. The app never reads a tracker login and never signs in.
   a relative link opens that file of the worktree in the File tab, a `#`
   link goes to the heading, and any other link is plain text with its
   address in the tooltip.
-- Review notes: in the Changes tab, in either comparison, hovering a line
+- Review notes: in the diff tab, in either comparison, hovering a line
   that takes notes lights its row and shows a small `+` in the focus color
   at the left edge of its numbers. A click on `+` starts a note on that
   line. Pressing `+` and dragging over more lines marks them with a range's
@@ -715,29 +734,30 @@ logins. The app never reads a tracker login and never signs in.
   note shows under its lines. Lines without numbers, such as Git's own
   notes or a conflict's combined diff, hunk headers, and binary or very
   large files, take no notes, show no `+`, and do not light up. Notes
-  collect in a Review panel on the right of the diff, shown
-  while the worktree has notes, with a count on the Changes tab and in the
-  panel's heading. The panel is 300px wide and does not grow: many notes
-  scroll inside it, while the diff, the file list, and the panel's Discard
-  and Send review stay where they are. Each note is a box led by its
+  collect in the Review section at the foot of the side panel's Changes
+  view, with a count beside Changes on the panel's switch and in the
+  section's heading. Before the first note it says how to leave one. The
+  section takes at most half the panel: many notes scroll inside it, while
+  the file list and its Discard, Copy review, and Send review stay where
+  they are. Each note is a box led by its
   reference, a button named "Show `path:line`" (", outdated" when it is):
   `path:line` or the range, the folder dimmed, "outdated" or "removed
   line" beside it, and under that its first line with Git's `+` or `-`
   ("empty line" when it is blank). Then the note, and Edit and Delete;
-  Edit opens the note's field in its box. Choosing a reference shows the
-  file, scrolls the diff to the lines, and marks them for a moment; the
+  Edit opens the note's field in its box. Choosing a reference opens the
+  file's diff in the diff tab, scrolls to the lines, and marks them for a
+  moment; the
   reference keeps its mark until another is chosen. An outdated note goes
   to its old lines where some are still there as they were, with the same
   numbers; when none are, its box says so. Deleting a note gives the
   keyboard to the next reference. Discard asks first. Nothing is sent
   while writing.
-- Where the diff and the panel do not fit side by side (under 800px for
-  both, about 1100px of the Changes tab), the panel is hidden and a
-  "Review" button with the count shows in the diff's title bar. It opens
-  the panel over the right of the diff, below that bar, with the keyboard
-  on its Close. Close, Escape, or the button again closes it, and the
-  keyboard goes back to the button; choosing a reference closes it and
-  shows the lines. The page never scrolls sideways.
+- While the worktree has notes and the Changes view is not on screen (the
+  side panel hidden, or on another view), the diff's title line shows a
+  "Review" button with the count. It shows the side panel at Changes, with
+  the keyboard there, as the title bar's Changes button does. Copy review
+  puts the whole review on the clipboard, as the Send review dialog's Copy
+  review does, and the notes stay.
 - Send review opens a preview of the whole review as one message, exactly
   as it will be pasted: each note as `path:line` (removed lines say they
   use the old numbers), the quoted lines with Git's `+` and `-`, and the
@@ -812,7 +832,7 @@ logins. The app never reads a tracker login and never signs in.
   --inspect --json`, shown in the footer: the agent's state in this app and
   Timber's, commits, committed and uncommitted changes against the arena's
   base, and untracked files as their own count. "Open in Changes" selects the
-  attempt and shows its Changes tab; "Start agent" starts its agent when none
+  attempt and shows its changes in the side panel; "Start agent" starts its agent when none
   runs. "Keep this one" compares again, then shows the exact `timber arena
   pick <arena> --winner <label>`, which attempts it removes, which of the
   app's sessions it ends first (every one in the other attempts, agents and

@@ -1,5 +1,6 @@
 import type { PaletteEntry } from "./palette";
 import type { AppStore } from "./store/store";
+import { toggleSidePanel } from "./components/SidePanel";
 
 /** The size to start a session at: the pane's own estimate, which the pane corrects once it shows. */
 export type SessionSize = () => { cols: number; rows: number };
@@ -45,6 +46,9 @@ export function runPaletteEntry(store: AppStore, entry: PaletteEntry, size: Sess
 			return;
 		case "chop":
 			runChopIn(store, action.repository, action.worktree, action.chop, size);
+			return;
+		case "side-panel":
+			toggleSidePanel(store, action.view);
 			return;
 	}
 }

@@ -199,7 +199,7 @@ describe("seen statuses in the app, on the mock engine", () => {
 	test("another tab on screen marks nothing", async () => {
 		const { store, codex, report } = await started();
 		store.select(featureId);
-		store.showTab("changes");
+		store.showTab("pull-request");
 		await settle();
 		await report(codex.id, "state=done");
 		expect(sessionOnScreen(store.getState())).toBeNull();

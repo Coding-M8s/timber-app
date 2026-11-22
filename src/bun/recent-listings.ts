@@ -14,7 +14,7 @@ export interface RecentListingsOptions {
 /**
  * A reader that keeps the last listing of each repository, for the read-only
  * views that only need to know which worktrees Timber lists and their saved
- * bases: the Changes tab and chops. A background reload of the sidebar is
+ * bases: the Changes view and chops. A background reload of the sidebar is
  * followed by those reads at once, and each would otherwise run the whole
  * `timber ls` again.
  *

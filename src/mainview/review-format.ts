@@ -1,7 +1,7 @@
 import { PASTE_TEXT_LIMIT } from "../shared/terminal";
 
 /**
- * Words and choices for review notes in the Changes tab and the Send review
+ * Words and choices for review notes in diffs and the Send review
  * dialog. Pure, so they can be tested without a window. The message itself
  * is built in ../shared/review.ts.
  */
@@ -36,7 +36,7 @@ export function describeReviewNotPasted(message: string): string {
 	return `The review was not pasted: ${message}`;
 }
 
-/** The count beside the Changes tab and the Review heading, in words for a screen reader. */
+/** The count beside the Changes view's switch and the Review heading, in words for a screen reader. */
 export function describeNoteCount(count: number): string {
 	return count === 1 ? "1 review note" : `${count} review notes`;
 }
@@ -60,9 +60,7 @@ export function describeReference(location: string, outdated: boolean): string {
 
 export const OUTDATED_REFERENCE = "These lines changed or left the diff since the note. It is sent with the lines as they were.";
 
-export const REVIEW_TOGGLE_TITLE = "Show the review notes over the diff";
-
-export const CLOSE_REVIEW = "Close the review";
+export const REVIEW_NOT_COPIED = "The review could not be put on the clipboard.";
 
 /** Shown for a reference whose first line is blank, so the line still shows. */
 export const EMPTY_LINE = "empty line";

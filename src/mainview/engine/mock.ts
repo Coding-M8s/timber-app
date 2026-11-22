@@ -484,7 +484,7 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	/** Every editor the mock acted out starting, oldest first. */
 	launchedEditors(): { request: OpenInEditorRequest; command: string }[];
 	/**
-	 * Decide what the Changes tab of one worktree, named by its path, lists
+	 * Decide what the Changes view of one worktree, named by its path, lists
 	 * from now on, each file with the text Git would print for it. Pass null
 	 * to go back to files made up from the worktree's modified and untracked
 	 * files. The interface is not told.
@@ -865,7 +865,7 @@ export function createMockEngine(
 		}
 	};
 
-	// The Changes tab, read from the pretend files with the same checks as the main process.
+	// The Changes view, read from the pretend files with the same checks as the main process.
 	const fileChangeLists = new Map<string, MockFileChange[]>();
 	let fileChangeFailure: string | null = null;
 	type Listed = { ok: true; worktree: Worktree } | { ok: false; outcome: "not-listed" | "failed"; message: string };

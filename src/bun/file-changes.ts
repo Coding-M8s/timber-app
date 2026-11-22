@@ -25,7 +25,7 @@ export interface FileChangesDependencies {
 	timeoutMilliseconds?: number;
 }
 
-/** The Changes tab's side in the main process: the changed files of a worktree, and the diff of one. Read-only. */
+/** The Changes view's side in the main process: the changed files of a worktree, and the diff of one. Read-only. */
 export interface FileChanges {
 	read(request: FileChangesRequest): Promise<FileChangesResult>;
 	diff(request: FileDiffRequest): Promise<FileDiffResult>;

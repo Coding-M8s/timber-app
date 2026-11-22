@@ -227,7 +227,7 @@ describe("workspace", () => {
 		const markup = render(store);
 		expect(markup).toMatch(/<div class="tabs" role="tablist" aria-label="[^"]+">/);
 		expect(markup).toMatch(/<button type="button" role="tab" id="tab-workspace" class="tab selected" aria-selected="true" aria-controls="workspace-panel" tabindex="0">Workspace</);
-		expect(markup).toMatch(/<button type="button" role="tab" id="tab-changes" class="tab" aria-selected="false" aria-controls="workspace-panel" tabindex="-1">Changes</);
+		expect(markup).not.toContain('id="tab-changes"');
 		expect(markup).toMatch(/<button type="button" role="tab" id="tab-pull-request" class="tab" aria-selected="false" aria-controls="workspace-panel" tabindex="-1">Pull request</);
 		const panel = tagOf(markup, "tabpanel workspace-panel");
 		expect(panel).toContain('role="tabpanel"');
@@ -239,16 +239,16 @@ describe("workspace", () => {
 		expect(markup).toContain(">Open terminal</button>");
 	});
 
-	test("the Changes tab shows its own panel, and the tab stop moves with it", async () => {
+	test("the Pull request tab shows its own panel, and the tab stop moves with it", async () => {
 		const { store } = await startedStore();
-		store.showTab("changes");
+		store.showTab("pull-request");
 		const markup = render(store);
-		expect(markup).toMatch(/id="tab-changes" class="tab selected" aria-selected="true" aria-controls="workspace-panel" tabindex="0"/);
+		expect(markup).toMatch(/id="tab-pull-request" class="tab selected" aria-selected="true" aria-controls="workspace-panel" tabindex="0"/);
 		expect(markup).toMatch(/id="tab-workspace" class="tab" aria-selected="false" aria-controls="workspace-panel" tabindex="-1"/);
-		expect(tagOf(markup, "tabpanel workspace-panel")).toContain('aria-labelledby="tab-changes"');
-		// Before the first read answers.
-		expect(markup).toContain("Reading changes");
+		expect(tagOf(markup, "tabpanel workspace-panel")).toContain('aria-labelledby="tab-pull-request"');
 		expect(markup).not.toContain("No session here yet");
+		// The changes are not a tab any more: they are in the side panel.
+		expect(markup).not.toContain('id="tab-changes"');
 	});
 
 	test("an arrow key on the tab list shows the next tab", async () => {
@@ -269,8 +269,6 @@ describe("workspace", () => {
 		// The handler also moves focus, which needs a document. This run has none worth the name.
 		Object.assign(globalThis, { document: { getElementById: () => null } });
 		try {
-			expect(press("ArrowRight")).toBe(true);
-			expect(store.getState().tab).toBe("changes");
 			expect(press("ArrowRight")).toBe(true);
 			expect(store.getState().tab).toBe("pull-request");
 			expect(press("ArrowRight")).toBe(true);

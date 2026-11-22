@@ -20,7 +20,7 @@ async function started() {
 	await store.openTerminal({ repository: TIMBER, worktree: typedIn.path, cols: 80, rows: 24 });
 	await settle();
 	const typing = store.getState().terminals[0]!;
-	store.showTab("changes");
+	store.showTab("pull-request");
 	return { engine, store, typedIn, typing };
 }
 

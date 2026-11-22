@@ -4,7 +4,7 @@ import { App } from "../src/mainview/App";
 import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import type { MockFileChange } from "../src/mainview/engine/mock-file-changes";
 import { samplePatch } from "../src/mainview/engine/mock-file-changes";
-import { describeFileNotice, fileTabLabel, pathInWorktree, settleFiles } from "../src/mainview/file-view-format";
+import { describeFileNotice, fileTabLabel, pathInWorktree, settleTabs } from "../src/mainview/file-view-format";
 import { createAppStore } from "../src/mainview/store/store";
 import { initialState } from "../src/mainview/store/state";
 import type { Engine } from "../src/shared/engine";
@@ -30,17 +30,17 @@ describe("the File tab", () => {
 		const engine = createMockEngine();
 		const store = await started(engine);
 		store.select(FEATURE.id);
-		store.showTab("changes");
-		expect(tabs(render(store))).toEqual(["Workspace", "Changes", "Pull request"]);
+		store.showTab("pull-request");
+		expect(tabs(render(store))).toEqual(["Workspace", "Pull request"]);
 		// Asking for the File tab with no file open does nothing.
 		store.showTab("file");
-		expect(store.getState().tab).toBe("changes");
+		expect(store.getState().tab).toBe("pull-request");
 
 		store.openFile(FEATURE.id, "docs/plan.md");
 		expect(store.getState().tab).toBe("file");
 		await settle();
 		const markup = render(store);
-		expect(tabs(markup)).toEqual(["Workspace", "Changes", "Pull request", "plan.md"]);
+		expect(tabs(markup)).toEqual(["Workspace", "Pull request", "plan.md"]);
 		expect(markup).toContain('aria-label="Close plan.md"');
 		// Markdown opens rendered (see markdown-reader.test.tsx); its source shows in the editor, read-only, colored.
 		expect(markup).toContain(">Plan</h1>");
@@ -51,8 +51,8 @@ describe("the File tab", () => {
 		expect(source).toContain("Read-only. Ctrl+F to find");
 
 		store.closeFile(FEATURE.id);
-		expect(store.getState().tab).toBe("changes");
-		expect(tabs(render(store))).toEqual(["Workspace", "Changes", "Pull request"]);
+		expect(store.getState().tab).toBe("pull-request");
+		expect(tabs(render(store))).toEqual(["Workspace", "Pull request"]);
 	});
 
 	test("belongs to its worktree: another worktree has none, and coming back finds the file", async () => {
@@ -62,7 +62,7 @@ describe("the File tab", () => {
 		await settle();
 		store.select(PRIMARY.id);
 		expect(store.getState().tab).toBe("workspace");
-		expect(tabs(render(store))).toEqual(["Workspace", "Changes", "Pull request"]);
+		expect(tabs(render(store))).toEqual(["Workspace", "Pull request"]);
 		store.select(FEATURE.id);
 		store.showTab("file");
 		expect(store.getState().tab).toBe("file");
@@ -122,14 +122,16 @@ describe("the File tab", () => {
 		expect(render(store)).toContain("second");
 	});
 
-	test("opens from the Changes tab's View file", async () => {
+	test("opens from the diff tab's View file, and closing it goes back to the diff", async () => {
 		const engine = createMockEngine();
 		const change: MockFileChange = { change: { area: "unstaged", kind: "modified", path: "src/net.ts", previousPath: null }, patch: samplePatch("src/net.ts") };
 		engine.setFileChanges(FEATURE.path, [change]);
 		const store = await started(engine);
 		store.select(FEATURE.id);
-		store.showTab("changes");
 		await store.readChanges(TIMBER, FEATURE.id);
+		// Listed as the comparison lists it: with the base, the file is under Changed.
+		await store.selectChangedFile(store.getState().changes!.files![0]!);
+		expect(store.getState().tab).toBe("diff");
 		expect(render(store)).toContain(">View file</button>");
 		// The button calls this; the file's text is what the mock has on disk.
 		store.openFile(FEATURE.id, "src/net.ts");
@@ -140,12 +142,15 @@ describe("the File tab", () => {
 		const markup = render(store);
 		expect(markup).toContain('<div class="text-editor-host"');
 		expect(markup).toContain('<span class="text-editor-language">TypeScript</span>');
+		expect(tabs(markup)).toEqual(["Workspace", "Pull request", "diffDiff of net.ts", "net.ts"]);
+		store.closeFile(FEATURE.id);
+		expect(store.getState().tab).toBe("diff");
 	});
 
 	test("an open file leaves with its worktree", () => {
 		const state = { ...initialState, tab: "file" as const, selection: { repository: TIMBER, worktree: FEATURE.id }, repositories: [], files: { [FEATURE.id]: { repository: TIMBER, worktreePath: FEATURE.path, path: "a.md", from: "workspace" as const, result: null, mode: "source" as const, draft: null, saving: false, saveProblem: null } } };
-		expect(settleFiles(state)).toEqual({ files: {}, tab: "workspace" });
-		expect(settleFiles({ ...state, repositories: sampleRepositories })).toBeNull();
+		expect(settleTabs(state)).toEqual({ files: {}, tab: "workspace" });
+		expect(settleTabs({ ...state, repositories: sampleRepositories })).toBeNull();
 	});
 });
 

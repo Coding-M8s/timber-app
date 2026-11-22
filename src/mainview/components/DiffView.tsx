@@ -1,126 +1,56 @@
-import { Fragment, type KeyboardEvent, type PointerEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { Fragment, type PointerEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Comparison, DiffLine, DiffSection, FileChange, FileChangeTarget, FileDiffResult } from "../../shared/file-changes";
 import { NOTE_LINE_LIMIT, type NoteDraft, type ReviewNote, chooseNoteLine, notableLine, sameNotedLine } from "../../shared/review";
-import { InlineNote, NoteForm, ReviewPanel, ReviewToggle } from "./ReviewNotes";
+import { InlineNote, NoteForm } from "./ReviewNotes";
 import { type DragStop, describeDraggedRange, dragNoteEnd, rowAtY } from "../review-drag";
 import { sameFileChange } from "../../shared/file-changes";
-import type { Repository, Worktree } from "../../shared/model";
-import {
-	AREA_TITLES, COMPARISONS, COMPARISON_LABELS, KIND_LABELS, KIND_LETTERS, MORE_FILES_NOTE, baseUnavailable, describeComparison, describeDiffNotice, describeFileArea,
-	NO_REFRESH, REFRESHING_CHANGES, type RefreshSpan, describeFileCounts, describeNoChanges, fileAfterKey, groupFileChanges, kindTone, listedOrder, nextRefreshSpan, splitPath,
-} from "../changes-format";
-import { chosenComparison } from "../../shared/layout";
-import { BASE_ACTION_TITLE, describeBaseAction } from "../base-change-format";
-import { ModeSwitch } from "./worktree-modes/ModeSwitch";
+import type { Worktree } from "../../shared/model";
+import { describeDiffNotice, describeFileArea } from "../changes-format";
 import { OPEN_IN_EDITOR } from "../editor-format";
 import { useAppState, useStore } from "../store/react";
-import { type ChangesView, changesBusy } from "../store/state";
-import { StatusGlyph } from "./StatusGlyph";
+import type { ChangesView } from "../store/state";
 import { EditorIcon, useOpenInEditor } from "./OpenInEditor";
+import { KindLetter, fileKey } from "./KindLetter";
+
+/*
+ * The diff of one changed file, with review notes on its lines: a click or
+ * Shift+click on a line number, or a drag of its `+`, starts a note, kept
+ * notes show under their lines, and outdated ones say so (see
+ * docs/architecture.md, "The Changes view"). The diff tab draws it.
+ *
+ * Each line is drawn in two parts, so what builds on this plugs in without
+ * reworking the tab: `lineTone` gives a line's background, from its kind
+ * and how notes mark it, and `LineContent` draws its text. `layout` says
+ * how the lines are laid out; only "unified" is drawn so far.
+ */
+
+/** How the lines of a diff are laid out. */
+export type DiffLayout = "unified";
 
 /** How long the lines of a chosen reference stay marked in the diff. */
 export const SHOWN_LINES_MS = 1500;
 
-export const FOLDER_MISSING_CHANGES = "The worktree's folder is missing, so there are no changes to read.";
-
-/** How long the refresh indicator stays after a read ends, so reads one after another show as one refresh. */
-export const REFRESH_HOLD_MS = 300;
-
-/**
- * True while `busy`, and for `holdMs` after it ends. A Refresh reloads the
- * repository and then reads the changes; between the two nothing runs for a
- * moment. Held, they show one spinner and make one announcement, and a quick
- * read still shows long enough to be seen.
- */
-function useHeld(busy: boolean, holdMs: number): boolean {
-	const [held, setHeld] = useState(busy);
-	useEffect(() => {
-		if (busy) {
-			setHeld(true);
-			return;
-		}
-		const timer = setTimeout(() => setHeld(false), holdMs);
-		return () => clearTimeout(timer);
-	}, [busy, holdMs]);
-	return busy || held;
+/** How notes mark a line, which `lineTone` turns into its background. */
+interface LineMarks {
+	/** The line can take a note. */
+	notable: boolean;
+	/** The line is in the range of the note being written, or being dragged over. */
+	noting: boolean;
+	/** The drag started on this line. */
+	dragAnchor: boolean;
+	/** The line is one of a chosen reference's, marked for a moment. */
+	shown: boolean;
 }
 
-/** The refresh this render is part of, kept from render to render (see `nextRefreshSpan`). */
-function useRefreshSpan(worktree: string, active: boolean, listShown: boolean): RefreshSpan {
-	const [span, setSpan] = useState(() => nextRefreshSpan(NO_REFRESH, worktree, active, listShown));
-	const next = nextRefreshSpan(span, worktree, active, listShown);
-	// Set while rendering, as React allows for state that follows props: it renders again at once with `next`.
-	if (next !== span) setSpan(next);
-	return next;
+/** The class names of a line's row: its kind, which colors it, and how notes mark it. The one place a line's background is chosen. */
+export function lineTone(line: Pick<DiffLine, "kind">, marks: LineMarks): string {
+	return `diff-line ${line.kind}${marks.notable ? " notable" : ""}${marks.noting ? " noting" : ""}${marks.dragAnchor ? " drag-anchor" : ""}${marks.shown ? " shown" : ""}`;
 }
 
-const fileKey = (file: FileChangeTarget) => `${file.area}\0${file.path}\0${file.previousPath ?? ""}`;
-
-function KindLetter({ file }: { file: FileChange }) {
-	return (
-		<span className={`change-letter ${kindTone(file.kind)}`} title={KIND_LABELS[file.kind]} aria-hidden="true">
-			{KIND_LETTERS[file.kind]}
-		</span>
-	);
-}
-
-/** The list of changed files, grouped as `git status` groups them. Only the selected file is a tab stop; the arrows reach the others. */
-function FileList({ view, dimmed }: { view: ChangesView & { files: readonly FileChange[] }; dimmed: string }) {
-	const store = useStore();
-	const buttons = useRef(new Map<string, HTMLButtonElement>());
-	const order = listedOrder(view.files);
-
-	const onKey = (event: KeyboardEvent<HTMLDivElement>) => {
-		const next = fileAfterKey(order, view.selected, event.key);
-		if (next === null) return;
-		event.preventDefault();
-		void store.selectChangedFile(next);
-		buttons.current.get(fileKey(next))?.focus();
-	};
-
-	// With nothing selected yet, the first file takes the tab stop.
-	const tabStop = view.selected ?? order[0] ?? null;
-	return (
-		<div className={`change-groups${dimmed}`} onKeyDown={onKey}>
-			{groupFileChanges(view.files).map(group => (
-				<section key={group.area} className="change-group" aria-label={AREA_TITLES[group.area]}>
-					<h2 className="change-group-title">
-						{AREA_TITLES[group.area]}
-						<span className="change-group-count">{group.files.length}</span>
-					</h2>
-					<ul className="change-files">
-						{group.files.map(file => {
-							const key = fileKey(file);
-							const selected = view.selected !== null && sameFileChange(view.selected, file);
-							const { name, folder } = splitPath(file.path);
-							return (
-								<li key={key}>
-									<button
-										type="button"
-										className={selected ? "change-file selected" : "change-file"}
-										aria-current={selected ? "true" : undefined}
-										aria-label={`${file.path}, ${KIND_LABELS[file.kind]}${file.previousPath === null ? "" : ` from ${file.previousPath}`}, ${AREA_TITLES[file.area]}`}
-										title={file.previousPath === null ? file.path : `${file.previousPath} → ${file.path}`}
-										tabIndex={tabStop !== null && sameFileChange(tabStop, file) ? 0 : -1}
-										ref={element => {
-											if (element) buttons.current.set(key, element);
-											else buttons.current.delete(key);
-										}}
-										onClick={() => void store.selectChangedFile(file)}
-									>
-										<span className="change-file-name">{name}</span>
-										{folder !== "" && <span className="change-file-folder">{folder}</span>}
-										<KindLetter file={file} />
-									</button>
-								</li>
-							);
-						})}
-					</ul>
-				</section>
-			))}
-		</div>
-	);
+/** The text of a line, after its numbers and marker. The one place a line's content is drawn. */
+function LineContent({ line }: { line: DiffLine }) {
+	return <span className="diff-text">{line.text}</span>;
 }
 
 /** What the diff of one file needs to take notes. */
@@ -232,7 +162,7 @@ function Section({ section, index, noting }: { section: DiffSection; index: numb
 							const shown = noting.shown !== null && noting.shown.lines.some(noted => sameNotedLine(noted, line));
 							return (
 								<Fragment key={lineIndex}>
-									<div className={`diff-line ${line.kind}${notable ? " notable" : ""}${chosen ? " noting" : ""}${anchored ? " drag-anchor" : ""}${shown ? " shown" : ""}`}>
+									<div className={lineTone(line, { notable, noting: chosen, dragAnchor: anchored, shown })}>
 										{notable ? (
 											<button
 												type="button"
@@ -272,7 +202,7 @@ function Section({ section, index, noting }: { section: DiffSection; index: numb
 											</>
 										)}
 										<span className="diff-marker" aria-hidden="true">{line.kind === "added" ? "+" : line.kind === "removed" ? "-" : ""}</span>
-										<span className="diff-text">{line.text}</span>
+										<LineContent line={line} />
 									</div>
 									{here.map(note => <InlineNote key={note.id} worktree={noting.worktree} note={note} />)}
 									{drafting && lineIndex === high && (
@@ -352,8 +282,21 @@ function OpenFileButton({ repository, worktree, file }: { repository: string; wo
 	);
 }
 
-/** The diff of the selected file, under a line that names it. `toggle` opens the Review panel in a narrow window. */
-function DiffPane({ repository, worktree, view, toggle }: { repository: string; worktree: Worktree; view: ChangesView; toggle: ReactNode }) {
+/**
+ * The diff of a changed file of `view`, under a line that names it, with
+ * View file and Open in editor. `review` goes in that line, before them:
+ * the diff tab's Review button, when it shows.
+ */
+export function DiffView({ repository, worktree, view, file, layout, review, onClose }: {
+	repository: string;
+	worktree: Worktree;
+	view: ChangesView;
+	file: FileChange;
+	layout: DiffLayout;
+	review: ReactNode;
+	/** Close the diff, from the Close button at the end of its title line. */
+	onClose: () => void;
+}) {
 	const store = useStore();
 	const state = useAppState();
 	const body = useRef<HTMLDivElement>(null);
@@ -418,7 +361,7 @@ function DiffPane({ repository, worktree, view, toggle }: { repository: string; 
 		setDrag(live.drag);
 	}
 
-	// Escape lets go of a drag before anything else sees it, so it neither cancels the note being written nor closes the Review panel.
+	// Escape lets go of a drag before anything else sees it, so it does not cancel the note being written.
 	useEffect(() => {
 		if (!dragActive) return;
 		const onKey = (event: globalThis.KeyboardEvent) => {
@@ -434,14 +377,14 @@ function DiffPane({ repository, worktree, view, toggle }: { repository: string; 
 	// The diff read again, or another file or comparison, ends a drag: its lines may be gone.
 	useEffect(() => () => dropDrag(), [view.diff, selected, view.compared]);
 
-	// A reference chosen in the Review panel comes into view once its file's diff shows, and its lines stay marked for a moment.
+	// A reference chosen in the Review section comes into view once its file's diff shows, and its lines stay marked for a moment.
 	useEffect(() => {
 		if (inView === null || inView.worktree !== worktree.id || view.diff === null || scrolled.current === inView) return;
 		if (inViewNote !== null && (selected === null || !sameFileChange(selected, inViewNote.file))) return;
 		scrolled.current = inView;
 		const first = body.current?.querySelector<HTMLElement>(".diff-line.shown") ?? null;
 		const note = body.current?.querySelector<HTMLElement>(`[data-note-id="${CSS.escape(inView.id)}"]`) ?? null;
-		// An outdated note whose lines all left the diff has nowhere to show: the Review panel said so.
+		// An outdated note whose lines all left the diff has nowhere to show: the Review section said so.
 		(first ?? note)?.scrollIntoView({ block: "center" });
 		(note ?? first?.querySelector<HTMLElement>(".diff-note-target") ?? null)?.focus({ preventScroll: true });
 		setTimeout(() => {
@@ -449,15 +392,6 @@ function DiffPane({ repository, worktree, view, toggle }: { repository: string; 
 		}, SHOWN_LINES_MS);
 	}, [inView, inViewNote, selected, view.diff, worktree.id, store]);
 
-	const file = selected === null ? undefined : view.files?.find(candidate => sameFileChange(candidate, selected));
-	if (!file) {
-		return (
-			<section className="changes-diff empty" aria-label="Diff">
-				{toggle !== null && <div className="diff-title review-toggle-bar">{toggle}</div>}
-				<p className="empty-text">{view.files !== null && view.files.length > 0 ? "Select a file to see its changes." : ""}</p>
-			</section>
-		);
-	}
 	// A deleted file is not on disk, so there is nothing to open.
 	const onDisk = file.kind !== "deleted";
 	const comparison = view.compared ?? "uncommitted";
@@ -522,7 +456,7 @@ function DiffPane({ repository, worktree, view, toggle }: { repository: string; 
 		},
 	};
 	return (
-		<section className="changes-diff" aria-label={`Diff of ${file.path}`}>
+		<section className="changes-diff" data-layout={layout} aria-label={`Diff of ${file.path}`}>
 			<div className="diff-title">
 				<KindLetter file={file} />
 				<span className="diff-path" title={file.path}>
@@ -530,13 +464,14 @@ function DiffPane({ repository, worktree, view, toggle }: { repository: string; 
 					{file.path}
 				</span>
 				<span className="diff-area">{describeFileArea(file)}</span>
-				{toggle}
+				{review}
 				{onDisk && (
 					<button type="button" className="button quiet diff-editor" title={`Show ${file.path} as it is now, read-only`} onClick={() => store.openFile(worktree.id, file.path)}>
 						View file
 					</button>
 				)}
 				{onDisk && <OpenFileButton repository={repository} worktree={worktree} file={file} />}
+				<button type="button" className="button quiet diff-close" title={`Close the diff of ${file.path}`} onClick={onClose}>Close</button>
 			</div>
 			<div
 				className={noting.drag === null ? "diff-body" : "diff-body dragging"}
@@ -563,157 +498,5 @@ function DiffPane({ repository, worktree, view, toggle }: { repository: string; 
 				document.body,
 			)}
 		</section>
-	);
-}
-
-/**
- * The Changes tab: what changed in the worktree, read-only. It reads the files
- * again whenever the worktree's status on screen is read again, which is
- * when the repository reloads.
- */
-export function ChangesPanel({ repository, worktree }: { repository: Repository; worktree: Worktree }) {
-	const store = useStore();
-	const state = useAppState();
-	const missing = !worktree.pathExists;
-	const baseNote = useId();
-	const busy = changesBusy(state, repository.path, worktree.id);
-	const refreshing = useHeld(busy, REFRESH_HOLD_MS);
-	const listed = state.changes?.worktree === worktree.id && state.changes.files !== null;
-	const overList = useRefreshSpan(worktree.id, refreshing, listed).overList;
-	const panelId = useId();
-	const toggleButton = useRef<HTMLButtonElement>(null);
-	// The worktree whose panel is open over the diff: another worktree starts with its panel closed.
-	const [openFor, setOpenFor] = useState<string | null>(null);
-	const noteCount = state.reviews[worktree.id]?.length ?? 0;
-	// Over the diff only while there are notes: the next first note does not open it again.
-	const open = openFor === worktree.id && noteCount > 0;
-	useEffect(() => {
-		if (noteCount === 0) setOpenFor(null);
-	}, [noteCount]);
-
-	// `worktree` is a new object after every reload of its repository, so this follows the rest of the status.
-	useEffect(() => {
-		if (!missing) void store.readChanges(repository.path, worktree.id);
-	}, [store, repository.path, worktree, missing]);
-
-	/** Close the panel over the diff, and give the keyboard back to the button that opens it, when that shows. */
-	function closeReview() {
-		setOpenFor(null);
-		const button = toggleButton.current;
-		if (button !== null && button.offsetParent !== null) button.focus();
-	}
-
-	if (missing) {
-		return (
-			<div className="empty">
-				<p className="empty-title">No changes to show</p>
-				<p className="empty-text">{FOLDER_MISSING_CHANGES}</p>
-			</div>
-		);
-	}
-
-	const view = state.changes?.worktree === worktree.id ? state.changes : null;
-	const compared = view?.compared ?? chosenComparison(state.layout, worktree.id);
-	const base = view?.base ?? null;
-	const unavailable = baseUnavailable(base);
-	const shown = describeComparison(compared, base);
-	const files = view?.files ?? null;
-	// The list on screen stays while it is read again, dimmed, so nothing jumps.
-	const dimmed = overList ? " refreshing" : "";
-
-	return (
-		<div className="changes">
-			<div className="changes-files">
-				<div className="changes-compare">
-					<span className="changes-compare-label" aria-hidden="true">Compare with</span>
-					<ModeSwitch
-						label="Compare with"
-						labels={COMPARISONS.map(choice => COMPARISON_LABELS[choice])}
-						selected={COMPARISONS.indexOf(compared)}
-						disabled={false}
-						unavailable={COMPARISONS.map(choice => choice === "base" && unavailable !== null)}
-						{...(unavailable === null ? {} : { describedBy: baseNote })}
-						onSelect={index => void store.compareChanges(COMPARISONS[index]!)}
-					/>
-					{view?.compared != null && <span className="changes-compared" title={shown.title}>{shown.text}</span>}
-					<button
-						type="button"
-						className="text-button changes-base-action"
-						title={BASE_ACTION_TITLE}
-						aria-haspopup="dialog"
-						onClick={() => store.openDialog({ kind: "set-base", repository: repository.path, worktree: worktree.id })}
-					>
-						{describeBaseAction(worktree.base)}
-					</button>
-				</div>
-				{unavailable !== null && <p className="changes-base-note" id={baseNote}>{unavailable}</p>}
-				<div className="changes-bar">
-					<span className="changes-state">
-						{refreshing && <span className="changes-spinner"><StatusGlyph status={{ kind: "working", progress: null }} /></span>}
-						<span className="changes-count" role="status">{files === null ? "Reading changes" : describeFileCounts(files, view?.more ?? false)}</span>
-					</span>
-					{/* Always there, so it speaks once when a refresh starts; "Reading changes" already speaks for an empty list. */}
-					<span className="visually-hidden" role="status">{overList ? REFRESHING_CHANGES : ""}</span>
-					<button
-						type="button"
-						className="text-button"
-						disabled={refreshing}
-						title="Read this repository's worktrees and their changes again"
-						onClick={() => void store.reloadRepository(repository.path)}
-					>
-						Refresh
-					</button>
-				</div>
-				{view?.problem != null && (
-					<div className="sidebar-error" role="alert">
-						<p className="sidebar-error-title">Could not read the changes</p>
-						<p className="sidebar-error-text">{view.problem}</p>
-					</div>
-				)}
-				{view !== null && files !== null && (files.length === 0
-					? (
-						<div className={`changes-clean${dimmed}`}>
-							<p className="empty-title">No changes</p>
-							<p className="empty-text">{describeNoChanges(compared, base)}</p>
-						</div>
-					)
-					: <FileList view={{ ...view, files }} dimmed={dimmed} />)}
-				{view?.more === true && <p className="changes-more">{MORE_FILES_NOTE}</p>}
-			</div>
-			{view !== null && (
-				<div
-					className="changes-main"
-					onKeyDown={event => {
-						// Escape closes the panel over the diff. A note's field takes Escape first, to cancel.
-						// Only while it shows: in a wide window the panel is beside the diff, and Escape is left alone.
-						if (event.key !== "Escape" || !open || toggleButton.current?.offsetParent == null) return;
-						event.preventDefault();
-						closeReview();
-					}}
-				>
-					<DiffPane
-						repository={repository.path}
-						worktree={worktree}
-						view={view}
-						toggle={noteCount > 0
-							? <ReviewToggle count={noteCount} panel={panelId} open={open} button={toggleButton} onToggle={() => (open ? closeReview() : setOpenFor(worktree.id))} />
-							: null}
-					/>
-					<ReviewPanel
-						key={worktree.id}
-						worktree={worktree.id}
-						id={panelId}
-						open={open}
-						onClose={closeReview}
-						onShown={() => setOpenFor(null)}
-						onGone={() => {
-							setOpenFor(null);
-							// The panel goes with its last note: the keyboard goes to the diff.
-							setTimeout(() => (document.querySelector<HTMLElement>(".changes-main .diff-body") ?? document.querySelector<HTMLElement>('.change-file[tabindex="0"]'))?.focus());
-						}}
-					/>
-				</div>
-			)}
-		</div>
 	);
 }

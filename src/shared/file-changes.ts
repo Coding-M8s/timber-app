@@ -1,6 +1,6 @@
 /**
  * What changed in a worktree, file by file, and the diff of one file, for the
- * Changes tab. Pure: the main process runs Git (see src/bun/file-changes.ts)
+ * Changes view. Pure: the main process runs Git (see src/bun/file-changes.ts)
  * and parses what it printed with these functions, and the mock engine and
  * the tests use them too.
  */
@@ -8,7 +8,7 @@
 import type { SavedBase } from "./model";
 
 /**
- * What the Changes tab compares the worktree with:
+ * What the Changes view compares the worktree with:
  *
  * - "base": everything the branch changed since it left its saved base,
  *   committed or not. The diff from `git merge-base <base> HEAD` to the files
@@ -150,7 +150,7 @@ const LITERAL = ["--literal-pathspecs"];
  * For every diff of tracked files: `git diff` refreshes the index and writes
  * it back when file times are stale, even with `GIT_OPTIONAL_LOCKS=0`, which
  * only covers `git status`. A write would wake the repository watcher, so
- * reading the Changes tab would reload the sidebar.
+ * reading the Changes view would reload the sidebar.
  */
 const NO_INDEX_REFRESH = ["-c", "diff.autoRefreshIndex=false"];
 
@@ -223,7 +223,7 @@ export function savedBaseRef(base: SavedBase | null): { ok: true; ref: string } 
 }
 
 /**
- * A saved base as the Changes tab names it: `origin/main` for a remote
+ * A saved base as the Changes view names it: `origin/main` for a remote
  * branch, `main` for a local one, `a1b2c3d` for a commit, the ref itself
  * otherwise.
  */

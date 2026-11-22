@@ -33,6 +33,7 @@ const KEYS: Record<string, { code: string; keyCode: number; text?: string }> = {
 	K: { code: "KeyK", keyCode: 75 },
 	E: { code: "KeyE", keyCode: 69 },
 	F: { code: "KeyF", keyCode: 70 },
+	G: { code: "KeyG", keyCode: 71 },
 	P: { code: "KeyP", keyCode: 80 },
 	S: { code: "KeyS", keyCode: 83 },
 	T: { code: "KeyT", keyCode: 84 },

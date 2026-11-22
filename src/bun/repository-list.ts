@@ -71,7 +71,7 @@ export interface RepositoryList {
 	/**
 	 * As `find`, but may answer with the listing the sidebar just read, when no
 	 * change of the repository was heard since. Only for views that read and
-	 * change nothing, such as the Changes tab and chops.
+	 * change nothing, such as the Changes view and chops.
 	 */
 	findRecent(path: string): Promise<Repository | null>;
 	/**

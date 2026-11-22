@@ -1344,7 +1344,7 @@ pre:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-	/* Still: the open ring stays, without turning. The Changes tab's spinner is the same ring. */
+	/* Still: the open ring stays, without turning. The Changes view's spinner is the same ring. */
 	.status-glyph.status-working {
 		animation: none;
 	}
@@ -3197,7 +3197,19 @@ pre:focus-visible {
 	background: var(--text);
 }
 
-/* Closes the File tab beside it. */
+/* The small "diff" before the diff tab's file name, so it is not taken for the File tab. */
+.tab-kind {
+	margin-right: 6px;
+	padding: 0 4px;
+	border-radius: 4px;
+	background: var(--fill-field);
+	color: var(--text-3);
+	font-family: var(--font-mono);
+	font-size: 10.5px;
+	font-weight: 400;
+}
+
+/* Closes the diff or File tab beside it. */
 .tab-close {
 	align-self: center;
 	width: 22px;
@@ -4217,20 +4229,31 @@ pre:focus-visible {
 	width: min(420px, calc(100vw - 32px));
 }
 
-/* The Changes tab: the changed files beside the diff of the selected one. */
+/* The side panel's Changes view: the changed files, and the Review section at its foot. */
+.changes-panel-body {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	padding: 0;
+}
+
+.changes-panel-empty {
+	padding: 10px 14px;
+}
+
 .changes {
 	flex: 1 1 auto;
 	min-height: 0;
 	display: flex;
+	flex-direction: column;
 }
 
 .changes-files {
-	flex: 0 0 300px;
+	flex: 1 1 auto;
 	min-width: 0;
+	min-height: 0;
 	display: flex;
 	flex-direction: column;
-	border-right: 1px solid var(--line);
-	background: var(--bg-main);
 }
 
 .changes-bar {
@@ -4468,7 +4491,8 @@ pre:focus-visible {
 	flex: none;
 }
 
-.diff-editor {
+.diff-editor,
+.diff-close {
 	flex: none;
 	display: inline-flex;
 	align-items: center;
@@ -4477,6 +4501,12 @@ pre:focus-visible {
 	margin: 0 0 0 auto;
 	padding: 0 10px;
 	font-size: 12px;
+}
+
+/* Close follows the other buttons; alone, for a deleted file, it goes to the end of the line. */
+.diff-editor + .diff-close,
+.review-toggle + .diff-close {
+	margin-left: 0;
 }
 
 .diff-body {
@@ -4566,19 +4596,6 @@ pre:focus-visible {
 .diff-line.note .diff-text {
 	font-style: italic;
 	color: var(--text-3);
-}
-
-@media (max-width: 640px) {
-	.changes {
-		flex-direction: column;
-	}
-
-	.changes-files {
-		flex: 0 0 auto;
-		max-height: 40%;
-		border-right: 0;
-		border-bottom: 1px solid var(--line);
-	}
 }
 
 /* The "+" menu of a worktree's sessions: the shell and every agent, each with what it runs. */
@@ -5974,7 +5991,7 @@ pre:focus-visible {
 	max-width: 420px;
 }
 
-/* Review notes: the count beside the Changes tab. */
+/* Review notes: the count beside Changes on the side panel's switch. */
 .tab-count {
 	margin-left: 6px;
 	padding: 0 5px;
@@ -6155,32 +6172,31 @@ pre:focus-visible {
 }
 
 /*
- * The Review panel beside the diff: a set width, its own scrolling list of
- * notes, and Send review and Discard always below. `.changes-main` holds the
- * diff and the panel; where they do not fit side by side, the panel opens
- * over the diff from the Review button in the diff's title bar instead.
+ * The Review section at the foot of the Changes view: its own scrolling list
+ * of notes, at most about half the panel, and Discard, Copy review, and Send
+ * review always below.
  */
-.changes-main {
-	flex: 1 1 0;
-	min-width: 0;
-	min-height: 0;
-	display: flex;
-	position: relative;
-	container: review / inline-size;
-}
-
 .changes-diff {
 	position: relative;
+	min-height: 0;
 }
 
 .review-panel {
-	flex: 0 0 300px;
+	flex: 0 1 auto;
 	min-width: 0;
 	min-height: 0;
+	max-height: 50%;
 	display: flex;
 	flex-direction: column;
-	border-left: 1px solid var(--line);
+	border-top: 1px solid var(--line);
 	background: var(--bg-main);
+}
+
+.review-hint {
+	margin: 0;
+	padding: 8px 12px 10px;
+	font-size: 12px;
+	color: var(--text-3);
 }
 
 .review-head {
@@ -6197,14 +6213,24 @@ pre:focus-visible {
 	padding: 0;
 }
 
-.review-close,
-.review-toggle,
-.review-toggle-bar {
-	display: none;
+/* The diff tab's Review button, while the Changes view is not on screen: it shows the view. */
+.review-toggle {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	height: 26px;
+	margin-left: auto;
+	padding: 0 10px;
+	font-size: 12px;
 }
 
-.review-close {
-	margin: 0 0 0 auto;
+.review-toggle + .diff-editor {
+	margin-left: 0;
+}
+
+.review-toggle .change-group-count {
+	margin: 0;
 }
 
 .review-items {
@@ -6371,65 +6397,6 @@ pre:focus-visible {
 .diff-line.shown,
 .diff-line.shown:hover {
 	box-shadow: inset 3px 0 0 var(--focus), inset 0 0 0 100vmax var(--fill-selected);
-}
-
-/*
- * Too narrow for the diff and the panel side by side: the panel opens over
- * the diff, below its title bar, from the Review button there. An engine
- * without container queries keeps the panel beside the diff.
- */
-@container review (width < 800px) {
-	.review-toggle {
-		flex: none;
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		height: 26px;
-		margin-left: auto;
-		padding: 0 10px;
-		font-size: 12px;
-	}
-
-	.review-toggle + .diff-editor {
-		margin-left: 0;
-	}
-
-	.review-toggle .change-group-count {
-		margin: 0;
-	}
-
-	.review-toggle[aria-expanded="true"] {
-		background: var(--fill-selected);
-	}
-
-	.review-toggle-bar {
-		display: flex;
-		position: absolute;
-		top: 0;
-		left: 0;
-		right: 0;
-		justify-content: flex-end;
-	}
-
-	.review-close {
-		display: inline-block;
-	}
-
-	.review-panel {
-		display: none;
-	}
-
-	/* Below the diff's title bar: 34px and its line. */
-	.review-panel.open {
-		display: flex;
-		position: absolute;
-		top: 35px;
-		right: 0;
-		bottom: 0;
-		z-index: 5;
-		width: min(300px, 100%);
-		box-shadow: -8px 0 24px var(--shadow-strong);
-	}
 }
 
 /* The Send review dialog: the agent to paste into, and the message as it will be pasted. */

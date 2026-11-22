@@ -1,5 +1,6 @@
 import { ChopsPanel, ChopsShortcut } from "./components/ChopsPanel";
 import { FilesPanel, FilesShortcut } from "./components/FilesPanel";
+import { ChangesList, ChangesReader, ChangesShortcut } from "./components/ChangesList";
 import { SidePanelResizer } from "./components/SidePanel";
 import { Dialogs } from "./components/Dialogs";
 import { PaletteShortcut } from "./components/PaletteShortcut";
@@ -55,8 +56,9 @@ function Body() {
 	const widths = { "--sidebar-width": `${state.layout.sidebarWidth}px`, ...(shown ? { "--chops-width": `${state.layout.chopsWidth}px` } : {}) } as CSSProperties;
 	// The parts are put in the order they are seen, so the keyboard reaches them in that order too.
 	// Keys keep each part mounted when the side changes, with whatever it holds, such as the filter.
-	// The side panel, with the chops or the files, is always on the workspace's right, wherever the sidebar is.
-	const panel = sidePanelView(state) === "files" ? <FilesPanel key="files" /> : <ChopsPanel key="chops" />;
+	// The side panel, with the chops, the files, or the changes, is always on the workspace's right, wherever the sidebar is.
+	const view = sidePanelView(state);
+	const panel = view === "files" ? <FilesPanel key="files" /> : view === "changes" ? <ChangesList key="changes" /> : <ChopsPanel key="chops" />;
 	const chops = shown ? [<SidePanelResizer key="chops-resizer" />, panel] : [];
 	const sidebar = [<Sidebar key="sidebar" />, <SidebarResizer key="resizer" />];
 	const main = [<Workspace key="workspace" />, ...chops];
@@ -137,6 +139,8 @@ export function App({ store, children }: { store: AppStore; children?: ReactNode
 				<ChopsShortcut />
 				<RunChopShortcut />
 				<FilesShortcut />
+				<ChangesShortcut />
+				<ChangesReader />
 				{children}
 				{/* Over any other dialog: the app is about to quit. */}
 				<QuitDialog />

@@ -1,5 +1,5 @@
 /**
- * Review notes: what the person writes on lines of a diff in the Changes tab,
+ * Review notes: what the person writes on lines of a diff in the diff tab,
  * collected per worktree and sent to an agent as one message. Pure, so the
  * message can be tested without a window, and so what the preview shows is
  * exactly what is pasted.

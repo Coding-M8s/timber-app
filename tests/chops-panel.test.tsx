@@ -333,7 +333,7 @@ describe("running a chop from the panel (mock engine)", () => {
 
 	test("a personal command runs in a new terminal in the selected worktree, and the Workspace tab shows it", async () => {
 		const { engine, store } = await panelStore();
-		store.showTab("changes");
+		store.showTab("pull-request");
 		runChopIn(store, TIMBER, FEATURE.id, "Hello", size);
 		await settle();
 		const session = store.getState().terminals.find(candidate => candidate.name === "Hello")!;
@@ -362,10 +362,10 @@ describe("running a chop from the panel (mock engine)", () => {
 	test("Copy with no agent saved leaves the view as it is", async () => {
 		const { engine, store } = await panelStore();
 		await store.savePreferences({ agents: [] });
-		store.showTab("changes");
+		store.showTab("pull-request");
 		runChopIn(store, TIMBER, FEATURE.id, "Review the diff", size, false);
 		await settle();
-		expect(store.getState().tab).toBe("changes");
+		expect(store.getState().tab).toBe("pull-request");
 		expect(await engine.readClipboard()).toContain("Review the changes on this branch");
 	});
 

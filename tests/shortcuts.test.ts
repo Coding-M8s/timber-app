@@ -4,6 +4,7 @@ import { searchKeymap } from "@codemirror/search";
 import type { KeyBinding } from "@codemirror/view";
 import { editorKeys } from "../src/mainview/components/TextEditor";
 import { isFilesPanelShortcut } from "../src/mainview/files-panel-format";
+import { isChangesPanelShortcut } from "../src/mainview/changes-panel-format";
 import { isPaletteShortcut } from "../src/mainview/palette";
 import { clipboardKey, sessionKey } from "../src/mainview/terminal-format";
 import { isWaitingShortcut } from "../src/mainview/waiting";
@@ -60,9 +61,9 @@ describe("a changeable shortcut's chord", () => {
 describe("the keys a changeable shortcut cannot take", () => {
 	test("each app key in the table is one the app's own key handler takes", () => {
 		const takenByApp = (letter: string) =>
-			isPaletteShortcut(chord(letter)) || isWaitingShortcut(chord(letter)) || isFilesPanelShortcut(chord(letter))
+			isPaletteShortcut(chord(letter)) || isWaitingShortcut(chord(letter)) || isFilesPanelShortcut(chord(letter)) || isChangesPanelShortcut(chord(letter))
 			|| sessionKey(chord(letter), false) !== null || clipboardKey(chord(letter), false) !== null;
-		const editorOnly = new Set(["Z", "G", "U"]);
+		const editorOnly = new Set(["Z", "U"]);
 		for (const letter of Object.keys(RESERVED_SHORTCUTS)) {
 			if (!editorOnly.has(letter)) expect(takenByApp(letter)).toBe(true);
 		}
@@ -97,7 +98,7 @@ describe("the keys a changeable shortcut cannot take", () => {
 		bound.delete("P");
 		bound.delete("J");
 		for (const letter of bound) expect(Object.keys(RESERVED_SHORTCUTS)).toContain(letter);
-		expect([...bound].sort()).toEqual(["G", "U", "Z"]);
+		expect([...bound].sort()).toEqual(["U", "Z"]);
 	});
 
 	test("a key the app keeps is refused with what it does", () => {

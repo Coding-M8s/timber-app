@@ -52,7 +52,7 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the + in 
 		await page?.close();
 	});
 
-	/** Show the long file of the feature worktree's Changes tab, in `comparison`. */
+	/** Show the long file of the feature worktree's changes in its diff tab, in `comparison`. */
 	async function showFile(comparison: "base" | "uncommitted") {
 		// The main process writes the theme before the app's page is drawn; this page has none, so the colors drawn here are set by hand.
 		await page.evaluate(`(() => {
@@ -65,7 +65,7 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the + in 
 			const feature = repository.worktrees[1];
 			${ENGINE}.setFileChanges(feature.path, [{ change: { area: "unstaged", kind: "modified", path: ${JSON.stringify(PATH)}, previousPath: null }, patch: ${JSON.stringify(PATCH)} }]);
 			${STORE}.select(feature.id);
-			${STORE}.showTab("changes");
+			${STORE}.showSidePanel("changes");
 			await ${STORE}.readChanges(repository.path, feature.id);
 		})()`);
 		await page.until(`${STORE}.getState().changes?.compared != null`, "the changes were read");

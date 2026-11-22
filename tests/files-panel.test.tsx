@@ -28,7 +28,7 @@ const rowsOf = (store: ReturnType<typeof createAppStore>, id = PRIMARY.id) => {
 	return tree ? treeRows(tree).map(row => row.id) : [];
 };
 
-describe("the side panel's two views", () => {
+describe("the side panel's views", () => {
 	test("Files shows the panel on the files, Chops switches it back, and pressing the shown one hides it; the view is remembered", async () => {
 		const { engine, store } = await startedStore();
 		expect(store.toggleSidePanel("files")).toBe(true);
@@ -45,7 +45,7 @@ describe("the side panel's two views", () => {
 		expect(sidePanelView(restarted.getState())).toBe("files");
 	});
 
-	test("with chops off, the files still show, without a switch, and a panel left on the chops stays hidden", async () => {
+	test("with chops off, the files still show, with a switch of Files and Changes, and a panel left on the chops stays hidden", async () => {
 		const { store } = await startedStore();
 		store.toggleSidePanel("chops");
 		await store.savePreferences({ useChops: false });
@@ -58,7 +58,8 @@ describe("the side panel's two views", () => {
 		expect(markup).toContain('id="titlebar-files"');
 		expect(markup).not.toContain('id="titlebar-chops"');
 		expect(markup).toContain('data-view="files"');
-		expect(markup).not.toContain("side-panel-switch");
+		const views = [...markup.matchAll(/class="side-panel-view" aria-pressed="(?:true|false)">([A-Za-z]+)/g)].map(match => match[1]);
+		expect(views).toEqual(["Files", "Changes"]);
 		expect(markup).toContain('<h2 id="');
 	});
 

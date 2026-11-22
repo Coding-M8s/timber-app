@@ -90,6 +90,19 @@ describe("what the side panel shows in the layout", () => {
 		expect(JSON.parse(serializeSettings(files)).layout.sidePanel).toBe("files");
 		expect(parseSettings(serializeSettings(files))).toEqual(files);
 	});
+
+	test("can be the changes, saved and read back", () => {
+		expect(readLayout({ chopsOpen: true, sidePanel: "changes" })).toMatchObject({ chopsOpen: true, sidePanel: "changes" });
+		const changes = { repositories: [one], layout: { ...defaultLayout(), chopsOpen: true, sidePanel: "changes" as const } };
+		expect(JSON.parse(serializeSettings(changes)).layout.sidePanel).toBe("changes");
+		expect(parseSettings(serializeSettings(changes))).toEqual(changes);
+	});
+
+	test("a layout saved before the Changes view reads as it was", () => {
+		// Saved by the app before the Changes view: two views, and every part kept.
+		const before = { sidebarWidth: 300, collapsed: ["/a"], setupDismissed: [], uncommittedChanges: ["wt-1"], issueLists: {}, collapsedGroups: [], chopsOpen: true, chopsWidth: 400, sidePanel: "files" };
+		expect(readLayout(before)).toEqual({ ...defaultLayout(), ...before, sidePanel: "files" });
+	});
 });
 
 describe("readLayout", () => {

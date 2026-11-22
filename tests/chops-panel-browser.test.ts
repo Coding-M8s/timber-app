@@ -21,11 +21,13 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the chops
 		await page.until(PANEL_SHOWN, "the panel showed");
 		await page.until(FOCUS_IN_PANEL, "the panel took the keyboard");
 		expect(await page.evaluate<string | null>(`document.querySelector(${JSON.stringify(BUTTON)}).getAttribute("aria-pressed")`)).toBe("true");
-		// By keyboard: Tab reaches the switch to the files, New chop, then the Close button inside the panel, and Enter hides it.
+		// By keyboard: Tab reaches the switch to the files and the changes, New chop, then the Close button inside the panel, and Enter hides it.
 		await page.press("Tab");
 		expect(await page.evaluate<string>(ACTIVE)).toBe("side-panel-view-chops");
 		await page.press("Tab");
 		expect(await page.evaluate<string>(ACTIVE)).toBe("side-panel-view-files");
+		await page.press("Tab");
+		expect(await page.evaluate<string>(ACTIVE)).toBe("side-panel-view-changes");
 		await page.press("Tab");
 		expect(await page.evaluate<string>(ACTIVE)).toBe("New chop");
 		await page.press("Tab");
@@ -200,13 +202,13 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the chops
 		await page.click(BUTTON);
 		await page.until(`document.querySelector('#chops-panel [aria-label="Run Hello"]') !== null`, "the panel listed Hello");
 		// Removing the worktree blocks a run, as the palette's rule says.
-		await page.evaluate(`(() => { const state = ${STORE}.getState(); const worktree = state.repositories[0].worktrees[1]; state.removals = [{ repository: state.repositories[0].path, worktree, toast: "", status: { kind: "running" } }]; ${STORE}.showTab("changes"); })()`);
+		await page.evaluate(`(() => { const state = ${STORE}.getState(); const worktree = state.repositories[0].worktrees[1]; state.removals = [{ repository: state.repositories[0].path, worktree, toast: "", status: { kind: "running" } }]; ${STORE}.showTab("pull-request"); })()`);
 		await page.until(`document.querySelector('#chops-panel [aria-label="Run Hello"]').getAttribute("aria-disabled") === "true"`, "Run was blocked");
 		await page.click(`#chops-panel [aria-label="Run Hello"]`);
 		await Bun.sleep(200);
 		expect(await page.evaluate<number>(`${STORE}.getState().terminals.length`)).toBe(0);
 		expect(await page.evaluate<boolean>(`${STORE}.getState().dialog === null`)).toBe(true);
-		expect(await page.evaluate<string>(`${STORE}.getState().tab`)).toBe("changes");
+		expect(await page.evaluate<string>(`${STORE}.getState().tab`)).toBe("pull-request");
 	}, 30_000);
 
 

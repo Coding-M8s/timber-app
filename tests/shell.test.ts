@@ -19,16 +19,13 @@ const API_SERVER = "/work/api-server";
 
 describe("tabAfterKey", () => {
 	test("the arrows step between the tabs and wrap around", () => {
-		expect(tabAfterKey("workspace", "ArrowRight")).toBe("changes");
-		expect(tabAfterKey("changes", "ArrowRight")).toBe("pull-request");
+		expect(tabAfterKey("workspace", "ArrowRight")).toBe("pull-request");
 		expect(tabAfterKey("pull-request", "ArrowRight")).toBe("workspace");
 		expect(tabAfterKey("workspace", "ArrowLeft")).toBe("pull-request");
-		expect(tabAfterKey("pull-request", "ArrowLeft")).toBe("changes");
-		expect(tabAfterKey("changes", "ArrowLeft")).toBe("workspace");
+		expect(tabAfterKey("pull-request", "ArrowLeft")).toBe("workspace");
 	});
 
 	test("Home and End go to the first and the last tab", () => {
-		expect(tabAfterKey("changes", "Home")).toBe("workspace");
 		expect(tabAfterKey("pull-request", "Home")).toBe("workspace");
 		expect(tabAfterKey("workspace", "End")).toBe("pull-request");
 	});
@@ -38,13 +35,22 @@ describe("tabAfterKey", () => {
 	});
 
 	test("the File tab is reached only while a file is open", () => {
-		expect(visibleTabs(false)).toEqual(["workspace", "changes", "pull-request"]);
-		expect(visibleTabs(true)).toEqual(["workspace", "changes", "pull-request", "file"]);
+		expect(visibleTabs(false)).toEqual(["workspace", "pull-request"]);
+		expect(visibleTabs(true)).toEqual(["workspace", "pull-request", "file"]);
 		const open = visibleTabs(true);
 		expect(tabAfterKey("pull-request", "ArrowRight", open)).toBe("file");
 		expect(tabAfterKey("file", "ArrowRight", open)).toBe("workspace");
 		expect(tabAfterKey("workspace", "End", open)).toBe("file");
 		expect(tabAfterKey("pull-request", "ArrowRight")).toBe("workspace");
+	});
+
+	test("the diff tab is reached only while a diff is open, after Pull request and before File", () => {
+		expect(visibleTabs(false, true)).toEqual(["workspace", "pull-request", "diff"]);
+		expect(visibleTabs(true, true)).toEqual(["workspace", "pull-request", "diff", "file"]);
+		const open = visibleTabs(true, true);
+		expect(tabAfterKey("pull-request", "ArrowRight", open)).toBe("diff");
+		expect(tabAfterKey("diff", "ArrowRight", open)).toBe("file");
+		expect(tabAfterKey("file", "ArrowLeft", open)).toBe("diff");
 	});
 });
 
@@ -302,8 +308,11 @@ describe("tabs and the dialog request in the store", () => {
 	test("the Workspace tab shows first, and showTab changes it", async () => {
 		const store = await startedStore();
 		expect(store.getState().tab).toBe("workspace");
-		store.showTab("changes");
-		expect(store.getState().tab).toBe("changes");
+		store.showTab("pull-request");
+		expect(store.getState().tab).toBe("pull-request");
+		// Only while a diff is open does the diff tab show.
+		store.showTab("diff");
+		expect(store.getState().tab).toBe("pull-request");
 	});
 
 	test("openDialog holds one request, and closeDialog clears it", async () => {

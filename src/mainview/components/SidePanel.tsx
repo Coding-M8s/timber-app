@@ -2,14 +2,16 @@ import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, useEffect,
 import { MAX_CHOPS_WIDTH, MIN_CHOPS_WIDTH, type SidePanelView } from "../../shared/layout";
 import { CHOPS_BUTTON_ID, CHOPS_PANEL_ID, CHOPS_WIDTH_LABEL } from "../chops-panel-format";
 import { FILES_BUTTON_ID, SIDE_PANEL_SWITCH_LABEL, SIDE_PANEL_VIEW_LABELS, sidePanelViewButtonId } from "../files-panel-format";
+import { CHANGES_BUTTON_ID, describeChangesViewNotes } from "../changes-panel-format";
 import { chopsWidthAfterDrag, chopsWidthAfterKey } from "../shell";
 import { useAppState, useStore } from "../store/react";
-import { chopsEnabled, sidePanelShown, sidePanelView } from "../store/state";
+import { offeredSidePanelViews, selectedWorktree, sidePanelShown, sidePanelView } from "../store/state";
 import type { AppStore } from "../store/store";
 
 /*
- * The side panel beside the workspace, which shows the chops or the files
- * (see docs/architecture.md, "Chops panel" and "File explorer"). Each view
+ * The side panel beside the workspace, which shows the chops, the files, or
+ * the changes (see docs/architecture.md, "Chops panel", "File explorer", and
+ * "The Changes view"). Each view
  * draws its own panel, with the same `id` and a `data-view`, and this module
  * keeps what they share: the keyboard as the panel shows, switches, and
  * hides, its edge, and the switch in its header.
@@ -40,8 +42,14 @@ export function useSidePanelFocus(view: SidePanelView): void {
 	useEffect(() => takeSidePanelFocus(view), [view]);
 }
 
+/** The title bar button of each view, where focus goes back when nothing else can take it. */
+const VIEW_BUTTON_IDS: Readonly<Record<SidePanelView, string>> = { chops: CHOPS_BUTTON_ID, files: FILES_BUTTON_ID, changes: CHANGES_BUTTON_ID };
+
+/** How the resizer names the panel, for each view. */
+const VIEW_WIDTH_NAMES: Readonly<Record<SidePanelView, string>> = { chops: "chops", files: "files", changes: "changes" };
+
 function giveFocusBack(view: SidePanelView): void {
-	const target = returnTo !== null && returnTo.isConnected ? returnTo : document.getElementById(view === "files" ? FILES_BUTTON_ID : CHOPS_BUTTON_ID);
+	const target = returnTo !== null && returnTo.isConnected ? returnTo : document.getElementById(VIEW_BUTTON_IDS[view]);
 	returnTo = null;
 	pendingFocus = null;
 	target?.focus();
@@ -127,7 +135,8 @@ export function SidePanelResizer() {
 	const store = useStore();
 	const state = useAppState();
 	const width = state.layout.chopsWidth;
-	const files = sidePanelView(state) === "files";
+	const view = sidePanelView(state);
+	const name = VIEW_WIDTH_NAMES[view];
 	const drag = useRef<{ x: number; width: number } | null>(null);
 	const [dragging, setDragging] = useState(false);
 
@@ -162,13 +171,13 @@ export function SidePanelResizer() {
 			className={dragging ? "resizer chops-resizer dragging" : "resizer chops-resizer"}
 			role="separator"
 			aria-orientation="vertical"
-			aria-label={files ? "Files panel width" : CHOPS_WIDTH_LABEL}
+			aria-label={view === "chops" ? CHOPS_WIDTH_LABEL : `${SIDE_PANEL_VIEW_LABELS[view]} panel width`}
 			aria-controls={CHOPS_PANEL_ID}
 			aria-valuemin={MIN_CHOPS_WIDTH}
 			aria-valuemax={MAX_CHOPS_WIDTH}
 			aria-valuenow={width}
 			aria-valuetext={`${width} pixels`}
-			title={`Drag to resize the ${files ? "files" : "chops"} panel, or focus this and use the arrow keys`}
+			title={`Drag to resize the ${name} panel, or focus this and use the arrow keys`}
 			tabIndex={0}
 			onPointerDown={startDrag}
 			onPointerMove={moveDrag}
@@ -183,18 +192,20 @@ export function SidePanelResizer() {
 }
 
 /**
- * The panel's title, and the switch between the chops and the files. With
- * chops off, only the title: the files are all the panel shows then.
+ * The panel's title, and the switch between its views: the chops, the
+ * files, and the changes, or only the last two with chops off. Changes
+ * counts the review notes of the selected worktree.
  */
 export function SidePanelTitle({ view, titleId, title }: { view: SidePanelView; titleId: string; title: string }) {
 	const store = useStore();
 	const state = useAppState();
-	if (!chopsEnabled(state)) return <h2 id={titleId} className="chops-panel-title">{title}</h2>;
+	const selected = selectedWorktree(state);
+	const notes = selected === null ? 0 : state.reviews[selected.worktree.id]?.length ?? 0;
 	return (
 		<>
 			<h2 id={titleId} className="visually-hidden">{title}</h2>
 			<div className="side-panel-switch" role="group" aria-label={SIDE_PANEL_SWITCH_LABEL}>
-				{(["chops", "files"] as const).map(option => (
+				{offeredSidePanelViews(state).map(option => (
 					<button
 						key={option}
 						id={sidePanelViewButtonId(option)}
@@ -204,6 +215,12 @@ export function SidePanelTitle({ view, titleId, title }: { view: SidePanelView; 
 						onClick={() => switchSidePanel(store, option)}
 					>
 						{SIDE_PANEL_VIEW_LABELS[option]}
+						{option === "changes" && notes > 0 && (
+							<>
+								<span className="tab-count" aria-hidden="true">{notes}</span>
+								<span className="visually-hidden">{describeChangesViewNotes(notes)}</span>
+							</>
+						)}
 					</button>
 				))}
 			</div>

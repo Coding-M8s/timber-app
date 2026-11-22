@@ -16,7 +16,7 @@ export const FILES_IGNORED_LABEL = "Show ignored files";
 export const SIDE_PANEL_SWITCH_LABEL = "Show in the side panel";
 
 /** The words of each view, on the switch in the panel's header. */
-export const SIDE_PANEL_VIEW_LABELS: Readonly<Record<SidePanelView, string>> = { chops: "Chops", files: "Files" };
+export const SIDE_PANEL_VIEW_LABELS: Readonly<Record<SidePanelView, string>> = { chops: "Chops", files: "Files", changes: "Changes" };
 
 /** The `id` of a view's button on the switch, so focus can land on it after the switch draws anew. */
 export const sidePanelViewButtonId = (view: SidePanelView) => `side-panel-view-${view}`;

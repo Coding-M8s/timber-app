@@ -32,7 +32,7 @@ const worktreeIn = (store: ReturnType<typeof createAppStore>, id: string) => sto
 async function changesOf(id: string, engine: Engine = createMockEngine()) {
 	const store = await started(engine);
 	store.select(id);
-	store.showTab("changes");
+	store.showSidePanel("changes");
 	await store.readChanges(TIMBER, id);
 	return store;
 }

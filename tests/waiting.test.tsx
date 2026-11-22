@@ -221,10 +221,10 @@ describe("the next session that needs you, across repositories", () => {
 		expect(store.getState().waitingOrder).toEqual([claude.id, codex.id]);
 	});
 
-	test("a jump from the Changes tab shows the Workspace tab", async () => {
+	test("a jump from the Pull request tab shows the Workspace tab", async () => {
 		const { store, claude, report } = await inTwoRepositories();
 		await report(claude.id, "state=blocked");
-		store.showTab("changes");
+		store.showTab("pull-request");
 		expect(store.jumpToWaiting()).toBe(true);
 		expect(store.getState().tab).toBe("workspace");
 		expect(sessionOnScreen(store.getState())?.id).toBe(claude.id);
@@ -258,7 +258,7 @@ describe("the next session that needs you, across repositories", () => {
 		await store.openTerminal({ repository: TIMBER, worktree: TIMBER, cols: 80, rows: 24, agent: "Codex" });
 		await settle();
 		store.select(apiId);
-		store.showTab("changes");
+		store.showTab("pull-request");
 		await settle();
 		const third = store.getState().terminals[2]!;
 		// Claude Code in api-server finishes first, then Codex in timber; the third agent needs you.
@@ -314,7 +314,7 @@ describe("the next session that needs you, across repositories", () => {
 		await store.openTerminal({ repository: TIMBER, worktree: TIMBER, cols: 80, rows: 24, agent: "Codex" });
 		await settle();
 		store.select(featureId);
-		store.showTab("changes");
+		store.showTab("pull-request");
 		await settle();
 		const third = store.getState().terminals[2]!;
 		await report(codex.id, "state=done");
