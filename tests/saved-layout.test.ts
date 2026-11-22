@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathS
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { createSavedLayout } from "../src/bun/layout";
+import { createSavedPreferences } from "../src/bun/preferences";
 import { createRepositoryList } from "../src/bun/repository-list";
 import type { RepositoryReader } from "../src/bun/repository-reader";
 import { createSettingsHolder, readSettings, writeSettings } from "../src/bun/settings";
@@ -49,6 +50,7 @@ function appOn(file = settingsFile) {
 	const settings = createSettingsHolder(file, () => {});
 	return {
 		layout: createSavedLayout(settings),
+		preferences: createSavedPreferences(settings),
 		repositories: createRepositoryList({ settingsFile: file, settings, pickFolder: async () => null, reader, environment: {}, warn: () => {} }),
 	};
 }
@@ -139,6 +141,17 @@ describe("the saved layout", () => {
 		expect(await layout.load()).toEqual({ sidebarWidth: 310, collapsed: [other], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [], chopsOpen: false, chopsWidth: 320, sidePanel: "chops" as const, diffLayout: "unified" as const });
 		expect(onDisk().layout).toEqual({ sidebarWidth: 310, collapsed: [other], setupDismissed: [], uncommittedChanges: [], issueLists: {} });
 		expect(onDisk().repositories.map((entry: { path: string }) => entry.path)).toEqual([other]);
+	});
+
+	test("removing a repository drops its Skip pull confirmation and keeps the other repositories' and Ask before pulling", async () => {
+		const { preferences, repositories } = appOn();
+		await repositories.addFolder(primary);
+		await repositories.addFolder(other);
+		expect(await preferences.save({ pull: { ask: false, skip: [primary, other] } })).toMatchObject({ outcome: "saved" });
+
+		expect(await repositories.remove(primary)).toEqual({ outcome: "removed" });
+		expect((await appOn().preferences.load()).pull).toEqual({ ask: false, skip: [other] });
+		expect(onDisk().preferences.pull).toEqual({ ask: false, skip: [other] });
 	});
 
 	// Skipped on Windows, where chmod only sets the read-only flag, so the folder stays writable. Also skipped for root, who can write anywhere.

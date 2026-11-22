@@ -336,3 +336,135 @@ describe("a push through the store and the mock engine", () => {
 		expect(await store.runSyncAction(request)).toMatchObject({ outcome: "failed", action: "push", ran: false, failure: { diagnostic: "Timber is not ready. Nothing was run." } });
 	});
 });
+
+describe("Pull without its dialog", () => {
+	const TIMBER = "/work/timber";
+	const main = sampleRepositories[0]!.worktrees.find(worktree => worktree.primary)!;
+	const pullRequest = { kind: "sync-action" as const, action: "pull" as const, repository: TIMBER, worktree: main.id };
+
+	async function started(pull: { ask: boolean; skip: string[] }, ending: SyncEnding = "pulled") {
+		const engine = createMockEngine(structuredClone(sampleRepositories), sampleTimberStatuses.ready);
+		engine.endSyncActions(ending);
+		const store = createAppStore(engine, () => () => {});
+		store.start();
+		await settle();
+		await store.savePreferences({ pull });
+		return { store, engine };
+	}
+
+	test("the row's control, its menu entry, and the palette say Pull runs at once, and Push still opens its dialog", () => {
+		const skipping = { pullAsks: false, pulling: false };
+		const [pull] = describeSyncControls(behind, skipping);
+		expect(pull).toMatchObject({ opensDialog: false, busy: false, title: "3 commits to pull from origin/feat/x, as of the last fetch. Click to pull now, without asking first." });
+		expect(describeSyncControls(behind)[0]).toMatchObject({ opensDialog: true, title: "3 commits to pull from origin/feat/x, as of the last fetch. Click to see the commands, then pull." });
+		expect(describeSyncControls(ahead, skipping)[0]).toMatchObject({ action: "push", opensDialog: true });
+		const markup = renderToStaticMarkup(<WorktreeRow worktree={behind} selected={false} onSelect={() => {}} onSyncAction={() => {}} syncOptions={skipping} />);
+		expect(markup).toContain("class=\"sync behind row-sync-button\"");
+		expect(markup).not.toContain("aria-haspopup=\"dialog\"");
+	});
+
+	test("while one runs, the control and the menu entry are off", () => {
+		const pulling = { pullAsks: false, pulling: true };
+		expect(describeSyncControls(behind, pulling)[0]).toMatchObject({ busy: true, title: "Pulling origin/feat/x into feat/x." });
+		expect(renderToStaticMarkup(<WorktreeRow worktree={behind} selected={false} onSelect={() => {}} onSyncAction={() => {}} syncOptions={pulling} />)).toContain("aria-disabled=\"true\"");
+		expect(worktreeMenuItems(behind, false, pulling)[0]).toMatchObject({ id: "sync:pull", disabled: true, note: "Pulling now." });
+		expect(worktreeMenuChoice("/work/app", behind, "sync:pull", false, pulling)).toBeNull();
+	});
+
+	test("a repository that skips it pulls at once and says so in a toast, with no dialog", async () => {
+		const { store, engine } = await started({ ask: true, skip: [TIMBER] });
+		store.openDialog(pullRequest);
+		expect(store.getState().dialog).toBeNull();
+		expect(store.getState().operations).toContainEqual({ kind: "pull-worktree", repository: TIMBER, worktree: main.path });
+		// A second Pull while it runs does nothing.
+		store.openDialog(pullRequest);
+		await settle();
+		expect(engine.syncActionRequests()).toEqual([{ action: "pull", repository: TIMBER, worktree: main.path, target: { remote: "origin", upstreamRef: "refs/remotes/origin/main" } }]);
+		expect(store.getState().dialog).toBeNull();
+		expect(store.getState().toasts.at(-1)).toMatchObject({ text: "Pulled origin/main into main." });
+		expect(store.getState().operations.some(operation => operation.kind === "pull-worktree")).toBe(false);
+	});
+
+	test("with Ask before pulling off, every repository pulls at once, and the palette closes", async () => {
+		const { store, engine } = await started({ ask: false, skip: [] });
+		store.openPalette();
+		store.openDialog(pullRequest);
+		expect(store.getState().dialog).toBeNull();
+		await settle();
+		expect(engine.syncActionRequests()).toHaveLength(1);
+	});
+
+	test("a repository that asks shows the dialog, and Push always does", async () => {
+		const asking = await started({ ask: true, skip: ["/work/other"] });
+		asking.store.openDialog(pullRequest);
+		expect(asking.store.getState().dialog).toEqual(pullRequest);
+		const { store, engine } = await started({ ask: false, skip: [TIMBER] });
+		const feature = sampleRepositories[0]!.worktrees.find(worktree => worktree.sync?.kind === "tracking" && worktree.sync.ahead > 0 && worktree.sync.behind === 0)!;
+		const push = { kind: "sync-action" as const, action: "push" as const, repository: TIMBER, worktree: feature.id };
+		store.openDialog(push);
+		expect(store.getState().dialog).toEqual(push);
+		await settle();
+		expect(engine.syncActionRequests()).toEqual([]);
+	});
+
+	test("a refusal or a failure opens the dialog on what Git said", async () => {
+		for (const ending of ["diverged", "local-changes", "failed"] as const) {
+			const { store } = await started({ ask: true, skip: [TIMBER] }, ending);
+			store.openDialog(pullRequest);
+			await settle();
+			const dialog = store.getState().dialog;
+			expect(dialog).toMatchObject({ ...pullRequest, ended: { outcome: ending === "failed" ? "failed" : "refused" } });
+			if (dialog?.kind !== "sync-action" || !dialog.ended) throw new Error("unreachable");
+			expect(dialog.ended.failure.command).toBe("git merge --ff-only --no-autostash refs/remotes/origin/main");
+		}
+	});
+
+	test("a refusal while another dialog is open leaves that dialog and says what Git said in a toast", async () => {
+		const { store } = await started({ ask: true, skip: [TIMBER] }, "diverged");
+		store.openDialog(pullRequest);
+		store.openDialog({ kind: "new-worktree", repository: TIMBER });
+		await settle();
+		expect(store.getState().dialog).toEqual({ kind: "new-worktree", repository: TIMBER });
+		expect(store.getState().toasts.at(-1)).toMatchObject({ problem: true });
+		expect(store.getState().toasts.at(-1)!.text).toStartWith("Could not pull into main. ");
+	});
+
+	test("a refusal for a worktree that left the list says what Git said in a toast", async () => {
+		const { store, engine } = await started({ ask: true, skip: [TIMBER] }, "diverged");
+		store.openDialog(pullRequest);
+		// The list read after the pull no longer has the worktree.
+		const without = structuredClone(sampleRepositories);
+		without[0]!.worktrees = without[0]!.worktrees.filter(worktree => worktree.id !== main.id);
+		engine.setRepositories(without);
+		await settle();
+		expect(store.getState().dialog).toBeNull();
+		expect(store.getState().toasts.at(-1)).toMatchObject({ problem: true });
+	});
+
+	test("removing a repository drops its switch, so after adding it again the dialog shows", async () => {
+		const { store, engine } = await started({ ask: true, skip: [TIMBER, "/work/other"] });
+		await store.removeRepository(TIMBER);
+		expect(store.getState().preferences.pull.skip).toEqual(["/work/other"]);
+		expect((await engine.loadPreferences()).pull.skip).toEqual(["/work/other"]);
+	});
+});
+
+describe("the Pull dialog's box", () => {
+	const view = (props: Partial<SyncActionDialogViewProps> = {}) => renderToStaticMarkup(
+		<SyncActionDialogView action="pull" worktree={behind} path={behind.path} result={null} submission={{ running: false, failure: null }} onSubmit={() => {}} onClose={() => {}} {...props} />,
+	);
+
+	test("is offered, unticked, only when asked for", () => {
+		const markup = view({ skipChoice: { repository: "app", checked: false, onChange: () => {} } });
+		expect(markup).toContain("Don&#x27;t ask before pulling in app");
+		expect(markup).toMatch(/<input type="checkbox" aria-describedby="[^"]+"\/>/);
+		expect(view()).not.toContain("ask before pulling");
+		expect(view({ skipChoice: { repository: "app", checked: true, onChange: () => {} } })).toMatch(/<input type="checkbox" aria-describedby="[^"]+" checked=""\/>/);
+	});
+
+	test("after a run, a worktree that went is not said to have run nothing", () => {
+		const failed: SyncActionResult = { outcome: "failed", action: "pull", ran: true, failure: { command: null, diagnostic: "Git stopped.", output: null } };
+		expect(view({ worktree: null, result: failed })).not.toContain("Nothing was run.");
+		expect(view({ worktree: null, result: failed })).toContain("This worktree left the list.");
+	});
+});

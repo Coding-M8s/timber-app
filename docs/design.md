@@ -279,6 +279,15 @@ change them here first when they change.
   beside the row. It opens a dialog that shows `git fetch <remote>` and
   `git merge --ff-only --no-autostash <upstream>` before they run. Pull is
   also in the row's menu and the command palette while it applies.
+- The Pull dialog can be skipped, because Pull runs Git, never a Timber
+  command. Its "Don't ask before pulling in <repository>" box, ticked when
+  Pull is submitted, turns on that repository's "Skip pull confirmation";
+  Cancel saves nothing. Settings, Pull has "Ask before pulling", on by
+  default, and each repository's switch. The dialog shows only while the
+  first is on and the repository's switch is off. Otherwise Pull runs at
+  once from the row, the menu, and the palette, with a toast when it
+  worked; a refusal or a failure opens the dialog with what Git said and
+  the commands that ran. Push always shows its dialog.
 - A branch that is ahead and not behind gets a Push control in place of its
   up arrow and count, drawn the same way. It opens a dialog that shows
   `timber publish --result-file <temporary file> -- <worktree>` before it
@@ -987,7 +996,7 @@ logins. The app never reads a tracker login and never signs in.
   Remove closes the dialog and the removals run one at a time; queued rows
   say "waiting to be removed", each ends as for Done, and one toast sums
   the run up.
-- **Settings:** sections for editor, agents, chops, notifications, fetching, Jira, setup scripts,
+- **Settings:** sections for editor, agents, chops, notifications, fetching, pull, Jira, setup scripts,
   pre-done scripts, starting branch, remote, worktree folder, and layout.
   Presets where they help, but every value is editable free-form, and every
   section has Save.

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { SETTINGS_NAV_FOOT, SETTINGS_NAV_GROUPS, TIMBER_SETTINGS_SECTIONS } from "../src/mainview/shell";
+import { SETTINGS_NAV_FOOT, SETTINGS_NAV_GROUPS, SETTINGS_SECTION_LABELS, TIMBER_SETTINGS_SECTIONS } from "../src/mainview/shell";
 import { SETTINGS_SECTIONS } from "../src/mainview/store/state";
 
 describe("the Settings list", () => {
@@ -13,5 +13,10 @@ describe("the Settings list", () => {
 		expect(SETTINGS_NAV_FOOT).toBe("about");
 		expect(SETTINGS_NAV_GROUPS.find(group => group.label === "Timber")?.sections).toEqual(TIMBER_SETTINGS_SECTIONS);
 		expect(SETTINGS_NAV_GROUPS.map(group => group.label)).toEqual(["Appearance", "Workflow", "Activity", "Timber"]);
+	});
+
+	test("has a Pull section under Activity, after Fetching", () => {
+		expect(SETTINGS_SECTION_LABELS.pull).toBe("Pull");
+		expect(SETTINGS_NAV_GROUPS.find(group => group.label === "Activity")?.sections).toEqual(["notifications", "fetch", "pull"]);
 	});
 });

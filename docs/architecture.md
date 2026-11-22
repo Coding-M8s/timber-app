@@ -1253,6 +1253,24 @@ engine call, one dialog, and one kind of row control.
   words. The store reads the
   repository again after every outcome, so the row's counts follow without
   a refresh.
+- **Skipping the Pull dialog.** The `pull` preference
+  (`src/shared/pull-confirm-setting.ts`) holds "Ask before pulling", on by
+  default, and the primary checkouts whose "Skip pull confirmation" is on.
+  Pull asks only while the first is on and the repository is not listed
+  (`confirmsPull`); a saved value that cannot be read whole asks everywhere. The row, the
+  menu, and the palette all ask the store's `openDialog` for the Pull
+  dialog, so the choice is made there: a pull that skips it runs at once
+  through `runSyncAction`, with the same commands and checks, as a
+  `pull-worktree` operation that turns the row's control and the menu and
+  palette entries off until it ends. One that worked gives the dialog's
+  toast. A refusal or a failure opens the dialog on that outcome (`ended`
+  on the request), with Git's words and the commands, unless another
+  dialog is open, which it would replace: a problem toast says what Git
+  said instead. The Pull dialog opened to ask first offers "Don't ask
+  before pulling in <repository>", saved when Pull is submitted, never on
+  Cancel. Settings, Pull holds both settings. Removing a repository drops
+  its entry, in the settings file and on screen. Push always asks: it runs
+  a Timber command, and every Timber command is shown before it runs.
 
 ## Reporting outcomes
 
@@ -1656,7 +1674,9 @@ Settings dialog and kept by the app. They are never Timber's configuration.
   defaults. A part that cannot be read falls back to its default and never
   makes the file count as damaged. The Fetching part keeps a readable
   "background fetching off" even when its interval cannot be read, so a
-  file that says off never turns fetching on. A part this version does not know is left
+  file that says off never turns fetching on. The Pull part takes its
+  default, asking everywhere, when any of it cannot be read, so a damaged
+  file never skips the Pull dialog. A part this version does not know is left
   out, so it is lost on the next save, for example after going back to an
   older build.
 - **One table.** Every preference is one entry in `PREFERENCE_PARTS`, which
@@ -1718,7 +1738,9 @@ Settings dialog and kept by the app. They are never Timber's configuration.
   section: the panel saves them (see the chops panel above). Sounds kept
   for a repository that left the list stay, within the limits, as its
   order does. Fetching: whether the app fetches in
-  the background and how often (see [fetching](#fetching)). Under a
+  the background and how often (see [fetching](#fetching)). Pull: "Ask
+  before pulling" and each repository's "Skip pull confirmation" (see
+  [sync actions](#sync-actions)). Under a
   "Timber" heading, Executable picks which Timber the app runs (see
   [finding Timber](#finding-timber)), and Machine and Repository edit
   Timber's own settings through Timber (see

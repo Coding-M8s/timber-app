@@ -13,6 +13,7 @@ import { readCustomThemes, salvageCustomThemes, sameCustomThemes, writeCustomThe
 import { type Theme, type ThemeChoice, defaultThemeChoice, readThemeChoice, sameThemeChoice, writeThemeChoice } from "./theme";
 import { DEFAULT_ZOOM, readZoom } from "./zoom";
 import { type FetchSetting, defaultFetchSetting, readFetchSetting, salvageFetchSetting, sameFetchSetting, writeFetchSetting } from "./fetch-setting";
+import { type PullConfirmSetting, defaultPullConfirmSetting, readPullConfirmSetting, samePullConfirmSetting, writePullConfirmSetting } from "./pull-confirm-setting";
 import { type StateSounds, defaultStateSounds, legacyStateSounds, readStateSounds, salvageStateSounds, sameStateSounds, writeStateSounds } from "./sound-setting";
 import { ALERT_STATES, type AlertState } from "./status-notices";
 import { type ShortcutSettings, readShortcuts, salvageShortcuts, sameShortcuts, writeShortcuts } from "./shortcuts";
@@ -74,6 +75,13 @@ export interface Preferences {
 	shortcuts: ShortcutSettings;
 	/** Whether and how often the app fetches every repository in the background. */
 	fetch: FetchSetting;
+	/**
+	 * Whether Pull shows its dialog before it runs: "Ask before pulling", and
+	 * the repositories whose "Skip pull confirmation" is on, by the primary
+	 * checkout (./pull-confirm-setting.ts), never in the repository. Asks
+	 * everywhere by default, and so does a saved value that cannot be read whole.
+	 */
+	pull: PullConfirmSetting;
 	/** How large the interface is drawn, where 1 is the size the window system gives. */
 	zoom: number;
 	/** Which theme the app is drawn in, or one for each of the system's light and dark settings. */
@@ -246,6 +254,13 @@ export const PREFERENCE_PARTS: { [Key in keyof Preferences]: PreferencePart<Pref
 		same: sameFetchSetting,
 		write: writeFetchSetting,
 		salvage: salvageFetchSetting,
+	},
+	pull: {
+		fallback: defaultPullConfirmSetting,
+		read: readPullConfirmSetting,
+		same: samePullConfirmSetting,
+		write: writePullConfirmSetting,
+		// No salvage: a value that cannot be read whole asks everywhere, never skips.
 	},
 	zoom: {
 		fallback: () => DEFAULT_ZOOM,

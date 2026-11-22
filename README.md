@@ -20,7 +20,7 @@ quick fixes; real work happens in your own editor.
   remote-tracking branches, with marks for upstreams that moved, were
   force-pushed, or were deleted.
 - **Rebase:** runs `timber rebase` after showing the command.
-- **Settings:** layout, editor, agents, fetching, and Timber's own machine and
+- **Settings:** layout, editor, agents, fetching, pulling without a dialog, and Timber's own machine and
   repository settings, saved and checked by Timber.
 
 Comparing against the base is designed but not built. See the

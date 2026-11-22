@@ -9,7 +9,7 @@ import { describeRepository } from "../shell";
 import { MOVE_REPOSITORY_HINT, MOVE_REPOSITORY_SHORTCUTS } from "../repository-drag";
 import { mostUrgent, summarizeStatuses } from "../../shared/session-status";
 import { unseenStatuses } from "../seen-status";
-import { type AppState, isBeingRemoved, removalAt, sessionsOf } from "../store/state";
+import { type AppState, isBeingRemoved, removalAt, sessionsOf, syncOptionsOf } from "../store/state";
 import type { AppStore } from "../store/store";
 import { describeRemovalFailed } from "../done-format";
 import { type PortClashMark, describePortClash } from "../ports-format";
@@ -262,9 +262,10 @@ export function RepositorySection({ state, store, repository, matches, open, que
 								</>
 							)}
 							onSyncAction={action => store.openDialog({ kind: "sync-action", action, repository: repository.path, worktree: worktree.id })}
+							syncOptions={syncOptionsOf(state, repository.path, worktree.path)}
 							onMenuChoice={id => {
 								// For this row's worktree, not the selected one, and without selecting it.
-								const request = worktreeMenuChoice(repository.path, worktree, id, isBeingRemoved(state, repository.path, worktree.path));
+								const request = worktreeMenuChoice(repository.path, worktree, id, isBeingRemoved(state, repository.path, worktree.path), syncOptionsOf(state, repository.path, worktree.path));
 								if (request) store.openDialog(request);
 							}}
 						/>

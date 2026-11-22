@@ -21,6 +21,7 @@ export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
 	chops: "Chops",
 	notifications: "Notifications",
 	fetch: "Fetching",
+	pull: "Pull",
 	about: "About",
 	executable: "Executable",
 	machine: "Machine",
@@ -37,7 +38,7 @@ export const TIMBER_SETTINGS_SECTIONS: readonly SettingsSection[] = ["executable
 export const SETTINGS_NAV_GROUPS: readonly { label: string; sections: readonly SettingsSection[] }[] = [
 	{ label: "Appearance", sections: ["layout", "theme", "terminal", "rendering"] },
 	{ label: "Workflow", sections: ["editor", "agents", "chops"] },
-	{ label: "Activity", sections: ["notifications", "fetch"] },
+	{ label: "Activity", sections: ["notifications", "fetch", "pull"] },
 	{ label: "Timber", sections: TIMBER_SETTINGS_SECTIONS },
 ];
 

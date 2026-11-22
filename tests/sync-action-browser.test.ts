@@ -144,3 +144,84 @@ describe.skipIf(browserPath === null || process.platform === "win32")("Push in a
 		expect(await page.evaluate<string>(`document.querySelector("dialog[open] .dialog-title").textContent`)).toBe("Push feat/github-issue-lookup");
 	}, 30_000);
 });
+
+const SKIP_BOX = `[...document.querySelectorAll("dialog[open] label.check")].find(label => label.textContent.startsWith("Don't ask before pulling in "))?.querySelector("input")`;
+const SKIPPED = `window.timberTestStore.getState().preferences.pull.skip`;
+
+// Not tried on Windows yet, so it does not run there.
+describe.skipIf(browserPath === null || process.platform === "win32")("Skipping the Pull dialog in a real browser", () => {
+	let page: BrowserPage;
+
+	beforeAll(async () => {
+		page = await openSidebarPage();
+	}, 60_000);
+
+	afterAll(async () => {
+		await page?.close();
+	});
+
+	beforeEach(async () => {
+		await page.reload();
+		await page.until(`document.querySelector(${JSON.stringify(CONTROL)}) !== null`, "a Pull control showed");
+	}, 30_000);
+
+	test("the dialog's box, ticked when Pull is submitted, turns on the repository's Skip pull confirmation", async () => {
+		await page.click(CONTROL);
+		await page.until(DIALOG_OPEN, "the dialog opened");
+		expect(await page.evaluate<string>(`(${SKIP_BOX}).closest("label").querySelector(".check-text").textContent`)).toStartWith("Don't ask before pulling in timberTurned on when you pull.");
+		expect(await page.evaluate<boolean>(`(${SKIP_BOX}).checked`)).toBe(false);
+		await page.evaluate(`(${SKIP_BOX}).click()`);
+		await page.click("dialog[open] button[type=submit]");
+		await page.until(DIALOG_CLOSED, "the dialog closed");
+		await page.until(`${SKIPPED}.includes("/work/timber")`, "the repository skips the dialog now");
+		expect(await page.evaluate<string[]>(`window.timberTestEngine.loadPreferences().then(saved => saved.pull.skip)`)).toEqual(["/work/timber"]);
+	}, 30_000);
+
+	test("cancelling with the box ticked saves nothing", async () => {
+		await page.click(CONTROL);
+		await page.until(DIALOG_OPEN, "the dialog opened");
+		await page.evaluate(`(${SKIP_BOX}).click()`);
+		await page.click("dialog[open] .dialog-buttons button.quiet");
+		await page.until(DIALOG_CLOSED, "the dialog closed");
+		expect(await page.evaluate<string[]>(SKIPPED)).toEqual([]);
+		expect(await page.evaluate<string[]>(`window.timberTestEngine.loadPreferences().then(saved => saved.pull.skip)`)).toEqual([]);
+	}, 30_000);
+
+	test("unticking the box and pulling again after a refusal turns the setting back off", async () => {
+		await page.evaluate(`window.timberTestEngine.endSyncActions("diverged")`);
+		await page.click(CONTROL);
+		await page.until(DIALOG_OPEN, "the dialog opened");
+		await page.evaluate(`(${SKIP_BOX}).click()`);
+		await page.click("dialog[open] button[type=submit]");
+		await page.until(`document.querySelector("dialog[open]")?.textContent.includes("Not possible to fast-forward") === true`, "Git's words showed");
+		await page.until(`${SKIPPED}.includes("/work/timber")`, "the tick was saved");
+		await page.evaluate(`(${SKIP_BOX}).click()`);
+		await page.click("dialog[open] button[type=submit]");
+		await page.until(`${SKIPPED}.length === 0`, "the untick was saved");
+	}, 30_000);
+
+	test("with the dialog skipped, the control pulls at once, the toast says so, and the keyboard goes to the row", async () => {
+		await page.evaluate(`window.timberTestStore.savePreferences({ pull: { ask: true, skip: ["/work/timber"] } })`);
+		await page.until(`document.querySelector(${JSON.stringify(CONTROL)}).getAttribute("aria-haspopup") === null`, "the control no longer says it opens a dialog");
+		await page.evaluate(`document.querySelector(${JSON.stringify(CONTROL)}).focus()`);
+		await page.click(CONTROL);
+		await page.until(`[...document.querySelectorAll(".toast-text")].some(toast => toast.textContent === "Pulled origin/main into main.")`, "the toast said so");
+		expect(await page.evaluate<boolean>(DIALOG_CLOSED)).toBe(true);
+		await page.until(`document.querySelector(${JSON.stringify(CONTROL)}) === null`, "the control went once the branch caught up");
+		await page.until(`document.activeElement?.classList.contains("row") === true`, "the keyboard went to the row");
+	}, 30_000);
+
+	test("with the dialog skipped, a refusal opens it with Git's words and the commands that ran", async () => {
+		await page.evaluate(`window.timberTestStore.savePreferences({ pull: { ask: false, skip: [] } })`);
+		await page.evaluate(`window.timberTestEngine.endSyncActions("diverged")`);
+		await page.until(`document.querySelector(${JSON.stringify(CONTROL)}).getAttribute("aria-haspopup") === null`, "the control no longer says it opens a dialog");
+		await page.click(CONTROL);
+		await page.until(DIALOG_OPEN, "the dialog opened on the refusal");
+		await page.until(`document.querySelector("dialog[open]").textContent.includes("Not possible to fast-forward")`, "Git's words showed");
+		const commands = await page.evaluate<string[]>(`[...document.querySelectorAll("dialog[open] .dialog-command")].map(command => command.textContent)`);
+		expect(commands).toEqual(["git fetch origin", "git merge --ff-only --no-autostash refs/remotes/origin/main"]);
+		expect(await page.evaluate<string>(`document.querySelector("dialog[open]").textContent`)).toContain("Rebase it onto its upstream");
+		// It already skips, so the box is not offered.
+		expect(await page.evaluate<boolean>(`(${SKIP_BOX}) === undefined`)).toBe(true);
+	}, 30_000);
+});
