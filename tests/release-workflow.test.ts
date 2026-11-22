@@ -8,7 +8,7 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const checker = join(root, "scripts/check-release-tag.ts");
 
 interface Step { uses?: string; run?: string; name?: string; shell?: string; if?: string; with?: Record<string, unknown>; env?: Record<string, string> }
-interface Job { "runs-on": string; needs?: string[]; if?: string; permissions?: Record<string, string>; steps: Step[] }
+interface Job { "runs-on": string; needs?: string[]; if?: string; permissions?: Record<string, string>; strategy?: { "fail-fast"?: boolean; matrix?: Record<string, unknown> }; steps: Step[] }
 interface Workflow { on: Record<string, unknown>; permissions?: Record<string, string>; jobs: Record<string, Job> }
 
 function workflow(name: string): Workflow {
@@ -59,7 +59,7 @@ test("each platform builds on its own runner, after the checks", () => {
 		const at = (command: string) => steps.findIndex(run => run.startsWith(command));
 		expect(at("bun install --frozen-lockfile")).toBe(0);
 		expect(at("bun scripts/check-release-tag.ts")).toBeGreaterThan(at("bun install"));
-		for (const check of ["bun run typecheck", "bun test"]) {
+		for (const check of ["bun run typecheck", "bun run test"]) {
 			expect(at(check)).toBeGreaterThan(at("bun install"));
 			expect(at(check)).toBeLessThan(at("bun run build"));
 		}
@@ -144,6 +144,31 @@ test("CI and the release test with the Timber the app bundles", () => {
 		expect(steps[0]!.run?.trim()).toBe("bun scripts/fetch-timber.ts --add-to-path");
 		expect(steps[0]!.env?.TIMBER_VERSION).toBeUndefined();
 	}
+});
+
+test("CI runs the tests in three parallel shards with Timber installed, and check passes only when every shard and the build did", () => {
+	const ci = workflow("ci.yml");
+	const scripts = (JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { scripts: Record<string, string> }).scripts;
+	expect(scripts.test).toBe("bun test --parallel --timeout=30000 --timings tests/timings.json");
+	expect(scripts["test:serial"]).toBe("bun test --timeout=30000");
+
+	const shards = ci.jobs.test!;
+	expect(shards.strategy).toEqual({ "fail-fast": false, matrix: { shard: [1, 2, 3] } });
+	const steps = runs(shards);
+	const at = (command: string) => steps.findIndex(run => run.startsWith(command));
+	expect(at("bun run test --shard=${{ matrix.shard }}/3")).toBe(steps.length - 1);
+	expect(at("bun scripts/fetch-timber.ts --add-to-path")).toBeGreaterThan(at("bun install"));
+	expect(at("bun scripts/fetch-timber.ts --add-to-path")).toBeLessThan(at("bun run test"));
+	expect(runs(ci.jobs.build!)).toEqual(["bun install --frozen-lockfile", "bun run typecheck", "bun run build:web"]);
+
+	// The main ruleset requires "check" and "typecheck-desktop" by name.
+	expect(ci.jobs["typecheck-desktop"]).toBeDefined();
+	const check = ci.jobs.check!;
+	expect(check.needs).toEqual(["test", "build"]);
+	expect(check.if).toBe("always()");
+	expect(check.steps[0]!.env).toEqual({ RESULTS: "${{ join(needs.*.result, ' ') }}" });
+	expect(check.steps[0]!.run).toContain('test "$result" = success || { echo "A required CI job finished with: $result" >&2; exit 1; }');
+	expect(runs(ci.jobs["test-windows"]!)).toContain("bun run test");
 });
 
 test("every desktop build fetches and checks the pinned Timber before it builds", () => {

@@ -353,11 +353,14 @@ export function recordedHere(text: string, places: readonly (readonly [recorded:
  * How long a test that runs the installed Timber may take. On Windows a run
  * of Timber 0.1.3 takes from under a second (`timber ls`) to over four
  * (`timber backup list`), so a test that runs it several times does not
- * finish in Bun's default five seconds. Bun sets the default again for each
- * test file, so each file that runs the installed Timber calls
- * `setDefaultTimeout(REAL_TIMBER_TIMEOUT_MS)` itself.
+ * finish in Bun's default five seconds. On Linux one run is quick, but
+ * `bun run test` runs the files in parallel, and a machine busy with other
+ * files' Git and Timber processes can take more than five seconds too, so
+ * the limit is the 30 seconds `bun run test` gives every test. Bun sets the
+ * default again for each test file, so each file that runs the installed
+ * Timber calls `setDefaultTimeout(REAL_TIMBER_TIMEOUT_MS)` itself.
  */
-export const REAL_TIMBER_TIMEOUT_MS = windows ? 60_000 : 5_000;
+export const REAL_TIMBER_TIMEOUT_MS = windows ? 60_000 : 30_000;
 
 /** The Timber installed on this machine, or null. Tests that need the real one are skipped without it. */
 const found = await findTimber();

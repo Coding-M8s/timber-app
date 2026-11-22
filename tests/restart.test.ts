@@ -199,8 +199,9 @@ describe.skipIf(windows)("the waiter, run for real", () => {
 		const out = join(root, "started");
 		const cwd = join(root, "work");
 		mkdirSync(cwd);
-		// The old app: gone after a moment. Its exit time is written, to show the new one starts after it.
-		const old = Bun.spawn(["/bin/sh", "-c", `sleep 0.4; date +%s%N > "${join(root, "gone")}"`]);
+		// The old app: gone after a moment, long enough that a busy machine still checks before it goes.
+		// Its exit time is written, to show the new one starts after it.
+		const old = Bun.spawn(["/bin/sh", "-c", `sleep 1.5; date +%s%N > "${join(root, "gone")}"`]);
 		const relaunch = { executable: "/bin/sh", args: ["-c", `date +%s%N > "${out}.at"; printf '%s|%s|%s' "$1" "$SECRET" "$PWD" > "${out}"`, "sh", "two words"], env: { SECRET: "s3cret", PATH: process.env.PATH ?? "/usr/bin:/bin" }, cwd };
 		const waiter = Bun.spawn(waiterCommand(old.pid, relaunch), { env: relaunch.env, cwd: relaunch.cwd, stdio: ["ignore", "ignore", "ignore"] });
 		await Bun.sleep(200);

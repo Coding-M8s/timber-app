@@ -28,7 +28,7 @@ Follow the [quick start](README.md#quick-start). Then:
 
 ```bash
 bun run typecheck
-bun test
+bun run test
 ```
 
 `bun run dev:web` shows the interface in a browser with sample data and is the
@@ -37,6 +37,38 @@ turn on the repository's commit hook once per clone:
 
 ```bash
 git config core.hooksPath .githooks
+```
+
+## Running tests
+
+```bash
+bun run test                          # every file, in parallel workers
+bun run test tests/terminals.test.ts  # one file, or a few
+bun run test:serial                   # one process, for debugging
+```
+
+`bun run test` is `bun test --parallel --timeout=30000 --timings
+tests/timings.json`. Bun starts one worker per CPU core, and each test file
+gets a fresh global, module registry, and environment. The tests in one file
+still run one after another. So a test file must not depend on another: make
+its own temporary folders with `mkdtemp`, listen on port 0, and wait for what
+it can observe rather than for a fixed time. Do not add `--concurrent` or
+`--no-isolate`: tests change environment variables and mocks.
+
+Every test may take 30 seconds, not Bun's default 5, because a test that
+starts Git, Timber, or a browser can be slow on a machine busy with other
+files. Bun ignores a `timeout` key in `bunfig.toml`, so the flag is in
+`package.json`. A file that calls `setDefaultTimeout` sets its own.
+
+CI runs the Linux tests as three shards (`bun run test --shard=N/3`) on
+separate runners, with the build in a job of its own. `tests/timings.json`
+holds each file's measured duration, so Bun balances the shards by time and
+starts the slowest files first. A file missing from it still runs. Refresh it
+when files are added, removed, or get much slower or faster, with four
+workers, as CI's runners have:
+
+```bash
+bun test --parallel=4 --timeout=30000 --timings tests/timings.json --update-timings
 ```
 
 ## Making changes
@@ -67,4 +99,4 @@ every contributor. The ones that most often matter in review:
   `bun run check:attribution --message-file <path>`.
 - In the pull request, list the exact verification commands you ran and what
   they printed. Do not claim a platform works unless you tested it.
-- Run `bun run typecheck` and `bun test` before you push.
+- Run `bun run typecheck` and `bun run test` before you push.
