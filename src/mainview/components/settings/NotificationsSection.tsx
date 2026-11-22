@@ -1,8 +1,8 @@
 import { useId, useState } from "react";
-import { BUNDLED_SOUNDS, BUNDLED_SOUND_LABELS, soundFileName } from "../../../shared/sound-setting";
 import { ALERT_STATES, type AlertState } from "../../../shared/status-notices";
-import { type NotificationsDraft, describeSoundOutcome, notificationsDraftOf, sameNotificationsDraft, pickSound, soundOptionOf, toggleState, withStateSound } from "../../notifications-format";
+import { type NotificationsDraft, describeSoundOutcome, notificationsDraftOf, sameNotificationsDraft, toggleState, withStateSound } from "../../notifications-format";
 import { useAppState, useStore } from "../../store/react";
+import { SoundPicker } from "../SoundPicker";
 import { type SectionSave, SettingsSection, useDraftSection } from "./SettingsSection";
 
 const STATE_LABELS: Record<AlertState, string> = {
@@ -30,11 +30,6 @@ export interface NotificationsSectionViewProps {
 export function NotificationsSectionView({ draft, saved, save, problem, customPaths, onEdit, onChooseFile, onPlay, onSave }: NotificationsSectionViewProps) {
 	const hintId = useId();
 	const busy = save.state === "saving";
-	const chooseSound = (state: AlertState, value: string) => {
-		const picked = pickSound(value, customPaths[state]);
-		if (picked?.kind === "set") onEdit({ sounds: withStateSound(draft.sounds, state, picked.sound) });
-		else if (picked?.kind === "choose-file") onChooseFile(state);
-	};
 	return (
 		<SettingsSection
 			title="Notifications"
@@ -72,16 +67,15 @@ export function NotificationsSectionView({ draft, saved, save, problem, customPa
 									onChange={event => onEdit({ notifyStates: toggleState(draft.notifyStates, state, event.target.checked) })}
 								/>
 							</label>
-							<select className="field-input" aria-label={`Sound: ${label}`} value={soundOptionOf(sound)} disabled={busy} onChange={event => chooseSound(state, event.target.value)}>
-								<option value="none">None</option>
-								{BUNDLED_SOUNDS.map(name => <option key={name} value={`bundled:${name}`}>{BUNDLED_SOUND_LABELS[name]}</option>)}
-								<option value="system">System sound</option>
-								<option value="custom">{customPath === undefined ? "Your own file..." : `Your own file: ${soundFileName(customPath)}`}</option>
-							</select>
-							<span className="alert-state-actions">
-								<button type="button" className="button quiet" aria-label={`Play sound: ${label}`} disabled={busy || sound === null} onClick={() => onPlay(state)}>Play</button>
-								{sound?.kind === "custom" && <button type="button" className="button quiet" aria-label={`Choose file: ${label}`} disabled={busy} onClick={() => onChooseFile(state)}>Choose file</button>}
-							</span>
+							<SoundPicker
+								label={label}
+								sound={sound}
+								customPath={customPath}
+								disabled={busy}
+								onPick={picked => onEdit({ sounds: withStateSound(draft.sounds, state, picked) })}
+								onChooseFile={() => onChooseFile(state)}
+								onPlay={() => onPlay(state)}
+							/>
 						</div>
 					);
 				})}

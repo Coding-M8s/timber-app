@@ -3735,3 +3735,36 @@ Google Chrome:
   Timber Light, Solarized Light, and Gruvbox Dark: each repository's header
   is a tinted row with its controls in view.
 - Not run: the desktop window on any platform.
+
+Run for a sound for each chop (issue 254), Linux x64 with Bun 1.4.5:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun run build:web`: built.
+- `bun run test`, after rebasing onto main: 3765 pass, 19 skip, 0 fail. One
+  earlier run, under load,
+  failed the editor's typing-speed browser test and hit the 30 second
+  timeout in `tests/arenas.test.ts` (real Timber); neither is touched here,
+  and both passed when run alone. New and changed tests cover
+  a personal chop's sound written only when set, read back, a missing or
+  null sound read as none, an unreadable one refused on save and the chime
+  on salvage; a `sound` key in `.timber/chops.json` passed over and left
+  out of the approval digest; merging, with a file chop's sound found by
+  name ignoring case and one taken over keeping its own; `fileChopSounds`
+  set, changed, taken away by None, round-tripped, refused whole, salvaged,
+  and kept within its limits by dropping the oldest; the main process's
+  `runChop` playing the sound once a command or an agent opened or a
+  prompt was sent, and nothing for a chop without one, while it asks for
+  approval, when it fails to start, with Play each chop's sound off, or when
+  the sounds cannot be read (the chop still runs); two chops in a row
+  through the real player with a pretend spawn, the second sound skipped as
+  busy and the first stopped at 4 seconds; the mock engine playing a
+  personal and a `.timber` chop's sound and staying silent with the switch
+  off; the form's Sound field and the file chop view's, the panel row's
+  sound name and tooltip, Settings, Chops keeping sounds through a save,
+  the new switch saving on its own, and a `__proto__` repository key read
+  as an entry. In a real browser over the mock engine, a `.timber` chop's
+  View has its one Sound field, and picking a sound there saves it at once
+  in `fileChopSounds`, None takes it away, and the row shows the sound
+  after Close.
+- Not run: the desktop window on any platform, hearing a sound played from
+  a real chop, and a screen reader.

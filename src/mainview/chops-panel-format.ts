@@ -3,6 +3,7 @@ import { type ChopKind, type ChopList, type ChopSource, type ListedChop, listedC
 import { promptTarget } from "./agent-sessions";
 import { type ChopAction, chopAction, chopButtonLabel, describeChopSource } from "./chop-format";
 import { worktreeLabel } from "./format";
+import { soundName } from "./notifications-format";
 import { chopBlockedReason, chopPlace } from "./palette";
 import { type AppState, canToggleChopsPanel, offeredChops, selectedWorktree, shownChopOrder } from "./store/state";
 
@@ -119,6 +120,11 @@ export function chopSourceShort(source: ChopSource): string {
 	return SOURCE_SHORT[source];
 }
 
+/** A row's sound tooltip: what plays as the chop starts, or that chop sounds are off. */
+export function describeChopSound(name: string, playChopSounds: boolean): string {
+	return playChopSounds ? `Plays ${name} when it starts` : `Sound: ${name}. Chop sounds are off in Settings, Chops.`;
+}
+
 /** Whether a chop's name or text has the query, ignoring case. An empty query has every chop. */
 export function chopMatches(chop: Pick<ListedChop, "name" | "text">, query: string): boolean {
 	const wanted = query.trim().toLowerCase();
@@ -149,6 +155,9 @@ export interface ChopsPanelRow extends ArrangedChop {
 	/** Where it comes from, short, and in full for the tooltip. */
 	source: string;
 	sourceTitle: string;
+	/** Its sound in a few words, and in full for the tooltip, or null for none. */
+	sound: string | null;
+	soundTitle: string | null;
 	action: ChopAction;
 	/** The button's visible word, and its accessible name. */
 	word: string;
@@ -234,6 +243,8 @@ export function chopsPanelModel(state: AppState, tab: ChopKind, query: string): 
 			favorite,
 			source: chopSourceShort(chop.source),
 			sourceTitle: describeChopSource(chop.source),
+			sound: chop.sound === null ? null : soundName(chop.sound),
+			soundTitle: chop.sound === null ? null : describeChopSound(soundName(chop.sound), state.preferences.playChopSounds),
 			action,
 			word: chopRunWord(action),
 			label: chopButtonLabel(chop.name, action),

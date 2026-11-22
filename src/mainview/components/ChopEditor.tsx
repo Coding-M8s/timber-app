@@ -1,8 +1,10 @@
 import type { FormEvent, KeyboardEvent, Ref } from "react";
 import type { AgentSetting } from "../../shared/agent";
 import { CHOP_DESCRIPTION_LIMIT, CHOP_KINDS, CHOP_TEXT_LIMIT, type ChopKind, type ListedChop, chopKindWord } from "../../shared/chops";
+import type { SoundChoice } from "../../shared/sound-setting";
 import { SESSION_NAME_LIMIT } from "../../shared/terminal";
 import { type ChopDraftChange, type ChopForm, type ChopScopeOption, chopAgentOptions, describeFileChopView } from "../chop-format";
+import { SoundPicker } from "./SoundPicker";
 
 /*
  * What the chops panel draws in place of a row, or above its list, while a
@@ -35,8 +37,14 @@ export interface ChopFormViewProps {
 	/** Why nothing can be saved now, or null. */
 	blocked: string | null;
 	saving: boolean;
+	/** What choosing or playing the sound last came to, when it went wrong, or null. */
+	soundProblem: string | null;
+	/** The file "Your own file" last chose for this form, saved or not. */
+	customSoundPath: string | undefined;
 	nameRef?: Ref<HTMLInputElement>;
 	onChange: (change: ChopDraftChange) => void;
+	onChooseSoundFile: () => void;
+	onPlaySound: () => void;
 	onSave: () => void;
 	onCancel: () => void;
 	/** Only when editing: asks before the chop is deleted. */
@@ -44,7 +52,9 @@ export interface ChopFormViewProps {
 }
 
 /** The form that makes a chop, or changes one of the person's own. */
-export function ChopFormView({ idBase, mode, form, scopeOptions, agents, problem, tried, notes, failure, blocked, saving, nameRef, onChange, onSave, onCancel, onDelete }: ChopFormViewProps) {
+export function ChopFormView({
+	idBase, mode, form, scopeOptions, agents, problem, tried, notes, failure, blocked, saving, soundProblem, customSoundPath, nameRef, onChange, onChooseSoundFile, onPlaySound, onSave, onCancel, onDelete,
+}: ChopFormViewProps) {
 	const id = (part: string) => `${idBase}-${part}`;
 	const blank = form.name.trim() === "" && form.text.trim() === "";
 	const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -117,6 +127,23 @@ export function ChopFormView({ idBase, mode, form, scopeOptions, agents, problem
 					onChange={event => onChange({ description: event.target.value })}
 				/>
 			</div>
+			<div className="field">
+				<label className="field-label" htmlFor={id("sound")}>Sound</label>
+				<div className="chop-editor-sound">
+					<SoundPicker
+						id={id("sound")}
+						label={form.name.trim() === "" ? "chop" : form.name.trim()}
+						sound={form.sound}
+						customPath={customSoundPath}
+						disabled={saving}
+						onPick={sound => onChange({ sound })}
+						onChooseFile={onChooseSoundFile}
+						onPlay={onPlaySound}
+					/>
+				</div>
+				<span className="field-hint">{CHOP_SOUND_HINT}</span>
+				{soundProblem !== null && <p className="field-error" role="alert">{soundProblem}</p>}
+			</div>
 			{notes.map(note => <p key={note} className="field-hint">{note}</p>)}
 			{problem !== null && !tried && blank && <p className="field-hint">Type a name and a {form.kind}.</p>}
 			{problem !== null && !tried && !blank && <p className="field-error">{problem}</p>}
@@ -132,18 +159,34 @@ export function ChopFormView({ idBase, mode, form, scopeOptions, agents, problem
 	);
 }
 
+/** What a chop's Sound field says under it. */
+export const CHOP_SOUND_HINT = "Plays when the chop starts, unless Play each chop's sound is off in Settings, Chops. One sound plays at a time, for at most 4 seconds.";
+
 export interface FileChopViewProps {
 	idBase: string;
 	chop: ListedChop;
 	/** The repository file's full path. */
 	path: string;
+	/** Whether the sound's save waits for its answer. */
+	saving: boolean;
+	/** Why nothing can be saved now, or null. */
+	blocked: string | null;
+	/** Why the sound was not saved, or what choosing or playing it came to, or null. */
+	soundProblem: string | null;
+	/** The file "Your own file" last chose here, saved or not. */
+	customSoundPath: string | undefined;
 	closeRef?: Ref<HTMLButtonElement>;
 	onClose: () => void;
+	/** A sound was picked: it is saved at once, in the app's settings. */
+	onPickSound: (sound: SoundChoice | null) => void;
+	onChooseSoundFile: () => void;
+	onPlaySound: () => void;
 }
 
-/** A chop from the repository file, shown whole and read-only: the app never writes that file. */
-export function FileChopView({ idBase, chop, path, closeRef, onClose }: FileChopViewProps) {
+/** A chop from the repository file, shown whole and read-only: the app never writes that file. Its sound is the person's, kept in the app's settings. */
+export function FileChopView({ idBase, chop, path, saving, blocked, soundProblem, customSoundPath, closeRef, onClose, onPickSound, onChooseSoundFile, onPlaySound }: FileChopViewProps) {
 	const titleId = `${idBase}-title`;
+	const soundId = `${idBase}-sound`;
 	return (
 		<section className="chop-editor" aria-labelledby={titleId} onKeyDown={cancelOnEscape(onClose)}>
 			<h3 id={titleId} className="chop-editor-title">{chop.name}</h3>
@@ -151,6 +194,24 @@ export function FileChopView({ idBase, chop, path, closeRef, onClose }: FileChop
 			{chop.description !== "" && <p className="field-hint">{chop.description}</p>}
 			<pre className="dialog-command">{chop.text}</pre>
 			<p className="field-hint">{describeFileChopView(path)}</p>
+			<div className="field">
+				<label className="field-label" htmlFor={soundId}>Sound</label>
+				<div className="chop-editor-sound">
+					<SoundPicker
+						id={soundId}
+						label={chop.name}
+						sound={chop.sound}
+						customPath={customSoundPath}
+						disabled={saving || blocked !== null}
+						onPick={onPickSound}
+						onChooseFile={onChooseSoundFile}
+						onPlay={onPlaySound}
+					/>
+				</div>
+				<span className="field-hint">{saving ? "Saving the sound" : `Kept in the app's settings, never in the file. ${CHOP_SOUND_HINT}`}</span>
+				{blocked !== null && <p className="field-error">{blocked}</p>}
+				{soundProblem !== null && <p className="field-error" role="alert">{soundProblem}</p>}
+			</div>
 			<div className="chop-editor-actions">
 				<button ref={closeRef} type="button" className="button quiet" onClick={onClose}>Close</button>
 			</div>

@@ -17,7 +17,7 @@ describe.skipIf(browserPath === null || process.platform === "win32")("moving an
 	const SAID = `document.querySelector('#chops-panel p[aria-live="polite"]').textContent.trim()`;
 
 	test("Alt+Up and Alt+Down move a chop, keep the keyboard on it, and say where it is now", async () => {
-		await page.evaluate(`${STORE}.savePreferences({ chops: [{ name: "Hello", kind: "command", text: "pwd", description: "", agent: null, repository: null }] })`);
+		await page.evaluate(`${STORE}.savePreferences({ chops: [{ name: "Hello", kind: "command", text: "pwd", description: "", agent: null, repository: null, sound: null }] })`);
 		await page.evaluate(`${STORE}.select(${STORE}.getState().repositories[0].worktrees[1].id)`);
 		await page.click(BUTTON);
 		await page.until(`${ROW_NAMES} === "Hello,Test,Dev server"`, "the panel listed the commands in merge order");
@@ -65,7 +65,7 @@ describe.skipIf(browserPath === null || process.platform === "win32")("moving an
 
 	test("a rename whose save fails leaves the rows where they were", async () => {
 		// Deploy was starred and deleted, so its name is kept in Favorites.
-		await page.evaluate(`${STORE}.savePreferences({ chops: [{ name: "Ship", kind: "command", text: "pwd", description: "", agent: null, repository: null }], chopOrder: { "/work/timber": { favorites: ["Deploy"], rest: ["Ship", "Test", "Dev server"] } } })`);
+		await page.evaluate(`${STORE}.savePreferences({ chops: [{ name: "Ship", kind: "command", text: "pwd", description: "", agent: null, repository: null, sound: null }], chopOrder: { "/work/timber": { favorites: ["Deploy"], rest: ["Ship", "Test", "Dev server"] } } })`);
 		await page.evaluate(`${STORE}.select(${STORE}.getState().repositories[0].worktrees[1].id)`);
 		await page.click(BUTTON);
 		await page.until(`${ROW_NAMES} === "Ship,Test,Dev server"`, "the panel listed Ship first");
@@ -128,7 +128,7 @@ describe.skipIf(browserPath === null || process.platform === "win32")("moving an
 
 	test("dragging reorders within a part and out of Favorites", async () => {
 		await page.evaluate(`${STORE}.savePreferences({ chopOrder: { "/work/timber": { favorites: ["Test", "Dev server"], rest: [] } } })`);
-		await page.evaluate(`${STORE}.savePreferences({ chops: [{ name: "Hello", kind: "command", text: "pwd", description: "", agent: null, repository: null }] })`);
+		await page.evaluate(`${STORE}.savePreferences({ chops: [{ name: "Hello", kind: "command", text: "pwd", description: "", agent: null, repository: null, sound: null }] })`);
 		await page.evaluate(`${STORE}.select(${STORE}.getState().repositories[0].worktrees[1].id)`);
 		await page.click(BUTTON);
 		await page.until(`${ROW_NAMES} === "Test,Dev server,Hello"`, "the panel listed the favorites first");
@@ -149,7 +149,7 @@ describe.skipIf(browserPath === null || process.platform === "win32")("moving an
 	}, 30_000);
 
 	test("a starred chop renamed in the panel's form keeps its star and place, also while the list is read again", async () => {
-		await page.evaluate(`${STORE}.savePreferences({ chops: [{ name: "Hello", kind: "command", text: "pwd", description: "", agent: null, repository: null }] })`);
+		await page.evaluate(`${STORE}.savePreferences({ chops: [{ name: "Hello", kind: "command", text: "pwd", description: "", agent: null, repository: null, sound: null }] })`);
 		await page.evaluate(`${STORE}.select(${STORE}.getState().repositories[0].worktrees[1].id)`);
 		await page.click(BUTTON);
 		await page.until(`${ROW_NAMES} === "Hello,Test,Dev server"`, "the panel listed Hello");
@@ -170,7 +170,7 @@ describe.skipIf(browserPath === null || process.platform === "win32")("moving an
 	}, 30_000);
 
 	test("a chop dragged to the top of a long list scrolls it and lands first", async () => {
-		const many = Array.from({ length: 30 }, (_, index) => ({ name: `Chop ${index + 1}`, kind: "command", text: `echo ${index + 1}`, description: "", agent: null, repository: null }));
+		const many = Array.from({ length: 30 }, (_, index) => ({ name: `Chop ${index + 1}`, kind: "command", text: `echo ${index + 1}`, description: "", agent: null, repository: null, sound: null }));
 		await page.evaluate(`${STORE}.savePreferences({ chops: ${JSON.stringify(many)} })`);
 		await page.evaluate(`${STORE}.select(${STORE}.getState().repositories[0].worktrees[1].id)`);
 		await page.click(BUTTON);
@@ -187,7 +187,7 @@ describe.skipIf(browserPath === null || process.platform === "win32")("moving an
 	}, 30_000);
 
 	test("a chop renamed in Settings, Chops keeps its star and place in the panel", async () => {
-		await page.evaluate(`${STORE}.savePreferences({ chops: [{ name: "Hello", kind: "command", text: "pwd", description: "", agent: null, repository: null }] })`);
+		await page.evaluate(`${STORE}.savePreferences({ chops: [{ name: "Hello", kind: "command", text: "pwd", description: "", agent: null, repository: null, sound: null }] })`);
 		await page.evaluate(`${STORE}.select(${STORE}.getState().repositories[0].worktrees[1].id)`);
 		await page.click(BUTTON);
 		await page.until(`${ROW_NAMES} === "Hello,Test,Dev server"`, "the panel listed Hello");

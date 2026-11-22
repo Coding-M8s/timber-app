@@ -26,7 +26,7 @@ const OTHER_DIGEST = "b".repeat(64);
 const size = () => ({ cols: 80, rows: 24 });
 
 const listed = (chops: ListedChop[]): ChopList => ({ outcome: "listed", file: { state: "read" }, path: "/r/.timber/chops.json", chops, overridden: [] });
-const chop = (name: string, more: Partial<ListedChop> = {}): ListedChop => ({ name, kind: "command", text: `run ${name}`, description: "", agent: null, source: "repository-file", ...more });
+const chop = (name: string, more: Partial<ListedChop> = {}): ListedChop => ({ name, kind: "command", text: `run ${name}`, description: "", agent: null, source: "repository-file", sound: null, ...more });
 
 async function startedStore(engine = createMockEngine()) {
 	const store = createAppStore(engine, () => () => {});
@@ -153,7 +153,7 @@ describe("chops in the palette", () => {
 		// A worktree whose folder is missing, in a repository whose file is damaged: a personal chop is still listed, with the reason.
 		const api = sampleRepositories[1]!;
 		const missing = api.worktrees.find(worktree => !worktree.pathExists)!;
-		expect(await store.savePreferences({ chops: [{ name: "Hello", kind: "command", text: "pwd", description: "", agent: null, repository: null }] })).toMatchObject({ outcome: "saved" });
+		expect(await store.savePreferences({ chops: [{ name: "Hello", kind: "command", text: "pwd", description: "", agent: null, repository: null, sound: null }] })).toMatchObject({ outcome: "saved" });
 		store.select(missing.id);
 		await store.readChops(api.path);
 		expect(paletteEntries(store.getState()).find(entry => entry.label === "Run chop: Hello")?.disabledReason).toBe(FOLDER_MISSING_FOR_SESSION);
@@ -170,7 +170,7 @@ describe("chops in the palette", () => {
 describe("running chops in the app (mock engine)", () => {
 	test("a personal chop runs from the palette in the active worktree, in a session named after it, and the shell stays", async () => {
 		const { engine, store } = await startedStore();
-		expect(await store.savePreferences({ chops: [{ name: "Hello", kind: "command", text: "pwd", description: "", agent: null, repository: null }] })).toMatchObject({ outcome: "saved" });
+		expect(await store.savePreferences({ chops: [{ name: "Hello", kind: "command", text: "pwd", description: "", agent: null, repository: null, sound: null }] })).toMatchObject({ outcome: "saved" });
 		store.select(FEATURE.id);
 		await store.readChops(TIMBER);
 		const entry = paletteEntries(store.getState()).find(candidate => candidate.label === "Run chop: Hello")!;
@@ -253,7 +253,7 @@ describe("running chops in the app (mock engine)", () => {
 
 	test("Insert chop types the text into the session with no Enter, as a bracketed paste when the program asked", async () => {
 		const { engine, store } = await startedStore();
-		expect(await store.savePreferences({ chops: [{ name: "Two", kind: "command", text: "make\nmake check", description: "", agent: null, repository: null }, { name: "One", kind: "command", text: "make", description: "", agent: null, repository: null }] })).toMatchObject({ outcome: "saved" });
+		expect(await store.savePreferences({ chops: [{ name: "Two", kind: "command", text: "make\nmake check", description: "", agent: null, repository: null, sound: null }, { name: "One", kind: "command", text: "make", description: "", agent: null, repository: null, sound: null }] })).toMatchObject({ outcome: "saved" });
 		store.select(TIMBER_ID);
 		await store.readChops(TIMBER);
 		await store.openTerminal({ repository: TIMBER, worktree: TIMBER, cols: 80, rows: 24 });
@@ -282,7 +282,7 @@ describe("running chops in the app (mock engine)", () => {
 });
 
 const ASK = "Write tests for what changed.\nRun them before you stop.";
-const askChop = (agent: string | null = "Codex") => ({ name: "Ask", kind: "prompt" as const, text: ASK, description: "", agent, repository: null });
+const askChop = (agent: string | null = "Codex") => ({ name: "Ask", kind: "prompt" as const, text: ASK, description: "", agent, repository: null, sound: null });
 
 async function promptStore(agent: string | null = "Codex") {
 	const started = await startedStore();
@@ -445,7 +445,7 @@ describe("prompt chops in the app (mock engine)", () => {
 describe("chops with \"Use chops\" off", () => {
 	test("the palette lists none, none runs, and none is inserted; turned on again, they are back", async () => {
 		const { engine, store } = await startedStore();
-		await store.savePreferences({ chops: [{ name: "Mine", kind: "command", text: "make", description: "", agent: null, repository: null }] });
+		await store.savePreferences({ chops: [{ name: "Mine", kind: "command", text: "make", description: "", agent: null, repository: null, sound: null }] });
 		store.select(FEATURE.id);
 		await store.readChops(TIMBER);
 		expect(paletteEntries(store.getState()).some(entry => entry.label.startsWith("Run chop:"))).toBe(true);

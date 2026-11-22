@@ -22,7 +22,7 @@ import { windows } from "./support/runtime";
 import { fingerprint, git } from "./support/timber";
 
 const REPO = "/work/timber";
-const every = (name: string, text = "bun test"): PersonalChop => ({ name, kind: "command", text, description: "", agent: null, repository: null });
+const every = (name: string, text = "bun test"): PersonalChop => ({ name, kind: "command", text, description: "", agent: null, repository: null, sound: null });
 const here = (name: string, text = "bun test"): PersonalChop => ({ ...every(name, text), repository: REPO });
 const form = (change: Partial<ChopForm> = {}): ChopForm => ({ ...blankChopForm("command", REPO), name: "Lint", text: "bun run lint", ...change });
 
@@ -97,7 +97,7 @@ describe("making, changing, and deleting chops from the panel", () => {
 	test("the form notes a chop of the same name that it takes the place of, without stopping the save", () => {
 		const list: ChopList = {
 			outcome: "listed", file: { state: "read" }, path: `${REPO}/.timber/chops.json`, overridden: [],
-			chops: [{ ...every("Mine"), source: "personal-every" }, { name: "Test", kind: "command", text: "bun test", description: "", agent: null, source: "repository-file" }],
+			chops: [{ ...every("Mine"), source: "personal-every", sound: null }, { name: "Test", kind: "command", text: "bun test", description: "", agent: null, source: "repository-file", sound: null }],
 		};
 		expect(chopFormNotes(form({ name: "test" }), list, REPO, null)).toEqual([`It takes the place of the chop called test in ${REPO}/.timber/chops.json here. That file is not changed.`]);
 		expect(chopFormNotes(form({ name: "Mine" }), list, REPO, null)).toEqual(["It takes the place of your chop called Mine for every repository, here."]);
@@ -130,7 +130,7 @@ describe("making, changing, and deleting chops from the panel", () => {
 
 describe("the panel's form, file chop view, and delete question as drawn", () => {
 	const scope = panelChopScopeOptions({ path: REPO, name: "timber" });
-	const props = { idBase: "f", scopeOptions: scope, agents: [{ name: "Codex", command: "codex" }], problem: null, tried: false, notes: [], failure: null, blocked: null, saving: false, onChange: () => {}, onSave: () => {}, onCancel: () => {} };
+	const props = { idBase: "f", scopeOptions: scope, agents: [{ name: "Codex", command: "codex" }], problem: null, tried: false, notes: [], failure: null, blocked: null, saving: false, soundProblem: null, customSoundPath: undefined, onChange: () => {}, onChooseSoundFile: () => {}, onPlaySound: () => {}, onSave: () => {}, onCancel: () => {} };
 
 	test("a new command: kind, scope, name, text, description, Save and Cancel, no Delete or agent", () => {
 		const markup = renderToStaticMarkup(<ChopFormView {...props} mode="new" form={blankChopForm("command", REPO)} problem="Give the chop a name." />);
@@ -160,8 +160,8 @@ describe("the panel's form, file chop view, and delete question as drawn", () =>
 	});
 
 	test("a file chop is shown whole with only Close", () => {
-		const chop = { name: "Dev", kind: "command" as const, text: "bun run dev", description: "Serve", agent: null, source: "repository-file" as const };
-		const markup = renderToStaticMarkup(<FileChopView idBase="v" chop={chop} path="/r/.timber/chops.json" onClose={() => {}} />);
+		const chop = { name: "Dev", kind: "command" as const, text: "bun run dev", description: "Serve", agent: null, source: "repository-file" as const, sound: null };
+		const markup = renderToStaticMarkup(<FileChopView idBase="v" chop={chop} path="/r/.timber/chops.json" saving={false} blocked={null} soundProblem={null} customSoundPath={undefined} onClose={() => {}} onPickSound={() => {}} onChooseSoundFile={() => {}} onPlaySound={() => {}} />);
 		expect(markup).toContain("bun run dev");
 		expect(markup).toContain("which the app only reads");
 		expect(markup).toContain(">Close</button>");
@@ -204,8 +204,8 @@ describe("saving from the panel over the mock engine", () => {
 		const saved = store.getState().preferences.chops;
 		const settings = renderToStaticMarkup(
 			<ChopsSectionView
-				drafts={chopDraftsOf(saved)} saved={saved} useChops canSave={false} repositories={store.getState().repositories} agents={[]} repository={null}
-				save={{ state: "idle" }} onUseChops={() => {}} onAdd={() => {}} onEdit={() => {}} onRemove={() => {}} onSave={() => {}} onReadAgain={() => {}}
+				drafts={chopDraftsOf(saved)} saved={saved} switches={{ useChops: true, playChopSounds: true }} canSave={false} repositories={store.getState().repositories} agents={[]} repository={null}
+				save={{ state: "idle" }} onSwitch={() => {}} onAdd={() => {}} onEdit={() => {}} onRemove={() => {}} onSave={() => {}} onReadAgain={() => {}}
 			/>,
 		);
 		expect(settings).toContain('value="Lint"');

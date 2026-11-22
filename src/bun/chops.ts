@@ -4,10 +4,12 @@ import { lstat, open } from "node:fs/promises";
 import { join } from "node:path";
 import { messageOf } from "../shared/error-message";
 import {
-	CHOPS_FILE, CHOPS_FILE_BYTES, type ChopApprovals, type ChopList, type ChopsFileState, type ChopsRequest, type Chop, type PersonalChop, type RunChopRequest, type RunChopResult,
+	CHOPS_FILE, CHOPS_FILE_BYTES, type ChopApprovals, type ChopList, type ChopsFileState, type ChopsRequest, type Chop, type ListedChop, type PersonalChop, type RunChopRequest, type RunChopResult,
 	chopDigestInput, findListedChop, isChopApproved, listedChops, mergeChops, parseChopsFile,
 } from "../shared/chops";
 import { type AgentSetting, findAgent } from "../shared/agent";
+import { type FileChopSounds, chopSoundToPlay } from "../shared/chop-sounds";
+import type { SoundChoice } from "../shared/sound-setting";
 import type { OpenTerminalRequest, OpenTerminalResult, PasteResult, TerminalSession } from "../shared/terminal";
 import type { FindRepository } from "./listed-worktree";
 import type { ChopInput } from "./terminals";
@@ -28,6 +30,10 @@ export interface ChopsDependencies {
 	session?: (id: string) => TerminalSession | null;
 	/** The agents as saved in Settings, for the agent a prompt chop starts. None when left out. */
 	agents?: () => Promise<readonly AgentSetting[]>;
+	/** The sounds kept for file chops, and whether chop sounds play, as saved now. None, and on, when left out. */
+	chopSounds?: () => Promise<{ play: boolean; file: FileChopSounds }>;
+	/** Play a chop's sound as it starts, without waiting, through the app's one sound player. Without it, nothing plays. */
+	playSound?: (choice: SoundChoice) => void;
 	warn?: (message: string) => void;
 }
 
@@ -132,12 +138,23 @@ export async function readChopsFile(checkout: string): Promise<ChopsFileRead> {
  * cached, so a change to it shows on the next read.
  */
 export function createChops({
-	findRepository, personal, approvals = async () => ({}), approve = async () => {}, openTerminal, sendPrompt, session: sessionOf = () => null, agents = async () => [], warn = console.warn,
+	findRepository, personal, approvals = async () => ({}), approve = async () => {}, openTerminal, sendPrompt, session: sessionOf = () => null, agents = async () => [],
+	chopSounds = async () => ({ play: true, file: {} }), playSound, warn = console.warn,
 }: ChopsDependencies): Chops {
+	/** The chop sounds as saved, or none with a warning when they cannot be read: a sound never stops a chop. */
+	async function savedSounds(): Promise<{ play: boolean; file: FileChopSounds }> {
+		try {
+			return await chopSounds();
+		} catch (error) {
+			warn(`Could not read the chop sounds: ${messageOf(error)}`);
+			return { play: false, file: {} };
+		}
+	}
+
 	/** The list, and the primary checkout it was read for, which keys both the merge and the approvals. */
-	async function read(request: ChopsRequest): Promise<{ list: ChopList; checkout: string }> {
+	async function read(request: ChopsRequest): Promise<{ list: ChopList; checkout: string; play: boolean }> {
 		const notRead = "No chops were read.";
-		const answer = (list: ChopList, checkout = request.repository) => ({ list, checkout });
+		const answer = (list: ChopList, checkout = request.repository, play = false) => ({ list, checkout, play });
 		let repository;
 		try {
 			repository = await findRepository(request.repository);
@@ -153,7 +170,22 @@ export function createChops({
 			return answer({ outcome: "failed", message: `Could not read the saved chops: ${messageOf(error)}` });
 		}
 		const { file, chops } = await readChopsFile(repository.path);
-		return answer({ outcome: "listed", file, path: join(repository.path, ...CHOPS_FILE.split("/")), ...mergeChops(saved, repository.path, chops) }, repository.path);
+		const sounds = await savedSounds();
+		const merged = mergeChops(saved, repository.path, chops, Object.hasOwn(sounds.file, repository.path) ? sounds.file[repository.path] : []);
+		return answer({ outcome: "listed", file, path: join(repository.path, ...CHOPS_FILE.split("/")), ...merged }, repository.path, sounds.play);
+	}
+
+	/** Start a chop that may run: a command's shell, a new agent with a prompt, or a prompt to a running agent. */
+	async function start(request: RunChopRequest, chop: ListedChop, agent: AgentSetting | null): Promise<RunChopResult> {
+		const where = { repository: request.repository, worktree: request.worktree, cols: request.cols, rows: request.rows };
+		if (chop.kind === "command") return openTerminal!(where, { kind: "command", name: chop.name, text: chop.text });
+		if (agent !== null) return openTerminal!({ ...where, agent: agent.name }, { kind: "prompt", text: chop.text });
+		if (sendPrompt === undefined) return { outcome: "unsupported", message: "Prompts cannot be sent here. Nothing was sent." };
+		// The session must be in this repository's worktree: an approval for one repository never reaches another's agent.
+		const sent = sendPrompt(request.session!, request.repository, request.worktree, chop.text);
+		if (sent.outcome !== "pasted") return sent;
+		const target = sessionOf(request.session!);
+		return target === null ? { outcome: "gone", message: "The session has ended." } : { outcome: "sent", session: target };
 	}
 
 	return {
@@ -162,7 +194,7 @@ export function createChops({
 			if (openTerminal === undefined) return { outcome: "unsupported", message: "Chops cannot run here. Nothing was started." };
 			if (typeof request.chop !== "string") return { outcome: "no-chop", message: "The request names no chop. Nothing was started." };
 			// Read once: the text approved is the text that runs.
-			const { list: listed, checkout } = await read({ repository: request.repository });
+			const { list: listed, checkout, play } = await read({ repository: request.repository });
 			if (listed.outcome !== "listed") return { outcome: listed.outcome === "not-listed" ? "not-listed" : "failed", message: listed.message };
 			const chop = findListedChop(listedChops(listed), request.chop);
 			if (chop === null) return { outcome: "no-chop", message: `No chop called "${request.chop}" is in ${request.repository} now. Nothing was started.` };
@@ -203,15 +235,11 @@ export function createChops({
 					warn(`Could not save the approval of a chop: ${messageOf(error)}`);
 				}
 			}
-			const where = { repository: request.repository, worktree: request.worktree, cols: request.cols, rows: request.rows };
-			if (chop.kind === "command") return openTerminal(where, { kind: "command", name: chop.name, text: chop.text });
-			if (agent !== null) return openTerminal({ ...where, agent: agent.name }, { kind: "prompt", text: chop.text });
-			if (sendPrompt === undefined) return { outcome: "unsupported", message: "Prompts cannot be sent here. Nothing was sent." };
-			// The session must be in this repository's worktree: an approval for one repository never reaches another's agent.
-			const sent = sendPrompt(request.session!, request.repository, request.worktree, chop.text);
-			if (sent.outcome !== "pasted") return sent;
-			const target = sessionOf(request.session!);
-			return target === null ? { outcome: "gone", message: "The session has ended." } : { outcome: "sent", session: target };
+			const result = await start(request, chop, agent);
+			// The chop started: its sound plays, as read with the chop, through the player's own rules (one at a time, at most 4 seconds).
+			const sound = chopSoundToPlay(chop, play);
+			if ((result.outcome === "opened" || result.outcome === "sent") && sound !== null) playSound?.(sound);
+			return result;
 		},
 	};
 }

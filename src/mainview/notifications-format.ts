@@ -1,5 +1,5 @@
 import { type Preferences, readAlertStates } from "../shared/preferences";
-import { BUNDLED_SOUNDS, type SoundChoice, type SoundOutcome, type StateSounds, sameStateSounds } from "../shared/sound-setting";
+import { BUNDLED_SOUNDS, BUNDLED_SOUND_LABELS, type SoundChoice, type SoundOutcome, type StateSounds, sameStateSounds, soundFileName } from "../shared/sound-setting";
 import type { AlertState } from "../shared/status-notices";
 
 /**
@@ -68,4 +68,11 @@ export function describeSoundOutcome(outcome: SoundOutcome): string | null {
 		case "failed":
 			return "The sound could not be played. The file may be of a kind the player cannot read.";
 	}
+}
+
+/** A sound in a few words, as its picker names it: "Chime", "System sound", or the file's name. */
+export function soundName(choice: SoundChoice): string {
+	if (choice.kind === "bundled") return BUNDLED_SOUND_LABELS[choice.name];
+	if (choice.kind === "system") return "System sound";
+	return soundFileName(choice.path);
 }
