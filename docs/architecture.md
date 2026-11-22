@@ -3424,8 +3424,22 @@ Open always pass `--no-editor` to Timber (see
   right away with an error, as a launcher that cannot find its editor does. A
   launcher that hands over and exits with 0 counts as opened. On Windows a
   `.cmd` or `.bat` file, which cmd.exe would read again, is refused: VS
-  Code's `code` is one, and launching on Windows is not tested yet.
-- **Answers.** Opened, not configured, a terminal editor, not listed, not
+  Code's `code` is one, and launching on Windows is not tested yet. An
+  editor that runs in a terminal is not spawned here. The launcher builds the
+  same command and hands it to the terminal sessions
+  (`TerminalSessions.open` with its third argument, an editor launch, which
+  only the main process passes), which find the executable the same way, with
+  its other names, and start it in a pseudo terminal in the worktree as a new
+  session of kind `editor`, named after the executable (`editorSessionName`:
+  "nvim", or "nvim: feature-login" under branch naming), 80 by 24 until the
+  pane resizes it. Each press starts another session. Quitting the editor
+  leaves the person's shell in the same session, in the worktree, after a dim
+  line such as "nvim exited with code 0. This is now a shell in ...", as an
+  agent that ends does, but with no mark of how it ended (`endedAgent` is for
+  agents only). An editor session is not saved at quit or started again
+  after a restart; the shell it became is saved as any shell.
+- **Answers.** Opened (with the new session, for a terminal editor), not
+  configured, not listed, not
   found, or failed (`OpenInEditorResult` in `src/shared/model.ts`). Not found
   names the command, every name that was looked for, and the PATH the app
   was started with. A PATH can hold dozens of folders, so the message names
@@ -3437,10 +3451,11 @@ Open always pass `--no-editor` to Timber (see
   reached by keyboard, or selected, and the row then keeps room for it, so it
   never covers the branch markers. The workspace header has it too. The
   tooltip is the exact command. With no editor set it opens Settings at
-  Editor. With an editor that runs in a terminal, or a worktree whose folder
-  is missing, it is disabled with the reason, which the workspace header
-  shows as one quiet line under its details (`OpenInEditorReason`): starting a terminal editor in
-  the worktree's terminal is a later step. A started editor is a toast. Any
+  Editor. With a worktree whose folder is missing it is disabled with the
+  reason, which the workspace header shows as one quiet line under its
+  details (`OpenInEditorReason`). A started window editor is a toast. A
+  terminal editor is a new session: the store adds it, shows it on the
+  Workspace tab, and gives it the keyboard, with no toast. Any
   other answer is a note under the workspace header that names the command,
   until it is dismissed or the next open works (`editorProblem` in the store).
 - **Trying it.** In `bun run dev:web` the mock engine acts it out and starts
@@ -4247,9 +4262,11 @@ that run when the app quits open again when it starts.
   `src/bun/listed-worktree.ts`, shared with `src/bun/editor.ts`). Each
   `openTerminal` starts one more session beside the ones the worktree has.
 - **Kinds and names.** A session has a kind and a name. The kind is
-  `terminal` for the shell, or `agent` for a coding agent, from Settings or
+  `terminal` for the shell, `agent` for a coding agent, from Settings or
   from a workflow, which starts the agent's command instead of the shell
-  (see [agent sessions](#agent-sessions)).
+  (see [agent sessions](#agent-sessions)), `timber` for a session that runs
+  a Timber command, or `editor` for a terminal editor, which only Open in
+  editor starts and which is named after its executable, such as `nvim`.
   The main process names a new session after the shell or the agent,
   "Terminal" or "Codex", then "Terminal 2" and on, the first name no
   session of that worktree has, exited ones included. It picks the name with
@@ -4554,7 +4571,8 @@ that run when the app quits open again when it starts.
     and anything a session printed. Only running sessions of kind
     `terminal` and `agent` are saved; a Timber session such as setup, an
     arena attempt or a workflow's own agent (their commands come from
-    Timber, not Settings), and a session whose process had ended, are not.
+    Timber, not Settings), an editor session started by Open in editor,
+    and a session whose process had ended, are not.
     A workflow that started an agent picked in Settings saves that agent.
   - *The shown chip and the selected worktree.* The window's `attend`
     message names the selected worktree's id and the session whose chip
@@ -4673,7 +4691,7 @@ that run when the app quits open again when it starts.
     the shell cannot be chosen in Settings yet.
 - **Not built.** Split views showing two sessions side by side, keeping
   what a session printed after a restart, keeping sessions running while
-  the app is closed, and starting a terminal editor in a session.
+  the app is closed.
 
 In `bun run dev:web` the mock engine acts out a shell that echoes what is
 typed and knows `pwd`, `clear`, `exit`, and `sample`, which prints a box,

@@ -2,7 +2,7 @@ import { defaultTerminalAppearance } from "../src/shared/terminal-appearance";
 import { DEFAULT_AGENTS } from "../src/shared/agent";
 import { describe, expect, test } from "bun:test";
 import {
-	EDITOR_PRESETS, describeEditorCommand, describeOtherExecutableNames, editorCommand, otherExecutableNames, presetOf, readEditorSetting, sameEditorSetting,
+	EDITOR_PRESETS, describeEditorCommand, describeOtherExecutableNames, editorCommand, editorSessionName, otherExecutableNames, presetOf, readEditorSetting, sameEditorSetting,
 	writeEditorSetting,
 } from "../src/shared/editor";
 import { applyPreferenceChange, defaultPreferences, readPreferences, samePreferences } from "../src/shared/preferences";
@@ -58,6 +58,23 @@ describe("editorCommand", () => {
 		expect(describeEditorCommand({ command: "code", terminal: false }, SPACED)).toBe(`code '${SPACED}'`);
 		expect(describeEditorCommand({ command: "nvim", terminal: true }, "/work/a")).toBe("nvim /work/a");
 		expect(describeEditorCommand({ command: `code "x`, terminal: false }, "/work/a")).toBeNull();
+	});
+});
+
+describe("editorSessionName", () => {
+	test("is the executable's name, without folders or .exe", () => {
+		expect(editorSessionName("nvim")).toBe("nvim");
+		expect(editorSessionName("/usr/local/bin/nvim")).toBe("nvim");
+		expect(editorSessionName("C:\\Program Files\\Neovim\\bin\\nvim.EXE")).toBe("nvim");
+	});
+
+	test("is Editor when nothing is left", () => {
+		expect(editorSessionName("/usr/bin/")).toBe("Editor");
+		expect(editorSessionName(".exe")).toBe("Editor");
+	});
+
+	test("is cut to a name a session can have", () => {
+		expect(editorSessionName("a".repeat(60))).toBe("a".repeat(40));
 	});
 });
 

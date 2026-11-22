@@ -167,8 +167,11 @@ export interface TerminalSessions {
 	 * `prompt` says how that stands. Only the main process passes `chop`; the
 	 * interface's `openTerminal` never does. A request's `review` is taken as
 	 * a prompt pasted with no Enter, once the agent is ready in the same way.
+	 * With `editor`, the saved terminal editor starts in place of the shell,
+	 * as a session of kind "editor" that goes on as the shell when the editor quits. Only
+	 * "Open in editor" passes it, and the request then names nothing else.
 	 */
-	open(request: OpenTerminalRequest, chop?: ChopInput): Promise<OpenTerminalResult>;
+	open(request: OpenTerminalRequest, chop?: ChopInput, editor?: AgentLaunch): Promise<OpenTerminalResult>;
 	/** Whether each saved agent's executable is there to start, looked for as `open` looks for it. Nothing starts. */
 	locateAgents(): Promise<AgentLocation[]>;
 	/** Whether one agent's executable is there to start, looked for as `open` looks for it, on the PATH the app was started with. Nothing starts. */
@@ -327,10 +330,11 @@ interface Live {
 
 /**
  * An agent's executable and arguments, ready to be looked up on the PATH:
- * from Settings, from a workflow, or from an arena attempt.
+ * from Settings, from a workflow, or from an arena attempt. It also
+ * carries a terminal editor started by Open in editor.
  */
-interface AgentLaunch {
-	/** The session's base name, and the name in messages: the agent's name, the workflow's, or the attempt's label. */
+export interface AgentLaunch {
+	/** The session's base name, and the name in messages: the agent's name, the workflow's, the attempt's label, or the editor's executable. */
 	name: string;
 	executable: string;
 	arguments: string[];
@@ -338,6 +342,10 @@ interface AgentLaunch {
 	words: ExecutableWords;
 	/** Where to change the command, for the batch-file message, such as "Settings, Agents". */
 	section: string;
+	/** Other names to look for when the executable is not on the PATH, such as `zeditor` for `zed`. */
+	otherNames?: readonly string[];
+	/** "editor" for the person's terminal editor: a session of that kind, not an agent. Only "Open in editor" starts one. */
+	kind?: "editor";
 	/** The session is named `name` as it is, not by the naming setting: an arena attempt, named by its label everywhere. */
 	fixedName?: boolean;
 	/** Set on top of the session's environment, and taken out of it, as Timber asks for an arena attempt. */
@@ -475,6 +483,13 @@ export function sessionEnvironment(environment: Record<string, string | undefine
  *   dialog showed it; with none named, a workflow that is gone, that cannot
  *   be read, or that leaves the agent unset starts nothing. Its arguments
  *   can hold tokens, so nothing about it is logged.
+ * - An editor session starts the person's terminal editor from Settings in
+ *   place of the shell, in the worktree, found on the PATH as the editor
+ *   launcher finds it (see ./editor.ts). Only "Open in editor" starts one,
+ *   with the command it built, so the window's request cannot. When the
+ *   editor quits, the session goes on as the person's shell, as an agent's
+ *   does, with no `endedAgent` mark. It is not saved or started again after
+ *   a restart as an editor; the shell it became is saved as any shell.
  * - Every session's output, shown or not, passes a scanner for the Program
  *   Status Protocol (OSC 7501, see ../shared/program-status.ts) before it is
  *   kept: a control sequence a program addresses to the terminal, like a
@@ -763,7 +778,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			return { ok: true, kind: "terminal", base: "Terminal", argv: [shell], command: describeCommandLine([shell]), ...plain };
 		}
 		const command = describeCommandLine([launch.executable, ...launch.arguments]);
-		const lookup = findExecutable(launch.executable, environment.PATH ?? environment.Path ?? "", launch.words);
+		const lookup = findExecutable(launch.executable, environment.PATH ?? environment.Path ?? "", launch.words, launch.otherNames);
 		if (!lookup.ok) {
 			return {
 				ok: false,
@@ -783,6 +798,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 				},
 			};
 		}
+		if (launch.kind === "editor") return { ok: true, kind: "editor", base: launch.name, argv, command: describeCommandLine(argv), ...plain };
 		// What the found file leads to tells a name other programs install too, such as `agent`. The agent still starts as found, since some read the name they were started as.
 		const real = realPathOf(lookup.path);
 		// An agent picked for the row in Settings takes the place of the name.
@@ -910,8 +926,8 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			const notSent = unsent ? { prompt: { state: "not-sent" as const, message: promptEndedMessage(live.session.name, unsent.review ? "review" : "prompt"), ...(unsent.review ? { what: "review" as const } : {}) } } : {};
 			dropChop(live);
 			noteEnded(live);
-			// An agent goes on as the person's shell. Everything else, a shell and a Timber command, stays ended.
-			if (live.session.kind === "agent" && continueAsShell(live, child, end, notSent)) return;
+			// An agent or a terminal editor goes on as the person's shell. Everything else, a shell and a Timber command, stays ended.
+			if ((live.session.kind === "agent" || live.session.kind === "editor") && continueAsShell(live, child, end, notSent)) return;
 			live.pasteMode.reset();
 			changed(live, { ...live.session, state: { kind: "exited", ...end }, ...recordsForWindow(live.records), ...notSent });
 		});
@@ -919,9 +935,11 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 	}
 
 	/**
-	 * Put the person's shell in place of an agent that ended by itself, in
-	 * the same session. Nothing waits between the start and the swap. Returns
-	 * false, and changes nothing, when the shell cannot start.
+	 * Put the person's shell in place of an agent or a terminal editor that
+	 * ended by itself, in the same session. Nothing waits between the start
+	 * and the swap. Returns false, and changes nothing, when the shell cannot
+	 * start. Only an agent leaves `endedAgent` behind: an editor that quit is
+	 * not a crash or a stop to mark, so its shell is a plain one.
 	 */
 	function continueAsShell(live: Live, old: PseudoTerminal, end: { exitCode: number | null; signal: string | null }, notSent: { prompt?: PromptDelivery }): boolean {
 		const shell = shellOf();
@@ -955,12 +973,18 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		flush(live);
 		// The agent's own name goes with it: the shell keeps its mark through `endedAgent`.
 		const { program: _agentProgram, ...shellSession } = live.session;
-		changed(live, { ...shellSession, kind: "terminal", shell, command: describeCommandLine([shell]), state: { kind: "running" }, status: null, children: [], endedAgent, ...notSent });
+		const mark = live.session.kind === "agent" ? { endedAgent } : {};
+		changed(live, { ...shellSession, kind: "terminal", shell, command: describeCommandLine([shell]), state: { kind: "running" }, status: null, children: [], ...mark, ...notSent });
 		return true;
 	}
 
-	async function open(request: OpenTerminalRequest, chop?: ChopInput): Promise<OpenTerminalResult> {
+	async function open(request: OpenTerminalRequest, chop?: ChopInput, editor?: AgentLaunch): Promise<OpenTerminalResult> {
 		if (startTerminal === null) return { outcome: "unsupported", message: TERMINAL_UNSUPPORTED_REASON };
+		// An editor starts as itself: no agent, setup, workflow, attempt, chop, review, name, or earlier session goes with it.
+		if (editor !== undefined && (chop !== undefined || request.agent !== undefined || request.timberWorktreeSetup !== undefined || request.arenaAttempt !== undefined
+			|| request.workflowAgent !== undefined || request.review !== undefined || request.resume !== undefined || request.restore !== undefined || request.name !== undefined)) {
+			return { outcome: "failed", message: "The editor starts on its own, not with an agent, setup, a workflow, an arena attempt, or a chop. The editor was not started." };
+		}
 		// A command chop runs in the person's shell only.
 		if (chop?.kind === "command" && (request.agent !== undefined || request.timberWorktreeSetup !== undefined || request.arenaAttempt !== undefined || request.workflowAgent !== undefined)) {
 			return { outcome: "failed", message: "A chop runs in a shell, not with an agent, setup, a workflow, or an arena attempt. Nothing was started." };
@@ -1041,18 +1065,19 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		const consequence = attempt.launch ? `${attempt.launch.name} was not started.`
 			: agent ? `${agent.name} was not started.`
 			: workflowAgent !== undefined ? `The agent of the ${workflowAgent.workflow} workflow was not started.`
+			: editor ? "The editor was not started."
 			: run ? `${run.what} was not started.` : chop?.kind === "command" ? `${chop.name} was not started.` : "No terminal was started.";
 		const listed = await findListedWorktree(findRepository, request.repository, request.worktree, consequence);
 		if (!listed.ok) return { outcome: "not-listed", message: listed.message };
 		// From here to the new session being kept nothing waits, so two sessions that start at once get different names.
-		let launch = attempt.launch ?? workflowLaunch;
+		let launch = attempt.launch ?? workflowLaunch ?? editor ?? null;
 		if (agent !== null) {
 			const setting = launchOfSetting(agent);
 			if (!setting.ok) return setting.result;
 			launch = setting.launch;
 		}
 		// A conversation, a name, and a restore tag from before a restart are read only as a UUID, a clean name, and a tag, only for an agent from Settings or a shell, and never for a Timber command, an arena attempt, or a workflow's own agent.
-		const ownLaunch = run === null && attempt.launch === null && (agent !== null || workflowLaunch === null);
+		const ownLaunch = run === null && attempt.launch === null && editor === undefined && (agent !== null || workflowLaunch === null);
 		const resume = ownLaunch && agent !== null && isConversationId(request.resume) ? request.resume : null;
 		const savedName = ownLaunch && chop === undefined ? cleanSessionName(request.name) : null;
 		const restored = ownLaunch && isRestoreTag(request.restore) ? { worktree: request.restore.worktree, index: request.restore.index } : null;

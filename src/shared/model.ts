@@ -1,5 +1,6 @@
 import type { Preferences } from "./preferences";
 import type { RepositoryGroups } from "./repository-groups";
+import type { TerminalSession } from "./terminal";
 
 /**
  * Whether a usable Timber is installed. Everything that runs Timber depends on
@@ -278,12 +279,15 @@ export interface OpenInEditorRequest {
  * was built. Only "opened" started anything.
  */
 export type OpenInEditorResult =
-	/** The editor was started, detached from the app. Whether it then shows a window is up to the editor. */
-	| { outcome: "opened"; command: string }
+	/**
+	 * The editor was started. A window editor is detached from the app, and
+	 * whether it then shows a window is up to the editor. An editor that runs
+	 * in a terminal was started in a new session of the worktree, which
+	 * `session` is.
+	 */
+	| { outcome: "opened"; command: string; session?: TerminalSession }
 	/** No editor is set in Settings. */
 	| { outcome: "not-configured" }
-	/** The editor runs in a terminal, which "Open in editor" does not start yet. Nothing was started. */
-	| { outcome: "terminal-editor"; command: string; message: string }
 	/** The repository is not in the app's list, or Timber does not list that worktree, or its folder is gone. Nothing was started. */
 	| { outcome: "not-listed"; message: string }
 	/** The executable is not on the PATH the app was started with. Nothing was started. */

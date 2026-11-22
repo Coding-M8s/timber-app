@@ -33,6 +33,13 @@ export type TerminalCapabilities = Pick<Engine,
 /** A chop to start a session with, as the main process's `ChopInput`. */
 export type MockChopInput = { kind: "command"; name: string; text: string } | { kind: "prompt"; text: string; review?: boolean };
 
+/** A terminal editor to start in a session: its session name and command, as the main process's editor launch. */
+export interface MockEditorLaunch {
+	name: string;
+	executable: string;
+	arguments: string[];
+}
+
 /**
  * What `runChop` uses, as the main process's `TerminalSessions` does: start a
  * shell with a command chop typed into it, or an agent with a prompt to
@@ -40,6 +47,8 @@ export type MockChopInput = { kind: "command"; name: string; text: string } | { 
  */
 export interface ChopTerminals {
 	openChopTerminal(request: OpenTerminalRequest, chop: MockChopInput): Promise<OpenTerminalResult>;
+	/** Start the saved terminal editor in a session, as "Open in editor" does in the main process. */
+	openEditorTerminal(request: OpenTerminalRequest, editor: MockEditorLaunch): Promise<OpenTerminalResult>;
 	sendPrompt(id: string, repository: string, worktreePath: string, text: string): PasteResult;
 	sessionById(id: string): TerminalSession | null;
 }
@@ -268,8 +277,8 @@ export function createMockTerminals(
 		const unsent = acted.waiting;
 		acted.waiting = null;
 		const dropped = unsent === null ? {} : { prompt: { state: "not-sent" as const, message: promptEndedMessage(acted.session.name, unsent.review ? "review" : "prompt"), ...(unsent.review ? { what: "review" as const } : {}) } };
-		// An agent goes on as the person's shell in the same session, as the main process has it do.
-		if (acted.session.kind === "agent") {
+		// An agent or a terminal editor goes on as the person's shell in the same session, as the main process has it do.
+		if (acted.session.kind === "agent" || acted.session.kind === "editor") {
 			const endedAgent: EndedAgent = {
 				name: acted.launchName, agent: acted.agent, program: acted.session.program ?? null, resumable: acted.resumable, conversation: acted.conversation,
 				command: acted.session.command, exitCode, signal: null,
@@ -283,7 +292,9 @@ export function createMockTerminals(
 			const shell = "/bin/mock-shell";
 			print(acted, agentEndedNote(acted.launchName, endedAgent, acted.session.path));
 			const { program: _agentProgram, ...shellSession } = acted.session;
-			acted.session = { ...shellSession, kind: "terminal", shell, command: describeCommandLine([shell]), state: { kind: "running" }, status: null, children: [], endedAgent, ...dropped };
+			// Only an agent leaves its mark on the shell; an editor that quit leaves a plain shell.
+			const mark = acted.session.kind === "agent" ? { endedAgent } : {};
+			acted.session = { ...shellSession, kind: "terminal", shell, command: describeCommandLine([shell]), state: { kind: "running" }, status: null, children: [], ...mark, ...dropped };
 			announce({ id: acted.session.id, session: acted.session });
 			print(acted, prompt(acted));
 			return;
@@ -329,8 +340,13 @@ export function createMockTerminals(
 	}
 
 	/** Start a session as the main process would. With `chop`, a pretend shell named after the chop, with the chop's text typed in. */
-	async function open(request: OpenTerminalRequest, chop?: MockChopInput): Promise<OpenTerminalResult> {
+	async function open(request: OpenTerminalRequest, chop?: MockChopInput, editor?: MockEditorLaunch): Promise<OpenTerminalResult> {
 		if (failing) return structuredClone(failing);
+		// As the main process does: an editor starts as itself, with nothing else in the request.
+		if (editor !== undefined && (chop !== undefined || request.agent !== undefined || request.timberWorktreeSetup !== undefined || request.arenaAttempt !== undefined
+			|| request.workflowAgent !== undefined || request.review !== undefined || request.resume !== undefined || request.restore !== undefined || request.name !== undefined)) {
+			return { outcome: "failed", message: "The editor starts on its own, not with an agent, setup, a workflow, an arena attempt, or a chop. The editor was not started." };
+		}
 		if (chop?.kind === "prompt" && (typeof request.agent !== "string" || request.timberWorktreeSetup !== undefined || request.arenaAttempt !== undefined || request.workflowAgent !== undefined)) {
 			return { outcome: "failed", message: "A prompt goes to an agent from Settings only. Nothing was started." };
 		}
@@ -403,7 +419,7 @@ export function createMockTerminals(
 			else return { outcome: "not-configured", message: `The ${name} workflow no longer sets an agent. Nothing was started. Start one from the "+" menu.` };
 		}
 		const worktree = findWorktree(request.repository, request.worktree);
-		const notStarted = attempt ? `${attempt.label} was not started.` : agent ? `${agent.name} was not started.` : workflowAgent !== undefined ? `The agent of the ${workflowAgent.workflow} workflow was not started.` : worktreeSetup ? "Setup was not started." : chop?.kind === "command" ? `${chop.name} was not started.` : "No terminal was started.";
+		const notStarted = editor ? "The editor was not started." : attempt ? `${attempt.label} was not started.` : agent ? `${agent.name} was not started.` : workflowAgent !== undefined ? `The agent of the ${workflowAgent.workflow} workflow was not started.` : worktreeSetup ? "Setup was not started." : chop?.kind === "command" ? `${chop.name} was not started.` : "No terminal was started.";
 		if (!worktree) return { outcome: "not-listed", message: `Timber lists no worktree at ${request.worktree} in ${request.repository}. ${notStarted} Refresh the list.` };
 		let shell = "/bin/mock-shell";
 		let args: string[] = [];
@@ -414,13 +430,14 @@ export function createMockTerminals(
 			? { worktree: request.restore.worktree, index: request.restore.index } : null;
 		let resumable: ResumableAgent | null = null;
 		let conversation: string | null = null;
+		if (editor) launch = { name: editor.name, executable: editor.executable, arguments: editor.arguments, command: "The editor command", section: "Settings, Editor" };
 		if (agent) {
 			const built = agentCommand(agent);
 			if (!built.ok) return { outcome: "failed", message: `${built.message} Change it in Settings, Agents. Nothing was started.` };
 			launch = { name: agent.name, executable: built.executable, arguments: built.arguments, command: `The command of ${agent.name}`, section: "Settings, Agents" };
 		}
 		if (launch) {
-			const what = agent ? launch.name : `the agent of the ${launch.name} workflow`;
+			const what = editor ? "the editor" : agent ? launch.name : `the agent of the ${launch.name} workflow`;
 			const command = describeCommandLine([launch.executable, ...launch.arguments]);
 			if (!launch.executable.startsWith("/") && /[\\/]/.test(launch.executable)) {
 				return {
@@ -464,7 +481,7 @@ export function createMockTerminals(
 		const program = launch || attempt ? agentProgram(shell, null, agent?.agent) : null;
 		const session: TerminalSession = {
 			id: `mock-terminal-${++lastId}`,
-			kind: launch || attempt ? "agent" : setup ? "timber" : "terminal",
+			kind: editor ? "editor" : launch || attempt ? "agent" : setup ? "timber" : "terminal",
 			name: defaultSessionName(
 				chop?.kind === "command" ? chop.name : attempt ? attempt.label : worktreeSetup ? WORKTREE_SETUP_SESSION_NAME
 					: savedName ?? sessionNameBase(sessionNaming(), launch ? launch.name : "Terminal", worktree.branch, launch !== null),
@@ -493,6 +510,10 @@ export function createMockTerminals(
 			const exitCode = worktreeSetupExit;
 			print(acted, `A pretend setup in ${session.path}, started as ${session.command}. Nothing runs in the browser.\r\n${exitCode ? MOCK_SETUP_FAILURE : ""}`);
 			if (exitCode !== null) later(() => end(acted, exitCode));
+			return { outcome: "opened", session: structuredClone(session) };
+		}
+		if (editor) {
+			print(acted, `A pretend ${editor.name} in ${session.path}, started as ${session.command}. Nothing runs in the browser. Try exit.\r\n`);
 			return { outcome: "opened", session: structuredClone(session) };
 		}
 		const greeting = launch || attempt
@@ -600,6 +621,7 @@ export function createMockTerminals(
 			})();
 		},
 		openChopTerminal: (request, chop) => open(request, chop),
+		openEditorTerminal: (request, editor) => open(request, undefined, editor),
 		sendPrompt(id, repository, worktreePath, text) {
 			const acted = sessions.get(id);
 			if (!acted || acted.session.state.kind !== "running") return { outcome: "gone", message: "The session has ended." };

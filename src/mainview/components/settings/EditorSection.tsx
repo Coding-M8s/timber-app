@@ -1,6 +1,6 @@
 import { useId } from "react";
 import type { EditorSetting } from "../../../shared/editor";
-import { PATH_TOKEN, TERMINAL_EDITOR_REASON } from "../../../shared/editor";
+import { PATH_TOKEN } from "../../../shared/editor";
 import {
 	EDITOR_CHOICES, EXAMPLE_WORKTREE, type EditorChoice, type EditorDraft, chooseEditor, draftOf, editEditor, editorDraftModel,
 } from "../../editor-format";
@@ -61,7 +61,7 @@ export function EditorSectionView({ draft, saved, save, onChoose, onEdit, onSave
 				<input type="checkbox" checked={draft.terminal} onChange={event => onEdit({ terminal: event.target.checked })} />
 				<span className="check-text">
 					Runs in a terminal
-					<span className="check-hint">For editors such as Neovim.</span>
+					<span className="check-hint">For editors such as Neovim. Opens in a new session of the worktree.</span>
 				</span>
 			</label>
 			{model.error !== null && (
@@ -77,7 +77,6 @@ export function EditorSectionView({ draft, saved, save, onChoose, onEdit, onSave
 					<p className="sidebar-error-text">{model.warning}</p>
 				</div>
 			)}
-			{model.setting?.terminal && <p className="dialog-note">{TERMINAL_EDITOR_REASON} Until then Open in editor is unavailable with this editor.</p>}
 			{model.note !== null && <p className="dialog-note">{model.note}</p>}
 			{model.example !== null && (
 				<div className="field">

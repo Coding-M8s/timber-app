@@ -1,6 +1,6 @@
 import { splitCommandLine } from "../shared/command-line";
 import {
-	EDITOR_PRESETS, type EditorPreset, type EditorSetting, TERMINAL_EDITOR_REASON, describeEditorCommand, describeOtherExecutableNames, editorTarget, presetOf,
+	EDITOR_PRESETS, type EditorPreset, type EditorSetting, describeEditorCommand, describeOtherExecutableNames, editorTarget, presetOf,
 	sameEditorSetting,
 } from "../shared/editor";
 import type { Worktree } from "../shared/model";
@@ -40,7 +40,6 @@ export function describeEditorAction(editor: EditorSetting | null, worktree: Pic
 		return { available: true, opensSettings: true, command: null, tooltip: `${OPEN_IN_EDITOR}. ${hint}`, reason: null };
 	}
 	const unavailable = (reason: string): EditorAction => ({ available: false, opensSettings: false, command, tooltip: `${OPEN_IN_EDITOR}: ${command}. ${reason}`, reason });
-	if (editor.terminal) return unavailable(TERMINAL_EDITOR_REASON);
 	if (!worktree.pathExists) return unavailable(FOLDER_MISSING_REASON);
 	if (running) return { available: false, opensSettings: false, command, tooltip: `Opening: ${command}`, reason: null };
 	return { available: true, opensSettings: false, command, tooltip: `${OPEN_IN_EDITOR}: ${command}`, reason: null };
@@ -51,7 +50,7 @@ export const describeOpenedInEditor = (label: string) => `Opened ${label} in the
 
 /** What to tell the person when "Open in editor" did not open anything. */
 export function describeEditorProblem(problem: EditorProblem, label: string): { title: string; text: string; command: string | null } {
-	const title = problem.kind === "terminal-editor" ? `Cannot open ${label} in a terminal editor yet` : `Could not open ${label} in the editor`;
+	const title = `Could not open ${label} in the editor`;
 	return { title, text: problem.message, command: problem.command };
 }
 
@@ -151,7 +150,6 @@ export function editorDraftModel(draft: EditorDraft, saved: EditorSetting | null
 	const warning = terminalEditor === null
 		? null
 		: `${terminalEditor} runs in a terminal. Without "Runs in a terminal" it would be started with no terminal to show it in.`;
-	// A terminal editor is not started from here, so no other name is tried for it.
-	const note = draft.terminal ? null : describeOtherExecutableNames(reading.words[0] ?? "");
+	const note = describeOtherExecutableNames(reading.words[0] ?? "");
 	return { setting, error: null, hint: null, warning, note, example: describeEditorCommand(setting, EXAMPLE_WORKTREE), canSave: !sameEditorSetting(setting, saved) };
 }

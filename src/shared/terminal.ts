@@ -17,10 +17,11 @@ export type TerminalState =
 
 /**
  * What a session runs: the person's shell, a coding agent from Settings or
- * from a workflow, which starts the agent's command instead of the shell, or
- * a Timber command such as `timber open --setup`.
+ * from a workflow, which starts the agent's command instead of the shell, a
+ * Timber command such as `timber open --setup`, or the person's terminal
+ * editor, which "Open in editor" starts.
  */
-export const SESSION_KINDS = ["terminal", "agent", "timber"] as const;
+export const SESSION_KINDS = ["terminal", "agent", "timber", "editor"] as const;
 export type SessionKind = typeof SESSION_KINDS[number];
 
 /** One session in a pseudo terminal, in one worktree. A worktree can have several. */
@@ -246,7 +247,7 @@ export const TERMINAL_UNSUPPORTED_REASON =
 /** The longest name a session can have, in characters. */
 export const SESSION_NAME_LIMIT = 40;
 
-const KIND_NAMES: Record<SessionKind, string> = { terminal: "Terminal", agent: "Agent", timber: "Timber" };
+const KIND_NAMES: Record<SessionKind, string> = { terminal: "Terminal", agent: "Agent", timber: "Timber", editor: "Editor" };
 
 /** The name of a session that runs a worktree's setup scripts. */
 export const WORKTREE_SETUP_SESSION_NAME = "Setup";

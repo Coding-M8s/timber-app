@@ -2193,6 +2193,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		}
 		if (state.operations.some(operation => operation.kind === "open-in-editor" && operation.worktree === request.worktree)) return null;
 		if (isBeingRemoved(state, request.repository, request.worktree)) return null;
+		const selectedAtPress = state.selection?.worktree ?? null;
 		const ask = async (): Promise<OpenInEditorResult> => {
 			try {
 				return await engine.openInEditor(request);
@@ -2208,6 +2209,20 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const worktree = repository?.worktrees.find(candidate => candidate.path === request.worktree);
 		switch (answer.outcome) {
 			case "opened":
+				if (answer.session !== undefined) {
+					// A terminal editor is a new session: it shows on the Workspace tab and takes the keyboard, so there is no toast.
+					const { session } = answer;
+					update({
+						// A change heard meanwhile is newer than this answer.
+						terminals: state.terminals.some(known => known.id === session.id) ? state.terminals : withTerminal(state.terminals, session.id, session),
+						unseenSessions: state.unseenSessions.filter(id => id !== session.id),
+						editorProblem: null,
+					});
+					// Only a person still where they pressed is taken to the session; one who moved to another worktree is not pulled back.
+					if (state.selection?.worktree === session.worktree || (state.selection?.worktree ?? null) === selectedAtPress) revealSession(session.id);
+					else update({ shownSessions: { ...state.shownSessions, [session.worktree]: session.id } });
+					break;
+				}
 				update({ editorProblem: null });
 				showToast(describeOpenedInEditor(request.file ?? (worktree ? worktreeLabel(worktree) : folderName(request.worktree))));
 				break;

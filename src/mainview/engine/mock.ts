@@ -18,7 +18,7 @@ import {
 	renameGroupIn,
 } from "../../shared/repository-groups";
 import { describeCommandLine } from "../../shared/command-line";
-import { TERMINAL_EDITOR_REASON, editorCommand, editorTarget, otherExecutableNames } from "../../shared/editor";
+import { editorCommand, editorSessionName, editorTarget, otherExecutableNames } from "../../shared/editor";
 import { notFoundOnPath } from "../../shared/search-path";
 import { type Preferences, applyPreferenceChange, defaultPreferences } from "../../shared/preferences";
 import { forgetPullRepository } from "../../shared/pull-confirm-setting";
@@ -472,8 +472,9 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	/**
 	 * Decide how "Open in editor" ends from now on, for an editor that is set
 	 * and a worktree that is listed: "opens" (the start), "not-found" (the
-	 * executable is not on the PATH), or "fails" (the editor stops right away
-	 * with an error).
+	 * executable is not on the PATH), or "fails" (a window editor stops right away
+	 * with an error; a terminal editor opens its session, as the main process
+	 * never reports an exit for it).
 	 */
 	endEditorLaunches(ending: EditorEnding): void;
 	/**
@@ -858,7 +859,7 @@ export function createMockEngine(
 	const NOT_RESTARTABLE = "This copy of the app runs from source in /home/sam/timber-app, so it cannot restart itself. Quit it and run the command again to use the saved setting.";
 	const NOT_INSTALLED = "This copy of the app was not installed, so there is nothing to uninstall. It runs from /home/sam/timber-app.";
 	const launches: { request: OpenInEditorRequest; command: string }[] = [];
-	const openInEditor = (request: OpenInEditorRequest): OpenInEditorResult => {
+	const openInEditor = async (request: OpenInEditorRequest): Promise<OpenInEditorResult> => {
 		const { editor } = preferences;
 		if (editor === null) return { outcome: "not-configured" };
 		const repository = current.find(candidate => candidate.path === request.repository);
@@ -874,8 +875,8 @@ export function createMockEngine(
 		const built = editorCommand(editor, opened.path);
 		if (!built.ok) return { outcome: "failed", command: null, message: `${built.message} Change it in Settings, Editor.` };
 		const command = describeCommandLine([built.executable, ...built.arguments]);
-		if (editor.terminal) return { outcome: "terminal-editor", command, message: TERMINAL_EDITOR_REASON };
-		switch (editorEnding) {
+		// The main process never says "exited right after it started" for a terminal editor: it opens a session.
+		switch (editor.terminal && editorEnding === "fails" ? "opens" : editorEnding) {
 			case "not-found":
 				return {
 					outcome: "not-found", command, executable: built.executable,
@@ -883,9 +884,24 @@ export function createMockEngine(
 				};
 			case "fails":
 				return { outcome: "failed", command, message: "The editor exited with code 1 right after it started. Try the command in a terminal to see why." };
-			case "opens":
-				launches.push({ request: structuredClone(request), command });
-				return { outcome: "opened", command };
+			case "opens": {
+				if (!editor.terminal) {
+					launches.push({ request: structuredClone(request), command });
+					return { outcome: "opened", command };
+				}
+				// As the main process does: a terminal editor starts in a new session of the worktree.
+				const started = await terminals.openEditorTerminal(
+					{ repository: request.repository, worktree: request.worktree, cols: 80, rows: 24 },
+					{ name: editorSessionName(built.executable), executable: built.executable, arguments: built.arguments },
+				);
+				switch (started.outcome) {
+					case "opened": return { outcome: "opened", command: started.session.command, session: started.session };
+					case "not-listed": return { outcome: "not-listed", message: started.message };
+					case "not-found": return { outcome: "not-found", command: started.command, executable: started.executable, message: started.message };
+					case "failed": return { outcome: "failed", command: started.command ?? command, message: started.message };
+					default: return { outcome: "failed", command, message: started.message };
+				}
+			}
 		}
 	};
 
@@ -1267,7 +1283,7 @@ export function createMockEngine(
 		failPreferenceSaves(message) {
 			preferencesFailure = message;
 		},
-		openInEditor: async request => structuredClone(openInEditor(request)),
+		openInEditor: async request => structuredClone(await openInEditor(request)),
 		endEditorLaunches(next) {
 			// Called from the browser console too, where nothing checks the word.
 			if (!EDITOR_ENDINGS.includes(next)) throw new Error(`Unknown ending: ${String(next)}`);

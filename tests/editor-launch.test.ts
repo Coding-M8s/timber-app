@@ -3,8 +3,10 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type EditorDependencies, createEditorLauncher } from "../src/bun/editor";
-import { type EditorSetting, TERMINAL_EDITOR_REASON } from "../src/shared/editor";
+import type { AgentLaunch } from "../src/bun/terminals";
+import { type EditorSetting } from "../src/shared/editor";
 import type { Repository } from "../src/shared/model";
+import type { OpenTerminalRequest, OpenTerminalResult, TerminalSession } from "../src/shared/terminal";
 import { defaultPreferences } from "../src/shared/preferences";
 import { until, windows } from "./support/runtime";
 
@@ -285,14 +287,59 @@ describe.skipIf(windows)("opening a worktree in an editor, with stand-in editors
 		expect(result.outcome).toBe("not-listed");
 	});
 
-	test("with no editor set, or an editor that runs in a terminal, nothing starts", async () => {
-		const editor = standInEditor();
+	test("with no editor set, nothing starts", async () => {
 		expect(await launcher(null).open(request())).toEqual({ outcome: "not-configured" });
-		const terminal = await launcher({ command: editor.name, terminal: true }).open(request());
-		expect(terminal).toMatchObject({ outcome: "terminal-editor", command: `${editor.name} '${worktree}'` });
-		expect(terminal.outcome === "terminal-editor" && terminal.message).toBe(TERMINAL_EDITOR_REASON);
+	});
+
+	/** A session as the terminals would answer for an editor. */
+	const editorSession = (command: string): TerminalSession => ({
+		id: "session-1", kind: "editor", name: "nvim", repository, worktree, path: worktree, shell: "/usr/bin/nvim", command,
+		state: { kind: "running" }, status: null, children: [],
+	});
+
+	/** An `openSession` that records what it was asked for and answers `answer`. */
+	function fakeSessions(answer: (launch: AgentLaunch) => OpenTerminalResult) {
+		const asked: { request: OpenTerminalRequest; launch: AgentLaunch }[] = [];
+		return { asked, openSession: async (request: OpenTerminalRequest, launch: AgentLaunch) => (asked.push({ request, launch }), answer(launch)) };
+	}
+
+	test("a terminal editor starts in a new session, with the worktree as its last argument, and no editor process of its own", async () => {
+		const editor = standInEditor();
+		const sessions = fakeSessions(() => ({ outcome: "opened", session: editorSession(`/usr/bin/nvim '${worktree}'`) }));
+		const result = await launcher({ command: `${editor.name} -p`, terminal: true }, listed([worktree]), { openSession: sessions.openSession }).open(request());
+		expect(result).toEqual({ outcome: "opened", command: `/usr/bin/nvim '${worktree}'`, session: editorSession(`/usr/bin/nvim '${worktree}'`) });
+		expect(sessions.asked).toHaveLength(1);
+		expect(sessions.asked[0]!.request).toEqual({ repository, worktree, cols: 80, rows: 24 });
+		expect(sessions.asked[0]!.launch).toMatchObject({ name: editor.name, executable: editor.name, arguments: ["-p", worktree], kind: "editor", otherNames: [] });
 		await Bun.sleep(100);
 		expect(editor.ran()).toBe(false);
+	});
+
+	test("a terminal editor is given the file named in the request, and is named after its executable", async () => {
+		const file = join(worktree, "terminal-file.ts");
+		writeFileSync(file, "export {};\n");
+		const sessions = fakeSessions(() => ({ outcome: "opened", session: editorSession("nvim") }));
+		await launcher({ command: "/usr/local/bin/nvim.exe", terminal: true }, listed([worktree]), { openSession: sessions.openSession }).open({ ...request(), file: "terminal-file.ts" });
+		expect(sessions.asked[0]!.launch).toMatchObject({ name: "nvim", executable: "/usr/local/bin/nvim.exe", arguments: [file] });
+	});
+
+	test("what the terminals answer for a terminal editor is passed on", async () => {
+		const setting = { command: "nvim", terminal: true };
+		const answer = async (result: OpenTerminalResult) => {
+			const sessions = fakeSessions(() => result);
+			return launcher(setting, listed([worktree]), { openSession: sessions.openSession }).open(request());
+		};
+		expect(await answer({ outcome: "not-found", command: "nvim", executable: "nvim", message: "nowhere" }))
+			.toEqual({ outcome: "not-found", command: "nvim", executable: "nvim", message: "nowhere" });
+		expect(await answer({ outcome: "failed", command: "nvim x", message: "broke" })).toEqual({ outcome: "failed", command: "nvim x", message: "broke" });
+		expect(await answer({ outcome: "failed", message: "broke" })).toEqual({ outcome: "failed", command: `nvim '${worktree}'`, message: "broke" });
+		expect(await answer({ outcome: "unsupported", message: "no pty" })).toEqual({ outcome: "failed", command: `nvim '${worktree}'`, message: "no pty" });
+		expect(await answer({ outcome: "not-listed", message: "gone" })).toEqual({ outcome: "not-listed", message: "gone" });
+	});
+
+	test("without terminals, a terminal editor is not started", async () => {
+		const result = await launcher({ command: "nvim", terminal: true }).open(request());
+		expect(result).toMatchObject({ outcome: "failed", command: `nvim '${worktree}'` });
 	});
 
 	test("an editor that stops right away with an error is a failure, and one that hands over and exits with 0 is not", async () => {

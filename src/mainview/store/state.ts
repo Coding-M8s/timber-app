@@ -363,7 +363,7 @@ export interface LayoutProblem {
  * dismissed, or until opening a worktree in the editor next works.
  */
 export interface EditorProblem {
-	kind: "terminal-editor" | "not-listed" | "not-found" | "failed";
+	kind: "not-listed" | "not-found" | "failed";
 	/** The worktree's registered path. */
 	worktree: string;
 	/** The file that was to be opened, relative to the worktree, or null for the worktree's folder. */

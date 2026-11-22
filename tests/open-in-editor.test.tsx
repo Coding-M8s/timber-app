@@ -7,10 +7,9 @@ import { EditorSectionView, type EditorSectionViewProps } from "../src/mainview/
 import {
 	EXAMPLE_WORKTREE, FOLDER_MISSING_REASON, NO_EDITOR_HINT, chooseEditor, describeEditorAction, draftOf, editEditor, editorDraftModel,
 } from "../src/mainview/editor-format";
-import { createMockEngine, sampleUnavailableRepository } from "../src/mainview/engine/mock";
+import { createMockEngine, sampleRepositories, sampleUnavailableRepository } from "../src/mainview/engine/mock";
 import { createAppStore } from "../src/mainview/store/store";
 import type { Engine } from "../src/shared/engine";
-import { TERMINAL_EDITOR_REASON } from "../src/shared/editor";
 import { defaultFetchSetting } from "../src/shared/fetch-setting";
 import { defaultPullConfirmSetting } from "../src/shared/pull-confirm-setting";
 import { defaultStateSounds } from "../src/shared/sound-setting";
@@ -61,9 +60,9 @@ describe("the control for a worktree", () => {
 		expect(action).toMatchObject({ available: true, opensSettings: false, command: "code '/work/my repo'", tooltip: "Open in editor: code '/work/my repo'" });
 	});
 
-	test("a terminal editor, or a folder that is missing, is unavailable with the reason", () => {
+	test("a terminal editor is available with its exact command, and a folder that is missing is unavailable with the reason", () => {
 		expect(describeEditorAction({ command: "nvim", terminal: true }, { path: FEATURE, pathExists: true }, false))
-			.toMatchObject({ available: false, reason: TERMINAL_EDITOR_REASON, tooltip: `Open in editor: nvim ${FEATURE}. ${TERMINAL_EDITOR_REASON}` });
+			.toEqual({ available: true, opensSettings: false, command: `nvim ${FEATURE}`, tooltip: `Open in editor: nvim ${FEATURE}`, reason: null });
 		expect(describeEditorAction({ command: "code", terminal: false }, { path: MISSING, pathExists: false }, false))
 			.toMatchObject({ available: false, reason: FOLDER_MISSING_REASON });
 	});
@@ -100,14 +99,13 @@ describe("Open in editor in the window", () => {
 		expect(tag).toContain(FOLDER_MISSING_REASON);
 	});
 
-	test("with a terminal editor it is disabled with the reason, in the header in words", async () => {
+	test("with a terminal editor it can be pressed, and says no reason", async () => {
 		const { store } = await withEditor("nvim", true);
 		const markup = render(store);
-		expect(rowEditor(markup, FEATURE)).toContain("disabled");
+		expect(rowEditor(markup, FEATURE)).not.toContain("disabled");
 		const [header] = tagsOf(markup, "button workspace-editor");
-		expect(header).toContain("disabled");
-		expect(header).toContain('aria-describedby="workspace-editor-reason"');
-		expect(markup).toContain(`<p id="workspace-editor-reason" class="workspace-note">${TERMINAL_EDITOR_REASON}</p>`);
+		expect(header).not.toContain("disabled");
+		expect(markup).not.toContain("workspace-editor-reason");
 	});
 
 	test("with no editor set, pressing it opens Settings at Editor and starts nothing", async () => {
@@ -164,12 +162,67 @@ describe("Open in editor in the window", () => {
 		expect(second.store.getState().editorProblem).toMatchObject({ kind: "failed", message: "The app did not hear whether the editor started: connection lost" });
 	});
 
-	test("a terminal editor asked for anyway starts nothing and says why", async () => {
+	test("a terminal editor opens an editor session in that worktree, shown on the Workspace tab, and quitting it ends the session", async () => {
 		const { store, engine } = await withEditor("nvim", true);
+		store.showTab("pull-request");
 		const result = await store.openInEditor({ repository: TIMBER, worktree: FEATURE });
-		expect(result).toMatchObject({ outcome: "terminal-editor", command: `nvim ${FEATURE}` });
+		expect(result).toMatchObject({ outcome: "opened", command: expect.stringContaining(`nvim ${FEATURE}`), session: { kind: "editor", name: "nvim", path: FEATURE } });
+		const session = result?.outcome === "opened" ? result.session! : null;
+		expect(session).not.toBeNull();
 		expect(engine.launchedEditors()).toEqual([]);
-		expect(render(store)).toContain("Cannot open feat/github-issue-lookup in a terminal editor yet");
+		const state = store.getState();
+		expect(state.terminals.map(known => known.id)).toContain(session!.id);
+		expect(state.shownSessions[session!.worktree]).toBe(session!.id);
+		expect(state.tab).toBe("workspace");
+		expect(state.selection?.worktree).toBe(session!.worktree);
+		expect(state.editorProblem).toBeNull();
+		// Each press starts another.
+		const again = await store.openInEditor({ repository: TIMBER, worktree: FEATURE });
+		expect(again?.outcome === "opened" && again.session?.name).toBe("nvim 2");
+		// Quitting the editor leaves a plain shell in the same session.
+		engine.endTerminal(session!.id, 0);
+		await settle();
+		const after = store.getState().terminals.find(known => known.id === session!.id);
+		expect(after).toMatchObject({ kind: "terminal", name: "nvim", state: { kind: "running" } });
+		expect(after?.endedAgent).toBeUndefined();
+	});
+
+	test("a terminal editor is not reported as failing right after it started", async () => {
+		const { store, engine } = await withEditor("nvim", true);
+		engine.endEditorLaunches("fails");
+		expect(await store.openInEditor({ repository: TIMBER, worktree: FEATURE })).toMatchObject({ outcome: "opened", session: { kind: "editor" } });
+		expect(store.getState().editorProblem).toBeNull();
+	});
+
+	test("a terminal editor opened while another worktree gets selected does not move the selection back", async () => {
+		const { store } = await withEditor("nvim", true);
+		const [, feature, other] = sampleRepositories[0]!.worktrees;
+		store.select(feature!.id);
+		store.showTab("pull-request");
+		const pending = store.openInEditor({ repository: TIMBER, worktree: FEATURE });
+		store.select(other!.id);
+		const result = await pending;
+		const session = result?.outcome === "opened" ? result.session! : null;
+		expect(session).not.toBeNull();
+		const state = store.getState();
+		expect(state.selection?.worktree).toBe(other!.id);
+		expect(state.tab).not.toBe("workspace");
+		expect(state.shownSessions[feature!.id]).toBe(session!.id);
+	});
+
+	test("a terminal editor that is not found shows the problem and starts no session", async () => {
+		const { store, engine } = await withEditor("nvim", true);
+		engine.endEditorLaunches("not-found");
+		const result = await store.openInEditor({ repository: TIMBER, worktree: FEATURE });
+		expect(result).toMatchObject({ outcome: "not-found" });
+		expect(store.getState().editorProblem).toMatchObject({ kind: "not-found", worktree: FEATURE });
+		expect(store.getState().terminals).toEqual([]);
+	});
+
+	test("a terminal editor opens a file of the worktree in its session", async () => {
+		const { store } = await withEditor("nvim", true);
+		const result = await store.openInEditor({ repository: TIMBER, worktree: FEATURE, file: "src/app.ts" });
+		expect(result?.outcome === "opened" && result.session?.command).toContain(`${FEATURE}/src/app.ts`);
 	});
 
 	test("one at a time per worktree", async () => {
@@ -236,8 +289,8 @@ describe("the Editor section of Settings", () => {
 		expect(editorDraftModel(chooseEditor(none, "zed"), null)).toMatchObject({ setting: { command: "zed", terminal: false }, note, example: `zed '${EXAMPLE_WORKTREE}'`, canSave: true });
 		expect(editorDraftModel(editEditor(none, { command: "zed --new" }), null).note).toBe(note);
 		for (const command of ["code", "zeditor", "/usr/bin/zed", "nvim", "constructor"]) expect(editorDraftModel(editEditor(none, { command }), null).note).toBeNull();
-		// With "Runs in a terminal" nothing is started from here, so nothing is tried.
-		expect(editorDraftModel(editEditor(none, { command: "zed", terminal: true }), null).note).toBeNull();
+		// A terminal editor is looked for under its other names too.
+		expect(editorDraftModel(editEditor(none, { command: "zed", terminal: true }), null).note).toBe(note);
 	});
 
 	const view = (props: Partial<EditorSectionViewProps>) => renderToStaticMarkup(
@@ -267,9 +320,10 @@ describe("the Editor section of Settings", () => {
 		expect(view({ draft: chooseEditor(none, "vscode") })).not.toContain("is tried");
 	});
 
-	test("Neovim says it is not started from here yet", () => {
+	test("Neovim says it opens in a new session, and no longer that terminal editors are unsupported", () => {
 		const markup = view({ draft: chooseEditor(none, "neovim") });
-		expect(markup).toContain(TERMINAL_EDITOR_REASON);
+		expect(markup).toContain("Opens in a new session of the worktree.");
+		expect(markup).not.toContain("not started from here");
 		expect(markup).toContain(`nvim &#x27;${EXAMPLE_WORKTREE}&#x27;`);
 	});
 
