@@ -1,6 +1,6 @@
 import type { FileChangeTarget } from "../shared/file-changes";
 import { describeNoteCount } from "./review-format";
-import { type AppState, canToggleSidePanel } from "./store/state";
+import { type AppState, canToggleSidePanel, shownDiffTab } from "./store/state";
 
 /**
  * Words and keys of the side panel's Changes view and of the diff tab it
@@ -46,6 +46,24 @@ export function isChangesPanelShortcut(event: Keys): boolean {
 /** Whether the app takes this key from the page, and from a terminal's program, to show or hide the Changes view. */
 export function takesChangesPanelKey(event: Keys, state: AppState): boolean {
 	return isChangesPanelShortcut(event) && canToggleSidePanel(state, "changes");
+}
+
+/** Alt+Up or Alt+Down alone: the step to the diff tab's previous or next file, or null for any other key. */
+export function fileStepOf(event: Keys): 1 | -1 | null {
+	if (event.type !== "keydown" || !event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return null;
+	return event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : null;
+}
+
+/**
+ * The step the app takes this key for, or null: Alt+Up and Alt+Down while
+ * the selected worktree's diff tab shows and no dialog or question is open,
+ * unless the key goes to a field that edits text, where it moves the cursor.
+ */
+export function takesFileStepKey(event: Keys, state: AppState, inTextField: boolean): 1 | -1 | null {
+	const step = fileStepOf(event);
+	if (step === null || inTextField || state.dialog !== null || state.quitRequest !== null) return null;
+	if (state.tab !== "diff" || state.board !== null || shownDiffTab(state) === null) return null;
+	return step;
 }
 
 /** What the Changes view says in place of the list when no worktree is selected, or null when it shows the list. */

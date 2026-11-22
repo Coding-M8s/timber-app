@@ -3,7 +3,8 @@ import { type FileChange, sameFileChange } from "../../shared/file-changes";
 import type { Repository, Worktree } from "../../shared/model";
 import {
 	AREA_TITLES, COMPARISONS, COMPARISON_LABELS, KIND_LABELS, MORE_FILES_NOTE, NO_REFRESH, REFRESHING_CHANGES, type RefreshSpan, baseUnavailable, describeComparison,
-	describeFileCounts, describeNoChanges, fileAfterKey, groupFileChanges, listedOrder, nextRefreshSpan, splitPath,
+	describeFileCounts, describeFilterResult, describeLineCounts, describeNoChanges, fileAfterKey, filterFiles, groupFileChanges, listedOrder, nextRefreshSpan, speakLineCounts, splitPath,
+	totalLineCounts,
 } from "../changes-format";
 import { CHANGES_CLOSE_LABEL, CHANGES_PANEL_TITLE, describeChangesPanelEmpty, takesChangesPanelKey } from "../changes-panel-format";
 import { CHOPS_PANEL_ID } from "../chops-panel-format";
@@ -11,7 +12,7 @@ import { chosenComparison } from "../../shared/layout";
 import { BASE_ACTION_TITLE, describeBaseAction } from "../base-change-format";
 import { ModeSwitch } from "./worktree-modes/ModeSwitch";
 import { useAppState, useStore } from "../store/react";
-import { type ChangesView, changesBusy, changesWanted, selectedWorktree } from "../store/state";
+import { type ChangesView, changesBusy, changesWanted, fileViewed, selectedWorktree } from "../store/state";
 import type { AppStore } from "../store/store";
 import { StatusGlyph } from "./StatusGlyph";
 import { KindLetter, fileKey } from "./KindLetter";
@@ -56,13 +57,35 @@ function useRefreshSpan(worktree: string, active: boolean, listShown: boolean): 
 	return next;
 }
 
+/** A file's `+12 -3`, colored, or nothing when Git counted none. Only for the eye: the row's label says it. */
+export function LineCounts({ file }: { file: Pick<FileChange, "added" | "removed"> }) {
+	const counts = describeLineCounts(file);
+	if (counts === null) return null;
+	return (
+		<span className="change-counts" aria-hidden="true">
+			<span className="change-added">{counts.added}</span> <span className="change-removed">{counts.removed}</span>
+		</span>
+	);
+}
+
+/** The check of a file marked Viewed. Only for the eye: the row's label says it. */
+function ViewedMark() {
+	return (
+		<svg className="change-viewed-mark" aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+			<path d="M5 12.5 10 17 19 7" />
+		</svg>
+	);
+}
+
 /**
- * The list of changed files, grouped as `git status` groups them. Choosing
- * one opens its diff in the diff tab, which marks it here. One file is a tab
- * stop; the arrows move the keyboard to the others without opening them.
+ * The list of changed files, grouped as `git status` groups them, through
+ * the filter. Choosing one opens its diff in the diff tab, which marks it
+ * here. One file is a tab stop; the arrows move the keyboard to the others
+ * without opening them. A file marked Viewed is dimmed and checked.
  */
 function FileList({ view, dimmed }: { view: ChangesView & { files: readonly FileChange[] }; dimmed: string }) {
 	const store = useStore();
+	const state = useAppState();
 	const buttons = useRef(new Map<string, HTMLButtonElement>());
 	const order = listedOrder(view.files);
 	const [focused, setFocused] = useState<string | null>(null);
@@ -71,6 +94,8 @@ function FileList({ view, dimmed }: { view: ChangesView & { files: readonly File
 	const tabStop = focusedFile ?? (view.selected === null ? undefined : order.find(file => sameFileChange(file, view.selected!))) ?? order[0] ?? null;
 
 	const onKey = (event: KeyboardEvent<HTMLDivElement>) => {
+		// Alt+Up and Alt+Down open the previous and next file (see ./DiffTab.tsx), so they do not move the keyboard here too.
+		if (event.altKey || event.ctrlKey || event.metaKey) return;
 		const next = fileAfterKey(order, tabStop, event.key);
 		if (next === null) return;
 		event.preventDefault();
@@ -90,14 +115,16 @@ function FileList({ view, dimmed }: { view: ChangesView & { files: readonly File
 						{group.files.map(file => {
 							const key = fileKey(file);
 							const selected = view.selected !== null && sameFileChange(view.selected, file);
+							const viewed = fileViewed(state, view.worktree, view.compared, file);
 							const { name, folder } = splitPath(file.path);
+							const counts = speakLineCounts(file);
 							return (
 								<li key={key}>
 									<button
 										type="button"
-										className={selected ? "change-file selected" : "change-file"}
+										className={`change-file${selected ? " selected" : ""}${viewed ? " viewed" : ""}`}
 										aria-current={selected ? "true" : undefined}
-										aria-label={`${file.path}, ${KIND_LABELS[file.kind]}${file.previousPath === null ? "" : ` from ${file.previousPath}`}, ${AREA_TITLES[file.area]}`}
+										aria-label={`${file.path}, ${KIND_LABELS[file.kind]}${file.previousPath === null ? "" : ` from ${file.previousPath}`}, ${AREA_TITLES[file.area]}${counts === "" ? "" : `, ${counts}`}${viewed ? ", viewed" : ""}`}
 										title={file.previousPath === null ? file.path : `${file.previousPath} → ${file.path}`}
 										tabIndex={tabStop !== null && sameFileChange(tabStop, file) ? 0 : -1}
 										ref={element => {
@@ -109,6 +136,8 @@ function FileList({ view, dimmed }: { view: ChangesView & { files: readonly File
 									>
 										<span className="change-file-name">{name}</span>
 										{folder !== "" && <span className="change-file-folder">{folder}</span>}
+										{viewed && <ViewedMark />}
+										<LineCounts file={file} />
 										<KindLetter file={file} />
 									</button>
 								</li>
@@ -126,6 +155,7 @@ function WorktreeChanges({ repository, worktree }: { repository: Repository; wor
 	const store = useStore();
 	const state = useAppState();
 	const baseNote = useId();
+	const filterId = useId();
 	const busy = changesBusy(state, repository.path, worktree.id);
 	const refreshing = useHeld(busy, REFRESH_HOLD_MS);
 	const listed = state.changes?.worktree === worktree.id && state.changes.files !== null;
@@ -149,6 +179,10 @@ function WorktreeChanges({ repository, worktree }: { repository: Repository; wor
 	const files = view?.files ?? null;
 	// The list on screen stays while it is read again, dimmed, so nothing jumps.
 	const dimmed = overList ? " refreshing" : "";
+	const filter = state.changeFilters[worktree.id] ?? "";
+	const shownFiles = files === null ? null : filterFiles(files, filter);
+	const totals = files === null ? null : totalLineCounts(files);
+	const filterResult = files === null ? "" : describeFilterResult(shownFiles!.length, files.length, filter);
 
 	return (
 		<div className="changes">
@@ -178,10 +212,49 @@ function WorktreeChanges({ repository, worktree }: { repository: Repository; wor
 					</button>
 				</div>
 				{unavailable !== null && <p className="changes-base-note" id={baseNote}>{unavailable}</p>}
+				{files !== null && files.length > 0 && (
+					<div className="changes-filter">
+						<label htmlFor={filterId} className="visually-hidden">Filter changed files</label>
+						<svg className="changes-filter-icon" aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+							<circle cx="11" cy="11" r="7" />
+							<path d="m20 20-3.5-3.5" />
+						</svg>
+						<input
+							id={filterId}
+							type="text"
+							className="changes-filter-input"
+							placeholder="Filter files"
+							value={filter}
+							spellCheck={false}
+							autoComplete="off"
+							onChange={event => store.setChangesFilter(worktree.id, event.target.value)}
+							onKeyDown={event => {
+								if (event.key === "Escape" && filter !== "") {
+									event.preventDefault();
+									event.stopPropagation();
+									store.setChangesFilter(worktree.id, "");
+								} else if (event.key === "ArrowDown") {
+									// Down goes into the list, to the file that takes its tab stop.
+									const target = list.current?.querySelector<HTMLElement>('.change-file[tabindex="0"]');
+									if (target) {
+										event.preventDefault();
+										target.focus();
+									}
+								}
+							}}
+						/>
+						{/* Always there, so a screen reader hears how many files match as the filter changes. */}
+						<span className="visually-hidden" role="status">{filterResult}</span>
+					</div>
+				)}
 				<div className="changes-bar">
 					<span className="changes-state">
 						{refreshing && <span className="changes-spinner"><StatusGlyph status={{ kind: "working", progress: null }} /></span>}
-						<span className="changes-count" role="status">{files === null ? "Reading changes" : describeFileCounts(files, view?.more ?? false)}</span>
+						<span className="changes-count" role="status">
+							{files === null ? "Reading changes" : describeFileCounts(files, view?.more ?? false)}
+							{totals !== null && files!.length > 0 && <span className="visually-hidden">, {speakLineCounts(totals)}</span>}
+						</span>
+						{totals !== null && files!.length > 0 && <LineCounts file={totals} />}
 					</span>
 					{/* Always there, so it speaks once when a refresh starts; "Reading changes" already speaks for an empty list. */}
 					<span className="visually-hidden" role="status">{overList ? REFRESHING_CHANGES : ""}</span>
@@ -208,7 +281,9 @@ function WorktreeChanges({ repository, worktree }: { repository: Repository; wor
 							<p className="empty-text">{describeNoChanges(compared, base)}</p>
 						</div>
 					)
-					: <FileList view={{ ...view, files }} dimmed={dimmed} />)}
+					: shownFiles!.length === 0
+						? <p className="empty-text changes-no-match">{filterResult}</p>
+						: <FileList view={{ ...view, files: shownFiles! }} dimmed={dimmed} />)}
 				{view?.more === true && <p className="changes-more">{MORE_FILES_NOTE}</p>}
 			</div>
 			<ReviewSection

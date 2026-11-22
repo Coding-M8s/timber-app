@@ -1,6 +1,6 @@
 import {
 	type BaseComparison, type Comparison, type FileChange, type FileChangesResult, type FileDiffResult, MAX_DIFF_BYTES, MAX_LISTED_FILES, type FileDiffRequest,
-	baseName, readDiffOutput, relativePathProblem, savedBaseRef,
+	baseName, parseDiff, readDiffOutput, relativePathProblem, savedBaseRef,
 } from "../../shared/file-changes";
 import type { Worktree } from "../../shared/model";
 
@@ -14,6 +14,36 @@ export interface MockFileChange {
 	change: FileChange;
 	/** Exactly what Git would print. Empty for a file that is no longer changed. */
 	patch: string;
+	/** The whole file on disk, when it holds more than the patch shows: the unchanged lines between its hunks. */
+	text?: string;
+}
+
+/**
+ * A file of `lines` lines, `const lineN = N;`, with the lines at `edits`
+ * changed, as `git diff` prints it with three lines of context, and the
+ * whole file on disk. Its hunks leave unchanged lines between them.
+ */
+export function sampleSpreadEdit(path: string, lines: number, edits: readonly number[]): MockFileChange {
+	const old = Array.from({ length: lines }, (_, index) => `export const line${index + 1} = ${index + 1};`);
+	const now = old.map((line, index) => (edits.includes(index + 1) ? line.replace(/= (\d+);/, "= $1 * 10;") : line));
+	const ranges: [number, number][] = [];
+	for (const edit of [...edits].sort((a, b) => a - b)) {
+		const [from, to] = [Math.max(1, edit - 3), Math.min(lines, edit + 3)];
+		const last = ranges.at(-1);
+		if (last && from <= last[1] + 1) last[1] = to;
+		else ranges.push([from, to]);
+	}
+	const hunks = ranges.flatMap(([from, to]) => {
+		const body: string[] = [];
+		for (let number = from; number <= to; number++) {
+			if (edits.includes(number)) body.push(`-${old[number - 1]}`, `+${now[number - 1]}`);
+			else body.push(` ${old[number - 1]}`);
+		}
+		const count = to - from + 1;
+		return [`@@ -${from},${count} +${from},${count} @@`, ...body];
+	});
+	const patch = [`diff --git a/${path} b/${path}`, "index 2c3d4e5..6f7a8b9 100644", `--- a/${path}`, `+++ b/${path}`, ...hunks, ""].join("\n");
+	return { change: { area: "unstaged", kind: "modified", path, previousPath: null, added: null, removed: null, version: "" }, patch, text: `${now.join("\n")}\n` };
 }
 
 const header = (path: string, previous = path) => `diff --git a/${previous} b/${path}\n`;
@@ -53,7 +83,29 @@ export function sampleNewFilePatch(path: string, lines: readonly string[] = ["ex
 }
 
 const tracked = (area: FileChange["area"], kind: FileChange["kind"], path: string, patch: string, previousPath: string | null = null): MockFileChange =>
-	({ change: { area, kind, path, previousPath }, patch });
+	({ change: { area, kind, path, previousPath, added: null, removed: null, version: "" }, patch });
+
+/**
+ * The counts Git would give for a pretend patch: its added and removed lines,
+ * none for a binary file or a conflict, and as many for a patch too large to
+ * show as for any other.
+ */
+export function mockLineCounts(change: Pick<FileChange, "kind">, patch: string): { added: number | null; removed: number | null } {
+	const diff = parseDiff(patch);
+	if (diff.kind !== "text" || change.kind === "conflicted") return { added: null, removed: null };
+	const lines = diff.sections.flatMap(section => section.hunks.flatMap(hunk => hunk.lines));
+	return { added: lines.filter(line => line.kind === "added").length, removed: lines.filter(line => line.kind === "removed").length };
+}
+
+/** A short text that changes with the patch, as the main process's version changes with the file. */
+function mockVersion(patch: string): string {
+	let hash = 5381;
+	for (let index = 0; index < patch.length; index++) hash = (hash * 33 + patch.charCodeAt(index)) >>> 0;
+	return `${patch.length.toString(36)}-${hash.toString(36)}`;
+}
+
+/** A pretend change as the engine answers it: with its counts and version from its patch. */
+const answered = (file: MockFileChange): FileChange => ({ ...structuredClone(file.change), ...mockLineCounts(file.change, file.patch), version: mockVersion(file.patch) });
 
 /** Every kind of change the tab shows, for one worktree of the browser build. */
 function gallery(): MockFileChange[] {
@@ -115,6 +167,7 @@ function gallery(): MockFileChange[] {
 		].join("\n")),
 		tracked("unstaged", "modified", "src/tax/rules.ts", samplePatch("src/tax/rules.ts").replace("retries = 5", "retries = 8")),
 		tracked("unstaged", "modified", "src/invoice/total.ts", samplePatch("src/invoice/total.ts")),
+		sampleSpreadEdit("src/invoice/lines.ts", 40, [6, 24]),
 		tracked("unstaged", "modified", "assets/logo.png", [
 			"diff --git a/assets/logo.png b/assets/logo.png",
 			"index 1f2e3d4..5c6b7a8 100644",
@@ -236,7 +289,7 @@ export function listMockFileChanges(all: readonly MockFileChange[], worktree: Wo
 	const files = compareMockFiles(all, compared);
 	return {
 		outcome: "read",
-		files: files.slice(0, MAX_LISTED_FILES).map(file => structuredClone(file.change)),
+		files: files.slice(0, MAX_LISTED_FILES).map(answered),
 		more: files.length > MAX_LISTED_FILES,
 		compared,
 		base,
@@ -254,5 +307,5 @@ export function diffMockFileChange(all: readonly MockFileChange[], worktree: Wor
 	const found = files.find(candidate => candidate.change.area === file.area && candidate.change.path === file.path);
 	if (!found) return { outcome: "read", file: null, diff: { kind: "unchanged" } };
 	const tooLarge = new TextEncoder().encode(found.patch).byteLength > MAX_DIFF_BYTES;
-	return { outcome: "read", file: structuredClone(found.change), diff: readDiffOutput(tooLarge ? "" : found.patch, tooLarge) };
+	return { outcome: "read", file: answered(found), diff: readDiffOutput(tooLarge ? "" : found.patch, tooLarge) };
 }

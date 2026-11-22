@@ -147,6 +147,58 @@ export function describeFileCounts(files: readonly FileChange[], more: boolean):
 	return more ? `${parts.join(", ")}, and more` : parts.join(", ");
 }
 
+/** A key for a changed file, unique in a list of changes. */
+export const fileKey = (file: FileChangeTarget) => `${file.area}\0${file.path}\0${file.previousPath ?? ""}`;
+
+/** A file's line counts as its row shows them, `+12` and `-3`, or null when Git counted none, as for a binary file. */
+export function describeLineCounts(file: Pick<FileChange, "added" | "removed">): { added: string; removed: string } | null {
+	return file.added === null || file.removed === null ? null : { added: `+${file.added}`, removed: `-${file.removed}` };
+}
+
+/** The lines added and removed in all the files that have counts. */
+export function totalLineCounts(files: readonly Pick<FileChange, "added" | "removed">[]): { added: number; removed: number } {
+	let [added, removed] = [0, 0];
+	for (const file of files) {
+		added += file.added ?? 0;
+		removed += file.removed ?? 0;
+	}
+	return { added, removed };
+}
+
+/** The counts as a screen reader says them, such as "12 lines added, 3 removed". Empty without counts. */
+export function speakLineCounts(file: Pick<FileChange, "added" | "removed">): string {
+	if (file.added === null || file.removed === null) return "";
+	return `${file.added} ${file.added === 1 ? "line" : "lines"} added, ${file.removed} removed`;
+}
+
+/** The files whose path holds the typed text, ignoring case. Nothing typed keeps every file. */
+export function filterFiles<T extends Pick<FileChange, "path">>(files: readonly T[], typed: string): T[] {
+	const wanted = typed.trim().toLowerCase();
+	return wanted === "" ? [...files] : files.filter(file => file.path.toLowerCase().includes(wanted));
+}
+
+/** What the filter's status says: nothing without a filter, else how many files match. */
+export function describeFilterResult(shown: number, total: number, typed: string): string {
+	if (typed.trim() === "") return "";
+	if (shown === 0) return `No changed file matches "${typed.trim()}".`;
+	return `${shown} of ${total} ${total === 1 ? "file" : "files"} ${shown === 1 ? "matches" : "match"}`;
+}
+
+/** The file `step` places after or before `current` in `order`, going round at either end. Null when there is no other file. */
+export function steppedFile<T extends FileChangeTarget>(order: readonly T[], current: FileChangeTarget | null, step: 1 | -1): T | null {
+	if (order.length === 0) return null;
+	const index = current === null ? -1 : order.findIndex(file => sameFileChange(file, current));
+	if (index < 0) return step === 1 ? order[0]! : order[order.length - 1]!;
+	if (order.length === 1) return null;
+	return order[(index + step + order.length) % order.length]!;
+}
+
+export const PREVIOUS_FILE = "Previous file";
+export const NEXT_FILE = "Next file";
+
+/** Said after the previous or next file opens, so a screen reader hears where the keyboard went. */
+export const describeSteppedTo = (file: Pick<FileChange, "path">, position: number, total: number) => `${file.path}, file ${position} of ${total}`;
+
 /** Said once, politely, while the Changes view reads again what is already on screen. */
 export const REFRESHING_CHANGES = "Refreshing…";
 

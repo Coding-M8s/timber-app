@@ -124,7 +124,7 @@ describe("the File tab", () => {
 
 	test("opens from the diff tab's View file, and closing it goes back to the diff", async () => {
 		const engine = createMockEngine();
-		const change: MockFileChange = { change: { area: "unstaged", kind: "modified", path: "src/net.ts", previousPath: null }, patch: samplePatch("src/net.ts") };
+		const change: MockFileChange = { change: { area: "unstaged", kind: "modified", path: "src/net.ts", previousPath: null, added: null, removed: null, version: "" }, patch: samplePatch("src/net.ts") };
 		engine.setFileChanges(FEATURE.path, [change]);
 		const store = await started(engine);
 		store.select(FEATURE.id);

@@ -35,7 +35,8 @@ const PATCH = [
 ].join("\n");
 
 // A `.diff-line` at index i of its hunk is `:nth-of-type(i + 2)`: the hunk's header is the first `div`.
-const ROWS = (hunk: number) => `[...document.querySelectorAll('[data-hunk="0-${hunk}"] > .diff-line')]`;
+/** Git's hunk `hunk` of the first section: each comes after the slot of the unchanged lines before it. */
+const ROWS = (hunk: number) => `[...document.querySelectorAll('[data-hunk="0-${2 * hunk + 1}"] > .diff-line')]`;
 const NOTING = `document.querySelectorAll(".diff-line.noting").length`;
 const LABEL = `document.querySelector(".diff-drag-label")?.textContent ?? null`;
 const FIELD = `document.querySelector(".diff-body .note-field")?.getAttribute("aria-label") ?? null`;
@@ -90,7 +91,7 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the + in 
 			const from = { x: box.left + box.width / 2, y: box.top + box.height / 2 };
 			let to;
 			if (${JSON.stringify(to)} === "above") {
-				const header = document.querySelector('[data-hunk="0-0"] > .diff-hunk-header').getBoundingClientRect();
+				const header = document.querySelector('[data-hunk="0-1"] > .diff-hunk-header').getBoundingClientRect();
 				to = { x: from.x, y: header.top + header.height / 2 };
 			} else {
 				const row = ${ROWS(toHunk)}[${to === "above" ? 0 : to}].getBoundingClientRect();
@@ -110,11 +111,11 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the + in 
 		await showFile("uncommitted");
 		const plus = (row: string) => `getComputedStyle(${row}.querySelector(".diff-note-plus")).opacity`;
 		expect(await page.evaluate<string>(plus(`${ROWS(0)}[3]`))).toBe("0");
-		await page.hover('[data-hunk="0-0"] > .diff-line:nth-of-type(5)');
+		await page.hover('[data-hunk="0-1"] > .diff-line:nth-of-type(5)');
 		await page.until(`${plus(`${ROWS(0)}[3]`)} === "1"`, "the + showed");
 		expect(await page.evaluate<string>(`getComputedStyle(${ROWS(0)}[3]).boxShadow`)).not.toBe("none");
 		// Git's note: no +, and nothing lights up.
-		await page.hover('[data-hunk="0-1"] > .diff-line.note');
+		await page.hover('[data-hunk="0-3"] > .diff-line.note');
 		expect(await page.evaluate<number>(`${ROWS(1)}[3].querySelectorAll(".diff-note-plus").length`)).toBe(0);
 		expect(await page.evaluate<string>(`getComputedStyle(${ROWS(1)}[3]).boxShadow`)).toBe("none");
 		expect(await page.evaluate<number>(`document.querySelectorAll(".diff-hunk-header .diff-note-plus").length`)).toBe(0);
@@ -123,7 +124,7 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the + in 
 	for (const comparison of ["uncommitted", "base"] as const) {
 		test(`in ${comparison === "base" ? "Base" : "Uncommitted"}, a click on + starts a note on that line`, async () => {
 			await showFile(comparison);
-			await page.click('[data-hunk="0-0"] > .diff-line:nth-of-type(5) .diff-note-plus');
+			await page.click('[data-hunk="0-1"] > .diff-line:nth-of-type(5) .diff-note-plus');
 			await page.until(`${FIELD} === "Note on line 4"`, "the note's field opened on line 4");
 			expect(await page.evaluate<boolean>(`document.activeElement?.classList.contains("note-field") === true`)).toBe(true);
 			expect(await page.evaluate<number>(NOTING)).toBe(1);
@@ -145,7 +146,7 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the + in 
 
 	test("a drag upwards opens the field under the bottom line, and keeps what was typed in the note being written", async () => {
 		await showFile("uncommitted");
-		await page.click('[data-hunk="0-0"] > .diff-line:nth-of-type(12) .diff-note-plus');
+		await page.click('[data-hunk="0-1"] > .diff-line:nth-of-type(12) .diff-note-plus');
 		await page.until(`${FIELD} === "Note on line 11"`, "a note was started");
 		await page.type("kept");
 		const { from, to } = await points(6, 3);
@@ -200,7 +201,7 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the + in 
 
 	test("Escape during a drag lets go of it, and the note being written stays as it was", async () => {
 		await showFile("uncommitted");
-		await page.click('[data-hunk="0-0"] > .diff-line:nth-of-type(12) .diff-note-plus');
+		await page.click('[data-hunk="0-1"] > .diff-line:nth-of-type(12) .diff-note-plus');
 		await page.until(`${FIELD} === "Note on line 11"`, "a note was started");
 		await page.type("kept");
 		const { from, to } = await points(2, 4);

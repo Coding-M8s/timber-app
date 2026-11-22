@@ -127,6 +127,27 @@ describe.skipIf(windows)("comparing a worktree with its base, in real repositori
 		expect(answer.more).toBe(false);
 	});
 
+	test("counts each file's lines since the branch point, committed or not, and an untracked file's lines, leaving files and refs as they were", async () => {
+		const before = [fingerprint(feature), fingerprint(primary)];
+		const answer = await read("base");
+		expect(Object.fromEntries(answer.files.map(file => [`${file.area} ${file.path}`, [file.added, file.removed]]))).toEqual({
+			"base added.txt": [1, 0],
+			"base gone.txt": [0, 1],
+			"base untracked-again.txt": [0, 1],
+			"base keep.txt": [1, 1],
+			"base staged.txt": [1, 0],
+			"base unstaged.txt": [1, 0],
+			"base new name.txt": [0, 0],
+			"untracked new.txt": [1, 0],
+			"untracked untracked-again.txt": [1, 0],
+		});
+		// The version follows the branch point: the same file compared with another base is another diff.
+		const uncommitted = await read("uncommitted");
+		const unstaged = (files: readonly FileChange[], area: ChangeArea) => files.find(file => file.area === area && file.path === "unstaged.txt")!.version;
+		expect(unstaged(answer.files, "base")).not.toBe(unstaged(uncommitted.files, "unstaged"));
+		expect([fingerprint(feature), fingerprint(primary)]).toEqual(before);
+	});
+
 	test("still shows the work after it is committed", async () => {
 		// In a worktree of its own, so the shared one stays as the other tests expect.
 		const other = join(root, "sample-worktrees", "committed");
@@ -151,7 +172,7 @@ describe.skipIf(windows)("comparing a worktree with its base, in real repositori
 		expect(texts).toEqual(["context one", "removed two", "added TWO"]);
 
 		const renamed = await diff("base", "new name.txt", "old name.txt");
-		expect(renamed.outcome === "read" && renamed.file).toEqual({ area: "base", kind: "renamed", path: "new name.txt", previousPath: "old name.txt" });
+		expect(renamed.outcome === "read" && renamed.file).toEqual({ area: "base", kind: "renamed", path: "new name.txt", previousPath: "old name.txt", added: 0, removed: 0, version: expect.any(String) });
 		expect(renamed.outcome === "read" && renamed.diff.kind === "text" && renamed.diff.sections[0]!.header).toContain("rename from old name.txt");
 
 		const untracked = await diff("untracked", "new.txt");
@@ -287,7 +308,7 @@ describe.skipIf(windows)("comparing a worktree with its base, in real repositori
 		const ask = reader(ORIGIN_MAIN, () => conflicted);
 		const answer = await ask.read({ repository: primary, worktree: conflicted, compare: "base" });
 		expect(answer).toMatchObject({ outcome: "read", compared: "base" });
-		expect(answer.outcome === "read" && answer.files.filter(file => file.path === "gone.txt")).toEqual([{ area: "conflicted", kind: "conflicted", path: "gone.txt", previousPath: null }]);
+		expect(answer.outcome === "read" && answer.files.filter(file => file.path === "gone.txt")).toEqual([{ area: "conflicted", kind: "conflicted", path: "gone.txt", previousPath: null, added: null, removed: null, version: expect.any(String) }]);
 		const diff = await ask.diff({ repository: primary, worktree: conflicted, compare: "base", file: { area: "conflicted", path: "gone.txt", previousPath: null } });
 		const texts = diff.outcome === "read" && diff.diff.kind === "text" ? diff.diff.sections[0]!.hunks[0]!.lines.map(line => `${line.kind} ${line.text}`) : [];
 		expect(texts.some(text => text.startsWith("added <<<<<<<"))).toBe(true);
