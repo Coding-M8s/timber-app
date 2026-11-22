@@ -657,7 +657,7 @@ pre:focus-visible {
 	display: flex;
 	align-items: center;
 	gap: 4px;
-	padding: 10px 8px 8px 10px;
+	padding: 10px 8px 5px 10px;
 }
 
 .filter {
@@ -734,7 +734,8 @@ pre:focus-visible {
 	display: flex;
 	flex-direction: column;
 	gap: 12px;
-	padding: 0 6px 8px;
+	/* Room above the first header for a control's whole focus ring, which the scrolling list would clip. */
+	padding: 3px 6px 8px;
 }
 
 .group {
@@ -3994,6 +3995,14 @@ pre:focus-visible {
 	color: var(--text);
 	font: inherit;
 	font-size: 12.5px;
+}
+
+/* Drawn inside, as a tab's is: the scrolling row clips a ring drawn outside. */
+.session-chip-tab:focus-visible,
+.session-chip-close:focus-visible,
+.session-rename:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: -2px;
 }
 
 .session-add {
