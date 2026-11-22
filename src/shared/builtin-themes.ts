@@ -26,6 +26,8 @@ interface Palette {
 	untracked: string;
 	error: string;
 	errorHover: string;
+	/** Merged pull requests: a purple, as the hosts draw them. */
+	merged: string;
 	/** The focus ring. The incoming color unless the palette says otherwise. */
 	focus?: string;
 	/** The sixteen ANSI colors, black to bright white. */
@@ -124,6 +126,7 @@ export const DEFAULT_DARK_THEME: Theme = theme("timber-dark", "Timber Dark", "da
 	untracked: "#73c991",
 	error: "#f08b80",
 	errorHover: "#f6a399",
+	merged: "#c79bf2",
 	ansi: [
 		"#1f1f23", "#f08b80", "#73c991", "#e2c08d", "#6ea8fe", "#c79bf2", "#6ccfd8", "#a1a1aa",
 		"#8a8a94", "#ffa79d", "#93deac", "#f0d4a6", "#94c0ff", "#dab8f7", "#93e2e9", "#ececef",
@@ -147,6 +150,7 @@ export const DEFAULT_LIGHT_THEME: Theme = theme("timber-light", "Timber Light", 
 	untracked: "#15803d",
 	error: "#c62828",
 	errorHover: "#a51f1f",
+	merged: "#9333ea",
 	ansi: [
 		"#18181b", "#c62828", "#15803d", "#8a6100", "#1d4ed8", "#9333ea", "#0e7490", "#71717a",
 		"#52525b", "#dc2626", "#16a34a", "#a16207", "#2563eb", "#a855f7", "#0891b2", "#3f3f46",
@@ -171,6 +175,8 @@ const SOLARIZED_DARK = theme("solarized-dark", "Solarized Dark", "dark", {
 	untracked: SOLARIZED.green,
 	error: "#e8605d",
 	errorHover: "#f07c79",
+	// Solarized violet is too faint on the dark ground; a lighter shade of it.
+	merged: "#8d91d6",
 	ansi: [
 		"#073642", SOLARIZED.red, SOLARIZED.green, SOLARIZED.yellow, SOLARIZED.blue, SOLARIZED.magenta, SOLARIZED.cyan, "#eee8d5",
 		"#586e75", SOLARIZED.orange, SOLARIZED.green, SOLARIZED.yellow, SOLARIZED.blue, SOLARIZED.violet, SOLARIZED.cyan, "#fdf6e3",
@@ -193,6 +199,7 @@ const SOLARIZED_LIGHT = theme("solarized-light", "Solarized Light", "light", {
 	untracked: "#617000",
 	error: "#c42b28",
 	errorHover: "#a82422",
+	merged: SOLARIZED.violet,
 	ansi: [
 		"#073642", SOLARIZED.red, SOLARIZED.green, SOLARIZED.yellow, SOLARIZED.blue, SOLARIZED.magenta, SOLARIZED.cyan, "#93a1a1",
 		"#586e75", SOLARIZED.orange, SOLARIZED.green, SOLARIZED.yellow, SOLARIZED.blue, SOLARIZED.violet, SOLARIZED.cyan, "#002b36",
@@ -215,6 +222,7 @@ const NORD = theme("nord", "Nord", "dark", {
 	untracked: "#a3be8c",
 	error: "#d97b84",
 	errorHover: "#e3949b",
+	merged: "#b48ead",
 	ansi: [
 		"#3b4252", "#bf616a", "#a3be8c", "#ebcb8b", "#81a1c1", "#b48ead", "#88c0d0", "#e5e9f0",
 		"#616e88", "#bf616a", "#a3be8c", "#ebcb8b", "#81a1c1", "#b48ead", "#8fbcbb", "#eceff4",
@@ -237,6 +245,7 @@ const GRUVBOX_DARK = theme("gruvbox-dark", "Gruvbox Dark", "dark", {
 	untracked: "#b8bb26",
 	error: "#fb4934",
 	errorHover: "#fc6d5c",
+	merged: "#d3869b",
 	ansi: [
 		"#282828", "#cc241d", "#98971a", "#d79921", "#458588", "#b16286", "#689d6a", "#a89984",
 		"#928374", "#fb4934", "#b8bb26", "#fabd2f", "#83a598", "#d3869b", "#8ec07c", "#ebdbb2",
@@ -259,6 +268,7 @@ const CATPPUCCIN_MOCHA = theme("catppuccin-mocha", "Catppuccin Mocha", "dark", {
 	untracked: "#a6e3a1",
 	error: "#f38ba8",
 	errorHover: "#f5a3ba",
+	merged: "#cba6f7",
 	ansi: [
 		"#45475a", "#f38ba8", "#a6e3a1", "#f9e2af", "#89b4fa", "#f5c2e7", "#94e2d5", "#bac2de",
 		"#585b70", "#f38ba8", "#a6e3a1", "#f9e2af", "#89b4fa", "#f5c2e7", "#94e2d5", "#a6adc8",

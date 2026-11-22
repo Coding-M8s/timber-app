@@ -2174,7 +2174,9 @@ the `theme` preference says which.
   tints, and the terminal's selection follow from them. A theme saved
   before the changed-word tints (`diffAddedWord`, `diffRemovedWord`) gets
   them the same way, from its own added and error colors, so it still reads
-  whole. Where a palette's own color was under the
+  whole. A palette also gives the purple of merged pull requests (`merged`);
+  a theme saved before it had one takes its own terminal magenta for it.
+  Where a palette's own color was under the
   contrast minimum, a nearby shade is used. Their notices are in
   `licenses/theme-palettes.txt`.
 - **The choice.** `ThemeChoice`: `{ mode: "fixed", theme }`, or

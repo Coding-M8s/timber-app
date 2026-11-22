@@ -1,6 +1,6 @@
 import { type FocusEvent, type KeyboardEvent, type MouseEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import type { Worktree } from "../../shared/model";
-import type { PullRequestEntry, PullRequestHost } from "../../shared/pull-requests";
+import type { PullRequest, PullRequestEntry, PullRequestHost } from "../../shared/pull-requests";
 import type { TerminalSession } from "../../shared/terminal";
 import type { IssueEntry, RemovalStatus } from "../store/state";
 import { describeRowTitle } from "../base-format";
@@ -11,6 +11,9 @@ import { type RowSessionMark, describeRowSessions } from "../terminal-format";
 import { WORKTREE_MENU_SHORTCUTS, type WorktreeMenuItemId, describeWorktreeMenu, opensWorktreeMenu, worktreeMenuItems } from "../worktree-menu-format";
 import { AgentIcon } from "./AgentIcon";
 import { ChildBadge } from "./ChildTasks";
+import { describeOpenPullRequest } from "../pull-request-format";
+import { type RowProgress, describeRowProgress, pullRequestStateWord } from "../row-progress-format";
+import { ProgressMark } from "./ProgressMark";
 import { StatusGlyph } from "./StatusGlyph";
 import { WorktreeMenu } from "./WorktreeMenu";
 import type { SyncActionKind } from "../../shared/sync-actions";
@@ -67,6 +70,47 @@ function Marker({ marker }: { marker: RowMarker }) {
 	);
 }
 
+/** The small arrow after a pull request's number: it opens elsewhere, in the browser. */
+function OutArrow() {
+	return (
+		<svg aria-hidden="true" width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
+			<path d="M2.5 1.5h4v4M6.5 1.5 1.5 6.5" />
+		</svg>
+	);
+}
+
+/**
+ * The pull request on the row: its number as a button that opens it in the
+ * browser, then the word for its state with the state's sentence as its
+ * tooltip. The number is a real button because it sits on the row's second
+ * line, outside the row's own button. Without a way to open it, the number
+ * and word are one marker, as any other.
+ */
+function PullRequestMarker({ marker, pull, host, progress, onOpen }: { marker: RowMarker; pull: PullRequest; host: PullRequestHost | undefined; progress: RowProgress | null; onOpen: ((url: string) => void) | undefined }) {
+	const word = pullRequestStateWord(pull.state, progress);
+	if (onOpen === undefined) return <Marker marker={{ ...marker, text: word === null ? `#${pull.number}` : `#${pull.number} ${word}` }} />;
+	const open = describeOpenPullRequest(pull, host);
+	return (
+		<span className={`${markerClass[marker.kind]} row-pull`}>
+			<button
+				type="button"
+				className="row-pull-link"
+				aria-label={open}
+				title={`${open}.`}
+				onClick={event => {
+					// Opening it does not also select the worktree, as a click elsewhere on the line does.
+					event.stopPropagation();
+					onOpen(pull.url);
+				}}
+			>
+				#{pull.number}
+				<OutArrow />
+			</button>
+			{word !== null && <span className="row-pull-state" title={marker.tooltip} aria-hidden="true">{word}</span>}
+		</span>
+	);
+}
+
 /**
  * One agent, or a session whose program reported a status: its state as a
  * shape and a color, with its initial. Its name and state in words are its
@@ -93,6 +137,8 @@ interface WorktreeRowProps {
 	pullRequest?: PullRequestEntry | null;
 	/** Where the repository's pull requests were read from, for the words of their markers. */
 	pullRequestHost?: PullRequestHost | undefined;
+	/** Open the pull request's link in the browser. With it, the row's pull request number is a button that does so. */
+	onOpenPullRequest?: ((url: string) => void) | undefined;
 	/** The store's last answer for the worktree's linked issue, if any. Its short form goes in the row's tooltip. */
 	issue?: IssueEntry | undefined;
 	/** Where a removal of the worktree stands, or null when none runs or failed. */
@@ -160,7 +206,7 @@ function SyncActionButton({ control, onChoose, onFocus, onBlur }: { control: Syn
 }
 
 /** One worktree in the sidebar. What it is marked with comes from `describeRowMarkers`; this only draws it. */
-export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest = null, pullRequestHost, issue, removal = null, sessions = [], seen = {}, portClash = null, actions, onMenuChoice, onSyncAction, syncOptions = ASKING_SYNC }: WorktreeRowProps) {
+export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest = null, pullRequestHost, onOpenPullRequest, issue, removal = null, sessions = [], seen = {}, portClash = null, actions, onMenuChoice, onSyncAction, syncOptions = ASKING_SYNC }: WorktreeRowProps) {
 	const descriptionId = useId();
 	const button = useRef<HTMLButtonElement>(null);
 	// Where the open menu was asked to be, or null while it is closed.
@@ -204,58 +250,74 @@ export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest =
 	}, [syncControls.length]);
 	// A marker whose control is beside the row is not drawn twice. Its sentence stays in the row's description.
 	const replaced = new Set(syncControls.map(control => syncMarker[control.action]));
-	const at = (place: RowMarker["place"]) => markers.filter(marker => marker.place === place && !replaced.has(marker.kind)).map(marker => <Marker key={marker.kind} marker={marker} />);
+	const progress = describeRowProgress(markers, pullRequest);
+	const pull = pullRequest?.outcome === "found" ? pullRequest.pullRequest : null;
+	const at = (place: RowMarker["place"]) => markers.filter(marker => marker.place === place && !replaced.has(marker.kind)).map(marker =>
+		marker.kind === "pull-request" && pull !== null
+			? <PullRequestMarker key={marker.kind} marker={marker} pull={pull} host={pullRequestHost} progress={progress} onOpen={onOpenPullRequest} />
+			: <Marker key={marker.kind} marker={marker} />);
 	const flags = [...at("state"), ...at("pull-request")];
+	const title = describeRowTitle(worktree, linked && issueTitlePart(linked));
+	const name = label ?? worktreeLabel(worktree);
+	const kind = describeWorktreeKind(worktree);
 	const row = (
 		<button
 			type="button"
 			className={selected ? "row selected" : "row"}
 			aria-current={selected}
+			// The kind sits on the second line, beside the button, so the name says it as it did when both lines were inside.
+			aria-label={`${name} ${kind}`}
 			aria-describedby={description !== "" ? descriptionId : undefined}
 			aria-keyshortcuts={onMenuChoice ? WORKTREE_MENU_SHORTCUTS : undefined}
-			title={describeRowTitle(worktree, linked && issueTitlePart(linked))}
+			title={title}
 			ref={button}
 			onClick={onSelect}
 			onKeyDown={onRowKeyDown}
 		>
 			<span className="row-line">
-				<span className="row-name">{label ?? worktreeLabel(worktree)}</span>
+				<span className="row-name">{name}</span>
 				{at("branch")}
-			</span>
-			<span className="row-line row-meta">
-				<span className="row-sub">{describeWorktreeKind(worktree)}</span>
-				{(flags.length > 0 || portClash !== null) && (
-					<span className="row-flags">
-						{flags}
-						{portClash !== null && <span className="row-flag failing" title={portClash} aria-hidden="true">port clash</span>}
-					</span>
-				)}
-				{(running.marks.length > 0 || running.others > 0) && (
-					// Each agent's state as a shape and a color, past a few the rest as "+4", then the other sessions as a count.
-					// Every sentence, the counted agents' too, is in the row's description.
-					<span className="row-sessions" aria-hidden="true">
-						{running.shown.map(mark => <SessionMark key={mark.id} mark={mark} />)}
-						{running.hidden.count > 0 && <span className="row-agents-more" title={running.hidden.words}>+{running.hidden.count}</span>}
-						{running.others > 0 && (
-							<span className="row-shells" title={running.othersWords}>
-								<span className="row-sessions-dot" />
-								{running.others}
-							</span>
-						)}
-					</span>
-				)}
-				{at("changes")}
 			</span>
 			{description !== "" && <span id={descriptionId} className="row-description" hidden>{description}</span>}
 		</button>
 	);
-	if (actions === undefined && !onMenuChoice && syncControls.length === 0) return row;
+	const meta = (
+		// The second line sits beside the row's button, not in it, so the pull request's number can be a button of its own.
+		// A click elsewhere on it selects the worktree, as the row does: a shortcut for the pointer. The keyboard selects
+		// with the row's button, which describes everything on this line; a role here would wrap the number's button.
+		<div className="row-line row-meta" title={title} onClick={onSelect}>
+			{progress !== null && <ProgressMark progress={progress} />}
+			<span className="row-sub">{kind}</span>
+			{(flags.length > 0 || portClash !== null) && (
+				<span className="row-flags">
+					{flags}
+					{portClash !== null && <span className="row-flag failing" title={portClash} aria-hidden="true">port clash</span>}
+				</span>
+			)}
+			{(running.marks.length > 0 || running.others > 0) && (
+				// Each agent's state as a shape and a color, past a few the rest as "+4", then the other sessions as a count.
+				// Every sentence, the counted agents' too, is in the row's description.
+				<span className="row-sessions" aria-hidden="true">
+					{running.shown.map(mark => <SessionMark key={mark.id} mark={mark} />)}
+					{running.hidden.count > 0 && <span className="row-agents-more" title={running.hidden.words}>+{running.hidden.count}</span>}
+					{running.others > 0 && (
+						<span className="row-shells" title={running.othersWords}>
+							<span className="row-sessions-dot" />
+							{running.others}
+						</span>
+					)}
+				</span>
+			)}
+			{at("changes")}
+		</div>
+	);
 	const itemClass = ["row-item", selected ? "selected" : "", syncControls.length > 0 ? "with-sync" : "", removal?.kind === "failed" ? "removal-failed" : "", actions !== undefined ? "with-actions" : ""].filter(Boolean).join(" ");
 	return (
 		// A right-click anywhere on the row, its actions included, opens its menu.
 		// A removal that failed keeps its Details in view (see styles.css).
 		<div className={itemClass} data-worktree-path={worktree.path} onContextMenu={onContextMenu}>
 			{row}
+			{meta}
 			{syncControls.length > 0 && onSyncAction && (
 				// Where the marker was, beside the row's button: the row is a button, so a control cannot be inside it.
 				<span className="row-sync">

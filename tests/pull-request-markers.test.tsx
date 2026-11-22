@@ -163,9 +163,10 @@ describe("the store and the window", () => {
 		const answer = store.getState().pullRequests[TIMBER];
 		expect(answer?.ok).toBe(true);
 		const markup = render(store);
-		expect(markup).toContain(">#42</span>");
+		// On the row, each number is a button that opens its pull request.
+		expect(markup).toContain('aria-label="Open pull request #42 on GitHub in the browser" title="Open pull request #42 on GitHub in the browser.">#42<svg');
 		expect(markup).toContain(">approved</span>");
-		expect(markup).toContain(">#38</span>");
+		expect(markup).toContain('aria-label="Open pull request #38 on GitHub in the browser"');
 		expect(markup).toContain(">changes requested</span>");
 	});
 
@@ -216,7 +217,9 @@ describe("the store and the window", () => {
 		expect(markup).toContain(`<button type="button" class="issue-link pull-link" title="${sentence}" aria-label="${sentence}">#42</button>`);
 		expect(markup).toContain('<span class="pull-marker failing" title="Checks fail on pull request #42: 1 failing, 1 passing." aria-hidden="true">checks fail</span>');
 		expect(markup).toContain('<span class="pull-marker failing" title="A reviewer asked for changes on pull request #42." aria-hidden="true">changes requested</span>');
-		expect(markup).not.toContain("on GitHub in the browser");
+		// The row's number names Bitbucket too.
+		expect(markup).toContain('aria-label="Open pull request #42 on Bitbucket in the browser"');
+		expect(markup).not.toContain("#42 on GitHub in the browser");
 		const opened: string[] = [];
 		engine.openLink = async link => {
 			opened.push(link);
@@ -251,8 +254,10 @@ describe("the store and the window", () => {
 		const { store } = await startedStore();
 		// The primary checkout is selected first; main has no pull request.
 		const markup = render(store);
-		expect(markup).not.toContain("Open pull request");
-		expect(markup).not.toContain("pull-marker");
+		const header = /<header class="workspace-header"[\s\S]*?<\/header>/.exec(markup)?.[0] ?? "";
+		expect(header).not.toBe("");
+		expect(header).not.toContain("Open pull request");
+		expect(header).not.toContain("pull-marker");
 	});
 
 	test("a repository off GitHub gets a quiet grey word with the reason, and its rows none", async () => {

@@ -32,10 +32,11 @@ const busy: Worktree = {
 
 const render = (worktree: Worktree, selected = false) => renderToStaticMarkup(<WorktreeRow worktree={worktree} selected={selected} onSelect={() => {}} />);
 
-/** Every marker in the markup: its class, tooltip, and text, with any drawing left out. */
+/** Every marker in the markup: its class, tooltip, and text, with any drawing left out. The progress mark is not a marker. */
 function markersIn(markup: string): { className: string; title: string; text: string }[] {
 	return [...markup.matchAll(/<span class="([^"]*)" title="([^"]*)" aria-hidden="true">(.*?)<\/span>/g)]
-		.map(match => ({ className: match[1]!, title: match[2]!, text: match[3]!.replace(/<svg.*?<\/svg>/g, "") }));
+		.map(match => ({ className: match[1]!, title: match[2]!, text: match[3]!.replace(/<svg.*?<\/svg>/g, "") }))
+		.filter(marker => !marker.className.startsWith("row-progress"));
 }
 
 /** The text the row's `aria-describedby` points at, or null when it has none. */
@@ -95,6 +96,8 @@ describe("WorktreeRow", () => {
 	test("assistive technology gets the name from the branch and every marker's sentence as the description", () => {
 		const markup = render(busy);
 		expect(nameOf(markup)).toBe("feat/x Worktree");
+		// The kind is on the second line, beside the button, so the button names it itself.
+		expect(markup).toContain('<button type="button" class="row" aria-current="false" aria-label="feat/x Worktree"');
 		expect(descriptionOf(markup)).toBe([
 			"14 commits to pull from origin/feat/x, as of the last fetch.",
 			"2 commits to push to origin/feat/x, as of the last fetch.",
@@ -104,10 +107,15 @@ describe("WorktreeRow", () => {
 		].join(" "));
 	});
 
-	test("the row stays one button with nothing interactive inside it", () => {
+	test("the row's button holds its first line, with nothing interactive inside it, and the second line sits beside it", () => {
 		const markup = render(busy, true);
-		expect(markup).toStartWith('<button type="button" class="row selected" aria-current="true"');
-		expect(markup).toEndWith("</button>");
+		expect(markup).toStartWith('<div class="row-item selected" data-worktree-path="/work/app-worktrees/feat-x"><button type="button" class="row selected" aria-current="true" aria-label="feat/x Worktree"');
+		const button = /<button type="button" class="row selected"[\s\S]*?<\/button>/.exec(markup)?.[0] ?? "";
+		expect(button).toContain('class="row-name"');
+		expect(button).toContain('class="sync behind"');
+		expect(button).not.toContain("row-meta");
+		// The second line has the row's tooltip too.
+		expect(markup).toContain('</button><div class="row-line row-meta" title="/work/app-worktrees/feat-x">');
 		expect(markup.match(/<button/g)?.length).toBe(1);
 		expect(markup).not.toMatch(/<a |<input|<select|tabindex|role=/);
 	});

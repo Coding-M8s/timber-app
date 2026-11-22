@@ -293,11 +293,29 @@ change them here first when they change.
   "(#153 · Open)" for GitHub, or the key and a quiet reason, such as
   "(PROJ-123, offline)", when the status could not be read. The row itself
   shows nothing more: its lines are full.
+- A row is its button, which holds the first line (the name and the branch
+  state), and its second line beside it, so the pull request's number can be
+  a button of its own. A click elsewhere on the second line selects the
+  worktree as the row does; the keyboard selects with the row, then Tab
+  reaches the number. The tint under the pointer, the selected tint, and the
+  focus ring go around both lines, and so does the row's tooltip.
+- The second line starts with the worktree's progress at a glance: one small
+  mark whose shape and color say open (a pull request arrow, green), draft
+  (the arrow with a dashed side, grey), merged (a merge fork, purple, the
+  theme's `merged` color), closed (the arrow struck out, red), force-pushed
+  (a loop turning back, amber), or upstream gone (a cloud struck through,
+  grey). A row shows one: force-pushed first, then merged or closed, then
+  upstream gone, then open or draft. The words stay on the row, so no state
+  is told by color alone, and the mark's tooltip is its state's sentence. A
+  row with none of these, such as the primary checkout or a branch only
+  local, has no mark. Screen readers skip it: the row's description already
+  says each state.
 - Branch state follows VS Code conventions: a down arrow with a count for
   commits to pull, an up arrow for commits to push, "force-pushed" when the
   remote branch was rewritten, "upstream gone" when it was deleted, and "local
-  only" when it was never published. "force-pushed" stays until the person
-  has selected that worktree and moved on. Modified and untracked counts use
+  only" when it was never published. "force-pushed" is amber, as its mark:
+  red is for closed pull requests and failing checks. It stays until the
+  person has selected that worktree and moved on. Modified and untracked counts use
   the yellow `M` and green `U`.
 - A branch that is behind and not ahead gets a Pull control in place of its
   down arrow and count: the same arrow and count, outlined as a button,
@@ -322,7 +340,11 @@ change them here first when they change.
   controls show to its right, in room the first line always keeps.
 - A row whose branch has a pull request shows it with its state, on the
   line under the branch: `#42` while open, or `#42 draft`, `#42 merged`,
-  `#42 closed`. An open or draft one adds its checks ("checks pass",
+  `#42 closed`; `#42 open` when another state's mark leads the line, such as
+  force-pushed. The number, with a small out arrow, is a button that opens
+  the pull request in the browser ("Open pull request #42 on GitHub in the
+  browser", naming Bitbucket there), underlined under the pointer. Opening
+  it does not select the worktree. An open or draft one adds its checks ("checks pass",
   "checks fail", "checks running") and its review ("approved", "changes
   requested", "review required"). Each word has its sentence as a tooltip.
   They are grey, except failing checks and requested changes, which are red
@@ -1146,8 +1168,9 @@ typeface for the interface and a monospace face only for terminals, diffs,
 paths, and commands. Color carries meaning only: amber for incoming commits
 and for an agent that needs you, blue for outgoing commits and running or
 working agents, yellow and green for file changes (green also for an agent
-that is done), red for destructive or rewritten state, for errors, and for a
-crashed agent. The one color not from a theme is Claude's own orange in its
+that is done), red for destructive state, for errors, for a closed pull
+request, and for a crashed agent, amber for rewritten state, and purple for a
+merged pull request. The one color not from a theme is Claude's own orange in its
 spark, which is part of its mark.
 
 Every color is a theme's. Timber Dark is the look above and the default;

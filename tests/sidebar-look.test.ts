@@ -125,3 +125,21 @@ describe("a repository's header row", () => {
 		expect(rule(".group-fetch.fetching svg")).toContain("animation: fetch-pulse 1.2s ease-in-out infinite;");
 	});
 });
+
+describe("a worktree's progress on its row (issue 241)", () => {
+	test("each mark takes its state's theme color, merged its own purple", () => {
+		expect(property(rule(".progress-open"), "color")).toBe("var(--untracked)");
+		expect(property(rule(".progress-merged"), "color")).toBe("var(--merged)");
+		expect(property(rule(".progress-closed"), "color")).toBe("var(--error)");
+		expect(property(rule(".progress-force-pushed"), "color")).toBe("var(--behind)");
+		expect(property(rule(".progress-draft,\n.progress-upstream-gone"), "color")).toBe("var(--text-3)");
+	});
+
+	test("force-pushed is amber, as its mark, not red, which is for closed pull requests and failing checks", () => {
+		expect(property(rule(".sync-note.rewritten"), "color")).toBe("var(--behind)");
+	});
+
+	test("the pull request's number keeps room for its whole focus ring", () => {
+		expect(property(rule(".row-flag.row-pull"), "overflow")).toBe("visible");
+	});
+});
