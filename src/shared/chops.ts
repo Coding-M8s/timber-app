@@ -403,6 +403,28 @@ export interface RunChopRequest {
 	approve?: string;
 	/** For a prompt chop only: the id of a running agent session of this worktree to send it to. Left out to start a new agent. */
 	session?: string;
+	/**
+	 * The text to type or send in place of the chop's, as the person edited
+	 * it just before this run. It runs once and changes no chop. Left out to
+	 * run the chop's own text. A repository chop still runs only once its own
+	 * text is approved (`approve`), edited or not.
+	 */
+	text?: string;
+}
+
+/**
+ * The text a run types or sends: the request's edited `text`, made to keep
+ * `\n` line endings, or the chop's own when there is none. An edited text
+ * that is not a string, is blank, or is longer than a chop can be is
+ * refused with the reason, and nothing runs.
+ */
+export function textToRun(request: Pick<RunChopRequest, "text">, chop: Pick<Chop, "kind" | "text">): { ok: true; text: string } | { ok: false; message: string } {
+	if (request.text === undefined) return { ok: true, text: chop.text };
+	if (typeof request.text !== "string") return { ok: false, message: "The edited text cannot be read. Nothing was started." };
+	const text = normalizeChopText(request.text);
+	if (text.trim() === "") return { ok: false, message: `The edited ${chop.kind} is empty. Nothing was started.` };
+	if (text.length > CHOP_TEXT_LIMIT) return { ok: false, message: `The edited ${chop.kind} is longer than ${CHOP_TEXT_LIMIT} characters. Nothing was started.` };
+	return { ok: true, text };
 }
 
 export type RunChopResult =

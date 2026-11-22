@@ -68,7 +68,17 @@ import { type FileEditMemory, createFileEditMemory } from "../text-editor-format
 import { afterSave, canEditFile, editableFileText, fileText, hasUnsavedEdits, initialFileMode, outsideResult, pathInWorktree, settleFiles, unsavedFileCount } from "../file-view-format";
 import {
 	type AppState, type ChangesView, type DialogRequest, type FileMode, type FileView, type Operation, type PullRequestForm, type Removal, type SessionAgent, type UnsavedFileStep, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood,
-	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, canToggleSidePanel, filesPanelShown, offeredChops, sidePanelShown, sidePanelView, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, shownSession, timberReady, withTerminal, withoutSession } from "./state";
+	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, canToggleSidePanel, chopsEnabled, filesPanelShown, offeredChops, sidePanelShown, sidePanelView, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, shownSession, timberReady, withTerminal, withoutSession } from "./state";
+
+/** How `AppStore.runChop` runs a chop, beyond which one and where. */
+export interface RunChopOptions {
+	/** The chop's own text, as confirmed in the approval dialog. */
+	approve?: string;
+	/** For a prompt: a running agent session, or a new agent with `{ session: null }`. */
+	target?: { session: string | null };
+	/** Text the person edited for this run, typed or sent in place of the chop's once. */
+	text?: string;
+}
 
 /**
  * The single holder of what the interface shows: Timber's status, the
@@ -316,9 +326,13 @@ export interface AppStore {
 	 * confirmed there. No new session starts while another one starts in the
 	 * worktree, or in a folder being deleted. Why a new session did not start
 	 * shows in `terminalProblem`, and why a prompt did not go to a running
-	 * agent in a toast. Never throws.
+	 * agent in a toast. `text`, when given, is typed or sent in place of the
+	 * chop's own text, once: the person edited it just before this run. It
+	 * goes through the same questions, and a repository chop's own text is
+	 * still the one approved. It is noted as the repository's last chop
+	 * (`lastChops`). Never throws.
 	 */
-	runChop(repository: string, worktreeId: string, chop: string, size: { cols: number; rows: number }, approve?: string, target?: { session: string | null }): Promise<void>;
+	runChop(repository: string, worktreeId: string, chop: string, size: { cols: number; rows: number }, options?: RunChopOptions): Promise<void>;
 	/**
 	 * Type a command chop of the session's repository into a running session,
 	 * with no Enter, as `Engine.pasteTerminal` does. A toast says when it
@@ -437,6 +451,12 @@ export interface AppStore {
 	closePalette(): void;
 	/** Open the command palette, or close it when it is open. Nothing happens while another dialog or the quit question is open. */
 	togglePalette(): void;
+	/**
+	 * Open the chop search, or close it when it is open. It opens only while
+	 * chops are in use (`chopsEnabled`) and no other dialog or the quit
+	 * question is open.
+	 */
+	toggleRunChop(): void;
 	/**
 	 * Ask Timber what removing a worktree would do. Read-only. Never throws: an
 	 * engine that could not answer is a failed preview with the reason.
@@ -1782,8 +1802,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		update({ chops: { repository: repositoryPath, list: answer } });
 	}
 
-	/** Put a prompt chop's text, as listed, on the clipboard. */
-	async function copyPrompt(repositoryPath: string, name: string): Promise<void> {
+	/** Put a prompt chop's text, as listed or as edited for this run, on the clipboard. */
+	async function copyPrompt(repositoryPath: string, name: string, text?: string): Promise<void> {
 		const offered = offeredChops(state);
 		const list = offered?.repository === repositoryPath ? offered.list : null;
 		const chop = findListedChop(listedChops(list), name);
@@ -1792,7 +1812,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			return;
 		}
 		try {
-			await engine.writeClipboard(chop.text);
+			await engine.writeClipboard(text ?? chop.text);
 		} catch {
 			showToast(`${chop.name} could not be put on the clipboard.`, true);
 			return;
@@ -1801,10 +1821,10 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	}
 
 	/** Send a prompt chop to a running agent session, which shows once it went. */
-	async function sendPromptChop(repositoryPath: string, worktreeId: string, worktreePath: string, name: string, size: { cols: number; rows: number }, session: string, approve?: string): Promise<void> {
+	async function sendPromptChop(repositoryPath: string, worktreeId: string, worktreePath: string, name: string, size: { cols: number; rows: number }, session: string, approve?: string, text?: string): Promise<void> {
 		let result: RunChopResult;
 		try {
-			result = await engine.runChop({ repository: repositoryPath, worktree: worktreePath, chop: name, ...size, session, ...(approve === undefined ? {} : { approve }) });
+			result = await engine.runChop({ repository: repositoryPath, worktree: worktreePath, chop: name, ...size, session, ...(approve === undefined ? {} : { approve }), ...(text === undefined ? {} : { text }) });
 		} catch (error) {
 			showToast(notHeard("back about the prompt", error, ". It may have been sent: look at the agent before you send it again."), true);
 			return;
@@ -1816,7 +1836,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			return;
 		}
 		if (result.outcome === "needs-approval") {
-			if (state.dialog === null || state.dialog.kind === "palette") update({ dialog: { kind: "approve-chop", repository: repositoryPath, worktree: worktreeId, chop: result.chop, path: result.path, session } });
+			if (state.dialog === null || state.dialog.kind === "palette") update({ dialog: { kind: "approve-chop", repository: repositoryPath, worktree: worktreeId, chop: result.chop, path: result.path, session, ...(text === undefined ? {} : { text }) } });
 			else showToast(`${name} comes from the repository and needs your approval. Send it again once this dialog is closed.`, true);
 			return;
 		}
@@ -1824,13 +1844,16 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		showToast(`${name} was not sent: ${result.message}`, true);
 	}
 
-	async function runChop(repositoryPath: string, worktreeId: string, name: string, size: { cols: number; rows: number }, approve?: string, target?: { session: string | null }): Promise<void> {
+	async function runChop(repositoryPath: string, worktreeId: string, name: string, size: { cols: number; rows: number }, options: RunChopOptions = {}): Promise<void> {
+		const { approve, target, text } = options;
 		// With "Use chops" off, nothing runs a chop, whatever asked.
 		if (!state.preferences.useChops) return;
+		// Chosen is enough to be the last one, even when it then asks first or cannot start.
+		if (state.lastChops[repositoryPath] !== name) update({ lastChops: { ...state.lastChops, [repositoryPath]: name } });
 		const listed = findListedChop(listedChops(state.chops?.repository === repositoryPath ? state.chops.list : null), name);
 		if (listed?.kind === "prompt") {
 			// With no agent saved, the prompt has nowhere to go: it is copied instead.
-			if (state.preferences.agents.length === 0) return copyPrompt(repositoryPath, name);
+			if (state.preferences.agents.length === 0) return copyPrompt(repositoryPath, name, text);
 			const worktree = worktreeOf(repositoryPath, worktreeId);
 			if (!worktree) return showToast(`${name} was not sent: the worktree is no longer listed.`, true);
 			if (isBeingRemoved(state, repositoryPath, worktree.path)) return showToast(`${name} was not sent: ${BEING_REMOVED_REASON}`, true);
@@ -1840,10 +1863,10 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			})();
 			if (where === null) {
 				// Never over a dialog the person opened meanwhile.
-				if (state.dialog === null || state.dialog.kind === "palette") update({ dialog: { kind: "send-prompt", repository: repositoryPath, worktree: worktreeId, chop: name } });
+				if (state.dialog === null || state.dialog.kind === "palette") update({ dialog: { kind: "send-prompt", repository: repositoryPath, worktree: worktreeId, chop: name, ...(text === undefined ? {} : { text }) } });
 				return;
 			}
-			if (where.session !== null) return sendPromptChop(repositoryPath, worktreeId, worktree.path, name, size, where.session, approve);
+			if (where.session !== null) return sendPromptChop(repositoryPath, worktreeId, worktree.path, name, size, where.session, approve, text);
 		}
 		const worktree = worktreeOf(repositoryPath, worktreeId);
 		// After the approval dialog closed, or for a prompt, whose palette entry does not wait for a starting session,
@@ -1858,7 +1881,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			let message: string;
 			let command: string | null = null;
 			try {
-				const result = await engine.runChop({ repository: repositoryPath, worktree: worktree.path, chop: name, ...size, ...(approve === undefined ? {} : { approve }) });
+				const result = await engine.runChop({ repository: repositoryPath, worktree: worktree.path, chop: name, ...size, ...(approve === undefined ? {} : { approve }), ...(text === undefined ? {} : { text }) });
 				if (result.outcome === "opened") {
 					const { session } = result;
 					update({
@@ -1872,7 +1895,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				}
 				if (result.outcome === "needs-approval") {
 					// Never over a dialog the person opened meanwhile.
-					if (state.dialog === null || state.dialog.kind === "palette") update({ dialog: { kind: "approve-chop", repository: repositoryPath, worktree: worktreeId, chop: result.chop, path: result.path } });
+					if (state.dialog === null || state.dialog.kind === "palette") update({ dialog: { kind: "approve-chop", repository: repositoryPath, worktree: worktreeId, chop: result.chop, path: result.path, ...(text === undefined ? {} : { text }) } });
 					else showToast(`${name} comes from the repository and needs your approval. Run it again once this dialog is closed.`, true);
 					return;
 				}
@@ -3516,6 +3539,10 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		togglePalette() {
 			if (state.dialog?.kind === "palette") closePalette();
 			else openPalette();
+		},
+		toggleRunChop() {
+			if (state.dialog?.kind === "run-chop") update({ dialog: null });
+			else if (state.dialog === null && state.quitRequest === null && chopsEnabled(state)) update({ dialog: { kind: "run-chop" } });
 		},
 		previewDone,
 		applyDone,

@@ -19,7 +19,11 @@ const MOD = isMac ? "Cmd" : "Ctrl";
 
 /** A key as a set of its parts, so "Shift-Mod-k" and "Mod-Shift-k" are the same key. */
 const keyParts = (key: string) => key.split("-").map(part => part.toLowerCase()).sort().join("-");
-/** Keys the window keeps for itself (the palette, chops, the next session), taken out of the editor's own. */
+/**
+ * Keys the window keeps for itself (the palette, chops, the next session), taken out of the editor's own. The chop
+ * shortcuts set in Settings are not followed here: they never take a key the editor binds (`RESERVED_SHORTCUTS` in
+ * ../../shared/shortcuts.ts), and the window hears them first.
+ */
 const WINDOW_KEYS = new Set(["Mod-Shift-p", "Mod-Shift-k", "Mod-Shift-j"].map(keyParts));
 /**
  * What CodeMirror's keys would do beyond typing, undo, search, indenting, and toggling a line comment, which this editor

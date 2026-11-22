@@ -15,6 +15,7 @@ import { DEFAULT_ZOOM, readZoom } from "./zoom";
 import { type FetchSetting, defaultFetchSetting, readFetchSetting, salvageFetchSetting, sameFetchSetting, writeFetchSetting } from "./fetch-setting";
 import { type StateSounds, defaultStateSounds, legacyStateSounds, readStateSounds, salvageStateSounds, sameStateSounds, writeStateSounds } from "./sound-setting";
 import { ALERT_STATES, type AlertState } from "./status-notices";
+import { type ShortcutSettings, readShortcuts, salvageShortcuts, sameShortcuts, writeShortcuts } from "./shortcuts";
 import { type SessionNaming, readSessionNaming } from "./terminal";
 import { type DmabufChoice, readDmabufChoice } from "./rendering";
 import { type TimberChoice, defaultTimberChoice, readTimberChoice, sameTimberChoice, writeTimberChoice } from "./timber-choice";
@@ -64,6 +65,13 @@ export interface Preferences {
 	fileChopSounds: FileChopSounds;
 	/** Whether a chop's sound plays when it starts. Off silences every chop sound, and keeps each chop's choice. */
 	playChopSounds: boolean;
+	/**
+	 * The keys set in Settings for the shortcuts that can be changed, by id
+	 * (./shortcuts.ts): the chops panel's and the one that searches and runs
+	 * a chop. Only the ones that differ from their default. A set that takes
+	 * a key the app keeps, or gives two shortcuts one key, is refused.
+	 */
+	shortcuts: ShortcutSettings;
 	/** Whether and how often the app fetches every repository in the background. */
 	fetch: FetchSetting;
 	/** How large the interface is drawn, where 1 is the size the window system gives. */
@@ -224,6 +232,13 @@ export const PREFERENCE_PARTS: { [Key in keyof Preferences]: PreferencePart<Pref
 		read: value => typeof value === "boolean" ? value : undefined,
 		same: (one, other) => one === other,
 		write: value => value,
+	},
+	shortcuts: {
+		fallback: () => ({}),
+		read: readShortcuts,
+		same: sameShortcuts,
+		write: writeShortcuts,
+		salvage: salvageShortcuts,
 	},
 	fetch: {
 		fallback: defaultFetchSetting,

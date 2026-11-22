@@ -349,7 +349,7 @@ describe("chop sounds in the app (mock engine)", () => {
 		expect(store.getState().dialog).toMatchObject({ kind: "approve-chop" });
 		expect(engine.chopSounds()).toEqual([]);
 		store.closeDialog();
-		await store.runChop(TIMBER, FEATURE.id, "Test", size, "bun test");
+		await store.runChop(TIMBER, FEATURE.id, "Test", size, { approve: "bun test" });
 		await settle();
 		expect(engine.chopSounds()).toEqual([{ chop: "Test", sound: KNOCK }]);
 	});

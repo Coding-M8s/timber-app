@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { AgentSetting } from "../../../shared/agent";
 import { CHOP_DESCRIPTION_LIMIT, CHOP_KINDS, CHOP_TEXT_LIMIT, type ChopKind, type ChopList, type PersonalChop, chopKindWord, samePersonalChops } from "../../../shared/chops";
 import { renameInArrangements, sameChopArrangements } from "../../../shared/chop-order";
+import { DEFAULT_SHORTCUTS, type ShortcutId, type ShortcutSettings, chordLetterOf, describeChord, shortcutLetter, shortcutProblem, withShortcut } from "../../../shared/shortcuts";
 import { SESSION_NAME_LIMIT } from "../../../shared/terminal";
 import {
 	type ChopDraft, type ChopDraftChange, type ChopsSwitches, addChopDraft, chopAgentOptions, chopsSectionChange, chopsSectionRenames, chopDraftsOf, chopScopeOptions, chopsDraftModel, describeChopSource, describeChopsFile,
@@ -19,6 +20,8 @@ export interface ChopsRepository {
 }
 
 export interface ChopsSectionViewProps {
+	/** Whether to name the keys as on macOS: Cmd for Ctrl. */
+	mac?: boolean;
 	drafts: readonly ChopDraft[];
 	saved: readonly PersonalChop[];
 	/** The switches as shown: what is saved, or what the person switched them to. */
@@ -82,8 +85,76 @@ function RepositoryChops({ repository, onReadAgain }: { repository: ChopsReposit
 	);
 }
 
+/** The modifier keys, which a shortcut field lets pass while the chord is being pressed. */
+const MODIFIER_KEYS = new Set(["Control", "Shift", "Alt", "Meta", "AltGraph", "OS"]);
+
+/** What a pressed key that is not a chord says, so the person knows what to press. */
+export function describeNotAChord(mac: boolean): string {
+	return `Press ${mac ? "Cmd" : "Ctrl"}+Shift and a letter, such as ${describeChord("T", mac)}.`;
+}
+
+/**
+ * One chop shortcut, set by pressing it: the field shows the key as set,
+ * and takes the next Ctrl+Shift and a letter (Cmd+Shift on macOS) pressed
+ * in it. A key that is taken, by the app, its text editor, or the other
+ * chop shortcut, is refused with the reason, and the key shown stays. Tab
+ * and Escape do what they always do. Reset goes back to the default.
+ */
+export function ShortcutField({ id, label, settings, mac, onChange }: { id: ShortcutId; label: string; settings: ShortcutSettings; mac: boolean; onChange: (next: ShortcutSettings) => void }) {
+	const fieldId = useId();
+	const [problem, setProblem] = useState<string | null>(null);
+	const letter = shortcutLetter(settings, id);
+	const isDefault = letter === DEFAULT_SHORTCUTS[id];
+	return (
+		<div className="field chop-shortcut">
+			<label className="field-label" htmlFor={fieldId}>{label}</label>
+			<div className="chop-shortcut-row">
+				<input
+					id={fieldId}
+					className="field-input mono"
+					type="text"
+					readOnly
+					value={describeChord(letter, mac)}
+					aria-describedby={`${fieldId}-hint`}
+					aria-invalid={problem !== null}
+					onKeyDown={event => {
+						if (event.key === "Tab" || event.key === "Escape" || MODIFIER_KEYS.has(event.key)) return;
+						event.preventDefault();
+						const pressed = chordLetterOf(event.nativeEvent);
+						if (pressed === null) return setProblem(describeNotAChord(mac));
+						const refused = shortcutProblem(id, pressed, settings);
+						setProblem(refused);
+						if (refused === null && pressed !== letter) onChange(withShortcut(settings, id, pressed));
+					}}
+					onBlur={event => {
+						// The error stays while the keyboard goes to Reset, which may say its own.
+						if (!(event.relatedTarget instanceof HTMLElement && event.currentTarget.parentElement?.contains(event.relatedTarget))) setProblem(null);
+					}}
+				/>
+				{!isDefault && (
+					<button
+						type="button"
+						className="button quiet"
+						aria-label={`Reset ${label} to ${describeChord(DEFAULT_SHORTCUTS[id], mac)}`}
+						onClick={() => {
+							const refused = shortcutProblem(id, DEFAULT_SHORTCUTS[id], settings);
+							setProblem(refused);
+							if (refused === null) onChange(withShortcut(settings, id, DEFAULT_SHORTCUTS[id]));
+						}}
+					>
+						Reset
+					</button>
+				)}
+			</div>
+			{problem === null
+				? <span id={`${fieldId}-hint`} className="field-hint">To change it, focus this field and press the new key.</span>
+				: <span id={`${fieldId}-hint`} className="field-error" role="alert">{problem}</span>}
+		</div>
+	);
+}
+
 /** Settings, Chops as drawn from its data, so it can be tested without a window. */
-export function ChopsSectionView({ drafts, saved, switches, canSave, repositories, agents, repository, save, onSwitch, onAdd, onEdit, onRemove, onSave, onReadAgain }: ChopsSectionViewProps) {
+export function ChopsSectionView({ mac = false, drafts, saved, switches, canSave, repositories, agents, repository, save, onSwitch, onAdd, onEdit, onRemove, onSave, onReadAgain }: ChopsSectionViewProps) {
 	const idPrefix = useId();
 	const useHintId = `${idPrefix}-use-hint`;
 	const soundsHintId = `${idPrefix}-sounds-hint`;
@@ -131,6 +202,13 @@ export function ChopsSectionView({ drafts, saved, switches, canSave, repositorie
 					Off, chops are gone from the app: the title bar's Chops button, the chops panel, the chop shortcuts, the palette, and the session menus. Your chops stay saved here and come back when you turn it on.
 				</span>
 			</div>
+			{/* Gone with chops, as the shortcuts are. */}
+			{switches.useChops && (
+				<div className="chop-shortcuts">
+					<ShortcutField id="chops-panel" label="Show or hide the panel" settings={switches.shortcuts ?? {}} mac={mac} onChange={shortcuts => onSwitch({ shortcuts })} />
+					<ShortcutField id="run-chop" label="Search and run a chop" settings={switches.shortcuts ?? {}} mac={mac} onChange={shortcuts => onSwitch({ shortcuts })} />
+				</div>
+			)}
 			<div className="field">
 				<label className="check">
 					<input type="checkbox" role="switch" checked={switches.playChopSounds} aria-describedby={soundsHintId} onChange={event => onSwitch({ playChopSounds: event.target.checked })} />
@@ -249,7 +327,8 @@ export function ChopsSection() {
 	const { draft: drafts, save, change, commit, reset } = useDraftSection(fromSaved);
 	// Unset follows what is saved, so a switch only differs from it by what the person did.
 	const [chosen, setChosen] = useState<Partial<ChopsSwitches>>({});
-	const savedSwitches: ChopsSwitches = { useChops: state.preferences.useChops, playChopSounds: state.preferences.playChopSounds };
+	const savedSwitches: ChopsSwitches = { useChops: state.preferences.useChops, playChopSounds: state.preferences.playChopSounds, shortcuts: state.preferences.shortcuts };
+	const mac = typeof navigator !== "undefined" && /Mac/.test(navigator.platform);
 	const switches: ChopsSwitches = { ...savedSwitches, ...chosen };
 	const pending = chopsSectionChange(chopsDraftModel(drafts, saved), saved, switches, savedSwitches);
 	const canSave = pending !== null;
@@ -272,6 +351,7 @@ export function ChopsSection() {
 
 	return (
 		<ChopsSectionView
+			mac={mac}
 			drafts={drafts}
 			saved={saved}
 			switches={switches}

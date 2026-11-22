@@ -1,3 +1,4 @@
+import { type ShortcutSettings, sameShortcuts } from "../shared/shortcuts";
 import {
 	CHOP_LIMIT, type ChopKind, type ChopList, type ChopSource, type ChopsFileState, type ListedChop, type PersonalChop, chopProblem, commandChops, listedChops, normalizeChopText, readPersonalChops,
 	sameChopName, samePersonalChops,
@@ -97,23 +98,28 @@ export function chopsDraftModel(drafts: readonly ChopDraft[], saved: readonly Pe
 	return { rows, chops, error, canSave: valid && !samePersonalChops(chops, saved) };
 }
 
-/** The switches of Settings, Chops: "Use chops" and "Play each chop's sound". */
+/** The settings of Settings, Chops besides the chops: "Use chops", the two chop shortcuts, and "Play each chop's sound". */
 export interface ChopsSwitches {
 	useChops: boolean;
 	playChopSounds: boolean;
+	/** The chop shortcuts as set (../shared/shortcuts.ts). Left out, they are the defaults. */
+	shortcuts?: ShortcutSettings;
 }
 
 /**
- * What Settings, Chops saves, from the rows and its switches: each switch
- * that differs from what is saved, and the rows when they differ and can be
- * saved. The switches save on their own while the rows are as saved, so
- * chops, or their sounds, can always be turned off; with rows changed but
- * not savable, nothing is. Null when there is nothing to save.
+ * What Settings, Chops saves, from the rows and its switches: each switch,
+ * and the shortcuts, that differ from what is saved, and the rows when they
+ * differ and can be saved. The switches save on their own while the rows are
+ * as saved, so chops, or their sounds, can always be turned off; with rows
+ * changed but not savable, nothing is. The shortcuts shown are always ones
+ * that can be saved: a key that is refused never replaces the one shown.
+ * Null when there is nothing to save.
  */
 export function chopsSectionChange(model: Pick<ChopsDraftModel, "chops" | "canSave">, saved: readonly PersonalChop[], switches: ChopsSwitches, savedSwitches: ChopsSwitches): (Partial<ChopsSwitches> & { chops?: PersonalChop[] }) | null {
 	const changed: Partial<ChopsSwitches> = {};
 	if (switches.useChops !== savedSwitches.useChops) changed.useChops = switches.useChops;
 	if (switches.playChopSounds !== savedSwitches.playChopSounds) changed.playChopSounds = switches.playChopSounds;
+	if (!sameShortcuts(switches.shortcuts ?? {}, savedSwitches.shortcuts ?? {})) changed.shortcuts = switches.shortcuts ?? {};
 	if (model.canSave) return { ...changed, chops: model.chops };
 	if (Object.keys(changed).length > 0 && samePersonalChops(model.chops, saved)) return changed;
 	return null;
@@ -506,4 +512,9 @@ export function panelChopScopeOptions(repository: { path: string; name: string }
 /** What the read-only view of a chop from the repository file says. */
 export function describeFileChopView(path: string): string {
 	return `From ${path}, which the app only reads. To change it here, make your own chop with the same name: it takes the place of this one.`;
+}
+
+/** What the approval dialog says above the text the person edited for this run. */
+export function describeEditedApproval(kind: ChopKind): string {
+	return `You edited it for this run. Approving trusts the file's text above; then this ${kind === "prompt" ? "prompt is sent" : "command runs"} once, in its place:`;
 }

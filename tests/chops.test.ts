@@ -172,6 +172,33 @@ describe.skipIf(windows)("reading a worktree's chops from real repositories", ()
 			}
 		});
 
+		test("text edited for one run is typed or sent in place of the chop's, and the approval is still of the chop's own text", async () => {
+			personal = [{ name: "Ask", kind: "prompt", text: "Write tests", description: "", agent: "Codex", repository: null, sound: null }];
+			const { runner, opened, prompts, approvals } = setUp();
+			// A repository chop asks first, edited or not; approving another text approves nothing.
+			expect(await runner.run({ ...request, chop: "Test", text: "bun test --bail" })).toMatchObject({ outcome: "needs-approval", chop: { text: "bun test" } });
+			expect((await runner.run({ ...request, chop: "Test", text: "bun test --bail", approve: "bun test --bail" })).outcome).toBe("needs-approval");
+			expect(opened).toEqual([]);
+			await runner.run({ ...request, chop: "Test", text: "bun test --bail\r\n", approve: "bun test" });
+			expect(opened.map(run => run.chop)).toEqual([{ kind: "command", name: "Test", text: "bun test --bail\n" }]);
+			expect(approvals()[primary]).toEqual([chopDigest({ kind: "command", text: "bun test" })]);
+			// A prompt to a running agent, and to a new one.
+			prompts.length = 0;
+			await runner.run({ ...request, chop: "Ask", session: "s1", text: "Write one test" });
+			expect(prompts.map(prompt => prompt.text)).toEqual(["Write one test"]);
+			await runner.run({ ...request, chop: "Ask", text: "Write two tests" });
+			expect(opened.at(-1)).toEqual({ request: { ...request, agent: "Codex" }, chop: { kind: "prompt", text: "Write two tests" } });
+		});
+
+		test("edited text that is blank, too long, or not text starts nothing and says why", async () => {
+			personal = [{ name: "Mine", kind: "command", text: "make", description: "", agent: null, repository: null, sound: null }];
+			const { runner, opened } = setUp();
+			expect(await runner.run({ ...request, chop: "Mine", text: " \n " })).toEqual({ outcome: "no-chop", message: "The edited command is empty. Nothing was started." });
+			expect(await runner.run({ ...request, chop: "Mine", text: "x".repeat(10_001) })).toMatchObject({ outcome: "no-chop", message: expect.stringContaining("longer than 10000 characters") });
+			expect(await runner.run({ ...request, chop: "Mine", text: 3 as unknown as string })).toEqual({ outcome: "no-chop", message: "The edited text cannot be read. Nothing was started." });
+			expect(opened).toEqual([]);
+		});
+
 		test("a name nobody has, or a session for a command, starts nothing", async () => {
 			personal = [];
 			const { runner, opened } = setUp();

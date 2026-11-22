@@ -55,12 +55,13 @@ export function runPaletteEntry(store: AppStore, entry: PaletteEntry, size: Sess
  * repository chop's first run, picks or asks for a prompt's agent, and
  * copies a prompt when no agent is saved. With `showSession`, the worktree
  * is selected and its Workspace tab shown first, so the new session, or why
- * it did not start, is in view.
+ * it did not start, is in view. `text` is the chop's text as the person
+ * edited it for this run, from the chop search.
  */
-export function runChopIn(store: AppStore, repository: string, worktree: string, chop: string, size: SessionSize, showSession = true): void {
+export function runChopIn(store: AppStore, repository: string, worktree: string, chop: string, size: SessionSize, showSession = true, text?: string): void {
 	if (showSession) {
 		store.select(worktree);
 		store.showTab("workspace");
 	}
-	void store.runChop(repository, worktree, chop, size());
+	void store.runChop(repository, worktree, chop, size(), text === undefined ? {} : { text });
 }

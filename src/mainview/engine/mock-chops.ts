@@ -1,6 +1,6 @@
 import {
 	CHOPS_FILE, type ChopApprovals, type ChopList, type ChopsFileState, type Chop, type PersonalChop, type RunChopRequest, type RunChopResult,
-	chopDigestInput, findListedChop, isChopApproved, listedChops, mergeChops, parseChopsFile, withChopApproval,
+	chopDigestInput, findListedChop, isChopApproved, listedChops, mergeChops, parseChopsFile, textToRun, withChopApproval,
 } from "../../shared/chops";
 import { type AgentSetting, findAgent } from "../../shared/agent";
 import { type FileChopSounds, chopSoundToPlay } from "../../shared/chop-sounds";
@@ -83,6 +83,8 @@ export function createMockChops() {
 			const message = chop.kind === "prompt" ? "The request names no session. Nothing was sent." : `${chop.name} is a command, which runs in a new session only. Nothing was started.`;
 			return { outcome: "no-chop", message };
 		}
+		const edited = textToRun(request, chop);
+		if (!edited.ok) return { outcome: "no-chop", message: edited.message };
 		let agent: AgentSetting | null = null;
 		if (chop.kind === "prompt" && request.session === undefined) {
 			agent = chop.agent === null ? agents[0] ?? null : findAgent(agents, chop.agent);
@@ -98,9 +100,9 @@ export function createMockChops() {
 			approvals = withChopApproval(approvals, request.repository, digest);
 		}
 		const where = { repository: request.repository, worktree: request.worktree, cols: request.cols, rows: request.rows };
-		if (chop.kind === "command") return terminals.openChopTerminal(where, { kind: "command", name: chop.name, text: chop.text });
-		if (agent !== null) return terminals.openChopTerminal({ ...where, agent: agent.name }, { kind: "prompt", text: chop.text });
-		const sent = terminals.sendPrompt(request.session!, request.repository, request.worktree, chop.text);
+		if (chop.kind === "command") return terminals.openChopTerminal(where, { kind: "command", name: chop.name, text: edited.text });
+		if (agent !== null) return terminals.openChopTerminal({ ...where, agent: agent.name }, { kind: "prompt", text: edited.text });
+		const sent = terminals.sendPrompt(request.session!, request.repository, request.worktree, edited.text);
 		if (sent.outcome !== "pasted") return sent;
 		const target = terminals.sessionById(request.session!);
 		return target === null ? { outcome: "gone", message: "The session has ended." } : { outcome: "sent", session: target };

@@ -3857,3 +3857,52 @@ Run for the workspace header's action bar and its Primary checkout label
 - `bun run build:web`: built.
 - `bun run test`: 3812 pass, 19 skip, 0 fail, after rebasing on main.
 - Not run: the desktop window on any platform, and a screen reader.
+
+Run for searching and running a chop from the keyboard, and changing both
+chop shortcuts in Settings, Chops (issue 255), Linux x64 with Bun 1.4.5:
+
+- `bun test tests/shortcuts.test.ts`: the chord grammar (Ctrl+Shift or
+  Cmd+Shift and a letter, never Alt, a digit, or a key let go), the
+  defaults K and T, each key the app or its text editor keeps refused with
+  what it does, the other chop shortcut's key refused, and the preference
+  read, refused, salvaged, and written. One test checks that every letter
+  in the kept table is taken by the app's own key handler or bound by
+  CodeMirror's default, history, or search keys as the editor uses them,
+  and the other way round, so the table cannot drift.
+- `bun test tests/run-chop.test.tsx`: the ranking (name, letters in the
+  name, text anywhere, letters in the first line; then the last chop,
+  favorites, the score, the panel's order), the kind filter and Tab, the
+  keys (Enter, Ctrl+Enter and Cmd+Enter, nothing while composing or for a
+  held key's repeats), the
+  shortcut taken only with chops on and no other dialog open, keys set in
+  Settings followed by the search, the panel, and the Chops button's
+  tooltip, a clashing save refused, the list's states, and runs over the
+  mock engine: a command through the panel's path, an edited command
+  typed as edited with the chop unchanged, an edited prompt sent or copied
+  as edited, the agent picker showing the edited prompt it sends, and an
+  edited `.timber/chops.json` chop asking for the file's
+  own text first, showing the edited text, then running it.
+- `bun test tests/chops.test.ts`: in the main process, edited text typed
+  or sent in place of the chop's, the approval still of the file's text,
+  and blank, too long, or non-text edits refused.
+- `tests/run-chop-browser.test.ts` in Chrome over the mock engine:
+  Ctrl+Shift+T opened the search with the panel hidden from a repository
+  header, took the keyboard, and closed again with focus back on the
+  header; typing, Tab, and Shift+Tab narrowed the list; Enter started the
+  chop in the selected worktree; Ctrl+Enter showed the text to edit,
+  Escape went back to the list and a second Escape closed it, and Enter
+  on an edited text started it with the saved chop unchanged; in Settings,
+  Chops, pressing Ctrl+Shift+P and then Ctrl+Shift+K in "Search and run a
+  chop" was refused with each reason and the field kept Ctrl+Shift+T,
+  Ctrl+Shift+Y was taken and saved, and Ctrl+Shift+Y then opened the
+  search; with "Use chops" off the key opened nothing.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun run build:web`: built.
+- `bun run test`: 3880 pass, 19 skip, 0 fail, after rebasing on main. Earlier full runs had one
+  to four failures in tests outside this change (a terminal output test,
+  the editor's 10,000-line typing test, and real-Timber worktree and arena
+  tests at their 30 second limit); each of those files passed when run on
+  its own.
+- Not run: the desktop window on any platform, and Ctrl+Shift+T or
+  Cmd+Shift+T against any desktop's own keys. The key was chosen by
+  analysis.

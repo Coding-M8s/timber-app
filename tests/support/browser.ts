@@ -35,6 +35,7 @@ const KEYS: Record<string, { code: string; keyCode: number; text?: string }> = {
 	F: { code: "KeyF", keyCode: 70 },
 	P: { code: "KeyP", keyCode: 80 },
 	S: { code: "KeyS", keyCode: 83 },
+	T: { code: "KeyT", keyCode: 84 },
 	Y: { code: "KeyY", keyCode: 89 },
 	Z: { code: "KeyZ", keyCode: 90 },
 	"/": { code: "Slash", keyCode: 191, text: "/" },

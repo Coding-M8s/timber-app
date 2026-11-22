@@ -6,6 +6,7 @@ import { useAppState, useStore } from "../store/react";
 import { chopsEnabled, chopsPanelShown, filesPanelShown, finishedSessions, selectedWorktree, timberReady, waitingSessions } from "../store/state";
 import { describeFinished, describeToVisit, describeWaiting, waitingHint } from "../waiting";
 import { StatusGlyph } from "./StatusGlyph";
+import { shortcutLetter } from "../../shared/shortcuts";
 import { CHOPS_BUTTON_ID, CHOPS_BUTTON_LABEL, CHOPS_PANEL_ID, chopsButtonHint } from "../chops-panel-format";
 import { toggleChopsPanel } from "./ChopsPanel";
 import { toggleFilesPanel } from "./FilesPanel";
@@ -67,7 +68,7 @@ export function TitleBar() {
 					className="titlebar-chops"
 					aria-pressed={chopsPanelShown(state)}
 					aria-controls={chopsPanelShown(state) ? CHOPS_PANEL_ID : undefined}
-					title={chopsButtonHint(chopsPanelShown(state), mac)}
+					title={chopsButtonHint(chopsPanelShown(state), mac, shortcutLetter(state.preferences.shortcuts, "chops-panel"))}
 					onClick={() => void toggleChopsPanel(store)}
 				>
 					<svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

@@ -5285,6 +5285,119 @@ pre:focus-visible {
 	white-space: nowrap;
 }
 
+/* The chop search (issue 255): the palette's box and rows, with each chop's kind, name, and text or target, and its whole text under the list. */
+.run-chop-filter {
+	flex: none;
+	padding: 3px 8px;
+	border: none;
+	border-radius: 6px;
+	background: var(--fill-selected);
+	color: var(--text-2);
+	font: inherit;
+	font-size: 12px;
+	cursor: pointer;
+}
+
+.run-chop-where {
+	flex: none;
+	max-width: 35%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 12px;
+	color: var(--text-3);
+}
+
+.run-chop-row {
+	align-items: center;
+}
+
+.run-chop-kind {
+	flex: none;
+	width: 64px;
+	font-size: 12px;
+	color: var(--text-3);
+}
+
+.run-chop-body {
+	flex: 1 1 auto;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.run-chop-body .palette-label {
+	flex: none;
+}
+
+.run-chop-text,
+.run-chop-target {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 12px;
+	color: var(--text-2);
+}
+
+.run-chop-text {
+	font-family: var(--font-mono);
+}
+
+.run-chop-preview {
+	flex: none;
+	max-height: 7.5em;
+	margin: 0;
+	padding: 8px 14px;
+	overflow: auto;
+	border-top: 1px solid var(--line);
+	font-family: var(--font-mono);
+	font-size: 12px;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	color: var(--text-2);
+}
+
+.run-chop-keys {
+	flex: none;
+	display: inline-flex;
+	gap: 12px;
+	white-space: nowrap;
+}
+
+.run-chop-keys kbd {
+	font-family: var(--font-mono);
+	font-size: 11px;
+	color: var(--text-2);
+}
+
+.run-chop-edit {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 14px;
+	overflow-y: auto;
+}
+
+/* Settings, Chops: the two chop shortcuts side by side, as in the mock. */
+.chop-shortcuts {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+	gap: 12px;
+}
+
+.chop-shortcut-row {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+}
+
+.chop-shortcut-row .field-input {
+	flex: 1 1 auto;
+	min-width: 0;
+	cursor: pointer;
+}
+
 /* Done in the background (issue 98): a removal that runs is said in blue, as for work that runs, one that failed in red, always with words. */
 .row-flag.removing {
 	color: var(--ahead);

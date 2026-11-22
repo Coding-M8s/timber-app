@@ -3,6 +3,7 @@ import { FilesPanel, FilesShortcut } from "./components/FilesPanel";
 import { SidePanelResizer } from "./components/SidePanel";
 import { Dialogs } from "./components/Dialogs";
 import { PaletteShortcut } from "./components/PaletteShortcut";
+import { RunChopShortcut } from "./components/RunChopDialog";
 import { WaitingShortcut } from "./components/WaitingShortcut";
 import { QuitDialog } from "./components/QuitDialog";
 import { Sidebar } from "./components/Sidebar";
@@ -134,6 +135,7 @@ export function App({ store, children }: { store: AppStore; children?: ReactNode
 				<PaletteShortcut />
 				<WaitingShortcut />
 				<ChopsShortcut />
+				<RunChopShortcut />
 				<FilesShortcut />
 				{children}
 				{/* Over any other dialog: the app is about to quit. */}
