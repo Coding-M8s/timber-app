@@ -59,7 +59,7 @@ describe.skipIf(browserPath === null || process.platform === "win32")("a diff's 
 			const feature = repository.worktrees[1];
 			${ENGINE}.setFileChanges(feature.path, [{ change: { area: "unstaged", kind: "modified", path: ${JSON.stringify(PATH)}, previousPath: null }, patch: ${JSON.stringify(PATCH)} }]);
 			${STORE}.select(feature.id);
-			${STORE}.showTab("changes");
+			${STORE}.showSidePanel("changes");
 			await ${STORE}.readChanges(repository.path, feature.id);
 		})()`);
 		await page.until(`[...document.querySelectorAll(".change-file")].some(button => button.title === ${JSON.stringify(PATH)})`, "the file was listed");
