@@ -154,8 +154,9 @@ describe("readTheme", () => {
 		expect(replaced).toEqual([]);
 		expect(theme.ui.diffAddedWord).toBe(withAlpha("#117733", 0.26));
 		expect(theme.ui.diffRemovedWord).toBe(withAlpha("#aa2222", 0.2));
-		// Given ones are kept.
+		// Given ones are kept, and one that is not a color is replaced and named, as any other.
 		expect(readTheme({ ...DEFAULT_LIGHT_THEME, ui: { ...ui, diffAddedWord: "#00ff00" } }).theme.ui.diffAddedWord).toBe("#00ff00");
+		expect(readTheme({ ...DEFAULT_LIGHT_THEME, ui: { ...ui, diffAddedWord: "green-ish" } }).replaced).toEqual(["ui.diffAddedWord"]);
 	});
 
 	test("never fails, and gives the default theme for what is not a theme at all", () => {

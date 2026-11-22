@@ -2718,6 +2718,18 @@ pre:focus-visible {
 	background: var(--diff-removed);
 }
 
+.theme-sample-diff-word {
+	border-radius: 2px;
+}
+
+.theme-sample-diff-line.added .theme-sample-diff-word {
+	background: var(--diff-added-word);
+}
+
+.theme-sample-diff-line.removed .theme-sample-diff-word {
+	background: var(--diff-removed-word);
+}
+
 .theme-sample-toast {
 	align-self: flex-start;
 	padding: 5px 9px;
@@ -4593,9 +4605,14 @@ pre:focus-visible {
 	color: var(--error);
 }
 
-/* The words that changed in a paired line, a stronger tint over the line's own. */
-.diff-word {
+/*
+ * The words that changed in a paired line, a stronger tint over the line's
+ * own, in the text color: some themes' code colors are too faint on the
+ * tint, and the contrast check measures the text color there.
+ */
+.diff-line .diff-word {
 	border-radius: 2px;
+	color: var(--text);
 }
 
 .diff-line.added .diff-word {

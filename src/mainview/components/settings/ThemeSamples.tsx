@@ -79,8 +79,8 @@ export function ThemeSample({ theme }: { theme: Theme }) {
 				</p>
 				<div className="theme-sample-diff">
 					<p className="theme-sample-diff-line">{"  "}export function login() {"{"}</p>
-					<p className="theme-sample-diff-line removed">-{"   "}return check(user);</p>
-					<p className="theme-sample-diff-line added">+{"   "}return check(user, token);</p>
+					<p className="theme-sample-diff-line removed">-{"   "}return check(user, <span className="theme-sample-diff-word">null</span>);</p>
+					<p className="theme-sample-diff-line added">+{"   "}return check(user, <span className="theme-sample-diff-word">token</span>);</p>
 					<p className="theme-sample-diff-line">{"  "}{"}"}</p>
 				</div>
 				<p className="theme-sample-toast">Fetch failed <span className="theme-sample-faint">offline</span></p>
