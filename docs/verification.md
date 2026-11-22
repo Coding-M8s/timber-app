@@ -3768,3 +3768,35 @@ Run for a sound for each chop (issue 254), Linux x64 with Bun 1.4.5:
   after Close.
 - Not run: the desktop window on any platform, hearing a sound played from
   a real chop, and a screen reader.
+
+Run for the sprint source and tracker scope in Settings, Issue tracking
+(issue 276), Linux x64 with Bun 1.4.5, Git 2.43.0, and Timber 0.1.4 on the
+PATH:
+
+- `bun test tests/timber-config.test.ts` with the real Timber 0.1.4: a
+  draft from the app's tracking fields with board 12, project `tim`,
+  GitHub project `octo/2` and milestone `v0.3`, and Linear team `eng` was
+  saved, and read back with `project = "TIM"` and `team = "ENG"`; the
+  fields read back left nothing to save. A board typed as `twelve` was
+  refused as `jira.board is invalid`, a board with sprint JQL as
+  `jira.sprint_jql is invalid`, and the team `engineering` as `linear.team
+  is invalid`, and the file was unchanged after each. Switching to JQL
+  replaced the board, and clearing the GitHub and Linear fields removed
+  both tables.
+- `tests/issue-tracking-link-browser.test.ts` in Chrome: a Linear board
+  with no team showed Current sprint disabled and "Open Issue tracking
+  settings"; clicking it opened Settings at Repository on that repository,
+  with focus on the Issue tracking heading; typing `eng` in Team and
+  saving showed "Saved" and `ENG`; on closing Settings, Current sprint was
+  enabled and the link gone. All against the mock engine.
+- `bun run typecheck`: no errors.
+- `bun run build:web`: built.
+- `bun run test`: 3752 pass, 19 skip, 0 fail, after rebasing on main.
+  Two earlier runs before the rebase each had two or three failures in
+  tests unrelated to this change (a real-Timber arena test and a
+  worktree test at their 30 second limit, the editor's 10,000-line typing
+  test, an editor launch test); each of those files passed when run on
+  its own.
+- Not run: the desktop window on any platform, and a real Jira board,
+  GitHub project or milestone, or Linear team: the sprint list after a
+  save is tested on the mock's lists, which follow the mock's settings.

@@ -981,7 +981,7 @@ export function createMockEngine(
 	const { workflowNames, ...workflows } = createMockWorkflows(path => current.some(repository => repository.path === path), () => currentTimber());
 	const pullRequests = createMockPullRequests(path => current.find(repository => repository.path === path && repository.available), () => currentTimber());
 	const issues = createMockIssues(path => current.find(repository => repository.path === path && repository.available), () => currentTimber());
-	const issueLists = createMockIssueLists(path => current.find(repository => repository.path === path && repository.available), () => currentTimber());
+	const issueLists = createMockIssueLists(path => current.find(repository => repository.path === path && repository.available), () => currentTimber(), path => timberConfig.effectiveTimberSettings(path));
 	const backups = createMockBackups({
 		listed: path => current.find(repository => repository.path === path && repository.available),
 		timber: () => currentTimber(),

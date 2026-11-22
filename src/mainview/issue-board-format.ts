@@ -105,6 +105,14 @@ export function describeEmptyList(list: IssueList, tracker: IssueTracker): { tit
 	return { title: "No open issues", text: `Open ${TRACKER_NAMES[tracker]} issues show here, newest first.` };
 }
 
+/** The button that opens Settings at the repository's Issue tracking, where the sprint, project, milestone, and team are set. */
+export const OPEN_TRACKING_SETTINGS = "Open Issue tracking settings";
+
+/** Whether a list that failed for this reason is fixed in Issue tracking settings: one not set up, or one whose board, project, milestone, or team Timber cannot find. */
+export function fixedInTrackingSettings(reason: IssueListFailureReason): boolean {
+	return reason === "not-configured" || reason === "not-found";
+}
+
 export const NO_CURRENT_SPRINT = { title: "No current sprint", text: "The sprint is set up, and nothing is running in it right now." };
 
 /** The quiet word for a list that could not be read, beside the board's title, and the line for when nothing was read before. */

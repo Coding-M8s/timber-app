@@ -13,8 +13,9 @@ import {
  * Each group saves on its own: its fields replace only its own keys in the
  * settings as last read, and every other key, including ones this app does
  * not edit such as named workflows, goes back to Timber as it was read. The
- * same holds inside a table a group sets, such as `[jira]`: the group
- * replaces only the keys it draws, and keys such as `board` stay as read.
+ * same holds inside a table a group sets, such as `[agent]`: the group
+ * replaces only the keys it draws, and keys such as `resolve_handoff` stay
+ * as read.
  */
 
 export const TIMBER_GROUPS = ["editor", "agent", "git", "scripts", "tracking"] as const;
@@ -58,12 +59,25 @@ export interface ScriptsDraft {
 	preDoneSet: boolean;
 }
 
-/** Logins are typed only to save or check them, never filled in from what is saved. */
+/** Where Jira's current sprint comes from: a Scrum board's active sprint, a JQL query, or not set. Never both. */
+export type SprintSource = "none" | "board" | "jql";
+
+/**
+ * Logins are typed only to save or check them, never filled in from what is
+ * saved. The sprint and scope fields are text as typed: blank means not set.
+ */
 export interface TrackingDraft {
 	tracker: Tracker | "";
 	jiraMode: Mode;
 	siteUrl: string;
 	cloudId: string;
+	sprintSource: SprintSource;
+	board: string;
+	sprintJql: string;
+	jiraProject: string;
+	githubProject: string;
+	githubMilestone: string;
+	linearTeam: string;
 	jiraEmail: string;
 	jiraToken: string;
 	removeJira: boolean;
@@ -85,7 +99,7 @@ export const GROUP_KEYS: Record<TimberGroup, readonly string[]> = {
 	agent: ["agent"],
 	git: ["base_branch", "remote", "worktree_dir"],
 	scripts: ["hooks"],
-	tracking: ["default_tracker", "jira"],
+	tracking: ["default_tracker", "jira", "github", "linear"],
 };
 
 function launcherDraft(value: TimberValues["editor"] | TimberValues["agent"]): LauncherDraft {
@@ -102,9 +116,24 @@ function launcherDraft(value: TimberValues["editor"] | TimberValues["agent"]): L
 	};
 }
 
+/** The Jira fields of a `[jira]` table as read: the site, the sprint source, and the project. */
+function jiraFields(jira: TimberValues["jira"]): Pick<TrackingDraft, "siteUrl" | "cloudId" | "sprintSource" | "board" | "sprintJql" | "jiraProject"> {
+	const table = jira || null;
+	// A board wins over JQL: Timber refuses to read a file that sets both, so it never comes to that.
+	const sprintSource: SprintSource = table?.board !== undefined ? "board" : table?.sprint_jql !== undefined ? "jql" : "none";
+	return {
+		siteUrl: table?.site_url ?? "",
+		cloudId: table?.cloud_id ?? "",
+		sprintSource,
+		board: table?.board !== undefined ? String(table.board) : "",
+		sprintJql: table?.sprint_jql ?? "",
+		jiraProject: table?.project ?? "",
+	};
+}
+
 /** Each group's fields as the settings that were read have them. */
 export function draftsOf(values: TimberValues): GroupDrafts {
-	const { hooks, jira } = values;
+	const { hooks, jira, github, linear } = values;
 	return {
 		editor: launcherDraft(values.editor),
 		agent: launcherDraft(values.agent),
@@ -115,8 +144,10 @@ export function draftsOf(values: TimberValues): GroupDrafts {
 		tracking: {
 			tracker: values.default_tracker ?? "",
 			jiraMode: jira === undefined ? "inherit" : jira === false ? "off" : "set",
-			siteUrl: jira ? jira.site_url : "",
-			cloudId: jira ? jira.cloud_id ?? "" : "",
+			...jiraFields(jira),
+			githubProject: github ? github.project ?? "" : "",
+			githubMilestone: github ? github.milestone ?? "" : "",
+			linearTeam: linear ? linear.team ?? "" : "",
 			jiraEmail: "",
 			jiraToken: "",
 			removeJira: false,
@@ -132,7 +163,10 @@ export const DRAWN_PATHS: Record<TimberGroup, readonly string[]> = {
 	agent: ["agent.command", "agent.args", "agent.enabled", "agent.wait_for_setup"],
 	git: ["base_branch", "remote", "worktree_dir"],
 	scripts: ["hooks.post_create", "hooks.pre_delete"],
-	tracking: ["default_tracker", "jira.site_url", "jira.cloud_id", "credentials.jira", "credentials.linear"],
+	tracking: [
+		"default_tracker", "jira.site_url", "jira.cloud_id", "jira.board", "jira.sprint_jql", "jira.project",
+		"github.project", "github.milestone", "linear.team", "credentials.jira", "credentials.linear",
+	],
 };
 
 /** Set or remove one key, leaving every other as it was. */
@@ -155,6 +189,32 @@ function tableValue(mode: Mode, read: unknown, drawn: Record<string, unknown>): 
 		else table[key] = value;
 	}
 	return table;
+}
+
+/** Text as typed without the spaces around it, or undefined when it is blank. Timber decides what it accepts. */
+const typed = (text: string): string | undefined => text.trim() === "" ? undefined : text.trim();
+
+/** A board number as Timber takes it, or the text as typed so Timber can refuse it at the field. */
+function boardValue(text: string): number | string | undefined {
+	const trimmed = text.trim();
+	if (trimmed === "") return undefined;
+	// A number past what JSON keeps exactly goes as text, so Timber refuses it rather than saving another board.
+	return /^\d+$/.test(trimmed) && Number.isSafeInteger(Number(trimmed)) ? Number(trimmed) : text;
+}
+
+/**
+ * A tracker scope table that has no Off or Inherit choice, such as
+ * `[github]`: left as read while every field is blank and the table as read
+ * sets none of them (absent, `false`, or empty, which still shadows the
+ * machine's), otherwise the table as read with the fields in place, and
+ * removed once that leaves it empty, so the machine's applies again.
+ */
+function scopeTableValue(read: unknown, drawn: Record<string, string | undefined>): unknown {
+	const readTable = typeof read === "object" && read !== null && !Array.isArray(read) ? read as Record<string, unknown> : null;
+	const readSetsOne = readTable !== null && Object.keys(drawn).some(key => readTable[key] !== undefined);
+	if (Object.values(drawn).every(value => value === undefined) && !readSetsOne) return read;
+	const table = tableValue("set", read, drawn) as Record<string, unknown>;
+	return Object.keys(table).length === 0 ? undefined : table;
 }
 
 function launcherValue(draft: LauncherDraft, kind: "editor" | "agent", read: unknown): unknown {
@@ -196,7 +256,13 @@ export function valuesWith<Group extends TimberGroup>(group: Group, draft: Group
 			put(next, "jira", tableValue(tracking.jiraMode, next.jira, {
 				site_url: tracking.siteUrl,
 				cloud_id: tracking.cloudId === "" ? undefined : tracking.cloudId,
+				// Only the chosen source is drawn, so the app never saves both.
+				board: tracking.sprintSource === "board" ? boardValue(tracking.board) : undefined,
+				sprint_jql: tracking.sprintSource === "jql" ? typed(tracking.sprintJql) : undefined,
+				project: typed(tracking.jiraProject),
 			}));
+			put(next, "github", scopeTableValue(next.github, { project: typed(tracking.githubProject), milestone: typed(tracking.githubMilestone) }));
+			put(next, "linear", scopeTableValue(next.linear, { team: typed(tracking.linearTeam) }));
 			break;
 		}
 	}
@@ -335,9 +401,50 @@ export function trackerPlaceholder(scope: TimberConfigScope, machine: TimberValu
 	return inherited !== undefined ? `${inheritLabel(scope)}: ${TRACKER_NAMES[inherited]}` : inheritLabel(scope);
 }
 
+/** A `[jira]` table's sprint source and project in words, such as "board 12, project TIM". */
+export function describeJiraSprint(jira: { board?: number | string | undefined; sprint_jql?: string | undefined; project?: string | undefined }): string[] {
+	return [
+		jira.board !== undefined ? `board ${jira.board}` : jira.sprint_jql !== undefined ? "sprint from JQL" : null,
+		jira.project !== undefined ? `project ${jira.project}` : null,
+	].filter(part => part !== null);
+}
+
 export function jiraDefault(scope: TimberConfigScope, machine: TimberValues | null): string | null {
 	if (scope !== "repository" || machine === null || machine.jira === undefined) return null;
-	return machine.jira === false ? "Off" : machine.jira.site_url;
+	return machine.jira === false ? "Off" : [machine.jira.site_url, ...describeJiraSprint(machine.jira)].join(", ");
+}
+
+/**
+ * The tracking fields after a new choice of where Jira comes from. A
+ * repository's own `[jira]` replaces the machine's whole, site included, so
+ * choosing "This site" with nothing typed starts from the machine's site,
+ * sprint source, and project, to change from there.
+ */
+export function withJiraMode(draft: TrackingDraft, jiraMode: Mode, scope: TimberConfigScope, machine: TimberValues | null): TrackingDraft {
+	const startFromMachine = jiraMode === "set" && scope === "repository" && draft.siteUrl.trim() === "" && typeof machine?.jira === "object";
+	return startFromMachine ? { ...draft, jiraMode, ...jiraFields(machine!.jira) } : { ...draft, jiraMode };
+}
+
+/**
+ * The fallback of a GitHub or Linear field, shown as its placeholder. A
+ * repository inherits the machine's table only while it sets none of the
+ * table's fields and its file has no such table of its own: one field set
+ * here, or a table written by hand (`false`, or empty), replaces the
+ * machine's table whole.
+ */
+export function scopePlaceholder(
+	table: "github" | "linear",
+	key: "project" | "milestone" | "team",
+	draft: TrackingDraft,
+	scope: TimberConfigScope,
+	machine: TimberValues | null,
+	values: TimberValues,
+): string {
+	const own = table === "github" ? [draft.githubProject, draft.githubMilestone] : [draft.linearTeam];
+	const inherits = scope === "repository" && values[table] === undefined && own.every(text => text.trim() === "");
+	const machineTable = inherits ? machine?.[table] : undefined;
+	const inherited = typeof machineTable === "object" ? (machineTable as Record<string, unknown>)[key] : undefined;
+	return typeof inherited === "string" ? `${inherited} (machine default)` : "Not set";
 }
 
 const STATE_WORDS: Record<TimberCredentialStates["linear"]["state"], string> = {

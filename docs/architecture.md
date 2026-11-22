@@ -2205,14 +2205,37 @@ the private login stores stay Timber's.
   terminals, wait for setup), Branch and remote and folder, Scripts (setup
   and pre-done, each script one entry that may span lines), and Issue
   tracking (default tracker, Jira site and cloud ID, Jira and Linear
-  logins). The presets of `timber setup` fill the fields, which stay
-  editable. A table can inherit, be off (`false`), or be set here. A group
+  logins, and where each tracker's current sprint comes from). The presets
+  of `timber setup` fill the fields, which stay editable. A table can
+  inherit, be off (`false`), or be set here. A group
   is held in the window as typed (`src/mainview/timber-settings-format.ts`)
   and saved as the whole scope: its own keys replaced in the settings as last
   read, every other key sent back as it was read. Inside a table the group
   sets, only the keys it draws are replaced: hand-set keys such as
-  `[jira].board`, `sprint_jql`, and `project`, or `[agent].resolve_handoff`,
-  stay as read. Named workflows and arena presets are not edited: they are
+  `[agent].resolve_handoff` stay as read.
+- **Sprint source and tracker scope.** Issue tracking also draws
+  `[jira].board` or `[jira].sprint_jql` (a "Current sprint from" choice of
+  Not set, Scrum board, or JQL; only the chosen one is sent, so the app
+  never saves both) and `[jira].project`, shown with the site when Jira is
+  set here; `[github].project` and `[github].milestone`; and
+  `[linear].team`. Values go to Timber as typed, trimmed only to tell blank
+  from set: a board that is a whole number is sent as one, anything else as
+  the text, so Timber refuses it at the field (`jira.board is invalid`).
+  Timber names `jira.sprint_jql` when both are set, which shows at the
+  board field while Board is chosen. Timber's scopes merge table by table,
+  so a repository's `[jira]` replaces the machine's whole, site included:
+  choosing "This site" in a repository with no site typed starts from the
+  machine's site, sprint source, and project (`withJiraMode`). GitHub and
+  Linear have no Off or Inherit choice: blank fields leave the table as
+  read when it sets none of them (absent, `false`, or empty), a field typed
+  writes the table, and clearing every field removes it, so the machine's
+  applies again. A repository's GitHub and Linear fields show the machine's
+  values as placeholders only while all of that table's fields are blank
+  (`scopePlaceholder`). The setup wizard draws the same fields, returns to
+  Issue tracking for Timber's messages about them, and lists them on its
+  last step. After a save, the Issues board shown, when the save could
+  change it, reads its trackers and lists again (`refreshBoard`), so a
+  sprint just set up shows; another board reads them when it opens. Named workflows and arena presets are not edited: they are
   left out of the draft and Timber carries them over from the file as it is
   at save time, so a change made to them outside the app is a conflict, not
   a refused field.
@@ -2740,6 +2763,13 @@ Each repository's board lists issues that Timber reads with its own logins.
 - **Showing.** `IssuesBoard` and `IssuesRow` in
   `src/mainview/components/IssuesBoard.tsx`; `state.board` names the
   repository whose board replaces the workspace, and `select` clears it.
+  A list not set up (its hint under the toggles, or the board's own line
+  when no list is), and a list whose board, project, milestone, or team
+  Timber cannot find (`fixedInTrackingSettings`), offer "Open Issue
+  tracking settings": the settings dialog request names the section
+  (`repository`), the board's repository, and the group (`tracking`), so
+  Settings opens on that repository, not the selected worktree's, and
+  Issue tracking scrolls into view and takes the focus once read.
   Columns come from `boardColumns` in `src/mainview/issue-board-format.ts`,
   which never drops an issue. Cards are keyed by address, since a GitHub
   project can hold issues of several repositories. Cards use
@@ -2822,7 +2852,10 @@ Each repository's board lists issues that Timber reads with its own logins.
 
 In `bun run dev:web`, the samples' trackers have a GitHub milestone and a
 Jira board sprint; Linear has no team, so its sprint and open issues are not
-set up (`src/mainview/engine/mock-issue-lists.ts`). The GitHub sprint has
+set up (`src/mainview/engine/mock-issue-lists.ts`). The lists follow the
+mock's Timber settings after inheritance: a Linear team saved in Settings
+sets up Linear's cycle and open issues, and a Jira site with neither a board
+nor sprint JQL has no sprint. The GitHub sprint has
 one issue with a pull request, one with two (one from a fork), one with a
 worktree and a pull request, and a done one with a pull request; Jira's
 TIM-80 has one, and two issues' links could not be read. Their head branches

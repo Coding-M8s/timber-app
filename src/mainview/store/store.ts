@@ -3489,6 +3489,10 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			if (result.outcome === "saved") {
 				if (request.scope === "repository" && request.repository !== null) await reloadOne(request.repository);
 				else await reloadAll("all");
+				// The open Issues board reads its trackers and lists again, so a sprint just set up shows. Another board does so when it opens.
+				// A read already running when the save landed is not repeated: Refresh reads again.
+				const shown = state.board;
+				if (shown !== null && (request.scope === "machine" || shown === request.repository)) void refreshBoard(shown);
 			}
 			return result;
 		},

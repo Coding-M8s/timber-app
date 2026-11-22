@@ -247,8 +247,13 @@ export type DialogRequest =
 	 */
 	| { kind: "restore-backup"; repository: string; backup: Backup }
 	| { kind: "delete-backup"; repository: string; backup: Backup }
-	/** The app's settings, open at one section, or at the first when none is named. */
-	| { kind: "settings"; section?: SettingsSection }
+	/**
+	 * The app's settings, open at one section, or at the first when none is
+	 * named. The Repository section can be opened at one repository, named by
+	 * the path of its primary checkout, and at one group of its settings, such
+	 * as Issue tracking from the Issues board.
+	 */
+	| { kind: "settings"; section?: SettingsSection; repository?: string; group?: "tracking" }
 	/** The command palette: every worktree and action, searched by typing. */
 	| { kind: "palette" }
 	/** The setup wizard of a repository new to Timber, named by the path of its primary checkout. */

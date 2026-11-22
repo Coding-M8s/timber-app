@@ -853,7 +853,11 @@ logins. The app never reads a tracker login and never signs in.
   Timber command it runs. Timber validates and writes; its messages show at
   the field they name. A tracked `.timber.toml` is changed only when the
   person ticks the box for that save. Issue tracking has "Test connection"
-  for GitHub, Jira, and Linear.
+  for GitHub, Jira, and Linear, and sets where each one's current sprint
+  comes from: a Jira Scrum board or JQL (one or the other) and project, a
+  GitHub project or milestone, a Linear team. The Issues board's "not set
+  up" lines offer "Open Issue tracking settings", which opens that group
+  for the board's repository.
 - **Chops:** a Settings section for saved commands and prompts to run in a
   worktree. A "Use chops" switch at its top, on by default, saved with the
   section's Save (on its own while the rows are as saved), removes the

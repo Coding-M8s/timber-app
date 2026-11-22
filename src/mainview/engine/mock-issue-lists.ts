@@ -3,6 +3,7 @@ import type { LinkedPullRequest, SuggestedIssue } from "../../shared/issue-searc
 import { type IssueList, type IssueListRequest, type IssueListResult, type Sprint, intersectMySprint } from "../../shared/issue-lists";
 import type { Issue } from "../../shared/issues";
 import type { IssueLink, IssueTracker, Repository, TimberStatus } from "../../shared/model";
+import type { TimberValues } from "../../shared/timber-config";
 
 /** The part of the engine about the issues board's lists. */
 export type IssueListCapabilities = Pick<Engine, "listIssues">;
@@ -43,7 +44,7 @@ const IN_REVIEW = { name: "In Review", category: "in-progress" } as const;
 const DONE = { name: "Done", category: "closed" } as const;
 const WONT_DO = { name: "Won't Do", category: "closed" } as const;
 
-/** The sample sprint of each tracker. Linear's team is not set, so its sprint is not set up. */
+/** The sample sprint of each tracker. Linear's team is not set in the samples, so its sprint is not set up until one is saved. */
 const sampleSprints: Readonly<Record<IssueTracker, { sprint: Sprint; issues: Issue[] } | null>> = {
 	github: {
 		sprint: { name: "v0.3", source: "github-milestone" },
@@ -139,19 +140,44 @@ export const sampleAssignedToMe = (issue: Pick<Issue, "tracker" | "assignee">): 
 /** A sample issue as a list holds it, before worktrees are marked. */
 const listed = (issue: Issue): SuggestedIssue => ({ ...issue, worktree: null, pullRequests: sampleLinks(issue), assignedToMe: sampleAssignedToMe(issue) });
 
-/** Linear's sprint and open issues need its team, which the samples do not set. */
+/** Linear's sprint and open issues need its team, which the samples do not set until one is saved. */
 const NOT_CONFIGURED: IssueListResult = { ok: true, outcome: "failed", reason: "not-configured", diagnostic: "No Linear team is configured. Set [linear].team to a team key." };
+const NO_GITHUB_SPRINT: IssueListResult = { ok: true, outcome: "failed", reason: "not-configured", diagnostic: "No GitHub sprint is configured. Set [github].project to a Projects board, or [github].milestone." };
+const NO_JIRA_SPRINT: IssueListResult = { ok: true, outcome: "failed", reason: "not-configured", diagnostic: "No Jira sprint is configured. Set [jira].board to a Scrum board, or [jira].sprint_jql." };
 
-/** What Timber would answer for one list of one sample tracker, before worktrees are marked. */
-export function sampleIssueList(list: IssueList, tracker: IssueTracker): IssueListResult {
-	const sprint = sampleSprints[tracker];
+/**
+ * The sample sprint of a tracker under the settings Timber would apply, as
+ * Timber reads them: a Linear team sets up Linear's cycle, GitHub's sprint
+ * needs a project or a milestone, and a Jira site with neither a board nor
+ * sprint JQL has no sprint. Without settings, or without a Jira site, the
+ * samples stand as they are.
+ */
+function sprintUnder(tracker: IssueTracker, settings: TimberValues | null): { sprint: Sprint; issues: Issue[] } | null | "no-jira-sprint" | "no-github-sprint" {
+	if (settings === null) return sampleSprints[tracker];
+	const { jira, github, linear } = settings;
+	if (tracker === "github" && !(typeof github === "object" && (github.project !== undefined || github.milestone !== undefined))) return "no-github-sprint";
+	if (tracker === "linear" && typeof linear === "object" && linear.team !== undefined) {
+		return { sprint: { name: `${linear.team.toUpperCase()} Cycle 7`, source: "linear-cycle" }, issues: sampleOpen.linear };
+	}
+	if (tracker === "jira" && typeof jira === "object" && jira.board === undefined && jira.sprint_jql === undefined) return "no-jira-sprint";
+	return sampleSprints[tracker];
+}
+
+/** What Timber would answer for one list of one sample tracker, before worktrees are marked. `settings` are the repository's settings after inheritance. */
+export function sampleIssueList(list: IssueList, tracker: IssueTracker, settings: TimberValues | null = null): IssueListResult {
+	const under = sprintUnder(tracker, settings);
+	const teamSet = tracker === "linear" && under !== null;
+	const sprint = under === "no-jira-sprint" || under === "no-github-sprint" ? null : under;
 	if (list === "sprint" || list === "my-sprint") {
+		if (under === "no-jira-sprint") return NO_JIRA_SPRINT;
+		if (under === "no-github-sprint") return NO_GITHUB_SPRINT;
 		if (sprint === null) return NOT_CONFIGURED;
 		const issues = list === "my-sprint" ? sprint.issues.filter(issue => issue.assignee === sampleLogin[tracker]) : sprint.issues;
 		return { ok: true, outcome: "found", issues: issues.map(listed), truncated: false, sprint: sprint.sprint };
 	}
-	const all = [...sampleOpen[tracker], ...(sprint?.issues ?? [])].filter(issue => issue.status.category !== "closed");
-	if (list === "open" && tracker === "linear") return NOT_CONFIGURED;
+	// The sprint's issues are still the tracker's open issues when no sprint is set up.
+	const all = [...new Set([...sampleOpen[tracker], ...((sprint ?? sampleSprints[tracker])?.issues ?? [])])].filter(issue => issue.status.category !== "closed");
+	if (list === "open" && tracker === "linear" && !teamSet) return NOT_CONFIGURED;
 	const issues = list === "assigned" ? all.filter(issue => issue.assignee === sampleLogin[tracker]) : all;
 	return { ok: true, outcome: "found", issues: issues.map(listed), truncated: false, sprint: null };
 }
@@ -178,13 +204,17 @@ export function bigSprint(count: number, tracker: IssueTracker = "jira"): IssueL
  * Timber must be ready. As Timber does, an issue a worktree is linked to
  * says so.
  */
-export function createMockIssueLists(listed: (path: string) => Repository | undefined, timber: () => TimberStatus): IssueListCapabilities & IssueListControls {
+export function createMockIssueLists(
+	listed: (path: string) => Repository | undefined,
+	timber: () => TimberStatus,
+	settings: (repository: string) => TimberValues | null = () => null,
+): IssueListCapabilities & IssueListControls {
 	const chosen = new Map<IssueList | "every", IssueListResult>();
 	const reads: IssueListRequest[] = [];
 	let delay = 0;
 	let assignedOption = true;
-	const answerOf = (list: IssueList, tracker: IssueTracker): IssueListResult => {
-		const answer = structuredClone(chosen.get(list) ?? chosen.get("every") ?? sampleIssueList(list, tracker));
+	const answerOf = (list: IssueList, tracker: IssueTracker, repository: string): IssueListResult => {
+		const answer = structuredClone(chosen.get(list) ?? chosen.get("every") ?? sampleIssueList(list, tracker, settings(repository)));
 		// An older Timber's records have no assignedToMe.
 		if (!assignedOption && answer.ok && answer.outcome === "found") for (const issue of answer.issues) issue.assignedToMe = null;
 		return answer;
@@ -200,8 +230,8 @@ export function createMockIssueLists(listed: (path: string) => Repository | unde
 			if (status.state === "too-old") return { ok: false, unsupported: false, message: `Timber ${status.found} at ${status.path} is older than the required ${status.required}.` };
 			reads.push({ repository, list, tracker });
 			const answer = list === "my-sprint" && !assignedOption && !chosen.has("my-sprint")
-				? intersectMySprint(answerOf("sprint", tracker), answerOf("assigned", tracker))
-				: answerOf(list, tracker);
+				? intersectMySprint(answerOf("sprint", tracker, repository), answerOf("assigned", tracker, repository))
+				: answerOf(list, tracker, repository);
 			if (!answer.ok || answer.outcome !== "found") return answer;
 			for (const issue of answer.issues) {
 				const tree = found.worktrees.find(candidate => candidate.issue?.kind === "linked" && candidate.issue.tracker === issue.tracker && candidate.issue.key === issue.key);

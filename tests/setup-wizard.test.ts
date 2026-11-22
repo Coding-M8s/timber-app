@@ -20,6 +20,8 @@ describe("the setup wizard as data", () => {
 		expect(stepOfField("hooks.post_create.1 is invalid")).toBe("scripts");
 		expect(stepOfField("credentials.jira needs a configured Jira site")).toBe("tracking");
 		expect(stepOfField("<root> is invalid")).toBeNull();
+		for (const field of ["jira.board", "jira.sprint_jql", "jira.project", "github.project", "github.milestone", "linear.team"]) expect(stepOfField(`${field} is invalid`)).toBe("tracking");
+		expect(firstStepOf(["linear.team is invalid"])).toBe("tracking");
 		expect(firstStepOf(["jira.site_url is invalid", "agent.command is invalid"])).toBe("agent");
 		expect(firstStepOf(["<root> is invalid"])).toBe("review");
 	});
@@ -48,7 +50,7 @@ describe("the setup wizard as data", () => {
 		const read = {
 			...READ,
 			agent: { command: "claude", args: [], enabled: true, resolve_handoff: "ask" },
-			jira: { site_url: "https://example.atlassian.net", board: 123, sprint_jql: "sprint in openSprints()", project: "TIM" },
+			jira: { site_url: "https://example.atlassian.net", sprint_jql: "sprint in openSprints()", project: "TIM", later_key: "kept" },
 		} as TimberValues;
 		const drafts = draftsOf(read);
 		expect(valuesWithAll(drafts, read)).toEqual(read);
@@ -56,7 +58,7 @@ describe("the setup wizard as data", () => {
 		drafts.tracking = { ...drafts.tracking, tracker: "jira", cloudId: "abc" };
 		const values = valuesWithAll(drafts, read);
 		expect<unknown>(values.agent).toEqual({ command: "codex", args: [], enabled: true, resolve_handoff: "ask" });
-		expect<unknown>(values.jira).toEqual({ site_url: "https://example.atlassian.net", cloud_id: "abc", board: 123, sprint_jql: "sprint in openSprints()", project: "TIM" });
+		expect<unknown>(values.jira).toEqual({ site_url: "https://example.atlassian.net", cloud_id: "abc", sprint_jql: "sprint in openSprints()", project: "TIM", later_key: "kept" });
 	});
 
 	test("the save request carries the revision as read, the scope, the logins typed, and the tracked say-so only for a tracked file", () => {
@@ -86,5 +88,20 @@ describe("the setup wizard as data", () => {
 		]);
 		expect(JSON.stringify(words)).not.toContain("lin_secret");
 		expect(describeChoices(draftsOf({}), "machine")[0]).toEqual({ group: "editor", text: "Timber's default" });
+	});
+
+	test("the last step lists the sprint source, the Jira project, GitHub's project and milestone, and Linear's team", () => {
+		const drafts = draftsOf({});
+		drafts.tracking = {
+			...drafts.tracking, jiraMode: "set", siteUrl: "https://example.atlassian.net", sprintSource: "board", board: "12", sprintJql: "ignored", jiraProject: "TIM",
+			githubProject: "octo/2", githubMilestone: "v0.3", linearTeam: "ENG",
+		};
+		const tracking = describeChoices(drafts, "repository").find(choice => choice.group === "tracking");
+		expect(tracking?.text).toBe("Jira at https://example.atlassian.net, board 12, project TIM, GitHub project octo/2, milestone v0.3, Linear team ENG");
+		drafts.tracking = { ...drafts.tracking, sprintSource: "jql", sprintJql: "sprint in openSprints()", jiraProject: "", githubProject: "", githubMilestone: "", linearTeam: "" };
+		expect(describeChoices(drafts, "repository").at(-1)?.text).toBe("Jira at https://example.atlassian.net, sprint from JQL");
+		// Off or inherited, the sprint fields are not listed.
+		drafts.tracking = { ...drafts.tracking, jiraMode: "off" };
+		expect(describeChoices(drafts, "repository").at(-1)?.text).toBe("Jira off");
 	});
 });

@@ -4,10 +4,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createTimberSettings } from "../src/bun/timber-settings";
 import {
-	type TimberSettingsSaveRequest, checkConnectionRequest, checkSaveRequest, invalidFieldPath, invalidFieldsAt, readConnectionCheck, readSettingsOutput,
+	type TimberSettingsSaveRequest, type TimberValues, checkConnectionRequest, checkSaveRequest, invalidFieldPath, invalidFieldsAt, readConnectionCheck, readSettingsOutput,
 	readTimberValues, settingsInput, shownApplyArguments, shownCheckArguments,
 } from "../src/shared/timber-config";
 import { describeTimberCommand, readTimberResult } from "../src/shared/timber-result";
+import { draftsOf, groupChanged, valuesWith } from "../src/mainview/timber-settings-format";
 import { REAL_TIMBER_TIMEOUT_MS, fingerprint, git, privateFolder, readyAt, realTimber, recordedConfig, standInResultTimber, standInTimber } from "./support/timber";
 
 setDefaultTimeout(REAL_TIMBER_TIMEOUT_MS);
@@ -47,6 +48,20 @@ describe("what Timber's settings commands print", () => {
 		expect(readSettingsOutput(recordedConfig.reads.machine.replace('"args":[]', '"args":"--flag"'), "machine")).toMatchObject({ ok: false });
 		// Keys the app does not edit may be anything: they go back as they came.
 		expect(readTimberValues({ arena: { agents: { fast: false } }, future_key: [1, 2] })).toEqual({ arena: { agents: { fast: false } }, future_key: [1, 2] });
+	});
+
+	test("the sprint source and tracker scope are read in Timber's shapes", () => {
+		const values = {
+			jira: { site_url: "https://example.atlassian.net", board: 12, project: "TIM" },
+			github: { project: "octo/2", milestone: "v0.3" },
+			linear: { team: "ENG" },
+		};
+		expect(readTimberValues(values)).toEqual(values);
+		expect(readTimberValues({ github: false, linear: false })).toEqual({ github: false, linear: false });
+		expect(readTimberValues({ jira: { site_url: "https://example.atlassian.net", sprint_jql: "sprint in openSprints()" } })).not.toBeNull();
+		expect(readTimberValues({ jira: { site_url: "https://example.atlassian.net", board: "12" } })).toBeNull();
+		expect(readTimberValues({ github: { project: 2 } })).toBeNull();
+		expect(readTimberValues({ linear: { team: ["ENG"] } })).toBeNull();
 	});
 
 	test("each result of a save is read from Timber's record", () => {
@@ -325,6 +340,39 @@ describe.skipIf(realTimber === null)("with the real Timber", () => {
 		const result = await service().save({ scope: "repository", repository, revision: settings.revision, values: { ...settings.values, editor: { command: " ", args: [], enabled: false } }, editTracked: false });
 		expect(result).toMatchObject({ outcome: "invalid", invalidFields: ["editor.command is invalid"] });
 		expect(readFileSync(join(repository, ".timber.toml"), "utf8")).toBe(before);
+	});
+
+	test("the sprint source and tracker scope drafted here are what Timber saves, and Timber refuses a bad board or both sources at the field", async () => {
+		const settings = await readRepository();
+		const path = join(repository, ".timber.toml");
+		const before = readFileSync(path, "utf8");
+		const draft = {
+			...draftsOf(settings.values).tracking,
+			jiraMode: "set" as const, siteUrl: "https://example.atlassian.net", sprintSource: "board" as const, board: "12", jiraProject: "tim",
+			githubProject: "octo/2", githubMilestone: "v0.3", linearTeam: "eng",
+		};
+		const save = (values: TimberValues) => service().save({ scope: "repository", repository, revision: settings.revision, values, editTracked: false });
+		expect(await save(valuesWith("tracking", { ...draft, board: "twelve" }, settings.values))).toMatchObject({ outcome: "invalid", invalidFields: ["jira.board is invalid"] });
+		const both = valuesWith("tracking", draft, settings.values);
+		expect(await save({ ...both, jira: { ...(both.jira as object), sprint_jql: "project = TIM" } as never })).toMatchObject({ outcome: "invalid", invalidFields: ["jira.sprint_jql is invalid"] });
+		expect(await save(valuesWith("tracking", { ...draft, linearTeam: "engineering" }, settings.values))).toMatchObject({ outcome: "invalid", invalidFields: ["linear.team is invalid"] });
+		expect(readFileSync(path, "utf8")).toBe(before);
+		expect(await save(both)).toMatchObject({ outcome: "saved" });
+		const after = await readRepository();
+		// Timber keeps project and team keys in capitals.
+		expect(after.values).toMatchObject({
+			jira: { site_url: "https://example.atlassian.net", board: 12, project: "TIM" },
+			github: { project: "octo/2", milestone: "v0.3" },
+			linear: { team: "ENG" },
+		});
+		// Read back, the fields are as saved, so there is nothing left to save.
+		expect(groupChanged("tracking", draftsOf(after.values).tracking, after.values)).toBe(false);
+		// Switching to JQL replaces the board, and clearing GitHub and Linear removes their tables.
+		const jql = valuesWith("tracking", { ...draftsOf(after.values).tracking, sprintSource: "jql", sprintJql: "project = TIM", githubProject: "", githubMilestone: "", linearTeam: "" }, after.values);
+		expect(await service().save({ scope: "repository", repository, revision: after.revision, values: jql, editTracked: false })).toMatchObject({ outcome: "saved" });
+		const cleared = await readRepository();
+		expect(cleared.values.jira).toEqual({ site_url: "https://example.atlassian.net", sprint_jql: "project = TIM", project: "TIM" });
+		expect("github" in cleared.values || "linear" in cleared.values).toBe(false);
 	});
 
 	test("a change made outside the app between read and save is refused, and the outside change stays", async () => {
