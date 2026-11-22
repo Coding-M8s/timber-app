@@ -20,7 +20,7 @@ import { applyPreferenceChange, defaultPreferences, readPreferences } from "../s
 import type { Repository } from "../src/shared/model";
 import { fingerprint, git } from "./support/timber";
 
-const chop = (name: string, kind: ChopKind = "command"): ListedChop => ({ name, kind, text: "x", description: "", agent: null, source: "personal-every" });
+const chop = (name: string, kind: ChopKind = "command"): ListedChop => ({ name, kind, text: "x", description: "", agent: null, source: "personal-every", sound: null });
 const names = (rows: readonly { chop: { name: string } }[]) => rows.map(row => row.chop.name);
 const arrangement = (favorites: string[], rest: string[]): ChopArrangement => ({ favorites, rest });
 
@@ -226,7 +226,7 @@ describe("the chop order in the settings file", () => {
 
 describe("renaming a chop", () => {
 	const saved = { "/a": arrangement(["Lint"], ["Test"]), "/b": arrangement([], ["Lint", "Build"]) };
-	const every = (name: string): PersonalChop => ({ name, kind: "command", text: "x", description: "", agent: null, repository: null });
+	const every = (name: string): PersonalChop => ({ name, kind: "command", text: "x", description: "", agent: null, repository: null, sound: null });
 	const here = (name: string, repository: string): PersonalChop => ({ ...every(name), repository });
 
 	test("a chop for one repository keeps its place and star there only", () => {

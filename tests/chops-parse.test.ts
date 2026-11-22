@@ -11,7 +11,7 @@ import { defaultPreferences, readPreferences, writePreferences } from "../src/sh
 const REPO = "/work/app";
 const command = (name: string, text = "bun test"): Chop => ({ name, kind: "command", text, description: "", agent: null });
 const prompt = (name: string, text = "Review the diff", agent: string | null = null): Chop => ({ name, kind: "prompt", text, description: "", agent });
-const mine = (chop: Chop, repository: string | null = null): PersonalChop => ({ ...chop, repository });
+const mine = (chop: Chop, repository: string | null = null): PersonalChop => ({ ...chop, repository, sound: null });
 const file = (chops: unknown[], extra: Record<string, unknown> = {}) => JSON.stringify({ version: 1, chops, ...extra });
 
 describe("one chop", () => {
@@ -137,13 +137,13 @@ describe("merging", () => {
 	test("a personal chop overrides the file's chop with the same name, ignoring case", () => {
 		const merged = mergeChops([mine(command("test", "bun test --watch"))], REPO, fileChops);
 		expect(merged.chops.map(chop => [chop.name, chop.source])).toEqual([["test", "personal-every"], ["Lint", "repository-file"], ["Review", "repository-file"]]);
-		expect(merged.overridden).toEqual([{ ...command("Test", "bun test"), source: "repository-file", by: "personal-every" }]);
+		expect(merged.overridden).toEqual([{ ...command("Test", "bun test"), source: "repository-file", sound: null, by: "personal-every" }]);
 	});
 
 	test("a personal chop for this repository wins over one for every repository, which is then left out", () => {
 		const merged = mergeChops([mine(command("Test", "every")), mine(command("Test", "here"), REPO)], REPO, fileChops);
-		expect(merged.chops.filter(chop => chop.name === "Test")).toEqual([{ ...command("Test", "here"), source: "personal-repository" }]);
-		expect(merged.overridden).toEqual([{ ...command("Test", "bun test"), source: "repository-file", by: "personal-repository" }]);
+		expect(merged.chops.filter(chop => chop.name === "Test")).toEqual([{ ...command("Test", "here"), source: "personal-repository", sound: null }]);
+		expect(merged.overridden).toEqual([{ ...command("Test", "bun test"), source: "repository-file", sound: null, by: "personal-repository" }]);
 	});
 
 	test("lists personal chops for this repository, then for every repository, then the file's, and leaves out other repositories", () => {
@@ -153,7 +153,7 @@ describe("merging", () => {
 	});
 
 	test("with no file, only personal chops are listed", () => {
-		expect(mergeChops([mine(command("Test"))], REPO, [])).toEqual({ chops: [{ ...command("Test"), source: "personal-every" }], overridden: [] });
+		expect(mergeChops([mine(command("Test"))], REPO, [])).toEqual({ chops: [{ ...command("Test"), source: "personal-every", sound: null }], overridden: [] });
 	});
 });
 
@@ -161,8 +161,8 @@ describe("the rows of Settings, Chops", () => {
 	test("save what was typed, with names cleaned and the agent only for a prompt", () => {
 		let drafts = addChopDraft([]);
 		const key = drafts[0]!.key;
-		drafts = editChopDraft(drafts, key, { name: "  Review   it ", kind: "prompt", text: "go", description: " Ask ", agent: "Codex", repository: REPO });
-		expect(chopsDraftModel(drafts, [])).toMatchObject({ canSave: true, chops: [{ name: "Review it", kind: "prompt", text: "go", description: "Ask", agent: "Codex", repository: REPO }] });
+		drafts = editChopDraft(drafts, key, { name: "  Review   it ", kind: "prompt", text: "go", description: " Ask ", agent: "Codex", repository: REPO, sound: null });
+		expect(chopsDraftModel(drafts, [])).toMatchObject({ canSave: true, chops: [{ name: "Review it", kind: "prompt", text: "go", description: "Ask", agent: "Codex", repository: REPO, sound: null }] });
 		drafts = editChopDraft(drafts, key, { kind: "command" });
 		expect(chopsDraftModel(drafts, []).chops[0]!.agent).toBeNull();
 	});

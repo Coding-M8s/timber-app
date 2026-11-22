@@ -4,7 +4,7 @@ import { CHOP_DESCRIPTION_LIMIT, CHOP_KINDS, CHOP_TEXT_LIMIT, type ChopKind, typ
 import { renameInArrangements, sameChopArrangements } from "../../../shared/chop-order";
 import { SESSION_NAME_LIMIT } from "../../../shared/terminal";
 import {
-	type ChopDraft, type ChopDraftChange, addChopDraft, chopAgentOptions, chopsSectionChange, chopsSectionRenames, chopDraftsOf, chopScopeOptions, chopsDraftModel, describeChopSource, describeChopsFile,
+	type ChopDraft, type ChopDraftChange, type ChopsSwitches, addChopDraft, chopAgentOptions, chopsSectionChange, chopsSectionRenames, chopDraftsOf, chopScopeOptions, chopsDraftModel, describeChopSource, describeChopsFile,
 	describeOverride, editChopDraft, isBlankChopDraft, removeChopDraft,
 } from "../../chop-format";
 import { useAppState, useStore } from "../../store/react";
@@ -21,8 +21,8 @@ export interface ChopsRepository {
 export interface ChopsSectionViewProps {
 	drafts: readonly ChopDraft[];
 	saved: readonly PersonalChop[];
-	/** The "Use chops" switch as shown: what is saved, or what the person switched it to. */
-	useChops: boolean;
+	/** The switches as shown: what is saved, or what the person switched them to. */
+	switches: ChopsSwitches;
 	/** Whether the section's Save has something it can save: the switch, the rows, or both. */
 	canSave: boolean;
 	repositories: readonly { path: string; name: string }[];
@@ -30,7 +30,7 @@ export interface ChopsSectionViewProps {
 	/** Null when no worktree is selected. */
 	repository: ChopsRepository | null;
 	save: SectionSave;
-	onUseChops: (on: boolean) => void;
+	onSwitch: (change: Partial<ChopsSwitches>) => void;
 	onAdd: () => void;
 	onEdit: (key: string, change: ChopDraftChange) => void;
 	onRemove: (key: string) => void;
@@ -83,9 +83,10 @@ function RepositoryChops({ repository, onReadAgain }: { repository: ChopsReposit
 }
 
 /** Settings, Chops as drawn from its data, so it can be tested without a window. */
-export function ChopsSectionView({ drafts, saved, useChops, canSave, repositories, agents, repository, save, onUseChops, onAdd, onEdit, onRemove, onSave, onReadAgain }: ChopsSectionViewProps) {
+export function ChopsSectionView({ drafts, saved, switches, canSave, repositories, agents, repository, save, onSwitch, onAdd, onEdit, onRemove, onSave, onReadAgain }: ChopsSectionViewProps) {
 	const idPrefix = useId();
 	const useHintId = `${idPrefix}-use-hint`;
+	const soundsHintId = `${idPrefix}-sounds-hint`;
 	const model = chopsDraftModel(drafts, saved);
 	const addId = `${idPrefix}-add`;
 	const removeId = (key: string) => `${idPrefix}-remove-${key}`;
@@ -123,11 +124,20 @@ export function ChopsSectionView({ drafts, saved, useChops, canSave, repositorie
 		>
 			<div className="field">
 				<label className="check">
-					<input type="checkbox" role="switch" checked={useChops} aria-describedby={useHintId} onChange={event => onUseChops(event.target.checked)} />
+					<input type="checkbox" role="switch" checked={switches.useChops} aria-describedby={useHintId} onChange={event => onSwitch({ useChops: event.target.checked })} />
 					<span className="check-text">Use chops</span>
 				</label>
 				<span id={useHintId} className="field-hint">
 					Off, chops are gone from the app: the title bar's Chops button, the chops panel, the chop shortcuts, the palette, and the session menus. Your chops stay saved here and come back when you turn it on.
+				</span>
+			</div>
+			<div className="field">
+				<label className="check">
+					<input type="checkbox" role="switch" checked={switches.playChopSounds} aria-describedby={soundsHintId} onChange={event => onSwitch({ playChopSounds: event.target.checked })} />
+					<span className="check-text">Play each chop's sound</span>
+				</label>
+				<span id={soundsHintId} className="field-hint">
+					A chop's sound, chosen in the chops panel, plays when the chop starts. Off, no chop plays one, and each keeps its sound for when you turn it on. One sound plays at a time, for at most 4 seconds.
 				</span>
 			</div>
 			{drafts.length === 0 && <p className="dialog-note">You have no chops of your own.</p>}
@@ -237,11 +247,11 @@ export function ChopsSection() {
 	if (shown.saved !== saved) setShown({ saved, drafts: fromSaved });
 	// The rows only ever differ from what is saved by what the person did.
 	const { draft: drafts, save, change, commit, reset } = useDraftSection(fromSaved);
-	// Null follows what is saved, so the switch only differs from it by what the person did.
-	const [chosenUse, setChosenUse] = useState<boolean | null>(null);
-	const savedUse = state.preferences.useChops;
-	const useChops = chosenUse ?? savedUse;
-	const pending = chopsSectionChange(chopsDraftModel(drafts, saved), saved, useChops, savedUse);
+	// Unset follows what is saved, so a switch only differs from it by what the person did.
+	const [chosen, setChosen] = useState<Partial<ChopsSwitches>>({});
+	const savedSwitches: ChopsSwitches = { useChops: state.preferences.useChops, playChopSounds: state.preferences.playChopSounds };
+	const switches: ChopsSwitches = { ...savedSwitches, ...chosen };
+	const pending = chopsSectionChange(chopsDraftModel(drafts, saved), saved, switches, savedSwitches);
 	const canSave = pending !== null;
 
 	const selected = selectedWorktree(state);
@@ -254,7 +264,7 @@ export function ChopsSection() {
 		const order = shownChopOrder(store.getState());
 		const chopOrder = renames.length === 0 ? null : renameInArrangements(order, renames);
 		store.noteChopRenames(renames);
-		await commit(chopOrder === null || sameChopArrangements(order, chopOrder) ? pending : { ...pending, chopOrder }, () => setChosenUse(null));
+		await commit(chopOrder === null || sameChopArrangements(order, chopOrder) ? pending : { ...pending, chopOrder }, () => setChosen({}));
 		// Nothing was renamed when the save failed, so the panel keeps the saved order by the names it lists.
 		if (renames.length > 0 && !samePersonalChops(store.getState().preferences.chops, pending.chops ?? [])) store.noteChopRenames([]);
 	};
@@ -264,14 +274,14 @@ export function ChopsSection() {
 		<ChopsSectionView
 			drafts={drafts}
 			saved={saved}
-			useChops={useChops}
+			switches={switches}
 			canSave={canSave}
 			repositories={state.repositories}
 			agents={state.preferences.agents}
 			repository={selected === null ? null : { repositoryName: selected.repository.name, list: view }}
 			save={save}
-			onUseChops={on => {
-				setChosenUse(on);
+			onSwitch={change => {
+				setChosen(current => ({ ...current, ...change }));
 				reset();
 			}}
 			onAdd={() => change(addChopDraft(drafts))}
@@ -287,7 +297,7 @@ export function ChopsSection() {
 
 /**
  * Reads the chops of the selected worktree's repository whenever another
- * repository is selected or the saved chops change, for the "+" menu, the
+ * repository is selected or the saved chops or file chop sounds change, for the "+" menu, the
  * palette, "Insert chop", the chops panel, and Settings, Chops. It draws
  * nothing.
  */
@@ -296,8 +306,10 @@ export function ChopsKeeper() {
 	const state = useAppState();
 	const repositoryPath = selectedWorktree(state)?.repository.path ?? null;
 	const saved = state.preferences.chops;
+	// A file chop's sound is listed with it, so a change to the sounds reads the list again too.
+	const fileSounds = state.preferences.fileChopSounds;
 	useEffect(() => {
 		if (repositoryPath !== null) void store.readChops(repositoryPath);
-	}, [store, repositoryPath, saved]);
+	}, [store, repositoryPath, saved, fileSounds]);
 	return null;
 }

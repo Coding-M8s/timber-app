@@ -1,4 +1,6 @@
+import type { FileChopSound } from "./chop-sounds";
 import { isSafeLine, isSafeText } from "./safe-text";
+import { type SoundChoice, defaultSoundChoice, readSoundChoice, sameSoundChoice, writeSoundChoice } from "./sound-setting";
 import { type OpenTerminalResult, type PasteResult, SESSION_NAME_LIMIT, type TerminalSession, cleanSessionName } from "./terminal";
 
 /**
@@ -14,6 +16,10 @@ import { type OpenTerminalResult, type PasteResult, SESSION_NAME_LIMIT, type Ter
  * never writes it, and never creates its folder. When names clash, ignoring
  * case, a personal chop for this repository wins over a personal chop for
  * every repository, which wins over the file's.
+ *
+ * A chop may have a sound, which plays when it starts. It is never read
+ * from the repository file: a personal chop keeps its own, and a file
+ * chop's is kept in the app's settings (./chop-sounds.ts).
  *
  * The text is kept exactly as saved, apart from Windows line endings, which
  * become `\n`. It may hold line breaks and tabs but no other control
@@ -45,6 +51,8 @@ export interface Chop {
 export interface PersonalChop extends Chop {
 	/** The primary checkout of the repository it is for, or null for every repository. */
 	repository: string | null;
+	/** What plays when it starts, or null for none. */
+	sound: SoundChoice | null;
 }
 
 /** Where a listed chop comes from. */
@@ -52,6 +60,8 @@ export type ChopSource = "personal-every" | "personal-repository" | "repository-
 
 export interface ListedChop extends Chop {
 	source: ChopSource;
+	/** What plays when it starts, or null for none: a personal chop's own, or the one kept for a file chop (./chop-sounds.ts). */
+	sound: SoundChoice | null;
 }
 
 /** The repository file, relative to the main checkout's folder, with `/` between parts. */
@@ -131,13 +141,24 @@ function readChopFields(value: unknown): { ok: true; chop: Chop } | { ok: false;
 /** The group a personal chop's name must be unique in: its repository, or every repository. */
 const groupOf = (chop: PersonalChop) => chop.repository;
 
-function readPersonalChop(value: unknown, before: readonly PersonalChop[]): PersonalChop | null {
+/**
+ * One personal chop, or null when it cannot be read. A missing or null sound
+ * is none. A sound that cannot be read refuses the chop, or, to salvage a
+ * settings file, plays the chime, since a sound was asked for.
+ */
+function readPersonalChop(value: unknown, before: readonly PersonalChop[], salvage = false): PersonalChop | null {
 	if (!isRecord(value)) return null;
-	const { repository = null } = value;
+	const { repository = null, sound: savedSound = null } = value;
 	if (repository !== null && (typeof repository !== "string" || repository === "")) return null;
 	const fields = readChopFields(value);
 	if (!fields.ok) return null;
-	const chop: PersonalChop = { ...fields.chop, repository };
+	let sound: SoundChoice | null = null;
+	if (savedSound !== null) {
+		const read = readSoundChoice(savedSound);
+		if (read === undefined && !salvage) return null;
+		sound = read ?? defaultSoundChoice();
+	}
+	const chop: PersonalChop = { ...fields.chop, repository, sound };
 	const others = before.filter(other => groupOf(other) === repository).map(other => other.name);
 	return chopProblem(chop, others) === null ? chop : null;
 }
@@ -167,7 +188,7 @@ export function salvagePersonalChops(value: unknown): PersonalChop[] | undefined
 	if (!Array.isArray(value)) return undefined;
 	const chops: PersonalChop[] = [];
 	for (const entry of value) {
-		const chop = readPersonalChop(entry, chops);
+		const chop = readPersonalChop(entry, chops, true);
 		if (chop !== null) chops.push(chop);
 		if (chops.length === CHOP_LIMIT) break;
 	}
@@ -183,6 +204,7 @@ export function writePersonalChops(chops: readonly PersonalChop[]): Record<strin
 		...(chop.description === "" ? {} : { description: chop.description }),
 		...(chop.agent === null ? {} : { agent: chop.agent }),
 		...(chop.repository === null ? {} : { repository: chop.repository }),
+		...(chop.sound === null ? {} : { sound: writeSoundChoice(chop.sound) }),
 	}));
 }
 
@@ -191,7 +213,12 @@ export function sameChop(one: Chop, other: Chop): boolean {
 }
 
 export function samePersonalChops(one: readonly PersonalChop[], other: readonly PersonalChop[]): boolean {
-	return one.length === other.length && one.every((chop, index) => sameChop(chop, other[index]!) && chop.repository === other[index]!.repository);
+	return one.length === other.length && one.every((chop, index) => sameChop(chop, other[index]!) && chop.repository === other[index]!.repository && sameChopSound(chop.sound, other[index]!.sound));
+}
+
+/** Whether two chop sounds are the same, null for none. */
+export function sameChopSound(one: SoundChoice | null, other: SoundChoice | null): boolean {
+	return one === null || other === null ? one === other : sameSoundChoice(one, other);
 }
 
 export type ChopsFileReading = { ok: true; chops: Chop[] } | { ok: false; message: string };
@@ -247,10 +274,12 @@ export interface MergedChops {
  * repository takes the place of a personal chop for every repository with
  * the same name, which is then left out, and either kind of personal chop
  * takes the place of a file chop with the same name, which is listed in
- * `overridden`. Personal chops for other repositories are left out.
+ * `overridden`. Personal chops for other repositories are left out. Each
+ * chop has its sound: a personal chop's own, and a file chop's from
+ * `fileSounds`, the ones kept for this repository's file.
  */
-export function mergeChops(personal: readonly PersonalChop[], repository: string, fileChops: readonly Chop[]): MergedChops {
-	const strip = ({ repository: _repository, ...chop }: PersonalChop): Chop => chop;
+export function mergeChops(personal: readonly PersonalChop[], repository: string, fileChops: readonly Chop[], fileSounds: readonly FileChopSound[] = []): MergedChops {
+	const strip = ({ repository: _repository, ...chop }: PersonalChop): Omit<PersonalChop, "repository"> => chop;
 	const forHere = personal.filter(chop => chop.repository === repository).map(chop => ({ ...strip(chop), source: "personal-repository" as const }));
 	const forEvery = personal
 		.filter(chop => chop.repository === null && !forHere.some(other => sameChopName(other.name, chop.name)))
@@ -260,8 +289,9 @@ export function mergeChops(personal: readonly PersonalChop[], repository: string
 	const overridden: OverriddenChop[] = [];
 	for (const chop of fileChops) {
 		const winner = mine.find(other => sameChopName(other.name, chop.name));
-		if (winner) overridden.push({ ...chop, source: "repository-file", by: winner.source as OverriddenChop["by"] });
-		else chops.push({ ...chop, source: "repository-file" });
+		const sound = fileSounds.find(entry => sameChopName(entry.name, chop.name))?.sound ?? null;
+		if (winner) overridden.push({ ...chop, source: "repository-file", sound, by: winner.source as OverriddenChop["by"] });
+		else chops.push({ ...chop, source: "repository-file", sound });
 	}
 	return { chops, overridden };
 }

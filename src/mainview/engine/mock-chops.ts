@@ -3,6 +3,8 @@ import {
 	chopDigestInput, findListedChop, isChopApproved, listedChops, mergeChops, parseChopsFile, withChopApproval,
 } from "../../shared/chops";
 import { type AgentSetting, findAgent } from "../../shared/agent";
+import { type FileChopSounds, chopSoundToPlay } from "../../shared/chop-sounds";
+import type { SoundChoice } from "../../shared/sound-setting";
 import type { ChopTerminals } from "./mock-terminals";
 
 /**
@@ -28,6 +30,8 @@ export interface ChopsControls {
 	setChopsFile(repository: string, text: string | null): void;
 	/** The approvals the mock keeps, by repository, as digest inputs (`chopDigestInput`). */
 	chopApprovals(): ChopApprovals;
+	/** The chop sounds played as chops started, oldest first: the chop's name and its sound. */
+	chopSounds(): { chop: string; sound: SoundChoice }[];
 }
 
 /** The mock's chops: files by main checkout, approvals in memory, and running through the pretend terminals. */
@@ -35,9 +39,11 @@ export function createMockChops() {
 	const files = new Map<string, string>(Object.entries(sampleChopsFiles));
 	const listeners = new Set<(repository: string) => void>();
 	let approvals: ChopApprovals = {};
+	/** The chop sounds played, oldest first. */
+	const played: { chop: string; sound: SoundChoice }[] = [];
 
 	/** The answer for a repository that is listed: its file read as the desktop app reads it, merged with the saved chops. */
-	function list(repository: string, personal: readonly PersonalChop[]): ChopList {
+	function list(repository: string, personal: readonly PersonalChop[], fileSounds: FileChopSounds = {}): ChopList {
 		const text = files.get(repository);
 		let file: ChopsFileState = { state: "missing" };
 		let chops: Chop[] = [];
@@ -50,16 +56,26 @@ export function createMockChops() {
 				file = { state: "damaged", message: reading.message };
 			}
 		}
-		return { outcome: "listed", file, path: `${repository}/${CHOPS_FILE}`, ...mergeChops(personal, repository, chops) };
+		return { outcome: "listed", file, path: `${repository}/${CHOPS_FILE}`, ...mergeChops(personal, repository, chops, Object.hasOwn(fileSounds, repository) ? fileSounds[repository] : []) };
 	}
 
 	/**
 	 * As the main process: the chop is read once, a repository chop runs once
 	 * its text is approved, a command's shell is named after it, and a prompt
 	 * goes to the session named or to a new agent: the chop's, or the first
-	 * saved one.
+	 * saved one. Once it started, its sound plays, unless chop sounds are off.
 	 */
-	async function run(request: RunChopRequest, listed: ChopList, terminals: ChopTerminals, agents: readonly AgentSetting[]): Promise<RunChopResult> {
+	async function run(request: RunChopRequest, listed: ChopList, terminals: ChopTerminals, agents: readonly AgentSetting[], playChopSounds = true): Promise<RunChopResult> {
+		const result = await start(request, listed, terminals, agents);
+		if (result.outcome === "opened" || result.outcome === "sent") {
+			const chop = findListedChop(listedChops(listed), request.chop);
+			const sound = chop === null ? null : chopSoundToPlay(chop, playChopSounds);
+			if (sound !== null) played.push({ chop: chop!.name, sound: structuredClone(sound) });
+		}
+		return result;
+	}
+
+	async function start(request: RunChopRequest, listed: ChopList, terminals: ChopTerminals, agents: readonly AgentSetting[]): Promise<RunChopResult> {
 		if (listed.outcome !== "listed") return { outcome: listed.outcome === "not-listed" ? "not-listed" : "failed", message: listed.message };
 		const chop = findListedChop(listedChops(listed), request.chop);
 		if (chop === null) return { outcome: "no-chop", message: `No chop called "${request.chop}" is in ${request.repository} now. Nothing was started.` };
@@ -107,6 +123,7 @@ export function createMockChops() {
 				});
 			},
 			chopApprovals: () => structuredClone(approvals),
+			chopSounds: () => structuredClone(played),
 		} satisfies ChopsControls,
 	};
 }

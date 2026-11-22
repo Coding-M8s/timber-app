@@ -117,7 +117,20 @@ change them here first when they change.
   again; renamed to a name the order held before, such as a deleted
   chop's, it keeps its own place, not that one. A chop deleted and made
   again with the same name gets its place and star back. The palette, the "+" menu, and "Insert chop" keep the
-  listed order. Sounds come later (#254). "Use chops" in
+  listed order. Each chop may have a sound, or none: the form's Sound
+  field, below the description, picks it with the same choices and Play
+  button as Settings, Notifications, and the row shows its name after
+  where the chop comes from. A `.timber/chops.json` chop's View has the
+  same Sound field, saved at once in the app's settings, never in the
+  file. The sound plays when the chop starts: a command's terminal opens,
+  a prompt starts its agent or goes to a running one. Nothing plays while
+  a chop asks before its first run, when it fails to start, or for
+  "Insert chop" and copying a prompt. It goes through the player that
+  alerts use, with its rules: one sound at a time, so a chop's sound can
+  make an alert's sound that comes within its few seconds skip (the
+  notification still shows), and none longer than 4 seconds. "Play each
+  chop's sound" in Settings, Chops (on by default) silences every chop and
+  keeps each chop's choice. "Use chops" in
   Settings, Chops, turns the feature off: no button, panel, or chop
   shortcut, and no chops in the palette, the "+" menu, the empty pane, or
   "Insert chop". The saved chops are kept. The mock's Ctrl+Alt+C was a

@@ -6,6 +6,7 @@
  */
 import { AGENT_PRESETS, type AgentSetting, readAgentSettings, sameAgentSettings, writeAgentSettings } from "./agent";
 import { type ChopArrangements, readChopArrangements, salvageChopArrangements, sameChopArrangements, writeChopArrangements } from "./chop-order";
+import { type FileChopSounds, readFileChopSounds, salvageFileChopSounds, sameFileChopSounds, writeFileChopSounds } from "./chop-sounds";
 import { type PersonalChop, readPersonalChops, salvagePersonalChops, samePersonalChops, writePersonalChops } from "./chops";
 import { type EditorSetting, readEditorSetting, sameEditorSetting, writeEditorSetting } from "./editor";
 import { readCustomThemes, salvageCustomThemes, sameCustomThemes, writeCustomThemes } from "./custom-themes";
@@ -55,6 +56,14 @@ export interface Preferences {
 	 * panel, never in the repository. None until a chop is moved or starred.
 	 */
 	chopOrder: ChopArrangements;
+	/**
+	 * The sounds of chops from `.timber/chops.json`, by the primary checkout
+	 * (./chop-sounds.ts), never in the repository. A personal chop keeps its
+	 * own sound in `chops`. None until a file chop is given one.
+	 */
+	fileChopSounds: FileChopSounds;
+	/** Whether a chop's sound plays when it starts. Off silences every chop sound, and keeps each chop's choice. */
+	playChopSounds: boolean;
 	/** Whether and how often the app fetches every repository in the background. */
 	fetch: FetchSetting;
 	/** How large the interface is drawn, where 1 is the size the window system gives. */
@@ -202,6 +211,19 @@ export const PREFERENCE_PARTS: { [Key in keyof Preferences]: PreferencePart<Pref
 		same: sameChopArrangements,
 		write: writeChopArrangements,
 		salvage: salvageChopArrangements,
+	},
+	fileChopSounds: {
+		fallback: () => ({}),
+		read: readFileChopSounds,
+		same: sameFileChopSounds,
+		write: writeFileChopSounds,
+		salvage: salvageFileChopSounds,
+	},
+	playChopSounds: {
+		fallback: () => true,
+		read: value => typeof value === "boolean" ? value : undefined,
+		same: (one, other) => one === other,
+		write: value => value,
 	},
 	fetch: {
 		fallback: defaultFetchSetting,

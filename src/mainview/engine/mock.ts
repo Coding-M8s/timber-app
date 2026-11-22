@@ -900,7 +900,7 @@ export function createMockEngine(
 		if (!repository) return { outcome: "not-listed", message: `${repositoryPath} is not a repository in this app's list. No chops were read.` };
 		// As when the main checkout's folder is missing: Git cannot read it.
 		if (!repository.available) return { outcome: "not-listed", message: `The folder of the main checkout, ${repositoryPath}, cannot be read. No chops were read.` };
-		return chopFiles.list(repositoryPath, preferences.chops);
+		return chopFiles.list(repositoryPath, preferences.chops, preferences.fileChopSounds);
 	};
 	const portReader = createMockPorts();
 
@@ -1345,7 +1345,7 @@ export function createMockEngine(
 		onChopsChanged: listener => chopFiles.onChopsChanged(listener),
 		async runChop(request) {
 			// The pretend terminals check the worktree is listed, with its folder there, as the main process does.
-			return chopFiles.run(structuredClone(request), listMockChops(request.repository), terminals, preferences.agents);
+			return chopFiles.run(structuredClone(request), listMockChops(request.repository), terminals, preferences.agents, preferences.playChopSounds);
 		},
 		...chopFiles.controls,
 		async readPorts(request) {

@@ -1,6 +1,8 @@
 import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, type ReactNode, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { type ChopArrangement, type ChopArrangements, type ChopPlace, arrangeChops, chopArrangementOf, describeChopAtEnd, describeChopPlace, placeChop, renameInArrangements, stepChop, toggleChopFavorite, withChopArrangement } from "../../shared/chop-order";
+import { withFileChopSound } from "../../shared/chop-sounds";
 import { type ChopKind, type ChopList, type ListedChop, type PersonalChop, listedChops, sameChopName } from "../../shared/chops";
+import type { SoundChoice } from "../../shared/sound-setting";
 import {
 	type ChopForm, type ChopTarget, blankChopForm, chopEditBlockedReason, chopRenames, chopFormNotes, chopFormOf, chopTargetOf, chopsWithSaved, chopsWithout, describeChopDelete, panelChopScopeOptions,
 } from "../chop-format";
@@ -11,6 +13,7 @@ import {
 } from "../chops-panel-format";
 import { DRAG_THRESHOLD, MOVE_REPOSITORY_SHORTCUTS, moveStep } from "../repository-drag";
 import { shownChopOrder } from "../store/state";
+import { describeSoundOutcome } from "../notifications-format";
 import { runChopIn } from "../palette-run";
 import { useAppState, useStore } from "../store/react";
 import type { AppStore } from "../store/store";
@@ -51,6 +54,14 @@ interface PanelEdit {
 	failure: string | null;
 	/** Whether Save was tried with a problem, so the problem is said as an alert. */
 	tried: boolean;
+	/** Counts each form or view opened, so a file dialog that answers after it closed changes nothing. */
+	opened: number;
+	/** What choosing, playing, or saving the sound last came to, when it went wrong, or null. */
+	soundProblem: string | null;
+	/** The file "Your own file" last chose in the form or view open now. */
+	customSoundPath: string | undefined;
+	/** Whether a file chop's sound waits for its save. While it waits, its picker takes no change. */
+	soundSaving: boolean;
 }
 
 /*
@@ -60,7 +71,7 @@ interface PanelEdit {
  * panel is hidden or drawn anew still closes its form. It saves for the
  * repository it was opened for.
  */
-let panelEdit: PanelEdit = { editing: null, saving: false, failure: null, tried: false };
+let panelEdit: PanelEdit = { editing: null, saving: false, failure: null, tried: false, opened: 0, soundProblem: null, customSoundPath: undefined, soundSaving: false };
 const panelEditListeners = new Set<() => void>();
 
 function changePanelEdit(change: Partial<PanelEdit>): void {
@@ -119,7 +130,7 @@ export function ChopsPanel() {
 	const baseId = useId();
 	const [tab, setTab] = useState<ChopKind>("command");
 	const [query, setQuery] = useState("");
-	const { editing, saving, failure, tried } = useSyncExternalStore(subscribePanelEdit, readPanelEdit, readPanelEdit);
+	const { editing, saving, failure, tried, soundProblem, customSoundPath, soundSaving } = useSyncExternalStore(subscribePanelEdit, readPanelEdit, readPanelEdit);
 	const setEditing = (next: Editing | null) => changePanelEdit({ editing: next });
 	const [menu, setMenu] = useState<{ name: string; at: { left: number; top: number }; byKey: boolean } | null>(null);
 	/** What the live region last said about a move or a star, and whether to end it with a no-break space, so the same words said again change the text and are heard again. */
@@ -208,7 +219,12 @@ export function ChopsPanel() {
 	const formOpen = editing !== null && (editing.mode === "new" || editing.mode === "edit");
 	const start = (next: Editing, aim: FocusAim) => {
 		focusNext.current = aim;
-		changePanelEdit({ editing: next, tried: false, failure: null });
+		// Back to the form a delete was asked from: the file it chose is still its own.
+		const back = next.mode === "edit" && editing?.mode === "delete" && editing.from === next;
+		changePanelEdit({
+			editing: next, tried: false, failure: null, soundProblem: null,
+			...(back ? {} : { opened: panelEdit.opened + 1, customSoundPath: next.mode === "edit" && next.form.sound?.kind === "custom" ? next.form.sound.path : undefined }),
+		});
 	};
 	// One form at a time, so nothing typed is dropped: asking for another goes back to the one open. Nothing opens while a save waits.
 	const busyElsewhere = () => {
@@ -435,6 +451,46 @@ export function ChopsPanel() {
 		};
 	}, []);
 
+	/** Play a sound as a preview, and say when it could not play. */
+	const previewSound = async (sound: SoundChoice | null) => {
+		if (sound === null) return;
+		const opened = panelEdit.opened;
+		const said = describeSoundOutcome(await store.playSound(sound));
+		if (panelEdit.opened === opened) changePanelEdit({ soundProblem: said });
+	};
+	/** Ask for a sound file of the person's own: the form takes it, or a file chop's sound is saved with it. Dropped when what asked closed meanwhile. */
+	const chooseSoundFile = async (then: (sound: SoundChoice) => void) => {
+		const opened = panelEdit.opened;
+		const result = await store.chooseSoundFile();
+		if (panelEdit.opened !== opened || panelEdit.editing === null) return;
+		if (result.outcome === "chosen") {
+			changePanelEdit({ customSoundPath: result.path, soundProblem: null });
+			then({ kind: "custom", path: result.path });
+		} else if (result.outcome === "refused") changePanelEdit({ soundProblem: result.message });
+	};
+	const chooseFormSoundFile = () => void chooseSoundFile(sound => {
+		const now = panelEdit.editing;
+		if (panelEdit.saving || (now?.mode !== "new" && now?.mode !== "edit")) return;
+		changePanelEdit({ failure: null, editing: { ...now, form: { ...now.form, sound } } });
+	});
+	/**
+	 * Save the sound of a chop from the repository file at once, in the app's
+	 * settings (`fileChopSounds`), never in the file, from what is saved when
+	 * the save starts. One save at a time, so none undoes another.
+	 */
+	const saveFileChopSound = async (repository: string, name: string, sound: SoundChoice | null) => {
+		// From the store, not the render: a file dialog may answer after saves became blocked.
+		if (panelEdit.soundSaving || chopEditBlockedReason(store.getState().preferencesProblem) !== null) return;
+		const opened = panelEdit.opened;
+		changePanelEdit({ soundSaving: true, soundProblem: null });
+		const next = withFileChopSound(store.getState().preferences.fileChopSounds, repository, name, sound);
+		const result = await store.savePreferences({ fileChopSounds: next });
+		// A failure is said only in the view it was saved from, not in a form opened since.
+		const said = result.outcome !== "saved" && panelEdit.opened === opened ? { soundProblem: `Not saved: ${result.message}` } : {};
+		changePanelEdit({ soundSaving: false, ...said });
+		if (result.outcome === "saved" && store.getState().chops?.repository === repository) void store.readChops(repository);
+	};
+
 	const editorId = `${baseId}-editor`;
 	const editor = (): ReactNode => {
 		if (editing === null) return null;
@@ -456,12 +512,16 @@ export function ChopsPanel() {
 						failure={failure}
 						blocked={editBlocked}
 						saving={saving}
+						soundProblem={soundProblem}
+						customSoundPath={customSoundPath}
 						nameRef={nameRef}
 						onChange={change => {
 							// What is being saved stays as it was sent.
 							if (panelEdit.saving) return;
-							changePanelEdit({ failure: null, editing: { ...editing, form: { ...form, ...change } } });
+							changePanelEdit({ failure: null, ...(change.sound === undefined ? {} : { soundProblem: null }), editing: { ...editing, form: { ...form, ...change } } });
 						}}
+						onChooseSoundFile={chooseFormSoundFile}
+						onPlaySound={() => void previewSound(form.sound)}
 						onSave={save}
 						onCancel={cancel}
 						onDelete={editing.mode === "edit" ? () => start({ mode: "delete", repository, target: editing.target, from: editing }, "cancel") : undefined}
@@ -472,7 +532,23 @@ export function ChopsPanel() {
 				const list = editing.repository.path === model.repository && model.list?.outcome === "listed" ? model.list : null;
 				const chop = list?.chops.find(candidate => candidate.source === "repository-file" && sameChopName(candidate.name, editing.name));
 				if (list === null || chop === undefined) return null;
-				return <FileChopView idBase={editorId} chop={chop} path={list.path} closeRef={closeRef} onClose={cancel} />;
+				const repository = editing.repository.path;
+				return (
+					<FileChopView
+						idBase={editorId}
+						chop={chop}
+						path={list.path}
+						saving={soundSaving}
+						blocked={editBlocked}
+						soundProblem={soundProblem}
+						customSoundPath={customSoundPath ?? (chop.sound?.kind === "custom" ? chop.sound.path : undefined)}
+						closeRef={closeRef}
+						onClose={cancel}
+						onPickSound={sound => void saveFileChopSound(repository, chop.name, sound)}
+						onChooseSoundFile={() => void chooseSoundFile(sound => void saveFileChopSound(repository, chop.name, sound))}
+						onPlaySound={() => void previewSound(chop.sound)}
+					/>
+				);
 			}
 			case "delete":
 				return (
@@ -596,6 +672,7 @@ export function ChopsPanel() {
 							<p className="chop-item-head" title={row.chop.source === "repository-file" ? "Double-click to view" : "Double-click to edit"} onDoubleClick={() => openChop(row.chop, "edit")}>
 								<span className="chop-item-name">{row.chop.name}</span>{" "}
 								<span className="chop-item-meta" title={row.sourceTitle}>{row.source}</span>
+								{row.sound !== null && <span className="chop-item-meta chop-item-sound" title={row.soundTitle ?? undefined}>{row.sound}</span>}
 							</p>
 							<button
 								type="button"

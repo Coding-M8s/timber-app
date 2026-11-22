@@ -30,7 +30,7 @@ async function startedStore(engine = createMockEngine()) {
 const render = (store: ReturnType<typeof createAppStore>) => renderToStaticMarkup(<App store={store} />);
 const key = (key: string, modifiers: Partial<Record<"ctrlKey" | "shiftKey" | "metaKey" | "altKey", boolean>> = {}) =>
 	({ type: "keydown", key, ctrlKey: false, shiftKey: false, metaKey: false, altKey: false, ...modifiers });
-const chop = { name: "Test", kind: "command" as const, text: "bun test", description: "", agent: null, repository: null };
+const chop = { name: "Test", kind: "command" as const, text: "bun test", description: "", agent: null, repository: null, sound: null };
 
 describe("the chops panel shortcut", () => {
 	test("is Ctrl+Shift+K, or Cmd+Shift+K on macOS, read by the character", () => {
@@ -325,7 +325,7 @@ describe("running a chop from the panel (mock engine)", () => {
 
 	async function panelStore() {
 		const started = await startedStore();
-		await started.store.savePreferences({ chops: [chop, { name: "Hello", kind: "command", text: "pwd", description: "", agent: null, repository: null }] });
+		await started.store.savePreferences({ chops: [chop, { name: "Hello", kind: "command", text: "pwd", description: "", agent: null, repository: null, sound: null }] });
 		started.store.select(FEATURE.id);
 		await started.store.readChops(TIMBER);
 		return started;

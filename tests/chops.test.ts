@@ -74,7 +74,7 @@ describe.skipIf(windows)("reading a worktree's chops from real repositories", ()
 	});
 
 	test("a main checkout with no file lists only personal chops, and the .timber folder is not created", async () => {
-		personal = [{ name: "Mine", kind: "command", text: "make", description: "", agent: null, repository: null }];
+		personal = [{ name: "Mine", kind: "command", text: "make", description: "", agent: null, repository: null, sound: null }];
 		const lone = join(root, "lone");
 		git(root, "init", "--initial-branch=main", lone);
 		const answer = await createChops({ findRepository: async path => path === lone ? { ...listed([]), path: lone } : null, personal: async () => personal }).list({ repository: lone });
@@ -83,10 +83,10 @@ describe.skipIf(windows)("reading a worktree's chops from real repositories", ()
 	});
 
 	test("merges personal chops, which win by name", async () => {
-		personal = [{ name: "test", kind: "command", text: "bun test --watch", description: "", agent: null, repository: primary }];
+		personal = [{ name: "test", kind: "command", text: "bun test --watch", description: "", agent: null, repository: primary, sound: null }];
 		const answer = await chops().list({ repository: primary });
 		expect(answer.outcome === "listed" && answer.chops.map(chop => [chop.name, chop.source])).toEqual([["test", "personal-repository"], ["Review", "repository-file"]]);
-		expect(answer.outcome === "listed" && answer.overridden).toEqual([{ name: "Test", kind: "command", text: "bun test", description: "", agent: null, source: "repository-file", by: "personal-repository" }]);
+		expect(answer.outcome === "listed" && answer.overridden).toEqual([{ name: "Test", kind: "command", text: "bun test", description: "", agent: null, source: "repository-file", sound: null, by: "personal-repository" }]);
 	});
 
 	test("a change to the main checkout's file shows on the next read, with nothing cached", async () => {
@@ -141,7 +141,7 @@ describe.skipIf(windows)("reading a worktree's chops from real repositories", ()
 		});
 
 		test("a personal chop runs straight away in the worktree asked for, named after the chop", async () => {
-			personal = [{ name: "Mine", kind: "command", text: "make\nmake check", description: "", agent: null, repository: null }];
+			personal = [{ name: "Mine", kind: "command", text: "make\nmake check", description: "", agent: null, repository: null, sound: null }];
 			const { runner, opened } = setUp();
 			await runner.run({ ...request, chop: "mine" });
 			expect(opened).toEqual([{ request, chop: { kind: "command", name: "Mine", text: "make\nmake check" } }]);
@@ -190,7 +190,7 @@ describe.skipIf(windows)("reading a worktree's chops from real repositories", ()
 		});
 
 		test("a prompt that names no agent starts the first saved one; a named agent not saved, or none saved, starts nothing", async () => {
-			personal = [{ name: "Ask", kind: "prompt", text: "Write tests", description: "", agent: null, repository: null }];
+			personal = [{ name: "Ask", kind: "prompt", text: "Write tests", description: "", agent: null, repository: null, sound: null }];
 			const { runner, opened } = setUp();
 			await runner.run({ ...request, chop: "Ask" });
 			expect(opened.at(-1)).toEqual({ request: { ...request, agent: "Claude Code" }, chop: { kind: "prompt", text: "Write tests" } });
@@ -204,7 +204,7 @@ describe.skipIf(windows)("reading a worktree's chops from real repositories", ()
 		});
 
 		test("a prompt goes to the running agent named, with the text read here, and starts nothing", async () => {
-			personal = [{ name: "Ask", kind: "prompt", text: "Write tests\nthen run them", description: "", agent: "Codex", repository: null }];
+			personal = [{ name: "Ask", kind: "prompt", text: "Write tests\nthen run them", description: "", agent: "Codex", repository: null, sound: null }];
 			const { runner, opened, prompts } = setUp();
 			prompts.length = 0;
 			expect(await runner.run({ ...request, chop: "Ask", session: "s1" })).toMatchObject({ outcome: "sent", session: { id: "s1", name: "Codex" } });

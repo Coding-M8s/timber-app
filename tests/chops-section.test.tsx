@@ -29,13 +29,13 @@ const view = (drafts: ReturnType<typeof chopDraftsOf>, repository: ChopsReposito
 		<ChopsSectionView
 			drafts={drafts}
 			saved={saved}
-			useChops={true}
+			switches={{ useChops: true, playChopSounds: true }}
 			canSave={false}
 			repositories={[{ path: TIMBER, name: "timber" }]}
 			agents={AGENT_PRESETS}
 			repository={repository}
 			save={{ state: "idle" }}
-			onUseChops={noop}
+			onSwitch={noop}
 			onAdd={noop}
 			onEdit={noop}
 			onRemove={noop}
@@ -45,7 +45,8 @@ const view = (drafts: ReturnType<typeof chopDraftsOf>, repository: ChopsReposito
 	);
 
 describe("the Use chops switch in Settings, Chops", () => {
-	const test1 = { name: "Test", kind: "command" as const, text: "bun test", description: "", agent: null, repository: null };
+	const ON = { useChops: true, playChopSounds: true };
+	const test1 = { name: "Test", kind: "command" as const, text: "bun test", description: "", agent: null, repository: null, sound: null };
 
 	test("is drawn as a switch, on by default, and says the saved chops are kept", () => {
 		const markup = view(chopDraftsOf([]), null);
@@ -56,24 +57,24 @@ describe("the Use chops switch in Settings, Chops", () => {
 
 	test("saves on its own while the rows are as saved", () => {
 		const drafts = chopDraftsOf([test1]);
-		expect(chopsSectionChange(chopsDraftModel(drafts, [test1]), [test1], false, true)).toEqual({ useChops: false });
-		expect(chopsSectionChange(chopsDraftModel(drafts, [test1]), [test1], true, true)).toBeNull();
+		expect(chopsSectionChange(chopsDraftModel(drafts, [test1]), [test1], { useChops: false, playChopSounds: true }, ON)).toEqual({ useChops: false });
+		expect(chopsSectionChange(chopsDraftModel(drafts, [test1]), [test1], ON, ON)).toBeNull();
 	});
 
 	test("saves with the rows when both changed, and not at all while a changed row cannot be saved", () => {
 		const drafts = chopDraftsOf([test1]);
 		const renamed = editChopDraft(drafts, drafts[0]!.key, { name: "Check" });
-		expect(chopsSectionChange(chopsDraftModel(renamed, [test1]), [test1], false, true)).toEqual({ useChops: false, chops: [{ ...test1, name: "Check" }] });
+		expect(chopsSectionChange(chopsDraftModel(renamed, [test1]), [test1], { useChops: false, playChopSounds: true }, ON)).toEqual({ useChops: false, chops: [{ ...test1, name: "Check" }] });
 		const blank = addChopDraft(chopDraftsOf([test1]));
-		expect(chopsSectionChange(chopsDraftModel(blank, [test1]), [test1], false, true)).toBeNull();
+		expect(chopsSectionChange(chopsDraftModel(blank, [test1]), [test1], { useChops: false, playChopSounds: true }, ON)).toBeNull();
 	});
 });
 
 describe("Settings, Chops as drawn", () => {
 	test("shows each personal chop's fields, and the agent only for a prompt", () => {
 		const markup = view(chopDraftsOf([
-			{ name: "Test", kind: "command", text: "bun test", description: "Every test", agent: null, repository: null },
-			{ name: "Review", kind: "prompt", text: "Review it", description: "", agent: "Codex", repository: TIMBER },
+			{ name: "Test", kind: "command", text: "bun test", description: "Every test", agent: null, repository: null, sound: null },
+			{ name: "Review", kind: "prompt", text: "Review it", description: "", agent: "Codex", repository: TIMBER, sound: null },
 		]), null);
 		expect(markup).toContain('value="Test"');
 		expect(markup).toContain(">bun test</textarea>");
@@ -98,10 +99,10 @@ describe("Settings, Chops as drawn", () => {
 				file: { state: "read" },
 				path: "/work/timber/.timber/chops.json",
 				chops: [
-					{ name: "Mine", kind: "command", text: "make", description: "", agent: null, source: "personal-every" },
-					{ name: "Dev server", kind: "command", text: "bun run dev:web", description: "The interface", agent: null, source: "repository-file" },
+					{ name: "Mine", kind: "command", text: "make", description: "", agent: null, source: "personal-every", sound: null },
+					{ name: "Dev server", kind: "command", text: "bun run dev:web", description: "The interface", agent: null, source: "repository-file", sound: null },
 				],
-				overridden: [{ name: "Test", kind: "command", text: "bun test", description: "", agent: null, source: "repository-file", by: "personal-every" }],
+				overridden: [{ name: "Test", kind: "command", text: "bun test", description: "", agent: null, source: "repository-file", sound: null, by: "personal-every" }],
 			},
 		});
 		expect(markup).toContain("timber: /work/timber/.timber/chops.json");
@@ -135,7 +136,7 @@ describe("chops in the app", () => {
 		const first = store.getState().chops?.list;
 		expect(first?.outcome === "listed" && first.chops.map(chop => chop.name)).toEqual(["Test", "Dev server", "Review the diff"]);
 
-		expect(await store.savePreferences({ chops: [{ name: "test", kind: "command", text: "bun test --watch", description: "", agent: null, repository: null }] })).toMatchObject({ outcome: "saved" });
+		expect(await store.savePreferences({ chops: [{ name: "test", kind: "command", text: "bun test --watch", description: "", agent: null, repository: null, sound: null }] })).toMatchObject({ outcome: "saved" });
 		await store.readChops(TIMBER);
 		const second = store.getState().chops?.list;
 		expect(second?.outcome === "listed" && second.chops.map(chop => [chop.name, chop.source])).toEqual([["test", "personal-every"], ["Dev server", "repository-file"], ["Review the diff", "repository-file"]]);

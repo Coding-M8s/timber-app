@@ -348,6 +348,19 @@ pre:focus-visible {
 	min-width: 0;
 }
 
+/* A chop's sound: the picker, then Play and Choose file, wrapping in a narrow panel. */
+.chop-editor-sound {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+}
+
+.chop-editor-sound > .field-input {
+	flex: 1 1 120px;
+	min-width: 0;
+}
+
 .chop-editor-actions {
 	display: flex;
 	flex-wrap: wrap;
@@ -4778,6 +4791,12 @@ pre:focus-visible {
 
 .chop-item-meta {
 	color: var(--text-2);
+}
+
+/* A chop's sound follows where it comes from, after a dot. */
+.chop-item-sound::before {
+	content: "\00b7";
+	margin: 0 4px;
 }
 
 .chop-item.overridden .dialog-command {

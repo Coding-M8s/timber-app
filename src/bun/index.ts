@@ -289,6 +289,13 @@ const chops = createChops({
 	session: id => terminals.list().find(session => session.id === id) ?? null,
 	// A prompt chop's agent comes from the saved Settings only, as any agent's does.
 	agents: async () => (await preferences.load()).agents,
+	// A chop's sound comes from the saved preferences only, never from the window.
+	chopSounds: async () => {
+		const saved = await preferences.load();
+		return { play: saved.playChopSounds, file: saved.fileChopSounds };
+	},
+	// The alerts' player, so its rules hold: one sound at a time, at most 4 seconds. A missing file of one's own plays the chime, as an alert does.
+	playSound: choice => void sounds.play(choice, { fallBackToChime: true }),
 });
 // Timber reads and writes its own settings and logins. The app never opens those files (see ./timber-settings.ts).
 const timberSettings = createTimberSettings({ timber: () => timber.current(), isListed: path => repositories.includes(path) });

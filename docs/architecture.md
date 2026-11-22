@@ -1464,7 +1464,15 @@ pure functions in `src/mainview/shell.ts`.
   again; it then reads the listed repository's chops again, which
   `ChopsKeeper` does not do with no worktree selected. The form, a view of
   a file chop, and the delete question are drawn by `ChopEditor.tsx`, in
-  place of the row or above the list. What is open is kept in the panel's
+  place of the row or above the list. The form's Sound field and the file
+  chop view's are `SoundPicker.tsx`, the picker Settings, Notifications
+  uses, whose Play previews through `playSound` and whose Choose file asks
+  `chooseSoundFile`; an answer that comes after the form or view closed is
+  dropped. The file chop view saves its sound at once through
+  `savePreferences({ fileChopSounds })`, from what is saved when it starts,
+  one save at a time, with the picker off while it waits or while saves are
+  blocked, then reads the listed chops again; `ChopsKeeper` reads again
+  when `fileChopSounds` changes too. What is open is kept in the panel's
   module, as the focus return is, so it survives the panel being hidden.
   A row's menu is the worktree menu (`WorktreeMenu`), opened by right
   click, its actions button, or Shift+F10 and the menu key, handled as a
@@ -1658,14 +1666,18 @@ Settings dialog and kept by the app. They are never Timber's configuration.
   [opening a worktree in an editor](#opening-a-worktree-in-an-editor)).
   Agents: the coding agents the "+" menu starts (see
   [agent sessions](#agent-sessions)). Chops: "Use chops" (`useChops`, on by
-  default) and the person's saved commands and prompts (see
-  [chops](#chops)); the switch saves with the section's Save, on its own
+  default), "Play each chop's sound" (`playChopSounds`, on by default), and
+  the person's saved commands and prompts (see [chops](#chops)); each
+  switch saves with the section's Save, on its own
   while the rows are as saved (`chopsSectionChange`), so it never waits on
   rows nobody touched; with a changed row that cannot be saved, nothing is
   saved until the row is fixed or removed. Turning it off never touches
-  `chops`. The chops panel's order and favorites (`chopOrder`) are a
-  preference with no section: the panel saves them (see the chops panel
-  above). Fetching: whether the app fetches in
+  `chops`, and turning sounds off keeps each chop's sound. The chops
+  panel's order and favorites (`chopOrder`) and the sounds of
+  `.timber/chops.json` chops (`fileChopSounds`) are preferences with no
+  section: the panel saves them (see the chops panel above). Sounds kept
+  for a repository that left the list stay, within the limits, as its
+  order does. Fetching: whether the app fetches in
   the background and how often (see [fetching](#fetching)). Under a
   "Timber" heading, Executable picks which Timber the app runs (see
   [finding Timber](#finding-timber)), and Machine and Repository edit
@@ -1763,6 +1775,31 @@ every machine agrees. The rules are pure, in
   readable entry and drops the rest (`salvagePersonalChops`), so a hand edit
   does not cost the others at the next save. A chop for a repository that
   left the list is kept, and Settings shows its path as "not in the list".
+  Each may have a `sound` (a `SoundChoice` from
+  `src/shared/sound-setting.ts`), written only when it has one; missing or
+  null is none. A save with a sound that cannot be read is refused; reading
+  the settings file plays the chime for it instead, as for an alert.
+- **Sounds** (`src/shared/chop-sounds.ts`). A chop's sound plays when it
+  starts. A personal chop keeps its own. A file chop's is the
+  `fileChopSounds` preference: for each repository's primary checkout, a
+  list of names and sounds, matched ignoring case, never in the repository
+  file, whose `sound` key, if any, is passed over and is not part of the
+  approval digest. Only chops with a sound are kept, so None takes the
+  entry away; a name not listed now keeps its sound while there is room.
+  At most 200 names a repository and 200 repositories, the ones changed
+  longest ago dropped first (`withFileChopSound`), so a save never goes past
+  what `readFileChopSounds` accepts. `playChopSounds` (on by default) is
+  "Play each chop's sound" in Settings, Chops. `mergeChops` gives each
+  listed chop its `sound`, so the panel shows it, and `runChop` in the
+  main process plays it (`chopSoundToPlay`) once the chop started: its
+  terminal or agent opened, or its prompt went to a running agent. Nothing
+  plays for `needs-approval`, a failure, "Insert chop", or a copied prompt.
+  The sound is read with the chop from the saved preferences, never from
+  the window, and goes through the alerts' player (`src/bun/sounds.ts`)
+  with the chime for a missing file of one's own, so its rules hold: one
+  sound at a time, a chop's sound can make an alert's sound skip, and none
+  longer than 4 seconds. A sound setting that cannot be read never stops a
+  chop: it runs silent, with a warning.
 - **Order and favorites** are the `chopOrder` preference: for each
   repository's primary checkout, the names of its favorites and of the
   rest, in the chops panel's order (`src/shared/chop-order.ts`). Any chop

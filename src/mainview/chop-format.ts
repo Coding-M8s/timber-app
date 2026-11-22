@@ -3,6 +3,7 @@ import {
 	sameChopName, samePersonalChops,
 } from "../shared/chops";
 import type { ChopRename } from "../shared/chop-order";
+import type { SoundChoice } from "../shared/sound-setting";
 import { cleanSessionName } from "../shared/terminal";
 import type { WorktreeMenuItem, WorktreeMenuItemId } from "./worktree-menu-format";
 
@@ -22,6 +23,8 @@ export interface ChopDraft {
 	agent: string | null;
 	/** The primary checkout of the repository it is for, or null for every repository. */
 	repository: string | null;
+	/** What plays when it starts, or null for none. Settings, Chops keeps it as saved; the chops panel's form chooses it. */
+	sound: SoundChoice | null;
 }
 
 export type ChopDraftChange = Partial<Omit<ChopDraft, "key">>;
@@ -36,7 +39,7 @@ export function chopDraftsOf(saved: readonly PersonalChop[]): ChopDraft[] {
 
 /** The rows with an empty command at the end, for the repository given, or for every repository with null. */
 export function addChopDraft(drafts: readonly ChopDraft[], repository: string | null = null): ChopDraft[] {
-	return [...drafts, { key: nextKey(), name: "", kind: "command", text: "", description: "", agent: null, repository }];
+	return [...drafts, { key: nextKey(), name: "", kind: "command", text: "", description: "", agent: null, repository, sound: null }];
 }
 
 export function editChopDraft(drafts: readonly ChopDraft[], key: string, change: ChopDraftChange): ChopDraft[] {
@@ -56,6 +59,7 @@ export function chopOf(draft: Omit<ChopDraft, "key">): PersonalChop {
 		description: draft.description.trim(),
 		agent: draft.kind === "prompt" ? draft.agent : null,
 		repository: draft.repository,
+		sound: draft.sound,
 	};
 }
 
@@ -93,17 +97,25 @@ export function chopsDraftModel(drafts: readonly ChopDraft[], saved: readonly Pe
 	return { rows, chops, error, canSave: valid && !samePersonalChops(chops, saved) };
 }
 
+/** The switches of Settings, Chops: "Use chops" and "Play each chop's sound". */
+export interface ChopsSwitches {
+	useChops: boolean;
+	playChopSounds: boolean;
+}
+
 /**
- * What Settings, Chops saves, from the rows and the "Use chops" switch: the
- * switch when it differs from what is saved, and the rows when they differ
- * and can be saved. The switch saves on its own while the rows are as
- * saved, so chops can always be turned off; with rows changed but not
- * savable, nothing is. Null when there is nothing to save.
+ * What Settings, Chops saves, from the rows and its switches: each switch
+ * that differs from what is saved, and the rows when they differ and can be
+ * saved. The switches save on their own while the rows are as saved, so
+ * chops, or their sounds, can always be turned off; with rows changed but
+ * not savable, nothing is. Null when there is nothing to save.
  */
-export function chopsSectionChange(model: Pick<ChopsDraftModel, "chops" | "canSave">, saved: readonly PersonalChop[], useChops: boolean, savedUseChops: boolean): { useChops?: boolean; chops?: PersonalChop[] } | null {
-	const useChanged = useChops !== savedUseChops;
-	if (model.canSave) return { ...(useChanged ? { useChops } : {}), chops: model.chops };
-	if (useChanged && samePersonalChops(model.chops, saved)) return { useChops };
+export function chopsSectionChange(model: Pick<ChopsDraftModel, "chops" | "canSave">, saved: readonly PersonalChop[], switches: ChopsSwitches, savedSwitches: ChopsSwitches): (Partial<ChopsSwitches> & { chops?: PersonalChop[] }) | null {
+	const changed: Partial<ChopsSwitches> = {};
+	if (switches.useChops !== savedSwitches.useChops) changed.useChops = switches.useChops;
+	if (switches.playChopSounds !== savedSwitches.playChopSounds) changed.playChopSounds = switches.playChopSounds;
+	if (model.canSave) return { ...changed, chops: model.chops };
+	if (Object.keys(changed).length > 0 && samePersonalChops(model.chops, saved)) return changed;
 	return null;
 }
 
@@ -378,7 +390,7 @@ export interface ChopTarget {
 
 /** An empty form of a kind, for the repository given, or for every repository with null. */
 export function blankChopForm(kind: ChopKind, repository: string | null): ChopForm {
-	return { name: "", kind, text: "", description: "", agent: null, repository };
+	return { name: "", kind, text: "", description: "", agent: null, repository, sound: null };
 }
 
 /**

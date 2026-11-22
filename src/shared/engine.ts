@@ -606,9 +606,11 @@ export interface Engine {
 	 * this repository (`isChopApproved` in ./chops.ts); otherwise nothing
 	 * starts and the answer is `needs-approval` with the exact text. A
 	 * request whose `approve` is that exact text approves it, keeps the
-	 * approval app-side, and runs it. Personal chops run straight away. Not
-	 * safe to call again blindly: each call starts a session or sends the
-	 * prompt again.
+	 * approval app-side, and runs it. Personal chops run straight away. Once
+	 * the chop started (`opened` or `sent`), its sound, read with it from the
+	 * saved preferences (./chop-sounds.ts), plays through the alerts' player,
+	 * unless `playChopSounds` is off. Not safe to call again blindly: each
+	 * call starts a session or sends the prompt again.
 	 */
 	runChop(request: RunChopRequest): Promise<RunChopResult>;
 	/**
