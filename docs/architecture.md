@@ -4830,12 +4830,72 @@ terminals"); the app's side is `src/bun/handoffs.ts`,
 In `bun run dev:web`, `timberMock.typeTimberNew("/work/timber", "feat/x", true)`
 acts out `timber new feat/x` typed in a terminal with Timber's agent on.
 
+### The agent registry
+
+Every agent the app knows by name is one row of one table, `AGENTS` in
+`src/shared/agent-registry.ts`: pure data, read by the main process and the
+interface alike. Claude Code and Codex are its rows. An agent that is not in
+it still runs from Settings, as typed, fresh after a restart, with letters
+for its mark. Each row has:
+
+- **`id`**: stable, `claude` or `codex`. A running session and the shell an
+  ended agent leaves carry it (`program` and `resumable`, and
+  `EndedAgent`), and the mark's class names use it.
+- **`name` and `label`**: its name as a preset in Settings, Agents and in
+  words ("Claude Code"), and as a preset of Timber's `[agent]`, as `timber
+  setup` names it ("Claude").
+- **`executables`**: the names it is known by, as the last part of a path in
+  lower case without `.exe`, unique across the table. `agentByExecutable`
+  takes the last part of a path on either separator and cuts a Windows
+  `.exe` in any case, so `/usr/local/bin/codex` and `C:\tools\CLAUDE.EXE`
+  are found, while `Claude` on Linux, `claude.sh`, and `mycodex` are not.
+  This one lookup gives a session its agent (`agentProgram`), its chance to
+  go back to a conversation (`resumableAgent`), and its mark (`agentBrand`).
+- **`command`**: what both preset lists fill in (`AGENT_PRESETS` in
+  `src/shared/agent.ts` and in `src/mainview/timber-settings-format.ts`).
+- **`mark`**: the official mark as SVG path data, its view box, its fill,
+  and where and when it was taken, drawn by `AgentIcon.tsx`.
+- **`resume`**: how it goes back to a conversation, or null when it always
+  starts as typed: the words before a new id the app chose (`fresh`, null
+  when no flag sets one), the words before an id that go back to it
+  (`resume`), the arguments that make it start as typed (`picks`, and their
+  short options as `pickingLetters`), and where its conversations are kept
+  (`conversations`: the folder layout `store`, its folder variable, and its
+  folder in the home folder). See
+  [going back to a conversation](#going-back-to-a-conversation).
+- **`signIn`**: a command that only reads whether it is signed in, and the
+  command that signs in. Null for both agents for now; nothing reads them yet.
+- **`status`**: how it reports its status, `osc-7501`, `hook`, or `none`,
+  and the start of the `app` it reports, such as `claude` for `claude-code`,
+  which gives its mark to any session that reports it. The source is not
+  read yet: any program may report through OSC 7501 (see
+  [agent status](#agent-status)).
+
+**Adding an agent.**
+
+1. Add a row to `ROWS` in `src/shared/agent-registry.ts` with a new `id`,
+   its `executables`, and its preset `command`. Its presets, its mark, and
+   its lookup by executable follow from the row.
+2. Take its mark from its maker's own site, and say where and when in
+   `mark.source`.
+3. Give it a `resume` only after checking its own `--help`, and add it to
+   the table under [going back to a conversation](#going-back-to-a-conversation).
+   An agent that keeps conversations in a folder layout of its own also
+   needs a new `ConversationStore` and code to read it, in
+   `src/bun/agent-conversations.ts`, `src/bun/terminals.ts` (where the
+   compiler asks for it), and, to find a conversation at quit,
+   `src/bun/session-layout.ts`.
+4. Add it to the tests in `tests/agent-registry.test.ts`, which check that
+   ids and executables are unique.
+
 ### Going back to a conversation
 
 After a restart an agent session goes back into the conversation it was in,
 which the agent itself keeps (see "After a restart" under
 [terminal sessions](#terminal-sessions)). The arguments are added when the
-agent starts and never stored in Settings (`src/shared/agent-resume.ts`).
+agent starts and never stored in Settings (`src/shared/agent-resume.ts`,
+with each agent's words in its `resume` in the
+[agent registry](#the-agent-registry)).
 Verified on Linux on 2026-11-20:
 
 | Agent | Fresh start | Going back | Source |
@@ -4848,7 +4908,8 @@ option that takes several values (Codex's `-i, --image <FILE>...`) and no
 `--` can take it for one of theirs.
 
 - **Which agents.** By the executable's last path part as typed in
-  Settings: `claude` or `codex` (`.exe` cut, in any case, on Windows).
+  Settings: `claude` or `codex` (`.exe` cut, in any case, on Windows), the
+  agents of the registry with a `resume`.
   Anything else, a wrapper script included, starts exactly as typed and
   fresh after a restart. So when an agent's command now runs another
   program, it gets no resume flag, and one agent never gets another's id.
@@ -5084,10 +5145,12 @@ What the agent prints on screen is still never read, parsed, or answered.
   assistive technology names every one (`describeRowSessions` in
   `src/mainview/terminal-format.ts`). The row's lines wrap, so nothing in it
   reaches past the sidebar at its narrowest width. Claude Code and Codex,
-  known by an agent session's executable (`claude`, `codex`) or a reported
-  `app` starting with either name (`agentBrand` in
-  `src/shared/session-status.ts`), show their makers' official marks instead
-  of letters (`AgentIcon.tsx`): Claude's spark in its own orange, and
+  known by an agent session's executable (`claude`, `codex`, with `.exe`
+  cut on Windows) or a reported `app` starting with either name
+  (`agentBrand` in `src/shared/session-status.ts`, from the
+  [agent registry](#the-agent-registry)), show their makers' official marks
+  instead of letters (`AgentIcon.tsx`, drawing each row's `mark`):
+  Claude's spark in its own orange, and
   OpenAI's mark in the text color. On its chip, the same mark in a quiet
   outline takes the place of the agent star, and the same shape, with the decoded
   message in the chip's tooltip and its state in words beside the chips. A

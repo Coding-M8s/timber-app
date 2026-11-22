@@ -1,3 +1,4 @@
+import { AGENTS } from "./agent-registry";
 import { describeCommandLine, splitCommandLine } from "./command-line";
 import { cleanSessionName, sessionKindName } from "./terminal";
 
@@ -23,11 +24,8 @@ export interface AgentSetting {
 	command: string;
 }
 
-/** Agents offered as a starting point, and the list before anything was saved. */
-export const AGENT_PRESETS: readonly AgentSetting[] = [
-	{ name: "Claude Code", command: "claude" },
-	{ name: "Codex", command: "codex" },
-];
+/** Agents offered as a starting point, and the list before anything was saved: each agent of the registry, by its name and command. */
+export const AGENT_PRESETS: readonly AgentSetting[] = AGENTS.map(agent => ({ name: agent.name, command: agent.command }));
 
 /** The most agents the list can hold. */
 export const AGENT_LIMIT = 20;

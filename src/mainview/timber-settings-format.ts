@@ -1,3 +1,4 @@
+import { AGENTS } from "../shared/agent-registry";
 import { describeCommandLine } from "../shared/command-line";
 import type { TimberFailure } from "../shared/model";
 import {
@@ -348,10 +349,8 @@ export const EDITOR_PRESETS: readonly LauncherPreset[] = [
 	{ label: "Zed", command: "zed", args: ["--new"] },
 	{ label: "Orca", command: "orca-ide", args: [], orca: true },
 ];
-export const AGENT_PRESETS: readonly LauncherPreset[] = [
-	{ label: "Claude", command: "claude", args: [] },
-	{ label: "Codex", command: "codex", args: [] },
-];
+/** Each agent of the registry, by the name `timber setup` gives it and its command. */
+export const AGENT_PRESETS: readonly LauncherPreset[] = AGENTS.map(agent => ({ label: agent.label, command: agent.command, args: [] }));
 
 /** A preset in place of the launcher's command, keeping whether it starts by itself. */
 export function withPreset(draft: LauncherDraft, preset: LauncherPreset): LauncherDraft {

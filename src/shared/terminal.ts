@@ -82,7 +82,7 @@ export interface EndedAgent {
 	name: string;
 	/** The agent's name in Settings, or null for a workflow's own agent or an arena attempt. */
 	agent: string | null;
-	/** Claude Code or Codex by the executable's name, however it was started. */
+	/** The agent of the registry the executable is by its name, however it was started. */
 	program: ResumableAgent | null;
 	/** Whether, and how, the agent could go back to its conversation. */
 	resumable: ResumableAgent | null;
