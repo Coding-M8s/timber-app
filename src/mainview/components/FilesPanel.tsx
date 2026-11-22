@@ -1,4 +1,5 @@
 import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import { FILE_PATHS_TYPE, worktreeFilePath } from "../terminal-drop";
 import { CHOPS_PANEL_ID } from "../chops-panel-format";
 import { type TreeRow, keptFocus, treeKeyAction, treeRows } from "../file-tree";
 import { FILES_CLOSE_LABEL, FILES_IGNORED_LABEL, FILES_PANEL_TITLE, describeFilesPanelEmpty, takesFilesPanelKey } from "../files-panel-format";
@@ -126,6 +127,15 @@ export function FilesPanel() {
 							onClick={() => {
 								focusRow(row.id);
 								choose(row);
+							}}
+							// Dragged onto a session, its absolute path pastes at the prompt (see ../path-drop.ts).
+							draggable={selected !== null}
+							onDragStart={event => {
+								if (!selected) return;
+								const path = worktreeFilePath(selected.worktree.path, entry.path);
+								event.dataTransfer.setData(FILE_PATHS_TYPE, JSON.stringify([path]));
+								event.dataTransfer.setData("text/plain", path);
+								event.dataTransfer.effectAllowed = "copy";
 							}}
 						>
 							<span className="files-tree-mark" aria-hidden="true">{row.expanded === null ? null : <Chevron open={row.expanded} />}</span>

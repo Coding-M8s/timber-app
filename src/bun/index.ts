@@ -746,6 +746,9 @@ const mainWindow = new BrowserWindow({
 	hidden: true,
 	frame: fitWindowFrame(savedWindow?.frame ?? DEFAULT_WINDOW_FRAME, displayAreas()),
 	rpc,
+	// Files dropped on the window never open in it, even when WebKitGTK goes to one whatever the page does,
+	// as with a drop of several files on Linux; the interface pastes their paths instead (src/mainview/path-drop.ts).
+	navigationRules: JSON.stringify(["^file://*"]),
 });
 applyWindowIcon(mainWindow.ptr);
 if (savedWindow?.maximized) mainWindow.maximize();
