@@ -12,6 +12,8 @@ const ICON_PATHS: Record<SettingsSection, ReactNode> = {
 	chops: <path d="M13 3 5 14h6l-1 7 8-11h-6l1-7z" />,
 	notifications: <path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15L6 16zM10 20a2 2 0 0 0 4 0" />,
 	fetch: <path d="M20 11a8 8 0 0 0-14.6-4.4M4 4v4h4M4 13a8 8 0 0 0 14.6 4.4M20 20v-4h-4" />,
+	// An arrow down onto a line: commits coming into the branch.
+	pull: <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />,
 	about: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8v.01" /></>,
 	// A program with a prompt: which Timber executable runs.
 	executable: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 9h18M7 13l2 2-2 2" /></>,

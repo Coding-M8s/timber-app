@@ -39,7 +39,9 @@ import {
 import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "../../shared/timber-config";
 import type { DoneApplyRequest, DoneApplyResult, DonePreview, DonePreviewRequest, DonePreviewResult } from "../../shared/timber-done";
 import type { RebaseRequest, RebaseResult } from "../../shared/timber-rebase";
-import type { SyncActionRequest, SyncActionResult } from "../../shared/sync-actions";
+import { type SyncActionRequest, type SyncActionResult, syncTargetOf } from "../../shared/sync-actions";
+import { confirmsPull, forgetPullRepository } from "../../shared/pull-confirm-setting";
+import { SYNC_ACTION_WORDS, presentSyncResult } from "../sync-action-format";
 import type { SetBaseRequest, SetBaseResult } from "../../shared/timber-base";
 import { type CreatePullRequestResult, initialPullRequestBase, pullRequestBaseFromText, pullRequestReviewersFromText } from "../../shared/timber-pr";
 import { type PullRequestFields, defaultPullRequestTitle, presentPullRequestCreation, pullRequestTitleWithKey, titleKeyOf } from "../pull-request-create-format";
@@ -68,7 +70,7 @@ import { filterFiles, listedOrder, steppedFile } from "../changes-format";
 import { type FileEditMemory, createFileEditMemory } from "../text-editor-format";
 import { afterSave, canEditFile, editableFileText, fileText, hasUnsavedEdits, initialFileMode, listedOnly, outsideResult, pathInWorktree, settleTabs, unsavedFileCount } from "../file-view-format";
 import {
-	type AppState, type ChangesView, type DialogRequest, type FileMode, type FileView, type Operation, type PullRequestForm, type Removal, type SessionAgent, type UnsavedFileStep, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood,
+	type AppState, type ChangesView, type DialogRequest, type FileMode, type FileView, type Operation, type PullRequestForm, type Removal, type SessionAgent, type UnsavedFileStep, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood, syncOptionsOf,
 	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, canToggleSidePanel, chopsEnabled, filesPanelShown, offeredChops, sidePanelShown, sidePanelView, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, shownSession, timberReady, withTerminal, withoutSession, fileViewed, viewedKey } from "./state";
 
 /** How `AppStore.runChop` runs a chop, beyond which one and where. */
@@ -473,7 +475,13 @@ export interface AppStore {
 	saveTimberSettings(request: TimberSettingsSaveRequest): Promise<TimberSettingsSaveResult>;
 	/** Check a login through Timber, saving nothing. Never throws, as above. */
 	checkTimberConnection(request: TimberConnectionCheckRequest): Promise<TimberConnectionCheckResult>;
-	/** Open a dialog over the window, in place of the one that is open. */
+	/**
+	 * Open a dialog over the window, in place of the one that is open. Pull,
+	 * where the Pull setting skips its dialog, runs at once instead (see
+	 * `syncOptionsOf` in ./state.ts): a toast says how it ended, and a refusal
+	 * or a failure opens the dialog on what Git said. Nothing happens while
+	 * such a pull already runs in the worktree.
+	 */
 	openDialog(request: DialogRequest): void;
 	closeDialog(): void;
 	/**
@@ -2271,7 +2279,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 					case "removed":
 						// The engine forgot the repository's collapsed group and dismissed setup prompt along with it.
 						if (savedLayout) savedLayout = forgetRepository(savedLayout, path);
-						update({ notice: null, layout: forgetRepository(state.layout, path) });
+						// The engine dropped its "Skip pull confirmation" too, so a Save of the Pull section cannot write it back.
+						update({ notice: null, layout: forgetRepository(state.layout, path), preferences: { ...state.preferences, pull: forgetPullRepository(state.preferences.pull, path) } });
 						await reloadAll("all");
 						showToast(describeRemoved(name ?? folderName(path)));
 						return;
@@ -2855,6 +2864,36 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			await reloadOne(request.repository);
 		}
 		return result;
+	}
+
+	/**
+	 * Pull without the dialog, for a worktree whose repository skips it. The
+	 * same commands and checks as the dialog's Pull (`runSyncAction`). Worked:
+	 * the dialog's toast. Refused or failed: the dialog opens on the outcome,
+	 * with Git's words and the commands, unless another dialog is open, which
+	 * it would replace: then a toast says what Git said.
+	 */
+	function pullWithoutAsking(request: Extract<DialogRequest, { kind: "sync-action" }>, worktree: Worktree): boolean {
+		const target = syncTargetOf(worktree.sync);
+		if (target === null || worktree.sync?.kind !== "tracking") return false;
+		const upstream = worktree.sync.upstream;
+		const label = worktreeLabel(worktree);
+		// The palette closes, as it does for every entry that is not a dialog.
+		if (state.dialog?.kind === "palette") update({ dialog: null });
+		void track({ kind: "pull-worktree", repository: request.repository, worktree: worktree.path }, async () => {
+			const ended = await runSyncAction({ action: "pull", repository: request.repository, worktree: worktree.path, target });
+			const told = presentSyncResult("pull", label, upstream, ended);
+			if (told.ok) {
+				showToast(told.toast, told.problem === true);
+				return;
+			}
+			if (ended.outcome === "done") return;
+			// The dialog has nothing to show for a worktree that left the list, so the toast says what Git said then too.
+			const free = (state.dialog === null || state.dialog.kind === "palette") && state.quitRequest === null;
+			if (free && worktreeOf(request.repository, request.worktree) !== null) update({ dialog: { ...request, ended } });
+			else showToast(`${SYNC_ACTION_WORDS.pull.failureTitle} into ${label}. ${told.failure.diagnostic}`, true);
+		});
+		return true;
 	}
 
 	async function setWorktreeBase(request: SetBaseRequest): Promise<SetBaseResult> {
@@ -3696,6 +3735,11 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		openDialog(request) {
 			// Neither Done, Rebase, nor Set base starts on a worktree that Timber is removing.
 			if ((request.kind === "done-worktree" || request.kind === "rebase-worktree" || request.kind === "set-base" || request.kind === "sync-action") && removingId(request.repository, request.worktree)) return;
+			if (request.kind === "sync-action" && request.action === "pull" && request.ended === undefined) {
+				const worktree = worktreeOf(request.repository, request.worktree);
+				if (worktree && syncOptionsOf(state, request.repository, worktree.path).pulling) return;
+				if (worktree && !confirmsPull(state.preferences.pull, request.repository) && pullWithoutAsking(request, worktree)) return;
+			}
 			update({ dialog: request });
 		},
 		closeDialog() {

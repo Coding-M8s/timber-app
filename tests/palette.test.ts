@@ -59,6 +59,16 @@ describe("palette entries", () => {
 		expect(paletteEntries(state).some(entry => entry.label === "Push")).toBe(false);
 	});
 
+	test("Pull says it runs at once where its dialog is skipped, and is off while it runs", async () => {
+		const { store } = await sampleState();
+		await store.savePreferences({ pull: { ask: false, skip: [] } });
+		expect(byLabel(store.getState(), "Pull")).toMatchObject({ hint: "Pulls into main now, without asking first. The dialog opens only when Git refuses or it fails.", disabledReason: null });
+		const main = store.getState().repositories[0]!.worktrees.find(worktree => worktree.primary)!;
+		store.openDialog({ kind: "sync-action", action: "pull", repository: TIMBER, worktree: main.id });
+		expect(byLabel(store.getState(), "Pull").disabledReason).toBe("Pulling now.");
+		await settle();
+	});
+
 	test("actions for a worktree are in its section and say what they do to it", async () => {
 		const { store } = await sampleState();
 		store.select(FEATURE_ID);

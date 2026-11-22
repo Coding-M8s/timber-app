@@ -21,6 +21,7 @@ import { describeCommandLine } from "../../shared/command-line";
 import { TERMINAL_EDITOR_REASON, editorCommand, editorTarget, otherExecutableNames } from "../../shared/editor";
 import { notFoundOnPath } from "../../shared/search-path";
 import { type Preferences, applyPreferenceChange, defaultPreferences } from "../../shared/preferences";
+import { forgetPullRepository } from "../../shared/pull-confirm-setting";
 import {
 	type DoneApplyResult, type DoneOptions, type DonePreviewResult, DONE_PREVIEW_MINUTES, describeDoneApply, describeDonePreview, readDonePreview,
 } from "../../shared/timber-done";
@@ -1055,6 +1056,7 @@ export function createMockEngine(
 		async removeRepository(path) {
 			current = current.filter(repository => repository.path !== path);
 			layout = forgetRepository(layout, path);
+			preferences = { ...preferences, pull: forgetPullRepository(preferences.pull, path) };
 			// Its group stays, as it does on disk.
 			delete membership[path];
 			return { outcome: "removed" };

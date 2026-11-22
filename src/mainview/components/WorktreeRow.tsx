@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type MouseEvent, type ReactNode, useId, useRef, useState } from "react";
+import { type FocusEvent, type KeyboardEvent, type MouseEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import type { Worktree } from "../../shared/model";
 import type { PullRequestEntry, PullRequestHost } from "../../shared/pull-requests";
 import type { TerminalSession } from "../../shared/terminal";
@@ -14,7 +14,7 @@ import { ChildBadge } from "./ChildTasks";
 import { StatusGlyph } from "./StatusGlyph";
 import { WorktreeMenu } from "./WorktreeMenu";
 import type { SyncActionKind } from "../../shared/sync-actions";
-import { type SyncControl, describeSyncControls } from "../sync-action-format";
+import { ASKING_SYNC, type SyncControl, type SyncOptions, describeSyncControls } from "../sync-action-format";
 
 function Arrow({ direction }: { direction: "up" | "down" }) {
 	return (
@@ -126,6 +126,8 @@ interface WorktreeRowProps {
 	 * stays a marker.
 	 */
 	onSyncAction?: (action: SyncActionKind) => void;
+	/** Whether Pull asks first here, and whether a pull without a dialog runs now. Asking, and none, by default. */
+	syncOptions?: SyncOptions;
 }
 
 /** The marker each sync action's control takes the place of: Pull the behind count, Push the ahead count. */
@@ -135,9 +137,22 @@ const syncMarker: Record<SyncActionKind, RowMarkerKind> = { pull: "behind", push
 const syncArrow: Record<SyncActionKind, "up" | "down"> = { pull: "down", push: "up" };
 
 /** A sync action's control: the arrow and count of the marker it replaces, as a button of its own. */
-function SyncActionButton({ control, onChoose }: { control: SyncControl; onChoose: () => void }) {
+function SyncActionButton({ control, onChoose, onFocus, onBlur }: { control: SyncControl; onChoose: () => void; onFocus: () => void; onBlur: (event: FocusEvent) => void }) {
 	return (
-		<button type="button" className={`${markerClass[syncMarker[control.action]]} row-sync-button`} aria-haspopup="dialog" aria-label={control.label} title={control.title} onClick={onChoose}>
+		<button
+			type="button"
+			className={`${markerClass[syncMarker[control.action]]} row-sync-button`}
+			aria-haspopup={control.opensDialog ? "dialog" : undefined}
+			// Marked, not disabled, while it runs, so the keyboard stays on it.
+			aria-disabled={control.busy ? true : undefined}
+			aria-label={control.label}
+			title={control.title}
+			onClick={() => {
+				if (!control.busy) onChoose();
+			}}
+			onFocus={onFocus}
+			onBlur={onBlur}
+		>
 			<Arrow direction={syncArrow[control.action]} />
 			{control.text}
 		</button>
@@ -145,7 +160,7 @@ function SyncActionButton({ control, onChoose }: { control: SyncControl; onChoos
 }
 
 /** One worktree in the sidebar. What it is marked with comes from `describeRowMarkers`; this only draws it. */
-export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest = null, pullRequestHost, issue, removal = null, sessions = [], seen = {}, portClash = null, actions, onMenuChoice, onSyncAction }: WorktreeRowProps) {
+export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest = null, pullRequestHost, issue, removal = null, sessions = [], seen = {}, portClash = null, actions, onMenuChoice, onSyncAction, syncOptions = ASKING_SYNC }: WorktreeRowProps) {
 	const descriptionId = useId();
 	const button = useRef<HTMLButtonElement>(null);
 	// Where the open menu was asked to be, or null while it is closed.
@@ -178,7 +193,15 @@ export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest =
 	const description = [describeRow(markers), portClash, running.sentence].filter(Boolean).join(" ");
 	// No sync action starts on a worktree that Timber is removing.
 	const removing = removal?.kind === "running" || removal?.kind === "waiting";
-	const syncControls = onSyncAction && !removing ? describeSyncControls(worktree) : [];
+	const syncControls = onSyncAction && !removing ? describeSyncControls(worktree, syncOptions) : [];
+	// Whether the keyboard was on a sync control. A control goes once its branch caught up, such as after
+	// a pull that ran without a dialog, and the keyboard then goes to the row instead of nowhere.
+	const onSyncControl = useRef(false);
+	useEffect(() => {
+		if (syncControls.length > 0 || !onSyncControl.current) return;
+		onSyncControl.current = false;
+		if (document.activeElement === null || document.activeElement === document.body) button.current?.focus();
+	}, [syncControls.length]);
 	// A marker whose control is beside the row is not drawn twice. Its sentence stays in the row's description.
 	const replaced = new Set(syncControls.map(control => syncMarker[control.action]));
 	const at = (place: RowMarker["place"]) => markers.filter(marker => marker.place === place && !replaced.has(marker.kind)).map(marker => <Marker key={marker.kind} marker={marker} />);
@@ -236,14 +259,27 @@ export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest =
 			{syncControls.length > 0 && onSyncAction && (
 				// Where the marker was, beside the row's button: the row is a button, so a control cannot be inside it.
 				<span className="row-sync">
-					{syncControls.map(control => <SyncActionButton key={control.action} control={control} onChoose={() => onSyncAction(control.action)} />)}
+					{syncControls.map(control => (
+						<SyncActionButton
+							key={control.action}
+							control={control}
+							onChoose={() => onSyncAction(control.action)}
+							onFocus={() => {
+								onSyncControl.current = true;
+							}}
+							onBlur={event => {
+								// A control taken out of the page may lose focus to nothing: that is not the person moving on.
+								if (event.relatedTarget !== null || event.currentTarget.isConnected) onSyncControl.current = false;
+							}}
+						/>
+					))}
 				</span>
 			)}
 			{actions !== undefined && <span className="row-actions">{actions}</span>}
 			{menuAt !== null && onMenuChoice && (
 				<WorktreeMenu
 					label={describeWorktreeMenu(worktree)}
-					items={worktreeMenuItems(worktree, removing)}
+					items={worktreeMenuItems(worktree, removing, syncOptions)}
 					at={menuAt}
 					onClose={closeMenu}
 					onChoose={onMenuChoice}

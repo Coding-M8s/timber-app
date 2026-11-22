@@ -6,11 +6,11 @@ import { BEING_REMOVED_REASON, DONE_PRIMARY_NOTE } from "./done-format";
 import { worktreeLabel } from "./format";
 import { REBASE_FOLDER_MISSING } from "./rebase-format";
 import type { Repository } from "../shared/model";
-import { type AppState, type DialogRequest, changesPanelShown, isBeingRemoved, isRunning, offeredChops, finishedSessions, selectedWorktree, sessionsOf, waitingSessions } from "./store/state";
+import { type AppState, type DialogRequest, changesPanelShown, isBeingRemoved, syncOptionsOf, isRunning, offeredChops, finishedSessions, selectedWorktree, sessionsOf, waitingSessions } from "./store/state";
 import type { SidePanelView } from "../shared/layout";
 import { type RowSessionMark, describeRowSessions } from "./terminal-format";
 import { NONE_WAITING, WAITING_LABEL, describeToVisit } from "./waiting";
-import { SYNC_ACTION_WORDS, syncMenuEntries } from "./sync-action-format";
+import { PULLING_REASON, SYNC_ACTION_WORDS, syncMenuEntries } from "./sync-action-format";
 
 /**
  * The command palette without React: what it lists for the state of the app,
@@ -245,10 +245,11 @@ function actionEntries(state: AppState): PaletteEntry[] {
 				{ kind: "chop", repository: repository.path, worktree: worktree.id, chop: chop.name }, [chop.title, "chop", chop.kind]);
 		}
 		// A sync action is listed only while it applies to the branch, as on the row and in its menu.
-		for (const entry of syncMenuEntries(worktree)) {
+		for (const entry of syncMenuEntries(worktree, syncOptionsOf(state, repository.path, worktree.path))) {
 			const words = SYNC_ACTION_WORDS[entry.action];
-			add(inWorktree(entry.action === "push" ? "push" : "fetch"), `sync:${entry.action}`, entry.label, `Opens ${entry.label} for ${name}, which shows ${words.shows}.`,
-				isBeingRemoved(state, repository.path, worktree.path) ? BEING_REMOVED_REASON : null,
+			const hint = entry.opensDialog ? `Opens ${entry.label} for ${name}, which shows ${words.shows}.` : `Pulls into ${name} now, without asking first. The dialog opens only when Git refuses or it fails.`;
+			add(inWorktree(entry.action === "push" ? "push" : "fetch"), `sync:${entry.action}`, entry.label, hint,
+				isBeingRemoved(state, repository.path, worktree.path) ? BEING_REMOVED_REASON : entry.busy ? PULLING_REASON : null,
 				{ kind: "dialog", request: { kind: "sync-action", action: entry.action, repository: repository.path, worktree: worktree.id } }, words.keywords);
 		}
 		add(inWorktree("rebase"), "rebase", "Rebase", `Opens Rebase for ${name}, which shows the Timber command before it runs.`, worktree.pathExists ? null : REBASE_FOLDER_MISSING,

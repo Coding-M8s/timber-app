@@ -2,6 +2,7 @@ import { basename } from "node:path";
 import type { AddRepositoryResult, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, RepositoryGroupsResult } from "../shared/model";
 import { applyOrder, sameOrder } from "../shared/repository-order";
 import { forgetGroup, forgetRepository } from "../shared/layout";
+import { forgetPullRepository } from "../shared/pull-confirm-setting";
 import {
 	type GroupChange,
 	type GroupedList,
@@ -271,9 +272,10 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 				const current = await settings();
 				const repositories = current.repositories.filter(entry => entry.path !== path);
 				if (repositories.length === current.repositories.length) return { outcome: "removed" };
-				// A collapsed group, a dismissed setup prompt, and the board's list are remembered by this path, so they go with the entry.
+				// A collapsed group, a dismissed setup prompt, the board's list, and its "Skip pull confirmation" are remembered by this path, so they go with the entry.
 				const next: Settings = { ...current, repositories };
 				if (current.layout) next.layout = forgetRepository(current.layout, path);
+				if (current.preferences) next.preferences = { ...current.preferences, pull: forgetPullRepository(current.preferences.pull, path) };
 				try {
 					await save(next);
 				} catch (error) {

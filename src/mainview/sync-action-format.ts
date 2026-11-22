@@ -42,10 +42,30 @@ export interface SyncControl {
 	label: string;
 	/** The tooltip. */
 	title: string;
+	/** Whether choosing it opens the dialog first. False for a Pull that runs at once. */
+	opensDialog: boolean;
+	/** True while this action runs for the worktree without a dialog: the control is off until it ends. */
+	busy: boolean;
 }
 
+/**
+ * How Pull behaves for one worktree, from the preferences and what runs:
+ * `pullAsks` is false when the Pull setting skips the dialog in its
+ * repository (`confirmsPull` in ../shared/pull-confirm-setting.ts), and
+ * `pulling` is true while a pull without a dialog runs there.
+ */
+export interface SyncOptions {
+	pullAsks: boolean;
+	pulling: boolean;
+}
+
+export const ASKING_SYNC: SyncOptions = { pullAsks: true, pulling: false };
+
+/** Why Pull is off while a pull without a dialog runs in the worktree. */
+export const PULLING_REASON = "Pulling now.";
+
 /** The controls a row shows for its worktree, one per action that applies, in the order of the table. */
-export function describeSyncControls(worktree: Worktree): SyncControl[] {
+export function describeSyncControls(worktree: Worktree, options: SyncOptions = ASKING_SYNC): SyncControl[] {
 	const { sync } = worktree;
 	if (worktree.branch === null || sync?.kind !== "tracking") return [];
 	const name = worktreeLabel(worktree);
@@ -56,7 +76,11 @@ export function describeSyncControls(worktree: Worktree): SyncControl[] {
 					action,
 					text: String(sync.behind),
 					label: `Pull ${counted(sync.behind, "commit")} into ${name} from ${sync.upstream}`,
-					title: `${counted(sync.behind, "commit")} to pull from ${sync.upstream}, as of the last fetch. Click to see the commands, then pull.`,
+					title: options.pulling
+						? `Pulling ${sync.upstream} into ${name}.`
+						: `${counted(sync.behind, "commit")} to pull from ${sync.upstream}, as of the last fetch. ${options.pullAsks ? "Click to see the commands, then pull." : "Click to pull now, without asking first."}`,
+					opensDialog: options.pullAsks,
+					busy: options.pulling,
 				};
 			case "push":
 				return {
@@ -64,14 +88,17 @@ export function describeSyncControls(worktree: Worktree): SyncControl[] {
 					text: String(sync.ahead),
 					label: `Push ${counted(sync.ahead, "commit")} from ${name} to ${sync.upstream}`,
 					title: `${counted(sync.ahead, "commit")} to push to ${sync.upstream}. Click to see the Timber command, then push.`,
+					// Push always asks: it runs a Timber command, shown before it runs.
+					opensDialog: true,
+					busy: false,
 				};
 		}
 	});
 }
 
 /** The menu entries a worktree's sync state offers. Never one that does not apply. */
-export function syncMenuEntries(worktree: Worktree): { action: SyncActionKind; label: string; title: string }[] {
-	return describeSyncControls(worktree).map(control => ({ action: control.action, label: SYNC_ACTION_WORDS[control.action].label, title: control.title }));
+export function syncMenuEntries(worktree: Worktree, options: SyncOptions = ASKING_SYNC): { action: SyncActionKind; label: string; title: string; opensDialog: boolean; busy: boolean }[] {
+	return describeSyncControls(worktree, options).map(control => ({ action: control.action, label: SYNC_ACTION_WORDS[control.action].label, title: control.title, opensDialog: control.opensDialog, busy: control.busy }));
 }
 
 /** What the dialog shows: the first command, then each that follows, with a note saying when it runs. */

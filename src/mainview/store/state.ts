@@ -23,7 +23,9 @@ import type { TerminalSession } from "../../shared/terminal";
 import type { RenderingStatus } from "../../shared/rendering";
 import type { SeenStatuses } from "../seen-status";
 import { type RepositoryGroups, emptyGroups } from "../../shared/repository-groups";
-import type { SyncActionKind } from "../../shared/sync-actions";
+import type { SyncActionKind, SyncActionResult } from "../../shared/sync-actions";
+import { confirmsPull } from "../../shared/pull-confirm-setting";
+import type { SyncOptions } from "../sync-action-format";
 
 /** Null until the first look for Timber has answered. */
 export type TimberState =
@@ -57,7 +59,9 @@ export type Operation =
 	/** Reading the diff of one changed file of a worktree, named by its identity. */
 	| { kind: "read-diff"; worktree: string }
 	/** Fetching a repository because the person asked, named by the path of its primary checkout. */
-	| { kind: "fetch-repository"; repository: string };
+	| { kind: "fetch-repository"; repository: string }
+	/** A pull that runs without its dialog, because the Pull setting skips it, in a worktree named by its registered path. */
+	| { kind: "pull-worktree"; repository: string; worktree: string };
 
 /**
  * The changes of one worktree: its changed files as last read, and the diff
@@ -256,8 +260,12 @@ export type DialogRequest =
 	| { kind: "done-worktree"; repository: string; worktree: string }
 	/** Rebase a worktree with Timber, in a new session. Named as for Done. */
 	| { kind: "rebase-worktree"; repository: string; worktree: string }
-	/** Run a sync action such as Pull in a worktree, after showing its Git commands. Named as for Done. */
-	| { kind: "sync-action"; action: SyncActionKind; repository: string; worktree: string }
+	/**
+	 * Run a sync action such as Pull in a worktree, after showing its Git
+	 * commands. Named as for Done. `ended` is set when a pull ran without the
+	 * dialog and Git refused or it failed: the dialog opens on that outcome.
+	 */
+	| { kind: "sync-action"; action: SyncActionKind; repository: string; worktree: string; ended?: Exclude<SyncActionResult, { outcome: "done" }> }
 	/** Save the base Timber keeps for a worktree, from the Changes view. Named as for Done. */
 	| { kind: "set-base"; repository: string; worktree: string }
 	/** Remove every linked worktree of one repository whose pull request merged. `repository` is the path of the primary checkout. */
@@ -323,7 +331,7 @@ export type DialogRequest =
 	| { kind: "start-work"; repository: string; issue: SuggestedIssue };
 
 /** The sections of the Settings dialog, in the order they are listed. */
-export const SETTINGS_SECTIONS = ["layout", "theme", "terminal", "rendering", "editor", "agents", "chops", "notifications", "fetch", "about", "executable", "machine", "repository"] as const;
+export const SETTINGS_SECTIONS = ["layout", "theme", "terminal", "rendering", "editor", "agents", "chops", "notifications", "fetch", "pull", "about", "executable", "machine", "repository"] as const;
 export type SettingsSection = typeof SETTINGS_SECTIONS[number];
 
 /**
@@ -948,6 +956,14 @@ export function removalAt(state: Pick<AppState, "removals">, repository: string,
  * Whether Timber is removing the worktree at this registered path right now,
  * or Clean up merged has it queued. Its actions are off meanwhile.
  */
+/** How Pull behaves for a worktree: whether it asks first in its repository, and whether a pull without a dialog runs there now. */
+export function syncOptionsOf(state: Pick<AppState, "preferences" | "operations">, repository: string, worktree: string): SyncOptions {
+	return {
+		pullAsks: confirmsPull(state.preferences.pull, repository),
+		pulling: state.operations.some(operation => operation.kind === "pull-worktree" && operation.repository === repository && operation.worktree === worktree),
+	};
+}
+
 export function isBeingRemoved(state: Pick<AppState, "removals">, repository: string, path: string): boolean {
 	const kind = removalAt(state, repository, path)?.status.kind;
 	return kind === "running" || kind === "waiting";

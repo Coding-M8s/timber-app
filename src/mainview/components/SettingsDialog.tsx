@@ -7,6 +7,7 @@ import { AgentsSection } from "./settings/AgentsSection";
 import { ChopsSection } from "./settings/ChopsSection";
 import { EditorSection } from "./settings/EditorSection";
 import { FetchSection } from "./settings/FetchSection";
+import { PullSection } from "./settings/PullSection";
 import { NotificationsSection } from "./settings/NotificationsSection";
 import { LayoutSection } from "./settings/LayoutSection";
 import { SettingsSavingContext } from "./settings/SettingsSection";
@@ -32,6 +33,7 @@ const SECTION_VIEWS: Record<SettingsSection, ComponentType> = {
 	chops: ChopsSection,
 	notifications: NotificationsSection,
 	fetch: FetchSection,
+	pull: PullSection,
 	about: AboutSection,
 	executable: TimberExecutableSection,
 	machine: MachineSection,

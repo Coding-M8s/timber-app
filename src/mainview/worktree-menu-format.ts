@@ -6,7 +6,7 @@ import { BEING_REMOVED_REASON, DONE_CONTROL_TITLE, DONE_PRIMARY_NOTE } from "./d
 import { worktreeLabel } from "./format";
 import type { DialogRequest } from "./store/state";
 import { type SyncActionKind, isSyncActionKind } from "../shared/sync-actions";
-import { syncMenuEntries } from "./sync-action-format";
+import { ASKING_SYNC, PULLING_REASON, type SyncOptions, syncMenuEntries } from "./sync-action-format";
 
 /**
  * Words and rules for the menu a worktree row opens on a right-click or from
@@ -42,11 +42,12 @@ export interface WorktreeMenuItem {
  * the workspace header, Done is never offered for a primary checkout, nor
  * while Timber removes the worktree.
  */
-export function worktreeMenuItems(worktree: Worktree, removing = false): WorktreeMenuItem[] {
+export function worktreeMenuItems(worktree: Worktree, removing = false, options: SyncOptions = ASKING_SYNC): WorktreeMenuItem[] {
 	const reason = worktree.primary ? DONE_PRIMARY_NOTE : removing ? BEING_REMOVED_REASON : null;
-	const sync = syncMenuEntries(worktree).map((entry): WorktreeMenuItem => ({
-		id: `sync:${entry.action}`, label: entry.label, disabled: removing, note: removing ? BEING_REMOVED_REASON : null, title: removing ? BEING_REMOVED_REASON : entry.title,
-	}));
+	const sync = syncMenuEntries(worktree, options).map((entry): WorktreeMenuItem => {
+		const off = removing ? BEING_REMOVED_REASON : entry.busy ? PULLING_REASON : null;
+		return { id: `sync:${entry.action}`, label: entry.label, disabled: off !== null, note: off, title: off ?? entry.title };
+	});
 	return [...sync, { id: "done", label: "Done", disabled: reason !== null, note: reason, title: reason ?? DONE_CONTROL_TITLE }];
 }
 
@@ -80,8 +81,8 @@ export function describeWorktreeMenu(worktree: Worktree): string {
  * The dialog choosing an entry opens, for the row's own worktree and never
  * the selected one. Null for a disabled entry, which does nothing.
  */
-export function worktreeMenuChoice(repository: string, worktree: Worktree, id: WorktreeMenuItemId, removing = false): DialogRequest | null {
-	const item = worktreeMenuItems(worktree, removing).find(candidate => candidate.id === id);
+export function worktreeMenuChoice(repository: string, worktree: Worktree, id: WorktreeMenuItemId, removing = false, options: SyncOptions = ASKING_SYNC): DialogRequest | null {
+	const item = worktreeMenuItems(worktree, removing, options).find(candidate => candidate.id === id);
 	if (!item || item.disabled) return null;
 	if (item.id.startsWith("sync:")) {
 		const action = item.id.slice("sync:".length);
