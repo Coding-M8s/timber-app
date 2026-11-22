@@ -106,7 +106,8 @@ describe("a theme file", () => {
 		const colors = refused(JSON.stringify({ ...whole, ui: { ...whole.ui, text: "red", text2: undefined }, terminal: { ...whole.terminal, red: 1 } }));
 		expect(colors).toBe("These colors are missing or are not colors: ui.text, ui.text2, terminal.red.");
 		const many = refused(JSON.stringify({ ...whole, ui: {} }));
-		expect(many).toContain(`and ${UI_COLORS.length - 4} more.`);
+		// The two changed-word tints follow from the theme's colors, so they are never missing.
+		expect(many).toContain(`and ${UI_COLORS.length - 4 - 2} more.`);
 		expect(refused(" ".repeat(MAX_THEME_FILE_BYTES + 1))).toContain("larger than 64 KB");
 	});
 

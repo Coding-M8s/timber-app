@@ -11,6 +11,9 @@ import { OPEN_IN_EDITOR } from "../editor-format";
 import { useAppState, useStore } from "../store/react";
 import type { ChangesView } from "../store/state";
 import { EditorIcon, useOpenInEditor } from "./OpenInEditor";
+import { type DiffMarks, DiffText, useDiffMarks } from "./DiffText";
+import type { CodeSpan } from "../diff-highlight";
+import type { WordRange } from "../diff-words";
 import { KindLetter, fileKey } from "./KindLetter";
 
 /*
@@ -21,7 +24,8 @@ import { KindLetter, fileKey } from "./KindLetter";
  *
  * Each line is drawn in two parts, so what builds on this plugs in without
  * reworking the tab: `lineTone` gives a line's background, from its kind
- * and how notes mark it, and `LineContent` draws its text. `layout` says
+ * and how notes mark it, and `LineContent` draws its text, colored as code
+ * with its changed words marked (`DiffText`). `layout` says
  * how the lines are laid out; only "unified" is drawn so far.
  */
 
@@ -49,8 +53,8 @@ export function lineTone(line: Pick<DiffLine, "kind">, marks: LineMarks): string
 }
 
 /** The text of a line, after its numbers and marker. The one place a line's content is drawn. */
-function LineContent({ line }: { line: DiffLine }) {
-	return <span className="diff-text">{line.text}</span>;
+function LineContent({ line, spans, word }: { line: DiffLine; spans: readonly CodeSpan[] | undefined; word: WordRange | null }) {
+	return <DiffText text={line.text} kind={line.kind} spans={spans} word={word} />;
 }
 
 /** What the diff of one file needs to take notes. */
@@ -131,7 +135,7 @@ function stepLineTarget(from: HTMLElement, key: string): boolean {
 	return true;
 }
 
-function Section({ section, index, noting }: { section: DiffSection; index: number; noting: Noting }) {
+function Section({ section, index, noting, marks }: { section: DiffSection; index: number; noting: Noting; marks: DiffMarks }) {
 	const store = useStore();
 	const { draft } = noting;
 	return (
@@ -202,7 +206,7 @@ function Section({ section, index, noting }: { section: DiffSection; index: numb
 											</>
 										)}
 										<span className="diff-marker" aria-hidden="true">{line.kind === "added" ? "+" : line.kind === "removed" ? "-" : ""}</span>
-										<LineContent line={line} />
+										<LineContent line={line} spans={marks.colors?.[index]?.[hunkIndex]?.[lineIndex]} word={marks.words[index]?.[hunkIndex]?.[lineIndex] ?? null} />
 									</div>
 									{here.map(note => <InlineNote key={note.id} worktree={noting.worktree} note={note} />)}
 									{drafting && lineIndex === high && (
@@ -231,7 +235,11 @@ function Section({ section, index, noting }: { section: DiffSection; index: numb
 	);
 }
 
+/** A diff with no text, so its marks have nothing to color. */
+const NO_SECTIONS: readonly DiffSection[] = [];
+
 function DiffBody({ file, result, commit, noting }: { file: FileChange; result: FileDiffResult | null; commit: string | null; noting: Noting }) {
+	const marks = useDiffMarks(file.path, result?.outcome === "read" && result.diff.kind === "text" ? result.diff.sections : NO_SECTIONS);
 	if (result === null) return <p className="diff-reading" role="status">Reading the diff</p>;
 	if (result.outcome !== "read") {
 		return (
@@ -260,7 +268,7 @@ function DiffBody({ file, result, commit, noting }: { file: FileChange; result: 
 					<p className="empty-text">{notice.text}</p>
 				</div>
 			)}
-			{result.diff.kind === "text" && result.diff.sections.map((section, index) => <Section key={index} section={section} index={index} noting={withStop} />)}
+			{result.diff.kind === "text" && result.diff.sections.map((section, index) => <Section key={index} section={section} index={index} noting={withStop} marks={marks} />)}
 		</>
 	);
 }

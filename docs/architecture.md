@@ -2124,8 +2124,11 @@ the `theme` preference says which.
   app was designed in, and the default), Timber Light, Catppuccin Mocha,
   Gruvbox Dark, Nord, Solarized Dark, and Solarized Light. A palette gives
   the surfaces, text, and meaning colors and the sixteen ANSI colors; the
-  see-through fills and shadows, the diff backgrounds, and the terminal's
-  selection follow from them. Where a palette's own color was under the
+  see-through fills and shadows, the diff backgrounds and changed-word
+  tints, and the terminal's selection follow from them. A theme saved
+  before the changed-word tints (`diffAddedWord`, `diffRemovedWord`) gets
+  them the same way, from its own added and error colors, so it still reads
+  whole. Where a palette's own color was under the
   contrast minimum, a nearby shade is used. Their notices are in
   `licenses/theme-palettes.txt`.
 - **The choice.** `ThemeChoice`: `{ mode: "fixed", theme }`, or
@@ -2173,8 +2176,9 @@ the `theme` preference says which.
 - **Contrast.** `contrastWarnings` measures each text color and meaning
   color (focus included) on every surface (the four backgrounds, and
   `fillField`, which is also the tint of a repository's header row in the
-  sidebar), and the terminal's text on its
-  background, as WCAG 2 does, laying see-through colors over the app's
+  sidebar), the terminal's text on its
+  background, and the interface's and the terminal's text on each
+  changed-word tint laid over its line's tint and the diff's pane, as WCAG 2 does, laying see-through colors over the app's
   background first. The minimums are WCAG AA (text 4.5:1, meaning colors
   3:1) unless the maker asks for AAA (7:1 and 4.5:1). The sixteen ANSI
   colors are the programs' and are not checked: terminals raise any that
@@ -3286,6 +3290,27 @@ discards, or commits. Comparing against a backup is a later step.
   stopped beyond that. A diff of more than 5,000 lines is not drawn. Either
   way, and for a binary file, a notice shows instead, with the Git command
   to run in a terminal. Git is stopped after 20 seconds.
+- **Colors and changed words.** `src/mainview/diff-highlight.ts` colors a
+  diff as the File tab's editor colors the file: `pickLanguage` picks the
+  language from the file's name, its parser loads once on demand, and
+  Lezer's `highlightTree` gives each token its class from
+  `codeHighlightStyle`, with no editor. Each hunk's old side (context and
+  removed lines) and new side (context and added lines) is parsed as one
+  piece of code, and context lines take the new side's colors. Git's notes
+  get none. A kind of file the editor does not know, or a diff whose
+  highest line number or text is over the editor's limits, stays plain.
+  The highlight style's classes are mounted on the page with the diff, so
+  a diff colors before any editor opened; a theme change recolors it with
+  no script, as in the editor. Known limit: a hunk that starts inside a
+  multi-line comment or string is parsed from its first line, so it may be
+  colored wrongly. `src/mainview/diff-words.ts` pairs each run of removed
+  lines with the run of added lines right after it, line by line, skipping
+  Git's notes, and marks the stretch between their shared start and end,
+  widened to whole words. A pair that shares fewer than 4 characters, or
+  under 30% of the shorter line, not counting indentation, is a rewrite
+  and gets no mark. `DiffText` in `src/mainview/components/DiffText.tsx`
+  draws a line's pieces (`lineSegments`), memoized, so a refresh colors at
+  once without flashing plain.
 - **Compare with.** A switch above the list, Base or Uncommitted. The view
   in the store keeps the comparison its files came from, and the header
   shows `origin/main @ a1b2c3d` or "Last commit". A commit base shows as

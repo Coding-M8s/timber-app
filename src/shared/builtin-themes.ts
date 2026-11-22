@@ -61,6 +61,18 @@ const FILLS: Record<Appearance, Pick<Record<UiColor, string>, "lineRaised" | "fi
 	},
 };
 
+/**
+ * The stronger tints that mark the words that changed inside a paired
+ * removed and added line, drawn over the line's own tint. A custom theme
+ * without them gets them the same way, from its own colors.
+ */
+export function diffWordTints(appearance: Appearance, colors: Pick<Record<UiColor, string>, "untracked" | "error">): Pick<Record<UiColor, string>, "diffAddedWord" | "diffRemovedWord"> {
+	return {
+		diffAddedWord: withAlpha(colors.untracked, appearance === "dark" ? 0.28 : 0.26),
+		diffRemovedWord: withAlpha(colors.error, appearance === "dark" ? 0.28 : 0.2),
+	};
+}
+
 function theme(id: string, name: string, appearance: Appearance, palette: Palette): Theme {
 	const { ansi, focus, ...colors } = palette;
 	const terminal = {} as Record<TerminalColor, string>;
@@ -78,6 +90,7 @@ function theme(id: string, name: string, appearance: Appearance, palette: Palett
 			focus: focus ?? colors.behind,
 			diffAdded: withAlpha(colors.untracked, appearance === "dark" ? 0.12 : 0.14),
 			diffRemoved: withAlpha(colors.error, appearance === "dark" ? 0.12 : 0.1),
+			...diffWordTints(appearance, colors),
 		},
 		terminal: {
 			...terminal,
