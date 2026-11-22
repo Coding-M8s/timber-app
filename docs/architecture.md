@@ -3342,7 +3342,10 @@ discards, or commits. Comparing against a backup is a later step.
   Git's notes, and marks the stretch between their shared start and end,
   widened to whole words. A pair that shares fewer than 4 characters, or
   under 30% of the shorter line, not counting indentation, is a rewrite
-  and gets no mark. `DiffText` in `src/mainview/components/DiffText.tsx`
+  and gets no mark. A marked word is drawn in the interface's text color on
+  its tint, since some themes' code colors are too faint there (Catppuccin
+  Mocha's comment grey is about 1.1:1 on it), and the contrast check
+  measures the text color on the tint. `DiffText` in `src/mainview/components/DiffText.tsx`
   draws a line's pieces (`lineSegments`), memoized, so a refresh colors at
   once without flashing plain.
 - **Compare with.** A switch above the list, Base or Uncommitted. The view

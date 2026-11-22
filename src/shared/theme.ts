@@ -177,8 +177,8 @@ export function readTheme(value: unknown): { theme: Theme; replaced: string[] } 
 		const colors = {} as Record<Key, string>;
 		for (const key of keys) {
 			const color = readColor(given[key]);
-			// A color a later version added comes from the theme's own colors, so an older theme still reads whole.
-			if (color === undefined && (DERIVED_UI_COLORS as readonly string[]).includes(key)) continue;
+			// A color a later version added, left out, comes from the theme's own colors, so an older theme still reads whole.
+			if (given[key] === undefined && (DERIVED_UI_COLORS as readonly string[]).includes(key)) continue;
 			if (color === undefined) replaced.push(`${part}.${key}`);
 			colors[key] = color ?? defaults[key];
 		}

@@ -43,6 +43,9 @@ const WORD_BACKGROUND = `(() => {
 	return word ? getComputedStyle(word).backgroundColor : "none";
 })()`;
 
+/** The color of the first changed word on an added line. */
+const WORD_COLOR = `getComputedStyle(document.querySelector(".diff-line.added .diff-word")).color`;
+
 // Not tried on Windows yet, so it does not run there.
 describe.skipIf(browserPath === null || process.platform === "win32")("a diff's colors in a real browser", () => {
 	let page: BrowserPage;
@@ -74,15 +77,18 @@ describe.skipIf(browserPath === null || process.platform === "win32")("a diff's 
 		// The changed number, and only it, is marked.
 		expect(await page.evaluate<string>(`document.querySelector(".diff-line.added .diff-word").textContent`)).toBe("1");
 		expect(await page.evaluate<string>(WORD_BACKGROUND)).toBe(DEFAULT_LIGHT_THEME.ui.diffAddedWord);
+		// A changed word is drawn in the text color, which the contrast check measures on its tint.
+		expect(await page.evaluate<string>(WORD_COLOR)).toBe(rgb(DEFAULT_LIGHT_THEME.ui.text));
 
 		const nord = BUILT_IN_THEMES.find(theme => theme.id === "nord")!;
 		await page.evaluate(`${STORE}.savePreferences({ theme: { mode: "fixed", theme: "nord" } })`);
 		await page.until(`${KEYWORD_COLOR} === ${JSON.stringify(rgb(nord.terminal.magenta))}`, "keywords took Nord's magenta");
 		expect(await page.evaluate<string>(WORD_BACKGROUND)).toBe(nord.ui.diffAddedWord);
+		expect(await page.evaluate<string>(WORD_COLOR)).toBe(rgb(nord.ui.text));
 	});
 
 	test("a diff of nearly 5,000 colored lines scrolls smoothly", async () => {
-		const frames = await page.evaluate<number[]>(`(async () => {
+		const frames = await page.evaluate<{ times: number[]; moved: number }>(`(async () => {
 			const body = document.querySelector(".diff-body");
 			body.scrollTop = 0;
 			const times = [];
@@ -93,8 +99,12 @@ describe.skipIf(browserPath === null || process.platform === "win32")("a diff's 
 				times.push(now - last);
 				last = now;
 			}
+			return { times, moved: body.scrollTop };
+		})()`).then(({ times, moved }) => {
+			// The diff itself scrolled, far down.
+			expect(moved).toBeGreaterThan(40_000);
 			return times;
-		})()`);
+		});
 		const sorted = [...frames].sort((one, other) => one - other);
 		const median = sorted[Math.floor(sorted.length / 2)]!;
 		const slow = sorted[Math.floor(sorted.length * 0.95)]!;
