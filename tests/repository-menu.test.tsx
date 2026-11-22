@@ -36,7 +36,7 @@ describe("a repository's menu", () => {
 describe("a group's menu", () => {
 	test("offers Rename and Delete group, which says its repositories stay", () => {
 		const markup = renderToStaticMarkup(
-			<WorktreeMenuView label={describeGroupMenu("Work")} items={repositoryMenuEntries(groupMenuItems())} at={{ left: 0, top: 0 }} idBase="g" />,
+			<WorktreeMenuView label={describeGroupMenu("Work")} items={repositoryMenuEntries(groupMenuItems([{ id: "g2", name: "Work" }], "g2"))} at={{ left: 0, top: 0 }} idBase="g" />,
 		);
 		expect(markup).toContain('aria-label="Actions for group Work"');
 		expect(markup).toContain('<span class="session-menu-label">Rename</span>');

@@ -530,14 +530,41 @@ describe("groups", () => {
 		expect((await groupsOn().watchTargets()).map(target => target.path)).toEqual([three.path, one.path, two.path]);
 	});
 
-	test("groups are reordered by id, keeping a group the order leaves out and skipping an unknown id", async () => {
+	test("groups are moved among their siblings, and a restart reads them back", async () => {
 		const work = { id: "g1", name: "Work" };
 		const personal = { id: "g2", name: "Personal" };
 		const spare = { id: "g3", name: "Spare" };
 		savedWith({ repositories: [one], groups: [work, personal, spare] });
 		const list = groupsOn();
-		expect(await list.reorderGroups(["g3", "gone", "g1"])).toEqual({ outcome: "saved", groups: { groups: [spare, work, personal], membership: {} } });
+		expect(await list.moveGroup("g3", null, "g1")).toEqual({ outcome: "saved", groups: { groups: [spare, work, personal], membership: {} } });
 		expect(onDisk().groups).toEqual([spare, work, personal]);
+		expect(await groupsOn().listGroups()).toEqual({ groups: [spare, work, personal], membership: {} });
+	});
+
+	test("subgroups are made, moved in and out, and deleted, each in one save that a restart reads back", async () => {
+		savedWith({ repositories: [{ ...one, group: "g1" }, two], groups: [{ id: "g1", name: "Work" }, { id: "g2", name: "Personal" }] });
+		const list = groupsOn();
+		const made = await list.createGroup("Client A", two.path, "g1");
+		expect(made.outcome).toBe("saved");
+		const client = made.outcome === "saved" ? made.groups.groups[2]! : { id: "" };
+		expect(client).toEqual({ id: client.id, name: "Client A", parent: "g1" });
+		expect(onDisk().repositories).toEqual([{ ...one, group: "g1" }, { ...two, group: client.id }]);
+
+		// Personal into Client A, then back to the top level, before Work.
+		expect((await list.moveGroup("g2", client.id, null)).outcome).toBe("saved");
+		expect(onDisk().groups).toEqual([{ id: "g1", name: "Work" }, { id: client.id, name: "Client A", parent: "g1" }, { id: "g2", name: "Personal", parent: client.id }]);
+		// Too deep a parent, or a group inside itself, is refused and nothing is written.
+		const text = readFileSync(settingsFile, "utf8");
+		expect(await list.createGroup("Deeper", undefined, "g2")).toEqual({ outcome: "too-deep" });
+		expect(await list.moveGroup("g1", "g2", null)).toEqual({ outcome: "inside-itself" });
+		expect(readFileSync(settingsFile, "utf8")).toBe(text);
+		expect((await list.moveGroup("g2", null, "g1")).outcome).toBe("saved");
+		expect((await groupsOn().listGroups()).groups.map(group => [group.name, group.parent ?? null])).toEqual([["Personal", null], ["Work", null], ["Client A", "g1"]]);
+
+		// Deleting Work moves Client A and timber up to the top level, and keeps every repository.
+		expect((await list.deleteGroup("g1")).outcome).toBe("saved");
+		expect(onDisk().groups).toEqual([{ id: "g2", name: "Personal" }, { id: client.id, name: "Client A" }]);
+		expect(onDisk().repositories).toEqual([one, { ...two, group: client.id }]);
 	});
 
 	test("an unknown group or repository changes nothing and writes nothing, so it is safe to ask again", async () => {
@@ -551,7 +578,9 @@ describe("groups", () => {
 		expect(await list.place(two.path, "gone")).toEqual(current);
 		expect(await list.place("/never/listed", "g1")).toEqual(current);
 		expect(await list.place(two.path, null)).toEqual(current);
-		expect(await list.reorderGroups(["gone"])).toEqual(current);
+		expect(await list.moveGroup("gone", null, null)).toEqual(current);
+		expect(await list.moveGroup("g1", "gone", null)).toEqual(current);
+		expect(await list.createGroup("Other", undefined, "gone")).toEqual(current);
 		expect(readFileSync(settingsFile, "utf8")).toBe(text);
 		expect(statSync(settingsFile).mtimeMs).toBe(saved);
 	});
@@ -599,7 +628,7 @@ describe("groups", () => {
 		expect(await list.createGroup("Personal", one.path)).toEqual({ outcome: "overridden" });
 		expect(await list.renameGroup("g1", "Job")).toEqual({ outcome: "overridden" });
 		expect(await list.deleteGroup("g1")).toEqual({ outcome: "overridden" });
-		expect(await list.reorderGroups(["g1"])).toEqual({ outcome: "overridden" });
+		expect(await list.moveGroup("g1", null, null)).toEqual({ outcome: "overridden" });
 		expect(await list.place(one.path, null)).toEqual({ outcome: "overridden" });
 		expect(await list.place(one.path, "g1", [one.path])).toEqual({ outcome: "overridden" });
 		expect(readFileSync(settingsFile, "utf8")).toBe(text);

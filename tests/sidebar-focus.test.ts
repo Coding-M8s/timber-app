@@ -45,11 +45,22 @@ describe("where the keyboard goes after the Done dialog closes", () => {
 			querySelectorAll: (selectors: string) => selectors === "[data-group]"
 				? [
 					{ dataset: { group: "g-personal" }, querySelector: () => ({ focus: () => void focused.push("Personal header") }) },
-					{ dataset: { group: "g-work" }, querySelector: (inner: string) => inner === ".repository-group-header" ? { focus: () => void focused.push("Work header") } : null },
+					{ dataset: { group: "g-work" }, querySelector: (inner: string) => inner === ":scope > .repository-group-head > .repository-group-header" ? { focus: () => void focused.push("Work header") } : null },
 				]
 				: [{ dataset: { repository: "/work/api" }, querySelector: () => ({ focus: () => void focused.push("api") }) }],
 		};
-		expect(focusFirstWorktree("/work/timber", root, "g-work")).toBe(true);
+		expect(focusFirstWorktree("/work/timber", root, ["g-work"])).toBe(true);
+		expect(focused).toEqual(["Work header"]);
+	});
+
+	test("the nearest drawn header around it when its own group sits inside a folded one, and only a group's own header", () => {
+		const focused: string[] = [];
+		const header = (name: string) => (inner: string) => inner === ":scope > .repository-group-head > .repository-group-header" ? { focus: () => void focused.push(name) } : null;
+		// Client, inside Work, is not drawn while Work is folded; Deep, inside Client, neither.
+		const root: FocusRoot = {
+			querySelectorAll: (selectors: string) => selectors === "[data-group]" ? [{ dataset: { group: "g-work" }, querySelector: header("Work header") }] : [],
+		};
+		expect(focusFirstWorktree("/work/timber", root, ["g-deep", "g-client", "g-work"])).toBe(true);
 		expect(focused).toEqual(["Work header"]);
 	});
 

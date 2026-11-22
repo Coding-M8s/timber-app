@@ -862,7 +862,8 @@ The app keeps its own list of repositories, so it is the same after a restart.
 - **Groups.** The person can gather repositories into named groups, such as
   Work and Personal (issue 130). There are none until the person makes one.
   The file gets an ordered `groups` list, and each grouped entry a `group`
-  that names one by id:
+  that names one by id. A group inside another names it in `parent`
+  (issue 316):
 
   ```json
   {
@@ -872,29 +873,52 @@ The app keeps its own list of repositories, so it is the same after a restart.
   		{ "path": "/work/timber", "commonDir": "/work/timber/.git", "group": "4f6c1d2e-..." }
   	],
   	"groups": [
-  		{ "id": "4f6c1d2e-...", "name": "Work" }
+  		{ "id": "4f6c1d2e-...", "name": "Work" },
+  		{ "id": "9a07b3c4-...", "name": "Client A", "parent": "4f6c1d2e-..." }
   	]
   }
   ```
 
-  Both fields are optional, so `SETTINGS_VERSION` stays 1, and a file
-  without groups is written exactly as before. Order inside a group is the
-  order of the entries, so moving a repository saves the same way as before.
+  All three fields are optional, so `SETTINGS_VERSION` stays 1, a file
+  without groups is written exactly as before, and `parent` is written only
+  for a group inside another. Order inside a group is the order of the
+  entries, so moving a repository saves the same way as before. Order among
+  groups with the same parent is their order in `groups`; where groups with
+  different parents sit in it means nothing. Inside a group its own
+  repositories show first, then its subgroups, so the shown order is a walk
+  of the tree, each group before its subgroups.
   Group data is a convenience, like the layout: a `groups` part that cannot be
   read, an entry with a repeated id or a name that is empty or not text, and a
   `group` that names no group are dropped, and the repositories always load.
+  A `parent` is dropped, and its group goes to the top level, in this order:
+  when it is not text, names the group itself, or names no group; when the
+  group is on a loop of parents (each group on the loop, not those hanging
+  under it); and, going down from the top level, when the group would sit
+  deeper than three levels (`MAX_GROUP_DEPTH`), so its subgroups go with it.
   The pure rules are in `src/shared/repository-groups.ts`: names are trimmed,
   inner runs of spaces become one, they are cut to 40 characters, and two
-  names are the same when they match ignoring case.
+  names are the same when they match ignoring case. A name only has to
+  differ from those of the groups with the same parent.
 - **Group methods.** `Engine.listRepositoryGroups` answers the groups and the
   group of each repository. `createRepositoryGroup`, `renameRepositoryGroup`,
-  `deleteRepositoryGroup`, `reorderRepositoryGroups`, and `placeRepository`
+  `deleteRepositoryGroup`, `moveRepositoryGroup`, and `placeRepository`
   each change the file in one save, in turn with every other change to it,
   and answer `RepositoryGroupsResult`: `saved` with the groups as saved, a
-  name problem (`name-empty`, `name-taken`), `overridden`, or `failed`.
-  Deleting a group makes its repositories loose and forgets that it was
-  folded, in the same save. A group or repository that is not listed changes
-  nothing and answers `saved`, so a request that raced a delete is safe.
+  name problem (`name-empty`, `name-taken`), a refused place
+  (`inside-itself`, `too-deep`), `overridden`, or `failed`.
+  `createRepositoryGroup` takes an optional parent. `moveRepositoryGroup`
+  takes a parent (null for the top level) and the sibling to go before (null
+  for the end), and refuses a parent that is the group or one of its
+  subgroups, a place more than three levels deep for the group and what it
+  holds, and a parent that already holds a group with its name. The store
+  checks the same rules first, so a refusal says why in the sidebar's notice
+  without asking the engine. Deleting a group moves its repositories and
+  subgroups up into its parent, or to the top level, its subgroups taking its
+  place among their new siblings; it never refuses, even when a lifted
+  subgroup then shares a name with a sibling. It forgets that the group was
+  folded, in the same save, and nothing else: each subgroup keeps its own
+  fold. A group, parent, or repository that is not listed changes nothing and
+  answers `saved`, so a request that raced a delete is safe.
   Removing a repository takes its `group` with it; the group stays.
 - **No reload.** Grouping changes only the settings file, never the set of
   repositories, so no Git or Timber command runs, nothing is watched or

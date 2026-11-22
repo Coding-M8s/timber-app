@@ -4049,3 +4049,29 @@ Git 2.56.1, and Chromium 158:
   (every row and the hunk header as wide as the scrolled width) failed
   with two row widths before the fix and passes after; the four diff
   browser test files: 29 passed. `bun run test`: 3996 pass, 19 skip, 0 fail.
+
+Run for nested repository groups (issue 316), on 2026-11-22, Linux x64 with
+Bun 1.4.5, Git 2.43.0, and Google Chrome 151:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun run build:web`: built.
+- `bun run test`: 4043 pass, 19 skip, 0 fail. On the base it started from,
+  the same machine ran 3996 pass, 19 skip, 0 fail.
+- `tests/repository-groups-browser.test.ts`, on the mock engine in the
+  installed Chrome: 12 passed, three of them new. They make a subgroup from a
+  group's menu and move it to the top level and back by menu; drag a group
+  onto another's header to put it inside, between groups to reorder it at a
+  nested level, onto its own subgroup (refused, with the error outline and
+  the notice, and nothing moved), and below every group to the end of the
+  top level; and reach a subgroup's header with Tab, fold it with Enter, move
+  it with Alt+Down, and see it stay folded after its parent is folded and
+  opened. A first version of the drag to the end failed because the test's
+  first pointer step left the header before the drag took hold; the test now
+  starts the drag inside the header.
+- Settings files: `tests/settings-parse.test.ts` and
+  `tests/repository-groups.test.ts` check that a file without `parent` is
+  written back byte for byte, that `parent` round-trips, and that an unknown,
+  self, looping, or too-deep `parent` is dropped. `tests/repository-list.test.ts`
+  reads the file back with a new list after each change, as a restart would.
+- Not run: the desktop app by hand on any platform, so nesting was seen only
+  in headless Chrome over the mock engine.

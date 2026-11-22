@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { Sidebar } from "../src/mainview/components/Sidebar";
 import { RepositoryGroupNameView } from "../src/mainview/components/RepositoryGroupName";
+import { MOVE_GROUP_HINT } from "../src/mainview/format";
 import { createMockEngine, sampleRepositories, sampleUnavailableRepository } from "../src/mainview/engine/mock";
 import { StoreProvider } from "../src/mainview/store/react";
 import { sessionsOf } from "../src/mainview/store/state";
@@ -13,6 +14,9 @@ import {
 	canDragRepositories,
 	chooseFromRepositoryMenu,
 	dropSlotsOf,
+	groupDropMark,
+	groupDropSlotsOf,
+	groupDropTarget,
 	groupNameBlurAction,
 	repositoryDropMark,
 	groupNameKeyAction,
@@ -123,8 +127,9 @@ describe("groups in the sidebar", () => {
 		expect(work).not.toContain('aria-label="api-server"');
 		expect(work).toMatch(/class="repository-group-header" aria-expanded="true"[^>]*>.*?Work/);
 		expect(markup.indexOf('aria-label="api-server"')).toBeLessThan(markup.indexOf('aria-label="Group Work"'));
-		// An empty group is shown too.
+		// An empty group is shown too, with nothing under its header.
 		expect(sectionOf(markup, "Group Empty")).toContain('class="repository-group-count">0<');
+		expect(sectionOf(markup, "Group Empty")).not.toContain("repository-group-members");
 		expect(markup).toContain('aria-label="More for group Work"');
 	});
 
@@ -176,7 +181,7 @@ describe("groups in the sidebar", () => {
 		await store.createGroup("Work");
 		await store.createGroup("Personal");
 		const header = sidebarElements(store).elements.find(element => element.props.className === "repository-group-header" && String(element.props.title).startsWith("Work"))!;
-		expect(header.props.title).toBe("Work. Drag to reorder, or press Alt+Up or Alt+Down.");
+		expect(header.props.title).toBe(`Work. ${MOVE_GROUP_HINT}`);
 		const press = key("ArrowDown", { altKey: true });
 		(header.props.onKeyDown as (event: unknown) => void)(press.event);
 		expect(press.prevented()).toBe(true);
@@ -204,6 +209,102 @@ describe("groups in the sidebar", () => {
 		const plain = key("F10");
 		(header.props.onKeyDown as (event: unknown) => void)(plain.event);
 		expect(plain.prevented()).toBe(false);
+	});
+});
+
+describe("subgroups in the sidebar", () => {
+	/** Work holds timber and Client, which holds api-server. */
+	async function nestedStore(engine = createMockEngine()) {
+		const started = await startedStore(engine);
+		await started.store.createGroup("Work", TIMBER);
+		await started.store.createGroup("Client", API_SERVER, "group-1");
+		return started;
+	}
+
+	test("a subgroup is drawn inside its group, after the group's own repositories, and the count takes in both", async () => {
+		const { store } = await nestedStore();
+		expect(store.getState().repositoryGroups.groups).toEqual([{ id: "group-1", name: "Work" }, { id: "group-2", name: "Client", parent: "group-1" }]);
+		const markup = render(store);
+		const work = sectionOf(markup, "Group Work");
+		const client = sectionOf(markup, "Group Client");
+		expect(work).toContain(client);
+		expect(client).toContain('aria-label="api-server"');
+		expect(client).not.toContain('aria-label="timber"');
+		expect(work.indexOf('aria-label="timber"')).toBeLessThan(work.indexOf('aria-label="Group Client"'));
+		expect(work).toMatch(/class="repository-group-count">2</);
+		expect(client).toMatch(/class="repository-group-count">1</);
+	});
+
+	test("folding the parent hides its subgroups, and each subgroup is folded on its own", async () => {
+		const { store } = await nestedStore();
+		store.toggleRepositoryGroup("group-2");
+		let markup = render(store);
+		expect(sectionOf(markup, "Group Work")).toContain('aria-label="timber"');
+		expect(sectionOf(markup, "Group Client")).not.toContain('aria-label="api-server"');
+		store.toggleRepositoryGroup("group-1");
+		markup = render(store);
+		expect(markup).not.toContain('aria-label="Group Client"');
+		expect(store.getState().layout.collapsedGroups).toEqual(["group-2", "group-1"]);
+		// Opening the parent again shows the subgroup still folded.
+		store.toggleRepositoryGroup("group-1");
+		expect(sectionOf(render(store), "Group Client")).toContain('aria-expanded="false"');
+	});
+
+	test("a folded group says when a repository in one of its subgroups needs a look", async () => {
+		const { store } = await startedStore(createMockEngine([...sampleRepositories, sampleUnavailableRepository]));
+		await store.createGroup("Work");
+		await store.createGroup("Old", sampleUnavailableRepository.path, "group-1");
+		store.toggleRepositoryGroup("group-1");
+		expect(sectionOf(render(store), "Group Work")).toMatch(/class="group-flag repository-group-check"[^>]*>check</);
+	});
+
+	test("Alt+Down on a subgroup's header moves it among the groups with the same parent only", async () => {
+		const { store } = await nestedStore();
+		await store.createGroup("Other", undefined, "group-1");
+		await store.createGroup("Personal");
+		const header = sidebarElements(store).elements.find(element => element.props.className === "repository-group-header" && String(element.props.title).startsWith("Client"))!;
+		(header.props.onKeyDown as (event: unknown) => void)(key("ArrowDown", { altKey: true }).event);
+		await settle();
+		const inWork = () => store.getState().repositoryGroups.groups.filter(group => group.parent === "group-1").map(group => group.name);
+		expect(inWork()).toEqual(["Other", "Client"]);
+		expect(store.getState().repositoryGroups.groups.filter(group => group.parent === undefined).map(group => group.name)).toEqual(["Work", "Personal"]);
+		(header.props.onKeyDown as (event: unknown) => void)(key("ArrowDown", { altKey: true }).event);
+		await settle();
+		// At the end of its siblings it stays, and never leaves Work.
+		expect(inWork()).toEqual(["Other", "Client"]);
+	});
+
+	test("a move into itself, into its subgroup, past three levels, or beside its name is refused with a notice, and nothing is saved", async () => {
+		const { store, engine } = await nestedStore();
+		await store.createGroup("Deep", undefined, "group-2");
+		await store.createGroup("Personal");
+		const saved = structuredClone(store.getState().repositoryGroups);
+		await store.moveGroup("group-1", "group-2", null);
+		expect(store.getState().notice).toEqual({ kind: "group-refused", reason: "inside-itself" });
+		await store.moveGroup("group-1", "group-1", null);
+		expect(store.getState().notice).toEqual({ kind: "group-refused", reason: "inside-itself" });
+		await store.moveGroup("group-4", "group-3", null);
+		expect(store.getState().notice).toEqual({ kind: "group-refused", reason: "too-deep" });
+		// A second Personal, inside Work, keeps the top-level one out of Work.
+		await store.createGroup("personal", undefined, "group-1");
+		await store.moveGroup("group-4", "group-1", null);
+		expect(store.getState().notice).toEqual({ kind: "group-refused", reason: "name-taken", name: "personal" });
+		expect(render(store)).toContain("There is already a group named personal there.");
+		expect((await engine.listRepositoryGroups()).groups.filter(group => group.id !== "group-5")).toEqual(saved.groups);
+		// A move that is allowed clears the notice and is saved.
+		await store.moveGroup("group-3", null, null);
+		expect(store.getState().notice).toBeNull();
+		expect((await engine.listRepositoryGroups()).groups.find(group => group.id === "group-3")).toEqual({ id: "group-3", name: "Deep" });
+	});
+
+	test("deleting a group moves its repositories and subgroups up a level and keeps them in the list", async () => {
+		const { store } = await nestedStore();
+		await store.createGroup("Deep", undefined, "group-2");
+		await store.deleteGroup("group-2");
+		expect(store.getState().repositoryGroups).toEqual({ groups: [{ id: "group-1", name: "Work" }, { id: "group-3", name: "Deep", parent: "group-1" }], membership: { [TIMBER]: "group-1", [API_SERVER]: "group-1" } });
+		await store.deleteGroup("group-1");
+		expect(store.getState().repositoryGroups).toEqual({ groups: [{ id: "group-3", name: "Deep" }], membership: {} });
+		expect(store.getState().repositories.map(repository => repository.path).sort()).toEqual([API_SERVER, TIMBER].sort());
 	});
 });
 
@@ -317,8 +418,8 @@ describe("dragging", () => {
 		const arranged = {
 			loose: [{ repository: { path: "/a" } }, { repository: { path: "/b" } }],
 			grouped: [
-				{ group: { id: "work", name: "Work" }, open: true, items: [{ repository: { path: "/c" } }] },
-				{ group: { id: "home", name: "Home" }, open: false, items: [{ repository: { path: "/d" } }] },
+				{ group: { id: "work", name: "Work" }, open: true, items: [{ repository: { path: "/c" } }], children: [] },
+				{ group: { id: "home", name: "Home" }, open: false, items: [{ repository: { path: "/d" } }], children: [] },
 			],
 		};
 		const boxes: Record<string, { top: number; height: number }> = {
@@ -339,7 +440,7 @@ describe("the mark of a dragged repository's drop", () => {
 	const personal = { id: "g-personal", name: "Personal" };
 	const arranged = {
 		loose: [row("/a"), row("/b")],
-		grouped: [{ group: work, items: [row("/c"), row("/d")] }, { group: personal, items: [] }],
+		grouped: [{ group: work, items: [row("/c"), row("/d")], children: [] }, { group: personal, items: [], children: [] }],
 	};
 
 	test("is before the section it lands before, in the loose list or in a group", () => {
@@ -371,5 +472,114 @@ describe("the mark of a dragged repository's drop", () => {
 
 	test("is nothing with nowhere to show it", () => {
 		expect(repositoryDropMark({ loose: [row("/a")], grouped: [] }, "/a", { group: null, before: null })).toBeNull();
+	});
+
+	test("finds a subgroup's repositories, and its end, at any depth", () => {
+		const client = { id: "g-client", name: "Client", parent: "g-work" };
+		const nested = { loose: [row("/a")], grouped: [{ group: work, items: [row("/c")], children: [{ group: client, items: [row("/e")], children: [] }] }] };
+		expect(repositoryDropMark(nested, "/a", { group: "g-client", before: "/e" })).toEqual({ kind: "repository", path: "/e", side: "before" });
+		expect(repositoryDropMark(nested, "/a", { group: "g-client", before: null })).toEqual({ kind: "into", group: "g-client" });
+		expect(repositoryDropMark(nested, "/e", { group: "g-client", before: null })).toBeNull();
+	});
+});
+
+describe("nested groups", () => {
+	const row = (path: string, matches: string[] = ["x"]) => ({ repository: { path }, matches });
+	// Work holds /b and Client, which holds /c and Deep, which holds /d. Home holds /e.
+	const groups = {
+		groups: [
+			{ id: "work", name: "Work" },
+			{ id: "home", name: "Home" },
+			{ id: "client", name: "Client", parent: "work" },
+			{ id: "deep", name: "Deep", parent: "client" },
+		],
+		membership: { "/b": "work", "/c": "client", "/d": "deep", "/e": "home" },
+	};
+	const rows = [row("/a"), row("/b"), row("/c"), row("/d"), row("/e")];
+	const shape = (shown: readonly { group: { id: string }; open: boolean; items: readonly { repository: { path: string } }[]; children: readonly unknown[]; paths: readonly string[] }[]): unknown =>
+		shown.map(({ group, open, items, children, paths }) => ({ id: group.id, open, items: items.map(item => item.repository.path), paths, children: shape(children as never) }));
+
+	test("a group holds its repositories first, then its subgroups, each folded on its own", () => {
+		const arranged = arrangeSidebar(rows, groups, ["client"], "");
+		expect(arranged.loose.map(item => item.repository.path)).toEqual(["/a"]);
+		expect(shape(arranged.grouped)).toEqual([
+			{ id: "work", open: true, items: ["/b"], paths: ["/b", "/c", "/d"], children: [
+				{ id: "client", open: false, items: ["/c"], paths: ["/c", "/d"], children: [
+					{ id: "deep", open: true, items: ["/d"], paths: ["/d"], children: [] },
+				] },
+			] },
+			{ id: "home", open: true, items: ["/e"], paths: ["/e"], children: [] },
+		]);
+	});
+
+	test("while a filter is typed, a group opens when anything inside it matches, at any depth", () => {
+		const filtered = [row("/a", []), row("/b", []), row("/c", []), row("/d"), row("/e", [])];
+		const arranged = arrangeSidebar(filtered, groups, ["work", "client", "deep"], "feat");
+		expect(shape(arranged.grouped)).toEqual([
+			{ id: "work", open: true, items: ["/b"], paths: ["/b", "/c", "/d"], children: [
+				{ id: "client", open: true, items: ["/c"], paths: ["/c", "/d"], children: [
+					{ id: "deep", open: true, items: ["/d"], paths: ["/d"], children: [] },
+				] },
+			] },
+		]);
+	});
+
+	test("the places to drop a repository walk into open subgroups only", () => {
+		const arranged = arrangeSidebar(rows, groups, ["deep"], "");
+		const boxes: Record<string, { top: number; height: number }> = {
+			"/a": { top: 0, height: 20 }, "group:work": { top: 20, height: 20 }, "/b": { top: 40, height: 20 }, "group:client": { top: 60, height: 20 },
+			"/c": { top: 80, height: 20 }, "group:deep": { top: 100, height: 20 }, "group:home": { top: 120, height: 20 }, "/e": { top: 140, height: 20 },
+		};
+		expect(dropSlotsOf(arranged, "/a", name => boxes[name]).map(slot => (slot.kind === "group" ? `group ${slot.id}` : `${slot.path} in ${slot.group}`))).toEqual([
+			"group work", "/b in work", "group client", "/c in client", "group deep", "group home", "/e in home",
+		]);
+	});
+
+	const headers: Record<string, { top: number; height: number }> = {
+		"group:work": { top: 0, height: 40 }, "group:client": { top: 60, height: 40 }, "group:deep": { top: 120, height: 40 }, "group:home": { top: 180, height: 40 },
+	};
+
+	test("the places to drop a group are the headers drawn, the dragged one's own subgroups too", () => {
+		expect(groupDropSlotsOf(arrangeSidebar(rows, groups, [], "").grouped, name => headers[name])).toEqual([
+			{ id: "work", top: 0, bottom: 40, expanded: true },
+			{ id: "client", top: 60, bottom: 100, expanded: true },
+			{ id: "deep", top: 120, bottom: 160, expanded: true },
+			{ id: "home", top: 180, bottom: 220, expanded: true },
+		]);
+		// Inside a folded group nothing is drawn.
+		expect(groupDropSlotsOf(arrangeSidebar(rows, groups, ["work"], "").grouped, name => headers[name]).map(slot => [slot.id, slot.expanded])).toEqual([["work", false], ["home", true]]);
+	});
+
+	test("a drop asks for a parent and a sibling to go before", () => {
+		expect(groupDropTarget(groups.groups, "home", { kind: "into", id: "work" })).toEqual({ parent: "work", before: null });
+		expect(groupDropTarget(groups.groups, "home", { kind: "before", id: "client" })).toEqual({ parent: "work", before: "client" });
+		expect(groupDropTarget(groups.groups, "work", { kind: "after", id: "home" })).toEqual({ parent: null, before: null });
+		expect(groupDropTarget(groups.groups, "home", { kind: "after", id: "work" })).toEqual({ parent: null, before: null });
+		expect(groupDropTarget(groups.groups, "deep", { kind: "end" })).toEqual({ parent: null, before: null });
+		// On its own header it is no move.
+		expect(groupDropTarget(groups.groups, "work", { kind: "into", id: "work" })).toBeNull();
+	});
+
+	test("the mark of a dragged group is a line, an outline, or a refusal", () => {
+		expect(groupDropMark(groups.groups, "home", { kind: "before", id: "work" })).toEqual({ kind: "line", id: "work", side: "before" });
+		expect(groupDropMark(groups.groups, "deep", { kind: "end" })).toEqual({ kind: "line", id: "home", side: "after" });
+		expect(groupDropMark(groups.groups, "home", { kind: "into", id: "client" })).toEqual({ kind: "into", id: "client" });
+		// Inside one of its own subgroups, or a fourth level, is refused where the pointer is.
+		expect(groupDropMark(groups.groups, "work", { kind: "into", id: "deep" })).toEqual({ kind: "refused", id: "deep" });
+		expect(groupDropMark(groups.groups, "work", { kind: "before", id: "deep" })).toEqual({ kind: "refused", id: "deep" });
+		// Just beside its own direct subgroup, a few pixels under its own header, it stays where it is.
+		expect(groupDropTarget(groups.groups, "work", { kind: "before", id: "client" })).toBeNull();
+		expect(groupDropMark(groups.groups, "work", { kind: "before", id: "client" })).toBeNull();
+		expect(groupDropMark(groups.groups, "work", { kind: "after", id: "client" })).toBeNull();
+		expect(groupDropMark(groups.groups, "home", { kind: "into", id: "deep" })).toEqual({ kind: "refused", id: "deep" });
+		// Where it already is: nothing.
+		expect(groupDropMark(groups.groups, "home", { kind: "after", id: "work" })).toBeNull();
+		expect(groupDropMark(groups.groups, "client", { kind: "into", id: "work" })).toBeNull();
+	});
+
+	test("a folded group's flag counts the repositories in its subgroups", () => {
+		const repositories = [{ path: "/b", available: true, failure: null }, { path: "/d", available: false, failure: null }];
+		const [work] = arrangeSidebar(rows, groups, ["work"], "").grouped;
+		expect(groupNeedsLook({ repositories, removals: [] }, work!.paths)).toBe(true);
 	});
 });

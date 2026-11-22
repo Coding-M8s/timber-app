@@ -26,7 +26,7 @@ import type { BackupDeleteRequest, BackupDeleteResult, BackupList, BackupRestore
 import type { ArenaInspection, ArenaList, ArenaPresetList, NewArenaRequest, NewArenaResult, PickArenaRequest, PickArenaResult } from "../../shared/arenas";
 import type { PullRequestList } from "../../shared/pull-requests";
 import { applyOrder, moveInOrder } from "../../shared/repository-order";
-import { type RepositoryGroups, emptyGroups, placeInOrder, shownOrder, stepAmongSiblings } from "../../shared/repository-groups";
+import { type RepositoryGroups, emptyGroups, moveGroupAmong, placeInOrder, shownOrder, stepAmongSiblings, stepGroupAmongSiblings } from "../../shared/repository-groups";
 import { type ZoomStep, stepZoom, zoomLabel } from "../../shared/zoom";
 import type { Theme } from "../../shared/theme";
 import type { ChooseSoundResult, SoundChoice, SoundOutcome } from "../../shared/sound-setting";
@@ -136,14 +136,19 @@ export interface AppStore {
 	 * `groupNameProblem`; the override and a failed save in `notice`, with the
 	 * groups and the order last saved put back.
 	 */
-	/** Make a group at the end, with `repository` in it when given. True when it was saved. */
-	createGroup(name: string, repository?: string): Promise<boolean>;
+	/** Make a group at the end of the groups inside `parent`, or of the top level, with `repository` in it when given. True when it was saved. */
+	createGroup(name: string, repository?: string, parent?: string): Promise<boolean>;
 	/** Give a group a new name. True when it was saved, or there was nothing to change. */
 	renameGroup(id: string, name: string): Promise<boolean>;
-	/** Delete a group. Its repositories stay in the list, loose. */
+	/** Delete a group. Its repositories and subgroups move up a level, and stay in the list. */
 	deleteGroup(id: string): Promise<void>;
-	/** Move a group to `index` among the groups, counted without it. Shows at once. */
-	moveGroup(id: string, index: number): Promise<void>;
+	/**
+	 * Move a group inside `parent` (null for the top level), before `before`, or at the end there. Shows at once. A
+	 * move that is refused (see `Engine.moveRepositoryGroup`) says why in `notice` and asks nothing of the engine.
+	 */
+	moveGroup(id: string, parent: string | null, before: string | null): Promise<void>;
+	/** Move a group one place among the groups that share its parent. Shows at once. */
+	stepGroup(id: string, step: -1 | 1): Promise<void>;
 	/**
 	 * Put a repository in a group, or with null take it out, before `before`
 	 * (a repository in that destination) or, without one, at its end. Shows at once.
@@ -2332,7 +2337,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	 * builds on what the last one saved. `order` is the whole new order when the change shows a new one at once,
 	 * and `before` the order to put back if it fails. Answers whether it was saved.
 	 */
-	function changeGroups(call: () => Promise<RepositoryGroupsResult>, shown: { order: string[]; before: string[] } | null, onSaved?: (groups: RepositoryGroups) => void): Promise<boolean> {
+	function changeGroups(call: () => Promise<RepositoryGroupsResult>, shown: { order: string[]; before: string[] } | null, onSaved?: (groups: RepositoryGroups) => void, moving = false): Promise<boolean> {
 		const ticket = shown ? ++orderTicket : orderTicket;
 		if (shown) pendingOrder = shown.order;
 		groupChanges++;
@@ -2357,7 +2362,14 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 					update({ groupNameProblem: { kind: "empty" } });
 					return false;
 				case "name-taken":
-					update({ groupNameProblem: { kind: "taken", name: result.name } });
+					// A move has no name field to say it under, so the sidebar's notice says it.
+					if (moving) update({ notice: { kind: "group-refused", reason: "name-taken", name: result.name }, repositoryGroups: savedGroups });
+					else update({ groupNameProblem: { kind: "taken", name: result.name } });
+					return false;
+				case "inside-itself":
+				case "too-deep":
+					// Only when the groups changed on the way, as checked before asking.
+					update({ notice: { kind: "group-refused", reason: result.outcome }, repositoryGroups: savedGroups });
 					return false;
 				case "overridden":
 				case "failed":
@@ -2401,21 +2413,36 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		return showPlaced(path, group !== undefined && state.repositoryGroups.groups.some(known => known.id === group) ? group : null, order);
 	}
 
-	function createGroup(name: string, repository?: string): Promise<boolean> {
-		return changeGroups(() => engine.createRepositoryGroup(name, repository), null, groups => {
+	function createGroup(name: string, repository?: string, parent?: string): Promise<boolean> {
+		return changeGroups(() => engine.createRepositoryGroup(name, repository, parent), null, groups => {
 			// The engine put the repository at the end of the shown order; so does the screen.
 			if (repository !== undefined) update({ repositories: applyOrder(state.repositories, shownOrder(pathsOnScreen(), groups)) });
 		});
 	}
 
-	function moveGroup(id: string, index: number): Promise<void> {
-		const before = state.repositoryGroups.groups.map(group => group.id);
-		const order = moveInOrder(before, id, index);
-		if (order.every((candidate, at) => candidate === before[at])) return Promise.resolve();
-		const byId = new Map(state.repositoryGroups.groups.map(group => [group.id, group]));
-		update({ notice: null, repositoryGroups: { ...state.repositoryGroups, groups: order.map(known => byId.get(known)!) } });
-		const paths = pathsOnScreen();
-		return changeGroups(() => engine.reorderRepositoryGroups(order), { order: paths, before: paths }).then(() => {});
+	function moveGroup(id: string, parent: string | null, before: string | null): Promise<void> {
+		const moved = moveGroupAmong(state.repositoryGroups.groups, id, parent, before);
+		switch (moved.outcome) {
+			case "unchanged":
+				return Promise.resolve();
+			case "inside-itself":
+			case "too-deep":
+				update({ notice: { kind: "group-refused", reason: moved.outcome } });
+				return Promise.resolve();
+			case "name-taken":
+				update({ notice: { kind: "group-refused", reason: "name-taken", name: moved.name } });
+				return Promise.resolve();
+			case "changed": {
+				update({ notice: null, repositoryGroups: { ...state.repositoryGroups, groups: moved.groups } });
+				const paths = pathsOnScreen();
+				return changeGroups(() => engine.moveRepositoryGroup(id, parent, before), { order: paths, before: paths }, undefined, true).then(() => {});
+			}
+		}
+	}
+
+	function stepGroup(id: string, step: -1 | 1): Promise<void> {
+		const target = stepGroupAmongSiblings(state.repositoryGroups.groups, id, step);
+		return target ? moveGroup(id, target.parent, target.before) : Promise.resolve();
 	}
 
 	function deleteGroup(id: string): Promise<void> {
@@ -3380,6 +3407,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		renameGroup: (id, name) => changeGroups(() => engine.renameRepositoryGroup(id, name), null),
 		deleteGroup,
 		moveGroup,
+		stepGroup,
 		placeRepository,
 		stepRepository,
 		toggleRepositoryGroup(id) {

@@ -79,19 +79,23 @@ export interface Engine {
 	 */
 	reorderRepositories(order: string[]): Promise<ReorderRepositoriesResult>;
 	/**
-	 * The groups the sidebar gathers repositories into, in order, and the
-	 * group of each grouped repository, by the path of its primary checkout.
-	 * None while the development override is set. Read from the app's saved
-	 * list without asking Git or Timber.
+	 * The groups the sidebar gathers repositories into, in order, each with
+	 * the group it sits inside, if any, and the group of each grouped
+	 * repository, by the path of its primary checkout. None while the
+	 * development override is set. Read from the app's saved list without
+	 * asking Git or Timber.
 	 */
 	listRepositoryGroups(): Promise<RepositoryGroups>;
 	/**
-	 * Make a group at the end. With `repository`, that repository goes in it,
-	 * at the end of the shown order. The name is trimmed, and must not be empty
-	 * or the name of another group, ignoring case. This only changes the app's
-	 * saved list, never anything in a repository or its folder.
+	 * Make a group at the end of the groups inside `parent`, or at the top
+	 * level without one. With `repository`, that repository goes in it, at
+	 * the end of the shown order. The name is trimmed, and must not be empty
+	 * or the name of another group with the same parent, ignoring case. A
+	 * `parent` at the deepest level answers `too-deep`; one that names no
+	 * group changes nothing. This only changes the app's saved list, never
+	 * anything in a repository or its folder.
 	 */
-	createRepositoryGroup(name: string, repository?: string): Promise<RepositoryGroupsResult>;
+	createRepositoryGroup(name: string, repository?: string, parent?: string): Promise<RepositoryGroupsResult>;
 	/**
 	 * Give a group a new name, by the rules of `createRepositoryGroup`. An id
 	 * that names no group changes nothing. This only changes the app's saved
@@ -99,17 +103,24 @@ export interface Engine {
 	 */
 	renameRepositoryGroup(id: string, name: string): Promise<RepositoryGroupsResult>;
 	/**
-	 * Delete a group. Its repositories stay in the list, loose. Also forgets
-	 * that it was folded. An id that names no group changes nothing. This only
-	 * changes the app's saved list, never anything in a repository or its folder.
+	 * Delete a group. Its repositories and subgroups move up into its parent,
+	 * or to the top level when it had none, and stay in the list. Also
+	 * forgets that it was folded. An id that names no group changes nothing.
+	 * This only changes the app's saved list, never anything in a repository
+	 * or its folder.
 	 */
 	deleteRepositoryGroup(id: string): Promise<RepositoryGroupsResult>;
 	/**
-	 * Order the groups by id, with the same leave-out and skip rules as
-	 * `reorderRepositories`. This only changes the app's saved list, never
-	 * anything in a repository or its folder.
+	 * Move a group, with everything inside it, inside `parent` (null for the
+	 * top level), before `before`, a group with that parent, or at the end of
+	 * them when `before` is null or not one; before itself changes nothing. Refused with `inside-itself`
+	 * when `parent` is the group or one of its subgroups, `too-deep` past
+	 * `MAX_GROUP_DEPTH` levels, and `name-taken` when a group inside `parent`
+	 * has its name. An id or parent that names no group changes nothing. This
+	 * only changes the app's saved list, never anything in a repository or its
+	 * folder.
 	 */
-	reorderRepositoryGroups(order: string[]): Promise<RepositoryGroupsResult>;
+	moveRepositoryGroup(id: string, parent: string | null, before: string | null): Promise<RepositoryGroupsResult>;
 	/**
 	 * Put a repository in a group, or with null take it out, and with `order`
 	 * also save the whole list in that order (same rules as

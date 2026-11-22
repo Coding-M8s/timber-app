@@ -10,9 +10,9 @@ import {
 	deleteGroupIn,
 	emptyGroups,
 	groupsOfList,
+	moveGroupIn,
 	placeIn,
 	renameGroupIn,
-	reorderGroupsIn,
 } from "../shared/repository-groups";
 import type { SavedRepository, Settings } from "../shared/settings";
 import { commonDirectory, overrideRepositoryPaths } from "./git-engine";
@@ -83,13 +83,13 @@ export interface RepositoryList {
 	/** The saved groups. See `Engine.listRepositoryGroups`. */
 	listGroups(): Promise<RepositoryGroups>;
 	/** See `Engine.createRepositoryGroup`. */
-	createGroup(name: string, repository?: string): Promise<RepositoryGroupsResult>;
+	createGroup(name: string, repository?: string, parent?: string): Promise<RepositoryGroupsResult>;
 	/** See `Engine.renameRepositoryGroup`. */
 	renameGroup(id: string, name: string): Promise<RepositoryGroupsResult>;
 	/** See `Engine.deleteRepositoryGroup`. */
 	deleteGroup(id: string): Promise<RepositoryGroupsResult>;
-	/** See `Engine.reorderRepositoryGroups`. */
-	reorderGroups(order: readonly string[]): Promise<RepositoryGroupsResult>;
+	/** See `Engine.moveRepositoryGroup`. */
+	moveGroup(id: string, parent: string | null, before: string | null): Promise<RepositoryGroupsResult>;
 	/** See `Engine.placeRepository`. */
 	place(path: string, group: string | null, order?: readonly string[]): Promise<RepositoryGroupsResult>;
 }
@@ -254,14 +254,14 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 			return groupsOf(await settings());
 		},
 
-		createGroup: (name, repository) => changeGroups(list => createGroupIn(list, crypto.randomUUID(), name, repository)),
+		createGroup: (name, repository, parent) => changeGroups(list => createGroupIn(list, crypto.randomUUID(), name, repository, parent ?? null)),
 
 		renameGroup: (id, name) => changeGroups(list => renameGroupIn(list, id, name)),
 
 		// Whether the group was folded is remembered by its id, so that goes in the same save.
 		deleteGroup: id => changeGroups(list => deleteGroupIn(list, id), next => next.layout ? { ...next, layout: forgetGroup(next.layout, id) } : next),
 
-		reorderGroups: order => changeGroups(list => reorderGroupsIn(list, order)),
+		moveGroup: (id, parent, before) => changeGroups(list => moveGroupIn(list, id, parent, before)),
 
 		place: (path, group, order) => changeGroups(list => placeIn(list, path, group, order)),
 

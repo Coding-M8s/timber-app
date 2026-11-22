@@ -508,10 +508,10 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			reorderRepositories: ({ order }) => repositories.reorder(order),
 			// Grouping only changes the settings file: the set of repositories stays, so nothing is watched or fetched anew.
 			listRepositoryGroups: () => repositories.listGroups(),
-			createRepositoryGroup: ({ name, repository }) => repositories.createGroup(name, repository ?? undefined),
+			createRepositoryGroup: ({ name, repository, parent }) => repositories.createGroup(name, repository ?? undefined, parent ?? undefined),
 			renameRepositoryGroup: ({ id, name }) => repositories.renameGroup(id, name),
 			deleteRepositoryGroup: ({ id }) => repositories.deleteGroup(id),
-			reorderRepositoryGroups: ({ order }) => repositories.reorderGroups(order),
+			moveRepositoryGroup: ({ id, parent, before }) => repositories.moveGroup(id, parent, before),
 			placeRepository: ({ path, group, order }) => repositories.place(path, group, order ?? undefined),
 			loadRepository: async ({ path }) => {
 				const marks = fetcher.marks(path);

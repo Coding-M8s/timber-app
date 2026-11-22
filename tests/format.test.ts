@@ -292,6 +292,13 @@ describe("describeReloadError", () => {
 });
 
 describe("describeListNotice", () => {
+	test("says why a group can't go where it was asked to", () => {
+		const said = (notice: Parameters<typeof describeListNotice>[0]) => describeListNotice(notice, sampleRepositories);
+		expect(said({ kind: "group-refused", reason: "inside-itself" })).toEqual({ title: "The group can't go there", text: "A group can't go inside itself or one of its own subgroups.", problem: false });
+		expect(said({ kind: "group-refused", reason: "too-deep" }).text).toBe("Groups nest at most 3 levels deep.");
+		expect(said({ kind: "group-refused", reason: "name-taken", name: "Misc" }).text).toBe("There is already a group named Misc there.");
+	});
+
 	test("names the listed repository, falling back to its folder name", () => {
 		expect(describeListNotice({ kind: "already-listed", repository: "/work/timber" }, sampleRepositories))
 			.toEqual({ title: "timber is already in the list", text: "That folder belongs to it, so nothing was added.", problem: false });
@@ -332,8 +339,8 @@ describe("repository group words", () => {
 	});
 
 	test("say what deleting and moving a group do", () => {
-		expect(DELETE_GROUP_HINT).toBe("Its repositories stay in the list.");
-		expect(MOVE_GROUP_HINT).toBe("Drag to reorder, or press Alt+Up or Alt+Down.");
+		expect(DELETE_GROUP_HINT).toBe("Its repositories and subgroups move up a level, and stay in the list.");
+		expect(MOVE_GROUP_HINT).toBe("Drag to reorder, or onto another group to put it inside. Alt+Up and Alt+Down move it among its neighbors.");
 	});
 });
 

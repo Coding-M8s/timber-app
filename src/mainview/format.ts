@@ -1,5 +1,6 @@
 import type { CapturedOutput, Repository, SyncState, TimberStatus, Worktree } from "../shared/model";
 import type { PullRequestEntry, PullRequestHost } from "../shared/pull-requests";
+import { MAX_GROUP_DEPTH } from "../shared/repository-groups";
 import { TIMBER_LS_COMMAND } from "../shared/timber-ls";
 import { TIMBER_OVERRIDE_VARIABLE } from "../shared/timber-version";
 import { SAVED_BASE_UNKNOWN, describeInvalidBase } from "./base-format";
@@ -117,10 +118,15 @@ const FAILED_LIST_TITLES = {
 } as const;
 
 /** What deleting a group does, as the menu item's tooltip says. */
-export const DELETE_GROUP_HINT = "Its repositories stay in the list.";
+export const DELETE_GROUP_HINT = "Its repositories and subgroups move up a level, and stay in the list.";
 
-/** The sentence a group header's tooltip ends with, when there is more than one group. */
-export const MOVE_GROUP_HINT = "Drag to reorder, or press Alt+Up or Alt+Down.";
+/** Why a group cannot go somewhere, as a menu entry's note and the sidebar's notice say. */
+export const GROUP_INSIDE_ITSELF = "A group can't go inside itself or one of its own subgroups.";
+export const GROUP_TOO_DEEP = `Groups nest at most ${MAX_GROUP_DEPTH} levels deep.`;
+export const describeGroupNameThere = (name: string) => `There is already a group named ${name} there.`;
+
+/** The sentences a group header's tooltip ends with, when there is more than one group. */
+export const MOVE_GROUP_HINT = "Drag to reorder, or onto another group to put it inside. Alt+Up and Alt+Down move it among its neighbors.";
 
 /** Why a group name was not saved, shown under the name field. */
 export function describeGroupNameProblem(problem: GroupNameProblem): string {
@@ -151,6 +157,12 @@ export function describeListNotice(
 				title: "The list comes from TIMBER_APP_REPOS",
 				text: "That variable is set, so the app shows its repositories and leaves the saved list alone. Unset it to add, remove, reorder, or group repositories here.",
 				problem: true,
+			};
+		case "group-refused":
+			return {
+				title: "The group can't go there",
+				text: notice.reason === "name-taken" ? describeGroupNameThere(notice.name) : notice.reason === "too-deep" ? GROUP_TOO_DEEP : GROUP_INSIDE_ITSELF,
+				problem: false,
 			};
 		case "failed":
 			return {
