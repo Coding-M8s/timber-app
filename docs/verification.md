@@ -3800,3 +3800,33 @@ PATH:
 - Not run: the desktop window on any platform, and a real Jira board,
   GitHub project or milestone, or Linear team: the sprint list after a
   save is tested on the mock's lists, which follow the mock's settings.
+
+Run for the file and folder icons in the Files panel (issue 287), Linux x64
+with Bun 1.4.5 and Git 2.56.1:
+
+- `bun test tests/file-icons.test.ts`: 16 pass. Exact names win over
+  extensions (`package.json`, `Dockerfile`, `Makefile`, `LICENSE`), longer
+  extensions over shorter (`store.test.ts`, `engine.d.ts`), dotfiles,
+  any letter case (`README.md`, `STORE.TS`, `PKGBUILD`), named folders
+  open and closed, the generic icons for anything else, and the light
+  drawings on a light theme only. Every icon the lookup can give has a
+  file in the package, and every named folder's open icon is the closed
+  one's plus `-open`, as the manifest lists it.
+- `bun test tests/files-panel.test.tsx`: each entry row draws one icon
+  before its name, `aria-hidden`, with an empty `alt` and not draggable.
+- `bun test tests/files-panel-browser.test.ts` in Chrome against the mock
+  engine: 6 pass. Every icon that showed loaded and drew, from
+  `/assets/material-icons/` on the page's own origin; after opening `docs`
+  more than 3 and fewer than 20 icon files had loaded (the test's bounds;
+  the exact count was not recorded), of the 1175 built; the `docs`
+  icon opened with the folder, and saving Timber Light switched `bun.lock`
+  to `bun_light.svg` and Timber Dark back.
+- `bun run build:web`: built. `dist/assets/material-icons/` holds 1175
+  SVG files, 857 kB, none inlined. The interface's main chunk went from
+  1,408.54 kB (433.08 kB gzip) to 1,634.93 kB (468.34 kB gzip) for the
+  name tables.
+- `bun run typecheck`: no errors.
+- `bun run test`: 3799 pass, 19 skip, 0 fail.
+- Not run: the desktop window on any platform, so the icons have not been
+  seen over `views://`, at other zoom levels, or in the built-in themes by
+  eye; and a screen reader.
