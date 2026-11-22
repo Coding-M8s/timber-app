@@ -3666,3 +3666,40 @@ engine:
   renamed in Settings, Chops keeps its place in the panel.
 - Not run: the desktop window on any platform, the WebKitGTK webview, and
   a screen reader.
+
+Run for the Current sprint and Assigned to me toggles on the issues board
+(issue 278), Linux x64 with Bun 1.4.5, Git 2.43.0, and Timber 0.1.4 on the
+PATH:
+
+- `timber __app-issues sprint --assigned --tracker github` with Timber
+  0.1.4: exit 1, nothing on standard output, and `error: unknown option
+  '--assigned'` on standard error, kept as
+  `tests/fixtures/timber-app-issue-lists/unknown-option-0.1.4.stderr`.
+  The option is on Timber's main branch (Coding-M8s/timber#221) and in no
+  release yet; the records `sprint --assigned` prints were not run here,
+  so their reading is tested against the contract's shape.
+- `bun run typecheck`: no errors.
+- `bun run build:web`: built.
+- `bun run test`: 3694 pass, 19 skip, 0 fail, after rebasing on main. New and changed tests
+  cover the four combinations of the toggles and back, the arguments of
+  `sprint --assigned`, a `my-sprint` record refused when an issue is not
+  marked as mine, telling a Timber without `--assigned` apart from one
+  without `__app-issues` and from a crash, the join of the sprint and the
+  assigned list by address (exact when every issue says whose it is, and
+  partial otherwise, with the sprint's `not-configured` the only one
+  passed through), a stand-in Timber answering by its arguments that is
+  run once with `--assigned` and three times without it, the real Timber
+  0.1.4 saying not configured for both toggles on in a repository with no
+  sprint, the sprint lists hidden together by the newer answer and
+  asked about once on Refresh, toggles blocked by a list not set up with
+  their tooltip and hint, the summary, empty, and partial words, Done only
+  with Current sprint on, a remembered list shown as the matching toggles,
+  a toggle turned to a list not set up coming back to the list shown
+  before, both toggles remembered coming back with a fresh read once the
+  sprint is set up, both toggles kept across a tracker switch, and Start
+  work on cards of all four lists. A review run of the whole suite once
+  hit a 30 second timeout in `tests/arenas.test.ts` (real Timber, not
+  touched here), which passed alone.
+- Not run: the desktop window on any platform, a browser over the mock
+  engine, a screen reader, and a live Jira, GitHub iteration, or Linear
+  sprint.

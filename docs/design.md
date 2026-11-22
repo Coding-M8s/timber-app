@@ -300,20 +300,35 @@ logins. The app never reads a tracker login and never signs in.
   says "repository / Issues". Choosing a worktree puts the board away. Its
   sessions keep running meanwhile. While a filter is typed, the row steps
   aside with the backups.
-- A picker at the top chooses the list: Current sprint (Jira's active sprint
-  of a board or a saved query, a GitHub project's current iteration or an
-  open milestone, Linear's current cycle), Assigned to me, or Open issues.
-  The pick is remembered per repository between runs. A list Timber says is
-  not set up leaves the picker, the next one shows, and a quiet line under
-  the picker says so in Timber's words, which name the setting that adds it. The remembered
-  pick is kept, so a list set up later comes back on the next Refresh.
+- Two toggles at the top filter the tracker's issues: Current sprint
+  (Jira's active sprint of a board or a saved query, a GitHub project's
+  current iteration or an open milestone, Linear's current cycle) and
+  Assigned to me. Neither on shows Open issues; Current sprint alone, the
+  whole sprint; Assigned to me alone, open issues assigned to the person;
+  both, the person's issues in the sprint, in every status. The toggles are
+  remembered per repository between runs; a repository that remembered one
+  of the three lists of before shows it as the matching toggles.
+- A toggle that would show a list Timber says is not set up is disabled,
+  with a tooltip saying which, and a quiet line under the toggles says so in
+  Timber's words, which name the setting that adds it. The board learns a
+  list is not set up only by asking: turning a toggle to such a list reads
+  it, comes back to the list shown before, which is remembered again, and
+  only then disables the toggle. A list remembered but not set up when the
+  board opens is kept, so it comes back on the next Refresh once set up. With no list set up, both toggles stay,
+  disabled, with their lines.
+- With both toggles on, a Timber without `sprint --assigned` gets the
+  sprint and the list assigned to the person, and the board keeps the
+  sprint's issues found in both. Done issues, any past the first 50
+  assigned, and on GitHub issues of other repositories in the project can
+  be missing, so the summary adds "may be incomplete" and a line at the end
+  says why.
 - A Tracker field shows only when two or more trackers are set up. It starts
   on Timber's default tracker, else the first set up, and a pick lasts for
   the run.
 - Columns are Open, In progress, and Done, each with the tracker's own
   status names beside it. GitHub issues are only open or closed, so a
-  GitHub board has Open and Done. Assigned to me and Open issues hold only
-  issues that are not done, so they have no Done column. An issue whose
+  GitHub board has Open and Done. Done shows only with Current sprint on:
+  Assigned to me alone and Open issues hold only issues that are not done. An issue whose
   status falls elsewhere still gets its column; none is ever left out.
 - Each card shows the key, the tracker's status (blue while in progress,
   always with its words), a control that opens the issue in the browser,
@@ -373,18 +388,21 @@ logins. The app never reads a tracker login and never signs in.
   out, Check out PR fails with Timber's reason where a plain open would
   not. When the list read afterwards does not show the worktree, the toast
   says so, and neither its tab nor setup starts.
-- The board reads when it opens, when another list or tracker is picked,
-  and on Refresh. There is no timer. "Read 2 minutes ago" says when. Each
+- The board reads when it opens, when a toggle is turned or a tracker is
+  picked, and on Refresh. There is no timer. "Read 2 minutes ago" says when. Each
   column scrolls on its own and a long sprint draws only the cards in view.
-  A sprint comes whole, up to Timber's 500; the other lists show the first
-  50, and a cut-off list says so at its end.
+  A sprint comes whole, up to Timber's 500, with or without Assigned to me;
+  without Current sprint the board shows the first 50, and a cut-off list
+  says so at its end.
 - Each failure to read is a quiet word or line in the view, never a
   dialog. (Check out PR and Start work run a Timber command, so like New worktree they are
   dialogs, and their failures stay in them.) A failed refresh keeps the last
   list on screen with a grey word beside the title ("offline", "sign-in needed", "no access", "not found") and Timber's
   reason in its tooltip. A first read that fails says so in a line, with
   Timber's reason, and `timber setup` when a login is missing. No current
-  sprint, an empty list, and no tracker set up each say so in one line.
+  sprint, an empty list, and no tracker set up each say so in one line; an
+  empty list names the toggles ("Nothing assigned to you in the current
+  sprint").
 - A Timber without `__app-issues` shows that the board needs a Timber built
   from its main branch. No Timber release has the command yet; the message
   names a version once one does.

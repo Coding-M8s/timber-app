@@ -2633,21 +2633,38 @@ every search answer `result` (`null` for the samples).
 Each repository's board lists issues that Timber reads with its own logins.
 
 - **Asking.** `listIssues` on the `Engine`, answered by
-  `src/bun/issue-lists.ts`, with a repository in the list, a list
-  (`sprint`, `assigned`, or `open`), and a tracker. Only while Timber is
-  ready, the main process runs `timber __app-issues <list> --tracker
-  <tracker>` (with `--limit 50` for `assigned` and `open`) in the
+  `src/bun/issue-lists.ts`, with a repository in the list, a list, and a
+  tracker. The board's two toggles, Current sprint and Assigned to me, make
+  four lists (`listOf` and `togglesOf` in `src/shared/issue-lists.ts`):
+  `open` (neither), `sprint`, `assigned`, and `my-sprint` (both). Only while
+  Timber is ready, the main process runs `timber __app-issues <list>
+  --tracker <tracker>` (with `--limit 50` for `assigned` and `open`, and
+  `sprint --assigned` for `my-sprint`) in the
   repository's primary checkout, as an executable plus an argument array,
   with standard input closed and a limit of thirty seconds. It reads up to 8
   MB of record: a 500-issue sprint is far less. It changes no file, ref, or
   issue and does not take the repository's turn. The tracker is always
   named, so the board never depends on a default it did not see; with no
-  default and none named, Timber answers not configured.
+  default and none named, Timber answers not configured. A Timber older
+  than `--assigned` (0.1.4 and before) exits 1 with "unknown option
+  '--assigned'" and prints nothing (`isAssignedOptionUnknown`). Then the
+  main process reads `sprint`, and, only when some issue does not say
+  whether it is the person's (`assignedToMe` null, as from 0.1.4), also
+  `assigned`, and joins them with `intersectMySprint`: it keeps the
+  sprint's issues by `assignedToMe`, else by address in the assigned list
+  (an address, since a GitHub project can hold issues of several
+  repositories). That join is lossy, so its result is `partial`. Only the
+  sprint's own `not-configured` passes through as `not-configured`, so the
+  assigned list can never hide the sprint. Any other failure, a crash
+  included, is read as usual and never falls back.
 - **Reading.** `readIssueListRecord` in `src/shared/issue-lists.ts` is pure.
   It accepts one version 1 record of the list and tracker asked about, whose
   outcome agrees with its fields and its exit code, reading each issue as a
   search does (`readListedIssue`). A found sprint must say its sprint and
-  source; other lists must not. An empty list is `found` with no issues.
+  source; other lists must not. `my-sprint` reads a record whose `query`
+  is `sprint`, and every issue in it must have `assignedToMe` true, since
+  nothing else shows that Timber applied the filter; otherwise the record
+  is refused. An empty list is `found` with no issues.
   A Timber without the command is `unsupported`. Each issue's
   `pullRequests` (the open pull requests the tracker links to it: number,
   address, head branch, `fromFork`, `draft`) is the one lenient read: Timber
@@ -2663,13 +2680,24 @@ Each repository's board lists issues that Timber reads with its own logins.
   tracker and list, and the latest good one apart, so an answer that comes
   late lands on its own list and a failed read leaves the last good list on
   screen. `boardView` derives what shows: the tracker (picked, else Timber's
-  default, else the first set up), the lists not set up (whose latest answer
-  is `not-configured`), and the list shown (`shownList`: the one remembered
-  in the layout's `issueLists`, else the next set up). A read whose list
-  turns out not to be set up reads the next list. Opening the board and
-  Refresh read the trackers (`readIssueTrackers`), the list shown, and each
-  list not set up, so one set up since comes back; that read contacts
-  nothing when the setting is still missing. Nothing reads on a timer.
+  default, else the first set up), the lists not set up (`hiddenLists`:
+  whose latest answer is `not-configured`; `sprint` and `my-sprint` need the
+  same setting, so both are not set up when the newer of their two answers
+  says so), and the list shown (`shownList`: the one remembered in the
+  layout's `issueLists`, else the first set up of `sprint`, `assigned`,
+  `open`, `my-sprint`). The layout keeps the list, so the toggles need no
+  new field and a list remembered before the toggles maps to them as is.
+  `boardToggles` says, for each toggle, whether it is on and which list not
+  set up flipping it would show; such a toggle is disabled and points at
+  that list's hint. A read whose list turns out not to be set up shows the
+  next list; when a toggle was turned to it, the list shown before comes
+  back and is remembered again. Whenever the list shown changes, it is read
+  if it never was or its own answer still says not set up, so both toggles
+  remembered come back with a fresh read once the sprint is set up. Opening the board and Refresh read the trackers
+  (`readIssueTrackers`), the list shown, and each list not set up, so one
+  set up since comes back; a sprint not set up is asked about once, as
+  `sprint`, never as `my-sprint` too. That read contacts nothing when the
+  setting is still missing. Nothing reads on a timer.
 - **Showing.** `IssuesBoard` and `IssuesRow` in
   `src/mainview/components/IssuesBoard.tsx`; `state.board` names the
   repository whose board replaces the workspace, and `select` clears it.
@@ -2768,6 +2796,11 @@ does; Jira's TIM-90 and GitHub's 44 are someone else's.
 `timberMock.setIssueList(result, list?)` makes every list, or one, answer
 `result` (`null` for the samples), `timberMock.setIssueListDelay(ms)` slows
 them, and `timberMock.sampleBigSprint(n)` builds a sprint of `n` issues.
+`timberMock.setAssignedOption(false)` acts out a Timber without `sprint
+--assigned`, such as 0.1.4: no issue says whose it is, and both toggles on
+join the sprint and the assigned list as the main process does, so GitHub's
+done issue 7 drops out and the board says the list may be incomplete
+(`true` undoes it).
 
 ## Recovery backups
 

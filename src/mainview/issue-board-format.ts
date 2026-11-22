@@ -1,4 +1,4 @@
-import { type IssueList, type IssueListFailureReason, LIST_LIMIT, type Sprint, type SprintSource } from "../shared/issue-lists";
+import { type IssueList, type IssueListFailureReason, LIST_LIMIT, type Sprint, type SprintSource, isSprintList } from "../shared/issue-lists";
 import type { SuggestedIssue } from "../shared/issue-search";
 import type { IssueTrackers } from "../shared/issue-trackers";
 import type { IssueStatusCategory } from "../shared/issues";
@@ -14,7 +14,10 @@ import { TRACKER_NAMES } from "./issue-format";
 
 export const ISSUES_ROW_LABEL = "Issues";
 
-export const LIST_LABELS: Record<IssueList, string> = { sprint: "Current sprint", assigned: "Assigned to me", open: "Open issues" };
+export const LIST_LABELS: Record<IssueList, string> = { "sprint": "Current sprint", "assigned": "Assigned to me", "open": "Open issues", "my-sprint": "My issues in the current sprint" };
+
+/** The board's two toggles, in the order they show. */
+export const TOGGLE_LABELS = { sprint: "Current sprint", assigned: "Assigned to me" } as const;
 
 /** The board's columns, by the tracker's grouping of each status. */
 export type BoardColumnId = "open" | "in-progress" | "done";
@@ -33,13 +36,14 @@ export interface BoardColumn {
 
 /**
  * The columns of one list. GitHub issues are only open or closed, so a
- * GitHub board has no In progress column. Assigned to me and Open issues hold
- * only issues that are not done, so they have no Done column. An issue whose
+ * GitHub board has no In progress column. Only a sprint list has a Done
+ * column: Assigned to me alone and Open issues hold only issues that are
+ * not done. An issue whose
  * status falls outside those columns still gets its column: nothing Timber
  * listed is ever left out.
  */
 export function boardColumns(issues: readonly SuggestedIssue[], list: IssueList, tracker: IssueTracker): BoardColumn[] {
-	const wanted = new Set<BoardColumnId>(COLUMN_ORDER.filter(id => !(id === "in-progress" && tracker === "github") && !(id === "done" && list !== "sprint")));
+	const wanted = new Set<BoardColumnId>(COLUMN_ORDER.filter(id => !(id === "in-progress" && tracker === "github") && !(id === "done" && !isSprintList(list))));
 	for (const issue of issues) wanted.add(COLUMN_OF[issue.status.category]);
 	const columns = COLUMN_ORDER.filter(id => wanted.has(id)).map((id): BoardColumn => ({ id, label: COLUMN_LABELS[id], statuses: [], issues: [] }));
 	for (const issue of issues) {
@@ -60,13 +64,25 @@ const SOURCE_WORDS: Record<SprintSource, string> = {
 
 const count = (issues: number, truncated: boolean) => `${issues}${truncated ? "+" : ""} ${issues === 1 && !truncated ? "issue" : "issues"}`;
 
-/** The line under the board's title, such as "Sprint 42, Jira board, 12 issues". */
-export function describeListSummary(list: IssueList, tracker: IssueTracker, sprint: Sprint | null, issues: number, truncated: boolean): string {
-	if (list === "sprint" && sprint !== null) {
+/**
+ * The line under the board's title, such as "Sprint 42, Jira board, 12
+ * issues", or "Sprint 42, Jira board, assigned to you, 3 issues" with both
+ * toggles on. `partial` adds that the list may be incomplete.
+ */
+export function describeListSummary(list: IssueList, tracker: IssueTracker, sprint: Sprint | null, issues: number, truncated: boolean, partial = false): string {
+	const mine = list === "my-sprint" ? ", assigned to you" : "";
+	const incomplete = partial ? ", may be incomplete" : "";
+	if (isSprintList(list) && sprint !== null) {
 		const name = sprint.name === null ? `The ${SOURCE_WORDS[sprint.source]}` : `${sprint.name}, ${SOURCE_WORDS[sprint.source]}`;
-		return `${name}, ${count(issues, truncated)}`;
+		return `${name}${mine}, ${count(issues, truncated)}${incomplete}`;
 	}
-	return `${LIST_LABELS[list]} in ${TRACKER_NAMES[tracker]}, ${count(issues, truncated)}`;
+	return `${LIST_LABELS[list]} in ${TRACKER_NAMES[tracker]}, ${count(issues, truncated)}${incomplete}`;
+}
+
+/** The line for my issues in the sprint from a Timber without `sprint --assigned`, which the app joined from two lists. */
+export function describePartial(tracker: IssueTracker): string {
+	const others = tracker === "github" ? ", issues of other repositories in the project," : "";
+	return `This Timber cannot list only your issues in the sprint, so these are the sprint's issues among the first ${LIST_LIMIT} open issues assigned to you. Done issues${others} and any past those ${LIST_LIMIT} may be missing. A Timber built from its main branch lists them all.`;
 }
 
 /** The short label beside the sidebar's Issues row: the sprint's name, once a read found one. */
@@ -76,7 +92,7 @@ export function sprintLabel(sprint: Sprint | null): string | null {
 
 /** The line at the end of a list the tracker cut off. */
 export function describeTruncated(list: IssueList, tracker: IssueTracker): string {
-	return list === "sprint"
+	return isSprintList(list)
 		? `${TRACKER_NAMES[tracker]} has more issues in this sprint than Timber lists.`
 		: `The first ${LIST_LIMIT} are shown. ${TRACKER_NAMES[tracker]} has more.`;
 }
@@ -84,6 +100,7 @@ export function describeTruncated(list: IssueList, tracker: IssueTracker): strin
 /** The line for a list with nothing in it. */
 export function describeEmptyList(list: IssueList, tracker: IssueTracker): { title: string; text: string } {
 	if (list === "sprint") return { title: "Nothing in the current sprint", text: `The sprint has no issues in ${TRACKER_NAMES[tracker]}.` };
+	if (list === "my-sprint") return { title: "Nothing assigned to you in the current sprint", text: `Your ${TRACKER_NAMES[tracker]} issues in the sprint show here, in every status.` };
 	if (list === "assigned") return { title: "Nothing assigned to you", text: `Open ${TRACKER_NAMES[tracker]} issues assigned to you show here.` };
 	return { title: "No open issues", text: `Open ${TRACKER_NAMES[tracker]} issues show here, newest first.` };
 }
@@ -104,22 +121,33 @@ export function describeListFailure(reason: IssueListFailureReason, tracker: Iss
 }
 
 /**
- * The hint under the picker for one list that is not set up, with Timber's
+ * The hint under the toggles for one list that is not set up, with Timber's
  * own words on which setting adds it. The app does not guess the setting:
- * Timber knows what each list of each tracker needs.
+ * Timber knows what each list of each tracker needs. The sprint's hint
+ * stands for both sprint lists.
  */
 export function describeHiddenList(list: IssueList, tracker: IssueTracker, diagnostic: string): string {
-	return `${LIST_LABELS[list]} is not set up for ${TRACKER_NAMES[tracker]}. ${diagnostic}`;
+	const label = isSprintList(list) ? LIST_LABELS.sprint : LIST_LABELS[list];
+	return `${label} is not set up for ${TRACKER_NAMES[tracker]}. ${diagnostic}`.trim();
+}
+
+/** Why a toggle cannot be flipped: flipping it would show a list that is not set up. */
+export function describeBlockedToggle(on: boolean, blockedBy: IssueList, tracker: IssueTracker): string {
+	const name = TRACKER_NAMES[tracker];
+	if (isSprintList(blockedBy)) return `${LIST_LABELS.sprint} is not set up for ${name}.`;
+	return `Turning this ${on ? "off" : "on"} shows ${LIST_LABELS[blockedBy]}, which is not set up for ${name}.`;
 }
 
 /**
  * The list the board shows: the one remembered for the repository, unless
- * it is not set up, then the first that is, in the picker's order. Null when
- * no list is set up. The remembered pick is kept, so a list that is set up
- * again later shows again.
+ * it is not set up, then the first that is, in the order Current sprint,
+ * Assigned to me, Open issues, both. Null when no list is set up. The
+ * remembered toggles are kept, so a list that is set up again later shows
+ * again.
  */
 export function shownList(remembered: IssueList | undefined, hidden: readonly IssueList[]): IssueList | null {
-	const order: IssueList[] = remembered === undefined ? ["sprint", "assigned", "open"] : [remembered, "sprint", "assigned", "open"];
+	const fallbacks: IssueList[] = ["sprint", "assigned", "open", "my-sprint"];
+	const order: IssueList[] = remembered === undefined ? fallbacks : [remembered, ...fallbacks];
 	return order.find(list => !hidden.includes(list)) ?? null;
 }
 

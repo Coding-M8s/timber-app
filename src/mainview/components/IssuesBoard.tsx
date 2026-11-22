@@ -1,17 +1,17 @@
 import { useEffect, useState } from "react";
-import { ISSUE_LISTS, type IssueList } from "../../shared/issue-lists";
+import { type IssueList, isSprintList, listOf, togglesOf } from "../../shared/issue-lists";
 import type { SuggestedIssue } from "../../shared/issue-search";
 import type { IssueTracker } from "../../shared/model";
 import { CHECK_OUT_LABEL, allRefused, checkOutChoice } from "../check-out-format";
 import { describeAgo } from "../fetch-format";
 import { TRACKER_NAMES, describeOpenIssue, issueKeyLabel } from "../issue-format";
 import {
-	ISSUES_ROW_LABEL, LIST_LABELS, LIST_NOT_READ, NO_CURRENT_SPRINT, NO_TRACKER,
-	boardColumns, boardTrackerChoices, boardTrackerOption, describeEmptyList, describeHiddenList, describeListFailure,
-	describeListSummary, describeTruncated, sprintLabel,
+	ISSUES_ROW_LABEL, LIST_NOT_READ, NO_CURRENT_SPRINT, NO_TRACKER, TOGGLE_LABELS,
+	boardColumns, boardTrackerChoices, boardTrackerOption, describeBlockedToggle, describeEmptyList, describeHiddenList, describeListFailure,
+	describeListSummary, describePartial, describeTruncated, shownList, sprintLabel,
 } from "../issue-board-format";
 import { OPEN_WORKTREE_LABEL, START_WORK_LABEL, startWorkChoice } from "../start-work-format";
-import { type BoardView, boardKey, boardView, emptyBoard } from "../store/issue-board";
+import { type BoardView, boardToggles, boardView, emptyBoard, hiddenDiagnostic } from "../store/issue-board";
 import { useAppState, useStore } from "../store/react";
 
 /** The view of one repository's board, as the store holds it now. */
@@ -26,14 +26,14 @@ export function IssuesRow({ repository }: { repository: string }) {
 	const state = useAppState();
 	const view = useBoard(repository);
 	const selected = state.board === repository;
-	const found = view.list === "sprint" && view.good?.result.outcome === "found" ? view.good.result.sprint : null;
+	const found = view.list !== null && isSprintList(view.list) && view.good?.result.outcome === "found" ? view.good.result.sprint : null;
 	const label = sprintLabel(found);
 	return (
 		<button
 			type="button"
 			className={selected ? "row issues-row selected" : "row issues-row"}
 			aria-current={selected}
-			title="The repository's issues: the current sprint, those assigned to you, and its open issues"
+			title="The repository's issues: its open issues, the current sprint, those assigned to you, or yours in the sprint"
 			onClick={() => store.openBoard(repository)}
 		>
 			<span className="row-line">
@@ -127,11 +127,12 @@ function Quiet({ title, text, detail, command }: { title: string; text?: string 
 	);
 }
 
-function Columns({ issues, list, tracker, truncated, onOpen, onJump, onCheckOut, onStart }: {
+function Columns({ issues, list, tracker, truncated, partial, onOpen, onJump, onCheckOut, onStart }: {
 	issues: readonly SuggestedIssue[];
 	list: IssueList;
 	tracker: IssueTracker;
 	truncated: boolean;
+	partial: boolean;
 	onOpen: (issue: SuggestedIssue) => void;
 	onJump: (issue: SuggestedIssue) => (() => void) | null;
 	onCheckOut: (issue: SuggestedIssue) => CardAction | null;
@@ -155,6 +156,7 @@ function Columns({ issues, list, tracker, truncated, onOpen, onJump, onCheckOut,
 				))}
 			</div>
 			{truncated && <p className="board-foot">{describeTruncated(list, tracker)}</p>}
+			{partial && <p className="board-foot">{describePartial(tracker)}</p>}
 		</>
 	);
 }
@@ -201,8 +203,8 @@ export function IssuesBoard({ repository }: { repository: string }) {
 	let summary: string | null = null;
 	if (good !== null && tracker !== null && list !== null) {
 		summary = good.result.outcome === "found"
-			? describeListSummary(list, tracker, good.result.sprint, good.result.issues.length, good.result.truncated)
-			: list === "sprint" ? `No current sprint in ${TRACKER_NAMES[tracker]}` : describeListSummary(list, tracker, null, 0, false);
+			? describeListSummary(list, tracker, good.result.sprint, good.result.issues.length, good.result.truncated, good.result.partial === true)
+			: isSprintList(list) ? `No current sprint in ${TRACKER_NAMES[tracker]}` : describeListSummary(list, tracker, null, 0, false);
 	}
 
 	let body;
@@ -218,11 +220,13 @@ export function IssuesBoard({ repository }: { repository: string }) {
 		body = <Quiet title={`No list is set up for ${TRACKER_NAMES[tracker]}.`} detail={reason} />;
 	} else if (good !== null) {
 		if (good.result.outcome === "none") {
-			body = list === "sprint" ? <Quiet title={NO_CURRENT_SPRINT.title} text={NO_CURRENT_SPRINT.text} /> : <Quiet {...describeEmptyList(list, tracker)} />;
+			body = isSprintList(list) ? <Quiet title={NO_CURRENT_SPRINT.title} text={NO_CURRENT_SPRINT.text} /> : <Quiet {...describeEmptyList(list, tracker)} />;
 		} else if (good.result.issues.length === 0) {
-			body = <Quiet {...describeEmptyList(list, tracker)} />;
+			const empty = describeEmptyList(list, tracker);
+			// Joined from two lists by a Timber without --assigned: an empty board may still be missing some of mine.
+			body = <Quiet title={empty.title} text={good.result.partial ? describePartial(tracker) : empty.text} />;
 		} else {
-			body = <Columns issues={good.result.issues} list={list} tracker={tracker} truncated={good.result.truncated} onOpen={openIssue} onJump={jumpTo} onCheckOut={checkOut} onStart={startWork} />;
+			body = <Columns issues={good.result.issues} list={list} tracker={tracker} truncated={good.result.truncated} partial={good.result.partial === true} onOpen={openIssue} onJump={jumpTo} onCheckOut={checkOut} onStart={startWork} />;
 		}
 	} else if (latest !== null && latest.result.ok && latest.result.outcome === "failed") {
 		const failure = describeListFailure(latest.result.reason, tracker);
@@ -233,11 +237,20 @@ export function IssuesBoard({ repository }: { repository: string }) {
 		body = <BoardLoading />;
 	}
 
-	// Each list that is not set up, in Timber's words on what adds it.
-	const hints = tracker === null || list === null ? [] : hidden.map(one => {
-		const result = board.latest[boardKey(tracker, one)]?.result;
-		return describeHiddenList(one, tracker, result?.ok && result.outcome === "failed" ? result.diagnostic : "");
-	});
+	// Each list that is not set up, in Timber's words on what adds it. The sprint's hint stands for both sprint lists.
+	const hints = tracker === null ? [] : hidden.filter(one => one !== "my-sprint").map(one => ({
+		list: one,
+		id: `board-hint-${one}`,
+		text: describeHiddenList(one, tracker, hiddenDiagnostic(board, tracker, one)),
+	}));
+	// The toggles show the list shown, or, when none is set up, the remembered one. One that would show a list that is not set up is disabled, and points at that list's hint.
+	const toggles = tracker === null ? null : boardToggles(list ?? shownList(state.layout.issueLists[repository], []) ?? "sprint", hidden);
+	const hintOf = (blocked: IssueList) => hints.find(hint => hint.list === (isSprintList(blocked) ? "sprint" : blocked))?.id;
+	const flip = (which: "sprint" | "assigned") => {
+		if (list === null) return;
+		const now = togglesOf(list);
+		void store.pickBoardList(repository, listOf({ ...now, [which]: !now[which] }));
+	};
 	return (
 		<main className="workspace issues-board" aria-label={`Issues of ${listed?.name ?? repository}`}>
 			<header className="board-header">
@@ -250,13 +263,31 @@ export function IssuesBoard({ repository }: { repository: string }) {
 				{summary !== null && <p className="board-summary">{summary}</p>}
 				{tracker !== null && (
 					<div className="board-pickers">
-						{list !== null && (
-							<div className="board-lists" role="group" aria-label="List">
-								{ISSUE_LISTS.filter(one => !hidden.includes(one)).map(one => (
-									<button key={one} type="button" className={one === list ? "board-list selected" : "board-list"} aria-pressed={one === list} onClick={() => void store.pickBoardList(repository, one)}>
-										{LIST_LABELS[one]}
-									</button>
-								))}
+						{toggles !== null && (
+							<div className="board-toggles" role="group" aria-label="Filter">
+								{(["sprint", "assigned"] as const).map(which => {
+									const toggle = toggles[which];
+									const blocked = list === null || toggle.blockedBy !== null;
+									const why = toggle.blockedBy !== null ? describeBlockedToggle(toggle.on, toggle.blockedBy, tracker!) : undefined;
+									return (
+										<button
+											key={which}
+											type="button"
+											className={toggle.on ? "board-toggle on" : "board-toggle"}
+											aria-pressed={toggle.on}
+											disabled={blocked}
+											title={why}
+											aria-describedby={toggle.blockedBy !== null ? hintOf(toggle.blockedBy) : undefined}
+											onClick={() => flip(which)}
+										>
+											<svg className="board-toggle-mark" aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.3">
+												<rect x="1" y="1" width="10" height="10" rx="2.5" />
+												{toggle.on && <path d="M3.5 6.2l1.8 1.8 3.2-3.6" strokeLinecap="round" strokeLinejoin="round" />}
+											</svg>
+											{TOGGLE_LABELS[which]}
+										</button>
+									);
+								})}
 							</div>
 						)}
 						{choices.length > 0 && (
@@ -269,7 +300,7 @@ export function IssuesBoard({ repository }: { repository: string }) {
 						)}
 					</div>
 				)}
-				{hints.map(hint => <p key={hint} className="board-hint">{hint}</p>)}
+				{hints.map(hint => <p key={hint.id} id={hint.id} className="board-hint">{hint.text}</p>)}
 			</header>
 			<div className="board-body">{body}</div>
 		</main>

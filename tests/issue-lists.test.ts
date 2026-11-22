@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createIssueLister, listIssues } from "../src/bun/issue-lists";
 import { createMockEngine, sampleTimberStatuses } from "../src/mainview/engine/mock";
-import { REAL_TIMBER_TIMEOUT_MS, fingerprint, git, readyAt, realTimber, standIn } from "./support/timber";
+import { REAL_TIMBER_TIMEOUT_MS, bunStandIn, fingerprint, git, readyAt, realTimber, standIn } from "./support/timber";
 
 setDefaultTimeout(REAL_TIMBER_TIMEOUT_MS);
 
@@ -69,6 +69,76 @@ describe("listIssues with a stand-in Timber", () => {
 		const result = await listIssues(timber.path, folder, "assigned", "github", process.env, 300);
 		expect(Date.now() - started).toBeLessThan(4_000);
 		expect(result).toEqual({ ok: false, unsupported: false, message: `timber __app-issues in ${folder} was stopped before it finished. The app waits 0.3 seconds for it.` });
+	});
+});
+
+/** A stand-in Timber that answers by its arguments, as `acts` says, and notes the arguments of every run. */
+const SCRIPTED = `
+const { appendFileSync, readFileSync } = require("node:fs");
+const { join } = require("node:path");
+const acts = JSON.parse(readFileSync(join(folder, "acts.json"), "utf8"));
+const given = process.argv.slice(2).join(" ");
+appendFileSync(join(folder, "runs.txt"), given + "\\n");
+const act = acts[given] ?? { stderr: "no act for " + given, exitCode: 2 };
+if (act.stdout) process.stdout.write(act.stdout);
+if (act.stderr) process.stderr.write(act.stderr);
+process.exitCode = act.exitCode ?? 0;
+`;
+
+function scripted(name: string, acts: Record<string, { stdout?: string; stderr?: string; exitCode?: number }>) {
+	const here = join(root, name);
+	mkdirSync(here, { recursive: true });
+	writeFileSync(join(here, "acts.json"), JSON.stringify(acts));
+	writeFileSync(join(here, "runs.txt"), "");
+	const path = bunStandIn(here, SCRIPTED);
+	return { path, runs: () => readFileSync(join(here, "runs.txt"), "utf8").split("\n").filter(line => line !== "") };
+}
+
+describe("my issues in the sprint", () => {
+	const SPRINT = "__app-issues sprint --tracker github";
+	const MY_SPRINT = `${SPRINT} --assigned`;
+	const ASSIGNED = "__app-issues assigned --tracker github --limit 50";
+	const sprintRecord = (change: (record: any) => void) => {
+		const record = JSON.parse(fixture("sprint-iteration.json"));
+		change(record);
+		return `${JSON.stringify(record)}\n`;
+	};
+
+	test("runs sprint --assigned once when Timber has it", async () => {
+		const timber = scripted("my-sprint-new", { [MY_SPRINT]: { stdout: sprintRecord(record => { for (const issue of record.issues) issue.assignedToMe = true; }) } });
+		const result = await listIssues(timber.path, folder, "my-sprint", "github");
+		expect(result).toMatchObject({ ok: true, outcome: "found", sprint: { name: "Iteration 1" } });
+		expect(result.ok && result.outcome === "found" && result.partial).toBeFalsy();
+		expect(timber.runs()).toEqual([MY_SPRINT]);
+	});
+
+	test("a Timber without --assigned reads the sprint and the assigned list, and keeps the sprint's issues assigned to me", async () => {
+		const assigned = JSON.parse(fixture("assigned.json"));
+		assigned.issues = [{ ...JSON.parse(fixture("sprint-iteration.json")).issues[1] }];
+		const timber = scripted("my-sprint-old", {
+			[MY_SPRINT]: { stderr: fixture("unknown-option-0.1.4.stderr"), exitCode: 1 },
+			[SPRINT]: { stdout: fixture("sprint-iteration.json") },
+			[ASSIGNED]: { stdout: `${JSON.stringify(assigned)}\n` },
+		});
+		const result = await listIssues(timber.path, folder, "my-sprint", "github");
+		expect(result).toMatchObject({ ok: true, outcome: "found", partial: true, sprint: { name: "Iteration 1" } });
+		expect(result.ok && result.outcome === "found" && result.issues.map(issue => issue.key)).toEqual(["147"]);
+		expect(timber.runs()).toEqual([MY_SPRINT, SPRINT, ASSIGNED]);
+	});
+
+	test("without --assigned, a sprint that is not set up is said as for sprint, and nothing more is read", async () => {
+		const timber = scripted("my-sprint-old-unset", {
+			[MY_SPRINT]: { stderr: fixture("unknown-option-0.1.4.stderr"), exitCode: 1 },
+			[SPRINT]: { stdout: fixture("sprint-not-configured.json"), exitCode: 1 },
+		});
+		expect(await listIssues(timber.path, folder, "my-sprint", "github")).toMatchObject({ ok: true, outcome: "failed", reason: "not-configured" });
+		expect(timber.runs()).toEqual([MY_SPRINT, SPRINT]);
+	});
+
+	test("a Timber without __app-issues is unsupported, and nothing more is read", async () => {
+		const timber = scripted("my-sprint-older", { [MY_SPRINT]: { stderr: fixture("unknown-command-0.1.3.stderr"), exitCode: 1 } });
+		expect(await listIssues(timber.path, folder, "my-sprint", "github")).toMatchObject({ ok: false, unsupported: true });
+		expect(timber.runs()).toEqual([MY_SPRINT]);
 	});
 });
 
@@ -193,6 +263,8 @@ describe.skipIf(!canListIssues(realTimber))("with a real Timber that has __app-i
 		const before = [fingerprint(repository), fingerprint(join(work, "one")), git(repository, "for-each-ref")];
 		expect(await listIssues(realTimber!, repository, "sprint", "github", environment)).toMatchObject({ ok: true, outcome: "failed", reason: "not-configured" });
 		expect(await listIssues(realTimber!, repository, "sprint", "linear", environment)).toMatchObject({ ok: true, outcome: "failed", reason: "not-configured" });
+		// With or without --assigned in this Timber, my issues in a sprint that is not set up say so as the sprint does.
+		expect(await listIssues(realTimber!, repository, "my-sprint", "github", environment)).toMatchObject({ ok: true, outcome: "failed", reason: "not-configured" });
 		expect(await listIssues(realTimber!, repository, "open", "linear", environment)).toMatchObject({ ok: true, outcome: "failed", reason: "not-configured" });
 		expect(await listIssues(realTimber!, repository, "sprint", "jira", environment)).toMatchObject({ ok: true, outcome: "failed", reason: "sign-in-needed" });
 		expect(await listIssues(realTimber!, repository, "assigned", "github", environment)).toMatchObject({ ok: true, outcome: "failed" });

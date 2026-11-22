@@ -14,7 +14,7 @@ import {
 import { selectedWorktree } from "../src/mainview/store/state";
 import { createAppStore } from "../src/mainview/store/store";
 import { createSubmission } from "../src/mainview/store/submission";
-import type { IssueList } from "../src/shared/issue-lists";
+import { ISSUE_LISTS, type IssueList } from "../src/shared/issue-lists";
 import { type SuggestedIssue, readListedIssue } from "../src/shared/issue-search";
 import type { NewWorktreeRequest, WorktreeCommandResult } from "../src/shared/model";
 import { RESULT_FILE_PLACEHOLDER, describeTimberCommand, readTimberResult } from "../src/shared/timber-result";
@@ -387,10 +387,10 @@ describe("Start work on the board", () => {
 		await settle();
 		store.openBoard(TIMBER);
 		await settle();
-		// Jira's samples have cards without a worktree in every list.
+		// Jira's samples have cards without a worktree in every list, both toggles on included.
 		await store.pickBoardTracker(TIMBER, "jira");
 		await settle();
-		for (const list of ["sprint", "assigned", "open"] as const) {
+		for (const list of ISSUE_LISTS) {
 			await store.pickBoardList(TIMBER, list);
 			await settle();
 			const markup = renderToStaticMarkup(<App store={store} />);

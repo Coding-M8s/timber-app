@@ -1,6 +1,6 @@
 import { ISSUE_TRACKERS } from "../shared/issue-trackers";
 import { APP_ISSUES_COMMAND } from "../shared/issue-search";
-import { ISSUE_LISTS, type IssueList, type IssueListRequest, type IssueListResult, issueListArguments, readIssueListRecord } from "../shared/issue-lists";
+import { ISSUE_LISTS, type IssueList, type IssueListRequest, type IssueListResult, intersectMySprint, isAssignedOptionUnknown, issueListArguments, readIssueListRecord } from "../shared/issue-lists";
 import type { IssueTracker, TimberStatus } from "../shared/model";
 import { runTimberRecord, withReadyTimber } from "./timber-record";
 
@@ -36,6 +36,10 @@ export interface IssueLister {
  * does not take the repository's turn, so it never waits behind a command
  * that changes the repository.
  *
+ * `my-sprint` runs `sprint --assigned`. A Timber older than that option
+ * says so and prints nothing, and then `sprint` and `assigned` are read
+ * instead and joined in the app (see `intersectMySprint`).
+ *
  * Nothing Timber printed is logged here: titles are other people's text.
  */
 export async function listIssues(
@@ -51,6 +55,13 @@ export async function listIssues(
 		command: APP_ISSUES_COMMAND, where: `in ${folder}`, tooLong: "a list of issues holds. Nothing was listed.",
 	});
 	if (!output.ok) return { ok: false, unsupported: false, message: output.message };
+	if (list === "my-sprint" && isAssignedOptionUnknown(output.record, output.diagnostic, output.exitCode)) {
+		const sprint = await listIssues(executable, folder, "sprint", tracker, environment, timeoutMs);
+		// The assigned list is read only when the sprint's issues do not say whose they are.
+		const needed = sprint.ok && sprint.outcome === "found" && sprint.issues.some(issue => issue.assignedToMe === null);
+		const assigned = needed ? await listIssues(executable, folder, "assigned", tracker, environment, timeoutMs) : null;
+		return intersectMySprint(sprint, assigned);
+	}
 	return readIssueListRecord(output.record, output.diagnostic, output.exitCode, list, tracker);
 }
 

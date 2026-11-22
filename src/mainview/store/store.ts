@@ -2262,7 +2262,12 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	const changeBoard = (repository: string, change: (board: IssueBoard) => IssueBoard) =>
 		update({ issueBoards: { ...state.issueBoards, [repository]: change(boardOf(repository)) } });
 
-	async function listOnBoard(repository: string, tracker: IssueTracker, list: IssueList): Promise<void> {
+	/**
+	 * Read one list onto the board. `back` is the list shown before a toggle
+	 * was turned to this one: when this one turns out not to be set up, the
+	 * board comes back to it, and it is remembered again.
+	 */
+	async function listOnBoard(repository: string, tracker: IssueTracker, list: IssueList, back: IssueList | null = null): Promise<void> {
 		const key = boardKey(tracker, list);
 		if (boardOf(repository).reading.includes(key)) return;
 		changeBoard(repository, board => withReading(board, key));
@@ -2275,9 +2280,16 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		// Kept under its own tracker and list, so an answer that comes late never shows on another list.
 		const before = boardView(boardOf(repository), state.layout.issueLists[repository]);
 		changeBoard(repository, board => withRead(board, key, { result, at: Date.now() }));
-		// A list that turned out not to be set up leaves the picker. The next one shows, and is read when it never was.
-		const after = boardView(boardOf(repository), state.layout.issueLists[repository]);
-		if (before.list === list && after.list !== null && after.list !== list && after.tracker !== null && after.latest === null) {
+		let after = boardView(boardOf(repository), state.layout.issueLists[repository]);
+		if (back !== null && before.list === list && after.list !== list && state.layout.issueLists[repository] === list && !after.hidden.includes(back)) {
+			changeLayout(chooseIssueList(state.layout, repository, back));
+			void saveLayout("layout");
+			after = boardView(boardOf(repository), state.layout.issueLists[repository]);
+		}
+		// The list shown changed: a list that turned out not to be set up leaves, or a sprint set up again brings both sprint lists back.
+		// The new one is read when it never was, or when its own answer still says it is not set up.
+		const stale = after.latest === null || (after.latest.result.ok && after.latest.result.outcome === "failed" && after.latest.result.reason === "not-configured");
+		if (after.list !== null && after.list !== before.list && after.tracker === tracker && stale) {
 			await listOnBoard(repository, after.tracker, after.list);
 		}
 	}
@@ -3211,13 +3223,14 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		},
 		refreshBoard,
 		async pickBoardList(repository, list) {
+			const shown = boardView(boardOf(repository), state.layout.issueLists[repository]).list;
 			const layout = chooseIssueList(state.layout, repository, list);
 			if (layout !== state.layout) {
 				changeLayout(layout);
 				void saveLayout("layout");
 			}
 			const view = boardView(boardOf(repository), list);
-			if (view.tracker !== null && view.list === list) await listOnBoard(repository, view.tracker, list);
+			if (view.tracker !== null && view.list === list) await listOnBoard(repository, view.tracker, list, shown !== list ? shown : null);
 		},
 		async pickBoardTracker(repository, tracker) {
 			changeBoard(repository, board => ({ ...board, picked: tracker }));
