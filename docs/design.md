@@ -1133,6 +1133,25 @@ logins. The app never reads a tracker login and never signs in.
   pre-done scripts, starting branch, remote, worktree folder, and layout.
   Presets where they help, but every value is editable free-form, and every
   section has Save.
+  Settings, Agents gives each row a second line under Name and Command:
+  Agent, a picker 280px wide whose first choice, "Detect from command",
+  names what it detected in parentheses, says "not recognized", or, for a
+  name other programs install too such as `agent`, "known once it
+  starts", then every agent the app knows; and Config folder, with the agent's folder
+  variable named beside the label (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`) and
+  its default as the placeholder ("Default: ~/.claude"), shown only for an
+  agent that keeps its conversations in a folder. A row with a folder says
+  "Starts with CLAUDE_CONFIG_DIR set to this folder, and goes back to its
+  conversation from there after a restart.", or only the first half when
+  its arguments start it as typed. A row whose command is not
+  recognized says "Not recognized from its command, so it starts fresh
+  after a restart. Pick its agent to go back to its conversation." A
+  folder that is not a full path or `~/` is refused under the row: "The
+  config folder must be a full path or start with ~/." The section's hint
+  adds: "Agent says which agent the command runs, for its mark and for
+  going back to its conversation after a restart; Detect goes by the
+  executable's name. Config folder is where that agent keeps its
+  conversations."
   The dialog keeps one size. The list down its side, each section with an
   icon, groups them under Appearance, Workflow, Activity, and Timber, with
   About on its own at the foot. A section opens with its title and what it

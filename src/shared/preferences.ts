@@ -34,8 +34,9 @@ export interface Preferences {
 	/**
 	 * The coding agents the "+" menu of a worktree's sessions starts, in menu
 	 * order. Claude Code and Codex until a list is saved; a saved empty list
-	 * stays empty. Read whole: one entry that cannot be read puts the presets
-	 * back, and the next save of the Agents section writes them.
+	 * stays empty. Each has a name and a command, and may pick its agent and
+	 * its config folder. Read whole: one entry that cannot be read puts the
+	 * presets back, and the next save of the Agents section writes them.
 	 */
 	agents: readonly AgentSetting[];
 	/**

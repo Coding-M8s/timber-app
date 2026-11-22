@@ -441,7 +441,8 @@ export function createMockTerminals(
 			args = launch.arguments;
 		}
 		if (agent) {
-			resumable = resumableAgent(launch!.executable, launch!.arguments);
+			// An agent picked for the row in Settings takes the place of the name, as in the main process. Its config folder changes nothing here: there are no folders in the browser.
+			resumable = resumableAgent(launch!.executable, launch!.arguments, null, agent.agent);
 			const exists = (id: string) => !goneConversations.includes(id);
 			if (resumable !== null && resume !== null && exists(resume)) {
 				args = agentStartArguments(resumable, args, { resume });
@@ -460,7 +461,7 @@ export function createMockTerminals(
 		}
 		const taken = [...sessions.values()].filter(acted => acted.session.worktree === worktree.id).map(acted => acted.session.name);
 		// No file is followed in the browser: the pretend executable's own name gives its agent.
-		const program = launch || attempt ? agentProgram(shell) : null;
+		const program = launch || attempt ? agentProgram(shell, null, agent?.agent) : null;
 		const session: TerminalSession = {
 			id: `mock-terminal-${++lastId}`,
 			kind: launch || attempt ? "agent" : setup ? "timber" : "terminal",

@@ -5168,6 +5168,16 @@ pre:focus-visible {
 	min-width: 0;
 }
 
+/* The second line of a row: which agent it runs, and where that agent keeps its conversations. */
+.agent-which {
+	flex: 0 0 280px;
+}
+
+.agent-folder {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
 .agent-remove {
 	flex: none;
 	margin-bottom: 6px;

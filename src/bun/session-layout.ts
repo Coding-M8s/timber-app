@@ -26,13 +26,16 @@ import type { RunningSession } from "./terminals";
  *   switched only in the selected worktree, which the report names. A
  *   worktree the window never reported keeps the chip that showed before.
  * - A Codex session's conversation id is read at quit from Codex's own files
- *   (see ./agent-conversations.ts), only for a Codex session that ran in its
- *   folder with no other Codex session of the app since it started, running
+ *   (see ./agent-conversations.ts), in the Codex home folder it started
+ *   with, only for a Codex session that ran in its folder with no other Codex
+ *   session of the app since it started, running with the same home folder,
  *   or ended. Otherwise nothing tells their conversations apart, so it keeps
  *   the id it was opened with, if any.
  * - A Claude Code session's id is saved only when Claude Code wrote that
  *   conversation, so one that never got a message starts fresh, without a
- *   note that it was not found.
+ *   note that it was not found. Both are looked for in the folder the
+ *   session's agent kept its conversations in when it started
+ *   (`RunningSession.conversationFolder`).
  */
 
 /** Where the file is: beside the settings file. */
@@ -52,10 +55,10 @@ export interface SessionLayoutDependencies {
 	running: () => RunningSession[];
 	/** When the last Codex session of each worktree, however it was started, ended or closed in this run, by worktree id. */
 	endedCodex?: () => ReadonlyMap<string, number>;
-	/** For a Codex session with nothing newer known (see ./agent-conversations.ts). */
-	findCodex: (options: { cwd: string; since: number; taken: ReadonlySet<string>; budget: number }) => string | null;
-	/** Whether Claude Code wrote the conversation with this id. */
-	claudeExists?: (id: string) => boolean;
+	/** For a Codex session with nothing newer known, in its Codex home folder (see ./agent-conversations.ts). */
+	findCodex: (options: { homeFolder: string; cwd: string; since: number; taken: ReadonlySet<string>; budget: number }) => string | null;
+	/** Whether Claude Code wrote the conversation with this id in this configuration folder. */
+	claudeExists?: (id: string, folder: string) => boolean;
 	warn?: (message: string) => void;
 	now?: () => number;
 }
@@ -102,24 +105,28 @@ export function createSessionLayout(dependencies: SessionLayoutDependencies): Se
 		const found = new Map<string, string | null>();
 		// First the Claude Code ids, which are quick to check: a Claude Code id the app chose is only a conversation once Claude Code wrote it.
 		for (const session of live) {
-			if (session.resumable !== "claude" || session.conversation === null) continue;
+			if (session.resumable !== "claude" || session.conversation === null || session.conversationFolder === null) continue;
 			if (deadline - now() <= 0) break;
 			let exists = true;
 			try {
-				exists = claudeExists(session.conversation);
+				exists = claudeExists(session.conversation, session.conversationFolder);
 			} catch {
 				// Then it keeps what it has.
 			}
 			if (!exists) found.set(session.id, null);
 		}
-		// Every Codex of a worktree, however it was started, so one started as typed is never taken for another.
+		// Every Codex of a worktree and home folder, however it was started, so one started as typed is never taken for another. Codex sessions with different home folders keep their conversations apart.
 		const codex = new Map<string, RunningSession[]>();
-		for (const session of live) if (session.program === "codex") codex.set(session.worktree, [...codex.get(session.worktree) ?? [], session]);
+		for (const session of live) {
+			if (session.program !== "codex") continue;
+			const key = JSON.stringify([session.worktree, session.conversationFolder]);
+			codex.set(key, [...codex.get(key) ?? [], session]);
+		}
 		const ended = endedCodex();
 		for (const sessions of codex.values()) {
 			if (sessions.length !== 1) continue;
 			const [session] = sessions as [RunningSession];
-			if (session.resumable !== "codex") continue;
+			if (session.resumable !== "codex" || session.conversationFolder === null) continue;
 			const since = session.startedAt - CODEX_START_SLACK_MILLISECONDS;
 			// Another Codex ran here meanwhile and ended: its conversation could be taken for this one's.
 			const rival = ended.get(session.worktree);
@@ -130,7 +137,7 @@ export function createSessionLayout(dependencies: SessionLayoutDependencies): Se
 			if (session.conversation !== null) own.delete(session.conversation);
 			let id: string | null = null;
 			try {
-				id = findCodex({ cwd: session.path, since, taken: own, budget });
+				id = findCodex({ homeFolder: session.conversationFolder, cwd: session.path, since, taken: own, budget });
 			} catch {
 				// Then it keeps what it has.
 			}

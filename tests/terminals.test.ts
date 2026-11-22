@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openWebLink } from "../src/bun/open-link";
 import { processTreeKillCommand, sessionMembers, sessionOfStat } from "../src/bun/process-session";
+import { claudeConversationExists, codexConversationExists } from "../src/bun/agent-conversations";
 import { PART_LIMIT, type TerminalDependencies, type TerminalSessions, createTerminalSessions } from "../src/bun/terminals";
+import type { AgentSetting } from "../src/shared/agent";
 import type { Repository } from "../src/shared/model";
 import { describeSearchPath } from "../src/shared/search-path";
 import { PROBE_ANSWER } from "../src/shared/program-status";
@@ -1283,7 +1285,7 @@ sleep 5
 			const session = await openWith({ agent: "Claude Code" });
 			await shows(session.id, `ARGS:--session-id ${NEW} --model opus`);
 			expect(session.command).toBe(`'${join(root, "resume bin", "claude")}' --session-id ${NEW} --model opus`);
-			expect(sessions.running()).toEqual([{ id: session.id, worktree: `id:${worktree}`, path: worktree, kind: "agent", agent: "Claude Code", resumable: "claude", program: "claude", conversation: NEW, startedAt: 1234, name: null, restored: null }]);
+			expect(sessions.running()).toEqual([{ id: session.id, worktree: `id:${worktree}`, path: worktree, kind: "agent", agent: "Claude Code", resumable: "claude", program: "claude", conversation: NEW, conversationFolder: join(root, ".claude"), startedAt: 1234, name: null, restored: null }]);
 		});
 
 		test("Claude Code goes back to a conversation that is there", async () => {
@@ -1408,6 +1410,122 @@ sleep 5
 			expect(sessions.running().map(session => [session.resumable, session.program, session.conversation])).toEqual([[null, "codex", null]]);
 			await sessions.close(typed.id);
 			expect([...sessions.endedCodex()]).toEqual([[`id:${worktree}`, 1234]]);
+		});
+
+		describe("a row whose agent and config folder are picked in Settings", () => {
+			/*
+			 * A wrapper like one many people keep for a second Claude account,
+			 * which sets the folder itself and runs `claude`. The `claude` beside
+			 * it is a stand-in that prints its arguments and folder, so the real
+			 * Claude Code is never run, and HOME is the test's own folder, so no
+			 * real configuration is read.
+			 */
+			function wrapperBin(): string {
+				const bin = join(root, "wrapper bin");
+				mkdirSync(bin, { recursive: true });
+				writeFileSync(join(bin, "claude"), `#!/bin/sh\necho "ARGS:$*"\necho "DIR:$CLAUDE_CONFIG_DIR"\nexec /bin/sh\n`);
+				writeFileSync(join(bin, "claude-personal"), `#!/bin/sh\nCLAUDE_CONFIG_DIR="$HOME/.claude-personal" exec claude "$@"\n`);
+				writeFileSync(join(bin, "codex"), `#!/bin/sh\necho "ARGS:$*"\necho "DIR:$CODEX_HOME"\nexec /bin/sh\n`);
+				for (const name of ["claude", "claude-personal", "codex"]) chmodSync(join(bin, name), 0o755);
+				return bin;
+			}
+
+			/** A Claude Code conversation file, as Claude Code writes one, in a config folder under the test's HOME. */
+			function conversationIn(folder: string, id: string) {
+				mkdirSync(join(root, folder, "projects", "-work-app"), { recursive: true });
+				writeFileSync(join(root, folder, "projects", "-work-app", `${id}.jsonl`), "{}\n");
+			}
+
+			function startRows(agents: AgentSetting[]) {
+				// The temporary folder is shared by the file's tests: no conversation of another test is left in it.
+				for (const folder of [".claude", ".claude-personal", ".claude-work", ".codex-work", "pinned"]) rmSync(join(root, folder), { recursive: true, force: true });
+				start({
+					environment: { PATH: `${wrapperBin()}:${process.env.PATH}`, HOME: root, SHELL: "/bin/sh", PS1: "$ ", LANG: "C.UTF-8" },
+					agents: async () => agents,
+					// The real checks, in the folders under the test's HOME.
+					conversations: { claudeExists: claudeConversationExists, codexExists: codexConversationExists, newId: () => NEW },
+					now: () => 1234,
+				});
+			}
+
+			const personal: AgentSetting = { name: "Claude Personal", command: "claude-personal --model opus", agent: "claude", configFolder: "~/.claude-personal" };
+
+			test("a wrapper picked as Claude Code gets an id of the app's choosing, and the folder is set", async () => {
+				startRows([personal]);
+				const session = await openWith({ agent: "Claude Personal" });
+				await shows(session.id, `ARGS:--session-id ${NEW} --model opus`);
+				await shows(session.id, `DIR:${join(root, ".claude-personal")}`);
+				expect(session.program).toBe("claude");
+				expect(sessions.running()[0]).toMatchObject({ resumable: "claude", program: "claude", conversation: NEW, conversationFolder: join(root, ".claude-personal") });
+			});
+
+			test("after a restart it goes back to a conversation that is in its own folder", async () => {
+				startRows([personal]);
+				conversationIn(".claude-personal", OLD);
+				const session = await openWith({ agent: "Claude Personal", resume: OLD });
+				await shows(session.id, `ARGS:--resume ${OLD} --model opus`);
+				expect(printed(session.id)).not.toContain(NOTE);
+			});
+
+			test("a conversation only in the default folder is not taken: it starts fresh and says so", async () => {
+				startRows([personal]);
+				conversationIn(".claude", OLD);
+				const session = await openWith({ agent: "Claude Personal", resume: OLD });
+				await shows(session.id, `ARGS:--session-id ${NEW} --model opus`);
+				expect(printed(session.id)).toContain("The saved conversation was not found, so Claude Personal started fresh.");
+			});
+
+			test("the same wrapper detected from its command starts as typed, as before", async () => {
+				startRows([{ name: "Claude Personal", command: "claude-personal --model opus" }]);
+				conversationIn(".claude-personal", OLD);
+				const session = await openWith({ agent: "Claude Personal", resume: OLD });
+				await shows(session.id, "ARGS:--model opus\r\n");
+				expect(session.program).toBeUndefined();
+				expect(sessions.running()[0]).toMatchObject({ resumable: null, program: null, conversation: null, conversationFolder: null });
+			});
+
+			test("the app sets the folder variable itself, also for a command it starts as typed", async () => {
+				startRows([
+					{ name: "Claude Work", command: "claude", configFolder: "~/.claude-work" },
+					{ name: "Pinned", command: "claude --continue", configFolder: join(root, "pinned") },
+					{ name: "Codex Work", command: "codex", configFolder: "~/.codex-work" },
+				]);
+				conversationIn(".claude-work", OLD);
+				const work = await openWith({ agent: "Claude Work", resume: OLD });
+				await shows(work.id, `ARGS:--resume ${OLD}`);
+				await shows(work.id, `DIR:${join(root, ".claude-work")}`);
+				const pinned = await openWith({ agent: "Pinned" });
+				await shows(pinned.id, "ARGS:--continue\r\n");
+				await shows(pinned.id, `DIR:${join(root, "pinned")}`);
+				// A Codex conversation as Codex keeps one, in the row's own home folder.
+				const day = join(root, ".codex-work", "sessions", "2026", "11", "20");
+				mkdirSync(day, { recursive: true });
+				writeFileSync(join(day, `rollout-2026-11-20T12-00-00-${OLD}.jsonl`), "{}\n");
+				const codex = await openWith({ agent: "Codex Work", resume: OLD });
+				await shows(codex.id, `ARGS:resume ${OLD}`);
+				await shows(codex.id, `DIR:${join(root, ".codex-work")}`);
+				expect(sessions.running().map(session => session.conversationFolder)).toEqual([join(root, ".claude-work"), join(root, "pinned"), join(root, ".codex-work")]);
+			});
+
+			test("with no config folder the folder variable is left as the app has it", async () => {
+				startRows([{ name: "Claude Code", command: "claude" }]);
+				const session = await openWith({ agent: "Claude Code" });
+				await shows(session.id, "DIR:\r\n");
+				expect(sessions.running()[0]!.conversationFolder).toBe(join(root, ".claude"));
+			});
+
+			test("the picked agent's mark stays once it ends into a shell, and the shell does not get the folder", async () => {
+				startRows([personal]);
+				const session = await openWith({ agent: "Claude Personal" });
+				await shows(session.id, `ARGS:--session-id ${NEW}`);
+				// The stand-in's own shell, then the person's shell the app starts in its place.
+				sessions.write(session.id, "exit\r");
+				expect(await until(() => sessions.list()[0]?.kind === "terminal")).toBe(true);
+				expect(sessions.list()[0]!.endedAgent).toMatchObject({ name: "Claude Personal", program: "claude", resumable: "claude", conversation: NEW });
+				expect(sessions.list()[0]!.program).toBeUndefined();
+				sessions.write(session.id, "echo \"SHELL-DIR:[$CLAUDE_CONFIG_DIR]\"\r");
+				await shows(session.id, "SHELL-DIR:[]");
+			});
 		});
 
 		test("the shell needs no conversation", async () => {

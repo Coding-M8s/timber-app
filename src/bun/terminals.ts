@@ -1,7 +1,7 @@
 import { accessSync, constants, realpathSync } from "node:fs";
 import { type ArenaLaunch, isArenaName, isAttemptLabel } from "../shared/arenas";
 import { homedir } from "node:os";
-import { type AgentSetting, agentCommand, findAgent } from "../shared/agent";
+import { type AgentSetting, agentCommand, conversationsOf, expandConfigFolder, findAgent } from "../shared/agent";
 import type { AgentLocation, AgentLookup } from "../shared/agent-lookup";
 import { type ConversationStore, agentById } from "../shared/agent-registry";
 import { type ResumableAgent, agentProgram, agentStartArguments, conversationMissingNote, resumableAgent } from "../shared/agent-resume";
@@ -20,7 +20,7 @@ import { asWin32KeyEvents } from "../shared/win32-input";
 import { type RestoreTag, isConversationId, isRestoreTag } from "../shared/saved-sessions";
 import { type Workflow, type WorkflowList, isWorkflowName } from "../shared/workflows";
 import { worktreeSetupArguments } from "../shared/worktree-commands";
-import { claudeConfigFolder, claudeConversationExists, codexConversationExists, codexHomeFolder } from "./agent-conversations";
+import { claudeConversationExists, codexConversationExists, conversationFolder } from "./agent-conversations";
 import { type ExecutableWords, findExecutable, isWindowsBatch, locateAgent } from "./find-executable";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
 import { killProcessTree, sessionMembers, signalEach, signalGroup } from "./process-session";
@@ -110,13 +110,15 @@ export interface TerminalDependencies {
 	 */
 	startTerminal?: StartPseudoTerminal | null;
 	/**
-	 * Whether an agent's own conversation is still there, and a new id for
-	 * one that starts fresh (see ./agent-conversations.ts). By default the
-	 * folders the environment names, or those in the home folder.
+	 * Whether an agent's own conversation is still there, in the folder the
+	 * session's agent keeps them in, and a new id for one that starts fresh
+	 * (see ./agent-conversations.ts). The folder is the row's config folder
+	 * from Settings, else the one `environment` names, else the agent's
+	 * folder in the home folder.
 	 */
 	conversations?: {
-		claudeExists: (id: string) => boolean;
-		codexExists: (id: string) => boolean;
+		claudeExists: (id: string, folder: string) => boolean;
+		codexExists: (id: string, folder: string) => boolean;
 		newId: () => string;
 	};
 	/** The clock, for when a session started. */
@@ -240,10 +242,16 @@ export interface RunningSession {
 	agent: string | null;
 	/** Whether, and how, the agent can go back to its conversation. */
 	resumable: ResumableAgent | null;
-	/** The agent of the registry the executable is by its name, however it was started: a Codex started as typed still counts when Codex conversations are told apart. */
+	/**
+	 * The agent of the registry it runs, however it was started: the one
+	 * picked for its row in Settings, else the one its executable is by name.
+	 * A Codex started as typed still counts when Codex conversations are told apart.
+	 */
 	program: ResumableAgent | null;
 	/** The agent's own conversation id, when it is known. */
 	conversation: string | null;
+	/** Where its agent keeps its conversations, as a full path, as it was when it started; null for an agent that keeps none the app reads. */
+	conversationFolder: string | null;
 	startedAt: number;
 	/** The session's name, only when the person gave it one. */
 	name: string | null;
@@ -300,6 +308,7 @@ interface Live {
 	program: ResumableAgent | null;
 	/** The agent's own conversation id, when it is known. */
 	conversation: string | null;
+	conversationFolder: string | null;
 	startedAt: number;
 	/** Whether the name is one the person gave, not a default. */
 	renamed: boolean;
@@ -331,6 +340,9 @@ interface AgentLaunch {
 	/** Set on top of the session's environment, and taken out of it, as Timber asks for an arena attempt. */
 	environment?: Record<string, string>;
 	unset?: string[];
+	/** For an agent from Settings: the agent picked for its row, and its config folder as typed. */
+	chosen?: AgentSetting["agent"];
+	configFolder?: string;
 }
 
 /** An agent from Settings, its command split without a shell (`agentCommand` in ../shared/agent.ts). */
@@ -340,7 +352,11 @@ function launchOfSetting(agent: AgentSetting): { ok: true; launch: AgentLaunch }
 	const section = "Settings, Agents";
 	return {
 		ok: true,
-		launch: { name: agent.name, executable: built.executable, arguments: built.arguments, words: { what: agent.name, command: `The command of ${agent.name}`, section }, section },
+		launch: {
+			name: agent.name, executable: built.executable, arguments: built.arguments, words: { what: agent.name, command: `The command of ${agent.name}`, section }, section,
+			...(agent.agent !== undefined ? { chosen: agent.agent } : {}),
+			...(agent.configFolder ? { configFolder: agent.configFolder } : {}),
+		},
 	};
 }
 
@@ -522,14 +538,14 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		promptWaitMilliseconds = PROMPT_WAIT_MILLISECONDS, promptQuietMilliseconds = PROMPT_QUIET_MILLISECONDS, promptEnterMilliseconds = PROMPT_ENTER_MILLISECONDS, promptBusyMilliseconds = PROMPT_BUSY_MILLISECONDS,
 	} = dependencies;
 	const conversations = dependencies.conversations ?? {
-		claudeExists: (id: string) => claudeConversationExists(id, claudeConfigFolder(environment, environment.HOME || homedir())),
-		codexExists: (id: string) => codexConversationExists(id, codexHomeFolder(environment, environment.HOME || homedir())),
+		claudeExists: (id: string, folder: string) => claudeConversationExists(id, folder),
+		codexExists: (id: string, folder: string) => codexConversationExists(id, folder),
 		newId: () => crypto.randomUUID(),
 	};
 	/** Whether a conversation is still there, for each layout of conversation folders an agent of the registry uses. */
-	const conversationExists: Record<ConversationStore, (id: string) => boolean> = {
-		"claude-projects": id => conversations.claudeExists(id),
-		"codex-sessions": id => conversations.codexExists(id),
+	const conversationExists: Record<ConversationStore, (id: string, folder: string) => boolean> = {
+		"claude-projects": (id, folder) => conversations.claudeExists(id, folder),
+		"codex-sessions": (id, folder) => conversations.codexExists(id, folder),
 	};
 	const windows = platform === "win32";
 	/** ConPTY drops an OSC written as it is, so on Windows the answer goes in as typed keys. */
@@ -721,14 +737,16 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		| {
 			ok: true; kind: TerminalSession["kind"]; base: string; argv: string[]; command: string; environment?: Record<string, string>; unset?: string[];
 			resumable: ResumableAgent | null; conversation: string | null;
-			/** The agent of the registry the executable is by its name, however it was started. */
+			/** The agent of the registry it runs, however it was started: the one picked in Settings, else the one its executable is by name. */
 			program: ResumableAgent | null;
+			/** Where that agent keeps its conversations, as a full path, or null. */
+			conversationFolder: string | null;
 			/** A conversation was asked for and could not be gone back to. */
 			missing: boolean;
 		}
 		| { ok: false; result: OpenTerminalResult };
 
-	const plain = { resumable: null, conversation: null, missing: false, program: null } as const;
+	const plain = { resumable: null, conversation: null, missing: false, program: null, conversationFolder: null } as const;
 
 	/**
 	 * What a session starts with. `resume` is a saved conversation, and
@@ -766,17 +784,24 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 				},
 			};
 		}
-		const extra = { ...(launch.environment ? { environment: launch.environment } : {}), ...(launch.unset ? { unset: launch.unset } : {}) };
 		// What the found file leads to tells a name other programs install too, such as `agent`. The agent still starts as found, since some read the name they were started as.
 		const real = realPathOf(lookup.path);
-		const program = agentProgram(launch.executable, real);
-		if (!settings) return { ok: true, kind: "agent", base: launch.name, argv, command: describeCommandLine(argv), ...extra, ...plain, program };
+		// An agent picked for the row in Settings takes the place of the name.
+		const program = agentProgram(launch.executable, real, settings ? launch.chosen : null);
+		const kept = conversationsOf(program === null ? null : agentById(program));
+		const home = environment.HOME || homedir();
+		// The row's config folder, for an agent that keeps its conversations in one: the agent starts with its variable set to it, and is looked for there.
+		const own = settings && kept !== null ? expandConfigFolder(launch.configFolder, home) : null;
+		const folder = kept === null ? null : own ?? conversationFolder(kept, environment, home);
+		const environmentSet = own !== null && kept !== null ? { ...launch.environment, [kept.folderVariable]: own } : launch.environment;
+		const extra = { ...(environmentSet ? { environment: environmentSet } : {}), ...(launch.unset ? { unset: launch.unset } : {}) };
+		if (!settings) return { ok: true, kind: "agent", base: launch.name, argv, command: describeCommandLine(argv), ...extra, ...plain, program, conversationFolder: folder };
 		// The conversation is only ever checked in the agent's own folder, and only a UUID gets that far.
-		const resumable = resumableAgent(launch.executable, launch.arguments, real);
+		const resumable = resumableAgent(launch.executable, launch.arguments, real, launch.chosen);
 		const recipe = resumable === null ? null : agentById(resumable).resume;
 		let conversation: string | null = null;
 		let args = launch.arguments;
-		if (recipe !== null && resume !== null && conversationExists[recipe.conversations.store](resume)) {
+		if (recipe !== null && resume !== null && folder !== null && conversationExists[recipe.conversations.store](resume, folder)) {
 			args = agentStartArguments(resumable, args, { resume });
 			conversation = resume;
 		} else if (recipe?.fresh) {
@@ -785,7 +810,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			conversation = fresh;
 		}
 		const started = [lookup.path, ...args];
-		return { ok: true, kind: "agent", base: launch.name, argv: started, command: describeCommandLine(started), ...extra, resumable, conversation, missing: resume !== null && conversation !== resume, program };
+		return { ok: true, kind: "agent", base: launch.name, argv: started, command: describeCommandLine(started), ...extra, resumable, conversation, missing: resume !== null && conversation !== resume, program, conversationFolder: folder };
 	}
 
 	/** The file a path leads to with every link followed, or null when that cannot be read. */
@@ -925,6 +950,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		live.resumable = null;
 		live.program = null;
 		live.conversation = null;
+		live.conversationFolder = null;
 		// The note goes after what the agent printed and is kept with it, so drawing the session again shows it too.
 		live.pending += agentEndedNote(live.launchName, endedAgent, live.session.path);
 		flush(live);
@@ -1069,7 +1095,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			session, process: started.child, scrollback: createScrollback(), pending: "", flushTimer: null, undrawn: [], undrawnSize: 0, held: false, leftovers: null, former: null, ended: started.ended,
 			environment: baseEnvironment, cols, rows, launchName: start.base,
 			scanner: createStatusScanner(), records: createStatusRecords(), pasteMode: createPasteModeScanner(), statusChanged: false, probedAt: Number.NEGATIVE_INFINITY, chop: null, prompt: null,
-			agent: agent?.name ?? null, resumable: start.resumable, program: start.program, conversation: start.conversation, startedAt: now(), renamed: savedName !== null, restored,
+			agent: agent?.name ?? null, resumable: start.resumable, program: start.program, conversation: start.conversation, conversationFolder: start.conversationFolder, startedAt: now(), renamed: savedName !== null, restored,
 		};
 		if (chop?.kind === "command") {
 			live.chop = { text: chop.text, timer: null, deadline: Date.now() + chopWaitMilliseconds };
@@ -1210,7 +1236,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			if (session.state.kind !== "running" || (session.kind !== "terminal" && session.kind !== "agent")) return [];
 			return [{
 				id: session.id, worktree: session.worktree, path: session.path, kind: session.kind, agent: live.agent, resumable: live.resumable, program: live.program,
-				conversation: live.conversation, startedAt: live.startedAt, name: live.renamed ? session.name : null, restored: live.restored,
+				conversation: live.conversation, conversationFolder: live.conversationFolder, startedAt: live.startedAt, name: live.renamed ? session.name : null, restored: live.restored,
 			}];
 		}),
 		endedCodex: () => new Map(codexEnded),

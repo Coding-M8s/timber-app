@@ -1,10 +1,11 @@
 import { useEffect, useId, useRef, useState } from "react";
-import type { AgentSetting } from "../../../shared/agent";
+import { type AgentSetting, configFolderProblem } from "../../../shared/agent";
 import type { AgentLocation } from "../../../shared/agent-lookup";
 import { SESSION_NAME_LIMIT } from "../../../shared/terminal";
 import {
-	type AgentDraft, addAgentDraft, agentDraftsOf, agentLookupLine, agentsDraftModel, editAgentDraft, presetsToAdd, removeAgentDraft,
+	AGENT_CHOICES, type AgentDraft, type AgentDraftChange, addAgentDraft, agentDraftsOf, agentLookupLine, agentsDraftModel, editAgentDraft, presetsToAdd, removeAgentDraft,
 } from "../../agent-format";
+import type { AgentId } from "../../../shared/agent-registry";
 import { useAppState, useStore } from "../../store/react";
 import { type SectionSave, SettingsSection, useDraftSection } from "./SettingsSection";
 
@@ -15,7 +16,7 @@ export interface AgentsSectionViewProps {
 	locations: readonly AgentLocation[] | null;
 	save: SectionSave;
 	onAdd: (preset?: AgentSetting) => void;
-	onEdit: (key: string, change: { name?: string; command?: string }) => void;
+	onEdit: (key: string, change: AgentDraftChange) => void;
 	onRemove: (key: string) => void;
 	onSave: () => void;
 }
@@ -65,6 +66,8 @@ export function AgentsSectionView({ drafts, saved, locations, save, onAdd, onEdi
 			<p id={hintId} className="field-hint">
 				The executable first, found on the PATH the app was started with, or a full path. Quotes group words with spaces; nothing else is special.
 				The agent starts in the worktree's folder, and nothing is added to the command.
+				Agent says which agent the command runs, for its mark and for going back to its conversation after a restart; Detect goes by the executable's name.
+				Config folder is where that agent keeps its conversations.
 			</p>
 			{drafts.length === 0 && <p className="dialog-note">No agents. The + menu offers only Terminal.</p>}
 			<ul className="agent-rows" aria-label="Agents">
@@ -72,6 +75,9 @@ export function AgentsSectionView({ drafts, saved, locations, save, onAdd, onEdi
 					const row = model.rows[index]!;
 					const nameId = `${idPrefix}-name-${draft.key}`;
 					const commandId = `${idPrefix}-command-${draft.key}`;
+					const agentId = `${idPrefix}-agent-${draft.key}`;
+					const folderId = `${idPrefix}-folder-${draft.key}`;
+					const folderWrong = row.folder !== null && configFolderProblem(draft.configFolder.trim()) !== null;
 					const label = draft.name.trim() === "" ? `agent ${index + 1}` : draft.name.trim();
 					return (
 						<li key={draft.key} className="agent-row">
@@ -105,6 +111,31 @@ export function AgentsSectionView({ drafts, saved, locations, save, onAdd, onEdi
 								</div>
 								<button type="button" id={removeId(draft.key)} className="text-button agent-remove" aria-label={`Remove ${label}`} onClick={() => remove(draft.key)}>Remove</button>
 							</div>
+							<div className="agent-row-fields">
+								<div className="field agent-which">
+									<label className="field-label" htmlFor={agentId}>Agent</label>
+									<select id={agentId} className="field-input" value={draft.agent} onChange={event => onEdit(draft.key, { agent: event.target.value as AgentId | "" })}>
+										<option value="">{row.detectLabel}</option>
+										{AGENT_CHOICES.map(choice => <option key={choice.id} value={choice.id}>{choice.name}</option>)}
+									</select>
+								</div>
+								{row.folder !== null && (
+									<div className="field agent-folder">
+										<label className="field-label" htmlFor={folderId}>Config folder <span className="mono">{row.folder.variable}</span></label>
+										<input
+											id={folderId}
+											className="field-input mono"
+											type="text"
+											spellCheck={false}
+											autoComplete="off"
+											placeholder={row.folder.placeholder}
+											aria-invalid={folderWrong}
+											value={draft.configFolder}
+											onChange={event => onEdit(draft.key, { configFolder: event.target.value })}
+										/>
+									</div>
+								)}
+							</div>
 							{/* A row just added is not wrong yet: it says what it needs without an alert. */}
 							{row.problem !== null && blank(draft) && <p className="field-hint">Type a name and a command, or remove this row.</p>}
 							{row.problem !== null && !blank(draft) && (
@@ -113,6 +144,7 @@ export function AgentsSectionView({ drafts, saved, locations, save, onAdd, onEdi
 							{row.problem === null && row.example !== null && (
 								<pre className="dialog-command" aria-label={`Command of ${label}`}>{row.example}</pre>
 							)}
+							{row.hint !== null && <p className="field-hint">{row.hint}</p>}
 							{row.problem === null && (() => {
 								const line = agentLookupLine(model.agents[index]!, saved, locations);
 								return line && <p className={line.missing ? "field-error" : "field-hint"}>{line.text}</p>;
