@@ -9,46 +9,47 @@ const labels = (items: { label: string }[]) => items.map(item => item.label);
 describe("repositoryMenuItems", () => {
 	test("a loose repository can be added to each group", () => {
 		const items = repositoryMenuItems({ groups: [personal, work], membership: {} }, "/work/timber");
-		expect(labels(items)).toEqual(["Add to Personal", "Add to Work", "New group...", "Remove from the list"]);
+		expect(labels(items)).toEqual(["Add to Personal", "Add to Work", "New group...", "Icon...", "Remove from the list"]);
 		expect(items.map(item => item.choice)).toEqual([
 			{ kind: "place", group: "g1" },
 			{ kind: "place", group: "g2" },
 			{ kind: "new-group" },
+			{ kind: "icon" },
 			{ kind: "remove" },
 		]);
-		expect(items[3]!.title).toBe(REMOVE_REPOSITORY_HINT);
+		expect(items.at(-1)!.title).toBe(REMOVE_REPOSITORY_HINT);
 		expect(new Set(items.map(item => item.id)).size).toBe(items.length);
 	});
 
 	test("a grouped repository can move to another group, or be taken out", () => {
 		const items = repositoryMenuItems({ groups: [personal, work], membership: { "/work/timber": "g1" } }, "/work/timber");
-		expect(labels(items)).toEqual(["Move to Work", "New group...", "Take out of Personal", "Remove from the list"]);
-		expect(items.map(item => item.choice)).toEqual([{ kind: "place", group: "g2" }, { kind: "new-group" }, { kind: "take-out" }, { kind: "remove" }]);
+		expect(labels(items)).toEqual(["Move to Work", "New group...", "Take out of Personal", "Icon...", "Remove from the list"]);
+		expect(items.map(item => item.choice)).toEqual([{ kind: "place", group: "g2" }, { kind: "new-group" }, { kind: "take-out" }, { kind: "icon" }, { kind: "remove" }]);
 	});
 
 	test("Clean up merged comes first when the sidebar gives it, disabled with its reason when there is nothing to clean up", () => {
 		const cleanUp = { id: "clean-up-merged" as const, label: "Clean up merged", disabled: true, note: "No merged worktrees.", title: "No merged worktrees." };
 		const items = repositoryMenuItems({ groups: [work], membership: {} }, "/work/timber", cleanUp);
-		expect(labels(items)).toEqual(["Clean up merged", "Add to Work", "New group...", "Remove from the list"]);
+		expect(labels(items)).toEqual(["Clean up merged", "Add to Work", "New group...", "Icon...", "Remove from the list"]);
 		expect(items[0]).toEqual({ id: "clean-up-merged", label: "Clean up merged", title: "No merged worktrees.", disabled: true, note: "No merged worktrees.", choice: { kind: "clean-up-merged" } });
 		expect(repositoryMenuItems({ groups: [], membership: {} }, "/work/timber", { ...cleanUp, disabled: false, note: null })[0]!.disabled).toBe(false);
 	});
 
 	test("with no groups, offers a new group and removing", () => {
-		expect(labels(repositoryMenuItems({ groups: [], membership: {} }, "/work/timber"))).toEqual(["New group...", "Remove from the list"]);
+		expect(labels(repositoryMenuItems({ groups: [], membership: {} }, "/work/timber"))).toEqual(["New group...", "Icon...", "Remove from the list"]);
 	});
 
 	test("a membership that names no group counts as loose", () => {
-		expect(labels(repositoryMenuItems({ groups: [work], membership: { "/work/timber": "gone" } }, "/work/timber"))).toEqual(["Add to Work", "New group...", "Remove from the list"]);
+		expect(labels(repositoryMenuItems({ groups: [work], membership: { "/work/timber": "gone" } }, "/work/timber"))).toEqual(["Add to Work", "New group...", "Icon...", "Remove from the list"]);
 	});
 });
 
 describe("groupMenuItems", () => {
 	test("rename, a new subgroup, and delete, which says the repositories stay", () => {
 		const items = groupMenuItems([work], "g2");
-		expect(labels(items)).toEqual(["Rename", "New subgroup...", "Delete group"]);
-		expect(items.map(item => item.choice)).toEqual([{ kind: "rename" }, { kind: "new-subgroup" }, { kind: "delete" }]);
-		expect(items[2]!.title).toBe(DELETE_GROUP_HINT);
+		expect(labels(items)).toEqual(["Rename", "Icon...", "New subgroup...", "Delete group"]);
+		expect(items.map(item => item.choice)).toEqual([{ kind: "rename" }, { kind: "icon" }, { kind: "new-subgroup" }, { kind: "delete" }]);
+		expect(items.at(-1)!.title).toBe(DELETE_GROUP_HINT);
 	});
 
 	// Work holds Client, which holds Deep. Personal and Misc are at the top level, and Client holds a Misc too.
@@ -63,11 +64,11 @@ describe("groupMenuItems", () => {
 
 	test("moves into each other group, named with the groups around it, but not into itself, its subgroups, or where it is", () => {
 		expect(labels(groupMenuItems(nested, "g1"))).toEqual([
-			"Rename", "New subgroup...", "Move down", "Move into Work", "Move into Work \u203a Client", "Move into Work \u203a Client \u203a Deep", "Move into Work \u203a Client \u203a Misc", "Move into Misc", "Delete group",
+			"Rename", "Icon...", "New subgroup...", "Move down", "Move into Work", "Move into Work \u203a Client", "Move into Work \u203a Client \u203a Deep", "Move into Work \u203a Client \u203a Misc", "Move into Misc", "Delete group",
 		]);
-		expect(labels(groupMenuItems(nested, "g2"))).toEqual(["Rename", "New subgroup...", "Move up", "Move down", "Move into Personal", "Move into Misc", "Delete group"]);
+		expect(labels(groupMenuItems(nested, "g2"))).toEqual(["Rename", "Icon...", "New subgroup...", "Move up", "Move down", "Move into Personal", "Move into Misc", "Delete group"]);
 		expect(labels(groupMenuItems(nested, "client"))).toEqual([
-			"Rename", "New subgroup...", "Move into Personal", "Move into Misc", "Move to the top level", "Delete group",
+			"Rename", "Icon...", "New subgroup...", "Move into Personal", "Move into Misc", "Move to the top level", "Delete group",
 		]);
 		expect(groupMenuItems(nested, "g2").filter(item => item.choice.kind === "step").map(item => item.choice)).toEqual([{ kind: "step", step: -1 }, { kind: "step", step: 1 }]);
 		expect(groupMenuItems(nested, "client").find(item => item.id === "move-top")!.choice).toEqual({ kind: "move", parent: null });
@@ -93,6 +94,6 @@ describe("groupMenuItems", () => {
 describe("repositoryMenuItems with nested groups", () => {
 	test("names each group with the groups around it, in the order shown", () => {
 		const nested = { groups: [work, personal, { id: "client", name: "Client", parent: "g2" }], membership: {} };
-		expect(labels(repositoryMenuItems(nested, "/work/timber"))).toEqual(["Add to Work", "Add to Work \u203a Client", "Add to Personal", "New group...", "Remove from the list"]);
+		expect(labels(repositoryMenuItems(nested, "/work/timber"))).toEqual(["Add to Work", "Add to Work \u203a Client", "Add to Personal", "New group...", "Icon...", "Remove from the list"]);
 	});
 });

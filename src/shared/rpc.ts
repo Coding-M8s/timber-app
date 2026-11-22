@@ -17,6 +17,7 @@ import type { SetBaseRequest } from "./timber-base";
 import type { CreatePullRequestRequest, HeadSubjectRequest } from "./timber-pr";
 import type { NewWorktreeRequest, OpenInEditorRequest, OpenWorktreeRequest } from "./model";
 import type { Preferences } from "./preferences";
+import type { IconChoice, IconTarget } from "./sidebar-icons";
 import type { IssueSearchRequest } from "./issue-search";
 import type { IssueListRequest } from "./issue-lists";
 import type { IssueRequest } from "./issues";
@@ -54,6 +55,10 @@ export type AppRPC = {
 			deleteRepositoryGroup: { params: { id: string }; response: Answer<"deleteRepositoryGroup"> };
 			moveRepositoryGroup: { params: { id: string; parent: string | null; before: string | null }; response: Answer<"moveRepositoryGroup"> };
 			placeRepository: { params: { path: string; group: string | null; order: string[] | null }; response: Answer<"placeRepository"> };
+			listSidebarIcons: { params: {}; response: Answer<"listSidebarIcons"> };
+			readRemoteIconSource: { params: { path: string }; response: Answer<"readRemoteIconSource"> };
+			/** Answers only when the file picker closes or the fetch ends, so the caller must not time it out. */
+			setSidebarIcon: { params: { target: IconTarget; choice: IconChoice | null }; response: Answer<"setSidebarIcon"> };
 			loadRepository: { params: { path: string }; response: Answer<"loadRepository"> };
 			listBranches: { params: { repository: string }; response: Answer<"listBranches"> };
 			/** Answers only when Timber and its setup scripts have ended, so the caller must not time it out. */

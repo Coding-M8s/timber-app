@@ -56,6 +56,7 @@ import { type PullRequestControls, createMockPullRequests } from "./mock-pull-re
 import { type BackupControls, createMockBackups } from "./mock-backups";
 import { type ArenaControls, createMockArenas } from "./mock-arenas";
 import { type ThemeFileControls, createMockThemeFiles } from "./mock-theme-files";
+import { type SidebarIconControls, createMockSidebarIcons } from "./mock-sidebar-icons";
 import type { ChopList } from "../../shared/chops";
 import type { WorktreeFolderChange, WorktreeFolderWatch } from "../../shared/worktree-folders";
 import { type ChopsControls, createMockChops } from "./mock-chops";
@@ -329,7 +330,7 @@ export const sampleTimberStatuses = {
 /** The mock engine, plus the controls a test or the browser build uses to act out changes. */
 /** The controls for terminals are in ./mock-terminals.ts. */
 /** The controls for Timber's settings are in ./mock-timber-config.ts, for workflows in ./mock-workflows.ts, for issue trackers in ./mock-issue-trackers.ts, for pull requests in ./mock-pull-requests.ts, for issues in ./mock-issues.ts, for the issues board in ./mock-issue-lists.ts, for backups in ./mock-backups.ts, and for arenas in ./mock-arenas.ts. */
-export interface MockEngine extends Engine, TerminalControls, TimberConfigControls, IssueTrackerControls, WorkflowControls, PullRequestControls, IssueControls, IssueListControls, BackupControls, ArenaControls, ThemeFileControls, ChopsControls, PortControls {
+export interface MockEngine extends Engine, TerminalControls, TimberConfigControls, IssueTrackerControls, WorkflowControls, PullRequestControls, IssueControls, IssueListControls, BackupControls, ArenaControls, ThemeFileControls, ChopsControls, PortControls, SidebarIconControls {
 	/** Replace the data, without telling the interface. */
 	setRepositories(repositories: Repository[]): void;
 	/** Report that a repository changed, as the main process would. */
@@ -645,6 +646,9 @@ export function createMockEngine(
 	const groupedList = (): GroupedList<{ path: string; group?: string }> => ({
 		groups,
 		repositories: current.map(({ path }) => (Object.hasOwn(membership, path) ? { path, group: membership[path]! } : { path })),
+	});
+	const { forgetIcon, ...sidebarIcons } = createMockSidebarIcons({
+		knows: target => (target.kind === "repository" ? current.some(repository => repository.path === target.path) : groups.some(group => group.id === target.id)),
 	});
 	const changeGroups = async (change: (list: GroupedList<{ path: string; group?: string }>) => GroupChange<{ path: string; group?: string }>): Promise<RepositoryGroupsResult> => {
 		const changed = change(groupedList());
@@ -1030,6 +1034,7 @@ export function createMockEngine(
 		...arenas,
 		...timberConfig,
 		...createMockThemeFiles(),
+		...sidebarIcons,
 		...workflows,
 		...createMockIssueTrackers(request => timberConfig.readTimberSettings(request)),
 		...pullRequests,
@@ -1057,6 +1062,7 @@ export function createMockEngine(
 			current = current.filter(repository => repository.path !== path);
 			layout = forgetRepository(layout, path);
 			preferences = { ...preferences, pull: forgetPullRepository(preferences.pull, path) };
+			forgetIcon({ kind: "repository", path });
 			// Its group stays, as it does on disk.
 			delete membership[path];
 			return { outcome: "removed" };
@@ -1077,6 +1083,7 @@ export function createMockEngine(
 		async deleteRepositoryGroup(id) {
 			const result = await changeGroups(list => deleteGroupIn(list, id));
 			layout = forgetGroup(layout, id);
+			if (result.outcome === "saved") forgetIcon({ kind: "group", id });
 			return result;
 		},
 		moveRepositoryGroup: (id, parent, before) => changeGroups(list => moveGroupIn(list, id, parent, before)),

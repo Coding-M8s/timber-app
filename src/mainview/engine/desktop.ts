@@ -77,6 +77,10 @@ export function createDesktopEngine(): Engine {
 		deleteRepositoryGroup: id => rpc.request.deleteRepositoryGroup({ id }),
 		moveRepositoryGroup: (id, parent, before) => rpc.request.moveRepositoryGroup({ id, parent, before }),
 		placeRepository: (path, group, order) => rpc.request.placeRepository({ path, group, order: order ?? null }),
+		listSidebarIcons: () => rpc.request.listSidebarIcons({}),
+		readRemoteIconSource: path => rpc.request.readRemoteIconSource({ path }),
+		// The file picker stays open for as long as the person likes.
+		setSidebarIcon: (target, choice) => rpc.request.setSidebarIcon({ target, choice }, { maxRequestTime: Infinity }),
 		loadRepository: path => rpc.request.loadRepository({ path }),
 		listBranches: repository => rpc.request.listBranches({ repository }),
 		// Setup scripts take as long as they take.

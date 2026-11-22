@@ -26,6 +26,7 @@ import type { BackupDeleteRequest, BackupDeleteResult, BackupList, BackupRestore
 import type { ArenaInspection, ArenaList, ArenaPresetList, NewArenaRequest, NewArenaResult, PickArenaRequest, PickArenaResult } from "../../shared/arenas";
 import type { PullRequestList } from "../../shared/pull-requests";
 import { applyOrder, moveInOrder } from "../../shared/repository-order";
+import { type IconChoice, type IconTarget, type RemoteIconSource, type SidebarIconResult, withIcon } from "../../shared/sidebar-icons";
 import { type RepositoryGroups, emptyGroups, moveGroupAmong, placeInOrder, shownOrder, stepAmongSiblings, stepGroupAmongSiblings } from "../../shared/repository-groups";
 import { type ZoomStep, stepZoom, zoomLabel } from "../../shared/zoom";
 import type { Theme } from "../../shared/theme";
@@ -144,6 +145,14 @@ export interface AppStore {
 	renameGroup(id: string, name: string): Promise<boolean>;
 	/** Delete a group. Its repositories and subgroups move up a level, and stay in the list. */
 	deleteGroup(id: string): Promise<void>;
+	/**
+	 * Set the icon of a repository or a group, or with null remove it (see
+	 * `Engine.setSidebarIcon`). A saved icon shows at once; any other outcome
+	 * is answered for the icon dialog to say, and changes nothing shown.
+	 */
+	setSidebarIcon(target: IconTarget, choice: IconChoice | null): Promise<SidebarIconResult>;
+	/** Where a repository can take its icon from, or null (see `Engine.readRemoteIconSource`). Null when it cannot be read. */
+	readRemoteIconSource(path: string): Promise<RemoteIconSource | null>;
 	/**
 	 * Move a group inside `parent` (null for the top level), before `before`, or at the end there. Shows at once. A
 	 * move that is refused (see `Engine.moveRepositoryGroup`) says why in `notice` and asks nothing of the engine.
@@ -1149,6 +1158,10 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	let savedGroups: RepositoryGroups = emptyGroups();
 	// Group changes asked for that have not answered yet. A list read meanwhile keeps the groups on screen.
 	let groupChanges = 0;
+	// Icon changes asked for that have not answered yet, and how many have answered. A read of the icons asked for
+	// before one answered may be older than it, so it is not shown.
+	let iconChanges = 0;
+	let iconAnswers = 0;
 
 	/** The saved groups, read beside the list. They come from the settings, so this is no second read of a repository. */
 	const readGroups = () => engine.listRepositoryGroups().catch(() => null);
@@ -1156,11 +1169,14 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	const reloadAll = mergeOverlapping<"all">(() => track({ kind: "reload-all" }, async () => {
 		const ticket = ++lastTicket;
 		try {
-			const [listed, groups] = await Promise.all([engine.listRepositories(), readGroups()]);
+			const answersBefore = iconAnswers;
+			const [listed, groups, icons] = await Promise.all([engine.listRepositories(), readGroups(), engine.listSidebarIcons().catch(() => null)]);
 			if (groups && groupChanges === 0) {
 				savedGroups = groups;
 				update({ repositoryGroups: groups });
 			}
+			// They come from the settings too, unless an icon was set while they were read: the store has that one already.
+			if (icons && iconChanges === 0 && iconAnswers === answersBefore) update({ sidebarIcons: icons });
 			// A repository that was reloaded on its own after this list was asked for keeps that newer data.
 			const read = listed.map(repository => {
 				const current = state.repositories.find(candidate => candidate.path === repository.path);
@@ -2285,7 +2301,13 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 						// The engine forgot the repository's collapsed group and dismissed setup prompt along with it.
 						if (savedLayout) savedLayout = forgetRepository(savedLayout, path);
 						// The engine dropped its "Skip pull confirmation" too, so a Save of the Pull section cannot write it back.
-						update({ notice: null, layout: forgetRepository(state.layout, path), preferences: { ...state.preferences, pull: forgetPullRepository(state.preferences.pull, path) } });
+						update({
+							notice: null,
+							layout: forgetRepository(state.layout, path),
+							preferences: { ...state.preferences, pull: forgetPullRepository(state.preferences.pull, path) },
+							// The engine dropped its icon in the same save.
+							sidebarIcons: withIcon(state.sidebarIcons, { kind: "repository", path }, null),
+						});
 						await reloadAll("all");
 						showToast(describeRemoved(name ?? folderName(path)));
 						return;
@@ -2460,7 +2482,24 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			if (savedLayout) savedLayout = forgetGroup(savedLayout, id);
 			const layout = forgetGroup(state.layout, id);
 			if (layout !== state.layout) update({ layout });
+			// And its icon.
+			update({ sidebarIcons: withIcon(state.sidebarIcons, { kind: "group", id }, null) });
 		}).then(() => {});
+	}
+
+	async function setSidebarIcon(target: IconTarget, choice: IconChoice | null): Promise<SidebarIconResult> {
+		let result: SidebarIconResult;
+		iconChanges++;
+		try {
+			result = await engine.setSidebarIcon(target, choice);
+		} catch (error) {
+			return { outcome: "failed", message: messageOf(error) };
+		} finally {
+			iconChanges--;
+			iconAnswers++;
+		}
+		if (result.outcome === "saved") update({ sidebarIcons: result.icons });
+		return result;
 	}
 
 	function select(worktreeId: string): void {
@@ -3445,6 +3484,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		createGroup,
 		renameGroup: (id, name) => changeGroups(() => engine.renameRepositoryGroup(id, name), null),
 		deleteGroup,
+		setSidebarIcon,
+		readRemoteIconSource: path => engine.readRemoteIconSource(path).catch(() => null),
 		moveGroup,
 		stepGroup,
 		placeRepository,

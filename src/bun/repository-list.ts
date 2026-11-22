@@ -3,6 +3,7 @@ import type { AddRepositoryResult, RemoveRepositoryResult, ReorderRepositoriesRe
 import { applyOrder, sameOrder } from "../shared/repository-order";
 import { forgetGroup, forgetRepository } from "../shared/layout";
 import { forgetPullRepository } from "../shared/pull-confirm-setting";
+import { withIcon } from "../shared/sidebar-icons";
 import {
 	type GroupChange,
 	type GroupedList,
@@ -259,8 +260,12 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 
 		renameGroup: (id, name) => changeGroups(list => renameGroupIn(list, id, name)),
 
-		// Whether the group was folded is remembered by its id, so that goes in the same save.
-		deleteGroup: id => changeGroups(list => deleteGroupIn(list, id), next => next.layout ? { ...next, layout: forgetGroup(next.layout, id) } : next),
+		// Whether the group was folded, and its icon, are remembered by its id, so they go in the same save.
+		deleteGroup: id => changeGroups(list => deleteGroupIn(list, id), next => ({
+			...next,
+			...(next.layout ? { layout: forgetGroup(next.layout, id) } : {}),
+			...(next.icons ? { icons: withIcon(next.icons, { kind: "group", id }, null) } : {}),
+		})),
 
 		moveGroup: (id, parent, before) => changeGroups(list => moveGroupIn(list, id, parent, before)),
 
@@ -272,10 +277,11 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 				const current = await settings();
 				const repositories = current.repositories.filter(entry => entry.path !== path);
 				if (repositories.length === current.repositories.length) return { outcome: "removed" };
-				// A collapsed group, a dismissed setup prompt, the board's list, and its "Skip pull confirmation" are remembered by this path, so they go with the entry.
+				// A collapsed group, a dismissed setup prompt, the board's list, its "Skip pull confirmation", and its icon are remembered by this path, so they go with the entry.
 				const next: Settings = { ...current, repositories };
 				if (current.layout) next.layout = forgetRepository(current.layout, path);
 				if (current.preferences) next.preferences = { ...current.preferences, pull: forgetPullRepository(current.preferences.pull, path) };
+				if (current.icons) next.icons = withIcon(current.icons, { kind: "repository", path }, null);
 				try {
 					await save(next);
 				} catch (error) {

@@ -15,10 +15,11 @@ describe("a repository's menu", () => {
 
 	test("is a menu named after the repository, with every entry a menu item", () => {
 		expect(markup).toContain('role="menu" aria-label="Actions for timber"');
-		expect(markup.match(/role="menuitem"/g)?.length).toBe(4);
+		expect(markup.match(/role="menuitem"/g)?.length).toBe(5);
 		expect(markup).toContain('<span class="session-menu-label">Move to Work</span>');
 		expect(markup).toContain('<span class="session-menu-label">New group...</span>');
 		expect(markup).toContain('<span class="session-menu-label">Take out of Personal</span>');
+		expect(markup).toContain('<span class="session-menu-label">Icon...</span>');
 		expect(markup).toContain(`title="${REMOVE_REPOSITORY_HINT}"><span class="session-menu-label">Remove from the list</span>`);
 		expect(markup).not.toContain("aria-disabled");
 	});

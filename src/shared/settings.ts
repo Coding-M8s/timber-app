@@ -3,6 +3,7 @@ import { type ForcePushMarks, readForcePushMarks } from "./git-fetch";
 import { DEFAULT_CHOPS_WIDTH, type Layout, readLayout } from "./layout";
 import { type RepositoryGroup, readGroups } from "./repository-groups";
 import { type Preferences, readPreferences, writePreferences } from "./preferences";
+import { type SidebarIcons, hasIcons, readIcons, writeIcons } from "./sidebar-icons";
 import { type SavedWindow, readSavedWindow } from "./window-frame";
 
 /**
@@ -57,6 +58,12 @@ export interface Settings {
 	 * Absent when there are none.
 	 */
 	chopApprovals?: ChopApprovals;
+	/**
+	 * The icons of repositories, by primary checkout, and of groups, by id,
+	 * each a bundled icon or an image kept here in base64. Absent when there
+	 * are none, and in files written before icons existed.
+	 */
+	icons?: SidebarIcons;
 }
 
 export const SETTINGS_VERSION = 1;
@@ -81,11 +88,12 @@ function readRepository(value: unknown): SavedRepository | null {
  * this version, or holding an entry that is not a saved repository. A damaged
  * file is never half-read, so a later save cannot quietly drop part of it.
  *
- * The groups, the layout, the preferences, the force-push marks, the window, and the chop approvals are the exception,
+ * The groups, the layout, the preferences, the force-push marks, the window, the chop approvals, and the icons are the exception,
  * because they are only a convenience: a part that cannot be read falls back to the defaults (see
  * `readGroups`, `readLayout`, `readPreferences`, and `readSavedWindow`) and never costs the
  * repository list. A repository's group that names no readable group is dropped, and the repository kept. A group's
- * `parent` that is unknown, loops, or nests too deep is dropped, and the group goes to the top level.
+ * `parent` that is unknown, loops, or nests too deep is dropped, and the group goes to the top level. An icon that cannot be
+ * read, or whose repository or group is not listed, is dropped on its own (see `readIcons`).
  */
 export function parseSettings(text: string): Settings | null {
 	let value: unknown;
@@ -123,6 +131,10 @@ export function parseSettings(text: string): Settings | null {
 	if (window) settings.window = window;
 	const chopApprovals = readChopApprovals(value.chopApprovals);
 	if (Object.keys(chopApprovals).length > 0) settings.chopApprovals = chopApprovals;
+	if (value.icons !== undefined) {
+		const icons = readIcons(value.icons, repositories.map(({ path }) => path), groups.map(({ id }) => id));
+		if (hasIcons(icons)) settings.icons = icons;
+	}
 	return settings;
 }
 
@@ -148,6 +160,8 @@ export function serializeSettings(settings: Settings): string {
 	const forcePushes = settings.forcePushes && Object.keys(settings.forcePushes).length > 0 ? readForcePushMarks(settings.forcePushes) : null;
 	const window = settings.window && readSavedWindow(settings.window);
 	const chopApprovals = settings.chopApprovals ? readChopApprovals(settings.chopApprovals) : {};
+	// Written only once an icon is set, so a file without icons stays as it was.
+	const icons = hasIcons(settings.icons) ? writeIcons(settings.icons) : null;
 	return `${JSON.stringify({
 		version: SETTINGS_VERSION,
 		repositories,
@@ -157,5 +171,6 @@ export function serializeSettings(settings: Settings): string {
 		...(forcePushes ? { forcePushes } : {}),
 		...(window ? { window: { frame: { x: window.frame.x, y: window.frame.y, width: window.frame.width, height: window.frame.height }, maximized: window.maximized } } : {}),
 		...(Object.keys(chopApprovals).length > 0 ? { chopApprovals } : {}),
+		...(icons ? { icons } : {}),
 	}, null, "\t")}\n`;
 }

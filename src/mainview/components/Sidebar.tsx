@@ -17,6 +17,8 @@ import { RepositorySection } from "./RepositorySection";
 import { MoreIcon } from "./MoreIcon";
 import { RepositoryMenu } from "./RepositoryMenu";
 import { RepositoryGroupName } from "./RepositoryGroupName";
+import { SidebarIconView } from "./SidebarIcon";
+import { groupIcon } from "../../shared/sidebar-icons";
 
 /** The name field in the sidebar: for a new group, maybe with a repository to put in it or a group to make it inside, or to rename a group. */
 type Naming = { kind: "new"; repository?: string; parent?: string } | { kind: "rename"; id: string };
@@ -423,6 +425,7 @@ export function Sidebar() {
 							<svg className={open ? "chevron open" : "chevron"} aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
 								<path d="M3.5 2 6.5 5 3.5 8" />
 							</svg>
+							<SidebarIconView icon={groupIcon(state.sidebarIcons, group.id)} />
 							<span className="repository-group-name">{group.name}</span>
 							{summary && (
 								// Its words are the button's description too.
@@ -458,6 +461,9 @@ export function Sidebar() {
 								switch (choice.kind) {
 									case "rename":
 										startNaming({ kind: "rename", id: group.id });
+										return;
+									case "icon":
+										store.openDialog({ kind: "sidebar-icon", target: { kind: "group", id: group.id } });
 										return;
 									case "new-subgroup":
 										// The field goes at the end of the group, so a folded one opens.

@@ -6,6 +6,8 @@ import {
 import { runPaletteEntry } from "../palette-run";
 import { waitingShortcut } from "../waiting";
 import { useAppState, useStore } from "../store/react";
+import { repositoryIcon } from "../../shared/sidebar-icons";
+import { SidebarIconView } from "./SidebarIcon";
 import { StatusGlyph } from "./StatusGlyph";
 import { estimateTerminalSize } from "./TerminalPanel";
 
@@ -143,6 +145,7 @@ export function CommandPalette() {
 						aria-label={`Searching ${context.repositoryName} only. Search every repository`}
 						onClick={widen}
 					>
+						<SidebarIconView icon={repositoryIcon(state.sidebarIcons, context.repository)} className="palette-repository-icon" size={12} />
 						<span>{context.repositoryName}</span>
 						<span className="palette-scope-slash" aria-hidden="true">/</span>
 						<span className="palette-scope-worktree">{context.worktreeName}</span>
@@ -206,7 +209,12 @@ export function CommandPalette() {
 												{entry.sessions.map(mark => <StatusGlyph key={mark.id} status={mark.status} seen={mark.seen} />)}
 											</span>
 										)}
-										{target !== null && <span className="palette-repository">{target}</span>}
+										{target !== null && (
+											<span className="palette-repository">
+												{entry.repository !== null && <SidebarIconView icon={repositoryIcon(state.sidebarIcons, entry.repository)} className="palette-repository-icon" size={12} />}
+												{target}
+											</span>
+										)}
 										{entry.current && <span className="palette-detail">Current</span>}
 										{entry.detail !== "" && <span className="palette-detail">{entry.detail}</span>}
 										{entry.action.kind === "next-waiting" && <kbd className="palette-shortcut">{waitingShortcut(mac)}</kbd>}

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createMockSidebarIcons } from "../src/mainview/engine/mock-sidebar-icons";
 import { createMockThemeFiles } from "../src/mainview/engine/mock-theme-files";
 import { createMockTerminals } from "../src/mainview/engine/mock-terminals";
 import { createMockTimberConfig } from "../src/mainview/engine/mock-timber-config";
@@ -79,6 +80,8 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 	const engine: Engine = {
 		// Theme files as the mock acts them out. Their own tests are in theme-files.test.ts.
 		...createMockThemeFiles(),
+		// Icons as the mock acts them out. Their own tests are in sidebar-icons-ui.test.tsx.
+		...createMockSidebarIcons({ knows: () => true }),
 		// Terminals as the mock acts them out. Their own tests are in terminal-store.test.ts.
 		...createMockTerminals(() => null),
 		onShowSession: () => () => {},

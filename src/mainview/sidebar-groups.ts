@@ -196,7 +196,8 @@ export function groupDropMark(groups: readonly RepositoryGroup[], dragged: strin
 
 /**
  * Do what an entry of a repository's menu says. New group... only asks for
- * the name field, with the repository to put in the group it makes.
+ * the name field, with the repository to put in the group it makes, and
+ * Icon... opens the icon dialog.
  */
 export function chooseFromRepositoryMenu(store: AppStore, repository: string, choice: RepositoryMenuChoice, startNewGroup: (repository: string) => void): void {
 	switch (choice.kind) {
@@ -211,6 +212,9 @@ export function chooseFromRepositoryMenu(store: AppStore, repository: string, ch
 			return;
 		case "new-group":
 			startNewGroup(repository);
+			return;
+		case "icon":
+			store.openDialog({ kind: "sidebar-icon", target: { kind: "repository", path: repository } });
 			return;
 		case "remove":
 			void store.removeRepository(repository);

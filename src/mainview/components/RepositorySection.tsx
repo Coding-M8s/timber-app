@@ -18,6 +18,8 @@ import { OpenInEditorIconButton } from "./OpenInEditor";
 import { wantTerminalFocus } from "../terminal-focus";
 import { BackupsSection } from "./BackupsSection";
 import { WorktreeRow } from "./WorktreeRow";
+import { SidebarIconView } from "./SidebarIcon";
+import { repositoryIcon } from "../../shared/sidebar-icons";
 import { IssuesRow } from "./IssuesBoard";
 import { WORKTREE_MENU_SHORTCUTS, worktreeMenuChoice } from "../worktree-menu-format";
 import { ARENA_BETA_NOTE, BETA, describeArenaHeader, groupArenaRows } from "../arena-format";
@@ -104,6 +106,7 @@ export function RepositorySection({ state, store, repository, matches, open, que
 					<svg className={open ? "chevron open" : "chevron"} aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
 						<path d="M3.5 2 6.5 5 3.5 8" />
 					</svg>
+					<SidebarIconView icon={repositoryIcon(state.sidebarIcons, repository.path)} />
 					<span className="group-name">{repository.name}</span>
 					{summary && (
 						// Its words are the button's description too.

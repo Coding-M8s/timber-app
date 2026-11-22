@@ -45,6 +45,8 @@ export async function createEngine(): Promise<Engine> {
 	// For the file viewer: timberMock.setWorktreeFile(worktree, "notes.md", "text"), { kind: "bytes", bytes: [0] }, or null for a missing file.
 	// Changing that file while it is edited acts out an agent writing it, so Save says it changed. timberMock.delayFileSaves(2000) slows saves.
 	// For themes: timberMock.setThemeImport(text) gives Import a file, and timberMock.exportedThemes() lists what Export wrote.
+	// For icons: timberMock.setIconFile(bytes) gives Choose image file its bytes (else the browser's picker opens), and
+	// timberMock.setRemoteIcon(path, null) acts out a repository whose origin is not on GitHub or Bitbucket.
 	// For agent sessions: timberMock.missingExecutables(["codex"]) acts out an agent that is not on the PATH.
 	// For timber new typed in a terminal: timberMock.typeTimberNew("/work/timber", "feat/x", true) hands a new worktree to the app.
 	// For sessions after a restart: timberMock.saveSessionsNow() saves the open sessions as quitting does, a reload opens
