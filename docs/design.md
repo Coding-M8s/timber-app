@@ -1208,3 +1208,10 @@ the system's light setting and one for its dark setting. A theme shows as
 soon as it is chosen, terminals included, and Save keeps it. The colors live
 in `src/shared/builtin-themes.ts`; `src/mainview/styles.css` has none of its
 own.
+
+A button's label stays on one line inside its outline at every window
+width. What sits beside it, such as a command, a hint, or a field, gives
+way, or the row wraps and the button takes a line of its own. In Settings,
+a label that changes while it runs, such as "Test connection" to
+"Testing", keeps the button as wide as the wider of the two, so the row
+does not move.

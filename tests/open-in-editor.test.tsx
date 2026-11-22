@@ -250,14 +250,14 @@ describe("the Editor section of Settings", () => {
 		expect(markup).toContain(`<input type="radio" name="editor-choice" checked="" value="vscode"/>`);
 		expect(markup).toContain('value="code"');
 		expect(markup).toContain(`<pre class="dialog-command" aria-label="Example command">code &#x27;${EXAMPLE_WORKTREE}&#x27;</pre>`);
-		expect(markup).toContain(`<button type="submit" class="button primary" aria-disabled="false">Save</button>`);
+		expect(markup).toContain(`<button type="submit" class="button primary" data-reserve="Saving" aria-disabled="false">Save</button>`);
 	});
 
 	test("an unreadable command says why, and Save is disabled", () => {
 		const markup = view({ draft: editEditor(none, { command: `code "x` }) });
 		expect(markup).toContain("This command cannot be read");
 		expect(markup).toContain('aria-invalid="true"');
-		expect(markup).toContain(`<button type="submit" class="button primary" aria-disabled="true">Save</button>`);
+		expect(markup).toContain(`<button type="submit" class="button primary" data-reserve="Saving" aria-disabled="true">Save</button>`);
 	});
 
 	test("draws the hint and the warning", () => {

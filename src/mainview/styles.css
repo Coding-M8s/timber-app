@@ -1675,6 +1675,7 @@ pre:focus-visible {
 }
 
 .button {
+	flex-shrink: 0;
 	height: 30px;
 	margin-top: 6px;
 	padding: 0 16px;
@@ -1682,6 +1683,17 @@ pre:focus-visible {
 	border-radius: 7px;
 	background: var(--fill-selected);
 	font-weight: 500;
+	/* One line always: the 30px box holds no more. What sits beside a button gives way instead, or the row wraps. */
+	white-space: nowrap;
+}
+
+/* A label that changes while it runs ("Testing", "Saving") keeps the button as wide as the wider of the two, so the row does not jump. */
+.button[data-reserve]::after {
+	content: attr(data-reserve);
+	display: block;
+	height: 0;
+	overflow: hidden;
+	visibility: hidden;
 }
 
 .button:hover {
@@ -1901,6 +1913,7 @@ pre:focus-visible {
 
 .dialog-buttons {
 	display: flex;
+	flex-wrap: wrap;
 	justify-content: flex-end;
 	gap: 8px;
 }
@@ -2824,6 +2837,7 @@ pre:focus-visible {
 
 .settings-section-foot {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
 	justify-content: flex-end;
 	gap: 10px;
@@ -2925,6 +2939,7 @@ pre:focus-visible {
 
 .uninstall-buttons {
 	display: flex;
+	flex-wrap: wrap;
 	justify-content: flex-end;
 	gap: 8px;
 }
@@ -5200,6 +5215,7 @@ pre:focus-visible {
 
 .chop-add {
 	display: flex;
+	flex-wrap: wrap;
 	gap: 8px;
 }
 
@@ -5214,6 +5230,7 @@ pre:focus-visible {
 
 .chops-repository-head {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
 	justify-content: space-between;
 	gap: 8px;
@@ -6271,6 +6288,7 @@ pre:focus-visible {
 
 .restart-prompt-buttons {
 	display: flex;
+	flex-wrap: wrap;
 	justify-content: flex-end;
 	gap: 8px;
 }

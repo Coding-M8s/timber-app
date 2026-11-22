@@ -143,7 +143,7 @@ export function SettingsSection({ title, description, save, canSave, onSave, sec
 				<p className="settings-section-status" role="status">{save.state === "saved" ? "Saved" : ""}</p>
 				{secondary}
 				{/* Marked, not disabled, so a keyboard user who just saved keeps focus here. */}
-				<button ref={saveButton} type="submit" className="button primary" aria-disabled={blocked}>
+				<button ref={saveButton} type="submit" className="button primary" data-reserve="Saving" aria-disabled={blocked}>
 					{saving ? "Saving" : "Save"}
 				</button>
 			</div>

@@ -338,7 +338,7 @@ function ConnectionTest({ integration, scope, outcome, onCheck, busy }: { integr
 		<div className="connection-test">
 			<div className="connection-test-row">
 				<pre className="dialog-command" aria-label={`${INTEGRATION_LABELS[integration]} check command`}>{describeTimberCommand(shownCheckArguments(integration, scope))}</pre>
-				<button type="button" className="button quiet" disabled={checking || busy} onClick={onCheck}>{checking ? "Testing" : "Test connection"}</button>
+				<button type="button" className="button quiet" data-reserve="Test connection" disabled={checking || busy} onClick={onCheck}>{checking ? "Testing" : "Test connection"}</button>
 			</div>
 			{outcome?.state === "done" && outcome.result.outcome === "checked" && (
 				<p className={outcome.result.check.ok ? "connection-result ok" : "connection-result"} role="status">{describeCheck(outcome.result.check)}</p>
@@ -536,7 +536,7 @@ export function TimberGroupForm({ group, scope, outcome, canSave, blocked, editT
 			{blocked !== null && <p id={blockedId} className="dialog-note">{blocked}</p>}
 			<div className="settings-section-foot">
 				<p className="settings-section-status" role="status">{outcome.state === "saved" ? "Saved" : ""}</p>
-				<button type="submit" className="button primary" aria-disabled={saving || !canSave || blocked !== null} aria-describedby={blocked !== null ? blockedId : undefined}>
+				<button type="submit" className="button primary" data-reserve="Saving" aria-disabled={saving || !canSave || blocked !== null} aria-describedby={blocked !== null ? blockedId : undefined}>
 					{saving ? "Saving" : "Save"}
 				</button>
 			</div>
@@ -593,7 +593,7 @@ export function TimberScopeSettings({ scope, repository, focusGroup = null }: {
 			<>
 				<TimberFailureDetails title="Could not read these settings" failure={result.failure} />
 				<p className="dialog-note">Nothing can be changed here until Timber can read them. A file Timber cannot read is fixed in an editor.</p>
-				<div><button type="button" className="button quiet" disabled={read.reading} onClick={() => void readAgain()}>{read.reading ? "Reading" : "Read again"}</button></div>
+				<div><button type="button" className="button quiet" data-reserve="Read again" disabled={read.reading} onClick={() => void readAgain()}>{read.reading ? "Reading" : "Read again"}</button></div>
 			</>
 		);
 	}
@@ -659,7 +659,7 @@ export function TimberScopeSettings({ scope, repository, focusGroup = null }: {
 		<>
 			<div className="timber-head">
 				<FileNote settings={settings} />
-				<button type="button" className="button quiet" disabled={read.reading || anySaving} onClick={() => void readAgain()}>{read.reading ? "Reading" : "Read again"}</button>
+				<button type="button" className="button quiet" data-reserve="Read again" disabled={read.reading || anySaving} onClick={() => void readAgain()}>{read.reading ? "Reading" : "Read again"}</button>
 			</div>
 			{settings.tracked && (
 				<div className="sidebar-error info" role="status">

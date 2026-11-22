@@ -100,7 +100,7 @@ describe("the Uninstall part of About", () => {
 		expect(markup).toContain("/home/sam/.config/timber-app stays, so another install finds the same repositories.");
 		// Focus starts on the button that changes nothing.
 		expect(markup).toContain('<button type="button" class="button quiet" autofocus="">Cancel</button>');
-		expect(markup).toContain('<button type="button" class="button danger">Uninstall and quit</button>');
+		expect(markup).toContain('<button type="button" class="button danger" data-reserve="Uninstall and quit">Uninstall and quit</button>');
 		expect(markup).not.toContain("will be ended");
 	});
 
@@ -119,7 +119,7 @@ describe("the Uninstall part of About", () => {
 		const markup = render({ confirming: true, run: { state: "running" } });
 		expect(markup).toContain('aria-busy="true"');
 		expect(markup).toContain('<button type="button" class="button quiet" autofocus="" disabled="">Cancel</button>');
-		expect(markup).toContain('<button type="button" class="button danger" disabled="">Uninstalling</button>');
+		expect(markup).toContain('<button type="button" class="button danger" data-reserve="Uninstall and quit" disabled="">Uninstalling</button>');
 		expect(markup).toContain('<input type="checkbox" disabled=""/>');
 	});
 
@@ -128,7 +128,7 @@ describe("the Uninstall part of About", () => {
 		expect(markup).toContain('role="alert"');
 		expect(markup).toContain("Could not uninstall");
 		expect(markup).toContain("The uninstaller ended with exit code 1: error: InvalidUninstallManifest");
-		expect(markup).toContain('<button type="button" class="button danger">Uninstall and quit</button>');
+		expect(markup).toContain('<button type="button" class="button danger" data-reserve="Uninstall and quit">Uninstall and quit</button>');
 	});
 
 	test("once the app is removed it says so and offers nothing more", () => {
