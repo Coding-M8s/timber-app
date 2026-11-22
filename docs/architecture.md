@@ -729,10 +729,12 @@ Nothing that depends on Timber is offered until a usable one is found.
   the window (`timberChanged`), with no restart.
 - The app requires the newest Timber release (see
   [the newest Timber release is required](#the-newest-timber-release-is-required)),
-  and never less than 0.1.4, the first release with the machine interface,
+  and never less than 0.2.0, the first release with the machine interface,
   `__app-config`, one-off workflows, `__app-pr` with each pull request's
-  reviewers, and Jira and Linear keys in any case (0.1.1 had only the first;
-  0.1.2 had no `__app-pr`; 0.1.3 read only uppercase keys). The
+  reviewers, Jira and Linear keys in any case, and `new --branch`,
+  `--assign`, and `--reassign`, which starting work on an issue runs (0.1.1
+  had only the first; 0.1.2 had no `__app-pr`; 0.1.3 read only uppercase
+  keys; 0.1.4 had no `--branch` or `--assign`). The
   number and the comparison live in `src/shared/timber-version.ts`. A
   pre-release sorts before its release.
 - The `Engine` contract reports one of three states: ready (path and version),
