@@ -21,6 +21,17 @@ const ACTIVE = `(() => {
 	return active.getAttribute("aria-label") ?? active.textContent.trim();
 })()`;
 
+/** The groups as drawn, nested: `Name[members](subgroups)`, top-level ones joined by " | ". */
+const NESTED = `(() => {
+	const draw = section => {
+		const members = section.querySelector(":scope > .repository-group-members");
+		const repositories = members ? [...members.querySelectorAll(":scope > section.group .group-name")].map(name => name.textContent) : [];
+		const groups = members ? [...members.querySelectorAll(":scope > section.repository-group:not(.pending)")].map(draw) : [];
+		return section.querySelector(".repository-group-name").textContent + "[" + repositories.join(",") + "]" + (groups.length > 0 ? "(" + groups.join(",") + ")" : "");
+	};
+	return [...document.querySelectorAll(".groups > section.repository-group:not(.pending)")].map(draw).join(" | ");
+})()`;
+
 const MENU_OPEN = `document.querySelector('[role="menu"]') !== null`;
 const FIELD = `document.querySelector(".repository-group-name-input")`;
 const PROBLEM = `document.querySelector(".repository-group-name-problem")?.textContent ?? null`;
@@ -270,5 +281,91 @@ describe.skipIf(browserPath === null || process.platform === "win32")("repositor
 		await page.press("ArrowUp", "alt");
 		await Bun.sleep(100);
 		expect(await tree()).toBe("G Work:timber,api-server");
+	}, 30_000);
+
+	/** Choose an entry of a group's menu by its words, from its More button. */
+	async function chooseFromGroupMenu(group: string, entry: string) {
+		await page.click(more(`group ${group}`));
+		await page.until(MENU_OPEN, "the group's menu opened");
+		await page.until(`${ACTIVE} === "Rename"`, "the first entry took the keyboard");
+		for (let step = 0; step < 12 && await active() !== entry; step++) await page.press("ArrowDown");
+		expect(await active()).toBe(entry);
+		await page.press("Enter");
+		await page.until(`!(${MENU_OPEN})`, "the menu closed");
+	}
+
+	test("a subgroup is made from a group's menu, moved out to the top level, and moved back in", async () => {
+		await makeGroup("Work");
+		await chooseFromGroupMenu("Work", "New subgroup...");
+		await page.until(`${FIELD} === document.activeElement`, "the name field took the keyboard");
+		expect(await active()).toBe("Name of the new group in Work");
+		await page.type("Client");
+		await page.press("Enter");
+		await page.until(`${ACTIVE} === "group header Client"`, "the new subgroup's header took the keyboard");
+		expect(await page.evaluate<string>(NESTED)).toBe("Work[](Client[])");
+
+		await chooseFromGroupMenu("Client", "Move to the top level");
+		await page.until(`${NESTED} === "Work[] | Client[]"`, "Client went to the top level");
+		await page.until(`${ACTIVE} === "group header Client"`, "its header kept the keyboard");
+
+		await chooseFromGroupMenu("Client", "Move into Work");
+		await page.until(`${NESTED} === "Work[](Client[])"`, "Client went back into Work");
+	}, 30_000);
+
+	test("a group dragged onto a header goes inside it, between groups it is reordered, and into its own subgroup it is refused", async () => {
+		await makeGroup("Work");
+		await makeGroup("Personal");
+		await makeGroup("Home");
+		// Home onto the middle of Work's header: inside Work.
+		await page.dragTo(await page.middle(groupHeader("Home")), await page.middle(groupHeader("Work")));
+		expect(await page.evaluate<boolean>(`document.querySelector('section[aria-label="Group Work"]').classList.contains("drop-into")`)).toBe(true);
+		await page.release();
+		await page.until(`${NESTED} === "Work[](Home[]) | Personal[]"`, "Home went inside Work");
+
+		// Personal just above Home's header: beside Home, inside Work.
+		const home = await page.middle(groupHeader("Home"));
+		await page.dragTo(await page.middle(groupHeader("Personal")), { x: home.x, y: home.top + 1 });
+		await page.release();
+		await page.until(`${NESTED} === "Work[](Personal[],Home[])"`, "Personal went before Home, inside Work");
+
+		// Work onto its own subgroup's header: refused, said, and nothing moves.
+		await page.dragTo(await page.middle(groupHeader("Work")), await page.middle(groupHeader("Home")));
+		expect(await page.evaluate<boolean>(`document.querySelector('section[aria-label="Group Home"]').classList.contains("drop-refused")`)).toBe(true);
+		await page.release();
+		await page.until(`document.querySelector(".sidebar-error")?.textContent.includes("A group can't go inside itself or one of its own subgroups.") === true`, "the refusal was said");
+		expect(await page.evaluate<string>(NESTED)).toBe("Work[](Personal[],Home[])");
+
+		// Home dragged below every header: the end of the top level. The drag starts within the header, so it holds the pointer.
+		const last = await page.middle(groupHeader("Home"));
+		await page.dragTo(last, { x: last.x, y: last.y + 8 });
+		await page.moveTo({ x: last.x, y: last.bottom + 200 });
+		await page.release();
+		await page.until(`${NESTED} === "Work[](Personal[]) | Home[]"`, "Home went to the end of the top level");
+	}, 30_000);
+
+	test("the keyboard reaches and folds a subgroup, and Alt+Down moves it among its siblings", async () => {
+		await makeGroup("Work");
+		for (const name of ["Client", "Other"]) {
+			await chooseFromGroupMenu("Work", "New subgroup...");
+			await page.until(`${FIELD} === document.activeElement`, "the name field took the keyboard");
+			await page.type(name);
+			await page.press("Enter");
+			await page.until(`${ACTIVE} === ${JSON.stringify(`group header ${name}`)}`, "the new subgroup's header took the keyboard");
+		}
+		await page.evaluate(`document.querySelector(${JSON.stringify(groupHeader("Work"))}).focus()`);
+		for (let step = 0; step < 6 && await active() !== "group header Client"; step++) await page.press("Tab");
+		expect(await active()).toBe("group header Client");
+		await page.press("Enter");
+		await page.until(`${expanded(groupHeader("Client"))} === "false"`, "Enter folded the subgroup");
+		expect(await page.evaluate<string>(expanded(groupHeader("Work")))).toBe("true");
+
+		await page.press("ArrowDown", "alt");
+		await page.until(`${NESTED} === "Work[](Other[],Client[])"`, "Alt+Down moved Client below Other");
+		await page.until(`${ACTIVE} === "group header Client"`, "the moved header kept the keyboard");
+		// Folding Work hides both; opening it again shows Client still folded.
+		await page.click(groupHeader("Work"));
+		await page.until(`document.querySelector(${JSON.stringify(groupHeader("Client"))}) === null`, "folding Work hid its subgroups");
+		await page.click(groupHeader("Work"));
+		await page.until(`${expanded(groupHeader("Client"))} === "false"`, "Client stayed folded on its own");
 	}, 30_000);
 });

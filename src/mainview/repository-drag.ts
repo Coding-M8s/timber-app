@@ -12,15 +12,33 @@ export const MOVE_REPOSITORY_SHORTCUTS = "Alt+ArrowUp Alt+ArrowDown";
 /** The sentence a repository header's tooltip ends with. */
 export const MOVE_REPOSITORY_HINT = "Drag to reorder, or press Alt+Up or Alt+Down.";
 
+/** A group header row drawn, top to bottom as shown, while a group is dragged. `expanded` is whether anything shows under it. */
+export interface GroupDropSlot {
+	id: string;
+	top: number;
+	bottom: number;
+	expanded: boolean;
+}
+
+/** Where a dragged group would land, by the header it is over: before it, inside it, after it, or at the end of the top level. */
+export type GroupDropPlace = { kind: "before" | "into" | "after"; id: string } | { kind: "end" };
+
 /**
- * Where a dragged group lands: its index among the other groups, counted
- * without it. `middles` are the vertical middles of those other groups, top
- * to bottom, and `y` is where the pointer is.
+ * Where a dragged group would land for a pointer at `y`. Over the top quarter
+ * of a header, or above it and below the header before, it lands before that
+ * group, beside it. Over the middle of a header it goes inside that group,
+ * at the end of its subgroups. Over the bottom quarter it lands after the
+ * group, beside it, when nothing shows under that header; otherwise that is
+ * inside it too. Below every header it lands at the end of the top level.
  */
-export function dropIndex(middles: readonly number[], y: number): number {
-	let index = 0;
-	while (index < middles.length && y > middles[index]!) index++;
-	return index;
+export function groupDropPlace(slots: readonly GroupDropSlot[], y: number): GroupDropPlace {
+	for (const slot of slots) {
+		const quarter = (slot.bottom - slot.top) / 4;
+		if (y < slot.top + quarter) return { kind: "before", id: slot.id };
+		if (y <= slot.bottom - quarter) return { kind: "into", id: slot.id };
+		if (y <= slot.bottom) return { kind: slot.expanded ? "into" : "after", id: slot.id };
+	}
+	return { kind: "end" };
 }
 
 /**

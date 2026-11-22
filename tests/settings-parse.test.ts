@@ -96,6 +96,32 @@ describe("repository groups", () => {
 			.toEqual({ repositories: [one], groups: [work] });
 	});
 
+	test("a group's parent round-trips, written only for a group inside another", () => {
+		const client = { id: "g-client", name: "Client", parent: work.id };
+		const settings = { repositories: [{ ...one, group: client.id }, two], groups: [work, personal, client] };
+		const text = serializeSettings(settings);
+		expect(parseSettings(text)).toEqual(settings);
+		expect(JSON.parse(text).groups).toEqual([{ id: work.id, name: "Work" }, { id: personal.id, name: "Personal" }, { id: client.id, name: "Client", parent: work.id }]);
+		// A file whose groups have no parent is written back exactly as it was.
+		const flat = JSON.stringify({ version: 1, repositories: [{ ...one, group: work.id }], groups: [work, personal] }, null, "\t") + "\n";
+		expect(serializeSettings(parseSettings(flat)!)).toBe(flat);
+	});
+
+	test("a parent that is unknown, the group itself, or on a loop is dropped, and the group goes to the top level", () => {
+		const text = JSON.stringify({
+			version: 1,
+			repositories: [{ ...one, group: "a" }],
+			groups: [
+				{ id: "a", name: "A", parent: "b" },
+				{ id: "b", name: "B", parent: "a" },
+				{ id: "c", name: "C", parent: "gone" },
+				{ id: "d", name: "D", parent: "d" },
+				{ id: "e", name: "E", parent: 5 },
+			],
+		});
+		expect(parseSettings(text)).toEqual({ repositories: [{ ...one, group: "a" }], groups: ["A", "B", "C", "D", "E"].map(name => ({ id: name.toLowerCase(), name })) });
+	});
+
 	test("the folded groups round-trip in the layout", () => {
 		const settings = { repositories: [{ ...one, group: work.id }], groups: [work], layout: { sidebarWidth: 300, collapsed: [], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [work.id], chopsOpen: false, chopsWidth: 320, sidePanel: "chops" as const, diffLayout: "unified" as const } };
 		expect(parseSettings(serializeSettings(settings))).toEqual(settings);

@@ -131,7 +131,7 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		createRepositoryGroup: async () => ({ outcome: "saved", groups: { groups: [], membership: {} } }),
 		renameRepositoryGroup: async () => ({ outcome: "saved", groups: { groups: [], membership: {} } }),
 		deleteRepositoryGroup: async () => ({ outcome: "saved", groups: { groups: [], membership: {} } }),
-		reorderRepositoryGroups: async () => ({ outcome: "saved", groups: { groups: [], membership: {} } }),
+		moveRepositoryGroup: async () => ({ outcome: "saved", groups: { groups: [], membership: {} } }),
 		placeRepository: async () => ({ outcome: "saved", groups: { groups: [], membership: {} } }),
 		listBranches: async () => null,
 		newWorktree: request => new Promise((resolve, reject) => {
@@ -579,7 +579,7 @@ describe("the mock engine's repository groups", () => {
 		const engine = createMockEngine();
 		await engine.createRepositoryGroup("Work", TIMBER);
 		await engine.createRepositoryGroup("Personal");
-		expect(await engine.reorderRepositoryGroups(["group-2"])).toEqual({ outcome: "saved", groups: { groups: [{ id: "group-2", name: "Personal" }, { id: "group-1", name: "Work" }], membership: { [TIMBER]: "group-1" } } });
+		expect(await engine.moveRepositoryGroup("group-2", null, "group-1")).toEqual({ outcome: "saved", groups: { groups: [{ id: "group-2", name: "Personal" }, { id: "group-1", name: "Work" }], membership: { [TIMBER]: "group-1" } } });
 		await engine.removeRepository(TIMBER);
 		expect(await engine.listRepositoryGroups()).toEqual({ groups: [{ id: "group-2", name: "Personal" }, { id: "group-1", name: "Work" }], membership: {} });
 	});
@@ -1315,7 +1315,7 @@ describe("repository groups", () => {
 		expect(store.getState().repositoryGroups).toEqual({ groups: [{ id: "group-1", name: "Work" }, { id: "group-2", name: "Personal" }], membership: { [API_SERVER]: "group-2" } });
 		expect(await store.renameGroup("group-1", "Job")).toBe(true);
 		expect(store.getState().repositoryGroups.groups[0]).toEqual({ id: "group-1", name: "Job" });
-		await store.moveGroup("group-2", 0);
+		await store.moveGroup("group-2", null, "group-1");
 		expect(store.getState().repositoryGroups.groups.map(group => group.id)).toEqual(["group-2", "group-1"]);
 		await store.placeRepository(TIMBER, "group-1");
 		expect(store.getState().repositoryGroups.membership).toEqual({ [API_SERVER]: "group-2", [TIMBER]: "group-1" });
@@ -1379,7 +1379,7 @@ describe("repository groups", () => {
 		const overridden = async () => ({ outcome: "overridden" as const });
 		const { store, reads } = await groupedStore(() => ({
 			createRepositoryGroup: overridden, renameRepositoryGroup: overridden, deleteRepositoryGroup: overridden,
-			reorderRepositoryGroups: overridden, placeRepository: overridden,
+			moveRepositoryGroup: overridden, placeRepository: overridden,
 		}));
 		const before = { ...reads };
 		expect(await store.createGroup("Work")).toBe(false);
@@ -1393,11 +1393,40 @@ describe("repository groups", () => {
 		expect(reads).toEqual(before);
 	});
 
+	test("a refusal the engine answers puts back the groups last saved, and says why", async () => {
+		let answer: RepositoryGroupsResult | null = null;
+		const { store } = await groupedStore(mock => ({
+			moveRepositoryGroup: (id, parent, before) => answer ? Promise.resolve(answer) : mock.moveRepositoryGroup(id, parent, before),
+			createRepositoryGroup: (name, repository, parent) => answer ? Promise.resolve(answer) : mock.createRepositoryGroup(name, repository, parent),
+		}));
+		await store.createGroup("Work");
+		await store.createGroup("Personal");
+		const saved = structuredClone(store.getState().repositoryGroups);
+		for (const refusal of [{ outcome: "inside-itself" as const }, { outcome: "too-deep" as const }]) {
+			answer = refusal;
+			await store.moveGroup("group-2", "group-1", null);
+			expect(store.getState().notice).toEqual({ kind: "group-refused", reason: refusal.outcome });
+			expect(store.getState().repositoryGroups).toEqual(saved);
+		}
+		// A move has no name field, so a taken name is said in the notice, not under a field.
+		answer = { outcome: "name-taken", name: "Personal" };
+		await store.moveGroup("group-2", "group-1", null);
+		expect(store.getState().notice).toEqual({ kind: "group-refused", reason: "name-taken", name: "Personal" });
+		expect(store.getState().groupNameProblem).toBeNull();
+		expect(store.getState().repositoryGroups).toEqual(saved);
+		// A subgroup made where the engine says it is too deep.
+		answer = { outcome: "too-deep" };
+		store.dismissNotice();
+		expect(await store.createGroup("Deep", undefined, "group-1")).toBe(false);
+		expect(store.getState().notice).toEqual({ kind: "group-refused", reason: "too-deep" });
+		expect(store.getState().repositoryGroups).toEqual(saved);
+	});
+
 	test("a save that fails puts back the groups and the order last saved, and says why", async () => {
 		let failing = false;
 		const { store, reads } = await groupedStore(mock => ({
 			placeRepository: (path, group, order) => failing ? Promise.resolve({ outcome: "failed", message: "read-only file system" }) : mock.placeRepository(path, group, order),
-			reorderRepositoryGroups: order => failing ? Promise.reject(new Error("bridge closed")) : mock.reorderRepositoryGroups(order),
+			moveRepositoryGroup: (id, parent, before) => failing ? Promise.reject(new Error("bridge closed")) : mock.moveRepositoryGroup(id, parent, before),
 		}));
 		await store.createGroup("Work", TIMBER);
 		await store.createGroup("Personal");
@@ -1411,7 +1440,7 @@ describe("repository groups", () => {
 		expect(store.getState().repositoryGroups).toEqual(saved);
 		expect(paths(store)).toEqual(order);
 
-		await store.moveGroup("group-2", 0);
+		await store.moveGroup("group-2", null, "group-1");
 		expect(store.getState().notice).toEqual({ kind: "failed", action: "group", message: "bridge closed" });
 		expect(store.getState().repositoryGroups).toEqual(saved);
 		expect(reads).toEqual(before);

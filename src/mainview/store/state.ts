@@ -201,7 +201,13 @@ export type ListNotice =
 	| { kind: "not-a-repository"; folder: string }
 	/** The list comes from the development override. */
 	| { kind: "overridden" }
-	| { kind: "failed"; action: "add" | "remove" | "reorder" | "group"; message: string };
+	| { kind: "failed"; action: "add" | "remove" | "reorder" | "group"; message: string }
+	/**
+	 * A group was not moved, or not made, where it was asked to go: not inside
+	 * itself or its own subgroups, not past the deepest level, and not beside a
+	 * group with its name (`name`, as saved).
+	 */
+	| { kind: "group-refused"; reason: "inside-itself" | "too-deep" } | { kind: "group-refused"; reason: "name-taken"; name: string };
 
 /** Why a group name was not saved: it was empty once trimmed, or another group has it, ignoring case. */
 export type GroupNameProblem = { kind: "empty" } | { kind: "taken"; name: string };

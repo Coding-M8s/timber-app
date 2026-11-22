@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { DRAG_THRESHOLD, type DropSlot, dropIndex, dropPlace, moveStep } from "../src/mainview/repository-drag";
+import { DRAG_THRESHOLD, type DropSlot, type GroupDropSlot, dropPlace, groupDropPlace, moveStep } from "../src/mainview/repository-drag";
 import { applyOrder, moveInOrder, sameOrder } from "../src/shared/repository-order";
 
 const items = (...paths: string[]) => paths.map(path => ({ path }));
@@ -54,15 +54,36 @@ test("sameOrder compares paths in order", () => {
 	expect(sameOrder(items("a"), items("a", "b"))).toBe(false);
 });
 
-describe("dropIndex", () => {
-	test("counts the groups whose middle is above the pointer", () => {
-		const middles = [10, 50, 90];
-		expect(dropIndex(middles, 0)).toBe(0);
-		expect(dropIndex(middles, 10)).toBe(0);
-		expect(dropIndex(middles, 11)).toBe(1);
-		expect(dropIndex(middles, 70)).toBe(2);
-		expect(dropIndex(middles, 500)).toBe(3);
-		expect(dropIndex([], 20)).toBe(0);
+describe("groupDropPlace", () => {
+	// Work at 0-40 with something under it, Client at 100-140 folded, Personal at 200-240 empty.
+	const slots: GroupDropSlot[] = [
+		{ id: "work", top: 0, bottom: 40, expanded: true },
+		{ id: "client", top: 100, bottom: 140, expanded: false },
+		{ id: "personal", top: 200, bottom: 240, expanded: false },
+	];
+
+	test("the top quarter of a header, or the gap above it, lands before that group", () => {
+		expect(groupDropPlace(slots, -5)).toEqual({ kind: "before", id: "work" });
+		expect(groupDropPlace(slots, 9)).toEqual({ kind: "before", id: "work" });
+		expect(groupDropPlace(slots, 60)).toEqual({ kind: "before", id: "client" });
+		expect(groupDropPlace(slots, 109)).toEqual({ kind: "before", id: "client" });
+	});
+
+	test("the middle of a header goes inside that group", () => {
+		expect(groupDropPlace(slots, 10)).toEqual({ kind: "into", id: "work" });
+		expect(groupDropPlace(slots, 20)).toEqual({ kind: "into", id: "work" });
+		expect(groupDropPlace(slots, 130)).toEqual({ kind: "into", id: "client" });
+	});
+
+	test("the bottom quarter lands after a group with nothing under it, and inside one with something", () => {
+		expect(groupDropPlace(slots, 135)).toEqual({ kind: "after", id: "client" });
+		expect(groupDropPlace(slots, 240)).toEqual({ kind: "after", id: "personal" });
+		expect(groupDropPlace(slots, 35)).toEqual({ kind: "into", id: "work" });
+	});
+
+	test("below every header is the end of the top level", () => {
+		expect(groupDropPlace(slots, 500)).toEqual({ kind: "end" });
+		expect(groupDropPlace([], 20)).toEqual({ kind: "end" });
 	});
 
 	test("a drag needs a few pixels of movement", () => {

@@ -12,6 +12,7 @@ import { type DoneSessionState, canRemove, createDoneSession } from "../store/do
 import { type DialogRequest, removalAt, runningSessionCount } from "../store/state";
 import type { SubmissionState } from "../store/submission";
 import { focusFirstWorktree, focusLost } from "../sidebar-focus";
+import { groupChainOf } from "../../shared/repository-groups";
 import { OperationDialog } from "./OperationDialog";
 import { TimberFailureDetails } from "./TimberFailureDetails";
 
@@ -238,7 +239,7 @@ export function DoneDialog({ request }: { request: Extract<DialogRequest, { kind
 	useEffect(() => () => {
 		setTimeout(() => {
 			// In a folded repository group the repository is not drawn, so the group's header takes the keyboard.
-			if (focusLost(document.activeElement, document.body)) focusFirstWorktree(request.repository, undefined, store.getState().repositoryGroups.membership[request.repository]);
+			if (focusLost(document.activeElement, document.body)) focusFirstWorktree(request.repository, undefined, groupChainOf(store.getState().repositoryGroups, request.repository));
 		}, 0);
 	}, [request.repository, store]);
 

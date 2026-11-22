@@ -13,9 +13,9 @@ import {
 	createGroupIn,
 	deleteGroupIn,
 	groupsOfList,
+	moveGroupIn,
 	placeIn,
 	renameGroupIn,
-	reorderGroupsIn,
 } from "../../shared/repository-groups";
 import { describeCommandLine } from "../../shared/command-line";
 import { TERMINAL_EDITOR_REASON, editorCommand, editorTarget, otherExecutableNames } from "../../shared/editor";
@@ -1066,10 +1066,10 @@ export function createMockEngine(
 			return { outcome: "saved" };
 		},
 		listRepositoryGroups: async () => groupsOfList(groupedList()),
-		async createRepositoryGroup(name, repository) {
+		async createRepositoryGroup(name, repository, parent) {
 			// Numbered in the order they are made: an id is used up only by a group that was made.
 			const id = `group-${groupIds + 1}`;
-			const result = await changeGroups(list => createGroupIn(list, id, name, repository));
+			const result = await changeGroups(list => createGroupIn(list, id, name, repository, parent ?? null));
 			if (result.outcome === "saved") groupIds++;
 			return result;
 		},
@@ -1079,7 +1079,7 @@ export function createMockEngine(
 			layout = forgetGroup(layout, id);
 			return result;
 		},
-		reorderRepositoryGroups: order => changeGroups(list => reorderGroupsIn(list, order)),
+		moveRepositoryGroup: (id, parent, before) => changeGroups(list => moveGroupIn(list, id, parent, before)),
 		placeRepository: (path, group, order) => changeGroups(list => placeIn(list, path, group, order)),
 		newWorktree: request => command(request.repository, repository => actOutNew(repository, request, ending, workflowNames(repository.path))),
 		openWorktree: request => command(request.repository, repository => actOutOpen(repository, request, ending, listedBranches(repository) ?? [], workflowNames(repository.path))),

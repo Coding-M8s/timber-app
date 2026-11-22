@@ -25,8 +25,10 @@ export interface SavedRepository {
 export interface Settings {
 	repositories: SavedRepository[];
 	/**
-	 * The groups the sidebar gathers repositories into, in the order shown.
-	 * Absent until the person makes one, and in files written before groups existed.
+	 * The groups the sidebar gathers repositories into, in the order shown
+	 * among those that share a parent. A group inside another names it in
+	 * `parent`. Absent until the person makes one, and in files written before
+	 * groups existed.
 	 */
 	groups?: RepositoryGroup[];
 	/**
@@ -82,7 +84,8 @@ function readRepository(value: unknown): SavedRepository | null {
  * The groups, the layout, the preferences, the force-push marks, the window, and the chop approvals are the exception,
  * because they are only a convenience: a part that cannot be read falls back to the defaults (see
  * `readGroups`, `readLayout`, `readPreferences`, and `readSavedWindow`) and never costs the
- * repository list. A repository's group that names no readable group is dropped, and the repository kept.
+ * repository list. A repository's group that names no readable group is dropped, and the repository kept. A group's
+ * `parent` that is unknown, loops, or nests too deep is dropped, and the group goes to the top level.
  */
 export function parseSettings(text: string): Settings | null {
 	let value: unknown;
@@ -126,7 +129,7 @@ export function parseSettings(text: string): Settings | null {
 /** The text of a settings file, readable and stable enough to edit by hand. */
 export function serializeSettings(settings: Settings): string {
 	const repositories = settings.repositories.map(({ path, commonDir, group }) => ({ path, commonDir, ...(group === undefined ? {} : { group }) }));
-	const groups = settings.groups && settings.groups.length > 0 ? settings.groups.map(({ id, name }) => ({ id, name })) : null;
+	const groups = settings.groups && settings.groups.length > 0 ? settings.groups.map(({ id, name, parent }) => ({ id, name, ...(parent === undefined ? {} : { parent }) })) : null;
 	const layout = settings.layout && {
 		sidebarWidth: settings.layout.sidebarWidth,
 		collapsed: [...settings.layout.collapsed],

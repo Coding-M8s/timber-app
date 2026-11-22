@@ -49,10 +49,10 @@ export type AppRPC = {
 			removeRepository: { params: { path: string }; response: Answer<"removeRepository"> };
 			reorderRepositories: { params: { order: string[] }; response: Answer<"reorderRepositories"> };
 			listRepositoryGroups: { params: {}; response: Answer<"listRepositoryGroups"> };
-			createRepositoryGroup: { params: { name: string; repository: string | null }; response: Answer<"createRepositoryGroup"> };
+			createRepositoryGroup: { params: { name: string; repository: string | null; parent: string | null }; response: Answer<"createRepositoryGroup"> };
 			renameRepositoryGroup: { params: { id: string; name: string }; response: Answer<"renameRepositoryGroup"> };
 			deleteRepositoryGroup: { params: { id: string }; response: Answer<"deleteRepositoryGroup"> };
-			reorderRepositoryGroups: { params: { order: string[] }; response: Answer<"reorderRepositoryGroups"> };
+			moveRepositoryGroup: { params: { id: string; parent: string | null; before: string | null }; response: Answer<"moveRepositoryGroup"> };
 			placeRepository: { params: { path: string; group: string | null; order: string[] | null }; response: Answer<"placeRepository"> };
 			loadRepository: { params: { path: string }; response: Answer<"loadRepository"> };
 			listBranches: { params: { repository: string }; response: Answer<"listBranches"> };

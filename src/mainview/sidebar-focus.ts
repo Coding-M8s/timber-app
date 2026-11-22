@@ -17,11 +17,12 @@ export interface FocusRoot {
  * Put the keyboard on the first worktree row in the sidebar group of a
  * repository, named by the path of its primary checkout, or on the group's
  * header while it shows no rows, for example while it is collapsed. A
- * repository that is not drawn at all, because the repository group it is in
- * (`group`, by id) is folded, gives the keyboard to that group's header.
- * Answers whether something took it.
+ * repository that is not drawn at all, because a repository group it is in is
+ * folded, gives the keyboard to the nearest group header drawn: `groups` are
+ * the ids of its group and each group around it, the nearest first (see
+ * `groupChainOf`). Answers whether something took it.
  */
-export function focusFirstWorktree(repository: string, root: FocusRoot = document as unknown as FocusRoot, group?: string): boolean {
+export function focusFirstWorktree(repository: string, root: FocusRoot = document as unknown as FocusRoot, groups: readonly string[] = []): boolean {
 	for (const section of root.querySelectorAll("[data-repository]")) {
 		if (section.dataset.repository !== repository) continue;
 		// The Issues row comes first in each repository, and is not a worktree.
@@ -29,12 +30,22 @@ export function focusFirstWorktree(repository: string, root: FocusRoot = documen
 		target?.focus();
 		return target !== null;
 	}
-	if (group === undefined) return false;
-	for (const section of root.querySelectorAll("[data-group]")) {
-		if (section.dataset.group !== group) continue;
-		const target = section.querySelector(".repository-group-header");
-		target?.focus();
-		return target !== null;
+	return focusGroupHeader(groups, root);
+}
+
+/**
+ * Put the keyboard on the header of the first group among `groups`, by id,
+ * that is drawn: a group inside a folded one is not. Answers whether one took it.
+ */
+export function focusGroupHeader(groups: readonly string[], root: FocusRoot = document as unknown as FocusRoot): boolean {
+	const sections = [...root.querySelectorAll("[data-group]")];
+	for (const group of groups) {
+		const section = sections.find(candidate => candidate.dataset.group === group);
+		// Its own header, not a subgroup's, which a group being renamed would otherwise give.
+		const target = section?.querySelector(":scope > .repository-group-head > .repository-group-header") ?? null;
+		if (!target) continue;
+		target.focus();
+		return true;
 	}
 	return false;
 }

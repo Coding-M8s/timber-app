@@ -229,29 +229,54 @@ change them here first when they change.
 - Each repository header also has a More button (three dots). It opens the
   repository's menu, as do a right-click on the header and Shift+F10 or the
   context menu key on it: "Clean up merged" first, then "Add to" or "Move to"
-  each group, "New group...", "Take out of" its group, and "Remove from the
-  list", which only changes the app's list. A missing folder still offers its
+  each group, named with the groups around it ("Work › Client A"), "New
+  group...", "Take out of" its group, and "Remove from the list", which only
+  changes the app's list. A missing folder still offers its
   own Remove.
 - Repositories can be gathered into named groups, such as Work and Personal.
   There are none until the person makes one, and with none the sidebar looks
   as before. "New group" sits beside Refresh; it, "New group..." in a
   repository's menu, and "Rename" in a group's menu type the name in place:
   Enter saves, Escape cancels. An empty name or one another group has,
-  ignoring case, is said under the field. Loose repositories come first, then
-  each group in order with its repositories indented; an empty group shows.
-- A group header folds and unfolds the whole group, by click, Enter, or
-  Space, and the fold is remembered. A folded group sums up its agents as a
-  repository does, and says "check" when one of its repositories has a
-  removal, a failed listing, or a missing folder. While a filter is typed, a
-  group with a match opens and a group without one is hidden.
+  among the groups with the same parent, ignoring case, is said under the
+  field. Loose repositories come first, then each group in order with its
+  repositories indented; an empty group shows.
+- A group can sit inside another, such as Work › Client A, at most three
+  levels deep so the indentation stays readable. Inside a group its own
+  repositories come first, then its subgroups, each indented one step more.
+  With no group inside another, the sidebar looks as it did before nesting.
+- A group header folds and unfolds the whole group, subgroups included, by
+  click, Enter, or Space, and the fold is remembered. Each subgroup keeps its
+  own fold, so opening the parent shows it as it was. A folded group sums up
+  the agents of every repository inside it, at any depth, as a repository
+  does, counts them all, and says "check" when one of them has a removal, a
+  failed listing, or a missing folder. While a filter is typed, a group opens
+  when anything inside it, at any depth, has a match, and a group without
+  one is hidden.
 - The group's More button, which always shows, a right-click, or Shift+F10
-  opens Rename and Delete group. Deleting never asks, because its
-  repositories stay in the list, loose.
+  opens Rename, "New subgroup...", "Move up" and "Move down" among the
+  groups with the same parent where there is room, "Move into" each other
+  group it can go inside, "Move to the top level" for a subgroup, and Delete group. A group
+  is never offered itself or its own subgroups; a place that would nest it
+  past three levels, or beside a group with its name, shows disabled with
+  the reason. At the third level "New subgroup..." is disabled the same way.
+  Deleting never asks, because its repositories and subgroups move up into
+  its parent, or to the top level, and stay in the list.
 - Dragging a repository header can reorder it, put it in a group (over the
   group's header, or anywhere in an open one), or take it out (above the
   first group). Alt+Up and Alt+Down move it among the repositories of its
-  group, or among the loose ones. Group headers drag, and Alt+Up and Alt+Down
-  move them, among the groups.
+  group, or among the loose ones.
+- Dragging a group header over the middle of another group's header puts it
+  inside that group, at the end of its subgroups, outlined while held there.
+  Over the top of a header, or between groups, it lands before that group at
+  its level; over the bottom of a folded or empty group's header, after it;
+  below every group, at the end of the top level. A line shows where. Over
+  its own header, or just beside its own subgroups, it stays where it is.
+  Inside one of its own subgroups, or anywhere that would nest it too deep
+  or beside a group with its name, the group under the pointer is outlined
+  in the error color, and letting go says why in the sidebar's
+  notice and moves nothing. Alt+Up and Alt+Down move a group among the
+  groups with the same parent.
 - Grouping only changes the app's saved list. No Git or Timber command runs,
   and nothing in a repository is touched.
 - The app fetches every repository in the background, on an interval from

@@ -1,9 +1,10 @@
-import { Fragment, type KeyboardEvent, type MouseEvent, type PointerEvent, useId, useMemo, useRef, useState } from "react";
+import { Fragment, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode, useId, useMemo, useRef, useState } from "react";
 import { MOVE_GROUP_HINT, describeGroupNameProblem, describeListNotice, describeReloadError, worktreeLabel } from "../format";
 import { SETTINGS_LABEL, describeLayoutProblem } from "../shell";
-import { DRAG_THRESHOLD, MOVE_REPOSITORY_SHORTCUTS, dropIndex, dropPlace, moveStep } from "../repository-drag";
+import { DRAG_THRESHOLD, type GroupDropPlace, MOVE_REPOSITORY_SHORTCUTS, dropPlace, groupDropPlace, moveStep } from "../repository-drag";
 import { describeGroupMenu, describeRepositoryMenu, groupMenuItems, repositoryMenuItems } from "../repository-menu-format";
-import { GROUP_NEEDS_LOOK_TITLE, arrangeSidebar, canDragRepositories, chooseFromRepositoryMenu, dropSlotsOf, groupNeedsLook, repositoryDropMark } from "../sidebar-groups";
+import { GROUP_NEEDS_LOOK_TITLE, type ShownGroup, arrangeSidebar, canDragRepositories, chooseFromRepositoryMenu, dropSlotsOf, groupDropMark, groupDropSlotsOf, groupDropTarget, groupNeedsLook, repositoryDropMark } from "../sidebar-groups";
+import { ancestorsOf } from "../../shared/repository-groups";
 import { opensWorktreeMenu, repositoryMenuItems as cleanUpMenuItems } from "../worktree-menu-format";
 import { clashMarksOf } from "../ports-format";
 import { useAppState, useStore } from "../store/react";
@@ -17,8 +18,8 @@ import { MoreIcon } from "./MoreIcon";
 import { RepositoryMenu } from "./RepositoryMenu";
 import { RepositoryGroupName } from "./RepositoryGroupName";
 
-/** The name field in the sidebar: for a new group, maybe with a repository to put in it, or to rename a group. */
-type Naming = { kind: "new"; repository?: string } | { kind: "rename"; id: string };
+/** The name field in the sidebar: for a new group, maybe with a repository to put in it or a group to make it inside, or to rename a group. */
+type Naming = { kind: "new"; repository?: string; parent?: string } | { kind: "rename"; id: string };
 
 /** An open menu: of a repository header, or of a group header, and where it was asked to be. */
 type OpenMenu = { kind: "repository"; path: string; at: { left: number; top: number } } | { kind: "group"; id: string; at: { left: number; top: number } };
@@ -57,12 +58,11 @@ export function Sidebar() {
 	const [drag, setDrag] = useState<{ path: string; place: { group: string | null; before: string | null } } | null>(null);
 	// The same for a group header, which moves among the groups.
 	const groupPress = useRef<{ id: string; pointerId: number; startY: number; dragging: boolean } | null>(null);
-	const [groupDrag, setGroupDrag] = useState<{ id: string; index: number } | null>(null);
+	const [groupDrag, setGroupDrag] = useState<{ id: string; place: GroupDropPlace } | null>(null);
 	// The click that ends a drag must not also open or close the group.
 	const dragEnded = useRef(false);
 	const groupElements = useRef(new Map<string, HTMLElement>());
 	const headerButtons = useRef(new Map<string, HTMLButtonElement>());
-	const repositoryGroupElements = useRef(new Map<string, HTMLElement>());
 	const repositoryGroupHeads = useRef(new Map<string, HTMLElement>());
 	const repositoryGroupHeaders = useRef(new Map<string, HTMLButtonElement>());
 	const newGroupButton = useRef<HTMLButtonElement>(null);
@@ -101,6 +101,17 @@ export function Sidebar() {
 		return element?.getBoundingClientRect();
 	};
 	const placeAt = (path: string, y: number) => dropPlace(dropSlotsOf(arranged, path, boxOf), y);
+	const groupPlaceAt = (y: number) => groupDropPlace(groupDropSlotsOf(arranged.grouped, boxOf), y);
+
+	/** The header of a group, or while it is not drawn, as inside a folded group, the nearest one around it that is. */
+	const headerOrAround = (id: string) => () => {
+		const groups = store.getState().repositoryGroups.groups;
+		for (const candidate of [id, ...ancestorsOf(groups, id).map(group => group.id)]) {
+			const header = repositoryGroupHeaders.current.get(candidate);
+			if (header) return header;
+		}
+		return null;
+	};
 
 	function startNaming(next: Naming) {
 		store.clearGroupNameProblem();
@@ -119,18 +130,21 @@ export function Sidebar() {
 	const namingOpener = (was: Naming | null) => () => {
 		if (was?.kind === "rename") return repositoryGroupHeaders.current.get(was.id);
 		if (was?.kind === "new" && was.repository !== undefined) return headerButtons.current.get(was.repository);
+		if (was?.kind === "new" && was.parent !== undefined) return headerOrAround(was.parent)();
 		return newGroupButton.current;
 	};
 
 	async function submitName(name: string) {
 		const was = naming;
 		if (!was) return;
-		const saved = was.kind === "new" ? await store.createGroup(name, was.repository) : await store.renameGroup(was.id, name);
+		const known = new Set(store.getState().repositoryGroups.groups.map(group => group.id));
+		const saved = was.kind === "new" ? await store.createGroup(name, was.repository, was.parent) : await store.renameGroup(was.id, name);
 		// A name that is empty or taken keeps the field, with the reason under it.
 		if (!saved && store.getState().groupNameProblem) return;
 		if (saved && was.kind === "new") {
-			const made = store.getState().repositoryGroups.groups.at(-1)?.id;
-			stopNaming(() => (made === undefined ? newGroupButton.current : repositoryGroupHeaders.current.get(made)));
+			// The group made is the one that was not there before. None was made when its parent went meanwhile.
+			const made = store.getState().repositoryGroups.groups.find(group => !known.has(group.id))?.id;
+			stopNaming(made === undefined ? namingOpener(was) : () => repositoryGroupHeaders.current.get(made));
 			return;
 		}
 		stopNaming(namingOpener(was));
@@ -184,12 +198,6 @@ export function Sidebar() {
 		focusLater(() => headerButtons.current.get(path));
 	}
 
-	const otherGroups = (id: string) => repositoryGroups.groups.filter(group => group.id !== id);
-	const groupIndexAt = (id: string, y: number) => dropIndex(otherGroups(id).map(group => {
-		const box = repositoryGroupElements.current.get(group.id)?.getBoundingClientRect();
-		return box ? box.top + box.height / 2 : Number.NEGATIVE_INFINITY;
-	}), y);
-
 	function onGroupPointerDown(id: string, event: PointerEvent<HTMLButtonElement>) {
 		if (event.button !== 0 || groupCount < 2) return;
 		groupPress.current = { id, pointerId: event.pointerId, startY: event.clientY, dragging: false };
@@ -203,8 +211,9 @@ export function Sidebar() {
 			current.dragging = true;
 			event.currentTarget.setPointerCapture(event.pointerId);
 		}
-		const index = groupIndexAt(current.id, event.clientY);
-		if (groupDrag?.id !== current.id || groupDrag.index !== index) setGroupDrag({ id: current.id, index });
+		const place = groupPlaceAt(event.clientY);
+		const same = groupDrag?.id === current.id && groupDrag.place.kind === place.kind && (place.kind === "end" || (groupDrag.place.kind !== "end" && groupDrag.place.id === place.id));
+		if (!same) setGroupDrag({ id: current.id, place });
 	}
 
 	function onGroupPointerUp(event: PointerEvent<HTMLButtonElement>) {
@@ -214,7 +223,8 @@ export function Sidebar() {
 		setGroupDrag(null);
 		if (!current.dragging) return;
 		endDrag();
-		void store.moveGroup(current.id, groupIndexAt(current.id, event.clientY));
+		const target = groupDropTarget(repositoryGroups.groups, current.id, groupPlaceAt(event.clientY));
+		if (target) void store.moveGroup(current.id, target.parent, target.before);
 	}
 
 	function onGroupPointerCancel() {
@@ -222,7 +232,7 @@ export function Sidebar() {
 		setGroupDrag(null);
 	}
 
-	function onGroupHeaderKeyDown(id: string, index: number, event: KeyboardEvent<HTMLButtonElement>) {
+	function onGroupHeaderKeyDown(id: string, event: KeyboardEvent<HTMLButtonElement>) {
 		if (opensWorktreeMenu(event)) {
 			event.preventDefault();
 			menuByKey.current = true;
@@ -232,9 +242,7 @@ export function Sidebar() {
 		const step = moveStep(event);
 		if (step === 0) return;
 		event.preventDefault();
-		const target = index + step;
-		if (target < 0 || target >= groupCount) return;
-		void store.moveGroup(id, target);
+		void store.stepGroup(id, step);
 		focusLater(() => repositoryGroupHeaders.current.get(id));
 	}
 
@@ -257,15 +265,8 @@ export function Sidebar() {
 	// Where the line that shows a repository's drop goes. Nothing while it would land where it is.
 	const dropMark = drag ? repositoryDropMark(arranged, drag.path, drag.place) : null;
 
-	// The same for a group: above the group it would land before, or below the last.
-	const groupDropMark = (() => {
-		if (!groupDrag) return null;
-		const others = otherGroups(groupDrag.id);
-		if (groupDrag.index === repositoryGroups.groups.findIndex(group => group.id === groupDrag.id)) return null;
-		return groupDrag.index < others.length
-			? { id: others[groupDrag.index]!.id, side: "before" as const }
-			: { id: others[others.length - 1]!.id, side: "after" as const };
-	})();
+	// The same for a group: a line beside the group it lands next to, or around the one it goes inside or cannot go to.
+	const groupMark = groupDrag ? groupDropMark(repositoryGroups.groups, groupDrag.id, groupDrag.place) : null;
 
 	const section = ({ repository, matches }: { repository: Repository; matches: Worktree[] }) => {
 		const index = repositories.indexOf(repository);
@@ -351,6 +352,145 @@ export function Sidebar() {
 		/>
 	);
 
+	const pendingGroup = (label: string) => (
+		// A group not saved yet: only its name field, at the end where the group will be.
+		<section className="repository-group pending" aria-label="Unsaved group">
+			<div className="repository-group-head">{nameField(label, "")}</div>
+		</section>
+	);
+
+	/** A group, its repositories, and its subgroups, each drawn the same way. */
+	const groupSection = (shown: ShownGroup<{ repository: Repository; matches: Worktree[] }>): ReactNode => {
+		const { group, items, children, open, paths } = shown;
+		const folded = !open;
+		// Only while the group is folded, what its repositories would show is summed up on its header. Seen ones are left out.
+		const statuses = folded ? unseenStatuses(state.terminals.filter(session => paths.includes(session.repository)), state.seenStatuses) : [];
+		const summary = summarizeStatuses(statuses);
+		const summaryId = `${idBase}-group-summary-${group.id}`;
+		const needsLook = folded && groupNeedsLook(state, paths);
+		const needsLookId = `${idBase}-group-check-${group.id}`;
+		const describedBy = [summary ? summaryId : "", needsLook ? needsLookId : ""].filter(Boolean).join(" ");
+		const renaming = naming?.kind === "rename" && naming.id === group.id;
+		const pendingHere = naming?.kind === "new" && naming.parent === group.id;
+		return (
+			<section
+				key={group.id}
+				className={[
+					"repository-group",
+					groupDrag?.id === group.id ? "dragging" : "",
+					groupMark?.kind === "line" && groupMark.id === group.id ? `drop-${groupMark.side}` : "",
+					groupMark?.kind === "into" && groupMark.id === group.id ? "drop-into" : "",
+					groupMark?.kind === "refused" && groupMark.id === group.id ? "drop-refused" : "",
+					dropMark?.kind === "into" && dropMark.group === group.id ? "drop-into" : "",
+					dropMark?.kind === "above-group" && dropMark.group === group.id ? "drop-before" : "",
+				].filter(Boolean).join(" ")}
+				aria-label={`Group ${group.name}`}
+				data-group={group.id}
+			>
+				<div
+					className="repository-group-head"
+					ref={element => {
+						if (element) repositoryGroupHeads.current.set(group.id, element);
+						else repositoryGroupHeads.current.delete(group.id);
+					}}
+					onContextMenu={event => openMenuAt({ kind: "group", id: group.id, at: { left: event.clientX, top: event.clientY } }, event)}
+				>
+					{renaming ? nameField(`New name for ${group.name}`, group.name) : (
+						<button
+							type="button"
+							className="repository-group-header"
+							aria-expanded={open}
+							aria-describedby={describedBy === "" ? undefined : describedBy}
+							aria-keyshortcuts={groupCount > 1 ? MOVE_REPOSITORY_SHORTCUTS : undefined}
+							title={groupCount > 1 ? `${group.name}. ${MOVE_GROUP_HINT}` : group.name}
+							ref={element => {
+								if (element) repositoryGroupHeaders.current.set(group.id, element);
+								else repositoryGroupHeaders.current.delete(group.id);
+							}}
+							onPointerDown={event => onGroupPointerDown(group.id, event)}
+							onPointerMove={onGroupPointerMove}
+							onPointerUp={onGroupPointerUp}
+							onPointerCancel={onGroupPointerCancel}
+							onKeyDown={event => onGroupHeaderKeyDown(group.id, event)}
+							onClick={() => {
+								if (dragEnded.current) {
+									dragEnded.current = false;
+									return;
+								}
+								store.toggleRepositoryGroup(group.id);
+							}}
+						>
+							<svg className={open ? "chevron open" : "chevron"} aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+								<path d="M3.5 2 6.5 5 3.5 8" />
+							</svg>
+							<span className="repository-group-name">{group.name}</span>
+							{summary && (
+								// Its words are the button's description too.
+								<span className={`group-status repository-group-status status-${mostUrgent(statuses)}`} aria-hidden="true">{summary}</span>
+							)}
+							{needsLook && <span className="group-flag repository-group-check" title={GROUP_NEEDS_LOOK_TITLE} aria-hidden="true">check</span>}
+							<span className="repository-group-count">{paths.length}</span>
+						</button>
+					)}
+					{summary && <span id={summaryId} hidden>{`Agents: ${summary}.`}</span>}
+					{needsLook && <span id={needsLookId} hidden>{GROUP_NEEDS_LOOK_TITLE}</span>}
+					<button
+						type="button"
+						className="icon-button repository-group-more"
+						aria-label={`More for group ${group.name}`}
+						title={`More for group ${group.name}`}
+						aria-haspopup="menu"
+						aria-expanded={menu?.kind === "group" && menu.id === group.id}
+						onClick={event => {
+							menuByKey.current = false;
+							setMenu({ kind: "group", id: group.id, at: underneath(event.currentTarget) });
+						}}
+					>
+						<MoreIcon />
+					</button>
+					{menu?.kind === "group" && menu.id === group.id && (
+						<RepositoryMenu
+							label={describeGroupMenu(group.name)}
+							items={groupMenuItems(repositoryGroups.groups, group.id)}
+							at={menu.at}
+							onClose={closeMenu}
+							onChoose={choice => {
+								switch (choice.kind) {
+									case "rename":
+										startNaming({ kind: "rename", id: group.id });
+										return;
+									case "new-subgroup":
+										// The field goes at the end of the group, so a folded one opens.
+										if (collapsedGroups.includes(group.id)) store.toggleRepositoryGroup(group.id);
+										startNaming({ kind: "new", parent: group.id });
+										return;
+									case "step":
+										void store.stepGroup(group.id, choice.step).then(() => focusLater(headerOrAround(group.id)));
+										return;
+									case "move":
+										// Its header is drawn anew where it went, or not at all inside a folded group.
+										void store.moveGroup(group.id, choice.parent, null).then(() => focusLater(headerOrAround(group.id)));
+										return;
+									case "delete":
+										// Its header goes with it, so the keyboard goes to New group.
+										void store.deleteGroup(group.id).then(() => focusLater(() => newGroupButton.current));
+										return;
+								}
+							}}
+						/>
+					)}
+				</div>
+				{open && (items.length > 0 || children.length > 0 || pendingHere) && (
+					<div className="repository-group-members">
+						{items.map(section)}
+						{children.map(groupSection)}
+						{pendingHere && pendingGroup(`Name of the new group in ${group.name}`)}
+					</div>
+				)}
+			</section>
+		);
+	};
+
 	return (
 		<aside id={SIDEBAR_ID} className="sidebar" aria-label="Worktrees">
 			<div className="sidebar-tools">
@@ -402,119 +542,8 @@ export function Sidebar() {
 
 			<div className="groups">
 				{arranged.loose.map(section)}
-				{arranged.grouped.map(({ group, items, open }, index) => {
-					const paths = items.map(row => row.repository.path);
-					const folded = !open;
-					// Only while the group is folded, what its repositories would show is summed up on its header. Seen ones are left out.
-					const statuses = folded ? unseenStatuses(state.terminals.filter(session => paths.includes(session.repository)), state.seenStatuses) : [];
-					const summary = summarizeStatuses(statuses);
-					const summaryId = `${idBase}-group-summary-${index}`;
-					const needsLook = folded && groupNeedsLook(state, paths);
-					const needsLookId = `${idBase}-group-check-${index}`;
-					const describedBy = [summary ? summaryId : "", needsLook ? needsLookId : ""].filter(Boolean).join(" ");
-					const renaming = naming?.kind === "rename" && naming.id === group.id;
-					return (
-						<section
-							key={group.id}
-							ref={element => {
-								if (element) repositoryGroupElements.current.set(group.id, element);
-								else repositoryGroupElements.current.delete(group.id);
-							}}
-							className={[
-								"repository-group",
-								groupDrag?.id === group.id ? "dragging" : "",
-								groupDropMark?.id === group.id ? `drop-${groupDropMark.side}` : "",
-								dropMark?.kind === "into" && dropMark.group === group.id ? "drop-into" : "",
-								dropMark?.kind === "above-group" && dropMark.group === group.id ? "drop-before" : "",
-							].filter(Boolean).join(" ")}
-							aria-label={`Group ${group.name}`}
-							data-group={group.id}
-						>
-							<div
-								className="repository-group-head"
-								ref={element => {
-									if (element) repositoryGroupHeads.current.set(group.id, element);
-									else repositoryGroupHeads.current.delete(group.id);
-								}}
-								onContextMenu={event => openMenuAt({ kind: "group", id: group.id, at: { left: event.clientX, top: event.clientY } }, event)}
-							>
-								{renaming ? nameField(`New name for ${group.name}`, group.name) : (
-									<button
-										type="button"
-										className="repository-group-header"
-										aria-expanded={open}
-										aria-describedby={describedBy === "" ? undefined : describedBy}
-										aria-keyshortcuts={groupCount > 1 ? MOVE_REPOSITORY_SHORTCUTS : undefined}
-										title={groupCount > 1 ? `${group.name}. ${MOVE_GROUP_HINT}` : group.name}
-										ref={element => {
-											if (element) repositoryGroupHeaders.current.set(group.id, element);
-											else repositoryGroupHeaders.current.delete(group.id);
-										}}
-										onPointerDown={event => onGroupPointerDown(group.id, event)}
-										onPointerMove={onGroupPointerMove}
-										onPointerUp={onGroupPointerUp}
-										onPointerCancel={onGroupPointerCancel}
-										onKeyDown={event => onGroupHeaderKeyDown(group.id, repositoryGroups.groups.indexOf(group), event)}
-										onClick={() => {
-											if (dragEnded.current) {
-												dragEnded.current = false;
-												return;
-											}
-											store.toggleRepositoryGroup(group.id);
-										}}
-									>
-										<svg className={open ? "chevron open" : "chevron"} aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-											<path d="M3.5 2 6.5 5 3.5 8" />
-										</svg>
-										<span className="repository-group-name">{group.name}</span>
-										{summary && (
-											// Its words are the button's description too.
-											<span className={`group-status repository-group-status status-${mostUrgent(statuses)}`} aria-hidden="true">{summary}</span>
-										)}
-										{needsLook && <span className="group-flag repository-group-check" title={GROUP_NEEDS_LOOK_TITLE} aria-hidden="true">check</span>}
-										<span className="repository-group-count">{items.length}</span>
-									</button>
-								)}
-								{summary && <span id={summaryId} hidden>{`Agents: ${summary}.`}</span>}
-								{needsLook && <span id={needsLookId} hidden>{GROUP_NEEDS_LOOK_TITLE}</span>}
-								<button
-									type="button"
-									className="icon-button repository-group-more"
-									aria-label={`More for group ${group.name}`}
-									title={`More for group ${group.name}`}
-									aria-haspopup="menu"
-									aria-expanded={menu?.kind === "group" && menu.id === group.id}
-									onClick={event => {
-										menuByKey.current = false;
-										setMenu({ kind: "group", id: group.id, at: underneath(event.currentTarget) });
-									}}
-								>
-									<MoreIcon />
-								</button>
-								{menu?.kind === "group" && menu.id === group.id && (
-									<RepositoryMenu
-										label={describeGroupMenu(group.name)}
-										items={groupMenuItems()}
-										at={menu.at}
-										onClose={closeMenu}
-										onChoose={choice => {
-											if (choice.kind === "rename") startNaming({ kind: "rename", id: group.id });
-											// Its header goes with it, so the keyboard goes to New group.
-											else void store.deleteGroup(group.id).then(() => focusLater(() => newGroupButton.current));
-										}}
-									/>
-								)}
-							</div>
-							{open && items.length > 0 && <div className="repository-group-members">{items.map(section)}</div>}
-						</section>
-					);
-				})}
-				{naming?.kind === "new" && (
-					// A group not saved yet: only its name field, at the end where the group will be.
-					<section className="repository-group pending" aria-label="Unsaved group">
-						<div className="repository-group-head">{nameField("Name of the new group", "")}</div>
-					</section>
-				)}
+				{arranged.grouped.map(groupSection)}
+				{naming?.kind === "new" && naming.parent === undefined && pendingGroup("Name of the new group")}
 			</div>
 
 			{nothingMatches && <p className="sidebar-note">No worktree matches that filter.</p>}

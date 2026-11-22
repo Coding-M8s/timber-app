@@ -212,8 +212,12 @@ export type RepositoryGroupsResult =
 	| { outcome: "saved"; groups: RepositoryGroups }
 	/** The name has nothing in it once its spaces are trimmed. */
 	| { outcome: "name-empty" }
-	/** Another group has this name, ignoring case. `name` is that group's name as saved. */
+	/** Another group with the same parent has this name, ignoring case. `name` is that group's name as saved. */
 	| { outcome: "name-taken"; name: string }
+	/** A group cannot go inside itself or one of its own subgroups. */
+	| { outcome: "inside-itself" }
+	/** Groups nest at most `MAX_GROUP_DEPTH` levels deep (see ./repository-groups.ts). */
+	| { outcome: "too-deep" }
 	/** The list comes from the development override, so the app does not change it. */
 	| { outcome: "overridden" }
 	| { outcome: "failed"; message: string };
