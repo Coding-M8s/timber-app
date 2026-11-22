@@ -3,7 +3,7 @@ import type { PullRequestEntry, PullRequestHost } from "../shared/pull-requests"
 import { MAX_GROUP_DEPTH } from "../shared/repository-groups";
 import { TIMBER_LS_COMMAND } from "../shared/timber-ls";
 import { TIMBER_OVERRIDE_VARIABLE } from "../shared/timber-version";
-import { SAVED_BASE_UNKNOWN, describeInvalidBase } from "./base-format";
+import { SAVED_BASE_UNKNOWN, describeBaseCounts, describeInvalidBase } from "./base-format";
 import { describePullRequestMarkers } from "./pull-request-format";
 import type { GroupNameProblem, ListNotice, RemovalStatus } from "./store/state";
 
@@ -232,6 +232,7 @@ export type RowMarkerKind =
 	| "locked"
 	| "prunable"
 	| "base-unknown"
+	| "base-counts"
 	| "pull-request"
 	| "checks-passing"
 	| "checks-failing"
@@ -297,6 +298,10 @@ export function describeRowMarkers(worktree: Worktree, pullRequest: PullRequestE
 	if (removal?.kind === "waiting") state("removal-waiting", "waiting to be removed", "Clean up merged removes this worktree once the ones before it are done. Its actions are off until then.");
 	if (removal?.kind === "failed") state("removal-failed", "removal failed", "Timber did not finish removing this worktree. Details shows what it said.");
 
+	// How far the worktree is from its saved base, in words, after anything about its removal.
+	const fromBase = describeBaseCounts(worktree.base, worktree.baseCounts);
+	if (fromBase !== null) state("base-counts", fromBase.flag, fromBase.sentence);
+
 	if (worktree.branch === null) {
 		const where = worktree.head ? ` The folder is at commit ${worktree.head.slice(0, 7)}.` : "";
 		state("detached", "detached HEAD", `No branch is checked out here.${where}`);
@@ -312,7 +317,7 @@ export function describeRowMarkers(worktree: Worktree, pullRequest: PullRequestE
 	if (worktree.prunable && worktree.pathExists) {
 		state("prunable", "prunable", "Prunable: Git considers the record of this worktree stale, and git worktree prune would remove the record.");
 	}
-	// Only unusable metadata is marked: it is a warning. A saved base, or none, is in the row's tooltip.
+	// Unusable metadata is marked: it is a warning. A saved base, or none, is in the row's tooltip, and how far the worktree is from it is the flag above.
 	// Timber calls the base stale whenever it could not verify the worktree, and the marker for that already says so.
 	const { base } = worktree;
 	if (base?.kind === "invalid" && !(base.reason === "stale" && changes.kind === "unknown")) state("base-unknown", SAVED_BASE_UNKNOWN, describeInvalidBase(base.reason));

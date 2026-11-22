@@ -82,6 +82,7 @@ describe("pull request markers", () => {
 		const markers = describeRowMarkers(worktree, found());
 		expect(markers.map(marker => [marker.place, marker.text])).toEqual([
 			["branch", "2"],
+			["state", "4\u00a0ahead, 1\u00a0behind\u00a0base"],
 			["pull-request", "#42"],
 			["pull-request", "checks pass"],
 			["pull-request", "review required"],
@@ -95,7 +96,7 @@ describe("pull request markers", () => {
 		const markup = renderToStaticMarkup(<WorktreeRow worktree={worktree} selected={false} onSelect={() => {}} pullRequest={found({ checks: { summary: "failing", passing: 0, failing: 1, pending: 0, runs: [] } })} />);
 		expect(markup).toContain('<span class="row-flag pr" title="Pull request #42 into main is open: Look up GitHub issues." aria-hidden="true">#42</span>');
 		expect(markup).toContain('<span class="row-flag pr failing" title="Checks fail on pull request #42: 1 failing." aria-hidden="true">checks fail</span>');
-		expect(markup).toContain('hidden="">2 commits to push to origin/feat/github-issue-lookup, as of the last fetch. Pull request #42 into main is open: Look up GitHub issues. Checks fail on pull request #42: 1 failing. Pull request #42 needs an approving review before it can merge. 3 files');
+		expect(markup).toContain('hidden="">2 commits to push to origin/feat/github-issue-lookup, as of the last fetch. 4 commits ahead of origin/main and 1 behind, as of the last fetch. Pull request #42 into main is open: Look up GitHub issues. Checks fail on pull request #42: 1 failing. Pull request #42 needs an approving review before it can merge. 3 files');
 	});
 });
 

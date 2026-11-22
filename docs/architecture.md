@@ -222,11 +222,26 @@ The sidebar shows exactly the worktrees Timber lists, in Timber's order
   A branch Git did not answer about has none either, and its row says "sync
   unknown" instead of looking up to date, and so does the workspace header.
   The counts are as of the last fetch, because the app does not fetch yet.
+- **Base counts.** Timber does not report how far a worktree is from its
+  saved base either. For each listed worktree whose saved base Git can
+  compare with (`savedBaseRef`: a canonical ref under `refs/` or a full
+  commit hash) and whose head is a full commit hash, one read-only `git
+  rev-list --left-right --count <base>...<head> --` in the common Git
+  directory gives the commits behind (the base's side) and ahead (the
+  head's side) (`readBaseCounts` in `src/bun/git-engine.ts`). Worktrees with
+  the same base and head are counted once, at most four at a time
+  (`BASE_COUNTS_AT_ONCE`), alongside the upstream read.
+  `Worktree.baseCounts` is null when there is nothing to count, and
+  "unreadable" when Git could not count, as when the base branch was
+  deleted, which the interface never shows as level. A missing folder has
+  no counts, because Timber cannot verify its base. The repository watcher
+  hears commits and fetches under `refs`, so the counts are read again then.
 - **Row markers.** `describeRowMarkers` in `src/mainview/format.ts` is pure
   and turns one worktree into the markers its row shows, each with a kind, a
   short text, and a sentence in plain words. `WorktreeRow` only draws them.
   Beside the branch: a down arrow and an up arrow with counts, "local only",
-  "upstream gone", or "sync unknown". Below it: "detached HEAD", "folder
+  "upstream gone", or "sync unknown". Below it: how far the worktree is
+  from its saved base, such as "4 ahead, 1 behind base", "detached HEAD", "folder
   missing" or "status unknown", "locked", "prunable", and "base unknown" for
   saved base metadata Timber cannot use. Timber calls the base stale
   whenever it could not verify the worktree, so a row that already says

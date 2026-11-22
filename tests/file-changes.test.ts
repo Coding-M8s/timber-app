@@ -21,7 +21,7 @@ const listed = (paths: string[]): Repository => ({
 	setup: "repository",
 	worktrees: paths.map(path => ({
 		id: path, path, canonicalPath: path, branch: "feat/x", head: null, primary: path === primary, detached: false, locked: false, prunable: false,
-		pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, base: null, issue: null, sync: null,
+		pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, base: null, issue: null, sync: null, baseCounts: null,
 	})),
 });
 

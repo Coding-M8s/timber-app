@@ -38,7 +38,7 @@ const render = (store: ReturnType<typeof createAppStore>) => renderToStaticMarku
 
 const worktree = (path: string, fields: Partial<Worktree> = {}): Worktree => ({
 	id: `id:${path}`, path, canonicalPath: path, branch: path.split("/").at(-1)!, head: null, primary: false, detached: false, locked: false, prunable: false, pathExists: true,
-	changes: { kind: "known", modified: [], untracked: [] }, base: null, issue: null, sync: null, ...fields,
+	changes: { kind: "known", modified: [], untracked: [] }, base: null, issue: null, sync: null, baseCounts: null, ...fields,
 });
 const listOf = (attempts: { label: string; path: string; git?: "ok" | "stale" | "missing" }[]): ArenaList => ({
 	state: "listed",

@@ -1,7 +1,8 @@
 import { realpath } from "node:fs/promises";
 import { delimiter } from "node:path";
-import { BRANCH_LIST_FORMAT, BRANCH_SYNC_FORMAT, parseBranchList, parseBranchSync } from "../shared/git-parse";
-import type { BranchSuggestion, SyncState } from "../shared/model";
+import { isCommitHash, savedBaseRef } from "../shared/file-changes";
+import { BRANCH_LIST_FORMAT, BRANCH_SYNC_FORMAT, parseBranchList, parseBranchSync, parseLeftRightCount } from "../shared/git-parse";
+import type { BaseCounts, BranchSuggestion, SavedBase, SyncState } from "../shared/model";
 import { readGit } from "./read-git";
 
 /** These queries take well under a second. One this slow is stuck, and answers as if Git could not. */
@@ -12,8 +13,8 @@ const GIT_QUERY_TIMEOUT_MS = 30_000;
  *
  * Timber lists the worktrees (see ./timber-ls.ts). Git is asked directly only
  * for what Timber does not report: which repository a folder belongs to, how
- * each branch stands against its upstream, and which branches there are to
- * offer for picking. Git is always invoked as an
+ * each branch stands against its upstream, how each worktree stands against
+ * its saved base, and which branches there are to offer for picking. Git is always invoked as an
  * executable plus an argument array, never through a shell, and nothing here
  * changes a repository.
  */
@@ -52,6 +53,25 @@ export async function commonDirectory(path: string): Promise<string | null> {
 export async function readBranchSync(commonGitDir: string): Promise<Map<string, SyncState> | null> {
 	const output = await git(["--git-dir", commonGitDir, "for-each-ref", `--format=${BRANCH_SYNC_FORMAT}`, "refs/heads"]);
 	return output === null ? null : parseBranchSync(output);
+}
+
+/**
+ * How a worktree's commit stands against its saved base, counted by Git in
+ * the repository's common Git directory, so it needs nothing from the
+ * worktree's folder. (Timber reports the base of a missing folder as stale,
+ * so the sidebar has no counts for one.)
+ * Null when there is nothing to count: no base Git can compare with (see
+ * `savedBaseRef`), or a head that is not a full commit hash, as on a branch
+ * with no commit yet. "unreadable" when Git could not count, as when the base
+ * ref no longer exists. Only a canonical ref or a full hash reaches Git, so
+ * neither can be read as an option.
+ */
+export async function readBaseCounts(commonGitDir: string, base: SavedBase | null, head: string | null): Promise<BaseCounts | null> {
+	const ref = savedBaseRef(base);
+	if (!ref.ok || head === null || !isCommitHash(head)) return null;
+	const output = await git(["--git-dir", commonGitDir, "rev-list", "--left-right", "--count", `${ref.ref}...${head}`, "--"]);
+	const counted = output === null ? null : parseLeftRightCount(output);
+	return counted === null ? { kind: "unreadable" } : { kind: "counted", ...counted };
 }
 
 /**

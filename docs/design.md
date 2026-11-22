@@ -323,6 +323,15 @@ change them here first when they change.
   "(#153 · Open)" for GitHub, or the key and a quiet reason, such as
   "(PROJ-123, offline)", when the status could not be read. The row itself
   shows nothing more: its lines are full.
+- How far a worktree is from its saved base is a word flag on the row's
+  second line, after anything about its removal and before the other flags:
+  "4 ahead, 1 behind base", "1 ahead of base", or "1 behind base", in the
+  quiet flag color with no arrows, so it never reads as the upstream's push
+  and pull counts beside the name. Its tooltip names the base: "4 commits
+  ahead of origin/main and 1 behind, as of the last fetch." In a narrow
+  sidebar it wraps after its comma instead of being cut short. A worktree
+  level with its base, with no saved base, or whose base Timber cannot use
+  has no flag, and neither does one whose commits Git could not count.
 - A row is its button, which holds the first line (the name and the branch
   state), and its second line beside it, so the pull request's number can be
   a button of its own. A click elsewhere on the second line selects the
@@ -607,7 +616,11 @@ logins. The app never reads a tracker login and never signs in.
   Linux the webview lets the page read only one path of a drop from the
   file manager, so a drop of several files pastes one of them.
 - The header names the worktree's saved base beside its sync state and
-  changes, in the same words as the row's tooltip.
+  changes, in the same words as the row's tooltip, then how far the
+  worktree is from it: "Base origin/main · 4 ahead, 1 behind". Its tooltip
+  says the same in a sentence, or that the commits could not be counted, as
+  when the base branch was deleted. A worktree level with its base shows the
+  base alone.
 - The header shows the worktree's pull request with the same words as its
   row. Its number, such as "#42", is a quiet underlined link, as the issue
   is, that opens it in the browser. When pull requests

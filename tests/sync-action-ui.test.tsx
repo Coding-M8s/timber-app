@@ -34,6 +34,7 @@ const behind: Worktree = {
 	base: null,
 	issue: null,
 	sync: tracking(0, 3),
+	baseCounts: null,
 };
 
 const renderRow = (worktree: Worktree, withAction = true, removing = false) => renderToStaticMarkup(

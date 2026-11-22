@@ -26,6 +26,7 @@ const worktree: Worktree = {
 	base: null,
 	issue: null,
 	sync: { kind: "tracking", upstream: "origin/feat/x", ahead: 0, behind: 0 },
+	baseCounts: null,
 };
 const forcePushed: Worktree = { ...worktree, sync: { kind: "tracking", upstream: "origin/feat/x", ahead: 0, behind: 0, forcePushed: { at: 1 } } };
 const gone: Worktree = { ...worktree, sync: { kind: "gone", upstream: "origin/feat/x" } };

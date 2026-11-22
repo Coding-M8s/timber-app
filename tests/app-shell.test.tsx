@@ -204,18 +204,23 @@ describe("workspace", () => {
 		expect(markup).toMatch(/class="titlebar-branch" title="feat\/github-issue-lookup">/);
 		expect(markup).toMatch(/class="path">\/work\/timber-worktrees\/feat-github-issue-lookup</);
 		expect(markup).toContain("3 modified, 1 untracked");
-		// The header names the base Timber saved for the worktree.
-		expect(markup).toContain('<span title="Timber rebases this worktree onto origin/main, the base saved for it.">Base origin/main</span>');
+		// The header names the base Timber saved for the worktree, and how far the worktree is from it.
+		expect(markup).toContain('<span title="Timber rebases this worktree onto origin/main, the base saved for it. 4 commits ahead of origin/main and 1 behind, as of the last fetch.">Base origin/main · 4 ahead, 1 behind</span>');
 	});
 
 	test("the header says no saved base, warns about metadata Timber cannot use, and shows nothing on a Timber that reports none", async () => {
 		const { store } = await startedStore(createMockEngine([...sampleRepositories, sampleStatesRepository]));
 		const headerOf = (branch: string) => {
-			store.select(sampleStatesRepository.worktrees.find(worktree => worktree.branch === branch)!.id);
+			store.select(sampleStatesRepository.worktrees.find(worktree => worktree.branch === branch || worktree.path.endsWith(`/${branch}`))!.id);
 			const markup = render(store);
 			return markup.slice(markup.indexOf('<div class="workspace-meta">'), markup.indexOf('<div class="workspace-done">'));
 		};
 		expect(headerOf("main")).toContain('<span title="Timber has no base saved for this worktree.">No saved base</span>');
+		// A commit base is counted too, and counts Git could not read are said, never shown as level.
+		expect(headerOf("hotfix/from-release")).toContain('<span title="Timber rebases this worktree onto commit 9f8e7d6, the base saved for it. 2 commits ahead of commit 9f8e7d6 and 5 behind.">Base 9f8e7d6 · 2 ahead, 5 behind</span>');
+		expect(headerOf("feat/tax-rules")).toContain('<span title="Timber rebases this worktree onto origin/main, the base saved for it. The app could not count the commits between this worktree and its base, as when the base no longer exists.">Base origin/main</span>');
+		// Level with its base: the base alone.
+		expect(headerOf("review-build")).toContain('<span title="Timber rebases this worktree onto origin/main, the base saved for it.">Base origin/main</span>');
 		expect(headerOf("feat/invoices")).toMatch(/<span class="saved-base-warning" title="Timber found a saved base for this worktree but cannot use it: [^"]+">Base unknown<\/span>/);
 		const older = headerOf("release/2.4");
 		expect(older).toContain("/work/billing-worktrees/release-2.4");

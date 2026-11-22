@@ -23,7 +23,7 @@ function listed(path: string, worktrees: [string, SavedBase | null][]): Reposito
 		path, name: "sample", available: true, failure: null, setup: "repository",
 		worktrees: worktrees.map(([folder, base]) => ({
 			id: folder, path: folder, canonicalPath: folder, branch: "feat", head: null, primary: folder === path, detached: false, locked: false, prunable: false,
-			pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, base, issue: null, sync: null,
+			pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, base, issue: null, sync: null, baseCounts: null,
 		})),
 	};
 }

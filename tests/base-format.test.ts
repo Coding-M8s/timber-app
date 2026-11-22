@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { describeInvalidBase, describeRebaseBase, describeRowTitle, describeSavedBase } from "../src/mainview/base-format";
+import { BASE_COUNTS_UNREADABLE, describeBaseCounts, describeInvalidBase, describeRebaseBase, describeRowTitle, describeSavedBase } from "../src/mainview/base-format";
 import { actOutNew } from "../src/mainview/engine/mock-commands";
 import { browserSampleRepositories, sampleRepositories, sampleStatesRepository } from "../src/mainview/engine/mock";
 import { MOCK_BRANCH_POINT, derivedFileChanges, mockBase } from "../src/mainview/engine/mock-file-changes";
@@ -121,5 +121,57 @@ describe("sample data", () => {
 		const bases = browserSampleRepositories.flatMap(repository => repository.worktrees).map(worktree => worktree.base);
 		expect(new Set(bases.map(base => base?.kind ?? "not reported"))).toEqual(new Set(["assigned", "commit", "unassigned", "invalid", "not reported"]));
 		expect(bases).toContainEqual(local);
+	});
+});
+
+describe("how far a worktree is from its base", () => {
+	const counted = (ahead: number, behind: number) => ({ kind: "counted", ahead, behind }) as const;
+	// The flag's spaces do not break within a part, so it wraps only after its comma.
+	const plain = (text: string | undefined) => text?.replaceAll(" ", " ");
+
+	test("the row's flag says ahead, behind, or both, in words", () => {
+		expect(plain(describeBaseCounts(remote, counted(4, 1))?.flag)).toBe("4 ahead, 1 behind base");
+		expect(plain(describeBaseCounts(remote, counted(1, 0))?.flag)).toBe("1 ahead of base");
+		expect(plain(describeBaseCounts(remote, counted(0, 3))?.flag)).toBe("3 behind base");
+		expect(describeBaseCounts(remote, counted(4, 1))?.flag).toBe("4 ahead, 1 behind base");
+	});
+
+	test("the sentence names the base, and says a remote-tracking base is as of the last fetch", () => {
+		expect(describeBaseCounts(remote, counted(4, 1))?.sentence).toBe("4 commits ahead of origin/main and 1 behind, as of the last fetch.");
+		expect(describeBaseCounts(remote, counted(1, 0))?.sentence).toBe("1 commit ahead of origin/main, as of the last fetch.");
+		expect(describeBaseCounts(local, counted(0, 1))?.sentence).toBe("1 commit behind refs/heads/main.");
+		expect(describeBaseCounts(commit, counted(2, 5))?.sentence).toBe("2 commits ahead of commit 9f8e7d6 and 5 behind.");
+	});
+
+	test("level with the base, counts Git could not read, or no base to count against show nothing", () => {
+		expect(describeBaseCounts(remote, counted(0, 0))).toBeNull();
+		expect(describeBaseCounts(remote, { kind: "unreadable" })).toBeNull();
+		expect(describeBaseCounts(remote, null)).toBeNull();
+		expect(describeBaseCounts(none, counted(1, 1))).toBeNull();
+		expect(describeBaseCounts(stale, counted(1, 1))).toBeNull();
+		expect(describeBaseCounts(null, counted(1, 1))).toBeNull();
+	});
+
+	test("the header adds the counts after the base, and says when they could not be read", () => {
+		expect(describeSavedBase(remote, counted(4, 1))).toEqual({
+			text: "Base origin/main · 4 ahead, 1 behind",
+			sentence: "Timber rebases this worktree onto origin/main, the base saved for it. 4 commits ahead of origin/main and 1 behind, as of the last fetch.",
+			warning: false,
+		});
+		expect(describeSavedBase(commit, counted(0, 2))?.text).toBe("Base 9f8e7d6 · 2 behind");
+		expect(describeSavedBase(remote, counted(0, 0))).toEqual(describeSavedBase(remote));
+		expect(describeSavedBase(remote, { kind: "unreadable" })).toEqual({ ...describeSavedBase(remote)!, sentence: `Timber rebases this worktree onto origin/main, the base saved for it. ${BASE_COUNTS_UNREADABLE}` });
+		// No counts at all: the header is as it was.
+		expect(describeSavedBase(none, null)).toEqual(describeSavedBase(none));
+		expect(describeSavedBase(stale, null)).toEqual(describeSavedBase(stale));
+	});
+
+	test("the mock samples count against a base Git can compare with, and a new worktree starts level with its base", () => {
+		for (const worktree of [...sampleRepositories, sampleStatesRepository].flatMap(repository => repository.worktrees)) {
+			const comparable = worktree.base?.kind === "assigned" || worktree.base?.kind === "commit";
+			expect(worktree.baseCounts === null).toBe(!comparable);
+		}
+		const { created } = actOutNew(sampleRepositories[0]!, { repository: "/work/timber", name: "feat/new", base: null }, "succeeds");
+		expect(created?.baseCounts).toEqual(counted(0, 0));
 	});
 });

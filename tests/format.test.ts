@@ -18,6 +18,7 @@ const base: Worktree = {
 	base: null,
 	issue: null,
 	sync: { kind: "unpublished" },
+	baseCounts: null,
 };
 const linked: Worktree = { ...base, primary: false };
 const missing: Worktree = { ...linked, pathExists: false, prunable: true, canonicalPath: null, changes: { kind: "unknown", reason: "Worktree path is missing" } };
@@ -194,7 +195,7 @@ describe("sample data", () => {
 		const worktrees = browserSampleRepositories.flatMap(repository => repository.worktrees);
 		const kinds = new Set(worktrees.flatMap(worktree => describeRowMarkers(worktree)).map(marker => marker.kind));
 		expect([...kinds].sort()).toEqual([
-			"ahead", "base-unknown", "behind", "detached", "folder-missing", "local-only", "locked", "modified", "prunable", "status-unknown", "sync-unknown", "untracked", "upstream-gone",
+			"ahead", "base-counts", "base-unknown", "behind", "detached", "folder-missing", "local-only", "locked", "modified", "prunable", "status-unknown", "sync-unknown", "untracked", "upstream-gone",
 		]);
 		expect(worktrees.some(worktree => describeRowMarkers(worktree).length === 0)).toBe(true);
 		expect(new Set(worktrees.map(worktree => worktree.id)).size).toBe(worktrees.length);
@@ -366,5 +367,31 @@ describe("the marker for a saved base Timber cannot use", () => {
 		expect(kinds({ ...unread, base: { kind: "invalid", reason: "stale" } })).toEqual(["local-only", "status-unknown"]);
 		// Metadata that is itself broken is still said.
 		expect(kinds({ ...unread, base: { kind: "invalid", reason: "malformed" } })).toContain("base-unknown");
+	});
+});
+
+describe("the row's flag for how far the worktree is from its base", () => {
+	const based: Worktree = { ...linked, base: { kind: "assigned", ref: "refs/remotes/origin/main" }, baseCounts: { kind: "counted", ahead: 4, behind: 1 } };
+	const stateKinds = (worktree: Worktree) => describeRowMarkers(worktree, null, { kind: "running" }).filter(marker => marker.place === "state").map(marker => marker.kind);
+
+	test("sits on the second line, after a removal and before everything else, with its sentence", () => {
+		const marker = describeRowMarkers(based).find(marker => marker.kind === "base-counts");
+		expect(marker).toEqual({ kind: "base-counts", place: "state", text: "4 ahead, 1 behind base", tooltip: "4 commits ahead of origin/main and 1 behind, as of the last fetch." });
+		expect(stateKinds({ ...based, branch: null, detached: true, locked: true })).toEqual(["removing", "base-counts", "detached", "locked"]);
+		expect(describeRow(describeRowMarkers(based))).toContain("4 commits ahead of origin/main and 1 behind, as of the last fetch.");
+	});
+
+	test("is left out when level with the base, when Git could not count, and with no base to count against", () => {
+		const kinds = (worktree: Worktree) => describeRowMarkers(worktree).map(marker => marker.kind);
+		expect(kinds({ ...based, baseCounts: { kind: "counted", ahead: 0, behind: 0 } })).not.toContain("base-counts");
+		expect(kinds({ ...based, baseCounts: { kind: "unreadable" } })).not.toContain("base-counts");
+		expect(kinds({ ...based, baseCounts: null })).not.toContain("base-counts");
+		expect(kinds({ ...based, base: { kind: "unassigned" }, baseCounts: null })).not.toContain("base-counts");
+	});
+
+	test("never shows beside base unknown: unusable metadata has nothing to count against", () => {
+		const kinds = describeRowMarkers({ ...based, base: { kind: "invalid", reason: "malformed" }, baseCounts: null }).map(marker => marker.kind);
+		expect(kinds).toContain("base-unknown");
+		expect(kinds).not.toContain("base-counts");
 	});
 });

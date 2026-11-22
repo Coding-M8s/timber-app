@@ -44,6 +44,7 @@ const markerClass: Record<RowMarkerKind, string> = {
 	"locked": "row-flag",
 	"prunable": "row-flag",
 	"base-unknown": "row-flag",
+	"base-counts": "row-flag base-counts",
 	"pull-request": "row-flag pr",
 	"checks-passing": "row-flag pr",
 	"checks-failing": "row-flag pr failing",

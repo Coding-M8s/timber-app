@@ -1,8 +1,18 @@
-import type { BranchSuggestion, Repository, SavedBase, Worktree } from "../../shared/model";
+import type { BaseCounts, BranchSuggestion, Repository, SavedBase, Worktree } from "../../shared/model";
 import { type SetBaseRequest, type SetBaseResult, readSetBaseResult, setBaseResultArguments } from "../../shared/timber-base";
-import { isCommitHash } from "../../shared/file-changes";
+import { isCommitHash, savedBaseRef } from "../../shared/file-changes";
 import { savedBaseSelector } from "../../shared/rebase-command";
 import { RESULT_FILE_PLACEHOLDER, type TimberRun, describeTimberCommand, readTimberResult } from "../../shared/timber-result";
+
+/**
+ * The counts against a saved base, as the main process reads them: none for a
+ * base Git cannot compare with or a worktree with no commit, and otherwise
+ * level with the base unless a sample says more.
+ */
+export function sampleBaseCounts(base: SavedBase | null, head: string | null): BaseCounts | null {
+	// The mock keeps no history, so a base it has no sample counts for is shown level with the worktree.
+	return savedBaseRef(base).ok && head !== null && isCommitHash(head) ? { kind: "counted", ahead: 0, behind: 0 } : null;
+}
 
 /**
  * Acting out `timber base --set --result-file` for the mock engine. Nothing
@@ -77,6 +87,6 @@ export function actOutSetBase(repository: Repository, worktree: Worktree, reques
 	const said = (base: SavedBase) => base.kind === "assigned" ? savedBaseSelector(base.ref) : base.kind === "commit" ? `commit ${base.commit}` : "none";
 	return {
 		result: written("set", current, null, `Saved base ${said(current)} for "${worktree.path}" (was ${said(previous)}).\n`),
-		saved: { ...worktree, base: current },
+		saved: { ...worktree, base: current, baseCounts: sampleBaseCounts(current, worktree.head) },
 	};
 }

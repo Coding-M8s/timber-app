@@ -20,6 +20,7 @@ const clean: Worktree = {
 	base: null,
 	issue: null,
 	sync: { kind: "tracking", upstream: "origin/feat/x", ahead: 0, behind: 0 },
+	baseCounts: null,
 };
 const busy: Worktree = {
 	...clean,
@@ -171,4 +172,12 @@ describe("WorktreeRow", () => {
 			expect(descriptionOf(markup)).toBe(markers.length > 0 ? markers.map(marker => marker.tooltip).join(" ") : null);
 		}
 	});
+});
+
+test("the row draws how far it is from its base as a quiet word flag on its second line, with the sentence as its tooltip", () => {
+	const based: Worktree = { ...clean, base: { kind: "assigned", ref: "refs/remotes/origin/main" }, baseCounts: { kind: "counted", ahead: 4, behind: 1 } };
+	const markup = renderToStaticMarkup(<WorktreeRow worktree={based} selected={false} onSelect={() => {}} />);
+	const meta = markup.slice(markup.indexOf('class="row-line row-meta"'));
+	expect(meta).toContain('<span class="row-flag base-counts" title="4 commits ahead of origin/main and 1 behind, as of the last fetch." aria-hidden="true">4 ahead, 1 behind base</span>');
+	expect(markup).toContain("4 commits ahead of origin/main and 1 behind, as of the last fetch.</span>");
 });
