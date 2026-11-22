@@ -149,7 +149,7 @@ test("CI and the release test with the Timber the app bundles", () => {
 test("CI runs the tests in three parallel shards with Timber installed, and check passes only when every shard and the build did", () => {
 	const ci = workflow("ci.yml");
 	const scripts = (JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { scripts: Record<string, string> }).scripts;
-	expect(scripts.test).toBe("bun test --parallel --timeout=30000 --timings tests/timings.json");
+	expect(scripts.test).toBe("bun test --parallel=4 --timeout=30000 --timings tests/timings.json");
 	expect(scripts["test:serial"]).toBe("bun test --timeout=30000");
 
 	const shards = ci.jobs.test!;
