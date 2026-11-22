@@ -5,7 +5,7 @@ import { addChopDraft, chopDraftsOf, chopsDraftModel, chopsSectionChange, editCh
 import { type ChopsRepository, ChopsSectionView } from "../src/mainview/components/settings/ChopsSection";
 import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { createAppStore } from "../src/mainview/store/store";
-import { AGENT_PRESETS } from "../src/shared/agent";
+import { DEFAULT_AGENTS } from "../src/shared/agent";
 import type { PersonalChop } from "../src/shared/chops";
 
 const settle = async () => {
@@ -32,7 +32,7 @@ const view = (drafts: ReturnType<typeof chopDraftsOf>, repository: ChopsReposito
 			switches={{ useChops: true, playChopSounds: true }}
 			canSave={false}
 			repositories={[{ path: TIMBER, name: "timber" }]}
-			agents={AGENT_PRESETS}
+			agents={DEFAULT_AGENTS}
 			repository={repository}
 			save={{ state: "idle" }}
 			onSwitch={noop}

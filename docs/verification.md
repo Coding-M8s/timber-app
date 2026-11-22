@@ -4214,3 +4214,43 @@ Run for showing which agents are installed (issue 331), Linux x64 with Bun
   `windows: true` on Linux. Not run on Windows or macOS.
 - Not run: the desktop app by hand, so Settings, Agents and the Agent field
   were seen only as rendered markup over the mock engine.
+
+Run for presets and marks for Cursor CLI, Gemini CLI, Grok Build, OpenCode,
+and GitHub Copilot CLI (issue 345), Linux x64 (Pop!_OS 24.04) with Bun
+1.4.5:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun run build:web`: built.
+- `bun run test`: 4261 pass, 19 skip, 0 fail. On the base it started from,
+  the same machine ran 4249 pass, 19 skip, 0 fail. Rebased onto main after
+  the first saved agent that was found starts everywhere an agent starts
+  unpicked: 4272 pass, 19 skip, 0 fail, with both type checks and the web
+  build again clean.
+- `tests/agent-registry.test.ts` finds every agent by each of its
+  executables, bare, as a full path, and as a Windows `.exe`; finds a bare
+  `agent` as Cursor CLI only when the file it leads to is `cursor-agent`,
+  and never by its name alone; and checks that the presets offered are all
+  seven agents while the list before anything was saved is still Claude
+  Code and Codex. `tests/agent-icon.test.tsx` renders every mark, and two
+  Gemini sparks with gradient ids of their own.
+- `tests/terminals.test.ts` starts real sessions of two `agent` links in a
+  temporary folder: one leading to a file named `cursor-agent` got
+  `program: "cursor"`, one leading to `grok-1.0.92-linux-x86_64` got no
+  program, and the Cursor one still started by the name it was found as.
+- `tests/agent-marks-browser.test.ts`, in headless Chrome over the mock
+  engine: a session of each of the seven agents, started from its preset,
+  showed its mark on its chip and on its worktree's row, drawn at a size
+  above zero, in Timber Light and Timber Dark; each one-color mark resolved
+  to the theme's text color, as a worktree's name is drawn, one color in
+  Timber Light and another in Timber Dark, and Gemini's spark to its
+  gradient. Screenshots
+  of both themes were looked at by eye.
+- On this machine, `agentProgram` with the file each one leads to:
+  `~/.local/bin/agent` (Cursor's link) and `~/.local/bin/cursor-agent` gave
+  Cursor; `~/.grok/bin/agent`, which is first on this PATH and leads to
+  Grok Build's `grok-1.0.92-linux-x86_64`, gave none; `~/.grok/bin/grok`
+  gave Grok; `/usr/bin/copilot` (VS Code's Copilot shim) gave Copilot.
+  Gemini CLI and OpenCode are not installed here.
+- Not run: the desktop app by hand, so no real session of these agents was
+  started from it, and macOS and Windows, where the links of an `agent`
+  were not checked.

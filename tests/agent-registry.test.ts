@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { AGENT_PRESETS } from "../src/shared/agent";
+import { AGENT_PRESETS, DEFAULT_AGENTS } from "../src/shared/agent";
 import { AGENTS, agentByExecutable, agentById, executableName } from "../src/shared/agent-registry";
-import { agentProgram } from "../src/shared/agent-resume";
+import { agentProgram, resumableAgent } from "../src/shared/agent-resume";
 import { agentBrand } from "../src/shared/session-status";
 import { AGENT_PRESETS as TIMBER_AGENT_PRESETS } from "../src/mainview/timber-settings-format";
 
@@ -11,6 +11,39 @@ describe("the agent registry", () => {
 	test("finds an agent by its executable's bare name", () => {
 		expect(idOf("claude")).toBe("claude");
 		expect(idOf("codex")).toBe("codex");
+		expect(idOf("cursor-agent")).toBe("cursor");
+		expect(idOf("gemini")).toBe("gemini");
+		expect(idOf("grok")).toBe("grok");
+		expect(idOf("opencode")).toBe("opencode");
+		expect(idOf("copilot")).toBe("copilot");
+	});
+
+	test("finds every agent by each of its executables, as a full path and as a Windows .exe", () => {
+		for (const agent of AGENTS) {
+			for (const executable of agent.executables) {
+				expect(idOf(`/home/me/.local/bin/${executable}`)).toBe(agent.id);
+				expect(idOf(`C:\\Tools\\${executable.toUpperCase()}.EXE`)).toBe(agent.id);
+			}
+		}
+	});
+
+	test("a name other programs install too is an agent only by the file it leads to", () => {
+		// As Cursor's installer links it, and as Grok Build's does on the same machine.
+		const cursor = "/home/me/.local/share/cursor-agent/versions/2026.11.19-f005e9d/cursor-agent";
+		const grok = "/home/me/.grok/downloads/grok-1.0.92-linux-x86_64";
+		expect(agentByExecutable("/home/me/.local/bin/agent", cursor)?.id).toBe("cursor");
+		expect(agentByExecutable("agent", cursor)?.id).toBe("cursor");
+		expect(agentByExecutable("C:\\Users\\me\\bin\\agent.exe", "C:\\Users\\me\\cursor-agent\\cursor-agent.exe")?.id).toBe("cursor");
+		expect(agentByExecutable("/home/me/.grok/bin/agent", grok)).toBeNull();
+		expect(agentByExecutable("/home/me/.local/bin/agent", "/home/me/.local/bin/agent")).toBeNull();
+		expect(agentByExecutable("/home/me/.local/bin/agent", null)).toBeNull();
+		expect(idOf("agent")).toBeNull();
+		// The file it leads to never makes another name an agent.
+		expect(agentByExecutable("/usr/bin/tool", cursor)).toBeNull();
+		expect(agentProgram("agent", cursor)).toBe("cursor");
+		expect(agentProgram("agent", grok)).toBeNull();
+		// Cursor has no way back to a conversation yet, so it starts as typed.
+		expect(resumableAgent("agent", [], cursor)).toBeNull();
 	});
 
 	test("finds an agent by the last part of a full path, on either separator", () => {
@@ -35,7 +68,7 @@ describe("the agent registry", () => {
 	test("ids and executables are unique, and executables are bare lower case names", () => {
 		const ids = AGENTS.map(agent => agent.id);
 		expect(new Set(ids).size).toBe(ids.length);
-		const executables = AGENTS.flatMap(agent => agent.executables);
+		const executables = AGENTS.flatMap(agent => [...agent.executables, ...agent.sharedExecutables]);
 		expect(new Set(executables).size).toBe(executables.length);
 		for (const executable of executables) {
 			expect(executable).toBe(executable.toLowerCase());
@@ -48,16 +81,36 @@ describe("the agent registry", () => {
 		}
 	});
 
-	test("Claude Code and Codex are its rows, in that order", () => {
-		expect(AGENTS.map(agent => [agent.id, agent.name, agent.label, agent.command])).toEqual([
-			["claude", "Claude Code", "Claude", "claude"],
-			["codex", "Codex", "Codex", "codex"],
+	test("its rows, in order, with Claude Code and Codex the default ones", () => {
+		expect(AGENTS.map(agent => [agent.id, agent.name, agent.label, agent.command, agent.executables, agent.sharedExecutables, agent.default])).toEqual([
+			["claude", "Claude Code", "Claude", "claude", ["claude"], [], true],
+			["codex", "Codex", "Codex", "codex", ["codex"], [], true],
+			["cursor", "Cursor CLI", "Cursor", "cursor-agent", ["cursor-agent"], ["agent"], false],
+			["gemini", "Gemini CLI", "Gemini", "gemini", ["gemini"], [], false],
+			["grok", "Grok Build", "Grok", "grok", ["grok"], [], false],
+			["opencode", "OpenCode", "OpenCode", "opencode", ["opencode"], [], false],
+			["copilot", "GitHub Copilot CLI", "Copilot", "copilot", ["copilot"], [], false],
 		]);
 	});
 
-	test("both preset lists are its rows", () => {
+	test("both preset lists are its rows, and the list before anything was saved is the default ones", () => {
 		expect(AGENT_PRESETS).toEqual(AGENTS.map(agent => ({ name: agent.name, command: agent.command })));
 		expect(TIMBER_AGENT_PRESETS).toEqual(AGENTS.map(agent => ({ label: agent.label, command: agent.command, args: [] })));
+		expect(TIMBER_AGENT_PRESETS.map(preset => preset.label)).toEqual(["Claude", "Codex", "Cursor", "Gemini", "Grok", "OpenCode", "Copilot"]);
+		expect(DEFAULT_AGENTS).toEqual([{ name: "Claude Code", command: "claude" }, { name: "Codex", command: "codex" }]);
+	});
+
+	test("each preset command is its agent's own executable, so a preset gets its mark", () => {
+		for (const agent of AGENTS) expect(agentByExecutable(agent.command)?.id).toBe(agent.id);
+	});
+
+	test("each mark says where and when it was taken, and has shapes to draw", () => {
+		for (const agent of AGENTS) {
+			expect(agent.mark.source).toMatch(/https:\/\/\S+.*taken on \d{4}-\d{2}-\d{2}\./);
+			expect(agent.mark.paths.length).toBeGreaterThan(0);
+			for (const path of agent.mark.paths) expect(path.d).toMatch(/^M[\d.\s,-]/);
+			expect(agent.mark.viewBox.split(" ")).toHaveLength(4);
+		}
 	});
 
 	test("an agent session's program and mark come from the same lookup", () => {
@@ -66,5 +119,15 @@ describe("the agent registry", () => {
 		expect(agentBrand(session("C:\\tools\\claude.exe"))).toBe("claude");
 		expect(agentBrand(session("C:\\tools\\CODEX.EXE"))).toBe("codex");
 		expect(agentBrand(session("/usr/bin/aider"))).toBeNull();
+		for (const agent of AGENTS) for (const executable of agent.executables) expect(agentBrand(session(`/usr/bin/${executable}`))).toBe(agent.id);
+	});
+
+	test("an agent session's mark follows the program the main process gave it, which a bare shared name cannot", () => {
+		expect(agentBrand({ kind: "agent", shell: "/home/me/.local/bin/agent", status: null })).toBeNull();
+		expect(agentBrand({ kind: "agent", shell: "/home/me/.local/bin/agent", status: null, program: "cursor" })).toBe("cursor");
+		// Only an agent session runs its program: a shell does not take one.
+		expect(agentBrand({ kind: "terminal", shell: "/bin/bash", status: null, program: "cursor" })).toBeNull();
+		// A reported app still counts in the registry's order, as before.
+		expect(agentBrand({ kind: "agent", shell: "/usr/bin/codex", status: { state: "working", kind: null, progress: null, app: "claude-code", title: null, message: null }, program: "codex" })).toBe("claude");
 	});
 });

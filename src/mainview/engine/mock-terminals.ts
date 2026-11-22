@@ -271,7 +271,7 @@ export function createMockTerminals(
 		// An agent goes on as the person's shell in the same session, as the main process has it do.
 		if (acted.session.kind === "agent") {
 			const endedAgent: EndedAgent = {
-				name: acted.launchName, agent: acted.agent, program: agentProgram(acted.session.shell), resumable: acted.resumable, conversation: acted.conversation,
+				name: acted.launchName, agent: acted.agent, program: acted.session.program ?? null, resumable: acted.resumable, conversation: acted.conversation,
 				command: acted.session.command, exitCode, signal: null,
 			};
 			acted.records = createStatusRecords();
@@ -282,7 +282,8 @@ export function createMockTerminals(
 			acted.line = "";
 			const shell = "/bin/mock-shell";
 			print(acted, agentEndedNote(acted.launchName, endedAgent, acted.session.path));
-			acted.session = { ...acted.session, kind: "terminal", shell, command: describeCommandLine([shell]), state: { kind: "running" }, status: null, children: [], endedAgent, ...dropped };
+			const { program: _agentProgram, ...shellSession } = acted.session;
+			acted.session = { ...shellSession, kind: "terminal", shell, command: describeCommandLine([shell]), state: { kind: "running" }, status: null, children: [], endedAgent, ...dropped };
 			announce({ id: acted.session.id, session: acted.session });
 			print(acted, prompt(acted));
 			return;
@@ -458,6 +459,8 @@ export function createMockTerminals(
 			args = rest;
 		}
 		const taken = [...sessions.values()].filter(acted => acted.session.worktree === worktree.id).map(acted => acted.session.name);
+		// No file is followed in the browser: the pretend executable's own name gives its agent.
+		const program = launch || attempt ? agentProgram(shell) : null;
 		const session: TerminalSession = {
 			id: `mock-terminal-${++lastId}`,
 			kind: launch || attempt ? "agent" : setup ? "timber" : "terminal",
@@ -474,6 +477,7 @@ export function createMockTerminals(
 			state: { kind: "running" },
 			status: null,
 			children: [],
+			...(program !== null ? { program } : {}),
 			...(chop?.kind === "prompt" ? { prompt: { state: "pending" as const, ...(chop.review ? { what: "review" as const } : {}) } } : {}),
 		};
 		const acted: Acted = {

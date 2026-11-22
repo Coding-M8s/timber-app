@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openWebLink } from "../src/bun/open-link";
@@ -1022,6 +1022,29 @@ sleep 5
 				expect(sessions.paste(session.id, "one line")).toEqual({ outcome: "not-ready", message: PROMPT_STILL_STARTING });
 				expect(sessions.sendPrompt(session.id, repository, worktree, "one line")).toEqual({ outcome: "not-ready", message: PROMPT_STILL_STARTING });
 			});
+		});
+
+		test("an agent named as other programs are too is known by the file it leads to, and still starts as found", async () => {
+			// As Cursor's installer and Grok Build's each put an `agent` on the PATH, linked to a file of their own.
+			const linked = (folder: string, file: string) => {
+				const target = join(root, folder, file);
+				mkdirSync(join(root, folder, "bin"), { recursive: true });
+				writeFileSync(target, `#!/bin/sh\nprintf '%s ready\\n' "$(basename "$0")"\nread line\n`);
+				chmodSync(target, 0o755);
+				symlinkSync(target, join(root, folder, "bin", "agent"));
+				return join(root, folder, "bin", "agent");
+			};
+			const cursor = linked("cursor-agent", "cursor-agent");
+			const grok = linked("grok", "grok-1.0.92-linux-x86_64");
+			startWithAgents({ agents: async () => [{ name: "Cursor CLI", command: cursor }, { name: "Other", command: grok }] });
+			const one = await openedAgent("Cursor CLI");
+			const other = await openedAgent("Other");
+			expect(one).toMatchObject({ kind: "agent", shell: cursor, program: "cursor" });
+			expect(other.shell).toBe(grok);
+			expect(other.program).toBeUndefined();
+			expect(sessions.running().map(session => session.program).sort()).toEqual(["cursor", null]);
+			// Started by the name it was found as, which such a program may read.
+			await seen(one.id, "agent ready");
 		});
 
 		describe("an agent that ends by itself", () => {

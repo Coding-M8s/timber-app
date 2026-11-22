@@ -4,7 +4,7 @@
  * behaves, never how Timber is configured. They are the `preferences` part of
  * the app's settings file. Everything here is pure.
  */
-import { AGENT_PRESETS, type AgentSetting, readAgentSettings, sameAgentSettings, writeAgentSettings } from "./agent";
+import { DEFAULT_AGENTS, type AgentSetting, readAgentSettings, sameAgentSettings, writeAgentSettings } from "./agent";
 import { type ChopArrangements, readChopArrangements, salvageChopArrangements, sameChopArrangements, writeChopArrangements } from "./chop-order";
 import { type FileChopSounds, readFileChopSounds, salvageFileChopSounds, sameFileChopSounds, writeFileChopSounds } from "./chop-sounds";
 import { type PersonalChop, readPersonalChops, salvagePersonalChops, samePersonalChops, writePersonalChops } from "./chops";
@@ -203,7 +203,7 @@ export const PREFERENCE_PARTS: { [Key in keyof Preferences]: PreferencePart<Pref
 		write: writeEditorSetting,
 	},
 	agents: {
-		fallback: () => AGENT_PRESETS.map(agent => ({ ...agent })),
+		fallback: () => DEFAULT_AGENTS.map(agent => ({ ...agent })),
 		read: readAgentSettings,
 		same: sameAgentSettings,
 		write: writeAgentSettings,

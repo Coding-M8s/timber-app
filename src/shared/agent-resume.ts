@@ -32,9 +32,13 @@ function startsAsTyped(args: readonly string[], recipe: AgentResume): boolean {
 		|| (SHORT_GROUP.test(arg) && Array.from(arg.slice(1)).some(letter => recipe.pickingLetters.includes(letter))));
 }
 
-/** Which agent an executable is by its name alone, whatever its arguments, or null. */
-export function agentProgram(executable: string): ResumableAgent | null {
-	return agentByExecutable(executable)?.id ?? null;
+/**
+ * Which agent an executable is by its name, whatever its arguments, or null.
+ * `realPath` is the file it leads to with every link followed, which tells a
+ * name other programs install too, such as `agent` (see `agentByExecutable`).
+ */
+export function agentProgram(executable: string, realPath?: string | null): ResumableAgent | null {
+	return agentByExecutable(executable, realPath)?.id ?? null;
 }
 
 /**
@@ -44,8 +48,8 @@ export function agentProgram(executable: string): ResumableAgent | null {
  * Words are matched exactly, so a flag that only starts the same way does
  * not count. Null for anything else.
  */
-export function resumableAgent(executable: string, args: readonly string[]): ResumableAgent | null {
-	const agent = agentByExecutable(executable);
+export function resumableAgent(executable: string, args: readonly string[], realPath?: string | null): ResumableAgent | null {
+	const agent = agentByExecutable(executable, realPath);
 	if (agent === null || agent.resume === null) return null;
 	return startsAsTyped(args, agent.resume) ? null : agent.id;
 }

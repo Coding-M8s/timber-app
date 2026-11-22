@@ -403,8 +403,15 @@ change them here first when they change.
   its own shape as well as its color; Needs you is a diamond, or a raised
   hand when the agent asks a question. A thin rounded outline in the state's
   color holds the shape and the agent's initial; the tooltip names the
-  agent. Claude Code and Codex show their makers' official marks there
-  instead of letters (Claude's spark, OpenAI's mark), and on their chip. An agent that reports nothing shows as running.
+  agent. The agents the app knows show their makers' official marks there
+  instead of letters, and on their chip: Claude Code (Claude's spark, in
+  its orange), Codex (OpenAI's mark), Cursor CLI (Cursor's cube), Gemini
+  CLI (Gemini's spark, in its gradient), Grok Build (Grok's mark), OpenCode
+  (OpenCode's mark, its inner square faint), and GitHub Copilot CLI
+  (GitHub's Copilot mark). Every mark but Claude's and Gemini's is drawn in
+  the theme's text color, so it reads in light and dark themes alike. Each
+  is its maker's trademark, shown only to say which agent a session runs.
+  An agent that reports nothing shows as running.
 - An agent's tasks (subagents and background tasks) that still run, or
   reported an error, show as a small count beside its mark, on the row and
   the chip, in the shape and color of the most urgent one, so a task that
@@ -615,8 +622,8 @@ logins. The app never reads a tracker login and never signs in.
   type at once: run the tests, look at `git diff`, or start the agent again.
   What the agent printed stays above, followed by a dim line saying it
   exited and that this is now a shell. The chip keeps its name, and the
-  Claude Code or Codex icon when it was one of them (another agent's chip
-  shows the terminal mark). While the shell runs, the chip shows how the
+  agent's mark when it was one the app knows (another agent's chip shows
+  the terminal mark). While the shell runs, the chip shows how the
   agent ended ("exit 0", "exit 3", or the signal), and says "Claude ended.
   Exited with code 0. Now a shell" to assistive technology. An agent that
   ended with exit code 0 leaves a plain terminal, counted on its row with
@@ -1251,8 +1258,9 @@ and for an agent that needs you, blue for outgoing commits and running or
 working agents, yellow and green for file changes (green also for an agent
 that is done), red for destructive state, for errors, for a closed pull
 request, and for a crashed agent, amber for rewritten state, and purple for a
-merged pull request. The one color not from a theme is Claude's own orange in its
-spark, which is part of its mark.
+merged pull request. The only colors not from a theme are inside two agents'
+marks, which are part of them: Claude's own orange in its spark, and the
+gradient of Gemini's spark.
 
 Every color is a theme's. Timber Dark is the look above and the default;
 Timber Light and a few well known palettes come with the app. A theme keeps

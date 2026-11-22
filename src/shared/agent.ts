@@ -24,8 +24,11 @@ export interface AgentSetting {
 	command: string;
 }
 
-/** Agents offered as a starting point, and the list before anything was saved: each agent of the registry, by its name and command. */
+/** Agents offered as a starting point in Settings, Agents: each agent of the registry, by its name and command. */
 export const AGENT_PRESETS: readonly AgentSetting[] = AGENTS.map(agent => ({ name: agent.name, command: agent.command }));
+
+/** The list before anything was saved: the presets of the registry's default agents, Claude Code and Codex. */
+export const DEFAULT_AGENTS: readonly AgentSetting[] = AGENTS.filter(agent => agent.default).map(agent => ({ name: agent.name, command: agent.command }));
 
 /** The most agents the list can hold. */
 export const AGENT_LIMIT = 20;

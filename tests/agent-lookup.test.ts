@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { locateAgent } from "../src/bun/find-executable";
 import { agentLookupLine } from "../src/mainview/agent-format";
-import { AGENT_PRESETS } from "../src/shared/agent";
+import { DEFAULT_AGENTS } from "../src/shared/agent";
 import { type AgentLocation, agentFound, agentMark, agentsLocated, describeAgentLookup, lookupOf } from "../src/shared/agent-lookup";
 
 const posix = process.platform !== "win32";
@@ -61,13 +61,13 @@ describe("what the app says about an agent's executable", () => {
 	const missing: AgentLocation = { name: "Codex", command: "codex", lookup: { state: "not-found" } };
 
 	test("matches an agent by its name and its command as looked for", () => {
-		expect(lookupOf([found, missing], AGENT_PRESETS[0]!)).toEqual(found.lookup);
+		expect(lookupOf([found, missing], DEFAULT_AGENTS[0]!)).toEqual(found.lookup);
 		expect(lookupOf([found], { name: "Claude Code", command: "claude --new" })).toBeNull();
-		expect(lookupOf(null, AGENT_PRESETS[0]!)).toBeNull();
-		expect(agentFound([found, missing], AGENT_PRESETS[0]!)).toBe(true);
-		expect(agentFound([found, missing], AGENT_PRESETS[1]!)).toBe(false);
-		expect(agentsLocated([found, missing], AGENT_PRESETS)).toBe(true);
-		expect(agentsLocated([found], AGENT_PRESETS)).toBe(false);
+		expect(lookupOf(null, DEFAULT_AGENTS[0]!)).toBeNull();
+		expect(agentFound([found, missing], DEFAULT_AGENTS[0]!)).toBe(true);
+		expect(agentFound([found, missing], DEFAULT_AGENTS[1]!)).toBe(false);
+		expect(agentsLocated([found, missing], DEFAULT_AGENTS)).toBe(true);
+		expect(agentsLocated([found], DEFAULT_AGENTS)).toBe(false);
 		expect(agentsLocated(null, [])).toBe(true);
 	});
 
@@ -84,7 +84,7 @@ describe("what the app says about an agent's executable", () => {
 	});
 
 	test("a row of the Agents section says so for a saved agent, and asks for a save first for one that changed", () => {
-		const saved = AGENT_PRESETS;
+		const saved = DEFAULT_AGENTS;
 		expect(agentLookupLine(saved[0]!, saved, [found, missing])).toEqual({ text: "Found at /usr/local/bin/claude", missing: false });
 		expect(agentLookupLine(saved[1]!, saved, [found, missing])).toEqual({ text: "Not found on PATH", missing: true });
 		expect(agentLookupLine({ name: "Codex", command: "codex --model big" }, saved, [found, missing])).toEqual({ text: "Save to check whether it is installed.", missing: false });
