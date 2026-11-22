@@ -4024,7 +4024,9 @@ A worktree can have any number of terminal sessions: each is the person's
 shell, running in its folder, drawn in the Workspace tab under a chip of its
 own. Every session keeps running while another one, or another worktree,
 shows, and coming back shows it as it was. The terminal and agent sessions
-that run when the app quits open again when it starts.
+that run when the app quits open again when it starts. Keeping them running
+after the app quits is planned, not built (see
+[the decision record](decision-kept-sessions.md)).
 
 - **Who owns it.** The main process (`src/bun/terminals.ts`). Each session is
   a pseudo terminal from `Bun.Terminal`, started with `SHELL` when that is a
