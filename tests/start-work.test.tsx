@@ -218,8 +218,9 @@ async function boardIssue(engine: ReturnType<typeof createMockEngine>, tracker: 
 }
 
 /** The Start work dialog as StartWorkDialog.tsx wires it, without a window, on the mock engine, noting every `timber new` it asks for. */
-async function startWork(pick: (engine: ReturnType<typeof createMockEngine>) => Promise<SuggestedIssue>) {
+async function startWork(pick: (engine: ReturnType<typeof createMockEngine>) => Promise<SuggestedIssue>, missingExecutables: string[] = []) {
 	const engine = createMockEngine();
+	engine.missingExecutables(missingExecutables);
 	const asked: NewWorktreeRequest[] = [];
 	const { newWorktree } = engine;
 	engine.newWorktree = request => (asked.push(request), newWorktree(request));
@@ -237,13 +238,13 @@ async function startWork(pick: (engine: ReturnType<typeof createMockEngine>) => 
 	let checkedOut = 0;
 	const mode = () => startWorkMode(model, model.getState(), repository, card, choice.selector, submission, undefined, () => void checkedOut++);
 	return {
-		store, engine, asked, model, toasts, mode, card,
+		store, engine, asked, model, toasts, mode, card, controller,
 		checkedOut: () => checkedOut,
 		submit: () => controller.submit(mode()),
 		render: () => renderToStaticMarkup(
 			<WorktreeDialogFrame
 				title="Start work" repository={repository} modes={[mode()]} selected={0} submission={submission.getState()}
-				agents={store.getState().preferences.agents} plan={controller.plan}
+				agents={store.getState().preferences.agents} agentLocations={store.getState().agentLocations} plan={controller.plan}
 				onSelect={() => {}} onPickAgent={() => {}} onSubmit={() => {}} onClose={() => {}}
 			/>,
 		),
@@ -251,6 +252,15 @@ async function startWork(pick: (engine: ReturnType<typeof createMockEngine>) => 
 }
 
 describe("Start work in the mock app", () => {
+	test("its Agent field picks the first agent found, marks the missing one, and starts the one picked", async () => {
+		const dialog = await startWork(engine => boardIssue(engine, "github", "42"), ["claude"]);
+		await dialog.controller.locateAgents();
+		expect(dialog.render()).toContain('<option value="Claude Code">Claude Code (not found)</option><option value="Codex" selected="">Codex</option>');
+		expect(await dialog.submit()).toBe(true);
+		await settle();
+		expect(dialog.store.getState().terminals.map(session => session.name)).toContain("Codex");
+	});
+
 	test("GitHub, unassigned: the footer shows --assign first, and the worktree it creates is linked, selected, and assigned", async () => {
 		const dialog = await startWork(engine => boardIssue(engine, "github", "42"));
 		const command = "timber new --assign --no-setup --result-file <temporary file> --no-editor --no-agent -- github:42";

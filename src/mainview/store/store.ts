@@ -1,3 +1,4 @@
+import { sameAgentSettings } from "../../shared/agent";
 import type { IssueSearchRequest, IssueSearchResult } from "../../shared/issue-search";
 import type { IssueList, IssueListResult } from "../../shared/issue-lists";
 import type { IssueTracker } from "../../shared/model";
@@ -258,6 +259,13 @@ export interface AppStore {
 	 * failed save with the reason.
 	 */
 	savePreferences(change: Partial<Preferences>): Promise<SavePreferencesResult>;
+	/**
+	 * Look again for the saved agents' executables (`agentLocations`), as
+	 * after installing one. An answer older than the one shown is dropped.
+	 * Answers whether this look's answer was shown. Never throws: when the
+	 * engine cannot answer, what was known stays, and the answer is false.
+	 */
+	locateAgents(): Promise<boolean>;
 	/**
 	 * Save the order and favorites of the chops panel as the `chopOrder`
 	 * preference, with any other preferences `also` names in the same save.
@@ -1461,9 +1469,29 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		if (result.outcome === "saved" && ticket > shownPreferenceTicket) {
 			shownPreferenceTicket = ticket;
 			preferencesSaved = true;
+			const agentsChanged = !sameAgentSettings(state.preferences.agents, result.preferences.agents);
 			update({ preferences: result.preferences, preferencesProblem: null });
+			if (agentsChanged) void locateAgents();
 		}
 		return result;
+	}
+
+	// Looks take a ticket when they ask, so an older answer that arrives last never replaces a newer one.
+	let lastAgentLook = 0;
+	let shownAgentLook = 0;
+
+	async function locateAgents(): Promise<boolean> {
+		const ticket = ++lastAgentLook;
+		try {
+			const agentLocations = await engine.locateAgents();
+			if (ticket < shownAgentLook) return false;
+			shownAgentLook = ticket;
+			update({ agentLocations });
+			return true;
+		} catch {
+			// What was known stays. The Agent field says when an agent is not known.
+			return false;
+		}
 	}
 
 	let chopOrderTicket = 0;
@@ -3433,6 +3461,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			});
 			void loadLayout();
 			void loadPreferences();
+			void locateAgents();
 			void findTimber(() => engine.timberStatus());
 			engine.appInfo().then(info => update({ appVersion: info.version, rendering: info.rendering }), () => {
 				// About says the version is not known.
@@ -3608,6 +3637,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			if (state.layoutProblem) update({ layoutProblem: null });
 		},
 		savePreferences,
+		locateAgents,
 		saveChopOrder,
 		noteChopRenames(renames) {
 			update({ chopRenaming: renames.length === 0 ? null : { renames, list: state.chops?.list ?? null } });

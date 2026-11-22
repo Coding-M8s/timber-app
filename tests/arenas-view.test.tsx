@@ -119,7 +119,7 @@ describe("the Arena mode of the New worktree dialog", () => {
 		const agents = [{ name: "Codex", command: "codex", args: [] }];
 		return renderToStaticMarkup(
 			<WorktreeDialogFrame
-				repository={repository} modes={modes} selected={selected} submission={submission} agents={agents}
+				repository={repository} modes={modes} selected={selected} submission={submission} agents={agents} agentLocations={null}
 				plan={() => ({ source: "pick", agent: agents[0]!, workflow: null, unread: false })}
 				onSelect={() => {}} onPickAgent={() => {}} onSubmit={() => {}} onClose={() => {}}
 			/>,

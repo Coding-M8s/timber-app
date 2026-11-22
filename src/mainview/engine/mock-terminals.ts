@@ -1,6 +1,7 @@
 import { terminalSample } from "../terminal-sample";
 import { type AgentSetting, agentCommand, findAgent } from "../../shared/agent";
 import { type ArenaLaunch, isArenaName, isAttemptLabel } from "../../shared/arenas";
+import type { AgentLookup } from "../../shared/agent-lookup";
 import { type ResumableAgent, agentProgram, agentStartArguments, conversationMissingNote, resumableAgent } from "../../shared/agent-resume";
 import type { Attention } from "../../shared/attention";
 import { describeCommandLine } from "../../shared/command-line";
@@ -26,7 +27,7 @@ import { type MockSessionStorage, memorySessionStorage } from "./mock-session-st
 export type TerminalCapabilities = Pick<Engine,
 	| "listTerminals" | "openTerminal" | "renameTerminal" | "readTerminal" | "drawnTerminal" | "writeTerminal" | "pasteTerminal" | "resizeTerminal" | "closeTerminal"
 	| "onTerminalOutput" | "onTerminalChanged" | "onQuitRequested" | "confirmQuit" | "writeClipboard" | "readClipboard" | "openLink" | "takeSavedSessions"
-	| "forgetSavedSessions"
+	| "forgetSavedSessions" | "locateAgents"
 >;
 
 /** A chop to start a session with, as the main process's `ChopInput`. */
@@ -671,6 +672,16 @@ export function createMockTerminals(
 				announce({ id, session: null });
 			}
 		},
+		// As the main process looks: a relative path cannot start, a missing executable is not found, the rest is on MOCK_PATH.
+		locateAgents: async () => agents().map(agent => {
+			const built = agentCommand(agent);
+			const lookup: AgentLookup = !built.ok ? { state: "unusable", message: built.message }
+				: !built.executable.startsWith("/") && /[\\/]/.test(built.executable)
+					? { state: "unusable", message: `Starts with the relative path ${built.executable}, which the app does not start. Use a command found on the PATH, or a full path.` }
+					: missing.includes(built.executable) ? { state: "not-found" }
+					: { state: "found", path: built.executable.startsWith("/") ? built.executable : `/usr/local/bin/${built.executable}` };
+			return { name: agent.name, command: agent.command, lookup };
+		}),
 		writeClipboard: async text => {
 			clipboard = text;
 		},

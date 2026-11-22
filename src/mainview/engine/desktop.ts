@@ -111,6 +111,7 @@ export function createDesktopEngine(): Engine {
 		saveLayout: layout => rpc.request.saveLayout({ layout }),
 		loadPreferences: () => rpc.request.loadPreferences({}),
 		savePreferences: change => rpc.request.savePreferences({ change }),
+		locateAgents: () => rpc.request.locateAgents({}),
 		// Both wait for the person to pick in a file dialog.
 		exportTheme: theme => rpc.request.exportTheme({ theme }, { maxRequestTime: Infinity }),
 		importTheme: () => rpc.request.importTheme({}, { maxRequestTime: Infinity }),

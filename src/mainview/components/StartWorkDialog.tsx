@@ -137,7 +137,10 @@ export function StartWorkDialog({ request, repository }: { request: Extract<Dial
 	const modelState = useSyncExternalStore(model.subscribe, model.getState, model.getState);
 	useEffect(() => {
 		if (selector === null) store.closeDialog();
-		else void controller.readWorkflows();
+		else {
+			void controller.readWorkflows();
+			void controller.locateAgents();
+		}
 	}, [controller, selector, store]);
 	if (selector === null) return null;
 
@@ -153,6 +156,7 @@ export function StartWorkDialog({ request, repository }: { request: Extract<Dial
 			selected={0}
 			submission={submissionState}
 			agents={state.preferences.agents}
+			agentLocations={state.agentLocations}
 			plan={controller.plan}
 			onSelect={controller.select}
 			onPickAgent={controller.pickAgent}

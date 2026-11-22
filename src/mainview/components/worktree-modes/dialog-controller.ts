@@ -1,6 +1,7 @@
 import type { AppStore } from "../../store/store";
 import type { Submission } from "../../store/submission";
-import { type AgentPick, type AgentPlan, plannedAgent, runAndStart, startingAgent } from "./agent-choice";
+import { agentsLocated } from "../../../shared/agent-lookup";
+import { type AgentPick, type AgentPlan, defaultAgent, plannedAgent, runAndStart, startingAgent } from "./agent-choice";
 import type { WorktreeDialogMode } from "./mode";
 import type { WorkflowOptions } from "./workflow-choice";
 
@@ -33,6 +34,15 @@ export interface WorktreeDialogController {
 	/** Read the repository's workflows. Only the latest read counts. Never throws. */
 	readWorkflows(): Promise<void>;
 	/**
+	 * Look for the agents' executables again, as the dialog opens, then hold
+	 * the agent the field picked on its own (`defaultAgent`) as if the person
+	 * had picked it, so a later look never changes the pick under them; it
+	 * only changes the marks. Until this look answers, the pick follows what
+	 * the app knew, and may change once when it does. Nothing is held when
+	 * the look got no answer, or an agent is still not known. Never throws.
+	 */
+	locateAgents(): Promise<void>;
+	/**
 	 * Where the agent that starts after a worktree is created comes from, for
 	 * a run with `workflow` (null for none): the pick, from the agents saved
 	 * now, or the workflow, as the list read last says.
@@ -54,7 +64,7 @@ export function pickOfOption(value: string): string | null {
 
 /** `repository` is the path of the primary checkout. */
 export function createWorktreeDialogController(
-	store: Pick<AppStore, "getState" | "startSessionsIn" | "listWorkflows">,
+	store: Pick<AppStore, "getState" | "startSessionsIn" | "listWorkflows" | "locateAgents">,
 	repository: string,
 	submission: Pick<Submission, "getState" | "submit" | "clearFailure">,
 	/** The mode to start on, by position. The first unless given. */
@@ -75,7 +85,18 @@ export function createWorktreeDialogController(
 		if (read === latestRead) update({ workflows });
 	}
 
-	const plan = (workflow: string | null) => plannedAgent(store.getState().preferences.agents, state.pick, state.workflows, workflow);
+	const plan = (workflow: string | null) => {
+		const { preferences, agentLocations } = store.getState();
+		return plannedAgent(preferences.agents, agentLocations, state.pick, state.workflows, workflow);
+	};
+
+	async function locateAgents(): Promise<void> {
+		// Held only from an answer this look got: never from what was known before it, which may be out of date.
+		if (!(await store.locateAgents())) return;
+		const { preferences: { agents }, agentLocations } = store.getState();
+		if (state.pick !== undefined || !agentsLocated(agentLocations, agents)) return;
+		update({ pick: defaultAgent(agents, agentLocations)?.name ?? null });
+	}
 
 	return {
 		getState: () => state,
@@ -90,6 +111,7 @@ export function createWorktreeDialogController(
 		},
 		pickAgent: pick => update({ pick }),
 		readWorkflows,
+		locateAgents,
 		plan,
 		async submit(mode) {
 			// A second submit while one runs does nothing, so it reads nothing either.

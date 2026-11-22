@@ -752,6 +752,27 @@ sleep 5
 			await run(terminal.id, "echo alive-$((1+1))", "alive-2");
 		});
 
+		test("each saved agent is looked for as a session looks for it, and nothing starts", async () => {
+			startWithAgents({
+				agents: async () => [
+					AGENTS[0]!, AGENTS[2]!,
+					{ name: "Full", command: `"${join(root, "agent bin", "fake-codex")}"` },
+					{ name: "Gone", command: join(root, "nowhere", "agent") },
+					{ name: "Relative", command: "./bin/agent" },
+				],
+			});
+			const changesBefore = changes.length;
+			expect(await sessions.locateAgents()).toEqual([
+				{ name: "Claude Code", command: "fake-claude", lookup: { state: "found", path: join(root, "agent bin", "fake-claude") } },
+				{ name: "Missing", command: "no-such-agent --flag", lookup: { state: "not-found" } },
+				{ name: "Full", command: `"${join(root, "agent bin", "fake-codex")}"`, lookup: { state: "found", path: join(root, "agent bin", "fake-codex") } },
+				{ name: "Gone", command: join(root, "nowhere", "agent"), lookup: { state: "not-found" } },
+				{ name: "Relative", command: "./bin/agent", lookup: { state: "unusable", message: "Starts with the relative path ./bin/agent, which the app does not start. Use a command found on the PATH, or a full path." } },
+			]);
+			expect(sessions.list()).toEqual([]);
+			expect(changes.length).toBe(changesBefore);
+		});
+
 		test("a full path that is not there, or a relative path, starts nothing", async () => {
 			startWithAgents({ agents: async () => [{ name: "Gone", command: join(root, "nowhere", "agent") }, { name: "Relative", command: "./bin/agent" }] });
 			const gone = await sessions.open({ repository, worktree, cols: 80, rows: 24, agent: "Gone" });

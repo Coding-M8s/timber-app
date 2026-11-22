@@ -1,4 +1,6 @@
 import { delimiter, isAbsolute } from "node:path";
+import { type AgentSetting, agentCommand } from "../shared/agent";
+import type { AgentLookup } from "../shared/agent-lookup";
 import { notFoundOnPath } from "../shared/search-path";
 
 export type ExecutableLookup =
@@ -56,4 +58,25 @@ export function findExecutable(executable: string, searchPath: string, words: Ex
 	}
 	const where = `${notFoundOnPath([executable, ...otherNames], searchPath, delimiter)} A change to PATH needs a restart of the app, or use the full path in ${words.section}.`;
 	return { ok: false, reason: "not-found", message: `Could not start ${words.what}. ${where}` };
+}
+
+/**
+ * Whether an agent from Settings can start, looked for as its session looks
+ * for it (`findExecutable`, then the Windows batch-file check), without
+ * starting anything. `searchPath` is the PATH the app was started with.
+ */
+export function locateAgent(agent: AgentSetting, searchPath: string, windows: boolean): AgentLookup {
+	const built = agentCommand(agent);
+	if (!built.ok) return { state: "unusable", message: built.message };
+	const words = { what: agent.name, command: `The command of ${agent.name}`, section: "Settings, Agents" };
+	const lookup = findExecutable(built.executable, searchPath, words);
+	if (!lookup.ok) {
+		return lookup.reason === "relative"
+			? { state: "unusable", message: `Starts with the relative path ${built.executable}, which the app does not start. Use a command found on the PATH, or a full path.` }
+			: { state: "not-found" };
+	}
+	if (windows && isWindowsBatch(lookup.path)) {
+		return { state: "unusable", message: `Found ${lookup.path}, a batch file, which the app does not start. Use ${agent.name}'s own .exe, as a full path if needed.` };
+	}
+	return { state: "found", path: lookup.path };
 }

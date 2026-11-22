@@ -1,15 +1,18 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { AgentSetting } from "../../../shared/agent";
+import type { AgentLocation } from "../../../shared/agent-lookup";
 import { SESSION_NAME_LIMIT } from "../../../shared/terminal";
 import {
-	type AgentDraft, addAgentDraft, agentDraftsOf, agentsDraftModel, editAgentDraft, presetsToAdd, removeAgentDraft,
+	type AgentDraft, addAgentDraft, agentDraftsOf, agentLookupLine, agentsDraftModel, editAgentDraft, presetsToAdd, removeAgentDraft,
 } from "../../agent-format";
-import { useAppState } from "../../store/react";
+import { useAppState, useStore } from "../../store/react";
 import { type SectionSave, SettingsSection, useDraftSection } from "./SettingsSection";
 
 export interface AgentsSectionViewProps {
 	drafts: readonly AgentDraft[];
 	saved: readonly AgentSetting[];
+	/** Whether each saved agent's executable was found (`AppState.agentLocations`). */
+	locations: readonly AgentLocation[] | null;
 	save: SectionSave;
 	onAdd: (preset?: AgentSetting) => void;
 	onEdit: (key: string, change: { name?: string; command?: string }) => void;
@@ -20,7 +23,7 @@ export interface AgentsSectionViewProps {
 const blank = (draft: AgentDraft) => draft.name.trim() === "" && draft.command.trim() === "";
 
 /** The Agents section as drawn from its data, so it can be tested without a window. */
-export function AgentsSectionView({ drafts, saved, save, onAdd, onEdit, onRemove, onSave }: AgentsSectionViewProps) {
+export function AgentsSectionView({ drafts, saved, locations, save, onAdd, onEdit, onRemove, onSave }: AgentsSectionViewProps) {
 	const hintId = useId();
 	const idPrefix = useId();
 	const model = agentsDraftModel(drafts, saved);
@@ -110,6 +113,10 @@ export function AgentsSectionView({ drafts, saved, save, onAdd, onEdit, onRemove
 							{row.problem === null && row.example !== null && (
 								<pre className="dialog-command" aria-label={`Command of ${label}`}>{row.example}</pre>
 							)}
+							{row.problem === null && (() => {
+								const line = agentLookupLine(model.agents[index]!, saved, locations);
+								return line && <p className={line.missing ? "field-error" : "field-hint"}>{line.text}</p>;
+							})()}
 						</li>
 					);
 				})}
@@ -132,7 +139,12 @@ export function AgentsSectionView({ drafts, saved, save, onAdd, onEdit, onRemove
 
 /** The Agents section of Settings: the list of agents, edited row by row and saved with its own Save. */
 export function AgentsSection() {
-	const saved = useAppState().preferences.agents;
+	const store = useStore();
+	const { preferences: { agents: saved }, agentLocations } = useAppState();
+	// Looked for again whenever the section shows, as one may have been installed since. Nothing runs.
+	useEffect(() => {
+		void store.locateAgents();
+	}, [store]);
 	const [shown, setShown] = useState<{ saved: readonly AgentSetting[]; drafts: AgentDraft[] }>(() => ({ saved, drafts: agentDraftsOf(saved) }));
 	// Rows keep their keys while what is saved stays the same, so a field keeps its focus.
 	const fromSaved = shown.saved === saved ? shown.drafts : agentDraftsOf(saved);
@@ -150,6 +162,7 @@ export function AgentsSection() {
 		<AgentsSectionView
 			drafts={drafts}
 			saved={saved}
+			locations={agentLocations}
 			save={save}
 			onAdd={preset => change(addAgentDraft(drafts, preset))}
 			onEdit={(key, edit) => change(editAgentDraft(drafts, key, edit))}

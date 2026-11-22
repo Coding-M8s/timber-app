@@ -4191,3 +4191,26 @@ tracking settings (issue 332), Linux x64 with Bun 1.4.5 and Git 2.43.0:
 - `bun run test`: 4220 pass, 19 skip, 0 fail, after rebasing on main.
 - Not run: the desktop window on any platform, and a real tracker that
   refused a login.
+
+Run for showing which agents are installed (issue 331), Linux x64 with Bun
+1.4.5 and Git 2.43:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun run build:web`: built.
+- `bun run test`: 4198 pass, 19 skip, 0 fail. On the base it started from,
+  the same machine ran 4177 pass, 19 skip, 0 fail. Rebased onto main after
+  issue 337 (commits ahead of and behind the base) and the ended agent's
+  chip kept open as a shell: 4235 pass, 19 skip, 0 fail, with both type
+  checks and the web build again clean. Rebased again after the Issues
+  board's pointers to Issue tracking settings: 4241 pass, 19 skip,
+  0 fail, with both type checks and the web build again clean.
+- `tests/agent-lookup.test.ts` looks for agents in a real temporary folder
+  on a PATH built for the test: a name on the PATH and a full path found
+  with their paths, a missing name, a missing full path, and a file that is
+  not executable not found, a relative path refused, and nothing run.
+  `tests/terminals.test.ts` asks `locateAgents` of the real terminal
+  sessions and asserts no session starts.
+- The Windows batch-file case is covered only by a unit test that passes
+  `windows: true` on Linux. Not run on Windows or macOS.
+- Not run: the desktop app by hand, so Settings, Agents and the Agent field
+  were seen only as rendered markup over the mock engine.
