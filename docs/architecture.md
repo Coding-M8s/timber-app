@@ -4862,13 +4862,15 @@ acts out `timber new feat/x` typed in a terminal with Timber's agent on.
 
 Every agent the app knows by name is one row of one table, `AGENTS` in
 `src/shared/agent-registry.ts`: pure data, read by the main process and the
-interface alike. Claude Code and Codex are its rows. An agent that is not in
+interface alike. Its rows are Claude Code, Codex, Cursor CLI, Gemini CLI,
+Grok Build, OpenCode, and GitHub Copilot CLI. An agent that is not in
 it still runs from Settings, as typed, fresh after a restart, with letters
 for its mark. Each row has:
 
-- **`id`**: stable, `claude` or `codex`. A running session and the shell an
-  ended agent leaves carry it (`program` and `resumable`, and
-  `EndedAgent`), and the mark's class names use it.
+- **`id`**: stable, such as `claude`, `codex`, or `cursor`. A running
+  session and the shell an ended agent leaves carry it (`program` and
+  `resumable`, on `TerminalSession` and `EndedAgent`), and the mark's class
+  names use it.
 - **`name` and `label`**: its name as a preset in Settings, Agents and in
   words ("Claude Code"), and as a preset of Timber's `[agent]`, as `timber
   setup` names it ("Claude").
@@ -4879,10 +4881,30 @@ for its mark. Each row has:
   are found, while `Claude` on Linux, `claude.sh`, and `mycodex` are not.
   This one lookup gives a session its agent (`agentProgram`), its chance to
   go back to a conversation (`resumableAgent`), and its mark (`agentBrand`).
+- **`sharedExecutables`**: names other programs install too, such as
+  `agent`, which both Cursor and Grok Build put on the PATH. Such a name is
+  the agent only when the file it was found at leads, with every link
+  followed, to a file named as one of its `executables`: Cursor's
+  installer links `~/.local/bin/agent` to `.../cursor-agent/versions/<v>/cursor-agent`,
+  while Grok Build's `agent` leads to `grok-<version>-<os>-<arch>` and
+  stays letters. The main process follows the links when an agent starts
+  (`realPathOf` in `src/bun/terminals.ts`), still starts it by the path it
+  was found at (Cursor reads the name it was started as), and puts the
+  agent on the session as `program`, which `agentBrand` reads first; the
+  interface alone never takes a bare `agent` for an agent. Checked on Linux
+  only.
+- **`default`**: whether it is in the list before anything was saved
+  (`DEFAULT_AGENTS` in `src/shared/agent.ts`): Claude Code and Codex. Every
+  row is offered as a preset either way.
 - **`command`**: what both preset lists fill in (`AGENT_PRESETS` in
   `src/shared/agent.ts` and in `src/mainview/timber-settings-format.ts`).
-- **`mark`**: the official mark as SVG path data, its view box, its fill,
-  and where and when it was taken, drawn by `AgentIcon.tsx`.
+  Cursor's is `cursor-agent`, not `agent`, since `agent` may be another
+  program's, as above.
+- **`mark`**: the official mark as SVG path data (`paths`, each with its
+  own `fillRule` or `opacity` when the maker's has one), its view box, its
+  fill (a color, `currentColor` for the theme's text color, or the maker's
+  radial gradient, which `AgentIcon.tsx` draws under an id of each
+  drawing's own), and where and when it was taken.
 - **`resume`**: how it goes back to a conversation, or null when it always
   starts as typed: the words before a new id the app chose (`fresh`, null
   when no flag sets one), the words before an id that go back to it
@@ -4892,7 +4914,7 @@ for its mark. Each row has:
   folder in the home folder). See
   [going back to a conversation](#going-back-to-a-conversation).
 - **`signIn`**: a command that only reads whether it is signed in, and the
-  command that signs in. Null for both agents for now; nothing reads them yet.
+  command that signs in. Null for every agent for now; nothing reads them yet.
 - **`status`**: how it reports its status, `osc-7501`, `hook`, or `none`,
   and the start of the `app` it reports, such as `claude` for `claude-code`,
   which gives its mark to any session that reports it. The source is not
@@ -4902,10 +4924,14 @@ for its mark. Each row has:
 **Adding an agent.**
 
 1. Add a row to `ROWS` in `src/shared/agent-registry.ts` with a new `id`,
-   its `executables`, and its preset `command`. Its presets, its mark, and
+   its `executables` (and `sharedExecutables` for a name other programs
+   install too), whether it is a `default` agent, and its preset
+   `command`, a name no other program installs. Its presets, its mark, and
    its lookup by executable follow from the row.
-2. Take its mark from its maker's own site, and say where and when in
-   `mark.source`.
+2. Take its mark from its maker's own brand assets where they publish
+   them, else its own site, and say where and when in `mark.source`,
+   beside the trademark note. Draw a one-color mark in `currentColor`, so
+   it reads in every theme, and list it in docs/design.md.
 3. Give it a `resume` only after checking its own `--help`, and add it to
    the table under [going back to a conversation](#going-back-to-a-conversation).
    An agent that keeps conversations in a folder layout of its own also
@@ -5172,14 +5198,16 @@ What the agent prints on screen is still never read, parsed, or answered.
   rest, whose names and states are its tooltip; the row's description for
   assistive technology names every one (`describeRowSessions` in
   `src/mainview/terminal-format.ts`). The row's lines wrap, so nothing in it
-  reaches past the sidebar at its narrowest width. Claude Code and Codex,
-  known by an agent session's executable (`claude`, `codex`, with `.exe`
-  cut on Windows) or a reported `app` starting with either name
-  (`agentBrand` in `src/shared/session-status.ts`, from the
-  [agent registry](#the-agent-registry)), show their makers' official marks
-  instead of letters (`AgentIcon.tsx`, drawing each row's `mark`):
-  Claude's spark in its own orange, and
-  OpenAI's mark in the text color. On its chip, the same mark in a quiet
+  reaches past the sidebar at its narrowest width. The agents of the
+  [agent registry](#the-agent-registry), known by an agent session's
+  `program` or executable (`claude`, `codex`, `cursor-agent`, `gemini`,
+  `grok`, `opencode`, `copilot`, with `.exe` cut on Windows, and `agent`
+  when it leads to Cursor's file) or by a reported `app` starting with
+  `claude` or `codex` (`agentBrand` in `src/shared/session-status.ts`),
+  show their makers' official marks instead of letters (`AgentIcon.tsx`,
+  drawing each row's `mark`): Claude's spark in its own orange, Gemini's
+  spark in its gradient, and the others (OpenAI's mark, Cursor's cube,
+  Grok's mark, OpenCode's mark, GitHub's Copilot mark) in the text color. On its chip, the same mark in a quiet
   outline takes the place of the agent star, and the same shape, with the decoded
   message in the chip's tooltip and its state in words beside the chips. A
   collapsed repository header sums up its agents' unseen states, such as

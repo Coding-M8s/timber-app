@@ -1,4 +1,4 @@
-import { accessSync, constants } from "node:fs";
+import { accessSync, constants, realpathSync } from "node:fs";
 import { type ArenaLaunch, isArenaName, isAttemptLabel } from "../shared/arenas";
 import { homedir } from "node:os";
 import { type AgentSetting, agentCommand, findAgent } from "../shared/agent";
@@ -767,9 +767,12 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			};
 		}
 		const extra = { ...(launch.environment ? { environment: launch.environment } : {}), ...(launch.unset ? { unset: launch.unset } : {}) };
-		if (!settings) return { ok: true, kind: "agent", base: launch.name, argv, command: describeCommandLine(argv), ...extra, ...plain, program: agentProgram(launch.executable) };
+		// What the found file leads to tells a name other programs install too, such as `agent`. The agent still starts as found, since some read the name they were started as.
+		const real = realPathOf(lookup.path);
+		const program = agentProgram(launch.executable, real);
+		if (!settings) return { ok: true, kind: "agent", base: launch.name, argv, command: describeCommandLine(argv), ...extra, ...plain, program };
 		// The conversation is only ever checked in the agent's own folder, and only a UUID gets that far.
-		const resumable = resumableAgent(launch.executable, launch.arguments);
+		const resumable = resumableAgent(launch.executable, launch.arguments, real);
 		const recipe = resumable === null ? null : agentById(resumable).resume;
 		let conversation: string | null = null;
 		let args = launch.arguments;
@@ -782,7 +785,16 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			conversation = fresh;
 		}
 		const started = [lookup.path, ...args];
-		return { ok: true, kind: "agent", base: launch.name, argv: started, command: describeCommandLine(started), ...extra, resumable, conversation, missing: resume !== null && conversation !== resume, program: agentProgram(launch.executable) };
+		return { ok: true, kind: "agent", base: launch.name, argv: started, command: describeCommandLine(started), ...extra, resumable, conversation, missing: resume !== null && conversation !== resume, program };
+	}
+
+	/** The file a path leads to with every link followed, or null when that cannot be read. */
+	function realPathOf(path: string): string | null {
+		try {
+			return realpathSync(path);
+		} catch {
+			return null;
+		}
 	}
 
 	/** A Timber command to run in place of the shell: a worktree's setup, with the Timber the app found. */
@@ -916,7 +928,9 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		// The note goes after what the agent printed and is kept with it, so drawing the session again shows it too.
 		live.pending += agentEndedNote(live.launchName, endedAgent, live.session.path);
 		flush(live);
-		changed(live, { ...live.session, kind: "terminal", shell, command: describeCommandLine([shell]), state: { kind: "running" }, status: null, children: [], endedAgent, ...notSent });
+		// The agent's own name goes with it: the shell keeps its mark through `endedAgent`.
+		const { program: _agentProgram, ...shellSession } = live.session;
+		changed(live, { ...shellSession, kind: "terminal", shell, command: describeCommandLine([shell]), state: { kind: "running" }, status: null, children: [], endedAgent, ...notSent });
 		return true;
 	}
 
@@ -1048,6 +1062,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			state: { kind: "running" },
 			status: null,
 			children: [],
+			...(start.program !== null ? { program: start.program } : {}),
 			...(chop?.kind === "prompt" ? { prompt: { state: "pending" as const, ...(chop.review ? { what: "review" as const } : {}) } } : {}),
 		};
 		live = {

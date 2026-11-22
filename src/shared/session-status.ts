@@ -257,18 +257,20 @@ export type AgentBrand = AgentId;
 
 /**
  * The agent a session runs, when the registry has it: known by the
- * executable of an agent session, as the last part of its path (`claude`,
- * `codex`, with `.exe` cut on Windows), or by the `app` a program reports,
- * such as `claude-code`, each agent in the registry's order. Null for
- * anything else, which keeps its letters. A shell that an ended agent left
- * behind keeps the brand of the agent.
+ * `program` the main process gave an agent session, or by its executable,
+ * as the last part of its path (`claude`, `codex`, with `.exe` cut on
+ * Windows; never a name other programs install too, such as `agent`), or by
+ * the `app` a program reports, such as `claude-code`, each agent in the
+ * registry's order. Null for anything else, which keeps its letters. A shell
+ * that an ended agent left behind keeps the brand of the agent.
  */
-export function agentBrand(session: Pick<TerminalSession, "kind" | "shell" | "status"> & Partial<Pick<TerminalSession, "endedAgent">>): AgentBrand | null {
+export function agentBrand(session: Pick<TerminalSession, "kind" | "shell" | "status"> & Partial<Pick<TerminalSession, "endedAgent" | "program">>): AgentBrand | null {
 	const executable = executableName(session.shell);
 	const app = session.status?.app?.toLowerCase() ?? "";
 	for (const agent of AGENTS) {
 		const reported = agent.status.app !== null && app.startsWith(agent.status.app);
-		if ((session.kind === "agent" && agent.executables.includes(executable)) || reported) return agent.id;
+		const runs = session.kind === "agent" && (session.program === agent.id || agent.executables.includes(executable));
+		if (runs || reported) return agent.id;
 	}
 	// A shell an agent left behind keeps the agent's icon.
 	return session.endedAgent?.program ?? null;

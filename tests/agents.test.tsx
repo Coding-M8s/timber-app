@@ -11,7 +11,7 @@ import { sessionsOf } from "../src/mainview/store/state";
 import { createAppStore } from "../src/mainview/store/store";
 import { describeSessionChip } from "../src/mainview/terminal-format";
 import {
-	AGENT_LIMIT, AGENT_PRESETS, agentCommand, agentProblem, describeAgentCommand, findAgent, readAgentSettings, sameAgentSettings, writeAgentSettings,
+	AGENT_LIMIT, DEFAULT_AGENTS, agentCommand, agentProblem, describeAgentCommand, findAgent, readAgentSettings, sameAgentSettings, writeAgentSettings,
 } from "../src/shared/agent";
 import type { AgentLocation } from "../src/shared/agent-lookup";
 import { defaultPreferences, readPreferences } from "../src/shared/preferences";
@@ -59,7 +59,7 @@ describe("an agent's command", () => {
 describe("the agents preference", () => {
 	test("starts as Claude Code and Codex, and a saved empty list stays empty", () => {
 		expect(defaultPreferences().agents).toEqual([{ name: "Claude Code", command: "claude" }, { name: "Codex", command: "codex" }]);
-		expect(readPreferences({}).agents).toEqual(AGENT_PRESETS);
+		expect(readPreferences({}).agents).toEqual(DEFAULT_AGENTS);
 		expect(readPreferences({ agents: [] }).agents).toEqual([]);
 	});
 
@@ -86,10 +86,10 @@ describe("the agents preference", () => {
 	});
 
 	test("names an agent exactly, and compares lists in order", () => {
-		expect(findAgent(AGENT_PRESETS, "Codex")).toEqual({ name: "Codex", command: "codex" });
-		expect(findAgent(AGENT_PRESETS, "codex")).toBeNull();
-		expect(sameAgentSettings(AGENT_PRESETS, [...AGENT_PRESETS])).toBe(true);
-		expect(sameAgentSettings(AGENT_PRESETS, [...AGENT_PRESETS].reverse())).toBe(false);
+		expect(findAgent(DEFAULT_AGENTS, "Codex")).toEqual({ name: "Codex", command: "codex" });
+		expect(findAgent(DEFAULT_AGENTS, "codex")).toBeNull();
+		expect(sameAgentSettings(DEFAULT_AGENTS, [...DEFAULT_AGENTS])).toBe(true);
+		expect(sameAgentSettings(DEFAULT_AGENTS, [...DEFAULT_AGENTS].reverse())).toBe(false);
 	});
 
 	test("refuses a name that is empty, repeated in any case, or the shell's", () => {
@@ -102,7 +102,7 @@ describe("the agents preference", () => {
 
 describe("the + menu", () => {
 	test("offers the shell first, then each agent with its exact command", () => {
-		expect(sessionMenuItems([...AGENT_PRESETS, { name: "Aider", command: `aider --model "big one"` }])).toEqual([
+		expect(sessionMenuItems([...DEFAULT_AGENTS, { name: "Aider", command: `aider --model "big one"` }])).toEqual([
 			{ agent: null, label: "Terminal", detail: "Your shell" },
 			{ agent: "Claude Code", label: "Claude Code", detail: "claude" },
 			{ agent: "Codex", label: "Codex", detail: "codex" },
@@ -121,7 +121,7 @@ describe("the + menu", () => {
 	});
 
 	test("each entry starts what it names, and the one after them opens Settings at Agents", () => {
-		const items = sessionMenuItems(AGENT_PRESETS);
+		const items = sessionMenuItems(DEFAULT_AGENTS);
 		expect(sessionMenuChoice(items, 0)).toEqual({ kind: "start", agent: null });
 		expect(sessionMenuChoice(items, 1)).toEqual({ kind: "start", agent: "Claude Code" });
 		expect(sessionMenuChoice(items, 2)).toEqual({ kind: "start", agent: "Codex" });
@@ -255,7 +255,7 @@ describe("agent sessions in the store", () => {
 
 describe("the Agents section of Settings", () => {
 	const noop = () => {};
-	const view = (drafts: ReturnType<typeof agentDraftsOf>, saved = AGENT_PRESETS, locations: AgentLocation[] | null = null) =>
+	const view = (drafts: ReturnType<typeof agentDraftsOf>, saved = DEFAULT_AGENTS, locations: AgentLocation[] | null = null) =>
 		renderToStaticMarkup(<AgentsSectionView drafts={drafts} saved={saved} locations={locations} save={{ state: "idle" }} onAdd={noop} onEdit={noop} onRemove={noop} onSave={noop} />);
 
 	test("says beside each saved agent where it was found, or that it was not, and asks for a save before a changed one is looked for", () => {
@@ -263,15 +263,15 @@ describe("the Agents section of Settings", () => {
 			{ name: "Claude Code", command: "claude", lookup: { state: "found", path: "/usr/local/bin/claude" } },
 			{ name: "Codex", command: "codex", lookup: { state: "not-found" } },
 		];
-		const drafts = agentDraftsOf(AGENT_PRESETS);
-		const markup = view(drafts, AGENT_PRESETS, locations);
+		const drafts = agentDraftsOf(DEFAULT_AGENTS);
+		const markup = view(drafts, DEFAULT_AGENTS, locations);
 		expect(markup).toContain('<pre class="dialog-command" aria-label="Command of Claude Code">claude</pre><p class="field-hint">Found at /usr/local/bin/claude</p>');
 		expect(markup).toContain('<pre class="dialog-command" aria-label="Command of Codex">codex</pre><p class="field-error">Not found on PATH</p>');
 		const edited = editAgentDraft(drafts, drafts[1]!.key, { command: "codex --model big" });
-		expect(view(edited, AGENT_PRESETS, locations)).toContain('<p class="field-hint">Save to check whether it is installed.</p>');
+		expect(view(edited, DEFAULT_AGENTS, locations)).toContain('<p class="field-hint">Save to check whether it is installed.</p>');
 		// Before the first look, nothing is claimed.
-		expect(view(drafts, AGENT_PRESETS, null)).not.toContain("Found at");
-		expect(view(drafts, AGENT_PRESETS, null)).not.toContain("Not found");
+		expect(view(drafts, DEFAULT_AGENTS, null)).not.toContain("Found at");
+		expect(view(drafts, DEFAULT_AGENTS, null)).not.toContain("Not found");
 	});
 
 	test("the agents are looked for at start, and again when asked, as after an install", async () => {
@@ -298,32 +298,34 @@ describe("the Agents section of Settings", () => {
 	});
 
 	test("Save is unavailable until something differs, and while a row cannot be saved", () => {
-		const saved = agentDraftsOf(AGENT_PRESETS);
-		expect(agentsDraftModel(saved, AGENT_PRESETS).canSave).toBe(false);
+		const saved = agentDraftsOf(DEFAULT_AGENTS);
+		expect(agentsDraftModel(saved, DEFAULT_AGENTS).canSave).toBe(false);
 		const added = addAgentDraft(saved, { name: "Aider", command: "aider" });
-		expect(agentsDraftModel(added, AGENT_PRESETS)).toMatchObject({ canSave: true, agents: [...AGENT_PRESETS, { name: "Aider", command: "aider" }] });
+		expect(agentsDraftModel(added, DEFAULT_AGENTS)).toMatchObject({ canSave: true, agents: [...DEFAULT_AGENTS, { name: "Aider", command: "aider" }] });
 		const blank = addAgentDraft(saved);
-		expect(agentsDraftModel(blank, AGENT_PRESETS).canSave).toBe(false);
-		expect(agentsDraftModel(blank, AGENT_PRESETS).rows[2]!.problem).toBe("Give the agent a name.");
+		expect(agentsDraftModel(blank, DEFAULT_AGENTS).canSave).toBe(false);
+		expect(agentsDraftModel(blank, DEFAULT_AGENTS).rows[2]!.problem).toBe("Give the agent a name.");
 		// A row just added asks for what it needs, without an alert.
 		expect(view(blank)).toContain('<p class="field-hint">Type a name and a command, or remove this row.</p>');
 		expect(view(blank)).not.toContain('role="alert"');
 		const clash = editAgentDraft(blank, blank[2]!.key, { name: "CODEX", command: "codex2" });
-		expect(agentsDraftModel(clash, AGENT_PRESETS).rows[2]!.problem).toBe('Another agent is already called "CODEX".');
+		expect(agentsDraftModel(clash, DEFAULT_AGENTS).rows[2]!.problem).toBe('Another agent is already called "CODEX".');
 		expect(view(clash)).toContain('<p class="field-error" role="alert">Another agent is already called &quot;CODEX&quot;.</p>');
 		const removed = removeAgentDraft(saved, saved[0]!.key);
-		expect(agentsDraftModel(removed, AGENT_PRESETS)).toMatchObject({ canSave: true, agents: [{ name: "Codex", command: "codex" }] });
-		expect(agentsDraftModel([], AGENT_PRESETS)).toMatchObject({ canSave: true, agents: [] });
+		expect(agentsDraftModel(removed, DEFAULT_AGENTS)).toMatchObject({ canSave: true, agents: [{ name: "Codex", command: "codex" }] });
+		expect(agentsDraftModel([], DEFAULT_AGENTS)).toMatchObject({ canSave: true, agents: [] });
 		expect(view([])).toContain("No agents. The + menu offers only Terminal.");
 	});
 
 	test("names are cleaned up on save, and the presets missing by name are offered", () => {
+		// Every agent of the registry is offered, not only the two in the list before anything was saved.
+		const OTHERS = ["Codex", "Cursor CLI", "Gemini CLI", "Grok Build", "OpenCode", "GitHub Copilot CLI"];
 		const drafts = addAgentDraft([]);
 		const typed = editAgentDraft(drafts, drafts[0]!.key, { name: "  my   agent ", command: "  agent --x " });
 		expect(agentsDraftModel(typed, []).agents).toEqual([{ name: "my agent", command: "agent --x" }]);
-		expect(presetsToAdd(agentDraftsOf([{ name: "claude code", command: "other" }])).map(preset => preset.name)).toEqual(["Codex"]);
+		expect(presetsToAdd(agentDraftsOf([{ name: "claude code", command: "other" }])).map(preset => preset.name)).toEqual(OTHERS);
 		// Compared as the name will be saved, cleaned up.
-		expect(presetsToAdd(agentDraftsOf([{ name: " Claude  Code ", command: "other" }])).map(preset => preset.name)).toEqual(["Codex"]);
+		expect(presetsToAdd(agentDraftsOf([{ name: " Claude  Code ", command: "other" }])).map(preset => preset.name)).toEqual(OTHERS);
 	});
 
 	test("saves only the agents, and the menu follows what was saved", async () => {
