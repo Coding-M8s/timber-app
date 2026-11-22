@@ -4766,6 +4766,17 @@ pre:focus-visible {
 	outline-offset: -2px;
 }
 
+/*
+ * In Unified, a section is as wide as its widest line, and at least the
+ * tab, so every row's tint and the hunk headers reach the end of the
+ * longest line when the diff scrolls sideways. Split wraps its lines
+ * instead, so it keeps the tab's width.
+ */
+.changes-diff[data-layout="unified"] .diff-section {
+	width: max-content;
+	min-width: 100%;
+}
+
 /* Wide lines scroll sideways with the whole diff, so the numbers stay lined up. */
 .diff-line {
 	display: grid;

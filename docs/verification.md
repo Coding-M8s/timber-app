@@ -4043,3 +4043,9 @@ Git 2.56.1, and Chromium 158:
 - Not run by me: the desktop window on any platform, so Split was seen by
   me only in headless Chromium; the report above is from the person
   testing.
+- After testing in the desktop window: in Unified, scrolled sideways, a
+  short added or removed line's tint stopped where its text did. Each
+  Unified section is now as wide as its widest line. The new browser test
+  (every row and the hunk header as wide as the scrolled width) failed
+  with two row widths before the fix and passes after; the four diff
+  browser test files: 29 passed. `bun run test`: 3996 pass, 19 skip, 0 fail.
