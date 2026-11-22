@@ -4,7 +4,8 @@ import { type MenuEntry, WorktreeMenu } from "./WorktreeMenu";
 export interface ChoiceItem<Choice> {
 	id: string;
 	label: string;
-	title?: string;
+	/** What the entry does, for assistive technology. Menu entries have no tooltip. */
+	description?: string | null;
 	disabled?: boolean;
 	note?: string | null;
 	choice: Choice;
@@ -12,7 +13,7 @@ export interface ChoiceItem<Choice> {
 
 /** The entries as the menu draws them. An entry is enabled, with no note, unless it says otherwise. */
 export function repositoryMenuEntries(items: readonly ChoiceItem<unknown>[]): MenuEntry<string>[] {
-	return items.map(item => ({ id: item.id, label: item.label, disabled: item.disabled ?? false, note: item.note ?? null, title: item.title ?? item.label }));
+	return items.map(item => ({ id: item.id, label: item.label, disabled: item.disabled ?? false, note: item.note ?? null, description: item.description ?? null }));
 }
 
 interface RepositoryMenuProps<Choice> {

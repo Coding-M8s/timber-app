@@ -273,6 +273,8 @@ export function Sidebar() {
 	const section = ({ repository, matches }: { repository: Repository; matches: Worktree[] }) => {
 		const index = repositories.indexOf(repository);
 		const open = query ? matches.length > 0 : !collapsed.includes(repository.path);
+		// Whatever opened a menu has no tooltip while it is open: the tooltip would cover the menu.
+		const menuOpen = menu?.kind === "repository" && menu.path === repository.path;
 		return (
 			<Fragment key={repository.path}>
 				{RepositorySection({
@@ -307,14 +309,15 @@ export function Sidebar() {
 					fetchAsked: fetchAsked(repository.path),
 					clashMarks,
 					removing: removing(repository.path),
+					menuOpen,
 					more: (
 						<button
 							type="button"
 							className="icon-button group-more"
 							aria-label={`More for ${repository.name}`}
-							title={`More for ${repository.name}`}
+							title={menuOpen ? undefined : `More for ${repository.name}`}
 							aria-haspopup="menu"
-							aria-expanded={menu?.kind === "repository" && menu.path === repository.path}
+							aria-expanded={menuOpen}
 							onClick={event => {
 								menuByKey.current = false;
 								setMenu({ kind: "repository", path: repository.path, at: underneath(event.currentTarget) });
@@ -326,7 +329,7 @@ export function Sidebar() {
 					onHeadContextMenu: event => openMenuAt({ kind: "repository", path: repository.path, at: { left: event.clientX, top: event.clientY } }, event),
 					listedIdAt: path => listedIdAt(repository.path, path),
 				})}
-				{menu?.kind === "repository" && menu.path === repository.path && (
+				{menuOpen && (
 					<RepositoryMenu
 						label={describeRepositoryMenu(repository.name)}
 						items={repositoryMenuItems(repositoryGroups, repository.path, cleanUpMenuItems(repository, state.pullRequests[repository.path])[0])}
@@ -374,6 +377,8 @@ export function Sidebar() {
 		const describedBy = [summary ? summaryId : "", needsLook ? needsLookId : ""].filter(Boolean).join(" ");
 		const renaming = naming?.kind === "rename" && naming.id === group.id;
 		const pendingHere = naming?.kind === "new" && naming.parent === group.id;
+		// Whatever opened a menu has no tooltip while it is open: the tooltip would cover the menu.
+		const groupMenuOpen = menu?.kind === "group" && menu.id === group.id;
 		return (
 			<section
 				key={group.id}
@@ -404,7 +409,7 @@ export function Sidebar() {
 							aria-expanded={open}
 							aria-describedby={describedBy === "" ? undefined : describedBy}
 							aria-keyshortcuts={groupCount > 1 ? MOVE_REPOSITORY_SHORTCUTS : undefined}
-							title={groupCount > 1 ? `${group.name}. ${MOVE_GROUP_HINT}` : group.name}
+							title={groupMenuOpen ? undefined : groupCount > 1 ? `${group.name}. ${MOVE_GROUP_HINT}` : group.name}
 							ref={element => {
 								if (element) repositoryGroupHeaders.current.set(group.id, element);
 								else repositoryGroupHeaders.current.delete(group.id);
@@ -441,9 +446,9 @@ export function Sidebar() {
 						type="button"
 						className="icon-button repository-group-more"
 						aria-label={`More for group ${group.name}`}
-						title={`More for group ${group.name}`}
+						title={groupMenuOpen ? undefined : `More for group ${group.name}`}
 						aria-haspopup="menu"
-						aria-expanded={menu?.kind === "group" && menu.id === group.id}
+						aria-expanded={groupMenuOpen}
 						onClick={event => {
 							menuByKey.current = false;
 							setMenu({ kind: "group", id: group.id, at: underneath(event.currentTarget) });
@@ -451,7 +456,7 @@ export function Sidebar() {
 					>
 						<MoreIcon />
 					</button>
-					{menu?.kind === "group" && menu.id === group.id && (
+					{groupMenuOpen && (
 						<RepositoryMenu
 							label={describeGroupMenu(group.name)}
 							items={groupMenuItems(repositoryGroups.groups, group.id)}

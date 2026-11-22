@@ -91,7 +91,7 @@ describe("the bytes typed for a chop", () => {
 });
 
 describe("menu entries for chops", () => {
-	test("the menu and palette offer every chop and Insert chop only commands, in listed order, with the description or the first line as the tooltip", () => {
+	test("the menu and palette offer every chop and Insert chop only commands, in listed order, with the description or the first line as its description", () => {
 		const list = listed([
 			chop("Test", { description: "Every test" }),
 			chop("Review", { kind: "prompt", agent: "Codex" }),

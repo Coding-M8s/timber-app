@@ -20,7 +20,11 @@ describe("a repository's menu", () => {
 		expect(markup).toContain('<span class="session-menu-label">New group...</span>');
 		expect(markup).toContain('<span class="session-menu-label">Take out of Personal</span>');
 		expect(markup).toContain('<span class="session-menu-label">Icon...</span>');
-		expect(markup).toContain(`title="${REMOVE_REPOSITORY_HINT}"><span class="session-menu-label">Remove from the list</span>`);
+		expect(markup).toContain('aria-describedby="m-description-4"><span class="session-menu-label">Remove from the list</span>');
+		expect(markup).toContain(`<span id="m-description-4" hidden="">${REMOVE_REPOSITORY_HINT}</span>`);
+		// An entry with nothing more to say than its label has no description.
+		expect(markup).toMatch(/tabindex="-1"><span class="session-menu-label">New group...<\/span>/);
+		expect(markup).not.toContain("title=");
 		expect(markup).not.toContain("aria-disabled");
 	});
 
@@ -41,6 +45,8 @@ describe("a group's menu", () => {
 		);
 		expect(markup).toContain('aria-label="Actions for group Work"');
 		expect(markup).toContain('<span class="session-menu-label">Rename</span>');
-		expect(markup).toContain(`title="${DELETE_GROUP_HINT}"><span class="session-menu-label">Delete group</span>`);
+		expect(markup).toMatch(/aria-describedby="g-description-\d+"><span class="session-menu-label">Delete group<\/span>/);
+		expect(markup).toContain(`hidden="">${DELETE_GROUP_HINT}</span>`);
+		expect(markup).not.toContain("title=");
 	});
 });

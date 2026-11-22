@@ -2067,9 +2067,10 @@ every machine agrees. The rules are pure, in
   Workspace "+" menu lists the chops after the agents, under "Chops",
   commands and prompts, a prompt marked "Prompt", or "Copy prompt" when no
   agent is saved in Settings, with the description, or the text's first
-  line, as the tooltip; with no session yet the empty pane has a "Run",
-  "Send", or "Copy" button for at most three, both kinds, in the chops
-  panel's order for the repository, favorites first (`emptyPaneChops`, over
+  line, as its description for assistive technology (no tooltip, which
+  would cover the menu; see `chopTitle`); with no session yet the empty
+  pane has a "Run", "Send", or "Copy" button for at most three, both
+  kinds, in the chops panel's order for the repository, favorites first (`emptyPaneChops`, over
   `arrangeChops` and `listedChopArrangement`, so a star or a move shows
   there at once), and with more than three an "All chops" button that shows
   the chops panel, or gives it the keyboard when it shows already

@@ -203,6 +203,16 @@ change them here first when they change.
   the key shown stays. Reset goes back to the default. They save with the
   section. With "Use chops" off the fields are gone, as the shortcuts are.
   The app's other shortcuts cannot be changed yet (#258).
+- No tooltip covers a menu. Whatever opened a menu (a More button, a
+  chop's actions button, the terminal "+", a session chip, a worktree row,
+  a repository or group header) has no tooltip while the menu is open, and
+  gets it back when the menu closes; its name stays. A marker or button
+  inside a row or header keeps its own tooltip: a right-click opens the
+  menu at the pointer, over it. Menu entries have no tooltips: an entry's
+  words are in sight, a disabled one's reason shows under it, and any more
+  it has to say is its description, for assistive technology only. Buttons
+  that open a dialog keep their tooltips, since the dialog's backdrop
+  covers them.
 
 ## Sidebar
 
@@ -1195,8 +1205,8 @@ logins. The app never reads a tracker login and never signs in.
 - **Running a chop:** a command chop runs in the active worktree only; to
   run it elsewhere, switch worktree first. The Workspace "+" menu has a
   Chops part listing the repository's command chops by name, with the
-  description in the tooltip, and a worktree with no session yet has a
-  "Run", "Send", or "Copy" button for at most three, favorites first, and
+  description read to assistive technology, and a worktree with no session
+  yet has a "Run", "Send", or "Copy" button for at most three, favorites first, and
   "All chops" when there are more. The chops panel runs or sends each with one
   click. The command palette lists "Run chop: <name>",
   found by name and description, and shows one that cannot run now with

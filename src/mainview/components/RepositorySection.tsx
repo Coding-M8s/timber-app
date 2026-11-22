@@ -53,6 +53,8 @@ export interface RepositorySectionProps {
 	clashMarks: ReadonlyMap<string, readonly PortClashMark[]>;
 	/** The More button, last in the header. */
 	more: ReactNode;
+	/** Whether the repository's menu is open. The header has no tooltip then: it would cover the menu. */
+	menuOpen: boolean;
 	/** A right-click on the header row, which opens the same menu as More. */
 	onHeadContextMenu: (event: MouseEvent<HTMLDivElement>) => void;
 	/** The identity the list has now for the worktree at this path, which is what the Done dialog is opened with. */
@@ -65,7 +67,7 @@ export interface RepositorySectionProps {
  * below it its worktrees, backups, and what went wrong. A plain function of
  * its props, with no hooks of its own, so the sidebar draws it in place.
  */
-export function RepositorySection({ state, store, repository, matches, open, query, now, idBase, index, marks, sectionRef, movable, header, fetchAsked, removing, clashMarks, more, onHeadContextMenu, listedIdAt, selectedId }: RepositorySectionProps) {
+export function RepositorySection({ state, store, repository, matches, open, query, now, idBase, index, marks, sectionRef, movable, header, fetchAsked, removing, clashMarks, more, menuOpen, onHeadContextMenu, listedIdAt, selectedId }: RepositorySectionProps) {
 	const fetch = state.fetches[repository.path];
 	const fetching = fetch?.fetching === true || fetchAsked;
 	const fetchMarker = repository.available ? describeFetchMarker(fetch, now) : null;
@@ -100,7 +102,7 @@ export function RepositorySection({ state, store, repository, matches, open, que
 					aria-expanded={open}
 					aria-describedby={describedBy === "" ? undefined : describedBy}
 					aria-keyshortcuts={movable ? `${MOVE_REPOSITORY_SHORTCUTS} ${WORKTREE_MENU_SHORTCUTS}` : WORKTREE_MENU_SHORTCUTS}
-					title={movable ? `${describeRepository(repository)}. ${MOVE_REPOSITORY_HINT}` : describeRepository(repository)}
+					title={menuOpen ? undefined : movable ? `${describeRepository(repository)}. ${MOVE_REPOSITORY_HINT}` : describeRepository(repository)}
 					{...header}
 				>
 					<svg className={open ? "chevron open" : "chevron"} aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

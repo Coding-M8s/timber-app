@@ -102,7 +102,7 @@ describe("App", () => {
 		for (const path of ["/work/timber", "/work/api-server"]) {
 			const remove = repositoryMenuItems(store.getState().repositoryGroups, path).at(-1)!;
 			expect(remove.label).toBe("Remove from the list");
-			expect(remove.title).toContain("Nothing on disk is changed.");
+			expect(remove.description).toContain("Nothing on disk is changed.");
 		}
 		chooseFromRepositoryMenu(store, "/work/api-server", { kind: "remove" }, () => {});
 		await settle();

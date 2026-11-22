@@ -117,7 +117,7 @@ const FAILED_LIST_TITLES = {
 	group: "Could not save the groups",
 } as const;
 
-/** What deleting a group does, as the menu item's tooltip says. */
+/** What deleting a group does, as the menu item's description says. */
 export const DELETE_GROUP_HINT = "Its repositories and subgroups move up a level, and stay in the list.";
 
 /** Why a group cannot go somewhere, as a menu entry's note and the sidebar's notice say. */
