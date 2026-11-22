@@ -137,7 +137,7 @@ export function DiffTab({ repository, worktree }: { repository: Repository; work
 				worktree={worktree}
 				view={view}
 				file={file}
-				layout="unified"
+				layout={state.layout.diffLayout}
 				steps={steps}
 				review={review}
 				viewed={<ViewedBox worktree={worktree.id} file={file} compared={view.compared} onToggle={() => void toggle(store, file).then(setStepped)} />}

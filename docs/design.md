@@ -652,6 +652,23 @@ logins. The app never reads a tracker login and never signs in.
   a deleted file, a conflict, a type change, or a staged change whose file
   was edited again on disk, and not when the file changed since the diff
   was read, until it is read again.
+- While the diff tab shows, the end of the worktree's tab row has a
+  Unified | Split switch; the diff's own title line is full. Where the row
+  is too narrow, the switch goes under the tabs, at the right.
+  Unified is one column, each removed line above what it became. Split
+  puts the old file on the left, with its old line numbers, and the new
+  file on the right, with its new ones: a kept line on both sides, and an
+  edited line beside the line it became, so a long edit reads across
+  rather than up and down. Where one side has more lines in a run than the
+  other, the other side shows an empty, hatched cell. A long line wraps in
+  its half. The choice is the same for every worktree and stays after a
+  restart. When the tab is too narrow for two readable columns, and for a
+  conflict's combined diff, it shows Unified and a line under the title
+  says why; Split stays chosen and comes back once the tab is wide enough.
+  For a narrow tab that line also offers "Hide side panel", which makes
+  room for Split, and "Show Split anyway", which shows Split in that tab
+  with its columns at their readable width and the diff scrolling
+  sideways.
 - Changes has a "Compare with" switch: Base or Uncommitted. Base is
   everything the branch changed since it left its saved base, committed or
   not, so the work stays visible after an agent commits; commits on the base
@@ -769,7 +786,11 @@ logins. The app never reads a tracker login and never signs in.
   field under the last line; Escape lets go of the drag and starts
   nothing. For the keyboard, clicking a line's numbers (or Enter on them)
   starts a note on that line, and Shift+click or Shift+Enter on another
-  line of the same hunk makes it a range. The `+` is part of the numbers
+  line of the same hunk makes it a range. In Split, notes start from
+  either side, the old numbers on the left, and a range stays on one side
+  of one hunk: a drag or Shift+click takes that side's lines only, Shift on
+  the other side starts a note there instead, and Up and Down keep to the
+  side. A note's reference names the same lines in either layout. The `+` is part of the numbers
   button, so it also shows while that button has the keyboard, and a
   screen reader hears the button as before, "Add a note on line 69". A
   note shows under its lines. Lines without numbers, such as Git's own

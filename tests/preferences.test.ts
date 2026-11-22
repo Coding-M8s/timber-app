@@ -103,7 +103,7 @@ describe("applyPreferenceChange", () => {
 
 describe("the preferences part of the settings file", () => {
 	test("round-trips beside the repositories and the layout", () => {
-		const settings = { repositories: [one], layout: { sidebarWidth: 300, collapsed: [], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: ["g-work"], chopsOpen: true, chopsWidth: 400, sidePanel: "files" as const }, preferences: { sidebarSide: "right" as const, editor: null, agents: AGENT_PRESETS, chops: [], useChops: true, chopOrder: {}, fileChopSounds: {}, playChopSounds: true, shortcuts: {}, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), sessionNames: "plain" as const, statusNotifications: true, notifyStates: ["needs-you", "done", "error", "crashed"] as const, sounds: defaultStateSounds(), dmabuf: "auto" as const, timber: { kind: "bundled" as const } } };
+		const settings = { repositories: [one], layout: { sidebarWidth: 300, collapsed: [], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: ["g-work"], chopsOpen: true, chopsWidth: 400, sidePanel: "files" as const, diffLayout: "split" as const }, preferences: { sidebarSide: "right" as const, editor: null, agents: AGENT_PRESETS, chops: [], useChops: true, chopOrder: {}, fileChopSounds: {}, playChopSounds: true, shortcuts: {}, fetch: defaultFetchSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), sessionNames: "plain" as const, statusNotifications: true, notifyStates: ["needs-you", "done", "error", "crashed"] as const, sounds: defaultStateSounds(), dmabuf: "auto" as const, timber: { kind: "bundled" as const } } };
 		const text = serializeSettings(settings);
 		expect(JSON.parse(text)).toEqual({ version: 1, ...settings });
 		expect(parseSettings(text)).toEqual(settings);
@@ -190,7 +190,7 @@ describe("the saved preferences in the main process", () => {
 		const results = await Promise.all([
 			repositories.addFolder(primary),
 			preferences.save({ sidebarSide: "right" }),
-			layout.save({ sidebarWidth: 330, collapsed: [primary], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [], chopsOpen: false, chopsWidth: 320, sidePanel: "chops" as const }),
+			layout.save({ sidebarWidth: 330, collapsed: [primary], setupDismissed: [], uncommittedChanges: [], issueLists: {}, collapsedGroups: [], chopsOpen: false, chopsWidth: 320, sidePanel: "chops" as const, diffLayout: "unified" as const }),
 		]);
 		expect(results.map(result => result.outcome)).toEqual(["added", "saved", "saved"]);
 		expect(onDisk()).toEqual({

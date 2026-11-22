@@ -40,7 +40,13 @@ export interface Layout {
 	chopsWidth: number;
 	/** What the side panel shows: the chops, or the selected worktree's files or changes. */
 	sidePanel: SidePanelView;
+	/** How the diff tab lays out a diff's lines, for every worktree: one column, or old and new side by side. */
+	diffLayout: DiffLayout;
 }
+
+/** How the lines of a diff are laid out: one column, old above new, or Split, old on the left and new on the right. */
+export type DiffLayout = "unified" | "split";
+export const DIFF_LAYOUTS: readonly DiffLayout[] = ["unified", "split"];
 
 export type SidePanelView = "chops" | "files" | "changes";
 export const SIDE_PANEL_VIEWS: readonly SidePanelView[] = ["chops", "files", "changes"];
@@ -74,6 +80,7 @@ export function defaultLayout(): Layout {
 		chopsOpen: false,
 		chopsWidth: DEFAULT_CHOPS_WIDTH,
 		sidePanel: "chops",
+		diffLayout: "unified",
 	};
 }
 
@@ -101,11 +108,12 @@ export function clampChopsWidth(width: number): number {
 export function readLayout(value: unknown): Layout {
 	const layout = defaultLayout();
 	if (typeof value !== "object" || value === null || Array.isArray(value)) return layout;
-	const { sidebarWidth, collapsed, setupDismissed, uncommittedChanges, issueLists, collapsedGroups, chopsOpen, chopsWidth, sidePanel } = value as Record<string, unknown>;
+	const { sidebarWidth, collapsed, setupDismissed, uncommittedChanges, issueLists, collapsedGroups, chopsOpen, chopsWidth, sidePanel, diffLayout } = value as Record<string, unknown>;
 	if (typeof sidebarWidth === "number") layout.sidebarWidth = clampSidebarWidth(sidebarWidth);
 	if (typeof chopsOpen === "boolean") layout.chopsOpen = chopsOpen;
 	if (typeof chopsWidth === "number") layout.chopsWidth = clampChopsWidth(chopsWidth);
 	if ((SIDE_PANEL_VIEWS as readonly unknown[]).includes(sidePanel)) layout.sidePanel = sidePanel as SidePanelView;
+	if ((DIFF_LAYOUTS as readonly unknown[]).includes(diffLayout)) layout.diffLayout = diffLayout as DiffLayout;
 	layout.collapsed = readPaths(collapsed);
 	layout.setupDismissed = readPaths(setupDismissed);
 	layout.uncommittedChanges = readPaths(uncommittedChanges);
@@ -149,7 +157,8 @@ export function sameLayout(one: Layout, other: Layout): boolean {
 		&& samePaths(one.collapsedGroups, other.collapsedGroups)
 		&& one.chopsOpen === other.chopsOpen
 		&& one.chopsWidth === other.chopsWidth
-		&& one.sidePanel === other.sidePanel;
+		&& one.sidePanel === other.sidePanel
+		&& one.diffLayout === other.diffLayout;
 }
 
 /** What the Changes view of a worktree asks to compare with: its base, unless the person chose Uncommitted there. */

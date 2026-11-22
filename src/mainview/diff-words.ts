@@ -1,4 +1,5 @@
 import type { DiffLine } from "../shared/file-changes";
+import { hunkParts } from "../shared/diff-split";
 
 /**
  * Which words changed inside an edited line of a diff. Each run of removed
@@ -45,25 +46,13 @@ export function wordRanges(removed: string, added: string): [WordRange | null, W
 	return [removedRange, addedRange];
 }
 
-/** For each line of a hunk, the stretch of it that changed, or null. Git's notes are skipped over when pairing. */
+/** For each line of a hunk, the stretch of it that changed, or null. Lines pair as the Split layout shows them (`hunkParts`), Git's notes skipped. */
 export function changedWords(lines: readonly DiffLine[]): (WordRange | null)[] {
 	const ranges: (WordRange | null)[] = lines.map(() => null);
-	let at = 0;
-	const run = (kind: "removed" | "added") => {
-		const found: number[] = [];
-		while (at < lines.length && (lines[at]!.kind === kind || lines[at]!.kind === "note")) {
-			if (lines[at]!.kind === kind) found.push(at);
-			at++;
-		}
-		return found;
-	};
-	while (at < lines.length) {
-		if (lines[at]!.kind !== "removed") {
-			at++;
-			continue;
-		}
-		const removed = run("removed");
-		const added = run("added");
+	for (const part of hunkParts(lines)) {
+		if (part.kind !== "change") continue;
+		const removed = part.removed.filter(index => lines[index]!.kind === "removed");
+		const added = part.added.filter(index => lines[index]!.kind === "added");
 		for (let pair = 0; pair < Math.min(removed.length, added.length); pair++) {
 			const [one, other] = wordRanges(lines[removed[pair]!]!.text, lines[added[pair]!]!.text);
 			ranges[removed[pair]!] = one;

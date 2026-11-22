@@ -139,6 +139,7 @@ export function serializeSettings(settings: Settings): string {
 		...(settings.layout.chopsOpen ? { chopsOpen: true } : {}),
 		...(settings.layout.chopsWidth !== DEFAULT_CHOPS_WIDTH ? { chopsWidth: settings.layout.chopsWidth } : {}),
 		...(settings.layout.sidePanel !== "chops" ? { sidePanel: settings.layout.sidePanel } : {}),
+		...(settings.layout.diffLayout !== "unified" ? { diffLayout: settings.layout.diffLayout } : {}),
 	};
 	const preferences = settings.preferences && writePreferences(settings.preferences);
 	const forcePushes = settings.forcePushes && Object.keys(settings.forcePushes).length > 0 ? readForcePushMarks(settings.forcePushes) : null;

@@ -17,7 +17,7 @@ import { promptTarget, reviewWaiting } from "../agent-sessions";
 import { describePromptCopied, describePromptSent } from "../chop-format";
 import { type Comparison, type FileChange, type FileChangeTarget, type FileChangesResult, type FileDiff, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
 import type { PortsResult } from "../../shared/ports";
-import { type Layout, type SidePanelView, chooseComparison, chooseIssueList, chosenComparison, clampChopsWidth, clampSidebarWidth, dismissSetup, forgetGroup, forgetRepository, sameLayout, toggleCollapsed, toggleGroupCollapsed } from "../../shared/layout";
+import { type DiffLayout, type Layout, type SidePanelView, chooseComparison, chooseIssueList, chosenComparison, clampChopsWidth, clampSidebarWidth, dismissSetup, forgetGroup, forgetRepository, sameLayout, toggleCollapsed, toggleGroupCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RepositoryGroupsResult, ReportedWorktree, SavePreferencesResult, TimberFailure, TimberStatus, Worktree, WorktreeCommandResult } from "../../shared/model";
 import { type Preferences, defaultPreferences } from "../../shared/preferences";
 import type { ChopArrangements, ChopRename } from "../../shared/chop-order";
@@ -385,6 +385,8 @@ export interface AppStore {
 	 * Never throws.
 	 */
 	compareChanges(compare: Comparison): Promise<void>;
+	/** Lay the diff tab's lines out in one column or side by side, for every worktree, and remember that in the layout. */
+	chooseDiffLayout(layout: DiffLayout): void;
 	/**
 	 * Keep a review note on lines of a diff of a worktree. Answers why it was
 	 * not kept, or null. Nothing is sent: notes wait in `reviews`.
@@ -2091,6 +2093,12 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		update({ ...closedDiff(worktreeId), ...(state.noteInView?.worktree === worktreeId ? { noteInView: null } : {}) });
 	}
 
+	function chooseDiffLayout(diffLayout: DiffLayout): void {
+		if (state.layout.diffLayout === diffLayout) return;
+		changeLayout({ ...state.layout, diffLayout });
+		void saveLayout("layout");
+	}
+
 	async function compareChanges(compare: Comparison): Promise<void> {
 		const view = state.changes;
 		if (!view) return;
@@ -3532,6 +3540,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		readPorts,
 		selectChangedFile,
 		compareChanges,
+		chooseDiffLayout,
 		addReviewNote(worktreeId, note) {
 			const text = normalizeNoteText(note.text);
 			const problem = noteProblem(text);

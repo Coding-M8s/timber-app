@@ -11,6 +11,7 @@ import { FileViewer } from "./FileViewer";
 import { useAppState, useStore } from "../store/react";
 import { type WorkspaceTab, isBeingRemoved, isRunning, selectedWorktree } from "../store/state";
 import { DiffTab } from "./DiffTab";
+import { DiffLayoutSwitch } from "./DiffView";
 import { diffTabLabel, diffTabTitle } from "../changes-panel-format";
 import { IssueHeaderLink, issueOf } from "./IssueSummary";
 import { IssuesBoard } from "./IssuesBoard";
@@ -125,45 +126,49 @@ export function Workspace() {
 				<EditorProblemNote />
 			</header>
 			<SetupPrompt repository={repository} />
-			<div className="tabs" role="tablist" aria-label="Views of this worktree" onKeyDown={onTabKey}>
-				{tabs.map(tab => (
-					<Fragment key={tab}>
-						<button
-							type="button"
-							role="tab"
-							id={tabId(tab)}
-							className={tab === state.tab ? "tab selected" : "tab"}
-							aria-selected={tab === state.tab}
-							aria-controls={PANEL_ID}
-							// Only the tab that shows is a tab stop. The arrows reach the others.
-							tabIndex={tab === state.tab ? 0 : -1}
-							onClick={() => store.showTab(tab)}
-						>
-							{tab === "file"
-								? <span title={file?.path}>{fileTabLabel(file)}</span>
-								: tab === "diff" && diff
-									? (
-										<span title={diffTabTitle(diff.file)}>
-											<span className="tab-kind" aria-hidden="true">diff</span>
-											<span className="visually-hidden">Diff of </span>
-											{diffTabLabel(diff.file)}
-										</span>
-									)
-									: TAB_LABELS[tab]}
-						</button>
-						{/* Beside the tab, not inside it: a button may not hold another. The diff's and the viewer's own Close reach it by keyboard. */}
-						{tab === "diff" && diff && (
-							<button type="button" className="tab-close" tabIndex={-1} aria-label={`Close the diff of ${diffTabLabel(diff.file)}`} title={`Close the diff of ${diff.file.path}`} onClick={() => store.closeDiff(worktree.id)}>
-								<span aria-hidden="true">×</span>
+			<div className="tabs-row">
+				<div className="tabs" role="tablist" aria-label="Views of this worktree" onKeyDown={onTabKey}>
+					{tabs.map(tab => (
+						<Fragment key={tab}>
+							<button
+								type="button"
+								role="tab"
+								id={tabId(tab)}
+								className={tab === state.tab ? "tab selected" : "tab"}
+								aria-selected={tab === state.tab}
+								aria-controls={PANEL_ID}
+								// Only the tab that shows is a tab stop. The arrows reach the others.
+								tabIndex={tab === state.tab ? 0 : -1}
+								onClick={() => store.showTab(tab)}
+							>
+								{tab === "file"
+									? <span title={file?.path}>{fileTabLabel(file)}</span>
+									: tab === "diff" && diff
+										? (
+											<span title={diffTabTitle(diff.file)}>
+												<span className="tab-kind" aria-hidden="true">diff</span>
+												<span className="visually-hidden">Diff of </span>
+												{diffTabLabel(diff.file)}
+											</span>
+										)
+										: TAB_LABELS[tab]}
 							</button>
-						)}
-						{tab === "file" && file && (
-							<button type="button" className="tab-close" tabIndex={-1} aria-label={`Close ${fileTabLabel(file)}`} title={`Close ${file.path}`} onClick={() => store.closeFile(worktree.id)}>
-								<span aria-hidden="true">×</span>
-							</button>
-						)}
-					</Fragment>
-				))}
+							{/* Beside the tab, not inside it: a button may not hold another. The diff's and the viewer's own Close reach it by keyboard. */}
+							{tab === "diff" && diff && (
+								<button type="button" className="tab-close" tabIndex={-1} aria-label={`Close the diff of ${diffTabLabel(diff.file)}`} title={`Close the diff of ${diff.file.path}`} onClick={() => store.closeDiff(worktree.id)}>
+									<span aria-hidden="true">×</span>
+								</button>
+							)}
+							{tab === "file" && file && (
+								<button type="button" className="tab-close" tabIndex={-1} aria-label={`Close ${fileTabLabel(file)}`} title={`Close ${file.path}`} onClick={() => store.closeFile(worktree.id)}>
+									<span aria-hidden="true">×</span>
+								</button>
+							)}
+						</Fragment>
+					))}
+				</div>
+				{/* Beside the tabs, not among them: a tab list holds only tabs. */}
+				{state.tab === "diff" && diff && <DiffLayoutSwitch />}
 			</div>
 			<div className="tabpanel workspace-panel" role="tabpanel" id={PANEL_ID} aria-labelledby={tabId(state.tab)}>
 				{state.tab === "workspace" && <TerminalPanel repository={repository} worktree={worktree} />}

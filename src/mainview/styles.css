@@ -3172,12 +3172,23 @@ pre:focus-visible {
 	outline-offset: 0;
 }
 
-.tabs {
+/* The worktree's tabs, and at the row's end what goes with the tab that shows, such as the diff's Unified | Split switch. */
+.tabs-row {
 	flex: none;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0 8px;
+	padding-right: 8px;
+	border-bottom: 1px solid var(--line);
+}
+
+/* Never squeezed: where the row is too narrow, what follows the tabs wraps under them instead. */
+.tabs {
+	flex: 1 0 auto;
 	display: flex;
 	gap: 2px;
 	padding: 0 8px;
-	border-bottom: 1px solid var(--line);
 }
 
 .tab {
@@ -4614,6 +4625,45 @@ pre:focus-visible {
 	margin-left: 0;
 }
 
+/* The Unified | Split switch at the end of the tab row, sized to fit it. */
+.diff-layout {
+	flex: none;
+	margin-left: auto;
+	padding: 3px 0;
+}
+
+.diff-layout .mode-option {
+	padding: 2px 8px;
+}
+
+/* Why the diff shows Unified though Split is chosen, and what makes room for Split. */
+.diff-layout-note {
+	flex: none;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 8px;
+	padding: 4px 8px 4px 12px;
+	border-bottom: 1px solid var(--line);
+	font-size: 12px;
+	color: var(--text-3);
+}
+
+.diff-layout-note p {
+	margin: 0 auto 0 0;
+}
+
+.diff-layout-actions {
+	display: flex;
+	gap: 4px;
+}
+
+.diff-layout-note .button {
+	height: 24px;
+	padding: 0 8px;
+	font-size: 12px;
+}
+
 .diff-body {
 	flex: 1 1 auto;
 	min-height: 0;
@@ -4772,6 +4822,44 @@ pre:focus-visible {
 .diff-line.note .diff-text {
 	font-style: italic;
 	color: var(--text-3);
+}
+
+/*
+ * Split: two columns of equal width, old on the left and new on the right.
+ * A long line wraps inside its cell, so the whole line shows and an edited
+ * line stays beside what it became; its number stays at the top.
+ */
+.diff-split-row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.diff-split-row > .diff-cell {
+	grid-template-columns: 5ch 2ch minmax(0, 1fr);
+	align-items: start;
+	min-width: 0;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.diff-split-row > :first-child {
+	border-right: 1px solid var(--line);
+}
+
+.diff-split-row .diff-note-target {
+	grid-column: 1 / 2;
+	grid-template-columns: 5ch;
+	align-self: stretch;
+}
+
+/* Beside the first line of a wrapped cell, not its middle. */
+.diff-split-row .diff-note-plus {
+	top: 0.75em;
+}
+
+/* A side with no line in this row. */
+.diff-cell-empty {
+	background: repeating-linear-gradient(135deg, var(--fill-hover) 0 6px, transparent 6px 12px);
 }
 
 /* The "+" menu of a worktree's sessions: the shell and every agent, each with what it runs. */

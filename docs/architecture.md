@@ -3422,9 +3422,7 @@ discards, or commits. Comparing against a backup is a later step.
   Git's own header lines, such as `rename from`, notes on lines, ranges,
   and outdated notes. "Open in editor" opens the file, and is not offered
   for a deleted one. Each line is drawn in two parts, `lineTone` for its
-  background and `LineContent` for its text, and `DiffView` takes how the
-  lines are laid out as `layout` ("unified" only so far), so colors and a
-  side by side layout plug in there.
+  background and `LineContent` for its text, in either layout.
 - **Previous, next, and Viewed.** `stepChangedFile` opens the file before
   or after the diff tab's, among the files the list shows through its
   filter, going round (`steppedFile`); the title line's buttons and
@@ -3453,6 +3451,26 @@ discards, or commits. Comparing against a backup is a later step.
   it. Send review and Copy review read each noted file again the same way
   (`readJudgedDiff` in the store), so a note on an unchanged line is not
   sent as outdated.
+- **Unified and Split.** The Unified | Split switch (`DiffLayoutSwitch`),
+  at the end of the worktree's tab row while the diff tab shows, since the
+  diff's title line has no room left, sets `diffLayout` in the saved layout (`chooseDiffLayout`), so the
+  choice is one for every worktree and kept after a restart; Unified until
+  one is made. Split puts old lines on the left with their old numbers and
+  new lines on the right with their new numbers. `splitRows` in
+  `src/shared/diff-split.ts` pairs them: a kept line on both sides, and in
+  each run of removed lines and the added lines after it, the first removed
+  beside the first added and so on, with an empty, hatched cell where one
+  side has no more lines. Git's "No newline at end of file" stays on the
+  side of the line it follows. `changedWords` pairs lines by the same rule
+  (`hunkParts`), so a marked word is always beside the line it changed in.
+  A long line wraps inside its cell, so the row stays paired. `shownLayout`
+  draws Unified instead, and a line under the title says why, while the tab
+  is narrower than `MIN_SPLIT_WIDTH` (600 pixels, measured as it resizes)
+  and for a conflict's combined diff; the choice stays Split. For a narrow
+  tab the line offers "Hide side panel" (`toggleSidePanel`) and "Show
+  Split anyway", kept in `DiffView` while it shows and never saved, which
+  draws Split `cramped`: each hunk keeps `MIN_SPLIT_WIDTH` as its least
+  width and the diff scrolls sideways.
 - **Refreshing.** `ChangesReader` reads the list while the Changes view
   shows or the diff tab does (`changesWanted`), and again whenever the
   worktree's status on screen is read again, which is whenever its
@@ -3819,7 +3837,10 @@ the Send prompt dialog, `src/mainview/components/AgentChoices.tsx`.
 
 - **A note.** One line, or a run of at most 30 lines of one hunk, of one
   file (`FileChangeTarget`) in one comparison, with the lines as Git
-  printed them and the text written. Only lines with a number take a note
+  printed them and the text written. In the Split layout a run is of one
+  side's lines only, so a range on the right never takes the removed lines
+  between its added ones (`notedLines` with a side). Each noted line keeps
+  both its numbers, so a note's reference is the same in either layout. Only lines with a number take a note
   (`notableLine`). The text is kept with `\n` line breaks and no spaces at
   its end, at most 10,000 characters, and like a chop's text holds only
   line breaks, tabs, and visible characters (`isSafeText` in
@@ -3856,7 +3877,10 @@ the Send prompt dialog, `src/mainview/components/AgentChoices.tsx`.
   (`chooseNoteLine`) and the text typed so far, so stretching it to a
   range keeps the text and a diff read again meanwhile does not change
   what the note quotes. A draft is not a note: choosing another file or
-  worktree drops it.
+  worktree drops it. A draft started in Split keeps its side, and
+  Shift+click on the other side starts a note there instead of stretching
+  across; switching the layout keeps the draft, and its range marks the
+  same lines.
 - **Pasting** (`pasteTerminal` on the `Engine`). The main process takes
   the text for a running session, only when it passes
   `pasteProblem` (not blank, at most 100,000 characters, no carriage
