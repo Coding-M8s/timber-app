@@ -263,7 +263,7 @@ function actionEntries(state: AppState): PaletteEntry[] {
 		}
 		const running = state.operations.some(operation => operation.kind === "open-in-editor" && operation.worktree === worktree.path);
 		const editor: EditorAction = describeEditorAction(state.preferences.editor, worktree, running);
-		add(inWorktree("editor"), "editor", OPEN_IN_EDITOR, `Opens ${name} in your editor.`, editor.available ? null : editor.reason ?? OPENING_IN_EDITOR,
+		add(inWorktree("editor"), "editor", OPEN_IN_EDITOR, editor.command === null ? `Opens ${name} in your editor.` : `Opens ${name} in your editor with ${editor.command}.`, editor.available ? null : editor.reason ?? OPENING_IN_EDITOR,
 			{ kind: "editor", repository: repository.path, worktree: worktree.path }, ["code"]);
 		add(inWorktree("done"), "done", "Done", `Opens Done for ${name}, which shows the Timber command before it runs.`, worktree.primary ? DONE_PRIMARY_NOTE : null,
 			{ kind: "dialog", request: { kind: "done-worktree", repository: repository.path, worktree: worktree.id } }, ["remove", "finish", "delete"]);

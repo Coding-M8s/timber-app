@@ -1,5 +1,6 @@
 import { describeCommandLine, splitCommandLine } from "./command-line";
 import { filePathIn, relativePathProblem } from "./file-changes";
+import { cleanSessionName } from "./terminal";
 
 /**
  * The editor that "Open in editor" starts, and how its command is built. Pure:
@@ -16,7 +17,7 @@ export interface EditorSetting {
 	command: string;
 	/**
 	 * True for an editor that runs in a terminal, such as Neovim. Those open in
-	 * a terminal session of the worktree, which the app does not have yet.
+	 * a new session of the worktree, so they have a terminal to run in.
 	 */
 	terminal: boolean;
 }
@@ -68,8 +69,15 @@ export function presetOf(setting: EditorSetting | null): EditorPreset | null {
 	return EDITOR_PRESETS.find(preset => preset.setting.command === command && preset.setting.terminal === setting.terminal) ?? null;
 }
 
-/** Why a terminal editor cannot be opened yet. */
-export const TERMINAL_EDITOR_REASON = "Editors that run in a terminal are not started from here yet. Open a terminal for the worktree in the Workspace tab and start it there.";
+/**
+ * The base name of the session a terminal editor starts: its executable's
+ * name, without folders or a Windows `.exe`, such as "nvim" for
+ * `/usr/bin/nvim`. "Editor" when that leaves nothing.
+ */
+export function editorSessionName(executable: string): string {
+	const base = executable.split(/[\\/]/).pop() ?? "";
+	return cleanSessionName(base.replace(/\.exe$/i, "")) ?? "Editor";
+}
 
 export type EditorCommand =
 	| { ok: true; executable: string; arguments: string[] }

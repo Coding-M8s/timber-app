@@ -7,7 +7,7 @@ import { processTreeKillCommand, sessionMembers, sessionOfStat } from "../src/bu
 import { conversationExists } from "../src/bun/agent-conversations";
 import { endedKey } from "../src/bun/session-layout";
 import type { ConversationStore } from "../src/shared/agent-registry";
-import { PART_LIMIT, type TerminalDependencies, type TerminalSessions, createTerminalSessions } from "../src/bun/terminals";
+import { type AgentLaunch, PART_LIMIT, type TerminalDependencies, type TerminalSessions, createTerminalSessions } from "../src/bun/terminals";
 import type { AgentSetting } from "../src/shared/agent";
 import type { Repository } from "../src/shared/model";
 import { describeSearchPath } from "../src/shared/search-path";
@@ -690,6 +690,69 @@ sleep 5
 			startWithAgents({ sessionNaming: async () => { throw new Error("unreadable"); } });
 			expect((await opened()).session.name).toBe("Terminal");
 			expect((await openedAgent("Codex")).name).toBe("Codex");
+		});
+
+		describe("an editor from Open in editor", () => {
+			/** A pretend terminal editor in the sessions' PATH: prints its folder and arguments, then ends when it reads a line. */
+			function startWithEditor(overrides: Partial<TerminalDependencies> = {}): AgentLaunch {
+				startWithAgents(overrides);
+				const script = join(root, "agent bin", "fake-nvim");
+				writeFileSync(script, `#!/bin/sh\nprintf 'fake-nvim in %s args' "$(pwd)"\nfor arg in "$@"; do printf ' [%s]' "$arg"; done\necho\nread line\nexit 3\n`);
+				chmodSync(script, 0o755);
+				return { name: "fake-nvim", executable: "fake-nvim", arguments: ["-p", worktree], words: { what: "the editor", command: "The editor command", section: "Settings, Editor" }, section: "Settings, Editor", kind: "editor" };
+			}
+			const plainRequest = () => ({ repository, worktree, cols: 80, rows: 24 });
+
+			test("starts in the worktree with its arguments, as a session of kind editor named after the executable, and a second is numbered", async () => {
+				const launch = startWithEditor();
+				const result = await sessions.open(plainRequest(), undefined, launch);
+				if (result.outcome !== "opened") throw new Error(`Not opened: ${JSON.stringify(result)}`);
+				const executable = join(root, "agent bin", "fake-nvim");
+				expect(result.session).toMatchObject({ kind: "editor", name: "fake-nvim", path: worktree, shell: executable, state: { kind: "running" } });
+				expect(result.session.command).toBe(`'${executable}' -p '${worktree}'`);
+				await seen(result.session.id, `fake-nvim in ${worktree} args [-p] [${worktree}]\r\n`);
+				const second = await sessions.open(plainRequest(), undefined, launch);
+				expect(second.outcome === "opened" && second.session.name).toBe("fake-nvim 2");
+			});
+
+			test("under branch naming the name has the branch, and the session is not an agent to the quit save", async () => {
+				const launch = startWithEditor({ sessionNaming: async () => "branch" });
+				const result = await sessions.open(plainRequest(), undefined, launch);
+				expect(result.outcome === "opened" && result.session.name).toBe("fake-nvim: feat/login");
+				expect(sessions.running()).toEqual([]);
+				expect(sessions.liveCount()).toBe(1);
+			});
+
+			test("quitting the editor leaves the person's shell in the same session, with no mark of an ended agent", async () => {
+				const launch = startWithEditor();
+				const result = await sessions.open(plainRequest(), undefined, launch);
+				if (result.outcome !== "opened") throw new Error("Not opened");
+				await seen(result.session.id, "args");
+				sessions.write(result.session.id, "q\r");
+				expect(await until(() => sessions.list().find(session => session.id === result.session.id)?.kind === "terminal")).toBe(true);
+				const shell = sessions.list()[0]!;
+				expect(shell).toMatchObject({ id: result.session.id, name: "fake-nvim", kind: "terminal", shell: "/bin/sh", state: { kind: "running" } });
+				expect(shell.endedAgent).toBeUndefined();
+				await seen(result.session.id, `fake-nvim exited with code 3. This is now a shell in ${worktree}.`);
+				await run(result.session.id, "echo still-here", "still-here");
+			});
+
+			test("an editor that is not on the PATH starts nothing and says what would have run", async () => {
+				const launch = startWithEditor();
+				const result = await sessions.open(plainRequest(), undefined, { ...launch, executable: "no-such-editor", arguments: [worktree] });
+				expect(result).toMatchObject({ outcome: "not-found", command: `no-such-editor '${worktree}'`, executable: "no-such-editor" });
+				expect(sessions.list()).toEqual([]);
+			});
+
+			test("is refused together with an agent, setup, a name, or a chop", async () => {
+				const launch = startWithEditor();
+				for (const request of [{ ...plainRequest(), agent: "Codex" }, { ...plainRequest(), timberWorktreeSetup: {} }, { ...plainRequest(), name: "mine" }, { ...plainRequest(), resume: "x" }]) {
+					const result = await sessions.open(request, undefined, launch);
+					expect(result).toMatchObject({ outcome: "failed", message: expect.stringContaining("The editor was not started.") });
+				}
+				expect((await sessions.open(plainRequest(), { kind: "command", name: "go", text: "ls" }, launch)).outcome).toBe("failed");
+				expect(sessions.list()).toEqual([]);
+			});
 		});
 
 		test("an agent starts its command in the worktree's folder, named after the agent, with the executable as found", async () => {

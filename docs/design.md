@@ -8,7 +8,8 @@ change them here first when they change.
 - One window: a sidebar of worktrees and, opposite it, the workspace for the
   selected worktree. Sidebar side (left or right) is a setting, not a button.
 - No built-in code editor beyond a small text editor for quick fixes in the
-  File tab (see File viewer). "Open in editor" launches the configured one.
+  File tab (see File viewer). "Open in editor" launches the configured one; a terminal editor
+  opens as a new session.
 - A command palette (Ctrl+Shift+P, Cmd+Shift+P on macOS, or the title bar
   button) searches actions and worktrees. It opens the same dialogs as the
   buttons.
@@ -634,10 +635,12 @@ logins. The app never reads a tracker login and never signs in.
   on its first entry, Up on its last; the menu moves and closes as a row's
   menu does, and gives the keyboard back to More, as does a dialog opened
   from it when it closes. When Open in editor cannot open anything, why
-  shows as one quiet line under the details. In a narrow window the name
-  shortens first.
+  shows as one quiet line under the details. A terminal editor opens as a
+  new session on the Workspace tab instead of a window of its own. In a
+  narrow window the name shortens first.
 - A worktree holds any number of sessions: agents such as codex and claude,
-  and terminals. Each session has a chip that shows or hides its pane; a hidden
+  terminals, and terminal editors. Each session has a chip that shows or
+  hides its pane; a hidden
   session keeps running. Closing an agent pane stops the agent. An agent's
   chip shows its state as on the sidebar, with its message, such as "approve
   Write: src/a.ts", in the tooltip. Beside the shown agent's state, a button

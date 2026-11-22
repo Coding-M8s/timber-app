@@ -1,11 +1,13 @@
 import { statSync } from "node:fs";
 import { describeCommandLine } from "../shared/command-line";
-import { TERMINAL_EDITOR_REASON, editorCommand, editorTarget, otherExecutableNames } from "../shared/editor";
+import { editorCommand, editorSessionName, editorTarget, otherExecutableNames } from "../shared/editor";
 import type { OpenInEditorRequest, OpenInEditorResult } from "../shared/model";
 import type { Preferences } from "../shared/preferences";
+import type { OpenTerminalRequest, OpenTerminalResult } from "../shared/terminal";
 import { findExecutable, isWindowsBatch } from "./find-executable";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
 import { signalName } from "./signal-name";
+import type { AgentLaunch } from "./terminals";
 import { messageOf } from "../shared/error-message";
 
 /**
@@ -26,6 +28,12 @@ export interface EditorDependencies {
 	watchMilliseconds?: number;
 	/** The operating system, as `process.platform` names it. Tests pass another. */
 	platform?: NodeJS.Platform;
+	/**
+	 * Start an editor that runs in a terminal in a new session (see
+	 * `TerminalSessions.open`). Left out where there are no terminals, and
+	 * then such an editor is not started.
+	 */
+	openSession?: (request: OpenTerminalRequest, launch: AgentLaunch) => Promise<OpenTerminalResult>;
 }
 
 /** Opening a worktree in the person's own editor: the main process side of "Open in editor". */
@@ -72,13 +80,15 @@ async function earlyExit(child: Bun.Subprocess, milliseconds: number): Promise<{
  * - The editor is started detached, in its own session, with no standard
  *   input or output, and the app does not wait for it. Closing the app does
  *   not close it.
- * - An editor that runs in a terminal is not started: starting it in the
- *   worktree's terminal session is a later step.
+ * - An editor that runs in a terminal is started in a new session of the
+ *   worktree instead, found on the PATH by the terminal sessions as above,
+ *   named after its executable, with the same command shown. The answer
+ *   carries the session. Each press starts another.
  * - On Windows a `.cmd` or `.bat` file is refused (see `isWindowsBatch`).
  *   VS Code's `code` on Windows is such a file.
  */
 export function createEditorLauncher(dependencies: EditorDependencies): EditorLauncher {
-	const { preferences, findRepository, environment = process.env, watchMilliseconds = WATCH_MILLISECONDS, platform = process.platform } = dependencies;
+	const { preferences, findRepository, environment = process.env, watchMilliseconds = WATCH_MILLISECONDS, platform = process.platform, openSession } = dependencies;
 
 	async function open(request: OpenInEditorRequest): Promise<OpenInEditorResult> {
 		const { editor } = await preferences();
@@ -97,10 +107,24 @@ export function createEditorLauncher(dependencies: EditorDependencies): EditorLa
 		const built = editorCommand(editor, target.path);
 		if (!built.ok) return { outcome: "failed", command: null, message: `${built.message} Change it in Settings, Editor.` };
 		const asSet = describeCommandLine([built.executable, ...built.arguments]);
-		if (editor.terminal) return { outcome: "terminal-editor", command: asSet, message: TERMINAL_EDITOR_REASON };
-
 		const { executable } = built;
-		const lookup = findExecutable(executable, environment.PATH ?? "", { what: "the editor", command: "The editor command", section: "Settings, Editor" }, otherExecutableNames(executable));
+		const words = { what: "the editor", command: "The editor command", section: "Settings, Editor" };
+		if (editor.terminal) {
+			if (openSession === undefined) return { outcome: "failed", command: asSet, message: "Terminals cannot run here, so an editor that runs in a terminal is not started." };
+			const launch: AgentLaunch = {
+				name: editorSessionName(executable), executable, arguments: built.arguments, words, section: words.section, otherNames: otherExecutableNames(executable), kind: "editor",
+			};
+			const started = await openSession({ repository: request.repository, worktree: request.worktree, cols: 80, rows: 24 }, launch);
+			switch (started.outcome) {
+				case "opened": return { outcome: "opened", command: started.session.command, session: started.session };
+				case "not-listed": return { outcome: "not-listed", message: started.message };
+				case "not-found": return { outcome: "not-found", command: started.command, executable: started.executable, message: started.message };
+				case "failed": return { outcome: "failed", command: started.command ?? asSet, message: started.message };
+				default: return { outcome: "failed", command: asSet, message: started.message };
+			}
+		}
+
+		const lookup = findExecutable(executable, environment.PATH ?? "", words, otherExecutableNames(executable));
 		if (!lookup.ok) {
 			return lookup.reason === "relative"
 				? { outcome: "failed", command: asSet, message: lookup.message }

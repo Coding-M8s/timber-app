@@ -541,10 +541,14 @@ export interface Engine {
 	pickArena(request: PickArenaRequest): Promise<PickArenaResult>;
 	/**
 	 * Open a worktree of a repository in the list in the editor from the
-	 * preferences, started detached so it outlives the app. The command comes
-	 * only from the saved setting, with the worktree's path as one argument
-	 * (`editorCommand` in ./editor.ts). Nothing else ever starts an editor:
-	 * New and Open pass `--no-editor` to Timber.
+	 * preferences. A window editor is started detached so it outlives the
+	 * app. An editor that runs in a terminal starts in a new session of the
+	 * worktree (kind "editor", named after its executable, 80 by 24 until the
+	 * pane resizes it), and the answer carries that session. Each press starts
+	 * another. The command comes only from the saved setting, with the
+	 * worktree's path, or the file's when the request names one, as one argument (`editorCommand` in ./editor.ts).
+	 * Nothing else ever starts an editor: New and Open pass `--no-editor` to
+	 * Timber.
 	 */
 	openInEditor(request: OpenInEditorRequest): Promise<OpenInEditorResult>;
 	/**

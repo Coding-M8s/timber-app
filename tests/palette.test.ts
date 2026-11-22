@@ -148,14 +148,15 @@ describe("palette entries", () => {
 		expect(byLabel(busy, "Add repository").disabledReason).toBe(ADDING_REPOSITORY);
 	});
 
-	test("Open in editor opens Settings when no editor is set, and waits for one that is set", async () => {
+	test("Open in editor opens Settings when no editor is set, and is available with a terminal editor", async () => {
 		const { store } = await sampleState();
 		store.select(FEATURE_ID);
 		const state = store.getState();
 		expect(state.preferences.editor).toBeNull();
 		expect(byLabel(state, "Open in editor").disabledReason).toBeNull();
 		const terminalEditor: AppState = { ...state, preferences: { ...state.preferences, editor: { command: "nvim", terminal: true } } };
-		expect(byLabel(terminalEditor, "Open in editor").disabledReason).not.toBeNull();
+		expect(byLabel(terminalEditor, "Open in editor").disabledReason).toBeNull();
+		expect(byLabel(terminalEditor, "Open in editor").hint).toContain("with nvim ");
 	});
 
 	test("an unavailable repository lists no worktrees", async () => {

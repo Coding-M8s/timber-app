@@ -4425,3 +4425,44 @@ screen.
 - `bun run test`: 4398 pass, 19 skip, 0 fail, with the new check that a
   session reporting `app=grok`, a bare `agent` included, gets Grok Build's
   mark.
+
+Run for starting a terminal editor from Open in editor (issue 232), Linux x64
+(Fedora, natively, not WSL) with Bun 1.4.2. Only what is listed here was run:
+
+- `bun run typecheck`: no errors.
+- `bun run test`: 3978 pass, 19 skip, 0 fail (3960 before). New ones: `tests/editor.test.ts`
+  (`editorSessionName`), `tests/editor-launch.test.ts` (a terminal editor is
+  handed to `openSession` with the path or file as its last argument and starts
+  no process of its own; the answers of the terminals are passed on; no
+  terminals fails), `tests/terminals.test.ts` (a stand-in editor script on the
+  PATH starts in the worktree with its arguments as a session of kind
+  `editor` named after it, "fake-nvim: feat/login" under branch naming, "2"
+  for a second, exits with its code, is not in the quit save, is not found
+  when missing, and is refused together with an agent, setup, a name, or a
+  chop), and `tests/open-in-editor.test.tsx` (the mock engine and the store:
+  the action is available with the exact command, pressing it opens an
+  "nvim" session on the Workspace tab, a second is "nvim 2", ending it marks
+  it exited, a file is passed, not found shows the note and starts no
+  session, an ending of "fails" does not apply to a terminal editor, and
+  moving to another worktree while it opens keeps the selection),
+  `tests/palette.test.ts` (the entry's hint shows the command), and
+  `tests/editor-session.test.ts` (the launcher against real terminal
+  sessions: the session opens in the worktree, kind `editor`, named after
+  the executable, path last; `zed` is found as `zeditor` on the PATH).
+- `bun run typecheck` and `bun run test`, after rebasing onto main: no
+  errors; 4014 pass, 19 skip, 0 fail. Again after main's agent-to-shell
+  change: 4290 pass, 19 skip, 0 fail.
+- After trying it in the desktop window on Linux (Neovim 0.12.6 at
+  `/usr/bin/nvim`): Open in editor opened an "nvim" session in the
+  worktree, but quitting nvim left an exited session with no shell. An
+  editor session now goes on as the person's shell when the editor quits,
+  as an agent's does, with no `endedAgent` mark. `tests/terminals.test.ts`
+  (the shell runs in the same session after "fake-nvim exited with code 3")
+  and `tests/open-in-editor.test.tsx` (the mock leaves a plain shell)
+  check it. `bun run typecheck`: no errors. `bun run test`: 4290 pass, 19
+  skip, 0 fail.
+- After rebasing onto main at `92e6612`: `bun run typecheck` and
+  `bun run typecheck:desktop`: no errors; `bun run test`: 4416 pass, 19 skip,
+  0 fail.
+- Not run by me: the desktop window; the report above is from the person
+  testing.

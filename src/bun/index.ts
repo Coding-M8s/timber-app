@@ -314,7 +314,12 @@ const pullRequests = createPullRequestReader({ timber: () => timber.current(), i
 const issues = createIssueReader({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
 const issueSearch = createIssueSearcher({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
 const issueLists = createIssueLister({ timber: () => timber.current(), isListed: path => repositories.includes(path) });
-const editor = createEditorLauncher({ preferences: () => preferences.load(), findRepository: path => repositories.find(path) });
+// A terminal editor starts in a session of its own, so it reaches the terminals, which are made below.
+const editor = createEditorLauncher({
+	preferences: () => preferences.load(),
+	findRepository: path => repositories.find(path),
+	openSession: (request, launch) => terminals.open(request, undefined, launch),
+});
 
 /** Report to the window. It may not be connected yet, or be reloading; its first load reads everything anyway. */
 function tell(what: string, send: () => void): void {
