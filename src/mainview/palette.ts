@@ -295,7 +295,7 @@ export interface PaletteMatch {
 
 export const PALETTE_LIMIT = 50;
 
-interface Fuzzy {
+export interface Fuzzy {
 	score: number;
 	positions: number[];
 }
@@ -306,8 +306,9 @@ const isWordStart = (text: string, index: number) => index === 0 || !/[a-z0-9]/i
  * A case-insensitive subsequence match of `query` in `text`, or null. A run
  * of the query as one piece scores best, then letters that begin words, then
  * letters that follow each other. A shorter text beats a longer one.
+ * `query` is lower case. The chop search uses it too.
  */
-function fuzzy(text: string, query: string): Fuzzy | null {
+export function fuzzy(text: string, query: string): Fuzzy | null {
 	const haystack = text.toLowerCase();
 	const whole = haystack.indexOf(query);
 	if (whole >= 0) {

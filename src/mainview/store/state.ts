@@ -273,12 +273,20 @@ export type DialogRequest =
 	 * after it changed, and run it only on confirm. `worktree` is `Worktree.id`.
 	 * `chop` is as the main process read it, kept as it was.
 	 */
-	| { kind: "approve-chop"; repository: string; worktree: string; chop: ListedChop; path: string; /** For a prompt sent to a running agent: its session id. */ session?: string }
+	| {
+		kind: "approve-chop"; repository: string; worktree: string; chop: ListedChop; path: string;
+		/** For a prompt sent to a running agent: its session id. */
+		session?: string;
+		/** The text the person edited for this run, which runs once the chop's own text is approved. */
+		text?: string;
+	}
 	/**
 	 * Ask where a prompt chop goes: one of the worktree's running agents, or a
 	 * new agent. `worktree` is `Worktree.id`; `chop` is the chop's name.
 	 */
-	| { kind: "send-prompt"; repository: string; worktree: string; chop: string }
+	| { kind: "send-prompt"; repository: string; worktree: string; chop: string; /** The text the person edited for this run, sent in place of the chop's. */ text?: string }
+	/** Search the chops of the selected worktree's repository and run one, from the keyboard. */
+	| { kind: "run-chop" }
 	/**
 	 * Check out one of an issue's open pull requests from the issues board.
 	 * `repository` is the path of the primary checkout; `issue` is the card as
@@ -387,6 +395,12 @@ export interface AppState {
 	 * jump until the list is read again (`chopsPanelModel`).
 	 */
 	chopRenaming: { renames: readonly ChopRename[]; list: unknown } | null;
+	/**
+	 * The chop last chosen to run in each repository, by the primary
+	 * checkout, from the panel, the palette, the "+" menu, or the chop search,
+	 * so the search lists it on top. Kept until the app closes.
+	 */
+	lastChops: Readonly<Record<string, string>>;
 	/**
 	 * The preferences as first read, which this run started with. A
 	 * preference read only at start keeps using this value until a restart
@@ -589,6 +603,7 @@ export const initialState: AppState = {
 	preferencesProblem: null,
 	chopOrderAim: null,
 	chopRenaming: null,
+	lastChops: {},
 	preferencesAtStart: null,
 	appVersion: null,
 	appUpdate: { kind: "idle" },

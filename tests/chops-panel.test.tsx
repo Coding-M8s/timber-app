@@ -380,7 +380,7 @@ describe("running a chop from the panel (mock engine)", () => {
 		await settle();
 		expect(store.getState().dialog).toMatchObject({ kind: "approve-chop", chop: { name: "Review the diff" }, session: running.id });
 		store.closeDialog();
-		await store.runChop(TIMBER, FEATURE.id, "Review the diff", size(), "Review the changes on this branch against main.\nList risks and missing tests, most serious first.", { session: running.id });
+		await store.runChop(TIMBER, FEATURE.id, "Review the diff", size(), { approve: "Review the changes on this branch against main.\nList risks and missing tests, most serious first.", target: { session: running.id } });
 		await settle();
 		expect(store.getState().terminals).toHaveLength(1);
 		expect(engine.promptsSentTo(running.id)).toHaveLength(1);

@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { isRunChopShortcut } from "../src/mainview/run-chop-format";
+import { DEFAULT_SHORTCUTS } from "../src/shared/shortcuts";
 import { type FolderListing, type TreeRow, type WorktreeTree, describeMore, keptFocus, shownFolders, treeKeyAction, treeRows, withFolder } from "../src/mainview/file-tree";
 import {
 	FILES_PANEL_SHORTCUT, FILES_PANEL_SHORTCUT_MAC, describeFilesPanelEmpty, filesButtonHint, isFilesPanelShortcut,
@@ -116,7 +118,7 @@ describe("the files panel's words and shortcut", () => {
 		expect(isFilesPanelShortcut(key("e", { ctrlKey: true }))).toBe(false);
 		expect(isFilesPanelShortcut(key("E", { ctrlKey: true, shiftKey: true, altKey: true }))).toBe(false);
 		const chord = key("E", { ctrlKey: true, shiftKey: true });
-		expect(isPaletteShortcut(chord) || isWaitingShortcut(chord) || isChopsPanelShortcut(chord)).toBe(false);
+		expect(isPaletteShortcut(chord) || isWaitingShortcut(chord) || isChopsPanelShortcut(chord) || isRunChopShortcut(chord, DEFAULT_SHORTCUTS["run-chop"])).toBe(false);
 		expect([FILES_PANEL_SHORTCUT, FILES_PANEL_SHORTCUT_MAC]).toEqual(["Ctrl+Shift+E", "Cmd+Shift+E"]);
 		expect(filesButtonHint(false, false)).toBe("Show files (Ctrl+Shift+E)");
 		expect(filesButtonHint(true, true)).toBe("Hide files (Cmd+Shift+E)");

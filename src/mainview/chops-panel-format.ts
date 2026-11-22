@@ -1,4 +1,5 @@
 import { type ArrangedChop, type ChopArrangement, type ChopRename, NO_CHOP_ARRANGEMENT, arrangeChops, chopArrangementOf, renameInArrangements } from "../shared/chop-order";
+import { DEFAULT_SHORTCUTS, type ShortcutLetter, describeChord, matchesChord, shortcutLetter } from "../shared/shortcuts";
 import { type ChopKind, type ChopList, type ChopSource, type ListedChop, listedChops } from "../shared/chops";
 import { promptTarget } from "./agent-sessions";
 import { type ChopAction, chopAction, chopButtonLabel, describeChopSource } from "./chop-format";
@@ -37,36 +38,38 @@ export const CHOPS_WIDTH_LABEL = "Chops panel width";
  * the program. Ctrl+Shift+K keeps the app's own pattern (Ctrl+Shift+P,
  * Ctrl+Shift+J, Ctrl+Shift+S), clashes with none of its keys or the
  * desktops' usual ones, and takes nothing from a terminal program, which
- * cannot tell it from Ctrl+K.
+ * cannot tell it from Ctrl+K. It is the default: Settings, Chops can set
+ * another (../shared/shortcuts.ts).
  */
 export const CHOPS_PANEL_SHORTCUT = "Ctrl+Shift+K";
 export const CHOPS_PANEL_SHORTCUT_MAC = "Cmd+Shift+K";
 
-export function chopsPanelShortcut(mac: boolean): string {
-	return mac ? CHOPS_PANEL_SHORTCUT_MAC : CHOPS_PANEL_SHORTCUT;
+/** The panel's shortcut for this platform: the key set in Settings, Chops, or Ctrl+Shift+K (Cmd+Shift+K on macOS). */
+export function chopsPanelShortcut(mac: boolean, letter: ShortcutLetter = DEFAULT_SHORTCUTS["chops-panel"]): string {
+	return describeChord(letter, mac);
 }
 
-/** The Chops button's tooltip: what a click does now, and the shortcut for this platform. */
-export function chopsButtonHint(open: boolean, mac: boolean): string {
-	return `${open ? "Hide" : "Show"} chops (${chopsPanelShortcut(mac)})`;
+/** The Chops button's tooltip: what a click does now, and the shortcut as set, for this platform. */
+export function chopsButtonHint(open: boolean, mac: boolean, letter: ShortcutLetter = DEFAULT_SHORTCUTS["chops-panel"]): string {
+	return `${open ? "Hide" : "Show"} chops (${chopsPanelShortcut(mac, letter)})`;
 }
 
 type Keys = Pick<KeyboardEvent, "type" | "key" | "ctrlKey" | "shiftKey" | "metaKey" | "altKey">;
 
-/** Ctrl+Shift+K, or Cmd+Shift+K on macOS. Either modifier counts, as for the palette's shortcut. */
-export function isChopsPanelShortcut(event: Keys): boolean {
-	if (event.type !== "keydown" || event.altKey || !event.shiftKey) return false;
-	return (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k";
+/** Ctrl+Shift and the letter set, Ctrl+Shift+K until another is, or Cmd+Shift on macOS. Either modifier counts, as for the palette's shortcut. */
+export function isChopsPanelShortcut(event: Keys, letter: ShortcutLetter = DEFAULT_SHORTCUTS["chops-panel"]): boolean {
+	return matchesChord(event, letter);
 }
 
 /**
  * Whether the app takes this key from the page, and from a terminal's
- * program, to show or hide the chops panel: the chord while the panel can
- * be shown or hidden. With chops off, a dialog open, or Timber not ready,
- * the key goes on to the page and the program as if the app had none.
+ * program, to show or hide the chops panel: the chord as set in Settings,
+ * while the panel can be shown or hidden. With chops off, a dialog open, or
+ * Timber not ready, the key goes on to the page and the program as if the
+ * app had none.
  */
 export function takesChopsPanelKey(event: Keys, state: AppState): boolean {
-	return isChopsPanelShortcut(event) && canToggleChopsPanel(state);
+	return isChopsPanelShortcut(event, shortcutLetter(state.preferences.shortcuts, "chops-panel")) && canToggleChopsPanel(state);
 }
 
 /**

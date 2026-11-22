@@ -70,8 +70,9 @@ change them here first when they change.
   icons are SVG files that ship with the app, each loaded only when a row
   shows it, and screen readers skip them; the name says what the row is.
 - The chops panel is the side panel's other view.
-  The title bar's Chops button, or Ctrl+Shift+K (Cmd+Shift+K on macOS),
-  shows or hides it from any focus, also from a terminal. Shown that way,
+  The title bar's Chops button, or Ctrl+Shift+K (Cmd+Shift+K on macOS,
+  or the key set in Settings, Chops; the button's tooltip names the key
+  as set), shows or hides it from any focus, also from a terminal. Shown that way,
   it takes the keyboard; hidden while it has the keyboard, the keyboard
   goes back where it was, or to the Chops button when that is gone. Its
   Close button only hides it. Its left edge resizes it like the sidebar's
@@ -155,9 +156,46 @@ change them here first when they change.
   take characters such as the Polish "ć", and in a terminal it is Escape
   then Ctrl+C to the program. Ctrl+Shift+K keeps the app's pattern and
   takes nothing from a terminal program, which cannot tell it from Ctrl+K.
-  Chosen by analysis; not yet checked against each desktop. The design
-  mock's "can be changed in Settings" is not built: no shortcut in the app
-  can be changed yet (#258).
+  Chosen by analysis; not yet checked against each desktop.
+- Ctrl+Shift+T (Cmd+Shift+T on macOS) searches and runs a chop, as the
+  task shortcut does in editors such as Zed, from any focus, also from a
+  terminal, with the chops panel shown or hidden. Pressed again, it
+  closes. It opens a box over the palette's frame, with the selected
+  worktree named at its right ("in feature-x") and a chip for which kinds
+  show. Typing searches names and text: a name that has the typed words
+  comes first, then a name with its letters in order, then a text that
+  has the words anywhere, then a first line with its letters in order;
+  the matched letters are marked. Within each, the chop last chosen to
+  run in the repository is on top, then favorites, then the panel's
+  order; with nothing typed, the last chop, then favorites, then the
+  rest. The last chop is remembered until the app closes. Each row shows
+  the kind, the name, and a command's first line in mono, or where a
+  prompt goes ("to Codex"); the highlighted chop's whole text shows under
+  the list, so what runs shows before it runs. Enter runs it in the
+  selected worktree through the panel's path, asking first for a
+  `.timber/chops.json` chop as the panel does. Ctrl+Enter (Cmd+Enter on
+  macOS) shows its text to edit for this run only: Enter runs the edited
+  text once, Shift+Enter adds a line, Escape goes back to the list, and
+  the chop stays as saved. An edited `.timber/chops.json` chop still asks
+  for the file's text first, and the question shows the edited text that
+  runs once approved. Tab shows only commands, then only prompts, then
+  every chop again; Shift+Tab goes back. A chop that cannot run says why
+  under the list, and Enter does nothing. The mock's Alt+Shift+T was a
+  placeholder: on macOS Option+Shift+T types a character, in a terminal it
+  is Escape then T to the program, and on Windows Alt+Shift switches the
+  keyboard layout. Ctrl+Shift+T keeps the app's pattern, clashes with none
+  of its keys or the text editor's, and takes nothing from a terminal
+  program, which cannot tell it from Ctrl+T. It is the new-tab key of
+  several terminal apps, which Timber has no use for. Chosen by analysis;
+  not yet checked against each desktop.
+- Settings, Chops sets both chop shortcuts, under "Use chops", by pressing
+  the new key in the field: Ctrl+Shift and a letter (Cmd+Shift on macOS).
+  A key the app or its text editor keeps (the palette, the next session,
+  the chips, the files, copy and paste in a terminal, redo, find
+  previous), or the other chop shortcut's, is refused with the reason, and
+  the key shown stays. Reset goes back to the default. They save with the
+  section. With "Use chops" off the fields are gone, as the shortcuts are.
+  The app's other shortcuts cannot be changed yet (#258).
 
 ## Sidebar
 

@@ -1433,7 +1433,7 @@ pure functions in `src/mainview/shell.ts`.
   third of the window; keys and drags step from the width on screen, so
   each one changes what is seen. Stacked in the narrow layout, it sits below the
   workspace. The title bar's Chops button (`aria-pressed`) and Ctrl+Shift+K
-  (Cmd+Shift+K) call `toggleChopsPanel` in the panel's module, which asks
+  (Cmd+Shift+K, or the key set in Settings, Chops) call `toggleChopsPanel` in the panel's module, which asks
   the store and moves the keyboard: shown that way, the panel takes focus
   and remembers what had it; hidden while focus is inside it, focus goes
   back there, or to the Chops button. Focus elsewhere stays where it is,
@@ -1535,12 +1535,39 @@ pure functions in `src/mainview/shell.ts`.
   page, and a drawn terminal passes it to its program then too.
   `chopsEnabled` in `src/mainview/store/state.ts` is the one gate: the
   `useChops` preference and a ready Timber. The button, the panel, and
-  every chop shortcut, including the search-and-run one still to come,
-  ask it. Everywhere else the window offers chops (the palette, the "+"
+  every chop shortcut, the chop search's too, ask it. Everywhere else the
+  window offers chops (the palette, the "+"
   menu and the empty pane's buttons, "Insert chop") reads them through
   `offeredChops`, which has none while `useChops` is off, and `runChop`
   and `insertChop` in the store do nothing then. The list is still read,
   so turning chops on shows it at once.
+- **Chop search.** Ctrl+Shift+T (Cmd+Shift+T), or the key set in
+  Settings, Chops, opens a `{ kind: "run-chop" }` dialog, drawn by
+  `RunChopDialog.tsx` on the palette's frame and classes, with the chops
+  panel shown or hidden. `RunChopShortcut` listens on the window in the
+  capture phase and takes the key only when it acts (`takesRunChopKey`):
+  chops in use and no other dialog or the quit question open, or its own
+  dialog open, which the key closes (`toggleRunChop` in the store). A drawn
+  terminal passes the key to its program otherwise. What it lists is
+  `runChopModel` in `src/mainview/run-chop-format.ts`, pure, over the
+  chops the panel lists (`chopsPanelModel`'s `arranged`, favorites first in
+  the panel's order), with the panel's empty, reading, and failed states.
+  `findChops` ranks them: tiers by where the query matched (a name that
+  has it as one piece, a name with its letters in order through the
+  palette's `fuzzy`, the whole text that has it as one piece, the first
+  line with its letters in order), then the repository's last chop, then
+  favorites, then the match's score, then the panel's order. A long
+  prompt is never matched letter by letter beyond its first line, which is
+  what a row shows. The last chop is `lastChops` in the store, set by
+  `runChop` for any path once chops are in use, by primary checkout, and
+  kept until the app closes. Each row is blocked by its own kind
+  (`chopBlockedReason` with `chopAction`). Enter calls `runChopIn`, the
+  panel's and the palette's path; Ctrl+Enter or Cmd+Enter swaps the list
+  for a text box with the chop's text, and Enter there passes the edited
+  text, when it differs, to `runChop` as `text`. Escape is the dialog's
+  `cancel`: back to the list from the text box, closed from the list. A
+  key while an input method composes runs nothing. Tab and Shift+Tab move
+  the kind chip through All, Commands, and Prompts, said in a live region.
 - **Sidebar side.** The sidebar sits on the left or on the right, as chosen
   in Settings (see [preferences](#preferences-and-the-settings-dialog)). The
   window has no control for it. On the right the body is drawn workspace,
@@ -1669,12 +1696,21 @@ Settings dialog and kept by the app. They are never Timber's configuration.
   [opening a worktree in an editor](#opening-a-worktree-in-an-editor)).
   Agents: the coding agents the "+" menu starts (see
   [agent sessions](#agent-sessions)). Chops: "Use chops" (`useChops`, on by
-  default), "Play each chop's sound" (`playChopSounds`, on by default), and
+  default), the two chop shortcuts (`shortcuts`, by id, only a key that
+  differs from the default, as "Ctrl+Shift+L"; see `src/shared/shortcuts.ts`),
+  "Play each chop's sound" (`playChopSounds`, on by default), and
   the person's saved commands and prompts (see [chops](#chops)); each
-  switch saves with the section's Save, on its own
+  switch, and the shortcuts, save with the section's Save, on its own
   while the rows are as saved (`chopsSectionChange`), so it never waits on
   rows nobody touched; with a changed row that cannot be saved, nothing is
-  saved until the row is fixed or removed. Turning it off never touches
+  saved until the row is fixed or removed. A shortcut is Ctrl+Shift and a
+  letter (either Ctrl or Cmd counts, read by `event.key`), set by pressing
+  it in its field (`ShortcutField`); a key the app or the text editor keeps
+  (`RESERVED_SHORTCUTS`, tied by a test to the app's key handlers and
+  CodeMirror's keymaps) or the other shortcut's is refused with the
+  reason, and never reaches the draft, so Save never holds a clash.
+  `readShortcuts` refuses such a save in the main process too, and a hand
+  edit keeps what it can (`salvageShortcuts`). Turning it off never touches
   `chops`, and turning sounds off keeps each chop's sound. The chops
   panel's order and favorites (`chopOrder`) and the sounds of
   `.timber/chops.json` chops (`fileChopSounds`) are preferences with no
@@ -1896,7 +1932,12 @@ every machine agrees. The rules are pure, in
   `src/mainview/agent-format.ts`, `src/mainview/palette.ts`).
 - **Running a command chop** (`runChop`). The request names the
   repository, the worktree's registered path, the chop by name, and the
-  pane's size, never the text. The main process lists the chops once, finds
+  pane's size, never the text, except `text` for a run the person edited
+  in the chop search: it is typed or sent in place of the chop's text,
+  once, and changes nothing else (the name, the agent, the sound, the
+  approval). `textToRun` in `src/shared/chops.ts`, in the main process and
+  the mock engine, refuses one that is not a string, blank, or longer than
+  a chop's text can be, and makes its line endings `\n`. The main process lists the chops once, finds
   the chop by name, ignoring case, and uses the text from that same read. A
   command chop starts the person's shell in the
   worktree as a new session named after the chop (`defaultSessionName`, so
@@ -1969,7 +2010,10 @@ every machine agrees. The rules are pure, in
   chop as read and the file's path, and the window shows the exact text and
   where it comes from, with Cancel first; Run asks again with `approve` set
   to the text shown, which approves it only if it is still the chop's text,
-  so a file changed meanwhile asks again. The question never replaces a
+  so a file changed meanwhile asks again. A run with edited `text` asks
+  the same, for the file's own text: the `approve-chop` dialog carries the
+  edited text, shows it under the file's as what runs once approved, and
+  Run passes both. The `send-prompt` dialog carries it too. The question never replaces a
   dialog the person opened meanwhile: a toast asks them to run it again.
   A run after Run that cannot start, such as while another session starts
   there, says why in a toast. Approvals are kept app-side in
@@ -3447,7 +3491,9 @@ edited and saved in a small editor.
   parts are used: line numbers, the active line, the drawn selection,
   special characters shown, history, search, and the default, history,
   and search keys (`editorKeys`), without the keys the window keeps
-  (Ctrl+Shift+P, K, and J, in any order of the modifiers) and without
+  (Ctrl+Shift+P, K, and J, in any order of the modifiers; the chop
+  shortcuts set in Settings never take a key the editor binds, see
+  `RESERVED_SHORTCUTS` in `src/shared/shortcuts.ts`) and without
   going to a line, selecting the next match or every match, block
   comments, and deleting, moving, or copying lines; Ctrl+/ (`toggleComment`)
   stays. `bracketMatching` marks the matching bracket, and `closeBrackets`

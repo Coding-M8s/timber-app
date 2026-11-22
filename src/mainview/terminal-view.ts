@@ -7,6 +7,7 @@ import "@xterm/xterm/css/xterm.css";
 import { isPaletteShortcut } from "./palette";
 import { isWaitingShortcut } from "./waiting";
 import { takesChopsPanelKey } from "./chops-panel-format";
+import { takesRunChopKey } from "./run-chop-format";
 import { takesFilesPanelKey } from "./files-panel-format";
 import type { AppStore } from "./store/store";
 import { TERMINAL_LINE_HEIGHT, type TerminalAppearance, terminalFontStack } from "../shared/terminal-appearance";
@@ -144,6 +145,8 @@ function createView(store: AppStore, id: string): TerminalView {
 		if (isWaitingShortcut(event)) return false;
 		// The chops panel's key too, but only while it can show or hide the panel: with chops off it is the program's.
 		if (takesChopsPanelKey(event, store.getState())) return false;
+		// And the chop search's, while it can open: Ctrl+Shift+T would reach the program as Ctrl+T.
+		if (takesRunChopKey(event, store.getState())) return false;
 		// The files' key as well, while it can show or hide them, so Ctrl+E does not reach the program with it.
 		if (takesFilesPanelKey(event, store.getState())) return false;
 		// Switching sessions and going to the chips are the app's keys, never the program's.

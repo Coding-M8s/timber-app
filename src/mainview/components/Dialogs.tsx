@@ -5,6 +5,7 @@ import { CheckOutPullRequestDialog } from "./CheckOutPullRequestDialog";
 import { CleanUpMergedDialog } from "./CleanUpMergedDialog";
 import { ArenaCompareDialog } from "./ArenaCompareDialog";
 import { CommandPalette } from "./CommandPalette";
+import { RunChopDialog } from "./RunChopDialog";
 import { DeleteBackupDialog, RestoreBackupDialog } from "./BackupDialogs";
 import { DoneDialog } from "./DoneDialog";
 import { NewWorktreeDialog } from "./NewWorktreeDialog";
@@ -49,6 +50,8 @@ export function Dialogs() {
 			return <CleanUpMergedDialog key={dialog.repository} request={dialog} />;
 		case "palette":
 			return <CommandPalette />;
+		case "run-chop":
+			return <RunChopDialog />;
 		case "restore-backup":
 		case "delete-backup": {
 			// Timber runs in the repository's folder, so the repository has to be listed and there. A key per backup, so another one starts from nothing.

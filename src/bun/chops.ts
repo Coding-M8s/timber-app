@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { messageOf } from "../shared/error-message";
 import {
 	CHOPS_FILE, CHOPS_FILE_BYTES, type ChopApprovals, type ChopList, type ChopsFileState, type ChopsRequest, type Chop, type ListedChop, type PersonalChop, type RunChopRequest, type RunChopResult,
-	chopDigestInput, findListedChop, isChopApproved, listedChops, mergeChops, parseChopsFile,
+	chopDigestInput, findListedChop, textToRun, isChopApproved, listedChops, mergeChops, parseChopsFile,
 } from "../shared/chops";
 import { type AgentSetting, findAgent } from "../shared/agent";
 import { type FileChopSounds, chopSoundToPlay } from "../shared/chop-sounds";
@@ -176,13 +176,13 @@ export function createChops({
 	}
 
 	/** Start a chop that may run: a command's shell, a new agent with a prompt, or a prompt to a running agent. */
-	async function start(request: RunChopRequest, chop: ListedChop, agent: AgentSetting | null): Promise<RunChopResult> {
+	async function start(request: RunChopRequest, chop: ListedChop, agent: AgentSetting | null, text: string): Promise<RunChopResult> {
 		const where = { repository: request.repository, worktree: request.worktree, cols: request.cols, rows: request.rows };
-		if (chop.kind === "command") return openTerminal!(where, { kind: "command", name: chop.name, text: chop.text });
-		if (agent !== null) return openTerminal!({ ...where, agent: agent.name }, { kind: "prompt", text: chop.text });
+		if (chop.kind === "command") return openTerminal!(where, { kind: "command", name: chop.name, text });
+		if (agent !== null) return openTerminal!({ ...where, agent: agent.name }, { kind: "prompt", text });
 		if (sendPrompt === undefined) return { outcome: "unsupported", message: "Prompts cannot be sent here. Nothing was sent." };
 		// The session must be in this repository's worktree: an approval for one repository never reaches another's agent.
-		const sent = sendPrompt(request.session!, request.repository, request.worktree, chop.text);
+		const sent = sendPrompt(request.session!, request.repository, request.worktree, text);
 		if (sent.outcome !== "pasted") return sent;
 		const target = sessionOf(request.session!);
 		return target === null ? { outcome: "gone", message: "The session has ended." } : { outcome: "sent", session: target };
@@ -202,6 +202,9 @@ export function createChops({
 				const message = chop.kind === "prompt" ? "The request names no session. Nothing was sent." : `${chop.name} is a command, which runs in a new session only. Nothing was started.`;
 				return { outcome: "no-chop", message };
 			}
+			// Text the person edited for this run replaces what is typed or sent, and nothing else: the approval below is of the chop's own text.
+			const edited = textToRun(request, chop);
+			if (!edited.ok) return { outcome: "no-chop", message: edited.message };
 			// The agent a new session starts is found before asking for approval, so a prompt that cannot go asks nothing.
 			let agent: AgentSetting | null = null;
 			if (chop.kind === "prompt" && request.session === undefined) {
@@ -235,7 +238,7 @@ export function createChops({
 					warn(`Could not save the approval of a chop: ${messageOf(error)}`);
 				}
 			}
-			const result = await start(request, chop, agent);
+			const result = await start(request, chop, agent, edited.text);
 			// The chop started: its sound plays, as read with the chop, through the player's own rules (one at a time, at most 4 seconds).
 			const sound = chopSoundToPlay(chop, play);
 			if ((result.outcome === "opened" || result.outcome === "sent") && sound !== null) playSound?.(sound);

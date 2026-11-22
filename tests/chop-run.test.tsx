@@ -196,7 +196,7 @@ describe("running chops in the app (mock engine)", () => {
 		expect(markup).toContain(`${TIMBER}/.timber/chops.json`);
 
 		store.closeDialog();
-		await store.runChop(TIMBER, FEATURE.id, "Test", size(), "bun test");
+		await store.runChop(TIMBER, FEATURE.id, "Test", size(), { approve: "bun test" });
 		await settle();
 		const first = store.getState().terminals.find(candidate => candidate.name === "Test")!;
 		expect(engine.typedInto(first.id)).toBe("bun test\r");
@@ -214,7 +214,7 @@ describe("running chops in the app (mock engine)", () => {
 		expect(store.getState().dialog).toMatchObject({ kind: "approve-chop", chop: { text: "bun test --bail" } });
 		// An approval of the old text runs nothing.
 		store.closeDialog();
-		await store.runChop(TIMBER, FEATURE.id, "Test", size(), "bun test");
+		await store.runChop(TIMBER, FEATURE.id, "Test", size(), { approve: "bun test" });
 		expect(store.getState().dialog).toMatchObject({ kind: "approve-chop", chop: { text: "bun test --bail" } });
 		expect(store.getState().terminals.filter(candidate => candidate.name.startsWith("Test"))).toHaveLength(2);
 	});
@@ -230,7 +230,7 @@ describe("running chops in the app (mock engine)", () => {
 		const removing = { repository: TIMBER, worktree: FEATURE, toast: "", status: { kind: "running" as const } };
 		// Acted out as the store sees it: Timber removes the worktree while the question was open.
 		(state as { removals: unknown }).removals = [removing];
-		await store.runChop(TIMBER, FEATURE.id, "Test", size(), "bun test");
+		await store.runChop(TIMBER, FEATURE.id, "Test", size(), { approve: "bun test" });
 		expect(store.getState().toasts.at(-1)?.text).toBe(`Test was not started: ${BEING_REMOVED_REASON}`);
 		expect(store.getState().terminals).toEqual([]);
 	});
@@ -246,7 +246,7 @@ describe("running chops in the app (mock engine)", () => {
 
 	test("a chop that is gone starts nothing and says why", async () => {
 		const { store } = await startedStore();
-		await store.runChop(TIMBER, FEATURE.id, "Nope", size(), "x");
+		await store.runChop(TIMBER, FEATURE.id, "Nope", size(), { approve: "x" });
 		expect(store.getState().terminalProblem).toMatchObject({ worktree: FEATURE.id, agent: "Nope", message: expect.stringContaining("No chop called") });
 		expect(store.getState().terminals).toEqual([]);
 	});
@@ -352,12 +352,12 @@ describe("prompt chops in the app (mock engine)", () => {
 		expect(engine.promptsSentTo(claude!.id)).toEqual([]);
 
 		store.closeDialog();
-		await store.runChop(TIMBER, FEATURE.id, "Ask", size(), undefined, { session: codex!.id });
+		await store.runChop(TIMBER, FEATURE.id, "Ask", size(), { target: { session: codex!.id } });
 		await settle();
 		expect(engine.promptsSentTo(codex!.id)).toEqual([ASK]);
 		expect(engine.promptsSentTo(claude!.id)).toEqual([]);
 
-		await store.runChop(TIMBER, FEATURE.id, "Ask", size(), undefined, { session: null });
+		await store.runChop(TIMBER, FEATURE.id, "Ask", size(), { target: { session: null } });
 		await settle();
 		expect(store.getState().terminals).toHaveLength(3);
 		expect(engine.promptsSentTo(store.getState().terminals[2]!.id)).toEqual([ASK]);
@@ -383,7 +383,7 @@ describe("prompt chops in the app (mock engine)", () => {
 		const running = store.getState().terminals[0]!;
 		engine.endTerminal(running.id, 0);
 		await settle();
-		await store.runChop(TIMBER, FEATURE.id, "Ask", size(), undefined, { session: running.id });
+		await store.runChop(TIMBER, FEATURE.id, "Ask", size(), { target: { session: running.id } });
 		await settle();
 		expect(store.getState().terminals).toHaveLength(1);
 		expect(toastTexts(store).at(-1)).toContain("Ask was not sent: The session has ended.");
@@ -416,7 +416,7 @@ describe("prompt chops in the app (mock engine)", () => {
 		expect(markup).toContain(">Send</button>");
 		const text = dialog?.kind === "approve-chop" ? dialog.chop.text : "";
 		store.closeDialog();
-		await store.runChop(TIMBER, FEATURE.id, "Review the diff", size(), text, { session: null });
+		await store.runChop(TIMBER, FEATURE.id, "Review the diff", size(), { approve: text, target: { session: null } });
 		await settle();
 		const session = store.getState().terminals[0]!;
 		expect(session.name).toBe("Claude Code");
@@ -427,7 +427,7 @@ describe("prompt chops in the app (mock engine)", () => {
 		const { store } = await promptStore();
 		// Act out a session starting: the store refuses a second start in the worktree.
 		const starting = store.openTerminal({ repository: TIMBER, worktree: FEATURE.path, ...size() });
-		await store.runChop(TIMBER, FEATURE.id, "Ask", size(), undefined, { session: null });
+		await store.runChop(TIMBER, FEATURE.id, "Ask", size(), { target: { session: null } });
 		await starting;
 		await settle();
 		expect(toastTexts(store).at(-1)).toContain("Ask was not started: another session is starting there.");

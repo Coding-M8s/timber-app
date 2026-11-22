@@ -14,10 +14,11 @@ const NEW_AGENT = "\0new";
  * Where a prompt chop goes, asked when the worktree has several running
  * agents, or only one that waits on the person: one of them, or a new agent,
  * the chop's or the first saved one. Nothing is picked at first, so Send
- * needs a choice. The prompt is shown as it is listed; the main process
- * sends the text it reads, never this one.
+ * needs a choice. The prompt is shown as it is listed, or as the person
+ * edited it for this run in the chop search, which is then what is sent;
+ * otherwise the main process sends the text it reads, never this one.
  */
-export function SendPromptDialog({ request }: { request: { repository: string; worktree: string; chop: string } }) {
+export function SendPromptDialog({ request }: { request: { repository: string; worktree: string; chop: string; text?: string } }) {
 	const store = useStore();
 	const state = useAppState();
 	const dialog = useRef<HTMLDialogElement>(null);
@@ -46,7 +47,7 @@ export function SendPromptDialog({ request }: { request: { repository: string; w
 		if (picked === null) return;
 		store.closeDialog();
 		const target = picked === NEW_AGENT ? { session: null } : { session: picked };
-		void store.runChop(request.repository, request.worktree, request.chop, estimateTerminalSize(document.getElementById("workspace-panel")), undefined, target);
+		void store.runChop(request.repository, request.worktree, request.chop, estimateTerminalSize(document.getElementById("workspace-panel")), { target, ...(request.text === undefined ? {} : { text: request.text }) });
 	};
 
 	return (
@@ -72,7 +73,9 @@ export function SendPromptDialog({ request }: { request: { repository: string; w
 						</label>
 					</AgentChoices>
 					{chosen !== null && waitsOnPerson(chosen) && <p className="review-warning" role="alert">{PROMPT_WAITS_WARNING}</p>}
-					{chop !== null && <pre className="review-preview" tabIndex={0} aria-label="The prompt, as listed">{chop.text}</pre>}
+					{request.text !== undefined
+						? <pre className="review-preview" tabIndex={0} aria-label="The prompt, as you edited it for this run">{request.text}</pre>
+						: chop !== null && <pre className="review-preview" tabIndex={0} aria-label="The prompt, as listed">{chop.text}</pre>}
 					<p className="dialog-note">The prompt goes as one paste, then Enter, so its line breaks do not send it early. An agent that is busy gets it as typed input.</p>
 				</div>
 				<footer className="dialog-foot">

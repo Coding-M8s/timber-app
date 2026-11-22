@@ -600,8 +600,10 @@ export interface Engine {
 	 * (`TerminalSession.prompt` says how that stands, see
 	 * ./agent-prompt.ts). A chop that names an agent not saved, or with no
 	 * agent saved, starts nothing (`not-configured`). The text comes from
-	 * the chop list as the machine reads it for this call, once, never from
-	 * the request. A chop
+	 * the chop list as the machine reads it for this call, once, unless the
+	 * request carries `text`, the person's edit for this one run, which is
+	 * typed or sent in its place (`textToRun` refuses one that is blank or
+	 * too long). Approval is always of the listed text. A chop
 	 * from the repository's file runs only when its text was approved for
 	 * this repository (`isChopApproved` in ./chops.ts); otherwise nothing
 	 * starts and the answer is `needs-approval` with the exact text. A
