@@ -651,6 +651,13 @@ logins. The app never reads a tracker login and never signs in.
   shows the new base as elsewhere in Changes (`name @ hash`, or a commit
   base by its short hash), and the workspace header and the row's tooltip
   name the new base. A remote base shows there only once it is fetched.
+- A diff's code is colored as the File tab's editor colors that file, in
+  the same theme, and a theme change recolors it. In a removed line and
+  the added line paired with it, the words that changed are marked with a
+  stronger tint of the line's color; a line rewritten almost entirely is
+  not marked. A kind of file the editor does not color stays plain. A hunk
+  that starts inside a multi-line comment or string may be colored
+  wrongly, since only the hunk's own lines are parsed.
 - File viewer: a File tab after Pull request shows one file of the worktree,
   read-only, with line numbers, in the terminal's font. The tab is there only
   while a file is open in that worktree, named after the file, with a close

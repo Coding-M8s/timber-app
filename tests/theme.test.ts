@@ -101,6 +101,8 @@ describe("the built-in themes", () => {
 			focus: "#e8a857",
 			diffAdded: "rgba(115, 201, 145, 0.12)",
 			diffRemoved: "rgba(240, 139, 128, 0.12)",
+			diffAddedWord: "rgba(115, 201, 145, 0.28)",
+			diffRemovedWord: "rgba(240, 139, 128, 0.28)",
 		});
 		expect(DEFAULT_DARK_THEME.terminal).toMatchObject({ background: "#0c0c0e", foreground: "#ececef", selectionBackground: "rgba(110, 168, 254, 0.32)", black: "#1f1f23", brightWhite: "#ececef" });
 	});
@@ -116,9 +118,17 @@ describe("contrastWarnings", () => {
 		expect(warnings.every(warning => warning.color === "text3" || warning.color === "error")).toBe(true);
 	});
 
+	test("check the text on each changed-word tint, laid over its line's tint and the pane", () => {
+		const heavy = { ...DEFAULT_DARK_THEME, ui: { ...DEFAULT_DARK_THEME.ui, diffAddedWord: "rgba(236, 236, 239, 0.9)" } };
+		const warnings = contrastWarnings(heavy);
+		expect(warnings.map(warning => `${warning.color} on ${warning.on}`)).toEqual(["text on diffAddedWord", "terminal.foreground on diffAddedWord"]);
+		expect(contrastWarnings(DEFAULT_DARK_THEME)).toEqual([]);
+	});
+
 	test("check the terminal's text, and take other minimums when given", () => {
 		const terminal = { ...DEFAULT_DARK_THEME, terminal: { ...DEFAULT_DARK_THEME.terminal, foreground: "#202024" } };
-		expect(contrastWarnings(terminal).map(warning => warning.color)).toEqual(["terminal.foreground"]);
+		// On the terminal's background, and in a diff, on each changed-word tint.
+		expect(contrastWarnings(terminal).map(warning => `${warning.color} on ${warning.on}`)).toEqual(["terminal.foreground on terminal.background", "terminal.foreground on diffAddedWord", "terminal.foreground on diffRemovedWord"]);
 		expect(contrastWarnings(DEFAULT_DARK_THEME, { text: 21, meaning: 1 }).every(warning => warning.minimum === 21)).toBe(true);
 	});
 });
@@ -135,6 +145,17 @@ describe("readTheme", () => {
 		expect(replaced).not.toContain("ui.text");
 		expect(replaced).toContain("terminal.green");
 		expect(replaced).not.toContain("terminal.red");
+	});
+
+	test("a theme saved before the changed-word tints reads whole, with tints from its own colors", () => {
+		const { diffAddedWord: _added, diffRemovedWord: _removed, ...older } = DEFAULT_LIGHT_THEME.ui;
+		const ui = { ...older, untracked: "#117733", error: "#aa2222" };
+		const { theme, replaced } = readTheme({ ...DEFAULT_LIGHT_THEME, id: "custom-old", ui });
+		expect(replaced).toEqual([]);
+		expect(theme.ui.diffAddedWord).toBe(withAlpha("#117733", 0.26));
+		expect(theme.ui.diffRemovedWord).toBe(withAlpha("#aa2222", 0.2));
+		// Given ones are kept.
+		expect(readTheme({ ...DEFAULT_LIGHT_THEME, ui: { ...ui, diffAddedWord: "#00ff00" } }).theme.ui.diffAddedWord).toBe("#00ff00");
 	});
 
 	test("never fails, and gives the default theme for what is not a theme at all", () => {

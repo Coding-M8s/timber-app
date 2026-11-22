@@ -4593,6 +4593,19 @@ pre:focus-visible {
 	color: var(--error);
 }
 
+/* The words that changed in a paired line, a stronger tint over the line's own. */
+.diff-word {
+	border-radius: 2px;
+}
+
+.diff-line.added .diff-word {
+	background: var(--diff-added-word);
+}
+
+.diff-line.removed .diff-word {
+	background: var(--diff-removed-word);
+}
+
 .diff-line.note .diff-text {
 	font-style: italic;
 	color: var(--text-3);

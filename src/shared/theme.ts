@@ -3,8 +3,8 @@
  * terminals. Reading a theme, choosing one, and turning it into a stylesheet
  * are pure. See docs/architecture.md, "Themes".
  */
-import { BUILT_IN_THEMES, DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME } from "./builtin-themes";
-import { contrastRatio, readColor } from "./color";
+import { BUILT_IN_THEMES, DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME, diffWordTints } from "./builtin-themes";
+import { contrastRatio, formatColor, over, parseColor, readColor } from "./color";
 
 /**
  * The id of the style element that holds the theme on the page. The main
@@ -59,6 +59,9 @@ export const UI_COLOR_PROPERTIES = {
 	focus: "--focus",
 	diffAdded: "--diff-added",
 	diffRemoved: "--diff-removed",
+	/** The words that changed in a paired line, over the line's own tint. */
+	diffAddedWord: "--diff-added-word",
+	diffRemovedWord: "--diff-removed-word",
 	/** The shadow under small floating things, such as menus and toasts. */
 	shadow: "--shadow",
 	/** The shadow under dialogs. */
@@ -139,6 +142,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** The colors a theme may leave out: they follow from its other colors, as in a theme saved before they were added. */
+const DERIVED_UI_COLORS = ["diffAddedWord", "diffRemovedWord"] as const satisfies readonly UiColor[];
+
 /** The longest name or id a theme can have. */
 const MAX_NAME_LENGTH = 80;
 
@@ -171,17 +177,22 @@ export function readTheme(value: unknown): { theme: Theme; replaced: string[] } 
 		const colors = {} as Record<Key, string>;
 		for (const key of keys) {
 			const color = readColor(given[key]);
+			// A color a later version added comes from the theme's own colors, so an older theme still reads whole.
+			if (color === undefined && (DERIVED_UI_COLORS as readonly string[]).includes(key)) continue;
 			if (color === undefined) replaced.push(`${part}.${key}`);
 			colors[key] = color ?? defaults[key];
 		}
 		return colors;
 	};
+	const ui = readColors("ui", UI_COLORS, fallback.ui);
+	const derived = diffWordTints(appearance ?? fallback.appearance, ui);
+	for (const key of DERIVED_UI_COLORS) ui[key] ??= derived[key];
 	return {
 		theme: {
 			id: id ?? fallback.id,
 			name: name ?? fallback.name,
 			appearance: appearance ?? fallback.appearance,
-			ui: readColors("ui", UI_COLORS, fallback.ui),
+			ui,
 			terminal: readColors("terminal", TERMINAL_COLORS, fallback.terminal),
 		},
 		replaced,
@@ -299,6 +310,16 @@ const MEANING_COLORS: readonly UiColor[] = ["behind", "ahead", "modified", "untr
 /** The fill of a text field is also the tint of a repository's header row in the sidebar, drawn over bgApp. */
 const SURFACES: readonly UiColor[] = ["bgApp", "bgMain", "bgPane", "bgRaised", "fillField"];
 
+/** Each tint of the words that changed, with the tint of the line it is drawn on. */
+const WORD_TINTS = [["diffAddedWord", "diffAdded"], ["diffRemovedWord", "diffRemoved"]] as const satisfies readonly (readonly [UiColor, UiColor])[];
+
+/** Colors laid one over the next, top first, as one opaque color. */
+function layered(colors: readonly string[]): string {
+	const parsed = colors.map(color => parseColor(color) ?? { r: 0, g: 0, b: 0, a: 1 });
+	const solid = parsed.reduceRight((below, top) => over(top, below), { ...parsed[parsed.length - 1]!, a: 1 });
+	return formatColor(solid);
+}
+
 /**
  * The colors of a theme that fall under the minimums on the surfaces they
  * are drawn on, with the ratio rounded down to two decimals. Empty when every
@@ -316,5 +337,11 @@ export function contrastWarnings(theme: Theme, minimums: { text: number; meaning
 		for (const color of MEANING_COLORS) check(color, theme.ui[color], surface, theme.ui[surface], minimums.meaning);
 	}
 	check("terminal.foreground", theme.terminal.foreground, "terminal.background", theme.terminal.background, minimums.text);
+	// A changed word's tint is drawn over its line's tint, over the diff's pane.
+	for (const [word, line] of WORD_TINTS) {
+		const ground = layered([theme.ui[word], theme.ui[line], theme.ui.bgPane, theme.ui.bgApp]);
+		check("text", theme.ui.text, word, ground, minimums.text);
+		check("terminal.foreground", theme.terminal.foreground, word, ground, minimums.text);
+	}
 	return warnings;
 }

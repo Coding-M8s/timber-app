@@ -1,12 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { tags } from "@lezer/highlight";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import {
 	MORE_FILES_NOTE, NO_REFRESH, REFRESHING_CHANGES, baseUnavailable, describeComparison, describeDiffNotice, describeFileArea, describeFileCounts, describeNoChanges, diffCommand, fileAfterKey, groupFileChanges, listedOrder, nextRefreshSpan, splitPath,
 } from "../src/mainview/changes-format";
 import { FOLDER_MISSING_CHANGES } from "../src/mainview/components/ChangesList";
+import { codeHighlightStyle, pickLanguage } from "../src/mainview/editor-language";
 import { browserSampleRepositories, createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { GALLERY_WORKTREE, MOCK_BRANCH_POINT, type MockFileChange, sampleNewFilePatch, samplePatch } from "../src/mainview/engine/mock-file-changes";
 import { changesBusy } from "../src/mainview/store/state";
@@ -221,8 +223,24 @@ describe("the Changes tab", () => {
 		const markup = render(store);
 		expect(markup).toContain('<div class="diff-hunk-header">@@ -1,6 +1,7 @@</div>');
 		// Each numbered line's numbers are a button that starts a review note on it.
-		expect(markup).toContain('<div class="diff-line removed notable"><button type="button" class="diff-note-target" tabindex="-1" data-line="0-0-2" aria-label="Add a note on removed line 3" title="Add a note. Drag the + over more lines of this hunk, or Shift+click one, for a range."><span class="diff-note-plus" aria-hidden="true">+</span><span class="diff-number">3</span><span class="diff-number"></span></button><span class="diff-marker" aria-hidden="true">-</span><span class="diff-text">export const retries = 3;</span></div>');
-		expect(markup).toContain('<div class="diff-line added notable"><button type="button" class="diff-note-target" tabindex="-1" data-line="0-0-3" aria-label="Add a note on line 3" title="Add a note. Drag the + over more lines of this hunk, or Shift+click one, for a range."><span class="diff-note-plus" aria-hidden="true">+</span><span class="diff-number"></span><span class="diff-number">3</span></button><span class="diff-marker" aria-hidden="true">+</span><span class="diff-text">export const retries = 5;</span></div>');
+		expect(markup).toContain('<div class="diff-line removed notable"><button type="button" class="diff-note-target" tabindex="-1" data-line="0-0-2" aria-label="Add a note on removed line 3" title="Add a note. Drag the + over more lines of this hunk, or Shift+click one, for a range."><span class="diff-note-plus" aria-hidden="true">+</span><span class="diff-number">3</span><span class="diff-number"></span></button><span class="diff-marker" aria-hidden="true">-</span><span class="diff-text">');
+		expect(markup).toContain('<div class="diff-line added notable"><button type="button" class="diff-note-target" tabindex="-1" data-line="0-0-3" aria-label="Add a note on line 3" title="Add a note. Drag the + over more lines of this hunk, or Shift+click one, for a range."><span class="diff-note-plus" aria-hidden="true">+</span><span class="diff-number"></span><span class="diff-number">3</span></button><span class="diff-marker" aria-hidden="true">+</span><span class="diff-text">');
+	});
+
+	test("colors a diff's code as the editor does, and marks the words that changed", async () => {
+		const language = pickLanguage("src/tax/rules.ts", { lines: 1, length: 1 });
+		if (language.kind !== "colored") throw new Error("TypeScript was not picked");
+		await language.description.load();
+		const store = await gallery();
+		await store.selectChangedFile(file("staged", "modified", "src/tax/rules.ts"));
+		const markup = render(store);
+		const keyword = codeHighlightStyle.style([tags.keyword])!;
+		const number = codeHighlightStyle.style([tags.number])!;
+		expect(markup).toContain(`<span class="diff-text"><span class="${keyword}">export</span> <span class="${keyword}">const</span>`);
+		// The one number that changed is marked on both lines, and still colored as a number.
+		expect(markup).toContain(`<span class="diff-word ${number}">3</span>`);
+		expect(markup).toContain(`<span class="diff-word ${number}">5</span>`);
+		expect(markup.match(/class="diff-word/g)).toHaveLength(2);
 	});
 
 	test("shows a notice for binary, very large, and empty files, and a rename's header", async () => {
