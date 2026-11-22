@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { startPseudoTerminal, startBunTerminal, createStartupQuery } from "../src/bun/pseudo-terminal";
+import { startPseudoTerminal, startBunTerminal, createStartupQuery, exitCodeOf } from "../src/bun/pseudo-terminal";
 
 describe("createStartupQuery", () => {
 	test("the first CSI c at the start is taken out and asks for the answer; the rest passes on", () => {
@@ -52,5 +52,25 @@ describe("startPseudoTerminal", () => {
 		expect(withPty).not.toBeNull();
 		expect(withPty).not.toBe(startBunTerminal);
 		expect(startPseudoTerminal("win32", () => null)).toBe(typeof Bun.Terminal === "function" ? startBunTerminal : null);
+	});
+});
+
+describe("exitCodeOf, for node-pty's exit", () => {
+	test("the code node-pty told is taken as it is", async () => {
+		expect(await exitCodeOf({ _agent: { exitCode: 9 } }, 3)).toBe(3);
+		expect(await exitCodeOf({}, 0)).toBe(0);
+	});
+
+	test("a code that was not there yet when the exit was told is read from the agent once it comes", async () => {
+		const agent: { exitCode?: number } = {};
+		setTimeout(() => (agent.exitCode = 3), 50);
+		expect(await exitCodeOf({ _agent: agent }, undefined)).toBe(3);
+	});
+
+	test("a code that never comes is unknown, after the wait", async () => {
+		const started = Date.now();
+		expect(await exitCodeOf({ _agent: {} }, undefined, 100)).toBeNull();
+		expect(Date.now() - started).toBeGreaterThanOrEqual(100);
+		expect(await exitCodeOf({}, undefined)).toBeNull();
 	});
 });

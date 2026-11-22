@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openWebLink } from "../src/bun/open-link";
 import { processTreeKillCommand, sessionMembers, sessionOfStat } from "../src/bun/process-session";
-import { type TerminalDependencies, type TerminalSessions, createTerminalSessions } from "../src/bun/terminals";
+import { PART_LIMIT, type TerminalDependencies, type TerminalSessions, createTerminalSessions } from "../src/bun/terminals";
 import type { Repository } from "../src/shared/model";
 import { describeSearchPath } from "../src/shared/search-path";
 import { PROBE_ANSWER } from "../src/shared/program-status";
@@ -455,11 +455,17 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 		sessions.drawn(session.id, outputs.at(-1)?.seq ?? 0);
 		const before = outputs.length;
 		await run(session.id, "i=0; while [ $i -lt 6000 ]; do echo line-$i-xxxxxxxxxxxxxxxxxxxx; i=$((i+1)); done; echo done-$((6*7))", /line-\d+-x/);
-		// Give the loop time to finish while the window draws nothing.
-		await Bun.sleep(500);
+		// Wait for the loop to finish while the window draws nothing.
+		expect(await until(() => sessions.read(session.id)!.data.includes("done-42"))).toBe(true);
 		const sent = outputs.slice(before);
-		const sentSize = sent.reduce((total, output) => total + output.data.length, 0);
-		expect(sentSize).toBeLessThan(2000 + 64 * 1024);
+		const sizeOf = (parts: typeof sent) => parts.reduce((total, output) => total + output.data.length, 0);
+		// Parts go while no more than the limit is undrawn; the part that passes it is the last one sent.
+		// A part is sent once it reaches PART_LIMIT, so it holds less than that plus the read that took it
+		// there. Bun hands over what the pseudo terminal has in one read: about 25 KiB when measured
+		// with a stalled event loop, as on a busy machine, so one more PART_LIMIT bounds it.
+		expect(sizeOf(sent.slice(0, -1))).toBeLessThanOrEqual(2000);
+		expect(sizeOf(sent)).toBeGreaterThan(2000);
+		expect(sizeOf(sent)).toBeLessThan(2000 + 2 * PART_LIMIT);
 		expect(sent.some(output => output.data.includes("done-42"))).toBe(false);
 		// The window catches up: one part, marked to start afresh, that holds the end.
 		sessions.drawn(session.id, sent.at(-1)!.seq);

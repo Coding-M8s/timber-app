@@ -43,7 +43,7 @@ apps update to it once it is published (see
 - **Builds on the platform it targets.** `build-linux` runs on Ubuntu 24.04
   and `build-windows` on Windows Server 2025. Each installs with the frozen
   lockfile, checks that the tag is `v` plus the version in `package.json`
-  (`scripts/check-release-tag.ts`), runs `bun run typecheck` and `bun test`,
+  (`scripts/check-release-tag.ts`), runs `bun run typecheck` and `bun run test`,
   then `bun run build`. Linux also runs `bun run typecheck:desktop` and
   puts the pinned Timber on PATH, as CI does, so the tests that need Timber
   run there; on Windows they are skipped, as in CI.
@@ -89,7 +89,7 @@ other change.
    ```
 
 2. **Check it builds.** `bun run fetch:timber` downloads the new files and
-   fails on any checksum that does not match. Then run `bun test`, which
+   fails on any checksum that does not match. Then run `bun run test`, which
    runs the pin tests, and `bun run build`.
 3. **Read Timber's license again.** If `LICENSE` changed, update the
    license text in Settings, About (`AboutSection.tsx`).

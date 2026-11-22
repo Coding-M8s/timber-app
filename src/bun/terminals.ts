@@ -30,7 +30,7 @@ const CLOSE_MILLISECONDS = 2000;
 /** Output is gathered this long before it is sent, so a busy program sends a few large parts, not many small ones. */
 const FLUSH_MILLISECONDS = 4;
 /** A part is sent at once when it reaches this many code units. */
-const PART_LIMIT = 64 * 1024;
+export const PART_LIMIT = 64 * 1024;
 /**
  * How much may be sent that the window has not drawn yet. Beyond it, output
  * is only kept, and once the window caught up it gets what is kept in one

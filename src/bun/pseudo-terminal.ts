@@ -153,8 +153,13 @@ export function nodePtyTerminal(pty: typeof NodePty): StartPseudoTerminal {
 			terminal.onExit(({ exitCode }) => {
 				clearTimeout(giveUp);
 				give(startup.flush());
-				state = { exitCode, signal: null };
-				resolve();
+				// Ended from here on, so nothing is written to it, while its exit code may still be on its way.
+				const ended = { exitCode: null as number | null, signal: null };
+				state = ended;
+				void exitCodeOf(terminal, exitCode).then(code => {
+					ended.exitCode = code;
+					resolve();
+				});
 			});
 		});
 		const close = () => {
@@ -190,6 +195,30 @@ export function nodePtyTerminal(pty: typeof NodePty): StartPseudoTerminal {
 			},
 		};
 	};
+}
+
+/** How long an exit code node-pty did not have when it told the exit is waited for. */
+export const EXIT_CODE_WAIT_MILLISECONDS = 2000;
+
+/**
+ * The exit code of a node-pty program that ended. With `useConptyDll`,
+ * node-pty tells the exit when the program's output pipe closes, with the
+ * code ConPTY's own notice of the exit gave it. On a busy machine the pipe
+ * can close first, and the code comes as undefined. The notice still comes
+ * moments later, so the code is read again from node-pty's agent (not part of
+ * its typed interface) until it is there, for at most
+ * EXIT_CODE_WAIT_MILLISECONDS. After that it is unknown: null.
+ */
+export async function exitCodeOf(terminal: unknown, told: number | undefined, wait = EXIT_CODE_WAIT_MILLISECONDS): Promise<number | null> {
+	if (typeof told === "number") return told;
+	const agent = (terminal as { _agent?: { exitCode?: unknown } })._agent;
+	const end = Date.now() + wait;
+	while (true) {
+		const code = agent?.exitCode;
+		if (typeof code === "number") return code;
+		if (agent === undefined || Date.now() >= end) return null;
+		await Bun.sleep(10);
+	}
 }
 
 /**

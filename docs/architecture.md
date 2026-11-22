@@ -75,7 +75,7 @@ the Electrobun browser SDK (`types/electrobun-web.d.ts`).
 
 ### Tests on Windows
 
-`bun test` runs on Windows too, and the `test-windows` CI job fails the run
+`bun run test` runs on Windows too, and the `test-windows` CI job fails the run
 when a test fails there. That job installs no Timber, so the tests that need
 the installed Timber are skipped in it and are run on a Windows machine with
 Timber instead (see [what has been verified](verification.md)). A few things
@@ -99,8 +99,9 @@ keep the tests the same on both systems:
   there only by an extension in PATHEXT.
 - **Timeouts.** A run of the installed Timber takes from under a second to
   over four there, so each file that runs it sets a default timeout of a
-  minute on Windows (`REAL_TIMBER_TIMEOUT_MS`). Bun sets the default again
-  for each file, so a preload cannot.
+  minute on Windows, and of 30 seconds elsewhere, as `bun run test` gives
+  every test (`REAL_TIMBER_TIMEOUT_MS`). Bun sets the default again for each
+  file, so a preload cannot.
 - **Private folders.** Timber reads its private records and credential store
   on Windows only when their access list allows nobody but the user, SYSTEM,
   and Administrators. A test that writes such a folder by hand makes it with

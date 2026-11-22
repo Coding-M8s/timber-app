@@ -8,7 +8,7 @@ import { windows } from "./support/runtime";
 import { bunStandIn, fingerprint, git, gitIdentity, isolatedEnvironment, makeRepository, readyAt, realTimber, recordedArena } from "./support/timber";
 
 // Creating an arena makes worktrees and runs setup, so the real Timber takes longer than one command.
-setDefaultTimeout(windows ? 120_000 : 20_000);
+setDefaultTimeout(windows ? 120_000 : 30_000);
 
 const ready = readyAt("0.1.3");
 const TASK = "PRIVATE_TASK_SENTINEL: fix the login\n' $(touch NEVER) \"quoted\"";

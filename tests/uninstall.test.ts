@@ -6,7 +6,7 @@ import { createSettingsHolder, removeSettings } from "../src/bun/settings";
 import { type UninstallerDependencies, createUninstaller, installRootOf } from "../src/bun/uninstall";
 import { emptySettings } from "../src/shared/settings";
 import { UNINSTALL_ARGUMENTS, parseInstallRecord, uninstallTargets } from "../src/shared/uninstall";
-import { windows } from "./support/runtime";
+import { until, windows } from "./support/runtime";
 
 /** The record Electrobun 2.0.6 wrote for an install on Linux, with the home folder changed. */
 const RECORDED = `{
@@ -277,7 +277,8 @@ describe.skipIf(windows)("uninstalling, with a stand-in uninstaller in real fold
 			}),
 		});
 		const first = uninstaller.uninstall({ forgetSettings: false });
-		await Bun.sleep(20);
+		// Wait until the uninstaller is running, not a fixed time: a busy machine may take longer to get there.
+		expect(await until(() => runs === 1)).toBe(true);
 		expect(await uninstaller.uninstall({ forgetSettings: true })).toEqual({ outcome: "failed", message: "The uninstaller is already running." });
 		release();
 		expect(await first).toEqual({ outcome: "uninstalled", settingsProblem: null });

@@ -15,7 +15,18 @@ permissions:
   contents: read
 
 jobs:
-  check:
+  # The suite is bound by Git, Timber, and browser processes, so it runs in
+  # Bun's parallel workers and splits across three runners. tests/timings.json
+  # balances the shards by measured file duration. Refresh it when test files
+  # are added, removed, or get much slower or faster:
+  #   bun test --parallel=4 --timeout=30000 --timings tests/timings.json --update-timings
+  # (four workers, as on these runners). A file missing from it still runs.
+  test:
+    name: test (${{ matrix.shard }}/3)
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -28,9 +39,36 @@ jobs:
       # the app bundles (timber-pin.json), checked against its SHA-256.
       - name: Install Timber
         run: bun scripts/fetch-timber.ts --add-to-path
+      - run: bun run test --shard=${{ matrix.shard }}/3
+
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
       - run: bun run typecheck
-      - run: bun test
       - run: bun run build:web
+
+  # The main ruleset requires a status named "check". It passes only when
+  # every shard and the build passed; a failed, cancelled, or skipped one
+  # fails it.
+  check:
+    needs: [test, build]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every CI job to pass
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for result in $RESULTS; do
+            test "$result" = success || { echo "A required CI job finished with: $result" >&2; exit 1; }
+          done
 
   # Type check against the real Electrobun SDK. A separate job, so a failed
   # toolchain download does not hide the results of the check above.
@@ -66,4 +104,4 @@ jobs:
           bun-version-file: .bun-version
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
-      - run: bun test
+      - run: bun run test
