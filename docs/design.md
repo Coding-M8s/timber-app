@@ -604,9 +604,33 @@ logins. The app never reads a tracker login and never signs in.
   Write: src/a.ts", in the tooltip. Beside the shown agent's state, a button
   such as "4 tasks" opens the list of its tasks as a tree, each with its
   state, progress, title, and message.
+- When an agent's process ends by itself, such as after `/exit` in Claude
+  Code, Ctrl+C twice, or Codex quitting, its chip does not go dead. The same
+  session goes on as a shell in the worktree's folder, so the person can
+  type at once: run the tests, look at `git diff`, or start the agent again.
+  What the agent printed stays above, followed by a dim line saying it
+  exited and that this is now a shell. The chip keeps its name, and the
+  Claude Code or Codex icon when it was one of them (another agent's chip
+  shows the terminal mark). While the shell runs, the chip shows how the
+  agent ended ("exit 0", "exit 3", or the signal), and says "Claude ended.
+  Exited with code 0. Now a shell" to assistive technology. An agent that
+  ended with exit code 0 leaves a plain terminal, counted on its row with
+  the other running sessions. One that crashed (another code, or a signal)
+  still raises its alert and keeps a crashed mark on its row while the
+  shell runs. The session counts as a terminal for the running counts and
+  the quit warning, and after a restart it comes back as a Terminal, with
+  its name kept only if the person renamed it. Agents from a workflow and
+  arena attempts follow the same rule, so unlike before they are now saved
+  at quit and come back as terminals in their worktrees, and an attempt
+  whose chip is a shell counts as still running in the Compare dialog. Closing the chip, removing the worktree, and quitting end it as
+  before, and a Timber setup session still ends and stays. A shell that
+  exits later stays exited. What the agent ended with (its name, exit,
+  command, and conversation) is kept on the session, for offering Resume
+  later.
 - Quitting and opening the app again brings every worktree's running
   sessions back in their places, with the same chip showing; agents go back
-  to their conversations, terminals start a fresh shell.
+  to their conversations, terminals start a fresh shell. An agent that
+  ended and left a shell in its chip comes back as a terminal.
 - Dropping files from the file manager on a running session's terminal, or
   dragging a file or folder row from the Files panel onto it, pastes their
   absolute paths at the prompt, quoted for the shell when needed, separated

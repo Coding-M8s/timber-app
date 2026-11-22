@@ -133,6 +133,23 @@ describe.skipIf(!posix)("a workflow's agent in a terminal session", () => {
 		expect(reads).toBe(1);
 	});
 
+	test("a workflow's agent that ends by itself goes on as a shell in the worktree, named after the workflow", async () => {
+		const quitter = join(bin, "fake-quitter");
+		writeFileSync(quitter, "#!/bin/sh\necho quitter-out\nexit 3\n");
+		chmodSync(quitter, 0o755);
+		start();
+		list = review("fake-quitter", []);
+		const result = await sessions.open(request({ workflow: "review" }));
+		if (result.outcome !== "opened") throw new Error(`Not opened: ${JSON.stringify(result)}`);
+		expect(await until(() => sessions.list()[0]?.kind === "terminal")).toBe(true);
+		expect(sessions.list()[0]).toMatchObject({
+			id: result.session.id, name: "review", state: { kind: "running" }, path: worktree,
+			endedAgent: { name: "review", agent: null, program: null, resumable: null, conversation: null, exitCode: 3 },
+		});
+		expect(changes.filter(change => change.session?.state.kind === "exited")).toEqual([]);
+		expect(printed(result.session.id)).toContain("review exited with code 3. This is now a shell in");
+	});
+
 	test("a command or arguments in the request are never used: only names are read", async () => {
 		start();
 		const result = await sessions.open(request({ workflow: "review", command: "fake-codex", args: ["--evil"] }));

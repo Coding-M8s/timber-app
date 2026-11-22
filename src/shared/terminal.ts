@@ -4,6 +4,7 @@
  * interface only draws what it prints and passes on what is typed.
  */
 
+import type { ResumableAgent } from "./agent-resume";
 import type { RestoreTag } from "./saved-sessions";
 import type { ChildStatus, ProgramStatus } from "./program-status";
 import { isSafeText } from "./safe-text";
@@ -66,6 +67,32 @@ export interface TerminalSession {
 	 * every other session.
 	 */
 	prompt?: PromptDelivery;
+	/**
+	 * Set when an agent's process ended by itself and the session went on as
+	 * the person's shell in the same chip. It says which agent it was and how
+	 * it ended. It is kept for offering Resume (#284), and it stays when the
+	 * shell later exits. Left out for every other session.
+	 */
+	endedAgent?: EndedAgent;
+}
+
+/** An agent that ended by itself, as its session keeps it once the session went on as a shell. */
+export interface EndedAgent {
+	/** What the session was launched as: the agent's name in Settings, the workflow's name, or the attempt's label. */
+	name: string;
+	/** The agent's name in Settings, or null for a workflow's own agent or an arena attempt. */
+	agent: string | null;
+	/** Claude Code or Codex by the executable's name, however it was started. */
+	program: ResumableAgent | null;
+	/** Whether, and how, the agent could go back to its conversation. */
+	resumable: ResumableAgent | null;
+	/** The agent's own conversation id, when it was known. */
+	conversation: string | null;
+	/** What ran, as one line for showing. */
+	command: string;
+	/** Null when a signal stopped it, and then `signal` names it. */
+	exitCode: number | null;
+	signal: string | null;
 }
 
 /**
@@ -403,6 +430,26 @@ export function createScrollback(limit: number = SCROLLBACK_LIMIT): Scrollback {
 export function describeTerminalExit(state: Extract<TerminalState, { kind: "exited" }>): string {
 	if (state.exitCode !== null) return `Exited with code ${state.exitCode}`;
 	return state.signal ? `Stopped by ${state.signal}` : "Exited";
+}
+
+/** The words for how an ended agent stopped, such as "Exited with code 3" or "Stopped by SIGKILL". */
+export function describeAgentExit(ended: Pick<EndedAgent, "exitCode" | "signal">): string {
+	return describeTerminalExit({ kind: "exited", exitCode: ended.exitCode, signal: ended.signal });
+}
+
+/**
+ * What is written into a session's output when its agent ended and the
+ * session went on as a shell: first a reset of the terminal modes the agent
+ * may have left on (screen, mouse, focus, paste, cursor, keyboard), which
+ * keeps what was printed, then one dim line that says what happened. The
+ * screen goes back with 1047, not 1049: 1049 also moves the cursor to where
+ * it was saved, the top left for an agent that never left the main screen,
+ * so the note and the prompt would print over the agent's output.
+ */
+export function agentEndedNote(name: string, ended: Pick<EndedAgent, "exitCode" | "signal">, path: string): string {
+	const reset = "\x1b[?1047l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1004l\x1b[?2004l\x1b[?25h\x1b[<u\x1b[0m";
+	const how = ended.exitCode !== null ? `exited with code ${ended.exitCode}` : `was stopped by ${ended.signal ?? "a signal"}`;
+	return `${reset}\r\n\x1b[2m${name} ${how}. This is now a shell in ${path}.\x1b[0m\r\n`;
 }
 
 /** The question before quitting while sessions run. */

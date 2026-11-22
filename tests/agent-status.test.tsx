@@ -9,10 +9,10 @@ import { createMockEngine, sampleRepositories } from "../src/mainview/engine/moc
 import { sessionsOf } from "../src/mainview/store/state";
 import { takeTerminalFocus } from "../src/mainview/terminal-focus";
 import { createAppStore } from "../src/mainview/store/store";
-import { describeRowSessions, describeSessionChip, describeTerminalState } from "../src/mainview/terminal-format";
+import { describeRowSessions, describeSessionChip, describeTerminalState, shortExit } from "../src/mainview/terminal-format";
 import { PROBE_ANSWER } from "../src/shared/program-status";
 import { type ShownStatus, agentBrand, describeShownStatus, hasStatusMark, mostUrgent, sessionInitials, shortMessage, shownStatus, summarizeStatuses } from "../src/shared/session-status";
-import type { TerminalSession } from "../src/shared/terminal";
+import { type TerminalSession, agentEndedNote, describeAgentExit } from "../src/shared/terminal";
 
 const settle = async () => {
 	for (let round = 0; round < 5; round += 1) await Bun.sleep(0);
@@ -87,6 +87,84 @@ describe("a session's status as shown", () => {
 		expect(hasStatusMark(session({ kind: "terminal" }))).toBe(false);
 		expect(hasStatusMark(session({ kind: "terminal", status: status("working") }))).toBe(true);
 		expect(hasStatusMark(session({ kind: "terminal", status: status("done"), state: { kind: "exited", exitCode: 0, signal: null } }))).toBe(false);
+	});
+
+	test("an agent that ended and left a shell shows how it ended, until a program in the shell reports", () => {
+		const ended = (exitCode: number | null, signal: string | null = null) => session({ kind: "terminal", shell: "/bin/zsh", endedAgent: { name: "Codex", agent: "Codex", program: "codex", resumable: "codex", conversation: null, command: "codex", exitCode, signal } });
+		expect(shownStatus(ended(0))).toEqual({ kind: "stopped" });
+		expect(shownStatus(ended(3))).toEqual({ kind: "crashed", exitCode: 3, signal: null });
+		expect(shownStatus(ended(null, "SIGKILL"))).toEqual({ kind: "crashed", exitCode: null, signal: "SIGKILL" });
+		// What a program in the shell reports wins, and an exited shell is its own exit.
+		expect(shownStatus({ ...ended(3), status: status("working") })).toEqual({ kind: "working", progress: null });
+		expect(shownStatus({ ...ended(0), state: { kind: "exited", exitCode: 2, signal: null } })).toEqual({ kind: "crashed", exitCode: 2, signal: null });
+		// A clean end leaves a plain terminal, counted with the others; a crash keeps its mark while the shell runs.
+		expect(hasStatusMark(ended(0))).toBe(false);
+		expect(hasStatusMark(ended(3))).toBe(true);
+		expect(hasStatusMark(ended(null, "SIGKILL"))).toBe(true);
+		// Once the shell itself exits it is a plain ended terminal again, so its exit is never told as the agent's crash.
+		expect(hasStatusMark({ ...ended(0), state: { kind: "exited", exitCode: 1, signal: null } })).toBe(false);
+		expect(agentBrand(ended(0))).toBe("codex");
+		expect(agentBrand(session({ kind: "terminal", shell: "/bin/zsh" }))).toBeNull();
+		expect(shortExit({ kind: "running" }, ended(3).endedAgent)).toBe("exit 3");
+		expect(shortExit({ kind: "running" }, ended(null, "SIGKILL").endedAgent)).toBe("SIGKILL");
+		expect(shortExit({ kind: "running" })).toBeNull();
+		expect(describeAgentExit({ exitCode: 3, signal: null })).toBe("Exited with code 3");
+		expect(describeAgentExit({ exitCode: null, signal: "SIGKILL" })).toBe("Stopped by SIGKILL");
+		expect(describeSessionChip(ended(0), false)).toBe("Terminal, zsh. Codex ended. Exited with code 0. Now a shell");
+		expect(describeSessionChip(ended(3), true)).toBe("Terminal, zsh. Codex ended. Exited with code 3. Now a shell. New output since you last looked");
+		expect(describeSessionChip({ ...ended(3), status: status("working") }, false)).toBe("Terminal, zsh. Codex ended. Exited with code 3. Now a shell. Working");
+		expect(describeTerminalState(ended(0))).toBe("Running");
+		expect(describeTerminalState(ended(3))).toBe("Crashed. Exited with code 3");
+	});
+
+	test("on the row, a shell left by a clean agent end counts with the running sessions, and one left by a crash keeps its mark", () => {
+		const left = (id: string, exitCode: number) => session({ id, kind: "terminal", name: "Codex", shell: "/bin/zsh", endedAgent: { name: "Codex", agent: "Codex", program: "codex", resumable: "codex", conversation: null, command: "codex", exitCode, signal: null } });
+		const clean = describeRowSessions([left("a", 0)]);
+		expect(clean.marks).toEqual([]);
+		expect(clean.others).toBe(1);
+		const crashed = describeRowSessions([left("b", 3)]);
+		expect(crashed.marks.map(mark => mark.status)).toEqual([{ kind: "crashed", exitCode: 3, signal: null }]);
+		expect(crashed.others).toBe(0);
+	});
+
+	test("the note an ended agent leaves resets the terminal modes, keeps the output, and says what happened", () => {
+		const note = agentEndedNote("Codex", { exitCode: 3, signal: null }, "/work/feature");
+		expect(note).toBe("\x1b[?1047l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1004l\x1b[?2004l\x1b[?25h\x1b[<u\x1b[0m\r\n\x1b[2mCodex exited with code 3. This is now a shell in /work/feature.\x1b[0m\r\n");
+		expect(note).not.toContain("\x1bc");
+		// 1049 would also move the cursor to a saved place, the top left when none was saved.
+		expect(note).not.toContain("\x1b[?1049l");
+		expect(agentEndedNote("Codex", { exitCode: null, signal: "SIGKILL" }, "/w")).toContain("Codex was stopped by SIGKILL. This is now a shell in /w.");
+	});
+
+	test("an agent in the mock engine that ends goes on as a terminal in the same session", async () => {
+		const { engine, store, agent, shell, current } = await withAgent();
+		engine.endTerminal(agent.id, 3);
+		await settle();
+		expect(current()).toMatchObject({ id: agent.id, name: agent.name, kind: "terminal", state: { kind: "running" }, status: null, children: [], endedAgent: { name: "Codex", agent: "Codex", exitCode: 3, signal: null } });
+		expect(current().shell).not.toBe(agent.shell);
+		expect(store.getState().terminals.filter(session => session.state.kind === "running")).toHaveLength(2);
+		const printed = (await engine.readTerminal(agent.id))!.data;
+		expect(printed).toContain("Codex exited with code 3. This is now a shell in");
+		store.select(featureId);
+		await settle();
+		const markup = render(store);
+		expect(markup).toContain('<span class="session-exit" aria-hidden="true">exit 3</span>');
+		expect(markup).toContain("Terminal, mock-shell. Codex ended. Exited with code 3. Now a shell");
+		expect(engine.typedInto(agent.id)).toBe("");
+		engine.writeTerminal(agent.id, "pwd\r");
+		await settle();
+		expect((await engine.readTerminal(agent.id))!.data).toContain(`\r\n${FEATURE}\r\n`);
+		engine.writeTerminal(agent.id, "exit\r");
+		await settle();
+		expect(current()).toMatchObject({ kind: "terminal", state: { kind: "exited", exitCode: 0 }, endedAgent: { exitCode: 3 } });
+		expect(shell.state.kind).toBe("running");
+	});
+
+	test("typing exit in a mock agent falls back the same way", async () => {
+		const { engine, agent, current } = await withAgent();
+		engine.writeTerminal(agent.id, "exit\r");
+		await settle();
+		expect(current()).toMatchObject({ kind: "terminal", state: { kind: "running" }, endedAgent: { exitCode: 0 } });
 	});
 
 	test("a summary puts Needs you first and leaves out stopped and unknown", () => {

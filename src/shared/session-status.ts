@@ -24,12 +24,16 @@ export type ShownStatus =
 
 export type ShownStatusKind = ShownStatus["kind"];
 
-export function shownStatus(session: Pick<TerminalSession, "state" | "status">): ShownStatus {
-	const { state, status } = session;
+export function shownStatus(session: Pick<TerminalSession, "state" | "status"> & Partial<Pick<TerminalSession, "endedAgent">>): ShownStatus {
+	const { state, status, endedAgent } = session;
 	if (state.kind === "exited") {
 		return state.exitCode === 0 ? { kind: "stopped" } : { kind: "crashed", exitCode: state.exitCode, signal: state.signal };
 	}
-	if (status === null) return { kind: "unknown" };
+	if (status === null) {
+		// An agent that ended and left a shell: how it ended is shown until a program in the shell reports something.
+		if (endedAgent !== undefined) return endedAgent.exitCode === 0 ? { kind: "stopped" } : { kind: "crashed", exitCode: endedAgent.exitCode, signal: endedAgent.signal };
+		return { kind: "unknown" };
+	}
 	switch (status.state) {
 		case "working":
 			return { kind: "working", progress: status.progress };
@@ -42,11 +46,19 @@ export function shownStatus(session: Pick<TerminalSession, "state" | "status">):
 
 /**
  * Whether a session gets a status mark of its own on the sidebar row and its
- * chip: every agent session, and any other running session whose program
- * reported a status. A plain shell with no status stays a count.
+ * chip: every agent session, a running shell left behind by an agent that
+ * crashed (ended with a code other than 0, or by a signal), and any other
+ * running session whose program reported a status. A plain shell with no
+ * status stays a count, as does a shell an agent left with exit 0, and a
+ * shell that exits, so its exit is never told as an agent's crash.
  */
-export function hasStatusMark(session: Pick<TerminalSession, "kind" | "state" | "status"> & Partial<Pick<TerminalSession, "children">>): boolean {
-	return session.kind === "agent" || (session.state.kind === "running" && (session.status !== null || notableChildren(session).length > 0));
+export function hasStatusMark(session: Pick<TerminalSession, "kind" | "state" | "status"> & Partial<Pick<TerminalSession, "children" | "endedAgent">>): boolean {
+	return session.kind === "agent" || (session.state.kind === "running" && (crashedAgent(session) || session.status !== null || notableChildren(session).length > 0));
+}
+
+/** Whether a session is a shell left behind by an agent that did not end with exit code 0. */
+function crashedAgent(session: Partial<Pick<TerminalSession, "endedAgent">>): boolean {
+	return session.endedAgent !== undefined && session.endedAgent.exitCode !== 0;
 }
 
 /** A child record's status as shown. A child has no process of its own, so it is what it reported. */
@@ -102,7 +114,7 @@ export function describeNotableChildren(session: Pick<TerminalSession, "state"> 
 }
 
 /** Whether the root says Done or Idle while children still run, so "done" does not hide work going on. */
-export function stillWorking(session: Pick<TerminalSession, "state" | "status"> & Partial<Pick<TerminalSession, "children">>): boolean {
+export function stillWorking(session: Pick<TerminalSession, "state" | "status"> & Partial<Pick<TerminalSession, "children" | "endedAgent">>): boolean {
 	const kind = shownStatus(session).kind;
 	return (kind === "done" || kind === "idle") && runningChildren(session).length > 0;
 }
@@ -127,7 +139,7 @@ export function childBadge(session: Pick<TerminalSession, "state"> & Partial<Pic
  * ./status-notices.ts), so they can name another task than this one; the
  * status is the same.
  */
-export function alertStatus(session: Pick<TerminalSession, "state" | "status"> & Partial<Pick<TerminalSession, "children">>): { status: ShownStatus; child: ChildStatus | null } {
+export function alertStatus(session: Pick<TerminalSession, "state" | "status"> & Partial<Pick<TerminalSession, "children" | "endedAgent">>): { status: ShownStatus; child: ChildStatus | null } {
 	const root = shownStatus(session);
 	if (session.state.kind !== "running" || root.kind === "needs-you") return { status: root, child: null };
 	const children = session.children ?? [];
@@ -247,15 +259,17 @@ export type AgentBrand = typeof AGENT_BRANDS[number];
  * The agent a session runs, when the app has an icon for it: Claude Code or
  * Codex, known by the executable of an agent session (`claude`, `codex`) or
  * by the `app` a program reports, such as `claude-code`. Null for anything
- * else, which keeps its letters.
+ * else, which keeps its letters. A shell that an ended Claude Code or Codex
+ * left behind keeps the brand of the agent.
  */
-export function agentBrand(session: Pick<TerminalSession, "kind" | "shell" | "status">): AgentBrand | null {
+export function agentBrand(session: Pick<TerminalSession, "kind" | "shell" | "status"> & Partial<Pick<TerminalSession, "endedAgent">>): AgentBrand | null {
 	const executable = session.shell.split(/[\\/]/).filter(Boolean).at(-1) ?? "";
 	const app = session.status?.app?.toLowerCase() ?? "";
 	for (const brand of AGENT_BRANDS) {
 		if ((session.kind === "agent" && executable === brand) || app.startsWith(brand)) return brand;
 	}
-	return null;
+	// A shell an agent left behind keeps the agent's icon.
+	return session.endedAgent?.program ?? null;
 }
 
 /** The most of a program's message that is shown, in characters. The protocol allows 2048 bytes. */
@@ -305,7 +319,7 @@ export function sessionInitials(names: readonly string[]): string[] {
  * such as "Done, seen, tasks still running". No count, so it can be a live
  * region that does not speak on every change.
  */
-export function describeSessionState(session: Pick<TerminalSession, "state" | "status"> & Partial<Pick<TerminalSession, "children">>, seen = false): string {
+export function describeSessionState(session: Pick<TerminalSession, "state" | "status"> & Partial<Pick<TerminalSession, "children" | "endedAgent">>, seen = false): string {
 	const shown = describeShownStatus(shownStatus(session));
 	const words = seen ? `${shown}, seen` : shown;
 	return stillWorking(session) ? `${words}, tasks still running` : words;
@@ -316,7 +330,7 @@ export function describeSessionState(session: Pick<TerminalSession, "state" | "s
  * approval, approve Write: src/a.ts. 2 tasks: 2 working", or "Codex: Done,
  * seen" once the person has seen it.
  */
-export function describeSessionStatus(session: Pick<TerminalSession, "name" | "state" | "status"> & Partial<Pick<TerminalSession, "children">>, seen = false): string {
+export function describeSessionStatus(session: Pick<TerminalSession, "name" | "state" | "status"> & Partial<Pick<TerminalSession, "children" | "endedAgent">>, seen = false): string {
 	const words = describeSessionState(session, seen);
 	const full = session.state.kind === "running" ? session.status?.message ?? null : null;
 	const message = full === null ? null : shortMessage(full);

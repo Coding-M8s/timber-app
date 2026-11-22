@@ -284,7 +284,7 @@ function Chip({ session, selected, unseen, seen, ids, shownId, closing, closingI
 		setMenuAt({ left: event.clientX, top: event.clientY });
 	};
 	const running = session.state.kind === "running";
-	const exit = shortExit(session.state);
+	const exit = shortExit(session.state, session.endedAgent);
 	const badge = childBadge(session);
 	const description = closing ? `${describeSessionChip(session, unseen, seen)}. Closing` : describeSessionChip(session, unseen, seen);
 

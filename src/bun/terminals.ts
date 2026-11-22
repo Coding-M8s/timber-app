@@ -6,9 +6,9 @@ import { type ResumableAgent, agentProgram, agentStartArguments, conversationMis
 import { describeCommandLine } from "../shared/command-line";
 import type { TimberStatus } from "../shared/model";
 import {
-	type OpenTerminalRequest, type OpenTerminalResult, type PasteModeScanner, type PasteResult, type PromptDelivery, type Scrollback, type SessionNaming, type TerminalChange, type TerminalOutput, type TerminalSession,
+	type EndedAgent, type OpenTerminalRequest, type OpenTerminalResult, type PasteModeScanner, type PasteResult, type PromptDelivery, type Scrollback, type SessionNaming, type TerminalChange, type TerminalOutput, type TerminalSession,
 	type TerminalSnapshot, TERMINAL_UNSUPPORTED_REASON, WORKTREE_SETUP_SESSION_NAME, clampTerminalSize, cleanSessionName, createScrollback, defaultSessionName, pickShell,
-	pickWindowsShell, sessionNameBase, PASTE_NOT_READY, CHOP_NOT_TYPED, chopRunBytes, createPasteModeScanner, pasteProblem, promptBytes,
+	pickWindowsShell, sessionNameBase, agentEndedNote, PASTE_NOT_READY, CHOP_NOT_TYPED, chopRunBytes, createPasteModeScanner, pasteProblem, promptBytes,
 } from "../shared/terminal";
 import { recordsForWindow } from "../shared/session-status";
 import { PROMPT_BUSY_MILLISECONDS, PROMPT_ENTER_MILLISECONDS, PROMPT_QUIET_MILLISECONDS, PROMPT_STILL_STARTING, PROMPT_WAIT_MILLISECONDS, isReadyForPrompt, promptEndedMessage, promptNotReadyMessage } from "../shared/agent-prompt";
@@ -263,7 +263,20 @@ interface Live {
 	 * are ever signalled.
 	 */
 	leftovers: number[] | null;
+	/**
+	 * For a session that went on as a shell after its agent ended: the agent's
+	 * process and what it left running, which closing the session still
+	 * signals. Null otherwise.
+	 */
+	former: { pid: number; leftovers: number[] } | null;
 	ended: Promise<void>;
+	/** What a new program in this session starts with: the environment before an arena attempt's own changes. */
+	environment: Record<string, string | undefined>;
+	/** The size the pane last asked for, for a shell that starts in place of an agent that ended. */
+	cols: number;
+	rows: number;
+	/** What the session was launched as: the agent's name in Settings, the workflow's, or the attempt's label. */
+	launchName: string;
 	/** Reads OSC 7501 reports, OSC 133 prompts, and full resets out of the output. */
 	scanner: StatusScanner;
 	records: StatusRecords;
@@ -382,9 +395,14 @@ const running = (child: PseudoTerminal) => child.ended() === null;
  * the ones left right then. Null where they cannot be listed.
  */
 function members(live: Live): number[] | null {
-	const now = sessionMembers(live.process.pid);
-	if (now === null || live.leftovers === null) return now;
-	return now.filter(pid => live.leftovers!.includes(pid));
+	return membersOf({ pid: live.process.pid, leftovers: live.leftovers });
+}
+
+/** The members of one process's session that may be signalled now, given what was left when it ended (null while it runs). */
+function membersOf(leader: { pid: number; leftovers: number[] | null }): number[] | null {
+	const now = sessionMembers(leader.pid);
+	if (now === null || leader.leftovers === null) return now;
+	return now.filter(pid => leader.leftovers!.includes(pid));
 }
 
 /**
@@ -393,6 +411,8 @@ function members(live: Live): number[] | null {
  * is that group surely its own.
  */
 function signalSession(live: Live, signal: NodeJS.Signals): void {
+	// What an agent that ended left running goes on being signalled, though the session is a shell now.
+	if (live.former !== null) signalEach(membersOf(live.former) ?? [], signal);
 	const now = members(live);
 	if (now !== null) signalEach(now, signal);
 	else if (running(live.process)) signalGroup(live.process.pid, signal);
@@ -462,6 +482,17 @@ export function sessionEnvironment(environment: Record<string, string | undefine
  * - When the shell ends by itself, what it left running is hung up on, as a
  *   terminal does when it closes. The session stays, with how it ended,
  *   until it is closed.
+ * - When an agent's process ends by itself (not a Timber setup command, and
+ *   not closed from the app), the same session goes on as the person's shell
+ *   in the worktree's folder, so the chip stays usable. It keeps its id and
+ *   name, and what the agent printed stays above, followed by a note. It
+ *   becomes a terminal session: it counts as one, and a restart opens it as a
+ *   terminal. What the agent ended with stays on the session as `endedAgent`.
+ *   What the agent left running is still hung up on and still ended when the
+ *   session is closed. The shell starts in the same step as the swap, so no
+ *   typed text, and no Enter of a prompt that was waiting, reaches the wrong
+ *   program. A shell that exits later stays exited, with no second shell. If
+ *   the shell cannot start, the session ends as an agent's did before.
  * - On Windows the pseudo terminal is the ConPTY that node-pty ships, or
  *   Windows' own through `Bun.Terminal` where node-pty cannot be loaded (see
  *   ./pseudo-terminal.ts). The shell is PowerShell (see `pickWindowsShell`).
@@ -555,8 +586,10 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		if (bytes === null) return { outcome: "not-ready", message: PASTE_NOT_READY };
 		live.process.write(bytes.paste);
 		if (enter) {
+			// The Enter belongs to the program that got the paste, not to a shell that took the session over.
+			const target = live.process;
 			setTimeout(() => {
-				const still = sessions.get(live.session.id) === live && live.session.state.kind === "running";
+				const still = sessions.get(live.session.id) === live && live.session.state.kind === "running" && live.process === target;
 				if (still) live.process.write(bytes.enter);
 				onEntered?.(still);
 			}, promptEnterMilliseconds);
@@ -781,6 +814,98 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		return { ok: true, agent };
 	}
 
+	/** A program started in a pseudo terminal, and the promise of its end having been taken care of. */
+	interface StartedChild {
+		child: PseudoTerminal;
+		ended: Promise<void>;
+	}
+
+	/**
+	 * Start a program for a session and watch it end. `owner` gives the
+	 * session's record, which is not there yet while the first program of a
+	 * session starts. Output of a program that is no longer the session's
+	 * current one is ignored, so an agent that ended never mixes with the
+	 * shell that took its place. Throws when it cannot start.
+	 */
+	function startChild(options: { argv: string[]; cwd: string; env: Record<string, string | undefined>; cols: number; rows: number }, owner: () => Live | undefined): StartedChild {
+		if (startTerminal === null) throw new Error(TERMINAL_UNSUPPORTED_REASON);
+		const child: PseudoTerminal = startTerminal({
+			...options,
+			data: text => {
+				const live = owner();
+				if (!live || live.process !== child) return;
+				take(live, text);
+				if (live.pending.length >= PART_LIMIT) flush(live);
+				else live.flushTimer ??= setTimeout(() => flush(live), flushMilliseconds);
+			},
+		});
+		const ended = child.exited.then(async () => {
+			// Output can still be on its way after the shell ended. A program left in the background can hold the terminal open, so do not wait for long.
+			await Promise.race([child.drained, wait(DRAIN_MILLISECONDS)]);
+			child.close();
+			const live = owner();
+			if (!live || live.process !== child) return;
+			// What the shell left running is hung up on, as when a terminal closes. A program started with nohup goes on; closing the session ends it too.
+			// On Windows closing the pseudo console above already hung up on what was attached to it.
+			hangUp(live);
+			live.leftovers = sessionMembers(child.pid) ?? [];
+			// The exit is told in one change with the status: working and blocked end with the process.
+			live.records.exited();
+			live.statusChanged = false;
+			flush(live);
+			// A session closed meanwhile is already gone and stays gone.
+			if (sessions.get(live.session.id) !== live) return;
+			const end = child.ended() ?? { exitCode: null, signal: null };
+			const unsent = live.prompt;
+			const notSent = unsent ? { prompt: { state: "not-sent" as const, message: promptEndedMessage(live.session.name, unsent.review ? "review" : "prompt"), ...(unsent.review ? { what: "review" as const } : {}) } } : {};
+			dropChop(live);
+			noteEnded(live);
+			// An agent goes on as the person's shell. Everything else, a shell and a Timber command, stays ended.
+			if (live.session.kind === "agent" && continueAsShell(live, child, end, notSent)) return;
+			live.pasteMode.reset();
+			changed(live, { ...live.session, state: { kind: "exited", ...end }, ...recordsForWindow(live.records), ...notSent });
+		});
+		return { child, ended };
+	}
+
+	/**
+	 * Put the person's shell in place of an agent that ended by itself, in
+	 * the same session. Nothing waits between the start and the swap. Returns
+	 * false, and changes nothing, when the shell cannot start.
+	 */
+	function continueAsShell(live: Live, old: PseudoTerminal, end: { exitCode: number | null; signal: string | null }, notSent: { prompt?: PromptDelivery }): boolean {
+		const shell = shellOf();
+		let started: StartedChild;
+		try {
+			started = startChild({ argv: [shell], cwd: live.session.path, env: live.environment, cols: live.cols, rows: live.rows }, () => live);
+		} catch {
+			return false;
+		}
+		const endedAgent: EndedAgent = {
+			name: live.launchName, agent: live.agent, program: live.program, resumable: live.resumable, conversation: live.conversation,
+			command: live.session.command, exitCode: end.exitCode, signal: end.signal,
+		};
+		// What the agent left running is still signalled when the session closes. On Windows there is nothing to follow.
+		live.former = live.leftovers !== null && live.leftovers.length > 0 ? { pid: old.pid, leftovers: live.leftovers } : null;
+		live.process = started.child;
+		live.ended = started.ended;
+		live.leftovers = null;
+		live.scanner = createStatusScanner();
+		live.records = createStatusRecords();
+		live.pasteMode.reset();
+		live.probedAt = Number.NEGATIVE_INFINITY;
+		live.statusChanged = false;
+		live.agent = null;
+		live.resumable = null;
+		live.program = null;
+		live.conversation = null;
+		// The note goes after what the agent printed and is kept with it, so drawing the session again shows it too.
+		live.pending += agentEndedNote(live.launchName, endedAgent, live.session.path);
+		flush(live);
+		changed(live, { ...live.session, kind: "terminal", shell, command: describeCommandLine([shell]), state: { kind: "running" }, status: null, children: [], endedAgent, ...notSent });
+		return true;
+	}
+
 	async function open(request: OpenTerminalRequest, chop?: ChopInput): Promise<OpenTerminalResult> {
 		if (startTerminal === null) return { outcome: "unsupported", message: TERMINAL_UNSUPPORTED_REASON };
 		// A command chop runs in the person's shell only.
@@ -888,22 +1013,11 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 
 		const shell = start.argv[0]!;
 		const { cols, rows } = clampTerminalSize(request.cols, request.rows);
+		const baseEnvironment = sessionEnvironment(environment, handoff);
 		let live: Live | undefined;
-		let child: PseudoTerminal;
+		let started: StartedChild;
 		try {
-			child = startTerminal({
-				argv: start.argv,
-				cwd: request.worktree,
-				env: withChanges(sessionEnvironment(environment, handoff), start.environment, start.unset),
-				cols,
-				rows,
-				data: text => {
-					if (!live) return;
-					take(live, text);
-					if (live.pending.length >= PART_LIMIT) flush(live);
-					else live.flushTimer ??= setTimeout(() => flush(live!), flushMilliseconds);
-				},
-			});
+			started = startChild({ argv: start.argv, cwd: request.worktree, env: withChanges(baseEnvironment, start.environment, start.unset), cols, rows }, () => live);
 		} catch (error) {
 			return { outcome: "failed", command: start.command, message: `Could not start ${shell} in ${request.worktree}: ${messageOf(error)}` };
 		}
@@ -922,30 +1036,9 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			children: [],
 			...(chop?.kind === "prompt" ? { prompt: { state: "pending" as const, ...(chop.review ? { what: "review" as const } : {}) } } : {}),
 		};
-		const ended = child.exited.then(async () => {
-			// Output can still be on its way after the shell ended. A program left in the background can hold the terminal open, so do not wait for long.
-			await Promise.race([child.drained, wait(DRAIN_MILLISECONDS)]);
-			child.close();
-			if (!live) return;
-			// What the shell left running is hung up on, as when a terminal closes. A program started with nohup goes on; closing the session ends it too.
-			// On Windows closing the pseudo console above already hung up on what was attached to it.
-			hangUp(live);
-			live.leftovers = sessionMembers(child.pid) ?? [];
-			// The exit is told in one change with the status: working and blocked end with the process.
-			live.records.exited();
-			live.statusChanged = false;
-			flush(live);
-			// A session closed meanwhile is already gone and stays gone.
-			if (sessions.get(session.id) !== live) return;
-			const end = child.ended() ?? { exitCode: null, signal: null };
-			const unsent = live.prompt;
-			dropChop(live);
-			noteEnded(live);
-			live.pasteMode.reset();
-			changed(live, { ...live.session, state: { kind: "exited", ...end }, ...recordsForWindow(live.records), ...(unsent ? { prompt: { state: "not-sent" as const, message: promptEndedMessage(live.session.name, unsent.review ? "review" : "prompt"), ...(unsent.review ? { what: "review" as const } : {}) } } : {}) });
-		});
 		live = {
-			session, process: child, scrollback: createScrollback(), pending: "", flushTimer: null, undrawn: [], undrawnSize: 0, held: false, leftovers: null, ended,
+			session, process: started.child, scrollback: createScrollback(), pending: "", flushTimer: null, undrawn: [], undrawnSize: 0, held: false, leftovers: null, former: null, ended: started.ended,
+			environment: baseEnvironment, cols, rows, launchName: start.base,
 			scanner: createStatusScanner(), records: createStatusRecords(), pasteMode: createPasteModeScanner(), statusChanged: false, probedAt: Number.NEGATIVE_INFINITY, chop: null, prompt: null,
 			agent: agent?.name ?? null, resumable: start.resumable, program: start.program, conversation: start.conversation, startedAt: now(), renamed: savedName !== null, restored,
 		};
@@ -978,7 +1071,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 	}
 
 	/** Whether the shell ended and nothing is left in its session that may be signalled. */
-	const settled = (live: Live) => !running(live.process) && (members(live)?.length ?? 0) === 0;
+	const settled = (live: Live) => !running(live.process) && (members(live)?.length ?? 0) === 0 && (live.former === null || (membersOf(live.former)?.length ?? 0) === 0);
 
 	/** When the last Codex session of each worktree stopped running, by worktree id (see `endedCodex`). */
 	const codexEnded = new Map<string, number>();
@@ -1058,6 +1151,8 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			const live = sessions.get(id);
 			if (!live || live.session.state.kind !== "running") return;
 			const size = clampTerminalSize(cols, rows);
+			live.cols = size.cols;
+			live.rows = size.rows;
 			live.process.resize(size.cols, size.rows);
 		},
 		close,
