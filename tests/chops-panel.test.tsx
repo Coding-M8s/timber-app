@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import {
-	CHOPS_PANEL_SHORTCUT, CHOPS_PANEL_SHORTCUT_MAC, chopMatches, chopSourceShort, chopsButtonHint, chopsPanelModel, chopsTabAfterKey, describeChopsPanelEmpty,
+	CHOPS_DEFINITION, CHOPS_PANEL_SHORTCUT, CHOPS_PANEL_SHORTCUT_MAC, chopMatches, chopSourceShort, chopsButtonHint, chopsPanelModel, chopsTabAfterKey, describeChopsPanelEmpty,
 	describeChopsTabEmpty, isChopsPanelShortcut, takesChopsPanelKey,
 } from "../src/mainview/chops-panel-format";
 import { BEING_REMOVED_REASON } from "../src/mainview/done-format";
@@ -159,6 +159,18 @@ describe("the chops panel as drawn", () => {
 		expect(markup).toContain('aria-label="Hide the chops panel"');
 	});
 
+	test("the switch's Chops button, the panel's title, says what a chop is in its tooltip, in every view, and Files and Changes have none", async () => {
+		const { store } = await startedStore();
+		const switchButtons = (markup: string) => [...markup.matchAll(/<button id="side-panel-view-([a-z]+)" type="button"( title="[^"]*")? class="side-panel-view"/g)].map(match => [match[1], match[2] ?? null]);
+		const expected = [["chops", ` title="${CHOPS_DEFINITION}"`], ["files", null], ["changes", null]];
+		store.toggleChopsPanel();
+		expect(switchButtons(render(store))).toEqual(expected);
+		store.toggleSidePanel("files");
+		expect(switchButtons(render(store))).toEqual(expected);
+		store.toggleSidePanel("changes");
+		expect(switchButtons(render(store))).toEqual(expected);
+	});
+
 	test("with the sidebar on the right, the panel stays on the workspace's right, before the sidebar", async () => {
 		const { store } = await startedStore();
 		await store.savePreferences({ sidebarSide: "right" });
@@ -196,7 +208,7 @@ describe("the chops panel as drawn", () => {
 	test("says what it is waiting for when there is nothing to list", () => {
 		expect(describeChopsPanelEmpty(false, null)).toBe("Select a worktree to see the chops of its repository.");
 		expect(describeChopsPanelEmpty(true, null)).toBe("Reading the chops");
-		expect(describeChopsPanelEmpty(true, 0)).toContain("No chops yet");
+		expect(describeChopsPanelEmpty(true, 0)).toStartWith(`${CHOPS_DEFINITION} None yet.`);
 		expect(describeChopsPanelEmpty(true, 2)).toBeNull();
 	});
 });

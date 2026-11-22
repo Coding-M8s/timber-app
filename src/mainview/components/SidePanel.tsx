@@ -1,6 +1,6 @@
 import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, useEffect, useRef, useState } from "react";
 import { MAX_CHOPS_WIDTH, MIN_CHOPS_WIDTH, type SidePanelView } from "../../shared/layout";
-import { CHOPS_BUTTON_ID, CHOPS_PANEL_ID, CHOPS_WIDTH_LABEL } from "../chops-panel-format";
+import { CHOPS_BUTTON_ID, CHOPS_DEFINITION, CHOPS_PANEL_ID, CHOPS_WIDTH_LABEL } from "../chops-panel-format";
 import { FILES_BUTTON_ID, SIDE_PANEL_SWITCH_LABEL, SIDE_PANEL_VIEW_LABELS, sidePanelViewButtonId } from "../files-panel-format";
 import { CHANGES_BUTTON_ID, describeChangesViewNotes } from "../changes-panel-format";
 import { chopsWidthAfterDrag, chopsWidthAfterKey } from "../shell";
@@ -210,6 +210,7 @@ export function SidePanelTitle({ view, titleId, title }: { view: SidePanelView; 
 						key={option}
 						id={sidePanelViewButtonId(option)}
 						type="button"
+						title={option === "chops" ? CHOPS_DEFINITION : undefined}
 						className="side-panel-view"
 						aria-pressed={option === view}
 						onClick={() => switchSidePanel(store, option)}

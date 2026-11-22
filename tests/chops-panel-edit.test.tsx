@@ -121,7 +121,7 @@ describe("making, changing, and deleting chops from the panel", () => {
 	test("the words: delete, the empty states, the scope, and a file chop's view", () => {
 		expect(describeChopDelete({ name: "Lint", repository: null }, "timber")).toBe("Delete Lint? It goes from your chops for every repository, here and in Settings.");
 		expect(describeChopDelete({ name: "Lint", repository: REPO }, "timber")).toBe("Delete Lint? It goes from your chops for timber, here and in Settings.");
-		expect(describeChopsPanelEmpty(true, 0)).toBe("No chops yet. Make one with New chop, or share some with everyone in .timber/chops.json.");
+		expect(describeChopsPanelEmpty(true, 0)).toBe("Chops are saved commands and agent prompts to run in a worktree. None yet. Make one with New chop, or share some with everyone in .timber/chops.json.");
 		expect(describeChopsTabEmpty("prompt", "")).toBe("No prompts yet. Make one with New chop.");
 		expect(panelChopScopeOptions({ path: REPO, name: "timber" })).toEqual([{ value: REPO, label: "This repository (timber)" }, { value: "", label: "Every repository" }]);
 		expect(describeFileChopView("/r/.timber/chops.json")).toContain("which the app only reads");
@@ -235,7 +235,7 @@ describe("saving from the panel over the mock engine", () => {
 		engine.setChopsFile(REPO, null);
 		await store.readChops(REPO);
 		panel = renderToStaticMarkup(<App store={store} />).split('id="chops-panel"')[1]!;
-		expect(panel).toContain("No chops yet. Make one with New chop");
+		expect(panel).toContain("Chops are saved commands and agent prompts to run in a worktree. None yet. Make one with New chop");
 		expect(panel).toContain('class="button quiet chops-panel-empty-new">New chop</button>');
 	});
 
