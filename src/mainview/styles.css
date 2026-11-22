@@ -4546,6 +4546,8 @@ pre:focus-visible {
 
 /* The title line wraps where the diff is narrow, so its buttons never spill over the side panel. */
 .diff-title {
+	/* Never shorter than its lines: a long diff below would squeeze it back to one. */
+	flex: none;
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
