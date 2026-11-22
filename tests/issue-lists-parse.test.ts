@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { type IssueListResult, issueListArguments, readIssueListRecord } from "../src/shared/issue-lists";
+import type { SuggestedIssue } from "../src/shared/issue-search";
+import { type IssueListResult, ISSUE_LISTS, intersectMySprint, isAssignedOptionUnknown, issueListArguments, listOf, readIssueListRecord, togglesOf } from "../src/shared/issue-lists";
 
 /**
  * Recorded on Linux from `timber __app-issues <list> --tracker <tracker>` of
@@ -22,6 +23,7 @@ import { type IssueListResult, issueListArguments, readIssueListRecord } from ".
  * - `linear-sprint-none`: Linear, `[linear].team` naming a real team with no active cycle (exit code 0).
  * - `offline`: GitHub `open` with HTTPS_PROXY pointing at a closed port (exit code 1).
  * - `unknown-command-0.1.3.stderr`: the standard error of Timber 0.1.3, which has no `__app-issues` (exit code 1, nothing on stdout).
+ * - `unknown-option-0.1.4.stderr`: the standard error of Timber 0.1.4 for `sprint --assigned`, an option it does not have (exit code 1, nothing on stdout).
  */
 const fixture = (name: string) => readFileSync(join(import.meta.dir, "fixtures", "timber-app-issue-lists", name), "utf8");
 
@@ -41,6 +43,100 @@ describe("issueListArguments", () => {
 		expect(issueListArguments("sprint", "jira")).toEqual(["__app-issues", "sprint", "--tracker", "jira"]);
 		expect(issueListArguments("assigned", "github")).toEqual(["__app-issues", "assigned", "--tracker", "github", "--limit", "50"]);
 		expect(issueListArguments("open", "linear")).toEqual(["__app-issues", "open", "--tracker", "linear", "--limit", "50"]);
+	});
+});
+
+describe("the toggles and the lists", () => {
+	test("each combination of Current sprint and Assigned to me is one list, and back", () => {
+		expect(listOf({ sprint: false, assigned: false })).toBe("open");
+		expect(listOf({ sprint: true, assigned: false })).toBe("sprint");
+		expect(listOf({ sprint: false, assigned: true })).toBe("assigned");
+		expect(listOf({ sprint: true, assigned: true })).toBe("my-sprint");
+		for (const list of ISSUE_LISTS) expect(listOf(togglesOf(list))).toBe(list);
+	});
+
+	test("my issues in the sprint are the sprint with --assigned, listed whole", () => {
+		expect(issueListArguments("my-sprint", "jira")).toEqual(["__app-issues", "sprint", "--tracker", "jira", "--assigned"]);
+	});
+});
+
+/** The sprint fixture as `sprint --assigned` would print it: only my issues, each marked as mine. */
+const mySprint = (mine: boolean | "missing" = true) => altered(record => {
+	record.issues = record.issues.slice(0, 2);
+	for (const issue of record.issues) if (mine !== "missing") issue.assignedToMe = mine;
+}, "sprint-iteration.json");
+
+describe("readIssueListRecord for my issues in the sprint", () => {
+	test("reads a sprint record whose issues are all mine, with its sprint", () => {
+		const result = readIssueListRecord(mySprint(), "", 0, "my-sprint", "github");
+		expect(result).toMatchObject({ ok: true, outcome: "found", sprint: { name: "Iteration 1", source: "github-iteration" } });
+		if (!result.ok || result.outcome !== "found") throw new Error("not found");
+		expect(result.issues.map(issue => issue.key)).toEqual(["103", "147"]);
+		expect(result.partial).toBeUndefined();
+	});
+
+	test("refuses a record with an issue not marked as mine, since nothing else shows the filter was applied", () => {
+		expect(message(readIssueListRecord(mySprint(false), "", 0, "my-sprint", "github"))).toContain("an issue in it is not assigned to you");
+		expect(message(readIssueListRecord(mySprint("missing"), "", 0, "my-sprint", "github"))).toContain("an issue in it is not assigned to you");
+	});
+
+	test("an empty sprint, no current sprint, and a sprint that is not set up read as for sprint", () => {
+		expect(readIssueListRecord(fixture("sprint-empty-milestone.json"), "", 0, "my-sprint", "github")).toMatchObject({ ok: true, outcome: "found", issues: [] });
+		expect(readIssueListRecord(fixture("linear-sprint-none.json"), "", 0, "my-sprint", "linear")).toEqual({ ok: true, outcome: "none" });
+		expect(readIssueListRecord(fixture("sprint-not-configured.json"), "", 1, "my-sprint", "github")).toMatchObject({ ok: true, outcome: "failed", reason: "not-configured" });
+	});
+
+	test("a Timber without --assigned is told apart, and nothing else is taken for it", () => {
+		expect(isAssignedOptionUnknown("", fixture("unknown-option-0.1.4.stderr"), 1)).toBe(true);
+		expect(isAssignedOptionUnknown("", fixture("unknown-command-0.1.3.stderr"), 1)).toBe(false);
+		expect(isAssignedOptionUnknown("", "Segmentation fault\n", 1)).toBe(false);
+		expect(isAssignedOptionUnknown("", fixture("unknown-option-0.1.4.stderr"), 2)).toBe(false);
+		expect(isAssignedOptionUnknown("{}", fixture("unknown-option-0.1.4.stderr"), 1)).toBe(false);
+		// Timber without __app-issues stays unsupported, whichever list was asked for.
+		expect(readIssueListRecord("", fixture("unknown-command-0.1.3.stderr"), 1, "my-sprint", "github")).toMatchObject({ ok: false, unsupported: true });
+	});
+});
+
+describe("intersectMySprint, for a Timber without --assigned", () => {
+	const issue = (key: string, assignedToMe: boolean | null, category: "open" | "closed" = "open", repository = "timber"): SuggestedIssue => ({
+		tracker: "github", key, url: `https://github.com/example/${repository}/issues/${key}`, title: `Issue ${key}`,
+		status: { name: category === "open" ? "Open" : "Closed", category }, assignee: null, worktree: null, pullRequests: [], assignedToMe,
+	});
+	const sprint = (issues: SuggestedIssue[], truncated = false): IssueListResult => ({ ok: true, outcome: "found", issues, truncated, sprint: { name: "v0.3", source: "github-milestone" } });
+	const assigned = (issues: SuggestedIssue[]): IssueListResult => ({ ok: true, outcome: "found", issues, truncated: false, sprint: null });
+
+	test("when every issue says whose it is, keeps mine exactly, in the sprint's order, in every status, without the assigned list", () => {
+		const result = intersectMySprint(sprint([issue("3", true, "closed"), issue("2", false), issue("1", true)]), null);
+		expect(result).toEqual(sprint([issue("3", true, "closed"), issue("1", true)]));
+	});
+
+	test("otherwise keeps the sprint's issues the assigned list has, by address, and says the list may be incomplete", () => {
+		const result = intersectMySprint(
+			sprint([issue("12", null), issue("12", null, "open", "other"), issue("7", null, "closed"), issue("9", null)], true),
+			assigned([issue("9", true), issue("12", true), issue("40", true)]),
+		);
+		expect(result).toMatchObject({ ok: true, outcome: "found", truncated: true, partial: true, sprint: { name: "v0.3" } });
+		if (!result.ok || result.outcome !== "found") throw new Error("not found");
+		// Issue 12 of another repository in the project is not mine, and done issue 7 is not in the assigned list.
+		expect(result.issues.map(one => one.url)).toEqual(["https://github.com/example/timber/issues/12", "https://github.com/example/timber/issues/9"]);
+		expect(result.issues.every(one => one.assignedToMe === true)).toBe(true);
+	});
+
+	test("nothing assigned is an empty, partial list", () => {
+		expect(intersectMySprint(sprint([issue("1", null)]), { ok: true, outcome: "none" })).toMatchObject({ outcome: "found", issues: [], partial: true });
+	});
+
+	test("a sprint that is not found is the answer as it is", () => {
+		const notSetUp: IssueListResult = { ok: true, outcome: "failed", reason: "not-configured", diagnostic: "No sprint." };
+		expect(intersectMySprint(notSetUp, null)).toBe(notSetUp);
+		expect(intersectMySprint({ ok: true, outcome: "none" }, null)).toEqual({ ok: true, outcome: "none" });
+	});
+
+	test("an assigned list that was needed and not read is the failure, and its not-configured never hides the sprint", () => {
+		const offline: IssueListResult = { ok: true, outcome: "failed", reason: "offline", diagnostic: "No network." };
+		expect(intersectMySprint(sprint([issue("1", null)]), offline)).toBe(offline);
+		expect(intersectMySprint(sprint([issue("1", null)]), { ok: true, outcome: "failed", reason: "not-configured", diagnostic: "x" })).toMatchObject({ outcome: "failed", reason: "failed" });
+		expect(intersectMySprint(sprint([issue("1", null)]), { ok: false, unsupported: false, message: "crashed" })).toEqual({ ok: false, unsupported: false, message: "crashed" });
 	});
 });
 

@@ -1,6 +1,6 @@
 import type { Engine } from "../../shared/engine";
 import type { LinkedPullRequest, SuggestedIssue } from "../../shared/issue-search";
-import type { IssueList, IssueListRequest, IssueListResult, Sprint } from "../../shared/issue-lists";
+import { type IssueList, type IssueListRequest, type IssueListResult, type Sprint, intersectMySprint } from "../../shared/issue-lists";
 import type { Issue } from "../../shared/issues";
 import type { IssueLink, IssueTracker, Repository, TimberStatus } from "../../shared/model";
 
@@ -10,6 +10,13 @@ export type IssueListCapabilities = Pick<Engine, "listIssues">;
 export interface IssueListControls {
 	/** Decide what every list answers from now on, or only `list` when it is named; null for the samples. */
 	setIssueList(result: IssueListResult | null, list?: IssueList): void;
+	/**
+	 * Act out a Timber without `sprint --assigned` (false), such as 0.1.4,
+	 * or one with it (true, the default). Without it, no issue says whose it
+	 * is, and my issues in the sprint are joined from the sprint and the
+	 * assigned list, as the main process does.
+	 */
+	setAssignedOption(supported: boolean): void;
 	/** How long each list takes to answer from now on, in milliseconds. */
 	setIssueListDelay(milliseconds: number): void;
 	/** Every list read that reached Timber, in order. */
@@ -138,9 +145,10 @@ const NOT_CONFIGURED: IssueListResult = { ok: true, outcome: "failed", reason: "
 /** What Timber would answer for one list of one sample tracker, before worktrees are marked. */
 export function sampleIssueList(list: IssueList, tracker: IssueTracker): IssueListResult {
 	const sprint = sampleSprints[tracker];
-	if (list === "sprint") {
+	if (list === "sprint" || list === "my-sprint") {
 		if (sprint === null) return NOT_CONFIGURED;
-		return { ok: true, outcome: "found", issues: sprint.issues.map(listed), truncated: false, sprint: sprint.sprint };
+		const issues = list === "my-sprint" ? sprint.issues.filter(issue => issue.assignee === sampleLogin[tracker]) : sprint.issues;
+		return { ok: true, outcome: "found", issues: issues.map(listed), truncated: false, sprint: sprint.sprint };
 	}
 	const all = [...sampleOpen[tracker], ...(sprint?.issues ?? [])].filter(issue => issue.status.category !== "closed");
 	if (list === "open" && tracker === "linear") return NOT_CONFIGURED;
@@ -174,6 +182,13 @@ export function createMockIssueLists(listed: (path: string) => Repository | unde
 	const chosen = new Map<IssueList | "every", IssueListResult>();
 	const reads: IssueListRequest[] = [];
 	let delay = 0;
+	let assignedOption = true;
+	const answerOf = (list: IssueList, tracker: IssueTracker): IssueListResult => {
+		const answer = structuredClone(chosen.get(list) ?? chosen.get("every") ?? sampleIssueList(list, tracker));
+		// An older Timber's records have no assignedToMe.
+		if (!assignedOption && answer.ok && answer.outcome === "found") for (const issue of answer.issues) issue.assignedToMe = null;
+		return answer;
+	};
 	return {
 		async listIssues(request) {
 			const { repository, list, tracker } = request;
@@ -184,7 +199,9 @@ export function createMockIssueLists(listed: (path: string) => Repository | unde
 			if (status.state === "not-found") return { ok: false, unsupported: false, message: "Timber was not found on PATH." };
 			if (status.state === "too-old") return { ok: false, unsupported: false, message: `Timber ${status.found} at ${status.path} is older than the required ${status.required}.` };
 			reads.push({ repository, list, tracker });
-			const answer = structuredClone(chosen.get(list) ?? chosen.get("every") ?? sampleIssueList(list, tracker));
+			const answer = list === "my-sprint" && !assignedOption && !chosen.has("my-sprint")
+				? intersectMySprint(answerOf("sprint", tracker), answerOf("assigned", tracker))
+				: answerOf(list, tracker);
 			if (!answer.ok || answer.outcome !== "found") return answer;
 			for (const issue of answer.issues) {
 				const tree = found.worktrees.find(candidate => candidate.issue?.kind === "linked" && candidate.issue.tracker === issue.tracker && candidate.issue.key === issue.key);
@@ -196,6 +213,9 @@ export function createMockIssueLists(listed: (path: string) => Repository | unde
 			const at = list ?? "every";
 			if (result === null) chosen.delete(at);
 			else chosen.set(at, structuredClone(result));
+		},
+		setAssignedOption(supported) {
+			assignedOption = supported;
 		},
 		setIssueListDelay(milliseconds) {
 			delay = Math.max(0, milliseconds);

@@ -6579,15 +6579,18 @@ pre:focus-visible {
 	gap: 8px 16px;
 }
 
-.board-lists {
+.board-toggles {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 2px;
+	gap: 4px;
 }
 
-.board-list {
+.board-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
 	height: 26px;
-	padding: 0 10px;
+	padding: 0 10px 0 8px;
 	border: 0;
 	border-radius: 6px;
 	background: transparent;
@@ -6595,14 +6598,23 @@ pre:focus-visible {
 	font-size: 12.5px;
 }
 
-.board-list:hover {
+.board-toggle:hover:not(:disabled) {
 	background: var(--fill-hover);
 }
 
-.board-list.selected {
+.board-toggle.on {
 	background: var(--fill-selected);
 	color: var(--text);
 	font-weight: 500;
+}
+
+.board-toggle:disabled {
+	color: var(--text-3);
+	cursor: default;
+}
+
+.board-toggle-mark {
+	flex: none;
 }
 
 .board-tracker {

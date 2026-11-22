@@ -397,11 +397,14 @@ export interface Engine {
 	searchIssues(request: IssueSearchRequest): Promise<IssueSearchResult>;
 	/**
 	 * One list of a tracker's issues for the issues board: the current
-	 * sprint, the issues assigned to the signed-in person, or the open issues,
-	 * read by `timber __app-issues <list>` with Timber's own tracker login
-	 * (./issue-lists.ts). Each issue says which worktree is already linked to
-	 * it. The answer is found (possibly empty, and for a sprint with the
-	 * sprint's name), none (no current sprint), failed with a reason as for a
+	 * sprint, the issues assigned to the signed-in person, the open issues,
+	 * or the person's issues in the current sprint (`my-sprint`), read by
+	 * `timber __app-issues <list>` with Timber's own tracker login
+	 * (./issue-lists.ts). `my-sprint` is `sprint --assigned`; from a Timber
+	 * without that option it is joined from `sprint` and `assigned`, and then
+	 * `partial` when it may miss some. Each issue says which worktree is
+	 * already linked to it. The answer is found (possibly empty, and for a
+	 * sprint with the sprint's name), none (no current sprint), failed with a reason as for a
 	 * search (`not-configured` when the list is not set up), or a failure with
 	 * a message, marked unsupported when the Timber found has no
 	 * `__app-issues`. Titles are text from the tracker: show them as text

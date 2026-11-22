@@ -1,4 +1,4 @@
-import { ISSUE_LISTS, type IssueList, type IssueListResult } from "../../shared/issue-lists";
+import { ISSUE_LISTS, type IssueList, type IssueListResult, isSprintList, listOf, togglesOf } from "../../shared/issue-lists";
 import type { IssueTrackers } from "../../shared/issue-trackers";
 import type { IssueTracker } from "../../shared/model";
 import { boardTracker, shownList } from "../issue-board-format";
@@ -40,12 +40,43 @@ export const boardKey = (tracker: IssueTracker, list: IssueList) => `${tracker} 
 
 const isGood = (read: BoardRead): read is GoodRead => read.result.ok && (read.result.outcome === "found" || read.result.outcome === "none");
 
-/** The lists of a tracker that Timber said are not set up, in the latest answer of each. */
+const notConfigured = (read: BoardRead | undefined) => read !== undefined && read.result.ok && read.result.outcome === "failed" && read.result.reason === "not-configured";
+
+/**
+ * The lists of a tracker that Timber said are not set up. `sprint` and
+ * `my-sprint` need the same setting, so they are one family: both are not
+ * set up when the newer answer of the two says so.
+ */
 export function hiddenLists(board: IssueBoard, tracker: IssueTracker): IssueList[] {
-	return ISSUE_LISTS.filter(list => {
-		const result = board.latest[boardKey(tracker, list)]?.result;
-		return result !== undefined && result.ok && result.outcome === "failed" && result.reason === "not-configured";
-	});
+	const sprint = board.latest[boardKey(tracker, "sprint")];
+	const mine = board.latest[boardKey(tracker, "my-sprint")];
+	const newer = sprint === undefined ? mine : mine === undefined || sprint.at >= mine.at ? sprint : mine;
+	const sprintHidden = notConfigured(newer);
+	return ISSUE_LISTS.filter(list => isSprintList(list) ? sprintHidden : notConfigured(board.latest[boardKey(tracker, list)]));
+}
+
+/** Timber's words on what sets up a list that is not set up: for the sprint, those of the newer answer of the two sprint lists. */
+export function hiddenDiagnostic(board: IssueBoard, tracker: IssueTracker, list: IssueList): string {
+	const reads = (isSprintList(list) ? (["sprint", "my-sprint"] as const) : [list]).map(one => board.latest[boardKey(tracker, one)]).filter(read => read !== undefined && notConfigured(read));
+	const newest = reads.sort((one, other) => other!.at - one!.at)[0]?.result;
+	return newest?.ok && newest.outcome === "failed" ? newest.diagnostic : "";
+}
+
+/** One toggle as the board shows it: on or off, and, when it cannot be flipped, the list that is not set up in the way. */
+export interface BoardToggle {
+	on: boolean;
+	/** The list flipping it would show, when that list is not set up. Null when it can be flipped. */
+	blockedBy: IssueList | null;
+}
+
+/** The board's two toggles over the list shown, or over the remembered one when no list is set up. */
+export function boardToggles(list: IssueList, hidden: readonly IssueList[]): { sprint: BoardToggle; assigned: BoardToggle } {
+	const toggles = togglesOf(list);
+	const toggle = (flipped: IssueList, on: boolean): BoardToggle => ({ on, blockedBy: hidden.includes(flipped) ? flipped : null });
+	return {
+		sprint: toggle(listOf({ ...toggles, sprint: !toggles.sprint }), toggles.sprint),
+		assigned: toggle(listOf({ ...toggles, assigned: !toggles.assigned }), toggles.assigned),
+	};
 }
 
 /** What the board shows now. */
@@ -101,12 +132,14 @@ export function withReading(board: IssueBoard, key: string): IssueBoard {
 /**
  * The lists a Refresh, or opening the board, reads: the one shown, and each
  * one hidden as not set up, so a list set up since shows again. Asking
- * Timber about a list that is still not set up contacts nothing.
+ * Timber about a list that is still not set up contacts nothing. A sprint
+ * that is not set up is asked about once, as `sprint`, never as
+ * `my-sprint` too, which a Timber without `--assigned` reads in two runs.
  */
 export function listsToRead(board: IssueBoard, remembered: IssueList | undefined): IssueList[] {
 	const view = boardView(board, remembered);
 	if (view.tracker === null) return [];
 	const lists = view.list === null ? [] : [view.list];
-	for (const list of view.hidden) if (!lists.includes(list)) lists.push(list);
+	for (const list of view.hidden) if (list !== "my-sprint" && !lists.includes(list)) lists.push(list);
 	return lists;
 }
