@@ -104,6 +104,39 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the file 
 		expect(await page.evaluate<boolean>(`document.querySelector(${JSON.stringify(ROW("node_modules"))}) !== null`)).toBe(true);
 	}, 30_000);
 
+	test("each row's icon is drawn from the app's own files, only the ones that show load, and a light theme takes its light drawings", async () => {
+		const ICON = (path: string) => `document.querySelector(${JSON.stringify(`${ROW(path)} .files-tree-icon`)})`;
+		const LOADED = `[...document.querySelectorAll(".files-tree-icon")].every(icon => icon.complete && icon.naturalWidth > 0)`;
+		// The page's own resource list is full of the dev server's modules by now, so the icons are counted as they load.
+		await page.evaluate(`(() => {
+			window.iconRequests = [];
+			new PerformanceObserver(list => {
+				for (const entry of list.getEntries()) if (entry.name.includes("/material-icons/")) window.iconRequests.push(entry.name);
+			}).observe({ type: "resource" });
+		})()`);
+		await page.evaluate(`window.timberTestEngine.setWorktreeFile(${STORE}.getState().repositories[0].worktrees[0].path, "bun.lock", "{}\\n")`);
+		await page.click(BUTTON);
+		await page.until(`${ICON("bun.lock")} !== null`, "the tree was read");
+		await page.until(LOADED, "every icon that shows was drawn");
+		expect(await page.evaluate<string>(`${ICON("docs")}.getAttribute("src")`)).toBe("/assets/material-icons/folder-docs.svg");
+		await page.click(ROW("docs"));
+		await page.until(`${ICON("docs")}.getAttribute("src") === "/assets/material-icons/folder-docs-open.svg"`, "the folder's icon opened with it");
+		await page.until(LOADED, "the opened folder's icons were drawn");
+		await page.until(`window.iconRequests.length > 3`, "the icons that show were counted");
+		const requests = await page.evaluate<string[]>("window.iconRequests");
+		// Same origin as the page, never the network, and a handful of the theme's more than a thousand icons.
+		const origin = await page.evaluate<string>("location.origin");
+		for (const request of requests) expect(request.startsWith(`${origin}/assets/material-icons/`)).toBe(true);
+		expect(requests.length).toBeGreaterThan(3);
+		expect(requests.length).toBeLessThan(20);
+		expect(await page.evaluate<string>(`${ICON("bun.lock")}.getAttribute("src")`)).toBe("/assets/material-icons/bun.svg");
+		await page.evaluate(`${STORE}.savePreferences({ theme: { mode: "fixed", theme: "timber-light" } })`);
+		await page.until(`${ICON("bun.lock")}.getAttribute("src") === "/assets/material-icons/bun_light.svg"`, "the light theme took the light drawing");
+		await page.until(LOADED, "the light drawing was drawn");
+		await page.evaluate(`${STORE}.savePreferences({ theme: { mode: "fixed", theme: "timber-dark" } })`);
+		await page.until(`${ICON("bun.lock")}.getAttribute("src") === "/assets/material-icons/bun.svg"`, "the dark theme took the dark drawing back");
+	}, 30_000);
+
 	test("the shortcut hides the files and gives the keyboard back where it was", async () => {
 		await page.evaluate(`document.querySelector(".group-header").focus()`);
 		const before = await page.evaluate<string>(ACTIVE);

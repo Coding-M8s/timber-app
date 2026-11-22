@@ -123,11 +123,13 @@ describe("the bundled fonts", () => {
 });
 
 describe("the licenses", () => {
-	test("the font license and the logo notice are in the repository and copied into every build", () => {
+	test("the font license, the logo notice, and the icons' notice are in the repository and copied into every build", () => {
 		expect(config.build.copy.licenses).toBe("licenses");
 		expect(text("licenses/geist-fonts-OFL.txt")).toContain("SIL OPEN FONT LICENSE Version 1.1");
 		expect(text("licenses/geist-fonts-OFL.txt")).toContain("Vercel");
 		expect(text("licenses/timber-logo.txt")).toContain("All rights reserved.");
+		expect(text("licenses/material-icon-theme.txt")).toContain("Copyright (c) 2025 Material Extensions");
+		expect(text("licenses/material-icon-theme.txt")).toContain(`material-icon-theme package ${JSON.parse(text("package.json")).dependencies["material-icon-theme"]} on npm`);
 		expect(existsSync(at("LICENSE"))).toBe(true);
 	});
 });

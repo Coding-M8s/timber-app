@@ -85,6 +85,23 @@ describe("the side panel's two views", () => {
 		expect(markup.match(/role="treeitem"[^>]*tabindex="0"/g)).toHaveLength(1);
 		expect(markup).toContain('aria-label="Files panel width"');
 	});
+
+	test("each file and folder row shows its icon before its name, hidden from the screen reader and never dragged on its own", async () => {
+		const { store } = await startedStore();
+		store.toggleSidePanel("files");
+		await settle();
+		store.setFolderOpen(PRIMARY.id, "docs", true);
+		await settle();
+		const markup = render(store);
+		const icon = (file: string) => `<img class="files-tree-icon" src="/assets/material-icons/${file}.svg" alt="" aria-hidden="true" width="16" height="16" loading="lazy" decoding="async" draggable="false"/>`;
+		expect(markup).toContain(`${icon("folder-docs-open")}<span class="files-tree-name">docs</span>`);
+		expect(markup).toContain(`${icon("readme")}<span class="files-tree-name">README.md</span>`);
+		expect(markup).toContain(`${icon("markdown")}<span class="files-tree-name">plan.md</span>`);
+		// Every entry row has exactly one icon.
+		const rows = markup.match(/<li[^>]*role="treeitem"(?![^>]*aria-disabled)[^>]*>.*?<\/li>/g) ?? [];
+		expect(rows.length).toBeGreaterThan(2);
+		for (const row of rows) expect(row.match(/class="files-tree-icon"/g)).toHaveLength(1);
+	});
 });
 
 describe("the file explorer's folders", () => {

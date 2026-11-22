@@ -1,10 +1,12 @@
-import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { FILE_PATHS_TYPE, worktreeFilePath } from "../terminal-drop";
 import { CHOPS_PANEL_ID } from "../chops-panel-format";
+import { fileIconUrl, iconFor } from "../file-icons";
 import { type TreeRow, keptFocus, treeKeyAction, treeRows } from "../file-tree";
 import { FILES_CLOSE_LABEL, FILES_IGNORED_LABEL, FILES_PANEL_TITLE, describeFilesPanelEmpty, takesFilesPanelKey } from "../files-panel-format";
 import { worktreeLabel } from "../format";
 import { useAppState, useStore } from "../store/react";
+import { currentAppearance, onAppearanceChange } from "../theme-apply";
 import { selectedWorktree } from "../store/state";
 import type { AppStore } from "../store/store";
 import { SidePanelTitle, hideSidePanel, toggleSidePanel, useSidePanelFocus } from "./SidePanel";
@@ -23,6 +25,15 @@ function Chevron({ open }: { open: boolean }) {
 }
 
 /**
+ * A row's icon, from ../file-icons.ts. It is decorative: the name beside it
+ * says what the row is. The box keeps its size while the SVG loads, and the
+ * row, not the image, is what a drag picks up.
+ */
+function RowIcon({ icon }: { icon: string }) {
+	return <img className="files-tree-icon" src={fileIconUrl(icon)} alt="" aria-hidden="true" width={16} height={16} loading="lazy" decoding="async" draggable={false} />;
+}
+
+/**
  * The selected worktree's files, in the side panel: a tree of its folders
  * that opens a file in the File tab. Folders are read as they open, and read
  * again when what is in them changes. It works by keyboard as a WAI-ARIA
@@ -35,6 +46,7 @@ export function FilesPanel() {
 	const treeRef = useRef<HTMLUListElement>(null);
 	const [focused, setFocused] = useState<string | null>(null);
 	useSidePanelFocus("files");
+	const appearance = useSyncExternalStore(onAppearanceChange, currentAppearance, currentAppearance);
 
 	const selected = selectedWorktree(state);
 	const worktreeId = selected?.worktree.id ?? null;
@@ -139,6 +151,7 @@ export function FilesPanel() {
 							}}
 						>
 							<span className="files-tree-mark" aria-hidden="true">{row.expanded === null ? null : <Chevron open={row.expanded} />}</span>
+							<RowIcon icon={iconFor(entry.name, row.expanded === null ? "file" : "folder", row.expanded === true, appearance)} />
 							<span className="files-tree-name">{entry.name}</span>
 							{entry.kind === "link" && <span className="files-tree-tag" aria-hidden="true">link</span>}
 						</li>

@@ -614,6 +614,14 @@ pre:focus-visible {
 	color: var(--text-3);
 }
 
+/* The file's or folder's icon, a fixed box so a row never moves while it loads. */
+.files-tree-icon {
+	flex: none;
+	width: 16px;
+	height: 16px;
+	margin-inline-end: 2px;
+}
+
 .files-tree-name {
 	min-width: 0;
 	overflow: hidden;
