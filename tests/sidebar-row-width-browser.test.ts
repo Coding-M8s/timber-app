@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { MIN_SIDEBAR_WIDTH } from "../src/shared/layout";
+import { THEME_STYLE_ID, themeStyleSheet } from "../src/shared/theme";
 import { type BrowserPage, browserPath, openSidebarPage } from "./support/browser";
 
 /**
@@ -50,7 +51,7 @@ const DETAILS = `(() => {
 	const details = item.querySelector(".row-removal-details");
 	if (!details) return { shown: false, covers: ["no Details button"] };
 	const box = details.getBoundingClientRect();
-	const covers = [...item.querySelectorAll(".row *")]
+	const covers = [...item.querySelectorAll(".row *, .row-meta *")]
 		.filter(element => element.children.length === 0 || element.matches(".row-agent, .row-flag, .sync-note"))
 		.filter(element => {
 			const other = element.getBoundingClientRect();
@@ -92,8 +93,11 @@ describe.skipIf(browserPath === null || process.platform === "win32")("a crowded
 	}
 
 	test("with six agents, a shell, a merged pull request, and its upstream gone, nothing passes the sidebar's edge", async () => {
-		const shown = await page.evaluate<string>(`${ITEM}.querySelector(".row").textContent`);
-		expect(shown).toContain("#64 merged");
+		const shown = await page.evaluate<string>(`${ITEM}.textContent`);
+		expect(await page.evaluate<string>(`${ITEM}.querySelector(".row-pull-link").textContent`)).toBe("#64");
+		expect(await page.evaluate<string>(`${ITEM}.querySelector(".row-pull-state").textContent`)).toBe("merged");
+		// Merged wins over the upstream that went with it.
+		expect(await page.evaluate<string>(`${ITEM}.querySelector(".row-progress").className`)).toBe("row-progress progress-merged");
 		expect(shown).toContain("upstream gone");
 		expect(shown).toContain("+4");
 		await fitsSelectedOrNot();
@@ -108,12 +112,46 @@ describe.skipIf(browserPath === null || process.platform === "win32")("a crowded
 			await store.removeWorktree({ repository: ${JSON.stringify(REPOSITORY)}, worktree, preview: preview.id, toast: "Removed", announce: false });
 		})()`);
 		await page.until(`${ITEM}?.classList.contains("removal-failed")`, "the removal failed");
-		expect(await page.evaluate<string>(`${ITEM}.querySelector(".row").textContent`)).toContain("removal failed");
+		expect(await page.evaluate<string>(`${ITEM}.querySelector(".row-meta").textContent`)).toContain("removal failed");
 		await fitsSelectedOrNot();
 	});
 
 	test("every sample row fits, and no flag is cut short while a line of its own holds it", async () => {
 		expect(await page.evaluate<string[]>(EVERY_ROW)).toEqual([]);
+	});
+
+	test("a click on the second line selects the worktree, and one on its pull request's number opens it instead", async () => {
+		await page.evaluate(`document.querySelector(".row-item:not(.selected) .row").click(); window.opened = []; ${STORE}.openLink = async url => { window.opened.push(url); }`);
+		await page.until(`!${ITEM}.classList.contains("selected")`, "another row was selected");
+		await page.evaluate(`${ITEM}.querySelector(".row-pull-link").click()`);
+		expect(await page.evaluate<string[]>("window.opened")).toEqual(["https://github.com/example/storefront/pull/64"]);
+		expect(await page.evaluate<boolean>(`${ITEM}.classList.contains("selected")`)).toBe(false);
+		await page.evaluate(`${ITEM}.querySelector(".row-meta .row-sub").click()`);
+		await page.until(`${ITEM}.classList.contains("selected")`, "the second line selected the row");
+		expect(await page.evaluate<string[]>("window.opened")).toHaveLength(1);
+	});
+
+	test("the row's tint and its focus ring go around both lines", async () => {
+		// The test page has no saved settings, so the theme is put on it here, as the main process would.
+		const sheet = themeStyleSheet({ mode: "fixed", theme: "timber-dark" });
+		await page.evaluate(`(() => {
+			const style = document.getElementById(${JSON.stringify(THEME_STYLE_ID)}) ?? document.head.appendChild(Object.assign(document.createElement("style"), { id: ${JSON.stringify(THEME_STYLE_ID)} }));
+			style.textContent = ${JSON.stringify(sheet)};
+		})()`);
+		await page.until(`${ITEM}.classList.contains("selected")`, "the row is selected");
+		// A key first, so the browser treats the focus as the keyboard's and shows the ring.
+		await page.press("Escape");
+		await page.evaluate(`${ITEM}.querySelector(".row").focus()`);
+		const look = await page.evaluate<{ item: string; button: string; outline: string }>(`(() => {
+			const item = ${ITEM};
+			return { item: getComputedStyle(item).backgroundColor, button: getComputedStyle(item.querySelector(".row")).backgroundColor, outline: getComputedStyle(item).outlineStyle };
+		})()`);
+		expect(look.button).toBe("rgba(0, 0, 0, 0)");
+		expect(look.item).not.toBe("rgba(0, 0, 0, 0)");
+		expect(look.outline).toBe("solid");
+		// Tab goes from the row to its pull request's number, the next thing on the row.
+		await page.press("Tab");
+		await page.until(`document.activeElement === ${ITEM}.querySelector(".row-pull-link")`, "Tab reached the pull request's number");
 	});
 
 	test("Details shows without pointing at the row, and covers nothing in it", async () => {

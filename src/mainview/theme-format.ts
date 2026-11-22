@@ -53,6 +53,7 @@ export const UI_COLOR_LABELS: Record<UiColor, string> = {
 	untracked: "Untracked files",
 	error: "Errors and destructive actions",
 	errorHover: "Destructive button under the pointer",
+	merged: "Merged pull requests",
 	focus: "Focus ring",
 	diffAdded: "Added lines",
 	diffRemoved: "Removed lines",
@@ -95,7 +96,7 @@ export const TERMINAL_COLOR_LABELS: Record<TerminalColor, string> = {
 export const COLOR_GROUPS: readonly { title: string; part: "ui" | "terminal"; keys: readonly (UiColor | TerminalColor)[] }[] = [
 	{ title: "Surfaces", part: "ui", keys: ["bgApp", "bgMain", "bgPane", "bgRaised"] },
 	{ title: "Text", part: "ui", keys: ["text", "text2", "text3"] },
-	{ title: "Meaning", part: "ui", keys: ["behind", "ahead", "modified", "untracked", "error", "focus"] },
+	{ title: "Meaning", part: "ui", keys: ["behind", "ahead", "modified", "untracked", "error", "merged", "focus"] },
 	{ title: "Lines and fills", part: "ui", keys: ["line", "lineRaised", "fillField", "fillHover", "fillSelected", "fillStrong", "primaryHover", "errorHover"] },
 	{ title: "Diffs", part: "ui", keys: ["diffAdded", "diffRemoved", "diffAddedWord", "diffRemovedWord"] },
 	{ title: "Shadows", part: "ui", keys: ["shadow", "shadowStrong", "scrim"] },

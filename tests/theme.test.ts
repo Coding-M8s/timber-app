@@ -98,6 +98,7 @@ describe("the built-in themes", () => {
 			modified: "#e2c08d",
 			untracked: "#73c991",
 			error: "#f08b80",
+			merged: "#c79bf2",
 			focus: "#e8a857",
 			diffAdded: "rgba(115, 201, 145, 0.12)",
 			diffRemoved: "rgba(240, 139, 128, 0.12)",
@@ -157,6 +158,16 @@ describe("readTheme", () => {
 		// Given ones are kept, and one that is not a color is replaced and named, as any other.
 		expect(readTheme({ ...DEFAULT_LIGHT_THEME, ui: { ...ui, diffAddedWord: "#00ff00" } }).theme.ui.diffAddedWord).toBe("#00ff00");
 		expect(readTheme({ ...DEFAULT_LIGHT_THEME, ui: { ...ui, diffAddedWord: "green-ish" } }).replaced).toEqual(["ui.diffAddedWord"]);
+	});
+
+	test("a theme saved before merged pull requests had a color reads whole, with its own terminal magenta for them", () => {
+		const { merged: _merged, ...older } = DEFAULT_DARK_THEME.ui;
+		const terminal = { ...DEFAULT_DARK_THEME.terminal, magenta: "#bb88ee" };
+		const { theme, replaced } = readTheme({ ...DEFAULT_DARK_THEME, id: "custom-old", ui: older, terminal });
+		expect(replaced).toEqual([]);
+		expect(theme.ui.merged).toBe("#bb88ee");
+		expect(readTheme({ ...DEFAULT_DARK_THEME, ui: { ...older, merged: "#aa77dd" } }).theme.ui.merged).toBe("#aa77dd");
+		expect(readTheme({ ...DEFAULT_DARK_THEME, ui: { ...older, merged: "purple-ish" } }).replaced).toEqual(["ui.merged"]);
 	});
 
 	test("never fails, and gives the default theme for what is not a theme at all", () => {

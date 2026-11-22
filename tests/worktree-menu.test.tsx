@@ -116,9 +116,9 @@ describe("a worktree row with a menu", () => {
 		expect(markup).not.toContain('role="menu"');
 	});
 
-	test("without a menu, it is a plain row as before", () => {
+	test("without a menu, it has no menu keys", () => {
 		const markup = renderToStaticMarkup(<WorktreeRow worktree={linked} selected={false} onSelect={() => {}} />);
 		expect(markup).not.toContain("aria-keyshortcuts");
-		expect(markup).not.toContain("row-item");
+		expect(markup).not.toContain('role="menu"');
 	});
 });

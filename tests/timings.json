@@ -149,6 +149,7 @@
     "tests/chops-parse.test.ts": 25,
     "tests/file-tree.test.ts": 25,
     "tests/row-agents-fit.test.tsx": 25,
+    "tests/row-progress.test.tsx": 30,
     "tests/tones.test.ts": 24,
     "tests/captured-output.test.ts": 22,
     "tests/store-state.test.ts": 22,

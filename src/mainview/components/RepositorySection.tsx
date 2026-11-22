@@ -239,6 +239,7 @@ export function RepositorySection({ state, store, repository, matches, open, que
 							}}
 							pullRequest={pullRequestOf(pullRequests, worktree.path)}
 							pullRequestHost={pullRequests?.ok ? pullRequests.host : undefined}
+							onOpenPullRequest={url => void store.openLink(url)}
 							issue={state.issues[worktree.id]}
 							removal={removal?.status ?? null}
 							sessions={sessionsOf(state, worktree.id)}

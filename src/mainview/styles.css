@@ -1214,6 +1214,77 @@ pre:focus-visible {
 	color: var(--text-3);
 }
 
+/*
+ * A worktree's progress at a glance (issue 241): one small mark leading the
+ * second line. Each state has its own shape as well as its color (see
+ * ProgressMark.tsx), and its word stays on the row, so none is told by color
+ * alone.
+ */
+.row-progress {
+	flex: none;
+	align-self: flex-start;
+	display: inline-flex;
+	margin-top: 2px;
+}
+
+.row-progress svg {
+	display: block;
+}
+
+.progress-open {
+	color: var(--untracked);
+}
+
+.progress-draft,
+.progress-upstream-gone {
+	color: var(--text-3);
+}
+
+.progress-merged {
+	color: var(--merged);
+}
+
+.progress-closed {
+	color: var(--error);
+}
+
+.progress-force-pushed {
+	color: var(--behind);
+}
+
+/* The pull request's number opens it in the browser: a quiet button in the line's own words, underlined under the pointer. */
+.row-pull-link {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	padding: 0;
+	border: 0;
+	border-radius: 3px;
+	background: transparent;
+	color: var(--text-2);
+	font-family: var(--font-mono);
+	font-size: 11px;
+}
+
+.row-pull-link svg {
+	opacity: 0.7;
+}
+
+.row-pull-link:hover {
+	color: var(--text);
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+
+.row-pull-state {
+	margin-left: 5px;
+}
+
+/* A flag cuts its words short, but the number's focus ring must show whole. */
+.row-flag.row-pull {
+	overflow: visible;
+}
+
 .sync,
 /* Sessions running in the worktree: blue, as for running agents, with the count. */
 .row-sessions {
@@ -3698,12 +3769,49 @@ pre:focus-visible {
  */
 .row-item {
 	position: relative;
+	border-radius: 7px;
+}
+
+/*
+ * A worktree row is its button, which holds the first line, and its second
+ * line beside it (issue 241), so the pull request's number can be a button
+ * of its own. The tints and the focus ring go around both, as one row.
+ */
+.row-item > .row {
+	padding-bottom: 0;
+	border-radius: 0;
+	background: transparent;
+}
+
+.row-item > .row-meta {
+	padding: 3px 10px 7px 23px;
+	cursor: pointer;
+}
+
+.row-item:hover {
+	background: var(--fill-hover);
+}
+
+.row-item.selected {
+	background: var(--fill-selected);
+}
+
+.row-item > .row:focus-visible {
+	outline: none;
+}
+
+.row-item:has(> .row:focus-visible) {
+	outline: 2px solid var(--focus);
+	outline-offset: 1px;
 }
 
 /* While the control shows, the row keeps room for it, so it never covers the branch markers. */
-.row-item:hover .row,
-.row-item:focus-within .row,
-.row-item.selected .row {
+.row-item:hover > .row,
+.row-item:hover > .row-meta,
+.row-item:focus-within > .row,
+.row-item:focus-within > .row-meta,
+.row-item.selected > .row,
+.row-item.selected > .row-meta {
 	padding-right: 34px;
 }
 
@@ -3729,11 +3837,12 @@ pre:focus-visible {
  * so pointing at it never turns the pointer onto one of them as they show.
  * Both sit on the first line only, so only that line keeps room for both.
  */
-.row-item.with-sync .row {
+.row-item.with-sync > .row,
+.row-item.with-sync > .row-meta {
 	padding-right: 48px;
 }
 
-.row-item.with-sync.with-actions .row > .row-line:not(.row-meta) {
+.row-item.with-sync.with-actions > .row > .row-line {
 	padding-right: 26px;
 }
 
@@ -3750,11 +3859,12 @@ pre:focus-visible {
 }
 
 /* A failed removal puts the row's other controls under it, so the sync control keeps its place and room. */
-.row-item.with-sync.removal-failed .row {
+.row-item.with-sync.removal-failed > .row,
+.row-item.with-sync.removal-failed > .row-meta {
 	padding-right: 48px;
 }
 
-.row-item.with-sync.removal-failed .row > .row-line:not(.row-meta) {
+.row-item.with-sync.removal-failed > .row > .row-line {
 	padding-right: 0;
 }
 
@@ -3788,21 +3898,9 @@ pre:focus-visible {
  * view without pointing at the row: on a line of their own under it, so they
  * cover nothing in a narrow sidebar. The highlight goes around both.
  */
-.row-item.removal-failed {
-	border-radius: 7px;
-}
-
-.row-item.removal-failed:hover {
-	background: var(--fill-hover);
-}
-
-.row-item.removal-failed.selected {
-	background: var(--fill-selected);
-}
-
-.row-item.removal-failed .row {
+.row-item.removal-failed > .row,
+.row-item.removal-failed > .row-meta {
 	padding-right: 10px;
-	background: transparent;
 }
 
 .row-item.removal-failed .row-actions {
@@ -5205,9 +5303,9 @@ pre:focus-visible {
 	font-size: 11px;
 }
 
-/* Red, as the design gives rewritten state, and always with its words. */
+/* Amber, as the design gives rewritten state (issue 241), and always with its words. Red is for closed pull requests and failing checks. */
 .sync-note.rewritten {
-	color: var(--error);
+	color: var(--behind);
 }
 
 /* Timber's own settings, edited in groups that each save through Timber. */

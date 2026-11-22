@@ -56,6 +56,8 @@ export const UI_COLOR_PROPERTIES = {
 	error: "--error",
 	/** The destructive button under the pointer. */
 	errorHover: "--error-hover",
+	/** Merged pull requests. */
+	merged: "--merged",
 	focus: "--focus",
 	diffAdded: "--diff-added",
 	diffRemoved: "--diff-removed",
@@ -143,7 +145,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** The colors a theme may leave out: they follow from its other colors, as in a theme saved before they were added. */
-const DERIVED_UI_COLORS = ["diffAddedWord", "diffRemovedWord"] as const satisfies readonly UiColor[];
+const DERIVED_UI_COLORS = ["diffAddedWord", "diffRemovedWord", "merged"] as const satisfies readonly UiColor[];
 
 /** The longest name or id a theme can have. */
 const MAX_NAME_LENGTH = 80;
@@ -185,7 +187,9 @@ export function readTheme(value: unknown): { theme: Theme; replaced: string[] } 
 		return colors;
 	};
 	const ui = readColors("ui", UI_COLORS, fallback.ui);
-	const derived = diffWordTints(appearance ?? fallback.appearance, ui);
+	const terminal = readColors("terminal", TERMINAL_COLORS, fallback.terminal);
+	// Merged pull requests, left out of a theme saved before they had a color, take the theme's own terminal magenta.
+	const derived = { ...diffWordTints(appearance ?? fallback.appearance, ui), merged: terminal.magenta };
 	for (const key of DERIVED_UI_COLORS) ui[key] ??= derived[key];
 	return {
 		theme: {
@@ -193,7 +197,7 @@ export function readTheme(value: unknown): { theme: Theme; replaced: string[] } 
 			name: name ?? fallback.name,
 			appearance: appearance ?? fallback.appearance,
 			ui,
-			terminal: readColors("terminal", TERMINAL_COLORS, fallback.terminal),
+			terminal,
 		},
 		replaced,
 	};
@@ -306,7 +310,7 @@ export interface ContrastWarning {
 }
 
 const TEXT_COLORS: readonly UiColor[] = ["text", "text2", "text3"];
-const MEANING_COLORS: readonly UiColor[] = ["behind", "ahead", "modified", "untracked", "error", "focus"];
+const MEANING_COLORS: readonly UiColor[] = ["behind", "ahead", "modified", "untracked", "error", "merged", "focus"];
 /** The fill of a text field is also the tint of a repository's header row in the sidebar, drawn over bgApp. */
 const SURFACES: readonly UiColor[] = ["bgApp", "bgMain", "bgPane", "bgRaised", "fillField"];
 

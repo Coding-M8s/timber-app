@@ -4075,3 +4075,29 @@ Bun 1.4.5, Git 2.43.0, and Google Chrome 151:
   reads the file back with a new list after each change, as a restart would.
 - Not run: the desktop app by hand on any platform, so nesting was seen only
   in headless Chrome over the mock engine.
+
+Run for a worktree's progress at a glance and opening its pull request from
+the row (issue 241), Linux x64 with Bun 1.4.5 and Git 2.43:
+
+- `bun run typecheck`: no errors.
+- `bun test tests/row-progress.test.tsx`: 13 passed: each state's mark and
+  its order when several hold, six distinct shapes, no mark where none
+  applies, the number as a button beside the row's own with its label, and
+  "open" after it only when another mark leads the line.
+- `bun test --timeout=30000 tests/sidebar-row-width-browser.test.ts` in
+  headless Chromium: 6 passed. At the narrowest sidebar nothing passes its
+  edge; a click on the number hands the pull request's link to the store
+  and does not select the row, and a click elsewhere on the second line
+  selects it; the tint and the focus ring are the whole row's; Tab goes from
+  the row to its number.
+- `bun test tests/theme.test.ts tests/theme-files.test.ts`: every built-in
+  theme has a merged color that passes the contrast check, and a theme saved
+  without one takes its own terminal magenta and reads whole.
+- `bun run dev:web` in headless Chrome at 1280 by 900: the marks and the
+  numbers showed on the sample rows as the approved mock shows. In the
+  default 272 pixel sidebar the mark takes about 19 pixels, so on a crowded
+  row the change counts can wrap to a line of their own; nothing spills.
+- `bun run test`: 4015 pass, 19 skip, 0 fail. Rebased onto main after
+  issue 305 (skipping the Pull dialog) and issue 316 (nested groups): 4092
+  pass, 19 skip, 0 fail.
+- Not run by me: the desktop window on any platform.
