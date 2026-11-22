@@ -5,7 +5,11 @@ import {
 	MAX_SOUND_PATH_LENGTH,
 	type SoundChoice,
 	defaultSoundChoice,
+	defaultStateSounds,
 	isSoundPath,
+	readStateSounds,
+	sameStateSounds,
+	writeStateSounds,
 	readSoundChoice,
 	sameSoundChoice,
 	soundFileName,
@@ -76,5 +80,31 @@ describe("sound setting", () => {
 		expect(sameSoundChoice({ kind: "system" }, { kind: "custom", path: "/a.wav" })).toBe(false);
 		expect(sameSoundChoice({ kind: "custom", path: "/a.wav" }, { kind: "custom", path: "/a.wav" })).toBe(true);
 		expect(sameSoundChoice({ kind: "custom", path: "/a.wav" }, { kind: "custom", path: "/b.wav" })).toBe(false);
+	});
+});
+
+describe("a sound for each state", () => {
+	const bell: SoundChoice = { kind: "custom", path: "/home/me/bell.ogg" };
+
+	test("every state is named, each with a sound or none, and round-trips", () => {
+		const sounds = { "needs-you": { kind: "bundled", name: "ping" }, done: bell, error: null, crashed: { kind: "system" } } as const;
+		expect(readStateSounds(writeStateSounds(sounds))).toEqual(sounds);
+		expect(writeStateSounds(defaultStateSounds())).toEqual({ "needs-you": null, done: null, error: null, crashed: null });
+		expect(readStateSounds({ ...defaultStateSounds(), later: bell })).toEqual(defaultStateSounds());
+	});
+
+	test("a state left out, or a sound that cannot be read, refuses the whole", () => {
+		const { crashed: _left, ...three } = defaultStateSounds();
+		expect(readStateSounds(three)).toBeUndefined();
+		expect(readStateSounds({ ...defaultStateSounds(), done: { kind: "custom", path: "/home/me/run.sh" } })).toBeUndefined();
+		expect(readStateSounds({ ...defaultStateSounds(), done: "chime" })).toBeUndefined();
+		for (const value of [null, [], "chime", 1]) expect(readStateSounds(value)).toBeUndefined();
+	});
+
+	test("compares each state's sound", () => {
+		expect(sameStateSounds(defaultStateSounds(), defaultStateSounds())).toBe(true);
+		expect(sameStateSounds({ ...defaultStateSounds(), done: bell }, { ...defaultStateSounds(), done: { ...bell } })).toBe(true);
+		expect(sameStateSounds({ ...defaultStateSounds(), done: bell }, defaultStateSounds())).toBe(false);
+		expect(sameStateSounds({ ...defaultStateSounds(), done: bell }, { ...defaultStateSounds(), error: bell })).toBe(false);
 	});
 });

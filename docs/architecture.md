@@ -4569,8 +4569,18 @@ What the agent prints on screen is still never read, parsed, or answered.
   window names no selected worktree, so then nothing counts as on screen.
   - *Settings.* `statusNotifications` (on by default) is the main switch for
     notifications, `notifyStates` the states that notify (all four by
-    default), `soundStates` the states that play a sound (none by default),
-    and `sound` the sound (`src/shared/sound-setting.ts`).
+    default), and `sounds` the sound each state plays: one that comes with
+    the app, the system's, a file of the person's own, or none (none for
+    every state by default; `src/shared/sound-setting.ts`). A change from
+    the window names all four states, so it cannot silence one by leaving
+    it out. A settings file from before each state had its own sound, with
+    `soundStates` and one `sound`, is carried over as it played: each
+    ticked state plays that sound, the chime when it could not be read,
+    and the rest none; a sound with no state ticked is not kept. The old
+    parts stay in the file until the next save, which does not write them
+    again, so the carry-over is one way: an older build then reads no
+    sound, and drops `sounds` on its own next save. A saved state whose
+    sound cannot be read plays the chime.
   - *One per session.* A session's new notification takes the place of its
     earlier one. It is withdrawn once it no longer holds: the session moved
     to a state that is not told about, closed, or its worktree came on
@@ -4584,13 +4594,16 @@ What the agent prints on screen is still never read, parsed, or answered.
     the notification would have shown when only the sound is chosen for that
     state, so it follows the same on-screen and rate-limit rules. The main
     process plays it, never the window, so it plays while the window is
-    hidden (`src/bun/sounds.ts`): `pw-play`, `paplay`, or `aplay` (WAV only)
+    hidden (`carryAlert` in `src/bun/alert-actions.ts` plays the sound chosen
+    for the state, through `src/bun/sounds.ts`): `pw-play`, `paplay`, or `aplay` (WAV only)
     on Linux, `afplay` on macOS, and PowerShell's `SoundPlayer` (WAV only,
     the path in an environment variable) on Windows, each as an executable
     plus arguments. A Linux player that fails at once, such as `pw-play`
     where the sound server is PulseAudio, gives way to the next one found.
-    One sound plays at a time: one asked for while another plays is lost,
-    not held. A sound still playing after 4 seconds is stopped, so a long
+    One sound plays at a time, whatever state asked for it: one asked for
+    while another plays is lost, not held, so a Needs you sound can be lost
+    behind another session's Done sound, and Settings' Play on a second row
+    while the first plays says another sound is still playing. A sound still playing after 4 seconds is stopped, so a long
     file cannot hold back the next. The three
     that come with the app are tones the app makes itself
     (`src/shared/tones.ts`), written to the cache folder the first time
@@ -4688,7 +4701,7 @@ In `bun run dev:web`, `timberMock.agentStatus(id, "state=blocked:kind=permission
 acts out a report from the program in a session (`"?"` for the probe), read
 by the same scanner as in the main process. `timberMock.notices()` lists the
 desktop notifications the main process would have on screen,
-`timberMock.alertSounds()` the sessions a sound played for, and
+`timberMock.alertSounds()` the sounds played, each with its session, and
 `timberMock.clickNotice(id)` acts out a click on one. Typing `subagents` in
 a session acts out four tasks, one of them with a task that needs you under
 it (Claude Code's own ids are flat; the nested one shows the tree), and

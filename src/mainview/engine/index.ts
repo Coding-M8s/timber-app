@@ -50,7 +50,7 @@ export async function createEngine(): Promise<Engine> {
 	// For sessions after a restart: timberMock.saveSessionsNow() saves the open sessions as quitting does, a reload opens
 	// them again, and timberMock.missingConversations([id]) acts out a conversation that is gone.
 	// For agent status: timberMock.agentStatus(id, "state=blocked:kind=permission") acts out an OSC 7501 report,
-	// timberMock.notices() lists the desktop notifications on screen, timberMock.alertSounds() the sounds played, and timberMock.clickNotice(id) clicks one.
+	// timberMock.notices() lists the desktop notifications on screen, timberMock.alertSounds() the sounds played with their sessions, and timberMock.clickNotice(id) clicks one.
 	// For tasks (subagents and background tasks): type subagents in a session to act out four child records, and subagents clear to clear them.
 	// For fetching: timberMock.endFetches("offline"), ("authentication"), or ("failed") chooses how Fetch now ends,
 	// and timberMock.forcePush("/work/timber", "main") acts out a fetch that found a rewritten upstream.

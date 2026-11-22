@@ -345,8 +345,8 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	 * first showed, a newer one in its session's place, a withdrawn one gone.
 	 */
 	notices(): StatusNotice[];
-	/** The sessions an alert sound played for, oldest first. */
-	alertSounds(): string[];
+	/** The alert sounds played, oldest first: the session each was for, and the sound chosen for its status. */
+	alertSounds(): { session: string; sound: SoundChoice }[];
 	/** The sounds Settings played as a preview, oldest first. */
 	previewSounds(): SoundChoice[];
 	/** What the next sound file dialog answers: a path, or null for Cancel. */
@@ -668,7 +668,7 @@ export function createMockEngine(
 	let unsaved = 0;
 	let ready = 0;
 	const notices: StatusNotice[] = [];
-	const alertSounds: string[] = [];
+	const alertSounds: { session: string; sound: SoundChoice }[] = [];
 	const previews: SoundChoice[] = [];
 	let pickedSound: string | null = "/home/me/sounds/bell.ogg";
 	let previewEnding: SoundOutcome["outcome"] = "played";
@@ -959,12 +959,12 @@ export function createMockEngine(
 		unsavedFiles: () => unsaved,
 	});
 	// As the main process does, every change is weighed for a desktop notification and a sound, which are only kept here.
-	const alertSettings = (): AlertSettings => ({ notify: preferences.statusNotifications, notifyStates: preferences.notifyStates, soundStates: preferences.soundStates });
+	const alertSettings = (): AlertSettings => ({ notify: preferences.statusNotifications, notifyStates: preferences.notifyStates, sounds: preferences.sounds });
 	const alerts = createAlertRunner({
 		attention: () => attended ?? assumedAttention,
 		settings: alertSettings,
 		act: action => {
-			if (action.kind === "sound") alertSounds.push(action.session);
+			if (action.kind === "sound") alertSounds.push({ session: action.session, sound: structuredClone(action.sound) });
 			else if (action.kind === "withdraw") {
 				const at = notices.findIndex(notice => notice.session === action.session);
 				if (at !== -1) notices.splice(at, 1);
@@ -972,7 +972,7 @@ export function createMockEngine(
 				const at = notices.findIndex(notice => notice.session === action.notice.session);
 				if (at === -1) notices.push(action.notice);
 				else notices[at] = action.notice;
-				if (action.sound) alertSounds.push(action.notice.session);
+				if (action.sound !== null) alertSounds.push({ session: action.notice.session, sound: structuredClone(action.sound) });
 			}
 		},
 	});
@@ -1410,7 +1410,7 @@ export function createMockEngine(
 		},
 		attention: () => attended,
 		notices: () => structuredClone(notices),
-		alertSounds: () => [...alertSounds],
+		alertSounds: () => structuredClone(alertSounds),
 		previewSounds: () => structuredClone(previews),
 		pickSoundFile(path) {
 			pickedSound = path;

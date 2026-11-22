@@ -3,6 +3,7 @@
  * own notification sound, or a file the person picked. Pure. The main
  * process plays it (see src/bun/sounds.ts).
  */
+import { ALERT_STATES, type AlertState } from "./status-notices";
 
 export const BUNDLED_SOUNDS = ["chime", "ping", "knock"] as const;
 export type BundledSound = (typeof BUNDLED_SOUNDS)[number];
@@ -107,3 +108,85 @@ export type ChooseSoundResult =
 	| { outcome: "chosen"; path: string }
 	| { outcome: "cancelled" }
 	| { outcome: "refused"; message: string };
+
+/**
+ * The sound each status plays, or null for none. Every status is named, so a
+ * save from the window that names only some cannot silence the rest.
+ */
+export type StateSounds = Readonly<Record<AlertState, SoundChoice | null>>;
+
+/** No sound for any status, so the app is quiet until asked. */
+export function defaultStateSounds(): StateSounds {
+	return { "needs-you": null, "done": null, "error": null, "crashed": null };
+}
+
+/**
+ * The sounds from a value that came from outside, or undefined when it cannot
+ * be read: every status must be there, each null or a choice `readSoundChoice`
+ * accepts. Names the app does not know are left out.
+ */
+export function readStateSounds(value: unknown): StateSounds | undefined {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+	const record = value as Record<string, unknown>;
+	const sounds: Record<AlertState, SoundChoice | null> = { ...defaultStateSounds() };
+	for (const state of ALERT_STATES) {
+		if (!Object.hasOwn(record, state)) return undefined;
+		const entry = record[state];
+		if (entry === null) continue;
+		const choice = readSoundChoice(entry);
+		if (choice === undefined) return undefined;
+		sounds[state] = choice;
+	}
+	return sounds;
+}
+
+/**
+ * What to keep of saved sounds that `readStateSounds` refuses, such as after a
+ * hand edit: a status that is missing or null plays nothing, and one whose
+ * sound cannot be read plays the chime, since a sound was asked for.
+ */
+export function salvageStateSounds(value: unknown): StateSounds | undefined {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+	const record = value as Record<string, unknown>;
+	const sounds: Record<AlertState, SoundChoice | null> = { ...defaultStateSounds() };
+	for (const state of ALERT_STATES) {
+		const entry = record[state];
+		if (entry === undefined || entry === null) continue;
+		sounds[state] = readSoundChoice(entry) ?? defaultSoundChoice();
+	}
+	return sounds;
+}
+
+/**
+ * The sounds from the settings of an app from before each status had its own:
+ * `soundStates` named the statuses that played, and `sound` the one sound they
+ * all played. A list that cannot be read played nothing, and a sound that
+ * cannot be read was the chime, as they were read then. Undefined when neither
+ * is there.
+ */
+export function legacyStateSounds(saved: Record<string, unknown>): StateSounds | undefined {
+	const { soundStates, sound } = saved;
+	if (soundStates === undefined && sound === undefined) return undefined;
+	const sounds: Record<AlertState, SoundChoice | null> = { ...defaultStateSounds() };
+	if (!Array.isArray(soundStates) || !soundStates.every(state => (ALERT_STATES as readonly unknown[]).includes(state))) return sounds;
+	const choice = readSoundChoice(sound) ?? defaultSoundChoice();
+	for (const state of ALERT_STATES) if (soundStates.includes(state)) sounds[state] = choice;
+	return sounds;
+}
+
+export function sameStateSounds(one: StateSounds, other: StateSounds): boolean {
+	return ALERT_STATES.every(state => {
+		const left = one[state];
+		const right = other[state];
+		return left === null || right === null ? left === right : sameSoundChoice(left, right);
+	});
+}
+
+export function writeStateSounds(sounds: StateSounds): unknown {
+	const written: Record<string, unknown> = {};
+	for (const state of ALERT_STATES) {
+		const choice = sounds[state];
+		written[state] = choice === null ? null : writeSoundChoice(choice);
+	}
+	return written;
+}

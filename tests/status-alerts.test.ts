@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { type AlertAction, type AlertSettings, createAlertRunner, createStatusAlerts, onScreen } from "../src/shared/status-notices";
+import { type SoundChoice, defaultStateSounds } from "../src/shared/sound-setting";
 import type { TerminalSession } from "../src/shared/terminal";
 
 const TIMBER = "/work/timber";
 const FEATURE = "/work/timber-worktrees/feat-github-issue-lookup";
 const away = { visible: true, focused: true, selected: { repository: TIMBER, worktree: TIMBER, id: "timber" }, session: null };
 const here = { visible: true, focused: true, selected: { repository: TIMBER, worktree: FEATURE, id: "feature" }, session: null };
-const all: AlertSettings = { notify: true, notifyStates: ["needs-you", "done", "error", "crashed"], soundStates: [] };
+const all: AlertSettings = { notify: true, notifyStates: ["needs-you", "done", "error", "crashed"], sounds: defaultStateSounds() };
 
 const session = (change: Partial<TerminalSession> = {}): TerminalSession => ({
 	id: "s", kind: "agent", name: "Codex", repository: TIMBER, worktree: "w", path: FEATURE, shell: "/usr/local/bin/codex", command: "codex",
@@ -17,7 +18,7 @@ const status = (state: "idle" | "working" | "done" | "blocked" | "error", more: 
 const change = (more: Partial<TerminalSession> = {}, id = "s") => ({ id, session: { ...session(more), id } });
 const working = change({ status: status("working") });
 const done = change({ status: status("done") });
-const show = (title: string, body: string, sound = false, id = "s"): AlertAction => ({ kind: "show", notice: { session: id, title, body }, sound });
+const show = (title: string, body: string, sound: SoundChoice | null = null, id = "s"): AlertAction => ({ kind: "show", notice: { session: id, title, body }, sound });
 const withdraw = (id = "s"): AlertAction => ({ kind: "withdraw", session: id });
 
 describe("which statuses are told about", () => {
@@ -148,18 +149,32 @@ describe("the rate limit holds an alert back instead of dropping it", () => {
 });
 
 describe("sounds follow the same rules", () => {
-	const soundy: AlertSettings = { ...all, soundStates: ["needs-you", "done"] };
-	const quiet: AlertSettings = { notify: false, notifyStates: [], soundStates: ["done"] };
+	const ping: SoundChoice = { kind: "bundled", name: "ping" };
+	const bell: SoundChoice = { kind: "custom", path: "/home/me/sounds/bell.ogg" };
+	const soundy: AlertSettings = { ...all, sounds: { ...defaultStateSounds(), "needs-you": ping, done: bell } };
+	const quiet: AlertSettings = { notify: false, notifyStates: [], sounds: { ...defaultStateSounds(), done: bell } };
 
 	test("with the notification of a chosen status, or alone when only the sound is chosen", () => {
 		const alerts = createStatusAlerts(0);
 		alerts.changed(working, away, soundy, 0);
-		expect(alerts.changed(done, away, soundy, 0)).toEqual([show("Codex is done", "In feat-github-issue-lookup: Done", true)]);
+		expect(alerts.changed(done, away, soundy, 0)).toEqual([show("Codex is done", "In feat-github-issue-lookup: Done", bell)]);
 		expect(alerts.changed(change({ status: status("error") }), away, soundy, 1)).toEqual([show("Codex reported an error", "In feat-github-issue-lookup: Error")]);
 		const alone = createStatusAlerts(0);
 		alone.changed(working, away, quiet, 0);
-		expect(alone.changed(done, away, quiet, 0)).toEqual([{ kind: "sound", session: "s" }]);
+		expect(alone.changed(done, away, quiet, 0)).toEqual([{ kind: "sound", session: "s", sound: bell }]);
 		expect(alone.changed(change({ status: status("blocked") }), away, quiet, 0)).toEqual([]);
+	});
+
+	test("each status plays the sound chosen for it", () => {
+		const alerts = createStatusAlerts(0);
+		alerts.changed(working, away, soundy, 0);
+		expect(alerts.changed(change({ status: status("blocked") }), away, soundy, 0)).toEqual([show("Codex needs you", "In feat-github-issue-lookup: Needs you", ping)]);
+		expect(alerts.changed(done, away, soundy, 1)).toEqual([show("Codex is done", "In feat-github-issue-lookup: Done", bell)]);
+		const alone = createStatusAlerts(0);
+		const crashedOnly: AlertSettings = { ...quiet, sounds: { ...defaultStateSounds(), crashed: { kind: "system" } } };
+		alone.changed(working, away, crashedOnly, 0);
+		expect(alone.changed(done, away, crashedOnly, 0)).toEqual([]);
+		expect(alone.changed(change({ state: { kind: "exited", exitCode: 1, signal: null } }), away, crashedOnly, 0)).toEqual([{ kind: "sound", session: "s", sound: { kind: "system" } }]);
 	});
 
 	test("never for the worktree on screen, and held back with the rate limit", () => {
@@ -167,10 +182,10 @@ describe("sounds follow the same rules", () => {
 		alerts.changed(working, here, quiet, 0);
 		expect(alerts.changed(done, here, quiet, 0)).toEqual([]);
 		alerts.changed(working, away, quiet, 0);
-		expect(alerts.changed(done, away, quiet, 0)).toEqual([{ kind: "sound", session: "s" }]);
+		expect(alerts.changed(done, away, quiet, 0)).toEqual([{ kind: "sound", session: "s", sound: bell }]);
 		alerts.changed(working, away, quiet, 1000);
 		expect(alerts.changed(done, away, quiet, 2000)).toEqual([]);
-		expect(alerts.review(away, quiet, 10_000)).toEqual([{ kind: "sound", session: "s" }]);
+		expect(alerts.review(away, quiet, 10_000)).toEqual([{ kind: "sound", session: "s", sound: bell }]);
 	});
 });
 

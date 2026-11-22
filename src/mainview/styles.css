@@ -5518,10 +5518,10 @@ pre:focus-visible {
 	list-style: none;
 }
 
-/* Settings, Notifications: a row for each state, with a Notify and a Sound box. */
+/* Settings, Notifications: a row for each state, with a Notify box, its sound, and Play and Choose file in one cell, Play first, so it stays put when Choose file shows. */
 .alert-states {
 	display: grid;
-	grid-template-columns: minmax(8em, max-content) 4.5em 4.5em;
+	grid-template-columns: minmax(7em, max-content) 4.5em minmax(9em, 14em) max-content;
 	align-items: center;
 	gap: 6px 12px;
 }
@@ -5535,8 +5535,12 @@ pre:focus-visible {
 	font-size: 12px;
 }
 
-.alert-states-head:first-of-type {
+.alert-states-notify {
 	grid-column: 2;
+}
+
+.alert-states-head:not(.alert-states-notify) {
+	grid-column: 3 / -1;
 }
 
 .alert-state {
@@ -5547,17 +5551,14 @@ pre:focus-visible {
 	justify-self: start;
 }
 
-/* The sound picker with its Choose file and Play buttons beside it. */
-.sound-row {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: 8px;
+.alert-state .field-input {
+	min-width: 0;
 }
 
-.sound-row .field-input {
-	flex: 1 1 160px;
-	min-width: 0;
+.alert-state-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
 }
 
 /* Backups sit below a repository's worktrees, quieter than its rows: hairline above, small grey words. */

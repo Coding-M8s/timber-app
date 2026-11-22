@@ -1,5 +1,5 @@
 import { type Preferences, readAlertStates } from "../shared/preferences";
-import { type SoundChoice, type SoundOutcome, sameSoundChoice } from "../shared/sound-setting";
+import { BUNDLED_SOUNDS, type SoundChoice, type SoundOutcome, type StateSounds, sameStateSounds } from "../shared/sound-setting";
 import type { AlertState } from "../shared/status-notices";
 
 /**
@@ -11,19 +11,42 @@ import type { AlertState } from "../shared/status-notices";
 export interface NotificationsDraft {
 	statusNotifications: boolean;
 	notifyStates: readonly AlertState[];
-	soundStates: readonly AlertState[];
-	sound: SoundChoice;
+	sounds: StateSounds;
 }
 
 export function notificationsDraftOf(preferences: Preferences): NotificationsDraft {
-	const { statusNotifications, notifyStates, soundStates, sound } = preferences;
-	return { statusNotifications, notifyStates, soundStates, sound };
+	const { statusNotifications, notifyStates, sounds } = preferences;
+	return { statusNotifications, notifyStates, sounds };
 }
 
 export function sameNotificationsDraft(one: NotificationsDraft, other: NotificationsDraft): boolean {
 	const sameStates = (left: readonly AlertState[], right: readonly AlertState[]) => left.length === right.length && left.every(state => right.includes(state));
 	return one.statusNotifications === other.statusNotifications && sameStates(one.notifyStates, other.notifyStates)
-		&& sameStates(one.soundStates, other.soundStates) && sameSoundChoice(one.sound, other.sound);
+		&& sameStateSounds(one.sounds, other.sounds);
+}
+
+/** The sounds with one status's sound changed, or turned off with null. */
+export function withStateSound(sounds: StateSounds, state: AlertState, choice: SoundChoice | null): StateSounds {
+	return { ...sounds, [state]: choice };
+}
+
+/** A state's sound picker value for a choice: `none`, `bundled:<name>`, `system`, or `custom`. */
+export function soundOptionOf(choice: SoundChoice | null): string {
+	if (choice === null) return "none";
+	return choice.kind === "bundled" ? `bundled:${choice.name}` : choice.kind;
+}
+
+/**
+ * What picking `value` in a state's sound picker does: set that state's
+ * sound (null for none), or open the file dialog when "Your own file" has no
+ * file yet for that state. Null for a value the picker does not offer.
+ */
+export function pickSound(value: string, customPath: string | undefined): { kind: "set"; sound: SoundChoice | null } | { kind: "choose-file" } | null {
+	if (value === "none") return { kind: "set", sound: null };
+	if (value === "system") return { kind: "set", sound: { kind: "system" } };
+	if (value === "custom") return customPath === undefined ? { kind: "choose-file" } : { kind: "set", sound: { kind: "custom", path: customPath } };
+	const name = BUNDLED_SOUNDS.find(sound => `bundled:${sound}` === value);
+	return name === undefined ? null : { kind: "set", sound: { kind: "bundled", name } };
 }
 
 /** A list of statuses with one turned on or off, kept in Settings order. */

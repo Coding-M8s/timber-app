@@ -8,6 +8,7 @@
 import type { Attention } from "./attention";
 import type { ChildStatus } from "./program-status";
 import { type ShownStatus, alertStatus, childName, describeShownStatus, hasStatusMark, shortMessage, shownChildStatus } from "./session-status";
+import type { SoundChoice, StateSounds } from "./sound-setting";
 import type { TerminalChange, TerminalSession } from "./terminal";
 
 /**
@@ -28,8 +29,8 @@ export interface AlertSettings {
 	notify: boolean;
 	/** The statuses that get a desktop notification while `notify` is on. */
 	notifyStates: readonly AlertState[];
-	/** The statuses that play a sound. None means no sound at all. */
-	soundStates: readonly AlertState[];
+	/** The sound each status plays, or null for none. */
+	sounds: StateSounds;
 }
 
 /** A desktop notification to show for a session. */
@@ -44,12 +45,12 @@ export interface StatusNotice {
 
 /**
  * What to do now. A notice replaces the session's earlier one, so a session
- * has at most one on screen. `sound` plays with it, or alone when only the
- * sound is chosen for that status.
+ * has at most one on screen. `sound`, the sound chosen for that status, plays
+ * with it, or alone when only the sound is chosen; null plays nothing.
  */
 export type AlertAction =
-	| { kind: "show"; notice: StatusNotice; sound: boolean }
-	| { kind: "sound"; session: string }
+	| { kind: "show"; notice: StatusNotice; sound: SoundChoice | null }
+	| { kind: "sound"; session: string; sound: SoundChoice }
 	| { kind: "withdraw"; session: string };
 
 const HEADLINES: Record<AlertState, string> = {
@@ -140,7 +141,7 @@ function wantsNotice(settings: AlertSettings, state: AlertState): boolean {
 }
 
 function wantsSound(settings: AlertSettings, state: AlertState): boolean {
-	return settings.soundStates.includes(state);
+	return settings.sounds[state] !== null;
 }
 
 export function createStatusAlerts(interval: number = NOTICE_INTERVAL_MILLISECONDS): StatusAlerts {
@@ -150,7 +151,7 @@ export function createStatusAlerts(interval: number = NOTICE_INTERVAL_MILLISECON
 	const alert = (id: string, entry: Tracked, state: AlertState, settings: AlertSettings, now: number): AlertAction[] => {
 		entry.waiting = null;
 		entry.last.set(state, now);
-		const sound = wantsSound(settings, state);
+		const sound = settings.sounds[state];
 		if (entry.child !== null) entry.toldChildren.set(entry.child, state);
 		if (wantsNotice(settings, state)) {
 			entry.shown = state;
@@ -162,7 +163,7 @@ export function createStatusAlerts(interval: number = NOTICE_INTERVAL_MILLISECON
 			entry.shown = null;
 			actions.push({ kind: "withdraw", session: id });
 		}
-		if (sound) actions.push({ kind: "sound", session: id });
+		if (sound !== null) actions.push({ kind: "sound", session: id, sound });
 		return actions;
 	};
 

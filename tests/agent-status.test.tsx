@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { NotificationsSectionView } from "../src/mainview/components/settings/NotificationsSection";
-import { describeSoundOutcome, notificationsDraftOf, sameNotificationsDraft, toggleState } from "../src/mainview/notifications-format";
+import { describeSoundOutcome, notificationsDraftOf, sameNotificationsDraft, pickSound, soundOptionOf, toggleState, withStateSound } from "../src/mainview/notifications-format";
+import { defaultStateSounds } from "../src/shared/sound-setting";
 import { defaultPreferences } from "../src/shared/preferences";
 import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { sessionsOf } from "../src/mainview/store/state";
@@ -267,51 +268,77 @@ describe("desktop notifications", () => {
 		expect(engine.notices()).toEqual([]);
 	});
 
-	test("sounds play only for the states chosen, never for the worktree on screen", async () => {
+	test("sounds play only for the states chosen, each its own, never for the worktree on screen", async () => {
 		const { engine, store, agent, report } = await withAgent();
+		const ping = { kind: "bundled" as const, name: "ping" as const };
+		const bell = { kind: "custom" as const, path: "/home/me/sounds/bell.ogg" };
 		await report("state=working");
 		await report("state=done");
 		expect(engine.alertSounds()).toEqual([]);
-		expect((await store.savePreferences({ soundStates: ["needs-you"] })).outcome).toBe("saved");
+		expect((await store.savePreferences({ sounds: { ...defaultStateSounds(), "needs-you": ping, error: bell } })).outcome).toBe("saved");
 		await report("state=blocked");
-		expect(engine.alertSounds()).toEqual([agent.id]);
+		await report("state=error");
+		expect(engine.alertSounds()).toEqual([{ session: agent.id, sound: ping }, { session: agent.id, sound: bell }]);
 		store.select(featureId);
 		await settle();
 		await report("state=working");
 		await report("state=error");
-		expect((await store.savePreferences({ soundStates: ["needs-you", "error"] })).outcome).toBe("saved");
+		expect((await store.savePreferences({ sounds: { ...defaultStateSounds(), error: { kind: "system" } } })).outcome).toBe("saved");
 		await report("state=working");
 		await report("state=error");
-		expect(engine.alertSounds()).toEqual([agent.id]);
+		expect(engine.alertSounds()).toHaveLength(2);
 	});
 });
 
 describe("the Notifications section of Settings", () => {
 	const saved = notificationsDraftOf(defaultPreferences());
 	const view = (draft = saved, more: Partial<Parameters<typeof NotificationsSectionView>[0]> = {}) => renderToStaticMarkup(
-		<NotificationsSectionView draft={draft} saved={saved} save={{ state: "idle" }} problem={null} customPath={null} onEdit={() => {}} onChooseFile={() => {}} onPlay={() => {}} onSave={() => {}} {...more} />,
+		<NotificationsSectionView draft={draft} saved={saved} save={{ state: "idle" }} problem={null} customPaths={{}} onEdit={() => {}} onChooseFile={() => {}} onPlay={() => {}} onSave={() => {}} {...more} />,
 	);
 
-	test("a main switch, a Notify and a Sound box for each state, and the sound with Play", () => {
+	test("a main switch, and for each state a Notify box, its own sound, and Play", () => {
 		const markup = view();
 		expect(markup).toContain("Show desktop notifications");
 		for (const state of ["Needs you", "Done", "Error", "Crashed"]) {
 			expect(markup).toContain(`aria-label="Notify: ${state}" checked=""`);
-			expect(markup).toMatch(new RegExp(`aria-label="Sound: ${state}"/>`));
+			expect(markup).toContain(`aria-label="Sound: ${state}"`);
+			// None by default, so Play has nothing to play.
+			expect(markup).toContain(`aria-label="Play sound: ${state}" disabled=""`);
 		}
-		expect(markup).toContain('<option value="bundled:chime" selected="">Chime</option>');
+		expect(markup.match(/<option value="none" selected="">None<\/option>/g)).toHaveLength(4);
+		expect(markup).toContain('<option value="bundled:chime">Chime</option>');
 		expect(markup).toContain('<option value="system">System sound</option>');
 		expect(markup).toContain(">Your own file...</option>");
-		expect(markup).toContain(">Play</button>");
-		expect(markup).toContain("Off until then.");
+		expect(markup).toContain("None until you choose one.");
+		expect(markup.match(/Your own file can be WAV/g)).toHaveLength(1);
 		expect(markup).not.toContain("Choose file");
 	});
 
-	test("Notify boxes are off while notifications are, and the person's own file is named", () => {
-		const markup = view({ ...saved, statusNotifications: false, sound: { kind: "custom", path: "/home/me/sounds/bell.ogg" } }, { customPath: "/home/me/sounds/bell.ogg" });
+	test("each row shows its own sound and its own file", () => {
+		const sounds = { ...defaultStateSounds(), done: { kind: "custom" as const, path: "/home/me/sounds/bell.ogg" }, error: { kind: "bundled" as const, name: "knock" as const } };
+		const markup = view({ ...saved, statusNotifications: false, sounds }, { customPaths: { done: "/home/me/sounds/bell.ogg", crashed: "/home/me/sounds/crash.wav" } });
 		expect(markup).toContain('aria-label="Notify: Done" disabled="" checked=""');
 		expect(markup).toContain('<option value="custom" selected="">Your own file: bell.ogg</option>');
-		expect(markup).toContain(">Choose file</button>");
+		expect(markup).toContain('<option value="custom">Your own file: crash.wav</option>');
+		expect(markup).toContain('<option value="bundled:knock" selected="">Knock</option>');
+		expect(markup).toContain('aria-label="Choose file: Done"');
+		expect(markup).not.toContain('aria-label="Choose file: Error"');
+		expect(markup).toContain('aria-label="Play sound: Done">');
+		expect(markup).toContain('aria-label="Play sound: Needs you" disabled=""');
+	});
+
+	test("a picker value sets the state's sound, or asks for a file when that state has none yet", () => {
+		const bell = "/home/me/sounds/bell.ogg";
+		expect(pickSound("none", undefined)).toEqual({ kind: "set", sound: null });
+		expect(pickSound("bundled:ping", undefined)).toEqual({ kind: "set", sound: { kind: "bundled", name: "ping" } });
+		expect(pickSound("system", bell)).toEqual({ kind: "set", sound: { kind: "system" } });
+		expect(pickSound("custom", bell)).toEqual({ kind: "set", sound: { kind: "custom", path: bell } });
+		expect(pickSound("custom", undefined)).toEqual({ kind: "choose-file" });
+		expect(pickSound("bundled:gong", undefined)).toBeNull();
+		for (const sound of [null, { kind: "bundled" as const, name: "knock" as const }, { kind: "system" as const }, { kind: "custom" as const, path: bell }]) {
+			const picked = pickSound(soundOptionOf(sound), bell);
+			expect(picked).toEqual({ kind: "set", sound });
+		}
 	});
 
 	test("a preview that could not play says why", () => {
@@ -324,7 +351,9 @@ describe("the Notifications section of Settings", () => {
 		expect(toggleState(["crashed"], "needs-you", true)).toEqual(["needs-you", "crashed"]);
 		expect(toggleState(["needs-you", "crashed"], "needs-you", false)).toEqual(["crashed"]);
 		expect(sameNotificationsDraft(saved, { ...saved, notifyStates: [...saved.notifyStates].reverse() })).toBe(true);
-		expect(sameNotificationsDraft(saved, { ...saved, sound: { kind: "system" } })).toBe(false);
+		expect(sameNotificationsDraft(saved, { ...saved, sounds: withStateSound(saved.sounds, "done", { kind: "system" }) })).toBe(false);
+		expect(withStateSound(saved.sounds, "done", { kind: "system" })).toEqual({ ...defaultStateSounds(), done: { kind: "system" } });
+		expect(withStateSound({ ...defaultStateSounds(), done: { kind: "system" } }, "done", null)).toEqual(defaultStateSounds());
 	});
 
 	test("the person's own file is chosen through the engine and saved with the section", async () => {
@@ -337,7 +366,8 @@ describe("the Notifications section of Settings", () => {
 		expect(await store.chooseSoundFile()).toEqual({ outcome: "cancelled" });
 		expect(await store.playSound({ kind: "system" })).toEqual({ outcome: "played" });
 		expect(engine.previewSounds()).toEqual([{ kind: "system" }]);
-		expect((await store.savePreferences({ sound: { kind: "custom", path: "/home/me/sounds/bell.ogg" } })).outcome).toBe("saved");
-		expect((await engine.loadPreferences()).sound).toEqual({ kind: "custom", path: "/home/me/sounds/bell.ogg" });
+		const sounds = { ...defaultStateSounds(), crashed: { kind: "custom" as const, path: "/home/me/sounds/bell.ogg" } };
+		expect((await store.savePreferences({ sounds })).outcome).toBe("saved");
+		expect((await engine.loadPreferences()).sounds).toEqual(sounds);
 	});
 });
