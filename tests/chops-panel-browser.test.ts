@@ -164,6 +164,36 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the chops
 		await page.until(`${STORE}.getState().dialog?.kind === "approve-chop"`, "the approval was asked");
 		expect(await page.evaluate<number>(`${STORE}.getState().terminals.length`)).toBe(0);
 	}, 30_000);
+
+	test("\"All chops\" in an empty session pane shows the panel, and never hides it: shown, the panel takes the keyboard; on the files, it switches to the chops", async () => {
+		const ALL = `.empty-actions[aria-label="Chops"] button[title="Show the chops panel, with every chop of this repository"]`;
+		await page.evaluate(`${STORE}.savePreferences({ chops: [{ name: "Hello", kind: "command", text: "pwd", description: "", agent: null, repository: null, sound: null }] })`);
+		await page.evaluate(`${STORE}.select(${STORE}.getState().repositories[0].worktrees[1].id)`);
+		await page.until(`document.querySelector(${JSON.stringify(ALL)}) !== null`, "the empty pane offered All chops");
+		expect(await page.evaluate<number>(`document.querySelectorAll('.empty-actions[aria-label="Chops"] button').length`)).toBe(4);
+		await page.click(ALL);
+		await page.until(PANEL_SHOWN, "the panel showed");
+		await page.until(FOCUS_IN_PANEL, "the panel took the keyboard");
+		// Clicked again with the panel shown, it stays and takes the keyboard back.
+		await page.evaluate(`document.querySelector(${JSON.stringify(ALL)}).focus()`);
+		await page.click(ALL);
+		await page.until(FOCUS_IN_PANEL, "the panel took the keyboard again");
+		expect(await page.evaluate<boolean>(PANEL_SHOWN)).toBe(true);
+		// On the files, it switches the panel to the chops.
+		await page.evaluate(`${STORE}.switchSidePanel("files")`);
+		await page.until(`document.getElementById("chops-panel")?.dataset.view === "files"`, "the panel showed the files");
+		await page.click(ALL);
+		await page.until(`document.getElementById("chops-panel")?.dataset.view === "chops"`, "the panel switched to the chops");
+		expect(await page.evaluate<boolean>(`${STORE}.getState().layout.chopsOpen`)).toBe(true);
+		// Shown already and asked again from the pane, hiding it gives the keyboard back to "All chops".
+		await page.evaluate(`document.querySelector(${JSON.stringify(ALL)}).focus()`);
+		await page.click(ALL);
+		await page.until(FOCUS_IN_PANEL, "the panel took the keyboard");
+		await page.press("K", "ctrlShift");
+		await page.until(PANEL_HIDDEN, "the panel hid");
+		expect(await page.evaluate<boolean>(`document.activeElement === document.querySelector(${JSON.stringify(ALL)})`)).toBe(true);
+	}, 30_000);
+
 	test("a click on a blocked Run does nothing: no session and no dialog", async () => {
 		await page.evaluate(`${STORE}.savePreferences({ chops: [{ name: "Hello", kind: "command", text: "pwd", description: "", agent: null, repository: null, sound: null }] })`);
 		await page.evaluate(`${STORE}.select(${STORE}.getState().repositories[0].worktrees[1].id)`);

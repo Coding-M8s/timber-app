@@ -128,7 +128,12 @@ change them here first when they change.
   Settings, Chops, keeps its place and star, also while the list is read
   again; renamed to a name the order held before, such as a deleted
   chop's, it keeps its own place, not that one. A chop deleted and made
-  again with the same name gets its place and star back. The palette, the "+" menu, and "Insert chop" keep the
+  again with the same name gets its place and star back. A worktree with
+  no session offers at most three chops in its empty pane, both kinds, in
+  this order, so the favorites come first and a star or a move shows there
+  at once; with more than three, a quiet "All chops" button shows the
+  panel, or gives it the keyboard when it shows already, and never hides
+  it. The palette, the "+" menu, and "Insert chop" keep the
   listed order. Each chop may have a sound, or none: the form's Sound
   field, below the description, picks it with the same choices and Play
   button as Settings, Notifications, and the row shows its name after
@@ -905,7 +910,8 @@ logins. The app never reads a tracker login and never signs in.
   run it elsewhere, switch worktree first. The Workspace "+" menu has a
   Chops part listing the repository's command chops by name, with the
   description in the tooltip, and a worktree with no session yet has a
-  "Run" button for each. The chops panel runs or sends each with one
+  "Run", "Send", or "Copy" button for at most three, favorites first, and
+  "All chops" when there are more. The chops panel runs or sends each with one
   click. The command palette lists "Run chop: <name>",
   found by name and description, and shows one that cannot run now with
   the reason. Running one opens a new session named after it, types the

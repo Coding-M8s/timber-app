@@ -2,7 +2,7 @@ import {
 	CHOP_LIMIT, type ChopKind, type ChopList, type ChopSource, type ChopsFileState, type ListedChop, type PersonalChop, chopProblem, commandChops, listedChops, normalizeChopText, readPersonalChops,
 	sameChopName, samePersonalChops,
 } from "../shared/chops";
-import type { ChopRename } from "../shared/chop-order";
+import { type ChopArrangement, type ChopRename, arrangeChops } from "../shared/chop-order";
 import type { SoundChoice } from "../shared/sound-setting";
 import { cleanSessionName } from "../shared/terminal";
 import type { WorktreeMenuItem, WorktreeMenuItemId } from "./worktree-menu-format";
@@ -239,6 +239,25 @@ const entryOf = (chop: ListedChop): ChopEntry => ({ name: chop.name, kind: chop.
 /** The chops of a list, commands and prompts, in listed order, for the "+" menu and the palette. None until the list was read. */
 export function chopEntries(list: ChopList | null | undefined): ChopEntry[] {
 	return listedChops(list).map(entryOf);
+}
+
+/** The most chop buttons an empty session pane shows. */
+export const EMPTY_PANE_CHOP_LIMIT = 3;
+
+/** The button in an empty session pane that opens the chops panel when there are more chops than buttons. */
+export const ALL_CHOPS_LABEL = "All chops";
+export const ALL_CHOPS_HINT = "Show the chops panel, with every chop of this repository";
+
+/**
+ * The chops an empty session pane offers: at most `limit`, both kinds, in
+ * the chops panel's order for the repository (`arrangeChops`), so the
+ * favorites come first, then the rest. `more` says whether some were left
+ * out, for "All chops". None until the list was read.
+ */
+export function emptyPaneChops(list: ChopList | null | undefined, arrangement: ChopArrangement, limit = EMPTY_PANE_CHOP_LIMIT): { chops: ChopEntry[]; more: boolean } {
+	const listed = listedChops(list);
+	const chops = arrangeChops(listed, arrangement).slice(0, limit).map(({ chop }) => entryOf(chop));
+	return { chops, more: listed.length > limit };
 }
 
 /** The command chops of a list, in listed order, for "Insert chop". */
