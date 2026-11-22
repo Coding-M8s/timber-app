@@ -424,6 +424,14 @@ logins. The app never reads a tracker login and never signs in.
 - Quitting and opening the app again brings every worktree's running
   sessions back in their places, with the same chip showing; agents go back
   to their conversations, terminals start a fresh shell.
+- Dropping files from the file manager on a running session's terminal, or
+  dragging a file or folder row from the Files panel onto it, pastes their
+  absolute paths at the prompt, quoted for the shell when needed, separated
+  by spaces, with a space after the last. It is a paste, so an agent does
+  not submit it. While files are over a session, a dashed outline marks it.
+  Dropped anywhere else, files do nothing: the window never opens them. On
+  Linux the webview lets the page read only one path of a drop from the
+  file manager, so a drop of several files pastes one of them.
 - The header names the worktree's saved base beside its sync state and
   changes, in the same words as the row's tooltip.
 - The header shows the worktree's pull request with the same words as its

@@ -30,6 +30,8 @@ export interface TerminalView {
 	/** Fit the terminal to its place, which tells the session its new size. */
 	fit(): void;
 	focus(): void;
+	/** Paste text at the prompt, marked as pasted for programs that ask, so a line is not run by itself. */
+	paste(text: string): void;
 	/** Whether typing reaches the session. Off once its process ended. */
 	setInput(enabled: boolean): void;
 	dispose(): void;
@@ -260,6 +262,9 @@ function createView(store: AppStore, id: string): TerminalView {
 		},
 		focus() {
 			terminal.focus();
+		},
+		paste(text) {
+			terminal.paste(text);
 		},
 		setInput(enabled) {
 			terminal.options.disableStdin = !enabled;

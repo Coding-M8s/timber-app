@@ -10,6 +10,8 @@ import { isSeen } from "../seen-status";
 import { StatusGlyph } from "./StatusGlyph";
 import { terminalAppearance } from "../terminal-look";
 import { useAppState, useStore } from "../store/react";
+import { DROP_SESSION_ATTRIBUTE, watchPathDrops } from "../path-drop";
+import type { AppStore } from "../store/store";
 import { isBeingRemoved, offeredChops, sessionsOf, shownSession } from "../store/state";
 import { type ChopEntry, chopAction, chopButtonLabel, chopEntries, chopTitle, describeSessionChipMenu, sessionChipMenuChop, sessionChipMenuItems } from "../chop-format";
 import type { ChopList } from "../../shared/chops";
@@ -61,6 +63,21 @@ export function TerminalViewKeeper() {
 	useEffect(() => {
 		views?.keepTerminalViews(new Set(terminals.map(session => session.id)));
 	}, [terminals]);
+	return null;
+}
+
+/** Paste text into a session's drawn terminal and give it the keyboard. Nothing when xterm.js has not loaded, as no terminal shows then. */
+function pasteIntoSession(store: AppStore, id: string, text: string): void {
+	if (!views || !store.getState().terminals.some(session => session.id === id)) return;
+	const view = views.terminalView(store, id);
+	view.paste(text);
+	view.focus();
+}
+
+/** Files and paths dropped on a session's terminal paste at its prompt, and dropped anywhere else do nothing (see ../path-drop.ts). It draws nothing. */
+export function TerminalPathDrops() {
+	const store = useStore();
+	useEffect(() => watchPathDrops(window, (id, text) => pasteIntoSession(store, id, text)), [store]);
 	return null;
 }
 
@@ -121,7 +138,8 @@ function TerminalScreen({ session }: { session: TerminalSession }) {
 		};
 	}, [store, session.id, running]);
 
-	return <div className="terminal-screen" ref={place} />;
+	// A running session is a place to drop files: their paths paste at its prompt.
+	return <div className="terminal-screen" ref={place} {...{ [DROP_SESSION_ATTRIBUTE]: running ? session.id : undefined }} />;
 }
 
 interface SessionProps {

@@ -4120,6 +4120,11 @@ pre:focus-visible {
 	overflow: hidden;
 }
 
+.terminal-screen.drop-target {
+	outline: 2px dashed var(--focus);
+	outline-offset: -4px;
+}
+
 .terminal-host {
 	width: 100%;
 	height: 100%;

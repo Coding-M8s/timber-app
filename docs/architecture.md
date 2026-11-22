@@ -3903,6 +3903,23 @@ that run when the app quits open again when it starts.
   lighter or darker shade of the same hue. xterm halves the minimum for dim
   text, which it draws faint on purpose, and leaves box and block
   characters alone.
+- **Dropped files.** `watchPathDrops` in `src/mainview/path-drop.ts` takes
+  every drag in the window that carries files (`Files` or `text/uri-list`)
+  or Files panel rows (`application/x-timber-paths`, a JSON list of
+  absolute paths), and leaves text drags alone. Over a running session's
+  terminal (`data-drop-session`) it accepts the drop and outlines it; a drop
+  there pastes `pathsPasteText(droppedPaths(...))` through xterm's `paste`,
+  so it is bracketed. Anywhere else the drop is taken and does nothing, so
+  neither the webview nor the editor opens the file. The pure parts are in
+  `src/mainview/terminal-drop.ts`: the app's own list first, then the URI
+  list, then the `file:` URIs in `text/html`. WebKitGTK gives a page an
+  empty `text/uri-list` for a drop from a file manager and writes one URI,
+  the item under the pointer, as a link's text in `text/html`, so on Linux
+  a drop of several files brings one path (seen with WebKitGTK through
+  Electrobun 2.0.6). Such a drop can also make the webview open a file
+  whatever the page does, so the window is made with the navigation rule
+  `^file://*` (`src/bun/index.ts`), which keeps it on the app. Quoting is
+  for POSIX shells: plain paths as they are, anything else in single quotes.
 - **Ending.** Closing a session hangs up its terminal and sends SIGHUP to
   every process in the shell's session, waits until all of them ended or two
   seconds passed, kills what is still there, and answers once the shell has
