@@ -58,3 +58,30 @@ export function agentMark(lookup: AgentLookup | null): string | null {
 	if (lookup === null || lookup.state === "found") return null;
 	return lookup.state === "not-found" ? "not found" : "cannot start";
 }
+
+/**
+ * The default agent: the one that starts wherever no agent was picked or
+ * named (the New worktree and Start work dialogs, the timber new handoff, a
+ * review sent to a new agent, a prompt chop that names no agent). It is the
+ * first saved agent whose executable was found. None when no agent was
+ * found, and none while any agent is not known yet, so an agent that turns
+ * out to be missing is never started, and a known one is never passed over
+ * for a later one. The main process applies the same rule to its own look.
+ */
+export function defaultAgent(agents: readonly AgentSetting[], locations: readonly AgentLocation[] | null): AgentSetting | null {
+	if (!agentsLocated(locations, agents)) return null;
+	return agents.find(agent => agentFound(locations, agent)) ?? null;
+}
+
+/**
+ * Why there is no default agent: none is saved, the app has not found out
+ * yet which are installed (no look, a look that failed, or one from before
+ * an agent's command changed), or every one was looked for and none can start.
+ */
+export type NoDefaultAgent = "none-saved" | "not-known" | "none-found";
+
+/** Why `defaultAgent` gives none for these agents and locations. Only meaningful when it does. */
+export function whyNoDefaultAgent(agents: readonly AgentSetting[], locations: readonly AgentLocation[] | null): NoDefaultAgent {
+	if (agents.length === 0) return "none-saved";
+	return agentsLocated(locations, agents) ? "none-found" : "not-known";
+}

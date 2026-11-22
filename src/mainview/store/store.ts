@@ -1,4 +1,5 @@
 import { sameAgentSettings } from "../../shared/agent";
+import { defaultAgent, whyNoDefaultAgent } from "../../shared/agent-lookup";
 import type { IssueSearchRequest, IssueSearchResult } from "../../shared/issue-search";
 import type { IssueList, IssueListResult } from "../../shared/issue-lists";
 import type { IssueTracker } from "../../shared/model";
@@ -15,7 +16,7 @@ import type { WorktreeHandoff } from "../../shared/handoff";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "../../shared/git-fetch";
 import { type ChopList, type RunChopResult, commandChops, findListedChop, listedChops } from "../../shared/chops";
 import { promptTarget, reviewWaiting } from "../agent-sessions";
-import { describePromptCopied, describePromptSent } from "../chop-format";
+import { describePromptCopied, describePromptCopiedNoAgentFound, describePromptSent } from "../chop-format";
 import { type Comparison, type FileChange, type FileChangeTarget, type FileChangesResult, type FileDiff, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
 import type { PortsResult } from "../../shared/ports";
 import { type DiffLayout, type Layout, type SidePanelView, chooseComparison, chooseIssueList, chosenComparison, clampChopsWidth, clampSidebarWidth, dismissSetup, forgetGroup, forgetRepository, sameLayout, toggleCollapsed, toggleGroupCollapsed } from "../../shared/layout";
@@ -36,7 +37,7 @@ import type { ExportThemeResult, ImportThemeResult } from "../../shared/theme-fi
 import { type OpenTerminalRequest, type OpenTerminalResult, type PasteResult, type TerminalChange, type TerminalSession, WORKTREE_SETUP_SESSION_NAME } from "../../shared/terminal";
 import { type ReviewNote, buildReviewMessage, markOutdated, normalizeNoteText, notedFiles, noteLinesShown, noteProblem } from "../../shared/review";
 import {
-	REVIEW_COPIED, describeReviewAgentStarted, describeReviewNotPasted, describeReviewSent, reviewAlreadyWaiting,
+	REVIEW_COPIED, describeReviewAgentStarted, describeReviewNotPasted, describeReviewSent, noNewReviewAgent, reviewAlreadyWaiting,
 } from "../review-format";
 import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "../../shared/timber-config";
 import type { DoneApplyRequest, DoneApplyResult, DonePreview, DonePreviewRequest, DonePreviewResult } from "../../shared/timber-done";
@@ -55,7 +56,7 @@ import { installStepOf } from "../app-update-format";
 import { BEING_REMOVED_REASON, describeDone, describeRemovalFailed } from "../done-format";
 import { SESSION_STARTED_DIAGNOSTIC, describeCleanUpEnded } from "../clean-up-format";
 import { describeOpenedInEditor } from "../editor-format";
-import { HANDOFF_NO_AGENT, describeHandoffNotListed, handoffAgent } from "../handoff-format";
+import { describeHandoffNotListed, handoffSession } from "../handoff-format";
 import { describeAdded, describeRemoved, folderName, worktreeLabel } from "../format";
 import { workflowAgentLabel } from "../agent-format";
 import { describeFetched } from "../fetch-format";
@@ -443,15 +444,15 @@ export interface AppStore {
 	 */
 	sendReview(worktreeId: string, sessionId: string, message: string): Promise<PasteResult>;
 	/**
-	 * Start the first agent saved in Settings as a new session of the
-	 * worktree, to paste `message`, as the preview showed it, once the agent
+	 * Start the default agent (the first saved agent found, looked for again
+	 * now) as a new session of the worktree, to paste `message`, as the preview showed it, once the agent
 	 * is ready, with no Enter (`OpenTerminalRequest.review`). Once started,
 	 * the dialog closes, the session shows, saying it waits, and a toast says
 	 * so. Once pasted, the notes that were sent are gone, unless changed
 	 * meanwhile, and a toast says to press Enter there; when it is not
 	 * pasted, the notes stay and a toast says why. Nothing starts while
 	 * another session starts in the worktree, while another agent there waits
-	 * to paste a review, or in a folder being deleted. Answers why nothing
+	 * to paste a review, in a folder being deleted, or with no default agent. Answers why nothing
 	 * started, or null. Never throws.
 	 */
 	startReviewAgent(worktreeId: string, message: string, size: { cols: number; rows: number }): Promise<string | null>;
@@ -1942,7 +1943,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	}
 
 	/** Put a prompt chop's text, as listed or as edited for this run, on the clipboard. */
-	async function copyPrompt(repositoryPath: string, name: string, text?: string): Promise<void> {
+	async function copyPrompt(repositoryPath: string, name: string, text?: string, noAgentFound = false): Promise<void> {
 		const offered = offeredChops(state);
 		const list = offered?.repository === repositoryPath ? offered.list : null;
 		const chop = findListedChop(listedChops(list), name);
@@ -1956,7 +1957,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			showToast(`${chop.name} could not be put on the clipboard.`, true);
 			return;
 		}
-		showToast(describePromptCopied(chop.name));
+		if (noAgentFound) showToast(describePromptCopiedNoAgentFound(chop.name), true);
+		else showToast(describePromptCopied(chop.name));
 	}
 
 	/** Send a prompt chop to a running agent session, which shows once it went. */
@@ -2006,6 +2008,15 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				return;
 			}
 			if (where.session !== null) return sendPromptChop(repositoryPath, worktreeId, worktree.path, name, size, where.session, approve, text);
+			if (listed.agent === null) {
+				// A new agent, the default one: looked for again now. With none found the prompt is copied, as with none saved.
+				// While not known, the main process, which looks itself, decides.
+				await locateAgents();
+				const { agents } = state.preferences;
+				if (agents.length > 0 && defaultAgent(agents, state.agentLocations) === null && whyNoDefaultAgent(agents, state.agentLocations) === "none-found") {
+					return copyPrompt(repositoryPath, name, text, true);
+				}
+			}
 		}
 		const worktree = worktreeOf(repositoryPath, worktreeId);
 		// After the approval dialog closed, or for a prompt, whose palette entry does not wait for a starting session,
@@ -3225,25 +3236,30 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	/**
 	 * Open the session of a worktree that `timber new` in a terminal handed
 	 * over, as the New worktree dialog does: select it, show the Workspace
-	 * tab, and start the first saved agent when Timber wanted its agent, or a
-	 * shell. The repository is read again first, since the worktree is new.
+	 * tab, and start the default agent (the first saved agent found, looked
+	 * for again now) when Timber wanted its agent, or a shell, with a toast
+	 * when the shell opened in place of the agent. The repository is read again first, since the worktree is new.
 	 * Only a worktree in the list opens; otherwise a toast says how to open it.
 	 * The terminal it was typed in is left alone.
 	 */
 	async function takeHandoff(handoff: WorktreeHandoff): Promise<void> {
-		if (state.repositories.some(repository => repository.path === handoff.repository)) await reloadOne(handoff.repository);
+		// The agents are looked for again beside the read, so the default agent is the one there now.
+		await Promise.all([
+			state.repositories.some(repository => repository.path === handoff.repository) ? reloadOne(handoff.repository) : null,
+			handoff.agent ? locateAgents() : null,
+		]);
 		const worktree = state.repositories.find(repository => repository.path === handoff.repository)?.worktrees.find(candidate => candidate.path === handoff.worktree);
 		if (!worktree) {
 			showToast(describeHandoffNotListed(handoff), true);
 			return;
 		}
-		const agent = handoffAgent(handoff, state.preferences.agents);
-		if (agent !== null) {
-			startSessionsIn(handoff.repository, { id: worktree.id, path: worktree.path, branch: worktree.branch }, { setup: false, agent: { kind: "saved", name: agent.name } });
+		const session = handoffSession(handoff, state.preferences.agents, state.agentLocations);
+		if (session.kind === "agent") {
+			startSessionsIn(handoff.repository, { id: worktree.id, path: worktree.path, branch: worktree.branch }, { setup: false, agent: { kind: "saved", name: session.agent.name } });
 			return;
 		}
 		openTerminalIn(handoff.repository, worktree.path);
-		if (handoff.agent) showToast(HANDOFF_NO_AGENT, true);
+		if (session.toast !== null) showToast(session.toast, true);
 	}
 
 	function startSessionsIn(repositoryPath: string, reported: ReportedWorktree, sessions: { setup: boolean; workflow?: string; agent: SessionAgent | null }): boolean {
@@ -3728,8 +3744,10 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			return result;
 		},
 		async startReviewAgent(worktreeId, message, size) {
-			const agent = state.preferences.agents[0];
-			if (!agent) return "No agent is saved in Settings, Agents. Copy the review instead.";
+			// The default agent, looked for again now: never a missing one ahead of one that is there.
+			if (state.preferences.agents.length > 0) await locateAgents();
+			const agent = defaultAgent(state.preferences.agents, state.agentLocations);
+			if (agent === null) return noNewReviewAgent(whyNoDefaultAgent(state.preferences.agents, state.agentLocations));
 			const listed = listedWorktree(worktreeId);
 			if (listed === null) return "The worktree is no longer listed.";
 			if (isBeingRemoved(state, listed.repository, listed.worktree.path)) return BEING_REMOVED_REASON;

@@ -1,5 +1,5 @@
 import { type AgentSetting, agentCommand, describeAgentCommand, findAgent } from "../../../shared/agent";
-import { type AgentLocation, agentFound, agentMark, agentsLocated, isFullPath, lookupOf } from "../../../shared/agent-lookup";
+import { type AgentLocation, agentFound, agentMark, agentsLocated, defaultAgent, isFullPath, lookupOf } from "../../../shared/agent-lookup";
 import { describeCommandLine } from "../../../shared/command-line";
 import type { ReportedWorktree } from "../../../shared/model";
 import { WORKTREE_PLACEHOLDER, describeTimberCommand } from "../../../shared/timber-result";
@@ -28,16 +28,8 @@ import type { WorkflowOptions } from "./workflow-choice";
  */
 export type AgentPick = string | null | undefined;
 
-/**
- * The agent the Agent field picks on its own: the first saved agent whose
- * executable was found. None when no agent was found, and none while any
- * agent is not known yet, so an agent that turns out to be missing is never
- * picked, and a known one is never passed over for a later one.
- */
-export function defaultAgent(agents: readonly AgentSetting[], locations: readonly AgentLocation[] | null): AgentSetting | null {
-	if (!agentsLocated(locations, agents)) return null;
-	return agents.find(agent => agentFound(locations, agent)) ?? null;
-}
+/** The agent the Agent field picks on its own: the default agent (`defaultAgent` in ../../../shared/agent-lookup.ts). */
+export { defaultAgent };
 
 /**
  * The agent that will start, or null for none. Any saved agent can be

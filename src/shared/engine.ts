@@ -645,11 +645,13 @@ export interface Engine {
 	 * and the command run again. A prompt chop: with `session`, the text
 	 * goes at once to that running agent session of the worktree, as one
 	 * paste and then Enter, and the answer is `sent`; without it, the chop's
-	 * agent, or the first saved agent, starts as a new session with nothing
+	 * agent, or the default agent (the first saved agent found,
+	 * `defaultAgent` in ./agent-lookup.ts), starts as a new session with nothing
 	 * added to its command line, and gets the text once it is ready
 	 * (`TerminalSession.prompt` says how that stands, see
-	 * ./agent-prompt.ts). A chop that names an agent not saved, or with no
-	 * agent saved, starts nothing (`not-configured`). The text comes from
+	 * ./agent-prompt.ts). A chop that names an agent gets that one, found or
+	 * not. A chop that names an agent not saved, or one that names none
+	 * with no agent saved or none found, starts nothing (`not-configured`). The text comes from
 	 * the chop list as the machine reads it for this call, once, unless the
 	 * request carries `text`, the person's edit for this one run, which is
 	 * typed or sent in its place (`textToRun` refuses one that is blank or

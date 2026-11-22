@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { BURST_LIMIT, BURST_WINDOW_MS, type HandoffFolder, openHandoffFolder } from "../src/bun/handoffs";
 import { sessionEnvironment } from "../src/bun/terminals";
 import { HANDOFF_SIZE_LIMIT, HANDOFF_VARIABLE, type WorktreeHandoff, isHandoffName, parseHandoff } from "../src/shared/handoff";
-import { describeHandoffNotListed, handoffAgent } from "../src/mainview/handoff-format";
+import { HANDOFF_NO_AGENT, describeHandoffNotListed, handoffSession } from "../src/mainview/handoff-format";
+import type { AgentLocation } from "../src/shared/agent-lookup";
 import { AGENT_PRESETS } from "../src/shared/agent";
 import { until, windows } from "./support/runtime";
 import { fingerprint, git, makeRepository } from "./support/timber";
@@ -37,11 +38,20 @@ describe("reading a handoff record", () => {
 		expect(isHandoffName("notes.txt")).toBe(false);
 	});
 
-	test("starts the first saved agent only when Timber wanted its agent", () => {
+	test("starts the default agent, the first saved one found, only when Timber wanted its agent, and says why a terminal opened instead", () => {
 		const handoff: WorktreeHandoff = { repository: "/repo", worktree: "/w", agent: true };
-		expect(handoffAgent(handoff, AGENT_PRESETS)?.name).toBe(AGENT_PRESETS[0]!.name);
-		expect(handoffAgent(handoff, [])).toBeNull();
-		expect(handoffAgent({ ...handoff, agent: false }, AGENT_PRESETS)).toBeNull();
+		const located = (missing: string[]): AgentLocation[] => AGENT_PRESETS.map(agent => ({
+			name: agent.name, command: agent.command, lookup: missing.includes(agent.name) ? { state: "not-found" } : { state: "found", path: `/bin/${agent.command}` },
+		}));
+		expect(handoffSession(handoff, AGENT_PRESETS, located([]))).toEqual({ kind: "agent", agent: AGENT_PRESETS[0]! });
+		// Never a missing agent ahead of one that is there.
+		expect(handoffSession(handoff, AGENT_PRESETS, located([AGENT_PRESETS[0]!.name]))).toEqual({ kind: "agent", agent: AGENT_PRESETS[1]! });
+		expect(handoffSession(handoff, AGENT_PRESETS, located(AGENT_PRESETS.map(agent => agent.name)))).toEqual({ kind: "terminal", toast: HANDOFF_NO_AGENT["none-found"] });
+		expect(handoffSession(handoff, AGENT_PRESETS, null)).toEqual({ kind: "terminal", toast: HANDOFF_NO_AGENT["not-known"] });
+		// A look from before an agent's command changed does not know the agent as it is now.
+		expect(handoffSession(handoff, [{ ...AGENT_PRESETS[0]!, command: "claude --fast" }], located([]))).toEqual({ kind: "terminal", toast: HANDOFF_NO_AGENT["not-known"] });
+		expect(handoffSession(handoff, [], [])).toEqual({ kind: "terminal", toast: HANDOFF_NO_AGENT["none-saved"] });
+		expect(handoffSession({ ...handoff, agent: false }, AGENT_PRESETS, located([]))).toEqual({ kind: "terminal", toast: null });
 	});
 
 	test("a path that is not listed is shown cleaned and quoted for the shell", () => {

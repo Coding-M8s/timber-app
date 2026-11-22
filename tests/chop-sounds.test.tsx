@@ -190,6 +190,7 @@ describe.skipIf(windows)("a chop's sound plays as it starts, in the main process
 			sendPrompt: id => id === "gone" ? { outcome: "gone", message: "The session has ended." } : { outcome: "pasted" },
 			session: () => session,
 			agents: async () => [{ name: "Codex", command: "codex" }],
+			locate: () => ({ state: "found", path: "/usr/bin/codex" }),
 			chopSounds: async () => {
 				if (saved.unreadable) throw new Error("unreadable");
 				return { play: saved.play, file: saved.file };

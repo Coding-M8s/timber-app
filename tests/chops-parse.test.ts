@@ -185,7 +185,7 @@ describe("the rows of Settings, Chops", () => {
 		const repositories = [{ path: REPO, name: "app" }];
 		expect(chopScopeOptions(repositories, null)).toEqual([{ value: "", label: "Every repository" }, { value: REPO, label: "app" }]);
 		expect(chopScopeOptions(repositories, "/work/gone").at(-1)).toEqual({ value: "/work/gone", label: "/work/gone (not in the list)" });
-		expect(chopAgentOptions([{ name: "Codex" }], "Aider")).toEqual([{ value: "", label: "First saved agent" }, { value: "Codex", label: "Codex" }, { value: "Aider", label: "Aider (no such agent)" }]);
+		expect(chopAgentOptions([{ name: "Codex" }], "Aider")).toEqual([{ value: "", label: "First agent found" }, { value: "Codex", label: "Codex" }, { value: "Aider", label: "Aider (no such agent)" }]);
 	});
 
 	test("say nothing when the file was read, a hint when it is missing, and the reason when it is damaged", () => {

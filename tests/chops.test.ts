@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chopDigest, createChops, readChopsFile } from "../src/bun/chops";
+import { locateAgent } from "../src/bun/find-executable";
 import type { ChopInput } from "../src/bun/terminals";
 import type { OpenTerminalRequest } from "../src/shared/terminal";
 import { CHOPS_FILE_BYTES, type PersonalChop } from "../src/shared/chops";
@@ -25,9 +26,13 @@ const listed = (paths: string[]): Repository => ({
 	})),
 });
 
+// Listing never looks for an agent.
+const notLooked = () => { throw new Error("listing looked for an agent"); };
+
 const chops = () => createChops({
 	findRepository: async path => path === primary ? listed([primary, linked, bare]) : null,
 	personal: async () => personal,
+	locate: notLooked,
 });
 
 const fileText = (chops: unknown[]) => `${JSON.stringify({ version: 1, chops }, null, "\t")}\n`;
@@ -77,7 +82,7 @@ describe.skipIf(windows)("reading a worktree's chops from real repositories", ()
 		personal = [{ name: "Mine", kind: "command", text: "make", description: "", agent: null, repository: null, sound: null }];
 		const lone = join(root, "lone");
 		git(root, "init", "--initial-branch=main", lone);
-		const answer = await createChops({ findRepository: async path => path === lone ? { ...listed([]), path: lone } : null, personal: async () => personal }).list({ repository: lone });
+		const answer = await createChops({ findRepository: async path => path === lone ? { ...listed([]), path: lone } : null, personal: async () => personal, locate: notLooked }).list({ repository: lone });
 		expect(answer).toMatchObject({ outcome: "listed", file: { state: "missing" }, chops: [{ name: "Mine", source: "personal-every" }] });
 		expect(existsSync(join(lone, ".timber"))).toBe(false);
 	});
@@ -128,6 +133,8 @@ describe.skipIf(windows)("reading a worktree's chops from real repositories", ()
 				},
 				session: id => ({ id, kind: "agent", name: "Codex", repository: primary, worktree: "w", path: linked, shell: "/bin/codex", command: "/bin/codex", state: { kind: "running" }, status: null, children: [] }),
 				agents: async () => agents,
+				// The agents are looked for as a session looks for them, on a real PATH: a temporary folder of executables.
+				locate: agent => locateAgent(agent, bin, false),
 				warn: () => {},
 			});
 			return { runner, opened, prompts, approvals: () => approvals };
@@ -136,8 +143,20 @@ describe.skipIf(windows)("reading a worktree's chops from real repositories", ()
 		let agents: { name: string; command: string }[] = [{ name: "Claude Code", command: "claude" }, { name: "Codex", command: "codex" }];
 		// Read once the repositories exist.
 		let request: { repository: string; worktree: string; cols: number; rows: number };
+		// The PATH the agents are looked for on: a folder with both agents' executables, made again by the tests that take one away.
+		let bin: string;
+		const installed = (names: string[]) => {
+			rmSync(bin, { recursive: true, force: true });
+			mkdirSync(bin);
+			for (const name of names) {
+				writeFileSync(join(bin, name), "#!/bin/sh\n");
+				chmodSync(join(bin, name), 0o755);
+			}
+		};
 		beforeAll(() => {
 			request = { repository: primary, worktree: linked, cols: 80, rows: 24 };
+			bin = join(root, "agent-bin");
+			installed(["claude", "codex"]);
 		});
 
 		test("a personal chop runs straight away in the worktree asked for, named after the chop", async () => {
@@ -216,7 +235,7 @@ describe.skipIf(windows)("reading a worktree's chops from real repositories", ()
 			expect(opened).toEqual([{ request: { ...request, agent: "Claude Code" }, chop: { kind: "prompt", text: "Review the diff" } }]);
 		});
 
-		test("a prompt that names no agent starts the first saved one; a named agent not saved, or none saved, starts nothing", async () => {
+		test("a prompt that names no agent starts the default agent; a named agent not saved, or none saved, starts nothing", async () => {
 			personal = [{ name: "Ask", kind: "prompt", text: "Write tests", description: "", agent: null, repository: null, sound: null }];
 			const { runner, opened } = setUp();
 			await runner.run({ ...request, chop: "Ask" });
@@ -228,6 +247,35 @@ describe.skipIf(windows)("reading a worktree's chops from real repositories", ()
 			expect(await runner.run({ ...request, chop: "Ask" })).toMatchObject({ outcome: "not-configured", message: expect.stringContaining("Copy it instead") });
 			expect(opened).toHaveLength(1);
 			agents = [{ name: "Claude Code", command: "claude" }, { name: "Codex", command: "codex" }];
+		});
+
+		test("a prompt that names no agent starts the first saved agent found on the PATH, never a missing one ahead of it", async () => {
+			try {
+				installed(["codex"]);
+				personal = [{ name: "Ask", kind: "prompt", text: "Write tests", description: "", agent: null, repository: null, sound: null }];
+				const { runner, opened } = setUp();
+				expect(await runner.run({ ...request, chop: "Ask" })).toMatchObject({ outcome: "failed" });
+				expect(opened).toEqual([{ request: { ...request, agent: "Codex" }, chop: { kind: "prompt", text: "Write tests" } }]);
+
+				// A chop that names its agent keeps it, found or not: the session then says it was not found.
+				personal = [{ ...personal[0]!, agent: "Claude Code" }];
+				await runner.run({ ...request, chop: "Ask" });
+				expect(opened.at(-1)).toEqual({ request: { ...request, agent: "Claude Code" }, chop: { kind: "prompt", text: "Write tests" } });
+
+				// None found: nothing starts, nothing asks for approval, and the answer says why.
+				installed([]);
+				personal = [{ ...personal[0]!, agent: null }];
+				expect(await runner.run({ ...request, chop: "Ask" })).toEqual({
+					outcome: "not-configured",
+					message: "None of the agents in Settings, Agents was found, so the prompt has no agent to go to. Copy it instead, or see why in Settings, Agents.",
+				});
+				expect(opened).toHaveLength(2);
+
+				// A prompt to a running agent needs no new one, so it still goes.
+				expect(await runner.run({ ...request, chop: "Ask", session: "s1" })).toMatchObject({ outcome: "sent" });
+			} finally {
+				installed(["claude", "codex"]);
+			}
 		});
 
 		test("a prompt goes to the running agent named, with the text read here, and starts nothing", async () => {

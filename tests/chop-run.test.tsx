@@ -2,15 +2,16 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { sessionMenuChoice, sessionMenuItems } from "../src/mainview/agent-format";
-import { CHOPS_NOT_READ, NO_CHOPS_FOR_SESSION, SESSION_ENDED_FOR_CHOP, chopEntries, commandChopEntries, sessionChipMenuChop, sessionChipMenuItems } from "../src/mainview/chop-format";
+import { CHOPS_NOT_READ, NO_CHOPS_FOR_SESSION, SESSION_ENDED_FOR_CHOP, chopEntries, describePromptCopiedNoAgentFound, noNewPromptAgent, commandChopEntries, sessionChipMenuChop, sessionChipMenuItems } from "../src/mainview/chop-format";
 import { ApproveChopView } from "../src/mainview/components/ApproveChopDialog";
 import { BEING_REMOVED_REASON } from "../src/mainview/done-format";
 import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { FOLDER_MISSING_FOR_SESSION, NO_WORKTREE_SELECTED, STARTING_SESSION, matchEntries, paletteEntries } from "../src/mainview/palette";
 import { runPaletteEntry } from "../src/mainview/palette-run";
 import { createAppStore } from "../src/mainview/store/store";
+import { describeRunChopRow, runChopModel } from "../src/mainview/run-chop-format";
 import {
-	CHOP_APPROVAL_LIMIT, type ChopList, type ListedChop, chopDigestInput, commandChops, findListedChop, isChopApproved, readChopApprovals, withChopApproval,
+	CHOP_APPROVAL_LIMIT, type ChopList, type ListedChop, chopDigestInput, commandChops, findListedChop, isChopApproved, noPromptAgent, readChopApprovals, withChopApproval,
 } from "../src/shared/chops";
 import { parseSettings, serializeSettings } from "../src/shared/settings";
 import { PASTE_NOT_READY, bracketedPaste, chopRunBytes, pasteBytes } from "../src/shared/terminal";
@@ -325,6 +326,52 @@ describe("prompt chops in the app (mock engine)", () => {
 		expect(other.store.getState().terminalProblem?.message).toContain('No agent called "Aider"');
 	});
 
+	test("a chop that names no agent starts the first saved agent found, never a missing one ahead of it; one that names its agent keeps it", async () => {
+		const { engine, store } = await promptStore(null);
+		// Claude Code goes missing after the app looked at start: the run looks again, and so does the mock engine.
+		engine.missingExecutables(["claude"]);
+		await store.runChop(TIMBER, FEATURE.id, "Ask", size());
+		await settle();
+		expect(store.getState().terminals.map(session => session.name)).toEqual(["Codex"]);
+		// The search names the agent that starts.
+		const other = await promptStore(null);
+		other.engine.missingExecutables(["claude"]);
+		await other.store.locateAgents();
+		expect(runChopModel(other.store.getState(), "Ask", "prompt").rows[0]?.target).toBe("to a new Codex");
+		// While the app does not know which agents are installed, the row does not guess a name.
+		other.engine.locateAgents = () => Promise.reject(new Error("gone"));
+		await other.store.savePreferences({ agents: [{ name: "Codex", command: "codex --fast" }] });
+		await settle();
+		const unknown = runChopModel(other.store.getState(), "Ask", "prompt");
+		expect(unknown.rows[0]).toMatchObject({ action: "send", target: "to a new session of the first agent found" });
+		expect(describeRunChopRow(unknown.rows[0], unknown.worktree)).toBe("Enter sends Ask to a new session of the first agent found.");
+
+		// A chop that names Claude Code still asks for it, found or not, never Codex: its start says it was not found.
+		const named = await promptStore("Claude Code");
+		named.engine.missingExecutables(["claude"]);
+		await named.store.runChop(TIMBER, FEATURE.id, "Ask", size());
+		await settle();
+		expect(named.store.getState().terminalProblem).toMatchObject({ worktree: FEATURE.id, message: expect.stringContaining("Claude Code") });
+		expect(named.store.getState().terminals.map(session => session.name)).not.toContain("Codex");
+	});
+
+	test("with none of the saved agents found, a chop that names no agent is copied, and the toast says why; the mock engine refuses it as the main process does", async () => {
+		const { engine, store } = await promptStore(null);
+		engine.missingExecutables(["claude", "codex"]);
+		await store.locateAgents();
+		const model = runChopModel(store.getState(), "Ask", "prompt");
+		expect(model.rows[0]).toMatchObject({ action: "copy", target: "copied: no agent was found", blocked: null });
+		expect(describeRunChopRow(model.rows[0], model.worktree)).toBe("Enter copies Ask: none of the agents in Settings, Agents was found.");
+		await store.runChop(TIMBER, FEATURE.id, "Ask", size());
+		await settle();
+		expect(store.getState().terminals).toEqual([]);
+		expect(await engine.readClipboard()).toBe(ASK);
+		expect(toastTexts(store)).toContain(describePromptCopiedNoAgentFound("Ask"));
+		// Asked straight, the engine starts nothing and says why, in the main process's words.
+		expect(await engine.runChop({ repository: TIMBER, worktree: FEATURE.path, chop: "Ask", ...size() })).toEqual({ outcome: "not-configured", message: noPromptAgent(askChop(null), true) });
+		expect(store.getState().terminals).toEqual([]);
+	});
+
 	test("with one agent running, it goes there as typed input, and no agent starts", async () => {
 		const { engine, store } = await promptStore();
 		await store.openTerminal({ repository: TIMBER, worktree: FEATURE.path, ...size(), agent: "Claude Code" });
@@ -361,6 +408,22 @@ describe("prompt chops in the app (mock engine)", () => {
 		await settle();
 		expect(store.getState().terminals).toHaveLength(3);
 		expect(engine.promptsSentTo(store.getState().terminals[2]!.id)).toEqual([ASK]);
+	});
+
+	test("the dialog's new agent for a chop that names none is the first saved agent found, or none, saying why", async () => {
+		const { engine, store } = await promptStore(null);
+		await store.openTerminal({ repository: TIMBER, worktree: FEATURE.path, ...size(), agent: "Claude Code" });
+		await store.openTerminal({ repository: TIMBER, worktree: FEATURE.path, ...size(), agent: "Codex" });
+		await settle();
+		engine.missingExecutables(["claude"]);
+		await store.locateAgents();
+		await store.runChop(TIMBER, FEATURE.id, "Ask", size());
+		expect(renderToStaticMarkup(<App store={store} />)).toContain("A new Codex");
+		engine.missingExecutables(["claude", "codex"]);
+		await store.locateAgents();
+		const markup = renderToStaticMarkup(<App store={store} />);
+		expect(markup).toContain(noNewPromptAgent(null, "none-found"));
+		expect(markup).not.toContain("A new Codex");
 	});
 
 	test("an only agent that waits on the person is never picked without asking", async () => {

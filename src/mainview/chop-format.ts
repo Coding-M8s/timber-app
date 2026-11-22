@@ -4,6 +4,7 @@ import {
 	sameChopName, samePersonalChops,
 } from "../shared/chops";
 import { type ChopArrangement, type ChopRename, arrangeChops } from "../shared/chop-order";
+import type { NoDefaultAgent } from "../shared/agent-lookup";
 import type { SoundChoice } from "../shared/sound-setting";
 import { cleanSessionName } from "../shared/terminal";
 import type { WorktreeMenuItem, WorktreeMenuItemId } from "./worktree-menu-format";
@@ -20,7 +21,7 @@ export interface ChopDraft {
 	kind: ChopKind;
 	text: string;
 	description: string;
-	/** For a prompt: an agent's name, or null for the first saved agent. Kept while the kind is a command, and left out when saved. */
+	/** For a prompt: an agent's name, or null for the default agent, the first saved agent found. Kept while the kind is a command, and left out when saved. */
 	agent: string | null;
 	/** The primary checkout of the repository it is for, or null for every repository. */
 	repository: string | null;
@@ -180,18 +181,18 @@ export function chopScopeOptions(repositories: readonly { path: string; name: st
 
 /** One choice of a prompt's "Agent" field. */
 export interface ChopAgentOption {
-	/** "" for the first saved agent, otherwise the agent's name. */
+	/** "" for the default agent (the first saved agent found), otherwise the agent's name. */
 	value: string;
 	label: string;
 }
 
 /**
- * The choices of a prompt's "Agent" field: the first saved agent, then each
+ * The choices of a prompt's "Agent" field: the default agent, the first saved agent found, then each
  * saved agent. A name no agent has, such as one from another machine, is kept
  * for the row that names it, and marked.
  */
 export function chopAgentOptions(agents: readonly { name: string }[], chosen: string | null): ChopAgentOption[] {
-	const options = [{ value: "", label: "First saved agent" }, ...agents.map(agent => ({ value: agent.name, label: agent.name }))];
+	const options = [{ value: "", label: "First agent found" }, ...agents.map(agent => ({ value: agent.name, label: agent.name }))];
 	if (chosen !== null && !agents.some(agent => agent.name === chosen)) options.push({ value: chosen, label: `${chosen} (no such agent)` });
 	return options;
 }
@@ -323,6 +324,11 @@ export function describePromptCopied(name: string): string {
 	return `${name} copied. Paste it where you want it.`;
 }
 
+/** The toast after a prompt that would start the default agent was copied instead, since none of the saved agents was found. */
+export function describePromptCopiedNoAgentFound(name: string): string {
+	return `${name} copied: none of the agents in Settings, Agents was found, so no agent could start. Paste it where you want it.`;
+}
+
 /** The toast after a prompt went to a running agent, or to a new one once it was ready. */
 export function describePromptSent(chop: string | null, session: string): string {
 	return chop === null ? `Prompt sent to ${session}.` : `${chop} sent to ${session}.`;
@@ -337,6 +343,20 @@ export function describeNewAgentChoice(agent: string | null): string {
 	return agent === null ? "A new agent" : `A new ${agent}`;
 }
 
+/**
+ * Why a prompt chop's "new agent" choice cannot be picked: the agent the chop
+ * names is not saved, or, naming none, there is no default agent, by why.
+ */
+export function noNewPromptAgent(named: string | null, why: NoDefaultAgent): string {
+	if (named !== null) return `No agent called "${named}" is saved in Settings, Agents.`;
+	switch (why) {
+		case "none-saved": return "No agent is saved in Settings, Agents.";
+		case "none-found": return "None of the agents in Settings, Agents was found.";
+		// Never shown: while not known, the choice stays open and the main process decides.
+		case "not-known": return "The app has not found out yet which agents are installed.";
+	}
+}
+
 /** The label of a chop in a session's menu. */
 export function insertChopLabel(name: string): string {
 	return `Insert chop: ${name}`;
@@ -346,11 +366,15 @@ export const CHOPS_NOT_READ = "The chops of this repository are being read.";
 export const SESSION_ENDED_FOR_CHOP = "The session has ended, so nothing can be typed into it.";
 export const NO_CHOPS_FOR_SESSION = "This repository has no command chops. Add some in Settings, Chops.";
 
-/** What the dialog before a repository chop runs says. */
-export function describeChopApproval(chop: Pick<ListedChop, "name" | "kind"> & { agent?: string | null }, path: string, target: string | null = null): { title: string; text: string; submit: string } {
+/**
+ * What the dialog before a repository chop runs says. `defaultName` is the
+ * default agent's name (`defaultAgent`), or null while there is none known.
+ */
+export function describeChopApproval(chop: Pick<ListedChop, "name" | "kind"> & { agent?: string | null }, path: string, target: string | null = null, defaultName: string | null = null): { title: string; text: string; submit: string } {
 	if (chop.kind === "prompt") {
-		// A new agent is named, since the file picks it: the chop's, or the first saved one.
-		const where = target !== null ? target : chop.agent ? `a new ${chop.agent}` : "a new session of your first saved agent";
+		// A new agent is named, since the file picks it: the chop's, or the default agent, the first saved one found.
+		const named = chop.agent || defaultName;
+		const where = target !== null ? target : named ? `a new ${named}` : "a new session of the first agent found";
 		return {
 			title: `Send ${chop.name} from the repository?`,
 			text: `This prompt comes from ${path}, which anyone who can change the repository can change. It goes to ${where} exactly as shown, and is submitted. The app asks the first time a chop's text is used, and again whenever it changes.`,

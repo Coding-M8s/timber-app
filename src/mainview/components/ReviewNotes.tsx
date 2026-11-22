@@ -3,13 +3,14 @@ import { promptTarget, reviewWaiting, runningAgents, waitsOnPerson } from "../ag
 import { AgentChoices } from "./AgentChoices";
 import { estimateTerminalSize } from "./TerminalPanel";
 import { describeAgentCommand } from "../../shared/agent";
+import { defaultAgent, whyNoDefaultAgent } from "../../shared/agent-lookup";
 import { type ReviewNote, noteLocation, noteSpan, quotedParts } from "../../shared/review";
 import { cleanLine } from "../../shared/safe-text";
 import { splitPath } from "../changes-format";
 import { PASTE_TEXT_LIMIT, type PasteResult } from "../../shared/terminal";
 import { useAppState, useStore } from "../store/react";
 import {
-	EMPTY_LINE, NEW_REVIEW_AGENT_NOTE, NO_REVIEW_AGENT, OUTDATED_REFERENCE, REVIEW_NOT_COPIED, REVIEW_PASTE_NOTE, REVIEW_WAITS_WARNING,
+	EMPTY_LINE, NEW_REVIEW_AGENT_NOTE, OUTDATED_REFERENCE, noReviewAgent, REVIEW_NOT_COPIED, REVIEW_PASTE_NOTE, REVIEW_WAITS_WARNING,
 	describeNewReviewAgent, describeNoteCount, describeReference, reviewAlreadyWaiting, reviewTooLong,
 } from "../review-format";
 import { NO_NOTES_HINT } from "../changes-panel-format";
@@ -319,7 +320,8 @@ export function ReviewSection({ worktree, onGone }: { worktree: string; onGone: 
 /**
  * The preview of a review before it goes anywhere: the agent to paste it
  * into, and the message exactly as it will be pasted. The choices are the
- * worktree's running agents and a new one, the first saved agent, with the
+ * worktree's running agents and a new one, the default agent (the first
+ * saved agent found), with the
  * command that starts it. What is picked at first is as for a prompt chop
  * (`promptTarget`): the new agent when none runs, the only one when it does
  * not wait on the person, and otherwise nothing, so the person picks.
@@ -334,7 +336,7 @@ export function SendReviewDialog({ worktree }: { worktree: string }) {
 	const [message, setMessage] = useState<string | null>(null);
 	const [prepared, setPrepared] = useState(false);
 	const sessions = runningAgents(state.terminals, worktree);
-	const newAgent = state.preferences.agents[0] ?? null;
+	const newAgent = defaultAgent(state.preferences.agents, state.agentLocations);
 	const waiting = reviewWaiting(state.terminals, worktree);
 	const firstPick = () => {
 		const target = promptTarget(state.terminals, worktree);
@@ -342,7 +344,8 @@ export function SendReviewDialog({ worktree }: { worktree: string }) {
 	};
 	const [picked, setPicked] = useState<string | null>(firstPick);
 	// An agent that starts or ends while the dialog is open changes what is picked at first: never a new one beside one that runs now.
-	const running = sessions.map(session => session.id).join(" ");
+	// So does the default agent, once the look for the agents answers.
+	const running = `${sessions.map(session => session.id).join(" ")}\0${newAgent?.name ?? ""}`;
 	const seenRunning = useRef(running);
 	useEffect(() => {
 		if (seenRunning.current === running) return;
@@ -366,6 +369,11 @@ export function SendReviewDialog({ worktree }: { worktree: string }) {
 			if (lost && opener instanceof HTMLElement && opener.isConnected) opener.focus();
 		};
 	}, []);
+
+	// The new agent is the default one: look again for which agents are installed, as the New worktree dialog does.
+	useEffect(() => {
+		void store.locateAgents();
+	}, [store]);
 
 	useEffect(() => {
 		let current = true;
@@ -415,7 +423,7 @@ export function SendReviewDialog({ worktree }: { worktree: string }) {
 				</header>
 				<div className="dialog-fields">
 					{!canSend ? (
-						<p className="dialog-note">{NO_REVIEW_AGENT}</p>
+						<p className="dialog-note">{noReviewAgent(whyNoDefaultAgent(state.preferences.agents, state.agentLocations))}</p>
 					) : (
 						<AgentChoices sessions={sessions} picked={picked} onPick={setPicked} name="review-agent" legend="Paste into" disabled={sending}>
 							{newAgent !== null && (

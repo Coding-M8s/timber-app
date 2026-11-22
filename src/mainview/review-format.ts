@@ -1,3 +1,4 @@
+import type { NoDefaultAgent } from "../shared/agent-lookup";
 import { PASTE_TEXT_LIMIT } from "../shared/terminal";
 
 /**
@@ -12,11 +13,27 @@ export const REVIEW_WAITS_WARNING =
 /** What the new agent choice says it does, before the command that starts it. */
 export const NEW_REVIEW_AGENT_NOTE = "Starts it here, then pastes the review once it is ready. Command:";
 
-export const NO_REVIEW_AGENT = "No agent runs in this worktree, and none is saved in Settings, Agents. Copy the review and paste it where you want it.";
+/** What the Send review dialog says with no agent running in the worktree and no default agent to start, by why there is none. */
+export function noReviewAgent(why: NoDefaultAgent): string {
+	switch (why) {
+		case "none-saved": return "No agent runs in this worktree, and none is saved in Settings, Agents. Copy the review and paste it where you want it.";
+		case "none-found": return "No agent runs in this worktree, and none of the agents in Settings, Agents was found. Copy the review and paste it where you want it.";
+		case "not-known": return "No agent runs in this worktree, and the app has not found out yet which agents are installed. Copy the review and paste it where you want it.";
+	}
+}
+
+/** Why a review starts no new agent, as `startReviewAgent` answers, by why there is no default agent. */
+export function noNewReviewAgent(why: NoDefaultAgent): string {
+	switch (why) {
+		case "none-saved": return "No agent is saved in Settings, Agents. Copy the review instead.";
+		case "none-found": return "None of the agents in Settings, Agents was found. Copy the review instead.";
+		case "not-known": return "The app could not find out which agents are installed. Copy the review instead, or send it again.";
+	}
+}
 
 export const REVIEW_PASTE_NOTE = "The review is pasted into the agent's input as one paste. Nothing is sent until you press Enter there.";
 
-/** The choice of a new agent for a review: the first saved agent, by name. */
+/** The choice of a new agent for a review: the default agent (the first saved agent found), by name. */
 export function describeNewReviewAgent(name: string): string {
 	return `New ${name}`;
 }

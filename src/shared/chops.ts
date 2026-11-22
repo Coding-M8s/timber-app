@@ -41,7 +41,8 @@ export interface Chop {
 	description: string;
 	/**
 	 * For a prompt, the name of the agent from Settings, Agents that gets it,
-	 * or null for the first saved agent. A name the person has no agent for
+	 * or null for the default agent (`defaultAgent` in ./agent-lookup.ts: the
+	 * first saved agent whose executable was found). A name the person has no agent for
 	 * is still a valid chop: running it says so, and never falls back to
 	 * another agent. Always null for a command.
 	 */
@@ -384,7 +385,7 @@ export function readChopApprovals(value: unknown): Record<string, string[]> {
  * person's shell there, named after the chop, and types the chop's text into
  * it. A prompt chop: the main process sends the text to the running agent
  * session `session` names, or, without one, starts the chop's agent (the
- * first saved agent when it names none) and sends it once the agent is
+ * default agent, the first saved one found, when it names none) and sends it once the agent is
  * ready. The text is looked up by name, from the same list `listChops`
  * answers. A repository chop runs only once its text was approved for the
  * repository: otherwise the answer is `needs-approval` with the text to
@@ -410,6 +411,17 @@ export interface RunChopRequest {
 	 * text is approved (`approve`), edited or not.
 	 */
 	text?: string;
+}
+
+/**
+ * Why a prompt chop starts no new agent, said the same by the main process
+ * and the mock: the agent it names is not saved, or, naming none, no agent
+ * is saved, or none of the saved agents was found. Nothing starts either way.
+ */
+export function noPromptAgent(chop: Pick<Chop, "name" | "agent">, agentsSaved: boolean): string {
+	if (chop.agent !== null) return `No agent called "${chop.agent}" is saved in Settings, Agents, so ${chop.name} cannot start it. Nothing was started.`;
+	if (!agentsSaved) return "No agent is saved in Settings, Agents, so the prompt has no agent to go to. Copy it instead.";
+	return "None of the agents in Settings, Agents was found, so the prompt has no agent to go to. Copy it instead, or see why in Settings, Agents.";
 }
 
 /**

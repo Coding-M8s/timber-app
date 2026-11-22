@@ -673,10 +673,31 @@ workflow's `post_create` scripts after the ordinary ones.
   field and the footer say that the workflow's agent starts instead if it
   sets one.
 
+**The default agent.** Wherever an agent starts that nobody picked or
+named, it is the default agent: the first saved agent, in Settings order,
+whose executable was found (`defaultAgent` in `src/shared/agent-lookup.ts`).
+None when none was found, and none while any agent is not known yet (never
+looked for, a look that failed, or a look from before its command changed),
+so a missing agent is never started ahead of one that is there.
+In the window, `whyNoDefaultAgent` says which of none saved, none found, or
+not known it is, and the messages that say why no agent started key off it;
+the main process and the mock say the same with `noPromptAgent`. The one rule
+serves the New worktree and Start work dialogs' Agent field, the `timber new`
+handoff, a review sent to a new agent, and a prompt chop that names no
+agent. The window looks for the agents again before the handoff, a new
+review agent, or a prompt chop's new agent starts (`AppStore.locateAgents`),
+and the Send review and Send prompt dialogs look again as they open, so the
+text that names the default agent names the one that starts. The main
+process applies the same rule itself for prompt chops, with
+`TerminalSessions.locateAgent` (`locateAgent` in `src/bun/find-executable.ts`
+on the PATH the app was started with), since it picks the agent there; the
+mock engine applies it to its own look. An agent picked in a dialog, or
+named by a chop, is never replaced: it starts found or not, and a missing
+one fails in its pane.
+
 Both modes share an **Agent** field under their own fields: the agents from
-Settings, Agents, in menu order, then None. The first agent whose
-executable was found is picked (`defaultAgent`); with none found, or while
-any agent is not known yet, None is. An agent not found is marked "(not
+Settings, Agents, in menu order, then None. The default agent is picked;
+with none found, or while any agent is not known yet, None is. An agent not found is marked "(not
 found)", one found but refused (a relative path, or a Windows batch file)
 "(cannot start)", and either can still be picked, with a hint that it will
 not start; started anyway, it fails in its pane as before. The dialog looks
@@ -1923,7 +1944,7 @@ every machine agrees. The rules are pure, in
   or `prompt`. `text` is never blank and at most 10,000 characters.
   `description` is one line, at most 200 characters, or empty. `agent` is
   only for a prompt: an agent's name from Settings, Agents, or none for the
-  first saved agent. A name no saved agent has is still a valid chop, since
+  default agent (the first saved agent found). A name no saved agent has is still a valid chop, since
   a shared file names agents other people may not have; running it must
   say so, never fall back to another agent.
 - **Text is checked, not cleaned.** It may hold line breaks and tabs, and
@@ -4042,17 +4063,22 @@ the Send prompt dialog, `src/mainview/components/AgentChoices.tsx`.
   none runs in the worktree, the only one when it does not wait on the
   person and is not still waiting for text of its own, and otherwise
   nothing, so the person picks. The choices are the running agents and a
-  new one, the first agent saved in Settings, with its command line
-  (`describeAgentCommand`). With none saved, no new one is offered; with
-  none saved and none running, Copy review is the only way.
+  new one, the default agent (the first saved agent found), with its
+  command line (`describeAgentCommand`). With none saved, none found, or
+  none known yet, no new one is offered; with no new one and none running,
+  Copy review is the only way, and the dialog says which of the three it is
+  (`noReviewAgent`). The dialog looks for the agents again as it opens, and
+  its first pick follows the default agent once the look answers.
 - **Sending** (`sendReview`). The dialog shows the message from
   `prepareReview` and sends that string. Once pasted, the worktree's notes
   are gone, the dialog closes, a toast says to press Enter in the agent,
   and its session shows. Any other answer keeps the notes and the dialog,
   with the reason. Copy review writes the same string to the clipboard and
   keeps the notes.
-- **Sending to a new agent** (`startReviewAgent`). The store opens the
-  first saved agent with `openTerminal` and `review` set to the message.
+- **Sending to a new agent** (`startReviewAgent`). The store looks for the
+  agents again, then opens the default agent with `openTerminal` and
+  `review` set to the message. With none, nothing starts and the answer
+  says why and to copy the review (`noNewReviewAgent`).
   The main process takes the review as a prompt chop's prompt with no
   Enter: the agent starts as usual, with nothing of the review on its
   command line, and the review waits for `isReadyForPrompt` (`src/shared/agent-prompt.ts`), so an
@@ -4811,11 +4837,13 @@ terminals"); the app's side is `src/bun/handoffs.ts`,
   warning in the app's log.
 - **Opening.** The window reads the repository again, then looks for the
   worktree in the list. Found: it selects it, shows the Workspace tab, and
-  starts the first saved agent there when Timber wanted its agent, or a
-  shell, which takes the keyboard (`startSessionsIn`, `openTerminalIn`).
+  starts the default agent there (the first saved agent found, looked for
+  again beside the read) when Timber wanted its agent, or a shell, which
+  takes the keyboard (`startSessionsIn`, `openTerminalIn`, `handoffSession`).
   Timber says whether an agent starts, the app says which; Timber's own
-  agent setting may name another. With no saved agent a shell opens and a
-  toast points to Settings, Agents. A worktree that is not in the list, such
+  agent setting may name another. With no default agent a shell opens and a
+  toast says why (`HANDOFF_NO_AGENT`): none saved, none found, or the app
+  could not find out which agents are installed. A worktree that is not in the list, such
   as one in a repository the app does not show, opens nothing; the toast
   gives `timber open --agent --no-editor -- '<path>'`. The terminal it was
   typed in keeps running, untouched.

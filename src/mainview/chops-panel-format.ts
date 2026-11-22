@@ -1,4 +1,5 @@
 import { type ArrangedChop, type ChopArrangement, type ChopRename, NO_CHOP_ARRANGEMENT, arrangeChops, chopArrangementOf, renameInArrangements } from "../shared/chop-order";
+import { defaultAgent, whyNoDefaultAgent } from "../shared/agent-lookup";
 import { DEFAULT_SHORTCUTS, type ShortcutLetter, describeChord, matchesChord, shortcutLetter } from "../shared/shortcuts";
 import { type ChopKind, type ChopList, type ChopSource, type ListedChop, listedChops } from "../shared/chops";
 import { promptTarget } from "./agent-sessions";
@@ -217,8 +218,16 @@ function describeTarget(state: AppState, kind: ChopKind, action: ChopAction): st
 			const session = state.terminals.find(candidate => candidate.id === target.session);
 			return `Prompts go to ${session?.name ?? "the agent running"} in ${where}.`;
 		}
-		case "new":
-			return `Prompts start a new agent in ${where}: the one the chop names, or ${state.preferences.agents[0]!.name}.`;
+		case "new": {
+			// The default agent: the first saved one found.
+			const { agents } = state.preferences;
+			const fallback = defaultAgent(agents, state.agentLocations);
+			if (fallback !== null) return `Prompts start a new agent in ${where}: the one the chop names, or ${fallback.name}.`;
+			if (whyNoDefaultAgent(agents, state.agentLocations) === "none-found") {
+				return `Prompts start the agent the chop names in ${where}. None of the agents in Settings, Agents was found, so a prompt that names none is copied to the clipboard.`;
+			}
+			return `Prompts start a new agent in ${where}: the one the chop names, or the first agent found.`;
+		}
 		case "ask":
 			return `You pick the agent in ${where} when you send a prompt.`;
 	}

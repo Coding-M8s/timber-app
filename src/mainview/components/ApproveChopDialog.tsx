@@ -1,3 +1,4 @@
+import { defaultAgent } from "../../shared/agent-lookup";
 import type { ListedChop } from "../../shared/chops";
 import { describeChopApproval, describeEditedApproval } from "../chop-format";
 import { useAppState, useStore } from "../store/react";
@@ -10,6 +11,8 @@ export interface ApproveChopViewProps {
 	path: string;
 	/** For a prompt: the agent session it goes to, by name, or null for a new agent. */
 	target?: string | null;
+	/** The default agent's name, which a new agent is when the chop names none, or null while none is known. */
+	defaultName?: string | null;
 	/** The text the person edited for this run, which runs in place of the chop's once its own text is approved. */
 	edited?: string;
 	onRun: () => void;
@@ -22,8 +25,8 @@ export interface ApproveChopViewProps {
  * comes from. Run is never the default: focus starts on Cancel, and Enter
  * does not run it.
  */
-export function ApproveChopView({ chop, path, target = null, edited, onRun, onClose }: ApproveChopViewProps) {
-	const words = describeChopApproval(chop, path, target);
+export function ApproveChopView({ chop, path, target = null, defaultName = null, edited, onRun, onClose }: ApproveChopViewProps) {
+	const words = describeChopApproval(chop, path, target, defaultName);
 	return (
 		<OperationDialog
 			title={words.title}
@@ -60,6 +63,7 @@ export function ApproveChopDialog({ request }: { request: { repository: string; 
 			chop={request.chop}
 			path={request.path}
 			target={session?.name ?? null}
+			defaultName={defaultAgent(state.preferences.agents, state.agentLocations)?.name ?? null}
 			{...(request.text === undefined ? {} : { edited: request.text })}
 			onRun={() => {
 				// Closed first: if the text changed meanwhile, the run asks again with a new dialog.

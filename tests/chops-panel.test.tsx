@@ -312,7 +312,7 @@ describe("the chops panel's model (mock engine)", () => {
 	});
 
 	test("the Prompts tab says where a prompt goes: a new agent, the only one running, the one picked, or the clipboard", async () => {
-		const { store } = await panelStore();
+		const { engine, store } = await panelStore();
 		const first = store.getState().preferences.agents[0]!.name;
 		const none = chopsPanelModel(store.getState(), "prompt", "");
 		expect(none.rows.map(row => [row.chop.name, row.word, row.label])).toEqual([["Review the diff", "Send", "Send Review the diff"]]);
@@ -323,6 +323,16 @@ describe("the chops panel's model (mock engine)", () => {
 		await store.openTerminal({ repository: TIMBER, worktree: FEATURE.path, cols: 80, rows: 24, agent: first });
 		await settle();
 		expect(chopsPanelModel(store.getState(), "prompt", "").footer).toBe(`You pick the agent in ${label} when you send a prompt.`);
+		for (const session of store.getState().terminals) await store.closeTerminal(session.id);
+		await settle();
+		engine.missingExecutables(["claude"]);
+		await store.locateAgents();
+		expect(chopsPanelModel(store.getState(), "prompt", "").footer).toBe(`Prompts start a new agent in ${label}: the one the chop names, or Codex.`);
+		engine.missingExecutables(["claude", "codex"]);
+		await store.locateAgents();
+		expect(chopsPanelModel(store.getState(), "prompt", "").footer).toBe(
+			`Prompts start the agent the chop names in ${label}. None of the agents in Settings, Agents was found, so a prompt that names none is copied to the clipboard.`,
+		);
 		await store.savePreferences({ agents: [] });
 		const copy = chopsPanelModel(store.getState(), "prompt", "");
 		expect(copy.rows[0]).toMatchObject({ word: "Copy", label: "Copy Review the diff" });

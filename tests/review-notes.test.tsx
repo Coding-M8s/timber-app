@@ -5,7 +5,7 @@ import { NO_NOTES_HINT } from "../src/mainview/changes-panel-format";
 import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { type MockFileChange, samplePatch } from "../src/mainview/engine/mock-file-changes";
 import {
-	NEW_REVIEW_AGENT_NOTE, NO_REVIEW_AGENT, REVIEW_COPIED, describeNewReviewAgent, describeReviewAgentStarted, describeReviewNotPasted, describeReviewSent,
+	NEW_REVIEW_AGENT_NOTE, REVIEW_COPIED, noNewReviewAgent, noReviewAgent, describeNewReviewAgent, describeReviewAgentStarted, describeReviewNotPasted, describeReviewSent,
 	reviewAlreadyWaiting, reviewTooLong,
 } from "../src/mainview/review-format";
 import { onlyAgent, reviewWaiting, runningAgents, waitsOnPerson } from "../src/mainview/agent-sessions";
@@ -429,7 +429,7 @@ describe("the Changes view with notes", () => {
 		store.closeDialog();
 		store.openDialog({ kind: "send-review", worktree: FEATURE.id });
 		markup = render(store);
-		expect(markup).toContain(NO_REVIEW_AGENT);
+		expect(markup).toContain(noReviewAgent("none-saved"));
 		// Copy review is the main button; it waits for the preview, which a static render does not read.
 		expect(markup).toContain('<button type="button" class="button primary" disabled="">Copy review</button>');
 		expect(markup).not.toContain(">Send</button>");
@@ -609,6 +609,49 @@ describe("sending a review to a new agent", () => {
 		expect(await store.startReviewAgent(FEATURE.id, preview, { cols: 80, rows: 24 })).toBeNull();
 		await settle();
 		expect(sessionsOf(store.getState(), FEATURE.id)).toHaveLength(1);
+	});
+
+	test("Send starts the first saved agent that is found, looked for again, never a missing one ahead of it", async () => {
+		const { engine, store } = await startedStore();
+		await notesOnTwoFiles(store);
+		// Claude Code goes missing after the app looked at start.
+		engine.missingExecutables(["claude"]);
+		const preview = (await store.prepareReview(FEATURE.id))!;
+		expect(await store.startReviewAgent(FEATURE.id, preview, { cols: 80, rows: 24 })).toBeNull();
+		await settle();
+		expect(sessionsOf(store.getState(), FEATURE.id).map(session => [session.kind, session.name])).toEqual([["agent", "Codex"]]);
+	});
+
+	test("the dialog offers the default agent, and with none found offers only Copy review, saying why", async () => {
+		const { engine, store } = await startedStore();
+		await notesOnTwoFiles(store);
+		engine.missingExecutables(["claude"]);
+		await store.locateAgents();
+		store.openDialog({ kind: "send-review", worktree: FEATURE.id });
+		let markup = render(store);
+		expect(choiceInput(markup, describeNewReviewAgent("Codex"))).toContain('checked=""');
+		expect(markup).not.toContain(describeNewReviewAgent("Claude Code"));
+		engine.missingExecutables(["claude", "codex"]);
+		await store.locateAgents();
+		markup = render(store);
+		expect(markup).toContain(noReviewAgent("none-found"));
+		expect(markup).not.toContain(">Send</button>");
+	});
+
+	test("with none of the saved agents found, or none known, nothing starts and the answer says why", async () => {
+		const { engine, store } = await startedStore();
+		await notesOnTwoFiles(store);
+		engine.missingExecutables(["claude", "codex"]);
+		const preview = (await store.prepareReview(FEATURE.id))!;
+		expect(await store.startReviewAgent(FEATURE.id, preview, { cols: 80, rows: 24 })).toBe(noNewReviewAgent("none-found"));
+		expect(sessionsOf(store.getState(), FEATURE.id)).toEqual([]);
+		expect(store.getState().reviews[FEATURE.id]).toHaveLength(2);
+		// A look that fails after a changed command leaves the agent not known: nothing starts.
+		engine.missingExecutables([]);
+		engine.locateAgents = () => Promise.reject(new Error("gone"));
+		expect(await store.savePreferences({ agents: [{ name: "Claude Code", command: "claude --fast" }] })).toMatchObject({ outcome: "saved" });
+		expect(await store.startReviewAgent(FEATURE.id, preview, { cols: 80, rows: 24 })).toBe(noNewReviewAgent("not-known"));
+		expect(sessionsOf(store.getState(), FEATURE.id)).toEqual([]);
 	});
 
 	test("with no agent saved, nothing starts", async () => {
