@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
+import { NO_NOTES_HINT } from "../src/mainview/changes-panel-format";
 import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { type MockFileChange, samplePatch } from "../src/mainview/engine/mock-file-changes";
 import {
@@ -34,8 +35,9 @@ async function startedStore() {
 	store.start();
 	await settle();
 	store.select(FEATURE.id);
-	store.showTab("changes");
+	store.showSidePanel("changes");
 	await store.readChanges(TIMBER, FEATURE.id);
+	await store.selectChangedFile(file("src/a.ts"));
 	return { engine, store };
 }
 
@@ -266,23 +268,24 @@ describe("review notes", () => {
 	});
 });
 
-describe("the Changes tab with notes", () => {
-	test("counts the notes on the tab, shows them in a panel beside the diff, and each under its lines", async () => {
+describe("the Changes view with notes", () => {
+	test("counts the notes on the panel's switch, lists them in the Review section under the files, and shows each under its lines", async () => {
 		const { store } = await startedStore();
 		await notesOnTwoFiles(store);
 		const markup = render(store);
-		expect(markup).toContain('<span class="tab-count" aria-hidden="true">2</span><span class="visually-hidden">, 2 review notes</span>');
-		// The panel follows the diff, out of the file list's column.
+		expect(markup).toContain('Changes<span class="tab-count" aria-hidden="true">2</span><span class="visually-hidden">, 2 review notes</span></button>');
+		// The Review section is at the foot of the Changes view, after the file list.
 		const files = markup.indexOf('class="changes-files"');
-		const main = markup.indexOf('class="changes-main"');
-		const panel = markup.search(/<aside id="[^"]+" class="review-panel" aria-label="Review">/);
+		const panel = markup.indexOf('<section class="review-panel" aria-label="Review">');
 		expect(files).toBeGreaterThan(-1);
-		expect(main).toBeGreaterThan(files);
-		expect(panel).toBeGreaterThan(markup.indexOf('class="changes-diff"'));
-		expect(markup).not.toContain('<section class="review"');
+		expect(panel).toBeGreaterThan(files);
+		expect(markup.indexOf('data-view="changes"')).toBeLessThan(files);
 		expect(markup).toContain('<span class="visually-hidden">2 review notes</span>');
 		expect(markup).toContain(">Send review</button>");
+		expect(markup).toContain(">Copy review</button>");
 		expect(markup).toContain(">Discard</button>");
+		// The Changes view shows, so the diff needs no Review button of its own.
+		expect(markup).not.toContain("review-toggle");
 		// src/b.ts shows: its note is under its first line, and every numbered line can take a note.
 		expect(markup).toContain('<p class="diff-note-text">Sort these imports.</p>');
 		expect(markup).toContain('aria-label="Add a note on line 1"');
@@ -371,22 +374,38 @@ describe("the Changes tab with notes", () => {
 		expect(markup).toContain(`class="review-ref chosen" data-note-id="${onA!.id}"`);
 	});
 
-	test("the Review button that opens the panel in a narrow window names the panel and the count", async () => {
+	test("with the side panel hidden or on another view, the diff shows Review with the count, which shows the Changes view", async () => {
 		const { store } = await startedStore();
 		await notesOnTwoFiles(store);
-		const markup = render(store);
-		const id = /<aside id="([^"]+)" class="review-panel"/.exec(markup)![1]!;
-		expect(markup).toContain(`<button type="button" class="button quiet review-toggle" aria-expanded="false" aria-controls="${id}" aria-label="Review, 2 review notes"`);
-		expect(markup).toContain('<button type="button" class="text-button review-close" aria-label="Close the review">Close</button>');
+		store.hideChopsPanel();
+		const hidden = render(store);
+		expect(hidden).not.toContain('data-view="changes"');
+		expect(hidden).toContain('<button type="button" class="button quiet review-toggle" aria-label="Review, 2 review notes. Show the Changes view" title="Show the review in the Changes view">Review<span class="change-group-count" aria-hidden="true">2</span></button>');
+		// The button asks for the Changes view as its title bar button does: shown, on Changes.
+		expect(store.toggleSidePanel("changes")).toBe(true);
+		expect(store.getState().layout).toMatchObject({ chopsOpen: true, sidePanel: "changes" });
+		expect(render(store)).not.toContain("review-toggle");
+		// On the files, the review is out of sight too.
+		store.switchSidePanel("files");
+		expect(render(store)).toContain("review-toggle");
 	});
 
-	test("has no Review panel, no Review button, and no count without notes", async () => {
+	test("has no notes, no Review button, and no count without notes, and says how to leave one", async () => {
 		const { store } = await startedStore();
 		const markup = render(store);
 		expect(markup).not.toContain("tab-count");
-		expect(markup).not.toContain("review-panel");
 		expect(markup).not.toContain("review-toggle");
-		expect(markup).toContain('class="changes-main"');
+		expect(markup).not.toContain(">Send review</button>");
+		expect(markup).toContain(`<p class="review-hint">${NO_NOTES_HINT}</p>`);
+	});
+
+	test("Copy review puts the review on the clipboard, and the notes stay", async () => {
+		const { engine, store } = await startedStore();
+		await notesOnTwoFiles(store);
+		const message = await store.prepareReview(FEATURE.id);
+		expect(await store.copyReview(message!)).toBe(true);
+		expect(await engine.readClipboard()).toBe(message!);
+		expect(store.getState().reviews[FEATURE.id]).toHaveLength(2);
 	});
 
 	test("the Send review dialog lists the running agents and a new one, and with none saved offers only Copy review", async () => {

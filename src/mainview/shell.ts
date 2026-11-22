@@ -51,14 +51,14 @@ export const SIDEBAR_SIDE_LABELS: Record<SidebarSide, string> = {
 
 export const TAB_LABELS: Record<WorkspaceTab, string> = {
 	workspace: "Workspace",
-	changes: "Changes",
 	"pull-request": "Pull request",
+	diff: "Diff",
 	file: "File",
 };
 
-/** The tabs a worktree shows: File only while a file is open there. */
-export function visibleTabs(fileOpen: boolean): WorkspaceTab[] {
-	return WORKSPACE_TABS.filter(tab => tab !== "file" || fileOpen);
+/** The tabs a worktree shows: the diff only while a diff is open there, and File only while a file is. */
+export function visibleTabs(fileOpen: boolean, diffOpen = false): WorkspaceTab[] {
+	return WORKSPACE_TABS.filter(tab => (tab !== "file" || fileOpen) && (tab !== "diff" || diffOpen));
 }
 
 /**

@@ -6,7 +6,7 @@ import { App } from "../src/mainview/App";
 import {
 	MORE_FILES_NOTE, NO_REFRESH, REFRESHING_CHANGES, baseUnavailable, describeComparison, describeDiffNotice, describeFileArea, describeFileCounts, describeNoChanges, diffCommand, fileAfterKey, groupFileChanges, listedOrder, nextRefreshSpan, splitPath,
 } from "../src/mainview/changes-format";
-import { FOLDER_MISSING_CHANGES } from "../src/mainview/components/ChangesPanel";
+import { FOLDER_MISSING_CHANGES } from "../src/mainview/components/ChangesList";
 import { browserSampleRepositories, createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { GALLERY_WORKTREE, MOCK_BRANCH_POINT, type MockFileChange, sampleNewFilePatch, samplePatch } from "../src/mainview/engine/mock-file-changes";
 import { changesBusy } from "../src/mainview/store/state";
@@ -51,28 +51,39 @@ const file = (area: FileChange["area"], kind: FileChange["kind"], path: string, 
 const mock = (change: FileChange, patch = samplePatch(change.path)): MockFileChange => ({ change, patch });
 
 describe("the store's Changes view", () => {
-	test("reads the files, selects the first one as listed, and reads its diff", async () => {
+	test("reads the files, and no diff until a file is chosen, which opens it in the diff tab", async () => {
 		const engine = await uncommittedEngine();
 		engine.setFileChanges(FEATURE.path, [
 			mock(file("unstaged", "modified", "b.ts")),
 			mock(file("staged", "added", "a.ts"), sampleNewFilePatch("a.ts")),
 		]);
 		const store = await started(engine);
+		store.select(FEATURE.id);
 		await store.readChanges(TIMBER, FEATURE.id);
 		const view = store.getState().changes!;
 		expect(view.files?.map(entry => `${entry.area} ${entry.path}`)).toEqual(["unstaged b.ts", "staged a.ts"]);
-		// Staged shows before unstaged, so it is the first file listed.
-		expect(view.selected).toEqual({ area: "staged", path: "a.ts", previousPath: null });
-		expect(view.diff?.outcome === "read" && view.diff.diff.kind).toBe("text");
+		// Nothing is open, so nothing is read for a diff, and the tab that showed stays.
+		expect(view).toMatchObject({ selected: null, diff: null });
+		expect(store.getState().diffs).toEqual({});
+		expect(store.getState().tab).toBe("workspace");
 		expect(store.getState().operations).toEqual([]);
+
+		await store.selectChangedFile(file("staged", "added", "a.ts"));
+		const opened = store.getState();
+		expect(opened.tab).toBe("diff");
+		expect(opened.diffs[FEATURE.id]).toEqual({ file: { area: "staged", path: "a.ts", previousPath: null }, from: "workspace" });
+		expect(opened.changes?.selected).toEqual({ area: "staged", path: "a.ts", previousPath: null });
+		expect(opened.changes?.diff?.outcome === "read" && opened.changes.diff.diff.kind).toBe("text");
 	});
 
-	test("keeps the selected file across reads while it is listed, and moves to the first when it is gone", async () => {
+	test("keeps the diff tab's file across reads while it is listed, and closes the tab when it is gone", async () => {
 		const engine = await uncommittedEngine();
 		const a = mock(file("unstaged", "modified", "a.ts"));
 		const b = mock(file("unstaged", "modified", "b.ts"));
 		engine.setFileChanges(FEATURE.path, [a, b]);
 		const store = await started(engine);
+		store.select(FEATURE.id);
+		store.showTab("pull-request");
 		await store.readChanges(TIMBER, FEATURE.id);
 		await store.selectChangedFile(b.change);
 		expect(store.getState().changes?.selected?.path).toBe("b.ts");
@@ -85,9 +96,12 @@ describe("the store's Changes view", () => {
 		const added = view.diff?.outcome === "read" && view.diff.diff.kind === "text" ? view.diff.diff.sections[0]!.hunks[0]!.lines.filter(line => line.kind === "added").map(line => line.text) : [];
 		expect(added).toContain("export const retries = 9;");
 
+		// b.ts is no longer changed: its diff tab closes, back to the tab it was opened from.
 		engine.setFileChanges(FEATURE.path, [a]);
 		await store.readChanges(TIMBER, FEATURE.id);
-		expect(store.getState().changes?.selected?.path).toBe("a.ts");
+		expect(store.getState().changes).toMatchObject({ selected: null, diff: null });
+		expect(store.getState().diffs).toEqual({});
+		expect(store.getState().tab).toBe("pull-request");
 
 		engine.setFileChanges(FEATURE.path, []);
 		await store.readChanges(TIMBER, FEATURE.id);
@@ -101,7 +115,8 @@ describe("the store's Changes view", () => {
 		await store.readChanges(TIMBER, FEATURE.id);
 		await store.selectChangedFile({ area: "staged", path: "a.ts", previousPath: null });
 		await store.selectChangedFile({ area: "unstaged", path: "../outside", previousPath: null });
-		expect(store.getState().changes?.selected).toEqual({ area: "unstaged", path: "a.ts", previousPath: null });
+		expect(store.getState().changes?.selected).toBeNull();
+		expect(store.getState().diffs).toEqual({});
 	});
 
 	test("a failed read keeps the last good list beside the reason, until a read works", async () => {
@@ -143,16 +158,18 @@ describe("the store's Changes view", () => {
 		const second = store.readChanges(TIMBER, FEATURE.id);
 		await settle();
 		pending[1]!({ outcome: "read", files: [file("unstaged", "modified", "new.ts")], more: false, compared: "uncommitted", base: { usable: false, reason: "No base." } });
-		await settle();
+		await second;
 		pending[0]!({ outcome: "read", files: [file("unstaged", "modified", "old.ts")], more: false, compared: "uncommitted", base: { usable: false, reason: "No base." } });
 		await first;
 		expect(store.getState().changes?.files?.map(entry => entry.path)).toEqual(["new.ts"]);
+		const opening = store.selectChangedFile(file("unstaged", "modified", "new.ts"));
+		await settle();
 
 		// Another worktree starts afresh, and the first one's diff answering late changes nothing.
 		const third = store.readChanges(TIMBER, main.id);
 		expect(store.getState().changes).toMatchObject({ worktree: main.id, files: null, selected: null });
 		diffs[0]!({ outcome: "read", file: file("unstaged", "modified", "new.ts"), diff: { kind: "binary" } });
-		await second;
+		await opening;
 		expect(store.getState().changes).toMatchObject({ worktree: main.id, diff: null });
 		pending[2]!({ outcome: "read", files: [], more: false, compared: "uncommitted", base: { usable: false, reason: "No base." } });
 		await third;
@@ -166,7 +183,7 @@ describe("the Changes tab", () => {
 		const store = await started();
 		const { repository, worktree } = find(store.getState().repositories, GALLERY_WORKTREE);
 		store.select(worktree.id);
-		store.showTab("changes");
+		store.showSidePanel("changes");
 		await store.readChanges(repository.path, worktree.id);
 		await store.compareChanges(compare);
 		return store;
@@ -174,16 +191,28 @@ describe("the Changes tab", () => {
 
 	test("lists conflicts, staged, and unstaged files apart, each with its letter", async () => {
 		const markup = render(await gallery());
-		const titles = [...markup.matchAll(/<h2 class="change-group-title">([^<]+)<span class="change-group-count">(\d+)<\/span><\/h2>/g)].map(match => `${match[1]} ${match[2]}`);
+		const titles = [...markup.matchAll(/<h3 class="change-group-title">([^<]+)<span class="change-group-count">(\d+)<\/span><\/h3>/g)].map(match => `${match[1]} ${match[2]}`);
 		expect(titles).toEqual(["Merge conflicts 1", "Staged 4", "Unstaged 12"]);
 		expect(markup).toContain("1 conflicted, 4 staged, 12 unstaged");
 		expect(markup).toContain('aria-label="src/tax/brackets.ts, Renamed from src/tax/bands.ts, Staged"');
 		expect(markup).toContain('aria-label="src/tax/zażółć.ts, Untracked, Unstaged"');
 		for (const letter of ["!", "M", "R", "A", "D", "T", "U"]) expect(markup).toContain(`aria-hidden="true">${letter}</span>`);
-		// The first file listed is selected, and it is the only tab stop of the list.
-		expect(markup.match(/class="change-file selected"/g)).toHaveLength(1);
-		expect(markup.match(/class="change-file( selected)?" aria-current="true"[^>]*tabindex="0"/g)).toHaveLength(1);
-		expect(markup).toContain('aria-label="Diff of src/tax/rates.ts"');
+		// Nothing is open yet: the first file listed is the only tab stop of the list, and none is marked.
+		expect(markup).not.toContain('class="change-file selected"');
+		expect(markup.match(/class="change-file"[^>]*tabindex="0"/g)).toHaveLength(1);
+		expect(markup).not.toContain('aria-label="Diff of ');
+	});
+
+	test("choosing a file marks it in the list and shows its diff in a tab named after it, after Pull request", async () => {
+		const store = await gallery();
+		await store.selectChangedFile(file("staged", "modified", "src/tax/rules.ts"));
+		const markup = render(store);
+		expect(markup.match(/class="change-file selected" aria-current="true"[^>]*tabindex="0"/g)).toHaveLength(1);
+		const tabs = [...markup.matchAll(/role="tab" id="tab-([a-z-]+)"/g)].map(match => match[1]);
+		expect(tabs).toEqual(["workspace", "pull-request", "diff"]);
+		expect(markup).toContain('<span title="Diff of src/tax/rules.ts"><span class="tab-kind" aria-hidden="true">diff</span><span class="visually-hidden">Diff of </span>rules.ts</span>');
+		expect(markup).toContain('aria-label="Close the diff of rules.ts"');
+		expect(markup).toContain('aria-label="Diff of src/tax/rules.ts"');
 	});
 
 	test("draws a diff with line numbers and markers", async () => {
@@ -240,7 +269,7 @@ describe("the Changes tab", () => {
 		const store = await started(engine);
 		const { repository, worktree } = find(store.getState().repositories, GALLERY_WORKTREE);
 		store.select(worktree.id);
-		store.showTab("changes");
+		store.showSidePanel("changes");
 		engine.failFileChanges("Git is busy");
 		await store.readChanges(repository.path, worktree.id);
 		const markup = render(store);
@@ -250,7 +279,7 @@ describe("the Changes tab", () => {
 
 	test("says there are no changes for a clean worktree, and does not read a missing folder", async () => {
 		const store = await started();
-		store.showTab("changes");
+		store.showSidePanel("changes");
 		const main = sampleRepositories[0]!.worktrees[0]!;
 		await store.readChanges(TIMBER, main.id);
 		expect(render(store)).toContain("This worktree matches its last commit.");
@@ -265,7 +294,7 @@ describe("the Changes tab", () => {
 		engine.setFileChanges(FEATURE.path, Array.from({ length: 5001 }, (_, index) => mock(file("unstaged", "untracked", `n/${index}.ts`), sampleNewFilePatch(`n/${index}.ts`))));
 		const store = await started(engine);
 		store.select(FEATURE.id);
-		store.showTab("changes");
+		store.showSidePanel("changes");
 		await store.readChanges(TIMBER, FEATURE.id);
 		const markup = render(store);
 		expect(markup).toContain(MORE_FILES_NOTE);
@@ -288,7 +317,7 @@ describe("refreshing the Changes tab", () => {
 		const store = await started(engine);
 		const { repository, worktree } = find(store.getState().repositories, GALLERY_WORKTREE);
 		store.select(worktree.id);
-		store.showTab("changes");
+		store.showSidePanel("changes");
 		await store.readChanges(repository.path, worktree.id);
 		await store.compareChanges("uncommitted");
 		return { store, repository, worktree, report: (path: string) => report(path) };
@@ -354,7 +383,7 @@ describe("refreshing the Changes tab", () => {
 
 	test("a clean worktree's No changes stays, dimmed, while it is read again", async () => {
 		const store = await started();
-		store.showTab("changes");
+		store.showSidePanel("changes");
 		const main = sampleRepositories[0]!.worktrees[0]!;
 		await store.readChanges(TIMBER, main.id);
 		const reading = store.readChanges(TIMBER, main.id);
@@ -473,8 +502,10 @@ describe("comparing with the base", () => {
 		expect(view.compared).toBe("base");
 		expect(view.base).toEqual({ usable: true, ref: "refs/remotes/origin/main", name: "origin/main", commit: MOCK_BRANCH_POINT });
 		expect(view.files?.map(entry => `${entry.area} ${entry.kind} ${entry.path}`)).toEqual(["base modified committed.ts", "base added a.ts", "untracked untracked n.ts"]);
-		expect(view.selected).toEqual({ area: "base", path: "committed.ts", previousPath: null });
-		expect(view.diff?.outcome === "read" && view.diff.file?.path).toBe("committed.ts");
+		expect(view.selected).toBeNull();
+		await store.selectChangedFile(file("base", "modified", "committed.ts"));
+		const diff = store.getState().changes?.diff;
+		expect(diff?.outcome === "read" && diff.file?.path).toBe("committed.ts");
 	});
 
 	test("choosing Uncommitted reads that list afresh, and is remembered for the worktree after a restart", async () => {
@@ -482,8 +513,11 @@ describe("comparing with the base", () => {
 		engine.setFileChanges(FEATURE.path, [mock(file("base", "modified", "committed.ts")), mock(file("unstaged", "modified", "b.ts"))]);
 		const store = await started(engine);
 		await store.readChanges(TIMBER, FEATURE.id);
+		await store.selectChangedFile(file("base", "modified", "committed.ts"));
 		await store.compareChanges("uncommitted");
-		expect(store.getState().changes).toMatchObject({ compared: "uncommitted", files: [file("unstaged", "modified", "b.ts")], selected: { path: "b.ts" } });
+		// The diff tab showed a file of the other list, so it closed.
+		expect(store.getState().changes).toMatchObject({ compared: "uncommitted", files: [file("unstaged", "modified", "b.ts")], selected: null });
+		expect(store.getState().diffs).toEqual({});
 		expect(store.getState().layout.uncommittedChanges).toEqual([FEATURE.id]);
 		await settle();
 		expect((await engine.loadLayout()).uncommittedChanges).toEqual([FEATURE.id]);
@@ -500,7 +534,7 @@ describe("comparing with the base", () => {
 	test("a worktree with no saved base shows Uncommitted, with Base disabled and the reason", async () => {
 		const store = await started();
 		store.select(MAIN.id);
-		store.showTab("changes");
+		store.showSidePanel("changes");
 		await store.readChanges(TIMBER, MAIN.id);
 		expect(store.getState().changes).toMatchObject({ compared: "uncommitted", base: { usable: false, reason: "Timber has no base saved for this worktree." }, problem: null });
 		await store.compareChanges("base");
@@ -516,10 +550,10 @@ describe("comparing with the base", () => {
 		const store = await started();
 		const { repository, worktree } = find(store.getState().repositories, GALLERY_WORKTREE);
 		store.select(worktree.id);
-		store.showTab("changes");
+		store.showSidePanel("changes");
 		await store.readChanges(repository.path, worktree.id);
 		const markup = render(store);
-		const titles = [...markup.matchAll(/<h2 class="change-group-title">([^<]+)<span class="change-group-count">(\d+)<\/span><\/h2>/g)].map(match => `${match[1]} ${match[2]}`);
+		const titles = [...markup.matchAll(/<h3 class="change-group-title">([^<]+)<span class="change-group-count">(\d+)<\/span><\/h3>/g)].map(match => `${match[1]} ${match[2]}`);
 		expect(titles).toEqual(["Merge conflicts 1", "Changed 12", "Untracked 5"]);
 		expect(markup).toContain(`>origin/main @ ${MOCK_BRANCH_POINT.slice(0, 7)}</span>`);
 		expect(markup).toContain('aria-label="src/tax/report.ts, Modified, Changed"');

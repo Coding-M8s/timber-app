@@ -48,23 +48,34 @@ export function describeFileNotice(result: WorktreeFileResult): { title: string;
 	}
 }
 
+/** The entries of a record by worktree whose worktree is still listed, or undefined when every one is. */
+function listedOnly<T>(record: Readonly<Record<string, T>>, listed: ReadonlySet<string>): Record<string, T> | undefined {
+	const ids = Object.keys(record);
+	const kept = ids.filter(id => listed.has(id));
+	return kept.length === ids.length ? undefined : Object.fromEntries(kept.map(id => [id, record[id]!]));
+}
+
 /**
- * The File tab after a change to the state: open files of worktrees that
- * left the list are forgotten, and when the selected worktree has no open
- * file, the File tab gives way to the Workspace tab, so it never shows
- * empty. Null when nothing needs to change.
+ * The File and diff tabs after a change to the state: open files and diffs
+ * of worktrees that left the list are forgotten, and when the selected
+ * worktree has no open file, or no open diff, that tab gives way to the
+ * Workspace tab, so it never shows empty. Null when nothing needs to change.
  */
-export function settleFiles(state: Pick<AppState, "tab" | "selection" | "files" | "repositories">): { tab?: WorkspaceTab; files?: AppState["files"] } | null {
-	const change: { tab?: WorkspaceTab; files?: AppState["files"] } = {};
-	const ids = Object.keys(state.files);
-	if (ids.length > 0) {
+export function settleTabs(state: Pick<AppState, "tab" | "selection" | "files" | "diffs" | "repositories">): { tab?: WorkspaceTab; files?: AppState["files"]; diffs?: AppState["diffs"] } | null {
+	const change: { tab?: WorkspaceTab; files?: AppState["files"]; diffs?: AppState["diffs"] } = {};
+	if (Object.keys(state.files).length > 0 || Object.keys(state.diffs).length > 0) {
 		const listed = new Set(state.repositories.flatMap(repository => repository.worktrees.map(worktree => worktree.id)));
-		const kept = ids.filter(id => listed.has(id));
-		if (kept.length !== ids.length) change.files = Object.fromEntries(kept.map(id => [id, state.files[id]!]));
+		const files = listedOnly(state.files, listed);
+		const diffs = listedOnly(state.diffs, listed);
+		if (files) change.files = files;
+		if (diffs) change.diffs = diffs;
 	}
 	const files = change.files ?? state.files;
-	if (state.tab === "file" && (state.selection === null || files[state.selection.worktree] === undefined)) change.tab = "workspace";
-	return change.tab === undefined && change.files === undefined ? null : change;
+	const diffs = change.diffs ?? state.diffs;
+	const worktree = state.selection?.worktree;
+	if (state.tab === "file" && (worktree === undefined || files[worktree] === undefined)) change.tab = "workspace";
+	if (state.tab === "diff" && (worktree === undefined || diffs[worktree] === undefined)) change.tab = "workspace";
+	return change.tab === undefined && change.files === undefined && change.diffs === undefined ? null : change;
 }
 
 /**

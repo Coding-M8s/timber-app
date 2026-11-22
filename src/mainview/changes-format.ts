@@ -4,7 +4,7 @@ import {
 } from "../shared/file-changes";
 
 /**
- * Words and keyboard rules of the Changes tab. Pure, so they can be tested
+ * Words and keyboard rules of the Changes view. Pure, so they can be tested
  * without a window.
  */
 
@@ -147,11 +147,11 @@ export function describeFileCounts(files: readonly FileChange[], more: boolean):
 	return more ? `${parts.join(", ")}, and more` : parts.join(", ");
 }
 
-/** Said once, politely, while the Changes tab reads again what is already on screen. */
+/** Said once, politely, while the Changes view reads again what is already on screen. */
 export const REFRESHING_CHANGES = "Refreshing…";
 
 /**
- * One refresh of a worktree's Changes tab, from the first read to a moment
+ * One refresh of a worktree's Changes view, from the first read to a moment
  * after the last. `overList` says whether it began with a list on screen and
  * still has one: only then is the list dimmed and "Refreshing" said. A first
  * read, or the read of the other comparison's list, has no list to refresh,

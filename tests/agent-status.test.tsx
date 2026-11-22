@@ -222,7 +222,7 @@ describe("desktop notifications", () => {
 		await report("state=working");
 		await report("state=done");
 		expect(engine.notices()).toEqual([{ session: agent.id, title: "Codex is done", body: "In feat-github-issue-lookup: Done" }]);
-		store.showTab("changes");
+		store.showTab("pull-request");
 		engine.clickNotice(agent.id);
 		const state = store.getState();
 		expect(state.selection?.worktree).toBe(featureId);

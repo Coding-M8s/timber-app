@@ -51,7 +51,7 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the file 
 		await page.press("E", "ctrlShift");
 		await page.until(`document.querySelector(${JSON.stringify(ROW("docs"))}) !== null`, "the tree was read");
 		// Tab goes through the switch, Ignored, and Close, then reaches the tree's one tab stop: its first row.
-		for (const expected of ["side-panel-view-chops", "side-panel-view-files", "files-panel-ignored", "Hide the files panel", "docs"]) {
+		for (const expected of ["side-panel-view-chops", "side-panel-view-files", "side-panel-view-changes", "files-panel-ignored", "Hide the files panel", "docs"]) {
 			await page.press("Tab");
 			expect(await page.evaluate<string>(ACTIVE)).toBe(expected);
 		}

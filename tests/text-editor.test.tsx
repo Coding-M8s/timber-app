@@ -70,7 +70,11 @@ describe("the editor's words and rules", () => {
 		expect(runs.has(undoCommand)).toBe(true);
 		expect(kept.find(binding => binding.key === "Mod-/")?.run).toBe(toggleComment);
 		const keys = kept.flatMap(binding => [binding.key, binding.mac]).filter(Boolean).map(key => key!.toLowerCase().split("-").sort().join("-"));
-		for (const window of ["k-mod-shift", "mod-p-shift", "j-mod-shift"]) expect(keys).not.toContain(window);
+		for (const window of ["k-mod-shift", "mod-p-shift", "j-mod-shift", "g-mod-shift"]) expect(keys).not.toContain(window);
+		// Find previous is Shift on Mod-g's binding; Shift there is Ctrl+Shift+G, the Changes view's, so it goes. Mod-g still finds the next.
+		const modG = kept.filter(binding => binding.key === "Mod-g");
+		expect(modG.length).toBeGreaterThan(0);
+		for (const binding of modG) expect(binding.shift).toBeUndefined();
 	});
 
 		test("undo outlives the editor: a kept state, given the next editor's handlers, still undoes", () => {

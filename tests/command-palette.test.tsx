@@ -131,7 +131,7 @@ describe("the command palette", () => {
 		const store = createAppStore(engine);
 		store.start();
 		await settle();
-		store.showTab("changes");
+		store.showTab("pull-request");
 		store.openDialog({ kind: "palette" });
 		choose(store, "Start Codex");
 		await settle();

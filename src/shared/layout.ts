@@ -18,7 +18,7 @@ export interface Layout {
 	setupDismissed: string[];
 	/**
 	 * The worktrees, each named by its identity (`Worktree.id`), whose Changes
-	 * tab the person set to Uncommitted. Every other worktree compares with
+	 * view the person set to Uncommitted. Every other worktree compares with
 	 * its base when it can.
 	 */
 	uncommittedChanges: string[];
@@ -31,19 +31,19 @@ export interface Layout {
 	/** The repository groups that are folded, each named by its id. */
 	collapsedGroups: string[];
 	/**
-	 * Whether the side panel shows beside the workspace, with the chops or
-	 * the files (`sidePanel`). Hidden until the person shows it. Named for
+	 * Whether the side panel shows beside the workspace, with the chops, the
+	 * files, or the changes (`sidePanel`). Hidden until the person shows it. Named for
 	 * the chops panel it was first, so a saved layout keeps working.
 	 */
 	chopsOpen: boolean;
 	/** Width of the side panel in pixels, always within the limits below, kept while the panel is hidden. */
 	chopsWidth: number;
-	/** What the side panel shows: the chops, or the selected worktree's files. */
+	/** What the side panel shows: the chops, or the selected worktree's files or changes. */
 	sidePanel: SidePanelView;
 }
 
-export type SidePanelView = "chops" | "files";
-export const SIDE_PANEL_VIEWS: readonly SidePanelView[] = ["chops", "files"];
+export type SidePanelView = "chops" | "files" | "changes";
+export const SIDE_PANEL_VIEWS: readonly SidePanelView[] = ["chops", "files", "changes"];
 
 export const DEFAULT_SIDEBAR_WIDTH = 272;
 export const MIN_SIDEBAR_WIDTH = 200;
@@ -152,12 +152,12 @@ export function sameLayout(one: Layout, other: Layout): boolean {
 		&& one.sidePanel === other.sidePanel;
 }
 
-/** What the Changes tab of a worktree asks to compare with: its base, unless the person chose Uncommitted there. */
+/** What the Changes view of a worktree asks to compare with: its base, unless the person chose Uncommitted there. */
 export function chosenComparison(layout: Layout, worktree: string): Comparison {
 	return layout.uncommittedChanges.includes(worktree) ? "uncommitted" : "base";
 }
 
-/** The layout with this comparison remembered for the worktree's Changes tab. */
+/** The layout with this comparison remembered for the worktree's Changes view. */
 export function chooseComparison(layout: Layout, worktree: string, compare: Comparison): Layout {
 	if (chosenComparison(layout, worktree) === compare) return layout;
 	const uncommittedChanges = compare === "uncommitted"

@@ -205,7 +205,7 @@ export function ArenaCompareDialog({ request }: { request: { repository: string;
 			onOpenChanges={worktree => {
 				store.closeDialog();
 				store.select(worktree.id);
-				store.showTab("changes");
+				store.showSidePanel("changes");
 			}}
 			onStartAgent={row => {
 				if (row.worktree === null) return;

@@ -38,7 +38,7 @@ const startsWithBom = (bytes: Uint8Array) => bytes.length >= 3 && BOM.every((byt
  * Where a file of a worktree really is, or why it may not be touched.
  *
  * - Only a worktree that Timber lists, in a repository in the app's list,
- *   whose folder is there (`findListedWorktree`), as the Changes tab.
+ *   whose folder is there (`findListedWorktree`), as the Changes view.
  * - The path must be relative and stay inside the worktree as written
  *   (`relativePathProblem`), and the real path of the file, every link
  *   followed, must still be inside the real path of the worktree, so a link

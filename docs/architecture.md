@@ -134,8 +134,8 @@ Timber's safety logic must exist once. The app follows two rules:
 2. **Git is asked directly only for read-only status that Timber does not
    report.** Today that is which repository a folder belongs to, how each
    branch stands against its upstream, which branches there are to offer
-   for picking, the changed files and diffs of the Changes tab (see
-   [the Changes tab](#the-changes-tab)), and the status of the selected
+   for picking, the changed files and diffs of the Changes view (see
+   [the Changes view](#the-changes-view)), and the status of the selected
    worktree for the background check (see
    [watching for changes](#watching-for-changes)). Git is invoked as an
    executable plus an argument array.
@@ -961,7 +961,7 @@ and the workspace cannot disagree.
 
 ## Watching for changes
 
-The sidebar and the Changes tab follow what happens outside the app, such as
+The sidebar and the Changes view follow what happens outside the app, such as
 a commit in a terminal or a file saved in an editor, without a press of
 Refresh. Everything here is in the main process and only reads. What it
 finds becomes a `repositoryChanged` message, so the interface reloads one
@@ -1021,7 +1021,7 @@ repository through the path described [above](#shared-state-and-live-updates).
 - **Edits in the working tree (`src/bun/worktree-stamp.ts`).** Saving a file
   touches no Git metadata, so while the window shows, the selected worktree
   is checked every 4 seconds, never sooner than ten times as long as the last
-  check took. The check reads `git status` with the Changes tab's options,
+  check took. The check reads `git status` with the Changes view's options,
   plus the size and modification time of the first 200 files it lists, so
   editing a file that was already modified counts too. A different answer
   from the last one is reported as a change of that worktree's repository.
@@ -1049,8 +1049,8 @@ repository through the path described [above](#shared-state-and-live-updates).
   Git calls. So the app never takes the index lock from a Git command the
   person runs, and its own reads do not rewrite the index, which would
   otherwise wake the watcher again. `git diff` refreshes the index even so,
-  so the Changes tab's diffs also turn `diff.autoRefreshIndex` off (see
-  [the Changes tab](#the-changes-tab)). The check also turns `core.fsmonitor`
+  so the Changes view's diffs also turn `diff.autoRefreshIndex` off (see
+  [the Changes view](#the-changes-view)). The check also turns `core.fsmonitor`
   off, so a background read never starts a monitor from the repository's
   configuration.
 - **Not done here.** Fetching, which moves ahead and behind counts, is
@@ -1357,11 +1357,12 @@ pure functions in `src/mainview/shell.ts`.
   bottom. Its edge is a resize handle: drag it, or
   focus it and use the arrow keys, Home, and End. The width stays between 200
   and 480 pixels, and never above half the window.
-- **Workspace.** A header for the selected worktree and two tabs, Workspace
-  and Changes, as one tab list: the arrows, Home, and End move between tabs.
-  Workspace holds the terminal and Changes the diff (see
-  [the Changes tab](#the-changes-tab)). Which tab shows is in the store and
-  is not remembered between runs.
+- **Workspace.** A header for the selected worktree and its tabs as one tab
+  list: Workspace and Pull request, then a diff tab while a diff is open
+  and a File tab while a file is (`visibleTabs`). The arrows, Home, and End
+  move between tabs. Workspace holds the terminal, and the diff tab one
+  changed file's diff (see [the Changes view](#the-changes-view)). Which tab
+  shows is in the store and is not remembered between runs.
 - **Command palette.** The title bar button, and Ctrl+Shift+P (Cmd+Shift+P on
   macOS), open the palette: a `{ kind: "palette" }` dialog in the store, drawn
   by `CommandPalette.tsx`. `PaletteShortcut` listens on the window in the
@@ -1421,8 +1422,8 @@ pure functions in `src/mainview/shell.ts`.
   Not verified that a desktop webview leaves Ctrl+Shift+J to the page.
 - **Chops panel.** `src/mainview/components/ChopsPanel.tsx`, with its
   words and key in `src/mainview/chops-panel-format.ts`. It is one of the
-  side panel's two views; the other is [the file explorer](#the-file-explorer),
-  and what they share (the keyboard as the panel shows, switches, and hides,
+  side panel's three views; the others are [the file explorer](#the-file-explorer)
+  and [the Changes view](#the-changes-view), and what they share (the keyboard as the panel shows, switches, and hides,
   its edge, and the switch in its header) is in
   `src/mainview/components/SidePanel.tsx`. Drawn on the
   workspace's right, after it in the page, with its own edge
@@ -3093,7 +3094,8 @@ run from `src/bun/arenas.ts`.
 - **Comparing.** `inspectArena` runs `timber arena pick <arena> --inspect
   --json`, which changes nothing, and the Compare dialog shows its counts as
   they are: committed and uncommitted apart, untracked as a count. "Open in
-  Changes" opens the attempt's Changes tab as for any worktree. Timber saves
+  Changes" shows the attempt's changes in the side panel as for any worktree
+  (`showSidePanel`). Timber saves
   no base for an attempt (`timber ls` reports it unassigned), so that tab
   compares uncommitted changes only; comparing with the arena's base commit
   there is not done yet.
@@ -3157,7 +3159,7 @@ Open always pass `--no-editor` to Timber (see
   and only when that folder is there. These checks come first, so no answer
   ever carries a command built from a path that was not listed. The request
   may also name a `file`, relative to the worktree as Git reports it, which
-  the Changes tab does. The editor then gets that file's full path in place
+  the diff tab does. The editor then gets that file's full path in place
   of the folder (`editorTarget` in `src/shared/editor.ts`). A path that is
   absolute or steps out with `..` is refused, and so is a file that is not
   there.
@@ -3202,12 +3204,13 @@ Open always pass `--no-editor` to Timber (see
   nothing. `timberMock.endEditorLaunches("not-found")` or `("fails")` chooses
   how it ends from then on, and `("opens")` goes back to the start.
 
-## The Changes tab
+## The Changes view
 
-The Changes tab shows what changed in the selected worktree, as `git status`
-and `git diff` see it, compared with the worktree's base or with its last
-commit. It is read-only: nothing in it stages, discards, or commits.
-Comparing against a backup is a later step.
+The side panel's Changes view shows what changed in the selected worktree,
+as `git status` and `git diff` see it, compared with the worktree's base or
+with its last commit, and opens each file's diff in a diff tab beside
+Workspace and Pull request. It is read-only: nothing in it stages,
+discards, or commits. Comparing against a backup is a later step.
 
 - **The capabilities.** `readFileChanges({ repository, worktree, compare })`
   and `readFileDiff({ repository, worktree, compare, file })` on the
@@ -3303,20 +3306,42 @@ Comparing against a backup is a later step.
   had chosen Base, and the list is read again, so the header shows the new
   `name @ hash`. Review notes taken under the old base stay, and are marked
   outdated when their lines are no longer in the diff.
-- **In the window.** The file list sits beside the diff. Each file shows its
-  name, its folder, and Git's letter (M, A, D, R, C, T, U, and ! for a
-  conflict). The first file is selected, and the selection stays on a file
-  for as long as it is listed. The arrows, Home, and End move through the
-  list. The diff shows old and new line numbers and Git's own header lines,
-  such as `rename from`. "Open in editor" opens the selected file, and is not
-  offered for a deleted one.
-- **Refreshing.** The tab reads the list again whenever the worktree's
-  status on screen is read again, which is whenever its repository reloads:
-  the sidebar's Refresh, the tab's own Refresh, or a reported change. The
-  selected file's diff is read again with it. The view is in the store
-  (`changes`), and the latest read wins.
+- **In the window.** `src/mainview/components/ChangesList.tsx` draws the
+  view: Compare with, the base, the counts and Refresh, the file list, and
+  the Review section (see [review notes](#review-notes)). Each file shows
+  its name, its folder, and Git's letter (M, A, D, R, C, T, U, and ! for a
+  conflict). The arrows, Home, and End move the keyboard through the list
+  without opening anything; a click or Enter opens the file's diff
+  (`selectChangedFile`). Its words and Ctrl+Shift+G are in
+  `src/mainview/changes-panel-format.ts`, and the rest of the side panel is
+  shared with the chops and the files (see
+  [the file explorer](#the-file-explorer), "One side panel, three views").
+- **The diff tab.** `diffs` in the store holds each worktree's diff tab, by
+  its identity: the file, and the tab it was opened from (`DiffTab` in the
+  store's state), never saved. `changes.selected` is the file of the
+  selected worktree's diff tab while it is listed, and only its diff is
+  read; nothing is read for a file no tab shows. A read whose list no
+  longer has the tab's file closes the tab, and so does a switch of
+  "Compare with". `closeDiff` shows the tab it came from; when that is gone,
+  or the worktree leaves the list, `settleTabs` in
+  `src/mainview/file-view-format.ts` shows Workspace instead.
+  `src/mainview/components/DiffTab.tsx` draws the tab, with the Review
+  button while there are notes and the Changes view is not on screen, and
+  `src/mainview/components/DiffView.tsx` the diff: old and new line numbers,
+  Git's own header lines, such as `rename from`, notes on lines, ranges,
+  and outdated notes. "Open in editor" opens the file, and is not offered
+  for a deleted one. Each line is drawn in two parts, `lineTone` for its
+  background and `LineContent` for its text, and `DiffView` takes how the
+  lines are laid out as `layout` ("unified" only so far), so colors, a side
+  by side layout, and more lines around a hunk plug in there.
+- **Refreshing.** `ChangesReader` reads the list while the Changes view
+  shows or the diff tab does (`changesWanted`), and again whenever the
+  worktree's status on screen is read again, which is whenever its
+  repository reloads: the sidebar's Refresh, the view's own Refresh, or a
+  reported change. The open file's diff is read again with it. The view is
+  in the store (`changes`), and the latest read wins.
 - **Showing a refresh.** `changesBusy` in the store's state says whether a
-  worktree's tab is being read again: its `read-changes`, its repository's
+  worktree's changes are being read again: its `read-changes`, its repository's
   `reload-repository`, or `reload-all`. A switch of "Compare with" is a
   `read-changes` too. The panel holds that for `REFRESH_HOLD_MS` (300 ms)
   after it ends, so the reload and the read that its effect starts next are
@@ -3340,8 +3365,8 @@ base and saves it in the worktree's private Git metadata; it never touches
 the branch, the index, or files, and never fetches. Nothing in the app
 checks a ref.
 
-- **Entry.** The control beside "Compare with" in the Changes tab, for the
-  shown worktree. The tab shows nothing to compare when the worktree's
+- **Entry.** The control beside "Compare with" in the Changes view, for the
+  shown worktree. The view shows nothing to compare when the worktree's
   folder is missing, so the control is not offered then.
 - **The field.** A `BranchField` over `listBranches`, in the form Timber
   takes (`rebaseBases`: `refs/heads/<name>` for a local branch,
@@ -3375,7 +3400,7 @@ checks a ref.
   the branch and files were not touched and the list was read again. The
   store's `setWorktreeBase` reads the repository again after every outcome,
   so the workspace header and the row's tooltip show the saved base; after
-  a set it also moves the worktree's Changes tab to Base and reads its list
+  a set it also moves the worktree's Changes view to Base and reads its list
   again. So does an answer that was lost or unreadable when the list read
   again shows a new base, since Timber may have saved it. `presentSetBase`
   in `src/mainview/base-change-format.ts` maps each answer, and is tested
@@ -3425,10 +3450,10 @@ edited and saved in a small editor.
   (`files`, by worktree identity), never saved. The File tab is listed only
   while its worktree has one (`visibleTabs`); when the selected worktree has
   none, or its worktree leaves the list, the store shows the Workspace tab
-  instead (`settleFiles`). The numbers and the text are two blocks side by
+  instead (`settleTabs`). The numbers and the text are two blocks side by
   side, not an element per line, so 20,000 lines draw quickly. The latest
   read of each worktree's file wins.
-- **Opening a file.** "View file" beside a diff in the Changes tab, for a
+- **Opening a file.** "View file" beside a diff in the diff tab, for a
   file that is on disk, or a file in the file explorer (see
   [the file explorer](#the-file-explorer)). In a terminal, a link provider finds paths in each
   row (`findFilePaths` in `src/mainview/terminal-paths.ts`): a name with an
@@ -3560,8 +3585,8 @@ edited and saved in a small editor.
 
 ## The file explorer
 
-The side panel beside the workspace shows the chops or the selected
-worktree's files, as the person chooses. The files are a tree of the
+The side panel beside the workspace shows the chops, or the selected
+worktree's files or changes, as the person chooses. The files are a tree of the
 worktree's folders that opens a file in the File tab, so a file an agent
 wrote and never mentioned can be found.
 
@@ -3638,20 +3663,24 @@ wrote and never mentioned can be found.
   app, so nothing loads from the network and a browser fetches only the
   icons of the rows that show. The lookup takes a bare name, so the File
   tab and the Changes list can use it later.
-- **One side panel, two views.** `chopsOpen` and `chopsWidth` in the layout
-  are the side panel's, whichever view it shows, and `sidePanel` ("chops"
-  or "files", written only when it is "files") is the view. The title
-  bar's Files button and Ctrl+Shift+E (Cmd+Shift+E) call `toggleSidePanel`
-  in `src/mainview/components/SidePanel.tsx`, as the Chops button and its
-  shortcut do with the chops: the panel shows with that view, switches to
-  it, or hides when it shows it already, and the keyboard moves as it does
-  for the chops panel. The switch in the panel's header changes the view
-  and keeps the keyboard on the switch. With "Use chops" off, the files
-  still show and the switch is gone (`sidePanelView`); a panel left on the
-  chops stays hidden then rather than showing the files unasked
-  (`sidePanelShown`). A drawn terminal keeps Ctrl+Shift+E from its program
-  only while it shows or hides the files (`takesFilesPanelKey`), as for the
-  chops key.
+- **One side panel, three views.** `chopsOpen` and `chopsWidth` in the
+  layout are the side panel's, whichever view it shows, and `sidePanel`
+  ("chops", "files", or "changes", written only when it is not "chops") is
+  the view. A layout saved before the Changes view reads as it was. The
+  title bar's Files button and Ctrl+Shift+E (Cmd+Shift+E), and its Changes
+  button, Ctrl+Shift+G (Cmd+Shift+G), and "Show changes" in the command
+  palette, call `toggleSidePanel` in `src/mainview/components/SidePanel.tsx`,
+  as the Chops button and its shortcut do with the chops: the panel shows
+  with that view, switches to it, or hides when it shows it already, and
+  the keyboard moves as it does for the chops panel. `showSidePanel` in the
+  store shows a view and never hides it. The switch in the panel's header
+  changes the view and keeps the keyboard on the switch; Changes there
+  counts the worktree's review notes. With "Use chops" off, the switch
+  offers Files and Changes (`offeredSidePanelViews`, `sidePanelView`); a
+  panel left on the chops stays hidden then rather than showing the files
+  unasked (`sidePanelShown`). A drawn terminal keeps Ctrl+Shift+E and
+  Ctrl+Shift+G from its program only while they show or hide a view
+  (`takesFilesPanelKey`, `takesChangesPanelKey`), as for the chops key.
 - **Trying it.** In `bun run dev:web` every worktree also has a
   `.gitignore`, a `debug.log`, and `node_modules/left-pad/index.js`, which
   the mock counts as ignored. `timberMock.setWorktreeFile` tells the window
@@ -3660,8 +3689,9 @@ wrote and never mentioned can be found.
 
 ## Review notes
 
-Notes on lines of a diff in the Changes tab, sent to an agent as one
-message. The rules are pure, in `src/shared/review.ts`; the words and the
+Notes on lines of a diff in the diff tab, sent to an agent as one
+message, kept in the Review section at the foot of the side panel's
+Changes view (`ReviewSection`). The rules are pure, in `src/shared/review.ts`; the words and the
 choice of agent are in `src/mainview/review-format.ts` and
 `src/mainview/agent-sessions.ts` (which running agents can take text,
 shared with prompt chops), and the views in
@@ -3693,7 +3723,7 @@ the Send prompt dialog, `src/mainview/components/AgentChoices.tsx`.
   again in the note's comparison, a note whose lines are not all there with
   the same kind, numbers, and text is outdated, and stays so. A file that
   is no longer changed there outdates its notes; a binary or too large
-  diff, or a failed read, changes nothing. This runs on every diff the tab
+  diff, or a failed read, changes nothing. This runs on every diff the app
   reads, and before the preview for every noted file (`prepareReview`), so
   notes on files not on screen are checked too. An outdated note keeps its
   old lines and is sent with them, marked. Lines are matched by their
@@ -3767,7 +3797,7 @@ the Send prompt dialog, `src/mainview/components/AgentChoices.tsx`.
   clear it.
 - **Trying it.** In `bun run dev:web`, start Claude Code or Codex in a
   worktree with changes (the mock agent asks for bracketed paste), note
-  lines in the Changes tab, and Send review: the pretend agent shows the
+  lines in a diff tab, and Send review: the pretend agent shows the
   text it was given. `timberMock.pastedInto(id)` lists what each session
   was given, and `timberMock.printInto(id, "\x1b[?2004l")` turns its
   bracketed paste off. `timberMock.holdNewAgents(true)` keeps a new agent
@@ -5288,7 +5318,7 @@ other `X11 Error:` line is not explained by it. See the issue 64 run under
    safe and "delete anyway" confirmations.
 4. **Changes.** Diff against the base, the last commit, or a backup.
    The working tree against the index and the last commit is built (see
-   [the Changes tab](#the-changes-tab)).
+   [the Changes view](#the-changes-view)).
 5. **Settings.** Editor, agents, scripts, layout. Built: layout, editor,
    agents, and Timber's settings, edited and saved through Timber's
    settings commands (issue 22).

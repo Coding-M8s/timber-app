@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type RefObject, useEffect, useId, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { promptTarget, reviewWaiting, runningAgents, waitsOnPerson } from "../agent-sessions";
 import { AgentChoices } from "./AgentChoices";
 import { estimateTerminalSize } from "./TerminalPanel";
@@ -9,9 +9,10 @@ import { splitPath } from "../changes-format";
 import { PASTE_TEXT_LIMIT, type PasteResult } from "../../shared/terminal";
 import { useAppState, useStore } from "../store/react";
 import {
-	CLOSE_REVIEW, EMPTY_LINE, NEW_REVIEW_AGENT_NOTE, NO_REVIEW_AGENT, OUTDATED_REFERENCE, REVIEW_PASTE_NOTE, REVIEW_TOGGLE_TITLE, REVIEW_WAITS_WARNING,
+	EMPTY_LINE, NEW_REVIEW_AGENT_NOTE, NO_REVIEW_AGENT, OUTDATED_REFERENCE, REVIEW_NOT_COPIED, REVIEW_PASTE_NOTE, REVIEW_WAITS_WARNING,
 	describeNewReviewAgent, describeNoteCount, describeReference, reviewAlreadyWaiting, reviewTooLong,
 } from "../review-format";
+import { NO_NOTES_HINT } from "../changes-panel-format";
 
 /** The radio value of the "new agent" choice; session ids never take this form. */
 const NEW_AGENT = "\0new";
@@ -158,7 +159,7 @@ function NoteReference({ note, chosen, onShow }: { note: ReviewNote; chosen: boo
 	);
 }
 
-/** One note in the Review panel: its reference, what was written, then Edit and Delete. */
+/** One note in the Review section: its reference, what was written, then Edit and Delete. */
 function ReviewItem({ worktree, note, chosen, problem, onShow, onDelete }: {
 	worktree: string;
 	note: ReviewNote;
@@ -205,43 +206,32 @@ function ReviewItem({ worktree, note, chosen, problem, onShow, onDelete }: {
 }
 
 /**
- * The review of a worktree, in a panel beside the diff: every note it has,
- * on any file and in either comparison, each led by a reference to its
- * lines, with Send review and Discard below. Nothing is sent from here:
- * Send review opens the preview. In a narrow window the panel opens over
- * the diff (`open`), and `onClose` closes it.
+ * The review of a worktree, in the Review section at the foot of the side
+ * panel's Changes view: every note it has, on any file and in either
+ * comparison, each led by a reference to its lines, with Discard, Copy
+ * review, and Send review below. Nothing is sent from here: Send review
+ * opens the preview. Before the first note it says how to leave one.
+ * `onGone` is told when the last note went, so the keyboard has somewhere
+ * to go.
  */
-export function ReviewPanel({ worktree, id, open, onClose, onShown, onGone }: {
-	worktree: string;
-	id: string;
-	open: boolean;
-	onClose: () => void;
-	/** A reference was chosen. */
-	onShown: () => void;
-	/** The last note went, and the keyboard needs somewhere to go. */
-	onGone: () => void;
-}) {
+export function ReviewSection({ worktree, onGone }: { worktree: string; onGone: () => void }) {
 	const store = useStore();
 	const state = useAppState();
 	const notes = state.reviews[worktree] ?? [];
 	const panel = useRef<HTMLElement>(null);
-	const closeButton = useRef<HTMLButtonElement>(null);
 	const discardButton = useRef<HTMLButtonElement>(null);
 	const [problem, setProblem] = useState<{ id: string; text: string } | null>(null);
+	const [copyProblem, setCopyProblem] = useState<string | null>(null);
 	const [discarding, setDiscarding] = useState(false);
 	const chosen = state.chosenNote?.worktree === worktree ? state.chosenNote.id : null;
 
-	// Opened over the diff, the keyboard goes into the panel.
-	useEffect(() => {
-		if (open) closeButton.current?.focus();
-	}, [open]);
-
 	// A review that went some other way, such as sent, does not come back asking to be discarded.
 	useEffect(() => {
-		if (notes.length === 0) setDiscarding(false);
+		if (notes.length === 0) {
+			setDiscarding(false);
+			setCopyProblem(null);
+		}
 	}, [notes.length]);
-
-	if (notes.length === 0) return null;
 
 	const remove = (index: number) => {
 		const next = notes[index + 1] ?? notes[index - 1];
@@ -251,39 +241,45 @@ export function ReviewPanel({ worktree, id, open, onClose, onShown, onGone }: {
 		else onGone();
 	};
 
+	const copy = async () => {
+		setCopyProblem(null);
+		const message = await store.prepareReview(worktree);
+		if (message === null) return;
+		if (!await store.copyReview(message)) setCopyProblem(REVIEW_NOT_COPIED);
+	};
+
 	return (
-		<aside ref={panel} id={id} className={`review-panel${open ? " open" : ""}`} aria-label="Review">
+		<section ref={panel} className="review-panel" aria-label="Review">
 			<div className="review-head">
-				<h2 className="change-group-title">
+				<h3 className="change-group-title">
 					Review
-					<span className="change-group-count" aria-hidden="true">{notes.length}</span>
+					{notes.length > 0 && <span className="change-group-count" aria-hidden="true">{notes.length}</span>}
 					<span className="visually-hidden">{describeNoteCount(notes.length)}</span>
-				</h2>
-				<button ref={closeButton} type="button" className="text-button review-close" aria-label={CLOSE_REVIEW} onClick={onClose}>Close</button>
+				</h3>
 			</div>
-			<ul className="review-items">
-				{notes.map((note, index) => (
-					<ReviewItem
-						key={note.id}
-						worktree={worktree}
-						note={note}
-						chosen={note.id === chosen}
-						problem={problem?.id === note.id ? problem.text : null}
-						onShow={() => {
-							setProblem(null);
-							// Over the diff, the panel closes to show the lines; when they cannot show, it stays open to say why.
-							void store.showReviewNote(worktree, note.id).then(text => {
-								setProblem(text === null ? null : { id: note.id, text });
-								if (text === null) onShown();
-							});
-						}}
-						onDelete={() => remove(index)}
-					/>
-				))}
-			</ul>
+			{notes.length === 0 ? <p className="review-hint">{NO_NOTES_HINT}</p> : (
+				<ul className="review-items">
+					{notes.map((note, index) => (
+						<ReviewItem
+							key={note.id}
+							worktree={worktree}
+							note={note}
+							chosen={note.id === chosen}
+							problem={problem?.id === note.id ? problem.text : null}
+							onShow={() => {
+								setProblem(null);
+								// The diff tab shows the lines; when they cannot show, the note says why.
+								void store.showReviewNote(worktree, note.id).then(text => setProblem(text === null ? null : { id: note.id, text }));
+							}}
+							onDelete={() => remove(index)}
+						/>
+					))}
+				</ul>
+			)}
 			{/* Always there, so what choosing a reference found is heard; the note's box shows it too. */}
 			<p className="visually-hidden" role="status">{problem?.text ?? ""}</p>
-			{discarding ? (
+			{copyProblem !== null && <p className="review-problem" role="alert">{copyProblem}</p>}
+			{notes.length > 0 && (discarding ? (
 				<div className="review-bar">
 					<span className="review-question">Discard {describeNoteCount(notes.length)}?</span>
 					<button
@@ -312,38 +308,11 @@ export function ReviewPanel({ worktree, id, open, onClose, onShown, onGone }: {
 			) : (
 				<div className="review-bar">
 					<button ref={discardButton} type="button" className="text-button" onClick={() => setDiscarding(true)}>Discard</button>
+					<button type="button" className="button quiet" onClick={() => void copy()}>Copy review</button>
 					<button type="button" className="button primary" onClick={() => store.openDialog({ kind: "send-review", worktree })}>Send review</button>
 				</div>
-			)}
-		</aside>
-	);
-}
-
-/**
- * The button that opens the Review panel over the diff. It shows only in a
- * narrow window, where the panel does not fit beside the diff.
- */
-export function ReviewToggle({ count, panel, open, onToggle, button }: {
-	count: number;
-	panel: string;
-	open: boolean;
-	onToggle: () => void;
-	button: RefObject<HTMLButtonElement | null>;
-}) {
-	return (
-		<button
-			ref={button}
-			type="button"
-			className="button quiet review-toggle"
-			aria-expanded={open}
-			aria-controls={panel}
-			aria-label={`Review, ${describeNoteCount(count)}`}
-			title={REVIEW_TOGGLE_TITLE}
-			onClick={onToggle}
-		>
-			Review
-			<span className="change-group-count" aria-hidden="true">{count}</span>
-		</button>
+			))}
+		</section>
 	);
 }
 
@@ -479,7 +448,7 @@ export function SendReviewDialog({ worktree }: { worktree: string }) {
 					<div className="dialog-buttons">
 						<button type="button" className="button quiet" disabled={sending} onClick={() => store.closeDialog()}>Cancel</button>
 						<button type="button" className={canSend ? "button quiet" : "button primary"} disabled={message === null || sending} onClick={() => {
-							if (message !== null) void store.copyReview(message).then(copied => copied || setProblem("The review could not be put on the clipboard."));
+							if (message !== null) void store.copyReview(message).then(copied => copied || setProblem(REVIEW_NOT_COPIED));
 						}}>
 							Copy review
 						</button>

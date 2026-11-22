@@ -27,7 +27,7 @@ export type ReadStamp = (worktree: Pick<AttendedWorktree, "repository" | "worktr
 
 /**
  * Reads the stamp of a worktree: `git status` with the same options as the
- * Changes tab, plus the size and modification time of the files it lists, so
+ * Changes view, plus the size and modification time of the files it lists, so
  * editing a file that was already modified changes the stamp as well.
  *
  * It runs often, so it does not ask Timber. It answers null, and runs no

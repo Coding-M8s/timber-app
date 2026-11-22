@@ -6,7 +6,8 @@ import { BEING_REMOVED_REASON, DONE_PRIMARY_NOTE } from "./done-format";
 import { worktreeLabel } from "./format";
 import { REBASE_FOLDER_MISSING } from "./rebase-format";
 import type { Repository } from "../shared/model";
-import { type AppState, type DialogRequest, isBeingRemoved, isRunning, offeredChops, finishedSessions, selectedWorktree, sessionsOf, waitingSessions } from "./store/state";
+import { type AppState, type DialogRequest, changesPanelShown, isBeingRemoved, isRunning, offeredChops, finishedSessions, selectedWorktree, sessionsOf, waitingSessions } from "./store/state";
+import type { SidePanelView } from "../shared/layout";
 import { type RowSessionMark, describeRowSessions } from "./terminal-format";
 import { NONE_WAITING, WAITING_LABEL, describeToVisit } from "./waiting";
 import { SYNC_ACTION_WORDS, syncMenuEntries } from "./sync-action-format";
@@ -31,7 +32,9 @@ export type PaletteAction =
 	/** Start the shell, or the agent named, in a worktree: `worktree` is its identity, `path` its registered path. */
 	| { kind: "terminal"; repository: string; worktree: string; path: string; agent: string | null }
 	/** Run a command chop of the repository in a worktree: `worktree` is its identity. */
-	| { kind: "chop"; repository: string; worktree: string; chop: string };
+	| { kind: "chop"; repository: string; worktree: string; chop: string }
+	/** Show, switch to, or hide this view of the side panel, as its title bar button does. */
+	| { kind: "side-panel"; view: SidePanelView };
 
 /**
  * Where an entry is listed: actions for the selected worktree, actions for a
@@ -42,7 +45,7 @@ export type PaletteSection = "worktree" | "repository" | "worktrees" | "app";
 /** The picture beside an entry's label. */
 export type PaletteIcon =
 	| "terminal" | "agent" | "rebase" | "done" | "editor" | "new" | "branch" | "arena" | "fetch" | "push" | "clean-up"
-	| "worktree" | "next" | "settings" | "add-repository";
+	| "worktree" | "next" | "settings" | "add-repository" | "changes";
 
 export interface PaletteEntry {
 	/** Unique in the list, so rows have a stable key. */
@@ -280,6 +283,10 @@ function actionEntries(state: AppState): PaletteEntry[] {
 	const finished = finishedSessions(state).length;
 	add(inApp("next"), "next-waiting", WAITING_LABEL, "Shows the session that has waited longest, then the one that finished first.", waiting + finished === 0 ? NONE_WAITING : null,
 		{ kind: "next-waiting" }, ["needs you", "waiting", "done", "finished", "agent", "jump", "attention"], describeToVisit(waiting, finished));
+	const changesShown = changesPanelShown(state);
+	add(inApp("changes"), "changes", changesShown ? "Hide changes" : "Show changes",
+		changesShown ? "Hides the Changes view of the side panel." : "Shows the selected worktree's changes and review in the side panel.", null,
+		{ kind: "side-panel", view: "changes" }, ["diff", "review", "git status", "side panel", "files changed"]);
 	add(inApp("settings"), "settings", "Settings", "Opens Settings.", null, { kind: "dialog", request: { kind: "settings" } }, ["preferences", "options"]);
 	add(inApp("add-repository"), "add-repository", "Add repository", "Adds a Git repository's folder to the list.", isRunning(state, "add-repository") ? ADDING_REPOSITORY : null,
 		{ kind: "add-repository" }, ["folder", "project"]);

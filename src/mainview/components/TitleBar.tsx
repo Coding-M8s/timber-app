@@ -3,7 +3,7 @@ import { worktreeLabel } from "../format";
 import { paletteHint } from "../palette";
 import { ISSUES_ROW_LABEL } from "../issue-board-format";
 import { useAppState, useStore } from "../store/react";
-import { chopsEnabled, chopsPanelShown, filesPanelShown, finishedSessions, selectedWorktree, timberReady, waitingSessions } from "../store/state";
+import { changesPanelShown, chopsEnabled, chopsPanelShown, filesPanelShown, finishedSessions, selectedWorktree, timberReady, waitingSessions } from "../store/state";
 import { describeFinished, describeToVisit, describeWaiting, waitingHint } from "../waiting";
 import { StatusGlyph } from "./StatusGlyph";
 import { shortcutLetter } from "../../shared/shortcuts";
@@ -11,6 +11,8 @@ import { CHOPS_BUTTON_ID, CHOPS_BUTTON_LABEL, CHOPS_PANEL_ID, chopsButtonHint } 
 import { toggleChopsPanel } from "./ChopsPanel";
 import { toggleFilesPanel } from "./FilesPanel";
 import { FILES_BUTTON_ID, FILES_BUTTON_LABEL, filesButtonHint } from "../files-panel-format";
+import { toggleChangesPanel } from "./ChangesList";
+import { CHANGES_BUTTON_ID, CHANGES_BUTTON_LABEL, changesButtonHint } from "../changes-panel-format";
 
 export function TitleBar() {
 	const store = useStore();
@@ -93,6 +95,26 @@ export function TitleBar() {
 						<path d="M2.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h4.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z" />
 					</svg>
 					{FILES_BUTTON_LABEL}
+				</button>
+			)}
+			{/* Shows or hides the selected worktree's changes in the same panel, as its shortcut does. */}
+			{timberReady(state) && (
+				<button
+					type="button"
+					id={CHANGES_BUTTON_ID}
+					className="titlebar-files titlebar-changes"
+					aria-pressed={changesPanelShown(state)}
+					aria-controls={changesPanelShown(state) ? CHOPS_PANEL_ID : undefined}
+					title={changesButtonHint(changesPanelShown(state), mac)}
+					onClick={() => void toggleChangesPanel(store)}
+				>
+					<svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+						<circle cx="5" cy="4" r="1.5" />
+						<circle cx="5" cy="12" r="1.5" />
+						<circle cx="11" cy="6" r="1.5" />
+						<path d="M5 5.5v5M11 7.5c0 2-2 2.5-6 3" />
+					</svg>
+					{CHANGES_BUTTON_LABEL}
 				</button>
 			)}
 			{/* Opens the palette, as its shortcut does. The tooltip names the shortcut for this platform. */}

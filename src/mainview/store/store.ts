@@ -50,7 +50,6 @@ import { describeOrphanTerminal, describeRestoreFailures, liveTerminalCount } fr
 import { installStepOf } from "../app-update-format";
 import { BEING_REMOVED_REASON, describeDone, describeRemovalFailed } from "../done-format";
 import { SESSION_STARTED_DIAGNOSTIC, describeCleanUpEnded } from "../clean-up-format";
-import { listedOrder } from "../changes-format";
 import { describeOpenedInEditor } from "../editor-format";
 import { HANDOFF_NO_AGENT, describeHandoffNotListed, handoffAgent } from "../handoff-format";
 import { describeAdded, describeRemoved, folderName, worktreeLabel } from "../format";
@@ -65,7 +64,7 @@ import { RESTORE_CONCURRENCY, RESTORE_QUIET_MILLISECONDS, type RestoreJob, goneS
 import { type SavedSessions, pickShown } from "../../shared/saved-sessions";
 import { type WorktreeFileResult, textToSave } from "../../shared/worktree-files";
 import { type FileEditMemory, createFileEditMemory } from "../text-editor-format";
-import { afterSave, canEditFile, editableFileText, fileText, hasUnsavedEdits, initialFileMode, outsideResult, pathInWorktree, settleFiles, unsavedFileCount } from "../file-view-format";
+import { afterSave, canEditFile, editableFileText, fileText, hasUnsavedEdits, initialFileMode, outsideResult, pathInWorktree, settleTabs, unsavedFileCount } from "../file-view-format";
 import {
 	type AppState, type ChangesView, type DialogRequest, type FileMode, type FileView, type Operation, type PullRequestForm, type Removal, type SessionAgent, type UnsavedFileStep, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood,
 	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, canToggleSidePanel, chopsEnabled, filesPanelShown, offeredChops, sidePanelShown, sidePanelView, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, shownSession, timberReady, withTerminal, withoutSession } from "./state";
@@ -207,6 +206,12 @@ export interface AppStore {
 	/** Hide the side panel, as its Close button does, and remember that. The saved chops stay. */
 	hideChopsPanel(): void;
 	/**
+	 * Show the side panel with this view, and remember that. Unlike
+	 * `toggleSidePanel`, it never hides the panel. Does nothing, and answers
+	 * false, when `canToggleSidePanel` says no.
+	 */
+	showSidePanel(view: SidePanelView): boolean;
+	/**
 	 * Open or close a folder in the file explorer of a worktree, by its
 	 * identity. An opened folder is read, and watched while it shows. A closed
 	 * one forgets its entries and its open folders.
@@ -264,8 +269,13 @@ export interface AppStore {
 	openInEditor(request: OpenInEditorRequest): Promise<OpenInEditorResult | null>;
 	/** Put away the note about the last "Open in editor". */
 	dismissEditorProblem(): void;
-	/** Show one of the views of the selected worktree. The File tab shows only while a file is open there. */
+	/** Show one of the views of the selected worktree. The diff and File tabs show only while a diff or a file is open there. */
 	showTab(tab: WorkspaceTab): void;
+	/**
+	 * Close the diff tab of a worktree, named by its identity, and show the
+	 * tab it was opened from when it showed.
+	 */
+	closeDiff(worktreeId: string): void;
 	/**
 	 * Open a file of a worktree, named by its identity, in its File tab, and
 	 * show that tab. The path is relative to the worktree, or absolute inside
@@ -302,9 +312,9 @@ export interface AppStore {
 	/**
 	 * Read the changed files of a worktree, named by the path of its
 	 * repository and its identity, into `changes`, and then the diff of the
-	 * selected file: the one selected before when it is still listed,
-	 * otherwise the first. Another worktree starts the view afresh. The
-	 * latest read wins. Never throws.
+	 * file of its diff tab. A diff tab whose file is no longer listed closes.
+	 * Another worktree starts the view afresh. The latest read wins. Never
+	 * throws.
 	 */
 	readChanges(repository: string, worktreeId: string): Promise<void>;
 	/**
@@ -345,11 +355,15 @@ export interface AppStore {
 	 * changes nothing. The latest read of each worktree wins. Never throws.
 	 */
 	readPorts(repository: string, worktreeId: string): Promise<void>;
-	/** Select a file of `changes` and read its diff. Never throws. */
+	/**
+	 * Open the diff of a file of `changes` in its worktree's diff tab, show
+	 * that tab, and read the diff. Replaces the diff open there. Never throws.
+	 */
 	selectChangedFile(file: FileChangeTarget): Promise<void>;
 	/**
 	 * Compare the worktree of `changes` with its base or with its last commit,
 	 * remember that for the worktree in the layout, and read the files again.
+	 * The diff tab closes: its file is listed in the other comparison apart.
 	 * Never throws.
 	 */
 	compareChanges(compare: Comparison): Promise<void>;
@@ -364,7 +378,7 @@ export interface AppStore {
 	/** Forget every note of a worktree without sending them. */
 	discardReview(worktreeId: string): void;
 	/**
-	 * Show the file and lines of a note in the Changes tab of the worktree it
+	 * Show the file and lines of a note in the diff tab of the worktree it
 	 * shows, in the note's comparison. Answers why it cannot, such as a file
 	 * no longer listed there, or null. Never throws.
 	 */
@@ -529,10 +543,10 @@ export interface AppStore {
 	 * Save a worktree's base with `timber base --set --result-file` and answer
 	 * how it ended (see `SetBaseResult`). The engine is asked once, and never
 	 * again by itself. Once a base is saved, the worktree compares with its
-	 * base in the Changes tab, as the person's choice; so does one whose
+	 * base in the Changes view, as the person's choice; so does one whose
 	 * answer was lost but whose list read again shows a new base. The
 	 * repository is read again before this answers, whatever the outcome, so
-	 * the header, the row, and the Changes tab show what Timber saved. Never
+	 * the header, the row, and the Changes view show what Timber saved. Never
 	 * throws.
 	 */
 	setWorktreeBase(request: SetBaseRequest): Promise<SetBaseResult>;
@@ -902,9 +916,9 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const shownBefore = sessionOnScreen(state)?.id ?? null;
 		const terminalsBefore = state.terminals;
 		state = { ...state, ...change };
-		// The File tab never shows without a file, and open files leave with their worktree.
-		if (change.tab !== undefined || change.selection !== undefined || change.files !== undefined || change.repositories !== undefined) {
-			const settled = settleFiles(state);
+		// The File and diff tabs never show empty, and open files and diffs leave with their worktree.
+		if (change.tab !== undefined || change.selection !== undefined || change.files !== undefined || change.diffs !== undefined || change.repositories !== undefined) {
+			const settled = settleTabs(state);
 			if (settled) state = { ...state, ...settled };
 			// The editor's memory goes with its file: closed, replaced, or gone with its worktree.
 			for (const [id, memory] of editMemories) if (state.files[id]?.path !== memory.path) forgetEditMemory(id);
@@ -1758,13 +1772,17 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			update({ changes: { ...view, problem: answer.message } });
 			return;
 		}
-		const kept = view.selected === null ? undefined : answer.files.find(file => sameFileChange(file, view.selected!));
-		const chosen = kept ?? listedOrder(answer.files)[0] ?? null;
-		const selected = chosen && { area: chosen.area, path: chosen.path, previousPath: chosen.previousPath };
+		// Only the diff tab's diff is read: nothing is read for a file no tab shows.
+		const open = state.diffs[worktreeId];
+		const wanted = open?.file ?? null;
+		const kept = wanted === null ? undefined : answer.files.find(file => sameFileChange(file, wanted));
+		const selected = kept ? { area: kept.area, path: kept.path, previousPath: kept.previousPath } : null;
 		// The same file keeps its diff on screen until the new one answers, so it does not flicker.
 		const sameComparison = view.compared === answer.compared;
-		const next: ChangesView = { ...view, files: answer.files, more: answer.more, compared: answer.compared, base: answer.base, problem: null, selected, diff: kept && sameComparison ? view.diff : null };
-		update({ changes: next });
+		const keptDiff = kept && view.selected !== null && sameFileChange(view.selected, kept) && sameComparison ? view.diff : null;
+		const next: ChangesView = { ...view, files: answer.files, more: answer.more, compared: answer.compared, base: answer.base, problem: null, selected, diff: keptDiff };
+		// A diff tab whose file is no longer changed has nothing to show: it closes, back to where it was opened from.
+		update(open && !kept ? { ...closedDiff(worktreeId), changes: next } : { changes: next });
 		if (selected) await readDiff(next, selected, worktree.path);
 	}
 
@@ -1940,10 +1958,34 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const inView = state.noteInView;
 		const pending = inView === null ? null : state.reviews[inView.worktree]?.find(note => note.id === inView.id);
 		if (inView !== null && (inView.worktree !== view.worktree || !pending || !sameFileChange(pending.file, selected))) update({ noteInView: null });
-		if (view.selected && sameFileChange(view.selected, selected) && view.diff !== null) return;
+		const before = state.diffs[view.worktree];
+		const shownHere = state.selection?.worktree === view.worktree && state.board === null;
+		const from = shownHere && state.tab !== "diff" ? state.tab : before?.from ?? "workspace";
+		const selection = selectionFor(state.repositories, view.worktree);
+		const tab = { ...(selection ? { selection, board: null } : {}), tab: "diff" as const, diffs: { ...state.diffs, [view.worktree]: { file: selected, from } } };
+		if (view.selected && sameFileChange(view.selected, selected) && view.diff !== null) {
+			update(tab);
+			return;
+		}
 		const next: ChangesView = { ...view, selected, diff: null };
-		update({ changes: next });
+		update({ ...tab, changes: next });
 		await readDiff(next, selected, worktree.path);
+	}
+
+	/** What closing the diff tab of a worktree changes: the tab goes, and the tab it came from shows when it showed. */
+	function closedDiff(worktreeId: string): Partial<AppState> {
+		const open = state.diffs[worktreeId];
+		if (!open) return {};
+		const { [worktreeId]: _closed, ...diffs } = state.diffs;
+		const shown = state.tab === "diff" && state.selection?.worktree === worktreeId;
+		const changes = state.changes?.worktree === worktreeId ? { ...state.changes, selected: null, diff: null } : state.changes;
+		return { diffs, changes, ...(shown ? { tab: open.from } : {}) };
+	}
+
+	function closeDiff(worktreeId: string): void {
+		if (!state.diffs[worktreeId]) return;
+		// The note on its way into view was in this diff.
+		update({ ...closedDiff(worktreeId), ...(state.noteInView?.worktree === worktreeId ? { noteInView: null } : {}) });
 	}
 
 	async function compareChanges(compare: Comparison): Promise<void> {
@@ -1958,7 +2000,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		}
 		if (view.compared === compare) return;
 		// The list of the other comparison is a different list: read it afresh, so nothing of the old one shows under the new header.
-		update({ changes: { ...view, files: null, more: false, compared: null, problem: null, selected: null, diff: null } });
+		// The diff tab shows a file of the old list, so it closes.
+		update({ ...closedDiff(view.worktree), changes: { ...view, files: null, more: false, compared: null, problem: null, selected: null, diff: null } });
 		await readChanges(view.repository, view.worktree);
 	}
 
@@ -3325,6 +3368,13 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			if (watchedTree !== null) readShownFolders(watchedTree);
 		},
 		readFoldersAgain: readShownFolders,
+		showSidePanel(view) {
+			if (!canToggleSidePanel(state, view)) return false;
+			if (sidePanelShown(state) && sidePanelView(state) === view) return true;
+			changeLayout({ ...state.layout, chopsOpen: true, sidePanel: view });
+			void saveLayout("layout");
+			return true;
+		},
 		hideChopsPanel() {
 			if (!state.layout.chopsOpen) return;
 			changeLayout({ ...state.layout, chopsOpen: false });
@@ -3351,8 +3401,10 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		showTab(tab) {
 			// A worktree's tab is asked for, so the worktree shows in place of any issues board.
 			if (tab === "file" && (state.selection === null || state.files[state.selection.worktree] === undefined)) return;
+			if (tab === "diff" && (state.selection === null || state.diffs[state.selection.worktree] === undefined)) return;
 			if (tab !== state.tab || state.board !== null) update({ tab, board: null });
 		},
+		closeDiff,
 		openFile,
 		readFileAgain,
 		closeFile,

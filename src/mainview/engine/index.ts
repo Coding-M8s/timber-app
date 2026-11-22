@@ -41,7 +41,7 @@ export async function createEngine(): Promise<Engine> {
 	// For Uninstall in About: timberMock.endUninstalls("fails"), ("keeps-settings"), or ("unavailable").
 	// For Restart now after saving a setting read at start: timberMock.endRestarts("fails") or ("unavailable"), and
 	// timberMock.restartCount() counts the restarts acted out. Nothing quits.
-	// For the Changes tab: timberMock.failFileChanges("Git is busy"), or timberMock.setFileChanges(path, files).
+	// For the Changes view: timberMock.failFileChanges("Git is busy"), or timberMock.setFileChanges(path, files).
 	// For the file viewer: timberMock.setWorktreeFile(worktree, "notes.md", "text"), { kind: "bytes", bytes: [0] }, or null for a missing file.
 	// Changing that file while it is edited acts out an agent writing it, so Save says it changed. timberMock.delayFileSaves(2000) slows saves.
 	// For themes: timberMock.setThemeImport(text) gives Import a file, and timberMock.exportedThemes() lists what Export wrote.

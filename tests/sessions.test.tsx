@@ -190,8 +190,8 @@ describe("several sessions in one worktree", () => {
 		expect([...store.getState().unseenSessions].sort()).toEqual([one.id, two.id].sort());
 		store.select(featureId);
 		expect(store.getState().unseenSessions).toEqual([two.id]);
-		// The Changes tab hides the sessions too.
-		store.showTab("changes");
+		// The Pull request tab hides the sessions too.
+		store.showTab("pull-request");
 		store.writeTerminal(one.id, "y");
 		await settle();
 		expect(store.getState().unseenSessions).toContain(one.id);

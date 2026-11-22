@@ -3906,3 +3906,46 @@ chop shortcuts in Settings, Chops (issue 255), Linux x64 with Bun 1.4.5:
 - Not run: the desktop window on any platform, and Ctrl+Shift+T or
   Cmd+Shift+T against any desktop's own keys. The key was chosen by
   analysis.
+
+Run for Changes in the side panel and each file's diff in its own tab
+(issue 300), Linux x64 with Bun 1.4.5, Git 2.56.1, and Chromium 158:
+
+- `bun run test` twice: 3,800 pass, 19 skipped, 0 failed each time,
+  browser tests included, and after rebasing on main again (with the
+  changeable chop shortcuts) 3,899 pass, 19 skipped, 0 failed. The
+  reserved shortcut table now says Ctrl+Shift+G shows or hides the
+  changes, and the editor drops CodeMirror's Shift variant of Mod-g, so
+  Ctrl+Shift+G never finds the previous match there. `bun run typecheck`, `bun run typecheck:desktop`, and
+  `bun run build:web` passed.
+- `tests/changes-panel.test.tsx`: Changes shows, switches to, and hides
+  the side panel and is saved as `sidePanel: "changes"`; the switch offers
+  Chops, Files, and Changes, or Files and Changes with "Use chops" off; the
+  diff tab opens after Pull request from the tab that showed, another file
+  replaces it, and closing goes back; each worktree keeps its own, read
+  again with the panel hidden; a note's reference opens its file's diff
+  with its three lines marked; Ctrl+Shift+G and Cmd+Shift+G, and the
+  palette's "Show changes" then "Hide changes".
+- `tests/changes-tab.test.tsx` and `tests/review-notes.test.tsx`: no diff
+  is read until a file is chosen; the diff tab closes when its file is no
+  longer changed and when Compare with switches; the note count on the
+  panel's switch; the diff's Review button while the Changes view is
+  hidden or on Files; Copy review keeps the notes.
+- `tests/layout.test.ts`: a layout with `sidePanel: "changes"` saves and
+  reads back, and one saved before this change, on the files, reads as it
+  was. No tab is saved between runs, so there is no saved tab to read.
+- In Chromium (`tests/review-panel-browser.test.ts`): the Review section
+  sits below the files inside the panel and the diff fills its tab with no
+  sideways scroll; Copy review shows its toast and keeps both notes;
+  choosing a reference opens the diff tab, marks the line, and gives the
+  diff the keyboard; deleting the last note leaves the hint and gives the
+  keyboard to the list; Ctrl+Shift+G from inside the view hides it and
+  gives the keyboard to the title bar's Changes; the diff's Review button
+  shows the view again with the keyboard in it. The chops and files
+  browser tests Tab through the switch's third button.
+- Screenshots of the mock app at 1440 by 900, without a theme: the panel's
+  switch with "Changes 1", the file groups above the Review section with
+  Discard, Copy review, and Send review, the "diff changed-1.ts" tab with
+  its close button after Pull request, and Review 1 in the diff's title
+  line once the panel was hidden.
+- Not run: the desktop window on any platform, any theme's colors, Cmd+Shift+G
+  on macOS, and a screen reader.

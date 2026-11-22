@@ -20,18 +20,27 @@ const MOD = isMac ? "Cmd" : "Ctrl";
 /** A key as a set of its parts, so "Shift-Mod-k" and "Mod-Shift-k" are the same key. */
 const keyParts = (key: string) => key.split("-").map(part => part.toLowerCase()).sort().join("-");
 /**
- * Keys the window keeps for itself (the palette, chops, the next session), taken out of the editor's own. The chop
+ * Keys the window keeps for itself (the palette, chops, the next session, the changes), taken out of the editor's own.
+ * Ctrl+Shift+G is find previous in CodeMirror; Shift+Enter and Shift+F3 still do that here. The chop
  * shortcuts set in Settings are not followed here: they never take a key the editor binds (`RESERVED_SHORTCUTS` in
  * ../../shared/shortcuts.ts), and the window hears them first.
  */
-const WINDOW_KEYS = new Set(["Mod-Shift-p", "Mod-Shift-k", "Mod-Shift-j"].map(keyParts));
+const WINDOW_KEYS = new Set(["Mod-Shift-p", "Mod-Shift-k", "Mod-Shift-j", "Mod-Shift-g"].map(keyParts));
 /**
  * What CodeMirror's keys would do beyond typing, undo, search, indenting, and toggling a line comment, which this editor
  * leaves out: go to a line, select the next match or every one, block comments, delete, move, or copy a line.
  */
 const LEFT_OUT: ReadonlySet<unknown> = new Set([gotoLine, selectNextOccurrence, selectSelectionMatches, toggleBlockComment, lineComment, blockComment, deleteLine, moveLineUp, moveLineDown, copyLineUp, copyLineDown]);
-export const editorKeys = (bindings: readonly KeyBinding[]) => bindings.filter(binding =>
-	!LEFT_OUT.has(binding.run) && !(binding.key && WINDOW_KEYS.has(keyParts(binding.key))) && !(binding.mac && WINDOW_KEYS.has(keyParts(binding.mac))));
+const isWindowKey = (key: string | undefined) => key !== undefined && WINDOW_KEYS.has(keyParts(key));
+/** A binding's Shift variant, such as find previous on Shift with Mod-g, is left out when Shift makes it a window key. */
+const withoutWindowShift = (binding: KeyBinding): KeyBinding => {
+	if (!binding.shift || !(isWindowKey(binding.key && `Shift-${binding.key}`) || isWindowKey(binding.mac && `Shift-${binding.mac}`))) return binding;
+	const { shift: _shift, ...rest } = binding;
+	return rest;
+};
+export const editorKeys = (bindings: readonly KeyBinding[]) => bindings
+	.filter(binding => !LEFT_OUT.has(binding.run) && !isWindowKey(binding.key) && !isWindowKey(binding.mac))
+	.map(withoutWindowShift);
 
 /** The search: the text as typed (no patterns), matching case only when asked. */
 const searchFor = (text: string, caseSensitive: boolean) => new SearchQuery({ search: text, caseSensitive, literal: true });

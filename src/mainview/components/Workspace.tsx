@@ -1,4 +1,4 @@
-import type { KeyboardEvent } from "react";
+import { Fragment, type KeyboardEvent } from "react";
 import { BEING_REMOVED_REASON } from "../done-format";
 import { workspaceKindLabel } from "../workspace-actions-format";
 import { describeSavedBase } from "../base-format";
@@ -10,8 +10,8 @@ import { fileTabLabel } from "../file-view-format";
 import { FileViewer } from "./FileViewer";
 import { useAppState, useStore } from "../store/react";
 import { type WorkspaceTab, isBeingRemoved, isRunning, selectedWorktree } from "../store/state";
-import { ChangesPanel } from "./ChangesPanel";
-import { describeNoteCount } from "../review-format";
+import { DiffTab } from "./DiffTab";
+import { diffTabLabel, diffTabTitle } from "../changes-panel-format";
 import { IssueHeaderLink, issueOf } from "./IssueSummary";
 import { IssuesBoard } from "./IssuesBoard";
 import { PortsItem } from "./PortsItem";
@@ -72,9 +72,9 @@ export function Workspace() {
 	const pullProblem = describeWorktreePullRequestProblem(pullRequests, pullRequest);
 	// While Timber removes the worktree, nothing new starts in it.
 	const removing = isBeingRemoved(state, repository.path, worktree.path);
-	const notes = state.reviews[worktree.id]?.length ?? 0;
 	const file = state.files[worktree.id];
-	const tabs = visibleTabs(file !== undefined);
+	const diff = state.diffs[worktree.id];
+	const tabs = visibleTabs(file !== undefined, diff !== undefined);
 
 	// As in any tab list: the arrows, Home, and End move between tabs, and the tab reached shows at once.
 	const onTabKey = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -126,38 +126,48 @@ export function Workspace() {
 			<SetupPrompt repository={repository} />
 			<div className="tabs" role="tablist" aria-label="Views of this worktree" onKeyDown={onTabKey}>
 				{tabs.map(tab => (
-					<button
-						key={tab}
-						type="button"
-						role="tab"
-						id={tabId(tab)}
-						className={tab === state.tab ? "tab selected" : "tab"}
-						aria-selected={tab === state.tab}
-						aria-controls={PANEL_ID}
-						// Only the tab that shows is a tab stop. The arrows reach the others.
-						tabIndex={tab === state.tab ? 0 : -1}
-						onClick={() => store.showTab(tab)}
-					>
-						{tab === "file" ? <span title={file?.path}>{fileTabLabel(file)}</span> : TAB_LABELS[tab]}
-						{tab === "changes" && notes > 0 && (
-							<>
-								<span className="tab-count" aria-hidden="true">{notes}</span>
-								<span className="visually-hidden">, {describeNoteCount(notes)}</span>
-							</>
+					<Fragment key={tab}>
+						<button
+							type="button"
+							role="tab"
+							id={tabId(tab)}
+							className={tab === state.tab ? "tab selected" : "tab"}
+							aria-selected={tab === state.tab}
+							aria-controls={PANEL_ID}
+							// Only the tab that shows is a tab stop. The arrows reach the others.
+							tabIndex={tab === state.tab ? 0 : -1}
+							onClick={() => store.showTab(tab)}
+						>
+							{tab === "file"
+								? <span title={file?.path}>{fileTabLabel(file)}</span>
+								: tab === "diff" && diff
+									? (
+										<span title={diffTabTitle(diff.file)}>
+											<span className="tab-kind" aria-hidden="true">diff</span>
+											<span className="visually-hidden">Diff of </span>
+											{diffTabLabel(diff.file)}
+										</span>
+									)
+									: TAB_LABELS[tab]}
+						</button>
+						{/* Beside the tab, not inside it: a button may not hold another. The diff's and the viewer's own Close reach it by keyboard. */}
+						{tab === "diff" && diff && (
+							<button type="button" className="tab-close" tabIndex={-1} aria-label={`Close the diff of ${diffTabLabel(diff.file)}`} title={`Close the diff of ${diff.file.path}`} onClick={() => store.closeDiff(worktree.id)}>
+								<span aria-hidden="true">×</span>
+							</button>
 						)}
-					</button>
+						{tab === "file" && file && (
+							<button type="button" className="tab-close" tabIndex={-1} aria-label={`Close ${fileTabLabel(file)}`} title={`Close ${file.path}`} onClick={() => store.closeFile(worktree.id)}>
+								<span aria-hidden="true">×</span>
+							</button>
+						)}
+					</Fragment>
 				))}
-				{/* Beside the tab, not inside it: a button may not hold another. The viewer's own Close reaches it by keyboard. */}
-				{file && (
-					<button type="button" className="tab-close" tabIndex={-1} aria-label={`Close ${fileTabLabel(file)}`} title={`Close ${file.path}`} onClick={() => store.closeFile(worktree.id)}>
-						<span aria-hidden="true">×</span>
-					</button>
-				)}
 			</div>
 			<div className="tabpanel workspace-panel" role="tabpanel" id={PANEL_ID} aria-labelledby={tabId(state.tab)}>
 				{state.tab === "workspace" && <TerminalPanel repository={repository} worktree={worktree} />}
-				{state.tab === "changes" && <ChangesPanel repository={repository} worktree={worktree} />}
 				{state.tab === "pull-request" && <PullRequestPanel repository={repository} worktree={worktree} />}
+				{state.tab === "diff" && diff && <DiffTab key={worktree.id} repository={repository} worktree={worktree} />}
 				{state.tab === "file" && file && <FileViewer key={`${worktree.id} ${file.path}`} repository={repository.path} worktree={worktree} view={file} />}
 			</div>
 		</main>

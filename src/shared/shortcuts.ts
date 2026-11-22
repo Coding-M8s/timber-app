@@ -51,7 +51,7 @@ export const RESERVED_SHORTCUTS: Readonly<Record<ShortcutLetter, string>> = {
 	C: "copies in a terminal",
 	V: "pastes in a terminal",
 	Z: "redoes in the text editor",
-	G: "finds the previous match in the text editor",
+	G: "shows or hides the changes",
 	U: "redoes a selection in the text editor on macOS",
 };
 

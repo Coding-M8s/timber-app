@@ -78,7 +78,7 @@ export function SetBaseDialogView(props: SetBaseDialogViewProps) {
 }
 
 /**
- * The Set base dialog for one worktree, opened from the Changes tab. Its Base
+ * The Set base dialog for one worktree, opened from the Changes view. Its Base
  * field starts as the base Timber saved, in the form Timber takes, offers the
  * repository's local and remote branches in that form, and takes any typed
  * ref. Submitting runs the command shown. A saved base closes the dialog with

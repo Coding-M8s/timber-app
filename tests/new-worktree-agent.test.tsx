@@ -273,7 +273,7 @@ describe("creating a worktree with an agent picked", () => {
 		const { engine, store, model, submit, sessions, selected, shown, pickAgent, asked } = await openedDialog();
 		// Setup that never ends: the agent still starts, and the dialog has closed.
 		engine.endWorktreeSetups(null);
-		store.showTab("changes");
+		store.showTab("pull-request");
 		pickAgent("Codex");
 		model.edit({ name: "feat/login" });
 		expect(await submit()).toBe(true);

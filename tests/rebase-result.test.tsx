@@ -130,7 +130,7 @@ describe("the store's rebaseWorktree", () => {
 
 	test("openTerminalIn starts a plain shell in the worktree and shows it", async () => {
 		const { store } = await startedStore();
-		store.showTab("changes");
+		store.showTab("pull-request");
 		store.openTerminalIn(TIMBER, FEATURE);
 		await settle();
 		const [session] = sessionsOf(store.getState(), feature.id);

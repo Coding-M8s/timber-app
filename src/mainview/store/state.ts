@@ -60,9 +60,9 @@ export type Operation =
 	| { kind: "fetch-repository"; repository: string };
 
 /**
- * The Changes tab of one worktree: its changed files as last read, and the
- * diff of the selected one. Read only while the tab shows, and started afresh
- * for another worktree.
+ * The changes of one worktree: its changed files as last read, and the diff
+ * of the file its diff tab shows. Read only while the Changes view or the
+ * diff tab shows, and started afresh for another worktree.
  */
 /**
  * The chops of the selected worktree's repository as last read: the same in
@@ -136,9 +136,17 @@ export interface ChangesView {
 	base: BaseComparison | null;
 	/** Why the latest read failed. Null once one worked. */
 	problem: string | null;
+	/** The file whose diff is read: the file of the worktree's diff tab while it is listed, otherwise null. */
 	selected: FileChangeTarget | null;
 	/** The diff of `selected`. Null while the first read of it runs. A newer read replaces it when it answers. */
 	diff: FileDiffResult | null;
+}
+
+/** A worktree's diff tab: the changed file whose diff it shows, and the tab to go back to when it closes. */
+export interface DiffTab {
+	file: FileChangeTarget;
+	/** The tab that showed when the diff was opened, shown again when it is closed. */
+	from: Exclude<WorkspaceTab, "diff">;
 }
 
 /** Why a session did not start. It stays until dismissed, or until a session starts in that worktree. */
@@ -236,7 +244,7 @@ export type DialogRequest =
 	| { kind: "rebase-worktree"; repository: string; worktree: string }
 	/** Run a sync action such as Pull in a worktree, after showing its Git commands. Named as for Done. */
 	| { kind: "sync-action"; action: SyncActionKind; repository: string; worktree: string }
-	/** Save the base Timber keeps for a worktree, from the Changes tab. Named as for Done. */
+	/** Save the base Timber keeps for a worktree, from the Changes view. Named as for Done. */
 	| { kind: "set-base"; repository: string; worktree: string }
 	/** Remove every linked worktree of one repository whose pull request merged. `repository` is the path of the primary checkout. */
 	| { kind: "clean-up-merged"; repository: string }
@@ -304,9 +312,12 @@ export type DialogRequest =
 export const SETTINGS_SECTIONS = ["layout", "theme", "terminal", "rendering", "editor", "agents", "chops", "notifications", "fetch", "about", "executable", "machine", "repository"] as const;
 export type SettingsSection = typeof SETTINGS_SECTIONS[number];
 
-/** The views of the selected worktree, in the order of their tabs. */
-/** Every view of a worktree. "file" is a tab only while a file is open there (see `visibleTabs`). */
-export const WORKSPACE_TABS = ["workspace", "changes", "pull-request", "file"] as const;
+/**
+ * Every view of a worktree, in the order of their tabs. "diff" is a tab only
+ * while a changed file's diff is open there, and "file" only while a file is
+ * (see `visibleTabs`). The worktree's changes list is in the side panel.
+ */
+export const WORKSPACE_TABS = ["workspace", "pull-request", "diff", "file"] as const;
 export type WorkspaceTab = typeof WORKSPACE_TABS[number];
 
 /** Why the layout could not be read on start, or could not be saved. What is on screen stays as it is. */
@@ -461,8 +472,14 @@ export interface AppState {
 	quitRequest: number | null;
 	/** Which view of the selected worktree shows. */
 	tab: WorkspaceTab;
-	/** The Changes tab as last read. Null before it was first shown. */
+	/** The changes of the selected worktree as last read, for the Changes view and the diff tab. Null before either first showed. */
 	changes: ChangesView | null;
+	/**
+	 * The diff tab of each worktree, by its identity. A worktree with none
+	 * has no diff tab. Kept in the window only, never saved, and forgotten
+	 * when the worktree leaves the list.
+	 */
+	diffs: Readonly<Record<string, DiffTab>>;
 	/**
 	 * The file open in the File tab of each worktree, by its identity. A
 	 * worktree with none has no File tab. Kept in the window only, never
@@ -476,9 +493,9 @@ export interface AppState {
 	 * takes its notes with it.
 	 */
 	reviews: Readonly<Record<string, readonly ReviewNote[]>>;
-	/** The note the Changes tab brings into view once its diff shows, after the person chose its reference in the Review panel. Its lines are marked until it is cleared, a moment after. */
+	/** The note the diff tab brings into view once its diff shows, after the person chose its reference in the Review section. Its lines are marked until it is cleared, a moment after. */
 	noteInView: { worktree: string; id: string } | null;
-	/** The note whose reference was chosen last in the Review panel. Its reference stays marked until another is chosen or it goes. */
+	/** The note whose reference was chosen last in the Review section. Its reference stays marked until another is chosen or it goes. */
 	chosenNote: { worktree: string; id: string } | null;
 	/** The chops of the selected worktree's repository as last read. Null before the first read. */
 	chops: ChopsView | null;
@@ -621,6 +638,7 @@ export const initialState: AppState = {
 	quitRequest: null,
 	tab: "workspace",
 	changes: null,
+	diffs: {},
 	files: {},
 	reviews: {},
 	noteInView: null,
@@ -670,12 +688,19 @@ export function shownChopOrder(state: Pick<AppState, "chopOrderAim" | "preferenc
 	return state.chopOrderAim ?? state.preferences.chopOrder;
 }
 
+/** The views the side panel offers, in the order of its switch: the chops only while they are in use. */
+export function offeredSidePanelViews(state: AppState): readonly SidePanelView[] {
+	return chopsEnabled(state) ? ["chops", "files", "changes"] : ["files", "changes"];
+}
+
 /**
- * What the side panel beside the workspace shows: the chops or the files, as
- * the person last chose. With chops off, only the files can show.
+ * What the side panel beside the workspace shows: the chops, the files, or
+ * the changes, as the person last chose. With chops off, a panel left on
+ * the chops names the files.
  */
 export function sidePanelView(state: AppState): SidePanelView {
-	return chopsEnabled(state) ? state.layout.sidePanel : "files";
+	const view = state.layout.sidePanel;
+	return view === "chops" && !chopsEnabled(state) ? "files" : view;
 }
 
 /**
@@ -684,7 +709,7 @@ export function sidePanelView(state: AppState): SidePanelView {
  * stays hidden while chops are off, rather than showing the files unasked.
  */
 export function sidePanelShown(state: AppState): boolean {
-	return timberReady(state) && state.layout.chopsOpen && (chopsEnabled(state) || state.layout.sidePanel === "files");
+	return timberReady(state) && state.layout.chopsOpen && (chopsEnabled(state) || state.layout.sidePanel !== "chops");
 }
 
 /** Whether the chops panel is drawn beside the workspace: chops are in use and the person showed it. */
@@ -697,6 +722,24 @@ export function filesPanelShown(state: AppState): boolean {
 	return sidePanelShown(state) && sidePanelView(state) === "files";
 }
 
+/** Whether the Changes view is drawn beside the workspace. */
+export function changesPanelShown(state: AppState): boolean {
+	return sidePanelShown(state) && sidePanelView(state) === "changes";
+}
+
+/** The diff tab of the selected worktree, when it has one. */
+export function shownDiffTab(state: AppState): DiffTab | null {
+	return state.selection === null ? null : state.diffs[state.selection.worktree] ?? null;
+}
+
+/**
+ * Whether the selected worktree's changes should be read now: the Changes
+ * view shows, or its diff tab does.
+ */
+export function changesWanted(state: AppState): boolean {
+	return changesPanelShown(state) || (state.tab === "diff" && state.board === null && shownDiffTab(state) !== null);
+}
+
 /**
  * Whether a button or a shortcut may show, switch, or hide the side panel
  * with this view now: Timber is ready, the view is offered (chops in use,
@@ -704,7 +747,7 @@ export function filesPanelShown(state: AppState): boolean {
  * the command palette.
  */
 export function canToggleSidePanel(state: AppState, view: SidePanelView): boolean {
-	return timberReady(state) && (view === "files" || chopsEnabled(state)) && state.dialog === null && state.quitRequest === null;
+	return timberReady(state) && (view !== "chops" || chopsEnabled(state)) && state.dialog === null && state.quitRequest === null;
 }
 
 /** Whether the Chops button or its shortcut may show or hide the chops panel now (`canToggleSidePanel`). */
@@ -717,7 +760,7 @@ export function isRunning(state: AppState, kind: Operation["kind"]): boolean {
 }
 
 /**
- * Whether a worktree's Changes tab is being read again: its changed files, or
+ * Whether a worktree's Changes view is being read again: its changed files, or
  * its repository (the tab's Refresh, a reported change), or every repository
  * (the sidebar's Refresh).
  */
