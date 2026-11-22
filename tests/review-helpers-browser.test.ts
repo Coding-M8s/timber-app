@@ -77,11 +77,26 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the revie
 		await page.click('.change-file[title="src/spread.ts"]');
 		await page.until(`document.querySelector(".diff-close") !== null`, "the diff opened");
 		try {
+			// Short, so the diff is longer than the window and leans on the title line: it must keep the height of its lines.
 			for (const width of [1400, 1100, 900]) {
-				await page.resize(width, 700);
-				const [diff, close, previous] = await page.evaluate<[number, number, number]>(`[document.querySelector(".changes-diff").getBoundingClientRect().right, document.querySelector(".diff-close").getBoundingClientRect().right, document.querySelector(".diff-steps").getBoundingClientRect().left]`);
-				expect(close).toBeLessThanOrEqual(diff);
-				expect(previous).toBeGreaterThan(0);
+				await page.resize(width, 420);
+				const box = await page.evaluate<{ diff: number; close: number; previous: number; title: number; lowest: number; body: number; scrolls: boolean }>(`(() => {
+					const edge = selector => document.querySelector(selector).getBoundingClientRect();
+					const title = document.querySelector(".diff-title");
+					const body = document.querySelector(".diff-body");
+					return {
+						diff: edge(".changes-diff").right, close: edge(".diff-close").right, previous: edge(".diff-steps").left,
+						title: title.getBoundingClientRect().bottom,
+						lowest: Math.max(...[...title.children].map(child => child.getBoundingClientRect().bottom)),
+						body: body.getBoundingClientRect().top,
+						scrolls: body.scrollHeight > body.clientHeight,
+					};
+				})()`);
+				expect(box.scrolls).toBe(true);
+				expect(box.close).toBeLessThanOrEqual(box.diff);
+				expect(box.previous).toBeGreaterThan(0);
+				expect(box.lowest).toBeLessThanOrEqual(box.title);
+				expect(box.body).toBeGreaterThanOrEqual(box.title);
 			}
 		} finally {
 			await page.resize(1280, 800);
