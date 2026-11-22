@@ -3563,6 +3563,24 @@ wrote and never mentioned can be found.
   the store's `openFile`, the path every other way of opening a file takes,
   so unsaved edits are asked about first. The keyboard stays in the tree.
   The open file's row is `aria-current`. Ignored entries are dimmed.
+- **Icons.** `iconFor(name, kind, open, appearance)` in
+  `src/mainview/file-icons.ts` picks each row's icon from the manifest of
+  `material-icon-theme` (pinned to one version, MIT, notice in
+  `licenses/material-icon-theme.txt`): a file by its exact name, then by
+  its extension, longest first; a folder by its name, with the open icon
+  named after the closed one plus `-open`, which a test checks against the
+  manifest. Its keys are compared in lower case, keys naming a path are
+  skipped, and a light theme takes the manifest's `light` overrides. It is
+  pure and imports only the tables it uses, so the bundle does not carry the
+  rest of the manifest. The panel follows the theme that shows, saved,
+  previewed, or the system's, through `currentAppearance` and
+  `onAppearanceChange` in `src/mainview/theme-apply.ts`. The SVGs are never
+  inlined: `fileIcons` in `vite.config.ts` serves them from the package on
+  the dev server and copies the ones the lookup can give into
+  `dist/assets/material-icons/`, which the build already carries into the
+  app, so nothing loads from the network and a browser fetches only the
+  icons of the rows that show. The lookup takes a bare name, so the File
+  tab and the Changes list can use it later.
 - **One side panel, two views.** `chopsOpen` and `chopsWidth` in the layout
   are the side panel's, whichever view it shows, and `sidePanel` ("chops"
   or "files", written only when it is "files") is the view. The title
@@ -4944,7 +4962,8 @@ None of it should have to change after a first release.
 - **Licenses.** `licenses/` holds the SIL Open Font License of the fonts,
   the notices of the palettes that built-in themes use, the MIT licenses of
   node-pty and of the ConPTY it ships (Windows only), of CodeMirror and
-  the packages it uses, and the notice for
+  the packages it uses, of Material Icon Theme, whose icons the Files
+  panel shows, and the notice for
   the logo, which is copyright Coding-M8s with all rights
   reserved and is not covered by the MIT license of the code. The build
   copies the folder into the app, to `Resources/app/licenses`.

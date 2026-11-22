@@ -57,6 +57,18 @@ change them here first when they change.
   more than 1,000 entries shows the first ones and says how many more there
   are. What shows updates when files are made or removed in a folder that
   is open. Links are listed as links and never opened as folders.
+  Each row shows an icon before its name, from Material Icon Theme. A file
+  is matched by its exact name first (`package.json`, `Dockerfile`,
+  `.gitignore`), then by its extension, longest first, so `store.test.ts`
+  gets the test icon and `store.ts` the TypeScript one. A folder with a
+  well-known name (`src`, `tests`, `docs`, `.github`, `node_modules`) gets
+  its own icon, and every folder's icon opens and closes with it. Letter
+  case does not matter. Anything else gets the plain file or folder icon,
+  never a blank. A light theme uses the theme's light drawings of the few
+  icons that have one. The theme's rules that name a path, such as
+  `.github/FUNDING.yml`, are not used: a row matches by its own name. The
+  icons are SVG files that ship with the app, each loaded only when a row
+  shows it, and screen readers skip them; the name says what the row is.
 - The chops panel is the side panel's other view.
   The title bar's Chops button, or Ctrl+Shift+K (Cmd+Shift+K on macOS),
   shows or hides it from any focus, also from a terminal. Shown that way,

@@ -1,4 +1,4 @@
-import { THEME_STYLE_ID, type Theme, type ThemeChoice, availableThemes, defaultThemeChoice, resolveTheme, themeStyleSheet } from "../shared/theme";
+import { type Appearance, THEME_STYLE_ID, type Theme, type ThemeChoice, availableThemes, defaultThemeChoice, resolveTheme, themeStyleSheet } from "../shared/theme";
 import { setTerminalColors } from "./terminal-colors";
 
 /*
@@ -16,6 +16,9 @@ let themes: readonly Theme[] = availableThemes();
 let preview: ThemeChoice | null = null;
 let written: string | null = null;
 let listening = false;
+/** Whether the theme that shows is a dark or a light one, for what picks its drawing by it, such as the Files panel's icons. */
+let appearance: Appearance = "dark";
+const appearanceListeners = new Set<() => void>();
 
 function systemIsDark(): boolean {
 	return typeof matchMedia === "function" ? matchMedia(SYSTEM_DARK).matches : true;
@@ -30,9 +33,24 @@ function styleElement(): HTMLStyleElement {
 	return style;
 }
 
-/** The terminals take their colors from script, so they follow the system's setting from here. */
-function colorTerminals(): void {
-	setTerminalColors(resolveTheme(preview ?? saved, systemIsDark(), themes).terminal);
+/** The terminals take their colors from script, and the appearance is read in script, so both follow the system's setting from here. */
+function followTheme(): void {
+	const theme = resolveTheme(preview ?? saved, systemIsDark(), themes);
+	setTerminalColors(theme.terminal);
+	if (theme.appearance === appearance) return;
+	appearance = theme.appearance;
+	for (const listener of appearanceListeners) listener();
+}
+
+/** Whether the theme that shows, saved or previewed, is dark or light. */
+export function currentAppearance(): Appearance {
+	return appearance;
+}
+
+/** Hear when the theme that shows turns from dark to light or back. Returns the way to stop. */
+export function onAppearanceChange(listener: () => void): () => void {
+	appearanceListeners.add(listener);
+	return () => appearanceListeners.delete(listener);
 }
 
 function apply(): void {
@@ -43,9 +61,9 @@ function apply(): void {
 		styleElement().textContent = sheet;
 		written = sheet;
 	}
-	colorTerminals();
+	followTheme();
 	if (!listening && typeof matchMedia === "function") {
-		matchMedia(SYSTEM_DARK).addEventListener("change", colorTerminals);
+		matchMedia(SYSTEM_DARK).addEventListener("change", followTheme);
 		listening = true;
 	}
 }
