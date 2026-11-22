@@ -3990,3 +3990,56 @@ Bun 1.4.5, Git 2.43.0, and Timber 0.1.4 on the PATH:
 - Not run: the desktop window on any platform, and a real Bitbucket
   repository with a login, so no real Bitbucket pull request, build
   status, or reviewer was read.
+
+Run for the diff tab's Split layout (issue 302), Linux x64 with Bun 1.4.5,
+Git 2.56.1, and Chromium 158:
+
+- `bun test tests/diff-split.test.ts`: the pairing, with lines only
+  removed, only added, uneven runs, kept lines, two runs apart, and Git's
+  "No newline at end of file" after each side; pairs agreeing with the
+  changed words; each side's lines; and Unified shown, with why, below 600
+  pixels and for a conflict's combined diff.
+- `bun test tests/review.test.ts tests/review-drag.test.ts`: a range on a
+  side takes only that side's lines, its reference uses the numbers of the
+  file now, Shift on the other side starts a note there, and the 30-line
+  limit counts the side's lines; a drag walks one side's rows.
+- `bun test tests/layout.test.ts tests/saved-layout.test.ts tests/review-notes.test.tsx`:
+  the choice is Unified by default, saved, read back after a restart of
+  the saved layout, and drawn as rows side by side with one tab stop.
+- `tests/diff-split-browser.test.ts` in headless Chromium over the mock
+  engine, 8 passed: the switch shows old lines left and new right with
+  edited lines paired and changed words marked, equal columns, a hatched
+  empty cell, every row one line tall, and the choice saved; a long line
+  wraps in its half with nothing scrolling sideways; a note from a new
+  line, and a drag down the left over an empty cell that takes only kept
+  and removed lines, with the note marked on its four lines in Unified; a
+  note made in Unified marked on its lines in Split; a draft keeping its
+  side and text across a switch; a drag up the right stopping at the
+  hunk's edge; the arrows keeping to a side; and a 1000 pixel window
+  showing Unified with "Too narrow for Split, so this shows Unified."
+  while Split stays chosen and comes back when wide again.
+- `tests/review-gutter-browser.test.ts`: its waits on the drag label and
+  the note's field compared nothing (`a ?? null === "x"` is always true
+  once there is text); with them compared, 12 passed.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun run build:web`: built.
+- `bun run test`, after rebasing onto main: 3964 pass, 19 skip, 0 fail.
+- After testing in the desktop window on Linux: in a half-screen window
+  the wrapped title line collided with the line under it, since a long
+  diff squeezed the title back to one line. `tests/diff-split-browser.test.ts`
+  now checks a 300-line diff in a narrow tab (it failed, 57 pixels of
+  title squeezed into 34, before the fix), and that "Show Split anyway"
+  shows Split with 300 pixel columns scrolling sideways and "Hide side
+  panel" brings Split back: 10 passed.
+- `bun run test` after that: 3967 pass, 19 skip, 0 fail.
+- Rebased onto main after issue 303 (previous and next file, Viewed, line
+  counts, unchanged lines): the switch no longer fit the diff's title line
+  (about 670 of 706 pixels taken at a 1300 pixel window with the Changes
+  panel), so it moved to the end of the worktree's tab row, wrapping under
+  the tabs where that row is narrow. Hunks now sit at odd slots
+  (`data-hunk="0-1"`) after the unchanged-lines slot. Seen in headless
+  Chromium at 1300 and 960 pixels. `bun run test`: 3995 pass, 19 skip, 0
+  fail.
+- Not run by me: the desktop window on any platform, so Split was seen by
+  me only in headless Chromium; the report above is from the person
+  testing.

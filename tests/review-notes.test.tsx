@@ -682,3 +682,41 @@ describe("choosing the agent", () => {
 		expect(waitsOnPerson(session("a", "w", "agent"))).toBe(false);
 	});
 });
+
+describe("the diff tab's Split layout", () => {
+	test("is chosen for every worktree, saved in the layout, and drawn side by side with the edited line beside what it became", async () => {
+		const { engine, store } = await startedStore();
+		expect(render(store)).not.toContain("diff-split-row");
+		store.chooseDiffLayout("split");
+		await settle();
+		expect(store.getState().layout.diffLayout).toBe("split");
+		expect((await engine.loadLayout()).diffLayout).toBe("split");
+		const markup = render(store);
+		// Eight lines in seven rows: the removed line beside the first added one, an empty cell beside the second.
+		expect(markup.match(/class="diff-split-row"/g)).toHaveLength(7);
+		expect(markup.match(/class="diff-cell-empty"/g)).toHaveLength(1);
+		expect(markup).toMatch(/data-side="old"[^]*?retries = <span[^>]*>3<\/span>[^]*?data-side="new"[^]*?retries = <span[^>]*>5<\/span>/);
+		expect(markup).toContain('aria-label="Add a note on removed line 3"');
+		// One tab stop among the line numbers, on the first line's left side.
+		expect(markup.match(/class="diff-note-target" tabindex="0"/g)).toHaveLength(1);
+		expect(markup).toContain('tabindex="0" data-line="0-1-0-old"');
+		store.chooseDiffLayout("unified");
+		await settle();
+		expect(render(store)).not.toContain("diff-split-row");
+		expect((await engine.loadLayout()).diffLayout).toBe("unified");
+	});
+
+	test("starts from the saved layout, as after a restart", async () => {
+		const engine = createMockEngine();
+		await engine.saveLayout({ ...defaultLayout(), uncommittedChanges: [FEATURE.id], diffLayout: "split" });
+		engine.setFileChanges(FEATURE.path, [mock(file("src/a.ts"))]);
+		const store = createAppStore(engine, () => () => {});
+		store.start();
+		await settle();
+		store.select(FEATURE.id);
+		store.showSidePanel("changes");
+		await store.readChanges(TIMBER, FEATURE.id);
+		await store.selectChangedFile(file("src/a.ts"));
+		expect(render(store)).toContain("diff-split-row");
+	});
+});

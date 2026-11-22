@@ -244,7 +244,7 @@ describe("following bracketed paste mode", () => {
 });
 
 describe("choosing lines for a note", () => {
-	const at = (line: number, hunk = 0) => ({ key: "f", comparison: "base" as const, section: 0, hunk, line });
+	const at = (line: number, hunk = 0) => ({ key: "f", comparison: "base" as const, section: 0, hunk, line, side: null });
 
 	test("a line starts a note on it, with the lines as they show", () => {
 		const draft = chooseNoteLine(null, at(2), hunk, false)!;
@@ -272,5 +272,62 @@ describe("choosing lines for a note", () => {
 		const first = chooseNoteLine(null, at(0), long, false)!;
 		expect(chooseNoteLine(first, at(NOTE_LINE_LIMIT), long, true)).toBe(first);
 		expect(chooseNoteLine(first, at(NOTE_LINE_LIMIT - 1), long, true)!.lines).toHaveLength(NOTE_LINE_LIMIT);
+	});
+});
+
+describe("choosing lines on one side of the Split layout", () => {
+	// Line 1 kept, 2 and 3 removed, two added as new lines 2 and 3, and line 4 kept (new 4).
+	const split: DiffLine[] = [
+		context("one", 1, 1),
+		removed("two", 2),
+		removed("three", 3),
+		added("TWO", 2),
+		added("THREE", 3),
+		context("four", 4, 4),
+	];
+	const at = (line: number, side: "old" | "new" | null) => ({ key: "src/a.ts", comparison: "base" as const, section: 0, hunk: 0, line, side });
+
+	test("a range on the right takes the kept and added lines only, never the removed ones between them", () => {
+		expect(notedLines(split, 0, 4, "new")!.map(line => line.text)).toEqual(["one", "TWO", "THREE"]);
+		const draft = chooseNoteLine(chooseNoteLine(null, at(0, "new"), split, false), at(5, "new"), split, true)!;
+		expect(draft.side).toBe("new");
+		expect(draft.lines.map(line => line.text)).toEqual(["one", "TWO", "THREE", "four"]);
+		expect(noteLocation({ file, lines: draft.lines })).toBe("src/a.ts:1-4");
+	});
+
+	test("a range on the left takes the kept and removed lines only, and its reference uses the numbers of the file as it is now", () => {
+		const draft = chooseNoteLine(chooseNoteLine(null, at(1, "old"), split, false), at(5, "old"), split, true)!;
+		expect(draft.lines.map(line => line.text)).toEqual(["two", "three", "four"]);
+		expect(noteLocation({ file, lines: draft.lines })).toBe("src/a.ts:4");
+		const removedOnly = chooseNoteLine(chooseNoteLine(null, at(1, "old"), split, false), at(2, "old"), split, true)!;
+		expect(noteLocation({ file, lines: removedOnly.lines })).toBe("src/a.ts:2-3 (removed lines, numbered as before the change)");
+	});
+
+	test("Shift on a line of the other side starts a note there instead of stretching across", () => {
+		const left = chooseNoteLine(null, at(1, "old"), split, false)!;
+		const right = chooseNoteLine({ ...left, text: "kept" }, at(4, "new"), split, true)!;
+		expect(right.side).toBe("new");
+		expect(right.lines.map(line => line.text)).toEqual(["THREE"]);
+		expect(right.text).toBe("kept");
+	});
+
+	test("a line not on that side cannot be chosen there", () => {
+		expect(chooseNoteLine(null, at(3, "old"), split, false)).toBeNull();
+		expect(notedLines(split, 1, 1, "new")).toBeNull();
+	});
+
+	test("the line limit counts only the side's lines", () => {
+		const long: DiffLine[] = [
+			...Array.from({ length: NOTE_LINE_LIMIT }, (_, index) => removed(`old ${index}`, index + 1)),
+			...Array.from({ length: NOTE_LINE_LIMIT }, (_, index) => added(`new ${index}`, index + 1)),
+		];
+		expect(notedLines(long, 0, long.length - 1, null)).toBeNull();
+		expect(notedLines(long, NOTE_LINE_LIMIT, long.length - 1, "new")).toHaveLength(NOTE_LINE_LIMIT);
+		expect(notedLines(long, 0, long.length - 1, "new")).toBeNull();
+	});
+
+	test("without a side, a range is every line between, as in Unified", () => {
+		expect(notedLines(split, 0, 4)!.map(line => line.text)).toEqual(["one", "two", "three", "TWO", "THREE"]);
+		expect(chooseNoteLine(null, at(1, null), split, false)!.side).toBeNull();
 	});
 });

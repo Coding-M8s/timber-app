@@ -38,8 +38,8 @@ const PATCH = [
 /** Git's hunk `hunk` of the first section: each comes after the slot of the unchanged lines before it. */
 const ROWS = (hunk: number) => `[...document.querySelectorAll('[data-hunk="0-${2 * hunk + 1}"] > .diff-line')]`;
 const NOTING = `document.querySelectorAll(".diff-line.noting").length`;
-const LABEL = `document.querySelector(".diff-drag-label")?.textContent ?? null`;
-const FIELD = `document.querySelector(".diff-body .note-field")?.getAttribute("aria-label") ?? null`;
+const LABEL = `(document.querySelector(".diff-drag-label")?.textContent ?? null)`;
+const FIELD = `(document.querySelector(".diff-body .note-field")?.getAttribute("aria-label") ?? null)`;
 
 // Not tried on Windows yet, so it does not run there.
 describe.skipIf(browserPath === null || process.platform === "win32")("the + in the diff's gutter in a real browser", () => {

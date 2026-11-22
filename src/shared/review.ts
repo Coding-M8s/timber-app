@@ -13,6 +13,7 @@
 
 import type { Comparison, DiffLine, FileChangeTarget, FileDiff } from "./file-changes";
 import { sameFileChange } from "./file-changes";
+import { type DiffSide, trackLines } from "./diff-split";
 import { cleanLine, isSafeText } from "./safe-text";
 
 /** One line of the diff a note is on, as it was when the note was written. */
@@ -64,13 +65,23 @@ export function noteProblem(text: string): string | null {
 	return null;
 }
 
-/** The lines of a hunk from `first` to `last`, either way round, as a note keeps them, or null when one of them cannot have a note or there are too many. */
-export function notedLines(hunk: readonly DiffLine[], first: number, last: number): NotedLine[] | null {
+/**
+ * The lines of a hunk from `first` to `last`, either way round, as a note
+ * keeps them, or null when one of them cannot have a note or there are too
+ * many. With a side of the Split layout, only that side's lines between them
+ * count, and both ends must be on it: a range on the right never takes the
+ * removed lines between its added ones.
+ */
+export function notedLines(hunk: readonly DiffLine[], first: number, last: number, side: DiffSide | null = null): NotedLine[] | null {
 	const from = Math.min(first, last);
 	const to = Math.max(first, last);
-	if (from < 0 || to >= hunk.length || to - from + 1 > NOTE_LINE_LIMIT) return null;
+	if (from < 0 || to >= hunk.length) return null;
+	const track = side === null ? null : trackLines(hunk, side);
+	if (track !== null && (!track.includes(from) || !track.includes(to))) return null;
+	const picked = track === null ? hunk.slice(from, to + 1) : track.filter(index => index >= from && index <= to).map(index => hunk[index]!);
+	if (picked.length > NOTE_LINE_LIMIT) return null;
 	const lines: NotedLine[] = [];
-	for (const line of hunk.slice(from, to + 1)) {
+	for (const line of picked) {
 		if (!notableLine(line)) return null;
 		lines.push({ kind: line.kind, text: line.text, oldLine: line.oldLine, newLine: line.newLine });
 	}
@@ -190,7 +201,11 @@ export function notedFiles(notes: readonly ReviewNote[]): { comparison: Comparis
 	return files;
 }
 
-/** A note being written in the diff: where it starts and ends in one hunk, the lines as they were when chosen, and its text so far. */
+/**
+ * A note being written in the diff: where it starts and ends in one hunk,
+ * by the lines' indexes in the hunk, the side of the Split layout it was
+ * started on, the lines as they were when chosen, and its text so far.
+ */
 export interface NoteDraft {
 	/** Names the file, as the list does. */
 	key: string;
@@ -199,6 +214,8 @@ export interface NoteDraft {
 	hunk: number;
 	anchor: number;
 	end: number;
+	/** The column of the Split layout the note is on, so its range takes only that side's lines. Null when started in Unified. */
+	side: DiffSide | null;
 	lines: NotedLine[];
 	text: string;
 }
@@ -210,22 +227,24 @@ export interface ChosenLine {
 	section: number;
 	hunk: number;
 	line: number;
+	/** The column of the Split layout it was chosen in, or null in Unified. */
+	side: DiffSide | null;
 }
 
 /**
  * The draft after a line number was chosen: a new note on that line, or with
- * `extend`, the draft stretched to it when it is in the same hunk and the
- * run stays within `NOTE_LINE_LIMIT`. The lines are taken as they show now,
+ * `extend`, the draft stretched to it when it is in the same hunk, on the
+ * same side, and the run stays within `NOTE_LINE_LIMIT`. The lines are taken as they show now,
  * and the text typed so far is kept. A line that cannot take a note leaves
  * the draft as it was.
  */
 export function chooseNoteLine(current: NoteDraft | null, at: ChosenLine, hunk: readonly DiffLine[], extend: boolean): NoteDraft | null {
-	const same = current !== null && current.key === at.key && current.comparison === at.comparison && current.section === at.section && current.hunk === at.hunk;
+	const same = current !== null && current.key === at.key && current.comparison === at.comparison && current.section === at.section && current.hunk === at.hunk && current.side === at.side;
 	if (extend && same) {
-		const lines = notedLines(hunk, current.anchor, at.line);
+		const lines = notedLines(hunk, current.anchor, at.line, at.side);
 		return lines === null ? current : { ...current, end: at.line, lines };
 	}
-	const lines = notedLines(hunk, at.line, at.line);
+	const lines = notedLines(hunk, at.line, at.line, at.side);
 	if (lines === null) return current;
-	return { key: at.key, comparison: at.comparison, section: at.section, hunk: at.hunk, anchor: at.line, end: at.line, lines, text: current?.text ?? "" };
+	return { key: at.key, comparison: at.comparison, section: at.section, hunk: at.hunk, anchor: at.line, end: at.line, side: at.side, lines, text: current?.text ?? "" };
 }

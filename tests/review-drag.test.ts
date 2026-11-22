@@ -62,6 +62,30 @@ describe("dragging a range", () => {
 	});
 });
 
+describe("dragging a range on one side of the Split layout", () => {
+	// On the left: lines 0, 1, and 4 of the hunk. On the right: 0, 2, 3, and 4.
+	test("walks only that side's lines, by their rows on screen, and ends on a line of the hunk", () => {
+		expect(dragNoteEnd(hunk, 0, 3, "new")).toEqual({ end: 4, stop: null });
+		expect(dragNoteEnd(hunk, 0, 2, "old")).toEqual({ end: 4, stop: null });
+		expect(dragNoteEnd(hunk, 3, 0, "new")).toEqual({ end: 0, stop: null });
+		expect(dragNoteEnd(hunk, 1, 3, "old")).toEqual({ end: 4, stop: "edge" });
+	});
+
+	test("labels only the side's lines", () => {
+		expect(describeDraggedRange(hunk, 0, { end: 4, stop: null }, "new")).toBe("Lines 68-71");
+		expect(describeDraggedRange(hunk, 1, { end: 1, stop: null }, "old")).toBe("Removed line 59");
+		expect(describeDraggedRange(hunk, 0, { end: 4, stop: null }, "old")).toBe("Lines 68-71");
+	});
+
+	test(`counts ${NOTE_LINE_LIMIT} lines on the side, not the other side's between them`, () => {
+		const long = [
+			...Array.from({ length: 40 }, (_, index) => removed(`${index}`, index + 1)),
+			...Array.from({ length: 40 }, (_, index) => added(`${index}`, index + 1)),
+		];
+		expect(dragNoteEnd(long, 40, 39, "new")).toEqual({ end: 40 + NOTE_LINE_LIMIT - 1, stop: "limit" });
+	});
+});
+
 describe("the label beside the pointer", () => {
 	test("names the line or the lines, with the numbers of the file as it is now", () => {
 		expect(describeDraggedRange(hunk, 2, { end: 2, stop: null })).toBe("Line 69");

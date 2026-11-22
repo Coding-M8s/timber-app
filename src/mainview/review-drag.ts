@@ -1,8 +1,9 @@
 /**
- * Dragging the `+` of a diff line over more lines of its hunk to start a note
- * on a range. Pure, so it can be tested without a window.
+ * Dragging the `+` of a diff line over more lines of its hunk, on one side in
+ * the Split layout, to start a note on a range. Pure, so it can be tested without a window.
  */
 
+import { type DiffSide, trackLines } from "../shared/diff-split";
 import type { DiffLine } from "../shared/file-changes";
 import { NOTE_LINE_LIMIT, notableLine, notedLines, noteSpan } from "../shared/review";
 
@@ -30,21 +31,26 @@ export function rowAtY(rows: readonly { top: number; bottom: number }[], y: numb
 }
 
 /**
- * Where a range dragged from `anchor` towards `target` ends. It walks from
- * the anchor one line at a time and stops before a line that takes no note
- * or outside the hunk ("edge"), and at `NOTE_LINE_LIMIT` lines ("limit").
- * `target` may be -1 or `hunk.length`, past the hunk's top or bottom.
+ * Where a range dragged from `anchor` towards `target` ends, as an index in
+ * the hunk. It walks the lines the drag is over, the side's lines with a
+ * side of the Split layout and every line without one (`trackLines`), from
+ * the anchor one at a time, and stops before a line that takes no note or
+ * outside the hunk ("edge"), and at `NOTE_LINE_LIMIT` lines ("limit").
+ * `target` is a row of those lines on screen, and may be -1 or their count,
+ * past the hunk's top or bottom.
  */
-export function dragNoteEnd(hunk: readonly DiffLine[], anchor: number, target: number): DraggedRange {
-	const step = target < anchor ? -1 : 1;
-	let end = anchor;
-	while (end !== target) {
-		const next = end + step;
-		if (next < 0 || next >= hunk.length || !notableLine(hunk[next]!)) return { end, stop: "edge" };
-		if (Math.abs(next - anchor) + 1 > NOTE_LINE_LIMIT) return { end, stop: "limit" };
-		end = next;
+export function dragNoteEnd(hunk: readonly DiffLine[], anchor: number, target: number, side: DiffSide | null = null): DraggedRange {
+	const track = trackLines(hunk, side);
+	const start = track.indexOf(anchor);
+	const step = target < start ? -1 : 1;
+	let at = start;
+	while (at !== target) {
+		const next = at + step;
+		if (next < 0 || next >= track.length || !notableLine(hunk[track[next]!]!)) return { end: track[at]!, stop: "edge" };
+		if (Math.abs(next - start) + 1 > NOTE_LINE_LIMIT) return { end: track[at]!, stop: "limit" };
+		at = next;
 	}
-	return { end, stop: null };
+	return { end: track[at]!, stop: null };
 }
 
 const STOP_WORDS: Record<DragStop, string> = {
@@ -57,8 +63,8 @@ const STOP_WORDS: Record<DragStop, string> = {
  * "Removed lines 3-4" for lines only the old file has, and why the range
  * stopped, when it did, such as "Lines 69-98 (30 lines at most)".
  */
-export function describeDraggedRange(hunk: readonly DiffLine[], anchor: number, range: DraggedRange): string {
-	const lines = notedLines(hunk, anchor, range.end) ?? [];
+export function describeDraggedRange(hunk: readonly DiffLine[], anchor: number, range: DraggedRange, side: DiffSide | null = null): string {
+	const lines = notedLines(hunk, anchor, range.end, side) ?? [];
 	const { lines: numbers, removed } = noteSpan({ lines });
 	const words = lines.length === 1 ? "Line" : "Lines";
 	const named = removed ? `Removed ${words.toLowerCase()} ${numbers}` : `${words} ${numbers}`;
