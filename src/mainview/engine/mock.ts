@@ -38,7 +38,7 @@ import { type CommandEnding, actOutNew, actOutOpen, isCommandEnding } from "./mo
 import { type RebaseEnding, actOutRebase, isRebaseEnding } from "./mock-rebase";
 import { type SyncEnding, actOutSyncAction, actionsOfEnding, isSyncEnding, withSampleTarget } from "./mock-sync";
 import { type SyncActionKind, type SyncActionRequest, isSyncActionKind, syncNotRun } from "../../shared/sync-actions";
-import { actOutSetBase } from "./mock-base";
+import { actOutSetBase, sampleBaseCounts } from "./mock-base";
 import { type PullRequestEnding, actOutPullRequest, isPullRequestEnding } from "./mock-pr";
 import type { CreatePullRequestResult } from "../../shared/timber-pr";
 import { type MockFileChange, derivedFileChanges, diffMockFileChange, listMockFileChanges } from "./mock-file-changes";
@@ -94,7 +94,9 @@ function worktree(repository: string, branch: string, overrides: SampleOverrides
 	};
 	// As Timber does: a canonical path only for a folder whose status it could read.
 	const canonicalPath = sample.pathExists && sample.changes.kind === "known" ? path : null;
-	return { ...sample, sync: withSampleTarget(sample.sync), id: worktreeId(`/work/${repository}/.git`, { path, canonicalPath }), canonicalPath, detached: sample.branch === null };
+	// A sample says its counts against the base, or is level with a base Git can compare with.
+	const baseCounts = overrides.baseCounts !== undefined ? overrides.baseCounts : sampleBaseCounts(sample.base, sample.head);
+	return { ...sample, baseCounts, sync: withSampleTarget(sample.sync), id: worktreeId(`/work/${repository}/.git`, { path, canonicalPath }), canonicalPath, detached: sample.branch === null };
 }
 
 /**
@@ -116,15 +118,19 @@ export const sampleRepositories: Repository[] = [
 			worktree("timber", "feat/github-issue-lookup", {
 				changes: sampleChanges(3, 1),
 				sync: { kind: "tracking", upstream: "origin/feat/github-issue-lookup", ahead: 2, behind: 0 },
+				baseCounts: { kind: "counted", ahead: 4, behind: 1 },
 			}),
 			worktree("timber", "fix/macos-portability", {
 				sync: { kind: "tracking", upstream: "origin/fix/macos-portability", ahead: 3, behind: 3 },
+				baseCounts: { kind: "counted", ahead: 3, behind: 0 },
 			}),
 			worktree("timber", "spike/new-idea", {
 				changes: sampleChanges(0, 2),
 				// Based on a local branch, which Timber saves by its full ref.
 				base: { kind: "assigned", ref: "refs/heads/main" },
 				sync: { kind: "unpublished" },
+				// One commit on a branch not published yet: the base says how far it went.
+				baseCounts: { kind: "counted", ahead: 1, behind: 0 },
 			}),
 		],
 	},
@@ -178,10 +184,13 @@ export const sampleStatesRepository: Repository = {
 		worktree("billing", "chore/moved-folder", {
 			prunable: true,
 			changes: { kind: "unknown", reason: "Path no longer identifies this Git worktree" },
+			base: { kind: "invalid", reason: "stale" },
 		}),
 		worktree("billing", "fix/unreadable", {
 			changes: { kind: "unknown", reason: "Cannot inspect worktree; check directory access" },
 			sync: { kind: "tracking", upstream: "origin/fix/unreadable", ahead: 1, behind: 0 },
+			// Timber reports the base of a worktree it cannot read as stale, so there is nothing to count.
+			base: { kind: "invalid", reason: "stale" },
 		}),
 		worktree("billing", "feat/invoices", {
 			changes: sampleChanges(2, 0),
@@ -192,11 +201,14 @@ export const sampleStatesRepository: Repository = {
 			// Based on a commit, which Timber saves by its full hash.
 			base: { kind: "commit", commit: "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432" },
 			sync: { kind: "unpublished" },
+			baseCounts: { kind: "counted", ahead: 2, behind: 5 },
 		}),
 		worktree("billing", "feat/tax-rules", {
 			locked: true,
 			changes: sampleChanges(12, 5),
 			sync: { kind: "tracking", upstream: "origin/feat/tax-rules", ahead: 1, behind: 14 },
+			// Git could not count against the base, as when its branch was deleted.
+			baseCounts: { kind: "unreadable" },
 		}),
 	],
 };
@@ -998,7 +1010,7 @@ export function createMockEngine(
 					id: worktreeId(`${repositoryPath}/.git`, { path, canonicalPath: path }),
 					path, canonicalPath: path, branch, head: "1111111111111111111111111111111111111111",
 					primary: false, detached: false, locked: false, prunable: false, pathExists: true,
-					changes: { kind: "known", modified: [], untracked: [] }, base: { kind: "unassigned" }, sync: { kind: "unpublished" }, issue: null,
+					changes: { kind: "known", modified: [], untracked: [] }, base: { kind: "unassigned" }, sync: { kind: "unpublished" }, issue: null, baseCounts: null,
 				}]),
 			});
 		},
@@ -1015,7 +1027,7 @@ export function createMockEngine(
 					id: worktreeId(`${repositoryPath}/.git`, { path, canonicalPath: path }),
 					path, canonicalPath: path, branch, head: "2222222222222222222222222222222222222222",
 					primary: false, detached: false, locked: false, prunable: false, pathExists: true,
-					changes: { kind: "known", modified: [], untracked: [] }, base: { kind: "unassigned" }, sync: { kind: "unpublished" }, issue: null,
+					changes: { kind: "known", modified: [], untracked: [] }, base: { kind: "unassigned" }, sync: { kind: "unpublished" }, issue: null, baseCounts: null,
 				}]),
 			});
 		},

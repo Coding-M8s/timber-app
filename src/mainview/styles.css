@@ -1208,6 +1208,15 @@ pre:focus-visible {
 	white-space: nowrap;
 }
 
+/*
+ * How far the worktree is from its saved base (issue 337) is longer than the
+ * other flags, so in a narrow sidebar it wraps after its comma instead of
+ * being cut short. Its words keep their spaces from breaking otherwise.
+ */
+.row-flag.base-counts {
+	white-space: normal;
+}
+
 .row-flag::before {
 	content: "\00b7";
 	margin-right: 6px;

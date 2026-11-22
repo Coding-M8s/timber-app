@@ -22,6 +22,7 @@ const worktree: Worktree = {
 	base: null,
 	issue: null,
 	sync: { kind: "tracking", upstream: "origin/feat/x", ahead: 0, behind: 0 },
+	baseCounts: null,
 };
 
 type Reported = "idle" | "working" | "done" | "blocked" | "error";

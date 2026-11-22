@@ -76,3 +76,15 @@ export function parseBranchList(output: string): BranchSuggestion[] {
 	}
 	return [...local, ...remote];
 }
+
+/**
+ * Parse what `git rev-list --left-right --count <base>...<head>` prints: the
+ * commits only on the base's side, a tab, then those only on the head's side.
+ * The first is how far the head is behind its base, the second how far ahead.
+ * Anything else is null, never a guessed zero.
+ */
+export function parseLeftRightCount(output: string): { ahead: number; behind: number } | null {
+	const match = /^(\d+)\t(\d+)\r?\n?$/.exec(output);
+	if (!match) return null;
+	return { behind: Number(match[1]), ahead: Number(match[2]) };
+}

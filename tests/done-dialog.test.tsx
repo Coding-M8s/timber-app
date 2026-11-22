@@ -32,7 +32,7 @@ function recorded(text: string): DonePreview {
 }
 
 /** The worktree a recorded preview is about, as the list would have it. */
-const worktreeOf = (preview: DonePreview, sync: SyncState | null = inSync): Worktree => ({ ...preview.worktree, id: preview.worktree.path, sync });
+const worktreeOf = (preview: DonePreview, sync: SyncState | null = inSync): Worktree => ({ ...preview.worktree, id: preview.worktree.path, sync, baseCounts: null });
 
 const optionsOf = (preview: DonePreview): DoneOptions => ({ keepBranch: preview.options.keepBranch, keepIgnored: !preview.options.discardIgnored, base: preview.options.base });
 

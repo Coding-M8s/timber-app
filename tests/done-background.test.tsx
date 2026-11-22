@@ -321,9 +321,9 @@ describe("which removals are kept", () => {
 
 	test("the row's markers say a removal runs or failed, first among its states", () => {
 		const worktree = sample(FEATURE);
-		expect(describeRowMarkers(worktree, null, { kind: "running" }).filter(marker => marker.place === "state").map(marker => marker.kind)).toEqual(["removing"]);
+		expect(describeRowMarkers(worktree, null, { kind: "running" }).filter(marker => marker.place === "state").map(marker => marker.kind)).toEqual(["removing", "base-counts"]);
 		const failed = describeRowMarkers({ ...worktree, branch: null }, null, { kind: "failed", failure: { command: null, diagnostic: "no", output: null }, gone: false });
-		expect(failed.filter(marker => marker.place === "state").map(marker => marker.kind)).toEqual(["removal-failed", "detached"]);
+		expect(failed.filter(marker => marker.place === "state").map(marker => marker.kind)).toEqual(["removal-failed", "base-counts", "detached"]);
 		expect(failed[0]).toMatchObject({ text: "removal failed" });
 		expect(describeRowMarkers(worktree).some(marker => marker.kind === "removing" || marker.kind === "removal-failed")).toBe(false);
 	});

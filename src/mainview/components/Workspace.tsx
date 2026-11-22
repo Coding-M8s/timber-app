@@ -62,7 +62,7 @@ export function Workspace() {
 	const label = worktreeLabel(worktree);
 	const changes = describeChanges(worktree);
 	const sync = describeWorktreeSync(worktree);
-	const base = describeSavedBase(worktree.base);
+	const base = describeSavedBase(worktree.base, worktree.baseCounts);
 	const issue = issueOf(state, worktree);
 	const pullRequests = state.pullRequests[repository.path];
 	const pullRequest = pullRequestOf(pullRequests, worktree.path);

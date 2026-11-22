@@ -1,7 +1,7 @@
 import { basename } from "node:path";
-import { type Repository, type SyncState, type TimberStatus, type Worktree, worktreeId } from "../shared/model";
+import { type BaseCounts, type Repository, type SyncState, type TimberStatus, type Worktree, worktreeId } from "../shared/model";
 import type { ListedWorktree } from "../shared/timber-ls";
-import { commonDirectory, readBranchSync } from "./git-engine";
+import { commonDirectory, readBaseCounts, readBranchSync } from "./git-engine";
 import { readSetupState } from "./setup-state";
 import { describeTimberStatus } from "./timber";
 import { listWorktrees } from "./timber-ls";
@@ -17,8 +17,8 @@ export type RepositoryRead =
 /**
  * Reads repositories for the sidebar. The worktrees are exactly the ones
  * `timber ls --json` lists, in its order. Git adds only what Timber does not
- * report: how each branch stands against its upstream. Everything is
- * read-only.
+ * report: how each branch stands against its upstream, and how each worktree
+ * stands against its saved base. Everything is read-only.
  */
 export interface RepositoryReader {
 	/** Read the repository that owns `folder`: its primary checkout, a linked worktree, or a folder inside either. */
@@ -45,6 +45,34 @@ export function syncOf(listed: Pick<ListedWorktree, "branch" | "head">, branches
 	return branches.get(listed.branch) ?? (listed.head === null ? { kind: "unpublished" } : null);
 }
 
+/** How many counts against a base run at once for one repository, so many worktrees do not start as many Git processes. */
+export const BASE_COUNTS_AT_ONCE = 4;
+
+/**
+ * Count every listed worktree against its saved base, in the order listed.
+ * Worktrees with the same base and head are counted once, and at most
+ * `atOnce` counts run at the same time.
+ */
+export async function countAgainstBases(
+	commonGitDir: string,
+	listed: readonly Pick<ListedWorktree, "base" | "head">[],
+	count: typeof readBaseCounts = readBaseCounts,
+	atOnce = BASE_COUNTS_AT_ONCE,
+): Promise<(BaseCounts | null)[]> {
+	const keys = listed.map(({ base, head }) => JSON.stringify([base, head]));
+	const distinct = [...new Map(listed.map((worktree, index) => [keys[index]!, worktree])).entries()];
+	const answers = new Map<string, BaseCounts | null>();
+	let next = 0;
+	const work = async () => {
+		while (next < distinct.length) {
+			const [key, { base, head }] = distinct[next++]!;
+			answers.set(key, await count(commonGitDir, base, head));
+		}
+	};
+	await Promise.all(Array.from({ length: Math.min(atOnce, distinct.length) }, work));
+	return keys.map(key => answers.get(key) ?? null);
+}
+
 /** A repository that Git can read but whose worktrees Timber did not list. Its setup is not told apart then. */
 export function failedRepository(path: string, message: string): Repository {
 	return { path, name: basename(path) || path, available: true, failure: message, setup: "unknown", worktrees: [] };
@@ -66,11 +94,16 @@ export function createRepositoryReader(
 
 		const { commonGitDir, primaryWorktreeRoot } = listing.repository;
 		// Timber reads its settings with the same environment it lists with, so the same machine defaults count.
-		const [branches, setup] = await Promise.all([readBranchSync(commonGitDir), readSetupState(primaryWorktreeRoot, environment)]);
-		const worktrees: Worktree[] = listing.worktrees.map(listed => ({
+		const [branches, setup, baseCounts] = await Promise.all([
+			readBranchSync(commonGitDir),
+			readSetupState(primaryWorktreeRoot, environment),
+			countAgainstBases(commonGitDir, listing.worktrees),
+		]);
+		const worktrees: Worktree[] = listing.worktrees.map((listed, index) => ({
 			id: worktreeId(commonGitDir, listed),
 			...listed,
 			sync: syncOf(listed, branches),
+			baseCounts: baseCounts[index] ?? null,
 		}));
 		return {
 			outcome: "read",

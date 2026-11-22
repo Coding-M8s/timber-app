@@ -130,7 +130,7 @@ describe("the mock engine names sessions as Settings says", () => {
 	const repository = "/repos/app";
 	const worktree = (path: string, branch: string | null): Worktree => ({
 		id: `id:${path}`, path, canonicalPath: path, branch, head: null, primary: false, detached: branch === null,
-		locked: false, prunable: false, pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, base: null, sync: null, issue: null,
+		locked: false, prunable: false, pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, base: null, sync: null, issue: null, baseCounts: null,
 	});
 	const worktrees = [worktree("/repos/app-login", "feature-login"), worktree("/repos/app-gh", "gh-122-name-tab"), worktree("/repos/app-detached", null)];
 

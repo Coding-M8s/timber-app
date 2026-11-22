@@ -43,7 +43,7 @@ describe.skipIf(windows)("Pull and Push against real repositories", () => {
 		const branches = await readBranchSync(join(mine, ".git"));
 		const worktree = (folder: string, branch: string, primary: boolean): Worktree => ({
 			id: folder, path: folder, canonicalPath: folder, branch, head: head(folder), primary, detached: false, locked: false, prunable: false, pathExists: true,
-			changes: { kind: "known", modified: [], untracked: [] }, base: null, issue: null, sync: branches?.get(branch) ?? null,
+			changes: { kind: "known", modified: [], untracked: [] }, base: null, issue: null, sync: branches?.get(branch) ?? null, baseCounts: null,
 		});
 		return { path: mine, name: "mine", available: true, failure: null, setup: "unknown", worktrees: [worktree(mine, "main", true), worktree(feature, "feature", false)] };
 	}

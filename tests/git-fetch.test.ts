@@ -167,7 +167,7 @@ describe("force-push marks", () => {
 
 	const worktree = (branch: string | null, sync: Worktree["sync"]): Worktree => ({
 		id: `id-${branch}`, path: `/work/a-${branch}`, canonicalPath: null, branch, head: A, primary: false, detached: branch === null,
-		locked: false, prunable: false, pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, base: null, issue: null, sync,
+		locked: false, prunable: false, pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, base: null, issue: null, sync, baseCounts: null,
 	});
 	const repository = (worktrees: Worktree[]): Repository => ({ path: "/work/a", name: "a", available: true, failure: null, setup: "unknown", worktrees });
 

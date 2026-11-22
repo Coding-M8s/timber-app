@@ -4139,3 +4139,33 @@ with Bun 1.4.5, Git 2.43.0, and Google Chrome 151:
 - Not run: the desktop app by hand on any platform, so the native file
   picker's type filter and the icons in the real window were not seen;
   icons were seen only in headless Chrome over the mock engine.
+
+Run for commits ahead of and behind the base (issue 337), on 2026-11-22,
+Linux x64 with Bun 1.4.5, Git 2.43.0, Timber 0.2.0 on the PATH, and Google
+Chrome 151:
+
+- Design as agreed in the issue: a word flag on the row's second line and
+  the counts after the base in the header. The flag comes after a removal's
+  flag, which the row says before anything else, rather than first of all.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun run build:web`: built.
+- `bun run test`: 4199 pass, 19 skip, 0 fail. On the base it started from,
+  the same machine ran 4176 pass, 19 skip, 0 fail. Rebased onto main after
+  the chops panel's empty text: 4200 pass, 19 skip, 0 fail, with both type
+  checks and the web build again clean.
+- `tests/base-counts.test.ts` counts on real temporary repositories with
+  the installed Timber setting each base with `timber base --set`: ahead
+  and behind a local branch base, a commit base, a deleted base branch
+  (unreadable, never level), no saved base, a head or base that reads as an
+  option (never run, no file written), counts after a commit on either side
+  and after the base moved back, a missing folder (no counts, as Timber
+  calls its base stale), and every file, ref, and index unchanged by reading.
+- `tests/sidebar-row-width-browser.test.ts`, in the installed Chrome at the
+  narrowest sidebar: every sample row fits. It first failed with "4 ahead, 1
+  behind base" cut short beside a Push control, and passes with the flag
+  wrapping after its comma.
+- Not run by me: the desktop window on any platform. The flag and the
+  header were seen only in headless Chrome over the mock engine.
+- Counts against bases run at most four at once per repository
+  (`BASE_COUNTS_AT_ONCE`), so a repository with many worktrees does not
+  start as many Git processes on each reload.

@@ -777,7 +777,7 @@ describe("createFetcher against real repositories", () => {
 			path: mine, name: "mine", available: true, failure: null, setup: "unknown",
 			worktrees: [{
 				id: "main", path: mine, canonicalPath: mine, branch: "main", head, primary: true, detached: false, locked: false, prunable: false, pathExists: true,
-				changes: { kind: "known", modified: [], untracked: [] }, base: null, issue: null, sync: { kind: "tracking", upstream: "origin/main", ahead: 2, behind },
+				changes: { kind: "known", modified: [], untracked: [] }, base: null, issue: null, sync: { kind: "tracking", upstream: "origin/main", ahead: 2, behind }, baseCounts: null,
 			}],
 		}, marks);
 		expect(read(head(mine, "main"), 0).repository.worktrees[0]!.sync).toMatchObject({ forcePushed: { at: marks.main!.at } });

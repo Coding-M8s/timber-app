@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseBranchList, parseBranchSync } from "../src/shared/git-parse";
+import { parseBranchList, parseBranchSync, parseLeftRightCount } from "../src/shared/git-parse";
 
 const line = (ref: string, upstream = "", track = "") => `${[ref, upstream, track].join("\0")}\n`;
 
@@ -98,5 +98,20 @@ describe("parseBranchList", () => {
 		].join("");
 		expect(parseBranchList(output)).toEqual([{ selector: "fine", kind: "local" }]);
 		expect(parseBranchList("")).toEqual([]);
+	});
+});
+
+describe("parseLeftRightCount", () => {
+	test("reads the base's side as behind and the head's side as ahead", () => {
+		expect(parseLeftRightCount("1\t4\n")).toEqual({ ahead: 4, behind: 1 });
+		expect(parseLeftRightCount("0\t0\n")).toEqual({ ahead: 0, behind: 0 });
+		expect(parseLeftRightCount("12\t0")).toEqual({ ahead: 0, behind: 12 });
+		expect(parseLeftRightCount("3\t2\r\n")).toEqual({ ahead: 2, behind: 3 });
+	});
+
+	test("anything else is unknown, never a guessed zero", () => {
+		for (const output of ["", "\n", "4\n", "1 4\n", "1\t4\t2\n", "-1\t4\n", "a\tb\n", "1\t4\n\n", "fatal: bad revision\n"]) {
+			expect(parseLeftRightCount(output)).toBeNull();
+		}
 	});
 });

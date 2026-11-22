@@ -55,7 +55,9 @@ export interface Engine {
 	 * The saved repositories, each with exactly the worktrees Timber lists, in
 	 * Timber's order. One whose folder is missing is still listed, marked
 	 * unavailable. One whose worktrees Timber could not list has `failure` set
-	 * and no worktrees, never part of a list.
+	 * and no worktrees, never part of a list. Each worktree carries what Git
+	 * adds to Timber's list: its upstream state and its counts against its
+	 * saved base (`Worktree.sync` and `Worktree.baseCounts`).
 	 */
 	listRepositories(): Promise<Repository[]>;
 	/**

@@ -166,7 +166,7 @@ describe.skipIf(windows)("a chop's sound plays as it starts, in the main process
 		path: checkout, name: "sample", available: true, failure: null, setup: "repository",
 		worktrees: [{
 			id: checkout, path: checkout, canonicalPath: checkout, branch: "main", head: null, primary: true, detached: false, locked: false, prunable: false,
-			pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, base: null, issue: null, sync: null,
+			pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, base: null, issue: null, sync: null, baseCounts: null,
 		}],
 	});
 

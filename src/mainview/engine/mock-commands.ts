@@ -4,6 +4,7 @@ import { RESULT_FILE_PLACEHOLDER, type ResultCommand, type TimberRun, describeTi
 import { newWorktreeArguments, openWorktreeArguments, worktreeCommandResult } from "../../shared/worktree-commands";
 import { TRACKER_NAMES } from "../issue-format";
 import { sampleIssue, sampleIssueLink, sampleLogin } from "./mock-issue-lists";
+import { sampleBaseCounts } from "./mock-base";
 
 /**
  * Acting out `timber new` and `timber open` for the mock engine. Nothing
@@ -92,12 +93,13 @@ function savedBaseFor(base: string | null): Worktree["base"] {
 
 function newWorktreeIn(repository: Repository, branch: string, base: Worktree["base"], sync: Worktree["sync"] = { kind: "unpublished" }): Worktree {
 	const path = `${repository.path}-worktrees/${branch.replaceAll("/", "-")}`;
+	const head = "0000000000000000000000000000000000000000";
 	return {
 		id: worktreeId(`${repository.path}/.git`, { path, canonicalPath: path }),
 		path,
 		canonicalPath: path,
 		branch,
-		head: "0000000000000000000000000000000000000000",
+		head,
 		primary: false,
 		detached: false,
 		locked: false,
@@ -107,6 +109,8 @@ function newWorktreeIn(repository: Repository, branch: string, base: Worktree["b
 		base,
 		issue: null,
 		sync,
+		// A new worktree starts at its base.
+		baseCounts: sampleBaseCounts(base, head),
 	};
 }
 

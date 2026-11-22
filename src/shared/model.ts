@@ -82,6 +82,17 @@ export type SavedBase =
 
 export type SavedBaseProblem = "malformed" | "stale" | "unreadable";
 
+/**
+ * How a worktree's commit stands against its saved base, read from Git with
+ * `git rev-list --left-right --count <base>...<head>`, because Timber does not
+ * report it. Commits on the worktree's side only are ahead; commits on the
+ * base's side only are behind.
+ */
+export type BaseCounts =
+	| { kind: "counted"; ahead: number; behind: number }
+	/** There is a base to count against, and Git could not count, as when the base ref no longer exists. Never a guessed zero. */
+	| { kind: "unreadable" };
+
 /** A tracker an issue link can name. */
 export type IssueTracker = "github" | "jira" | "linear";
 
@@ -137,6 +148,12 @@ export interface Worktree {
 	 * does not report it. Null on a detached HEAD, or when Git could not say.
 	 */
 	sync: SyncState | null;
+	/**
+	 * How the worktree's commit stands against its saved base. Null when there
+	 * is nothing to count: no saved base Git can compare with (none reported,
+	 * unassigned, or invalid), or no commit yet.
+	 */
+	baseCounts: BaseCounts | null;
 }
 
 /**
