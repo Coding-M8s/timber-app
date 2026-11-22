@@ -72,7 +72,8 @@ describe("the Rebase dialog", () => {
 
 	test("the workspace header opens it for the selected worktree", async () => {
 		const { store } = await startedStore();
-		expect(renderToStaticMarkup(<App store={store} />)).toContain(">Rebase<");
+		// Rebase is in the header's More menu, which opens this dialog (tests/workspace-actions.test.ts).
+		expect(renderToStaticMarkup(<App store={store} />)).toContain('aria-haspopup="menu" aria-expanded="false"');
 		store.openDialog({ kind: "rebase-worktree", repository: TIMBER, worktree: feature.id });
 		await settle();
 		const markup = renderToStaticMarkup(<App store={store} />);

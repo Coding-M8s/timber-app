@@ -3830,3 +3830,30 @@ with Bun 1.4.5 and Git 2.56.1:
 - Not run: the desktop window on any platform, so the icons have not been
   seen over `views://`, at other zoom levels, or in the built-in themes by
   eye; and a screen reader.
+
+Run for the workspace header's action bar and its Primary checkout label
+(issue 245), Linux x64 with Bun 1.4.5 and Git 2.56.1:
+
+- `bun test tests/workspace-actions.test.ts`: Rebase and Done in the More
+  menu with today's tooltips; Done off for a primary checkout with "The
+  primary checkout is never removed."; Rebase off for a missing folder;
+  both off while Timber removes the worktree; each enabled entry opens its
+  dialog and a disabled one opens nothing; Down and Up open the menu on
+  its first and last entries.
+- `tests/workspace-actions-browser.test.ts` in Chrome over the mock
+  engine: the primary checkout showed its quiet label; Tab went from Open
+  in editor to More; Enter opened the menu on "Rebase…", Down reached
+  "Done…", disabled with its reason, and Enter on it left the menu open
+  and no dialog; Escape gave the keyboard back to More; Up opened on
+  "Done…" and Space on "Rebase…"; Rebase from the menu opened its dialog
+  with the `timber rebase` command, and Escape gave the keyboard back to
+  More; clicking the pull request's number opened
+  `https://github.com/example/timber/pull/42`, and no Open pull request
+  button showed.
+- Screenshots of the test page at 1280 and 820 pixels wide: the name, the
+  label, and the action bar on one line, the menu kept inside the window,
+  and at 820 the details wrapping under it.
+- `bun run typecheck`: no errors.
+- `bun run build:web`: built.
+- `bun run test`: 3812 pass, 19 skip, 0 fail, after rebasing on main.
+- Not run: the desktop window on any platform, and a screen reader.

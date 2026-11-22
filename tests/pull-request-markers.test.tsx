@@ -148,13 +148,14 @@ describe("the store and the window", () => {
 		expect(engine.pullRequestReads("/work/api-server")).toBe(1);
 	});
 
-	test("the workspace header shows the same markers and Open pull request, and openLink hands the link to the engine", async () => {
+	test("the workspace header shows the same markers, its pull request as a link that opens it, and openLink hands the link to the engine", async () => {
 		const { store, engine } = await startedStore();
 		const lookup = store.getState().repositories[0]!.worktrees.find(worktree => worktree.path === LOOKUP)!;
 		store.select(lookup.id);
 		const markup = render(store);
-		expect(markup).toContain('<span class="pull-marker" title="Pull request #42 into main is open: Look up GitHub issues by number." aria-hidden="true">#42</span>');
-		expect(markup).toContain(">Open pull request</button>");
+		const sentence = "Pull request #42 into main is open: Look up GitHub issues by number. Open pull request #42 on GitHub in the browser.";
+		expect(markup).toContain(`<button type="button" class="issue-link pull-link" title="${sentence}" aria-label="${sentence}">#42</button>`);
+		expect(markup).not.toContain("Open pull request</button>");
 		const opened: string[] = [];
 		engine.openLink = async url => {
 			opened.push(url);

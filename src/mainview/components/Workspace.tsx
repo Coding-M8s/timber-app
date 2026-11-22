@@ -1,9 +1,9 @@
 import type { KeyboardEvent } from "react";
-import { BEING_REMOVED_REASON, DONE_CONTROL_TITLE, DONE_PRIMARY_NOTE } from "../done-format";
-import { REBASE_CONTROL_TITLE, REBASE_FOLDER_MISSING } from "../rebase-format";
+import { BEING_REMOVED_REASON } from "../done-format";
+import { workspaceKindLabel } from "../workspace-actions-format";
 import { describeSavedBase } from "../base-format";
 import { describeChanges, describeWorktreeSync, worktreeLabel } from "../format";
-import { OPEN_PULL_REQUEST, describeOpenPullRequest, describePullRequestMarkers, describeWorktreePullRequestProblem } from "../pull-request-format";
+import { describeOpenPullRequest, describePullRequestMarkers, describeWorktreePullRequestProblem } from "../pull-request-format";
 import { pullRequestOf } from "../../shared/pull-requests";
 import { TAB_LABELS, tabAfterKey, visibleTabs } from "../shell";
 import { fileTabLabel } from "../file-view-format";
@@ -16,7 +16,8 @@ import { IssueHeaderLink, issueOf } from "./IssueSummary";
 import { IssuesBoard } from "./IssuesBoard";
 import { PortsItem } from "./PortsItem";
 import { PullRequestPanel } from "./PullRequestPanel";
-import { EditorProblemNote, OpenInEditorButton } from "./OpenInEditor";
+import { EditorProblemNote, OpenInEditorButton, OpenInEditorReason } from "./OpenInEditor";
+import { WorkspaceMore } from "./WorkspaceMore";
 import { SetupPrompt } from "./SetupPrompt";
 import { TerminalPanel } from "./TerminalPanel";
 
@@ -65,6 +66,9 @@ export function Workspace() {
 	const pullRequests = state.pullRequests[repository.path];
 	const pullRequest = pullRequestOf(pullRequests, worktree.path);
 	const pullMarkers = describePullRequestMarkers(pullRequest);
+	const pullUrl = pullRequest?.outcome === "found" ? pullRequest.pullRequest.url : null;
+	const pullOpenTitle = pullRequest?.outcome === "found" ? describeOpenPullRequest(pullRequest.pullRequest) : null;
+	const kind = workspaceKindLabel(worktree);
 	const pullProblem = describeWorktreePullRequestProblem(pullRequests, pullRequest);
 	// While Timber removes the worktree, nothing new starts in it.
 	const removing = isBeingRemoved(state, repository.path, worktree.path);
@@ -84,7 +88,16 @@ export function Workspace() {
 	return (
 		<main className="workspace">
 			<header className="workspace-header">
-				<h1 className="workspace-title" title={label}>{label}</h1>
+				{/* One action bar on the title line: Open in editor, then More with Rebase and Done. Each shows its command before it runs. */}
+				<div className="workspace-title-line">
+					<h1 className="workspace-title" title={label}>{label}</h1>
+					{kind !== null && <span className="workspace-kind">{kind}</span>}
+					{removing && <span className="workspace-kind" role="status" title={BEING_REMOVED_REASON}>Removing</span>}
+					<div className="workspace-actions">
+						<OpenInEditorButton repository={repository.path} worktree={worktree} />
+						<WorkspaceMore repository={repository.path} worktree={worktree} removing={removing} />
+					</div>
+				</div>
 				<div className="workspace-meta">
 					{sync && <span>{sync}</span>}
 					<span>{changes}</span>
@@ -93,45 +106,21 @@ export function Workspace() {
 					{pullMarkers.length > 0 && (
 						// The same markers as the row, each with its sentence; the visible words are the short form.
 						<span className="workspace-pull" role="group" aria-label={pullMarkers.map(marker => marker.tooltip).join(" ")}>
-							{pullMarkers.map(marker => (
-								<span key={marker.kind} className={marker.kind === "checks-failing" || marker.kind === "review-changes" ? "pull-marker failing" : "pull-marker"} title={marker.tooltip} aria-hidden="true">{marker.text}</span>
-							))}
+							{pullMarkers.map(marker =>
+								// The pull request's own marker is the link that opens it, as the issue's is.
+								marker.kind === "pull-request" && pullUrl !== null && pullOpenTitle !== null ? (
+									<button key={marker.kind} type="button" className="issue-link pull-link" title={`${marker.tooltip} ${pullOpenTitle}.`} aria-label={`${marker.tooltip} ${pullOpenTitle}.`} onClick={() => void store.openLink(pullUrl)}>{marker.text}</button>
+								) : (
+									<span key={marker.kind} className={marker.kind === "checks-failing" || marker.kind === "review-changes" ? "pull-marker failing" : "pull-marker"} title={marker.tooltip} aria-hidden="true">{marker.text}</span>
+								),
+							)}
 						</span>
 					)}
 					{pullProblem && <span className="pull-problem" title={pullProblem.tooltip} aria-label={pullProblem.tooltip}>{pullProblem.text}</span>}
 					{worktree.pathExists && <PortsItem repository={repository} worktree={worktree} />}
 					<span className="path">{worktree.path}</span>
 				</div>
-				<div className="workspace-done">
-					<OpenInEditorButton repository={repository.path} worktree={worktree} />
-					{pullRequest?.outcome === "found" && (
-						<button type="button" className="button" title={describeOpenPullRequest(pullRequest.pullRequest)} onClick={() => void store.openLink(pullRequest.pullRequest.url)}>
-							{OPEN_PULL_REQUEST}
-						</button>
-					)}
-					{/* Opens the Rebase dialog, which shows the command. Nothing runs before its own button. */}
-					<button
-						type="button"
-						className="button"
-						disabled={!worktree.pathExists || removing}
-						title={removing ? BEING_REMOVED_REASON : worktree.pathExists ? REBASE_CONTROL_TITLE : REBASE_FOLDER_MISSING}
-						onClick={() => store.openDialog({ kind: "rebase-worktree", repository: repository.path, worktree: worktree.id })}
-					>
-						Rebase
-					</button>
-					{/* Opens the Done dialog, which asks Timber for a preview. Nothing is removed before its Remove button. */}
-					<button
-						type="button"
-						className="button"
-						disabled={worktree.primary || removing}
-						title={worktree.primary ? DONE_PRIMARY_NOTE : removing ? BEING_REMOVED_REASON : DONE_CONTROL_TITLE}
-						onClick={() => store.openDialog({ kind: "done-worktree", repository: repository.path, worktree: worktree.id })}
-					>
-						Done
-					</button>
-					{worktree.primary && <span className="workspace-done-note">{DONE_PRIMARY_NOTE}</span>}
-					{removing && <span className="workspace-done-note" role="status">{BEING_REMOVED_REASON}</span>}
-				</div>
+				<OpenInEditorReason repository={repository.path} worktree={worktree} />
 				<EditorProblemNote />
 			</header>
 			<SetupPrompt repository={repository} />

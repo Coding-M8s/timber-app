@@ -3451,23 +3451,50 @@ pre:focus-visible {
  * destructive button, and the preview of what a removal deletes.
  */
 /* In a narrow pane the row wraps instead of squeezing the buttons, whose labels would spill out of their fixed height. */
-.workspace-done {
+/*
+ * The workspace header's title line (issue 245): the name, a quiet label for
+ * a primary checkout or a removal, and one action bar at the end. The name
+ * shortens first; the label and the actions keep their place.
+ */
+.workspace-title-line {
 	display: flex;
-	flex-wrap: wrap;
 	align-items: center;
-	gap: 8px 10px;
-	margin-top: 5px;
+	gap: 10px;
+	min-width: 0;
+	min-height: 30px;
 }
 
-.workspace-done .button {
+.workspace-title-line .workspace-title {
+	flex: 0 1 auto;
+	min-width: 0;
+}
+
+.workspace-kind {
 	flex: none;
+	padding: 1px 6px;
+	border: 1px solid var(--line);
+	border-radius: 4px;
+	font-size: 11px;
+	color: var(--text-3);
+	white-space: nowrap;
+}
+
+.workspace-actions {
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-left: auto;
+}
+
+.workspace-actions .button {
 	margin-top: 0;
 	white-space: nowrap;
 }
 
-.workspace-done-note {
-	flex: 1 1 160px;
-	min-width: 0;
+/* Why Open in editor cannot open anything, as one quiet line under the details. */
+.workspace-note {
+	margin: 2px 0 0;
 	font-size: 12px;
 	color: var(--text-3);
 }
@@ -3763,10 +3790,6 @@ pre:focus-visible {
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;
-}
-
-.workspace-done .workspace-editor {
-	margin-top: 0;
 }
 
 .editor-problem {

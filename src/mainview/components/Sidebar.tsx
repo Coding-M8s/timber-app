@@ -13,6 +13,7 @@ import { unseenStatuses } from "../seen-status";
 import type { Repository, Worktree } from "../../shared/model";
 import { SIDEBAR_ID } from "./SidebarResizer";
 import { RepositorySection } from "./RepositorySection";
+import { MoreIcon } from "./MoreIcon";
 import { RepositoryMenu } from "./RepositoryMenu";
 import { RepositoryGroupName } from "./RepositoryGroupName";
 
@@ -21,14 +22,6 @@ type Naming = { kind: "new"; repository?: string } | { kind: "rename"; id: strin
 
 /** An open menu: of a repository header, or of a group header, and where it was asked to be. */
 type OpenMenu = { kind: "repository"; path: string; at: { left: number; top: number } } | { kind: "group"; id: string; at: { left: number; top: number } };
-
-const MoreIcon = () => (
-	<svg aria-hidden="true" width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
-		<circle cx="3" cy="8" r="1.4" />
-		<circle cx="8" cy="8" r="1.4" />
-		<circle cx="13" cy="8" r="1.4" />
-	</svg>
-);
 
 /** Where a menu opened from the keyboard goes: under the control that has the keyboard. */
 const underneath = (element: Element) => {

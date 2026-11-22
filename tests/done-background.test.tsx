@@ -62,9 +62,8 @@ describe("a removal that runs in the background", () => {
 
 		const markup = app(store);
 		expect(markup).toContain('<span class="row-flag removing" title="Timber is removing this worktree. Its actions are off until Timber finishes." aria-hidden="true">removing</span>');
-		expect(markup).toContain(`<button type="button" class="button" disabled="" title="${BEING_REMOVED_REASON}">Done</button>`);
-		expect(markup).toContain(`disabled="" title="${BEING_REMOVED_REASON}">Rebase</button>`);
-		expect(markup).toContain(`<span class="workspace-done-note" role="status">${BEING_REMOVED_REASON}</span>`);
+		// The header says so after the name; Rebase and Done in its More menu are off with this reason (tests/workspace-actions.test.ts).
+		expect(markup).toContain(`<span class="workspace-kind" role="status" title="${BEING_REMOVED_REASON}">Removing</span>`);
 		expect(markup).not.toContain("<dialog");
 
 		// Starting Done or Rebase on it again, or a session in it, does nothing.
@@ -157,7 +156,7 @@ describe("a removal that runs in the background", () => {
 		store.select(`registered ${FEATURE}`);
 		const markup = app(store);
 		expect(markup).toContain(">removing</span>");
-		expect(markup).toContain(`<button type="button" class="button" disabled="" title="${BEING_REMOVED_REASON}">Done</button>`);
+		expect(markup).toContain(`<span class="workspace-kind" role="status" title="${BEING_REMOVED_REASON}">Removing</span>`);
 		store.openDialog({ kind: "done-worktree", repository: TIMBER, worktree: `registered ${FEATURE}` });
 		expect(store.getState().dialog).toBeNull();
 		await removal;
