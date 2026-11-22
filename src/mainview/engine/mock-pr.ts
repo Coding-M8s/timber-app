@@ -2,6 +2,7 @@ import type { Repository, Worktree } from "../../shared/model";
 import type { PullRequest, Reviewer } from "../../shared/pull-requests";
 import { type CreatePullRequestRequest, type CreatePullRequestResult, type ReviewerRequestOutcome, prResultArguments, readPrResult } from "../../shared/timber-pr";
 import { RESULT_FILE_PLACEHOLDER, type TimberRun, describeTimberCommand, readTimberResult } from "../../shared/timber-result";
+import { samplePullRequestHosts } from "./mock-pull-requests";
 
 /**
  * Acting out `timber pr --result-file` for the mock engine. Nothing is pushed
@@ -64,7 +65,7 @@ function worktreeRecord(worktree: Worktree): object {
 	};
 }
 
-/** What the acted run answers, and the pull request GitHub would now list for the branch, if any. */
+/** What the acted run answers, and the pull request the host would now list for the branch, if any. */
 export interface ActedPullRequest {
 	result: CreatePullRequestResult;
 	opened: PullRequest | null;
@@ -83,6 +84,10 @@ export function actOutPullRequest(repository: Repository, worktree: Worktree, re
 	const shown = describeTimberCommand(prResultArguments(request, RESULT_FILE_PLACEHOLDER));
 	const base = request.base === null ? "main" : request.base.replace(/^refs\/remotes\//, "").split("/").slice(1).join("/") || request.base;
 	const owner = repository.name.replace(/[^A-Za-z0-9_.-]/g, "-");
+	// A sample repository on Bitbucket gets Bitbucket's link, as Timber 0.1.4 reports it.
+	const link = (number: number) => samplePullRequestHosts[repository.path] === "bitbucket"
+		? `https://bitbucket.org/example/${owner}/pull-requests/${number}`
+		: `https://github.com/example/${owner}/pull/${number}`;
 
 	const written = (pr: Record<string, unknown>, outcome: "succeeded" | "failed", diagnostic: string | null, printed: string): CreatePullRequestResult => {
 		const failed = outcome === "failed";
@@ -107,7 +112,7 @@ export function actOutPullRequest(repository: Repository, worktree: Worktree, re
 	const outcomes = (firstFails: boolean): ReviewerRequestOutcome[] => reviewers.map((reviewer, index) => firstFails && index === 0
 		? { ...reviewer, result: "failed", diagnostic: REVIEWER_REFUSED }
 		: { ...reviewer, result: "requested", diagnostic: null });
-	/** The requested ones, as GitHub then lists them on the pull request. */
+	/** The requested ones, as GitHub then lists them on the pull request. The form sends none on Bitbucket, where it has no field; unlike Timber, this mock does not refuse them there. */
 	const listed = (requested: readonly ReviewerRequestOutcome[]): Reviewer[] => requested.filter(outcome => outcome.result === "requested").map(({ name, kind }) => ({
 		kind,
 		name,
@@ -121,7 +126,7 @@ export function actOutPullRequest(repository: Repository, worktree: Worktree, re
 	};
 	const pull = (number: number, title: string, description: string, draft: boolean): PullRequest => ({
 		number,
-		url: `https://github.com/example/${owner}/pull/${number}`,
+		url: link(number),
 		title,
 		state: draft ? "draft" : "open",
 		baseBranch: base,

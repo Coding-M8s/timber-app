@@ -563,7 +563,7 @@ export interface AppStore {
 	 * Run `timber pr` for a worktree's form, once. While it runs, a second
 	 * call does nothing. The repository and its pull requests are read again
 	 * after every outcome that ran, since even a failure can come after the
-	 * push, so the tab shows a created pull request as soon as GitHub lists
+	 * push, so the tab shows a created pull request as soon as the host lists
 	 * it. Created: a toast. Already open: a note above it. Reviewers Timber
 	 * could not request stay in the form under either, until put away or the
 	 * next run. Refused or failed: the failure stays in the form for a retry.
@@ -1187,7 +1187,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	}
 
 	/*
-	 * Pull requests come from GitHub through Timber, so they are read as often
+	 * Pull requests come from GitHub or Bitbucket through Timber, so they are read as often
 	 * as the repository is fetched: once when it is first listed, then each
 	 * time a fetch of it ends, in the background or after Fetch now. Reads of
 	 * one repository never overlap. Nothing is read while Timber is not ready,
@@ -2867,7 +2867,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			const failure = notHeardFailure("how timber pr ended", error, ". The engine did not answer, so what it did is unknown.");
 			result = { outcome: "failed", ran: true, published: null, failure };
 		}
-		// Even a failure can come after the push, or after GitHub opened the pull request.
+		// Even a failure can come after the push, or after the host opened the pull request.
 		if (result.outcome !== "failed" || result.ran) await Promise.all([reloadOne(repository), refreshPullRequests(repository)]);
 		const shown = presentPullRequestCreation(result);
 		changeForm(worktreeId, { running: false, failure: shown.failure, reported: shown.reported, reviewerFailures: shown.reviewerFailures });

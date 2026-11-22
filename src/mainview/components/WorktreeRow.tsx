@@ -1,6 +1,6 @@
 import { type KeyboardEvent, type MouseEvent, type ReactNode, useId, useRef, useState } from "react";
 import type { Worktree } from "../../shared/model";
-import type { PullRequestEntry } from "../../shared/pull-requests";
+import type { PullRequestEntry, PullRequestHost } from "../../shared/pull-requests";
 import type { TerminalSession } from "../../shared/terminal";
 import type { IssueEntry, RemovalStatus } from "../store/state";
 import { describeRowTitle } from "../base-format";
@@ -91,6 +91,8 @@ interface WorktreeRowProps {
 	label?: string | undefined;
 	/** The pull request Timber found for the worktree's branch, or null for none or not known. */
 	pullRequest?: PullRequestEntry | null;
+	/** Where the repository's pull requests were read from, for the words of their markers. */
+	pullRequestHost?: PullRequestHost | undefined;
 	/** The store's last answer for the worktree's linked issue, if any. Its short form goes in the row's tooltip. */
 	issue?: IssueEntry | undefined;
 	/** Where a removal of the worktree stands, or null when none runs or failed. */
@@ -143,7 +145,7 @@ function SyncActionButton({ control, onChoose }: { control: SyncControl; onChoos
 }
 
 /** One worktree in the sidebar. What it is marked with comes from `describeRowMarkers`; this only draws it. */
-export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest = null, issue, removal = null, sessions = [], seen = {}, portClash = null, actions, onMenuChoice, onSyncAction }: WorktreeRowProps) {
+export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest = null, pullRequestHost, issue, removal = null, sessions = [], seen = {}, portClash = null, actions, onMenuChoice, onSyncAction }: WorktreeRowProps) {
 	const descriptionId = useId();
 	const button = useRef<HTMLButtonElement>(null);
 	// Where the open menu was asked to be, or null while it is closed.
@@ -170,7 +172,7 @@ export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest =
 		openedByKey.current = true;
 		setMenuAt({ left: box.left, top: box.bottom });
 	};
-	const markers = describeRowMarkers(worktree, pullRequest, removal);
+	const markers = describeRowMarkers(worktree, pullRequest, removal, pullRequestHost);
 	const linked = describeIssue(worktree.issue, issue);
 	const running = describeRowSessions(sessions, seen);
 	const description = [describeRow(markers), portClash, running.sentence].filter(Boolean).join(" ");

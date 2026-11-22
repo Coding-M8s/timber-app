@@ -1,7 +1,8 @@
 import type { IssueLink, TimberFailure } from "../shared/model";
-import type { PullRequestList } from "../shared/pull-requests";
+import type { PullRequestHost, PullRequestList } from "../shared/pull-requests";
 import { type CreatePullRequestResult, type ReviewerRequestOutcome, prResultArguments, pullRequestBaseFromText, pullRequestReviewersFromText } from "../shared/timber-pr";
 import { RESULT_FILE_PLACEHOLDER, describeTimberCommand } from "../shared/timber-result";
+import { pullRequestHostName } from "./pull-request-format";
 
 /**
  * Words for the form in the Pull request tab that opens a pull request with
@@ -10,7 +11,11 @@ import { RESULT_FILE_PLACEHOLDER, describeTimberCommand } from "../shared/timber
  */
 
 export const CREATE_HEADING = "Open a pull request";
-export const CREATE_NOTE = "Timber publishes the branch, then opens the pull request on GitHub with its own login. The app never pushes on its own.";
+/** What the form does, naming the host Timber opens the pull request on. */
+export const createNote = (host: PullRequestHost | undefined): string =>
+	`Timber publishes the branch, then opens the pull request on ${pullRequestHostName(host)} with its own login. The app never pushes on its own.`;
+/** In place of the Reviewers field on Bitbucket, where Timber refuses `--reviewer`. */
+export const BITBUCKET_REVIEWERS_NOTE = "Add reviewers on Bitbucket once the pull request is open: Timber cannot ask for them there.";
 export const BASE_HINT = "Empty uses the base Timber saved for this worktree. Otherwise type a branch on the remote, such as origin/main.";
 export const REVIEWERS_HINT = "Logins or org/team, separated by commas or spaces. Timber asks each one for a review once the pull request is open.";
 export const CREATE_SUBMIT = "Publish and open";
@@ -114,10 +119,12 @@ export interface ReviewerSuggestion {
  * The people and teams the repository's pull requests already list as
  * reviewers, each once whatever its case, by name. Bots are left out: a
  * login such as Copilot's is not one `--reviewer` takes. None until the
- * pull requests are read, or when they could not be.
+ * pull requests are read, or when they could not be, and none on Bitbucket:
+ * its reviewers are display names, which are not unique and may hold
+ * spaces, and Timber refuses `--reviewer` there.
  */
 export function reviewerSuggestions(list: PullRequestList | undefined): ReviewerSuggestion[] {
-	if (!list?.ok) return [];
+	if (!list?.ok || list.host === "bitbucket") return [];
 	const byName = new Map<string, ReviewerSuggestion>();
 	for (const entry of list.worktrees) {
 		if (entry.outcome !== "found") continue;

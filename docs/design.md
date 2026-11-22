@@ -297,9 +297,11 @@ change them here first when they change.
   nothing.
 - Pull requests that could not be read get a quiet grey word beside the
   repository's name, once, as one lookup answers for all its branches:
-  "PRs offline", "PRs need sign-in", "not on GitHub", "PRs failed", or "PRs
-  unknown" when Timber's answer could not be read. The reason is in its
-  tooltip. Never a dialog, and never a prompt to sign in.
+  "PRs offline", "PRs need sign-in" ("PRs need Bitbucket sign-in" for a
+  repository on Bitbucket), "not on GitHub" (on neither GitHub nor
+  Bitbucket), "PRs failed", or "PRs unknown" when Timber's answer could not
+  be read. The reason is in its tooltip, naming the host. Never a dialog,
+  and never a prompt to sign in.
 - An agent's state comes from the Program Status Protocol (OSC 7501) it
   writes to its terminal: Working, Needs you (approval, question, or
   sign-in), Done, Idle, Error, Stopped, or crashed with its code. Each has

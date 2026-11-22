@@ -200,9 +200,15 @@ describe("readPrResult, with records it cannot use", () => {
 		expectUnknown(read(changed(recordedPr.failedAfterPush, {}, { reviewers }), 1), `it lists reviewers for a result of "failed"`);
 	});
 
-	test("a link that is not an https GitHub link", () => {
-		expectUnknown(read(changed(recordedPr.created, {}, { url: "http://github.com/example/sample/pull/7" }), 0), "not a GitHub link");
-		expectUnknown(read(changed(recordedPr.created, {}, { url: "https://example.com/pull/7" }), 0), "not a GitHub link");
+	test("a link that is not an https GitHub or Bitbucket link", () => {
+		expectUnknown(read(changed(recordedPr.created, {}, { url: "http://github.com/example/sample/pull/7" }), 0), "not a GitHub or Bitbucket link");
+		expectUnknown(read(changed(recordedPr.created, {}, { url: "https://example.com/pull/7" }), 0), "not a GitHub or Bitbucket link");
+		expectUnknown(read(changed(recordedPr.created, {}, { url: "http://bitbucket.org/example/sample/pull-requests/7" }), 0), "not a GitHub or Bitbucket link");
+	});
+
+	test("a pull request Timber 0.1.4 opened on Bitbucket is read like one on GitHub", () => {
+		const url = "https://bitbucket.org/example/sample/pull-requests/7";
+		expect(read(changed(recordedPr.created, {}, { url }), 0)).toEqual({ outcome: "created", number: 7, url, base: "main", published: true, reviewers: [] });
 	});
 
 	test("a cancelled record, which timber pr never writes", () => {

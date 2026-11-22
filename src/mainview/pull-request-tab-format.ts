@@ -1,5 +1,5 @@
-import { APP_PR_COMMAND, type CheckRunStatus, type PullRequest, type PullRequestEntry, type PullRequestFailureReason, type PullRequestList, type PullRequestState, type ReviewDecision, type Reviewer, type ReviewerState } from "../shared/pull-requests";
-import { asSentence, pullRequestFailureSentence } from "./pull-request-format";
+import { APP_PR_COMMAND, type CheckRunStatus, type PullRequest, type PullRequestEntry, type PullRequestFailureReason, type PullRequestHost, type PullRequestList, type PullRequestState, type ReviewDecision, type Reviewer, type ReviewerState } from "../shared/pull-requests";
+import { asSentence, describeOpenPullRequest, pullRequestFailureSentence, pullRequestHostName } from "./pull-request-format";
 
 /**
  * Words for the Pull request tab: what it shows for the selected worktree,
@@ -42,6 +42,17 @@ const REVIEW_SENTENCES: Record<ReviewDecision, string> = {
 	"none": "The repository asks for no review decision on it.",
 };
 
+/** Bitbucket has no review decision: Timber works it out from the reviewers, never from the repository's merge checks. */
+const BITBUCKET_REVIEW_SENTENCES: Record<ReviewDecision, string> = {
+	"approved": "A reviewer approved it.",
+	"changes-requested": "A reviewer asked for changes.",
+	"review-required": "It waits for its reviewers: none has approved it yet.",
+	"none": "No one was asked to review it.",
+};
+
+/** Bitbucket's checks are read only while a pull request is open or a draft. */
+const BITBUCKET_NO_CHECKS_AFTER = "Checks are read from Bitbucket only while a pull request is open or a draft.";
+
 const REVIEWER_STATE_LABELS: Record<ReviewerState, string> = {
 	"requested": "requested",
 	"approved": "approved",
@@ -50,12 +61,14 @@ const REVIEWER_STATE_LABELS: Record<ReviewerState, string> = {
 	"dismissed": "dismissed",
 };
 
-const PROBLEM_TITLES: Record<PullRequestFailureReason, string> = {
-	"offline": "GitHub could not be reached",
-	"sign-in-needed": "Sign-in needed",
-	"not-github": "Not on GitHub",
-	"failed": "The pull request could not be read",
-};
+function problemTitle(reason: PullRequestFailureReason, host: PullRequestHost | undefined): string {
+	switch (reason) {
+		case "offline": return `${pullRequestHostName(host)} could not be reached`;
+		case "sign-in-needed": return host === "bitbucket" ? "Bitbucket sign-in needed" : "Sign-in needed";
+		case "not-github": return "Not on GitHub or Bitbucket";
+		case "failed": return "The pull request could not be read";
+	}
+}
 
 /** The review decision, in a short label and a sentence. */
 export interface ReviewView {
@@ -88,7 +101,7 @@ export type PullRequestTabView =
 	| { kind: "found"; pullRequest: PullRequest; heading: string; state: string; base: string; checks: ChecksView; review: ReviewView; reviewers: ReviewerView[]; reviewersNote: string | null; openTitle: string }
 	| { kind: "none" | "waiting" | "problem"; title: string; text: string };
 
-function describeChecks(pull: PullRequest): ChecksView {
+function describeChecks(pull: PullRequest, host: PullRequestHost | undefined): ChecksView {
 	const { summary, passing, failing, pending, runs } = pull.checks;
 	const skipped = runs.filter(run => run.status === "skipped").length;
 	const parts = [failing > 0 ? `${failing} failing` : "", pending > 0 ? `${pending} pending` : "", passing > 0 ? `${passing} passing` : "", skipped > 0 ? `${skipped} skipped` : ""].filter(Boolean);
@@ -97,41 +110,64 @@ function describeChecks(pull: PullRequest): ChecksView {
 		case "passing": return { text: `Checks pass${counts}.`, warning: false };
 		case "failing": return { text: `Checks fail${counts}.`, warning: true };
 		case "pending": return { text: `Checks still run${counts}.`, warning: false };
-		case "none": return { text: runs.length === 0 ? NO_CHECKS : `No combined state was reported${counts}.`, warning: false };
+		case "none": {
+			if (runs.length > 0) return { text: `No combined state was reported${counts}.`, warning: false };
+			const after = host === "bitbucket" && (pull.state === "merged" || pull.state === "closed");
+			return { text: after ? BITBUCKET_NO_CHECKS_AFTER : NO_CHECKS, warning: false };
+		}
 	}
 }
 
-function describeReviewer(reviewer: Reviewer): ReviewerView {
+function describeReviewer(reviewer: Reviewer, host: PullRequestHost | undefined): ReviewerView {
 	return {
 		name: reviewer.name,
 		kind: reviewer.kind === "user" ? null : reviewer.kind,
 		state: REVIEWER_STATE_LABELS[reviewer.state],
 		warning: reviewer.state === "changes-requested",
 		url: reviewer.url,
-		openTitle: `Open ${reviewer.name} on GitHub in the browser`,
+		openTitle: `Open ${reviewer.name} on ${pullRequestHostName(host)} in the browser`,
 	};
 }
 
 /** A quiet line under the reviewers: there are none, or Timber's login could not read them all. Null when the list says it all. */
-function reviewersNote(pull: PullRequest): string | null {
+function reviewersNote(pull: PullRequest, host: PullRequestHost | undefined): string | null {
 	if (pull.reviewersComplete) return pull.reviewers.length === 0 ? NO_REVIEWERS : null;
+	if (host === "bitbucket") {
+		return pull.reviewers.length === 0
+			? "No reviewers could be read: Bitbucket did not list them."
+			: "Bitbucket did not list every reviewer, so some may be missing.";
+	}
 	return pull.reviewers.length === 0
 		? "No reviewers could be read with Timber's GitHub login. Some, such as a team it cannot see, may be hidden from it."
 		: "Some reviewers could not be read with Timber's GitHub login, such as a team it cannot see.";
 }
 
-function describeFound(pull: PullRequest): PullRequestTabView {
+/**
+ * The review decision. On Bitbucket `none` means no one was asked, though
+ * people who only commented may be listed; when Bitbucket left out the
+ * reviewers, that is not known.
+ */
+function describeReview(pull: PullRequest, host: PullRequestHost | undefined): ReviewView {
+	const warning = pull.review === "changes-requested";
+	if (host !== "bitbucket") return { label: REVIEW_LABELS[pull.review], sentence: REVIEW_SENTENCES[pull.review], warning };
+	if (pull.review !== "none") return { label: REVIEW_LABELS[pull.review], sentence: BITBUCKET_REVIEW_SENTENCES[pull.review], warning };
+	return pull.reviewersComplete
+		? { label: "No review requested", sentence: BITBUCKET_REVIEW_SENTENCES.none, warning }
+		: { label: "No review decision", sentence: "Bitbucket did not list who was asked to review it.", warning };
+}
+
+function describeFound(pull: PullRequest, host: PullRequestHost | undefined): PullRequestTabView {
 	return {
 		kind: "found",
 		pullRequest: pull,
 		heading: pull.title === "" ? `Pull request #${pull.number}` : pull.title,
 		state: STATE_LABELS[pull.state],
 		base: pull.state === "merged" ? `merged into ${pull.baseBranch}` : `into ${pull.baseBranch}`,
-		checks: describeChecks(pull),
-		review: { label: REVIEW_LABELS[pull.review], sentence: REVIEW_SENTENCES[pull.review], warning: pull.review === "changes-requested" },
-		reviewers: pull.reviewers.map(describeReviewer),
-		reviewersNote: reviewersNote(pull),
-		openTitle: `Open pull request #${pull.number} on GitHub in the browser`,
+		checks: describeChecks(pull, host),
+		review: describeReview(pull, host),
+		reviewers: pull.reviewers.map(reviewer => describeReviewer(reviewer, host)),
+		reviewersNote: reviewersNote(pull, host),
+		openTitle: describeOpenPullRequest(pull, host),
 	};
 }
 
@@ -152,14 +188,14 @@ export function describePullRequestTab(list: PullRequestList | undefined, entry:
 		return { kind: "problem", title: "The pull request is unknown", text: `${APP_PR_COMMAND} said nothing about this worktree. The app reads it again after the next fetch.` };
 	}
 	switch (entry.outcome) {
-		case "found": return describeFound(entry.pullRequest);
-		case "failed": return { kind: "problem", title: PROBLEM_TITLES[entry.reason], text: `${pullRequestFailureSentence(entry.reason)} Timber says: ${asSentence(entry.diagnostic)}` };
+		case "found": return describeFound(entry.pullRequest, list.host);
+		case "failed": return { kind: "problem", title: problemTitle(entry.reason, list.host), text: `${pullRequestFailureSentence(entry.reason, list.host)} Timber says: ${asSentence(entry.diagnostic)}` };
 		case "none": return {
 			kind: "none",
 			title: "No pull request yet",
 			text: branch === null
 				? "A detached HEAD has no branch, so it has no pull request."
-				: `GitHub has no pull request for ${branch}.`,
+				: `${pullRequestHostName(list.host)} has no pull request for ${branch}.`,
 		};
 	}
 }

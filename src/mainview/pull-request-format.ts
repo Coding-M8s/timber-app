@@ -1,11 +1,18 @@
-import { APP_PR_COMMAND, type PullRequest, type PullRequestEntry, type PullRequestFailureReason, type PullRequestList } from "../shared/pull-requests";
+import { APP_PR_COMMAND, type PullRequest, type PullRequestEntry, type PullRequestFailureReason, type PullRequestHost, type PullRequestList } from "../shared/pull-requests";
 import type { RowMarker, RowMarkerKind } from "./format";
 
 /**
  * Words for pull requests: the markers on a worktree's row and in the
  * workspace header, and the quiet word when they could not be read. Pure, so
  * they can be tested without a window.
+ *
+ * Timber reads the pull requests from GitHub or from Bitbucket, after the
+ * repository's remote, and says which. The words name that host; with no
+ * host said, they are GitHub's, as before Bitbucket.
  */
+
+/** The host by name, for the person. */
+export const pullRequestHostName = (host: PullRequestHost | undefined): string => host === "bitbucket" ? "Bitbucket" : "GitHub";
 
 /** The control in the workspace header that opens the pull request in the browser. */
 export const OPEN_PULL_REQUEST = "Open pull request";
@@ -40,12 +47,19 @@ function checksMarker(pull: PullRequest): RowMarker | null {
 	}
 }
 
-function reviewMarker(pull: PullRequest): RowMarker | null {
+/** Bitbucket has no review decision: Timber works it out from the reviewers, and it says nothing about the repository's merge checks. */
+function reviewRequiredSentence(pull: PullRequest, host: PullRequestHost | undefined): string {
+	return host === "bitbucket"
+		? `Pull request #${pull.number} waits for its reviewers: none has approved it yet.`
+		: `Pull request #${pull.number} needs an approving review before it can merge.`;
+}
+
+function reviewMarker(pull: PullRequest, host: PullRequestHost | undefined): RowMarker | null {
 	const marker = (kind: RowMarkerKind, text: string, tooltip: string): RowMarker => ({ kind, place: "pull-request", text, tooltip });
 	switch (pull.review) {
 		case "approved": return marker("review-approved", "approved", `Pull request #${pull.number} is approved.`);
 		case "changes-requested": return marker("review-changes", "changes requested", `A reviewer asked for changes on pull request #${pull.number}.`);
-		case "review-required": return marker("review-required", "review required", `Pull request #${pull.number} needs an approving review before it can merge.`);
+		case "review-required": return marker("review-required", "review required", reviewRequiredSentence(pull, host));
 		case "none": return null;
 	}
 }
@@ -55,22 +69,23 @@ function reviewMarker(pull: PullRequest): RowMarker | null {
  * checks and its review decision while it is open or a draft. A merged or
  * closed one has only the first, as nothing about it waits any longer. A
  * branch with no pull request, or one whose pull request could not be read,
- * gets none: the reason is said once, on its repository.
+ * gets none: the reason is said once, on its repository. `host` is where
+ * the repository's pull requests were read from.
  */
-export function describePullRequestMarkers(entry: PullRequestEntry | null): RowMarker[] {
+export function describePullRequestMarkers(entry: PullRequestEntry | null, host?: PullRequestHost): RowMarker[] {
 	if (entry?.outcome !== "found") return [];
 	const pull = entry.pullRequest;
 	const text = pull.state === "open" ? `#${pull.number}` : `#${pull.number} ${pull.state}`;
 	const markers: RowMarker[] = [{ kind: "pull-request", place: "pull-request", text, tooltip: stateSentence(pull) }];
 	if (pull.state === "open" || pull.state === "draft") {
-		for (const marker of [checksMarker(pull), reviewMarker(pull)]) if (marker) markers.push(marker);
+		for (const marker of [checksMarker(pull), reviewMarker(pull, host)]) if (marker) markers.push(marker);
 	}
 	return markers;
 }
 
 /** What "Open pull request" does, for its tooltip. */
-export function describeOpenPullRequest(pull: PullRequest): string {
-	return `Open pull request #${pull.number} on GitHub in the browser`;
+export function describeOpenPullRequest(pull: PullRequest, host?: PullRequestHost): string {
+	return `Open pull request #${pull.number} on ${pullRequestHostName(host)} in the browser`;
 }
 
 /** The quiet word when pull requests could not be read, with its sentences for the tooltip. */
@@ -79,25 +94,30 @@ export interface PullRequestProblem {
 	tooltip: string;
 }
 
-const FAILURE_WORDS: Record<PullRequestFailureReason, string> = {
-	"offline": "PRs offline",
-	"sign-in-needed": "PRs need sign-in",
-	"not-github": "not on GitHub",
-	"failed": "PRs failed",
-};
+/** The quiet word for a reason. Bitbucket's sign-in is named, so it is never taken for GitHub's. */
+function failureWord(reason: PullRequestFailureReason, host: PullRequestHost | undefined): string {
+	switch (reason) {
+		case "offline": return "PRs offline";
+		case "sign-in-needed": return host === "bitbucket" ? "PRs need Bitbucket sign-in" : "PRs need sign-in";
+		case "not-github": return "not on GitHub";
+		case "failed": return "PRs failed";
+	}
+}
 
-const FAILURE_SENTENCES: Record<PullRequestFailureReason, string> = {
-	"offline": "Pull requests could not be read: GitHub could not be reached. The app tries again after the next fetch.",
-	"sign-in-needed": "Pull requests could not be read: Timber has no GitHub login, or GitHub refused it. The app never asks: sign in once with gh auth login in a terminal, or set GH_TOKEN.",
-	"not-github": "Pull requests are read from github.com only, and this repository's remote is not there.",
-	"failed": "Pull requests could not be read. The app tries again after the next fetch.",
-};
+/** Why pull requests could not be read, in a whole sentence for the person. `host` is where Timber read them from. */
+export function pullRequestFailureSentence(reason: PullRequestFailureReason, host?: PullRequestHost): string {
+	switch (reason) {
+		case "offline": return `Pull requests could not be read: ${pullRequestHostName(host)} could not be reached. The app tries again after the next fetch.`;
+		case "sign-in-needed": return host === "bitbucket"
+			? "Pull requests could not be read: Timber has no Bitbucket login, or Bitbucket refused it. The app never asks: sign in once with timber setup in a terminal, or set BITBUCKET_EMAIL and BITBUCKET_API_TOKEN."
+			: "Pull requests could not be read: Timber has no GitHub login, or GitHub refused it. The app never asks: sign in once with gh auth login in a terminal, or set GH_TOKEN.";
+		case "not-github": return "Pull requests are read from github.com or bitbucket.org only, and this repository's remote is on neither.";
+		case "failed": return "Pull requests could not be read. The app tries again after the next fetch.";
+	}
+}
 
-/** Why pull requests could not be read, in a whole sentence for the person. */
-export const pullRequestFailureSentence = (reason: PullRequestFailureReason): string => FAILURE_SENTENCES[reason];
-
-function failureProblem(entry: Extract<PullRequestEntry, { outcome: "failed" }>): PullRequestProblem {
-	return { text: FAILURE_WORDS[entry.reason], tooltip: `${FAILURE_SENTENCES[entry.reason]} Timber says: ${asSentence(entry.diagnostic)}` };
+function failureProblem(entry: Extract<PullRequestEntry, { outcome: "failed" }>, host: PullRequestHost | undefined): PullRequestProblem {
+	return { text: failureWord(entry.reason, host), tooltip: `${pullRequestFailureSentence(entry.reason, host)} Timber says: ${asSentence(entry.diagnostic)}` };
 }
 
 function unknownProblem(message: string): PullRequestProblem {
@@ -114,12 +134,12 @@ export function describeRepositoryPullRequestProblem(list: PullRequestList | und
 	if (list === undefined) return null;
 	if (!list.ok) return unknownProblem(list.message);
 	const failure = list.worktrees.find(entry => entry.outcome === "failed");
-	return failure?.outcome === "failed" ? failureProblem(failure) : null;
+	return failure?.outcome === "failed" ? failureProblem(failure, list.host) : null;
 }
 
 /** The same word in the workspace header, for the selected worktree only. */
 export function describeWorktreePullRequestProblem(list: PullRequestList | undefined, entry: PullRequestEntry | null): PullRequestProblem | null {
 	if (list === undefined) return null;
 	if (!list.ok) return unknownProblem(list.message);
-	return entry?.outcome === "failed" ? failureProblem(entry) : null;
+	return entry?.outcome === "failed" ? failureProblem(entry, list.host) : null;
 }

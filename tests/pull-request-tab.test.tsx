@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { browserSampleRepositories, createMockEngine, samplePickableRepository, sampleRepositories } from "../src/mainview/engine/mock";
 import { samplePullRequests } from "../src/mainview/engine/mock-pull-requests";
-import { NO_CHECKS, NO_DESCRIPTION, NO_REVIEWERS, OPEN_IN_BROWSER, describePullRequestTab } from "../src/mainview/pull-request-tab-format";
+import { NO_CHECKS, NO_DESCRIPTION, NO_REVIEWERS, OPEN_IN_BROWSER, type PullRequestTabView, describePullRequestTab } from "../src/mainview/pull-request-tab-format";
 import { createAppStore } from "../src/mainview/store/store";
 import type { PullRequest, PullRequestEntry, PullRequestList } from "../src/shared/pull-requests";
 
@@ -103,6 +103,46 @@ describe("describePullRequestTab", () => {
 		expect(note({ reviewers: [...one], reviewersComplete: true })).toBeNull();
 	});
 
+	test("a Bitbucket pull request names Bitbucket, and its review and missing checks in Bitbucket's terms", () => {
+		const bitbucket = (fields: Partial<PullRequest>): PullRequestTabView => {
+			const entry = found({ url: "https://bitbucket.org/example/timber/pull-requests/42", ...fields });
+			return describePullRequestTab({ ok: true, host: "bitbucket", worktrees: [entry] }, entry, BRANCH);
+		};
+		const reviewer = { kind: "user", name: "Alex Example", state: "requested", url: "https://bitbucket.org/alex-example/" } as const;
+		const view = bitbucket({ review: "review-required", reviewers: [reviewer] });
+		if (view.kind !== "found") throw new Error(view.kind);
+		expect(view.openTitle).toBe("Open pull request #42 on Bitbucket in the browser");
+		expect(view.review).toEqual({ label: "Review required", sentence: "It waits for its reviewers: none has approved it yet.", warning: false });
+		expect(view.reviewers[0]!.openTitle).toBe("Open Alex Example on Bitbucket in the browser");
+		const of = (fields: Partial<PullRequest>) => {
+			const shown = bitbucket(fields);
+			if (shown.kind !== "found") throw new Error(shown.kind);
+			return shown;
+		};
+		expect(of({ review: "none" }).review).toEqual({ label: "No review requested", sentence: "No one was asked to review it.", warning: false });
+		expect(of({ review: "none", reviewers: [], reviewersComplete: false }).review).toEqual({ label: "No review decision", sentence: "Bitbucket did not list who was asked to review it.", warning: false });
+		const noChecks: PullRequest["checks"] = { summary: "none", passing: 0, failing: 0, pending: 0, runs: [] };
+		// Timber reads Bitbucket's checks only while a pull request is open or a draft.
+		expect(of({ state: "merged", checks: noChecks }).checks.text).toBe("Checks are read from Bitbucket only while a pull request is open or a draft.");
+		expect(of({ state: "closed", checks: noChecks }).checks.text).toBe("Checks are read from Bitbucket only while a pull request is open or a draft.");
+		expect(of({ state: "open", checks: noChecks }).checks.text).toBe(NO_CHECKS);
+		expect(of({ reviewers: [], reviewersComplete: false }).reviewersNote).toBe("No reviewers could be read: Bitbucket did not list them.");
+		expect(of({ reviewers: [reviewer], reviewersComplete: false }).reviewersNote).toBe("Bitbucket did not list every reviewer, so some may be missing.");
+		const none: PullRequestEntry = { path: LOOKUP, branch: BRANCH, outcome: "none" };
+		expect(describePullRequestTab({ ok: true, host: "bitbucket", worktrees: [none] }, none, BRANCH)).toMatchObject({ text: "Bitbucket has no pull request for feat/github-issue-lookup." });
+	});
+
+	test("a Bitbucket failure names Bitbucket and how to sign in through Timber", () => {
+		const failed = (reason: "offline" | "sign-in-needed"): PullRequestEntry => ({ path: LOOKUP, branch: BRANCH, outcome: "failed", reason, diagnostic: "Timber's words" });
+		const tab = (reason: "offline" | "sign-in-needed") => describePullRequestTab({ ok: true, host: "bitbucket", worktrees: [failed(reason)] }, failed(reason), BRANCH);
+		expect(tab("offline")).toMatchObject({ title: "Bitbucket could not be reached" });
+		expect(tab("sign-in-needed")).toEqual({
+			kind: "problem",
+			title: "Bitbucket sign-in needed",
+			text: "Pull requests could not be read: Timber has no Bitbucket login, or Bitbucket refused it. The app never asks: sign in once with timber setup in a terminal, or set BITBUCKET_EMAIL and BITBUCKET_API_TOKEN. Timber says: Timber's words.",
+		});
+	});
+
 	test("no pull request is a quiet note, also for a detached HEAD", () => {
 		const none: PullRequestEntry = { path: LOOKUP, branch: BRANCH, outcome: "none" };
 		expect(describePullRequestTab(list(none), none, BRANCH)).toEqual({ kind: "none", title: "No pull request yet", text: "GitHub has no pull request for feat/github-issue-lookup." });
@@ -117,7 +157,7 @@ describe("describePullRequestTab", () => {
 			text: "Pull requests could not be read: GitHub could not be reached. The app tries again after the next fetch. Timber says: Timber's words.",
 		});
 		expect(describePullRequestTab(list(failed("sign-in-needed")), failed("sign-in-needed"), BRANCH)).toMatchObject({ title: "Sign-in needed" });
-		expect(describePullRequestTab(list(failed("not-github")), failed("not-github"), BRANCH)).toMatchObject({ title: "Not on GitHub" });
+		expect(describePullRequestTab(list(failed("not-github")), failed("not-github"), BRANCH)).toMatchObject({ title: "Not on GitHub or Bitbucket" });
 		expect(describePullRequestTab(list(failed("failed")), failed("failed"), BRANCH)).toMatchObject({ title: "The pull request could not be read" });
 		expect(describePullRequestTab({ ok: false, message: "unknown command '__app-pr'" }, null, BRANCH)).toEqual({
 			kind: "problem",
@@ -200,12 +240,17 @@ describe("the Pull request tab", () => {
 		expect(showing(store, "/work/api-server-worktrees/feat-rate-limit-headers")).toContain("<span>merged into main</span>");
 		const closed = showing(store, "/work/billing-worktrees/release-2.4");
 		expect(closed).toContain('<span class="pull-state closed">Closed</span>');
-		expect(closed).toContain(NO_CHECKS);
+		// billing is on Bitbucket, which has no checks for a closed pull request.
+		expect(closed).toContain("Checks are read from Bitbucket only while a pull request is open or a draft.");
 		expect(closed).toContain(NO_DESCRIPTION);
 		expect(closed).toContain(`<p class="pull-tab-line quiet">${NO_REVIEWERS}</p>`);
-		// A bot, and a list Timber's login could not read all of.
+		// A bot, and a list Bitbucket did not give in full.
 		expect(showing(store, LOOKUP)).toContain('<span class="pull-reviewer-kind">bot</span>');
-		expect(showing(store, "/work/billing-worktrees/feat-invoices")).toContain("Some reviewers could not be read with Timber&#x27;s GitHub login");
+		const draft = showing(store, "/work/billing-worktrees/feat-invoices");
+		expect(draft).toContain("Bitbucket did not list every reviewer, so some may be missing.");
+		expect(draft).toContain('title="Open pull request #8 on Bitbucket in the browser"');
+		expect(draft).toContain('title="Open Erin Example on Bitbucket in the browser"');
+		expect(draft).not.toContain("GitHub");
 	});
 
 	test("a branch with no pull request gets the form for timber pr once it starts, and a quiet placeholder before", async () => {
@@ -234,8 +279,8 @@ describe("the Pull request tab", () => {
 		const engine = createMockEngine([...sampleRepositories, samplePickableRepository]);
 		const { store } = await startedStore(engine);
 		const panel = showing(store, samplePickableRepository.path);
-		expect(panel).toContain('<p class="empty-title">Not on GitHub</p>');
-		expect(panel).toContain("Pull requests are read from github.com only");
+		expect(panel).toContain('<p class="empty-title">Not on GitHub or Bitbucket</p>');
+		expect(panel).toContain("Pull requests are read from github.com or bitbucket.org only, and this repository&#x27;s remote is on neither.");
 		expect(store.getState().dialog).toBeNull();
 	});
 

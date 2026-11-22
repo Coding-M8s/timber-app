@@ -1,8 +1,9 @@
 import { type SubmitEvent, useEffect, useId } from "react";
 import type { Repository, Worktree } from "../../shared/model";
-import { pullRequestOf } from "../../shared/pull-requests";
-import { BASE_HINT, CREATE_HEADING, CREATE_NOTE, CREATE_RUNNING, CREATE_SUBMIT, type PullRequestFields, issueMentionHint, type ReportedPullRequestView, type ReviewerFailuresView, type ReviewerSuggestion, pullRequestCommandFor, reviewerSuggestions } from "../pull-request-create-format";
+import { type PullRequestHost, pullRequestOf } from "../../shared/pull-requests";
+import { BASE_HINT, BITBUCKET_REVIEWERS_NOTE, CREATE_HEADING, CREATE_RUNNING, CREATE_SUBMIT, type PullRequestFields, createNote, issueMentionHint, type ReportedPullRequestView, type ReviewerFailuresView, type ReviewerSuggestion, pullRequestCommandFor, reviewerSuggestions } from "../pull-request-create-format";
 import { NO_DESCRIPTION, OPEN_IN_BROWSER, RUN_STATUS_LABELS, describePullRequestTab } from "../pull-request-tab-format";
+import { pullRequestHostName } from "../pull-request-format";
 import { useAppState, useStore } from "../store/react";
 import type { PullRequestForm } from "../store/state";
 import { IssueSection, issueOf } from "./IssueSummary";
@@ -35,7 +36,7 @@ export function PullRequestPanel({ repository, worktree }: { repository: Reposit
 	}, [offersForm, store, repository.path, worktree]);
 
 	if (view.kind !== "found") {
-		// Reviewers the last run could not request show whatever the tab shows now: GitHub may not list the
+		// Reviewers the last run could not request show whatever the tab shows now: the host may not list the
 		// pull request yet, or the pull requests may not be readable, and the toast alone does not name them.
 		const failures = form?.reviewerFailures
 			? <ReviewerFailures failures={form.reviewerFailures} onDismiss={() => store.dismissReviewerFailures(worktree.id)} />
@@ -44,7 +45,7 @@ export function PullRequestPanel({ repository, worktree }: { repository: Reposit
 			return (
 				<div className="pull-tab">
 					{issue && <IssueSection issue={issue} />}
-					{form.reported && <ReportedNote reported={form.reported} onOpen={() => void store.openLink(form.reported!.url)} />}
+					{form.reported && <ReportedNote reported={form.reported} host={list?.ok ? list.host : undefined} onOpen={() => void store.openLink(form.reported!.url)} />}
 					{failures}
 					{!form.reported && (
 						<PullRequestFormView
@@ -52,6 +53,7 @@ export function PullRequestPanel({ repository, worktree }: { repository: Reposit
 							afterIssue={issue !== null}
 							mentionHint={issueMentionHint(worktree.issue)}
 							suggestions={reviewerSuggestions(list)}
+							host={list?.ok ? list.host : undefined}
 							onChange={change => store.editPullRequestForm(worktree.id, change)}
 							onSubmit={() => void store.createPullRequest(worktree.id)}
 						/>
@@ -144,7 +146,7 @@ export function PullRequestPanel({ repository, worktree }: { repository: Reposit
 
 			<section className="pull-tab-section" aria-labelledby="pull-description">
 				<h3 className="pull-tab-section-title" id="pull-description">Description</h3>
-				{/* Text from GitHub, shown as text: never rendered as markup. */}
+				{/* Text from the host, shown as text: never rendered as markup. */}
 				{pull.description === "" ? <p className="pull-tab-line quiet">{NO_DESCRIPTION}</p> : <div className="pull-description">{pull.description}</div>}
 			</section>
 		</div>
@@ -152,15 +154,16 @@ export function PullRequestPanel({ repository, worktree }: { repository: Reposit
 }
 
 /**
- * What Timber reported, until the pull requests read again list it: GitHub
+ * What Timber reported, until the pull requests read again list it: the host
  * can take a moment to list a pull request it just opened.
  */
-function ReportedNote({ reported, onOpen }: { reported: ReportedPullRequestView; onOpen: () => void }) {
+function ReportedNote({ reported, host, onOpen }: { reported: ReportedPullRequestView; host: PullRequestHost | undefined; onOpen: () => void }) {
+	const hostName = pullRequestHostName(host);
 	const title = reported.outcome === "created" ? `Pull request #${reported.number} opened` : `Pull request #${reported.number} was already open`;
 	return (
 		<div className="pull-tab-reported" role="status">
-			<p className="pull-tab-line"><span className="pull-tab-strong">{title}.</span> {reported.note ?? "It shows here once GitHub lists it, after the next read."}</p>
-			<button type="button" className="button" title={`Open pull request #${reported.number} on GitHub in the browser`} onClick={onOpen}>{OPEN_IN_BROWSER}</button>
+			<p className="pull-tab-line"><span className="pull-tab-strong">{title}.</span> {reported.note ?? `It shows here once ${hostName} lists it, after the next read.`}</p>
+			<button type="button" className="button" title={`Open pull request #${reported.number} on ${hostName} in the browser`} onClick={onOpen}>{OPEN_IN_BROWSER}</button>
 		</div>
 	);
 }
@@ -190,6 +193,8 @@ export interface PullRequestFormViewProps {
 	mentionHint: string | null;
 	/** The people and teams to offer in the Reviewers field. */
 	suggestions: readonly ReviewerSuggestion[];
+	/** Where the repository's pull requests are. On Bitbucket there is no Reviewers field. */
+	host?: PullRequestHost | undefined;
 	onChange: (change: Partial<PullRequestFields>) => void;
 	onSubmit: () => void;
 }
@@ -202,7 +207,7 @@ export interface PullRequestFormViewProps {
  * what Timber printed in a details area that starts closed, until a field
  * changes or the next run.
  */
-export function PullRequestFormView({ form, afterIssue, mentionHint, suggestions, onChange, onSubmit }: PullRequestFormViewProps) {
+export function PullRequestFormView({ form, afterIssue, mentionHint, suggestions, host, onChange, onSubmit }: PullRequestFormViewProps) {
 	const headingId = useId();
 	const { running, failure } = form;
 	const submit = (event: SubmitEvent<HTMLFormElement>) => {
@@ -212,7 +217,7 @@ export function PullRequestFormView({ form, afterIssue, mentionHint, suggestions
 	return (
 		<form className={afterIssue ? "pull-create after-issue" : "pull-create"} aria-labelledby={headingId} aria-busy={running} onSubmit={submit}>
 			<h2 id={headingId} className="pull-tab-title">{CREATE_HEADING}</h2>
-			<p className="pull-tab-line quiet">{CREATE_NOTE}</p>
+			<p className="pull-tab-line quiet">{createNote(host)}</p>
 			<fieldset className="pull-create-fields" disabled={running}>
 				<label className="field">
 					<span className="field-label">Title</span>
@@ -228,7 +233,10 @@ export function PullRequestFormView({ form, afterIssue, mentionHint, suggestions
 					<input className="field-input mono" name="base" value={form.base} placeholder="Saved base" spellCheck={false} onChange={event => onChange({ base: event.target.value })} />
 					<span className="field-hint">{BASE_HINT}</span>
 				</label>
-				<ReviewersField value={form.reviewers} suggestions={suggestions} disabled={running} onChange={reviewers => onChange({ reviewers })} />
+				{/* Timber refuses --reviewer on Bitbucket, so the field is not offered there. */}
+				{host === "bitbucket"
+					? <p className="field-hint">{BITBUCKET_REVIEWERS_NOTE}</p>
+					: <ReviewersField value={form.reviewers} suggestions={suggestions} disabled={running} onChange={reviewers => onChange({ reviewers })} />}
 				<label className="check">
 					<input type="checkbox" role="switch" name="draft" checked={form.draft} onChange={event => onChange({ draft: event.target.checked })} />
 					<span>Open as a draft</span>

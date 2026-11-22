@@ -92,9 +92,13 @@ export function initialPullRequestBase(base: SavedBase | null): string {
 /** A pull request Timber reported, with what this run did to the branch. */
 export interface ReportedPullRequest {
 	number: number;
-	/** `https://github.com/<owner>/<repo>/pull/<number>`, built by Timber from the validated repository. */
+	/**
+	 * `https://github.com/<owner>/<repo>/pull/<number>`, or since Timber 0.1.4
+	 * `https://bitbucket.org/<workspace>/<repo>/pull-requests/<id>`, built by
+	 * Timber from the validated repository.
+	 */
 	url: string;
-	/** The base branch as GitHub names it, such as `main`. */
+	/** The base branch as the host names it, such as `main`. */
 	base: string | null;
 	/** This run pushed commits to the remote. */
 	published: boolean;
@@ -185,7 +189,7 @@ function readFields(value: unknown): PrFields | string {
 function isPullRequestLink(url: string): boolean {
 	try {
 		const parsed = new URL(url);
-		return parsed.protocol === "https:" && parsed.hostname === "github.com";
+		return parsed.protocol === "https:" && (parsed.hostname === "github.com" || parsed.hostname === "bitbucket.org");
 	} catch {
 		return false;
 	}
@@ -226,7 +230,7 @@ export function readPrResult(run: TimberRun, worktreePath: string): CreatePullRe
 	if (reported !== (fields.number !== null) || reported !== (fields.url !== null)) {
 		return unreadable(reported ? `it reports "${kind}" without a pull request` : `it names a pull request for a result of "${kind}"`);
 	}
-	if (fields.url !== null && !isPullRequestLink(fields.url)) return unreadable("its link is not a GitHub link");
+	if (fields.url !== null && !isPullRequestLink(fields.url)) return unreadable("its link is not a GitHub or Bitbucket link");
 	if (kind === "refused" && fields.published) return unreadable("it says a refused run published the branch");
 	if (!reported && fields.reviewers.length > 0) return unreadable(`it lists reviewers for a result of "${kind}"`);
 

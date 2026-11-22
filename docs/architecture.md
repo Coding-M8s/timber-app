@@ -124,7 +124,7 @@ Timber's safety logic must exist once. The app follows two rules:
    [creating and opening worktrees](#creating-and-opening-worktrees)), and
    so is rebasing, which reads Timber's result file (see
    [rebasing a worktree](#rebasing-a-worktree)). Pull requests come from
-   `timber __app-pr`, with Timber's GitHub login (see
+   `timber __app-pr`, with Timber's GitHub or Bitbucket login (see
    [pull requests](#pull-requests)), and the live state of a worktree's
    issue from `timber __app-issue`, with Timber's tracker logins (see
    [linked issues](#linked-issues)). Recovery backups are listed, restored,
@@ -2405,8 +2405,11 @@ the sample).
 
 ## Pull requests
 
-Each row shows its branch's pull request, read from GitHub by Timber, so
-there is one sign-in, Timber's, and the app holds no token.
+Each row shows its branch's pull request, read by Timber from GitHub or
+Bitbucket Cloud, so there is one sign-in, Timber's, and the app holds no
+token. The host follows the repository's remote, not its issue tracker: a
+repository with Jira as its tracker and its code on bitbucket.org shows
+its Bitbucket pull requests.
 
 - **Asking.** `readPullRequests` on the `Engine`, answered by
   `src/bun/pull-requests.ts`. For a repository in the app's list only, and
@@ -2414,10 +2417,12 @@ there is one sign-in, Timber's, and the app holds no token.
   primary checkout, as an executable plus an argument array, with standard
   input closed and a limit of thirty seconds. Timber stops its own network
   part after fifteen. One run answers for every worktree of the repository.
-  Timber reads the login it uses for `timber new github:<n>` (`GH_TOKEN`,
-  `GITHUB_TOKEN`, or the GitHub CLI's), never prompts, and changes no file
-  or ref. This needs Timber 0.1.3, the first release with `__app-pr`. An
-  older one answers "unknown command".
+  On GitHub, Timber reads the login it uses for `timber new github:<n>`
+  (`GH_TOKEN`, `GITHUB_TOKEN`, or the GitHub CLI's); on Bitbucket, the one
+  `timber pr` uses (`BITBUCKET_EMAIL` and `BITBUCKET_API_TOKEN`, or the
+  login saved by `timber setup`). It never prompts, and changes no file or
+  ref. This needs Timber 0.1.3, the first release with `__app-pr`, and
+  Timber 0.1.4 for Bitbucket. An older one answers "unknown command".
 - **Reading.** `readPullRequestList` in `src/shared/pull-requests.ts` is
   pure. It accepts one version 1 record from a Timber that exited with 0, or
   with 1 when a lookup failed, and only when the exit code agrees with the
@@ -2437,7 +2442,12 @@ there is one sign-in, Timber's, and the app holds no token.
   `https`. A missing reviewer list, a missing or non-boolean
   `reviewersComplete`, or a reviewer of an unknown kind or state makes the
   entry unreadable, since every Timber with `__app-pr` reports them. Fields
-  the app does not use are ignored.
+  the app does not use are ignored. `not-github` means the remote is on
+  neither github.com nor bitbucket.org. The answer keeps the host,
+  `github` or `bitbucket`, from Timber's `pullRequestRepository`; with
+  none, as for a remote on neither host or a Timber before 0.1.4, the
+  words are GitHub's. A host the app does not know makes the answer
+  unreadable, so it is never named as GitHub.
 - **Never an empty answer by mistake.** Another exit code, output that is
   not one such record, another schema version, a repository Timber could
   not read (its `diagnostic`), or any entry that cannot be read fails the
@@ -2448,7 +2458,11 @@ there is one sign-in, Timber's, and the app holds no token.
   interval, wait while the window is hidden as fetches do, and are read
   again after Fetch now. With background fetching off, only Fetch now reads
   them again. Reads of one repository never overlap, and a removed
-  repository's answer is forgotten.
+  repository's answer is forgotten. Background fetches are at least a
+  minute apart, so a Bitbucket repository is not read in the background
+  more often than Timber asks (Bitbucket allows a user about 1,000
+  requests an hour); a read that hit the limit fails every entry, shown
+  as "PRs failed".
 - **Showing.** `describeRowMarkers` takes the worktree's entry, found by its
   Git-registered path (`pullRequestOf`), and adds the pull request's markers
   from `src/mainview/pull-request-format.ts` after the row's state flags.
@@ -2456,7 +2470,14 @@ there is one sign-in, Timber's, and the app holds no token.
   in the workspace header of a selected worktree in it, never on every row
   and never as a dialog. The pull request's number in the workspace header
   is a link that goes through `openLink`, which opens only `http` and
-  `https` links.
+  `https` links. The words name the host the answer gives
+  (`pullRequestHostName`): the link's "Open pull request #N on Bitbucket
+  in the browser", "PRs need Bitbucket sign-in" with `timber setup` or
+  `BITBUCKET_EMAIL` and `BITBUCKET_API_TOKEN` in its tooltip, and
+  "Bitbucket could not be reached". On Bitbucket, which has no review
+  decision, "review required" says the reviewers have not approved yet
+  rather than that the repository requires a review, and the checks are
+  its build statuses.
 - **The Pull request tab.** `PullRequestPanel` shows the selected
   worktree's entry from the same answer, with its words from the pure
   `describePullRequestTab` in `src/mainview/pull-request-tab-format.ts`:
@@ -2466,17 +2487,24 @@ there is one sign-in, Timber's, and the app holds no token.
   Open link when it has one, then a quiet line when there are none or
   Timber's login could not read them all. It reads the store, so it
   changes whenever the pull requests are read again. Showing a pull request
-  runs no command, and its controls open links through `openLink`. A
+  runs no command, and its controls open links through `openLink`. On
+  Bitbucket, its review sentence follows Timber's rule (anyone asking for
+  changes, then any approval, then any reviewer), a merged or closed pull
+  request says Bitbucket's checks are read only while it is open, and an
+  incomplete reviewer list says Bitbucket did not list them all. A
   worktree on a branch with none yet gets a form that runs `timber pr` (see
-  [opening a pull request](#opening-a-pull-request)).
+  [opening a pull request](#opening-a-pull-request)); on Bitbucket its
+  Reviewers field offers no suggestions, since Bitbucket's reviewers are
+  display names and Timber refuses `--reviewer` there.
 
 In `bun run dev:web`, timber has an approved pull request and one with
 failing checks and requested changes, api-server a merged one, and billing
-a draft and a closed one, with descriptions and check runs that show
+a draft and a closed one on Bitbucket, beside its Jira issue, with
+descriptions and check runs that show
 every status, a run without a link, and none at all. Their reviewers show
 every state, a team, a bot, none at all, and a list Timber could not read
-in full (the draft). docs-site, once
-added, is not on GitHub.
+in full (the draft, on Bitbucket). docs-site, once
+added, is on neither GitHub nor Bitbucket.
 `timberMock.setPullRequests(path, list)` changes one (`null` for the
 sample).
 
@@ -2484,8 +2512,12 @@ sample).
 
 The Pull request tab of a worktree on a branch with no pull request yet is a
 form that runs `timber pr --result-file`. Timber publishes the branch with the
-rules of `timber publish` and opens the pull request on github.com with its
-own login. The app never pushes and never calls GitHub. Timber 0.1.3, the
+rules of `timber publish` and opens the pull request on github.com, or
+since Timber 0.1.4 on bitbucket.org, with its own login; the form's note
+names the host the pull requests were read from. The app never pushes and
+never calls GitHub or Bitbucket. On Bitbucket the form has no Reviewers
+field, since Timber refuses `--reviewer` there, and says to add reviewers
+on Bitbucket. Timber 0.1.3, the
 release the app requires, is the first with `timber pr`, so there is no
 version gate of its own. Reviewers need `timber pr --reviewer` and the
 record's `reviewers` field (Coding-M8s/timber#174), which are on Timber's
@@ -2582,7 +2614,8 @@ that finishes this.
   only for created and exists. The app does not compare the list with what
   was asked for, since Timber trims and deduplicates. Created and exists must have succeeded and refused and failed
   must have failed; `number` and `url` are there exactly for created and
-  exists; `url` must be an `https://github.com` link; a refusal never
+  exists; `url` must be an `https://github.com` or `https://bitbucket.org`
+  link; a refusal never
   published; and a record that names another worktree is not used. Anything
   else is a failure whose effect is unknown (`published: null`), since the
   branch may have been pushed.
@@ -2610,7 +2643,8 @@ that finishes this.
   read, it shows above the form or the note in the tab's place.
 - **Afterwards.** After every outcome that ran, even a failure, the store
   reads the repository and its pull requests again before it says how it
-  ended, so a created pull request shows as soon as GitHub lists it.
+  ended, so a created pull request shows as soon as the host lists it,
+  and the note until then names that host.
 - **In the browser.** The mock engine acts out `timber pr`
   (`src/mainview/engine/mock-pr.ts`) and writes the record Timber would,
   read by the same code. Created and exists add the pull request to the

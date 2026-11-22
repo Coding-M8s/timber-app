@@ -1,5 +1,5 @@
 import type { CapturedOutput, Repository, SyncState, TimberStatus, Worktree } from "../shared/model";
-import type { PullRequestEntry } from "../shared/pull-requests";
+import type { PullRequestEntry, PullRequestHost } from "../shared/pull-requests";
 import { TIMBER_LS_COMMAND } from "../shared/timber-ls";
 import { TIMBER_OVERRIDE_VARIABLE } from "../shared/timber-version";
 import { SAVED_BASE_UNKNOWN, describeInvalidBase } from "./base-format";
@@ -274,8 +274,9 @@ function syncMarkers(worktree: Worktree): RowMarker[] {
  * request is the one Timber found for the worktree (`pullRequestOf`), and a
  * branch with none gets no marker for it. `removal` is where a removal of
  * the worktree that Done started stands, said before anything else.
+ * `pullRequestHost` is where the pull requests were read from.
  */
-export function describeRowMarkers(worktree: Worktree, pullRequest: PullRequestEntry | null = null, removal: RemovalStatus | null = null): RowMarker[] {
+export function describeRowMarkers(worktree: Worktree, pullRequest: PullRequestEntry | null = null, removal: RemovalStatus | null = null, pullRequestHost?: PullRequestHost): RowMarker[] {
 	const { changes } = worktree;
 	const markers = syncMarkers(worktree);
 	const state = (kind: RowMarkerKind, text: string, tooltip: string) => void markers.push({ kind, place: "state", text, tooltip });
@@ -303,7 +304,7 @@ export function describeRowMarkers(worktree: Worktree, pullRequest: PullRequestE
 	// Timber calls the base stale whenever it could not verify the worktree, and the marker for that already says so.
 	const { base } = worktree;
 	if (base?.kind === "invalid" && !(base.reason === "stale" && changes.kind === "unknown")) state("base-unknown", SAVED_BASE_UNKNOWN, describeInvalidBase(base.reason));
-	markers.push(...describePullRequestMarkers(pullRequest));
+	markers.push(...describePullRequestMarkers(pullRequest, pullRequestHost));
 
 	if (changes.kind === "known") {
 		const modified = changes.modified.length;

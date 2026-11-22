@@ -65,9 +65,10 @@ export function Workspace() {
 	const issue = issueOf(state, worktree);
 	const pullRequests = state.pullRequests[repository.path];
 	const pullRequest = pullRequestOf(pullRequests, worktree.path);
-	const pullMarkers = describePullRequestMarkers(pullRequest);
+	const pullHost = pullRequests?.ok ? pullRequests.host : undefined;
+	const pullMarkers = describePullRequestMarkers(pullRequest, pullHost);
 	const pullUrl = pullRequest?.outcome === "found" ? pullRequest.pullRequest.url : null;
-	const pullOpenTitle = pullRequest?.outcome === "found" ? describeOpenPullRequest(pullRequest.pullRequest) : null;
+	const pullOpenTitle = pullRequest?.outcome === "found" ? describeOpenPullRequest(pullRequest.pullRequest, pullHost) : null;
 	const kind = workspaceKindLabel(worktree);
 	const pullProblem = describeWorktreePullRequestProblem(pullRequests, pullRequest);
 	// While Timber removes the worktree, nothing new starts in it.

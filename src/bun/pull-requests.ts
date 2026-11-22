@@ -32,8 +32,8 @@ export interface PullRequestReader {
 /**
  * Run `timber __app-pr` in a folder and read its record. Timber is run as an
  * executable plus an argument array, never through a shell, with standard
- * input closed so it can never ask for a login. It reads GitHub with its own
- * login and changes no file or ref.
+ * input closed so it can never ask for a login. It reads GitHub or
+ * Bitbucket, after the remote, with its own login and changes no file or ref.
  *
  * Nothing Timber printed is logged here: descriptions are other people's
  * text, and a diagnostic is shown only.
