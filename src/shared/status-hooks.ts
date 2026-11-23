@@ -197,6 +197,32 @@ function hasUnsafe(value: Json): boolean {
 	return false;
 }
 
+/**
+ * Read an agent's JSON file as an object: whether it held comments, which a
+ * rewrite would drop, and whether it holds a value a rewrite would change.
+ */
+function readJsonObject(text: string): { parsed: JsonObject; comments: boolean; unsafe: boolean } | { broken: string } {
+	let parsed: unknown;
+	let comments = false;
+	try {
+		parsed = JSON.parse(text);
+	} catch {
+		try {
+			parsed = JSON.parse(stripJsonComments(text));
+			comments = true;
+		} catch {
+			return { broken: "It is not valid JSON." };
+		}
+	}
+	if (!isObject(parsed)) return { broken: "It does not hold a JSON object." };
+	try {
+		return { parsed, comments, unsafe: hasUnsafe(parsed) };
+	} catch {
+		// Nested deeper than can be walked: the app does not read it further.
+		return { broken: "It is nested too deeply to read." };
+	}
+}
+
 /** The entry the app writes for one event. */
 function ownEntry(hook: AgentHook, scriptPath: string, agent: string, event: string): JsonObject {
 	return { command: hookCommand(scriptPath, agent, event) ?? "", timeout: hook.timeout };
@@ -227,26 +253,9 @@ export function planCursorHooks(text: string | null, hook: AgentHook, scriptPath
 		const whole = serialize({ version: 1, hooks: wanted });
 		return { state: { kind: "off" }, comments: false, unsafe: false, installed: whole, removed: undefined, entries: whole, present: [] };
 	}
-	let parsed: unknown;
-	let comments = false;
-	try {
-		parsed = JSON.parse(text);
-	} catch {
-		try {
-			parsed = JSON.parse(stripJsonComments(text));
-			comments = true;
-		} catch {
-			return broken("It is not valid JSON.");
-		}
-	}
-	if (!isObject(parsed)) return broken("It does not hold a JSON object.");
-	let unsafe: boolean;
-	try {
-		unsafe = hasUnsafe(parsed);
-	} catch {
-		// Nested deeper than can be walked: the app does not read it further.
-		return broken("It is nested too deeply to read.");
-	}
+	const read = readJsonObject(text);
+	if ("broken" in read) return broken(read.broken);
+	const { parsed, comments, unsafe } = read;
 	if ("version" in parsed && parsed.version !== 1) return broken("Its version is not 1, the one the app knows.");
 	if ("hooks" in parsed && !isObject(parsed.hooks)) return broken("Its \"hooks\" is not an object.");
 	const hooks: JsonObject = isObject(parsed.hooks) ? parsed.hooks : {};
@@ -295,11 +304,127 @@ export function planCursorHooks(text: string | null, hook: AgentHook, scriptPath
 	return { state, comments, unsafe, installed, removed, entries, present };
 }
 
+/** The keys of Gemini CLI's `hooks` that hold its settings, not an event's entries (`HOOKS_CONFIG_FIELDS` in 0.70.0). */
+const GEMINI_HOOK_SETTINGS = new Set(["enabled", "disabled", "notifications"]);
+/** The name Gemini CLI shows for the app's entries, as in its `/hooks` list. */
+export const GEMINI_HOOK_NAME = "timber-app-status";
+
+/**
+ * The command of the app's entry for Gemini CLI. Gemini CLI takes text a
+ * failed hook printed as its answer: a missing script, which `bash` reports
+ * with exit 127, would deny every prompt. So whatever the script does, the
+ * entry prints nothing and exits 0. Null as `hookCommand` is.
+ */
+export function geminiCommand(scriptPath: string, agent: string, event: string): string | null {
+	const command = hookCommand(scriptPath, agent, event);
+	return command === null ? null : `${command} 2>/dev/null || true`;
+}
+
+/** Whether a Gemini CLI hook entry (an item of a definition's `hooks`) is one of the app's. */
+const isOwnGeminiHook = (entry: Json, scriptPath: string) => isObject(entry) && isOwnCommand(entry.command, scriptPath);
+
+/** The definition the app writes for one event: a matcher when the registry gives one, and one command, its timeout in milliseconds. */
+function ownGeminiDefinition(hook: AgentHook, scriptPath: string, agent: string, event: { event: string; matcher?: string }): JsonObject {
+	const command: JsonObject = { type: "command", name: GEMINI_HOOK_NAME, command: geminiCommand(scriptPath, agent, event.event) ?? "", timeout: hook.timeout * 1000 };
+	return event.matcher === undefined ? { hooks: [command] } : { matcher: event.matcher, hooks: [command] };
+}
+
+/**
+ * Read Gemini CLI's `settings.json` (null when there is none) for the app's
+ * hook of `agent`, and plan what turning it on or off writes. Its `hooks`
+ * maps an event to a list of definitions, each with an optional `matcher`
+ * and a `hooks` list of commands. The app's definitions are those holding a
+ * command of the app's. Only those are added or taken out: every other key
+ * and value parses the same after, as for Cursor.
+ */
+export function planGeminiSettings(text: string | null, hook: AgentHook, scriptPath: string, agent: string): HookPlan {
+	const wanted: JsonObject = {};
+	for (const event of hook.events) wanted[event.event] = [ownGeminiDefinition(hook, scriptPath, agent, event)];
+	const entries = serialize({ hooks: wanted });
+	const broken = (reason: string): HookPlan => ({ state: { kind: "broken", reason }, comments: false, unsafe: false, installed: null, removed: undefined, entries, present: [] });
+
+	// A new file is all the app's: the text shown is the whole file.
+	if (text === null) return { state: { kind: "off" }, comments: false, unsafe: false, installed: entries, removed: undefined, entries, present: [] };
+	const read = readJsonObject(text);
+	if ("broken" in read) return broken(read.broken);
+	const { parsed, comments, unsafe } = read;
+	if ("hooks" in parsed && !isObject(parsed.hooks)) return broken("Its \"hooks\" is not an object.");
+	const hooks: JsonObject = isObject(parsed.hooks) ? parsed.hooks : {};
+	const events = Object.entries(hooks).filter(([event]) => !GEMINI_HOOK_SETTINGS.has(event));
+	for (const [event, list] of events) {
+		if (!Array.isArray(list)) return broken(`Its "${event}" is not a list.`);
+		if (!list.every(definition => isObject(definition) && Array.isArray(definition.hooks))) return broken(`Its "${event}" holds an entry without a "hooks" list.`);
+	}
+	const definitions = (list: Json) => list as JsonObject[];
+	const holdsOwn = (definition: JsonObject) => (definition.hooks as Json[]).some(entry => isOwnGeminiHook(entry, scriptPath));
+
+	// The app's definitions, wherever they are, and whether they are exactly what it writes.
+	const present: string[] = [];
+	let exact = true;
+	for (const [event, list] of events) {
+		const own = definitions(list).filter(holdsOwn);
+		for (const definition of own) present.push(`"${event}": ${JSON.stringify(definition)}`);
+		const expected = wanted[event] as Json[] | undefined;
+		if (own.length === 0) continue;
+		if (expected === undefined || own.length !== 1 || !sameJson(own[0]!, expected[0]!)) exact = false;
+	}
+	const missing = hook.events.filter(({ event }) => {
+		const list = hooks[event];
+		return !Array.isArray(list) || !definitions(list).some(holdsOwn);
+	});
+	let state: HookState;
+	if (present.length === 0) state = { kind: "off" };
+	else if (exact && missing.length === 0) state = { kind: "on" };
+	else if (missing.length > 0 && exact) state = { kind: "changed", reason: `The entries for ${missing.map(({ event }) => event).join(", ")} are missing.` };
+	else state = { kind: "changed", reason: "An entry of the app's is not as the app writes it." };
+
+	let installed: string | null = null;
+	const writable = !comments && !unsafe;
+	if (writable && state.kind === "off") {
+		const nextHooks: JsonObject = { ...hooks };
+		for (const { event } of hook.events) {
+			const list = hooks[event];
+			nextHooks[event] = [...(Array.isArray(list) ? list : []), ...(wanted[event] as Json[])];
+		}
+		installed = serialize({ ...parsed, hooks: nextHooks });
+	}
+
+	let removed: string | null | undefined;
+	if (writable && present.length > 0) {
+		const nextHooks: JsonObject = {};
+		for (const [event, list] of Object.entries(hooks)) {
+			if (GEMINI_HOOK_SETTINGS.has(event) || !Array.isArray(list)) {
+				nextHooks[event] = list;
+				continue;
+			}
+			const kept: Json[] = [];
+			for (const definition of definitions(list)) {
+				if (!holdsOwn(definition)) {
+					kept.push(definition);
+					continue;
+				}
+				// Only the app's commands go: a definition that holds another command keeps it, and one left with none goes.
+				const others = (definition.hooks as Json[]).filter(entry => !isOwnGeminiHook(entry, scriptPath));
+				if (others.length > 0) kept.push({ ...definition, hooks: others });
+			}
+			// A list that held only the app's definitions goes with them.
+			if (kept.length > 0 || list.length === 0) nextHooks[event] = kept;
+		}
+		// A `hooks` left empty goes too, as most settings files have none until Turn on adds it.
+		const { hooks: _hooks, ...rest } = parsed;
+		const next: JsonObject = Object.keys(nextHooks).length === 0 ? rest : { ...rest, hooks: nextHooks };
+		removed = Object.keys(next).length === 0 ? null : serialize(next);
+	}
+	return { state, comments, unsafe, installed, removed, entries, present };
+}
+
 /** Plan an agent's hook from its file, by the format the registry names. */
 export function planHook(text: string | null, hook: AgentHook, scriptPath: string, agent: string): HookPlan {
 	switch (hook.format) {
 		case "cursor-hooks":
 			return planCursorHooks(text, hook, scriptPath, agent);
+		case "gemini-settings":
+			return planGeminiSettings(text, hook, scriptPath, agent);
 	}
 }
 

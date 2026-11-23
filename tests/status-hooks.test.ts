@@ -5,13 +5,16 @@ import { type AlertAction, type AlertSettings, createAlertRunner } from "../src/
 import { defaultStateSounds } from "../src/shared/sound-setting";
 import type { TerminalSession } from "../src/shared/terminal";
 import {
-	STATUS_HOOK_SCRIPT, describeStates, hookCommand, hookedAgent, isOwnCommand, parseStatusLine, planCursorHooks, reportedStates, statusFromLine, stripJsonComments,
+	STATUS_HOOK_SCRIPT, describeStates, hookCommand, GEMINI_HOOK_NAME, geminiCommand, hookedAgent, isOwnCommand, parseStatusLine, planCursorHooks, planGeminiSettings, reportedStates, statusFromLine, stripJsonComments,
 } from "../src/shared/status-hooks";
 
 const SCRIPT = "/home/you/.config/timber-app/status-hook";
 const cursor = agentById("cursor");
 if (cursor.status.source !== "hook") throw new Error("Cursor CLI has a hook in the registry");
 const HOOK = cursor.status.hook;
+const gemini = agentById("gemini");
+if (gemini.status.source !== "hook") throw new Error("Gemini CLI has a hook in the registry");
+const GEMINI = gemini.status.hook;
 
 /**
  * A shared hooks file shaped as another tool writes one: eight events, each
@@ -89,6 +92,28 @@ describe("a line a hook appended", () => {
 		expect(hooked).toEqual(run([stream("state=idle:app=cursor"), stream("state=working:app=cursor"), stream("state=done:app=cursor")]));
 		expect(hooked[0]).toMatchObject({ kind: "show", notice: { title: "Cursor CLI is done" } });
 	});
+
+	test("Gemini CLI's events give idle, working, needs you, working again after an approved tool, and done, with the same alerts as from its stream", () => {
+		const events = ["SessionStart", "BeforeAgent", "Notification", "AfterTool", "AfterAgent"];
+		expect(events.map(event => statusFromLine({ agent: "gemini", event })?.state)).toEqual(["idle", "working", "blocked", "working", "done"]);
+		expect(statusFromLine({ agent: "gemini", event: "BeforeTool" })).toBeNull();
+		const run = (statuses: TerminalSession["status"][]) => {
+			const acted: AlertAction[] = [];
+			const runner = createAlertRunner({ attention: () => AWAY, settings: () => ALL, act: action => acted.push(action), now: () => 0, setTimer: () => null, clearTimer: () => {} });
+			for (const status of statuses) runner.changed({ id: "s", session: { ...SESSION, name: "Gemini CLI", status } });
+			runner.stop();
+			return acted;
+		};
+		const hooked = run(events.map(event => statusFromLine({ agent: "gemini", event })));
+		const streamed = run(["idle", "working", "blocked", "working", "done"].map(state => {
+			const report = parseStatusReport(`state=${state}:app=gemini`);
+			if (report === null || report.state === "clear") throw new Error("a report");
+			const { id: _id, ...status } = report;
+			return status;
+		}));
+		expect(hooked).toEqual(streamed);
+		expect(hooked.filter(action => action.kind === "show").map(action => action.kind === "show" ? action.notice.title : "")).toEqual(["Gemini CLI needs you", "Gemini CLI is done"]);
+	});
 });
 
 describe("the states an agent reports", () => {
@@ -96,7 +121,8 @@ describe("the states an agent reports", () => {
 		expect(reportedStates(cursor)).toEqual(["working", "done"]);
 		expect(reportedStates(agentById("claude"))).toEqual(["working", "blocked", "done"]);
 		expect(reportedStates(agentById("codex"))).toEqual(["working", "done"]);
-		expect(reportedStates(agentById("gemini"))).toEqual([]);
+		expect(reportedStates(gemini)).toEqual(["working", "blocked", "done"]);
+		expect(reportedStates(agentById("opencode"))).toEqual([]);
 	});
 
 	test("are said in words", () => {
@@ -228,5 +254,109 @@ describe("planning Cursor's hooks.json", () => {
 			expect(plan.installed).toBeNull();
 			expect(plan.removed).toBeUndefined();
 		}
+	});
+});
+
+describe("planning Gemini CLI's settings.json", () => {
+	const own = (event: string, matcher?: string) => ({
+		...(matcher === undefined ? {} : { matcher }),
+		hooks: [{ type: "command", name: GEMINI_HOOK_NAME, command: `'${SCRIPT}' gemini ${event} 2>/dev/null || true`, timeout: 5000 }],
+	});
+	const ALL_OWN = {
+		SessionStart: [own("SessionStart")], BeforeAgent: [own("BeforeAgent")], Notification: [own("Notification", "ToolPermission")],
+		AfterTool: [own("AfterTool")], AfterAgent: [own("AfterAgent")],
+	};
+	/** Settings as a person keeps them: other keys, another tool's hooks, and Gemini's own hook settings inside `hooks`. The commands are made up. */
+	const SETTINGS = {
+		security: { auth: { selectedType: "oauth-personal" } },
+		hooksConfig: { enabled: true },
+		hooks: {
+			disabled: ["other-tool-log"],
+			BeforeAgent: [{ hooks: [{ type: "command", name: "other-tool-log", command: "other-tool log", timeout: 2000 }] }],
+			BeforeTool: [{ matcher: "run_shell_command", sequential: true, hooks: [{ type: "command", command: "other-tool check" }] }],
+		},
+		ui: { theme: "Default" },
+	};
+
+	test("the command ends so that it prints nothing and exits 0 whatever the script does, and starts as the app's commands do", () => {
+		expect(geminiCommand(SCRIPT, "gemini", "AfterAgent")).toBe(`'${SCRIPT}' gemini AfterAgent 2>/dev/null || true`);
+		expect(isOwnCommand(geminiCommand(SCRIPT, "gemini", "AfterAgent"), SCRIPT)).toBe(true);
+		expect(geminiCommand("/home/it's/status-hook", "gemini", "AfterAgent")).toBeNull();
+	});
+
+	// The hook is not offered on Windows, which has no `sh`.
+	test.skipIf(process.platform === "win32")("a missing script makes the command print nothing and exit 0 in sh and bash", () => {
+		for (const shell of ["/bin/sh", "/bin/bash"]) {
+			const ran = Bun.spawnSync([shell, "-c", geminiCommand("/nowhere/status-hook", "gemini", "BeforeAgent")!]);
+			expect(ran.exitCode).toBe(0);
+			expect(ran.stdout.length + ran.stderr.length).toBe(0);
+		}
+	});
+
+	test("with no file: off, and turning on makes a file of only the app's entries, shown as it is written", () => {
+		const plan = planGeminiSettings(null, GEMINI, SCRIPT, "gemini");
+		expect(plan.state).toEqual({ kind: "off" });
+		expect(JSON.parse(plan.installed!)).toEqual({ hooks: ALL_OWN });
+		expect(plan.entries).toBe(plan.installed!);
+		expect(planGeminiSettings(plan.installed, GEMINI, SCRIPT, "gemini").state).toEqual({ kind: "on" });
+		expect(planGeminiSettings(plan.installed, GEMINI, SCRIPT, "gemini").removed).toBeNull();
+	});
+
+	test("in shared settings, turning on adds after what is there, and removing gives back what was there", () => {
+		const text = JSON.stringify(SETTINGS, null, 2);
+		const plan = planGeminiSettings(text, GEMINI, SCRIPT, "gemini");
+		expect(plan.state).toEqual({ kind: "off" });
+		expect(plan.present).toEqual([]);
+		const installed = JSON.parse(plan.installed!);
+		expect(installed).toEqual({ ...SETTINGS, hooks: { ...SETTINGS.hooks, ...ALL_OWN, BeforeAgent: [...SETTINGS.hooks.BeforeAgent, own("BeforeAgent")] } });
+		const on = planGeminiSettings(plan.installed, GEMINI, SCRIPT, "gemini");
+		expect(on.state).toEqual({ kind: "on" });
+		// In the file's order: BeforeAgent was there first.
+		expect(on.present.toSorted()).toEqual(Object.entries(ALL_OWN).map(([event, [definition]]) => `"${event}": ${JSON.stringify(definition)}`).toSorted());
+		expect(JSON.parse(on.removed!)).toEqual(SETTINGS);
+	});
+
+	test("settings with no hooks get them back as they were: `hooks` goes when only the app's were in it", () => {
+		const text = JSON.stringify({ ui: { theme: "Default" } });
+		const installed = planGeminiSettings(text, GEMINI, SCRIPT, "gemini").installed!;
+		expect(JSON.parse(planGeminiSettings(installed, GEMINI, SCRIPT, "gemini").removed!)).toEqual({ ui: { theme: "Default" } });
+		// Gemini CLI's own hook settings keep `hooks`.
+		const withSettings = planGeminiSettings(JSON.stringify({ hooks: { enabled: true } }), GEMINI, SCRIPT, "gemini").installed!;
+		expect(JSON.parse(planGeminiSettings(withSettings, GEMINI, SCRIPT, "gemini").removed!)).toEqual({ hooks: { enabled: true } });
+	});
+
+	test("changed when an entry is edited, missing, in another event, twice, or shares a definition; neither on nor off is written then", () => {
+		const with_ = (hooks: object) => planGeminiSettings(JSON.stringify({ hooks: { ...ALL_OWN, ...hooks } }), GEMINI, SCRIPT, "gemini");
+		const longer = own("AfterAgent");
+		longer.hooks[0]!.timeout = 60000;
+		expect(with_({ AfterAgent: [longer] }).state).toEqual({ kind: "changed", reason: "An entry of the app's is not as the app writes it." });
+		const { AfterTool: _gone, ...missing } = ALL_OWN;
+		expect(planGeminiSettings(JSON.stringify({ hooks: missing }), GEMINI, SCRIPT, "gemini").state).toEqual({ kind: "changed", reason: "The entries for AfterTool are missing." });
+		expect(with_({ BeforeTool: [own("AfterTool")] }).state.kind).toBe("changed");
+		expect(with_({ AfterAgent: [own("AfterAgent"), own("AfterAgent")] }).state.kind).toBe("changed");
+		const shared = { hooks: [...own("AfterAgent").hooks, { type: "command", command: "other-tool done" }] };
+		const plan = with_({ AfterAgent: [shared] });
+		expect(plan.state.kind).toBe("changed");
+		expect(plan.installed).toBeNull();
+		// Remove takes out only the app's command: the other tool's stays in its definition.
+		expect(JSON.parse(plan.removed!)).toEqual({ hooks: { AfterAgent: [{ hooks: [{ type: "command", command: "other-tool done" }] }] } });
+	});
+
+	test("comments, or a value a rewrite would change, are read but never written", () => {
+		const commented = `// mine\n${JSON.stringify(SETTINGS)}`;
+		const plan = planGeminiSettings(commented, GEMINI, SCRIPT, "gemini");
+		expect(plan).toMatchObject({ state: { kind: "off" }, comments: true, installed: null });
+		const big = planGeminiSettings('{"n":12345678901234567890}', GEMINI, SCRIPT, "gemini");
+		expect(big).toMatchObject({ unsafe: true, installed: null });
+	});
+
+	test("broken when it is not JSON, not an object, or not the shape Gemini CLI reads; its own hook settings are not events", () => {
+		const broken = (text: string) => planGeminiSettings(text, GEMINI, SCRIPT, "gemini").state;
+		expect(broken("{ nope")).toEqual({ kind: "broken", reason: "It is not valid JSON." });
+		expect(broken("[]")).toEqual({ kind: "broken", reason: "It does not hold a JSON object." });
+		expect(broken('{"hooks":[]}')).toEqual({ kind: "broken", reason: "Its \"hooks\" is not an object." });
+		expect(broken('{"hooks":{"AfterAgent":{}}}')).toEqual({ kind: "broken", reason: "Its \"AfterAgent\" is not a list." });
+		expect(broken('{"hooks":{"AfterAgent":[{"command":"x"}]}}')).toEqual({ kind: "broken", reason: "Its \"AfterAgent\" holds an entry without a \"hooks\" list." });
+		expect(broken('{"hooks":{"enabled":true,"disabled":["a"],"notifications":false}}')).toEqual({ kind: "off" });
 	});
 });

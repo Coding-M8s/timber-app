@@ -27,7 +27,7 @@ const VIEWS: StatusHookView[] = [
 	{ name: "Claude Code", agent: "claude", source: "osc-7501", reports: ["working", "blocked", "done"], hook: null },
 	{ name: "Codex", agent: "codex", source: "osc-7501", reports: ["working", "done"], hook: null },
 	cursor(),
-	{ name: "Gemini CLI", agent: "gemini", source: "none", reports: [], hook: null },
+	{ name: "OpenCode", agent: "opencode", source: "none", reports: [], hook: null },
 ];
 
 describe("an agent row's status line", () => {
@@ -47,6 +47,8 @@ describe("an agent row's status line", () => {
 		expect(describeStatusLine(cursor({ state: { kind: "on" } }))).toEqual({
 			label: "Status hook", text: "On, in ~/.cursor/hooks.json. Reports working and done; not needs you.", tone: "hint", actions: [{ action: "remove", label: "Remove…" }],
 		});
+		const gemini: StatusHookView = { name: "Gemini CLI", agent: "gemini", source: "hook", reports: ["working", "blocked", "done"], hook: hook({ agent: "gemini", agentName: "Gemini CLI", file: "~/.gemini/settings.json", state: { kind: "on" } }) };
+		expect(describeStatusLine(gemini)?.text).toBe("On, in ~/.gemini/settings.json. Reports working, needs you, and done.");
 		expect(describeStatusLine(cursor({ state: { kind: "changed", reason: "An entry of the app's is not as the app writes it." } }))).toEqual({
 			label: "Status hook changed",
 			text: "An entry of the app's is not as the app writes it. Checked against Cursor CLI 2026.11.22 on 2026-11-22. The app does not rewrite it.",
@@ -83,6 +85,10 @@ describe("the status hook dialogs", () => {
 		]);
 		expect(model.confirm).toEqual({ label: "Turn on", danger: false, running: "Turning on…" });
 		expect(describeHookDialog(hook({ exists: false }), ["working", "done"], "install")).toMatchObject({ note: "Makes ~/.cursor/hooks.json, which is not there yet.", blocks: [{ label: "~/.cursor/hooks.json" }, {}] });
+		// Gemini CLI's dialog says, before anything is written, that it runs hooks only in a folder it trusts.
+		expect(describeHookDialog(hook({ agent: "gemini", agentName: "Gemini CLI", file: "~/.gemini/settings.json" }), ["working", "blocked", "done"], "install").note).toBe(
+			"Adds to ~/.gemini/settings.json. Nothing else in it changes. Gemini CLI runs hooks only in a folder it trusts, so a session in a new worktree reports nothing until you trust that folder, or one above it, in Gemini CLI.",
+		);
 	});
 
 	test("Remove shows exactly what goes, and its button is the dangerous one", () => {

@@ -30,7 +30,7 @@ Spiked on 2026-11-22 (see [the spike](#the-spike)):
 | Codex CLI 0.169.0 | yes, without a probe: idle, working, done | no |
 | Grok Build 1.0.92 | yes, once the terminal answers its probe | no |
 | Cursor CLI 2026.11.22 | no: none sent in a turn, and no `]7501` in its files | yes |
-| Gemini CLI | not spiked: not installed here | to be found in #351 |
+| Gemini CLI 0.70.0 | no: no `]7501` in its package (read, not run, #351) | yes |
 | OpenCode | not spiked: not installed here | to be found in #353 |
 | GitHub Copilot CLI | not spiked: not installed here | to be found in #354 |
 | Pi | yes, by its maker's account (issue 343) | no |
@@ -280,8 +280,17 @@ the agent asks the person.
 - **Cursor CLI**, spiked: `sessionStart`, `beforeSubmitPrompt`, and `stop`
   ran. They give idle, working, and done. No event spiked says it waits for
   the person, so Needs you is not available for Cursor yet.
-- **Gemini CLI, OpenCode, Copilot CLI:** not spiked. Their events are
-  decided in their tickets.
+- **Gemini CLI 0.70.0**, read from its package source, not run (#351):
+  `SessionStart` idle, `BeforeAgent` working, `Notification`
+  (`ToolPermission`) needs you, `AfterTool` working again once an approved
+  tool ran, and `AfterAgent` done. A failed hook's output is taken as a
+  refusal there, so its entries end in `2>/dev/null || true`. Its hooks run
+  only in a folder it trusts. `GEMINI_CLI_HOME` moves its settings file,
+  but Gemini CLI has no Config folder field yet, so its hook is one per
+  agent, in `~/.gemini/settings.json`, for now: a departure from a hook per
+  config folder, left for a follow-up.
+- **OpenCode, Copilot CLI:** not spiked. Their events are decided in their
+  tickets.
 
 Settings says, beside each hook, which states it can report, so a missing
 Needs you is not a surprise.
@@ -356,7 +365,9 @@ docs/verification.md. In short:
   a scratch repository ran `sessionStart`, `beforeSubmitPrompt`, and `stop`;
   each hook had the session's environment but no terminal. Writing to the
   terminal's path from the environment reached the stream.
-- **Gemini CLI, OpenCode, GitHub Copilot CLI:** not installed on this
+- **Gemini CLI:** not installed on this machine; #351 read 0.70.0's npm
+  package instead (see above).
+- **OpenCode, GitHub Copilot CLI:** not installed on this
   machine (the `copilot` on its `PATH` is VS Code's shim), so not spiked.
 
 ## Before the build

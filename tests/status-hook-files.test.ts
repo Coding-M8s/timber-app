@@ -261,3 +261,121 @@ describe.skipIf(!posix)("status hooks in a temporary home folder", () => {
 		expect(readFileSync(file, "utf8")).toBe("{ not json");
 	});
 });
+
+describe.skipIf(!posix)("Gemini CLI's status hook in a temporary home folder", () => {
+	let home: string;
+	let script: string;
+	let file: string;
+	const rows = [{ name: "Gemini CLI", agent: "gemini" as const }, { name: "Cursor CLI", agent: "cursor" as const }];
+
+	/** Settings as a person keeps them, with another tool's hooks and Gemini's own hook settings. The commands are made up. */
+	const SETTINGS = {
+		security: { auth: { selectedType: "oauth-personal" } },
+		hooks: {
+			disabled: ["other-tool-log"],
+			BeforeAgent: [{ hooks: [{ type: "command", name: "other-tool-log", command: "other-tool log" }] }],
+			AfterAgent: [{ matcher: "*", hooks: [{ type: "command", command: "other-tool done", timeout: 1000 }] }],
+		},
+		mcpServers: { tool: { command: "other-tool", args: ["serve"] } },
+	};
+
+	beforeEach(() => {
+		home = realpathSync(mkdtempSync(join(tmpdir(), "timber-app-gemini-hooks-")));
+		mkdirSync(join(home, ".config", "timber-app"), { recursive: true });
+		script = join(home, ".config", "timber-app", "status-hook");
+		file = join(home, ".gemini", "settings.json");
+	});
+	afterEach(() => rmSync(home, { recursive: true, force: true }));
+
+	const hooks = () => createStatusHookFiles({ home, scriptPath: script, savedPrograms: async () => rows });
+	const geminiOf = (views: StatusHookView[]) => views.find(view => view.agent === "gemini")!.hook!;
+
+	test("each row says how its agent reports; Gemini CLI's file is ~/.gemini/settings.json, and reading writes nothing", async () => {
+		const views = await hooks().list();
+		expect(views.map(view => [view.name, view.source, view.reports])).toEqual([
+			["Gemini CLI", "hook", ["working", "blocked", "done"]],
+			["Cursor CLI", "hook", ["working", "done"]],
+		]);
+		expect(geminiOf(views)).toMatchObject({ agentName: "Gemini CLI", file: "~/.gemini/settings.json", exists: false, state: { kind: "off" }, byHand: null, checked: "Gemini CLI 0.70.0's source, read on 2026-11-22, not run" });
+		expect(existsSync(join(home, ".gemini"))).toBe(false);
+	});
+
+	test("turning on a new file makes the folder, the file, and the script; removing deletes the file it made", async () => {
+		const files = hooks();
+		const off = geminiOf(await files.list());
+		const result = await files.install({ agent: "gemini", token: off.token });
+		expect(result).toMatchObject({ outcome: "done", message: "The Gemini CLI status hook is on, in ~/.gemini/settings.json." });
+		expect(readFileSync(file, "utf8")).toBe(off.entries);
+		expect(Object.keys(JSON.parse(readFileSync(file, "utf8")).hooks)).toEqual(["SessionStart", "BeforeAgent", "Notification", "AfterTool", "AfterAgent"]);
+		expect(readFileSync(script, "utf8")).toBe(STATUS_HOOK_SCRIPT);
+		const on = geminiOf(result.hooks);
+		expect(on.state).toEqual({ kind: "on" });
+		expect(await files.remove({ agent: "gemini", token: on.token })).toMatchObject({ outcome: "done", message: "The Gemini CLI status hook is off, and ~/.gemini/settings.json, left empty, was deleted." });
+		expect(existsSync(file)).toBe(false);
+		expect(existsSync(script)).toBe(true);
+	});
+
+	test("in shared settings, only the app's entries come and go; every other key parses the same, and the mode stays", async () => {
+		mkdirSync(join(home, ".gemini"));
+		writeFileSync(file, JSON.stringify(SETTINGS, null, 2), { mode: 0o600 });
+		chmodSync(file, 0o600);
+		const files = hooks();
+		const result = await files.install({ agent: "gemini", token: geminiOf(await files.list()).token });
+		expect(result.outcome).toBe("done");
+		const on = JSON.parse(readFileSync(file, "utf8"));
+		expect(on.security).toEqual(SETTINGS.security);
+		expect(on.mcpServers).toEqual(SETTINGS.mcpServers);
+		expect(on.hooks.disabled).toEqual(SETTINGS.hooks.disabled);
+		expect(on.hooks.BeforeAgent.slice(0, 1)).toEqual(SETTINGS.hooks.BeforeAgent);
+		expect(on.hooks.AfterAgent.slice(0, 1)).toEqual(SETTINGS.hooks.AfterAgent);
+		expect(on.hooks.Notification).toEqual([{ matcher: "ToolPermission", hooks: [{ type: "command", name: "timber-app-status", command: `'${script}' gemini Notification 2>/dev/null || true`, timeout: 5000 }] }]);
+		expect(statSync(file).mode & 0o777).toBe(0o600);
+		const removed = await files.remove({ agent: "gemini", token: geminiOf(result.hooks).token });
+		expect(removed).toMatchObject({ outcome: "done", message: "The Gemini CLI status hook is off. The app's entries were taken out of ~/.gemini/settings.json." });
+		expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(SETTINGS);
+		expect(statSync(file).mode & 0o777).toBe(0o600);
+		expect(readdirSync(join(home, ".gemini"))).toEqual(["settings.json"]);
+		// Cursor's file was never touched.
+		expect(existsSync(join(home, ".cursor"))).toBe(false);
+	});
+
+	test("the entries as written append the event in a session, and stay silent with exit 0 once the script is gone", async () => {
+		const files = hooks();
+		await files.install({ agent: "gemini", token: geminiOf(await files.list()).token });
+		const settings = JSON.parse(readFileSync(file, "utf8")) as { hooks: Record<string, { hooks: { command: string }[] }[]> };
+		const status = join(home, "status");
+		writeFileSync(status, "");
+		for (const event of ["SessionStart", "BeforeAgent", "Notification", "AfterTool", "AfterAgent"]) {
+			// Gemini CLI 0.70.0 runs a command with `bash -c` and its input on stdin.
+			const ran = Bun.spawnSync(["bash", "-c", settings.hooks[event]![0]!.hooks[0]!.command], { stdin: Buffer.from('{"hook_event_name":"x"}'), env: { PATH: process.env.PATH, TIMBER_APP_STATUS: status } });
+			expect(ran.exitCode).toBe(0);
+			expect(ran.stdout.length + ran.stderr.length).toBe(0);
+		}
+		expect(readFileSync(status, "utf8")).toBe("agent=gemini:event=SessionStart\nagent=gemini:event=BeforeAgent\nagent=gemini:event=Notification\nagent=gemini:event=AfterTool\nagent=gemini:event=AfterAgent\n");
+		rmSync(script);
+		const gone = Bun.spawnSync(["bash", "-c", settings.hooks.BeforeAgent![0]!.hooks[0]!.command], { env: { PATH: process.env.PATH, TIMBER_APP_STATUS: status } });
+		expect(gone.exitCode).toBe(0);
+		expect(gone.stdout.length + gone.stderr.length).toBe(0);
+	});
+
+	test("settings with no hooks, as most are, parse the same after on and off", async () => {
+		mkdirSync(join(home, ".gemini"));
+		writeFileSync(file, JSON.stringify({ ui: { theme: "Default" }, general: { vimMode: true } }));
+		const files = hooks();
+		const result = await files.install({ agent: "gemini", token: geminiOf(await files.list()).token });
+		expect((await files.remove({ agent: "gemini", token: geminiOf(result.hooks).token })).outcome).toBe("done");
+		expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ ui: { theme: "Default" }, general: { vimMode: true } });
+	});
+
+	test("settings with comments are never written: the entries are added by hand", async () => {
+		mkdirSync(join(home, ".gemini"));
+		const text = `{\n  // mine\n  "ui": { "theme": "Default" }\n}\n`;
+		writeFileSync(file, text);
+		const files = hooks();
+		const shown = geminiOf(await files.list());
+		expect(shown).toMatchObject({ state: { kind: "off" }, byHand: "~/.gemini/settings.json holds comments, which the app would drop if it wrote the file." });
+		const result = await files.install({ agent: "gemini", token: shown.token });
+		expect(result).toMatchObject({ outcome: "done", message: "The script is in place at ~/.config/timber-app/status-hook. Add the entries to ~/.gemini/settings.json by hand." });
+		expect(readFileSync(file, "utf8")).toBe(text);
+	});
+});
