@@ -69,6 +69,8 @@ describe("a line a hook appended", () => {
 
 	test("of an event the registry does not map, or an agent with no hook, is nothing", () => {
 		expect(statusFromLine({ agent: "cursor", event: "preToolUse" })).toBeNull();
+		// Cursor runs it for every shell command before it decides whether to ask, so it never means needs you (issue 352).
+		expect(statusFromLine({ agent: "cursor", event: "beforeShellExecution" })).toBeNull();
 		expect(statusFromLine({ agent: "claude", event: "stop" })).toBeNull();
 		expect(statusFromLine({ agent: "someone", event: "stop" })).toBeNull();
 		expect(hookedAgent("codex")).toBeNull();
@@ -91,6 +93,8 @@ describe("a line a hook appended", () => {
 		const hooked = run(["sessionStart", "beforeSubmitPrompt", "stop"].map(event => statusFromLine({ agent: "cursor", event })));
 		expect(hooked).toEqual(run([stream("state=idle:app=cursor"), stream("state=working:app=cursor"), stream("state=done:app=cursor")]));
 		expect(hooked[0]).toMatchObject({ kind: "show", notice: { title: "Cursor CLI is done" } });
+		// Esc or Ctrl+C runs `stop` twice (issue 352): one alert, as for a turn that finished.
+		expect(run(["sessionStart", "beforeSubmitPrompt", "stop", "stop"].map(event => statusFromLine({ agent: "cursor", event })))).toEqual(hooked);
 		// OpenCode's plugin reports needs you as well.
 		const opencode = run(["busy", "permission.asked", "answered", "idle"].map(event => statusFromLine({ agent: "opencode", event })));
 		expect(opencode).toEqual(run([stream("state=working:app=opencode"), stream("state=blocked:app=opencode"), stream("state=working:app=opencode"), stream("state=done:app=opencode")]));

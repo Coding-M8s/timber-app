@@ -2,7 +2,8 @@
 
 Status: accepted, for issue #349. #350 built the installer with Cursor CLI
 as its first agent, and #353 added OpenCode's plugin (see "Status hooks" in
-docs/architecture.md); the other agents follow in their own tickets (see [the work](#the-work)). Where the
+docs/architecture.md); #352 looked for a Needs you event for Cursor CLI and
+found none; the other agents follow in their own tickets (see [the work](#the-work)). Where the
 build settled something this page left open, it says so below.
 
 ## The problem
@@ -288,8 +289,18 @@ after a spike shows an empty answer changes nothing, since it runs before
 the agent asks the person.
 
 - **Cursor CLI**, spiked: `sessionStart`, `beforeSubmitPrompt`, and `stop`
-  ran. They give idle, working, and done. No event spiked says it waits for
-  the person, so Needs you is not available for Cursor yet.
+  ran. They give idle, working, and done. #352 logged 18 of the events its
+  bundle names, with 2026.11.22: `preToolUse` and `beforeShellExecution`
+  run for every shell command before Cursor decides whether to ask, an
+  allowlisted one included, and no event ran while it waited for a shell
+  command's approval or for the answer to a question it asked. Its bundle
+  lists no event for waiting, and where it takes Claude Code's hooks it
+  maps `Notification` and `PermissionRequest` to no event. So Needs you is
+  not available for Cursor, and is added once Cursor runs an event when it
+  waits. Mapping `beforeShellExecution` to Needs you was set aside: it
+  would alert for every command that runs without asking. Not tried: an
+  edit that waits for approval (edits ran without asking) and an MCP
+  tool's approval (no MCP server was set up).
 - **Gemini CLI 0.70.0**, read from its package source, not run (#351):
   `SessionStart` idle, `BeforeAgent` working, `Notification`
   (`ToolPermission`) needs you, `AfterTool` working again once an approved
@@ -393,8 +404,15 @@ docs/verification.md. In short:
   its events, how it treats a missing hook command and unread input, and
   whether its hooks run when its folder is not trusted.
 - Whether Cursor's `stop` runs for a turn that is interrupted (Esc, Ctrl+C)
-  or fails. If not, a session stays Working until the agent exits or a new
-  prompt starts working again; #352 finds out.
+  or fails. Found in #352, with 2026.11.22: Esc and Ctrl+C run `stop`
+  twice, so an interrupted turn shows Done, as a finished one does. The
+  hook never reads its input, which says which it was, so the two are not
+  told apart; while its worktree is on screen in the focused window, as it
+  is when the person presses Esc, Done raises no alert. A turn that cannot
+  reach Cursor's servers keeps reconnecting (still at its tenth attempt
+  after 380 seconds) and runs no `stop`, so it stays Working, which is
+  what it is doing. A turn that fails in another way was not tried; were
+  it to run `stop`, it would show Done.
 
 ## The work
 
@@ -407,8 +425,8 @@ docs/verification.md. In short:
   do.
 - #351 Gemini CLI, #354 Copilot CLI: spike first, then a
   hook only if it does not report natively.
-- #352 Cursor CLI: folds into #350, or adds a Needs you event once one is
-  found.
+- #352 Cursor CLI: found no event for Needs you and recorded how `stop`
+  runs; the events #350 installs stay as they are.
 - #355 Grok Build: no hook. Its registry row now says it reports through
   OSC 7501; what is left is checking it in the desktop app.
 - Each of them adds its capabilities to `src/shared/engine.ts`, the main
