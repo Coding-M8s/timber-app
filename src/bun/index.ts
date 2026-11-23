@@ -461,6 +461,8 @@ const statusHooks = createStatusHookFiles({
 	home: homedir(),
 	scriptPath: join(dirname(settingsFile), STATUS_HOOK_NAME),
 	savedPrograms: () => terminals.savedPrograms(),
+	// OpenCode's plugins folder moves with XDG_CONFIG_HOME; the app's own environment is what its sessions start with.
+	xdgConfigHome: process.env.XDG_CONFIG_HOME,
 });
 // Ports are read for the selected worktree on request only, never on a timer (see ./ports.ts).
 const ports = createPorts({ listWorktrees: createWorktreePaths({ targets: () => watchTargets }), leaders: () => terminals.leaders(), attention: () => attention });

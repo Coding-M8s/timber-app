@@ -20,7 +20,7 @@ const ENTRIES = '{\n  "hooks": {\n    "stop": [\n      { "command": "\'/home/you
 
 const hook = (more: Partial<HookDetails> = {}): HookDetails => ({
 	agent: "cursor", agentName: "Cursor CLI", file: "~/.cursor/hooks.json", exists: true, state: { kind: "off" }, byHand: null, token: "t",
-	entries: ENTRIES, present: [], script: STATUS_HOOK_SCRIPT, scriptPath: "~/.config/timber-app/status-hook", checked: "Cursor CLI 2026.11.22 on 2026-11-22", ...more,
+	entries: ENTRIES, present: [], script: STATUS_HOOK_SCRIPT, scriptPath: "~/.config/timber-app/status-hook", kind: "entries", checked: "Cursor CLI 2026.11.22 on 2026-11-22", run: true, ...more,
 });
 const cursor = (more: Partial<HookDetails> = {}): StatusHookView => ({ name: "Cursor CLI", agent: "cursor", source: "hook", reports: ["working", "done"], hook: hook(more) });
 const VIEWS: StatusHookView[] = [
@@ -135,7 +135,7 @@ describe("Settings, Agents with status hooks", () => {
 		const markup = renderToStaticMarkup(
 			<NotificationsSectionView draft={draft} saved={draft} save={{ state: "idle" }} problem={null} customPaths={{}} onEdit={() => {}} onChooseFile={() => {}} onPlay={() => {}} onSave={() => {}} />,
 		);
-		expect(markup).toContain("Agents that do not report their status themselves, such as Cursor CLI, need a status hook, turned on in Settings, Agents.");
+		expect(markup).toContain("Agents that do not report their status themselves, such as Cursor CLI and OpenCode, need a status hook, turned on in Settings, Agents.");
 	});
 });
 

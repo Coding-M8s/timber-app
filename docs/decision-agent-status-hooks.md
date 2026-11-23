@@ -1,8 +1,8 @@
 # Decision: status hooks for agents that do not report their status
 
 Status: accepted, for issue #349. #350 built the installer with Cursor CLI
-as its first agent (see "Status hooks" in docs/architecture.md); the other
-agents follow in their own tickets (see [the work](#the-work)). Where the
+as its first agent, and #353 added OpenCode's plugin (see "Status hooks" in
+docs/architecture.md); the other agents follow in their own tickets (see [the work](#the-work)). Where the
 build settled something this page left open, it says so below.
 
 ## The problem
@@ -31,7 +31,7 @@ Spiked on 2026-11-22 (see [the spike](#the-spike)):
 | Grok Build 1.0.92 | yes, once the terminal answers its probe | no |
 | Cursor CLI 2026.11.22 | no: none sent in a turn, and no `]7501` in its files | yes |
 | Gemini CLI 0.70.0 | no: no `]7501` in its package (read, not run, #351) | yes |
-| OpenCode | not spiked: not installed here | to be found in #353 |
+| OpenCode 1.19.6 | no OSC 7501 in its source; not run (#353) | yes, a plugin |
 | GitHub Copilot CLI | not spiked: not installed here | to be found in #354 |
 | Pi | yes, by its maker's account (issue 343) | no |
 
@@ -42,8 +42,9 @@ there. Grok Build reports by default: its own guide
 `program_status` the default `"auto"`, which reports where the terminal
 answers the probe, as the app does, and the spike ran with nothing set.
 
-So hooks are for Cursor for certain, and for Gemini, OpenCode, and Copilot
-if their spikes find no native reports. For Codex and Grok Build no hook is
+So hooks are for Cursor for certain, for Gemini CLI and OpenCode (their
+sources hold no OSC 7501; #351, #353), and for Copilot if its spike finds
+no native reports. For Codex and Grok Build no hook is
 installed.
 
 ## What any choice must do
@@ -162,7 +163,10 @@ show "needs a look" for it, with no config written at all.
   `hooks.json`) is to be confirmed per agent, in its ticket. For Cursor
   CLI it does not: 2026.11.22 reads `~/.cursor/hooks.json` whatever
   `CURSOR_CONFIG_DIR` names (checked in #350), so its hook is one per
-  agent, not per config folder.
+  agent, not per config folder. Nor for OpenCode, from its 1.19.6 source
+  (#353): `OPENCODE_CONFIG_DIR` adds a folder and moves nothing, while
+  `XDG_CONFIG_HOME` moves its global folder, plugins and all, so its hook
+  is one per agent too, in that folder.
 - Before writing, a dialog shows the file's full path, whether it exists,
   and the exact text added, then Install and Cancel. Nothing is written on
   Cancel.
@@ -177,7 +181,7 @@ a repository or worktree:
 | Cursor CLI | `~/.cursor/hooks.json` | entries added to a shared file |
 | Gemini CLI | `~/.gemini/settings.json` | entries added to a shared file |
 | GitHub Copilot CLI | `~/.copilot/hooks/` | a file of the app's own |
-| OpenCode | `~/.config/opencode/plugins/` | a plugin file of the app's own |
+| OpenCode | `~/.config/opencode/plugins/timber-app-status.js` (under `XDG_CONFIG_HOME` when set), confirmed from source in #353 | a plugin file of the app's own |
 
 The script the entries run lives in the app's own data folder, so the entry
 in the agent's file stays one line.
@@ -224,6 +228,12 @@ One script, `status-hook`, takes its agent and its event as arguments:
    find its script (the app was uninstalled) must also stay quiet and let
    the agent go on; whether each agent does so for a missing command is
    part of its spike.
+
+A plugin of the app's own (OpenCode's, #353) runs no script: it appends the
+same line itself, only when `TIMBER_APP_STATUS` names a file, opening it to
+append without making it, and never throws or prints. Running in the
+agent's own process, it can also hold what it saw, so it sends an event
+for a whole turn rather than for each subsession.
 
 The hook sends the event, not a state: the main process maps
 `(agent, event)` to a state, so the hook never carries anything the
@@ -289,8 +299,11 @@ the agent asks the person.
   but Gemini CLI has no Config folder field yet, so its hook is one per
   agent, in `~/.gemini/settings.json`, for now: a departure from a hook per
   config folder, left for a follow-up.
-- **OpenCode, Copilot CLI:** not spiked. Their events are decided in their
-  tickets.
+- **OpenCode 1.19.6**, from its source, not run (#353): `session.status`
+  busy and idle, `permission.asked` and `.replied`, and `question.asked`,
+  `.replied`, and `.rejected`. Its plugin gives working, needs you, and
+  done; it waits for no answer, so no event decides anything.
+- **Copilot CLI:** not spiked. Its events are decided in its ticket.
 
 Settings says, beside each hook, which states it can report, so a missing
 Needs you is not a surprise.
@@ -389,7 +402,10 @@ docs/verification.md. In short:
   Settings, Agents part, Install and Remove, the checks. Its first agent is
   Cursor CLI, the only one spiked that needs a hook, not Codex, which
   reports itself.
-- #351 Gemini CLI, #353 OpenCode, #354 Copilot CLI: spike first, then a
+- #353 OpenCode: a plugin of the app's own that appends the line itself,
+  built from OpenCode 1.19.6's source; running it in OpenCode is still to
+  do.
+- #351 Gemini CLI, #354 Copilot CLI: spike first, then a
   hook only if it does not report natively.
 - #352 Cursor CLI: folds into #350, or adds a Needs you event once one is
   found.
