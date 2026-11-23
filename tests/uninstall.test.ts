@@ -301,10 +301,11 @@ describe("deleting the app's settings", () => {
 
 	const folderOf = () => join(root, `config ${++count}`, "timber-app");
 
-	test("the file, a kept damaged copy, and a leftover temporary file go, and then the folder", async () => {
+	test("the file, a kept damaged copy, a leftover temporary file, and the status hook script go, and then the folder", async () => {
 		const folder = folderOf();
 		mkdirSync(folder, { recursive: true });
-		for (const name of ["settings.json", "settings.json.damaged", "settings.json.4242.0b9a.tmp"]) writeFileSync(join(folder, name), "{}");
+		// The status hook script is the app's too (issue 350).
+		for (const name of ["settings.json", "settings.json.damaged", "settings.json.4242.0b9a.tmp", "status-hook"]) writeFileSync(join(folder, name), "{}");
 		await removeSettings(join(folder, "settings.json"));
 		expect(existsSync(folder)).toBe(false);
 		// The folder above is not the app's.

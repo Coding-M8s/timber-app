@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useContext, useEffect, useId, useRef, useState } from "react";
 import { type AgentSetting, configFolderProblem } from "../../../shared/agent";
 import type { AgentLocation } from "../../../shared/agent-lookup";
 import { SESSION_NAME_LIMIT } from "../../../shared/terminal";
@@ -7,7 +7,10 @@ import {
 } from "../../agent-format";
 import type { AgentId } from "../../../shared/agent-registry";
 import { useAppState, useStore } from "../../store/react";
-import { type SectionSave, SettingsSection, useDraftSection } from "./SettingsSection";
+import { type SectionSave, SettingsSavingContext, SettingsSection, useDraftSection } from "./SettingsSection";
+import type { StatusHookRequest, StatusHookResult, StatusHookView } from "../../../shared/status-hooks";
+import type { HookAction } from "../../status-hook-format";
+import { StatusHookDialog, StatusHookLine } from "./StatusHookParts";
 
 export interface AgentsSectionViewProps {
 	drafts: readonly AgentDraft[];
@@ -19,12 +22,28 @@ export interface AgentsSectionViewProps {
 	onEdit: (key: string, change: AgentDraftChange) => void;
 	onRemove: (key: string) => void;
 	onSave: () => void;
+	/** How each saved agent reports its status (`AppState.statusHooks`), by name. None shown when left out. */
+	hooks?: readonly StatusHookView[] | null;
+	/** Turn on or take out a hook as shown. */
+	onHook?: (action: "install" | "remove", request: StatusHookRequest) => Promise<StatusHookResult>;
+	onCopy?: (text: string) => void;
+}
+
+/** The status of a row, only while it is as saved: a row being edited says nothing until it is saved and read again. */
+function viewOf(agent: AgentSetting | undefined, saved: readonly AgentSetting[], hooks: readonly StatusHookView[] | null | undefined): StatusHookView | null {
+	if (!agent || !hooks) return null;
+	const same = saved.find(candidate => candidate.name === agent.name && candidate.command === agent.command && candidate.agent === agent.agent && (candidate.configFolder ?? "") === (agent.configFolder ?? ""));
+	return same === undefined ? null : hooks.find(view => view.name === same.name) ?? null;
 }
 
 const blank = (draft: AgentDraft) => draft.name.trim() === "" && draft.command.trim() === "";
 
 /** The Agents section as drawn from its data, so it can be tested without a window. */
-export function AgentsSectionView({ drafts, saved, locations, save, onAdd, onEdit, onRemove, onSave }: AgentsSectionViewProps) {
+export function AgentsSectionView({ drafts, saved, locations, save, onAdd, onEdit, onRemove, onSave, hooks, onHook, onCopy }: AgentsSectionViewProps) {
+	const { reportSaving } = useContext(SettingsSavingContext);
+	// The hook dialog shows the hook of an agent as last read, so it follows every answer.
+	const [dialog, setDialog] = useState<{ name: string; action: HookAction; opener: { button: string; line: string }; problem: string | null; running: boolean } | null>(null);
+	const dialogView = dialog === null ? null : hooks?.find(view => view.name === dialog.name) ?? null;
 	const hintId = useId();
 	const idPrefix = useId();
 	const model = agentsDraftModel(drafts, saved);
@@ -50,6 +69,28 @@ export function AgentsSectionView({ drafts, saved, locations, save, onAdd, onEdi
 	const add = (preset?: AgentSetting) => {
 		pendingFocus.current = { kind: "added" };
 		onAdd(preset);
+	};
+	const hookButtonId = (key: string, action: HookAction) => `${idPrefix}-hook-${action}-${key}`;
+	const hookLineId = (key: string) => `${idPrefix}-hook-${key}`;
+	const closeDialog = () => {
+		const opener = dialog?.opener;
+		setDialog(null);
+		// Back to the button that opened it, or the row's first one when that one is gone.
+		if (opener) setTimeout(() => (document.getElementById(opener.button) ?? document.getElementById(opener.line)?.querySelector("button"))?.focus());
+	};
+	const confirmHook = async () => {
+		if (dialog === null || dialogView?.hook == null || !onHook || dialog.running) return;
+		const writes = dialog.action === "remove" ? "remove" : "install";
+		setDialog({ ...dialog, running: true, problem: null });
+		// Settings stays open while the file is written.
+		reportSaving(true);
+		try {
+			const result = await onHook(writes, { agent: dialogView.hook.agent, token: dialogView.hook.token });
+			if (result.outcome === "done") closeDialog();
+			else setDialog(current => current && { ...current, running: false, problem: result.message });
+		} finally {
+			reportSaving(false);
+		}
 	};
 	const remove = (key: string) => {
 		pendingFocus.current = { kind: "removed", index: drafts.findIndex(draft => draft.key === key) };
@@ -149,6 +190,18 @@ export function AgentsSectionView({ drafts, saved, locations, save, onAdd, onEdi
 								const line = agentLookupLine(model.agents[index]!, saved, locations);
 								return line && <p className={line.missing ? "field-error" : "field-hint"}>{line.text}</p>;
 							})()}
+							{row.problem === null && (() => {
+								const view = viewOf(model.agents[index], saved, hooks);
+								return view && (
+									<StatusHookLine
+										view={view}
+										rowLabel={label}
+										idOf={action => hookButtonId(draft.key, action)}
+										lineId={hookLineId(draft.key)}
+										onOpen={action => setDialog({ name: view.name, action, opener: { button: hookButtonId(draft.key, action), line: hookLineId(draft.key) }, problem: null, running: false })}
+									/>
+								);
+							})()}
 						</li>
 					);
 				})}
@@ -158,6 +211,19 @@ export function AgentsSectionView({ drafts, saved, locations, save, onAdd, onEdi
 					<p className="sidebar-error-title">Too many agents</p>
 					<p className="sidebar-error-text">{model.error}</p>
 				</div>
+			)}
+			{dialog !== null && dialogView?.hook && (
+				<StatusHookDialog
+					hook={dialogView.hook}
+					reports={dialogView.reports}
+					action={dialog.action}
+					running={dialog.running}
+					problem={dialog.problem}
+					onClose={closeDialog}
+					onConfirm={() => void confirmHook()}
+					onCopy={text => onCopy?.(text)}
+					onSwitch={action => setDialog({ ...dialog, action, problem: null })}
+				/>
 			)}
 			<div className="agent-add">
 				{presets.map(preset => (
@@ -172,10 +238,12 @@ export function AgentsSectionView({ drafts, saved, locations, save, onAdd, onEdi
 /** The Agents section of Settings: the list of agents, edited row by row and saved with its own Save. */
 export function AgentsSection() {
 	const store = useStore();
-	const { preferences: { agents: saved }, agentLocations } = useAppState();
+	const { preferences: { agents: saved }, agentLocations, statusHooks } = useAppState();
 	// Looked for again whenever the section shows, as one may have been installed since. Nothing runs.
+	// Each agent's status hook is read again too: a file may have changed since. Nothing is written.
 	useEffect(() => {
 		void store.locateAgents();
+		void store.loadStatusHooks();
 	}, [store]);
 	const [shown, setShown] = useState<{ saved: readonly AgentSetting[]; drafts: AgentDraft[] }>(() => ({ saved, drafts: agentDraftsOf(saved) }));
 	// Rows keep their keys while what is saved stays the same, so a field keeps its focus.
@@ -200,6 +268,9 @@ export function AgentsSection() {
 			onEdit={(key, edit) => change(editAgentDraft(drafts, key, edit))}
 			onRemove={key => change(removeAgentDraft(drafts, key))}
 			onSave={() => void onSave()}
+			hooks={statusHooks}
+			onHook={(action, request) => action === "install" ? store.installStatusHook(request) : store.removeStatusHook(request)}
+			onCopy={text => void store.copyText(text)}
 		/>
 	);
 }

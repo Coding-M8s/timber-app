@@ -105,11 +105,38 @@ export interface AgentDefinition {
 	signIn: { status: readonly string[] | null; login: readonly string[] | null };
 	/**
 	 * How it reports its status: the Program Status Protocol (OSC 7501), a
-	 * hook, or not at all, and the start of the `app` it reports, such as
-	 * `claude` for `claude-code`, which gives its mark to any session that
-	 * reports it. `source` is not read yet: any program may report.
+	 * status hook the person turns on in Settings, Agents, or not at all, and
+	 * the start of the `app` it reports, such as `claude` for `claude-code`,
+	 * which gives its mark to any session that reports it. Any program may
+	 * still report through OSC 7501, whatever `source` says. `reports` lists
+	 * the states it can report, for Settings to say; with a hook, they are
+	 * the states of `hook.events`.
 	 */
-	status: { source: "osc-7501" | "hook" | "none"; app: string | null };
+	status:
+		| { source: "osc-7501"; app: string; reports: readonly ReportedState[] }
+		| { source: "hook"; app: string; hook: AgentHook }
+		| { source: "none"; app: null };
+}
+
+/** The states Settings names for an agent: `blocked` is said as "needs you". `idle` is never named. */
+export type ReportedState = "idle" | "working" | "blocked" | "done";
+
+/**
+ * A status hook: entries the app adds to an agent's own settings file, each
+ * running the app's `status-hook` script with the agent's id and an event
+ * (see docs/decision-agent-status-hooks.md and src/shared/status-hooks.ts).
+ */
+export interface AgentHook {
+	/** The file's layout, which needs code of its own to read and write. */
+	format: "cursor-hooks";
+	/** The file, as parts of a path in the home folder. */
+	file: readonly string[];
+	/** Each event the entries are added for, and the state it reports, in the order they are added. */
+	events: readonly { event: string; state: ReportedState }[];
+	/** The agent's own timeout for each entry, in seconds. */
+	timeout: number;
+	/** The version of the agent the format and events were checked against, and when. */
+	checked: string;
 }
 
 const ROWS = [
@@ -144,7 +171,7 @@ const ROWS = [
 			conversations: { store: "claude-projects", folderVariable: "CLAUDE_CONFIG_DIR", folder: ".claude" },
 		},
 		signIn: { status: null, login: null },
-		status: { source: "osc-7501", app: "claude" },
+		status: { source: "osc-7501", app: "claude", reports: ["working", "blocked", "done"] },
 	},
 	{
 		id: "codex",
@@ -176,7 +203,7 @@ const ROWS = [
 			conversations: { store: "codex-sessions", folderVariable: "CODEX_HOME", folder: ".codex" },
 		},
 		signIn: { status: null, login: null },
-		status: { source: "osc-7501", app: "codex" },
+		status: { source: "osc-7501", app: "codex", reports: ["working", "done"] },
 	},
 	{
 		id: "cursor",
@@ -213,7 +240,30 @@ const ROWS = [
 			conversations: { store: "cursor-chats", folderVariable: "CURSOR_CONFIG_DIR", folder: ".cursor", xdgFolder: "cursor" },
 		},
 		signIn: { status: null, login: null },
-		status: { source: "none", app: null },
+		/*
+		 * Cursor CLI writes no OSC 7501. Checked with 2026.11.22-e9042b2 on
+		 * 2026-11-22 by running it interactively: it reads its user hooks from
+		 * `~/.cursor/hooks.json` in the home folder, whatever
+		 * `CURSOR_CONFIG_DIR` names, and runs `sessionStart`,
+		 * `beforeSubmitPrompt`, and `stop` with no terminal. A hook that prints
+		 * nothing, leaves its input unread, or names a missing command lets the
+		 * turn go on. No event says it waits for the person, so no needs you.
+		 */
+		status: {
+			source: "hook",
+			app: "cursor",
+			hook: {
+				format: "cursor-hooks",
+				file: [".cursor", "hooks.json"],
+				events: [
+					{ event: "sessionStart", state: "idle" },
+					{ event: "beforeSubmitPrompt", state: "working" },
+					{ event: "stop", state: "done" },
+				],
+				timeout: 5,
+				checked: "Cursor CLI 2026.11.22 on 2026-11-22",
+			},
+		},
 	},
 	{
 		id: "gemini",
@@ -276,7 +326,7 @@ const ROWS = [
 			conversations: { store: "grok-sessions", folderVariable: "GROK_HOME", folder: ".grok" },
 		},
 		signIn: { status: null, login: null },
-		status: { source: "osc-7501", app: "grok" },
+		status: { source: "osc-7501", app: "grok", reports: ["working", "blocked", "done"] },
 	},
 	{
 		id: "opencode",

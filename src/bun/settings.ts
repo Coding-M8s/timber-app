@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join, posix, win32 } from "node:path";
 import { type Settings, emptySettings, parseSettings, serializeSettings } from "../shared/settings";
 import { messageOf } from "../shared/error-message";
+import { STATUS_HOOK_NAME } from "../shared/status-hooks";
 
 type Environment = Record<string, string | undefined>;
 
@@ -85,9 +86,12 @@ export async function writeSettings(file: string, settings: Settings): Promise<v
 }
 
 /**
- * Delete the settings: the file, a copy kept of a damaged one, and any
- * temporary file a save left behind. The folder goes too when nothing else
- * is in it. Anything else in the folder is not the app's and stays.
+ * Delete the settings: the file, a copy kept of a damaged one, any
+ * temporary file a save left behind, and the status hook script (see
+ * ../shared/status-hooks.ts). Entries left in an agent's file then name a
+ * missing command, which the agent takes as a hook that failed and goes on.
+ * The folder goes too when nothing else is in it. Anything else in the
+ * folder is not the app's and stays.
  */
 export async function removeSettings(file: string): Promise<void> {
 	const folder = dirname(file);
@@ -100,7 +104,7 @@ export async function removeSettings(file: string): Promise<void> {
 		throw error;
 	}
 	for (const entry of entries) {
-		const ours = entry === name || entry === `${name}.damaged` || (entry.startsWith(`${name}.`) && entry.endsWith(".tmp"));
+		const ours = entry === name || entry === `${name}.damaged` || entry === STATUS_HOOK_NAME || (entry.startsWith(`${name}.`) && entry.endsWith(".tmp"));
 		if (ours) await rm(join(folder, entry), { force: true });
 	}
 	try {

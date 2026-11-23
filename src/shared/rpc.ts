@@ -23,6 +23,7 @@ import type { IssueListRequest } from "./issue-lists";
 import type { IssueRequest } from "./issues";
 import type { Theme } from "./theme";
 import type { SoundChoice } from "./sound-setting";
+import type { StatusHookRequest } from "./status-hooks";
 import type { OpenTerminalRequest, TerminalChange, TerminalOutput } from "./terminal";
 import type { TimberConnectionCheckRequest, TimberSettingsRequest, TimberSettingsSaveRequest } from "./timber-config";
 import type { DoneApplyRequest, DonePreviewRequest } from "./timber-done";
@@ -79,6 +80,9 @@ export type AppRPC = {
 			loadPreferences: { params: {}; response: Answer<"loadPreferences"> };
 			savePreferences: { params: { change: Partial<Preferences> }; response: Answer<"savePreferences"> };
 			locateAgents: { params: {}; response: Answer<"locateAgents"> };
+			statusHooks: { params: {}; response: Answer<"statusHooks"> };
+			installStatusHook: { params: StatusHookRequest; response: Answer<"installStatusHook"> };
+			removeStatusHook: { params: StatusHookRequest; response: Answer<"removeStatusHook"> };
 			/** Waits for the person to pick a folder, so the caller must not time it out. */
 			exportTheme: { params: { theme: Theme }; response: Answer<"exportTheme"> };
 			/** Waits for the person to pick a file, so the caller must not time it out. */

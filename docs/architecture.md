@@ -5016,10 +5016,12 @@ for its mark. Each row has:
 - **`status`**: how it reports its status, `osc-7501`, `hook`, or `none`,
   and the start of the `app` it reports, such as `claude` for `claude-code`,
   which gives its mark to any session that reports it. Claude Code, Codex,
-  and Grok Build report through OSC 7501 (`app` `claude`, `codex`, `grok`).
-  The source is not read yet: any program may report through OSC 7501 (see
-  [agent status](#agent-status)). `hook` is for the agents of
-  [the status hook decision](decision-agent-status-hooks.md), not built.
+  and Grok Build report through OSC 7501 (`app` `claude`, `codex`, `grok`),
+  with the states each reports (`reports`), which Settings, Agents names.
+  Cursor CLI reports through a status hook (`hook`: its file in the home
+  folder, its format, the events and the state each gives, the agent's own
+  timeout, and the version checked); see [status hooks](#status-hooks). Any
+  program may still report through OSC 7501, whatever its row says.
 
 **Adding an agent.**
 
@@ -5239,11 +5241,10 @@ Each agent's state shows on the sidebar row, on its chip, and on a collapsed
 repository header, from the **Program Status Protocol** (OSC 7501,
 [spec](https://www.superlogical.com/rex/docs/build/program-status)). A
 program writes it into its own terminal stream once the terminal says it
-supports it. Nothing is added to an agent's command, and no agent config
-file is written. Whether and how the app may install a status hook for an
-agent that does not report is decided in
-[docs/decision-agent-status-hooks.md](decision-agent-status-hooks.md);
-nothing of it is built yet.
+supports it. Nothing is added to an agent's command. An agent that does not
+report gets its state from a status hook, which the person turns on in
+Settings, Agents (see [status hooks](#status-hooks)); until then no agent
+config file is written.
 
 Which agents report, on Linux x64 (issue 349): Claude Code once the probe is
 answered; Codex CLI 0.169.0 without a probe, from its prompt on (`idle`,
@@ -5559,10 +5560,11 @@ What the agent prints on screen is still never read, parsed, or answered.
   - *Not told again.* A session that stays in a state, such as Needs you
     for a second approval with a new message, gets no new notification, and
     the one on screen keeps its first message.
-- **Not built.** Hooks for agents that do not send OSC 7501, decided in
-  [docs/decision-agent-status-hooks.md](decision-agent-status-hooks.md).
-  They carry the agent and the event only, never the prompt or the
-  agent's reply.
+- **Hooks.** An agent that does not send OSC 7501 reports through a
+  status hook once the person turns it on (see
+  [status hooks](#status-hooks)). A hook carries the agent and the event
+  only, never the prompt or the agent's reply, and its report raises the
+  same notifications and sounds as one from the stream.
 
 In `bun run dev:web`, `timberMock.agentStatus(id, "state=blocked:kind=permission:msg=YXBwcm92ZQ==")`
 acts out a report from the program in a session (`"?"` for the probe), read
@@ -5573,6 +5575,85 @@ desktop notifications the main process would have on screen,
 a session acts out four tasks, one of them with a task that needs you under
 it (Claude Code's own ids are flat; the nested one shows the tree), and
 `subagents clear` clears every record.
+
+### Status hooks
+
+For an agent that does not report through OSC 7501, the app can add entries
+to the agent's own settings file that report its events
+(issue 350, as decided in
+[docs/decision-agent-status-hooks.md](decision-agent-status-hooks.md)).
+Off for every agent until the person turns it on.
+
+- **Which agents.** Those whose registry row has `status.source` `hook`:
+  Cursor CLI, checked with 2026.11.22-e9042b2 on Linux x64 (Pop!_OS 24.04)
+  on 2026-11-22. Its entries go in `~/.cursor/hooks.json`: Cursor CLI reads
+  its user hooks there whatever `CURSOR_CONFIG_DIR` names, so a row's
+  config folder does not move the hook, and one hook serves every Cursor
+  CLI row. `sessionStart` gives idle, `beforeSubmitPrompt` working, and
+  `stop` done; no event says it waits for the person, so Cursor CLI has no
+  needs you. Its hooks run with no terminal; one that prints nothing, leaves
+  its input unread, or names a missing command lets the turn go on.
+  Codex and Grok Build report themselves and get no hook.
+- **The script.** `status-hook` in the app's settings folder
+  (`~/.config/timber-app/status-hook` on Linux), written on Turn on with
+  mode 0755 (`STATUS_HOOK_SCRIPT` in `src/shared/status-hooks.ts`). It does
+  nothing unless `TIMBER_APP_STATUS` is set, appends
+  `agent=<id>:event=<event>` to that file, prints nothing, and exits 0. Every
+  install of the app that shares the settings folder shares the script and
+  the hook. Uninstalling the app leaves the entries in the agent's file:
+  take them out first with Remove in Settings, Agents. Forgetting the
+  settings on uninstall removes the script; the entries left then name a
+  missing command, which Cursor CLI takes as a hook that failed.
+- **Platforms.** Built and checked on Linux only. On Windows no status line
+  shows for a hooked agent and nothing is written, since the script is `sh`
+  and the agents' files there are not confirmed. macOS is not tried.
+- **The entries.** One per event, `{ "command": "'<script>' cursor <event>",
+  "timeout": 5 }`, added after the entries already there. The app's entries
+  are known by a command that starts with the script's quoted path and a
+  space, and nothing else records what it installed.
+- **What a file reads as** (`planCursorHooks`): Off (none of the app's
+  entries), On (each exactly as written), Changed (an entry not as written,
+  one missing, one in another event, or a script that is not the app's), or
+  Broken (not JSON, not an object, `version` not 1, `hooks` or an event not
+  the shape Cursor reads, unreadable, or the script missing). Changed and
+  Broken are shown, never rewritten; Remove takes the app's entries out of a
+  Changed file, and out of a Broken one whose entries are there (as when
+  only the script is missing). A file holding a number past what
+  JavaScript holds exactly, or a `__proto__` key, is never written, as one
+  with comments is not.
+- **Writing** (`src/bun/status-hook-files.ts`). Only for an agent a saved
+  row runs, only its file the registry names, and only the app's entries:
+  every other key and value parses the same after; spacing and key order
+  may change. A file that is a link, sits in a folder that is a link (as
+  stow makes), cannot be written (or its folder cannot), or holds comments
+  is never written: its entries
+  are shown to add or take out by hand, and Turn on then only puts the
+  script in place. The window sends back a hash of the file as it was shown;
+  the file is read again just before the write, and a change since stops
+  it. Written to a temporary file beside it with the same mode, then renamed
+  over it, with no backup copy, since the file can hold secrets. A file left
+  with nothing in it after Remove is deleted. Nothing of the file but the
+  app's entries goes to the window.
+- **Reading** (`Engine.statusHooks`). When Settings, Agents opens, after a
+  save of the agents, and when a session of a hooked agent starts; never in
+  the background. Nothing is written.
+- **Sessions** (`src/bun/status-files.ts`, `src/bun/terminals.ts`). One
+  private folder per run (mode 0700, in `XDG_RUNTIME_DIR` or the temporary
+  folder), beside the handoff folder. Each session gets a file there named by
+  its id, made empty before its program starts and deleted when the session
+  ends or closes, and its path as `TIMBER_APP_STATUS`; one in the app's own
+  environment is never passed on. A shell that takes over from an ended
+  agent keeps the file. The folder is watched, and looked at every 2
+  seconds as well. A file is read from where it stopped, a whole line at a
+  time: a line over 128 bytes is dropped whole, a file past 64 KiB or one
+  that shrank is read no further, and a file the app does not know, or
+  anything not a regular file, is deleted unread.
+- **A line** becomes a report of the session's root record, with the state
+  the registry gives the event and the agent's `app` (`statusFromLine`),
+  and is dropped when the session ended, runs another agent of the
+  registry (Grok Build may run Cursor's hooks), or reported through its own
+  stream since it started or since the last new prompt or full reset.
+  Records from a hook end as those from the stream do.
 
 ## First-run setup
 
@@ -5815,6 +5896,10 @@ knowing a path and two arguments.
   that folder. A copy started with `bun run dev` or `bun run start` says it
   was not installed and where it runs from, and has no button. Windows and
   macOS say that this is built for Linux only so far.
+- **Status hooks stay.** Entries the app added to an agent's own file
+  (see [status hooks](#status-hooks)) are not taken out on uninstall: take
+  them out first with Remove in Settings, Agents. Left behind, they do
+  nothing outside the app's sessions.
 - **The settings are the app's own to delete.** The uninstaller does not
   know `~/.config/timber-app/`. A box, off at first, asks to forget the
   saved repository list and settings too. Then, after the uninstaller ended
