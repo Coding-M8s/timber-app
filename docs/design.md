@@ -1159,15 +1159,30 @@ logins. The app never reads a tracker login and never signs in.
 - **Delete backup:** "Delete backup of <branch>?" with Keep as the default.
   When the backup changed since it was chosen, only Close. A partial
   deletion shows what is left and "Delete again".
-- **Done:** a clean, published worktree gets a summary of what is removed,
-  including ignored files. One with unsaved work gets "Delete anyway?" with
-  Keep as the default. Remove closes the dialog: the removal goes on, the
+- **Done:** one name for the action. "Done" is the entry that opens the
+  dialog, in the command palette and both menus ("Done…" in the More menu,
+  whose entries that open a dialog all end so), and "Remove" is its verb
+  everywhere after: the title, the button, progress ("Removing <name>"),
+  toasts ("Removed <name>"), and tooltips. "Delete" is only said of what
+  stops existing with the folder, its files and its branch. The dialog
+  leads with a plain sentence, "Removes this worktree's folder from this
+  computer.", then the folder, and its exact Timber commands stay in full,
+  smaller and dimmed under a "Timber command" label, the preview's above
+  Preview again and the removal's above the buttons. The title says what is
+  at risk: "Delete anyway?" with Keep as the default only when modified or
+  untracked files would be lost; for commits that may be only on the
+  deleted branch, "<branch> was never published", "The upstream of
+  <branch> was deleted", or "<branch> has 1 commit not on <upstream>", with
+  Cancel; otherwise "Remove <name>?", which it also is until the preview
+  arrives. When the preview expires is said only once it has. The ignored
+  files option reads "Stop if there are ignored files (don't delete them)".
+  Remove closes the dialog: the removal goes on, the
   worktree's row says "removing" and its actions are off, and a toast says
   how it ended. A failure stays on the row, or in the repository's group
   once the worktree left the list, with Details to read it.
 - **Clean up merged:** every linked worktree of one repository whose pull
   request merged, previewed with Timber's defaults, as Ready or Skipped with
-  the reason. Anything that would need "Delete anyway?", except a deleted
+  the reason. Files or commits that would be lost, except under a deleted
   upstream, and a live session make a row Skipped, with Open Done for its
   own dialog. A Ready row with a deleted upstream says that commits only on
   its branch go with it. One `apply` per Ready row shows before Remove.

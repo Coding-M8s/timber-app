@@ -5,6 +5,11 @@ import { DONE_PREVIEW_MINUTES, type DonePreview } from "../shared/timber-done";
  * The wording of the Done dialog. Pure. It only puts into words what Timber's
  * preview says, plus the upstream state the app already shows in the list.
  * Nothing here decides whether a worktree may be removed: Timber does.
+ *
+ * One name for the action: "Done" is the entry that opens the dialog, in the
+ * command palette and both menus, and "Remove" is its verb everywhere after
+ * that: the title, the button, progress, toasts, and tooltips. "Delete" is
+ * only said of what stops existing with the folder: its files and its branch.
  */
 
 /** Said in every preview: Timber's cleanup works on local state only. */
@@ -56,33 +61,63 @@ export function describeUnpublishedCommits(preview: DonePreview, sync: SyncState
 export function describeIgnoredEffect(preview: DonePreview): string {
 	const count = preview.ignored.length;
 	if (!preview.options.discardIgnored) {
-		return "No ignored files exist, so there is nothing to keep. If any appear before the removal, Timber refuses it.";
+		return "No ignored files exist. If any appear before the removal, Timber stops and removes nothing.";
 	}
-	const scope = "Removing covers every ignored file in the folder, including ones that scripts run before deletion create or change.";
+	const scope = "Removing covers every ignored file in the folder, including ones that scripts run before the removal create or change.";
 	if (count === 0) return `No ignored files were found. ${scope}`;
 	return `${count} ignored ${count === 1 ? "path is" : "paths are"} deleted with the folder. ${scope}`;
 }
 
+/** The label of the option that makes Timber refuse while ignored files exist (`--keep-ignored`), rather than delete them. */
+export const KEEP_IGNORED_LABEL = "Stop if there are ignored files (don't delete them)";
+
+/** The plain sentence the dialog leads with, before the exact folder. */
+export const DONE_LEAD = "Removes this worktree's folder from this computer.";
+
+/** The label over the exact Timber commands, which the dialog shows before they run. */
+export const DONE_COMMAND_LABEL = "Timber command";
+
+/** The label over the preview command, which runs when the dialog opens, when an option changes, and on Preview again. */
+export const DONE_PREVIEW_COMMAND_LABEL = "Timber command for the preview";
+
+/** The dialog's title and the label of the button that keeps the worktree. */
+export interface DoneHeading {
+	title: string;
+	cancelLabel: string;
+}
+
 /**
- * Whether the dialog asks "Delete anyway?": there are modified or untracked
- * files, or commits that may be on this branch only. This chooses the wording
- * and nothing else. Either way nothing is removed before Remove is pressed,
+ * The title says what is at risk, from the preview on screen and the
+ * upstream state the list has. Modified or untracked files make it "Delete
+ * anyway?", with Keep. Without them, commits that may be only on the branch
+ * being deleted name the branch and why, with Cancel: the same commits the
+ * body's sentence is about (`describeUnpublishedCommits`). Otherwise, and
+ * while there is no preview to go by, it is "Remove <label>?". This chooses
+ * the words and nothing else: nothing is removed before Remove is pressed,
  * and Timber checks the worktree against the preview again.
  */
-export function losesWork(preview: DonePreview, sync: SyncState | null): boolean {
-	return filesLost(preview) > 0 || describeUnpublishedCommits(preview, sync) !== null;
+export function describeDoneHeading(label: string, preview: DonePreview | null, sync: SyncState | null, gone = false): DoneHeading {
+	if (gone) return { title: `${label} is no longer in the list`, cancelLabel: "Close" };
+	if (preview === null) return { title: `Remove ${label}?`, cancelLabel: "Cancel" };
+	if (filesLost(preview) > 0) return { title: "Delete anyway?", cancelLabel: "Keep" };
+	const { branch } = preview.worktree;
+	if (branch !== null && sync !== null && describeUnpublishedCommits(preview, sync) !== null) {
+		switch (sync.kind) {
+			case "unpublished":
+				return { title: `${branch} was never published`, cancelLabel: "Cancel" };
+			case "gone":
+				return { title: `The upstream of ${branch} was deleted`, cancelLabel: "Cancel" };
+			case "tracking":
+				return { title: `${branch} has ${sync.ahead} ${sync.ahead === 1 ? "commit" : "commits"} not on ${sync.upstream}`, cancelLabel: "Cancel" };
+		}
+	}
+	return { title: `Remove ${label}?`, cancelLabel: "Cancel" };
 }
 
 /** The toast after a removal that worked. `label` is the worktree's name in the list. */
 export function describeDone(label: string, preview: DonePreview): string {
 	const { branch } = preview.worktree;
 	return branch !== null && preview.options.keepBranch ? `Removed the worktree of ${branch} and kept the branch` : `Removed ${label}`;
-}
-
-/** The time of day a preview expires, for the line under it. */
-export function describeExpiry(expiresAt: number): string {
-	const time = new Date(expiresAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-	return `Timber accepts this preview until ${time}.`;
 }
 
 /** Why a worktree's actions are off while Timber removes it. */

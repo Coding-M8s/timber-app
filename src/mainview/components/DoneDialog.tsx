@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Worktree } from "../../shared/model";
 import { type DoneOptions, describeDoneApply, describeDonePreview } from "../../shared/timber-done";
 import {
-	DONE_EXPIRED_NOTE, DONE_REMOTE_NOTE, describeBranchEffect, describeDone, describeExpiry, describeIgnoredEffect,
-	describeUnpublishedCommits, filesLost, losesWork,
+	DONE_COMMAND_LABEL, DONE_EXPIRED_NOTE, DONE_LEAD, DONE_PREVIEW_COMMAND_LABEL, DONE_REMOTE_NOTE, KEEP_IGNORED_LABEL, describeBranchEffect,
+	describeDone, describeDoneHeading, describeIgnoredEffect, describeUnpublishedCommits, filesLost,
 } from "../done-format";
 import { worktreeLabel } from "../format";
 import { describeDoneSessionsWarning } from "../terminal-format";
@@ -76,10 +76,8 @@ export function DoneDialogView(props: DoneDialogViewProps) {
 	const label = worktreeLabel(worktree);
 	const basePending = baseOf(baseDraft) !== options.base;
 	const ready = preview.kind === "ready" && !preview.expired ? preview.preview : null;
-	const lossy = ready !== null && losesWork(ready, worktree.sync);
 	const commits = ready && describeUnpublishedCommits(ready, worktree.sync);
-
-	const title = gone ? `${label} is no longer in the list` : lossy ? "Delete anyway?" : `Remove ${label}?`;
+	const { title, cancelLabel } = describeDoneHeading(label, ready, worktree.sync, gone);
 	const failureNote = (
 		<p className="done-note">
 			{gone
@@ -92,6 +90,7 @@ export function DoneDialogView(props: DoneDialogViewProps) {
 		<OperationDialog
 			title={title}
 			command={describeDoneApply(worktree.path)}
+			commandLabel={DONE_COMMAND_LABEL}
 			submission={submission}
 			submitLabel="Remove"
 			runningLabel={`Removing ${label}`}
@@ -99,12 +98,13 @@ export function DoneDialogView(props: DoneDialogViewProps) {
 			failureNote={failureNote}
 			canSubmit={!gone && !basePending && canRemove(session)}
 			destructive
-			cancelLabel={gone ? "Close" : lossy ? "Keep" : "Cancel"}
+			cancelLabel={cancelLabel}
 			onSubmit={onRemove}
 			onClose={onClose}
 		>
+			{!gone && <p className="done-lead">{DONE_LEAD}</p>}
 			<div className="done-target">
-				<span className="done-label">{gone ? "Was at" : "Removes the folder"}</span>
+				{gone && <span className="done-label">Was at</span>}
 				<span className="path">{worktree.path}</span>
 				<span className="done-sub">{worktree.branch === null ? label : `Branch ${worktree.branch}`} in {repository}</span>
 			</div>
@@ -127,7 +127,7 @@ export function DoneDialogView(props: DoneDialogViewProps) {
 						</label>
 						<label className="done-check">
 							<input type="checkbox" checked={options.keepIgnored} onChange={event => onOptions({ ...options, keepIgnored: event.target.checked })} />
-							<span>Keep ignored files (Timber then refuses while any exist, and copies nothing)</span>
+							<span>{KEEP_IGNORED_LABEL}</span>
 						</label>
 						<label className="field">
 							<span className="field-label">Base branch to check against (empty for Timber's own choice)</span>
@@ -167,11 +167,13 @@ export function DoneDialogView(props: DoneDialogViewProps) {
 								<p className="done-line">{describeBranchEffect(ready)}</p>
 								{commits && <p className="done-warning">{commits}</p>}
 								<p className="done-line">{DONE_REMOTE_NOTE}</p>
-								<p className="done-hint">{describeExpiry(ready.expiresAt)}</p>
 							</>
 						)}
 						<div className="done-preview-foot">
-							<pre className="dialog-command" aria-label="Preview command">{describeDonePreview(worktree.path, options)}</pre>
+							<div className="done-preview-command">
+								<p className="dialog-command-label" aria-hidden="true">{DONE_PREVIEW_COMMAND_LABEL}</p>
+								<pre className="dialog-command" aria-label="Preview command">{describeDonePreview(worktree.path, options)}</pre>
+							</div>
 							{preview.kind !== "loading" && <button type="button" className="button quiet done-refresh" onClick={onRefresh}>Preview again</button>}
 						</div>
 					</div>

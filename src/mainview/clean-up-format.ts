@@ -9,7 +9,8 @@ import { worktreeLabel } from "./format";
  * of one repository whose pull request merged. Pure. As in the Done dialog,
  * nothing here decides what is safe to delete: Timber previews each
  * worktree, and this only sorts its answers into Ready and Skipped, so a
- * worktree that would need "Delete anyway?" is left for its own Done dialog.
+ * worktree with files or commits that would be lost is left for its own Done
+ * dialog.
  */
 
 export const CLEAN_UP_LABEL = "Clean up merged";

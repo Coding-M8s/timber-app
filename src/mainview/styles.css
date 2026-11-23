@@ -1825,6 +1825,8 @@ pre:focus-visible {
 	font-size: 15px;
 	font-weight: 600;
 	letter-spacing: -0.01em;
+	/* A title can name a long branch, such as "<branch> has 1 commit not on <upstream>". */
+	overflow-wrap: anywhere;
 }
 
 .dialog-fields {
@@ -3773,9 +3775,37 @@ pre:focus-visible {
 
 .done-preview-foot {
 	display: flex;
-	align-items: center;
+	align-items: flex-end;
 	justify-content: space-between;
 	gap: 10px;
+}
+
+.done-lead {
+	margin: 0;
+}
+
+.done-preview-command {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+/* Issue 329: a dialog that leads with a plain sentence shows its exact Timber commands quieter, under a label, and still in full. */
+.dialog-command-label {
+	margin: 0;
+	font-size: 11px;
+	color: var(--text-3);
+}
+
+.dialog-foot.labelled .dialog-command-label + .dialog-command {
+	margin-top: -8px;
+}
+
+.dialog-foot.labelled .dialog-command,
+.done-preview-command .dialog-command {
+	font-size: 11px;
+	color: var(--text-3);
 }
 
 .done-refresh {
