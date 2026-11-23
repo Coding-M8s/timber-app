@@ -613,7 +613,24 @@ logins. The app never reads a tracker login and never signs in.
   then More (three dots), whose menu holds "Rebase…" and "Done…". Each
   menu entry opens its dialog, which shows the Timber command before
   anything runs. A disabled entry says why under it, such as "The primary
-  checkout is never removed." Enter, Space, or Down on More opens the menu
+  checkout is never removed."
+- On a primary checkout whose base is its own branch's upstream, the More
+  menu and the command palette offer Pull in place of Rebase, since a
+  rebase there would be a `git pull --rebase` under another name that
+  rewrites local commits. That is so when its saved base is its upstream,
+  or when it has no saved base, its branch tracks the remote branch of the
+  same name, and that is the remote's default branch as of the last fetch
+  (`refs/remotes/<remote>/HEAD`) or the branch Timber's `base_branch`
+  setting names. When that cannot be told offline, as for a remote with no
+  cached default, Rebase stays. Where Pull takes its place, the app offers
+  no rebase there, onto any base; `timber rebase` in a terminal still can. The entry is the row's Pull, with the same
+  commands, checks, dialog (or none, as the Pull setting says), and
+  toasts, and it is offered also when the branch is not behind, is ahead,
+  or has diverged: Pull fetches and only fast-forwards, so Git refuses
+  what is not a fast-forward and nothing is rewritten. Its refusal for a
+  diverged branch says to decide in a terminal, not to rebase. The menu
+  reads "Pull…" when Pull asks first and "Pull" when it runs at once;
+  typing "rebase" in the palette finds it. A row's own menu is unchanged. Enter, Space, or Down on More opens the menu
   on its first entry, Up on its last; the menu moves and closes as a row's
   menu does, and gives the keyboard back to More, as does a dialog opened
   from it when it closes. When Open in editor cannot open anything, why

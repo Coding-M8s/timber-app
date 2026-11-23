@@ -110,6 +110,7 @@ export const sampleRepositories: Repository[] = [
 		available: true,
 		failure: null,
 		setup: "repository",
+		fallbackBase: "refs/remotes/origin/main",
 		worktrees: [
 			worktree("timber", "main", {
 				primary: true,
@@ -140,6 +141,7 @@ export const sampleRepositories: Repository[] = [
 		available: true,
 		failure: null,
 		setup: "repository",
+		fallbackBase: "refs/remotes/origin/main",
 		worktrees: [
 			worktree("api-server", "main", { primary: true }),
 			worktree("api-server", "feat/rate-limit-headers", {
@@ -172,6 +174,8 @@ export const sampleStatesRepository: Repository = {
 	failure: null,
 	// Set up with the machine defaults only, which counts as set up.
 	setup: "machine",
+	// As when the remote has no cached default branch: the primary checkout keeps Rebase.
+	fallbackBase: null,
 	worktrees: [
 		worktree("billing", "main", { primary: true }),
 		worktree("billing", "review-build", {
@@ -227,6 +231,7 @@ export const sampleMergedRepository: Repository = {
 	available: true,
 	failure: null,
 	setup: "repository",
+	fallbackBase: "refs/remotes/origin/main",
 	worktrees: [
 		worktree("storefront", "main", { primary: true }),
 		worktree("storefront", "feat/coupons", { sync: { kind: "gone", upstream: "origin/feat/coupons" } }),
@@ -256,6 +261,7 @@ export const sampleUnavailableRepository: Repository = {
 	available: false,
 	failure: null,
 	setup: "unknown",
+	fallbackBase: null,
 	worktrees: [],
 };
 
@@ -273,6 +279,7 @@ export const samplePickableRepository: Repository = {
 	available: true,
 	failure: null,
 	setup: "none",
+	fallbackBase: "refs/remotes/origin/main",
 	worktrees: [
 		worktree("docs-site", "main", { primary: true }),
 		worktree("docs-site", "feat/search", {
@@ -634,7 +641,7 @@ export function createMockEngine(
 	// As the main process does: a failed listing brings the diagnostic and no worktrees.
 	const asRead = (repository: Repository): Repository => {
 		const diagnostic = timberFailures.get(repository.path);
-		return diagnostic === undefined || !repository.available ? repository : { ...repository, failure: diagnostic, setup: "unknown", worktrees: [] };
+		return diagnostic === undefined || !repository.available ? repository : { ...repository, failure: diagnostic, setup: "unknown", fallbackBase: null, worktrees: [] };
 	};
 	let picked: string | null = samplePickableRepository.path;
 	// Everything on the pretend disk: whatever was ever listed, plus one repository to add.

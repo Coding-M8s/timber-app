@@ -20,7 +20,7 @@ const ORIGIN_MAIN: SavedBase = { kind: "assigned", ref: "refs/remotes/origin/mai
 /** The repository as the app's list would answer, with each worktree's saved base. */
 function listed(path: string, worktrees: [string, SavedBase | null][]): Repository {
 	return {
-		path, name: "sample", available: true, failure: null, setup: "repository",
+		path, name: "sample", available: true, failure: null, setup: "repository", fallbackBase: null,
 		worktrees: worktrees.map(([folder, base]) => ({
 			id: folder, path: folder, canonicalPath: folder, branch: "feat", head: null, primary: folder === path, detached: false, locked: false, prunable: false,
 			pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, base, issue: null, sync: null, baseCounts: null,

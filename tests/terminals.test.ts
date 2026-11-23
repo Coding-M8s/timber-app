@@ -100,6 +100,7 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 	const listed = (): Repository => ({
 		path: repository, name: "my repo", available: true, failure: null,
 		setup: "repository",
+		fallbackBase: null,
 		worktrees: [repository, worktree].map((path, index) => ({
 			id: `id:${path}`, path, canonicalPath: path, branch: index === 0 ? "main" : "feat/login", head: null, primary: index === 0, detached: false,
 			locked: false, prunable: false, pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, base: null, issue: null, sync: null, baseCounts: null,

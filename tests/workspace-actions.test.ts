@@ -5,6 +5,7 @@ import {
 	describeWorkspaceMenu, describeWorkspaceMore, workspaceKindLabel, workspaceMenuChoice, workspaceMenuItems, workspaceMoreKeyOpens,
 } from "../src/mainview/workspace-actions-format";
 import { sampleRepositories } from "../src/mainview/engine/mock";
+import { PULLING_REASON, pullInsteadOfRebase } from "../src/mainview/sync-action-format";
 import type { Worktree } from "../src/shared/model";
 
 const TIMBER = "/work/timber";
@@ -12,6 +13,8 @@ const worktrees = sampleRepositories.flatMap(repository => repository.worktrees)
 const primary = worktrees.find(worktree => worktree.primary)!;
 const linked = worktrees.find(worktree => !worktree.primary && worktree.pathExists)!;
 const missing: Worktree = { ...linked, pathExists: false };
+const timber = sampleRepositories[0]!;
+const asking = { pullAsks: true, pulling: false };
 
 describe("the workspace header's More menu", () => {
 	test("a linked worktree offers Rebase and Done, each with today's tooltip as its description", () => {
@@ -46,6 +49,47 @@ describe("the workspace header's More menu", () => {
 		expect(workspaceMenuChoice(TIMBER, primary, "done")).toBeNull();
 		expect(workspaceMenuChoice(TIMBER, missing, "rebase")).toBeNull();
 		expect(workspaceMenuChoice(TIMBER, linked, "rebase", true)).toBeNull();
+	});
+
+	test("the primary checkout whose base is its upstream offers Pull in place of Rebase, which opens the row's Pull", () => {
+		const pull = pullInsteadOfRebase(timber, primary, asking);
+		expect(pull).not.toBeNull();
+		const [first, done] = workspaceMenuItems(primary, false, pull);
+		expect(first).toEqual({ id: "pull", label: "Pull…", disabled: false, note: null, description: pull!.title });
+		expect(done!.id).toBe("done");
+		expect(workspaceMenuItems(primary, false, pull).some(item => item.id === "rebase")).toBe(false);
+		expect(workspaceMenuChoice(TIMBER, primary, "pull", false, pull)).toEqual({ kind: "sync-action", action: "pull", repository: TIMBER, worktree: primary.id });
+		// Without the Pull it was drawn with, the entry is not there to choose.
+		expect(workspaceMenuChoice(TIMBER, primary, "pull")).toBeNull();
+	});
+
+	test("Pull is plain \"Pull\" when the Pull setting skips the dialog, and is off while it runs or Timber removes the worktree", () => {
+		const skipping = pullInsteadOfRebase(timber, primary, { pullAsks: false, pulling: false })!;
+		expect(workspaceMenuItems(primary, false, skipping)[0]!.label).toBe("Pull");
+		const running = pullInsteadOfRebase(timber, primary, { pullAsks: false, pulling: true })!;
+		expect(workspaceMenuItems(primary, false, running)[0]).toMatchObject({ id: "pull", disabled: true, note: PULLING_REASON, description: null });
+		expect(workspaceMenuChoice(TIMBER, primary, "pull", false, running)).toBeNull();
+		expect(workspaceMenuItems(primary, true, skipping)[0]).toMatchObject({ disabled: true, note: BEING_REMOVED_REASON });
+	});
+
+	test("a primary checkout whose saved base is its upstream offers Pull; one on a feature branch with another base keeps Rebase", () => {
+		const saved: Worktree = { ...primary, base: { kind: "assigned", ref: "refs/remotes/origin/main" } };
+		expect(workspaceMenuItems(saved, false, pullInsteadOfRebase({ ...timber, fallbackBase: null }, saved, asking))[0]!.id).toBe("pull");
+		const feature: Worktree = {
+			...primary,
+			branch: "feat/login",
+			base: { kind: "assigned", ref: "refs/remotes/origin/main" },
+			sync: { kind: "tracking", upstream: "origin/feat/login", ahead: 0, behind: 2, remote: "origin", upstreamRef: "refs/remotes/origin/feat/login" },
+		};
+		const pull = pullInsteadOfRebase(timber, feature, asking);
+		expect(pull).toBeNull();
+		expect(workspaceMenuItems(feature, false, pull).map(item => item.id)).toEqual(["rebase", "done"]);
+	});
+
+	test("linked worktrees, and a primary checkout whose fallback base is unknown, keep Rebase", () => {
+		expect(pullInsteadOfRebase(timber, linked, asking)).toBeNull();
+		expect(pullInsteadOfRebase({ ...timber, fallbackBase: null }, primary, asking)).toBeNull();
+		expect(workspaceMenuItems(linked, false, pullInsteadOfRebase(timber, linked, asking))[0]!.id).toBe("rebase");
 	});
 
 	test("the button and the menu are named after the worktree", () => {

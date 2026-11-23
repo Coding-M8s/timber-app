@@ -20,6 +20,7 @@ let personal: PersonalChop[] = [];
 const listed = (paths: string[]): Repository => ({
 	path: primary, name: "sample", available: true, failure: null,
 	setup: "repository",
+	fallbackBase: null,
 	worktrees: paths.map(path => ({
 		id: path, path, canonicalPath: path, branch: "main", head: null, primary: path === primary, detached: false, locked: false, prunable: false,
 		pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, base: null, issue: null, sync: null, baseCounts: null,

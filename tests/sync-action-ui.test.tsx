@@ -5,7 +5,7 @@ import { WorktreeRow } from "../src/mainview/components/WorktreeRow";
 import { createMockEngine, sampleRepositories, sampleTimberStatuses } from "../src/mainview/engine/mock";
 import type { SyncEnding } from "../src/mainview/engine/mock-sync";
 import { createAppStore } from "../src/mainview/store/store";
-import { describeSyncCommands, describeSyncControls, describeSyncRefusalNote, presentSyncResult } from "../src/mainview/sync-action-format";
+import { describeSyncCommands, describeSyncControls, describeSyncIntro, describeSyncRefusalNote, presentSyncResult, pullInsteadOfRebase, syncMenuEntries } from "../src/mainview/sync-action-format";
 import { worktreeMenuChoice, worktreeMenuItems } from "../src/mainview/worktree-menu-format";
 import { BEING_REMOVED_REASON } from "../src/mainview/done-format";
 import type { SyncState, TimberStatus, Worktree } from "../src/shared/model";
@@ -130,6 +130,18 @@ describe("the Pull dialog", () => {
 		expect(markup).toContain("fatal: Not possible to fast-forward, aborting.");
 		expect(markup).toContain("Rebase it onto its upstream");
 		expect(describeSyncRefusalNote({ ...refused, reason: "local-changes" })).toContain("your files are as they were");
+	});
+
+	test("where Pull takes Rebase's place, a diverged branch's refusal does not point to Rebase", () => {
+		const refused: SyncActionResult = {
+			outcome: "refused", action: "pull", reason: "diverged", fetchFailure: null,
+			failure: { command: "git merge --ff-only --no-autostash refs/remotes/origin/feat/x", diagnostic: "fatal: Not possible to fast-forward, aborting.", output: null },
+		};
+		const markup = view({ result: refused, rebaseOffered: false, submission: { running: false, failure: refused.failure } });
+		expect(markup).toContain("fatal: Not possible to fast-forward, aborting.");
+		expect(markup).toContain("decide in a terminal");
+		expect(markup).not.toContain("Rebase it onto its upstream");
+		expect(describeSyncRefusalNote({ ...refused, reason: "local-changes" }, false)).toContain("your files are as they were");
 	});
 
 	test("a worktree that left the list, or lost its upstream, runs nothing", () => {
@@ -467,5 +479,51 @@ describe("the Pull dialog's box", () => {
 		const failed: SyncActionResult = { outcome: "failed", action: "pull", ran: true, failure: { command: null, diagnostic: "Git stopped.", output: null } };
 		expect(view({ worktree: null, result: failed })).not.toContain("Nothing was run.");
 		expect(view({ worktree: null, result: failed })).toContain("This worktree left the list.");
+	});
+});
+
+describe("Pull in place of Rebase, for a primary checkout whose base is its upstream", () => {
+	const primary: Worktree = {
+		...behind,
+		id: "/work/app/.git\0verified\0/work/app",
+		path: "/work/app",
+		canonicalPath: "/work/app",
+		branch: "main",
+		primary: true,
+		base: { kind: "unassigned" },
+		sync: { kind: "tracking", upstream: "origin/main", ahead: 0, behind: 3, remote: "origin", upstreamRef: "refs/remotes/origin/main" },
+	};
+	const repository = { fallbackBase: "refs/remotes/origin/main" };
+	const asking = { pullAsks: true, pulling: false };
+	const withSync = (sync: SyncState): Worktree => ({ ...primary, sync });
+
+	test("when the row offers Pull, it is that same Pull", () => {
+		expect(pullInsteadOfRebase(repository, primary, asking)).toEqual(syncMenuEntries(primary, asking)[0]!);
+	});
+
+	test("it is offered also when the branch is level, ahead, diverged, or its upstream was rewritten, where the row offers none", () => {
+		const level = { kind: "tracking", upstream: "origin/main", ahead: 0, behind: 0, remote: "origin", upstreamRef: "refs/remotes/origin/main" } as const;
+		for (const sync of [level, { ...level, ahead: 2 }, { ...level, ahead: 1, behind: 1 }, { ...level, behind: 1, forcePushed: { at: 1 } }]) {
+			expect(syncMenuEntries(withSync(sync), asking).some(entry => entry.action === "pull")).toBe(false);
+			const pull = pullInsteadOfRebase(repository, withSync(sync), asking)!;
+			expect(pull).toMatchObject({ action: "pull", label: "Pull", opensDialog: true, busy: false });
+			expect(pull.title).toBe("Fetches origin/main and fast-forwards main to it, never rewriting its commits. Shows the commands, then pulls.");
+		}
+		const skipping = pullInsteadOfRebase(repository, withSync(level), { pullAsks: false, pulling: false })!;
+		expect(skipping).toMatchObject({ opensDialog: false, title: "Fetches origin/main and fast-forwards main to it, never rewriting its commits. Pulls now, without asking first." });
+		expect(pullInsteadOfRebase(repository, withSync(level), { pullAsks: false, pulling: true })).toMatchObject({ busy: true, title: "Pulling origin/main into main." });
+	});
+
+	test("its dialog shows the row's commands, and says nothing of a count when the branch is not behind", () => {
+		const level = withSync({ kind: "tracking", upstream: "origin/main", ahead: 0, behind: 0, remote: "origin", upstreamRef: "refs/remotes/origin/main" });
+		expect(describeSyncIntro("pull", level)[0]).toStartWith("Pull fetches origin/main and fast-forwards main to it");
+		expect(describeSyncIntro("pull", primary)[0]).toStartWith("3 commits behind origin/main as of the last fetch.");
+		expect(describeSyncCommands("pull", { remote: "origin", upstreamRef: "refs/remotes/origin/main" }, primary.path).command).toBe("git fetch origin");
+	});
+
+	test("none where Rebase stays: a linked worktree, an unknown fallback base, or no upstream on a remote", () => {
+		expect(pullInsteadOfRebase(repository, { ...primary, primary: false }, asking)).toBeNull();
+		expect(pullInsteadOfRebase({ fallbackBase: null }, primary, asking)).toBeNull();
+		expect(pullInsteadOfRebase(repository, withSync({ kind: "unpublished" }), asking)).toBeNull();
 	});
 });

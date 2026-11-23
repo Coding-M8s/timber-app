@@ -163,7 +163,7 @@ describe.skipIf(windows)("a chop's sound plays as it starts, in the main process
 	afterAll(() => rmSync(root, { recursive: true, force: true }));
 
 	const listed = (): Repository => ({
-		path: checkout, name: "sample", available: true, failure: null, setup: "repository",
+		path: checkout, name: "sample", available: true, failure: null, setup: "repository", fallbackBase: null,
 		worktrees: [{
 			id: checkout, path: checkout, canonicalPath: checkout, branch: "main", head: null, primary: true, detached: false, locked: false, prunable: false,
 			pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, base: null, issue: null, sync: null, baseCounts: null,

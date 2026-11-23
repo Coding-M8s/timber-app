@@ -77,6 +77,7 @@ describe.if(windows)("terminal sessions on Windows, on a real ConPTY", () => {
 	const listed = (): Repository => ({
 		path: repository, name: "my repo", available: true, failure: null,
 		setup: "repository",
+		fallbackBase: null,
 		worktrees: [repository, worktree].map((path, index) => ({
 			id: `id:${path}`, path, canonicalPath: path, branch: index === 0 ? "main" : "feat/login", head: null, primary: index === 0, detached: false,
 			locked: false, prunable: false, pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, base: null, issue: null, sync: null, baseCounts: null,

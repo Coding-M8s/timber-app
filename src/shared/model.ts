@@ -184,6 +184,16 @@ export interface Repository {
 	failure: string | null;
 	/** Which Timber settings apply to the repository, as of the latest read (see `SetupState`). */
 	setup: SetupState;
+	/**
+	 * The remote-tracking ref a worktree with no saved base is rebased onto,
+	 * such as `refs/remotes/origin/main`, as far as can be told offline: the
+	 * remote's default branch as of the last fetch, or the branch Timber's
+	 * settings name. Null when unknown and when it was not worth reading, since
+	 * it is read only for a primary checkout that tracks the remote branch of
+	 * its own name with no saved base (see ./fallback-base.ts). It only
+	 * chooses between Rebase and Pull for the primary checkout.
+	 */
+	fallbackBase: string | null;
 	worktrees: Worktree[];
 }
 

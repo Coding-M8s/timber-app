@@ -147,7 +147,7 @@ describe("when Timber does not give a list", () => {
 		createRepositoryReader(async () => ready(standInTimber(root, `stand-in-${name}`, output, exitCode).path));
 
 	test("a failed record becomes a repository with the diagnostic and no worktrees", async () => {
-		const expected = { path: primary, name: "my sample", available: true, failure: "Not a Git repository: /work/plain", setup: "unknown" as const, worktrees: [] };
+		const expected = { path: primary, name: "my sample", available: true, failure: "Not a Git repository: /work/plain", setup: "unknown" as const, fallbackBase: null, worktrees: [] };
 		expect(await standIn("failed", recorded.failed, 1).reload(primary)).toEqual(expected);
 		expect(await standIn("failed", recorded.failed, 1).find(primary)).toEqual({ outcome: "failed", message: "Not a Git repository: /work/plain" });
 	});

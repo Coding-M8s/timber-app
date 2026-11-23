@@ -54,7 +54,7 @@ interface Captured {
 }
 
 /** Run Timber as an executable plus arguments, never through a shell, with standard input closed. */
-async function runCaptured(argv: string[], cwd: string, environment: Environment, timeout: number): Promise<Captured> {
+export async function runCaptured(argv: string[], cwd: string, environment: Environment, timeout: number): Promise<Captured> {
 	const errors = createOutputCapture();
 	const output = createOutputCapture(ANSWER_LIMIT_BYTES);
 	const child = Bun.spawn(argv, { cwd, stdin: "ignore", stdout: "pipe", stderr: "pipe", env: environment, timeout });

@@ -17,7 +17,7 @@ const MENU_CLOSED = `document.querySelector(".worktree-menu") === null`;
 const DIALOG_OPEN = `document.querySelector("dialog[open]") !== null`;
 const DIALOG_CLOSED = `document.querySelector("dialog[open]") === null`;
 const ON_MORE = `document.activeElement === document.querySelector(${JSON.stringify(MORE)})`;
-const FOCUSED_TEXT = `document.activeElement?.textContent ?? ""`;
+const FOCUSED_TEXT = `(document.activeElement?.textContent ?? "")`;
 /** The sample worktree with an open pull request, #42. */
 const LOOKUP = "/work/timber-worktrees/feat-github-issue-lookup";
 
@@ -54,12 +54,13 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the works
 		await page.until(ON_MORE, "Tab reached More");
 	}, 30_000);
 
-	test("Enter opens the menu on Rebase; Done is off with the reason and stays put when pressed; Escape gives the keyboard back to More", async () => {
+	test("on the primary checkout, whose base is its upstream, Enter opens the menu on Pull; Done is off with the reason and stays put when pressed; Escape gives the keyboard back to More", async () => {
 		await page.evaluate(`document.querySelector(${JSON.stringify(MORE)}).focus()`);
 		await page.press("Enter");
 		await page.until(MENU_OPEN, "the menu opened");
 		expect(await page.evaluate<string>(`document.querySelector(${JSON.stringify(MORE)}).getAttribute("aria-expanded")`)).toBe("true");
-		await page.until(`${FOCUSED_TEXT} === "Rebase…"`, "Rebase had the keyboard");
+		await page.until(`${FOCUSED_TEXT} === "Pull…"`, "Pull had the keyboard");
+		expect(await page.evaluate<string[]>(`[...document.querySelectorAll("[role=menuitem]")].map(item => item.textContent.trim())`)).toEqual(["Pull…", "Done…"]);
 		await page.press("ArrowDown");
 		await page.until(`${FOCUSED_TEXT} === "Done…"`, "Done had the keyboard");
 		expect(await page.evaluate<string | null>(`document.activeElement.getAttribute("aria-disabled")`)).toBe("true");
@@ -79,10 +80,24 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the works
 		await page.press("Escape");
 		await page.until(ON_MORE, "the keyboard went back to More");
 		await page.press(" ");
-		await page.until(`${FOCUSED_TEXT} === "Rebase…"`, "Space opened on Rebase");
+		await page.until(`${FOCUSED_TEXT} === "Pull…"`, "Space opened on Pull");
 	}, 30_000);
 
-	test("Rebase from the menu opens its dialog with the command, and closing it gives the keyboard back to More", async () => {
+	test("Pull from the primary checkout's menu opens the row's Pull dialog with the Git commands", async () => {
+		await page.evaluate(`document.querySelector(${JSON.stringify(MORE)}).focus()`);
+		await page.press("Enter");
+		await page.until(`${FOCUSED_TEXT} === "Pull…"`, "Pull had the keyboard");
+		await page.press("Enter");
+		await page.until(DIALOG_OPEN, "the Pull dialog opened");
+		expect(await page.evaluate<string>(`document.querySelector("dialog[open] .dialog-title").textContent`)).toBe("Pull main");
+		expect(await page.evaluate<string[]>(`[...document.querySelectorAll("dialog[open] .dialog-command")].map(command => command.textContent)`))
+			.toEqual(["git fetch origin", "git merge --ff-only --no-autostash refs/remotes/origin/main"]);
+		await page.press("Escape");
+		await page.until(DIALOG_CLOSED, "the dialog closed");
+		await page.until(ON_MORE, "the keyboard went back to More");
+	}, 30_000);
+
+	test("Rebase from a linked worktree's menu opens its dialog with the command, and closing it gives the keyboard back to More", async () => {
 		await selectWorktree(LOOKUP);
 		await page.evaluate(`document.querySelector(${JSON.stringify(MORE)}).focus()`);
 		await page.press("Enter");

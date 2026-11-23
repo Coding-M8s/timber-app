@@ -10,7 +10,7 @@ import { type AppState, type DialogRequest, changesPanelShown, isBeingRemoved, s
 import type { SidePanelView } from "../shared/layout";
 import { type RowSessionMark, describeRowSessions } from "./terminal-format";
 import { NONE_WAITING, WAITING_LABEL, describeToVisit } from "./waiting";
-import { PULLING_REASON, SYNC_ACTION_WORDS, syncMenuEntries } from "./sync-action-format";
+import { PULLING_REASON, SYNC_ACTION_WORDS, pullInsteadOfRebase, syncMenuEntries } from "./sync-action-format";
 
 /**
  * The command palette without React: what it lists for the state of the app,
@@ -244,16 +244,23 @@ function actionEntries(state: AppState): PaletteEntry[] {
 			add(inWorktree(chop.kind === "prompt" ? "agent" : "terminal"), `chop:${chop.name}`, runChopLabel(chop.name, action), hint, chopBlockedReason(action, place),
 				{ kind: "chop", repository: repository.path, worktree: worktree.id, chop: chop.name }, [chop.title, "chop", chop.kind]);
 		}
-		// A sync action is listed only while it applies to the branch, as on the row and in its menu.
-		for (const entry of syncMenuEntries(worktree, syncOptionsOf(state, repository.path, worktree.path))) {
+		// A sync action is listed only while it applies to the branch, as on the row and in its menu. A primary
+		// checkout whose base is its own upstream lists Pull in place of Rebase, as its More menu does, once.
+		const options = syncOptionsOf(state, repository.path, worktree.path);
+		const pullInstead = pullInsteadOfRebase(repository, worktree, options);
+		const syncEntries = syncMenuEntries(worktree, options).filter(entry => pullInstead === null || entry.action !== "pull");
+		for (const entry of pullInstead === null ? syncEntries : [pullInstead, ...syncEntries]) {
 			const words = SYNC_ACTION_WORDS[entry.action];
 			const hint = entry.opensDialog ? `Opens ${entry.label} for ${name}, which shows ${words.shows}.` : `Pulls into ${name} now, without asking first. The dialog opens only when Git refuses or it fails.`;
 			add(inWorktree(entry.action === "push" ? "push" : "fetch"), `sync:${entry.action}`, entry.label, hint,
 				isBeingRemoved(state, repository.path, worktree.path) ? BEING_REMOVED_REASON : entry.busy ? PULLING_REASON : null,
-				{ kind: "dialog", request: { kind: "sync-action", action: entry.action, repository: repository.path, worktree: worktree.id } }, words.keywords);
+				{ kind: "dialog", request: { kind: "sync-action", action: entry.action, repository: repository.path, worktree: worktree.id } },
+				entry === pullInstead ? [...words.keywords, "rebase"] : words.keywords);
 		}
-		add(inWorktree("rebase"), "rebase", "Rebase", `Opens Rebase for ${name}, which shows the Timber command before it runs.`, worktree.pathExists ? null : REBASE_FOLDER_MISSING,
-			{ kind: "dialog", request: { kind: "rebase-worktree", repository: repository.path, worktree: worktree.id } });
+		if (pullInstead === null) {
+			add(inWorktree("rebase"), "rebase", "Rebase", `Opens Rebase for ${name}, which shows the Timber command before it runs.`, worktree.pathExists ? null : REBASE_FOLDER_MISSING,
+				{ kind: "dialog", request: { kind: "rebase-worktree", repository: repository.path, worktree: worktree.id } });
+		}
 		const running = state.operations.some(operation => operation.kind === "open-in-editor" && operation.worktree === worktree.path);
 		const editor: EditorAction = describeEditorAction(state.preferences.editor, worktree, running);
 		add(inWorktree("editor"), "editor", OPEN_IN_EDITOR, `Opens ${name} in your editor.`, editor.available ? null : editor.reason ?? OPENING_IN_EDITOR,

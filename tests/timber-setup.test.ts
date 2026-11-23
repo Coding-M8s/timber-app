@@ -3,7 +3,7 @@ import type { Repository } from "../src/shared/model";
 import { showsSetupPrompt } from "../src/shared/timber-setup";
 
 const repository = (overrides: Partial<Repository> = {}): Repository => ({
-	path: "/work/docs-site", name: "docs-site", available: true, failure: null, setup: "none", worktrees: [], ...overrides,
+	path: "/work/docs-site", name: "docs-site", available: true, failure: null, setup: "none", fallbackBase: null, worktrees: [], ...overrides,
 });
 
 describe("the setup prompt", () => {

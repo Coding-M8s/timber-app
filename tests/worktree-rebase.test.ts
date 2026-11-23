@@ -38,7 +38,7 @@ describe("WorktreeCommands.rebase, with a stand-in Timber", () => {
 
 	/** The repository as the app's list would answer. */
 	const listing = (paths: string[], change: Partial<Repository> = {}): Repository => ({
-		path: repository, name: "my repo", available: true, failure: null, setup: "repository",
+		path: repository, name: "my repo", available: true, failure: null, setup: "repository", fallbackBase: null,
 		worktrees: paths.map(path => ({
 			id: path, path, canonicalPath: path, branch: "feat", head: null, primary: false, detached: false, locked: false, prunable: false,
 			pathExists: true, changes: { kind: "known", modified: [], untracked: [] }, base: null, issue: null, sync: null, baseCounts: null,
