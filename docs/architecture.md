@@ -5593,8 +5593,17 @@ Off for every agent until the person turns it on.
   its user hooks there whatever `CURSOR_CONFIG_DIR` names, so a row's
   config folder does not move the hook, and one hook serves every Cursor
   CLI row. `sessionStart` gives idle, `beforeSubmitPrompt` working, and
-  `stop` done; no event says it waits for the person, so Cursor CLI has no
-  needs you. Its hooks run with no terminal; one that prints nothing, leaves
+  `stop` done. Cursor CLI has no needs you (checked in issue 352, with the
+  same version and date, for shell commands and questions; edit and MCP
+  approval not tried): `preToolUse` and `beforeShellExecution` run for
+  every shell command before Cursor decides whether to ask, an allowlisted
+  one included, so neither means it waits; no event ran while it waited
+  for a shell command's approval or for the answer to a question it asked,
+  and its bundle lists no event for waiting. A turn stopped with Esc or
+  Ctrl+C runs `stop` twice, so it shows done, as a finished turn does; a
+  turn that cannot reach Cursor's servers keeps reconnecting and runs no
+  `stop`, so it stays working; a turn that fails in another way was not
+  tried. Its hooks run with no terminal; one that prints nothing, leaves
   its input unread, or names a missing command lets the turn go on.
   Gemini CLI, from the source and docs of its 0.70.0 npm package, read on
   2026-11-22 on Linux x64 and **not run**: Gemini CLI is not installed on

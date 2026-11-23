@@ -4634,3 +4634,48 @@ with Bun 1.4.5 and headless Chrome, on 2026-11-22:
 - Not run: OpenCode itself, so no claim yet that an OpenCode session shows
   its states; OpenCode 2, whose events are renamed; the desktop app by
   hand; macOS and Windows.
+
+Run for Cursor CLI's needs you and interrupted turns (issue 352), Linux x64
+(Pop!_OS 24.04) with Bun 1.4.5 and Cursor CLI 2026.11.22-e9042b2, on
+2026-11-22:
+
+- Cursor CLI was run interactively in a pseudo terminal of 120 by 40 by a
+  Python script that typed prompts and keys, with a temporary home folder
+  whose `.cursor` linked every entry of the real one but `hooks.json` and
+  `cli-config.json`. Its `cli-config.json` was a copy of the real one with
+  `approvalMode` set to `allowlist` (the real one says `unrestricted`;
+  `Shell(ls)` is allowlisted); the real `~/.cursor/hooks.json` was not
+  touched. Its `hooks.json` ran a scratch logging script, not the app's
+  `status-hook`, on 18 events the bundle names (all but `workspaceOpen` and
+  the editor's Tab events), which kept each event's
+  time and its input; the app's hook never reads that input.
+- `ls`, allowlisted: `preToolUse`, `beforeShellExecution`,
+  `afterShellExecution` 2.2 seconds later, `postToolUse`,
+  `afterAgentResponse`, `stop`, with no question asked.
+- `touch`, not allowlisted: `preToolUse` and `beforeShellExecution`, then
+  "Waiting for approval..." and "Run this command?". No event ran in the 19
+  seconds it waited. On `y`: `afterShellExecution`, `postToolUse`,
+  `afterAgentResponse`, `stop`. On `n`, and then an empty answer to "Tell
+  the agent what to do instead": `afterShellExecution`, `postToolUse`,
+  `stop`, and no event while that answer was awaited.
+- A question asked with its question tool ("Question 1 of 1"): no event at
+  all while it waited, not even `preToolUse`. A file edit ran without
+  asking. No MCP server was set up, so MCP approval was not tried.
+- The bundle (`index.js`, `connect-pool-worker.js`) runs
+  `beforeShellExecution` among a tool's pre-execution hooks for every shell
+  command, where an `ask` answer forces the question, so it runs before
+  Cursor decides whether to ask. It lists no event for waiting, and maps
+  Claude Code's `Notification` and `PermissionRequest` hooks to none.
+- Ctrl+C or Esc in a turn, and Ctrl+C during a running command: `stop`
+  twice within 50 milliseconds, its input saying `aborted`, then `error`.
+- A turn with `HTTPS_PROXY` and `HTTP_PROXY` set to a closed port:
+  `beforeSubmitPrompt`, then "Reconnecting to ..." until its tenth attempt
+  after 380 seconds, when the script stopped, with no `stop`.
+- `bun test tests/status-hooks.test.ts`: 19 pass. It now checks that
+  `beforeShellExecution` gives no state and that a second `stop`, as an
+  interrupt sends, raises no second alert.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors;
+  `bun run test`: 4539 pass, 19 skip, 0 fail, on top of main at `e689e53`.
+- Not run: the desktop app by hand; macOS and Windows; MCP tool approval;
+  an edit that waits for approval; a turn that fails other than by not
+  reaching Cursor's servers.

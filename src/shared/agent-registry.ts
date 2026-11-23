@@ -279,7 +279,12 @@ const ROWS = [
 		 * `CURSOR_CONFIG_DIR` names, and runs `sessionStart`,
 		 * `beforeSubmitPrompt`, and `stop` with no terminal. A hook that prints
 		 * nothing, leaves its input unread, or names a missing command lets the
-		 * turn go on. No event says it waits for the person, so no needs you.
+		 * turn go on. No event ran while it waited for a shell command's
+		 * approval or a question's answer, so no needs you (issue 352; edit and
+		 * MCP approval not tried): `beforeShellExecution` runs for every shell command
+		 * before Cursor decides whether to ask, so mapping it would alert for
+		 * commands that never wait. Esc and Ctrl+C run `stop`, so an
+		 * interrupted turn shows done.
 		 */
 		status: {
 			source: "hook",
