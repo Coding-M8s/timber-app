@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { agentStartArguments, conversationMissingNote, resumableAgent } from "../src/shared/agent-resume";
+import { agentStartArguments, conversationMissingNote, resumableAgent, resumeCommand } from "../src/shared/agent-resume";
 
 const ID = "01a17995-a303-7160-8d6d-d7587e0d5d50";
 
@@ -116,5 +116,28 @@ describe("the arguments an agent starts with", () => {
 		expect(note).toContain("The saved conversation was not found, so Codex started fresh.");
 		expect(note.endsWith("\r\n")).toBe(true);
 		expect(note).not.toContain(String.fromCharCode(0x2014));
+	});
+});
+
+describe("the command that starts an ended agent in its conversation by hand", () => {
+	const base = { conversation: ID, configFolder: null, windows: false } as const;
+
+	test("is the executable as typed and the app's words first, then the arguments", () => {
+		expect(resumeCommand({ ...base, agent: "claude", executable: "claude", arguments: ["--model", "opus"] })).toBe(`claude --resume ${ID} --model opus`);
+		expect(resumeCommand({ ...base, agent: "codex", executable: "/opt/codex bin/codex", arguments: [] })).toBe(`'/opt/codex bin/codex' resume ${ID}`);
+	});
+
+	test("sets the row's own config folder with env, quoted for a shell", () => {
+		const configFolder = { variable: "CLAUDE_CONFIG_DIR", path: "/home/a/my claude" };
+		expect(resumeCommand({ ...base, agent: "claude", executable: "claude", arguments: [], configFolder })).toBe(`env 'CLAUDE_CONFIG_DIR=/home/a/my claude' claude --resume ${ID}`);
+		expect(resumeCommand({ ...base, agent: "codex", executable: "codex", arguments: [], configFolder: { variable: "CODEX_HOME", path: "/home/a/.codex-work" } })).toBe(`env CODEX_HOME=/home/a/.codex-work codex resume ${ID}`);
+	});
+
+	test("on Windows is given for plain words only, and never with a config folder", () => {
+		expect(resumeCommand({ ...base, windows: true, agent: "claude", executable: "C:\\tools\\claude.exe", arguments: ["--model", "opus"] })).toBe(`C:\\tools\\claude.exe --resume ${ID} --model opus`);
+		expect(resumeCommand({ ...base, windows: true, agent: "claude", executable: "claude", arguments: ["--append-system-prompt", "be brief"] })).toBeNull();
+		expect(resumeCommand({ ...base, windows: true, agent: "claude", executable: "C:\\Program Files\\claude.exe", arguments: [] })).toBeNull();
+		expect(resumeCommand({ ...base, windows: true, agent: "claude", executable: "claude", arguments: [""] })).toBeNull();
+		expect(resumeCommand({ ...base, windows: true, agent: "claude", executable: "claude", arguments: [], configFolder: { variable: "CLAUDE_CONFIG_DIR", path: "C:\\c" } })).toBeNull();
 	});
 });

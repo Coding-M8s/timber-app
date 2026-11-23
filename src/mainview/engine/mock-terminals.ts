@@ -2,14 +2,14 @@ import { terminalSample } from "../terminal-sample";
 import { type AgentSetting, agentCommand, findAgent } from "../../shared/agent";
 import { type ArenaLaunch, isArenaName, isAttemptLabel } from "../../shared/arenas";
 import type { AgentLookup } from "../../shared/agent-lookup";
-import { type ResumableAgent, agentProgram, agentStartArguments, conversationMissingNote, resumableAgent } from "../../shared/agent-resume";
+import { type ResumableAgent, agentProgram, agentStartArguments, conversationMissingNote, resumableAgent, resumeCommand } from "../../shared/agent-resume";
 import type { Attention } from "../../shared/attention";
 import { describeCommandLine } from "../../shared/command-line";
 import type { Engine } from "../../shared/engine";
 import type { TimberStatus, Worktree } from "../../shared/model";
 import {
-	type EndedAgent, type OpenTerminalResult, type Scrollback, type TerminalChange, type TerminalOutput, type TerminalSession, cleanSessionName, createScrollback,
-	agentEndedNote, defaultSessionName, isWebLink, type SessionNaming, sessionNameBase, WORKTREE_SETUP_SESSION_NAME, type PasteModeScanner, PASTE_NOT_READY, CHOP_NOT_TYPED,
+	type EndedAgent, type ResumeOffer, type OpenTerminalResult, type Scrollback, type TerminalChange, type TerminalOutput, type TerminalSession, cleanSessionName, createScrollback,
+	agentEndedNote, agentResumedNote, defaultSessionName, isWebLink, type SessionNaming, sessionNameBase, WORKTREE_SETUP_SESSION_NAME, type PasteModeScanner, PASTE_NOT_READY, CHOP_NOT_TYPED,
 	type OpenTerminalRequest, type PasteResult, chopRunBytes, createPasteModeScanner, pasteProblem, promptBytes,
 } from "../../shared/terminal";
 import { recordsForWindow } from "../../shared/session-status";
@@ -25,7 +25,7 @@ import { type MockSessionStorage, memorySessionStorage } from "./mock-session-st
 
 /** The part of the engine about terminals, and how they are acted out. */
 export type TerminalCapabilities = Pick<Engine,
-	| "listTerminals" | "openTerminal" | "renameTerminal" | "readTerminal" | "drawnTerminal" | "writeTerminal" | "pasteTerminal" | "resizeTerminal" | "closeTerminal"
+	| "listTerminals" | "openTerminal" | "resumeAgent" | "renameTerminal" | "readTerminal" | "drawnTerminal" | "writeTerminal" | "pasteTerminal" | "resizeTerminal" | "closeTerminal"
 	| "onTerminalOutput" | "onTerminalChanged" | "onQuitRequested" | "confirmQuit" | "writeClipboard" | "readClipboard" | "openLink" | "takeSavedSessions"
 	| "forgetSavedSessions" | "locateAgents"
 >;
@@ -145,6 +145,8 @@ interface Acted {
 	launchName: string;
 	resumable: ResumableAgent | null;
 	conversation: string | null;
+	/** For an agent from Settings: what it started from, kept to start it again in its conversation. */
+	launch: { executable: string; arguments: string[] } | null;
 	/** Whether the person gave the session its name. */
 	renamed: boolean;
 	/** The saved session it opened again, when it did. */
@@ -270,6 +272,16 @@ export function createMockTerminals(
 		});
 	}
 
+	/** Whether an agent that ends now can go back to its conversation, as the main process finds it: only an agent from Settings with a way back. */
+	function resumeOffer(acted: Acted): ResumeOffer | null {
+		if (acted.session.kind !== "agent" || acted.agent === null || acted.resumable === null || acted.launch === null) return null;
+		if (acted.conversation === null) return { state: "unavailable", reason: "not-known" };
+		if (goneConversations.includes(acted.conversation)) return { state: "unavailable", reason: "gone" };
+		// No config folder in the browser, and the pretend platform is not Windows.
+		const command = resumeCommand({ agent: acted.resumable, executable: acted.launch.executable, arguments: acted.launch.arguments, conversation: acted.conversation, configFolder: null, windows: false });
+		return { state: "ready", conversation: acted.conversation, command };
+	}
+
 	function end(acted: Acted, exitCode: number): void {
 		if (acted.session.state.kind !== "running") return;
 		acted.records.exited();
@@ -281,7 +293,7 @@ export function createMockTerminals(
 		if (acted.session.kind === "agent" || acted.session.kind === "editor") {
 			const endedAgent: EndedAgent = {
 				name: acted.launchName, agent: acted.agent, program: acted.session.program ?? null, resumable: acted.resumable, conversation: acted.conversation,
-				command: acted.session.command, exitCode, signal: null,
+				command: acted.session.command, exitCode, signal: null, resume: resumeOffer(acted),
 			};
 			acted.records = createStatusRecords();
 			acted.scanner = createStatusScanner();
@@ -501,7 +513,8 @@ export function createMockTerminals(
 		const acted: Acted = {
 			session, scrollback: createScrollback(), line: "", typed: "", size: { cols: request.cols, rows: request.rows }, drawn: 0,
 			scanner: createStatusScanner(), records: createStatusRecords(), answers: [], pasteMode: createPasteModeScanner(), pasted: [], prompts: [],
-			agent: agent?.name ?? null, launchName: attempt ? attempt.label : launch ? launch.name : "", resumable, conversation, renamed: savedName !== null, restored,
+			agent: agent?.name ?? null, launchName: attempt ? attempt.label : launch ? launch.name : "", resumable, conversation,
+			launch: agent !== null && launch !== null ? { executable: launch.executable, arguments: [...launch.arguments] } : null, renamed: savedName !== null, restored,
 			waiting: chop?.kind === "prompt" ? { text: chop.text, review: chop.review === true } : null,
 		};
 		sessions.set(session.id, acted);
@@ -619,6 +632,39 @@ export function createMockTerminals(
 					opening -= 1;
 				}
 			})();
+		},
+		async resumeAgent(id) {
+			const acted = sessions.get(id);
+			const ended = acted?.session.endedAgent;
+			const offer = ended?.resume;
+			if (!acted || !ended || acted.session.state.kind !== "running" || acted.session.kind !== "terminal" || offer?.state !== "ready" || acted.launch === null) {
+				return { outcome: "failed", message: "That session is not a shell that an agent ended in, with its conversation to go back to. Nothing was started." };
+			}
+			// As the main process does: the conversation is looked at again, and a fresh start is never the answer.
+			if (goneConversations.includes(offer.conversation) || ended.resumable === null) {
+				acted.session = { ...acted.session, endedAgent: { ...ended, resume: { state: "unavailable", reason: "gone" } } };
+				announce({ id, session: acted.session });
+				return { outcome: "failed", message: `The conversation of ${acted.launchName} is no longer in its folder, so it was not resumed. Nothing was started.` };
+			}
+			const { executable } = acted.launch;
+			const shell = executable.startsWith("/") ? executable : `/usr/local/bin/${executable}`;
+			const args = agentStartArguments(ended.resumable, acted.launch.arguments, { resume: offer.conversation });
+			print(acted, agentResumedNote(acted.launchName));
+			acted.records = createStatusRecords();
+			acted.scanner = createStatusScanner();
+			acted.pasteMode.reset();
+			acted.agent = ended.agent;
+			acted.resumable = ended.resumable;
+			acted.conversation = offer.conversation;
+			acted.line = "";
+			const { endedAgent: _endedAgent, prompt: _prompt, ...rest } = acted.session;
+			acted.session = {
+				...rest, kind: "agent", shell, command: describeCommandLine([shell, ...args]), state: { kind: "running" }, status: null, children: [],
+				...(ended.program !== null ? { program: ended.program } : {}),
+			};
+			announce({ id, session: acted.session });
+			print(acted, `A pretend ${acted.session.name} in ${acted.session.path}, started as ${acted.session.command}. Nothing runs in the browser. Try exit.\r\n\x1b[?2004h${prompt(acted)}`);
+			return { outcome: "opened", session: structuredClone(acted.session) };
 		},
 		openChopTerminal: (request, chop) => open(request, chop),
 		openEditorTerminal: (request, editor) => open(request, undefined, editor),

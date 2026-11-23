@@ -79,8 +79,9 @@ export interface TerminalSession {
 	/**
 	 * Set when an agent's process ended by itself and the session went on as
 	 * the person's shell in the same chip. It says which agent it was and how
-	 * it ended. It is kept for offering Resume (#284), and it stays when the
-	 * shell later exits. Left out for every other session.
+	 * it ended, and whether it can be offered its conversation back
+	 * (`resume`). It stays when the shell later exits. Left out for every
+	 * other session.
 	 */
 	endedAgent?: EndedAgent;
 }
@@ -102,7 +103,22 @@ export interface EndedAgent {
 	/** Null when a signal stopped it, and then `signal` names it. */
 	exitCode: number | null;
 	signal: string | null;
+	/** Whether the agent can go back to its conversation, as found when it ended. Null when that is not offered at all: a workflow's own agent, an arena attempt, a command started as typed, or an agent with no way back. */
+	resume: ResumeOffer | null;
 }
+
+/**
+ * Whether an ended agent can go back to its conversation, as the main
+ * process found it when the agent ended. `command` is what to run by hand
+ * to get the same, or null when it cannot be given safely. `never-saved`:
+ * the agent takes an id the app gave it, and never wrote that conversation.
+ * `not-known`: the id is found from the agent's own files, and the search
+ * found none or could not tell. `gone`: an id is known but is no longer in
+ * the agent's folder.
+ */
+export type ResumeOffer =
+	| { state: "ready"; conversation: string; command: string | null }
+	| { state: "unavailable"; reason: "never-saved" | "gone" | "not-known" };
 
 /**
  * How a prompt chop's text, or a review, stands in the agent session started
@@ -459,6 +475,11 @@ export function agentEndedNote(name: string, ended: Pick<EndedAgent, "exitCode" 
 	const reset = "\x1b[?1047l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1004l\x1b[?2004l\x1b[?25h\x1b[<u\x1b[0m";
 	const how = ended.exitCode !== null ? `exited with code ${ended.exitCode}` : `was stopped by ${ended.signal ?? "a signal"}`;
 	return `${reset}\r\n\x1b[2m${name} ${how}. This is now a shell in ${path}.\x1b[0m\r\n`;
+}
+
+/** The dim line printed when a session's agent starts again in its conversation. Ends with a line break. */
+export function agentResumedNote(name: string): string {
+	return `\r\n\x1b[2mResuming ${name} in its conversation.\x1b[0m\r\n`;
 }
 
 /** The question before quitting while sessions run. */

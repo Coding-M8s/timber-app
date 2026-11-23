@@ -4478,6 +4478,7 @@ pre:focus-visible {
 
 .session-ended {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
 	gap: 12px;
 	padding: 8px 12px;
@@ -4490,6 +4491,66 @@ pre:focus-visible {
 	margin: 0;
 	font-size: 12.5px;
 	color: var(--text-2);
+}
+
+/* Over a shell an agent left: how it ended, Resume or why not, and the command to run by hand. */
+.resume-bar {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 8px 12px;
+	border-bottom: 1px solid var(--line);
+	background: var(--bg-main);
+}
+
+.resume-bar-line {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.resume-bar-text {
+	flex: 1 1 auto;
+	min-width: 0;
+	margin: 0;
+	font-size: 12.5px;
+	color: var(--text-2);
+}
+
+.resume-bar-line .button {
+	flex: none;
+}
+
+.resume-command {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+}
+
+/* A long command wraps inside its own box, so the bar never widens the pane. */
+.resume-command-text {
+	flex: 1 1 auto;
+	min-width: 0;
+	max-height: 4.5em;
+	overflow: auto;
+	padding: 4px 6px;
+	border: 1px solid var(--line);
+	border-radius: 4px;
+	font-family: var(--font-mono);
+	font-size: 11.5px;
+	color: var(--text-2);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	user-select: all;
+}
+
+.resume-command .button {
+	flex: none;
+}
+
+.session-ended .resume-command {
+	flex: 1 1 100%;
 }
 
 .terminal-problem {

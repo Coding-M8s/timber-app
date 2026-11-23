@@ -448,6 +448,7 @@ const terminals = createTerminalSessions({
 	// An agent goes back to its own conversation only when that is still in the agent's own folder. Nothing there is written.
 	conversations: {
 		exists: (store, id, folder) => conversationExists[store](id, folder),
+		find: (store, search) => conversationFinders[store]?.(search) ?? null,
 		newId: () => crypto.randomUUID(),
 	},
 	onOutput: output => tell("terminal output", () => rpc.send.terminalOutput(output)),
@@ -661,6 +662,8 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			},
 			readTerminal: ({ id }) => terminals.read(id),
 			renameTerminal: ({ id, name }) => terminals.rename(id, name),
+			// Ends the shell an agent left behind and starts the agent again in its conversation, only when the main process found it there (see ./terminals.ts).
+			resumeAgent: ({ id }) => terminals.resume(id),
 			closeTerminal: ({ id }) => terminals.close(id),
 			confirmQuit: async () => {
 				await quitGuard.confirm();

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openWebLink } from "../src/bun/open-link";
 import { processTreeKillCommand, sessionMembers, sessionOfStat } from "../src/bun/process-session";
+import { type PseudoTerminalOptions, startBunTerminal } from "../src/bun/pseudo-terminal";
 import { conversationExists } from "../src/bun/agent-conversations";
 import { endedKey } from "../src/bun/session-layout";
 import type { ConversationStore } from "../src/shared/agent-registry";
@@ -1291,7 +1292,7 @@ sleep 5
 				const result = await sessions.open({ repository, worktree, cols: 80, rows: 24, arenaAttempt: wanted });
 				if (result.outcome !== "opened") throw new Error(JSON.stringify(result));
 				expect(await until(() => sessions.list()[0]?.kind === "terminal")).toBe(true);
-				expect(sessions.list()[0]).toMatchObject({ id: result.session.id, name: "codex-1", state: { kind: "running" }, endedAgent: { name: "codex-1", agent: null, exitCode: 3 } });
+				expect(sessions.list()[0]).toMatchObject({ id: result.session.id, name: "codex-1", state: { kind: "running" }, endedAgent: { name: "codex-1", agent: null, exitCode: 3, resume: null } });
 				expect(printed(result.session.id)).toContain("codex-1 exited with code 3.");
 				// The shell does not get the attempt's own environment changes.
 				sessions.write(result.session.id, "echo arena=${TIMBER_ARENA-unset}\r");
@@ -1627,6 +1628,259 @@ sleep 5
 				expect(sessions.list()[0]!.program).toBeUndefined();
 				sessions.write(session.id, "echo \"SHELL-DIR:[$CLAUDE_CONFIG_DIR]\"\r");
 				await shows(session.id, "SHELL-DIR:[]");
+			});
+		});
+
+		describe("offering an ended agent its conversation back", () => {
+			/** Starts the stand-in agents with the conversations the test says exist, and what a search of Codex's files finds. */
+			function startOffering(agents: AgentSetting[], options: { existing?: string[]; found?: string | null } = {}, overrides: Partial<TerminalDependencies> = {}) {
+				const bin = resumeBin();
+				const existing = new Set(options.existing ?? []);
+				const searches: string[] = [];
+				let issued = 0;
+				start({
+					environment: { PATH: `${bin}:${process.env.PATH}`, HOME: root, SHELL: "/bin/sh", PS1: "$ ", LANG: "C.UTF-8" },
+					agents: async () => agents,
+					conversations: {
+						exists: (_store, id) => existing.has(id),
+						find: store => (searches.push(store), options.found ?? null),
+						// The first fresh id is NEW; later ones differ, as real ones do, so a fresh start in place of a resume is told apart.
+						newId: () => (issued++ === 0 ? NEW : `eeeeeeee-0000-4000-8000-00000000000${issued}`),
+					},
+					...overrides,
+				});
+				return { existing, searches };
+			}
+
+			const claude: AgentSetting = { name: "Claude Code", command: "claude --model opus" };
+			const codex: AgentSetting = { name: "Codex", command: "codex" };
+			const fallen = (id: string) => until(() => sessions.list().find(session => session.id === id)?.kind === "terminal");
+
+			/** Open an agent, wait for its stand-in to print, and end it by itself. */
+			async function endedAgent(name: string) {
+				const session = await openWith({ agent: name });
+				await shows(session.id, "ARGS:");
+				sessions.write(session.id, "exit\r");
+				expect(await fallen(session.id)).toBe(true);
+				return session;
+			}
+
+			const resumeOf = (id: string) => sessions.list().find(session => session.id === id)!.endedAgent!.resume;
+
+			test("a conversation Claude Code wrote is offered back, with the command to run by hand", async () => {
+				startOffering([claude], { existing: [NEW] });
+				const session = await endedAgent("Claude Code");
+				expect(resumeOf(session.id)).toEqual({ state: "ready", conversation: NEW, command: `claude --resume ${NEW} --model opus` });
+			});
+
+			test("a conversation Claude Code never wrote is never-saved", async () => {
+				startOffering([claude]);
+				const session = await endedAgent("Claude Code");
+				expect(resumeOf(session.id)).toEqual({ state: "unavailable", reason: "never-saved" });
+			});
+
+			test("Codex ended alone is offered the conversation found in its files, so its own end is not a rival", async () => {
+				const { searches } = startOffering([codex], { existing: [OLD], found: OLD });
+				const session = await endedAgent("Codex");
+				expect(resumeOf(session.id)).toEqual({ state: "ready", conversation: OLD, command: `codex resume ${OLD}` });
+				expect(searches).toEqual(["codex-sessions"]);
+				expect(sessions.list()[0]!.endedAgent!.conversation).toBe(OLD);
+			});
+
+			test("Codex with nothing found, or a found conversation that is gone, is not-known or gone", async () => {
+				startOffering([codex]);
+				const none = await endedAgent("Codex");
+				expect(resumeOf(none.id)).toEqual({ state: "unavailable", reason: "not-known" });
+				startOffering([codex], { found: OLD });
+				const gone = await endedAgent("Codex");
+				expect(resumeOf(gone.id)).toEqual({ state: "unavailable", reason: "gone" });
+			});
+
+			test("an error while looking gives not-known", async () => {
+				const bin = resumeBin();
+				start({
+					environment: { PATH: `${bin}:${process.env.PATH}`, HOME: root, SHELL: "/bin/sh", PS1: "$ ", LANG: "C.UTF-8" },
+					agents: async () => [codex],
+					conversations: { exists: () => true, find: () => { throw new Error("unreadable"); }, newId: () => NEW },
+				});
+				const session = await endedAgent("Codex");
+				expect(resumeOf(session.id)).toEqual({ state: "unavailable", reason: "not-known" });
+			});
+
+			test("a command started as typed, or an agent with no way back, has no offer", async () => {
+				startOffering([{ name: "Typed", command: "claude --continue" }, { name: "Aider", command: "/bin/sh" }], { existing: [NEW] });
+				const typed = await endedAgent("Typed");
+				expect(resumeOf(typed.id)).toBeNull();
+				const aider = await openWith({ agent: "Aider" });
+				sessions.write(aider.id, "exit\r");
+				expect(await fallen(aider.id)).toBe(true);
+				expect(resumeOf(aider.id)).toBeNull();
+			});
+
+			test("Resume starts the same agent in its conversation, in the same session", async () => {
+				startOffering([claude], { existing: [NEW] });
+				const session = await endedAgent("Claude Code");
+				// Two clicks at once start one agent.
+				const [first, second] = await Promise.all([sessions.resume(session.id), sessions.resume(session.id)]);
+				expect(first.outcome).toBe("opened");
+				expect(second).toMatchObject({ outcome: "failed", message: expect.stringContaining("Nothing was started.") });
+				if (first.outcome !== "opened") throw new Error(JSON.stringify(first));
+				expect(first.session).toMatchObject({ id: session.id, kind: "agent", name: "Claude Code", program: "claude", state: { kind: "running" } });
+				expect(first.session.command).toBe(`'${join(root, "resume bin", "claude")}' --resume ${NEW} --model opus`);
+				expect(first.session.endedAgent).toBeUndefined();
+				await shows(session.id, `ARGS:--resume ${NEW} --model opus`);
+				expect(printed(session.id)).toContain("Resuming Claude Code in its conversation.");
+				expect(sessions.list()).toHaveLength(1);
+				expect(sessions.running()).toMatchObject([{ id: session.id, kind: "agent", agent: "Claude Code", resumable: "claude", program: "claude", conversation: NEW }]);
+				expect(sessions.liveCount()).toBe(1);
+			});
+
+			test("a row with a config folder gets its variable on resume, and the command by hand says so", async () => {
+				startOffering([{ name: "Claude Work", command: "claude", configFolder: "~/.claude-work" }], { existing: [NEW] });
+				const session = await endedAgent("Claude Work");
+				expect(resumeOf(session.id)).toEqual({ state: "ready", conversation: NEW, command: `env CLAUDE_CONFIG_DIR=${join(root, ".claude-work")} claude --resume ${NEW}` });
+				expect((await sessions.resume(session.id)).outcome).toBe("opened");
+				sessions.write(session.id, 'echo "DIR:[$CLAUDE_CONFIG_DIR]"\r');
+				await shows(session.id, `DIR:[${join(root, ".claude-work")}]`);
+			});
+
+			test("a conversation gone by the click is refused, nothing starts, and the offer turns to gone", async () => {
+				const { existing } = startOffering([claude], { existing: [NEW] });
+				const session = await endedAgent("Claude Code");
+				existing.delete(NEW);
+				const result = await sessions.resume(session.id);
+				expect(result).toEqual({ outcome: "failed", message: "The conversation of Claude Code is no longer in its folder, so it was not resumed. Nothing was started." });
+				expect(sessions.list()[0]).toMatchObject({ kind: "terminal", state: { kind: "running" }, endedAgent: { resume: { state: "unavailable", reason: "gone" } } });
+				expect(printed(session.id)).not.toContain("Resuming");
+				expect(printed(session.id).match(/ARGS:/g)).toHaveLength(1);
+				// With the offer gone, a second click is refused too.
+				expect((await sessions.resume(session.id)).outcome).toBe("failed");
+			});
+
+			test("a session that is not an ended agent's shell is refused", async () => {
+				startOffering([claude], { existing: [NEW] });
+				const running = await openWith({ agent: "Claude Code" });
+				await shows(running.id, "ARGS:");
+				const terminal = await openWith({});
+				for (const id of [running.id, terminal.id, "nothing"]) {
+					expect(await sessions.resume(id)).toMatchObject({ outcome: "failed", message: expect.stringContaining("Nothing was started.") });
+				}
+				expect(sessions.list().map(session => session.kind)).toEqual(["agent", "terminal"]);
+			});
+
+			test("an agent that ends again gets a new offer, and closing after Resume ends it", async () => {
+				startOffering([claude], { existing: [NEW] });
+				const session = await endedAgent("Claude Code");
+				expect((await sessions.resume(session.id)).outcome).toBe("opened");
+				await shows(session.id, `ARGS:--resume ${NEW}`);
+				sessions.write(session.id, "exit\r");
+				expect(await fallen(session.id)).toBe(true);
+				expect(resumeOf(session.id)).toEqual({ state: "ready", conversation: NEW, command: `claude --resume ${NEW} --model opus` });
+				expect((await sessions.resume(session.id)).outcome).toBe("opened");
+				await sessions.close(session.id);
+				expect(sessions.list()).toEqual([]);
+				expect(sessions.liveCount()).toBe(0);
+				expect(changes.at(-1)).toEqual({ id: session.id, session: null });
+			});
+
+			/** Starts that are recorded, and can fail, and a listing that can be held back. */
+			function watched(options: { failOn?: number } = {}) {
+				const starts: Pick<PseudoTerminalOptions, "argv" | "cols" | "rows">[] = [];
+				const gate = { open: true, release: () => {}, waiting: null as Promise<void> | null, hold() { this.open = false; this.waiting = null; } };
+				const startTerminal: TerminalDependencies["startTerminal"] = given => {
+					starts.push({ argv: given.argv, cols: given.cols, rows: given.rows });
+					if (starts.length === options.failOn) throw new Error("no terminal");
+					return startBunTerminal(given);
+				};
+				const findRepository: TerminalDependencies["findRepository"] = async path => {
+					if (!gate.open) await (gate.waiting ??= new Promise<void>(resolve => { gate.release = () => { gate.open = true; resolve(); }; }));
+					return path === repository ? listed() : null;
+				};
+				return { starts, gate, overrides: { startTerminal, findRepository } };
+			}
+
+			test("Codex goes back to its conversation by the id it was given, and again by the id kept when a search finds nothing", async () => {
+				const { overrides } = watched();
+				const given = { existing: [OLD], found: OLD as string | null };
+				startOffering([codex], given, overrides);
+				const session = await endedAgent("Codex");
+				expect(resumeOf(session.id)).toMatchObject({ state: "ready", conversation: OLD });
+				expect((await sessions.resume(session.id)).outcome).toBe("opened");
+				await shows(session.id, `ARGS:resume ${OLD}`);
+				// The search no longer finds it, yet the id kept still stands.
+				given.found = null;
+				sessions.write(session.id, "exit\r");
+				expect(await fallen(session.id)).toBe(true);
+				expect(resumeOf(session.id)).toEqual({ state: "ready", conversation: OLD, command: `codex resume ${OLD}` });
+			});
+
+			test("a close during the swap ends the session and starts nothing", async () => {
+				const { starts, gate, overrides } = watched();
+				startOffering([claude], { existing: [NEW] }, overrides);
+				const session = await endedAgent("Claude Code");
+				gate.hold();
+				// A shell that ignores the hang up keeps the swap waiting for its moment before it is killed.
+				sessions.write(session.id, "trap '' HUP\r");
+				await new Promise(resolve => setTimeout(resolve, 100));
+				const before = starts.length;
+				const resuming = sessions.resume(session.id);
+				gate.release();
+				await new Promise(resolve => setTimeout(resolve, 50));
+				await sessions.close(session.id);
+				expect(await resuming).toEqual({ outcome: "failed", message: "The session was closed. Nothing was started." });
+				expect(starts).toHaveLength(before);
+				expect(sessions.list()).toEqual([]);
+			});
+
+			test("a resize during the swap is kept for the agent that starts", async () => {
+				const { starts, gate, overrides } = watched();
+				startOffering([claude], { existing: [NEW] }, overrides);
+				const session = await endedAgent("Claude Code");
+				gate.hold();
+				sessions.write(session.id, "trap '' HUP\r");
+				await new Promise(resolve => setTimeout(resolve, 100));
+				const resuming = sessions.resume(session.id);
+				gate.release();
+				await new Promise(resolve => setTimeout(resolve, 50));
+				sessions.resize(session.id, 120, 40);
+				expect((await resuming).outcome).toBe("opened");
+				expect(starts.at(-1)).toMatchObject({ cols: 120, rows: 40 });
+			});
+
+			test("a shell that exited while the worktree was looked up is not swapped", async () => {
+				const { starts, gate, overrides } = watched();
+				startOffering([claude], { existing: [NEW] }, overrides);
+				const session = await endedAgent("Claude Code");
+				gate.hold();
+				const before = starts.length;
+				const resuming = sessions.resume(session.id);
+				sessions.write(session.id, "exit\r");
+				expect(await until(() => sessions.list()[0]?.state.kind === "exited")).toBe(true);
+				gate.release();
+				expect(await resuming).toEqual({ outcome: "failed", message: "The shell has exited. Nothing was started." });
+				expect(starts).toHaveLength(before);
+				expect(sessions.list()[0]!.state.kind).toBe("exited");
+			});
+
+			test("an agent that cannot start leaves the session exited, and the failure is told", async () => {
+				const { overrides } = watched({ failOn: 3 });
+				startOffering([claude], { existing: [NEW] }, overrides);
+				const session = await endedAgent("Claude Code");
+				const result = await sessions.resume(session.id);
+				expect(result).toMatchObject({ outcome: "failed", message: expect.stringContaining("no terminal") });
+				expect(sessions.list()[0]).toMatchObject({ id: session.id, state: { kind: "exited" } });
+			});
+
+			test.skipIf(!linux)("what the shell left running in the background is gone after Resume", async () => {
+				startOffering([claude], { existing: [NEW] });
+				const session = await endedAgent("Claude Code");
+				sessions.write(session.id, "sleep 300 &\r");
+				sessions.write(session.id, "echo BGPID:$!:END\r");
+				await until(() => /BGPID:\d+:END/.test(printed(session.id)));
+				const pid = Number(/BGPID:(\d+):END/.exec(printed(session.id))![1]);
+				expect(alive(pid)).toBe(true);
+				expect((await sessions.resume(session.id)).outcome).toBe("opened");
+				expect(await until(() => !alive(pid))).toBe(true);
 			});
 		});
 

@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpath
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { findCodexConversation, findCursorConversation } from "../src/bun/agent-conversations";
-import { SESSIONS_FILE_LIMIT, createSessionLayout, endedKey, sessionsFilePath, type SessionLayoutDependencies } from "../src/bun/session-layout";
+import { SESSIONS_FILE_LIMIT, createSessionLayout, endedKey, resolveConversations, sessionsFilePath, type SessionLayoutDependencies } from "../src/bun/session-layout";
 import type { RunningSession } from "../src/bun/terminals";
 import type { Attention } from "../src/shared/attention";
 
@@ -558,5 +558,45 @@ describe("conversations checked at quit", () => {
 		live = [claude("1", "w1")];
 		layout({ exists: () => { throw new Error("no"); } }).save();
 		expect((await reopened())?.worktrees.w1!.sessions[0]).toEqual({ kind: "agent", agent: "Claude Code", conversation: CLAUDE });
+	});
+});
+
+describe("resolving conversations without a save", () => {
+	const dependencies = { exists: () => true, find: () => FOUND, endedAgents: new Map<string, number>(), now: () => 20_000 };
+
+	test("gives an agent without an id the one its files hold, and drops an id the agent never wrote", () => {
+		const live = [codex("a", "w1"), claude("b", "w1", { conversation: CLAUDE })];
+		const resolved = resolveConversations(live, { ...dependencies, exists: () => false });
+		expect(resolved.map(entry => entry.conversation)).toEqual([FOUND, null]);
+		// The sessions it was given are not changed.
+		expect(live.map(entry => entry.conversation)).toEqual([null, CLAUDE]);
+	});
+
+	test("leaves a session alone when another of its agent ended in its worktree since it started", () => {
+		const endedAgents = new Map([[endedKey("codex", "w1"), 10_000]]);
+		expect(resolveConversations([codex("a", "w1")], { ...dependencies, endedAgents })[0]!.conversation).toBeNull();
+	});
+
+	test("with only a session named, no other session is checked or searched, yet it still counts for taken ids and for who is alone", () => {
+		const searched: string[] = [];
+		const checked: string[] = [];
+		const watching = {
+			...dependencies,
+			exists: (_store: unknown, id: string) => (checked.push(id), false),
+			find: (_store: unknown, options: { cwd: string; taken: ReadonlySet<string> }) => (searched.push(`${options.cwd}:${[...options.taken].join(",")}`), FOUND),
+		};
+		const live = [codex("a", "w1"), codex("b", "w2"), claude("c", "w3", { conversation: CLAUDE })];
+		const resolved = resolveConversations(live, { ...watching, only: "b" });
+		expect(searched).toEqual([`/r/w2:${CLAUDE}`]);
+		expect(checked).toEqual([]);
+		expect(resolved.map(entry => entry.conversation)).toEqual([null, FOUND, CLAUDE]);
+		// A second Codex in the same worktree still means the one named is not alone, so nothing is searched.
+		searched.length = 0;
+		const pair = resolveConversations([codex("a", "w1"), codex("b", "w1")], { ...watching, only: "b" });
+		expect(searched).toEqual([]);
+		expect(pair.map(entry => entry.conversation)).toEqual([null, null]);
+		// Naming the Claude Code session checks only it.
+		resolveConversations(live, { ...watching, only: "c" });
+		expect(checked).toEqual([CLAUDE]);
 	});
 });

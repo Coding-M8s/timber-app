@@ -752,6 +752,20 @@ export interface Engine {
 	 */
 	openTerminal(request: OpenTerminalRequest): Promise<OpenTerminalResult>;
 	/**
+	 * Take an agent that ended by itself back into its conversation, in the
+	 * same session. The session must be the shell that went on after the
+	 * agent, with `endedAgent.resume` ready. The conversation is checked
+	 * again first: when it is gone, nothing starts, the offer turns to
+	 * "gone", and the answer says so; a fresh agent is never started in its
+	 * place. Otherwise the shell is ended as closing ends it, and the same
+	 * agent from Settings starts again with the words that pick its
+	 * conversation, so the session is an agent again and a restart brings it
+	 * back there. Answers the session as it now is, or why nothing started.
+	 * Not safe to call again blindly: it is refused once the session is an
+	 * agent again.
+	 */
+	resumeAgent(id: string): Promise<OpenTerminalResult>;
+	/**
 	 * Give a session another name, cleaned up as `cleanSessionName` does. The
 	 * change is also heard through `onTerminalChanged`. Answers the session as
 	 * it now is, or null when it is gone or the name has nothing in it.

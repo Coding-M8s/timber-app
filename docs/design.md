@@ -666,9 +666,32 @@ logins. The app never reads a tracker login and never signs in.
   at quit and come back as terminals in their worktrees, and an attempt
   whose chip is a shell counts as still running in the Compare dialog. Closing the chip, removing the worktree, and quitting end it as
   before, and a Timber setup session still ends and stays. A shell that
-  exits later stays exited. What the agent ended with (its name, exit,
-  command, and conversation) is kept on the session, for offering Resume
-  later.
+  exits later stays exited.
+- Over the shell an agent left, a bar says how it ended ("Claude ended.
+  Exited with code 0.") and offers Resume when the agent can go back to its
+  conversation. Resume ends the shell as closing the chip does, then starts
+  the same agent from Settings again in the same session, in its
+  conversation (its title says "Ends this shell and starts Claude again in
+  its conversation."). While it starts the button says "Resuming", and it
+  waits while another session starts in the worktree. The session is an
+  agent again, so the quit save brings it back to the same conversation after
+  a restart. When the conversation is no longer there when Resume is
+  pressed, nothing starts, never a fresh agent in its place, and the bar
+  turns to its reason. When the agent cannot be resumed the bar says why in
+  place of the button: "<name> saved no conversation, so there is nothing to
+  resume.", "<name>'s conversation is no longer in its folder, so it cannot
+  be resumed.", or "The app could not tell which conversation <name> was in,
+  so it cannot be resumed." When the app can give the command that does the
+  same by hand, it shows under the bar in a box of its own, with Copy
+  command beside it; the box wraps, so it never widens the pane. Only
+  agents from Settings that the app can bring back to their conversation
+  (Claude Code, Codex, Grok Build, and Cursor CLI) get the bar, not ones
+  started as typed. Agents
+  from a workflow, arena attempts, a command started as typed, and agents
+  with no way back show no bar at all and keep the plain shell. When the
+  shell itself has exited, only the command and Copy stay, with no Resume.
+  After a restart a shell that an agent left comes back as a plain Terminal,
+  with no bar.
 - Quitting and opening the app again brings every worktree's running
   sessions back in their places, with the same chip showing; agents go back
   to their conversations, terminals start a fresh shell. An agent that

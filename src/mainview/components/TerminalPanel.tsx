@@ -22,7 +22,7 @@ import { WorktreeMenu } from "./WorktreeMenu";
 import { BEING_REMOVED_REASON } from "../done-format";
 import { dropTerminalFocus, onTerminalFocusWish, takeTerminalFocus, wantTerminalFocus } from "../terminal-focus";
 import {
-	chipAfterClose, chipAfterKey, chipButtonCommand, chipCommand, closeTerminalLabel, describeSessionChip, describeTerminalState, sessionChipId, shellName, shortExit,
+	chipAfterClose, chipAfterKey, chipButtonCommand, chipCommand, closeTerminalLabel, type ResumeBar, describeResumeOffer, describeSessionChip, describeTerminalState, sessionChipId, shellName, shortExit,
 } from "../terminal-format";
 
 /** The drawn terminals load with xterm.js, the first time one shows, and stay loaded. */
@@ -184,6 +184,7 @@ function SessionControls({ session, onRename }: SessionControlsProps) {
 function Session({ session, renaming }: SessionProps) {
 	const store = useStore();
 	const running = session.state.kind === "running";
+	const offer = session.endedAgent === undefined ? null : describeResumeOffer(session.endedAgent);
 	return (
 		<section
 			className={session.kind === "agent" ? "session agent" : "session"}
@@ -192,14 +193,53 @@ function Session({ session, renaming }: SessionProps) {
 			aria-labelledby={renaming ? undefined : sessionChipId(session.id)}
 			aria-label={renaming ? session.name : undefined}
 		>
+			{running && offer !== null && <ResumeBarView session={session} offer={offer} />}
 			<TerminalScreen session={session} />
 			{!running && (
 				<div className="session-ended">
 					<p className="session-ended-text">{describeTerminalState(session)}. What it printed stays above until it is dismissed.</p>
+					{offer?.command != null && <ResumeCommand command={offer.command} />}
 					<button type="button" className="button" onClick={() => void store.closeTerminal(session.id)}>Dismiss</button>
 				</div>
 			)}
 		</section>
+	);
+}
+
+/** The command that takes an agent back into its conversation, with a button that copies it. */
+function ResumeCommand({ command }: { command: string }) {
+	const store = useStore();
+	return (
+		<div className="resume-command">
+			<code className="resume-command-text" aria-label="Command to resume by hand">{command}</code>
+			<button type="button" className="button" onClick={() => void store.copyText(command)}>Copy command</button>
+		</div>
+	);
+}
+
+/**
+ * Over a shell an agent left: how the agent ended, then Resume when it can
+ * go back to its conversation, or why it cannot, and the command to run by
+ * hand when there is one. Resume waits while a session starts in the
+ * worktree, which includes the resume itself.
+ */
+function ResumeBarView({ session, offer }: { session: TerminalSession; offer: ResumeBar }) {
+	const store = useStore();
+	const state = useAppState();
+	const starting = state.operations.some(operation => operation.kind === "open-terminal" && operation.worktree === session.worktree);
+	const resuming = state.operations.some(operation => operation.kind === "open-terminal" && operation.worktree === session.worktree && operation.agent === session.endedAgent?.name);
+	return (
+		<div className="resume-bar" role="region" aria-label="Resume the agent">
+			<div className="resume-bar-line">
+				<p className="resume-bar-text" role="status">{offer.reason === null ? offer.lead : `${offer.lead} ${offer.reason}`}</p>
+				{offer.canResume && (
+					<button type="button" className="button primary" disabled={starting} title={offer.resumeTitle} onClick={() => void store.resumeAgent(session.id)}>
+						{resuming ? "Resuming" : "Resume"}
+					</button>
+				)}
+			</div>
+			{offer.command !== null && <ResumeCommand command={offer.command} />}
+		</div>
 	);
 }
 

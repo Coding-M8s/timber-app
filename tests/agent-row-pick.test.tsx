@@ -103,7 +103,7 @@ describe("the agent picked for a row", () => {
 		expect(agentBrand({ kind: "agent", shell: "/home/a/.local/bin/claude-personal", status: null, program: "claude" })).toBe("claude");
 		expect(agentBrand({ kind: "agent", shell: "/usr/bin/claude", status: null, program: "codex" })).toBe("codex");
 		expect(agentBrand({ kind: "agent", shell: "/home/a/.local/bin/claude-personal", status: null })).toBeNull();
-		const ended = { name: "Claude Personal", agent: "Claude Personal", program: "claude" as const, resumable: "claude" as const, conversation: ID, command: "claude-personal", exitCode: 0, signal: null };
+		const ended = { name: "Claude Personal", agent: "Claude Personal", program: "claude" as const, resumable: "claude" as const, conversation: ID, command: "claude-personal", exitCode: 0, signal: null, resume: null };
 		expect(agentBrand({ kind: "terminal", shell: "/bin/bash", status: null, endedAgent: ended })).toBe("claude");
 	});
 });

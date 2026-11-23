@@ -4,13 +4,13 @@ import { homedir } from "node:os";
 import { type AgentSetting, agentCommand, conversationsOf, expandConfigFolder, findAgent } from "../shared/agent";
 import type { AgentLocation, AgentLookup } from "../shared/agent-lookup";
 import { type AgentId, type ConversationStore, agentById } from "../shared/agent-registry";
-import { type ResumableAgent, agentProgram, agentStartArguments, conversationMissingNote, resumableAgent } from "../shared/agent-resume";
+import { type ResumableAgent, agentProgram, agentStartArguments, conversationMissingNote, resumableAgent, resumeCommand } from "../shared/agent-resume";
 import { describeCommandLine } from "../shared/command-line";
 import type { TimberStatus } from "../shared/model";
 import {
-	type EndedAgent, type OpenTerminalRequest, type OpenTerminalResult, type PasteModeScanner, type PasteResult, type PromptDelivery, type Scrollback, type SessionNaming, type TerminalChange, type TerminalOutput, type TerminalSession,
+	type EndedAgent, type OpenTerminalRequest, type OpenTerminalResult, type PasteModeScanner, type PasteResult, type PromptDelivery, type ResumeOffer, type Scrollback, type SessionNaming, type TerminalChange, type TerminalOutput, type TerminalSession,
 	type TerminalSnapshot, TERMINAL_UNSUPPORTED_REASON, WORKTREE_SETUP_SESSION_NAME, clampTerminalSize, cleanSessionName, createScrollback, defaultSessionName, pickShell,
-	pickWindowsShell, sessionNameBase, agentEndedNote, PASTE_NOT_READY, CHOP_NOT_TYPED, chopRunBytes, createPasteModeScanner, pasteProblem, promptBytes,
+	pickWindowsShell, sessionNameBase, agentEndedNote, agentResumedNote, PASTE_NOT_READY, CHOP_NOT_TYPED, chopRunBytes, createPasteModeScanner, pasteProblem, promptBytes,
 } from "../shared/terminal";
 import { recordsForWindow } from "../shared/session-status";
 import { PROMPT_BUSY_MILLISECONDS, PROMPT_ENTER_MILLISECONDS, PROMPT_QUIET_MILLISECONDS, PROMPT_STILL_STARTING, PROMPT_WAIT_MILLISECONDS, isReadyForPrompt, promptEndedMessage, promptNotReadyMessage } from "../shared/agent-prompt";
@@ -21,8 +21,8 @@ import { asWin32KeyEvents } from "../shared/win32-input";
 import { type RestoreTag, isConversationId, isRestoreTag } from "../shared/saved-sessions";
 import { type Workflow, type WorkflowList, isWorkflowName } from "../shared/workflows";
 import { worktreeSetupArguments } from "../shared/worktree-commands";
-import { conversationExists, conversationFolder } from "./agent-conversations";
-import { endedKey } from "./session-layout";
+import { type ConversationSearch, conversationExists, conversationFinders, conversationFolder } from "./agent-conversations";
+import { endedKey, resolveConversations } from "./session-layout";
 import { type ExecutableWords, findExecutable, isWindowsBatch, locateAgent } from "./find-executable";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
 import { killProcessTree, sessionMembers, signalEach, signalGroup } from "./process-session";
@@ -128,6 +128,13 @@ export interface TerminalDependencies {
 	 */
 	conversations?: {
 		exists: (store: ConversationStore, id: string, folder: string) => boolean;
+		/**
+		 * The search for the conversation of an agent whose id is not known
+		 * when it starts, used when such an agent ends to tell whether it can
+		 * be offered its conversation back. Null when none was found. The
+		 * agent's own files are searched when left out.
+		 */
+		find?: (store: ConversationStore, search: ConversationSearch) => string | null;
 		newId: () => string;
 	};
 	/** The clock, for when a session started. */
@@ -240,6 +247,18 @@ export interface TerminalSessions {
 	liveCount(): number;
 	/** Each running session's shell, which leads the session's processes, for looking up what they listen on. Read-only. */
 	leaders(): SessionLeader[];
+	/**
+	 * Take an agent that ended by itself back into its conversation, in the
+	 * same session, when its `endedAgent.resume` is ready: the shell that took
+	 * the session over is ended as closing ends it, with what the agent left
+	 * running, and the same agent starts again with the words that pick its
+	 * conversation (`agentStartArguments`), as a restart does, so the quit save
+	 * brings it back there too. The conversation is checked again first, and
+	 * one that is gone is never replaced by a fresh start: the session's offer
+	 * turns to "gone" and nothing is started. Refused, with nothing changed,
+	 * for any session that is not a shell after an agent with a ready offer.
+	 */
+	resume(id: string): Promise<OpenTerminalResult>;
 	/** Every running terminal and agent session in chip order, as the quit save needs them. */
 	running(): RunningSession[];
 	/**
@@ -343,6 +362,14 @@ interface Live {
 	/** The agent's own conversation id, when it is known. */
 	conversation: string | null;
 	conversationFolder: string | null;
+	/** The row's own config folder, with the variable that sets it, when the agent started with one from Settings. Kept to give the command that resumes it. */
+	configFolder: { variable: string; path: string } | null;
+	/** The agent from Settings this session started from, kept for starting it again in its conversation. Null for anything else. */
+	launch: AgentLaunch | null;
+	/** The shell is being ended so the agent can start again in its place: its own end changes nothing, and nothing is typed into it. */
+	swapping: boolean;
+	/** A resume of this session is under way, so a second one is refused. */
+	resuming: boolean;
 	startedAt: number;
 	/** Whether the name is one the person gave, not a default. */
 	renamed: boolean;
@@ -587,9 +614,10 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		now = Date.now,
 		promptWaitMilliseconds = PROMPT_WAIT_MILLISECONDS, promptQuietMilliseconds = PROMPT_QUIET_MILLISECONDS, promptEnterMilliseconds = PROMPT_ENTER_MILLISECONDS, promptBusyMilliseconds = PROMPT_BUSY_MILLISECONDS,
 	} = dependencies;
-	const conversations = dependencies.conversations ?? {
-		exists: (store: ConversationStore, id: string, folder: string) => conversationExists[store](id, folder),
-		newId: () => crypto.randomUUID(),
+	const conversations = {
+		exists: dependencies.conversations?.exists ?? ((store: ConversationStore, id: string, folder: string) => conversationExists[store](id, folder)),
+		find: dependencies.conversations?.find ?? ((store: ConversationStore, search: ConversationSearch) => conversationFinders[store]?.(search) ?? null),
+		newId: dependencies.conversations?.newId ?? (() => crypto.randomUUID()),
 	};
 	const windows = platform === "win32";
 	/** ConPTY drops an OSC written as it is, so on Windows the answer goes in as typed keys. */
@@ -790,12 +818,14 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			program: ResumableAgent | null;
 			/** Where that agent keeps its conversations, as a full path, or null. */
 			conversationFolder: string | null;
+			/** The row's own config folder and its variable, for an agent from Settings that has one. */
+			configFolder: { variable: string; path: string } | null;
 			/** A conversation was asked for and could not be gone back to. */
 			missing: boolean;
 		}
 		| { ok: false; result: OpenTerminalResult };
 
-	const plain = { resumable: null, conversation: null, missing: false, program: null, conversationFolder: null } as const;
+	const plain = { resumable: null, conversation: null, missing: false, program: null, conversationFolder: null, configFolder: null } as const;
 
 	/**
 	 * What a session starts with. `resume` is a saved conversation, and
@@ -860,7 +890,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			conversation = fresh;
 		}
 		const started = [lookup.path, ...args];
-		return { ok: true, kind: "agent", base: launch.name, argv: started, command: describeCommandLine(started), ...extra, resumable, conversation, missing: resume !== null && conversation !== resume, program, conversationFolder: folder };
+		return { ok: true, kind: "agent", base: launch.name, argv: started, command: describeCommandLine(started), ...extra, resumable, conversation, missing: resume !== null && conversation !== resume, program, conversationFolder: folder, configFolder: own !== null && kept !== null ? { variable: kept.folderVariable, path: own } : null };
 	}
 
 	/** The file a path leads to with every link followed, or null when that cannot be read. */
@@ -950,6 +980,8 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			// On Windows closing the pseudo console above already hung up on what was attached to it.
 			hangUp(live);
 			live.leftovers = sessionMembers(child.pid) ?? [];
+			// A shell ended so the agent can start again in its session: that is told by the resume, not by this.
+			if (live.swapping) return;
 			// The exit is told in one change with the status: working and blocked end with the process.
 			live.records.exited();
 			live.native = false;
@@ -961,14 +993,54 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			const unsent = live.prompt;
 			const notSent = unsent ? { prompt: { state: "not-sent" as const, message: promptEndedMessage(live.session.name, unsent.review ? "review" : "prompt"), ...(unsent.review ? { what: "review" as const } : {}) } } : {};
 			dropChop(live);
+			// Before the end is noted: otherwise this session's own end would count as another session of the agent having ended here.
+			const resume = resumeOffer(live);
 			noteEnded(live);
 			// An agent or a terminal editor goes on as the person's shell. Everything else, a shell and a Timber command, stays ended.
-			if ((live.session.kind === "agent" || live.session.kind === "editor") && continueAsShell(live, child, end, notSent)) return;
+			if ((live.session.kind === "agent" || live.session.kind === "editor") && continueAsShell(live, child, end, notSent, resume)) return;
 			live.pasteMode.reset();
 			releaseStatusFile(live);
 			changed(live, { ...live.session, state: { kind: "exited", ...end }, ...recordsForWindow(live.records), ...notSent });
 		});
 		return { child, ended };
+	}
+
+	/** Every running terminal and agent session in chip order, as the quit save needs them. */
+	function runningSessions(): RunningSession[] {
+		return [...sessions.values()].flatMap((live): RunningSession[] => {
+			const { session } = live;
+			if (session.state.kind !== "running" || (session.kind !== "terminal" && session.kind !== "agent")) return [];
+			return [{
+				id: session.id, worktree: session.worktree, path: session.path, kind: session.kind, agent: live.agent, resumable: live.resumable, program: live.program,
+				conversation: live.conversation, conversationFolder: live.conversationFolder, startedAt: live.startedAt, name: live.renamed ? session.name : null, restored: live.restored,
+			}];
+		});
+	}
+
+	/**
+	 * Whether an agent that just ended can go back to its conversation, read
+	 * from the agent's own files as the quit save reads them, while the
+	 * session still counts as a running agent. Null when it is not offered at
+	 * all. A session that cannot be told is "not-known", never a guess.
+	 */
+	function resumeOffer(live: Live): ResumeOffer | null {
+		if (live.session.kind !== "agent" || live.agent === null || live.resumable === null || live.launch === null) return null;
+		const recipe = agentById(live.resumable).resume;
+		if (recipe === null) return null;
+		const unknown: ResumeOffer = { state: "unavailable", reason: "not-known" };
+		try {
+			const entry = resolveConversations(runningSessions(), { exists: conversations.exists, find: conversations.find, endedAgents: new Map(agentsEnded), now, only: live.session.id }).find(session => session.id === live.session.id);
+			// A conversation found is kept on the session; none found leaves the id the app gave, so `endedAgent` still says what the agent started with.
+			const id = entry?.conversation ?? null;
+			if (id !== null) live.conversation = id;
+			if (id === null) return { state: "unavailable", reason: recipe.fresh !== null ? "never-saved" : "not-known" };
+			if (live.conversationFolder === null) return unknown;
+			if (!conversations.exists(recipe.conversations.store, id, live.conversationFolder)) return { state: "unavailable", reason: "gone" };
+			const command = resumeCommand({ agent: live.resumable, executable: live.launch.executable, arguments: live.launch.arguments, conversation: id, configFolder: live.configFolder, windows });
+			return { state: "ready", conversation: id, command };
+		} catch {
+			return unknown;
+		}
 	}
 
 	/**
@@ -978,7 +1050,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 	 * start. Only an agent leaves `endedAgent` behind: an editor that quit is
 	 * not a crash or a stop to mark, so its shell is a plain one.
 	 */
-	function continueAsShell(live: Live, old: PseudoTerminal, end: { exitCode: number | null; signal: string | null }, notSent: { prompt?: PromptDelivery }): boolean {
+	function continueAsShell(live: Live, old: PseudoTerminal, end: { exitCode: number | null; signal: string | null }, notSent: { prompt?: PromptDelivery }, resume: ResumeOffer | null): boolean {
 		const shell = shellOf();
 		let started: StartedChild;
 		try {
@@ -988,7 +1060,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		}
 		const endedAgent: EndedAgent = {
 			name: live.launchName, agent: live.agent, program: live.program, resumable: live.resumable, conversation: live.conversation,
-			command: live.session.command, exitCode: end.exitCode, signal: end.signal,
+			command: live.session.command, exitCode: end.exitCode, signal: end.signal, resume,
 		};
 		// What the agent left running is still signalled when the session closes. On Windows there is nothing to follow.
 		live.former = live.leftovers !== null && live.leftovers.length > 0 ? { pid: old.pid, leftovers: live.leftovers } : null;
@@ -1163,7 +1235,8 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			session, process: started.child, scrollback: createScrollback(), pending: "", flushTimer: null, undrawn: [], undrawnSize: 0, held: false, leftovers: null, former: null, ended: started.ended,
 			environment: baseEnvironment, cols, rows, launchName: start.base,
 			scanner: createStatusScanner(), records: createStatusRecords(), pasteMode: createPasteModeScanner(), statusChanged: false, native: false, probedAt: Number.NEGATIVE_INFINITY, chop: null, prompt: null,
-			agent: agent?.name ?? null, resumable: start.resumable, program: start.program, conversation: start.conversation, conversationFolder: start.conversationFolder, startedAt: now(), renamed: savedName !== null, restored,
+			agent: agent?.name ?? null, resumable: start.resumable, program: start.program, conversation: start.conversation, conversationFolder: start.conversationFolder, configFolder: start.configFolder,
+			launch: agent !== null ? launch : null, swapping: false, resuming: false, startedAt: now(), renamed: savedName !== null, restored,
 		};
 		if (chop?.kind === "command") {
 			live.chop = { text: chop.text, timer: null, deadline: Date.now() + chopWaitMilliseconds };
@@ -1249,6 +1322,88 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		changed(live, null);
 	}
 
+	/** A refusal of a resume, with the line every refusal ends on. */
+	const notResumed = (message: string): OpenTerminalResult => ({ outcome: "failed", message: `${message} Nothing was started.` });
+
+	async function resume(id: string): Promise<OpenTerminalResult> {
+		const live = sessions.get(id);
+		const offer = live?.session.endedAgent?.resume;
+		if (!live || live.session.state.kind !== "running" || live.session.kind !== "terminal" || offer?.state !== "ready" || live.launch === null || live.swapping || live.resuming) {
+			return notResumed("That session is not a shell that an agent ended in, with its conversation to go back to.");
+		}
+		const launch = live.launch;
+		const ended = live.session.endedAgent!;
+		live.resuming = true;
+		try {
+			// Looked at again now: the conversation may be gone since the agent ended, and a fresh start is never the answer.
+			const start = startOf(launch, null, offer.conversation, true);
+			if (!start.ok) return start.result;
+			if (start.missing || start.resumable === null || start.conversation !== offer.conversation) {
+				if (sessions.get(id) === live) changed(live, { ...live.session, endedAgent: { ...ended, resume: { state: "unavailable", reason: "gone" } } });
+				return notResumed(`The conversation of ${live.launchName} is no longer in its folder, so it was not resumed.`);
+			}
+			const listed = await findListedWorktree(findRepository, live.session.repository, live.session.path, `${live.launchName} was not resumed.`);
+			if (!listed.ok) return { outcome: "not-listed", message: listed.message };
+			if (sessions.get(id) !== live) return notResumed("The session was closed.");
+			if (live.session.state.kind !== "running") return notResumed("The shell has exited.");
+			// The shell goes as closing ends it: hung up, given a moment, then killed, with what the agent left running.
+			live.swapping = true;
+			dropChop(live);
+			live.process.close();
+			hangUp(live);
+			const deadline = Date.now() + closeMilliseconds;
+			while (!settled(live) && Date.now() < deadline) await wait(Math.min(50, closeMilliseconds));
+			killLeftovers(live);
+			await live.process.exited;
+			await live.ended;
+			if (sessions.get(id) !== live) return notResumed("The session was closed.");
+			let started: StartedChild;
+			try {
+				started = startChild({ argv: start.argv, cwd: live.session.path, env: withChanges(live.environment, start.environment, start.unset), cols: live.cols, rows: live.rows }, () => live);
+			} catch (error) {
+				live.swapping = false;
+				live.pasteMode.reset();
+				live.records.exited();
+				live.native = false;
+				// The session ended for good, as when a shell exits: its status file goes.
+				releaseStatusFile(live);
+				changed(live, { ...live.session, state: { kind: "exited", exitCode: null, signal: null }, ...recordsForWindow(live.records) });
+				return { outcome: "failed", command: start.command, message: `Could not start ${start.argv[0]!} in ${live.session.path}: ${messageOf(error)}` };
+			}
+			// The note goes after what the shell printed and is kept with it, so drawing the session again shows it too.
+			live.pending += agentResumedNote(live.launchName);
+			flush(live);
+			live.former = null;
+			live.process = started.child;
+			live.ended = started.ended;
+			live.leftovers = null;
+			live.scanner = createStatusScanner();
+			live.records = createStatusRecords();
+			live.native = false;
+			live.pasteMode.reset();
+			live.probedAt = Number.NEGATIVE_INFINITY;
+			live.statusChanged = false;
+			live.prompt = null;
+			live.chop = null;
+			live.agent = ended.agent;
+			live.resumable = start.resumable;
+			live.program = start.program;
+			live.conversation = start.conversation;
+			live.conversationFolder = start.conversationFolder;
+			live.configFolder = start.configFolder;
+			live.startedAt = now();
+			live.swapping = false;
+			const { endedAgent: _endedAgent, prompt: _prompt, ...rest } = live.session;
+			changed(live, {
+				...rest, kind: "agent", shell: start.argv[0]!, command: start.command, state: { kind: "running" }, status: null, children: [],
+				...(start.program !== null ? { program: start.program } : {}),
+			});
+			return { outcome: "opened", session: { ...live.session } };
+		} finally {
+			live.resuming = false;
+		}
+	}
+
 	return {
 		list: () => [...sessions.values()].map(live => ({ ...live.session })),
 		open,
@@ -1293,12 +1448,13 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		},
 		write(id, data) {
 			const live = sessions.get(id);
-			if (!live || live.session.state.kind !== "running" || typeof data !== "string" || data === "") return;
+			if (!live || live.swapping || live.session.state.kind !== "running" || typeof data !== "string" || data === "") return;
 			live.process.write(data);
 		},
 		paste(id, text) {
 			const live = sessions.get(id);
 			if (!live || live.session.state.kind !== "running") return { outcome: "gone", message: "The session has ended." };
+			if (live.swapping) return { outcome: "not-ready", message: PASTE_NOT_READY };
 			// An agent still waiting for the text it was started with may be on a first-run screen.
 			if (live.prompt !== null) return { outcome: "not-ready", message: PROMPT_STILL_STARTING };
 			return deliver(live, text, false);
@@ -1307,6 +1463,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			const live = sessions.get(id);
 			if (!live || live.session.state.kind !== "running") return { outcome: "gone", message: "The session has ended." };
 			if (live.session.kind !== "agent" || live.session.path !== worktreePath || live.session.repository !== repository) return { outcome: "not-agent", message: "That session is not an agent of this worktree." };
+			if (live.swapping) return { outcome: "not-ready", message: PASTE_NOT_READY };
 			if (live.prompt !== null) return { outcome: "not-ready", message: PROMPT_STILL_STARTING };
 			return deliver(live, text, true);
 		},
@@ -1316,7 +1473,8 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			const size = clampTerminalSize(cols, rows);
 			live.cols = size.cols;
 			live.rows = size.rows;
-			live.process.resize(size.cols, size.rows);
+			// While the shell is swapped for the agent there is no process to resize; the agent starts at the size kept here.
+			if (!live.swapping) live.process.resize(size.cols, size.rows);
 		},
 		close,
 		async closeAll() {
@@ -1335,14 +1493,8 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		leaders: () => [...sessions.values()]
 			.filter(live => live.session.state.kind === "running")
 			.map(live => ({ id: live.session.id, name: live.session.name, path: live.session.path, pid: live.process.pid })),
-		running: () => [...sessions.values()].flatMap((live): RunningSession[] => {
-			const { session } = live;
-			if (session.state.kind !== "running" || (session.kind !== "terminal" && session.kind !== "agent")) return [];
-			return [{
-				id: session.id, worktree: session.worktree, path: session.path, kind: session.kind, agent: live.agent, resumable: live.resumable, program: live.program,
-				conversation: live.conversation, conversationFolder: live.conversationFolder, startedAt: live.startedAt, name: live.renamed ? session.name : null, restored: live.restored,
-			}];
-		}),
+		resume,
+		running: runningSessions,
 		endedAgents: () => new Map(agentsEnded),
 	};
 }

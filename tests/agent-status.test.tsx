@@ -90,7 +90,7 @@ describe("a session's status as shown", () => {
 	});
 
 	test("an agent that ended and left a shell shows how it ended, until a program in the shell reports", () => {
-		const ended = (exitCode: number | null, signal: string | null = null) => session({ kind: "terminal", shell: "/bin/zsh", endedAgent: { name: "Codex", agent: "Codex", program: "codex", resumable: "codex", conversation: null, command: "codex", exitCode, signal } });
+		const ended = (exitCode: number | null, signal: string | null = null) => session({ kind: "terminal", shell: "/bin/zsh", endedAgent: { name: "Codex", agent: "Codex", program: "codex", resumable: "codex", conversation: null, command: "codex", exitCode, signal, resume: null } });
 		expect(shownStatus(ended(0))).toEqual({ kind: "stopped" });
 		expect(shownStatus(ended(3))).toEqual({ kind: "crashed", exitCode: 3, signal: null });
 		expect(shownStatus(ended(null, "SIGKILL"))).toEqual({ kind: "crashed", exitCode: null, signal: "SIGKILL" });
@@ -118,7 +118,7 @@ describe("a session's status as shown", () => {
 	});
 
 	test("on the row, a shell left by a clean agent end counts with the running sessions, and one left by a crash keeps its mark", () => {
-		const left = (id: string, exitCode: number) => session({ id, kind: "terminal", name: "Codex", shell: "/bin/zsh", endedAgent: { name: "Codex", agent: "Codex", program: "codex", resumable: "codex", conversation: null, command: "codex", exitCode, signal: null } });
+		const left = (id: string, exitCode: number) => session({ id, kind: "terminal", name: "Codex", shell: "/bin/zsh", endedAgent: { name: "Codex", agent: "Codex", program: "codex", resumable: "codex", conversation: null, command: "codex", exitCode, signal: null, resume: null } });
 		const clean = describeRowSessions([left("a", 0)]);
 		expect(clean.marks).toEqual([]);
 		expect(clean.others).toBe(1);
