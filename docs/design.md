@@ -21,8 +21,13 @@ change them here first when they change.
     agents, Rebase, Open in editor, Done), In the repository (New worktree,
     Open existing branch, New arena, Fetch now, Clean up merged), the
     repository's worktrees with the current one marked and their sessions'
-    marks, and App (next session, Settings, Add repository). Actions that
-    cannot run now are left out and named in one line under the list.
+    marks, and App (next session, Show chops, Run a chop, Show files,
+    Show changes, Settings, Add repository). Actions that cannot run now are
+    left out and named in one line under the list.
+  - A command with a keyboard shortcut shows it at the end of its row, Ctrl
+    on Linux and Windows and Cmd on macOS, as its own tooltip names it, and
+    a chop key as set in Settings. The chip's tooltip gives the full
+    repository and worktree names.
   - Typing ranks matches. Scoped, this repository's come first, then other
     repositories' worktrees under "Other repositories", never their actions.
     An action that cannot run is found too, dimmed.
@@ -50,9 +55,10 @@ change them here first when they change.
   worktree's review notes. The title bar's Files button, or Ctrl+Shift+E
   (Cmd+Shift+E on macOS), shows or hides the files from any focus, as the
   Chops button and its shortcut do for the chops; pressed while the panel
-  shows another view, it switches. The Changes button, Ctrl+Shift+G
-  (Cmd+Shift+G on macOS), and "Show changes" in the command palette do the
-  same for the changes (see Workspace). With "Use chops" off, the switch
+  shows another view, it switches. The Changes button and Ctrl+Shift+G
+  (Cmd+Shift+G on macOS) do the same for the changes (see Workspace). The
+  command palette has "Show chops", "Show files", and "Show changes", each
+  "Hide" while it shows. With "Use chops" off, the switch
   offers Files and Changes. The files are a tree of the
   worktree's folders, folders first, `.git` left out. A click or Enter on a
   file opens it in the File tab, and its row stays marked while it is
@@ -168,7 +174,7 @@ change them here first when they change.
 - Ctrl+Shift+T (Cmd+Shift+T on macOS) searches and runs a chop, as the
   task shortcut does in editors such as Zed, from any focus, also from a
   terminal, with the chops panel shown or hidden. Pressed again, it
-  closes. It opens a box over the palette's frame, with the selected
+  closes. "Run a chop" in the command palette opens it too. It opens a box over the palette's frame, with the selected
   worktree named at its right ("in feature-x") and a chip for which kinds
   show. Typing searches names and text: a name that has the typed words
   comes first, then a name with its letters in order, then a text that

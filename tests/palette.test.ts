@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { DONE_PRIMARY_NOTE } from "../src/mainview/done-format";
 import {
-	ADDING_REPOSITORY, FETCHING_NOW, FOLDER_MISSING_FOR_SESSION, NO_WORKTREE_SELECTED, OTHER_REPOSITORIES, STARTING_SESSION, describeHighlighted, describeUnavailable,
+	ADDING_REPOSITORY, FETCHING_NOW, FOLDER_MISSING_FOR_SESSION, NO_WORKTREE_SELECTED, OTHER_REPOSITORIES, STARTING_SESSION, describeHighlighted, describeScopeChip, describeUnavailable,
 	isPaletteShortcut, matchEntries, paletteEntries, paletteHint, paletteScope, paletteView, pointerMoved, rowAfterKey, rowTarget,
 } from "../src/mainview/palette";
 import { REBASE_FOLDER_MISSING } from "../src/mainview/rebase-format";
@@ -24,6 +24,62 @@ async function sampleState(): Promise<{ state: AppState; store: ReturnType<typeo
 
 const byLabel = (state: AppState, label: string) => paletteEntries(state).find(entry => entry.label === label)!;
 
+describe("palette shortcuts", () => {
+	const keys = (state: AppState, mac: boolean) => Object.fromEntries(paletteEntries(state, mac).filter(entry => entry.shortcut !== undefined).map(entry => [entry.id, entry.shortcut]));
+
+	test("every command with a key shows it, with Ctrl off macOS and Cmd on macOS", async () => {
+		const { state } = await sampleState();
+		expect(keys(state, false)).toEqual({
+			"action:next-waiting": "Ctrl+Shift+J", "action:chops": "Ctrl+Shift+K", "action:run-chop": "Ctrl+Shift+T", "action:files": "Ctrl+Shift+E", "action:changes": "Ctrl+Shift+G",
+		});
+		expect(keys(state, true)).toEqual({
+			"action:next-waiting": "Cmd+Shift+J", "action:chops": "Cmd+Shift+K", "action:run-chop": "Cmd+Shift+T", "action:files": "Cmd+Shift+E", "action:changes": "Cmd+Shift+G",
+		});
+	});
+
+	test("entries with no key of their own have no shortcut, a single chop's row included", async () => {
+		const { store } = await sampleState();
+		store.select(FEATURE_ID);
+		await store.readChops(TIMBER);
+		const entries = paletteEntries(store.getState());
+		expect(entries.some(entry => entry.label.startsWith("Run chop: "))).toBe(true);
+		for (const entry of entries.filter(candidate => candidate.kind === "worktree" || candidate.label.startsWith("Run chop: ") || candidate.label === "Settings")) {
+			expect(entry.shortcut).toBeUndefined();
+		}
+	});
+
+	test("the chop keys read as set in Settings", async () => {
+		const { store } = await sampleState();
+		await store.savePreferences({ shortcuts: { "chops-panel": "Ctrl+Shift+L", "run-chop": "Ctrl+Shift+Y" } });
+		expect(keys(store.getState(), false)).toMatchObject({ "action:chops": "Ctrl+Shift+L", "action:run-chop": "Ctrl+Shift+Y" });
+		expect(keys(store.getState(), true)).toMatchObject({ "action:chops": "Cmd+Shift+L", "action:run-chop": "Cmd+Shift+Y" });
+	});
+
+	test("with chops off, neither chop command is listed, and Files and Changes stay", async () => {
+		const { store } = await sampleState();
+		await store.savePreferences({ useChops: false });
+		const ids = paletteEntries(store.getState()).map(entry => entry.id);
+		expect(ids).not.toContain("action:chops");
+		expect(ids).not.toContain("action:run-chop");
+		expect(ids).toEqual(expect.arrayContaining(["action:files", "action:changes"]));
+	});
+
+	test("Files and Chops say Hide while they show, and Run a chop opens the search", async () => {
+		const { store } = await sampleState();
+		expect(byLabel(store.getState(), "Run a chop").action).toEqual({ kind: "dialog", request: { kind: "run-chop" } });
+		expect(store.toggleSidePanel("files")).toBe(true);
+		expect(paletteEntries(store.getState()).map(entry => entry.label)).toEqual(expect.arrayContaining(["Hide files", "Show chops"]));
+		expect(store.toggleSidePanel("chops")).toBe(true);
+		expect(paletteEntries(store.getState()).map(entry => entry.label)).toEqual(expect.arrayContaining(["Show files", "Hide chops"]));
+	});
+
+	test("the scope chip's tooltip names the whole repository and worktree", () => {
+		const repositoryName = "a-repository-name-long-enough-to-be-cut-short";
+		const worktreeName = "feat/a-branch-long-enough-to-be-cut-short";
+		expect(describeScopeChip({ repository: "/work/x", repositoryName, worktreeName })).toBe(`${repositoryName} / ${worktreeName}. Search every repository (Backspace)`);
+	});
+});
+
 describe("palette entries", () => {
 	test("lists the actions, then every worktree of every available repository", async () => {
 		const { state } = await sampleState();
@@ -41,7 +97,7 @@ describe("palette entries", () => {
 		const labels = entries.filter(entry => entry.kind === "action").map(entry => entry.label);
 		expect(labels).toEqual([
 			"Open terminal", "Start Claude Code", "Start Codex", "Pull", "Open in editor", "Done", "New worktree", "Open existing branch", "New arena (Beta)", "Fetch now",
-			"Clean up merged", "Clean up merged", "Show next session that needs you or is done", "Show changes", "Settings", "Add repository",
+			"Clean up merged", "Clean up merged", "Show next session that needs you or is done", "Show chops", "Run a chop", "Show files", "Show changes", "Settings", "Add repository",
 		]);
 	});
 

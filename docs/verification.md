@@ -4679,3 +4679,26 @@ Run for Cursor CLI's needs you and interrupted turns (issue 352), Linux x64
 - Not run: the desktop app by hand; macOS and Windows; MCP tool approval;
   an edit that waits for approval; a turn that fails other than by not
   reaching Cursor's servers.
+
+Run for the command palette's shortcuts (issue 335), Windows 11 with Bun
+1.4.4 and headless Chrome, on 2026-11-23:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun run test`: 3870 pass, 833 skip, 1 fail. The failure is "a session in
+  a folder reached through a link finds the chat", whose `symlinkSync` gets
+  EPERM on this Windows account. The browser suites skip on Windows, so the
+  existing ones that open the palette did not run.
+  A second run: 3869 pass, 833 skip, 2 fail, the same one and "killAll ends
+  the shell and what it started" in `tests/terminals-windows.test.ts`, which
+  timed out waiting 8 seconds for the processes to end. Run alone with
+  `bun test tests/terminals-windows.test.ts -t "killAll ends the shell"`, it
+  passed 5 times out of 5. This change touches no terminal code.
+- A throwaway script over `tests/support/browser.ts`, with `CHROME_BIN` set,
+  opened the palette over the mock engine in Timber Light and Timber Dark at
+  1280 and 480 pixels wide. Show chops, Run a chop, Show files, and Show
+  changes each ended in their Ctrl+Shift key inside the row, the list did
+  not overflow sideways, and the chip's title was "timber / main. Search
+  every repository (Backspace)". Choosing Show and Hide files, Show and Hide
+  chops, and Run a chop did what each says.
+- Not run: the desktop app; Linux and macOS. Cmd on macOS is checked only by
+  the unit tests, which pass `mac` directly.

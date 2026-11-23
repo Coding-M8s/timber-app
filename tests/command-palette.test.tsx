@@ -66,6 +66,18 @@ describe("the command palette", () => {
 		expect(markup).not.toContain("The primary checkout is never removed.");
 	});
 
+	test("a row with a shortcut ends in its key, a row without one has none, and the chip names the repository and worktree", async () => {
+		const store = await startedStore();
+		store.openDialog({ kind: "palette" });
+		const markup = renderPalette(store);
+		const row = (label: string) => markup.split('role="option"').find(part => part.includes(`>${label}</span>`))!;
+		for (const [label, letter] of [["Show changes", "G"], ["Show files", "E"], ["Show chops", "K"], ["Run a chop", "T"]] as const) {
+			expect(row(label)).toMatch(new RegExp(`<kbd class="palette-shortcut">(Ctrl|Cmd)\\+Shift\\+${letter}</kbd>`));
+		}
+		expect(row("Settings")).not.toContain("<kbd");
+		expect(markup).toContain('title="timber / main. Search every repository (Backspace)"');
+	});
+
 	test("the rows are the listbox's options, and headings are not", async () => {
 		const store = await startedStore();
 		store.openDialog({ kind: "palette" });

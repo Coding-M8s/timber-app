@@ -1568,8 +1568,11 @@ pure functions in `src/mainview/shell.ts`.
   the actions first (New worktree, Open existing branch, Fetch now, Rebase,
   Done, Open in editor, Open terminal, Start each saved agent, Show next
   session that needs you or is done, Clean up merged for each repository,
-  Settings, Add repository), then every worktree of every available
-  repository. Matching is
+  Show or hide chops and Run a chop while chops are in use, Show or hide
+  files and changes, Settings, Add repository), then every worktree of every
+  available repository. An entry's optional `shortcut` comes from the same
+  function as that feature's tooltip, so it follows the platform and a key
+  set in Settings. Matching is
   case-insensitive and fuzzy over the label, the branch, the folder name, and
   the repository name, and shows at most 50 entries so hundreds of worktrees
   stay quick. Actions that need a worktree apply to the selected one and name

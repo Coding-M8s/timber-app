@@ -1,10 +1,9 @@
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
-	NOTHING_MATCHES, PALETTE_LABEL, PALETTE_PLACEHOLDER, type PaletteIcon, type PaletteMatch, describeHighlighted, paletteEntries,
+	NOTHING_MATCHES, PALETTE_LABEL, PALETTE_PLACEHOLDER, type PaletteIcon, type PaletteMatch, describeHighlighted, describeScopeChip, paletteEntries,
 	paletteScope, paletteView, pointerMoved, rowAfterKey, rowTarget, type PointerAt,
 } from "../palette";
 import { runPaletteEntry } from "../palette-run";
-import { waitingShortcut } from "../waiting";
 import { useAppState, useStore } from "../store/react";
 import { repositoryIcon } from "../../shared/sidebar-icons";
 import { SidebarIconView } from "./SidebarIcon";
@@ -39,6 +38,9 @@ const ICON_PATHS: Record<Exclude<PaletteIcon, "worktree">, ReactNode> = {
 	"next": <><path d="M5 12h14" /><path d="M13 6l6 6-6 6" /></>,
 	"settings": <><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1" /></>,
 	"changes": <><circle cx="7" cy="6" r="2" /><circle cx="7" cy="18" r="2" /><circle cx="17" cy="9" r="2" /><path d="M7 8v8M17 11c0 3-3 4-10 5" /></>,
+	"files": <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />,
+	"chops": <><path d="M8 6h12" /><path d="M8 12h12" /><path d="M8 18h12" /><path d="M4 6h.01" /><path d="M4 12h.01" /><path d="M4 18h.01" /></>,
+	"search": <><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></>,
 	"add-repository": <><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="M12 10v6M9 13h6" /></>,
 };
 
@@ -73,7 +75,7 @@ export function CommandPalette() {
 	const mac = typeof navigator !== "undefined" && /Mac/.test(navigator.platform);
 	const context = useMemo(() => paletteScope(state), [state]);
 	const scoped = context !== null && !widened;
-	const entries = useMemo(() => paletteEntries(state), [state]);
+	const entries = useMemo(() => paletteEntries(state, mac), [state, mac]);
 	const view = useMemo(() => paletteView(entries, query, context, scoped), [entries, query, context, scoped]);
 	const { options } = view;
 	const current = Math.min(active, options.length - 1);
@@ -141,7 +143,7 @@ export function CommandPalette() {
 					<button
 						type="button"
 						className="palette-scope"
-						title="Search every repository (Backspace)"
+						title={describeScopeChip(context)}
 						aria-label={`Searching ${context.repositoryName} only. Search every repository`}
 						onClick={widen}
 					>
@@ -217,7 +219,7 @@ export function CommandPalette() {
 										)}
 										{entry.current && <span className="palette-detail">Current</span>}
 										{entry.detail !== "" && <span className="palette-detail">{entry.detail}</span>}
-										{entry.action.kind === "next-waiting" && <kbd className="palette-shortcut">{waitingShortcut(mac)}</kbd>}
+										{entry.shortcut !== undefined && <kbd className="palette-shortcut">{entry.shortcut}</kbd>}
 									</li>
 								);
 							})}
