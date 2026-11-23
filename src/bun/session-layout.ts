@@ -94,6 +94,81 @@ function messageOf(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
+/** What `resolveConversations` reads: the agent's own files, the sessions that ended, and the clock. */
+export interface ConversationDependencies {
+	/** Whether the agent wrote the conversation with this id in this folder. */
+	exists: (store: ConversationStore, id: string, folder: string) => boolean;
+	/** The search for an agent whose id is not known when it starts. Null when none was found. */
+	find: (store: ConversationStore, options: ConversationSearch & { budget: number }) => string | null;
+	/** When the last session of each agent ended or closed in each worktree (`endedKey`). */
+	endedAgents: ReadonlyMap<string, number>;
+	now: () => number;
+	/** The time all the checks may take in all, in milliseconds. */
+	budget?: number;
+	/** A session id: only that session is checked and searched. The others still count for the ids taken and for who is alone in a worktree. */
+	only?: string;
+}
+
+/**
+ * Every session with the conversation it is in, read again from the agent's
+ * own files where that is exact. Used at quit, and when an agent ends, to
+ * tell whether it can be offered its conversation back.
+ */
+export function resolveConversations(live: RunningSession[], dependencies: ConversationDependencies): RunningSession[] {
+	const { exists, find, endedAgents, now, budget = CONVERSATION_SEARCH_MILLISECONDS, only } = dependencies;
+	const taken = new Set(live.flatMap(session => session.conversation === null ? [] : [session.conversation]));
+	const deadline = now() + budget;
+	const found = new Map<string, string | null>();
+	// First the ids the app gave (Claude Code, Grok Build), which are quick to check: such an id is only a conversation once the agent wrote it.
+	for (const session of live) {
+		if (only !== undefined && session.id !== only) continue;
+		const recipe = session.resumable === null ? null : agentById(session.resumable).resume;
+		if (recipe === null || recipe.fresh === null || session.conversation === null || session.conversationFolder === null) continue;
+		if (deadline - now() <= 0) break;
+		let written = true;
+		try {
+			written = exists(recipe.conversations.store, session.conversation, session.conversationFolder);
+		} catch {
+			// Then it keeps what it has.
+		}
+		if (!written) found.set(session.id, null);
+	}
+	// Every session of an agent found at quit, by agent, worktree, and folder, however it was started, so one started as typed is never taken for another. Sessions with different folders keep their conversations apart.
+	const groups = new Map<string, RunningSession[]>();
+	for (const session of live) {
+		if (session.program === null) continue;
+		const recipe = agentById(session.program).resume;
+		if (recipe === null || recipe.fresh !== null) continue;
+		const key = JSON.stringify([session.program, session.worktree, session.conversationFolder]);
+		groups.set(key, [...groups.get(key) ?? [], session]);
+	}
+	const ended = endedAgents;
+	for (const sessions of groups.values()) {
+		if (sessions.length !== 1) continue;
+		const [session] = sessions as [RunningSession];
+		if (only !== undefined && session.id !== only) continue;
+		if (session.resumable === null || session.resumable !== session.program || session.conversationFolder === null) continue;
+		const since = session.startedAt - START_SLACK_MILLISECONDS;
+		// Another session of the same agent ran here meanwhile and ended: its conversation could be taken for this one's.
+		const rival = ended.get(endedKey(session.program, session.worktree));
+		if (rival !== undefined && rival >= since) continue;
+		const budget = deadline - now();
+		if (budget <= 0) break;
+		const own = new Set(taken);
+		if (session.conversation !== null) own.delete(session.conversation);
+		let id: string | null = null;
+		try {
+			id = find(agentById(session.program).resume!.conversations.store, { folder: session.conversationFolder, cwd: session.path, since, taken: own, budget });
+		} catch {
+			// Then it keeps what it has.
+		}
+		if (id === null || own.has(id)) continue;
+		found.set(session.id, id);
+		taken.add(id);
+	}
+	return live.map(session => found.has(session.id) ? { ...session, conversation: found.get(session.id)! } : session);
+}
+
 export function createSessionLayout(dependencies: SessionLayoutDependencies): SessionLayout {
 	const { file, running, find, endedAgents = () => new Map<string, number>(), exists = () => true, warn = console.warn, now = Date.now } = dependencies;
 	let loaded: SavedSessions | null = null;
@@ -105,59 +180,6 @@ export function createSessionLayout(dependencies: SessionLayoutDependencies): Se
 	/** The session whose chip showed last, by worktree id. */
 	const shown: Record<string, string> = {};
 	let selected: string | null = null;
-
-	/** Every session with the conversation it is in, read again from the agent's own files where that is exact. */
-	function withConversations(live: RunningSession[]): RunningSession[] {
-		const taken = new Set(live.flatMap(session => session.conversation === null ? [] : [session.conversation]));
-		const deadline = now() + CONVERSATION_SEARCH_MILLISECONDS;
-		const found = new Map<string, string | null>();
-		// First the ids the app gave (Claude Code, Grok Build), which are quick to check: such an id is only a conversation once the agent wrote it.
-		for (const session of live) {
-			const recipe = session.resumable === null ? null : agentById(session.resumable).resume;
-			if (recipe === null || recipe.fresh === null || session.conversation === null || session.conversationFolder === null) continue;
-			if (deadline - now() <= 0) break;
-			let written = true;
-			try {
-				written = exists(recipe.conversations.store, session.conversation, session.conversationFolder);
-			} catch {
-				// Then it keeps what it has.
-			}
-			if (!written) found.set(session.id, null);
-		}
-		// Every session of an agent found at quit, by agent, worktree, and folder, however it was started, so one started as typed is never taken for another. Sessions with different folders keep their conversations apart.
-		const groups = new Map<string, RunningSession[]>();
-		for (const session of live) {
-			if (session.program === null) continue;
-			const recipe = agentById(session.program).resume;
-			if (recipe === null || recipe.fresh !== null) continue;
-			const key = JSON.stringify([session.program, session.worktree, session.conversationFolder]);
-			groups.set(key, [...groups.get(key) ?? [], session]);
-		}
-		const ended = endedAgents();
-		for (const sessions of groups.values()) {
-			if (sessions.length !== 1) continue;
-			const [session] = sessions as [RunningSession];
-			if (session.resumable === null || session.resumable !== session.program || session.conversationFolder === null) continue;
-			const since = session.startedAt - START_SLACK_MILLISECONDS;
-			// Another session of the same agent ran here meanwhile and ended: its conversation could be taken for this one's.
-			const rival = ended.get(endedKey(session.program, session.worktree));
-			if (rival !== undefined && rival >= since) continue;
-			const budget = deadline - now();
-			if (budget <= 0) break;
-			const own = new Set(taken);
-			if (session.conversation !== null) own.delete(session.conversation);
-			let id: string | null = null;
-			try {
-				id = find(agentById(session.program).resume!.conversations.store, { folder: session.conversationFolder, cwd: session.path, since, taken: own, budget });
-			} catch {
-				// Then it keeps what it has.
-			}
-			if (id === null || own.has(id)) continue;
-			found.set(session.id, id);
-			taken.add(id);
-		}
-		return live.map(session => found.has(session.id) ? { ...session, conversation: found.get(session.id)! } : session);
-	}
 
 	/** The file's text, or null when it is too large to be one the app wrote. */
 	async function readLimited(path: string): Promise<string | null> {
@@ -248,7 +270,7 @@ export function createSessionLayout(dependencies: SessionLayoutDependencies): Se
 			if (saved || newer || discarded) return;
 			saved = true;
 			try {
-				const live = withConversations(running());
+				const live = resolveConversations(running(), { exists, find, endedAgents: endedAgents(), now });
 				write(serializeSavedSessions(buildSavedSessions(live, shown, selected, carry)));
 			} catch (error) {
 				warn(`Could not save which sessions are open to ${file}: ${messageOf(error)}`);

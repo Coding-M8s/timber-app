@@ -4491,7 +4491,8 @@ that run when the app quits open again when it starts.
   followed by a reset of the terminal modes the agent may have left on and a
   one-line note. The session becomes a terminal: one change tells the window
   its kind is now terminal, with the agent's name, program, conversation,
-  command, and exit in `endedAgent` (kept for Resume, #284). What the agent
+  command, exit, and resume offer in `endedAgent` (see "Resuming an ended
+  agent" under [Going back to a conversation](#going-back-to-a-conversation)). What the agent
   left running is hung up on as above, and closing the session still ends it,
   through the agent's recorded leftovers. A prompt that was waiting is
   dropped as not sent, and its Enter never reaches the shell. A shell that
@@ -5234,6 +5235,46 @@ option that takes several values (Codex's `-i, --image <FILE>...`) and no
   note. When an agent changes where
   or how it keeps conversations, nothing is found and it starts fresh,
   never with an error.
+
+#### Resuming an ended agent
+
+When an agent from Settings ends by itself and its chip goes on as a shell,
+the session's `endedAgent.resume` (a `ResumeOffer` in
+`src/shared/terminal.ts`) says whether it can go back. It is `null` for a
+workflow's own agent, an arena attempt, a command started as typed, and an
+agent with no resume recipe: the window shows no bar. Otherwise it is found
+when the agent ends, with the same resolver as the quit save,
+`resolveConversations` in `src/bun/session-layout.ts`, over the running
+sessions, and before the end is noted in `endedAgents`, so the session is not
+its own rival (a Codex that ended alone would otherwise find a newer session
+than its own). The offer is `ready` with the conversation when its id is
+known and `conversationExists` finds it in the agent's folder, and
+`unavailable` otherwise: `never-saved` for an agent that takes a fresh id
+(`fresh` in its recipe) and never wrote that conversation, `gone` when a known
+id is no longer in the folder, and `not-known` when the search found none, was
+unsure, or failed.
+
+`resumeAgent(id)` (`TerminalSessions.resume` in `src/bun/terminals.ts`) is
+refused unless the session is the running shell of an ended agent with a
+`ready` offer, started from a Settings agent, and not already being resumed.
+It looks the conversation up again: when it is gone, nothing starts, the offer
+turns to `gone`, and the answer says so, so a fresh agent is never started in
+its place. Then it ends the shell as closing does, with its leftovers, while
+the shell's own end handler stays quiet, and starts the same agent with the
+words that pick the conversation, in the same session id. The session is an
+agent again, with a new offer when it ends again, and the quit save restores
+it into that conversation. A shell that an agent left and that is saved at quit
+comes back as a plain terminal, with no offer.
+
+The command shown for running by hand is `resumeCommand` in
+`src/shared/agent-resume.ts`: the executable as typed in Settings, then the
+words `agentStartArguments` gives for that conversation. On macOS and Linux a
+config folder set on the agent's row in Settings is put first as `env
+VARIABLE=folder`, quoted for the shell (`describeCommandLine`); a folder that
+comes from the app's own environment has no prefix. On Windows only plain
+words are given, joined by spaces, and the command is `null` when the row has a
+config folder or any word is not plain, since no quoting is safe there. A
+`null` command shows Resume without a command.
 
 ### Agent status
 

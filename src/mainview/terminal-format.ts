@@ -310,3 +310,38 @@ export function describeOrphanTerminal(path: string, count = 1): string {
 export function describeRestoreFailures(count: number): string {
 	return `Could not open ${count === 1 ? "a session" : `${count} sessions`} from the last time again`;
 }
+
+/** What the bar over a shell that an agent left says: how the agent ended, and whether it can go back to its conversation. */
+export interface ResumeBar {
+	/** Such as "Claude ended. Exited with code 0." */
+	lead: string;
+	/** Whether a Resume button is offered. */
+	canResume: boolean;
+	/** What the Resume button says it does, also its tooltip. */
+	resumeTitle: string;
+	/** Why it cannot be resumed, as a sentence, or null when it can. */
+	reason: string | null;
+	/** What to run by hand to get the same, or null when it cannot be given safely. */
+	command: string | null;
+}
+
+/** Each way an agent cannot go back, said with the agent's name. */
+function describeNoResume(name: string, reason: "never-saved" | "gone" | "not-known"): string {
+	if (reason === "never-saved") return `${name} saved no conversation, so there is nothing to resume.`;
+	if (reason === "gone") return `${name}'s conversation is no longer in its folder, so it cannot be resumed.`;
+	return `The app could not tell which conversation ${name} was in, so it cannot be resumed.`;
+}
+
+/**
+ * The bar for a shell that an agent left, or null when nothing is offered
+ * at all (a workflow's agent, an arena attempt, a command started as typed,
+ * or an agent with no way back), which keeps the plain shell.
+ */
+export function describeResumeOffer(ended: EndedAgent): ResumeBar | null {
+	const offer = ended.resume;
+	if (offer === null) return null;
+	const lead = `${ended.name} ended. ${describeAgentExit(ended)}.`;
+	const resumeTitle = `Ends this shell and starts ${ended.name} again in its conversation.`;
+	if (offer.state === "ready") return { lead, canResume: true, resumeTitle, reason: null, command: offer.command };
+	return { lead, canResume: false, resumeTitle, reason: describeNoResume(ended.name, offer.reason), command: null };
+}

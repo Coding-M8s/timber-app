@@ -4553,3 +4553,39 @@ Run for status hooks with Cursor CLI first (issue 350), Linux x64 (Pop!_OS
   `bun run test`: 4488 pass, 19 skip, 0 fail, on main at `f0bcfb9`.
 - Not run: the desktop app by hand; macOS and Windows, where no hook is
   offered; a Cursor turn that is interrupted or fails (#352).
+
+Run for Resume back into an ended agent's conversation (issue 284), Linux
+x64 (Fedora 44) with Bun 1.4.4:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun run test`: 4463 pass, 19 skip, 0 fail.
+- `tests/terminals.test.ts`, "offering an ended agent its conversation
+  back", with real pseudo terminals and stand-in agents in temporary
+  folders: a Claude Code-like agent that wrote its conversation gets a ready
+  offer with `--resume <id>` in the command, one that never wrote it gets
+  "never-saved"; a Codex-like agent alone in its worktree gets the id the
+  search found, though its own end was just noted; nothing found gives
+  "not-known"; arena attempts, commands started as typed, and agents with
+  no resume recipe get no offer. Resume ends the shell, `sleep 300 &` left
+  in it included, and starts the agent with `--resume <id>` (Claude) or
+  `resume <id>` (Codex) in the same session, which `running()` then lists
+  as an agent with its conversation, so the quit save keeps it; a row with
+  a config folder gets its variable and `env VAR=<folder>` in the command;
+  a conversation deleted since is refused, nothing starts fresh, and the
+  offer turns to "gone"; a second click at once, a close or a shell exit
+  during the swap, and an agent that cannot start are refused or end the
+  session; a resize during the swap reaches the agent; an agent that ends
+  again gets a new offer.
+- `tests/session-layout.test.ts`: `resolveConversations` with and without
+  `only`, and the quit save unchanged.
+- `tests/agent-resume.test.ts`: `resumeCommand` on POSIX and Windows.
+- `tests/mock-resume.test.ts` and `tests/resume-bar.test.tsx`: the mock
+  engine's offer and `resumeAgent`, and the bar's wording, Resume,
+  reasons, command, and Copy.
+- After rebasing onto main at `6e1f982`, where the resumed agent keeps the
+  session's status file and a failed start releases it: `bun run typecheck`
+  and `bun run typecheck:desktop`: no errors; `bun run test`: 4524 pass,
+  19 skip, 0 fail.
+- Not run: the desktop app by hand with a real Claude Code or Codex; a
+  real-browser look at the bar in Timber Light and Timber Dark (the page
+  has no way to end a mock agent); macOS and Windows.

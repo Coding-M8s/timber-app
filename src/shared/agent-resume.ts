@@ -1,3 +1,4 @@
+import { describeCommandLine } from "./command-line";
 import { type AgentId, type AgentResume, agentByExecutable, agentById } from "./agent-registry";
 
 /**
@@ -81,4 +82,35 @@ export function agentStartArguments(agent: ResumableAgent | null, args: readonly
 /** The line a terminal shows when a saved conversation is gone. Dim, and ends with a line break. */
 export function conversationMissingNote(agentName: string): string {
 	return `\x1b[2mThe saved conversation was not found, so ${agentName} started fresh.\x1b[0m\r\n`;
+}
+
+/** A word a Windows shell takes as it is, without quoting. */
+const PLAIN_WINDOWS_WORD = /^[A-Za-z0-9_.:\\/=+-]+$/;
+
+/**
+ * The command to run by hand that starts an ended agent in its conversation
+ * again: the executable as typed in Settings, then the arguments the app
+ * adds (`agentStartArguments`). `configFolder` is the row's own config
+ * folder in Settings, set in front with `env` as the app sets it; a folder
+ * that comes from the app's environment is not given. On Windows no way of
+ * setting a variable for one command is known to work in every shell, and a
+ * word that needs quoting would be quoted differently by each, so the
+ * command is given only when it is plain words and has no config folder.
+ * Null when it cannot be given safely.
+ */
+export function resumeCommand(options: {
+	agent: ResumableAgent;
+	executable: string;
+	arguments: readonly string[];
+	conversation: string;
+	configFolder: { variable: string; path: string } | null;
+	windows: boolean;
+}): string | null {
+	const words = [options.executable, ...agentStartArguments(options.agent, options.arguments, { resume: options.conversation })];
+	if (options.windows) {
+		if (options.configFolder !== null || !words.every(word => PLAIN_WINDOWS_WORD.test(word))) return null;
+		return words.join(" ");
+	}
+	const { configFolder } = options;
+	return describeCommandLine(configFolder === null ? words : ["env", `${configFolder.variable}=${configFolder.path}`, ...words]);
 }

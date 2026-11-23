@@ -585,6 +585,15 @@ export interface AppStore {
 	 */
 	openTerminal(request: OpenTerminalRequest): Promise<void>;
 	/**
+	 * Take the agent that ended in a session back into its conversation, as
+	 * the engine's `resumeAgent` does. It counts as a session starting in the
+	 * worktree, so a second click, or a start beside it, waits. The session
+	 * shows as an agent again; why it did not start shows in `terminalProblem`.
+	 * Does nothing for a session that is not an ended agent's shell. Never
+	 * throws.
+	 */
+	resumeAgent(sessionId: string): Promise<void>;
+	/**
 	 * Rebase a worktree with `timber rebase --result-file` and answer how it
 	 * ended (see `RebaseResult`). The engine is asked once, and never again by
 	 * itself. The repository is read again before this answers, whatever the
@@ -2993,6 +3002,34 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		}
 	}
 
+	async function resumeAgent(sessionId: string): Promise<void> {
+		const session = state.terminals.find(candidate => candidate.id === sessionId);
+		const ended = session?.endedAgent;
+		if (session === undefined || ended === undefined || ended.resume?.state !== "ready") return;
+		const key = session.worktree;
+		if (state.operations.some(operation => operation.kind === "open-terminal" && operation.worktree === key)) return;
+		if (isBeingRemoved(state, session.repository, session.path)) return;
+		await track({ kind: "open-terminal", worktree: key, agent: ended.name }, async () => {
+			let message: string;
+			try {
+				const result = await engine.resumeAgent(sessionId);
+				if (result.outcome === "opened") {
+					const { id } = result.session;
+					update({
+						terminals: withTerminal(state.terminals, id, result.session),
+						unseenSessions: state.unseenSessions.filter(candidate => candidate !== id),
+						terminalProblem: state.terminalProblem?.worktree === key ? null : state.terminalProblem,
+					});
+					return;
+				}
+				message = result.message;
+			} catch (error) {
+				message = `The app did not hear whether ${ended.name} started again: ${messageOf(error)}`;
+			}
+			update({ terminalProblem: { worktree: key, agent: ended.name, message, command: null } });
+		});
+	}
+
 	/**
 	 * `openTerminal`, after any request already being answered in that
 	 * worktree, instead of being dropped as a second click is: what the New
@@ -3942,6 +3979,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		cleanUpMerged,
 		dismissRemoval,
 		openTerminal,
+		resumeAgent,
 		startSessionsIn,
 		rebaseWorktree,
 		runSyncAction,

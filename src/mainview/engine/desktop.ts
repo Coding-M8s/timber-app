@@ -167,6 +167,7 @@ export function createDesktopEngine(): Engine {
 		forgetSavedSessions: worktrees => rpc.request.forgetSavedSessions({ worktrees }),
 		// The main process reads the list first.
 		openTerminal: request => rpc.request.openTerminal(request, { maxRequestTime: 60_000 }),
+		resumeAgent: id => rpc.request.resumeAgent({ id }, { maxRequestTime: 60_000 }),
 		readTerminal: id => rpc.request.readTerminal({ id }),
 		renameTerminal: (id, name) => rpc.request.renameTerminal({ id, name }),
 		drawnTerminal: (id, seq) => rpc.send.terminalDrawn({ id, seq }),

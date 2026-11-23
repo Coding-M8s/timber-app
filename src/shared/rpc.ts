@@ -138,6 +138,7 @@ export type AppRPC = {
 			takeSavedSessions: { params: {}; response: Answer<"takeSavedSessions"> };
 			forgetSavedSessions: { params: { worktrees: string[] }; response: Answer<"forgetSavedSessions"> };
 			openTerminal: { params: OpenTerminalRequest; response: Answer<"openTerminal"> };
+			resumeAgent: { params: { id: string }; response: Answer<"resumeAgent"> };
 			readTerminal: { params: { id: string }; response: Answer<"readTerminal"> };
 			renameTerminal: { params: { id: string; name: string }; response: Answer<"renameTerminal"> };
 			closeTerminal: { params: { id: string }; response: Answer<"closeTerminal"> };
