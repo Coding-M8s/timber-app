@@ -30,15 +30,18 @@ export interface AgentResume {
 	pickingLetters: string;
 	/**
 	 * Where its conversations are kept, read only to know whether one is still
-	 * there (see src/bun/agent-conversations.ts). `store` names the layout,
-	 * which needs code of its own to read; the folder is `folderVariable` when
-	 * it is set to a full path, else `folder` in the home folder.
+	 * there and, for an agent without `fresh`, which one a session is in (see
+	 * src/bun/agent-conversations.ts). `store` names the layout, which needs
+	 * code of its own to read; the folder is `folderVariable` when it is set
+	 * to a full path, else `xdgFolder` in `XDG_CONFIG_HOME` when the agent
+	 * reads that variable and it is set to a full path, else `folder` in the
+	 * home folder.
 	 */
-	conversations: { store: ConversationStore; folderVariable: string; folder: string };
+	conversations: { store: ConversationStore; folderVariable: string; folder: string; xdgFolder?: string };
 }
 
 /** The layouts of conversation folders the app can read. */
-export type ConversationStore = "claude-projects" | "codex-sessions";
+export type ConversationStore = "claude-projects" | "codex-sessions" | "grok-sessions" | "cursor-chats";
 
 /** One shape of an agent's mark. */
 export interface AgentMarkPath {
@@ -193,7 +196,22 @@ const ROWS = [
 			// A trademark of its maker, shown only to say which agent a session runs.
 			source: "Cursor's cube, CUBE_2D_LIGHT.svg in the brand kit at https://cursor.com/brand, taken on 2026-11-22.",
 		},
-		resume: null,
+		/*
+		 * Verified with Cursor CLI 2026.11.19-f005e9d and 2026.11.22-e9042b2,
+		 * from its own `--help` and by running it (see docs/architecture.md,
+		 * "Going back to a conversation"): `cursor-agent --resume <chat id>`
+		 * goes back to a chat. No documented flag sets the id of a new one, so
+		 * a fresh Cursor starts as typed and its id is read at quit from its
+		 * chats folder. `--worktree` and `--workspace` move the chat to another
+		 * folder, so they start as typed too.
+		 */
+		resume: {
+			fresh: null,
+			resume: ["--resume"],
+			picks: ["--resume", "--continue", "--print", "-p", "--new-session-id", "--cloud", "-c", "--background", "-b", "--worktree", "-w", "--workspace", "--list-models", "--help", "-h", "--version", "-v"],
+			pickingLetters: "pcbwhv",
+			conversations: { store: "cursor-chats", folderVariable: "CURSOR_CONFIG_DIR", folder: ".cursor", xdgFolder: "cursor" },
+		},
 		signIn: { status: null, login: null },
 		status: { source: "none", app: null },
 	},
@@ -241,7 +259,22 @@ const ROWS = [
 			// A trademark of its maker, shown only to say which agent a session runs.
 			source: "Grok's mark, from https://grok.com/images/favicon.svg (its two shapes, without the dark tile behind them), taken on 2026-11-22.",
 		},
-		resume: null,
+		/*
+		 * Verified with Grok Build 1.0.92, from its own `--help` and by running
+		 * it (see docs/architecture.md, "Going back to a conversation"):
+		 * `grok --session-id <uuid>` starts a new conversation with an id the
+		 * app chose, also in the interactive screen, and `grok --resume <uuid>`
+		 * goes back to it. The two are never combined: Grok refuses that
+		 * without `--fork-session`. `--worktree` and `--cwd` start it in another
+		 * folder, so they start as typed.
+		 */
+		resume: {
+			fresh: ["--session-id"],
+			resume: ["--resume"],
+			picks: ["--session-id", "-s", "--resume", "-r", "--continue", "-c", "--fork-session", "--single", "-p", "--prompt-file", "--prompt-json", "--worktree", "-w", "--cwd", "--help", "-h", "--version", "-v"],
+			pickingLetters: "srcpwhv",
+			conversations: { store: "grok-sessions", folderVariable: "GROK_HOME", folder: ".grok" },
+		},
 		signIn: { status: null, login: null },
 		status: { source: "none", app: null },
 	},

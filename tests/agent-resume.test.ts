@@ -40,6 +40,28 @@ describe("which agents can go back to their conversation", () => {
 		for (const args of [["fix the bug"], ["mcp", "list"], ["--model", "o3", "--", "fix it"]]) expect(resumableAgent("codex", args)).toBeNull();
 	});
 
+	test("Grok Build and Cursor CLI by their executables", () => {
+		expect(resumableAgent("grok", ["--model", "grok-4.7"])).toBe("grok");
+		expect(resumableAgent("/home/me/.local/bin/cursor-agent", [])).toBe("cursor");
+		expect(resumableAgent("C:\\tools\\GROK.EXE", [])).toBe("grok");
+	});
+
+	test("a Grok Build command that already picks a conversation, or starts elsewhere, is started as typed", () => {
+		for (const args of [["-s", "x"], ["--session-id", "x"], ["--session-id=x"], ["-r"], ["--resume", "x"], ["--resume=x"], ["-c"], ["--continue"], ["--fork-session"], ["-p", "hi"], ["--single"], ["--prompt-file", "a"], ["--prompt-json", "[]"], ["-w"], ["--worktree", "x"], ["--cwd", "/x"], ["-h"], ["--version"], ["-v"]]) {
+			expect(resumableAgent("grok", args)).toBeNull();
+		}
+		for (const args of [["--always-approve", "-cs"], ["-wm"], ["sessions", "list"], ["fix it"], ["--", "fix it"]]) expect(resumableAgent("grok", args)).toBeNull();
+		expect(resumableAgent("grok", ["-m", "grok-4.7", "--always-approve"])).toBe("grok");
+	});
+
+	test("a Cursor CLI command that already picks a chat, or starts elsewhere, is started as typed", () => {
+		for (const args of [["--resume"], ["--resume", "x"], ["--resume=x"], ["--continue"], ["-p"], ["--print"], ["--new-session-id", "x"], ["-w"], ["--worktree", "x"], ["--workspace", "/x"], ["--list-models"], ["-c"], ["--cloud"], ["-b"], ["--background"], ["-h"], ["-v"], ["-fp"], ["-fb"], ["ls"], ["resume"], ["create-chat"], ["fix it"], ["--", "fix it"]]) {
+			expect(resumableAgent("cursor-agent", args)).toBeNull();
+		}
+		// Cursor's -f is --force, and -e takes an endpoint: neither picks a chat.
+		expect(resumableAgent("cursor-agent", ["-f", "--model", "gpt-5"])).toBe("cursor");
+	});
+
 	test("an option with = that picks a conversation counts", () => {
 		expect(resumableAgent("claude", ["--from-pr=12"])).toBeNull();
 		expect(resumableAgent("claude", ["--model=opus"])).toBe("claude");
@@ -59,6 +81,24 @@ describe("the arguments an agent starts with", () => {
 		expect(agentStartArguments("codex", ["-i", "shot.png"], { resume: ID })).toEqual(["resume", ID, "-i", "shot.png"]);
 		expect(agentStartArguments("codex", ["--model", "o4"], { fresh: ID })).toEqual(["--model", "o4"]);
 		expect(agentStartArguments("codex", ["--model", "o4"], null)).toEqual(["--model", "o4"]);
+	});
+
+	test("Grok Build resumes with --resume and starts fresh with an id of the app's choosing", () => {
+		expect(agentStartArguments("grok", ["--model", "grok-4.7"], { resume: ID })).toEqual(["--resume", ID, "--model", "grok-4.7"]);
+		expect(agentStartArguments("grok", ["--model", "grok-4.7"], { fresh: ID })).toEqual(["--session-id", ID, "--model", "grok-4.7"]);
+		expect(agentStartArguments("grok", ["--model", "grok-4.7"], null)).toEqual(["--model", "grok-4.7"]);
+	});
+
+	test("Cursor CLI resumes with --resume and starts as typed otherwise", () => {
+		// Before an option such as --add-dir, so nothing can take the id for its value.
+		expect(agentStartArguments("cursor", ["--add-dir", "../docs"], { resume: ID })).toEqual(["--resume", ID, "--add-dir", "../docs"]);
+		expect(agentStartArguments("cursor", ["--model", "gpt-5"], { fresh: ID })).toEqual(["--model", "gpt-5"]);
+		expect(agentStartArguments("cursor", ["--model", "gpt-5"], null)).toEqual(["--model", "gpt-5"]);
+	});
+
+	test("Gemini CLI, OpenCode, and GitHub Copilot CLI start as typed: their ways back are not verified yet", () => {
+		for (const executable of ["gemini", "opencode", "copilot"]) expect(resumableAgent(executable, [])).toBeNull();
+		for (const conversation of [{ resume: ID }, { fresh: ID }]) expect(agentStartArguments(resumableAgent("gemini", []), ["--yolo"], conversation)).toEqual(["--yolo"]);
 	});
 
 	test("any other agent keeps its arguments", () => {

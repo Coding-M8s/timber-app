@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { findCodexConversation } from "../src/bun/agent-conversations";
-import { SESSIONS_FILE_LIMIT, createSessionLayout, sessionsFilePath, type SessionLayoutDependencies } from "../src/bun/session-layout";
+import { findCodexConversation, findCursorConversation } from "../src/bun/agent-conversations";
+import { SESSIONS_FILE_LIMIT, createSessionLayout, endedKey, sessionsFilePath, type SessionLayoutDependencies } from "../src/bun/session-layout";
 import type { RunningSession } from "../src/bun/terminals";
 import type { Attention } from "../src/shared/attention";
 
@@ -34,7 +35,7 @@ function layout(overrides: Partial<SessionLayoutDependencies> = {}) {
 	return createSessionLayout({
 		file,
 		running: () => live,
-		findCodex: options => {
+		find: (_store, options) => {
 			searches.push({ cwd: options.cwd, since: options.since, taken: [...options.taken].sort(), budget: options.budget });
 			return answer(options.cwd);
 		},
@@ -48,6 +49,8 @@ const session = (id: string, worktree: string, more: Partial<RunningSession> = {
 });
 const claude = (id: string, worktree: string, more: Partial<RunningSession> = {}) => session(id, worktree, { kind: "agent", agent: "Claude Code", resumable: "claude", program: "claude", conversation: CLAUDE, conversationFolder: "/home/a/.claude", ...more });
 const codex = (id: string, worktree: string, more: Partial<RunningSession> = {}) => session(id, worktree, { kind: "agent", agent: "Codex", resumable: "codex", program: "codex", conversationFolder: "/home/a/.codex", ...more });
+const grok = (id: string, worktree: string, more: Partial<RunningSession> = {}) => session(id, worktree, { kind: "agent", agent: "Grok Build", resumable: "grok", program: "grok", conversation: CLAUDE, conversationFolder: "/home/a/.grok", ...more });
+const cursor = (id: string, worktree: string, more: Partial<RunningSession> = {}) => session(id, worktree, { kind: "agent", agent: "Cursor CLI", resumable: "cursor", program: "cursor", conversationFolder: "/home/a/.cursor", ...more });
 const attention = (worktree: string | null, chip: string | null): Attention => ({
 	visible: true, focused: true, selected: worktree === null ? null : { repository: "/r", worktree: `/r/${worktree}`, id: worktree }, session: chip,
 });
@@ -195,12 +198,12 @@ describe("the sessions saved at quit", () => {
 		expect(taken?.worktrees.w2!.sessions).toEqual([{ kind: "agent", agent: "Codex" }]);
 	});
 
-	test("the Codex search has 300 ms in all", () => {
+	test("the searches at quit have 300 ms in all", () => {
 		let clock = 0;
 		live = [codex("1", "w1"), codex("2", "w2"), codex("3", "w3")];
 		const first = layout({
 			now: () => clock,
-			findCodex: options => {
+			find: (_store, options) => {
 				searches.push({ cwd: options.cwd, since: options.since, taken: [], budget: options.budget });
 				clock += 200;
 				return null;
@@ -213,7 +216,7 @@ describe("the sessions saved at quit", () => {
 
 	test("a search that throws does not stop the save", async () => {
 		live = [codex("1", "w1", { conversation: CODEX })];
-		layout({ findCodex: () => { throw new Error("broken"); } }).save();
+		layout({ find: () => { throw new Error("broken"); } }).save();
 		expect((await reopened())?.worktrees.w1!.sessions).toEqual([{ kind: "agent", agent: "Codex", conversation: CODEX }]);
 	});
 
@@ -262,7 +265,7 @@ describe("the sessions saved at quit", () => {
 				codex(`${worktree}-4`, id, { conversation: crypto.randomUUID() }), session(`${worktree}-5`, id),
 			);
 		}
-		const took = fastest(() => layout({ findCodex: () => null }).save());
+		const took = fastest(() => layout({ find: () => null }).save());
 		const size = readFileSync(file).length;
 		console.log(`quit save of 200 worktrees x 5 sessions: ${took.toFixed(1)} ms, ${size} bytes (budget: 300 ms Codex search plus this, under 500 ms)`);
 		expect(took).toBeLessThan(100);
@@ -285,7 +288,7 @@ describe("the sessions saved at quit", () => {
 		for (let worktree = 0; worktree < 200; worktree += 1) {
 			live.push(session(`${worktree}-1`, `w${worktree}`), codex(`${worktree}-2`, `w${worktree}`, { startedAt: since }));
 		}
-		const took = fastest(() => layout({ findCodex: options => findCodexConversation({ ...options, homeFolder: home }) }).save());
+		const took = fastest(() => layout({ find: (_store, options) => findCodexConversation({ ...options, folder: home }) }).save());
 		console.log(`worst case quit save, real Codex search in 200 worktrees over 600 files: ${took.toFixed(1)} ms`);
 		expect(took).toBeLessThan(500);
 		expect(existsSync(file)).toBe(true);
@@ -420,14 +423,14 @@ describe("conversations checked at quit", () => {
 	test("a Codex session is not given the conversation of a sibling that ran meanwhile and closed", () => {
 		live = [codex("A", "w1", { startedAt: 50_000 })];
 		answer = () => FOUND;
-		layout({ endedCodex: () => new Map([["w1", 60_000]]), now: () => 1_000 }).save();
+		layout({ endedAgents: () => new Map([[endedKey("codex", "w1"), 60_000]]), now: () => 1_000 }).save();
 		expect(searches).toEqual([]);
 	});
 
 	test("a sibling that ended before this one started does not stop the search", () => {
 		live = [codex("A", "w1", { startedAt: 50_000 })];
 		answer = () => FOUND;
-		layout({ endedCodex: () => new Map([["w1", 40_000], ["w2", 90_000]]), now: () => 1_000 }).save();
+		layout({ endedAgents: () => new Map([[endedKey("codex", "w1"), 40_000], [endedKey("codex", "w2"), 90_000], [endedKey("cursor", "w1"), 90_000]]), now: () => 1_000 }).save();
 		expect(searches.map(search => search.cwd)).toEqual(["/r/w1"]);
 	});
 
@@ -444,10 +447,10 @@ describe("conversations checked at quit", () => {
 		write(FOUND, 20);
 		live = [codex("A", "w1", { startedAt: at(10) })];
 		const real = (ended: Map<string, number>) => layout({
-			endedCodex: () => ended,
-			findCodex: options => findCodexConversation({ ...options, homeFolder: home }),
+			endedAgents: () => ended,
+			find: (_store, options) => findCodexConversation({ ...options, folder: home }),
 		});
-		real(new Map([["w1", at(30)]])).save();
+		real(new Map([[endedKey("codex", "w1"), at(30)]])).save();
 		expect((await reopened())?.worktrees.w1!.sessions[0]).toEqual({ kind: "agent", agent: "Codex" });
 		real(new Map()).save();
 		expect((await reopened())?.worktrees.w1!.sessions[0]).toEqual({ kind: "agent", agent: "Codex", conversation: FOUND });
@@ -475,37 +478,85 @@ describe("conversations checked at quit", () => {
 		answer = () => FOUND;
 		layout({
 			now: () => 1_000,
-			claudeExists: (id, folder) => (claudeAsked.push([id, folder]), true),
-			findCodex: options => (homes.push(options.homeFolder), options.homeFolder === "/home/a/.codex-work" ? FOUND : CODEX),
+			exists: (_store, id, folder) => (claudeAsked.push([id, folder]), true),
+			find: (_store, options) => (homes.push(options.folder), options.folder === "/home/a/.codex-work" ? FOUND : CODEX),
 		}).save();
 		expect(claudeAsked).toEqual([[CLAUDE, "/home/a/.claude-work"]]);
 		expect(homes.sort()).toEqual(["/home/a/.codex", "/home/a/.codex-work"]);
 		expect((await reopened())?.worktrees.w1!.sessions.map(saved => (saved as { conversation?: string }).conversation)).toEqual([CLAUDE, CODEX, FOUND]);
 	});
 
-	test("the Claude Code ids are checked before the Codex search can use up the time", async () => {
+	test("the ids the app gave are checked before a search can use up the time", async () => {
 		let clock = 0;
 		live = [codex("A", "w1"), claude("C", "w2")];
 		layout({
 			now: () => clock,
-			findCodex: () => {
+			find: () => {
 				clock += 1_000;
 				return null;
 			},
-			claudeExists: () => false,
+			exists: () => false,
 		}).save();
 		expect((await reopened())?.worktrees.w2!.sessions[0]).toEqual({ kind: "agent", agent: "Claude Code" });
 	});
 
 	test("a Claude Code id is saved only when Claude Code wrote that conversation", async () => {
 		live = [claude("1", "w1"), claude("2", "w1", { conversation: FOUND })];
-		layout({ claudeExists: id => id === FOUND }).save();
+		layout({ exists: (_store, id) => id === FOUND }).save();
 		expect((await reopened())?.worktrees.w1!.sessions).toEqual([{ kind: "agent", agent: "Claude Code" }, { kind: "agent", agent: "Claude Code", conversation: FOUND }]);
+	});
+
+	test("a Grok Build id is saved only when Grok wrote that session, checked in Grok's own layout", async () => {
+		const asked: [string, string, string][] = [];
+		live = [grok("1", "w1"), grok("2", "w1", { conversation: FOUND })];
+		layout({ exists: (store, id, folder) => (asked.push([store, id, folder]), id === FOUND) }).save();
+		expect(asked).toEqual([["grok-sessions", CLAUDE, "/home/a/.grok"], ["grok-sessions", FOUND, "/home/a/.grok"]]);
+		expect((await reopened())?.worktrees.w1!.sessions).toEqual([{ kind: "agent", agent: "Grok Build" }, { kind: "agent", agent: "Grok Build", conversation: FOUND }]);
+	});
+
+	test("a Cursor CLI chat is looked for at quit in Cursor's own layout, and a Codex that ended does not stop it", async () => {
+		const stores: string[] = [];
+		live = [cursor("A", "w1", { startedAt: 50_000 })];
+		layout({
+			now: () => 1_000,
+			endedAgents: () => new Map([[endedKey("codex", "w1"), 60_000]]),
+			find: (store, options) => (stores.push(store), options.folder === "/home/a/.cursor" ? FOUND : null),
+		}).save();
+		expect(stores).toEqual(["cursor-chats"]);
+		expect((await reopened())?.worktrees.w1!.sessions[0]).toEqual({ kind: "agent", agent: "Cursor CLI", conversation: FOUND });
+	});
+
+	test("two Cursor CLI sessions in a worktree, or one after another ended there, are not told apart", () => {
+		answer = () => FOUND;
+		live = [cursor("A", "w1"), cursor("B", "w1")];
+		layout({ now: () => 1_000 }).save();
+		live = [cursor("A", "w1", { startedAt: 50_000 })];
+		layout({ now: () => 1_000, endedAgents: () => new Map([[endedKey("cursor", "w1"), 60_000]]) }).save();
+		// A Cursor started as typed has no chat of its own to look for.
+		live = [cursor("A", "w1", { resumable: null })];
+		layout({ now: () => 1_000 }).save();
+		expect(searches).toEqual([]);
+	});
+
+	test("with real Cursor files: the chat started in the worktree after the session did is saved", async () => {
+		const config = join(root, "cursor");
+		const work = join(root, "w1");
+		const write = (id: string, at: number, hasConversation = true) => {
+			const folder = join(config, "chats", createHash("md5").update(work).digest("hex"), id);
+			mkdirSync(folder, { recursive: true });
+			writeFileSync(join(folder, "meta.json"), JSON.stringify({ schemaVersion: 1, createdAtMs: at, hasConversation, updatedAtMs: at, cwd: work }));
+		};
+		write(CODEX, 5_000);
+		write(FOUND, 12_000);
+		write(CLAUDE, 13_000, false);
+		live = [cursor("A", "w1", { path: work, conversationFolder: config, startedAt: 10_000 })];
+		layout({ find: (store, options) => store === "cursor-chats" ? findCursorConversation(options) : null }).save();
+		expect((await reopened())?.worktrees.w1!.sessions[0]).toEqual({ kind: "agent", agent: "Cursor CLI", conversation: FOUND });
 	});
 
 	test("a Claude Code check that throws keeps the id", async () => {
 		live = [claude("1", "w1")];
-		layout({ claudeExists: () => { throw new Error("no"); } }).save();
+		layout({ exists: () => { throw new Error("no"); } }).save();
 		expect((await reopened())?.worktrees.w1!.sessions[0]).toEqual({ kind: "agent", agent: "Claude Code", conversation: CLAUDE });
 	});
 });

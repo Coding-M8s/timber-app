@@ -42,8 +42,9 @@ describe("the agent registry", () => {
 		expect(agentByExecutable("/usr/bin/tool", cursor)).toBeNull();
 		expect(agentProgram("agent", cursor)).toBe("cursor");
 		expect(agentProgram("agent", grok)).toBeNull();
-		// Cursor has no way back to a conversation yet, so it starts as typed.
-		expect(resumableAgent("agent", [], cursor)).toBeNull();
+		// Cursor goes back to its chats; the same name leading to Grok Build is no agent.
+		expect(resumableAgent("agent", [], cursor)).toBe("cursor");
+		expect(resumableAgent("agent", [], grok)).toBeNull();
 	});
 
 	test("finds an agent by the last part of a full path, on either separator", () => {

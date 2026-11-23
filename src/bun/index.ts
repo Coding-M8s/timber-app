@@ -52,7 +52,7 @@ import { createRefreshPolicy } from "./refresh-policy";
 import { type WatchTarget, createRepositoryWatcher } from "./repository-watcher";
 import { createWorktreeStamps } from "./worktree-stamp";
 import { createTerminalSessions } from "./terminals";
-import { claudeConversationExists, codexConversationExists, findCodexConversation } from "./agent-conversations";
+import { conversationExists, conversationFinders } from "./agent-conversations";
 import { createSessionLayout, sessionsFilePath } from "./session-layout";
 import { createDesktopNotices } from "./desktop-notices";
 import { type AlertSettings, createAlertRunner } from "../shared/status-notices";
@@ -150,10 +150,10 @@ const layout = createSavedLayout(settings);
 const sessionLayout = createSessionLayout({
 	file: sessionsFilePath(settingsFile),
 	running: () => terminals.running(),
-	endedCodex: () => terminals.endedCodex(),
+	endedAgents: () => terminals.endedAgents(),
 	// Each session is checked in the folder its agent kept its conversations in when it started (see ./terminals.ts).
-	findCodex: options => findCodexConversation(options),
-	claudeExists: (id, folder) => claudeConversationExists(id, folder),
+	find: (store, options) => conversationFinders[store]?.(options) ?? null,
+	exists: (store, id, folder) => conversationExists[store](id, folder),
 });
 await sessionLayout.load();
 const preferences = createSavedPreferences(settings);
@@ -422,8 +422,7 @@ const terminals = createTerminalSessions({
 	workflows: repository => workflows.list(repository),
 	// An agent goes back to its own conversation only when that is still in the agent's own folder. Nothing there is written.
 	conversations: {
-		claudeExists: (id, folder) => claudeConversationExists(id, folder),
-		codexExists: (id, folder) => codexConversationExists(id, folder),
+		exists: (store, id, folder) => conversationExists[store](id, folder),
 		newId: () => crypto.randomUUID(),
 	},
 	onOutput: output => tell("terminal output", () => rpc.send.terminalOutput(output)),

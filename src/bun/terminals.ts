@@ -20,7 +20,8 @@ import { asWin32KeyEvents } from "../shared/win32-input";
 import { type RestoreTag, isConversationId, isRestoreTag } from "../shared/saved-sessions";
 import { type Workflow, type WorkflowList, isWorkflowName } from "../shared/workflows";
 import { worktreeSetupArguments } from "../shared/worktree-commands";
-import { claudeConversationExists, codexConversationExists, conversationFolder } from "./agent-conversations";
+import { conversationExists, conversationFolder } from "./agent-conversations";
+import { endedKey } from "./session-layout";
 import { type ExecutableWords, findExecutable, isWindowsBatch, locateAgent } from "./find-executable";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
 import { killProcessTree, sessionMembers, signalEach, signalGroup } from "./process-session";
@@ -117,8 +118,7 @@ export interface TerminalDependencies {
 	 * folder in the home folder.
 	 */
 	conversations?: {
-		claudeExists: (id: string, folder: string) => boolean;
-		codexExists: (id: string, folder: string) => boolean;
+		exists: (store: ConversationStore, id: string, folder: string) => boolean;
 		newId: () => string;
 	};
 	/** The clock, for when a session started. */
@@ -217,8 +217,11 @@ export interface TerminalSessions {
 	leaders(): SessionLeader[];
 	/** Every running terminal and agent session in chip order, as the quit save needs them. */
 	running(): RunningSession[];
-	/** When the last Codex session of each worktree ended or closed in this run, by worktree id, for the quit save. */
-	endedCodex(): ReadonlyMap<string, number>;
+	/**
+	 * When the last session of each agent of the registry ended or closed in
+	 * each worktree in this run, for the quit save, keyed by `endedKey`.
+	 */
+	endedAgents(): ReadonlyMap<string, number>;
 }
 
 /** A running session and the process that leads its process session. */
@@ -245,7 +248,7 @@ export interface RunningSession {
 	/**
 	 * The agent of the registry it runs, however it was started: the one
 	 * picked for its row in Settings, else the one its executable is by name.
-	 * A Codex started as typed still counts when Codex conversations are told apart.
+	 * A Codex or Cursor CLI started as typed still counts when their conversations are told apart at quit.
 	 */
 	program: ResumableAgent | null;
 	/** The agent's own conversation id, when it is known. */
@@ -490,14 +493,16 @@ export function sessionEnvironment(environment: Record<string, string | undefine
  *   branch or its issue key ("feature-login", "Codex: GH-122"). A setup
  *   session is always "Setup". The name is set once, when the session opens.
  * - A session opened again after a restart may bring the name the person
- *   gave it, and an agent the id of its own conversation. Claude Code goes
- *   back to it with `--resume <id>` and Codex with `resume <id>`, only when
- *   the conversation is still in the agent's own folder; otherwise the agent
- *   starts fresh and its terminal says so. A fresh Claude Code gets
- *   `--session-id` with a new id, so its conversation is known from the
- *   start. The id is read only as a UUID, and only ever follows a flag the
- *   app adds itself (see ../shared/agent-resume.ts). A command that already
- *   picks a conversation, or any other agent, starts as typed.
+ *   gave it, and an agent the id of its own conversation. An agent of the
+ *   registry with a `resume` goes back to it with its own words (Claude
+ *   Code's `--resume <id>`, Codex's `resume <id>`), only when the
+ *   conversation is still in the agent's own folder; otherwise the agent
+ *   starts fresh and its terminal says so. A fresh agent that takes the id
+ *   of a new conversation (Claude Code, Grok Build) gets one, so its
+ *   conversation is known from the start. The id is read only as a UUID,
+ *   and only ever follows a flag the app adds itself (see
+ *   ../shared/agent-resume.ts). A command that already picks a
+ *   conversation, or any other agent, starts as typed.
  * - Output is kept, up to `SCROLLBACK_LIMIT`, so the interface can draw a
  *   session again, and is sent in numbered parts, never far ahead of what
  *   the window drew (`UNDRAWN_LIMIT`).
@@ -538,14 +543,8 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		promptWaitMilliseconds = PROMPT_WAIT_MILLISECONDS, promptQuietMilliseconds = PROMPT_QUIET_MILLISECONDS, promptEnterMilliseconds = PROMPT_ENTER_MILLISECONDS, promptBusyMilliseconds = PROMPT_BUSY_MILLISECONDS,
 	} = dependencies;
 	const conversations = dependencies.conversations ?? {
-		claudeExists: (id: string, folder: string) => claudeConversationExists(id, folder),
-		codexExists: (id: string, folder: string) => codexConversationExists(id, folder),
+		exists: (store: ConversationStore, id: string, folder: string) => conversationExists[store](id, folder),
 		newId: () => crypto.randomUUID(),
-	};
-	/** Whether a conversation is still there, for each layout of conversation folders an agent of the registry uses. */
-	const conversationExists: Record<ConversationStore, (id: string, folder: string) => boolean> = {
-		"claude-projects": (id, folder) => conversations.claudeExists(id, folder),
-		"codex-sessions": (id, folder) => conversations.codexExists(id, folder),
 	};
 	const windows = platform === "win32";
 	/** ConPTY drops an OSC written as it is, so on Windows the answer goes in as typed keys. */
@@ -801,7 +800,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		const recipe = resumable === null ? null : agentById(resumable).resume;
 		let conversation: string | null = null;
 		let args = launch.arguments;
-		if (recipe !== null && resume !== null && folder !== null && conversationExists[recipe.conversations.store](resume, folder)) {
+		if (recipe !== null && resume !== null && folder !== null && conversations.exists(recipe.conversations.store, resume, folder)) {
 			args = agentStartArguments(resumable, args, { resume });
 			conversation = resume;
 		} else if (recipe?.fresh) {
@@ -1128,11 +1127,11 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 	/** Whether the shell ended and nothing is left in its session that may be signalled. */
 	const settled = (live: Live) => !running(live.process) && (members(live)?.length ?? 0) === 0 && (live.former === null || (membersOf(live.former)?.length ?? 0) === 0);
 
-	/** When the last Codex session of each worktree stopped running, by worktree id (see `endedCodex`). */
-	const codexEnded = new Map<string, number>();
+	/** When the last session of each agent of the registry stopped running in each worktree (see `endedAgents`). */
+	const agentsEnded = new Map<string, number>();
 
 	function noteEnded(live: Live): void {
-		if (live.program === "codex" && live.session.state.kind === "running") codexEnded.set(live.session.worktree, now());
+		if (live.program !== null && live.session.state.kind === "running") agentsEnded.set(endedKey(live.program, live.session.worktree), now());
 	}
 
 	async function close(id: string): Promise<void> {
@@ -1239,6 +1238,6 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 				conversation: live.conversation, conversationFolder: live.conversationFolder, startedAt: live.startedAt, name: live.renamed ? session.name : null, restored: live.restored,
 			}];
 		}),
-		endedCodex: () => new Map(codexEnded),
+		endedAgents: () => new Map(agentsEnded),
 	};
 }

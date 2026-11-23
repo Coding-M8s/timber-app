@@ -2,9 +2,11 @@ import { randomUUID } from "node:crypto";
 import { closeSync, fsyncSync, mkdirSync, openSync, readdirSync, renameSync, rmSync, writeSync } from "node:fs";
 import { open, rename } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import { type AgentId, type ConversationStore, agentById } from "../shared/agent-registry";
 import type { Attention } from "../shared/attention";
 import { type SavedCarry, type SavedSessions, buildSavedSessions, createSavedCarry, isRestoreTag, parseSavedSessions, serializeSavedSessions } from "../shared/saved-sessions";
 import type { OpenTerminalResult } from "../shared/terminal";
+import type { ConversationSearch } from "./agent-conversations";
 import type { RunningSession } from "./terminals";
 
 /**
@@ -25,18 +27,24 @@ import type { RunningSession } from "./terminals";
  * - Which chip shows comes from the window's `attend` reports: chips are
  *   switched only in the selected worktree, which the report names. A
  *   worktree the window never reported keeps the chip that showed before.
- * - A Codex session's conversation id is read at quit from Codex's own files
- *   (see ./agent-conversations.ts), in the Codex home folder it started
- *   with, only for a Codex session that ran in its folder with no other Codex
- *   session of the app since it started, running with the same home folder,
- *   or ended. Otherwise nothing tells their conversations apart, so it keeps
- *   the id it was opened with, if any.
- * - A Claude Code session's id is saved only when Claude Code wrote that
- *   conversation, so one that never got a message starts fresh, without a
- *   note that it was not found. Both are looked for in the folder the
- *   session's agent kept its conversations in when it started
- *   (`RunningSession.conversationFolder`).
+ * - The conversation id of an agent that cannot be given the id of a new
+ *   one (Codex, Cursor CLI: its recipe has no `fresh`) is read at quit from
+ *   the agent's own files (see ./agent-conversations.ts), in the folder it
+ *   started with, only for a session that ran in its worktree with no other
+ *   session of the same agent since it started, running with the same
+ *   folder, or ended. Otherwise nothing tells their conversations apart, so
+ *   it keeps the id it was opened with, if any.
+ * - The id of an agent that was given one (Claude Code, Grok Build) is saved
+ *   only when the agent wrote that conversation, so one that never got a
+ *   message, or never got that far, starts fresh, without a note that it was
+ *   not found. Both are looked for in the folder the session's agent kept
+ *   its conversations in when it started (`RunningSession.conversationFolder`).
  */
+
+/** The key of `endedAgents`: the agent of the registry and the worktree's id. */
+export function endedKey(program: AgentId, worktree: string): string {
+	return JSON.stringify([program, worktree]);
+}
 
 /** Where the file is: beside the settings file. */
 export function sessionsFilePath(settingsFile: string): string {
@@ -44,21 +52,21 @@ export function sessionsFilePath(settingsFile: string): string {
 }
 
 /** The time the conversation checks at quit may take in all, in milliseconds. */
-const CODEX_SEARCH_MILLISECONDS = 300;
+const CONVERSATION_SEARCH_MILLISECONDS = 300;
 /** A file larger than this is not one the app wrote: 200 worktrees of 50 sessions are well under it. */
 export const SESSIONS_FILE_LIMIT = 4 * 1024 * 1024;
-/** A Codex session file can be written a moment before the app learns the session started. */
-const CODEX_START_SLACK_MILLISECONDS = 2000;
+/** An agent can write its conversation a moment before the app learns the session started. */
+const START_SLACK_MILLISECONDS = 2000;
 
 export interface SessionLayoutDependencies {
 	file: string;
 	running: () => RunningSession[];
-	/** When the last Codex session of each worktree, however it was started, ended or closed in this run, by worktree id. */
-	endedCodex?: () => ReadonlyMap<string, number>;
-	/** For a Codex session with nothing newer known, in its Codex home folder (see ./agent-conversations.ts). */
-	findCodex: (options: { homeFolder: string; cwd: string; since: number; taken: ReadonlySet<string>; budget: number }) => string | null;
-	/** Whether Claude Code wrote the conversation with this id in this configuration folder. */
-	claudeExists?: (id: string, folder: string) => boolean;
+	/** When the last session of each agent of the registry, however it was started, ended or closed in each worktree in this run (`endedKey`). */
+	endedAgents?: () => ReadonlyMap<string, number>;
+	/** The search at quit for an agent whose id is not known when it starts, in its folder (see ./agent-conversations.ts). Null when none was found. */
+	find: (store: ConversationStore, options: ConversationSearch & { budget: number }) => string | null;
+	/** Whether the agent wrote the conversation with this id in this folder. */
+	exists?: (store: ConversationStore, id: string, folder: string) => boolean;
 	warn?: (message: string) => void;
 	now?: () => number;
 }
@@ -87,7 +95,7 @@ function messageOf(error: unknown): string {
 }
 
 export function createSessionLayout(dependencies: SessionLayoutDependencies): SessionLayout {
-	const { file, running, findCodex, endedCodex = () => new Map<string, number>(), claudeExists = () => true, warn = console.warn, now = Date.now } = dependencies;
+	const { file, running, find, endedAgents = () => new Map<string, number>(), exists = () => true, warn = console.warn, now = Date.now } = dependencies;
 	let loaded: SavedSessions | null = null;
 	let carry: SavedCarry = createSavedCarry(null);
 	/** A file of a later version is there: it is left for that version. */
@@ -98,38 +106,41 @@ export function createSessionLayout(dependencies: SessionLayoutDependencies): Se
 	const shown: Record<string, string> = {};
 	let selected: string | null = null;
 
-	/** Every session with the conversation it is in, Codex ones read again from Codex's files where that is exact. */
+	/** Every session with the conversation it is in, read again from the agent's own files where that is exact. */
 	function withConversations(live: RunningSession[]): RunningSession[] {
 		const taken = new Set(live.flatMap(session => session.conversation === null ? [] : [session.conversation]));
-		const deadline = now() + CODEX_SEARCH_MILLISECONDS;
+		const deadline = now() + CONVERSATION_SEARCH_MILLISECONDS;
 		const found = new Map<string, string | null>();
-		// First the Claude Code ids, which are quick to check: a Claude Code id the app chose is only a conversation once Claude Code wrote it.
+		// First the ids the app gave (Claude Code, Grok Build), which are quick to check: such an id is only a conversation once the agent wrote it.
 		for (const session of live) {
-			if (session.resumable !== "claude" || session.conversation === null || session.conversationFolder === null) continue;
+			const recipe = session.resumable === null ? null : agentById(session.resumable).resume;
+			if (recipe === null || recipe.fresh === null || session.conversation === null || session.conversationFolder === null) continue;
 			if (deadline - now() <= 0) break;
-			let exists = true;
+			let written = true;
 			try {
-				exists = claudeExists(session.conversation, session.conversationFolder);
+				written = exists(recipe.conversations.store, session.conversation, session.conversationFolder);
 			} catch {
 				// Then it keeps what it has.
 			}
-			if (!exists) found.set(session.id, null);
+			if (!written) found.set(session.id, null);
 		}
-		// Every Codex of a worktree and home folder, however it was started, so one started as typed is never taken for another. Codex sessions with different home folders keep their conversations apart.
-		const codex = new Map<string, RunningSession[]>();
+		// Every session of an agent found at quit, by agent, worktree, and folder, however it was started, so one started as typed is never taken for another. Sessions with different folders keep their conversations apart.
+		const groups = new Map<string, RunningSession[]>();
 		for (const session of live) {
-			if (session.program !== "codex") continue;
-			const key = JSON.stringify([session.worktree, session.conversationFolder]);
-			codex.set(key, [...codex.get(key) ?? [], session]);
+			if (session.program === null) continue;
+			const recipe = agentById(session.program).resume;
+			if (recipe === null || recipe.fresh !== null) continue;
+			const key = JSON.stringify([session.program, session.worktree, session.conversationFolder]);
+			groups.set(key, [...groups.get(key) ?? [], session]);
 		}
-		const ended = endedCodex();
-		for (const sessions of codex.values()) {
+		const ended = endedAgents();
+		for (const sessions of groups.values()) {
 			if (sessions.length !== 1) continue;
 			const [session] = sessions as [RunningSession];
-			if (session.resumable !== "codex" || session.conversationFolder === null) continue;
-			const since = session.startedAt - CODEX_START_SLACK_MILLISECONDS;
-			// Another Codex ran here meanwhile and ended: its conversation could be taken for this one's.
-			const rival = ended.get(session.worktree);
+			if (session.resumable === null || session.resumable !== session.program || session.conversationFolder === null) continue;
+			const since = session.startedAt - START_SLACK_MILLISECONDS;
+			// Another session of the same agent ran here meanwhile and ended: its conversation could be taken for this one's.
+			const rival = ended.get(endedKey(session.program, session.worktree));
 			if (rival !== undefined && rival >= since) continue;
 			const budget = deadline - now();
 			if (budget <= 0) break;
@@ -137,7 +148,7 @@ export function createSessionLayout(dependencies: SessionLayoutDependencies): Se
 			if (session.conversation !== null) own.delete(session.conversation);
 			let id: string | null = null;
 			try {
-				id = findCodex({ homeFolder: session.conversationFolder, cwd: session.path, since, taken: own, budget });
+				id = find(agentById(session.program).resume!.conversations.store, { folder: session.conversationFolder, cwd: session.path, since, taken: own, budget });
 			} catch {
 				// Then it keeps what it has.
 			}

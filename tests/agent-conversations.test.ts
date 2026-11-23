@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-	claudeConfigFolder, claudeConversationExists, codexConversationExists, codexHomeFolder, findCodexConversation,
+	claudeConfigFolder, claudeConversationExists, codexConversationExists, codexHomeFolder, conversationExists, conversationFinders, conversationFolder,
+	cursorConversationExists, findCodexConversation, findCursorConversation, grokConversationExists,
 } from "../src/bun/agent-conversations";
+import { agentById } from "../src/shared/agent-registry";
 
 const ONE = "0b6f1c1e-7a52-4f0e-9d53-2f1f6f0c7a11";
 const TWO = "01a17995-a303-7160-8d6d-d7587e0d5d50";
@@ -44,6 +47,136 @@ describe("where the agents keep their conversations", () => {
 		expect(claudeConfigFolder({}, "/home/a")).toBe(join("/home/a", ".claude"));
 		expect(codexHomeFolder({ CODEX_HOME: "/cfg/codex" }, "/home/a")).toBe("/cfg/codex");
 		expect(codexHomeFolder({ CODEX_HOME: "" }, "/home/a")).toBe(join("/home/a", ".codex"));
+	});
+
+	test("Grok Build's is GROK_HOME or ~/.grok", () => {
+		const grok = agentById("grok").resume!.conversations;
+		expect(conversationFolder(grok, { GROK_HOME: "/cfg/grok" }, "/home/a")).toBe("/cfg/grok");
+		expect(conversationFolder(grok, { XDG_CONFIG_HOME: "/cfg" }, "/home/a")).toBe(join("/home/a", ".grok"));
+	});
+
+	test("Cursor CLI's is CURSOR_CONFIG_DIR, else cursor in XDG_CONFIG_HOME, else ~/.cursor, as Cursor reads them", () => {
+		const cursor = agentById("cursor").resume!.conversations;
+		expect(conversationFolder(cursor, { CURSOR_CONFIG_DIR: "/cfg/cursor", XDG_CONFIG_HOME: "/xdg" }, "/home/a")).toBe("/cfg/cursor");
+		expect(conversationFolder(cursor, { XDG_CONFIG_HOME: "/xdg" }, "/home/a")).toBe(join("/xdg", "cursor"));
+		expect(conversationFolder(cursor, { XDG_CONFIG_HOME: "relative" }, "/home/a")).toBe(join("/home/a", ".cursor"));
+		expect(conversationFolder(cursor, { XDG_CONFIG_HOME: " " }, "/home/a")).toBe(join("/home/a", ".cursor"));
+		expect(conversationFolder(cursor, {}, "/home/a")).toBe(join("/home/a", ".cursor"));
+	});
+
+	test("every layout has its check, and the agents found at quit have their search", () => {
+		expect(Object.keys(conversationExists).sort()).toEqual(["claude-projects", "codex-sessions", "cursor-chats", "grok-sessions"]);
+		expect(Object.keys(conversationFinders).sort()).toEqual(["codex-sessions", "cursor-chats"]);
+	});
+});
+
+/** A Grok Build session folder as Grok writes one, under its working folder's URL-encoded name. */
+function grokSession(home: string, cwd: string, id: string): string {
+	const folder = join(home, "sessions", encodeURIComponent(cwd), id);
+	mkdirSync(folder, { recursive: true });
+	writeFileSync(join(folder, "summary.json"), JSON.stringify({ info: { id, cwd }, session_summary: "", num_messages: 0 }));
+	writeFileSync(join(folder, "updates.jsonl"), "");
+	return folder;
+}
+
+describe("whether a Grok Build conversation is there", () => {
+	test("found under any working folder's folder, beside Grok's own files, and not found when it is not", () => {
+		grokSession(root, "/w/feat", ONE);
+		mkdirSync(join(root, "sessions", encodeURIComponent("/w/other"), TWO), { recursive: true });
+		writeFileSync(join(root, "sessions", "session_search.sqlite"), "");
+		expect(grokConversationExists(ONE, root)).toBe(true);
+		// A folder without its summary is not a session Grok can go back to.
+		expect(grokConversationExists(TWO, root)).toBe(false);
+		expect(grokConversationExists(THREE, root)).toBe(false);
+	});
+
+	test("an id that is not a UUID, or a folder that is not there, gives false", () => {
+		grokSession(root, "/w/feat", ONE);
+		expect(grokConversationExists("../sessions", root)).toBe(false);
+		expect(grokConversationExists(ONE, join(root, "nowhere"))).toBe(false);
+	});
+});
+
+/** A Cursor CLI chat as Cursor writes one: `chats/<md5 of the folder>/<id>/meta.json` and its store. */
+function cursorChat(config: string, options: { id: string; cwd: string; at: number; hasConversation?: boolean; folderOf?: string; meta?: string }): string {
+	const hash = createHash("md5").update(options.folderOf ?? options.cwd).digest("hex");
+	const folder = join(config, "chats", hash, options.id);
+	mkdirSync(folder, { recursive: true });
+	const meta = options.meta ?? JSON.stringify({ schemaVersion: 1, createdAtMs: options.at, hasConversation: options.hasConversation ?? true, title: "Private title", updatedAtMs: options.at + 5_000, cwd: options.cwd });
+	writeFileSync(join(folder, "meta.json"), meta);
+	writeFileSync(join(folder, "store.db"), "");
+	return folder;
+}
+
+describe("whether a Cursor CLI chat is there", () => {
+	test("found under any folder's chats, and not found when it is not", () => {
+		cursorChat(root, { id: ONE, cwd: "/w/feat", at: 1 });
+		mkdirSync(join(root, "chats", "0123", TWO), { recursive: true });
+		expect(cursorConversationExists(ONE, root)).toBe(true);
+		expect(cursorConversationExists(TWO, root)).toBe(false);
+		expect(cursorConversationExists(THREE, root)).toBe(false);
+		expect(cursorConversationExists("..", root)).toBe(false);
+		expect(cursorConversationExists(ONE, join(root, "nowhere"))).toBe(false);
+	});
+});
+
+describe("finding the Cursor CLI chat a session is in", () => {
+	const since = Date.UTC(2026, 10, 22, 12, 0, 0);
+	let work: string;
+	beforeEach(() => {
+		work = join(root, "work", "feat");
+		mkdirSync(work, { recursive: true });
+	});
+	const find = (extra: Partial<Parameters<typeof findCursorConversation>[0]> = {}) => findCursorConversation({ folder: root, cwd: work, since, taken: new Set(), ...extra });
+
+	test("the newest chat with a message, in the session's folder, from its start on", () => {
+		cursorChat(root, { id: ONE, cwd: work, at: since + 1_000 });
+		cursorChat(root, { id: TWO, cwd: work, at: since + 2_000 });
+		// No message yet: Cursor leaves such a folder behind when it is killed.
+		cursorChat(root, { id: THREE, cwd: work, at: since + 3_000, hasConversation: false });
+		expect(find()).toBe(TWO);
+	});
+
+	test("a chat from before the start, of another folder, taken, or unreadable is not taken", () => {
+		cursorChat(root, { id: ONE, cwd: work, at: since - 1 });
+		cursorChat(root, { id: TWO, cwd: "/elsewhere", at: since + 1_000, folderOf: work });
+		cursorChat(root, { id: THREE, cwd: work, at: since + 1_000 });
+		expect(find({ taken: new Set([THREE]) })).toBeNull();
+		expect(find()).toBe(THREE);
+		cursorChat(root, { id: "10000000-0000-4000-8000-000000000000", cwd: work, at: since + 9_000, meta: "{ not json" });
+		cursorChat(root, { id: "20000000-0000-4000-8000-000000000000", cwd: work, at: since + 9_000, meta: JSON.stringify({ cwd: work, hasConversation: true, createdAtMs: "soon" }) });
+		cursorChat(root, { id: "not-a-uuid", cwd: work, at: since + 9_000 });
+		cursorChat(root, { id: "40000000-0000-4000-8000-000000000000", cwd: work, at: since + 9_000, meta: JSON.stringify({ cwd: work, hasConversation: true, createdAtMs: since + 9_000, isSubagent: true }) });
+		cursorChat(root, { id: "30000000-0000-4000-8000-000000000000", cwd: work, at: since + 9_000, meta: JSON.stringify({ cwd: work, hasConversation: true, createdAtMs: since + 9_000, title: "x".repeat(70_000) }) });
+		expect(find()).toBe(THREE);
+	});
+
+	test("a session in a folder reached through a link finds the chat Cursor filed under the real folder", () => {
+		const link = join(root, "link");
+		symlinkSync(join(root, "work"), link);
+		cursorChat(root, { id: ONE, cwd: work, at: since + 1_000 });
+		expect(find({ cwd: join(link, "feat") })).toBe(ONE);
+	});
+
+	test("a search that runs out of time finds nothing, since the chat folders are in no order", () => {
+		cursorChat(root, { id: ONE, cwd: work, at: since + 1_000 });
+		cursorChat(root, { id: TWO, cwd: work, at: since + 2_000 });
+		let clock = 0;
+		expect(find({ budget: 15, now: () => (clock += 10) })).toBeNull();
+		clock = 0;
+		expect(find({ budget: 1_000, now: () => (clock += 10) })).toBe(TWO);
+	});
+
+	test("nothing in Cursor's folder is changed", () => {
+		const folder = cursorChat(root, { id: ONE, cwd: work, at: since + 1_000 });
+		const before = { names: readdirSync(folder).sort(), meta: readFileSync(join(folder, "meta.json"), "utf8"), modified: statSync(join(folder, "meta.json")).mtimeMs };
+		expect(find()).toBe(ONE);
+		expect(cursorConversationExists(ONE, root)).toBe(true);
+		expect({ names: readdirSync(folder).sort(), meta: readFileSync(join(folder, "meta.json"), "utf8"), modified: statSync(join(folder, "meta.json")).mtimeMs }).toEqual(before);
+	});
+
+	test("a folder that is not there finds nothing", () => {
+		expect(findCursorConversation({ folder: join(root, "nowhere"), cwd: work, since, taken: new Set() })).toBeNull();
 	});
 });
 
@@ -85,7 +218,7 @@ describe("whether a Codex conversation is there", () => {
 
 describe("the Codex conversation of a folder since a session started", () => {
 	const since = Date.parse("2026-11-20T12:00:00");
-	const find = (extra: Partial<Parameters<typeof findCodexConversation>[0]> = {}) => findCodexConversation({ homeFolder: root, cwd: "/w/feat", since, taken: new Set(), ...extra });
+	const find = (extra: Partial<Parameters<typeof findCodexConversation>[0]> = {}) => findCodexConversation({ folder: root, cwd: "/w/feat", since, taken: new Set(), ...extra });
 
 	test("the one started in the folder after the session started", () => {
 		rollout(root, { id: ONE, cwd: "/w/feat", at: since - 60_000 });
@@ -130,7 +263,7 @@ describe("the Codex conversation of a folder since a session started", () => {
 	test("a start just before midnight finds a file in the next day's folder", () => {
 		const late = Date.parse("2026-11-20T23:59:30");
 		rollout(root, { id: TWO, cwd: "/w/feat", at: late + 60_000 });
-		expect(findCodexConversation({ homeFolder: root, cwd: "/w/feat", since: late, taken: new Set() })).toBe(TWO);
+		expect(findCodexConversation({ folder: root, cwd: "/w/feat", since: late, taken: new Set() })).toBe(TWO);
 	});
 
 	test("day folders long before the start are not opened", () => {
