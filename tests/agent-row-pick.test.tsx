@@ -96,7 +96,7 @@ describe("the agent picked for a row", () => {
 		for (const args of [["--continue"], ["-cp"], ["mcp", "list"], ["--", "fix it"]]) expect(resumableAgent("claude-personal", args, null, "claude")).toBeNull();
 		expect(resumableAgent("codex-work", ["exec", "hi"], null, "codex")).toBeNull();
 		// An agent with no way back starts as typed whatever it is called.
-		expect(resumableAgent("my-cursor", [], null, "cursor")).toBeNull();
+		expect(resumableAgent("my-gemini", [], null, "gemini")).toBeNull();
 	});
 
 	test("gives the chip and row its mark, over the executable's name, also once it ends into a shell", () => {
@@ -147,6 +147,11 @@ describe("the Agent and Config folder fields of Settings, Agents", () => {
 		expect(rowMarkup(markup, "Codex")).toContain('placeholder="Default: ~/.codex"');
 		expect(rowMarkup(markup, "Team agent")).not.toContain("Config folder");
 		expect(rowMarkup(markup, "Team agent")).toContain("Not recognized from its command, so it starts fresh after a restart. Pick its agent to go back to its conversation.");
+		const grokAndCursor = view(agentDraftsOf([{ name: "Grok Build", command: "grok" }, { name: "Cursor CLI", command: "cursor-agent" }]));
+		expect(rowMarkup(grokAndCursor, "Grok Build")).toContain('Config folder <span class="mono">GROK_HOME</span>');
+		expect(rowMarkup(grokAndCursor, "Grok Build")).toContain('placeholder="Default: ~/.grok"');
+		expect(rowMarkup(grokAndCursor, "Cursor CLI")).toContain('Config folder <span class="mono">CURSOR_CONFIG_DIR</span>');
+		expect(rowMarkup(grokAndCursor, "Cursor CLI")).toContain('placeholder="Default: ~/.cursor"');
 		const gemini = view(agentDraftsOf([{ name: "Gemini CLI", command: "gemini" }]));
 		expect(gemini).not.toContain("Config folder <span");
 		expect(gemini).not.toContain("Not recognized");
@@ -179,8 +184,8 @@ describe("the Agent and Config folder fields of Settings, Agents", () => {
 		const picked = editAgentDraft(drafts, key, { agent: "claude", configFolder: " ~/.claude-personal " });
 		expect(agentsDraftModel(picked, []).rows[0]!.folder).toEqual({ variable: "CLAUDE_CONFIG_DIR", placeholder: "Default: ~/.claude" });
 		expect(agentsDraftModel(picked, []).agents).toEqual([personal]);
-		const switched = editAgentDraft(picked, key, { agent: "cursor" });
-		expect(agentsDraftModel(switched, []).agents).toEqual([{ name: "Claude Personal", command: "claude-personal", agent: "cursor" }]);
+		const switched = editAgentDraft(picked, key, { agent: "gemini" });
+		expect(agentsDraftModel(switched, []).agents).toEqual([{ name: "Claude Personal", command: "claude-personal", agent: "gemini" }]);
 		const detected = editAgentDraft(picked, key, { agent: "" });
 		expect(agentsDraftModel(detected, []).agents).toEqual([{ name: "Claude Personal", command: "claude-personal" }]);
 	});

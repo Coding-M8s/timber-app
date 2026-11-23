@@ -448,7 +448,7 @@ export function createMockTerminals(
 				args = agentStartArguments(resumable, args, { resume });
 				conversation = resume;
 			} else if (resumable !== null) {
-				// A fresh Codex has no id of the app's choosing; this one stands in for what the main process reads from Codex's files at quit.
+				// A fresh Codex or Cursor CLI has no id of the app's choosing; this one stands in for what the main process reads from its files at quit.
 				conversation = crypto.randomUUID();
 				args = agentStartArguments(resumable, args, { fresh: conversation });
 			}

@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openWebLink } from "../src/bun/open-link";
 import { processTreeKillCommand, sessionMembers, sessionOfStat } from "../src/bun/process-session";
-import { claudeConversationExists, codexConversationExists } from "../src/bun/agent-conversations";
+import { conversationExists } from "../src/bun/agent-conversations";
+import { endedKey } from "../src/bun/session-layout";
+import type { ConversationStore } from "../src/shared/agent-registry";
 import { PART_LIMIT, type TerminalDependencies, type TerminalSessions, createTerminalSessions } from "../src/bun/terminals";
 import type { AgentSetting } from "../src/shared/agent";
 import type { Repository } from "../src/shared/model";
@@ -1079,7 +1081,7 @@ sleep 5
 
 			test("keeps the conversation of Claude Code, and then is a terminal that restarts as one", async () => {
 				const ID = "dddddddd-0000-4000-8000-000000000004";
-				startWithAgents({ conversations: { claudeExists: () => false, codexExists: () => false, newId: () => ID } });
+				startWithAgents({ conversations: { exists: () => false, newId: () => ID } });
 				const claude = await openedAgent("Claude Leaves");
 				expect(sessions.running()).toMatchObject([{ kind: "agent", agent: "Claude Leaves", resumable: "claude", program: "claude", conversation: ID }]);
 				await seen(claude.id, `claude args [--session-id] [${ID}]`);
@@ -1240,12 +1242,14 @@ sleep 5
 		const OLD = "bbbbbbbb-0000-4000-8000-000000000002";
 		const GONE = "cccccccc-0000-4000-8000-000000000003";
 		const NOTE = "The saved conversation was not found, so";
+		/** Which agent each layout of conversation folders is, as the checks are written down. */
+		const STORE_AGENT: Record<ConversationStore, string> = { "claude-projects": "claude", "codex-sessions": "codex", "grok-sessions": "grok", "cursor-chats": "cursor" };
 
-		/** Pretend `claude`, `codex`, and `timber` that print their arguments, then wait as a shell. */
+		/** Pretend `claude`, `codex`, `grok`, `cursor-agent`, and `timber` that print their arguments, then wait as a shell. */
 		function resumeBin(): string {
 			const bin = join(root, "resume bin");
 			mkdirSync(bin, { recursive: true });
-			for (const name of ["claude", "codex", "timber"]) {
+			for (const name of ["claude", "codex", "grok", "cursor-agent", "timber"]) {
 				writeFileSync(join(bin, name), `#!/bin/sh\necho "ARGS:$*"\nexec /bin/sh\n`);
 				chmodSync(join(bin, name), 0o755);
 			}
@@ -1261,8 +1265,7 @@ sleep 5
 				agents: async () => agents,
 				timber: async () => ({ state: "ready", source: "path", path: join(bin, "timber"), version: "0.1.1" }),
 				conversations: {
-					claudeExists: id => (asked.push(`claude:${id}`), existing.has(id)),
-					codexExists: id => (asked.push(`codex:${id}`), existing.has(id)),
+					exists: (store, id) => (asked.push(`${STORE_AGENT[store]}:${id}`), existing.has(id)),
 					newId: () => NEW,
 				},
 				now: () => 1234,
@@ -1322,6 +1325,39 @@ sleep 5
 			expect(sessions.running().map(session => session.conversation)).toEqual([OLD, null, null]);
 			// Each agent's id is looked for only in that agent's own folder.
 			expect(asked).toEqual([`codex:${OLD}`, `codex:${GONE}`]);
+		});
+
+		test("a fresh Grok Build gets an id of the app's choosing, and goes back with --resume", async () => {
+			const { asked } = startResumable([{ name: "Grok Build", command: "grok --model grok-4.7" }]);
+			const fresh = await openWith({ agent: "Grok Build" });
+			await shows(fresh.id, `ARGS:--session-id ${NEW} --model grok-4.7`);
+			const resumed = await openWith({ agent: "Grok Build", resume: OLD });
+			await shows(resumed.id, `ARGS:--resume ${OLD} --model grok-4.7`);
+			expect(printed(resumed.id)).not.toContain("--session-id");
+			const gone = await openWith({ agent: "Grok Build", resume: GONE });
+			await shows(gone.id, `ARGS:--session-id ${NEW} --model grok-4.7`);
+			expect(printed(gone.id)).toContain("The saved conversation was not found, so Grok Build started fresh.");
+			expect(sessions.running().map(session => [session.resumable, session.conversation, session.conversationFolder])).toEqual([
+				["grok", NEW, join(root, ".grok")], ["grok", OLD, join(root, ".grok")], ["grok", NEW, join(root, ".grok")],
+			]);
+			expect(asked).toEqual([`grok:${OLD}`, `grok:${GONE}`]);
+		});
+
+		test("Cursor CLI goes back with --resume, and starts as typed otherwise", async () => {
+			const { asked } = startResumable([{ name: "Cursor CLI", command: "cursor-agent --model gpt-5" }, { name: "Cursor print", command: "cursor-agent -p hi" }]);
+			const resumed = await openWith({ agent: "Cursor CLI", resume: OLD });
+			await shows(resumed.id, `ARGS:--resume ${OLD} --model gpt-5`);
+			const plain = await openWith({ agent: "Cursor CLI" });
+			await shows(plain.id, "ARGS:--model gpt-5\r\n");
+			const gone = await openWith({ agent: "Cursor CLI", resume: GONE });
+			await shows(gone.id, "ARGS:--model gpt-5\r\n");
+			expect(printed(gone.id)).toContain("The saved conversation was not found, so Cursor CLI started fresh.");
+			const typed = await openWith({ agent: "Cursor print" });
+			await shows(typed.id, "ARGS:-p hi\r\n");
+			expect(sessions.running().map(session => [session.resumable, session.program, session.conversation])).toEqual([
+				["cursor", "cursor", OLD], ["cursor", "cursor", null], ["cursor", "cursor", null], [null, "cursor", null],
+			]);
+			expect(asked).toEqual([`cursor:${OLD}`, `cursor:${GONE}`]);
 		});
 
 		test("an agent the app cannot resume starts as typed, and says so when a conversation was asked for", async () => {
@@ -1391,17 +1427,19 @@ sleep 5
 			expect([tagged.kind, agent.kind]).toEqual(["terminal", "agent"]);
 		});
 
-		test("when a Codex session ends or closes is kept by worktree, and nothing for another agent", async () => {
+		test("when an agent's session ends or closes is kept by agent and worktree, and nothing for a program the registry does not know", async () => {
 			startResumable();
-			const claude = await openWith({ agent: "Claude Code" });
-			await sessions.close(claude.id);
-			expect(sessions.endedCodex().size).toBe(0);
+			const aider = await openWith({ agent: "Aider" });
+			await sessions.close(aider.id);
+			expect(sessions.endedAgents().size).toBe(0);
 			const first = await openWith({ agent: "Codex" });
 			sessions.write(first.id, "exit\r");
-			expect(await until(() => sessions.endedCodex().get(`id:${worktree}`) === 1234)).toBe(true);
+			expect(await until(() => sessions.endedAgents().get(endedKey("codex", `id:${worktree}`)) === 1234)).toBe(true);
 			const second = await openWith({ agent: "Codex" });
 			await sessions.close(second.id);
-			expect([...sessions.endedCodex()]).toEqual([[`id:${worktree}`, 1234]]);
+			const claude = await openWith({ agent: "Claude Code" });
+			await sessions.close(claude.id);
+			expect([...sessions.endedAgents()]).toEqual([[endedKey("codex", `id:${worktree}`), 1234], [endedKey("claude", `id:${worktree}`), 1234]]);
 		});
 
 		test("a Codex started as typed is not resumed, and still counts when it ends", async () => {
@@ -1410,7 +1448,7 @@ sleep 5
 			await shows(typed.id, "ARGS:fix it");
 			expect(sessions.running().map(session => [session.resumable, session.program, session.conversation])).toEqual([[null, "codex", null]]);
 			await sessions.close(typed.id);
-			expect([...sessions.endedCodex()]).toEqual([[`id:${worktree}`, 1234]]);
+			expect([...sessions.endedAgents()]).toEqual([[endedKey("codex", `id:${worktree}`), 1234]]);
 		});
 
 		describe("a row whose agent and config folder are picked in Settings", () => {
@@ -1444,7 +1482,7 @@ sleep 5
 					environment: { PATH: `${wrapperBin()}:${process.env.PATH}`, HOME: root, SHELL: "/bin/sh", PS1: "$ ", LANG: "C.UTF-8" },
 					agents: async () => agents,
 					// The real checks, in the folders under the test's HOME.
-					conversations: { claudeExists: claudeConversationExists, codexExists: codexConversationExists, newId: () => NEW },
+					conversations: { exists: (store, id, folder) => conversationExists[store](id, folder), newId: () => NEW },
 					now: () => 1234,
 				});
 			}

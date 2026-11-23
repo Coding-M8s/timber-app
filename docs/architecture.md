@@ -4984,8 +4984,9 @@ for its mark. Each row has:
   when no flag sets one), the words before an id that go back to it
   (`resume`), the arguments that make it start as typed (`picks`, and their
   short options as `pickingLetters`), and where its conversations are kept
-  (`conversations`: the folder layout `store`, its folder variable, and its
-  folder in the home folder). See
+  (`conversations`: the folder layout `store`, its folder variable, its
+  folder in `XDG_CONFIG_HOME` when it reads that variable, as Cursor CLI
+  does, and its folder in the home folder). See
   [going back to a conversation](#going-back-to-a-conversation).
 - **`signIn`**: a command that only reads whether it is signed in, and the
   command that signs in. Null for every agent for now; nothing reads them yet.
@@ -5006,13 +5007,15 @@ for its mark. Each row has:
    them, else its own site, and say where and when in `mark.source`,
    beside the trademark note. Draw a one-color mark in `currentColor`, so
    it reads in every theme, and list it in docs/design.md.
-3. Give it a `resume` only after checking its own `--help`, and add it to
-   the table under [going back to a conversation](#going-back-to-a-conversation).
+3. Give it a `resume` only after checking its own `--help` and running the
+   installed version, and add it, with that version and the date, to the
+   table under [going back to a conversation](#going-back-to-a-conversation).
    An agent that keeps conversations in a folder layout of its own also
-   needs a new `ConversationStore` and code to read it, in
-   `src/bun/agent-conversations.ts`, `src/bun/terminals.ts` (where the
-   compiler asks for it), and, to find a conversation at quit,
-   `src/bun/session-layout.ts`.
+   needs a new `ConversationStore` and code to read it in
+   `src/bun/agent-conversations.ts`: its check in `conversationExists`,
+   where the compiler asks for it, and, for an agent with no `fresh`, its
+   search at quit in `conversationFinders`. `src/bun/terminals.ts` and
+   `src/bun/session-layout.ts` read both tables and need no change.
 4. Add it to the tests in `tests/agent-registry.test.ts`, which check that
    ids and executables are unique.
 
@@ -5024,12 +5027,21 @@ which the agent itself keeps (see "After a restart" under
 agent starts and never stored in Settings (`src/shared/agent-resume.ts`,
 with each agent's words in its `resume` in the
 [agent registry](#the-agent-registry)).
-Verified on Linux on 2026-11-20:
+Verified on Linux, against each installed version:
 
-| Agent | Fresh start | Going back | Source |
-|---|---|---|---|
-| Claude Code 2.1.329, 2.1.330 | `claude --session-id <uuid> <args>`, with a UUID the app makes | `claude --resume <uuid> <args>` | `claude --help`: "`--session-id <uuid>` Use a specific session ID for the conversation (must be a valid UUID)"; "`-r, --resume [value]` Resume a conversation by session ID or name" |
-| Codex CLI 0.170.0, 0.171.0 | `codex <args>`; no flag sets or prints the id | `codex resume <uuid> <args>` | `codex resume --help`: "Usage: codex resume [OPTIONS] [SESSION_ID] [PROMPT]", with the same options as `codex --help` |
+| Agent | Verified | Fresh start | Going back | Source |
+|---|---|---|---|---|
+| Claude Code 2.1.329, 2.1.330 | 2026-11-20 | `claude --session-id <uuid> <args>`, with a UUID the app makes | `claude --resume <uuid> <args>` | `claude --help`: "`--session-id <uuid>` Use a specific session ID for the conversation (must be a valid UUID)"; "`-r, --resume [value]` Resume a conversation by session ID or name" |
+| Codex CLI 0.170.0, 0.171.0 | 2026-11-20 | `codex <args>`; no flag sets or prints the id | `codex resume <uuid> <args>` | `codex resume --help`: "Usage: codex resume [OPTIONS] [SESSION_ID] [PROMPT]", with the same options as `codex --help` |
+| Grok Build 1.0.92 | 2026-11-22 | `grok --session-id <uuid> <args>`, with a UUID the app makes | `grok --resume <uuid> <args>` | `grok --help`: "`-s, --session-id <SESSION_ID>` Use a specific session UUID for a new conversation"; "`-r, --resume [<SESSION_ID_OR_TITLE>]` Resume a session by ID or title". Its README calls `--session-id` headless only, but the interactive screen honors it: run, it made that session and went back to it |
+| Cursor CLI 2026.11.19-f005e9d, 2026.11.22-e9042b2 | 2026-11-22 | `cursor-agent <args>`; no documented flag sets the id | `cursor-agent --resume <chat id> <args>` | `cursor-agent --help`: "`--resume [chatId]` Select a session to resume"; run, both `--resume <id>` and `--resume=<id>` went back to a chat |
+| Gemini CLI | not verified | `gemini <args>` | starts fresh | not installed on the machine it was checked on, so not run. Its 0.70.0 package shows `--session-id <uuid>` and `--resume <uuid>`, for a later change |
+| OpenCode | not verified | `opencode <args>` | starts fresh | not installed on the machine it was checked on, so not run |
+| GitHub Copilot CLI | not verified | `copilot <args>` | starts fresh | only the editor's `copilot` stub was installed, so not run |
+
+An agent the table marks not verified has `resume: null` in the registry:
+it starts as typed and fresh after a restart, like a custom agent, until
+its flags are checked against an installed version.
 
 What the app adds goes first, before the arguments from Settings, so no
 option that takes several values (Codex's `-i, --image <FILE>...`) and no
@@ -5037,8 +5049,10 @@ option that takes several values (Codex's `-i, --image <FILE>...`) and no
 
 - **Which agents.** The agent picked for the row in Settings, when one
   was, else the one the executable's last path part as typed in Settings
-  is: `claude` or `codex` (`.exe` cut, in any case, on Windows). Only the
-  agents of the registry with a `resume` go back. With Detect, anything
+  is: `claude`, `codex`, `grok`, or `cursor-agent` (or `agent` leading to
+  Cursor's, see [the agent registry](#the-agent-registry); `.exe` cut, in
+  any case, on Windows). Only the agents of the registry with a `resume`
+  go back. With Detect, anything
   else, a wrapper script included, starts exactly as typed and fresh after
   a restart. So when an agent's command now runs another program, it gets
   no resume flag, and one agent never gets another's id. A wrapper such as
@@ -5052,7 +5066,17 @@ option that takes several values (Codex's `-i, --image <FILE>...`) and no
   `--teleport`, `--print`, `-p`, `--fork-session`, `--cloud`, `--bg`,
   `--background`, `--help`, `-h`, `--version`, `-v`, also as `--resume=<id>`
   and inside a group of short options such as `-cp`; for Codex `resume`,
-  `fork`, `exec`, `e`, `review`, `--help`, `-h`, `--version`, `-V`. So is a
+  `fork`, `exec`, `e`, `review`, `--help`, `-h`, `--version`, `-V`; for
+  Grok Build `--session-id`, `-s`, `--resume`, `-r`, `--continue`, `-c`,
+  `--fork-session`, `--single`, `-p`, `--prompt-file`, `--prompt-json`,
+  `--worktree`, `-w`, `--cwd`, `--help`, `-h`, `--version`, `-v`; for
+  Cursor CLI `--resume`, `--continue`, `--print`, `-p`, `--new-session-id`,
+  `--cloud`, `-c`, `--background`, `-b` (both deprecated, still read),
+  `--worktree`, `-w`, `--workspace`, `--list-models`, `--help`, `-h`,
+  `--version`, `-v`. The worktree, `--cwd`, and `--workspace` options start
+  the agent in another folder, where the app would not find its
+  conversation, and a Grok started with `--worktree` again would make
+  another worktree. So is a
   command with `--`, or whose first argument is not an option, which names
   a subcommand (`claude mcp list`) or a prompt (`codex "fix the bug"`).
   Words are matched whole.
@@ -5062,9 +5086,19 @@ option that takes several values (Codex's `-i, --image <FILE>...`) and no
   `<home>/sessions/YYYY/MM/DD/rollout-<local time>-<uuid>.jsonl`, `<home>`
   being `$CODEX_HOME` or `~/.codex`, with a first line of type
   `session_meta` that names its id, folder (`cwd`), start time, and
-  `source` (`src/bun/agent-conversations.ts`). A row's Config folder
-  takes the place of `<config>` or `<home>`: the agent starts with
-  `CLAUDE_CONFIG_DIR` or `CODEX_HOME` set to it, also when its arguments
+  `source` (`src/bun/agent-conversations.ts`). Grok Build keeps each as
+  the folder `<home>/sessions/<URL-encoded working folder>/<uuid>/`, with
+  a `summary.json`, `<home>` being `$GROK_HOME` or `~/.grok`; `sessions`
+  also holds files of its own, such as `session_search.sqlite`. Cursor CLI
+  keeps each chat as the folder
+  `<config>/chats/<md5 of the working folder>/<uuid>/`, with a
+  `meta.json` that names its `cwd`, `createdAtMs`, `hasConversation`, and
+  a title, and a `store.db`; `<config>` is `$CURSOR_CONFIG_DIR`, else
+  `$XDG_CONFIG_HOME/cursor`, else `~/.cursor`, in the order Cursor's own
+  code reads them; the app takes either variable only as a full path, so a
+  relative one is looked for in the default and the agent starts fresh. A row's Config folder takes the place of `<config>` or `<home>`:
+  the agent starts with `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GROK_HOME`, or
+  `CURSOR_CONFIG_DIR` set to it, also when its arguments
   start it as typed, and its conversation is looked for there, at start
   and at quit. Without one, the variable is left as the app has it, and
   the folder is the one it names or the default. The folder is fixed when
@@ -5073,24 +5107,59 @@ option that takes several values (Codex's `-i, --image <FILE>...`) and no
   move it. The shell an ended agent leaves does not get the variable. A
   wrapper that sets the variable to another folder itself wins inside the
   agent, so the app looks in the wrong place and the agent starts fresh,
-  with the note. The app only looks: it never writes there, and of a
-  conversation it reads nothing but the first line of a Codex session
-  file.
+  with the note. The placeholder "Default: ~/.cursor" in Settings does not
+  know `XDG_CONFIG_HOME`, which only the main process reads. The app only
+  looks: it never writes there, and of a conversation it reads nothing but
+  the first line of a Codex session file and a Cursor chat's `meta.json`
+  (at most 64 KiB), of which it keeps only `cwd`, `createdAtMs`,
+  `hasConversation`, and `isSubagent`. The chat's title is never kept or logged.
 - **The check before going back.** The id comes back from the window only
   as a UUID and only follows a word the main process adds itself. It is
   used only when the conversation's file is found in that agent's own
-  folder, because both agents refuse an id they do not know: Claude Code
+  folder, because the agents refuse an id they do not know: Claude Code
   prints "No conversation found with session ID" and exits, Codex "No
-  saved session found with ID". Otherwise the agent starts fresh, and a
+  saved session found with ID", and Grok Build "No saved copy of session
+  ... was found remotely" after looking for it on its servers. Cursor CLI
+  starts a new empty chat for an id it does not know, without a word.
+  Grok is checked for `sessions/<any folder>/<uuid>/summary.json`, and
+  Cursor for `chats/<any folder>/<uuid>/meta.json`. Otherwise the agent
+  starts fresh, and a
   dim line at the top of its terminal says "The saved conversation was not
   found, so <agent> started fresh." A Claude id is never found under
-  Codex's sessions, and the reverse. Claude Code refuses `--session-id`
-  together with `--resume`, so the two are never combined.
+  Codex's sessions, and the reverse: each agent's id is looked for only in
+  its own layout. Claude Code and Grok Build refuse `--session-id`
+  together with `--resume` (Grok: "--session-id can only be used with
+  --continue or --resume if --fork-session is also specified"), so the two
+  are never combined.
 - **Claude Code** gets `--session-id` with a new UUID on every fresh start,
   so its id is exact from the first moment. It shows in the command beside
   the chips. At quit the id is saved only when Claude Code wrote that
   conversation, so a session that never got a message starts fresh after a
   restart, without a note that it was not found.
+- **Grok Build** gets `--session-id` with a new UUID on every fresh start,
+  as Claude Code does. Grok writes the session's folder as soon as its
+  screen is up, before any message, and goes back to such an empty one
+  too. It is not written when Grok never got that far (for example while
+  it asks whether to trust the folder), so the id is saved at quit only
+  when its `summary.json` is there. A session killed with SIGKILL, as the
+  app's quit does, went back with its message.
+- **Cursor CLI** has no documented flag that sets the id of a new chat, so
+  its id is read at quit from its chats folder, as Codex's is, with the
+  same rules for which sessions are searched (below): the newest chat in
+  `<config>/chats/<md5 of the worktree's folder>/`, trying the folder as
+  given and with its links followed, as Cursor names it, whose `meta.json`
+  has that folder as `cwd`, `hasConversation` true, no `isSubagent` true
+  (a subagent's chat, which Cursor's own list leaves out too), and a
+  `createdAtMs` at or after the session's start, less two seconds. Cursor sets
+  `hasConversation` once a message is sent, while it still runs, and a
+  Cursor killed before a message leaves a folder with it false behind, so
+  such a chat is never taken. The chat folders are in no order, so a
+  search that runs out of time finds nothing rather than an older chat.
+  Its bundle has a `--new-session-id <uuid>` that `--help` does not list;
+  it is not used, since an option a later version drops would stop the
+  agent from starting, and Cursor updates itself. A Cursor killed with
+  SIGKILL went back to its chat. An ended Cursor, like an ended Codex,
+  keeps no id for going back to its conversation.
 - **Codex** has no such flag, so its id is read at quit from its own files:
   the newest session file whose first line has the worktree's folder as
   `cwd`, `source` `"cli"`, no `parent_thread_id`, and a start at or after
@@ -5107,9 +5176,11 @@ option that takes several values (Codex's `-i, --image <FILE>...`) and no
   started as typed, from a workflow, or for an arena attempt: otherwise nothing
   tells their conversations apart (open A, open B, close B, quit would
   give A the conversation of B), so it keeps the id it was opened with, or
-  starts fresh. When the last Codex session of each worktree ended is kept
-  in memory (`endedCodex` in `src/bun/terminals.ts`). An id is never
-  given to two sessions. What was seen on this machine: an interactive
+  starts fresh. The same holds for Cursor CLI, counted apart from Codex.
+  When the last session of each agent of the registry ended in each
+  worktree is kept in memory (`endedAgents` in `src/bun/terminals.ts`). An
+  id is never given to two sessions, and the searches of Codex and Cursor
+  share the 300 ms. What was seen on this machine: an interactive
   Codex has `source` `"cli"`; `codex exec` runs have `"exec"`, the editor
   extension `"vscode"`, and a subagent an object with a parent, so none of
   those is taken for the terminal's session. A Codex session file with
@@ -5125,7 +5196,15 @@ option that takes several values (Codex's `-i, --image <FILE>...`) and no
   agent goes back. A subcommand after an option (`claude --model opus mcp
   list`) is not told from a prompt, so it gets the app's words. A Codex
   started by hand in the same folder after the app's
-  Codex session started can be taken for it. When an agent changes where
+  Codex session started can be taken for it. A Cursor chat's `meta.json`
+  says nothing of where it came from, so a `cursor-agent -p` run, or a
+  Cursor started by hand, in the same folder after the app's Cursor
+  session started can be taken for it, and a Cursor session that went
+  back to an older chat is saved with a newer chat when one was started
+  there meanwhile. A new conversation started inside Grok Build is not
+  followed, as with Claude Code's `/clear`. A Grok session kept only on
+  Grok's servers, and no longer on this machine, starts fresh with the
+  note. When an agent changes where
   or how it keeps conversations, nothing is found and it starts fresh,
   never with an error.
 

@@ -1180,7 +1180,8 @@ logins. The app never reads a tracker login and never signs in.
   names what it detected in parentheses, says "not recognized", or, for a
   name other programs install too such as `agent`, "known once it
   starts", then every agent the app knows; and Config folder, with the agent's folder
-  variable named beside the label (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`) and
+  variable named beside the label (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
+  `GROK_HOME`, `CURSOR_CONFIG_DIR`) and
   its default as the placeholder ("Default: ~/.claude"), shown only for an
   agent that keeps its conversations in a folder. A row with a folder says
   "Starts with CLAUDE_CONFIG_DIR set to this folder, and goes back to its

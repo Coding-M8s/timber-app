@@ -4321,3 +4321,47 @@ x64 (Pop!_OS 24.04) with Bun 1.4.5 and Timber 0.2.0 on PATH:
 - `tests/sync-action-browser.test.ts`: a diverged refusal on the sample
   primary checkout showed the terminal note, not the Rebase one.
 - Not run: the desktop app by hand, and macOS and Windows.
+
+Run for going back to Grok Build and Cursor CLI conversations (issue 346),
+on 2026-11-22, Linux x64 (Pop!_OS 24.04) with Bun 1.4.5, Grok Build 1.0.92
+(b06756fd6256), and Cursor CLI 2026.11.19-f005e9d, which updated itself to
+2026.11.22-e9042b2 during the checks. Each agent was run in its own
+interactive screen through a pseudo terminal, in a new empty Git repository
+in a scratch folder, signed in, with one short message:
+
+- `grok --help` read: `-s, --session-id <SESSION_ID>` "Use a specific
+  session UUID for a new conversation", `-r, --resume`, `-c, --continue`,
+  `--fork-session`, `-p, --single`, `--prompt-file`, `--prompt-json`,
+  `-w, --worktree`, and `--cwd`. Its README says `--session-id` is for
+  headless runs only.
+- `grok --session-id <new uuid>` in the interactive screen: the folder
+  `~/.grok/sessions/<URL-encoded folder>/<uuid>/` with `summary.json` was
+  there as soon as the screen was up, before a message, and not while Grok
+  still asked whether to trust the folder. `grok --resume <uuid>` showed the
+  message sent before, also after Grok was killed with SIGKILL, and went
+  back to a session that never got a message. `grok --resume <unknown
+  uuid>` printed "Error: No saved copy of session ... was found remotely"
+  and exited. `grok --session-id <id> --resume <id>` printed "Error:
+  --session-id can only be used with --continue or --resume if
+  --fork-session is also specified."
+- `cursor-agent --help` read: `--resume [chatId]`, `--continue`,
+  `-p, --print`, `-w, --worktree`, `--workspace`, `--list-models`; no flag
+  that sets a new chat's id. Its bundle has a hidden `--new-session-id`,
+  not used, and reads `CURSOR_CONFIG_DIR`, then `XDG_CONFIG_HOME/cursor`,
+  then `~/.cursor`, and names a chat's folder by the MD5 of
+  `path.resolve(cwd)`.
+- Cursor wrote `~/.cursor/chats/<md5 of the folder>/<uuid>/meta.json` with
+  `hasConversation` true while it still ran after the message; killed with
+  SIGKILL before a message, it left a folder with `hasConversation` false
+  and no `store.db`. `cursor-agent --resume <id>` and `--resume=<id>`
+  showed the message sent before, also after a SIGKILL. `--resume
+  <unknown uuid>` started a new empty chat without a word.
+- Gemini CLI, OpenCode, and GitHub Copilot CLI are not installed here
+  (`/usr/bin/copilot` is the editor's stub, which says Copilot CLI was not
+  found), so their ways back were not run and they keep starting fresh.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun run test`: 4397 pass, 19 skip, 0 fail, after rebasing on main at
+  `fc52e66`.
+- `bun run build:web`: built.
+- Not run: the desktop app by hand, so no Grok or Cursor session was
+  quit and opened again through it; macOS and Windows.
