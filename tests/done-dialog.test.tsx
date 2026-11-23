@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { DoneDialogView, type DoneDialogViewProps } from "../src/mainview/components/DoneDialog";
-import { DONE_EXPIRED_NOTE, DONE_PRIMARY_NOTE, DONE_REMOTE_NOTE, describeBranchEffect, describeDone, describeIgnoredEffect, describeUnpublishedCommits, losesWork } from "../src/mainview/done-format";
+import {
+	DONE_COMMAND_LABEL, DONE_EXPIRED_NOTE, DONE_LEAD, DONE_PREVIEW_COMMAND_LABEL, DONE_PRIMARY_NOTE, DONE_REMOTE_NOTE, KEEP_IGNORED_LABEL, describeBranchEffect,
+	describeDone, describeDoneHeading, describeIgnoredEffect, describeUnpublishedCommits,
+} from "../src/mainview/done-format";
 import { createMockEngine, sampleRepositories, sampleTimberStatuses } from "../src/mainview/engine/mock";
 import { type DoneSessionDependencies, type DoneSessionState, canRemove, createDoneSession } from "../src/mainview/store/done-session";
 import { type Schedule, createAppStore } from "../src/mainview/store/store";
@@ -81,6 +84,7 @@ describe("the Done dialog, for a clean worktree", () => {
 		expect(markup).toContain('class="dialog-title">Remove feat/clean?</h2>');
 		expect(markup).not.toContain("Delete anyway?");
 		expect(markup).toContain('<span class="path">/work/sample-worktrees/feat-clean</span>');
+		expect(markup).not.toContain("Removes the folder");
 		expect(markup).toContain("Branch feat/clean in sample");
 		expect(markup).toContain("No modified or untracked files.");
 		expect(markup).not.toContain("done-files");
@@ -88,14 +92,26 @@ describe("the Done dialog, for a clean worktree", () => {
 
 	test("says what happens to the local branch, to ignored files, and that remotes are not touched", () => {
 		expect(markup).toContain("The local branch feat/clean is deleted.");
-		expect(markup).toContain("No ignored files were found. Removing covers every ignored file in the folder, including ones that scripts run before deletion create or change.");
+		expect(markup).toContain("No ignored files were found. Removing covers every ignored file in the folder, including ones that scripts run before the removal create or change.");
 		expect(markup).toContain(DONE_REMOTE_NOTE);
 		expect(DONE_REMOTE_NOTE).toContain("Nothing on a remote is touched");
 	});
 
-	test("shows both Timber commands: the preview that ran and the removal that Remove runs", () => {
-		expect(markup).toContain('<pre class="dialog-command" aria-label="Preview command">timber __ide-done preview -- /work/sample-worktrees/feat-clean</pre>');
-		expect(markup).toContain('<pre class="dialog-command" aria-label="Command that will run">timber __ide-done apply --approval-file &lt;approved preview&gt; --result-file &lt;temporary file&gt; -- /work/sample-worktrees/feat-clean</pre>');
+	test("leads with a plain sentence, before the folder and the commands", () => {
+		expect(DONE_LEAD).toBe("Removes this worktree's folder from this computer.");
+		const lead = markup.indexOf(`<p class="done-lead">${DONE_LEAD.replace("'", "&#x27;")}</p>`);
+		expect(lead).toBeGreaterThan(-1);
+		expect(lead).toBeLessThan(markup.indexOf('class="path"'));
+		expect(lead).toBeLessThan(markup.indexOf("timber __ide-done"));
+	});
+
+	test("shows both Timber commands in full, quieter, under a label: the preview that ran and the removal that Remove runs", () => {
+		expect(markup).toContain(`<p class="dialog-command-label" aria-hidden="true">${DONE_PREVIEW_COMMAND_LABEL}</p><pre class="dialog-command" aria-label="Preview command">timber __ide-done preview -- /work/sample-worktrees/feat-clean</pre>`);
+		expect(markup).toContain('<footer class="dialog-foot labelled">');
+		expect(markup).toContain(`<p class="dialog-command-label" aria-hidden="true">${DONE_COMMAND_LABEL}</p><pre class="dialog-command" aria-label="Command that will run">timber __ide-done apply --approval-file &lt;approved preview&gt; --result-file &lt;temporary file&gt; -- /work/sample-worktrees/feat-clean</pre>`);
+		expect(DONE_COMMAND_LABEL).toBe("Timber command");
+		// The command that runs is shown before the button that runs it.
+		expect(markup.indexOf("__ide-done apply")).toBeLessThan(markup.indexOf(">Remove</button>"));
 	});
 
 	test("has one Remove button, which is not where focus starts and which Enter in a field cannot press", () => {
@@ -108,8 +124,9 @@ describe("the Done dialog, for a clean worktree", () => {
 		expect(markup).not.toContain('type="submit"');
 	});
 
-	test("says until when Timber accepts the preview", () => {
-		expect(markup).toContain("Timber accepts this preview until ");
+	test("says nothing about when the preview expires while it has not", () => {
+		expect(markup).not.toContain("Timber accepts");
+		expect(markup).not.toContain(DONE_EXPIRED_NOTE);
 	});
 });
 
@@ -148,11 +165,35 @@ describe("the Done dialog, for a worktree with content that would be lost", () =
 });
 
 describe("the Done dialog, for what the list knows about commits", () => {
-	test("a branch that was never published gets Delete anyway? with the reason", () => {
+	test("a worktree with no changes on a branch that was never published gets a title about the branch, not Delete anyway?", () => {
 		const markup = render(previews.unpublished, { worktree: worktreeOf(previews.unpublished, { kind: "unpublished" }) });
-		expect(markup).toContain("Delete anyway?");
+		expect(markup).toContain('class="dialog-title">feat/unpublished was never published</h2>');
+		expect(markup).not.toContain("Delete anyway?");
+		expect(markup).toContain("No modified or untracked files.");
 		expect(markup).toContain('<p class="done-warning">feat/unpublished was never published. Commits that are only on this branch are deleted with it.</p>');
-		expect(markup).toContain(">Keep</button>");
+		expect(markup).toContain('autofocus="">Cancel</button>');
+		expect(markup).not.toContain(">Keep</button>");
+	});
+
+	test("commits to push name the branch, how many, and the upstream in the title", () => {
+		const one = render(previews.clean, { worktree: worktreeOf(previews.clean, { kind: "tracking", upstream: "origin/feat/clean", ahead: 1, behind: 0 }) });
+		expect(one).toContain('class="dialog-title">feat/clean has 1 commit not on origin/feat/clean</h2>');
+		expect(one).toContain("as of the last fetch");
+		expect(one).toContain('autofocus="">Cancel</button>');
+	});
+
+	test("a deleted upstream is named in the title", () => {
+		const markup = render(previews.clean, { worktree: worktreeOf(previews.clean, { kind: "gone", upstream: "origin/feat/clean" }) });
+		expect(markup).toContain('class="dialog-title">The upstream of feat/clean was deleted</h2>');
+		expect(markup).toContain("Its upstream origin/feat/clean was deleted.");
+		expect(markup).toContain('autofocus="">Cancel</button>');
+	});
+
+	test("files that would be lost and commits: Delete anyway? with Keep, and the commits still said in the body", () => {
+		const markup = render(previews.dirty, { worktree: worktreeOf(previews.dirty, { kind: "tracking", upstream: "origin/feat/dirty", ahead: 2, behind: 0 }) });
+		expect(markup).toContain('class="dialog-title">Delete anyway?</h2>');
+		expect(markup).toContain('autofocus="">Keep</button>');
+		expect(markup).toContain("2 commits are not on origin/feat/dirty as of the last fetch.");
 	});
 
 	test("commits to push, and a deleted upstream, are said as well", () => {
@@ -168,11 +209,33 @@ describe("the Done dialog, for what the list knows about commits", () => {
 		expect(describeUnpublishedCommits(previews.clean, null)).toBeNull();
 		expect(describeUnpublishedCommits(previews.keepBranch, { kind: "unpublished" })).toBeNull();
 		expect(describeUnpublishedCommits(previews.detached, { kind: "unpublished" })).toBeNull();
-		expect(losesWork(previews.keepBranch, { kind: "unpublished" })).toBe(false);
-		expect(losesWork(previews.clean, { kind: "unpublished" })).toBe(true);
-		expect(losesWork(previews.dirty, inSync)).toBe(true);
+	});
+});
+
+describe("describeDoneHeading", () => {
+	const plain = (label: string) => ({ title: `Remove ${label}?`, cancelLabel: "Cancel" });
+
+	test("says what is at risk: lost files first, then commits that may be only on the branch, otherwise a plain question", () => {
+		expect(describeDoneHeading("feat/dirty", previews.dirty, inSync)).toEqual({ title: "Delete anyway?", cancelLabel: "Keep" });
+		expect(describeDoneHeading("feat/dirty", previews.dirty, { kind: "unpublished" })).toEqual({ title: "Delete anyway?", cancelLabel: "Keep" });
+		expect(describeDoneHeading("feat/clean", previews.clean, { kind: "unpublished" })).toEqual({ title: "feat/clean was never published", cancelLabel: "Cancel" });
+		expect(describeDoneHeading("feat/clean", previews.clean, { kind: "gone", upstream: "origin/feat/clean" })).toEqual({ title: "The upstream of feat/clean was deleted", cancelLabel: "Cancel" });
+		expect(describeDoneHeading("feat/clean", previews.clean, { kind: "tracking", upstream: "origin/feat/clean", ahead: 1, behind: 4 }).title).toBe("feat/clean has 1 commit not on origin/feat/clean");
+		expect(describeDoneHeading("feat/clean", previews.clean, { kind: "tracking", upstream: "origin/feat/clean", ahead: 3, behind: 0 }).title).toBe("feat/clean has 3 commits not on origin/feat/clean");
+		expect(describeDoneHeading("feat/clean", previews.clean, inSync)).toEqual(plain("feat/clean"));
+		expect(describeDoneHeading("feat/clean", previews.clean, null)).toEqual(plain("feat/clean"));
 		// Ignored files alone are part of the plain summary.
-		expect(losesWork(previews.ignored, inSync)).toBe(false);
+		expect(describeDoneHeading("feat/ignored", previews.ignored, inSync)).toEqual(plain("feat/ignored"));
+	});
+
+	test("a kept branch or a detached HEAD loses no commits, so its title is the plain question", () => {
+		expect(describeDoneHeading("feat/clean", previews.keepBranch, { kind: "unpublished" })).toEqual(plain("feat/clean"));
+		expect(describeDoneHeading("detached at 55b4839", previews.detached, { kind: "unpublished" })).toEqual(plain("detached at 55b4839"));
+	});
+
+	test("without a preview to go by, and once the worktree is gone", () => {
+		expect(describeDoneHeading("feat/clean", null, { kind: "unpublished" })).toEqual(plain("feat/clean"));
+		expect(describeDoneHeading("feat/clean", previews.dirty, inSync, true)).toEqual({ title: "feat/clean is no longer in the list", cancelLabel: "Close" });
 	});
 });
 
@@ -190,7 +253,9 @@ describe("the Done dialog, for the options", () => {
 		const markup = render(previews.everyOption);
 		expect(markup).toContain("timber __ide-done preview --keep-branch --keep-ignored --base=main -- /work/sample-worktrees/feat-clean");
 		expect(markup).toContain(describeIgnoredEffect(previews.everyOption));
-		expect(describeIgnoredEffect(previews.everyOption)).toContain("If any appear before the removal, Timber refuses it.");
+		expect(describeIgnoredEffect(previews.everyOption)).toBe("No ignored files exist. If any appear before the removal, Timber stops and removes nothing.");
+		expect(KEEP_IGNORED_LABEL).toBe("Stop if there are ignored files (don't delete them)");
+		expect(markup).toContain(`<input type="checkbox" checked=""/><span>${KEEP_IGNORED_LABEL.replace("'", "&#x27;")}</span>`);
 		expect(markup).toContain('value="main"');
 		expect(markup).toContain(REMOVE);
 	});
@@ -225,6 +290,10 @@ describe("the Done dialog, while there is no preview to approve", () => {
 		expect(markup).toContain(REMOVE_DISABLED);
 		expect(markup).toContain('role="status">Asking Timber what would be removed. Nothing is removed by asking.</p>');
 		expect(markup).toContain("timber __ide-done preview -- /work/sample-worktrees/feat-clean");
+		// Both commands stay shown, under their labels, before there is a preview.
+		expect(markup).toContain(`<p class="dialog-command-label" aria-hidden="true">${DONE_PREVIEW_COMMAND_LABEL}</p>`);
+		expect(markup).toContain(`<p class="dialog-command-label" aria-hidden="true">${DONE_COMMAND_LABEL}</p><pre class="dialog-command" aria-label="Command that will run">timber __ide-done apply`);
+		expect(markup).toContain('class="dialog-title">Remove feat/clean?</h2>');
 		expect(markup).not.toContain("Preview again");
 		expect(markup).toContain('autofocus="">Cancel</button>');
 	});
@@ -246,6 +315,7 @@ describe("the Done dialog, while there is no preview to approve", () => {
 		const markup = render(previews.dirty, { session: expired });
 		expect(markup).toContain(REMOVE_DISABLED);
 		expect(markup).toContain(`<p class="done-warning" role="alert">${DONE_EXPIRED_NOTE}</p>`);
+		expect(DONE_EXPIRED_NOTE).toContain("This preview expired.");
 		expect(markup).toContain(">Preview again</button>");
 		expect(markup).not.toContain("done-files");
 		expect(markup).not.toContain("Delete anyway?");
@@ -292,6 +362,8 @@ describe("the Done dialog, while and after the removal", () => {
 
 	test("a worktree that left the list while the dialog was open can only be closed", () => {
 		const markup = render(previews.dirty, { gone: true });
+		expect(markup).not.toContain("done-lead");
+		expect(markup).toContain('<span class="done-label">Was at</span>');
 		expect(markup).toContain('class="dialog-title">feat/dirty is no longer in the list</h2>');
 		expect(markup).toContain("This worktree left the list while the dialog was open, so there is nothing to remove here any more.");
 		expect(markup).toContain(REMOVE_DISABLED);

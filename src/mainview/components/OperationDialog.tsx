@@ -8,6 +8,13 @@ interface OperationDialogProps {
 	headerAside?: ReactNode;
 	/** The exact command the dialog is about to run, shown before it runs: a Timber command, or a chop's text. */
 	command: string;
+	/**
+	 * A label over the command, such as "Timber command". Given, the command
+	 * is drawn quieter under it, for a dialog that leads with a plain sentence
+	 * and whose command is Timber's machine interface. It is still shown in
+	 * full before it runs.
+	 */
+	commandLabel?: string;
 	/** The state of the dialog's submission (see `useSubmission`). */
 	submission: SubmissionState;
 	/** On the submit button, for example "Create worktree". */
@@ -133,7 +140,7 @@ export function openModal(dialog: { open: boolean; showModal(): void }, fields: 
  */
 export function OperationDialog(props: OperationDialogProps) {
 	const { title, headerAside, command, submission, submitLabel, runningLabel, failureTitle, canSubmit = true, onSubmit, onClose, children } = props;
-	const { destructive = false, cancelLabel = "Cancel", failureNote, followUps = [], reserveLabels = [], className } = props;
+	const { destructive = false, cancelLabel = "Cancel", failureNote, followUps = [], reserveLabels = [], className, commandLabel } = props;
 	const { running, failure } = submission;
 	const closable = !running;
 	const dialog = useRef<HTMLDialogElement>(null);
@@ -218,7 +225,8 @@ export function OperationDialog(props: OperationDialogProps) {
 						)}
 					</div>
 				)}
-				<footer className="dialog-foot">
+				<footer className={commandLabel ? "dialog-foot labelled" : "dialog-foot"}>
+					{commandLabel && <p className="dialog-command-label" aria-hidden="true">{commandLabel}</p>}
 					<pre className="dialog-command" aria-label="Command that will run">{command}</pre>
 					{followUps.map(followUp => (
 						<Fragment key={followUp.command}>

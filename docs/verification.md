@@ -4466,3 +4466,48 @@ Run for starting a terminal editor from Open in editor (issue 232), Linux x64
   0 fail.
 - Not run by me: the desktop window; the report above is from the person
   testing.
+
+---
+
+Run for the Done dialog's names, title, and quieter Timber command (issue
+329), Linux x64 (Pop!_OS 24.04) with Bun 1.4.5, Git 2.43.0, and Google
+Chrome 151:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun run test`: 4409 pass, 19 skip, 0 fail, after rebasing on main at
+  `92e6612`.
+- `bun run build:web`: built.
+- `tests/done-dialog.test.tsx`: `describeDoneHeading` gives "Delete anyway?"
+  with Keep only for modified or untracked files, also with commits to
+  push; "feat/clean was never published", "The upstream of feat/clean was
+  deleted", and "feat/clean has 1 commit" or "3 commits not on
+  origin/feat/clean" with Cancel; "Remove <name>?" for a branch in step, a
+  kept branch, a detached HEAD, ignored files alone, and before a preview.
+  The rendered dialog leads with "Removes this worktree's folder from this
+  computer." before the folder and the commands, shows both exact commands
+  under "Timber command for the preview" and "Timber command", the
+  removal's before the Remove button, also while the preview loads, no
+  expiry time while the preview holds and the expired note once it does
+  not, and the option "Stop if there are ignored files (don't delete
+  them)". The gone state has no lead sentence.
+- `tests/done-dialog-browser.test.ts`, new, in headless Chrome over the mock
+  engine, in Timber Light and Timber Dark at 1280 and 480 pixels wide: the
+  title "fix/macos-portability has 3 commits not on
+  origin/fix/macos-portability", on more than one line at 480, with nothing
+  scrolling sideways; the lead sentence above the folder; each command
+  right under its label, in full, smaller than an unlabelled command and in
+  the `--text-3` color. With the quiet rule taken out of styles.css, all
+  four failed.
+- `tests/settings-buttons-browser.test.ts`, `tests/dialog-footer-browser.test.ts`,
+  `tests/workspace-actions-browser.test.ts`, and
+  `tests/menu-tooltips-browser.test.ts`, in headless Chrome over the mock
+  engine: pass, so the Done dialog's buttons fit at every width with the
+  longer option and the labels, and the More menu still reads "Done…".
+- A temporary real-browser script (not committed) opened Done for each
+  linked sample worktree: "feat/github-issue-lookup" and "spike/new-idea"
+  got "Delete anyway?" with Keep, "fix/macos-portability" the commits title
+  with Cancel.
+- After rebasing onto main at `42ad43a`: `bun run typecheck` and
+  `bun run typecheck:desktop`: no errors; `bun run test`: 4427 pass, 19 skip,
+  0 fail.
+- Not run: the desktop app by hand; macOS and Windows.

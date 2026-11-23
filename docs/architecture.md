@@ -376,17 +376,22 @@ decides, both when it previews and again when it removes.
 - **What is shown.** The exact folder and branch, every modified and
   untracked file, the count of ignored paths and how far removal reaches for them,
   whether the local branch is deleted or kept, that nothing on a remote is
-  touched, both commands, and until when the preview holds. The preview says
+  touched, and both commands, in full under a "Timber command" label. That
+  the preview expired is said once it has; until then its time is not shown.
+  The preview says
   nothing about commits, and the removal deletes a branch whose commits are
   nowhere else. So the dialog adds one sentence from what the list already
   shows: never published, upstream deleted, or commits to push.
-- **Two wordings.** Modified or untracked files, or such commits, make it
-  "Delete anyway?" with Keep. Otherwise it is a plain confirmation. This only
-  chooses the words. In both, focus starts on the button that keeps the
+- **Three wordings** (`describeDoneHeading` in src/mainview/done-format.ts).
+  Modified or untracked files make it "Delete anyway?" with Keep. Without
+  them, such commits name the branch and why in the title, with Cancel, from
+  the same rule as the sentence. Otherwise it is a plain confirmation. This
+  only chooses the words. In all, focus starts on the button that keeps the
   worktree, Enter in a field never removes, and the one Remove button is the
   only thing that does.
-- **Options.** Keep branch, keep ignored files, and base are the preview's
-  flags. Changing one takes the preview off the screen at once and asks for a
+- **Options.** "Keep the local branch" (`--keep-branch`), "Stop if there
+  are ignored files (don't delete them)" (`--keep-ignored`), and base are the
+  preview's flags. Changing one takes the preview off the screen at once and asks for a
   new one. Every question takes a ticket, so an older answer never replaces a
   newer one (`src/mainview/store/done-session.ts`). Remove is possible only
   for a preview that is on screen, is for the options on screen, and has not
