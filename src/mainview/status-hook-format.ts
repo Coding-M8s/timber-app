@@ -2,7 +2,7 @@
  * The words of an agent row's status line in Settings, Agents, and of the
  * status hook dialogs (see docs/design.md, "Status hooks"). Pure.
  */
-import { type HookDetails, type StatusHookView, describeStates } from "../shared/status-hooks";
+import { type HookDetails, type StatusHookView, describeStates, hookedAgent } from "../shared/status-hooks";
 
 /** What a status line's buttons and a dialog do. */
 export type HookAction = "install" | "remove" | "add-by-hand" | "remove-by-hand" | "differs";
@@ -84,7 +84,7 @@ export function describeHookDialog(hook: HookDetails, reports: StatusHookView["r
 				...quiet,
 				title: `Turn on the ${name} status hook?`,
 				lead: `${name} does not report its status. This adds ${count === 1 ? "an entry" : `${count} entries`} to its hooks file, so its sessions in the app show ${states}, with their notifications and sounds. ${name} runs them in every terminal; outside the app they do nothing.`,
-				note: hook.exists ? `Adds to ${hook.file}. Nothing else in it changes.` : `Makes ${hook.file}, which is not there yet.`,
+				note: [hook.exists ? `Adds to ${hook.file}. Nothing else in it changes.` : `Makes ${hook.file}, which is not there yet.`, hookedAgent(hook.agent)?.status.hook.caveat].filter(Boolean).join(" "),
 				blocks: [
 					{ label: hook.exists ? `Added to ${hook.file}` : hook.file, text: hook.entries },
 					{ label: `The script they run, ${hook.scriptPath}`, text: hook.script },

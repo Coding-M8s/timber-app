@@ -1217,10 +1217,11 @@ logins. The app never reads a tracker login and never signs in.
   lines (issue 350); a row being edited shows none until it is saved. An
   agent that reports through OSC 7501 says "Status  Reports working, needs
   you, and done itself." (the states it reports). An agent with a status
-  hook (Cursor CLI) says, after the label "Status hook" in `--text-2`:
-  "Off. Its sessions show only running or exited." with a quiet Turn on…;
-  "On, in ~/.cursor/hooks.json. Reports working and done; not needs you."
-  with Remove…; or, in the error color, "Status hook changed: <why>
+  hook (Cursor CLI, Gemini CLI) says, after the label "Status hook" in
+  `--text-2`: "Off. Its sessions show only running or exited." with a
+  quiet Turn on…; "On, in ~/.cursor/hooks.json. Reports working and done;
+  not needs you." or "On, in ~/.gemini/settings.json. Reports working,
+  needs you, and done." with Remove…; or, in the error color, "Status hook changed: <why>
   Checked against <version>. The app does not rewrite it." with Show what
   differs… and Remove…, or "Status hook broken: <why> Fix it by hand, then
   open Settings, Agents again." with no button. When the app does not write

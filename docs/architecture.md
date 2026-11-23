@@ -5018,9 +5018,10 @@ for its mark. Each row has:
   which gives its mark to any session that reports it. Claude Code, Codex,
   and Grok Build report through OSC 7501 (`app` `claude`, `codex`, `grok`),
   with the states each reports (`reports`), which Settings, Agents names.
-  Cursor CLI reports through a status hook (`hook`: its file in the home
-  folder, its format, the events and the state each gives, the agent's own
-  timeout, and the version checked); see [status hooks](#status-hooks). Any
+  Cursor CLI and Gemini CLI report through a status hook (`hook`: its file
+  in the home folder, its format, the events, the state each gives and any
+  matcher, the timeout in seconds, and the version checked); see
+  [status hooks](#status-hooks). Any
   program may still report through OSC 7501, whatever its row says.
 
 **Adding an agent.**
@@ -5251,8 +5252,9 @@ answered; Codex CLI 0.169.0 without a probe, from its prompt on (`idle`,
 with a short `working` and `idle` as it starts, then `working` and `done`
 for a turn; nothing before its first screen is passed, and `blocked` was
 not seen); Grok Build 1.0.92 once the probe is answered, by default
-(its `program_status = "auto"`). Cursor CLI does not. Gemini CLI, OpenCode,
-and GitHub Copilot CLI were not tried.
+(its `program_status = "auto"`). Cursor CLI does not. Gemini CLI 0.70.0
+does not either: its package holds no `]7501` (read, not run; issue 351).
+OpenCode and GitHub Copilot CLI were not tried.
 
 **Why this is not reading agent output.** OSC 7501 is a terminal control
 sequence the program addresses to the terminal, like a title (OSC 0) or a
@@ -5593,7 +5595,38 @@ Off for every agent until the person turns it on.
   `stop` done; no event says it waits for the person, so Cursor CLI has no
   needs you. Its hooks run with no terminal; one that prints nothing, leaves
   its input unread, or names a missing command lets the turn go on.
-  Codex and Grok Build report themselves and get no hook.
+  Gemini CLI, from the source and docs of its 0.70.0 npm package, read on
+  2026-11-22 on Linux x64 and **not run**: Gemini CLI is not installed on
+  the machine it was built on (issue 351). Its entries go in
+  `~/.gemini/settings.json`. `SessionStart` gives idle, `BeforeAgent`
+  working, `Notification` needs you (its only kind in 0.70.0 is
+  `ToolPermission`, sent as Gemini CLI asks to run a tool; the matcher is
+  written but 0.70.0 does not apply it to this event), `AfterTool` working
+  again once an approved tool ran (`BeforeTool` runs before the person is
+  asked, so it cannot), and `AfterAgent` done, once per prompt after the
+  last reply. Codex and Grok Build report themselves and get no hook.
+- **Gemini CLI's hook that is On but reports nothing** (as read in 0.70.0):
+  - *A folder Gemini CLI does not trust.* With folder trust on, as by
+    default, Gemini CLI runs no hooks from its settings in a folder it does
+    not trust, user settings included. Each new worktree is a new folder,
+    so a session there shows only running or exited until the person
+    trusts the folder (or a folder above it) in Gemini CLI. The Turn on
+    dialog says so (the registry's `caveat`).
+  - *Hooks turned off in Gemini CLI:* `hooksConfig.enabled` false, or
+    `timber-app-status`, the name of the app's entries, in
+    `hooksConfig.disabled`, which turns off all five.
+  - *`GEMINI_CLI_HOME`* moves the settings file to
+    `$GEMINI_CLI_HOME/.gemini/settings.json`. The app reads and writes only
+    `~/.gemini/settings.json`: Gemini CLI has no Config folder field yet, so
+    a session that sets the variable runs without the hook. This departs
+    from the decision record's hook per config folder.
+  - *Strict environment cleaning,* when `GITHUB_SHA` is set or `SURFACE` is
+    `Github`, drops `TIMBER_APP_STATUS` from the hook's environment.
+  - *States that stay.* Esc during a turn, or at the question, ends it with
+    no `AfterAgent`, so the row stays Working or Needs you until the next
+    prompt; a tool the person declines while the turn goes on keeps Needs
+    you until `AfterAgent`; and Needs you stays while an approved tool runs,
+    until `AfterTool`. Claude Code reports these itself.
 - **The script.** `status-hook` in the app's settings folder
   (`~/.config/timber-app/status-hook` on Linux), written on Turn on with
   mode 0755 (`STATUS_HOOK_SCRIPT` in `src/shared/status-hooks.ts`). It does
@@ -5603,19 +5636,31 @@ Off for every agent until the person turns it on.
   the hook. Uninstalling the app leaves the entries in the agent's file:
   take them out first with Remove in Settings, Agents. Forgetting the
   settings on uninstall removes the script; the entries left then name a
-  missing command, which Cursor CLI takes as a hook that failed.
+  missing command, which Cursor CLI takes as a hook that failed. Gemini CLI
+  0.70.0 would take what a failed hook prints as a refusal, so a missing
+  script would stop every prompt: its entries end in `2>/dev/null || true`,
+  and print nothing and exit 0 whatever the script does.
 - **Platforms.** Built and checked on Linux only. On Windows no status line
   shows for a hooked agent and nothing is written, since the script is `sh`
   and the agents' files there are not confirmed. macOS is not tried.
-- **The entries.** One per event, `{ "command": "'<script>' cursor <event>",
-  "timeout": 5 }`, added after the entries already there. The app's entries
-  are known by a command that starts with the script's quoted path and a
-  space, and nothing else records what it installed.
-- **What a file reads as** (`planCursorHooks`): Off (none of the app's
+- **The entries.** One per event, added after the entries already there.
+  Cursor CLI: `{ "command": "'<script>' cursor <event>", "timeout": 5 }`.
+  Gemini CLI: `{ "matcher": "ToolPermission", "hooks": [{ "type":
+  "command", "name": "timber-app-status", "command": "'<script>' gemini
+  <Event> 2>/dev/null || true", "timeout": 5000 }] }`, the matcher only for
+  `Notification` and the timeout in milliseconds, as Gemini CLI counts it.
+  The app's entries are known by a command that starts with the script's
+  quoted path and a space, and nothing else records what it installed.
+- **What a file reads as** (`planCursorHooks`, `planGeminiSettings`): Off (none of the app's
   entries), On (each exactly as written), Changed (an entry not as written,
   one missing, one in another event, or a script that is not the app's), or
   Broken (not JSON, not an object, `version` not 1, `hooks` or an event not
-  the shape Cursor reads, unreadable, or the script missing). Changed and
+  the shape the agent reads, unreadable, or the script missing). In Gemini
+  CLI's file the keys `enabled`, `disabled`, and `notifications` inside
+  `hooks` are its own settings, not events, and stay as they are; Remove
+  takes the app's command out of a definition that also holds another
+  tool's, and keeps that one. A `hooks` left empty goes with the
+  app's entries. Changed and
   Broken are shown, never rewritten; Remove takes the app's entries out of a
   Changed file, and out of a Broken one whose entries are there (as when
   only the script is missing). A file holding a number past what

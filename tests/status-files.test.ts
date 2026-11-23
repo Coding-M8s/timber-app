@@ -207,6 +207,22 @@ describe.skipIf(!posix)("status hook lines in a real session", () => {
 		expect(await until(() => !existsSync(file))).toBe(true);
 	});
 
+	test("Gemini CLI's events set idle, working, needs you, working, and done, with its mark", async () => {
+		await start();
+		const session = await opened();
+		const steps: [string, string][] = [["SessionStart", "idle"], ["BeforeAgent", "working"], ["Notification", "blocked"], ["AfterTool", "working"], ["AfterAgent", "done"]];
+		for (const [index, [event, state]] of steps.entries()) {
+			// As Gemini CLI's entry runs it: whatever happens, nothing printed.
+			await run(session.id, `'${script}' gemini ${event} 2>/dev/null || true; echo gem${index}`, `gem${index}\r\n`);
+			expect(await until(() => statusOf(session.id)?.state === state)).toBe(true);
+			expect(statusOf(session.id)?.app).toBe("gemini");
+		}
+		// BeforeTool runs before Gemini CLI asks, and is not mapped.
+		await run(session.id, `'${script}' gemini BeforeTool; echo gem9`, "gem9\r\n");
+		await Bun.sleep(150);
+		expect(statusOf(session.id)?.state).toBe("done");
+	});
+
 	test("outside the app's sessions, the script does nothing and exits 0", () => {
 		const ran = Bun.spawnSync([script, "cursor", "stop"], { env: { PATH: process.env.PATH } });
 		expect(ran.exitCode).toBe(0);

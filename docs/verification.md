@@ -4553,3 +4553,36 @@ Run for status hooks with Cursor CLI first (issue 350), Linux x64 (Pop!_OS
   `bun run test`: 4488 pass, 19 skip, 0 fail, on main at `f0bcfb9`.
 - Not run: the desktop app by hand; macOS and Windows, where no hook is
   offered; a Cursor turn that is interrupted or fails (#352).
+
+Run for the Gemini CLI status hook (issue 351), Linux x64 (Pop!_OS 24.04)
+with Bun 1.4.5:
+
+- Gemini CLI was **not run**: it is not installed on this machine. Its
+  0.70.0 npm package was unpacked into a scratch folder and read: its hooks
+  docs (`bundle/docs/hooks/reference.md`) and the code that loads, runs,
+  and reads hooks. Found: no `]7501`; settings in
+  `$GEMINI_CLI_HOME`/`~` + `/.gemini/settings.json`, comments allowed;
+  hooks run with `bash -c` and their input on stdin; text a hook prints
+  with an exit code other than 0 or 1 becomes a refusal; `BeforeTool` runs
+  before the person is asked and `Notification` (`ToolPermission`) as they
+  are; `AfterAgent` runs once per prompt and not while tools are pending or
+  after Esc; settings hooks run only in a trusted folder. A live run was
+  declined, so none of this was observed.
+- `bun test tests/status-hooks.test.ts tests/status-hook-files.test.ts
+  tests/status-files.test.ts tests/status-hooks-ui.test.tsx
+  tests/agent-registry.test.ts`: pass. New cases: Gemini CLI's plan for a
+  new file, shared settings with another tool's hooks and Gemini's own hook
+  settings, a changed, missing, moved, doubled, or shared entry, comments,
+  and a broken shape, and settings with no `hooks` given back without one
+  after on and off; the Turn on dialog's note that Gemini CLI runs hooks
+  only in a folder it trusts; the installer in a temporary home folder (a new file
+  and its folder, shared settings and their mode, comments, Cursor's file
+  untouched); each written entry run with `bash -c` and input on stdin
+  appending its event, and printing nothing with exit 0 once the script is
+  deleted (also with `sh`); the real script in a real session giving idle,
+  working, needs you, working, and done with `app` `gemini`; and the same
+  alerts as from the stream ("Gemini CLI needs you", "Gemini CLI is done").
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors;
+  `bun run test`: 4503 pass, 19 skip, 0 fail, on main at `6e1f982`.
+- Not run: Gemini CLI itself, so no session of it was seen to report; the
+  desktop app by hand; macOS and Windows, where no hook is offered.

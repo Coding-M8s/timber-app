@@ -128,15 +128,21 @@ export type ReportedState = "idle" | "working" | "blocked" | "done";
  */
 export interface AgentHook {
 	/** The file's layout, which needs code of its own to read and write. */
-	format: "cursor-hooks";
+	format: "cursor-hooks" | "gemini-settings";
 	/** The file, as parts of a path in the home folder. */
 	file: readonly string[];
-	/** Each event the entries are added for, and the state it reports, in the order they are added. */
-	events: readonly { event: string; state: ReportedState }[];
-	/** The agent's own timeout for each entry, in seconds. */
+	/**
+	 * Each event the entries are added for, and the state it reports, in the
+	 * order they are added; with `matcher`, the agent's own filter for the
+	 * entry, written as it is (Gemini CLI's `matcher`).
+	 */
+	events: readonly { event: string; state: ReportedState; matcher?: string }[];
+	/** The timeout for each entry, in seconds. A format whose agent counts in milliseconds converts it. */
 	timeout: number;
 	/** The version of the agent the format and events were checked against, and when. */
 	checked: string;
+	/** What keeps the hook from reporting that the person should know before turning it on, or absent. */
+	caveat?: string;
 }
 
 const ROWS = [
@@ -288,7 +294,34 @@ const ROWS = [
 		},
 		resume: null,
 		signIn: { status: null, login: null },
-		status: { source: "none", app: null },
+		/*
+		 * Gemini CLI writes no OSC 7501: no `]7501` in its 0.70.0 package.
+		 * Not run: its hooks were read from that package's source and docs on
+		 * 2026-11-22 (see docs/architecture.md, "Status hooks"). It reads them
+		 * from `~/.gemini/settings.json` (`GEMINI_CLI_HOME` moves it, which the
+		 * app does not follow), and only in a folder it trusts. `BeforeTool`
+		 * runs before the person is asked, so `AfterTool` is what brings an
+		 * approved turn back to working. `Notification` runs as it asks, and
+		 * takes no matcher in 0.70.0; `ToolPermission` is its only kind.
+		 */
+		status: {
+			source: "hook",
+			app: "gemini",
+			hook: {
+				format: "gemini-settings",
+				file: [".gemini", "settings.json"],
+				events: [
+					{ event: "SessionStart", state: "idle" },
+					{ event: "BeforeAgent", state: "working" },
+					{ event: "Notification", state: "blocked", matcher: "ToolPermission" },
+					{ event: "AfterTool", state: "working" },
+					{ event: "AfterAgent", state: "done" },
+				],
+				timeout: 5,
+				checked: "Gemini CLI 0.70.0's source, read on 2026-11-22, not run",
+				caveat: "Gemini CLI runs hooks only in a folder it trusts, so a session in a new worktree reports nothing until you trust that folder, or one above it, in Gemini CLI.",
+			},
+		},
 	},
 	{
 		id: "grok",
