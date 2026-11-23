@@ -6,11 +6,14 @@ import { WIZARD_STEPS, WIZARD_STEP_TITLES, type WizardStep, describeChoices, des
 import { useStore } from "../store/react";
 import { type GroupDrafts, type GroupOutcome, type TimberGroup, DRAWN_PATHS, IDLE_OUTCOME as IDLE, TIMBER_GROUP_TITLES, draftsOf, groupMessages, outcomeOfSave } from "../timber-settings-format";
 import { GitFields, LauncherFields, SaveOutcomeNotes, ScriptsFields, TrackingFields, useTimberDrafts, useTimberRead } from "./settings/TimberSections";
+import { reservedLabels } from "./OperationDialog";
 import { TimberFailureDetails } from "./TimberFailureDetails";
 
 /** How long the last step shows before Save acts, so a double click on Next cannot save unseen. */
 const SAVE_DELAY_MILLISECONDS = 500;
 const ALL_DRAWN = Object.values(DRAWN_PATHS).flat();
+/** Every label of the last button, so it keeps one width and Cancel and Back never move. */
+const NEXT_LABELS = reservedLabels(["Next", "Save", "Saving"]);
 
 /**
  * "Set up Timber" for a repository new to Timber: the choices of `timber
@@ -213,7 +216,7 @@ export function SetupWizardDialog({ repository }: { repository: Repository }) {
 	return (
 		<dialog
 			ref={dialog}
-			className="dialog setup-wizard"
+			className="dialog setup-wizard steady"
 			aria-labelledby={titleId}
 			onCancel={event => {
 				// Escape asks to close, through the store, and never while the save runs.
@@ -228,11 +231,16 @@ export function SetupWizardDialog({ repository }: { repository: Repository }) {
 				<p id={stepTitleId} ref={stepTitle} tabIndex={-1} className="wizard-step" aria-live="polite">
 					Step {index + 1} of {WIZARD_STEPS.length}: {WIZARD_STEP_TITLES[step]}
 				</p>
-				<fieldset className="dialog-fields" disabled={busy}>{body}</fieldset>
+				{/* The step scrolls when it is taller than the dialog; the header and the buttons stay. */}
+				<div className="dialog-body">
+					<fieldset className="dialog-fields" disabled={busy}>{body}</fieldset>
+				</div>
 				{busy && (
-					<div className="dialog-progress">
-						<div className="progress" role="progressbar" aria-label="Saving" />
-						<p className="dialog-progress-text" role="status">Saving</p>
+					<div className="dialog-status">
+						<div className="dialog-progress">
+							<div className="progress" role="progressbar" aria-label="Saving" />
+							<p className="dialog-progress-text" role="status">Saving</p>
+						</div>
 					</div>
 				)}
 				<footer className="dialog-foot">
@@ -243,7 +251,7 @@ export function SetupWizardDialog({ repository }: { repository: Repository }) {
 					<div className="dialog-buttons">
 						<button type="button" className="button quiet" disabled={busy} onClick={close}>Cancel</button>
 						<button type="button" className="button quiet" disabled={busy || index === 0} onClick={() => setStep(WIZARD_STEPS[index - 1]!)}>Back</button>
-						<button type="submit" className="button primary" disabled={busy || !ready || (step === "review" && needsTracked)}>
+						<button type="submit" className="button primary" data-reserve={NEXT_LABELS} disabled={busy || !ready || (step === "review" && needsTracked)}>
 							{step === "review" ? (busy ? "Saving" : "Save") : "Next"}
 						</button>
 					</div>

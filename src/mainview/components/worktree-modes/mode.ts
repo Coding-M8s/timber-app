@@ -14,6 +14,12 @@ export interface WorktreeDialogMode {
 	command: string;
 	canSubmit: boolean;
 	submitLabel: string;
+	/**
+	 * Every label the submit button can show in this mode, at any step, such
+	 * as "Create worktree" and "Run setup". The button is as wide as the
+	 * widest of them in every mode, so the buttons beside it never move.
+	 */
+	submitLabels: readonly string[];
 	runningLabel: string;
 	failureTitle: string;
 	/** Whether the picked agent starts after the next run works (see ./agent-choice.ts). */

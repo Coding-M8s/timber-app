@@ -168,10 +168,14 @@ export function describeQuestion(question: StartWorkQuestion, tracker: IssueTrac
 	return lines;
 }
 
+/** The submit labels for a closed issue and for several assignees to replace, which name no one, so they can be known ahead. */
+export const START_ANYWAY_LABEL = "Start work anyway";
+export const REPLACE_THEM_LABEL = "Replace them and start work";
+
 /** The submit button's words for a question. */
 export function startWorkSubmitLabel(question: StartWorkQuestion): string {
-	if (question.replace !== null) return question.replace.length === 1 ? `Replace ${displayText(question.replace[0]!, 40)} and start work` : "Replace them and start work";
-	if (question.closed !== null) return "Start work anyway";
+	if (question.replace !== null) return question.replace.length === 1 ? `Replace ${displayText(question.replace[0]!, 40)} and start work` : REPLACE_THEM_LABEL;
+	if (question.closed !== null) return START_ANYWAY_LABEL;
 	return START_WORK_LABEL;
 }
 

@@ -108,7 +108,7 @@ describe("the Arena mode of the New worktree dialog", () => {
 	const repository = sampleRepositories[0]!;
 	const form = { setName() {}, setTask() {}, setGroups() {}, setBase() {}, run: async () => ({ outcome: { ok: true as const, toast: "" }, created: null, setup: null }) };
 	const fake = (label: string): WorktreeDialogMode => ({
-		label, fields: <p>{label} fields</p>, command: "timber new x", canSubmit: true, submitLabel: "Create worktree", runningLabel: "Running", failureTitle: "Failed",
+		label, fields: <p>{label} fields</p>, command: "timber new x", canSubmit: true, submitLabel: "Create worktree", submitLabels: ["Create worktree"], runningLabel: "Running", failureTitle: "Failed",
 		agentStart: "always", setupStart: "always", worktree: null, workflow: null, run: async () => ({ outcome: { ok: true, toast: "" }, created: null, setup: null }),
 	});
 	type Change = Partial<ArenaFormState> & { submission?: SubmissionState; unavailable?: string | null; selected?: number };
@@ -142,7 +142,7 @@ describe("the Arena mode of the New worktree dialog", () => {
 		expect(markup).toMatch(/<label class="mode-option" title="The Timber found has no arenas for apps. Install a newer Timber."><input class="mode-radio" type="radio" disabled="" name="[^"]+"\/><span class="mode-label">Arena \(Beta\)/);
 		const shown = frame({ unavailable: "No arenas." });
 		expect(shown).toContain("No arenas.");
-		expect(shown).toMatch(/<button type="submit" class="button primary" disabled="">Create arena<\/button>/);
+		expect(shown).toMatch(/<button type="submit" class="button primary" data-reserve="Create arena\nCreate worktree\nRunning" disabled="">Create arena<\/button>/);
 	});
 
 	test("shows the exact command and the launch Timber is asked for, says Beta, and never shows the task in a command", () => {
@@ -160,7 +160,7 @@ describe("the Arena mode of the New worktree dialog", () => {
 	test("cannot be submitted without a task, or with fewer than two attempts, and says why", () => {
 		const noTask = frame({ task: "" });
 		expect(noTask).toContain("Write the task the attempts work on.");
-		expect(noTask).toMatch(/<button type="submit" class="button primary" disabled="">Create arena<\/button>/);
+		expect(noTask).toMatch(/<button type="submit" class="button primary" data-reserve="Create arena\nCreate worktree\nRunning" disabled="">Create arena<\/button>/);
 		const one = frame({ groups: [{ ...firstGroupDraft(), runs: "1" }] });
 		expect(one).toContain("An arena has at least 2 attempts.");
 	});
@@ -171,7 +171,7 @@ describe("the Arena mode of the New worktree dialog", () => {
 		expect(markup).toContain("Timber kept arena demo; it stopped at setup of codex-1. No agent was started.");
 		expect(markup).toContain("codex-1: created, setup failed");
 		expect(markup).toContain("Timber already kept an arena called demo. Choose another name.");
-		expect(markup).toMatch(/<button type="submit" class="button primary" disabled="">Create arena<\/button>/);
+		expect(markup).toMatch(/<button type="submit" class="button primary" data-reserve="Create arena\nCreate worktree\nRunning" disabled="">Create arena<\/button>/);
 	});
 });
 
@@ -248,12 +248,12 @@ describe("comparing and keeping an attempt", () => {
 		const confirming = renderToStaticMarkup(<ArenaCompareView {...props({ choosing: "codex-1" })} />);
 		expect(confirming).toContain('aria-label="Command that will run">timber arena pick demo --winner codex-1 --result-file &lt;temporary file&gt;</pre>');
 		expect(confirming).toContain("Removed: claude-1.");
-		expect(confirming).toMatch(/<button type="button" class="button danger">Keep codex-1<\/button>/);
+		expect(confirming).toMatch(/<button type="button" class="button danger" data-reserve="Keep codex-1\nRunning">Keep codex-1<\/button>/);
 		expect(confirming).toContain("No session of the app is open in the other attempts.");
 		const busy = renderToStaticMarkup(<ArenaCompareView {...props({ choosing: "codex-1", ending: ["claude-1", "Terminal 2"], keeping: ["codex-1"] })} />);
 		expect(busy).toContain("Ends these sessions first: claude-1, Terminal 2.");
 		expect(busy).toContain("Keeps open: codex-1.");
-		expect(busy).toMatch(/<button type="button" class="button danger">Keep codex-1<\/button>/);
+		expect(busy).toMatch(/<button type="button" class="button danger" data-reserve="Keep codex-1\nRunning">Keep codex-1<\/button>/);
 	});
 
 	test("reports what pick did on each row, Timber's reason for a kept one included", () => {

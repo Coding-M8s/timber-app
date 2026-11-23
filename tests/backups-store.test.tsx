@@ -240,7 +240,7 @@ describe("the Restore dialog", () => {
 		const markup = restore({ destination: "recovered" });
 		expect(markup).toContain('aria-invalid="true"');
 		expect(markup).toContain('class="field-hint error">Give the whole path, such as /home/me/recovered.</span>');
-		expect(markup).toMatch(/<button type="submit" class="button primary" disabled="">/);
+		expect(markup).toMatch(/<button type="submit" class="button primary" data-reserve="[^"]*" disabled="">/);
 	});
 
 	test("a backup that left the list offers only Close", () => {
@@ -267,7 +267,7 @@ describe("the Delete dialog", () => {
 		const markup = remove();
 		expect(markup).toContain(">Delete backup of feat/github-issue-lookup?</h2>");
 		expect(markup).toContain('<button type="button" class="button quiet" autofocus="">Keep</button>');
-		expect(markup).toContain('<button type="button" class="button danger">Delete</button>');
+		expect(markup).toContain('<button type="button" class="button danger" data-reserve="Delete\nRunning">Delete</button>');
 		expect(markup).toContain(escaped(deleteCommandFor(usable)));
 		expect(deleteCommandFor(usable)).toBe(`timber __app-backup delete --id ${usable.id} --record-sha256 ${usable.recordSha256} --result-file <temporary file>`);
 	});
@@ -276,7 +276,7 @@ describe("the Delete dialog", () => {
 		for (const listed of ["changed", "gone"] as const) {
 			const markup = remove({ listed });
 			expect(markup).toContain(">This backup changed</h2>");
-			expect(markup).toContain('<button type="button" class="button danger" disabled="">Delete</button>');
+			expect(markup).toContain('<button type="button" class="button danger" data-reserve="Delete\nRunning" disabled="">Delete</button>');
 			expect(markup).toContain(">Close</button>");
 		}
 	});

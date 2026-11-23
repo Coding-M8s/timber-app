@@ -1014,6 +1014,16 @@ logins. The app never reads a tracker login and never signs in.
 ## Dialogs
 
 - Every dialog that runs Timber shows the exact command in its footer.
+- The submit button of a dialog that runs Timber keeps room for "Running",
+  so the buttons beside it do not move while the command runs.
+- The setup wizard, New worktree, and Start work keep their footer buttons
+  in place across steps, modes, a run, and a failure. They keep one height,
+  as Settings does: only the fields between the header and the footer scroll
+  when taller, and a failure or progress shows under them, always in view.
+  The submit button is as wide as the widest label it can show. In a window
+  too short for that, the whole dialog scrolls under a footer that stays at
+  the bottom. One exception: Start work's "Replace <name> and start work",
+  which names an assignee only known once Timber refuses, may widen it.
 - While the command runs, the dialog shows progress, its controls are
   disabled, and it cannot be submitted again. It cannot be closed either.
   Done and Clean up merged are the exceptions: their removals go on in the

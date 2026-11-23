@@ -110,12 +110,14 @@ export function afterNew(result: WorktreeCommandResult): { run: ModeRun; kept: R
 }
 
 /** The words on the dialog for where the mode is. */
-export function describeStep(step: NewBranchStep): { submitLabel: string; runningLabel: string; failureTitle: string } {
+export function describeStep(step: NewBranchStep): { submitLabel: string; submitLabels: readonly string[]; runningLabel: string; failureTitle: string } {
+	const submitLabels = ["Create worktree", "Run setup"];
 	if (step.kind === "form") {
-		return { submitLabel: "Create worktree", runningLabel: "Creating the worktree", failureTitle: "Could not create the worktree" };
+		return { submitLabel: "Create worktree", submitLabels, runningLabel: "Creating the worktree", failureTitle: "Could not create the worktree" };
 	}
 	return {
 		submitLabel: "Run setup",
+		submitLabels,
 		runningLabel: "Starting setup",
 		failureTitle: `Created ${reportedLabel(step.worktree)}, but Timber stopped before setup`,
 	};

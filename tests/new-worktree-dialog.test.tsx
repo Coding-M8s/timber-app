@@ -80,7 +80,7 @@ describe("the + on a repository", () => {
 	test("opens the dialog for that repository, named in the title", async () => {
 		const { store } = await openedDialog();
 		const markup = renderToStaticMarkup(<App store={store} />);
-		expect(markup).toMatch(/<dialog class="dialog"[^>]*>.*?<h2[^>]*class="dialog-title">New worktree in timber<\/h2>/);
+		expect(markup).toMatch(/<dialog class="dialog steady worktree-dialog"[^>]*>.*?<h2[^>]*class="dialog-title">New worktree in timber<\/h2>/);
 		expect(markup).toContain(">Create worktree</button>");
 	});
 
@@ -124,12 +124,12 @@ describe("the New branch form", () => {
 	test("cannot be submitted without a name", async () => {
 		const { model, mode, render } = await openedDialog();
 		expect(mode().canSubmit).toBe(false);
-		expect(render()).toContain('<button type="submit" class="button primary" disabled="">Create worktree</button>');
+		expect(render()).toContain('<button type="submit" class="button primary" data-reserve="Create worktree\nRun setup\nRunning" disabled="">Create worktree</button>');
 		model.edit({ base: "develop", name: "   " });
 		expect(mode().canSubmit).toBe(false);
 		model.edit({ name: " x " });
 		expect(mode().canSubmit).toBe(true);
-		expect(render()).toContain('<button type="submit" class="button primary">Create worktree</button>');
+		expect(render()).toContain('<button type="submit" class="button primary" data-reserve="Create worktree\nRun setup\nRunning">Create worktree</button>');
 	});
 
 	test("shows the exact command in the footer as the fields change", async () => {
@@ -220,8 +220,8 @@ describe("creating a worktree", () => {
 		// The form is still there, with what was typed, ready for a correction.
 		expect(markup).toContain('name="name" value="feat/login"');
 		expect(markup).toContain('name="base" value="shared"');
-		expect(markup).toContain('<button type="submit" class="button primary">Create worktree</button>');
-		expect(markup).not.toContain("Run setup");
+		expect(markup).toContain('<button type="submit" class="button primary" data-reserve="Create worktree\nRun setup\nRunning">Create worktree</button>');
+		expect(markup).not.toContain(">Run setup</button>");
 	});
 
 	test("a name that is taken fails the same way, with Timber's guidance", async () => {
@@ -240,7 +240,7 @@ describe("creating a worktree", () => {
 		expect(store.getState().dialog).not.toBeNull();
 		expect(model.getState().step).toEqual({ kind: "form" });
 		expect(render()).toContain("timber new exited with code 0 and left no result, so what it did is unknown.");
-		expect(render()).not.toContain("Run setup");
+		expect(render()).not.toContain(">Run setup</button>");
 		// Reading again shows what is really there, although the command did not say.
 		expect(branches()).toContain("feat/login");
 	});
@@ -284,7 +284,7 @@ describe("created, then Timber stopped before setup", () => {
 		expect(markup).toContain("Nothing is created again.");
 		// The form, and with it the offer to create, is gone.
 		expect(markup).not.toContain('name="name"');
-		expect(markup).not.toContain("Create worktree");
+		expect(markup).not.toContain(">Create worktree</button>");
 
 		const app = renderToStaticMarkup(<App store={store} />);
 		expect(app).toMatch(/class="row selected" aria-current="true"[^>]*>.*?feat\/login/);
@@ -297,7 +297,7 @@ describe("created, then Timber stopped before setup", () => {
 		expect(mode().command).toBe(`timber open --setup --no-editor --no-agent -- ${NEW_PATH}`);
 		const markup = render();
 		expect(markup).toContain(`<pre class="dialog-command" aria-label="Command that will run">${escaped(mode().command)}</pre>`);
-		expect(markup).toContain('<button type="submit" class="button primary">Run setup</button>');
+		expect(markup).toContain('<button type="submit" class="button primary" data-reserve="Create worktree\nRun setup\nRunning">Run setup</button>');
 	});
 
 	test("Run setup starts setup in a session in the reported worktree, closes the dialog, and never asks Timber again", async () => {
@@ -361,7 +361,7 @@ describe("while a command runs", () => {
 		const markup = render();
 		expect(markup).toContain('<fieldset class="dialog-fields" disabled="">');
 		expect(markup).toContain('<button type="button" class="button quiet" disabled="">Cancel</button>');
-		expect(markup).toContain('<button type="submit" class="button primary" disabled="">Running</button>');
+		expect(markup).toContain('<button type="submit" class="button primary" data-reserve="Create worktree\nRun setup\nRunning" disabled="">Running</button>');
 		expect(markup).toContain('role="progressbar" aria-label="Creating the worktree"');
 		finish();
 		expect(await first).toBe(true);
@@ -377,6 +377,7 @@ describe("the mode switch", () => {
 		command: `timber ${label.toLowerCase().replaceAll(" ", "-")}`,
 		canSubmit: true,
 		submitLabel: `Run ${label}`,
+		submitLabels: [`Run ${label}`],
 		runningLabel: "Running",
 		failureTitle: "Failed",
 		agentStart: "always",

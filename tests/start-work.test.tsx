@@ -306,6 +306,8 @@ describe("Start work in the mock app", () => {
 		const markup = dialog.render();
 		expect(markup).toContain("TIM-90 is assigned to Sam Okafor.");
 		expect(markup).toContain("Replace Sam Okafor and start work");
+		// The button keeps room for every label that names no one, and for this one, so it keeps one width.
+		expect(markup).toContain('data-reserve="Replace Sam Okafor and start work\nReplace them and start work\nRun setup\nRunning\nStart work\nStart work anyway">Replace Sam Okafor and start work</button>');
 		expect(markup).toContain(escaped("timber new --reassign --no-setup --result-file <temporary file> --no-editor --no-agent -- jira:TIM-90"));
 		// No pull request on TIM-90, but the offer is drawn whenever the dialog is given one.
 		expect(dialog.asked).toEqual([]);
