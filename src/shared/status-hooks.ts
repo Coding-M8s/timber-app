@@ -4,17 +4,18 @@
  *
  * - The person turns a hook on in Settings, Agents. The app then adds entries
  *   to the agent's own settings file, each running the app's `status-hook`
- *   script with the agent's id and an event.
- * - The script appends `agent=<id>:event=<event>` to the file named in
- *   `TIMBER_APP_STATUS`, which only the app's sessions have, so it does
- *   nothing in any other terminal.
+ *   script with the agent's id and an event (Cursor CLI), or writes a plugin
+ *   file of its own in the agent's plugins folder (OpenCode).
+ * - The script, or the plugin, appends `agent=<id>:event=<event>` to the
+ *   file named in `TIMBER_APP_STATUS`, which only the app's sessions have,
+ *   so it does nothing in any other terminal.
  * - The main process reads those lines and turns each into a report of the
  *   session's root record, with the state the registry gives the event.
  *
  * The app keeps no record of what it installed: its entries are known by the
- * script they run.
+ * script they run, and its plugin by its name and first line.
  */
-import { AGENTS, type AgentDefinition, type AgentHook, type AgentId, type ReportedState } from "./agent-registry";
+import { AGENTS, type AgentDefinition, type AgentHook, type AgentId, type EntriesHook, type PluginHook, type ReportedState } from "./agent-registry";
 import type { ProgramStatus } from "./program-status";
 
 /** The variable that names a session's status file. */
@@ -41,6 +42,104 @@ export const STATUS_HOOK_SCRIPT = `#!/bin/sh
 [ -n "$TIMBER_APP_STATUS" ] || exit 0
 printf 'agent=%s:event=%s\\n' "$1" "$2" >>"$TIMBER_APP_STATUS" 2>/dev/null
 exit 0
+`;
+
+/** The first line of the app's OpenCode plugin, by which the app knows the file as its own. */
+export const OPENCODE_PLUGIN_MARKER = "// Timber app status plugin, turned on in Settings, Agents.";
+
+/**
+ * The OpenCode plugin, as written and as shown before it is (see
+ * docs/architecture.md, "Status hooks"). Built for OpenCode 1's plugins: its
+ * one export is a plugin function, and its `event` hook gets each event.
+ *
+ * - It appends `agent=opencode:event=<event>` to the file named in
+ *   `TIMBER_APP_STATUS`, opened to append and never made, so it does nothing
+ *   outside the app's sessions, nor after a session's file is gone.
+ * - A task's subsessions go busy and idle inside a turn, so it reports `busy`
+ *   when the first session goes busy and `idle` when the last goes idle.
+ * - Two questions can wait at once, so `answered` comes only when the last
+ *   one is answered, or its session ended while it waited.
+ * - What it saw is forgotten when OpenCode disposes of it, as OpenCode may
+ *   not deliver a stopped turn's last idle. It reports nothing then.
+ * - It never throws and prints nothing: OpenCode does not catch what an
+ *   `event` hook throws. Its state is kept for the whole process, as OpenCode
+ *   may start a plugin more than once.
+ */
+export const OPENCODE_STATUS_PLUGIN = `${OPENCODE_PLUGIN_MARKER}
+// It appends this agent's state to the file its session names, and does
+// nothing outside the app's sessions. The app knows this file by its text:
+// an edited copy shows as changed in Settings, Agents.
+
+// Kept for the whole process: OpenCode may start a plugin more than once.
+const busy = new Set();
+const asks = new Map();
+let fs = null;
+
+function report(event) {
+	try {
+		const file = typeof process === "object" && process && process.env ? process.env.TIMBER_APP_STATUS : undefined;
+		if (!file || !fs) return;
+		// Opened to append, never made: a session's file is made by the app.
+		const fd = fs.openSync(file, fs.constants.O_WRONLY | fs.constants.O_APPEND);
+		try {
+			fs.writeSync(fd, "agent=opencode:event=" + event + "\\n");
+		} finally {
+			fs.closeSync(fd);
+		}
+	} catch {}
+}
+
+function ended(session) {
+	// A question left waiting by a session that ended gets no answer event.
+	let dropped = false;
+	for (const [id, owner] of asks) {
+		if (owner === session) {
+			asks.delete(id);
+			dropped = true;
+		}
+	}
+	if (busy.delete(session) && busy.size === 0) report("idle");
+	else if (dropped && asks.size === 0 && busy.size > 0) report("answered");
+}
+
+function seen(event) {
+	const type = event && event.type;
+	const properties = (event && event.properties) || {};
+	const session = typeof properties.sessionID === "string" ? properties.sessionID : null;
+	if (type === "session.status" && session) {
+		const status = properties.status && properties.status.type;
+		if (status === "busy" || status === "retry") {
+			const first = busy.size === 0;
+			busy.add(session);
+			if (first) report("busy");
+		} else if (status === "idle") ended(session);
+	} else if (type === "session.deleted" && session) ended(session);
+	else if (type === "permission.asked" || type === "question.asked") {
+		if (typeof properties.id === "string") asks.set(properties.id, session);
+		report(type);
+	} else if (type === "permission.replied" || type === "question.replied" || type === "question.rejected") {
+		if (asks.delete(properties.requestID) && asks.size === 0 && busy.size > 0) report("answered");
+	}
+}
+
+export const TimberAppStatus = async () => {
+	try {
+		if (fs === null) fs = await import("node:fs");
+	} catch {}
+	return {
+		event: async input => {
+			try {
+				seen(input && input.event);
+			} catch {}
+		},
+		// OpenCode may not deliver a stopped turn's last idle, so what was seen is forgotten.
+		// Nothing is reported: a dispose comes mostly as OpenCode quits, and done then would be a false alert.
+		dispose: async () => {
+			busy.clear();
+			asks.clear();
+		},
+	};
+};
 `;
 
 /** One line a hook appended, read. */
@@ -149,7 +248,7 @@ export interface HookPlan {
 	installed: string | null;
 	/** The file as it would be with the hook off: null when nothing would be left in it, so it goes; undefined when it cannot be written. */
 	removed: string | null | undefined;
-	/** The entries the app adds, as JSON, as the person would paste them: for a file not there yet, the whole file. */
+	/** The entries the app adds, as JSON, as the person would paste them: for a file not there yet, the whole file; for a file of the app's own, that file. */
 	entries: string;
 	/** The app's entries as they are now in the file, one per line, for Remove to show. */
 	present: string[];
@@ -224,7 +323,7 @@ function readJsonObject(text: string): { parsed: JsonObject; comments: boolean; 
 }
 
 /** The entry the app writes for one event. */
-function ownEntry(hook: AgentHook, scriptPath: string, agent: string, event: string): JsonObject {
+function ownEntry(hook: EntriesHook, scriptPath: string, agent: string, event: string): JsonObject {
 	return { command: hookCommand(scriptPath, agent, event) ?? "", timeout: hook.timeout };
 }
 
@@ -242,7 +341,7 @@ function serialize(value: JsonObject): string {
  * are added or taken out: every other key and value parses the same after.
  * Spacing and key order may change, as Cursor reads JSON.
  */
-export function planCursorHooks(text: string | null, hook: AgentHook, scriptPath: string, agent: string): HookPlan {
+export function planCursorHooks(text: string | null, hook: EntriesHook, scriptPath: string, agent: string): HookPlan {
 	const wanted: JsonObject = {};
 	for (const { event } of hook.events) wanted[event] = [ownEntry(hook, scriptPath, agent, event)];
 	const entries = serialize({ hooks: wanted });
@@ -324,7 +423,7 @@ export function geminiCommand(scriptPath: string, agent: string, event: string):
 const isOwnGeminiHook = (entry: Json, scriptPath: string) => isObject(entry) && isOwnCommand(entry.command, scriptPath);
 
 /** The definition the app writes for one event: a matcher when the registry gives one, and one command, its timeout in milliseconds. */
-function ownGeminiDefinition(hook: AgentHook, scriptPath: string, agent: string, event: { event: string; matcher?: string }): JsonObject {
+function ownGeminiDefinition(hook: EntriesHook, scriptPath: string, agent: string, event: { event: string; matcher?: string }): JsonObject {
 	const command: JsonObject = { type: "command", name: GEMINI_HOOK_NAME, command: geminiCommand(scriptPath, agent, event.event) ?? "", timeout: hook.timeout * 1000 };
 	return event.matcher === undefined ? { hooks: [command] } : { matcher: event.matcher, hooks: [command] };
 }
@@ -337,7 +436,7 @@ function ownGeminiDefinition(hook: AgentHook, scriptPath: string, agent: string,
  * command of the app's. Only those are added or taken out: every other key
  * and value parses the same after, as for Cursor.
  */
-export function planGeminiSettings(text: string | null, hook: AgentHook, scriptPath: string, agent: string): HookPlan {
+export function planGeminiSettings(text: string | null, hook: EntriesHook, scriptPath: string, agent: string): HookPlan {
 	const wanted: JsonObject = {};
 	for (const event of hook.events) wanted[event.event] = [ownGeminiDefinition(hook, scriptPath, agent, event)];
 	const entries = serialize({ hooks: wanted });
@@ -425,7 +524,32 @@ export function planHook(text: string | null, hook: AgentHook, scriptPath: strin
 			return planCursorHooks(text, hook, scriptPath, agent);
 		case "gemini-settings":
 			return planGeminiSettings(text, hook, scriptPath, agent);
+		case "opencode-plugin":
+			return planPlugin(text, hook);
 	}
+}
+
+/**
+ * Read the app's OpenCode plugin file (null when there is none), and plan
+ * what turning the hook on or off writes. The file is the app's own, written
+ * and deleted whole: known by its first line, so a file of that name that
+ * does not start with it is never written or deleted.
+ */
+export function planPlugin(text: string | null, _hook: PluginHook): HookPlan {
+	const entries = OPENCODE_STATUS_PLUGIN;
+	const plan = { comments: false, unsafe: false, entries };
+	if (text === null) return { ...plan, state: { kind: "off" }, installed: OPENCODE_STATUS_PLUGIN, removed: undefined, present: [] };
+	if (text === OPENCODE_STATUS_PLUGIN) return { ...plan, state: { kind: "on" }, installed: null, removed: null, present: [text] };
+	if (text.startsWith(`${OPENCODE_PLUGIN_MARKER}\n`)) {
+		// Most often another build of the app that wrote another text: Remove, then Turn on, writes this one.
+		return { ...plan, state: { kind: "changed", reason: "The app's plugin is not as this version of the app writes it." }, installed: null, removed: null, present: [text] };
+	}
+	return { ...plan, state: { kind: "broken", reason: "A file of that name is there, but the app did not write it." }, installed: null, removed: undefined, present: [] };
+}
+
+/** Whether a hook is entries that run the app's script, or a file of the app's own that needs no script. */
+export function hookKind(hook: AgentHook): "entries" | "file" {
+	return hook.format === "opencode-plugin" ? "file" : "entries";
 }
 
 /** A saved agent's row in Settings, Agents, as its status line shows it. */
@@ -455,15 +579,19 @@ export interface HookDetails {
 	byHand: string | null;
 	/** What the file held when this was read, for Turn on and Remove to check it did not change since it was shown. */
 	token: string;
-	/** The app's entries, as JSON, as they are added. */
+	/** The app's entries, as JSON, as they are added; for a file of the app's own, the file whole. */
 	entries: string;
-	/** The app's entries as they are in the file now, one per line. */
+	/** The app's entries as they are in the file now, one per line; for a file of the app's own, the file whole. */
 	present: string[];
-	/** The script the entries run, and where it is, with `~` for the home folder. */
-	script: string;
-	scriptPath: string;
+	/** Entries in a shared file that run the script, or a file of the app's own that reports itself (`hookKind`). */
+	kind: "entries" | "file";
+	/** The script the entries run, and where it is, with `~` for the home folder; null for a file of the app's own, which runs none. */
+	script: string | null;
+	scriptPath: string | null;
 	/** The version of the agent the format was checked against. */
 	checked: string;
+	/** Whether the hook was checked by running the agent, or only built from its source. */
+	run: boolean;
 }
 
 /** Turn on, or take out, the hook of an agent a saved row runs, as last shown. */

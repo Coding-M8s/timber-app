@@ -4,7 +4,7 @@ import { agentProgram } from "../../shared/agent-resume";
 import type { Engine } from "../../shared/engine";
 import {
 	type HookDetails, type HookState, STATUS_HOOK_SCRIPT, type StatusHookRequest, type StatusHookResult, type StatusHookView,
-	hookedAgent, planHook, reportedStates,
+	hookKind, hookedAgent, planHook, reportedStates,
 } from "../../shared/status-hooks";
 
 /** Where the mock's script is, as a main process on Linux would put it. */
@@ -52,13 +52,17 @@ export function createMockStatusHooks(agents: () => readonly AgentSetting[]): Pi
 		const file = fileOf(agent);
 		const plan = planHook(file.text, hook, SCRIPT_PATH, agent);
 		const shownFile = `~/${hook.file.join("/")}`;
+		const kind = hookKind(hook);
 		let state: HookState = plan.state;
-		if ((state.kind === "on" || state.kind === "changed") && file.scriptMissing) state = { kind: "broken", reason: `The script its entries run, ${SCRIPT_PATH.replace(HOME, "~")}, is missing.` };
+		if (kind === "file" && state.kind === "broken") state = { kind: "broken", reason: `${shownFile} is there, but the app did not write it.` };
+		if (kind === "entries" && (state.kind === "on" || state.kind === "changed") && file.scriptMissing) state = { kind: "broken", reason: `The script its entries run, ${SCRIPT_PATH.replace(HOME, "~")}, is missing.` };
 		const byHand = file.byHand ?? (plan.comments ? `${shownFile} holds comments, which the app would drop if it wrote the file.` : plan.unsafe ? `${shownFile} holds a value the app could not write back exactly.` : null);
 		return {
 			details: {
 				agent, agentName: definition.name, file: shownFile, exists: file.text !== null, state, byHand, token: tokenOf(file),
-				entries: plan.entries, present: plan.present, script: STATUS_HOOK_SCRIPT, scriptPath: SCRIPT_PATH.replace(HOME, "~"), checked: hook.checked,
+				entries: plan.entries, present: plan.present, kind,
+				script: kind === "entries" ? STATUS_HOOK_SCRIPT : null, scriptPath: kind === "entries" ? SCRIPT_PATH.replace(HOME, "~") : null,
+				checked: hook.checked, run: hook.run,
 			},
 			installed: byHand === null ? plan.installed : null,
 			removed: byHand === null ? plan.removed : undefined,
@@ -86,7 +90,8 @@ export function createMockStatusHooks(agents: () => readonly AgentSetting[]): Pi
 		if (found === null) return answer("refused", "That agent has no status hook. Nothing was written.");
 		const { details } = found;
 		if (details.token !== request.token) return answer("changed-since", `${details.file} changed since it was shown. Nothing was written; look at it again.`);
-		if (details.byHand !== null && action === "install" && details.state.kind === "off") {
+		const own = details.kind === "file";
+		if (!own && details.byHand !== null && action === "install" && details.state.kind === "off") {
 			files.set(request.agent, { ...fileOf(request.agent), scriptMissing: false });
 			return answer("done", `The script is in place at ${details.scriptPath}. Add the entries to ${details.file} by hand.`);
 		}
@@ -97,8 +102,9 @@ export function createMockStatusHooks(agents: () => readonly AgentSetting[]): Pi
 			files.set(request.agent, { ...file, text: found.installed, scriptMissing: false });
 			return answer("done", `The ${details.agentName} status hook is on, in ${details.file}.`);
 		}
-		if (details.present.length === 0 || found.removed === undefined) return answer("refused", `The app's entries are not in ${details.file}. Nothing was written.`);
+		if (details.present.length === 0 || found.removed === undefined) return answer("refused", own ? `${details.file} is not the app's plugin. Nothing was deleted.` : `The app's entries are not in ${details.file}. Nothing was written.`);
 		files.set(request.agent, { ...file, text: found.removed });
+		if (own) return answer("done", `The ${details.agentName} status hook is off: the app's plugin, ${details.file}, was deleted.`);
 		return answer("done", found.removed === null ? `The ${details.agentName} status hook is off, and ${details.file}, left empty, was deleted.` : `The ${details.agentName} status hook is off. The app's entries were taken out of ${details.file}.`);
 	}
 

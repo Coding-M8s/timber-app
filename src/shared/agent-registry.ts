@@ -122,15 +122,33 @@ export interface AgentDefinition {
 export type ReportedState = "idle" | "working" | "blocked" | "done";
 
 /**
- * A status hook: entries the app adds to an agent's own settings file, each
- * running the app's `status-hook` script with the agent's id and an event
- * (see docs/decision-agent-status-hooks.md and src/shared/status-hooks.ts).
+ * A status hook (see docs/decision-agent-status-hooks.md and
+ * src/shared/status-hooks.ts), in one of two forms:
+ *
+ * - `cursor-hooks` and `gemini-settings`: entries the app adds to an
+ *   agent's own settings file, each running the app's `status-hook` script
+ *   with the agent's id and an event.
+ * - `opencode-plugin`: a plugin file of the app's own in the agent's
+ *   plugins folder, written and deleted whole, which appends the same line
+ *   itself.
  */
-export interface AgentHook {
-	/** The file's layout, which needs code of its own to read and write. */
-	format: "cursor-hooks" | "gemini-settings";
+export type AgentHook = EntriesHook | PluginHook;
+
+interface HookBase {
 	/** The file, as parts of a path in the home folder. */
 	file: readonly string[];
+	/** The version of the agent the format and events were checked against, and when. */
+	checked: string;
+	/** Whether the hook was checked by running the agent, or only built from its source; Turn on says so when not. */
+	run: boolean;
+	/** What keeps the hook from reporting that the person should know before turning it on, or absent. */
+	caveat?: string;
+}
+
+/** Entries in an agent's shared settings file, each running the app's script: Cursor's `hooks.json`, Gemini's `settings.json`. */
+export interface EntriesHook extends HookBase {
+	/** The file's layout, which needs code of its own to read and write. */
+	format: "cursor-hooks" | "gemini-settings";
 	/**
 	 * Each event the entries are added for, and the state it reports, in the
 	 * order they are added; with `matcher`, the agent's own filter for the
@@ -139,10 +157,18 @@ export interface AgentHook {
 	events: readonly { event: string; state: ReportedState; matcher?: string }[];
 	/** The timeout for each entry, in seconds. A format whose agent counts in milliseconds converts it. */
 	timeout: number;
-	/** The version of the agent the format and events were checked against, and when. */
-	checked: string;
-	/** What keeps the hook from reporting that the person should know before turning it on, or absent. */
-	caveat?: string;
+}
+
+/** A plugin file of the app's own, which reports the events itself. */
+export interface PluginHook extends HookBase {
+	format: "opencode-plugin";
+	/** Each event the plugin reports, and the state it gives. */
+	events: readonly { event: string; state: ReportedState }[];
+	/**
+	 * The file's parts under `XDG_CONFIG_HOME` when that is a full path,
+	 * where the agent reads it instead of `file`; null when it does not move.
+	 */
+	xdgFile: readonly string[] | null;
 }
 
 const ROWS = [
@@ -268,6 +294,7 @@ const ROWS = [
 				],
 				timeout: 5,
 				checked: "Cursor CLI 2026.11.22 on 2026-11-22",
+				run: true,
 			},
 		},
 	},
@@ -319,6 +346,7 @@ const ROWS = [
 				],
 				timeout: 5,
 				checked: "Gemini CLI 0.70.0's source, read on 2026-11-22, not run",
+				run: false,
 				caveat: "Gemini CLI runs hooks only in a folder it trusts, so a session in a new worktree reports nothing until you trust that folder, or one above it, in Gemini CLI.",
 			},
 		},
@@ -382,7 +410,35 @@ const ROWS = [
 		},
 		resume: null,
 		signIn: { status: null, login: null },
-		status: { source: "none", app: null },
+		/*
+		 * OpenCode writes no OSC 7501 that is known of. Built from the source
+		 * of OpenCode 1.19.6 (github.com/anomalyco/opencode, tag v1.19.6) on
+		 * 2026-11-22, not run: OpenCode was not installed where it was built.
+		 * It loads every `.js` file in `plugins` of its config folder,
+		 * `XDG_CONFIG_HOME/opencode` or `~/.config/opencode`, and gives a
+		 * plugin `session.status` (busy, idle), `permission.asked` and
+		 * `.replied`, and `question.asked`, `.replied`, and `.rejected`. The
+		 * plugin (`OPENCODE_STATUS_PLUGIN`) turns those into the events here.
+		 * OpenCode 2 renames its events, so this is for OpenCode 1 only.
+		 */
+		status: {
+			source: "hook",
+			app: "opencode",
+			hook: {
+				format: "opencode-plugin",
+				file: [".config", "opencode", "plugins", "timber-app-status.js"],
+				xdgFile: ["opencode", "plugins", "timber-app-status.js"],
+				events: [
+					{ event: "busy", state: "working" },
+					{ event: "permission.asked", state: "blocked" },
+					{ event: "question.asked", state: "blocked" },
+					{ event: "answered", state: "working" },
+					{ event: "idle", state: "done" },
+				],
+				checked: "OpenCode 1.19.6's source on 2026-11-22",
+				run: false,
+			},
+		},
 	},
 	{
 		id: "copilot",

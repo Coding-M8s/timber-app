@@ -1245,9 +1245,22 @@ logins. The app never reads a tracker login and never signs in.
   them; Close and Remove…). Cancel has the keyboard first; Escape closes
   only the dialog, never Settings; a problem shows in the dialog, which
   stays open; focus goes back to the row's button when it closes.
+  OpenCode's hook is a plugin file of the app's own (issue 353), so its
+  line and dialogs say "plugin" and "file" where Cursor's say "entries":
+  "On, in ~/.config/opencode/plugins/timber-app-status.js. Reports
+  working, needs you, and done. Not yet checked by running OpenCode.", by
+  hand Show the plugin to add… and Show
+  the file to delete…, and "Remove deletes the app's plugin, or fix it by
+  hand" for a Broken one. Turn on shows the file and the whole plugin, one
+  block, and its note ends "Not yet checked by running OpenCode.", as
+  the note and the On line do for any hook the registry marks as never run
+  (Gemini CLI's too). Remove shows the file it deletes and says
+  "Your other plugins stay as they are."; by hand, the plugin to save
+  (Close and Copy, no Done, as there is no script) or the file to delete
+  (Close); what differs shows the file now and as the app writes it.
   Settings, Notifications adds: "Agents that do not report their status
-  themselves, such as Cursor CLI, need a status hook, turned on in
-  Settings, Agents."
+  themselves, such as Cursor CLI and OpenCode, need a status hook, turned
+  on in Settings, Agents."
   The dialog keeps one size. The list down its side, each section with an
   icon, groups them under Appearance, Workflow, Activity, and Timber, with
   About on its own at the foot. A section opens with its title and what it

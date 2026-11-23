@@ -7,7 +7,8 @@ import { type BrowserPage, browserPath, openSidebarPage } from "./support/browse
  * dialog stacked over Settings, Escape closing only that dialog, and Turn on
  * changing the line to On. In Timber Light and Timber Dark, at the default
  * window width and a narrow one, where the files and the script scroll inside
- * their own boxes rather than widening the dialog. Skipped where no browser
+ * their own boxes rather than widening the dialog. And OpenCode's Turn on
+ * dialog (issue 353), whose plugin is much longer. Skipped where no browser
  * is installed.
  */
 
@@ -84,6 +85,28 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the statu
 				await page.until(`${LINE}.textContent.startsWith("Status hook On, in ~/.cursor/hooks.json.")`, "the line says On");
 				expect((await page.evaluate<Look>(LOOK)).hookOpen).toBe(false);
 				await page.until(`document.activeElement?.textContent === "Remove…"`, "focus went to Remove");
+				await page.evaluate(`${STORE}.closeDialog()`);
+			}, 60_000);
+
+			// OpenCode's plugin (issue 353) is far longer than Cursor's entries: it scrolls in its box, and the dialog says it was never run.
+			test(`the OpenCode plugin dialog in ${theme} at ${width} pixels wide`, async () => {
+				await page.reload();
+				await page.until(`${STORE}.getState().repositories.length > 0`, "the repositories were listed");
+				await page.evaluate(`${STORE}.savePreferences({ theme: { mode: "fixed", theme: "${theme}" }, agents: [{ name: "Claude Code", command: "claude" }, { name: "Codex", command: "codex" }, { name: "OpenCode", command: "opencode" }] })`);
+				await page.resize(width, 820);
+				await page.evaluate(`${STORE}.openDialog({ kind: "settings", section: "agents" })`);
+				await page.until(`${LINE} !== null && ${LINE}.textContent.includes("Off.")`, "the OpenCode row says its hook is off");
+				await page.evaluate(CENTER);
+				await page.click(".agent-rows > li:nth-child(3) .agent-status button");
+				await page.until(`document.querySelector("dialog.status-hook-dialog[open]") !== null`, "the Turn on dialog opened");
+				const look = await page.evaluate<Look>(LOOK);
+				expect(look).toMatchObject({ settingsOpen: true, hookOpen: true, title: "Turn on the OpenCode status hook?", sideways: 0, focused: "Cancel", scriptShown: false });
+				expect(look.labels).toEqual(["~/.config/opencode/plugins/timber-app-status.js"]);
+				expect(await page.evaluate<boolean>(`document.querySelector("dialog.status-hook-dialog[open]").textContent.includes("Not yet checked by running OpenCode.")`)).toBe(true);
+				// The plugin scrolls inside its own box, within the window's height.
+				expect(await page.evaluate<boolean>(`(() => { const dialog = document.querySelector("dialog.status-hook-dialog[open]").getBoundingClientRect(); return dialog.bottom <= innerHeight && dialog.top >= 0; })()`)).toBe(true);
+				await page.press("Escape");
+				await page.until(`document.querySelector("dialog.status-hook-dialog[open]") === null`, "the hook dialog closed");
 				await page.evaluate(`${STORE}.closeDialog()`);
 			}, 60_000);
 		}

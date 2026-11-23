@@ -10,10 +10,10 @@ import {
 
 const SCRIPT = "/home/you/.config/timber-app/status-hook";
 const cursor = agentById("cursor");
-if (cursor.status.source !== "hook") throw new Error("Cursor CLI has a hook in the registry");
+if (cursor.status.source !== "hook" || cursor.status.hook.format !== "cursor-hooks") throw new Error("Cursor CLI has entries in the registry");
 const HOOK = cursor.status.hook;
 const gemini = agentById("gemini");
-if (gemini.status.source !== "hook") throw new Error("Gemini CLI has a hook in the registry");
+if (gemini.status.source !== "hook" || gemini.status.hook.format === "opencode-plugin") throw new Error("Gemini CLI has entries in the registry");
 const GEMINI = gemini.status.hook;
 
 /**
@@ -91,6 +91,11 @@ describe("a line a hook appended", () => {
 		const hooked = run(["sessionStart", "beforeSubmitPrompt", "stop"].map(event => statusFromLine({ agent: "cursor", event })));
 		expect(hooked).toEqual(run([stream("state=idle:app=cursor"), stream("state=working:app=cursor"), stream("state=done:app=cursor")]));
 		expect(hooked[0]).toMatchObject({ kind: "show", notice: { title: "Cursor CLI is done" } });
+		// OpenCode's plugin reports needs you as well.
+		const opencode = run(["busy", "permission.asked", "answered", "idle"].map(event => statusFromLine({ agent: "opencode", event })));
+		expect(opencode).toEqual(run([stream("state=working:app=opencode"), stream("state=blocked:app=opencode"), stream("state=working:app=opencode"), stream("state=done:app=opencode")]));
+		// The notices name the session, as for any agent.
+		expect(opencode.filter(action => action.kind === "show").map(action => action.kind === "show" && action.notice.title)).toEqual([`${SESSION.name} needs you`, `${SESSION.name} is done`]);
 	});
 
 	test("Gemini CLI's events give idle, working, needs you, working again after an approved tool, and done, with the same alerts as from its stream", () => {
@@ -122,7 +127,7 @@ describe("the states an agent reports", () => {
 		expect(reportedStates(agentById("claude"))).toEqual(["working", "blocked", "done"]);
 		expect(reportedStates(agentById("codex"))).toEqual(["working", "done"]);
 		expect(reportedStates(gemini)).toEqual(["working", "blocked", "done"]);
-		expect(reportedStates(agentById("opencode"))).toEqual([]);
+		expect(reportedStates(agentById("opencode"))).toEqual(["working", "blocked", "done"]);
 	});
 
 	test("are said in words", () => {

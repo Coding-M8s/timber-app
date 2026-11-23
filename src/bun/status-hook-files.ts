@@ -1,12 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { access, chmod, lstat, mkdir, readFile, readlink, realpath, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
-import { dirname, join, sep } from "node:path";
-import { type AgentId, agentById } from "../shared/agent-registry";
+import { dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { type AgentHook, type AgentId, agentById } from "../shared/agent-registry";
 import { messageOf } from "../shared/error-message";
 import {
 	type HookDetails, type HookState, STATUS_HOOK_SCRIPT, type StatusHookRequest, type StatusHookResult, type StatusHookView,
-	hookCommand, hookedAgent, planHook, reportedStates,
+	hookCommand, hookKind, hookedAgent, planHook, reportedStates,
 } from "../shared/status-hooks";
 
 /** An agent's file larger than this is not read: hook files are a few kilobytes. */
@@ -19,7 +19,13 @@ export interface StatusHookFilesDependencies {
 	scriptPath: string;
 	/** The agent each saved row runs, in the order saved (`TerminalSessions.savedPrograms`). */
 	savedPrograms: () => Promise<{ name: string; agent: AgentId | null }[]>;
-	/** The operating system, as `process.platform` names it. The hook is a `sh` script, so Windows gets none yet. */
+	/**
+	 * The app's own `XDG_CONFIG_HOME`, for an agent whose file moves with it
+	 * (`xdgFile`): used only when it is a full path. The app reads its own
+	 * environment, not a session's.
+	 */
+	xdgConfigHome?: string | undefined;
+	/** The operating system, as `process.platform` names it. The agents' files on Windows are not confirmed, so Windows gets none yet. */
 	platform?: NodeJS.Platform;
 }
 
@@ -27,9 +33,10 @@ export interface StatusHookFilesDependencies {
  * Status hooks in the agents' own files (see ../shared/status-hooks.ts and
  * docs/decision-agent-status-hooks.md).
  *
- * - Only an agent a saved row runs, only its file in the home folder that the
- *   registry names, and only the app's own entries. The window names the
- *   agent, never a file.
+ * - Only an agent a saved row runs, only its file in the home folder (or
+ *   `XDG_CONFIG_HOME`) that the registry names, and only the app's own
+ *   entries, or its own plugin file. The window names the agent, never a
+ *   file.
  * - A file that is a link, cannot be written, or holds comments is never
  *   written: its entries are shown to add or take out by hand.
  * - Before writing, the file is read again and checked against what was
@@ -59,9 +66,14 @@ interface FileRead {
 
 const tokenOf = (bytes: Uint8Array | null) => bytes === null ? "missing" : createHash("sha256").update(bytes).digest("hex");
 
-export function createStatusHookFiles({ home, scriptPath, savedPrograms, platform = process.platform }: StatusHookFilesDependencies): StatusHookFiles {
-	// The script is `sh`, and the agents' files on Windows are not confirmed: nothing there is offered or written.
+export function createStatusHookFiles({ home, scriptPath, savedPrograms, xdgConfigHome, platform = process.platform }: StatusHookFilesDependencies): StatusHookFiles {
+	// The script is `sh`, and the agents' files on Windows, OpenCode's plugins folder too, are not confirmed: nothing there is offered or written.
 	const supported = platform !== "win32";
+	// As xdg-basedir reads it, but only a full path: a relative one would follow each session's folder.
+	const xdg = xdgConfigHome !== undefined && isAbsolute(xdgConfigHome) ? resolve(xdgConfigHome) : null;
+
+	/** The agent's file: in `XDG_CONFIG_HOME` when it moves with it and that is set, otherwise in the home folder. */
+	const pathOf = (hook: AgentHook) => hook.format === "opencode-plugin" && hook.xdgFile !== null && xdg !== null ? join(xdg, ...hook.xdgFile) : join(home, ...hook.file);
 	const shown = (path: string) => path === home ? "~" : path.startsWith(home + sep) ? `~${path.slice(home.length)}` : path;
 
 	async function writable(path: string): Promise<boolean> {
@@ -74,13 +86,15 @@ export function createStatusHookFiles({ home, scriptPath, savedPrograms, platfor
 	 * makes for a dotfiles repository, may lead into a repository.
 	 */
 	async function linkedFolder(path: string): Promise<string | null> {
-		const realHome = await realpath(home).catch(() => home);
+		// The folders checked start below the home folder, or below XDG_CONFIG_HOME for a file there, which may be outside it.
+		const root = xdg !== null && path.startsWith(xdg + sep) && !xdg.startsWith(home + sep) ? xdg : home;
+		const realRoot = await realpath(root).catch(() => root);
 		let folder = dirname(path);
 		// A folder not there yet is made under the first one that is.
 		while (!(await lstat(folder).then(() => true, () => false)) && dirname(folder) !== folder) folder = dirname(folder);
-		if (folder === home || !folder.startsWith(home + sep)) return null;
+		if (folder === root || !folder.startsWith(root + sep)) return null;
 		const real = await realpath(folder).catch(() => null);
-		const expected = join(realHome, folder.slice(home.length + 1));
+		const expected = join(realRoot, folder.slice(root.length + 1));
 		if (real === expected) return null;
 		return `${shown(folder)} is a link to ${real ?? "somewhere that cannot be read"}, so the app does not write in it: it may be in a repository.`;
 	}
@@ -131,15 +145,19 @@ export function createStatusHookFiles({ home, scriptPath, savedPrograms, platfor
 		const definition = hookedAgent(agent);
 		if (definition === null) return null;
 		const hook = definition.status.hook;
-		const path = join(home, ...hook.file);
+		// A file of the app's own reports itself: it runs no script.
+		const kind = hookKind(hook);
+		const path = pathOf(hook);
 		const file = await readAgentFile(path);
 		const plan = planHook(file.text, hook, scriptPath, agent);
 		let state: HookState = file.unreadable !== null ? { kind: "broken", reason: file.unreadable } : plan.state;
+		// A file of that name not written by the app is named, as no dialog shows it.
+		if (kind === "file" && file.unreadable === null && state.kind === "broken") state = { kind: "broken", reason: `${shown(path)} is there, but the app did not write it.` };
 		let byHand = file.byHand;
 		if (byHand === null && plan.comments) byHand = `${shown(path)} holds comments, which the app would drop if it wrote the file.`;
 		if (byHand === null && plan.unsafe) byHand = `${shown(path)} holds a value the app could not write back exactly.`;
-		if (byHand === null && hookCommand(scriptPath, agent, "x") === null) byHand = `The app's settings folder, ${shown(dirname(scriptPath))}, has a quote in its path, which the entries cannot hold.`;
-		if (state.kind === "on" || state.kind === "changed") {
+		if (kind === "entries" && byHand === null && hookCommand(scriptPath, agent, "x") === null) byHand = `The app's settings folder, ${shown(dirname(scriptPath))}, has a quote in its path, which the entries cannot hold.`;
+		if (kind === "entries" && (state.kind === "on" || state.kind === "changed")) {
 			const script = await scriptState();
 			if (script === "missing") state = { kind: "broken", reason: `The script its entries run, ${shown(scriptPath)}, is missing.` };
 			else if (script === "unusable") state = { kind: "broken", reason: `The script its entries run, ${shown(scriptPath)}, cannot be read or run.` };
@@ -148,7 +166,9 @@ export function createStatusHookFiles({ home, scriptPath, savedPrograms, platfor
 		return {
 			details: {
 				agent, agentName: definition.name, file: shown(path), exists: file.exists, state, byHand, token: file.token,
-				entries: plan.entries, present: plan.present, script: STATUS_HOOK_SCRIPT, scriptPath: shown(scriptPath), checked: hook.checked,
+				entries: plan.entries, present: plan.present, kind,
+				script: kind === "entries" ? STATUS_HOOK_SCRIPT : null, scriptPath: kind === "entries" ? shown(scriptPath) : null,
+				checked: hook.checked, run: hook.run,
 			},
 			file,
 			installed: byHand === null ? plan.installed : null,
@@ -197,9 +217,10 @@ export function createStatusHookFiles({ home, scriptPath, savedPrograms, platfor
 		if (found === null) return answer("refused", "That agent has no status hook. Nothing was written.");
 		const { details, file } = found;
 		const name = details.agentName;
+		const own = details.kind === "file";
 		if (details.token !== request.token) return answer("changed-since", `${details.file} changed since it was shown. Nothing was written; look at it again.`);
 		// A file the app does not write: Turn on only puts the script in place, in the app's own folder, for the entries added by hand.
-		if (details.byHand !== null && action === "install" && details.state.kind === "off" && hookCommand(scriptPath, request.agent, "x") !== null) {
+		if (!own && details.byHand !== null && action === "install" && details.state.kind === "off" && hookCommand(scriptPath, request.agent, "x") !== null) {
 			const script = await scriptState();
 			if (script === "different" || script === "unusable") return answer("refused", `${details.scriptPath} is there but ${script === "unusable" ? "cannot be read or run" : "not as the app writes it"}, so the app does not replace it. Nothing was written.`);
 			try {
@@ -213,18 +234,22 @@ export function createStatusHookFiles({ home, scriptPath, savedPrograms, platfor
 		try {
 			if (action === "install") {
 				if (details.state.kind !== "off" || found.installed === null) return answer("refused", `The ${name} status hook is not off. Nothing was written.`);
-				const script = await scriptState();
-				if (script === "different" || script === "unusable") return answer("refused", `${details.scriptPath} is there but ${script === "unusable" ? "cannot be read or run" : "not as the app writes it"}, so the app does not replace it. Nothing was written.`);
-				if (script === "missing") await replace(scriptPath, STATUS_HOOK_SCRIPT, 0o755);
+				if (!own) {
+					const script = await scriptState();
+					if (script === "different" || script === "unusable") return answer("refused", `${details.scriptPath} is there but ${script === "unusable" ? "cannot be read or run" : "not as the app writes it"}, so the app does not replace it. Nothing was written.`);
+					if (script === "missing") await replace(scriptPath, STATUS_HOOK_SCRIPT, 0o755);
+				}
 				// Read again just before writing: what is written is what was shown.
 				if ((await readAgentFile(file.path)).token !== request.token) return answer("changed-since", `${details.file} changed since it was shown. Nothing was written; look at it again.`);
 				await replace(file.path, found.installed, file.exists ? file.mode : 0o644);
 				return answer("done", `The ${name} status hook is on, in ${details.file}.`);
 			}
-			if (details.present.length === 0 || found.removed === undefined) return answer("refused", `The app's entries are not in ${details.file}. Nothing was written.`);
+			if (details.present.length === 0 || found.removed === undefined) return answer("refused", own ? `${details.file} is not the app's plugin. Nothing was deleted.` : `The app's entries are not in ${details.file}. Nothing was written.`);
 			if ((await readAgentFile(file.path)).token !== request.token) return answer("changed-since", `${details.file} changed since it was shown. Nothing was written; look at it again.`);
+			// A file of the app's own goes whole; its folder stays, as another tool may use it.
 			if (found.removed === null) await unlink(file.path);
 			else await replace(file.path, found.removed, file.mode);
+			if (own) return answer("done", `The ${name} status hook is off: the app's plugin, ${details.file}, was deleted.`);
 			return answer("done", found.removed === null ? `The ${name} status hook is off, and ${details.file}, left empty, was deleted.` : `The ${name} status hook is off. The app's entries were taken out of ${details.file}.`);
 		} catch (error) {
 			return answer("failed", `Could not write ${details.file}: ${messageOf(error)}.`);

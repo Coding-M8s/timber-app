@@ -5254,7 +5254,8 @@ for a turn; nothing before its first screen is passed, and `blocked` was
 not seen); Grok Build 1.0.92 once the probe is answered, by default
 (its `program_status = "auto"`). Cursor CLI does not. Gemini CLI 0.70.0
 does not either: its package holds no `]7501` (read, not run; issue 351).
-OpenCode and GitHub Copilot CLI were not tried.
+OpenCode 1.19.6's source holds none either, so it gets a status hook (read,
+not run; issue 353, below). GitHub Copilot CLI was not tried.
 
 **Why this is not reading agent output.** OSC 7501 is a terminal control
 sequence the program addresses to the terminal, like a title (OSC 0) or a
@@ -5581,8 +5582,8 @@ it (Claude Code's own ids are flat; the nested one shows the tree), and
 ### Status hooks
 
 For an agent that does not report through OSC 7501, the app can add entries
-to the agent's own settings file that report its events
-(issue 350, as decided in
+to the agent's own settings file that report its events, or a plugin file of
+its own that does (issues 350 and 353, as decided in
 [docs/decision-agent-status-hooks.md](decision-agent-status-hooks.md)).
 Off for every agent until the person turns it on.
 
@@ -5627,6 +5628,58 @@ Off for every agent until the person turns it on.
     prompt; a tool the person declines while the turn goes on keeps Needs
     you until `AfterAgent`; and Needs you stays while an approved tool runs,
     until `AfterTool`. Claude Code reports these itself.
+- **OpenCode** (issue 353). Built from the source of OpenCode 1.19.6
+  (github.com/anomalyco/opencode, tag `v1.19.6`, released 2026-11-17) on
+  2026-11-22, and **not run**: OpenCode was not installed on the machine it
+  was built on. Its row says so (`run: false`), and Turn on and its On
+  line say "Not yet checked by running OpenCode.", as for any hook the
+  registry marks as never run (Gemini CLI's too). What the source says:
+  - OpenCode loads every `.js` and `.ts` file in `plugin/` and `plugins/`
+    of each config folder (`config/plugin.ts`), among them its global one,
+    `opencode` in `XDG_CONFIG_HOME` (by `xdg-basedir`, so `~/.config`
+    when it is not set). `OPENCODE_CONFIG_DIR` adds a folder and moves
+    nothing, so the hook is one per agent, as Cursor's is. The app writes
+    `~/.config/opencode/plugins/timber-app-status.js`, or the same under
+    `XDG_CONFIG_HOME` when the app's own environment has it as a full path.
+    `xdg-basedir` takes any value that is not empty; a relative one is not
+    followed here. OpenCode reads `XDG_CONFIG_HOME` from the session's
+    environment, so one set or unset only in a shell's startup file, and
+    not in the app's own, puts the plugin where OpenCode does not look,
+    while Settings says On.
+  - The plugin runs in the process that runs OpenCode's server: in the
+    session for `opencode` itself, but not for `opencode attach` to a
+    server started elsewhere, and `--pure` loads no plugins. Either reports
+    nothing.
+  - A plugin of OpenCode 1 is a module whose every export is a plugin
+    function (`plugin/index.ts`); its `event` hook is called with each
+    event and nothing catches what it throws.
+  - Events: `session.status` with `busy`, `retry`, or `idle` for each
+    session, a task's subsessions included; `permission.asked` and
+    `permission.replied`; `question.asked`, `question.replied`, and
+    `question.rejected` (`packages/schema`).
+  - OpenCode 2 renames its events, so the plugin reports nothing there: it
+    is for OpenCode 1 only.
+- **The OpenCode plugin** (`OPENCODE_STATUS_PLUGIN` in
+  `src/shared/status-hooks.ts`). A file of the app's own, written whole and
+  deleted whole, known by its first line (`OPENCODE_PLUGIN_MARKER`). It
+  runs no script: it appends `agent=opencode:event=<event>` to the file in
+  `TIMBER_APP_STATUS` itself, opened to append and never made, so it does
+  nothing outside the app's sessions or after a session's file is gone. It
+  sends `busy` (working) when the first session goes busy and `idle` (done)
+  when the last goes idle, so a task's subsessions do not end the turn;
+  `permission.asked` and `question.asked` (needs you); and `answered`
+  (working) once every question waiting is answered or rejected, or its
+  session ended while it waited, which OpenCode answers with no event. A
+  session deleted counts as idle. It keeps what it knows for the whole
+  process, as OpenCode may start a plugin once for each folder it serves,
+  and forgets it, reporting nothing, when OpenCode disposes of the plugin,
+  which may not deliver a stopped turn's last idle. A process serving two
+  folders shares that state, so disposing of one forgets the other's
+  turn, which then shows working until the next. It prints nothing and never
+  throws. A turn stopped with Esc goes idle, and says done. No event comes
+  when OpenCode starts, so a session shows running until its first prompt,
+  not idle as Cursor's does. Its line says "On, in <file>. Reports working,
+  needs you, and done. Not yet checked by running OpenCode."
 - **The script.** `status-hook` in the app's settings folder
   (`~/.config/timber-app/status-hook` on Linux), written on Turn on with
   mode 0755 (`STATUS_HOOK_SCRIPT` in `src/shared/status-hooks.ts`). It does
@@ -5643,6 +5696,8 @@ Off for every agent until the person turns it on.
 - **Platforms.** Built and checked on Linux only. On Windows no status line
   shows for a hooked agent and nothing is written, since the script is `sh`
   and the agents' files there are not confirmed. macOS is not tried.
+  OpenCode's plugin was run under Bun with events shaped as OpenCode sends
+  them, never in OpenCode.
 - **The entries.** One per event, added after the entries already there.
   Cursor CLI: `{ "command": "'<script>' cursor <event>", "timeout": 5 }`.
   Gemini CLI: `{ "matcher": "ToolPermission", "hooks": [{ "type":
@@ -5651,6 +5706,7 @@ Off for every agent until the person turns it on.
   `Notification` and the timeout in milliseconds, as Gemini CLI counts it.
   The app's entries are known by a command that starts with the script's
   quoted path and a space, and nothing else records what it installed.
+  OpenCode's plugin is a file, not entries (below).
 - **What a file reads as** (`planCursorHooks`, `planGeminiSettings`): Off (none of the app's
   entries), On (each exactly as written), Changed (an entry not as written,
   one missing, one in another event, or a script that is not the app's), or
@@ -5665,7 +5721,13 @@ Off for every agent until the person turns it on.
   Changed file, and out of a Broken one whose entries are there (as when
   only the script is missing). A file holding a number past what
   JavaScript holds exactly, or a `__proto__` key, is never written, as one
-  with comments is not.
+  with comments is not. OpenCode's plugin (`planPlugin`) reads as Off (no
+  file), On (the plugin as written), Changed (the marker, then other text,
+  as another build of the app writes, or an edit), or Broken (a file of
+  that name without the marker, never written, deleted, or shown; the line
+  names the file).
+  Remove deletes a Changed plugin, as shown, and Remove then Turn on brings
+  it up to date.
 - **Writing** (`src/bun/status-hook-files.ts`). Only for an agent a saved
   row runs, only its file the registry names, and only the app's entries:
   every other key and value parses the same after; spacing and key order
@@ -5678,7 +5740,11 @@ Off for every agent until the person turns it on.
   it. Written to a temporary file beside it with the same mode, then renamed
   over it, with no backup copy, since the file can hold secrets. A file left
   with nothing in it after Remove is deleted. Nothing of the file but the
-  app's entries goes to the window.
+  app's entries goes to the window. Remove deletes OpenCode's plugin file
+  and leaves its folder, even one the app made: nothing records who made
+  it, and another tool's plugins may be there. Turn on writes no script for
+  it. For a file outside the home folder (`XDG_CONFIG_HOME` elsewhere), the
+  folders below `XDG_CONFIG_HOME` are checked for links instead.
 - **Reading** (`Engine.statusHooks`). When Settings, Agents opens, after a
   save of the agents, and when a session of a hooked agent starts; never in
   the background. Nothing is written.
@@ -5941,10 +6007,11 @@ knowing a path and two arguments.
   that folder. A copy started with `bun run dev` or `bun run start` says it
   was not installed and where it runs from, and has no button. Windows and
   macOS say that this is built for Linux only so far.
-- **Status hooks stay.** Entries the app added to an agent's own file
-  (see [status hooks](#status-hooks)) are not taken out on uninstall: take
-  them out first with Remove in Settings, Agents. Left behind, they do
-  nothing outside the app's sessions.
+- **Status hooks stay.** Entries the app added to an agent's own file, and
+  OpenCode's plugin (see [status hooks](#status-hooks)), are not taken out
+  on uninstall: take them out first with Remove in Settings, Agents. Left
+  behind, they do nothing outside the app's sessions; the plugin needs no
+  script, so it has no missing command either.
 - **The settings are the app's own to delete.** The uninstaller does not
   know `~/.config/timber-app/`. A box, off at first, asks to forget the
   saved repository list and settings too. Then, after the uninstaller ended

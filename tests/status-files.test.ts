@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { type StatusFolder, openStatusFolder } from "../src/bun/status-files";
 import { type TerminalChange, type TerminalOutput } from "../src/shared/terminal";
 import { type TerminalSessions, createTerminalSessions, sessionEnvironment } from "../src/bun/terminals";
-import { STATUS_FILE_LIMIT, STATUS_HOOK_SCRIPT, STATUS_VARIABLE, type StatusLine } from "../src/shared/status-hooks";
+import { OPENCODE_STATUS_PLUGIN, STATUS_FILE_LIMIT, STATUS_HOOK_SCRIPT, STATUS_VARIABLE, type StatusLine } from "../src/shared/status-hooks";
 import type { AgentSetting } from "../src/shared/agent";
 import type { Repository } from "../src/shared/model";
 import { until } from "./support/runtime";
@@ -266,6 +266,38 @@ describe.skipIf(!posix)("status hook lines in a real session", () => {
 		sessions.hookLine(session.id, { agent: "cursor", event: "beforeSubmitPrompt" });
 		await Bun.sleep(50);
 		expect(changes.length).toBe(count);
+	});
+
+	test("OpenCode's plugin, driven as OpenCode 1.19.6 would, sets the session's status with OpenCode's mark", async () => {
+		// OpenCode itself was not run: a Bun program loads the plugin as OpenCode 1 does and replays events shaped as its source sends them.
+		writeFileSync(join(root, "timber-app-status.js"), OPENCODE_STATUS_PLUGIN);
+		writeFileSync(join(root, "opencode-events.mjs"), [
+			`const plugin = Object.values(await import(${JSON.stringify(join(root, "timber-app-status.js"))}))[0];`,
+			"const hooks = await plugin({ directory: process.cwd() });",
+			"const events = {",
+			"\tbusy: id => ({ type: \"session.status\", properties: { sessionID: id, status: { type: \"busy\" } } }),",
+			"\tidle: id => ({ type: \"session.status\", properties: { sessionID: id, status: { type: \"idle\" } } }),",
+			"\task: id => ({ type: \"permission.asked\", properties: { id, sessionID: \"r\", permission: \"bash\" } }),",
+			"\treply: id => ({ type: \"permission.replied\", properties: { sessionID: \"r\", requestID: id, reply: \"once\" } }),",
+			"};",
+			"for (const step of process.argv.slice(2)) {",
+			"\tconst [kind, id] = step.split(\":\");",
+			"\tawait hooks.event({ event: events[kind](id) });",
+			"}",
+			"",
+		].join("\n"));
+		const driver = `${JSON.stringify(process.execPath)} ${JSON.stringify(join(root, "opencode-events.mjs"))}`;
+		await start();
+		const session = await opened();
+		await run(session.id, `${driver} busy:r; echo ran1`, "ran1\r\n");
+		expect(await until(() => statusOf(session.id)?.state === "working")).toBe(true);
+		await run(session.id, `${driver} busy:r ask:p; echo ran2`, "ran2\r\n");
+		expect(await until(() => statusOf(session.id)?.state === "blocked")).toBe(true);
+		expect(statusOf(session.id)).toEqual({ state: "blocked", kind: null, progress: null, app: "opencode", title: null, message: null });
+		await run(session.id, `${driver} busy:r ask:p reply:p idle:r; echo ran3`, "ran3\r\n");
+		expect(await until(() => statusOf(session.id)?.state === "done")).toBe(true);
+		// The plugin printed nothing.
+		expect(printed(session.id)).not.toContain("agent=opencode");
 	});
 
 	test("closing a session deletes its file", async () => {

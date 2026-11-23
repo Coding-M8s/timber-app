@@ -4586,3 +4586,51 @@ with Bun 1.4.5:
   `bun run test`: 4503 pass, 19 skip, 0 fail, on main at `6e1f982`.
 - Not run: Gemini CLI itself, so no session of it was seen to report; the
   desktop app by hand; macOS and Windows, where no hook is offered.
+
+Run for OpenCode's status plugin (issue 353), Linux x64 (Pop!_OS 24.04)
+with Bun 1.4.5 and headless Chrome, on 2026-11-22:
+
+- OpenCode was **not run**: it is not installed on this machine, and the
+  plugin was built from OpenCode 1.19.6's source instead, read with
+  `gh api repos/anomalyco/opencode/contents/<path>?ref=v1.19.6`:
+  `packages/opencode/src/config/plugin.ts` (the `{plugin,plugins}/*.{ts,js}`
+  scan), `config/paths.ts` and `packages/core/src/global.ts` (the config
+  folders, `XDG_CONFIG_HOME`, `OPENCODE_CONFIG_DIR`),
+  `packages/opencode/src/plugin/index.ts` (every export a plugin function,
+  the `event` hook called without a catch), `session/status.ts` and
+  `packages/schema/src/session-status-event.ts` (`session.status`,
+  `session.idle`), and `packages/schema/src/v1/permission.ts` and
+  `v1/question.ts` (their events and fields).
+- `tests/opencode-status-hook.test.ts`: pass. The plugin, loaded by Bun from
+  a file as OpenCode 1 loads one, given events shaped as OpenCode 1.19.6
+  sends them: one export, a function; a turn with a subsession, a retry,
+  and two permissions waiting at once gives busy, permission.asked twice,
+  answered once, then a question and idle; a session deleted ends the turn;
+  a subsession that ends while its question waits gives answered; what
+  was seen is forgotten on dispose, so a missed idle does not stick;
+  two starts in one process share what they know; nothing is written
+  without `TIMBER_APP_STATUS` or once its file is gone, and malformed
+  events throw nothing. The plan (missing, as written, edited, not the
+  app's), and the installer in a temporary home folder: Turn on writes only
+  the plugin and no script, Remove deletes only it and leaves the folder
+  and another tool's plugin; a file that is not the app's, an edited one, a
+  change since shown, `XDG_CONFIG_HOME` inside and outside the home folder
+  (Turn on and Remove there, and a linked folder there added by hand), a
+  plugin that is a link, a folder in its place, Windows, and a folder that
+  cannot be written. The mock engine's Turn on and Remove. The line's and
+  the dialogs' words.
+- `tests/status-files.test.ts`: pass, with a new case in a real session: a
+  Bun program loads the plugin and replays OpenCode's events, and the
+  session's status goes working, needs you (`app` `opencode`), and done,
+  with nothing printed. `tests/status-hooks.test.ts`: the same alerts from
+  OpenCode's lines as from OSC 7501.
+- `tests/status-hook-dialog-browser.test.ts`, in headless Chrome over the
+  mock engine, in Timber Light and Timber Dark at 1280 and 480 pixels wide:
+  pass. OpenCode's Turn on dialog shows the file and the whole plugin
+  within the window, with nothing scrolling sideways, and says it was not
+  checked by running OpenCode.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors;
+  `bun run test`: 4539 pass, 19 skip, 0 fail, on main at `18a6843`.
+- Not run: OpenCode itself, so no claim yet that an OpenCode session shows
+  its states; OpenCode 2, whose events are renamed; the desktop app by
+  hand; macOS and Windows.
