@@ -54,6 +54,7 @@ export function existingBranchMode(
 		command: describeTimberCommand(openWorktreeArguments(openRequest(repository, state, workflow), RESULT_FILE_PLACEHOLDER)),
 		canSubmit: canOpen(state),
 		submitLabel: "Open worktree",
+		submitLabels: ["Open worktree"],
 		runningLabel: "Opening the worktree",
 		failureTitle: kept
 			? kept.created ? "The worktree was created, but Timber stopped before setup" : "The worktree was opened, but Timber did not finish"

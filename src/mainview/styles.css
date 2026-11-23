@@ -1696,13 +1696,17 @@ pre:focus-visible {
 	white-space: nowrap;
 }
 
-/* A label that changes while it runs ("Testing", "Saving") keeps the button as wide as the wider of the two, so the row does not jump. */
+/*
+ * A label that changes while it runs ("Testing", "Saving") keeps the button as wide as the widest it can show, so the row does not jump.
+ * `data-reserve` holds one label, or several, one per line, as a dialog with steps or modes gives them.
+ */
 .button[data-reserve]::after {
 	content: attr(data-reserve);
 	display: block;
 	height: 0;
 	overflow: hidden;
 	visibility: hidden;
+	white-space: pre;
 }
 
 .button:hover {
@@ -3998,8 +4002,97 @@ pre:focus-visible {
 	margin-top: 0;
 }
 
+/* Between a dialog's header and its footer: the fields, then a failure or progress. Not boxes of their own, except in a dialog that keeps one height. */
+.dialog-body,
+.dialog-status {
+	display: contents;
+}
+
+/*
+ * A dialog with steps or modes keeps one height whatever it shows, so its header, footer, and buttons never move, as
+ * Settings does: only the body between them scrolls when it is taller. Each such dialog sets `--steady-height` to fit its
+ * usual steps unscrolled. The body reaches the dialog's edges, so its scroll bar sits there and focus rings are not cut.
+ */
+.dialog.steady {
+	height: min(var(--steady-height), calc(100% - 48px));
+	overflow: hidden;
+}
+
+.dialog.steady > .dialog-form {
+	height: 100%;
+}
+
+.dialog.steady .dialog-body {
+	/* It takes what the header, the footer, and a failure or progress leave, but keeps room for a field or two however
+	   long a failure is, so the field to correct stays in view; a failure gives way below that. */
+	flex: 1 1 0;
+	min-height: 96px;
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+	margin: -4px -18px 0;
+	padding: 4px 18px;
+	overflow-y: auto;
+}
+
+/* A failure or progress stays in view under the fields, which make room for it; a long failure scrolls on its own. */
+.dialog.steady .dialog-status {
+	flex: 0 1 auto;
+	min-height: 0;
+	max-height: 45%;
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+	margin: -4px -18px 0;
+	padding: 4px 18px;
+	overflow-y: auto;
+}
+
+/*
+ * In a window too short for the header, the footer, and some of the body, the whole dialog scrolls instead, under a footer
+ * that stays at the bottom (see the sticky .dialog-foot). The room for the scroll bar is kept whether or not it shows, so
+ * the buttons do not move sideways from one step to the next.
+ */
+@media (max-height: 540px) {
+	.dialog.steady {
+		overflow-y: auto;
+		scrollbar-gutter: stable;
+	}
+
+	/* A sticky footer stays inside the form's content box, so the form's top padding is the header's instead: a footer
+	   nearly as tall as the dialog, as New worktree's at the smallest window, then still reaches the bottom. */
+	.dialog.steady > .dialog-form {
+		height: auto;
+		min-height: 100%;
+		padding-top: 0;
+	}
+
+	.dialog.steady .dialog-head {
+		padding-top: 18px;
+	}
+
+	.dialog.steady .dialog-body,
+	.dialog.steady .dialog-status {
+		flex: none;
+		max-height: none;
+		margin: 0;
+		padding: 0;
+		overflow: visible;
+	}
+
+	.dialog.steady .dialog-foot {
+		margin-top: auto;
+	}
+}
+
+/* New worktree and Start work: one height for every mode and step, as tall as New branch with its Agent field. */
+.worktree-dialog {
+	--steady-height: 760px;
+}
+
 /* The setup wizard: one step of Timber's settings at a time, then a last look before the one save. */
 .setup-wizard {
+	--steady-height: 580px;
 	width: min(600px, calc(100% - 32px));
 }
 

@@ -85,7 +85,8 @@ interface WorktreeDialogFrameProps {
  * The worktree dialog as a drawing of its modes: one `OperationDialog` for
  * whichever mode is selected, with the Agent field under the mode's own
  * fields, unless the mode starts its own agents. The switch shows only when
- * there is a choice.
+ * there is a choice. It keeps one height, and its submit button one width,
+ * across modes and steps, so the buttons never move.
  */
 export function WorktreeDialogFrame(props: WorktreeDialogFrameProps) {
 	const { repository, modes, selected, submission, agents, agentLocations, onSelect, onPickAgent, onSubmit, onClose } = props;
@@ -95,6 +96,7 @@ export function WorktreeDialogFrame(props: WorktreeDialogFrameProps) {
 	return (
 		<OperationDialog
 			title={props.title ?? `New worktree in ${repository.name}`}
+			className="steady worktree-dialog"
 			headerAside={modes.length > 1 && (
 				<ModeSwitch
 					labels={modes.map(candidate => candidate.label)}
@@ -110,6 +112,7 @@ export function WorktreeDialogFrame(props: WorktreeDialogFrameProps) {
 			failureNote={mode.failureNote}
 			submission={submission}
 			submitLabel={mode.submitLabel}
+			reserveLabels={modes.flatMap(candidate => candidate.submitLabels)}
 			runningLabel={mode.runningLabel}
 			failureTitle={mode.failureTitle}
 			canSubmit={mode.canSubmit}

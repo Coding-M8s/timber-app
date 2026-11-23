@@ -556,6 +556,10 @@ brings its fields, the exact command it is about to run, and what running it
 means, and the frame draws the selected one in one `OperationDialog`. The
 switch between modes sits beside the title. Switching puts a failure away,
 keeps what was typed in each mode, and is not possible while a command runs.
+Each mode lists every label its submit button can show (`submitLabels`), and
+the frame reserves room for all of them across modes, so the button keeps one
+width; the frame also keeps one height (`steady` in styles.css), so the
+footer buttons never move between modes and steps.
 
 "New branch" is the first mode, with a name and an optional start point.
 
@@ -1416,7 +1420,10 @@ Every operation reports how it ended in the same way.
   (`src/mainview/store/submission.ts`, through `useSubmission`). The command
   is shown before it runs. While it runs, the fields and buttons are
   disabled, a progress bar shows, the dialog cannot be closed, and a second
-  submission does nothing. When it worked, the dialog closes and the toast
+  submission does nothing. The submit button keeps room for "Running" and
+  any `reserveLabels` (in `data-reserve`), and a `className` of "steady"
+  with a class that sets `--steady-height` keeps the dialog one height with
+  only its fields scrolling, and a failure or progress pinned under them. When it worked, the dialog closes and the toast
   shows. Done and Clean up merged are the exceptions: their removals are the
   store's (`removeWorktree`, `cleanUpMerged`), and Remove closes the dialog
   as they start. A Done failure is shown when its dialog is opened again

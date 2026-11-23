@@ -71,8 +71,8 @@ const previews = {
 	unpublished: recorded(recordedDone.previews.unpublished),
 };
 
-const REMOVE = '<button type="button" class="button danger">Remove</button>';
-const REMOVE_DISABLED = '<button type="button" class="button danger" disabled="">Remove</button>';
+const REMOVE = '<button type="button" class="button danger" data-reserve="Remove\nRunning">Remove</button>';
+const REMOVE_DISABLED = '<button type="button" class="button danger" data-reserve="Remove\nRunning" disabled="">Remove</button>';
 
 describe("the Done dialog, for a clean worktree", () => {
 	const markup = render(previews.clean);
@@ -256,7 +256,7 @@ describe("the Done dialog, while and after the removal", () => {
 	test("while Timber runs: the fields are disabled, progress shows, and nothing can be pressed again", () => {
 		const markup = render(previews.dirty, { submission: { running: true, failure: null } });
 		expect(markup).toContain('<fieldset class="dialog-fields" disabled="">');
-		expect(markup).toContain('<button type="button" class="button danger" disabled="">Running</button>');
+		expect(markup).toContain('<button type="button" class="button danger" data-reserve="Remove\nRunning" disabled="">Running</button>');
 		expect(markup).toContain('role="progressbar" aria-label="Removing feat/dirty"');
 	});
 

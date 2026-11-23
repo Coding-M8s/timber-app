@@ -12,6 +12,19 @@ interface OperationDialogProps {
 	submission: SubmissionState;
 	/** On the submit button, for example "Create worktree". */
 	submitLabel: string;
+	/**
+	 * Other labels the submit button can show while the dialog is open, such
+	 * as those of another step or mode. The button is as wide as the widest of
+	 * these, `submitLabel`, and "Running", so the buttons beside it never move.
+	 */
+	reserveLabels?: readonly string[];
+	/**
+	 * Set for a dialog that keeps one height across its steps or modes, so its
+	 * footer never moves: "steady" and a class of its own that sets
+	 * `--steady-height` in styles.css. The fields scroll when taller, and the
+	 * header and footer stay.
+	 */
+	className?: string;
 	/** Beside the progress bar while the command runs, for example "Creating the worktree". */
 	runningLabel: string;
 	/** Above a failure, for example "Could not create the worktree". */
@@ -87,6 +100,18 @@ export function focusAfterFailure(controls: Iterable<Focusable>, retry: { focus(
 	retry?.focus();
 }
 
+/** On the submit button while the command runs. */
+const RUNNING_LABEL = "Running";
+
+/**
+ * The `data-reserve` of a button that can show any of `labels`: each label
+ * once, one per line, in a fixed order, so it is the same at every step.
+ * styles.css makes the button as wide as the widest line.
+ */
+export function reservedLabels(labels: readonly string[]): string {
+	return [...new Set(labels)].sort().join("\n");
+}
+
 /**
  * Opens `dialog` as a modal with the keyboard in its first field. React's
  * autoFocus runs while the dialog is still closed, so it does nothing, and
@@ -108,7 +133,7 @@ export function openModal(dialog: { open: boolean; showModal(): void }, fields: 
  */
 export function OperationDialog(props: OperationDialogProps) {
 	const { title, headerAside, command, submission, submitLabel, runningLabel, failureTitle, canSubmit = true, onSubmit, onClose, children } = props;
-	const { destructive = false, cancelLabel = "Cancel", failureNote, followUps = [] } = props;
+	const { destructive = false, cancelLabel = "Cancel", failureNote, followUps = [], reserveLabels = [], className } = props;
 	const { running, failure } = submission;
 	const closable = !running;
 	const dialog = useRef<HTMLDialogElement>(null);
@@ -117,6 +142,7 @@ export function OperationDialog(props: OperationDialogProps) {
 	const retry = useRef<HTMLButtonElement>(null);
 	const ran = useRef(false);
 	const titleId = useId();
+	const reserve = reservedLabels([submitLabel, RUNNING_LABEL, ...reserveLabels]);
 
 	// Opened as a modal, so the rest of the window is inert and focus stays inside.
 	// Closing gives the keyboard back to what opened it, such as a worktree row, when that is still there. The
@@ -162,7 +188,7 @@ export function OperationDialog(props: OperationDialogProps) {
 	return (
 		<dialog
 			ref={dialog}
-			className="dialog"
+			className={className ? `dialog ${className}` : "dialog"}
 			aria-labelledby={titleId}
 			onCancel={event => {
 				// Escape asks to close. The dialog decides, and never while the command runs.
@@ -175,13 +201,21 @@ export function OperationDialog(props: OperationDialogProps) {
 					<h2 id={titleId} className="dialog-title">{title}</h2>
 					{headerAside}
 				</header>
-				<fieldset ref={fields} className="dialog-fields" disabled={running}>{children}</fieldset>
-				{failure && <TimberFailureDetails title={failureTitle} failure={failure} />}
-				{failure && failureNote}
-				{running && (
-					<div className="dialog-progress">
-						<div className="progress" role="progressbar" aria-label={runningLabel} />
-						<p className="dialog-progress-text" role="status">{runningLabel}</p>
+				{/* What scrolls in a dialog that keeps one height. Elsewhere it is not a box of its own. */}
+				<div className="dialog-body">
+					<fieldset ref={fields} className="dialog-fields" disabled={running}>{children}</fieldset>
+				</div>
+				{/* Under the fields, never scrolled out of view with them, so a failure or progress is always seen. */}
+				{(failure || running) && (
+					<div className="dialog-status">
+						{failure && <TimberFailureDetails title={failureTitle} failure={failure} />}
+						{failure && failureNote}
+						{running && (
+							<div className="dialog-progress">
+								<div className="progress" role="progressbar" aria-label={runningLabel} />
+								<p className="dialog-progress-text" role="status">{runningLabel}</p>
+							</div>
+						)}
 					</div>
 				)}
 				<footer className="dialog-foot">
@@ -195,12 +229,12 @@ export function OperationDialog(props: OperationDialogProps) {
 					<div className="dialog-buttons">
 						<button ref={cancel} type="button" className="button quiet" disabled={!closable} autoFocus={destructive} onClick={onClose}>{cancelLabel}</button>
 						{destructive ? (
-							<button type="button" className="button danger" disabled={running || !canSubmit} onClick={run}>
-								{running ? "Running" : submitLabel}
+							<button type="button" className="button danger" data-reserve={reserve} disabled={running || !canSubmit} onClick={run}>
+								{running ? RUNNING_LABEL : submitLabel}
 							</button>
 						) : (
-							<button ref={retry} type="submit" className="button primary" disabled={running || !canSubmit}>
-								{running ? "Running" : submitLabel}
+							<button ref={retry} type="submit" className="button primary" data-reserve={reserve} disabled={running || !canSubmit}>
+								{running ? RUNNING_LABEL : submitLabel}
 							</button>
 						)}
 					</div>

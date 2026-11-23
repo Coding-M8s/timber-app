@@ -245,6 +245,6 @@ describe("Check out PR on the board", () => {
 		expect(first).toContain(escaped("-- fix/explain-arena"));
 		const fork = view(1);
 		expect(fork).toContain(escaped(FORK_REFUSAL));
-		expect(fork).toMatch(/<button type="submit" class="button primary" disabled=""/);
+		expect(fork).toMatch(/<button type="submit" class="button primary" data-reserve="[^"]*" disabled=""/);
 	});
 });

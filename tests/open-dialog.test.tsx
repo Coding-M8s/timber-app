@@ -128,7 +128,7 @@ describe("the Existing branch fields", () => {
 		expect(markup).not.toContain('role="option"');
 		expect(markup).toContain("No listed branch matches. Timber decides what the text means.");
 		expect(mode().canSubmit).toBe(true);
-		expect(markup).toContain('<button type="submit" class="button primary">Open worktree</button>');
+		expect(markup).toContain('<button type="submit" class="button primary" data-reserve="Create worktree\nOpen worktree\nRun setup\nRunning">Open worktree</button>');
 	});
 
 	test("when the branches cannot be read the field still works as plain text", async () => {
@@ -185,7 +185,7 @@ describe("the Existing branch fields", () => {
 		const { form, mode, render } = await openedDialog();
 		form.setSelector("   ");
 		expect(mode().canSubmit).toBe(false);
-		expect(render()).toContain('<button type="submit" class="button primary" disabled="">Open worktree</button>');
+		expect(render()).toContain('<button type="submit" class="button primary" data-reserve="Create worktree\nOpen worktree\nRun setup\nRunning" disabled="">Open worktree</button>');
 		form.setSelector("  feat/github-issue-lookup ");
 		expect(mode().command).toBe("timber open --no-setup --result-file <temporary file> --no-editor --no-agent -- feat/github-issue-lookup");
 		// The field keeps what was typed. Only the request leaves the spaces off.
@@ -263,7 +263,7 @@ describe("opening from the dialog", () => {
 		expect(markup).toContain('<fieldset class="dialog-fields" disabled="">');
 		expect(markup).toContain('role="progressbar" aria-label="Opening the worktree"');
 		expect(markup).toContain('<button type="button" class="button quiet" disabled="">Cancel</button>');
-		expect(markup).toContain('<button type="submit" class="button primary" disabled="">Running</button>');
+		expect(markup).toContain('<button type="submit" class="button primary" data-reserve="Create worktree\nOpen worktree\nRun setup\nRunning" disabled="">Running</button>');
 		expect(await submit()).toBe(false);
 		expect(calls.length).toBe(1);
 		expect(submission.getState().running).toBe(true);
@@ -284,7 +284,7 @@ describe("a failure in the dialog", () => {
 		expect(markup).toContain('role="alert"');
 		expect(markup).toContain('<p class="failure-title">Could not open the worktree</p>');
 		expect(markup).toContain(`<p class="failure-diagnostic">${escaped('No existing branch or worktree matches "no/such-branch". Check the exact branch or absolute worktree path.')}</p>`);
-		expect(markup).toContain('<button type="submit" class="button primary">Open worktree</button>');
+		expect(markup).toContain('<button type="submit" class="button primary" data-reserve="Create worktree\nOpen worktree\nRun setup\nRunning">Open worktree</button>');
 		expect(markup).toContain('value="no/such-branch"');
 		expect(store.getState().dialog).toEqual({ kind: "new-worktree", repository: TIMBER });
 		expect(toasts()).toEqual([]);
@@ -534,7 +534,7 @@ describe("the two modes together", () => {
 		expect(mode().command).toBe("timber open --setup --no-editor --no-agent -- /work/timber-worktrees/feat-login");
 		expect(markup).toContain("feat/login was created and is in the list, but Timber stopped before its setup.");
 		expect(markup).not.toContain('role="alert"');
-		expect(markup).not.toContain("Create worktree");
+		expect(markup).not.toContain(">Create worktree</button>");
 
 		// Opening that worktree from Existing branch instead closes the dialog as any open does.
 		engine.endCommands("succeeds");

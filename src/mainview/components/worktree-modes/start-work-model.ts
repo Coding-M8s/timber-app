@@ -2,7 +2,7 @@ import type { SuggestedIssue } from "../../../shared/issue-search";
 import type { ReportedWorktree } from "../../../shared/model";
 import { RESULT_FILE_PLACEHOLDER, describeTimberCommand } from "../../../shared/timber-result";
 import { newWorktreeArguments } from "../../../shared/worktree-commands";
-import { type StartWorkFields, type StartWorkQuestion, assigneeRefusal, describeAssignment, initialQuestion, startWorkRequest, startWorkSubmitLabel } from "../../start-work-format";
+import { REPLACE_THEM_LABEL, START_ANYWAY_LABEL, START_WORK_LABEL, type StartWorkFields, type StartWorkQuestion, assigneeRefusal, describeAssignment, initialQuestion, startWorkRequest, startWorkSubmitLabel } from "../../start-work-format";
 import type { AppStore } from "../../store/store";
 import { type ModeRun, setupCommand } from "./agent-choice";
 import { afterNew, reportedLabel } from "./new-branch-model";
@@ -46,10 +46,13 @@ export function startWorkCommand(repository: string, selector: string, state: St
 }
 
 /** The words on the dialog for where the mode is. */
-export function describeStartWorkStep(state: StartWorkState): { submitLabel: string; runningLabel: string; failureTitle: string } {
+export function describeStartWorkStep(state: StartWorkState): { submitLabel: string; submitLabels: readonly string[]; runningLabel: string; failureTitle: string } {
 	const { step } = state;
-	if (step.kind === "form") return { submitLabel: startWorkSubmitLabel(state.question), runningLabel: "Creating the worktree", failureTitle: "Could not start work" };
-	return { submitLabel: "Run setup", runningLabel: "Starting setup", failureTitle: `Created ${reportedLabel(step.worktree)}, but Timber stopped before setup` };
+	// A refused assignee can bring a question, and its label, while the dialog is open. The labels that name no one are
+	// reserved ahead; one that names the assignee is only known then, and may widen the button once.
+	const submitLabels = [startWorkSubmitLabel(state.question), START_WORK_LABEL, START_ANYWAY_LABEL, REPLACE_THEM_LABEL, "Run setup"];
+	if (step.kind === "form") return { submitLabel: submitLabels[0]!, submitLabels, runningLabel: "Creating the worktree", failureTitle: "Could not start work" };
+	return { submitLabel: "Run setup", submitLabels, runningLabel: "Starting setup", failureTitle: `Created ${reportedLabel(step.worktree)}, but Timber stopped before setup` };
 }
 
 export interface StartWorkModel {

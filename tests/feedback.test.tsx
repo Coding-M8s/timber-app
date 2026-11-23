@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
-import { OperationDialog } from "../src/mainview/components/OperationDialog";
+import { OperationDialog, reservedLabels } from "../src/mainview/components/OperationDialog";
 import { TimberFailureDetails } from "../src/mainview/components/TimberFailureDetails";
 import { createMockEngine } from "../src/mainview/engine/mock";
 import { OUTPUT_PRIVACY_NOTE } from "../src/mainview/format";
@@ -271,7 +271,7 @@ describe("OperationDialog", () => {
 		expect(markup).toContain('<pre class="dialog-command" aria-label="Command that will run">timber new feat/login --result-file &lt;temporary file&gt; --no-editor --no-agent</pre>');
 		expect(markup).toContain('<fieldset class="dialog-fields">');
 		expect(markup).toContain('<button type="button" class="button quiet">Cancel</button>');
-		expect(markup).toContain('<button type="submit" class="button primary">Create worktree</button>');
+		expect(markup).toContain('<button type="submit" class="button primary" data-reserve="Create worktree\nRunning">Create worktree</button>');
 		expect(markup).toContain('aria-busy="false"');
 		expect(markup).not.toContain("progressbar");
 		expect(markup).not.toContain('role="alert"');
@@ -281,7 +281,7 @@ describe("OperationDialog", () => {
 		const markup = render({ running: true, failure: null });
 		expect(markup).toContain('<fieldset class="dialog-fields" disabled="">');
 		expect(markup).toContain('<button type="button" class="button quiet" disabled="">Cancel</button>');
-		expect(markup).toContain('<button type="submit" class="button primary" disabled="">Running</button>');
+		expect(markup).toContain('<button type="submit" class="button primary" data-reserve="Create worktree\nRunning" disabled="">Running</button>');
 		expect(markup).toContain('role="progressbar" aria-label="Creating the worktree"');
 		expect(markup).toContain('<p class="dialog-progress-text" role="status">Creating the worktree</p>');
 		expect(markup).toContain('aria-busy="true"');
@@ -292,13 +292,34 @@ describe("OperationDialog", () => {
 		expect(markup).toContain('role="alert"');
 		expect(markup).toContain(failure.diagnostic);
 		expect(markup).toContain('<fieldset class="dialog-fields">');
-		expect(markup).toContain('<button type="submit" class="button primary">Create worktree</button>');
+		expect(markup).toContain('<button type="submit" class="button primary" data-reserve="Create worktree\nRunning">Create worktree</button>');
 		expect(markup).not.toContain("progressbar");
 	});
 
 	test("fields that do not make a command yet disable only the submit button", () => {
 		const markup = render({ running: false, failure: null }, false);
-		expect(markup).toContain('<button type="submit" class="button primary" disabled="">Create worktree</button>');
+		expect(markup).toContain('<button type="submit" class="button primary" data-reserve="Create worktree\nRunning" disabled="">Create worktree</button>');
 		expect(markup).toContain('<button type="button" class="button quiet">Cancel</button>');
+	});
+
+	test("the submit button keeps room for every label it can show, so the buttons beside it never move", () => {
+		const markup = renderToStaticMarkup(
+			<OperationDialog
+				title="New worktree" command="timber new" submission={{ running: false, failure: null }} submitLabel="Run setup"
+				reserveLabels={["Create worktree", "Run setup", "Open worktree"]} runningLabel="Creating the worktree" failureTitle="Failed"
+				className="steady worktree-dialog" onSubmit={() => {}} onClose={() => {}}
+			>
+				<p>Fields</p>
+			</OperationDialog>,
+		);
+		expect(markup).toContain('<dialog class="dialog steady worktree-dialog"');
+		expect(markup).toContain('<button type="submit" class="button primary" data-reserve="Create worktree\nOpen worktree\nRun setup\nRunning">Run setup</button>');
+		// The fields, a failure, and progress are one body, which scrolls in a dialog that keeps one height.
+		expect(markup).toContain('<div class="dialog-body"><fieldset class="dialog-fields"><p>Fields</p></fieldset></div><footer class="dialog-foot">');
+	});
+
+	test("the labels kept room for are each named once, in the same order whichever is shown", () => {
+		expect(reservedLabels(["Save", "Next", "Saving", "Next"])).toBe("Next\nSave\nSaving");
+		expect(reservedLabels(["Saving", "Save", "Next"])).toBe(reservedLabels(["Next", "Save", "Saving"]));
 	});
 });

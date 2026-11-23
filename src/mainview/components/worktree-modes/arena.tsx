@@ -101,6 +101,7 @@ export function arenaMode(form: Pick<ArenaForm, "setName" | "setTask" | "setGrou
 		command: newArenaCommandFor(name, groups, base),
 		canSubmit: unavailable === null && problem === null && !taken,
 		submitLabel: "Create arena",
+		submitLabels: ["Create arena"],
 		runningLabel: "Creating every attempt's worktree",
 		failureTitle: "Could not create the arena",
 		// The store starts each attempt's agent as Timber says, never the dialog's pick, and Timber runs setup itself.
