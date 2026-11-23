@@ -131,4 +131,12 @@ describe("the agent registry", () => {
 		// A reported app still counts in the registry's order, as before.
 		expect(agentBrand({ kind: "agent", shell: "/usr/bin/codex", status: { state: "working", kind: null, progress: null, app: "claude-code", title: null, message: null }, program: "codex" })).toBe("claude");
 	});
+
+	test("Grok Build's reports name it grok, which gives its mark to a session the bare shared name could not", () => {
+		const grok = { state: "working" as const, kind: null, progress: null, app: "grok", title: null, message: null };
+		// Grok Build installs a bare `agent` too, which alone gives no mark.
+		expect(agentBrand({ kind: "agent", shell: "/home/me/.grok/bin/agent", status: null })).toBeNull();
+		expect(agentBrand({ kind: "agent", shell: "/home/me/.grok/bin/agent", status: grok })).toBe("grok");
+		expect(agentBrand({ kind: "terminal", shell: "/bin/bash", status: grok })).toBe("grok");
+	});
 });
