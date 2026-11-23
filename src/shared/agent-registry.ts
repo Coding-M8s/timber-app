@@ -276,7 +276,7 @@ const ROWS = [
 			conversations: { store: "grok-sessions", folderVariable: "GROK_HOME", folder: ".grok" },
 		},
 		signIn: { status: null, login: null },
-		status: { source: "none", app: null },
+		status: { source: "osc-7501", app: "grok" },
 	},
 	{
 		id: "opencode",

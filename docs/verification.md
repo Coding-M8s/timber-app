@@ -4365,3 +4365,63 @@ in a scratch folder, signed in, with one short message:
 - `bun run build:web`: built.
 - Not run: the desktop app by hand, so no Grok or Cursor session was
   quit and opened again through it; macOS and Windows.
+
+Run for the status hook decision (issue 349), on 2026-11-22, Pop!_OS 24.04
+on Linux x64 with Bun 1.4.5. Each agent was started from a scratch Python
+script with `pty.fork`, 120 by 40, `TERM=xterm-256color` and `TERM_PROGRAM`
+unset, in a new scratch repository. The script answered `CSI 6n`
+(`ESC [ 1 ; 1 R`), `CSI c` (`ESC [ ? 62 ; 22 c`), OSC 10 and OSC 11 color
+queries, and the OSC 7501 probe with the app's `PROBE_ANSWER`, typed a
+prompt ("Reply with the single word ok. Do not run any tools.") as a
+bracketed paste and Enter, and kept everything written. It supersedes, for
+Codex CLI 0.169.0 on Linux x64, the earlier "never probed" and "sent
+neither a probe nor a report" notes above, which stopped at its first
+screen.
+
+- Codex CLI 0.169.0, `codex -C <repo> -c 'projects."<repo>".trust_level="trusted"'`,
+  for 70 seconds: no probe; `state=idle:app=codex` at its prompt, a short
+  `working` and `idle` before the prompt was sent (the status line still
+  read "0 in, 0 out"), then `working` for the turn and `done` once it
+  answered. The same with `TERM_PROGRAM=Rex` and with the app's own
+  `TERM_PROGRAM=timber-app` and `COLORTERM=truecolor`. With `-a on-request -s read-only` and a prompt to run
+  `touch spike.txt`, the file was made with no approval asked (the account
+  approves for itself), so `blocked` was not seen; `-c
+  'approval_policy="untrusted"'` is refused by 0.169.0 ("no longer
+  supported").
+- Codex's `notify`, set with `-c 'notify=["<script>","codex","notify"]'`
+  (no file written): the script ran twice after the turn with the session's
+  environment (a test variable was there), in the session's terminal
+  session on its `pts`. OSC 7501 it wrote to `/dev/tty`, and to the path of
+  the session's terminal passed in the environment, both came out of the
+  session's stream.
+- A project `.codex/hooks.json` in the scratch repository was held by
+  Codex's "Hooks need review" screen and did not run; not taken further.
+- Grok Build 1.0.92, `grok` in the repository, its config untouched (no
+  `program_status` set): one probe, `state=blocked:kind=permission:app=grok`
+  with "Trust this folder?", then after Enter `idle`, `working` with
+  "Waiting for response..." and "Thinking", and `done` with "Turn complete
+  in 2.0s.", all `app=grok`. The same, one probe answered and then
+  `idle`, `working`, and `done`, with `TERM_PROGRAM=timber-app` and
+  `COLORTERM=truecolor`. Its guide (`~/.grok/docs/user-guide/05-configuration.md`)
+  gives `program_status` the default `"auto"`.
+- Cursor CLI 2026.11.22, `cursor-agent --workspace <repo>`, Enter at its
+  trust screen, with a project `.cursor/hooks.json` running a scratch
+  script on `sessionStart`, `beforeSubmitPrompt`, and `stop`: no OSC 7501
+  from Cursor (its files hold no `]7501` either). All three hooks ran, each
+  with the session's environment, in a session of its own with no
+  terminal: `tty` said "not a tty", and writing to `/dev/tty` failed with
+  "No such device or address". Writing to the session's terminal by its
+  path from the environment came out of the session's stream.
+- No BEL, OSC 9, or OSC 777 from Codex, Grok Build, or Cursor CLI in these
+  turns.
+- These runs were in the scratch script, not through `createTerminalSessions`,
+  so the reports reaching a session's `status` is the scanner's tested
+  behavior on the same bytes, not observed for Codex or Grok Build.
+- Not run: Gemini CLI, OpenCode, and GitHub Copilot CLI, which are not
+  installed here (`/usr/bin/copilot` is VS Code's shim, which says Copilot
+  CLI was not found); the desktop app with any of these agents; macOS and
+  Windows.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun run test`: 4398 pass, 19 skip, 0 fail, with the new check that a
+  session reporting `app=grok`, a bare `agent` included, gets Grok Build's
+  mark.

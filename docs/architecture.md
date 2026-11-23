@@ -4992,9 +4992,11 @@ for its mark. Each row has:
   command that signs in. Null for every agent for now; nothing reads them yet.
 - **`status`**: how it reports its status, `osc-7501`, `hook`, or `none`,
   and the start of the `app` it reports, such as `claude` for `claude-code`,
-  which gives its mark to any session that reports it. The source is not
-  read yet: any program may report through OSC 7501 (see
-  [agent status](#agent-status)).
+  which gives its mark to any session that reports it. Claude Code, Codex,
+  and Grok Build report through OSC 7501 (`app` `claude`, `codex`, `grok`).
+  The source is not read yet: any program may report through OSC 7501 (see
+  [agent status](#agent-status)). `hook` is for the agents of
+  [the status hook decision](decision-agent-status-hooks.md), not built.
 
 **Adding an agent.**
 
@@ -5215,7 +5217,18 @@ repository header, from the **Program Status Protocol** (OSC 7501,
 [spec](https://www.superlogical.com/rex/docs/build/program-status)). A
 program writes it into its own terminal stream once the terminal says it
 supports it. Nothing is added to an agent's command, and no agent config
-file is written.
+file is written. Whether and how the app may install a status hook for an
+agent that does not report is decided in
+[docs/decision-agent-status-hooks.md](decision-agent-status-hooks.md);
+nothing of it is built yet.
+
+Which agents report, on Linux x64 (issue 349): Claude Code once the probe is
+answered; Codex CLI 0.169.0 without a probe, from its prompt on (`idle`,
+with a short `working` and `idle` as it starts, then `working` and `done`
+for a turn; nothing before its first screen is passed, and `blocked` was
+not seen); Grok Build 1.0.92 once the probe is answered, by default
+(its `program_status = "auto"`). Cursor CLI does not. Gemini CLI, OpenCode,
+and GitHub Copilot CLI were not tried.
 
 **Why this is not reading agent output.** OSC 7501 is a terminal control
 sequence the program addresses to the terminal, like a title (OSC 0) or a
@@ -5523,8 +5536,10 @@ What the agent prints on screen is still never read, parsed, or answered.
   - *Not told again.* A session that stays in a state, such as Needs you
     for a second approval with a new message, gets no new notification, and
     the one on screen keeps its first message.
-- **Not built.** Hooks for agents that do not send OSC 7501, which can
-  also carry the prompt and the agent's reply.
+- **Not built.** Hooks for agents that do not send OSC 7501, decided in
+  [docs/decision-agent-status-hooks.md](decision-agent-status-hooks.md).
+  They carry the agent and the event only, never the prompt or the
+  agent's reply.
 
 In `bun run dev:web`, `timberMock.agentStatus(id, "state=blocked:kind=permission:msg=YXBwcm92ZQ==")`
 acts out a report from the program in a session (`"?"` for the probe), read

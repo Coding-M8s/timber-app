@@ -33,7 +33,7 @@ export function NotificationsSectionView({ draft, saved, save, problem, customPa
 	return (
 		<SettingsSection
 			title="Notifications"
-			description="Agents that support the Program Status Protocol, such as Claude Code and Codex, tell the app when they work, need you, or are done. The sidebar always shows it. A desktop notification and a sound can say it too, for a worktree that is not on screen."
+			description="Agents that support the Program Status Protocol, such as Claude Code, Codex, and Grok Build, tell the app when they work and when they are done, and Claude Code and Grok Build also when they need you. The sidebar always shows it. A desktop notification and a sound can say it too, for a worktree that is not on screen."
 			save={save}
 			canSave={!sameNotificationsDraft(draft, saved)}
 			onSave={onSave}
