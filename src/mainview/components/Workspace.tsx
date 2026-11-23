@@ -90,14 +90,14 @@ export function Workspace() {
 	return (
 		<main className="workspace">
 			<header className="workspace-header">
-				{/* One action bar on the title line: Open in editor, then More with Rebase and Done. Each shows its command before it runs. */}
+				{/* One action bar on the title line: Open in editor, then More with Rebase (or Pull, for a primary checkout whose base is its upstream) and Done. Each shows its command before it runs. */}
 				<div className="workspace-title-line">
 					<h1 className="workspace-title" title={label}>{label}</h1>
 					{kind !== null && <span className="workspace-kind">{kind}</span>}
 					{removing && <span className="workspace-kind" role="status" title={BEING_REMOVED_REASON}>Removing</span>}
 					<div className="workspace-actions">
 						<OpenInEditorButton repository={repository.path} worktree={worktree} />
-						<WorkspaceMore repository={repository.path} worktree={worktree} removing={removing} />
+						<WorkspaceMore repository={repository} worktree={worktree} removing={removing} />
 					</div>
 				</div>
 				<div className="workspace-meta">

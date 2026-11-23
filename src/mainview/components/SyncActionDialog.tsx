@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from "react";
 import { confirmsPull, withPullSkipped } from "../../shared/pull-confirm-setting";
+import { pullsInsteadOfRebase } from "../../shared/fallback-base";
 import type { Worktree } from "../../shared/model";
 import type { SyncActionKind, SyncActionResult } from "../../shared/sync-actions";
 import { worktreeLabel } from "../format";
@@ -20,6 +21,8 @@ export interface SyncActionDialogViewProps {
 	path: string;
 	/** What the latest run that left the dialog open came to, for the note under Git's words. */
 	result: SyncActionResult | null;
+	/** False for a primary checkout whose base is its own upstream, where Pull is offered in place of Rebase: a refusal then does not point to Rebase. */
+	rebaseOffered?: boolean;
 	submission: SubmissionState;
 	/**
 	 * The "Don't ask before pulling" box, for a Pull dialog opened to ask
@@ -36,14 +39,14 @@ export interface SyncActionDialogViewProps {
  * its own. It shows every command before it runs, worded from the same
  * table the main process runs them from: Git's for Pull, Timber's for Push.
  */
-export function SyncActionDialogView({ action, worktree, path, result, submission, skipChoice, onSubmit, onClose }: SyncActionDialogViewProps) {
+export function SyncActionDialogView({ action, worktree, path, result, rebaseOffered = true, submission, skipChoice, onSubmit, onClose }: SyncActionDialogViewProps) {
 	const words = SYNC_ACTION_WORDS[action];
 	const skipHintId = useId();
 	// After a run, something did run: the notes for a worktree or upstream that went say only what is so now.
 	const ran = result !== null && !(result.outcome === "failed" && !result.ran);
 	const target = syncTargetOfWorktree(worktree);
 	const commands = target && worktree ? describeSyncCommands(action, target, worktree.path) : null;
-	const note = result ? describeSyncRefusalNote(result) : null;
+	const note = result ? describeSyncRefusalNote(result, rebaseOffered) : null;
 	return (
 		<OperationDialog
 			title={worktree ? describeSyncTitle(action, worktree) : `${path} is no longer in the list`}
@@ -148,6 +151,7 @@ export function SyncActionDialog({ request }: { request: Extract<DialogRequest, 
 			worktree={worktree}
 			path={path}
 			result={result}
+			rebaseOffered={repository === undefined || worktree === null || !pullsInsteadOfRebase(repository, worktree)}
 			submission={ended !== null && !submissionState.running && submissionState.failure === null ? { running: false, failure: ended.failure } : submissionState}
 			{...(offerSkip ? { skipChoice: { repository: repositoryName, checked: skipTicked, onChange: setSkipTicked } } : {})}
 			onSubmit={run}

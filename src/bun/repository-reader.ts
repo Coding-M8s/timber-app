@@ -1,7 +1,9 @@
 import { basename } from "node:path";
-import { type BaseCounts, type Repository, type SyncState, type TimberStatus, type Worktree, worktreeId } from "../shared/model";
+import { NOTHING_CONFIGURED, fallbackBaseOf, mayFallBackToUpstream } from "../shared/fallback-base";
+import { type BaseCounts, type Repository, type SetupState, type SyncState, type TimberStatus, type Worktree, worktreeId } from "../shared/model";
 import type { ListedWorktree } from "../shared/timber-ls";
-import { commonDirectory, readBaseCounts, readBranchSync } from "./git-engine";
+import { type ConfiguredBaseReader, createConfiguredBaseReader } from "./configured-base";
+import { commonDirectory, readBaseCounts, readBranchSync, readRemoteDefaults } from "./git-engine";
 import { readSetupState } from "./setup-state";
 import { describeTimberStatus } from "./timber";
 import { listWorktrees } from "./timber-ls";
@@ -17,8 +19,9 @@ export type RepositoryRead =
 /**
  * Reads repositories for the sidebar. The worktrees are exactly the ones
  * `timber ls --json` lists, in its order. Git adds only what Timber does not
- * report: how each branch stands against its upstream, and how each worktree
- * stands against its saved base. Everything is read-only.
+ * report: how each branch stands against its upstream, how each worktree
+ * stands against its saved base, and the remotes' cached default branches.
+ * Timber's settings are read only for `fallbackBase`. Everything is read-only.
  */
 export interface RepositoryReader {
 	/** Read the repository that owns `folder`: its primary checkout, a linked worktree, or a folder inside either. */
@@ -73,15 +76,45 @@ export async function countAgainstBases(
 	return keys.map(key => answers.get(key) ?? null);
 }
 
+/** Where the fallback base of one repository is read from. */
+export interface FallbackBaseSources {
+	commonGitDir: string;
+	primaryRoot: string;
+	setup: SetupState;
+	/** The Timber executable, for reading its settings. */
+	timber: string;
+	configuredBase: ConfiguredBaseReader;
+	remoteDefaults?: typeof readRemoteDefaults;
+}
+
+/**
+ * The repository's `fallbackBase`: read only when its primary checkout may
+ * fall back to its own upstream (`mayFallBackToUpstream`), so most reads run
+ * nothing more. Git gives the remotes and their cached default branches.
+ * Timber's settings, which may name the base, are read only when one of its
+ * settings files exists ("none" means nothing is configured), and an
+ * unknown setup gives null.
+ */
+export async function readFallbackBase(worktrees: readonly Worktree[], sources: FallbackBaseSources): Promise<string | null> {
+	const primary = worktrees.find(worktree => worktree.primary);
+	if (primary === undefined || !mayFallBackToUpstream(primary) || sources.setup === "unknown") return null;
+	const defaults = await (sources.remoteDefaults ?? readRemoteDefaults)(sources.commonGitDir);
+	if (defaults === null) return null;
+	if (sources.setup === "none") return fallbackBaseOf(defaults.remotes, defaults.heads, NOTHING_CONFIGURED);
+	const configured = await sources.configuredBase(sources.timber, sources.primaryRoot);
+	return fallbackBaseOf(defaults.remotes, defaults.heads, configured);
+}
+
 /** A repository that Git can read but whose worktrees Timber did not list. Its setup is not told apart then. */
 export function failedRepository(path: string, message: string): Repository {
-	return { path, name: basename(path) || path, available: true, failure: message, setup: "unknown", worktrees: [] };
+	return { path, name: basename(path) || path, available: true, failure: message, setup: "unknown", fallbackBase: null, worktrees: [] };
 }
 
 /** `timber` answers where Timber is, as of the last look (see ./timber.ts). */
 export function createRepositoryReader(
 	timber: () => Promise<TimberStatus>,
 	environment: Record<string, string | undefined> = process.env,
+	configuredBase: ConfiguredBaseReader = createConfiguredBaseReader(environment),
 ): RepositoryReader {
 	async function find(folder: string): Promise<RepositoryRead> {
 		// Git says whether this is a repository at all, so a missing folder is not mistaken for a Timber failure.
@@ -105,9 +138,10 @@ export function createRepositoryReader(
 			sync: syncOf(listed, branches),
 			baseCounts: baseCounts[index] ?? null,
 		}));
+		const fallbackBase = await readFallbackBase(worktrees, { commonGitDir, primaryRoot: primaryWorktreeRoot, setup, timber: status.path, configuredBase });
 		return {
 			outcome: "read",
-			repository: { path: primaryWorktreeRoot, name: basename(primaryWorktreeRoot), available: true, failure: null, setup, worktrees },
+			repository: { path: primaryWorktreeRoot, name: basename(primaryWorktreeRoot), available: true, failure: null, setup, fallbackBase, worktrees },
 		};
 	}
 

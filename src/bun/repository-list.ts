@@ -103,7 +103,7 @@ const groupedList = (settings: Settings): GroupedList<SavedRepository> => ({ gro
 const groupsOf = (settings: Settings): RepositoryGroups => groupsOfList(groupedList(settings));
 
 function unavailable(path: string): Repository {
-	return { path, name: basename(path) || path, available: false, failure: null, setup: "unknown", worktrees: [] };
+	return { path, name: basename(path) || path, available: false, failure: null, setup: "unknown", fallbackBase: null, worktrees: [] };
 }
 
 export function createRepositoryList(options: RepositoryListOptions): RepositoryList {

@@ -2,6 +2,7 @@ import { realpath } from "node:fs/promises";
 import { delimiter } from "node:path";
 import { isCommitHash, savedBaseRef } from "../shared/file-changes";
 import { BRANCH_LIST_FORMAT, BRANCH_SYNC_FORMAT, parseBranchList, parseBranchSync, parseLeftRightCount } from "../shared/git-parse";
+import { REMOTE_HEADS_FORMAT, REMOTE_HEADS_PATTERN, parseRemoteHeads, parseRemoteNames } from "../shared/fallback-base";
 import type { BaseCounts, BranchSuggestion, SavedBase, SyncState } from "../shared/model";
 import { readGit } from "./read-git";
 
@@ -103,4 +104,18 @@ export async function readHeadSubject(worktree: string): Promise<string | null> 
 export function overrideRepositoryPaths(environment: Record<string, string | undefined> = process.env): string[] | null {
 	const configured = (environment.TIMBER_APP_REPOS ?? "").split(delimiter).map(path => path.trim()).filter(Boolean);
 	return configured.length > 0 ? configured : null;
+}
+
+/**
+ * The remotes of a repository and each one's cached default branch (see
+ * `parseRemoteHeads`), for telling what a worktree with no saved base is
+ * rebased onto. Null when Git could not answer. Read-only, and offline.
+ */
+export async function readRemoteDefaults(commonGitDir: string): Promise<{ remotes: string[]; heads: Map<string, string> } | null> {
+	const [names, refs] = await Promise.all([
+		git(["--git-dir", commonGitDir, "remote"]),
+		git(["--git-dir", commonGitDir, "for-each-ref", `--format=${REMOTE_HEADS_FORMAT}`, REMOTE_HEADS_PATTERN]),
+	]);
+	if (names === null || refs === null) return null;
+	return { remotes: parseRemoteNames(names), heads: parseRemoteHeads(refs) };
 }

@@ -148,8 +148,8 @@ describe("the saved preferences in the main process", () => {
 
 	/** Stands in for Timber's list: every folder is its own primary checkout. Git still says, for real, what a folder is. */
 	const reader: RepositoryReader = {
-		find: async folder => ({ outcome: "read", repository: { path: folder, name: basename(folder), available: true, failure: null, setup: "unknown", worktrees: [] } }),
-		reload: async path => ({ path, name: basename(path), available: true, failure: null, setup: "unknown", worktrees: [] }),
+		find: async folder => ({ outcome: "read", repository: { path: folder, name: basename(folder), available: true, failure: null, setup: "unknown", fallbackBase: null, worktrees: [] } }),
+		reload: async path => ({ path, name: basename(path), available: true, failure: null, setup: "unknown", fallbackBase: null, worktrees: [] }),
 	};
 
 	/** What the main process sets up: one holder of the file, shared by everything that saves a part of it. */

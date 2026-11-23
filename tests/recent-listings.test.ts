@@ -6,7 +6,7 @@ import type { Repository } from "../src/shared/model";
 const A = "/work/a";
 const B = "/work/b";
 
-const repository = (path: string, read: number): Repository => ({ path, name: `read ${read}`, available: true, failure: null, setup: "repository", worktrees: [] });
+const repository = (path: string, read: number): Repository => ({ path, name: `read ${read}`, available: true, failure: null, setup: "repository", fallbackBase: null, worktrees: [] });
 
 function setup() {
 	let clock = 0;

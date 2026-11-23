@@ -387,7 +387,7 @@ describe("the chop order on disk", () => {
 	let root: string;
 	let primary: string;
 	const fileText = `${JSON.stringify({ version: 1, chops: [{ name: "Test", kind: "command", text: "bun test" }, { name: "Lint", kind: "command", text: "bun run lint" }] }, null, "\t")}\n`;
-	const repository = (path: string): Repository => ({ path, name: "sample", available: true, failure: null, setup: "repository", worktrees: [] });
+	const repository = (path: string): Repository => ({ path, name: "sample", available: true, failure: null, setup: "repository", fallbackBase: null, worktrees: [] });
 
 	beforeAll(() => {
 		root = realpathSync(mkdtempSync(join(tmpdir(), "timber-app-chop-order-")));

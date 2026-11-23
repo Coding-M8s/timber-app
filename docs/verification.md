@@ -4274,3 +4274,50 @@ Bun 1.4.5:
 - Screenshots of both themes, panel open and closed, at 1280 and 860 wide,
   were looked at by eye.
 - Not run: the desktop app by hand, and macOS and Windows.
+
+Run for Pull in place of Rebase on the primary checkout (issue 340), Linux
+x64 (Pop!_OS 24.04) with Bun 1.4.5 and Timber 0.2.0 on PATH:
+
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- `bun test --parallel=4 --timeout=30000`: 4373 pass, 19 skip, 0 fail.
+- `bun run build:web`: built.
+- `tests/fallback-base.test.ts`: the rule over Timber's settings, the
+  remotes, and their cached defaults, and which worktrees get Pull: the
+  primary checkout on its default branch with no saved base, also ahead,
+  diverged, or with a rewritten upstream; one whose saved base is its
+  upstream; not one on a feature branch with another base, a linked
+  worktree, an unknown fallback base, or a base Timber does not report.
+- `tests/fallback-base-read.test.ts`, on real temporary repositories: a
+  clone's `origin/HEAD` read with `git for-each-ref refs/remotes/**/HEAD`,
+  leaving every ref and file of `.git` as it was; remotes whose HEAD was
+  removed with `git remote set-head --delete` have no cached default. (Git
+  2.48 and later cache it on a fetch, so CI found the first version of
+  this test wrong.) A stand-in Timber answering Timber's recorded
+  `__app-config read` output gave `base_branch` and `remote`, ran in the
+  primary checkout with `__app-config read --scope repository`, and a
+  refusal or unreadable answer gave none and was read again next time.
+  The answer was kept until a settings file or the Timber changed, and
+  Timber was not run for a primary checkout that cannot fall back to its
+  upstream. With the installed Timber 0.2.0 on a clone: no settings gave
+  `refs/remotes/origin/main`, `base_branch = "develop"` in `.timber.toml`
+  gave `refs/remotes/origin/develop`, and `remote = "origin"` alone gave
+  `refs/remotes/origin/main`.
+- `tests/palette.test.ts` and `tests/workspace-actions.test.ts`: Pull, once,
+  in place of Rebase in the palette and the More menu, also when the row
+  offers none; "Pull…" or "Pull" as the Pull setting says; choosing it opens
+  the row's `sync-action` request; Rebase where it stays.
+- `tests/sync-action-ui.test.tsx`: that Pull is the row's when the row
+  offers one; a diverged refusal there says to decide in a terminal, not to
+  rebase.
+- `tests/workspace-actions-browser.test.ts`, in headless Chrome over the
+  mock engine: the sample primary checkout's More menu held "Pull…" and
+  "Done…", and Pull opened "Pull main" with `git fetch origin` and
+  `git merge --ff-only --no-autostash refs/remotes/origin/main`; a linked
+  worktree's Rebase opened the Rebase dialog. This file's focus checks
+  (`FOCUSED_TEXT === "..."`) were always true before, because `??` binds
+  looser than `===`; they are now in parentheses and check the entry. The
+  earlier entry for this file, which says Enter and Space opened the menu
+  on "Rebase…", recorded checks that did not test which entry it was.
+- `tests/sync-action-browser.test.ts`: a diverged refusal on the sample
+  primary checkout showed the terminal note, not the Rebase one.
+- Not run: the desktop app by hand, and macOS and Windows.

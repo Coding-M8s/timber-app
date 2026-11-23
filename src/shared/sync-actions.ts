@@ -92,7 +92,12 @@ function pullSteps(target: SyncTarget): SyncStep[] {
 	];
 }
 
-/** Pull is offered only to a branch that is behind and not ahead, whose upstream was not rewritten. */
+/**
+ * The row offers Pull only to a branch that is behind and not ahead, whose
+ * upstream was not rewritten. The Pull that takes Rebase's place on a
+ * primary checkout whose base is its upstream does not ask this (see
+ * `pullInsteadOfRebase` in ../mainview/sync-action-format.ts).
+ */
 function pullApplies(sync: SyncState | null): boolean {
 	return sync?.kind === "tracking" && sync.behind > 0 && sync.ahead === 0 && sync.forcePushed === undefined && syncTargetOf(sync) !== null;
 }
@@ -149,7 +154,8 @@ export function describeSyncStep(step: SyncStep): string {
 /**
  * Why an action was refused before it changed anything:
  * - `diverged`: Git refused a fast-forward because the branch has commits its
- *   upstream does not. Rebase is the way on.
+ *   upstream does not. Rebase is the way on, except where the upstream is
+ *   the branch's own base (see ./fallback-base.ts).
  * - `local-changes`: Git refused a fast-forward because changed or untracked
  *   files would be overwritten.
  * - `timber-refused`: Timber refused a push, such as one to a remote branch

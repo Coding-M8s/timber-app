@@ -1,6 +1,8 @@
 import { type KeyboardEvent, useRef, useState } from "react";
-import type { Worktree } from "../../shared/model";
-import { useStore } from "../store/react";
+import type { Repository, Worktree } from "../../shared/model";
+import { useAppState, useStore } from "../store/react";
+import { syncOptionsOf } from "../store/state";
+import { pullInsteadOfRebase } from "../sync-action-format";
 import { describeWorkspaceMenu, describeWorkspaceMore, workspaceMenuChoice, workspaceMenuItems, workspaceMoreKeyOpens } from "../workspace-actions-format";
 import { MoreIcon } from "./MoreIcon";
 import { WorktreeMenu } from "./WorktreeMenu";
@@ -11,13 +13,17 @@ interface OpenMenu {
 }
 
 /**
- * More on the workspace header's title line, and its menu: Rebase and Done.
+ * More on the workspace header's title line, and its menu: Rebase and Done,
+ * or Pull in place of Rebase for a primary checkout whose base is its own
+ * upstream (`pullInsteadOfRebase`).
  * Enter, Space, or Down open it on its first entry, Up on its last. Escape,
  * Tab, or choosing gives the keyboard back to More, so a dialog opened from
  * it hands the keyboard back to More when it closes.
  */
-export function WorkspaceMore({ repository, worktree, removing }: { repository: string; worktree: Worktree; removing: boolean }) {
+export function WorkspaceMore({ repository, worktree, removing }: { repository: Repository; worktree: Worktree; removing: boolean }) {
 	const store = useStore();
+	const state = useAppState();
+	const pull = pullInsteadOfRebase(repository, worktree, syncOptionsOf(state, repository.path, worktree.path));
 	const button = useRef<HTMLButtonElement>(null);
 	const [menu, setMenu] = useState<OpenMenu | null>(null);
 
@@ -53,7 +59,7 @@ export function WorkspaceMore({ repository, worktree, removing }: { repository: 
 			{menu !== null && (
 				<WorktreeMenu
 					label={describeWorkspaceMenu(worktree)}
-					items={workspaceMenuItems(worktree, removing)}
+					items={workspaceMenuItems(worktree, removing, pull)}
 					at={menu.at}
 					start={menu.start}
 					onClose={backToMore => {
@@ -61,7 +67,7 @@ export function WorkspaceMore({ repository, worktree, removing }: { repository: 
 						if (backToMore) button.current?.focus();
 					}}
 					onChoose={id => {
-						const dialog = workspaceMenuChoice(repository, worktree, id, removing);
+						const dialog = workspaceMenuChoice(repository.path, worktree, id, removing, pull);
 						if (dialog) store.openDialog(dialog);
 					}}
 				/>

@@ -40,7 +40,7 @@ describe("palette entries", () => {
 		expect(feature.action).toEqual({ kind: "select", worktree: FEATURE_ID });
 		const labels = entries.filter(entry => entry.kind === "action").map(entry => entry.label);
 		expect(labels).toEqual([
-			"Open terminal", "Start Claude Code", "Start Codex", "Pull", "Rebase", "Open in editor", "Done", "New worktree", "Open existing branch", "New arena (Beta)", "Fetch now",
+			"Open terminal", "Start Claude Code", "Start Codex", "Pull", "Open in editor", "Done", "New worktree", "Open existing branch", "New arena (Beta)", "Fetch now",
 			"Clean up merged", "Clean up merged", "Show next session that needs you or is done", "Show changes", "Settings", "Add repository",
 		]);
 	});
@@ -118,7 +118,9 @@ describe("palette entries", () => {
 		const { state } = await sampleState();
 		expect(state.selection).not.toBeNull();
 		expect(byLabel(state, "Done").disabledReason).toBe(DONE_PRIMARY_NOTE);
-		expect(byLabel(state, "Rebase").disabledReason).toBeNull();
+		// Its base is its own upstream, so Pull takes Rebase's place.
+		expect(byLabel(state, "Rebase")).toBeUndefined();
+		expect(byLabel(state, "Pull").disabledReason).toBeNull();
 	});
 
 	test("a missing folder disables rebase, terminals, and agents", async () => {
@@ -328,11 +330,11 @@ describe("the view: scoped to the repository, in sections", () => {
 		const of = (label: string) => entries.find(entry => entry.label === label)!;
 		const apiWorktree = entries.find(entry => entry.kind === "worktree" && entry.repository === API)!;
 		const timberWorktree = entries.find(entry => entry.kind === "worktree" && entry.repository === TIMBER)!;
-		expect(rowTarget(of("Rebase"), context, true, true)).toBeNull();
+		expect(rowTarget(of("Pull"), context, true, true)).toBeNull();
 		expect(rowTarget(timberWorktree, context, true, true)).toBeNull();
 		expect(rowTarget(apiWorktree, context, true, true)).toBe("api-server");
 		expect(rowTarget(timberWorktree, context, false, true)).toBe("timber");
-		expect(rowTarget(of("Rebase"), context, false, false)).toBe("main in timber");
+		expect(rowTarget(of("Pull"), context, false, false)).toBe("main in timber");
 		expect(rowTarget(of("Fetch now"), context, false, false)).toBe("timber");
 		expect(rowTarget(of("Settings"), context, false, false)).toBeNull();
 		const apiCleanUp = entries.find(entry => entry.label === "Clean up merged" && entry.repository === API)!;
@@ -385,5 +387,65 @@ describe("the shortcut and the list keys", () => {
 		expect(rowAfterKey(3, 1, "End")).toBe(2);
 		expect(rowAfterKey(3, 1, "a")).toBeNull();
 		expect(rowAfterKey(0, 0, "ArrowDown")).toBeNull();
+	});
+});
+
+describe("Pull in place of Rebase", () => {
+	/** The sample state with the selected primary checkout of timber changed. */
+	const withPrimary = (state: AppState, change: Partial<Worktree>, repository: Partial<Repository> = {}): AppState => ({
+		...state,
+		repositories: state.repositories.map(candidate => candidate.path !== TIMBER ? candidate : {
+			...candidate,
+			...repository,
+			worktrees: candidate.worktrees.map(worktree => worktree.primary ? { ...worktree, ...change } : worktree),
+		}),
+	});
+	const actionLabels = (state: AppState) => paletteEntries(state).filter(entry => entry.section === "worktree").map(entry => entry.label);
+
+	test("the primary checkout on the default branch, with no saved base, lists Pull once and no Rebase, and typing rebase finds it", async () => {
+		const { state } = await sampleState();
+		const labels = actionLabels(state);
+		expect(labels.filter(label => label === "Pull")).toHaveLength(1);
+		expect(labels).not.toContain("Rebase");
+		const pull = byLabel(state, "Pull");
+		const primary = state.repositories[0]!.worktrees.find(worktree => worktree.primary)!;
+		expect(pull.id).toBe("action:sync:pull");
+		expect(pull.action).toEqual({ kind: "dialog", request: { kind: "sync-action", action: "pull", repository: TIMBER, worktree: primary.id } });
+		expect(matchEntries(paletteEntries(state), "rebase").map(match => match.entry.label)).toContain("Pull");
+	});
+
+	test("it is listed also when the branch is not behind, where the row offers no Pull", async () => {
+		const { state } = await sampleState();
+		const level = withPrimary(state, { sync: { kind: "tracking", upstream: "origin/main", ahead: 1, behind: 0, remote: "origin", upstreamRef: "refs/remotes/origin/main" } });
+		const labels = actionLabels(level);
+		expect(labels.filter(label => label === "Pull")).toHaveLength(1);
+		expect(labels).not.toContain("Rebase");
+		// Ahead, so the row's Push is there too, after Pull.
+		expect(labels.indexOf("Pull")).toBeLessThan(labels.indexOf("Push"));
+	});
+
+	test("the primary checkout on a feature branch with another base keeps Rebase", async () => {
+		const { state } = await sampleState();
+		const feature = withPrimary(state, {
+			branch: "feat/login",
+			base: { kind: "assigned", ref: "refs/remotes/origin/main" },
+			sync: { kind: "tracking", upstream: "origin/feat/login", ahead: 0, behind: 0, remote: "origin", upstreamRef: "refs/remotes/origin/feat/login" },
+		});
+		expect(actionLabels(feature)).toContain("Rebase");
+		expect(actionLabels(feature)).not.toContain("Pull");
+	});
+
+	test("an unknown fallback base, as when the remote has no cached default, keeps Rebase", async () => {
+		const { state } = await sampleState();
+		const configured = withPrimary(state, {}, { fallbackBase: null });
+		expect(actionLabels(configured)).toContain("Rebase");
+		// The row's own Pull, for a branch that is behind, stays as before.
+		expect(actionLabels(configured)).toContain("Pull");
+	});
+
+	test("a linked worktree keeps Rebase", async () => {
+		const { store } = await sampleState();
+		store.select(FEATURE_ID);
+		expect(actionLabels(store.getState())).toContain("Rebase");
 	});
 });

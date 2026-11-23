@@ -254,7 +254,7 @@ describe.skipIf(windows)("saving chops leaves a real repository's file as it is"
 	let primary: string;
 	let lone: string;
 	const fileText = `${JSON.stringify({ version: 1, chops: [{ name: "Test", kind: "command", text: "bun test" }] }, null, "\t")}\n`;
-	const repository = (path: string): Repository => ({ path, name: "sample", available: true, failure: null, setup: "repository", worktrees: [] });
+	const repository = (path: string): Repository => ({ path, name: "sample", available: true, failure: null, setup: "repository", fallbackBase: null, worktrees: [] });
 
 	beforeAll(() => {
 		root = realpathSync(mkdtempSync(join(tmpdir(), "timber-app-chops-edit-")));

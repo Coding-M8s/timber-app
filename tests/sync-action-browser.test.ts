@@ -62,7 +62,9 @@ describe.skipIf(browserPath === null || process.platform === "win32")("Pull in a
 		await page.until(DIALOG_OPEN, "the dialog opened");
 		await page.click("dialog[open] button[type=submit]");
 		await page.until(`document.querySelector("dialog[open]")?.textContent.includes("Not possible to fast-forward") === true`, "Git's words showed");
-		expect(await page.evaluate<string>(`document.querySelector("dialog[open]").textContent`)).toContain("Rebase it onto its upstream");
+		// The sample primary checkout's base is its own upstream, so the way on is not Rebase, which it does not offer.
+		expect(await page.evaluate<string>(`document.querySelector("dialog[open]").textContent`)).toContain("decide in a terminal");
+		expect(await page.evaluate<string>(`document.querySelector("dialog[open]").textContent`)).not.toContain("Rebase it onto its upstream");
 		expect(await page.evaluate<boolean>(`document.querySelector(${JSON.stringify(CONTROL)}) !== null`)).toBe(true);
 	}, 30_000);
 
@@ -220,7 +222,9 @@ describe.skipIf(browserPath === null || process.platform === "win32")("Skipping 
 		await page.until(`document.querySelector("dialog[open]").textContent.includes("Not possible to fast-forward")`, "Git's words showed");
 		const commands = await page.evaluate<string[]>(`[...document.querySelectorAll("dialog[open] .dialog-command")].map(command => command.textContent)`);
 		expect(commands).toEqual(["git fetch origin", "git merge --ff-only --no-autostash refs/remotes/origin/main"]);
-		expect(await page.evaluate<string>(`document.querySelector("dialog[open]").textContent`)).toContain("Rebase it onto its upstream");
+		// The sample primary checkout's base is its own upstream, so the way on is not Rebase, which it does not offer.
+		expect(await page.evaluate<string>(`document.querySelector("dialog[open]").textContent`)).toContain("decide in a terminal");
+		expect(await page.evaluate<string>(`document.querySelector("dialog[open]").textContent`)).not.toContain("Rebase it onto its upstream");
 		// It already skips, so the box is not offered.
 		expect(await page.evaluate<boolean>(`(${SKIP_BOX}) === undefined`)).toBe(true);
 	}, 30_000);

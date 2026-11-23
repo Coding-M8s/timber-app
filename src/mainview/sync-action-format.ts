@@ -1,4 +1,5 @@
-import type { Worktree } from "../shared/model";
+import { pullsInsteadOfRebase } from "../shared/fallback-base";
+import type { Repository, Worktree } from "../shared/model";
 import {
 	type SyncActionKind, type SyncActionResult, type SyncTarget, applicableSyncActions, describeSyncStep, syncActionSteps, syncTargetOf,
 } from "../shared/sync-actions";
@@ -96,9 +97,46 @@ export function describeSyncControls(worktree: Worktree, options: SyncOptions = 
 	});
 }
 
+/** One sync action offered in a menu or the palette. */
+export interface SyncMenuEntry {
+	action: SyncActionKind;
+	label: string;
+	/** What it does, in a sentence or two. */
+	title: string;
+	opensDialog: boolean;
+	busy: boolean;
+}
+
 /** The menu entries a worktree's sync state offers. Never one that does not apply. */
-export function syncMenuEntries(worktree: Worktree, options: SyncOptions = ASKING_SYNC): { action: SyncActionKind; label: string; title: string; opensDialog: boolean; busy: boolean }[] {
+export function syncMenuEntries(worktree: Worktree, options: SyncOptions = ASKING_SYNC): SyncMenuEntry[] {
 	return describeSyncControls(worktree, options).map(control => ({ action: control.action, label: SYNC_ACTION_WORDS[control.action].label, title: control.title, opensDialog: control.opensDialog, busy: control.busy }));
+}
+
+/**
+ * The Pull offered in place of Rebase, or null where Rebase stays. Only a
+ * primary checkout whose base is its own upstream gets one
+ * (`pullsInsteadOfRebase` in ../shared/fallback-base.ts). It is the row's
+ * Pull when that applies, and otherwise the same Pull, also when the branch
+ * is not behind, is ahead, or its upstream was rewritten: Pull fetches first
+ * and only fast-forwards, so Git refuses whatever cannot be one and nothing
+ * is rewritten. The More menu and the palette both ask this, so they agree.
+ */
+export function pullInsteadOfRebase(repository: Pick<Repository, "fallbackBase">, worktree: Worktree, options: SyncOptions = ASKING_SYNC): SyncMenuEntry | null {
+	if (!pullsInsteadOfRebase(repository, worktree)) return null;
+	const listed = syncMenuEntries(worktree, options).find(entry => entry.action === "pull");
+	if (listed !== undefined) return listed;
+	const { sync } = worktree;
+	if (worktree.branch === null || sync?.kind !== "tracking" || syncTargetOf(sync) === null) return null;
+	const name = worktreeLabel(worktree);
+	return {
+		action: "pull",
+		label: SYNC_ACTION_WORDS.pull.label,
+		title: options.pulling
+			? `Pulling ${sync.upstream} into ${name}.`
+			: `Fetches ${sync.upstream} and fast-forwards ${name} to it, never rewriting its commits. ${options.pullAsks ? "Shows the commands, then pulls." : "Pulls now, without asking first."}`,
+		opensDialog: options.pullAsks,
+		busy: options.pulling,
+	};
 }
 
 /** What the dialog shows: the first command, then each that follows, with a note saying when it runs. */
@@ -129,7 +167,8 @@ export function describeSyncIntro(action: SyncActionKind, worktree: Worktree): s
 	switch (action) {
 		case "pull": {
 			const upstream = sync?.kind === "tracking" ? sync.upstream : "its upstream";
-			const behind = sync?.kind === "tracking" ? `${counted(sync.behind, "commit")} behind ${upstream} as of the last fetch. ` : "";
+			// Pull in place of Rebase is offered also when the branch is not behind: the fetch may bring commits.
+			const behind = sync?.kind === "tracking" && sync.behind > 0 ? `${counted(sync.behind, "commit")} behind ${upstream} as of the last fetch. ` : "";
 			return [
 				`${behind}Pull fetches ${upstream} and fast-forwards ${worktreeLabel(worktree)} to it, as git pull --ff-only does. It never makes a merge commit, never rebases, and never asks for a password.`,
 				`Both commands run in ${worktree.path}.`,
@@ -145,12 +184,19 @@ export function describeSyncIntro(action: SyncActionKind, worktree: Worktree): s
 	}
 }
 
-/** The note under a refusal: for a branch that diverged, the way on is Rebase. Timber's own words say why it refused a push. */
-export function describeSyncRefusalNote(result: SyncActionResult): string | null {
+/**
+ * The note under a refusal. For a branch that diverged, the way on is Rebase,
+ * unless Rebase is not offered there (`rebaseOffered` false, for a primary
+ * checkout whose base is its own upstream, where Pull takes its place): then
+ * it is to be sorted out in a terminal. Timber's own words say why it refused a push.
+ */
+export function describeSyncRefusalNote(result: SyncActionResult, rebaseOffered = true): string | null {
 	if (result.outcome !== "refused") return null;
 	switch (result.reason) {
 		case "diverged":
-			return "The branch has commits its upstream does not, so it cannot be fast-forwarded. Rebase it onto its upstream instead, from Rebase in the worktree's header or the command palette. Nothing was changed.";
+			return rebaseOffered
+				? "The branch has commits its upstream does not, so it cannot be fast-forwarded. Rebase it onto its upstream instead, from Rebase in the worktree's header or the command palette. Nothing was changed."
+				: "The branch has commits its upstream does not, so it cannot be fast-forwarded. Its upstream is its base, so the app does not rebase it: decide in a terminal whether to keep, move, or drop those commits. Nothing was changed.";
 		case "local-changes":
 			return "Commit or put away the changes Git names, then pull again. Nothing was changed, and your files are as they were.";
 		case "timber-refused":

@@ -222,6 +222,35 @@ The sidebar shows exactly the worktrees Timber lists, in Timber's order
   A branch Git did not answer about has none either, and its row says "sync
   unknown" instead of looking up to date, and so does the workspace header.
   The counts are as of the last fetch, because the app does not fetch yet.
+- **Fallback base.** Whether the primary checkout's Rebase is offered as
+  Pull (`pullsInsteadOfRebase` in `src/shared/fallback-base.ts`) needs what
+  a worktree with no saved base is rebased onto, which Timber does not
+  report. `Repository.fallbackBase` holds it as far as it can be told
+  offline (`readFallbackBase` in `src/bun/repository-reader.ts`), and only
+  for a primary checkout on a branch with no saved base that tracks the
+  remote branch of its own name; otherwise it is null and nothing more
+  runs. Git gives the remotes (`git remote`) and their cached default
+  branches (`git for-each-ref --format=%(refname)%00%(symref)
+  refs/remotes/**/HEAD`), read-only. When one of Timber's
+  settings files exists, Timber's effective `base_branch` and `remote` are
+  read with `timber __app-config read --scope repository`
+  (`src/bun/configured-base.ts`), kept per repository until either
+  settings file or the Timber executable changes, because the read opens
+  Timber's credential stores; a failed read is not kept. As Timber does,
+  a `base_branch` that starts with a remote's name (`origin/main`,
+  `refs/remotes/origin/main`) is on that remote; otherwise the remote is
+  the configured one, else the only one. The fallback is then
+  `refs/remotes/<remote>/<base_branch>`, or with no `base_branch` the
+  remote's cached default. It is null when the settings cannot be read,
+  when the setup is unknown, when the configured remote does not exist or
+  no single remote is chosen, when a `base_branch` is not a plain branch
+  name, and when the remote has no cached default to fall back on. The
+  read runs while the repository is read, so the first list read of such
+  a repository waits for it (at most 10 seconds); later ones use the kept
+  answer. Timber asks the remote for its
+  live default first; the app uses the cached one and never reaches the
+  network for this. It only chooses which action is shown; Timber keeps
+  every rule about a rebase and Git every check of a pull.
 - **Base counts.** Timber does not report how far a worktree is from its
   saved base either. For each listed worktree whose saved base Git can
   compare with (`savedBaseRef`: a canonical ref under `refs/` or a full
@@ -1347,7 +1376,9 @@ engine call, one dialog, and one kind of row control.
   Online this is `git pull --ff-only`. `--no-autostash` keeps a configured
   `merge.autostash` from putting local changes away and back: when they are
   in the way, Git refuses and leaves them. A branch that diverged is
-  refused by Git, with its message and a note pointing to Rebase. Any
+  refused by Git, with its message and a note pointing to Rebase, or, on a
+  primary checkout whose Rebase is replaced by Pull, a note to decide in a
+  terminal. Any
   other stop is reported as a failure that may have changed files, with
   Git's words and a note to check the worktree, never as "nothing changed". The
   fast-forward is stopped after 10 minutes, as a fetch is, since it
@@ -1370,7 +1401,13 @@ engine call, one dialog, and one kind of row control.
   ahead, Push for one that is ahead and not behind, each only when the
   upstream is a remote-tracking branch that was not marked force-pushed.
   Neither for a diverged, force-pushed, gone, unpublished, or detached
-  branch, nor while Timber removes the worktree.
+  branch, nor while Timber removes the worktree. The one exception is the
+  Pull that takes Rebase's place on a primary checkout whose base is its
+  upstream (`pullInsteadOfRebase` in `src/mainview/sync-action-format.ts`,
+  see "Fallback base" under [the worktree list](#the-worktree-list)): the
+  More menu and the palette offer it whenever the branch tracks a remote
+  branch, since the runner checks only the branch and the target and Git
+  refuses what cannot fast-forward.
 - **The interface.** `src/mainview/sync-action-format.ts` has each
   action's words, the row's control (`describeSyncControls`), the dialog's
   commands, and how a result is told. On the row, the behind count (Pull)
@@ -4661,7 +4698,10 @@ notice instead.
 
 - **Entry.** The Rebase control in the workspace header opens the dialog
   for the selected worktree (`src/mainview/components/RebaseDialog.tsx`).
-  It is disabled when the worktree's folder is missing.
+  It is disabled when the worktree's folder is missing. A primary checkout
+  whose base is its own upstream has Pull in its place, in the More menu
+  and the palette (see "Fallback base" under
+  [the worktree list](#the-worktree-list)).
 - **Onto.** A `BranchField` over the `listBranches` capability, which takes
   any typed ref. Timber reads a plain name as a branch on a remote, so a
   local branch is offered as `refs/heads/<name>`, and a remote-tracking one

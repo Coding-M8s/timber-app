@@ -41,8 +41,8 @@ const saved = (path: string) => ({ path, commonDir: join(path, ".git") });
  * repository a folder belongs to.
  */
 const reader: RepositoryReader = {
-	find: async folder => ({ outcome: "read", repository: { path: folder, name: basename(folder), available: true, failure: null, setup: "unknown", worktrees: [] } }),
-	reload: async path => ({ path, name: basename(path), available: true, failure: null, setup: "unknown", worktrees: [] }),
+	find: async folder => ({ outcome: "read", repository: { path: folder, name: basename(folder), available: true, failure: null, setup: "unknown", fallbackBase: null, worktrees: [] } }),
+	reload: async path => ({ path, name: basename(path), available: true, failure: null, setup: "unknown", fallbackBase: null, worktrees: [] }),
 };
 
 /** What the main process sets up: one holder of the file, shared by the repository list and the layout. */
