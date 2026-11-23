@@ -1,4 +1,5 @@
 import type { AgentLocation } from "../../shared/agent-lookup";
+import type { StatusHookView } from "../../shared/status-hooks";
 import type { ChopArrangements, ChopRename } from "../../shared/chop-order";
 import type { SuggestedIssue } from "../../shared/issue-search";
 import type { AppUpdateState } from "../../shared/app-update";
@@ -435,6 +436,12 @@ export interface AppState {
 	 */
 	agentLocations: readonly AgentLocation[] | null;
 	/**
+	 * How each saved agent reports its status, and its status hook as the
+	 * engine last read it (`Engine.statusHooks`), by the row's name. Null
+	 * until it has answered.
+	 */
+	statusHooks: readonly StatusHookView[] | null;
+	/**
 	 * The chop order the latest move or star in the chops panel asked for,
 	 * shown until its save answers, so quick moves add up. Null when none
 	 * waits: the saved `preferences.chopOrder` shows (`shownChopOrder`).
@@ -669,6 +676,7 @@ export const initialState: AppState = {
 	preferences: defaultPreferences(),
 	preferencesProblem: null,
 	agentLocations: null,
+	statusHooks: null,
 	chopOrderAim: null,
 	chopRenaming: null,
 	lastChops: {},

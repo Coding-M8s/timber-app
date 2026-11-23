@@ -4511,3 +4511,45 @@ Chrome 151:
   `bun run typecheck:desktop`: no errors; `bun run test`: 4427 pass, 19 skip,
   0 fail.
 - Not run: the desktop app by hand; macOS and Windows.
+
+Run for status hooks with Cursor CLI first (issue 350), Linux x64 (Pop!_OS
+24.04) with Bun 1.4.5, Cursor CLI 2026.11.22-e9042b2, and headless Chrome:
+
+- Cursor CLI was run interactively in a pseudo terminal, with a temporary
+  home folder whose `.cursor` linked every entry of the real one but
+  `hooks.json`, so no real file was written. Hooks in `CURSOR_CONFIG_DIR`
+  did not run, and hooks in `$HOME/.cursor/hooks.json` ran with
+  `CURSOR_CONFIG_DIR` unset or set elsewhere: Cursor CLI reads its user
+  hooks from the home folder only. `sessionStart`, `beforeSubmitPrompt`, and
+  `stop` ran with no terminal (`tty` said "not a tty"). An entry naming a
+  missing script, and hooks that print nothing and leave their input
+  unread, let the turn go on. In print mode (`-p`) no hook ran, project
+  hooks included.
+- End to end, with a temporary script (not committed): the installer wrote
+  the hook into the temporary home's new `~/.cursor/hooks.json`, a real
+  Cursor CLI session opened through `createTerminalSessions` with the status
+  folder, and a prompt was sent. The session's status went idle, working,
+  done, each with `app` `cursor`; the alert runner showed "Cursor CLI is
+  done". Remove then deleted the file, which held nothing else. Device
+  attributes were answered by the script, as xterm.js answers them in the
+  app.
+- `tests/status-hooks.test.ts`, `tests/status-hook-files.test.ts`,
+  `tests/status-files.test.ts`, `tests/status-hooks-ui.test.tsx`: pass. They
+  cover the plan for a missing, shared, commented, changed, and broken file,
+  with every other key parsing the same after a write; the installer in a
+  temporary home folder (a new file, a shared file and its mode, a change
+  since shown, a link, comments, a folder or file that cannot be written, a
+  missing or changed script, a row that runs another agent); the status
+  folder (offsets, partial and long lines, the size cap, a file that
+  shrank, unknown files and links); the real script run in real sessions,
+  dropped for another agent's session and while the stream reports; and the
+  same alerts from a hook as from the stream.
+- `tests/status-hook-dialog-browser.test.ts`, in headless Chrome over the
+  mock engine, in Timber Light and Timber Dark at 1280 and 480 pixels wide:
+  pass. The Cursor CLI row says Off, Turn on opens its dialog over Settings
+  with the file and the script, Escape closes only that dialog and focus
+  goes back to Turn on, and Turn on makes the line say On.
+- `bun run typecheck` and `bun run typecheck:desktop`: no errors;
+  `bun run test`: 4488 pass, 19 skip, 0 fail, on main at `f0bcfb9`.
+- Not run: the desktop app by hand; macOS and Windows, where no hook is
+  offered; a Cursor turn that is interrupted or fails (#352).

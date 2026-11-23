@@ -21,6 +21,9 @@ import { createGitRunner } from "./fetch-git";
 import { createFetcher } from "./fetcher";
 import { createSyncActions } from "./sync-actions";
 import { type HandoffFolder, openHandoffFolder } from "./handoffs";
+import { type StatusFolder, openStatusFolder } from "./status-files";
+import { createStatusHookFiles } from "./status-hook-files";
+import { STATUS_HOOK_NAME } from "../shared/status-hooks";
 import { createSavedForcePushes } from "./force-pushes";
 import { createChops } from "./chops";
 import { createSavedChopApprovals } from "./chop-approvals";
@@ -412,9 +415,26 @@ const handoffReady: Promise<string | null> = openHandoffFolder({
 	return null;
 });
 
+// Where status hooks leave what their agent did, one file per session (see ./status-files.ts and ../shared/status-hooks.ts).
+// A line only ever sets the state of the session whose file it is in.
+let statusFolder: StatusFolder | null = null;
+const statusReady: Promise<StatusFolder | null> = openStatusFolder({
+	parent: process.env.XDG_RUNTIME_DIR || tmpdir(),
+	onLine: (session, line) => terminals.hookLine(session, line),
+	onProblem: message => console.warn(message),
+}).then(folder => {
+	statusFolder = folder;
+	if (quitting) folder.close();
+	return folder;
+}, error => {
+	console.warn(`Could not make the status folder, so status hooks report nothing: ${messageOf(error)}`);
+	return null;
+});
+
 // What a terminal prints is private, like what a command prints: it goes to the window and is never logged.
 const terminals = createTerminalSessions({
 	handoffFolder: () => handoffReady,
+	statusFolder: () => statusReady,
 	findRepository: path => repositories.find(path),
 	// An agent's command comes from the saved preferences only (see ./terminals.ts).
 	agents: async () => (await preferences.load()).agents,
@@ -435,7 +455,14 @@ const terminals = createTerminalSessions({
 		tell("a terminal change", () => rpc.send.terminalChanged(change));
 		alerts.changed(change);
 	},
-});// Ports are read for the selected worktree on request only, never on a timer (see ./ports.ts).
+});
+// The script the hooks run sits beside the settings, so every install of the app that shares them shares one hook.
+const statusHooks = createStatusHookFiles({
+	home: homedir(),
+	scriptPath: join(dirname(settingsFile), STATUS_HOOK_NAME),
+	savedPrograms: () => terminals.savedPrograms(),
+});
+// Ports are read for the selected worktree on request only, never on a timer (see ./ports.ts).
 const ports = createPorts({ listWorktrees: createWorktreePaths({ targets: () => watchTargets }), leaders: () => terminals.leaders(), attention: () => attention });
 
 
@@ -559,6 +586,10 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			},
 			// Looks for the saved agents' executables only; nothing starts (see ./terminals.ts).
 			locateAgents: () => terminals.locateAgents(),
+			// Reads and writes only the app's entries in an agent's file the registry names, for an agent a saved row runs (see ./status-hook-files.ts).
+			statusHooks: () => statusHooks.list(),
+			installStatusHook: request => statusHooks.install(request),
+			removeStatusHook: request => statusHooks.remove(request),
 			exportTheme: ({ theme }) => themeFiles.exportTheme(theme),
 			importTheme: () => themeFiles.importTheme(),
 			// Answers the path the person picked, which is private: never log it.
@@ -707,6 +738,7 @@ function guardQuit(event: unknown): void {
 		worktreeFolders.close();
 		quitting = true;
 		handoffFolder?.close();
+		statusFolder?.close();
 		// Asks a running Git to stop, so it can remove its lock files before the app goes.
 		fetcher.stop();
 		// A resize from just before quitting is still waiting to be saved.

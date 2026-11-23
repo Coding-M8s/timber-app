@@ -1,7 +1,9 @@
 # Decision: status hooks for agents that do not report their status
 
-Status: proposed, for issue #349. Nothing here is built yet. #350 builds the
-installer; the agents follow in their own tickets (see [the work](#the-work)).
+Status: accepted, for issue #349. #350 built the installer with Cursor CLI
+as its first agent (see "Status hooks" in docs/architecture.md); the other
+agents follow in their own tickets (see [the work](#the-work)). Where the
+build settled something this page left open, it says so below.
 
 ## The problem
 
@@ -157,7 +159,10 @@ show "needs a look" for it, with no config written at all.
   Copilot have no `resume`, so the registry needs a config folder variable
   of its own, apart from `resume`. Whether that variable also moves each
   agent's hook file (for Cursor, whether `CURSOR_CONFIG_DIR` moves
-  `hooks.json`) is to be confirmed per agent, in its ticket.
+  `hooks.json`) is to be confirmed per agent, in its ticket. For Cursor
+  CLI it does not: 2026.11.22 reads `~/.cursor/hooks.json` whatever
+  `CURSOR_CONFIG_DIR` names (checked in #350), so its hook is one per
+  agent, not per config folder.
 - Before writing, a dialog shows the file's full path, whether it exists,
   and the exact text added, then Install and Cancel. Nothing is written on
   Cancel.
@@ -252,10 +257,11 @@ touching the person's files.
 - In a session with no `program` (a shell where the person typed
   `cursor-agent`, an unrecognized wrapper, or the shell an agent ended
   into), a line is kept: the hook only runs where its agent runs.
-- A line is also dropped while the session holds records from its own
-  stream, since the agent then reports natively (now or after an update).
-  Those end as below, so a shell where `claude` ran and quit takes
-  `cursor-agent`'s lines afterwards.
+- A line is also dropped once the session reported through its own
+  stream, since the agent then reports natively (now or after an update),
+  until a new shell prompt, a full reset, or the program's exit, so a shell
+  where `claude` ran and quit takes `cursor-agent`'s lines afterwards.
+  (As built in #350.)
 - Records from lines end as records from the stream do: on exit, on a new
   shell prompt (OSC 133 `A`), and on a full reset.
 - For a kept session (issue 171, whose decision record is not merged yet), the
@@ -300,11 +306,11 @@ agent's file and looks for its entries, known by the path of its script.
   command that is missing, which each agent must take as a failed observer
   and go on (part of each spike). Settings is where they are removed, and
   docs say so.
-- Several installs of the app (stable and canary) have data folders of
-  their own. Each looks for entries that name its own script, so neither
-  takes out or reports on the other's; both may be on at once, and each
-  session's variable names one app, so a line reaches only the app that
-  started the session.
+- Several installs of the app (stable and canary) share one settings
+  folder, so they share the script and its entries: one hook serves both,
+  either can turn it on or take it out, and each session's variable names
+  one app's file, so a line reaches only the app that started the session.
+  (Settled in #350; this page first assumed a data folder per install.)
 
 ### Windows
 

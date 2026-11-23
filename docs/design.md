@@ -1213,6 +1213,40 @@ logins. The app never reads a tracker login and never signs in.
   going back to its conversation after a restart; Detect goes by the
   executable's name. Config folder is where that agent keeps its
   conversations."
+  A saved row whose agent is known gets a status line under its other
+  lines (issue 350); a row being edited shows none until it is saved. An
+  agent that reports through OSC 7501 says "Status  Reports working, needs
+  you, and done itself." (the states it reports). An agent with a status
+  hook (Cursor CLI) says, after the label "Status hook" in `--text-2`:
+  "Off. Its sessions show only running or exited." with a quiet Turn on…;
+  "On, in ~/.cursor/hooks.json. Reports working and done; not needs you."
+  with Remove…; or, in the error color, "Status hook changed: <why>
+  Checked against <version>. The app does not rewrite it." with Show what
+  differs… and Remove…, or "Status hook broken: <why> Fix it by hand, then
+  open Settings, Agents again." with no button. When the app does not write
+  the file (a link, not writable, comments), the line says why and offers
+  Show the entries to add… or Show the entries to remove…. An agent that
+  cannot report, or one not known, shows no line, and on Windows, where
+  hooks are not built yet, a hooked agent shows none either. A Broken hook
+  whose entries are there, as when only the script is missing, offers
+  Remove…; a Changed one whose entries are as written but whose script is
+  not offers only Remove….
+  Each button opens a dialog over Settings, 760px wide at most, that shows
+  the exact text in full, each block under a small `--text-3` label and
+  scrolling sideways inside its own box: "Turn on the Cursor CLI status
+  hook?" (what it does, the file and whether it is new, the entries added,
+  and the whole script; Cancel and Turn on), "Remove the Cursor CLI status
+  hook?" (the entries removed; Cancel and Remove, in the danger style),
+  "Add the Cursor CLI status hook by hand" (the entries and the script;
+  Cancel, Copy, and Done, which puts the script in place), "Remove the
+  Cursor CLI status hook by hand" (Close and Copy), and "The Cursor CLI
+  status hook changed" (the entries as they are and as the app writes
+  them; Close and Remove…). Cancel has the keyboard first; Escape closes
+  only the dialog, never Settings; a problem shows in the dialog, which
+  stays open; focus goes back to the row's button when it closes.
+  Settings, Notifications adds: "Agents that do not report their status
+  themselves, such as Cursor CLI, need a status hook, turned on in
+  Settings, Agents."
   The dialog keeps one size. The list down its side, each section with an
   icon, groups them under Appearance, Workflow, Activity, and Timber, with
   About on its own at the foot. A section opens with its title and what it

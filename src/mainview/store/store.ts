@@ -1,4 +1,5 @@
 import { sameAgentSettings } from "../../shared/agent";
+import { type StatusHookRequest, type StatusHookResult, hookedAgent } from "../../shared/status-hooks";
 import { defaultAgent, whyNoDefaultAgent } from "../../shared/agent-lookup";
 import type { IssueSearchRequest, IssueSearchResult } from "../../shared/issue-search";
 import type { IssueList, IssueListResult } from "../../shared/issue-lists";
@@ -267,6 +268,15 @@ export interface AppStore {
 	 * engine cannot answer, what was known stays, and the answer is false.
 	 */
 	locateAgents(): Promise<boolean>;
+	/**
+	 * Read again how each saved agent reports its status (`statusHooks`). An
+	 * answer older than the one shown is dropped. Never throws: when the
+	 * engine cannot answer, what was known stays.
+	 */
+	loadStatusHooks(): Promise<void>;
+	/** Turn on, or take out, an agent's status hook as last shown, and show every row as found after. Never throws. */
+	installStatusHook(request: StatusHookRequest): Promise<StatusHookResult>;
+	removeStatusHook(request: StatusHookRequest): Promise<StatusHookResult>;
 	/**
 	 * Save the order and favorites of the chops panel as the `chopOrder`
 	 * preference, with any other preferences `also` names in the same save.
@@ -1472,7 +1482,10 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			preferencesSaved = true;
 			const agentsChanged = !sameAgentSettings(state.preferences.agents, result.preferences.agents);
 			update({ preferences: result.preferences, preferencesProblem: null });
-			if (agentsChanged) void locateAgents();
+			if (agentsChanged) {
+				void locateAgents();
+				void loadStatusHooks();
+			}
 		}
 		return result;
 	}
@@ -1493,6 +1506,36 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			// What was known stays. The Agent field says when an agent is not known.
 			return false;
 		}
+	}
+
+	let lastHookLook = 0;
+	let shownHookLook = 0;
+
+	async function loadStatusHooks(): Promise<void> {
+		const ticket = ++lastHookLook;
+		try {
+			const statusHooks = await engine.statusHooks();
+			if (ticket < shownHookLook) return;
+			shownHookLook = ticket;
+			update({ statusHooks });
+		} catch {
+			// What was known stays.
+		}
+	}
+
+	async function changeStatusHook(request: StatusHookRequest, action: "install" | "remove"): Promise<StatusHookResult> {
+		const ticket = ++lastHookLook;
+		let result: StatusHookResult;
+		try {
+			result = action === "install" ? await engine.installStatusHook(request) : await engine.removeStatusHook(request);
+		} catch (error) {
+			return { outcome: "failed", message: `The app could not answer: ${messageOf(error)}`, hooks: [...(state.statusHooks ?? [])] };
+		}
+		if (ticket >= shownHookLook) {
+			shownHookLook = ticket;
+			update({ statusHooks: result.hooks });
+		}
+		return result;
 	}
 
 	let chopOrderTicket = 0;
@@ -3430,6 +3473,9 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 					if (heard !== null) return void heard.push(change);
 					const stopped = timberSessionStopped(state.terminals, change);
 					const promptBefore = state.terminals.find(session => session.id === change.id)?.prompt;
+					// A hook is checked again when a session of its agent starts, so Settings never shows an old answer.
+					const isNew = change.session !== null && !state.terminals.some(session => session.id === change.id);
+					if (isNew && change.session?.program !== undefined && hookedAgent(change.session.program) !== null) void loadStatusHooks();
 					if (change.session) update({ terminals: withTerminal(state.terminals, change.id, change.session) });
 					else update(withoutSession(state, change.id));
 					// A new agent's prompt went, or could not: say so, since the person may be looking elsewhere.
@@ -3669,6 +3715,9 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		},
 		savePreferences,
 		locateAgents,
+		loadStatusHooks,
+		installStatusHook: request => changeStatusHook(request, "install"),
+		removeStatusHook: request => changeStatusHook(request, "remove"),
 		saveChopOrder,
 		noteChopRenames(renames) {
 			update({ chopRenaming: renames.length === 0 ? null : { renames, list: state.chops?.list ?? null } });

@@ -25,6 +25,7 @@ import type { Theme } from "./theme";
 import type { ChooseSoundResult, SoundChoice, SoundOutcome } from "./sound-setting";
 import type { ExportThemeResult, ImportThemeResult } from "./theme-file";
 import type { SavedSessions } from "./saved-sessions";
+import type { StatusHookRequest, StatusHookResult, StatusHookView } from "./status-hooks";
 import type { OpenTerminalRequest, OpenTerminalResult, PasteResult, TerminalChange, TerminalOutput, TerminalSession, TerminalSnapshot } from "./terminal";
 import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberSettingsReadResult, TimberSettingsRequest, TimberSettingsSaveRequest, TimberSettingsSaveResult } from "./timber-config";
 import type { RebaseRequest, RebaseResult } from "./timber-rebase";
@@ -341,6 +342,29 @@ export interface Engine {
 	 * starts. Safe to call again, as after installing an agent.
 	 */
 	locateAgents(): Promise<AgentLocation[]>;
+	/**
+	 * How each agent saved in Settings, Agents reports its status, in the order
+	 * saved: itself through OSC 7501, a status hook, or neither (see
+	 * ./status-hooks.ts). For an agent with a hook, whether its entries are in
+	 * the agent's own file, read now. Only the app's entries leave the main
+	 * process, never the rest of the file. Nothing is written. Safe to call
+	 * again.
+	 */
+	statusHooks(): Promise<StatusHookView[]>;
+	/**
+	 * Add the app's hook entries to the agent's own file, and write the
+	 * script they run, for an agent a saved row runs. Written only when the
+	 * hook is off, the file is one the app writes, and the file holds what it
+	 * held when shown (`token`); otherwise nothing is written. Every other
+	 * key and value in the file parses the same after.
+	 */
+	installStatusHook(request: StatusHookRequest): Promise<StatusHookResult>;
+	/**
+	 * Take the app's hook entries out of the agent's own file, as checked by
+	 * `token`, and nothing else. A file left with nothing in it is deleted.
+	 * The script stays, for other installs of the app that may use it.
+	 */
+	removeStatusHook(request: StatusHookRequest): Promise<StatusHookResult>;
 	/**
 	 * Write a theme to a new file, in a folder the person picks
 	 * (`themeFileText` and `themeFileName` in ./theme-file.ts). A theme that

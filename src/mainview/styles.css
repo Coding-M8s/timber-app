@@ -5282,6 +5282,59 @@ pre:focus-visible {
 	gap: 8px;
 }
 
+/* A saved agent's status line: how it reports, and its status hook's buttons. */
+.agent-status {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.agent-status p {
+	margin: 0;
+}
+
+.agent-status-inline {
+	flex-direction: row;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 10px;
+}
+
+.agent-status-inline .field-hint {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.agent-status-label {
+	margin-right: 6px;
+	color: var(--text-2);
+	font-weight: 500;
+}
+
+.agent-status-buttons {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+/* The status hook dialogs show files and a script in full, so they are wider than most. */
+.status-hook-dialog {
+	width: min(760px, calc(100% - 32px));
+}
+
+.status-hook-block {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-width: 0;
+}
+
+.status-hook-text {
+	margin: 0;
+	white-space: pre;
+	overflow-x: auto;
+}
+
 .agent-name {
 	flex: 0 0 150px;
 }

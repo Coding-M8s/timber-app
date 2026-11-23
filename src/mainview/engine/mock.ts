@@ -1,4 +1,5 @@
 import type { WorktreeHandoff } from "../../shared/handoff";
+import { type StatusHookControls, createMockStatusHooks } from "./mock-status-hooks";
 import { type Attention, assumedAttention } from "../../shared/attention";
 import { type AlertSettings, type StatusNotice, createAlertRunner } from "../../shared/status-notices";
 import { type ChooseSoundResult, type SoundChoice, type SoundOutcome, readSoundChoice } from "../../shared/sound-setting";
@@ -349,7 +350,7 @@ export const sampleTimberStatuses = {
 /** The mock engine, plus the controls a test or the browser build uses to act out changes. */
 /** The controls for terminals are in ./mock-terminals.ts. */
 /** The controls for Timber's settings are in ./mock-timber-config.ts, for workflows in ./mock-workflows.ts, for issue trackers in ./mock-issue-trackers.ts, for pull requests in ./mock-pull-requests.ts, for issues in ./mock-issues.ts, for the issues board in ./mock-issue-lists.ts, for backups in ./mock-backups.ts, and for arenas in ./mock-arenas.ts. */
-export interface MockEngine extends Engine, TerminalControls, TimberConfigControls, IssueTrackerControls, WorkflowControls, PullRequestControls, IssueControls, IssueListControls, BackupControls, ArenaControls, ThemeFileControls, ChopsControls, PortControls, SidebarIconControls {
+export interface MockEngine extends Engine, TerminalControls, TimberConfigControls, IssueTrackerControls, WorkflowControls, PullRequestControls, IssueControls, IssueListControls, BackupControls, ArenaControls, ThemeFileControls, ChopsControls, PortControls, SidebarIconControls, StatusHookControls {
 	/** Replace the data, without telling the interface. */
 	setRepositories(repositories: Repository[]): void;
 	/** Report that a repository changed, as the main process would. */
@@ -1064,9 +1065,11 @@ export function createMockEngine(
 		},
 		delay: () => options.commandMilliseconds ?? 0,
 	});
+	const statusHooks = createMockStatusHooks(() => preferences.agents);
 	return {
 		...terminals,
 		...arenas,
+		...statusHooks,
 		...timberConfig,
 		...createMockThemeFiles(),
 		...sidebarIcons,

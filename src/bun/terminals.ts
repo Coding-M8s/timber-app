@@ -3,7 +3,7 @@ import { type ArenaLaunch, isArenaName, isAttemptLabel } from "../shared/arenas"
 import { homedir } from "node:os";
 import { type AgentSetting, agentCommand, conversationsOf, expandConfigFolder, findAgent } from "../shared/agent";
 import type { AgentLocation, AgentLookup } from "../shared/agent-lookup";
-import { type ConversationStore, agentById } from "../shared/agent-registry";
+import { type AgentId, type ConversationStore, agentById } from "../shared/agent-registry";
 import { type ResumableAgent, agentProgram, agentStartArguments, conversationMissingNote, resumableAgent } from "../shared/agent-resume";
 import { describeCommandLine } from "../shared/command-line";
 import type { TimberStatus } from "../shared/model";
@@ -16,6 +16,7 @@ import { recordsForWindow } from "../shared/session-status";
 import { PROMPT_BUSY_MILLISECONDS, PROMPT_ENTER_MILLISECONDS, PROMPT_QUIET_MILLISECONDS, PROMPT_STILL_STARTING, PROMPT_WAIT_MILLISECONDS, isReadyForPrompt, promptEndedMessage, promptNotReadyMessage } from "../shared/agent-prompt";
 import { PROBE_ANSWER, type StatusRecords, type StatusScanner, createStatusRecords, createStatusScanner } from "../shared/program-status";
 import { HANDOFF_VARIABLE } from "../shared/handoff";
+import { STATUS_VARIABLE, type StatusLine, statusFromLine } from "../shared/status-hooks";
 import { asWin32KeyEvents } from "../shared/win32-input";
 import { type RestoreTag, isConversationId, isRestoreTag } from "../shared/saved-sessions";
 import { type Workflow, type WorkflowList, isWorkflowName } from "../shared/workflows";
@@ -102,6 +103,14 @@ export interface TerminalDependencies {
 	 * inherited from the app's own environment is never passed on.
 	 */
 	handoffFolder?: () => Promise<string | null>;
+	/**
+	 * The folder where status hooks leave what their agent did (see
+	 * ./status-files.ts), or null when there is none. Each session gets a file
+	 * of its own there, as `TIMBER_APP_STATUS`, made before it starts and
+	 * deleted when it ends; one inherited from the app's own environment is
+	 * never passed on. Lines come back through `TerminalSessions.hookLine`.
+	 */
+	statusFolder?: () => Promise<{ add(session: string): string | null; remove(session: string): void } | null>;
 	/** The operating system, as `process.platform` names it. Tests pass another. */
 	platform?: NodeJS.Platform;
 	/**
@@ -176,6 +185,19 @@ export interface TerminalSessions {
 	locateAgents(): Promise<AgentLocation[]>;
 	/** Whether one agent's executable is there to start, looked for as `open` looks for it, on the PATH the app was started with. Nothing starts. */
 	locateAgent(agent: AgentSetting): AgentLookup;
+	/**
+	 * The agent of the registry each saved agent runs, in the order saved, as
+	 * `open` would tell it: the one picked for its row, else the one its
+	 * executable is by name. Nothing starts.
+	 */
+	savedPrograms(): Promise<{ name: string; agent: AgentId | null }[]>;
+	/**
+	 * A line a status hook left in a session's file (see ./status-files.ts).
+	 * Taken as a report of the session's root record, with the state the
+	 * registry gives the event, unless the session is gone or ended, runs
+	 * another agent of the registry, or reports through its own stream.
+	 */
+	hookLine(id: string, line: StatusLine): void;
 	/** Give a session another name. Null for a session that is gone, or a name with nothing in it. */
 	rename(id: string, name: string): TerminalSession | null;
 	/** The end of what a session printed. Null for a session that is gone. */
@@ -306,6 +328,12 @@ interface Live {
 	probedAt: number;
 	/** A record, the root or a child, changed since the window was last told. Told with the next flush, so a stream of progress is one change per part. */
 	statusChanged: boolean;
+	/**
+	 * The program in the session reported through its own stream since it
+	 * started, or since the last new prompt or full reset. A status hook's
+	 * line is dropped meanwhile: the agent reports natively.
+	 */
+	native: boolean;
 	/** A chop's text still to type, and the timer that types it line by line if bracketed paste never comes. Null once typed, or for any other session. */
 	chop: { text: string; timer: ReturnType<typeof setTimeout> | null; deadline: number } | null;
 	/** The agent's name in Settings, or null for a shell or a Timber command. */
@@ -451,12 +479,14 @@ function signalSession(live: Live, signal: NodeJS.Signals): void {
 	else if (running(live.process)) signalGroup(live.process.pid, signal);
 }
 
-/** What a session's program gets: the app's environment, with the terminal's own variables and the handoff folder. */
-export function sessionEnvironment(environment: Record<string, string | undefined>, handoff: string | null): Record<string, string | undefined> {
+/** What a session's program gets: the app's environment, with the terminal's own variables, the handoff folder, and the session's status file. */
+export function sessionEnvironment(environment: Record<string, string | undefined>, handoff: string | null, status: string | null = null): Record<string, string | undefined> {
 	const env: Record<string, string | undefined> = { ...environment, TERM: "xterm-256color", COLORTERM: "truecolor", TERM_PROGRAM: "timber-app" };
-	// A folder from the app's own environment, as when it was started from one of its terminals, belongs to another run.
+	// A folder or file from the app's own environment, as when it was started from one of its terminals, belongs to another run or session.
 	delete env[HANDOFF_VARIABLE];
+	delete env[STATUS_VARIABLE];
 	if (handoff !== null) env[HANDOFF_VARIABLE] = handoff;
+	if (status !== null) env[STATUS_VARIABLE] = status;
 	return env;
 }
 
@@ -549,7 +579,7 @@ export function sessionEnvironment(environment: Record<string, string | undefine
  */
 export function createTerminalSessions(dependencies: TerminalDependencies): TerminalSessions {
 	const {
-		findRepository, onOutput, onChange, agents = async () => [], sessionNaming = async (): Promise<SessionNaming> => "plain", timber = async (): Promise<TimberStatus> => ({ state: "not-found", source: "path", path: null }), environment = process.env, handoffFolder = async () => null, platform = process.platform,
+		findRepository, onOutput, onChange, agents = async () => [], sessionNaming = async (): Promise<SessionNaming> => "plain", timber = async (): Promise<TimberStatus> => ({ state: "not-found", source: "path", path: null }), environment = process.env, handoffFolder = async () => null, statusFolder = async () => null, platform = process.platform,
 		arenaLaunch = async () => ({ outcome: "failed", message: "Arena attempts cannot start here. Nothing was started." }),
 		workflows = async (): Promise<WorkflowList> => ({ ok: false, message: "Workflows cannot be read here." }),
 		startTerminal = startPseudoTerminal(platform),
@@ -612,7 +642,12 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 					live.probedAt = now;
 					live.process.write(probeAnswer);
 				}
-			} else if (live.records.apply(event)) live.statusChanged = true;
+			} else {
+				// A report from the stream says the program reports natively; a new prompt or a reset ends that, as it ends the records.
+				if (event.type === "report" && event.report !== null) live.native = true;
+				else if (event.type === "prompt" || event.type === "reset") live.native = false;
+				if (live.records.apply(event)) live.statusChanged = true;
+			}
 		}
 		live.pending += text;
 		if (live.prompt !== null) considerPrompt(live);
@@ -917,6 +952,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			live.leftovers = sessionMembers(child.pid) ?? [];
 			// The exit is told in one change with the status: working and blocked end with the process.
 			live.records.exited();
+			live.native = false;
 			live.statusChanged = false;
 			flush(live);
 			// A session closed meanwhile is already gone and stays gone.
@@ -929,6 +965,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			// An agent or a terminal editor goes on as the person's shell. Everything else, a shell and a Timber command, stays ended.
 			if ((live.session.kind === "agent" || live.session.kind === "editor") && continueAsShell(live, child, end, notSent)) return;
 			live.pasteMode.reset();
+			releaseStatusFile(live);
 			changed(live, { ...live.session, state: { kind: "exited", ...end }, ...recordsForWindow(live.records), ...notSent });
 		});
 		return { child, ended };
@@ -960,6 +997,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		live.leftovers = null;
 		live.scanner = createStatusScanner();
 		live.records = createStatusRecords();
+		live.native = false;
 		live.pasteMode.reset();
 		live.probedAt = Number.NEGATIVE_INFINITY;
 		live.statusChanged = false;
@@ -1062,6 +1100,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		// Naming is a convenience: when it cannot be read, the session is named as it always was.
 		const naming = run === null && chop?.kind !== "command" ? await sessionNaming().catch((): SessionNaming => "plain") : "plain";
 		const handoff = await handoffFolder().catch(() => null);
+		const folder = await statusFolder().catch(() => null);
 		const consequence = attempt.launch ? `${attempt.launch.name} was not started.`
 			: agent ? `${agent.name} was not started.`
 			: workflowAgent !== undefined ? `The agent of the ${workflowAgent.workflow} workflow was not started.`
@@ -1091,17 +1130,22 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 
 		const shell = start.argv[0]!;
 		const { cols, rows } = clampTerminalSize(request.cols, request.rows);
-		const baseEnvironment = sessionEnvironment(environment, handoff);
+		// The id comes first, so the session's status file is there before its program starts.
+		const id = crypto.randomUUID();
+		const statusFile = folder === null ? null : folder.add(id);
+		// The shell that may take over from an agent gets the same environment, and so the same file.
+		const baseEnvironment = sessionEnvironment(environment, handoff, statusFile);
 		let live: Live | undefined;
 		let started: StartedChild;
 		try {
 			started = startChild({ argv: start.argv, cwd: request.worktree, env: withChanges(baseEnvironment, start.environment, start.unset), cols, rows }, () => live);
 		} catch (error) {
+			if (statusFile !== null) folder?.remove(id);
 			return { outcome: "failed", command: start.command, message: `Could not start ${shell} in ${request.worktree}: ${messageOf(error)}` };
 		}
 
 		const session: TerminalSession = {
-			id: crypto.randomUUID(),
+			id,
 			kind: start.kind,
 			name,
 			repository: request.repository,
@@ -1118,7 +1162,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		live = {
 			session, process: started.child, scrollback: createScrollback(), pending: "", flushTimer: null, undrawn: [], undrawnSize: 0, held: false, leftovers: null, former: null, ended: started.ended,
 			environment: baseEnvironment, cols, rows, launchName: start.base,
-			scanner: createStatusScanner(), records: createStatusRecords(), pasteMode: createPasteModeScanner(), statusChanged: false, probedAt: Number.NEGATIVE_INFINITY, chop: null, prompt: null,
+			scanner: createStatusScanner(), records: createStatusRecords(), pasteMode: createPasteModeScanner(), statusChanged: false, native: false, probedAt: Number.NEGATIVE_INFINITY, chop: null, prompt: null,
 			agent: agent?.name ?? null, resumable: start.resumable, program: start.program, conversation: start.conversation, conversationFolder: start.conversationFolder, startedAt: now(), renamed: savedName !== null, restored,
 		};
 		if (chop?.kind === "command") {
@@ -1138,6 +1182,31 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		}
 		considerPrompt(live);
 		return { outcome: "opened", session: { ...session } };
+	}
+
+	/** Delete a session's status file, once it ended for good or closed. Safe to call again. */
+	function releaseStatusFile(live: Live): void {
+		void statusFolder().then(folder => folder?.remove(live.session.id), () => undefined);
+	}
+
+	/**
+	 * Take a status hook's line as a report of a session's root record (see
+	 * `TerminalSessions.hookLine`). A line is read when the folder's watch
+	 * fires, or by the poll up to two seconds later where the watch misses
+	 * it, so a late `stop` can still set Done after a new prompt ended the
+	 * records; the next prompt or event sets it right.
+	 */
+	function hookLine(id: string, line: StatusLine): void {
+		const live = sessions.get(id);
+		if (!live || live.session.state.kind !== "running" || live.native) return;
+		// Another agent's hook can run where that agent's settings are shared, as Grok Build runs Cursor's.
+		if (live.program !== null && live.program !== line.agent) return;
+		const report = statusFromLine(line);
+		if (report === null) return;
+		if (live.records.apply({ type: "report", report: { id: null, ...report } })) {
+			live.statusChanged = true;
+			live.flushTimer ??= setTimeout(() => flush(live), flushMilliseconds);
+		}
 	}
 
 	/** Kill the shell, if it still runs, and what is left in its session. */
@@ -1164,6 +1233,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		if (!live) return;
 		noteEnded(live);
 		sessions.delete(id);
+		releaseStatusFile(live);
 		dropChop(live);
 		if (live.flushTimer !== null) clearTimeout(live.flushTimer);
 		// Hanging up the terminal sends SIGHUP to the shell and what runs in front; the rest of its session gets it too.
@@ -1186,6 +1256,16 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			return (await agents()).map(agent => ({ name: agent.name, command: agent.command, lookup: lookAt(agent) }));
 		},
 		locateAgent: agent => lookAt(agent),
+		hookLine,
+		async savedPrograms() {
+			return (await agents()).map(agent => {
+				const built = agentCommand(agent);
+				if (!built.ok) return { name: agent.name, agent: agent.agent ?? null };
+				const lookup = lookAt(agent);
+				const real = lookup.state === "found" ? realPathOf(lookup.path) : null;
+				return { name: agent.name, agent: agentProgram(built.executable, real, agent.agent ?? null) };
+			});
+		},
 		rename(id, name) {
 			const live = sessions.get(id);
 			const clean = cleanSessionName(name);
