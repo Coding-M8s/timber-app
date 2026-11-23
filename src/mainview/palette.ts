@@ -1,15 +1,20 @@
 import { NEW_ARENA_LABEL, arenasUnavailable } from "./arena-format";
+import { changesPanelShortcut } from "./changes-panel-format";
 import { type ChopAction, chopAction, chopEntries, runChopLabel } from "./chop-format";
+import { chopsPanelShortcut } from "./chops-panel-format";
 import { type EditorAction, OPEN_IN_EDITOR, describeEditorAction } from "./editor-format";
 import { CLEAN_UP_LABEL, CLEAN_UP_TITLE, cleanUpUnavailableReason, mergedCandidates } from "./clean-up-format";
 import { BEING_REMOVED_REASON, DONE_PRIMARY_NOTE } from "./done-format";
+import { filesPanelShortcut } from "./files-panel-format";
 import { worktreeLabel } from "./format";
 import { REBASE_FOLDER_MISSING } from "./rebase-format";
+import { RUN_CHOP_LABEL, runChopShortcut } from "./run-chop-format";
+import { shortcutLetter } from "../shared/shortcuts";
 import type { Repository } from "../shared/model";
-import { type AppState, type DialogRequest, changesPanelShown, isBeingRemoved, syncOptionsOf, isRunning, offeredChops, finishedSessions, selectedWorktree, sessionsOf, waitingSessions } from "./store/state";
+import { type AppState, type DialogRequest, changesPanelShown, chopsEnabled, chopsPanelShown, filesPanelShown, isBeingRemoved, syncOptionsOf, isRunning, offeredChops, finishedSessions, selectedWorktree, sessionsOf, waitingSessions } from "./store/state";
 import type { SidePanelView } from "../shared/layout";
 import { type RowSessionMark, describeRowSessions } from "./terminal-format";
-import { NONE_WAITING, WAITING_LABEL, describeToVisit } from "./waiting";
+import { NONE_WAITING, WAITING_LABEL, describeToVisit, waitingShortcut } from "./waiting";
 import { PULLING_REASON, SYNC_ACTION_WORDS, pullInsteadOfRebase, syncMenuEntries } from "./sync-action-format";
 
 /**
@@ -45,7 +50,7 @@ export type PaletteSection = "worktree" | "repository" | "worktrees" | "app";
 /** The picture beside an entry's label. */
 export type PaletteIcon =
 	| "terminal" | "agent" | "rebase" | "done" | "editor" | "new" | "branch" | "arena" | "fetch" | "push" | "clean-up"
-	| "worktree" | "next" | "settings" | "add-repository" | "changes";
+	| "worktree" | "next" | "settings" | "add-repository" | "changes" | "files" | "chops" | "search";
 
 export interface PaletteEntry {
 	/** Unique in the list, so rows have a stable key. */
@@ -56,6 +61,8 @@ export interface PaletteEntry {
 	label: string;
 	/** A short note at the end of the row, such as "2 merged", or empty. */
 	detail: string;
+	/** The key that does the same from anywhere, for this platform, from the feature's own tooltip text. */
+	shortcut?: string;
 	/** The path of the repository it belongs to, or null for an entry about the whole app. */
 	repository: string | null;
 	/** That repository's name, shown when the palette is not scoped to it. Empty for the whole app. */
@@ -143,8 +150,8 @@ export function isPaletteShortcut(event: Keys): boolean {
  * for the selected one, and carry a reason when they cannot run. Which of
  * them show, and where, is `paletteView`'s part.
  */
-export function paletteEntries(state: AppState): PaletteEntry[] {
-	return [...actionEntries(state), ...worktreeEntries(state)];
+export function paletteEntries(state: AppState, mac = false): PaletteEntry[] {
+	return [...actionEntries(state, mac), ...worktreeEntries(state)];
 }
 
 function worktreeEntries(state: AppState): PaletteEntry[] {
@@ -184,10 +191,10 @@ interface Owner {
 	repository: Repository | null;
 }
 
-function actionEntries(state: AppState): PaletteEntry[] {
+function actionEntries(state: AppState, mac: boolean): PaletteEntry[] {
 	const selection = selectedWorktree(state);
 	const entries: PaletteEntry[] = [];
-	const add = (owner: Owner, id: string, label: string, hint: string, disabledReason: string | null, action: PaletteAction, keywords: readonly string[] = [], detail = "") =>
+	const add = (owner: Owner, id: string, label: string, hint: string, disabledReason: string | null, action: PaletteAction, keywords: readonly string[] = [], detail = "", shortcut?: string) =>
 		entries.push({
 			id: `action:${id}`,
 			kind: "action",
@@ -195,6 +202,7 @@ function actionEntries(state: AppState): PaletteEntry[] {
 			icon: owner.icon,
 			label,
 			detail,
+			...(shortcut === undefined ? {} : { shortcut }),
 			repository: owner.repository?.path ?? null,
 			repositoryName: owner.repository?.name ?? "",
 			hint,
@@ -290,11 +298,22 @@ function actionEntries(state: AppState): PaletteEntry[] {
 	const waiting = waitingSessions(state).length;
 	const finished = finishedSessions(state).length;
 	add(inApp("next"), "next-waiting", WAITING_LABEL, "Shows the session that has waited longest, then the one that finished first.", waiting + finished === 0 ? NONE_WAITING : null,
-		{ kind: "next-waiting" }, ["needs you", "waiting", "done", "finished", "agent", "jump", "attention"], describeToVisit(waiting, finished));
+		{ kind: "next-waiting" }, ["needs you", "waiting", "done", "finished", "agent", "jump", "attention"], describeToVisit(waiting, finished), waitingShortcut(mac));
+	// Only while chops are in use, as their button and keys are. A "Run chop: <name>" row has no key of its own.
+	if (chopsEnabled(state)) {
+		const chopsShown = chopsPanelShown(state);
+		add(inApp("chops"), "chops", chopsShown ? "Hide chops" : "Show chops", chopsShown ? "Hides the chops panel." : "Shows the chops in the side panel.", null,
+			{ kind: "side-panel", view: "chops" }, ["side panel", "saved commands", "prompts"], "", chopsPanelShortcut(mac, shortcutLetter(state.preferences.shortcuts, "chops-panel")));
+		add(inApp("search"), "run-chop", RUN_CHOP_LABEL, "Opens the chop search, to find a chop and run it.", null,
+			{ kind: "dialog", request: { kind: "run-chop" } }, ["search chops", "find", "saved commands", "prompts"], "", runChopShortcut(state, mac));
+	}
+	const filesShown = filesPanelShown(state);
+	add(inApp("files"), "files", filesShown ? "Hide files" : "Show files", filesShown ? "Hides the Files view of the side panel." : "Shows the selected worktree's files in the side panel.", null,
+		{ kind: "side-panel", view: "files" }, ["explorer", "tree", "folders", "side panel"], "", filesPanelShortcut(mac));
 	const changesShown = changesPanelShown(state);
 	add(inApp("changes"), "changes", changesShown ? "Hide changes" : "Show changes",
 		changesShown ? "Hides the Changes view of the side panel." : "Shows the selected worktree's changes and review in the side panel.", null,
-		{ kind: "side-panel", view: "changes" }, ["diff", "review", "git status", "side panel", "files changed"]);
+		{ kind: "side-panel", view: "changes" }, ["diff", "review", "git status", "side panel", "files changed"], "", changesPanelShortcut(mac));
 	add(inApp("settings"), "settings", "Settings", "Opens Settings.", null, { kind: "dialog", request: { kind: "settings" } }, ["preferences", "options"]);
 	add(inApp("add-repository"), "add-repository", "Add repository", "Adds a Git repository's folder to the list.", isRunning(state, "add-repository") ? ADDING_REPOSITORY : null,
 		{ kind: "add-repository" }, ["folder", "project"]);
@@ -381,6 +400,11 @@ export function paletteScope(state: AppState): PaletteScope | null {
 	const selection = selectedWorktree(state);
 	if (!selection) return null;
 	return { repository: selection.repository.path, repositoryName: selection.repository.name, worktreeName: worktreeLabel(selection.worktree) };
+}
+
+/** The scope chip's tooltip: the full names its row may cut short, and what clicking it does. */
+export function describeScopeChip(scope: PaletteScope): string {
+	return `${scope.repositoryName} / ${scope.worktreeName}. Search every repository (Backspace)`;
 }
 
 /** Entries under one heading. A null heading is a list with no sections, as when typing across every repository. */
