@@ -29,6 +29,7 @@ import { createChops } from "./chops";
 import { createSavedChopApprovals } from "./chop-approvals";
 import { createChopsWatcher } from "./chops-watcher";
 import { createFileChanges } from "./file-changes";
+import { createGitWrites } from "./git-writes";
 import { createWorktreeFiles } from "./worktree-files";
 import { createWorktreeFolders } from "./worktree-folders";
 import { createPorts } from "./ports";
@@ -276,7 +277,9 @@ function watchRepositories(): Promise<void> {
 void watchRepositories();
 
 const done = createDone({ timber: () => timber.current(), findRepository: path => repositories.find(path) });
-const fileChanges = createFileChanges({ findRepository: path => repositories.findRecent(path) });
+// Staging and unstaging write only the index, in the repository's turn, and the window reads the repository again (see ./git-writes.ts).
+const gitWrites = createGitWrites({ findRepository: path => repositories.find(path), turns, onWritten: heard });
+const fileChanges = createFileChanges({ findRepository: path => repositories.findRecent(path), writes: gitWrites });
 const worktreeFiles = createWorktreeFiles({ findRepository: path => repositories.findRecent(path) });
 // The folders the file explorer shows, each watched alone, never what is below (see ./worktree-folders.ts).
 const worktreeFolders = createWorktreeFolders({
@@ -634,6 +637,9 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			// Read-only Git, only in a worktree Timber lists (see ./file-changes.ts). A diff holds file contents: never log it.
 			readFileChanges: request => fileChanges.read(request),
 			readFileDiff: request => fileChanges.diff(request),
+			// The app's own index writes, only with paths from the status read again (see ./file-changes.ts and ./git-writes.ts).
+			stageFiles: request => fileChanges.stage(request),
+			unstageFiles: request => fileChanges.unstage(request),
 			// Reads one file, only inside a worktree Timber lists, links included (see ./worktree-files.ts). It holds file contents: never log it.
 			readWorktreeFile: request => worktreeFiles.read(request),
 			// Writes only that file, in place, and only a file that is there (see ./worktree-files.ts). It holds file contents: never log it.

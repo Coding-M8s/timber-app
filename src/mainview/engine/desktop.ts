@@ -152,6 +152,9 @@ export function createDesktopEngine(): Engine {
 		// The main process reads the list first, then Git, which it stops after 20 seconds.
 		readFileChanges: request => rpc.request.readFileChanges(request, { maxRequestTime: 60_000 }),
 		readFileDiff: request => rpc.request.readFileDiff(request, { maxRequestTime: 60_000 }),
+		// The main process waits its turn in the repository, then stops Git after 20 seconds.
+		stageFiles: request => rpc.request.stageFiles(request, { maxRequestTime: 120_000 }),
+		unstageFiles: request => rpc.request.unstageFiles(request, { maxRequestTime: 120_000 }),
 		readWorktreeFile: request => rpc.request.readWorktreeFile(request, { maxRequestTime: 60_000 }),
 		writeWorktreeFile: request => rpc.request.writeWorktreeFile(request, { maxRequestTime: 60_000 }),
 		listWorktreeFolder: request => rpc.request.listWorktreeFolder(request, { maxRequestTime: 60_000 }),

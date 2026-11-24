@@ -105,8 +105,10 @@ export type FileChangesResult =
 	 * `more` is true when there were more files than `MAX_LISTED_FILES`, and
 	 * only the first are listed. `compared` is the comparison the files come
 	 * from: "uncommitted" when "base" was asked for and cannot be used.
+	 * `hasCommit` is false before the worktree's first commit, when unstaging
+	 * is `git rm --cached` (see ./index-writes.ts).
 	 */
-	| { outcome: "read"; files: FileChange[]; more: boolean; compared: Comparison; base: BaseComparison }
+	| { outcome: "read"; files: FileChange[]; more: boolean; compared: Comparison; base: BaseComparison; hasCommit: boolean }
 	/** The repository is not in the app's list, Timber does not list the worktree, or its folder is gone. */
 	| { outcome: "not-listed"; message: string }
 	| { outcome: "failed"; message: string };

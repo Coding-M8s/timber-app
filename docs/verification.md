@@ -4776,3 +4776,45 @@ Run for the keyboard back in the session's terminal (issue 392), on
   the desktop window after Alt+Tab or a click back, and whether the
   window's `focus` comes before the click's `pointerdown`. macOS and Windows
   were not tried.
+
+Run for staging and unstaging files in the Changes view (issue 393), on
+2026-11-24, Linux x64 with Git 2.56.1 and Bun 1.4.5.
+
+- In a scratch repository with no commit, `git restore --staged -- a`
+  failed with "fatal: could not resolve 'HEAD'" (exit 128), `git rm
+  --cached -- a` on a file edited after staging refused with "staged
+  content different from both the file and the HEAD" (exit 1), and `git rm
+  --cached -f -- a` exited 0, kept the edited file on disk, and left it
+  untracked. That is why unstaging before the first commit uses `-f`.
+- `bun test tests/index-writes.test.ts`: 13 passed, 0 failed. On real
+  temporary repositories, in a linked worktree: an edit, a deletion, and a
+  new file in a new folder with a non-ASCII name staged in one `git add`;
+  `star*.txt` staged without `star-other.txt`; 401 paths staged through
+  standard input; a staged rename and a file edited after staging unstaged
+  with `git restore --staged`; a content conflict and a modify/delete
+  conflict marked resolved with `MERGE_HEAD` kept; unstaging before the
+  first commit with `git rm --cached -f`; a held `index.lock` failing with
+  Git's message and the index bytes unchanged; and every refusal (a clean
+  file, a missing file beside a good one, the wrong group, a path with
+  `..`, a command other than the one shown, no files, an unlisted
+  worktree) running nothing. Each checks that the files on disk (bytes,
+  modes, and times), the refs, HEAD, and the stash stayed as they were.
+- `bun test tests/stage-files.test.tsx`: 11 passed. The buttons, their
+  tooltips, and labels over the mock engine; none in Base; stage, a group,
+  unstage, Mark resolved leaving Merge conflicts; a failure shown with
+  Git's message and nothing moved; the store and the mock refusing what is
+  not listed; a diff tab staying open on the staged entry.
+- `bun test tests/stage-files-browser.test.ts`: 5 passed in headless
+  Chrome. A button shows only on hover and keyboard focus and fits inside
+  its row; Space stages and unstages with the keyboard following the file
+  into Staged and back; Tab and Enter on Mark resolved; Stage all failing
+  with the alert, then working; no buttons in Base.
+- `bun test` over the Changes, file changes, store, set base, file viewer,
+  and review test files with the three above (14 files): 349 passed, 0
+  failed.
+- `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
+- Screenshots of the browser test page at 1400 and 900 pixels wide showed
+  the button over the end of a hovered row and of a focused one, and each
+  group's button at the end of its heading. That page has no theme colors,
+  so the look in the app's themes was not checked.
+- Not run: the desktop app, Windows, and macOS.

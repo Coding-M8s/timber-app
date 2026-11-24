@@ -70,7 +70,8 @@ import { RESTORE_CONCURRENCY, RESTORE_QUIET_MILLISECONDS, type RestoreJob, goneS
 import { type SavedSessions, pickShown } from "../../shared/saved-sessions";
 import { type WorktreeFileResult, textToSave } from "../../shared/worktree-files";
 import { fileLines, fillUnchanged, linesMatchDiff, unchangedReadable } from "../diff-unchanged";
-import { filterFiles, listedOrder, steppedFile } from "../changes-format";
+import { filterFiles, listedOrder, movedEntry, steppedFile } from "../changes-format";
+import { type IndexAction, type IndexWriteResult, canWriteIndex, describeGitCommand, indexCommand } from "../../shared/index-writes";
 import { type FileEditMemory, createFileEditMemory } from "../text-editor-format";
 import { afterSave, canEditFile, editableFileText, fileText, hasUnsavedEdits, initialFileMode, listedOnly, outsideResult, pathInWorktree, settleTabs, unsavedFileCount } from "../file-view-format";
 import {
@@ -354,6 +355,14 @@ export interface AppStore {
 	 * throws.
 	 */
 	readChanges(repository: string, worktreeId: string): Promise<void>;
+	/**
+	 * Stage or unstage files of the Uncommitted list, as `Engine.stageFiles`
+	 * and `Engine.unstageFiles` do, with the command `indexCommand` gives,
+	 * then read the list again at once. Does nothing (null) outside
+	 * Uncommitted, while another write runs, or for a file not listed in a
+	 * group that takes the action. Never throws.
+	 */
+	writeIndex(action: IndexAction, files: readonly FileChangeTarget[]): Promise<IndexWriteResult | null>;
 	/**
 	 * Read the chops of a repository, named by the path of its primary
 	 * checkout, into `chops`. The latest read wins, and another repository
@@ -1912,12 +1921,12 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		return state.repositories.find(candidate => candidate.path === repositoryPath)?.worktrees.find(candidate => candidate.path === worktreePath) ?? null;
 	}
 
-	async function readChanges(repositoryPath: string, worktreeId: string): Promise<void> {
+	async function readChanges(repositoryPath: string, worktreeId: string, moved: readonly string[] = []): Promise<void> {
 		const worktree = worktreeOf(repositoryPath, worktreeId);
 		if (!worktree) return;
 		const ticket = ++changesTicket;
 		if (state.changes?.worktree !== worktreeId || state.changes.repository !== repositoryPath) {
-			update({ changes: { repository: repositoryPath, worktree: worktreeId, files: null, more: false, compared: null, base: null, problem: null, selected: null, diff: null, unchanged: null } });
+			update({ changes: { repository: repositoryPath, worktree: worktreeId, files: null, more: false, compared: null, base: null, problem: null, hasCommit: true, writing: false, writeProblem: null, selected: null, diff: null, unchanged: null } });
 		}
 		const compare = chosenComparison(state.layout, worktreeId);
 		let answer!: FileChangesResult;
@@ -1937,17 +1946,19 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		// Only the diff tab's diff is read: nothing is read for a file no tab shows.
 		const open = state.diffs[worktreeId];
 		const wanted = open?.file ?? null;
-		const kept = wanted === null ? undefined : answer.files.find(file => sameFileChange(file, wanted));
+		// A file just staged or unstaged keeps its diff tab, now on its new group's entry.
+		const kept = wanted === null ? undefined : answer.files.find(file => sameFileChange(file, wanted)) ?? (moved.includes(wanted.path) ? movedEntry(answer.files, wanted.path) : undefined);
 		const selected = kept ? { area: kept.area, path: kept.path, previousPath: kept.previousPath } : null;
 		// The same file keeps its diff on screen until the new one answers, so it does not flicker.
 		const sameComparison = view.compared === answer.compared;
 		const keptDiff = kept && view.selected !== null && sameFileChange(view.selected, kept) && sameComparison ? view.diff : null;
-		const next: ChangesView = { ...view, files: answer.files, more: answer.more, compared: answer.compared, base: answer.base, problem: null, selected, diff: keptDiff, unchanged: keptDiff === null ? null : view.unchanged };
+		const next: ChangesView = { ...view, files: answer.files, more: answer.more, compared: answer.compared, base: answer.base, hasCommit: answer.hasCommit, problem: null, selected, diff: keptDiff, unchanged: keptDiff === null ? null : view.unchanged };
 		// A viewed file whose diff changed since, or that left the list, is no longer viewed.
 		const viewed = keptViewed(worktreeId, answer.compared, answer.files);
 		if (viewed !== state.viewed) update({ viewed });
 		// A diff tab whose file is no longer changed has nothing to show: it closes, back to where it was opened from.
-		update(open && !kept ? { ...closedDiff(worktreeId), changes: next } : { changes: next });
+		const retargeted = open && selected !== null && !sameFileChange(open.file, selected) ? { diffs: { ...state.diffs, [worktreeId]: { ...open, file: selected } } } : {};
+		update(open && !kept ? { ...closedDiff(worktreeId), changes: next } : { ...retargeted, changes: next });
 		if (selected) await readDiff(next, selected, worktree.path);
 	}
 
@@ -2121,6 +2132,37 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			return;
 		}
 		if (result.outcome !== "pasted") showToast(`${chop.name} was not inserted: ${result.message}`, true);
+	}
+
+	/**
+	 * Stage or unstage files of the Uncommitted list (see `Engine.stageFiles`),
+	 * with the command the list shows for them, then read the list again at
+	 * once. A refusal or Git's failure stays in `writeProblem` until the next
+	 * write works. Never throws.
+	 */
+	async function writeIndex(action: IndexAction, files: readonly FileChangeTarget[]): Promise<IndexWriteResult | null> {
+		const view = state.changes;
+		if (!view?.files || view.compared !== "uncommitted" || view.writing || files.length === 0) return null;
+		const worktree = worktreeOf(view.repository, view.worktree);
+		if (!worktree) return null;
+		const targets = files.map(file => ({ area: file.area, path: file.path, previousPath: file.previousPath }));
+		if (!targets.every(file => canWriteIndex(action, file.area) && view.files!.some(candidate => sameFileChange(candidate, file)))) return null;
+		const command = indexCommand(action, targets, view.hasCommit);
+		update({ changes: { ...view, writing: true } });
+		const request = { repository: view.repository, worktree: worktree.path, files: targets, shown: command.args };
+		let result: IndexWriteResult;
+		try {
+			result = await (action === "stage" ? engine.stageFiles(request) : engine.unstageFiles(request));
+		} catch (error) {
+			result = { outcome: "failed", command: describeGitCommand(command), message: unheard(action === "stage" ? "staging" : "unstaging", error) };
+		}
+		const now = state.changes;
+		if (now?.worktree === view.worktree) {
+			const writeProblem = result.outcome === "written" ? null : { action, command: result.outcome === "failed" ? result.command : null, message: result.message };
+			update({ changes: { ...now, writing: false, writeProblem } });
+		}
+		await readChanges(view.repository, view.worktree, targets.flatMap(file => (file.previousPath === null ? [file.path] : [file.path, file.previousPath])));
+		return result;
 	}
 
 	async function selectChangedFile(file: FileChangeTarget): Promise<void> {
@@ -3757,6 +3799,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		insertChop,
 		readPorts,
 		selectChangedFile,
+		writeIndex,
 		compareChanges,
 		chooseDiffLayout,
 		addReviewNote(worktreeId, note) {

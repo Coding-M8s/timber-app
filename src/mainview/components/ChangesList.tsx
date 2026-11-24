@@ -2,10 +2,11 @@ import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { type FileChange, sameFileChange } from "../../shared/file-changes";
 import type { Repository, Worktree } from "../../shared/model";
 import {
-	AREA_TITLES, COMPARISONS, COMPARISON_LABELS, KIND_LABELS, MORE_FILES_NOTE, NO_REFRESH, REFRESHING_CHANGES, type RefreshSpan, baseUnavailable, describeComparison,
-	describeFileCounts, describeFilterResult, describeLineCounts, describeNoChanges, fileAfterKey, filterFiles, groupFileChanges, listedOrder, nextRefreshSpan, speakLineCounts, splitPath,
-	totalLineCounts,
+	AREA_TITLES, COMPARISONS, COMPARISON_LABELS, INDEX_KEY, INDEX_KEY_NAME, INDEX_WRITE_FAILED, KIND_LABELS, MORE_FILES_NOTE, NO_REFRESH, REFRESHING_CHANGES, type RefreshSpan, baseUnavailable,
+	describeComparison, describeFileCounts, describeFilterResult, describeIndexCommand, describeLineCounts, describeNoChanges, fileAfterKey, fileIndexAction, filterFiles, groupFileChanges,
+	groupIndexAction, listedOrder, movedEntry, nextRefreshSpan, speakLineCounts, splitPath, totalLineCounts,
 } from "../changes-format";
+import { type IndexAction, indexCommand } from "../../shared/index-writes";
 import { CHANGES_CLOSE_LABEL, CHANGES_PANEL_TITLE, describeChangesPanelEmpty, takesChangesPanelKey } from "../changes-panel-format";
 import { CHOPS_PANEL_ID } from "../chops-panel-format";
 import { chosenComparison } from "../../shared/layout";
@@ -82,6 +83,12 @@ function ViewedMark() {
  * the filter. Choosing one opens its diff in the diff tab, which marks it
  * here. One file is a tab stop; the arrows move the keyboard to the others
  * without opening them. A file marked Viewed is dimmed and checked.
+ *
+ * With Uncommitted, each file has Stage, Unstage, or Mark resolved, shown on
+ * hover and keyboard focus, and Space on the file does the same; each group
+ * has Stage all, Unstage all, or Mark all resolved, for the files it shows.
+ * Each button's tooltip is the command it runs. Afterwards the keyboard
+ * stays on the file, in its new group.
  */
 function FileList({ view, dimmed }: { view: ChangesView & { files: readonly FileChange[] }; dimmed: string }) {
 	const store = useStore();
@@ -89,9 +96,32 @@ function FileList({ view, dimmed }: { view: ChangesView & { files: readonly File
 	const buttons = useRef(new Map<string, HTMLButtonElement>());
 	const order = listedOrder(view.files);
 	const [focused, setFocused] = useState<string | null>(null);
+	// The file the keyboard follows after a stage or unstage, by path, and where it was in the list.
+	const following = useRef<{ path: string; index: number; files: readonly FileChange[] } | null>(null);
 	const focusedFile = focused === null ? undefined : order.find(file => fileKey(file) === focused);
 	// The file the keyboard was on, else the open one, else the first, takes the tab stop.
 	const tabStop = focusedFile ?? (view.selected === null ? undefined : order.find(file => sameFileChange(file, view.selected!))) ?? order[0] ?? null;
+	const writable = view.compared === "uncommitted";
+
+	useEffect(() => {
+		const follow = following.current;
+		// Only once the list was read again after the write.
+		if (follow === null || view.writing || state.changes?.files === follow.files) return;
+		following.current = null;
+		// The file in its new group, else whatever took its place.
+		const next = movedEntry(view.files, follow.path) ?? order[Math.min(follow.index, order.length - 1)];
+		if (!next) return;
+		setFocused(fileKey(next));
+		buttons.current.get(fileKey(next))?.focus();
+	});
+
+	const write = (action: IndexAction, files: readonly FileChange[], follow: FileChange) => {
+		if (view.writing) return;
+		following.current = { path: follow.path, index: Math.max(0, order.findIndex(file => sameFileChange(file, follow))), files: state.changes?.files ?? [] };
+		void store.writeIndex(action, files).then(result => {
+			if (result === null) following.current = null;
+		});
+	};
 
 	const onKey = (event: KeyboardEvent<HTMLDivElement>) => {
 		// Alt+Up and Alt+Down open the previous and next file (see ./DiffTab.tsx), so they do not move the keyboard here too.
@@ -105,47 +135,87 @@ function FileList({ view, dimmed }: { view: ChangesView & { files: readonly File
 
 	return (
 		<div className={`change-groups${dimmed}`} onKeyDown={onKey}>
-			{groupFileChanges(view.files).map(group => (
-				<section key={group.area} className="change-group" aria-label={AREA_TITLES[group.area]}>
-					<h3 className="change-group-title">
-						{AREA_TITLES[group.area]}
-						<span className="change-group-count">{group.files.length}</span>
-					</h3>
-					<ul className="change-files">
-						{group.files.map(file => {
-							const key = fileKey(file);
-							const selected = view.selected !== null && sameFileChange(view.selected, file);
-							const viewed = fileViewed(state, view.worktree, view.compared, file);
-							const { name, folder } = splitPath(file.path);
-							const counts = speakLineCounts(file);
-							return (
-								<li key={key}>
-									<button
-										type="button"
-										className={`change-file${selected ? " selected" : ""}${viewed ? " viewed" : ""}`}
-										aria-current={selected ? "true" : undefined}
-										aria-label={`${file.path}, ${KIND_LABELS[file.kind]}${file.previousPath === null ? "" : ` from ${file.previousPath}`}${AREA_TITLES[file.area] === KIND_LABELS[file.kind] ? "" : `, ${AREA_TITLES[file.area]}`}${counts === "" ? "" : `, ${counts}`}${viewed ? ", viewed" : ""}`}
-										title={file.previousPath === null ? file.path : `${file.previousPath} → ${file.path}`}
-										tabIndex={tabStop !== null && sameFileChange(tabStop, file) ? 0 : -1}
-										ref={element => {
-											if (element) buttons.current.set(key, element);
-											else buttons.current.delete(key);
-										}}
-										onFocus={() => setFocused(key)}
-										onClick={() => void store.selectChangedFile(file)}
-									>
-										<span className="change-file-name">{name}</span>
-										{folder !== "" && <span className="change-file-folder">{folder}</span>}
-										{viewed && <ViewedMark />}
-										<LineCounts file={file} />
-										<KindLetter file={file} />
-									</button>
-								</li>
-							);
-						})}
-					</ul>
-				</section>
-			))}
+			{groupFileChanges(view.files).map(group => {
+				const all = writable ? groupIndexAction(group.area) : null;
+				return (
+					<section key={group.area} className="change-group" aria-label={AREA_TITLES[group.area]}>
+						<div className="change-group-head">
+							<h3 className="change-group-title">
+								{AREA_TITLES[group.area]}
+								<span className="change-group-count">{group.files.length}</span>
+							</h3>
+							{all !== null && (
+								<button
+									type="button"
+									className="change-group-action"
+									title={describeIndexCommand(indexCommand(all.action, group.files, view.hasCommit))}
+									aria-label={`${all.label}: ${group.files.length} ${group.files.length === 1 ? "file" : "files"} in ${AREA_TITLES[group.area]}`}
+									aria-disabled={view.writing || undefined}
+									onClick={() => write(all.action, group.files, group.files[0]!)}
+								>
+									{all.label}
+								</button>
+							)}
+						</div>
+						<ul className="change-files">
+							{group.files.map(file => {
+								const key = fileKey(file);
+								const own = writable ? fileIndexAction(file) : null;
+								const isTabStop = tabStop !== null && sameFileChange(tabStop, file);
+								const selected = view.selected !== null && sameFileChange(view.selected, file);
+								const viewed = fileViewed(state, view.worktree, view.compared, file);
+								const { name, folder } = splitPath(file.path);
+								const counts = speakLineCounts(file);
+								return (
+									<li key={key} className={`change-row${own === null ? "" : " writable"}`}>
+										<button
+											type="button"
+											className={`change-file${selected ? " selected" : ""}${viewed ? " viewed" : ""}`}
+											aria-current={selected ? "true" : undefined}
+											aria-label={`${file.path}, ${KIND_LABELS[file.kind]}${file.previousPath === null ? "" : ` from ${file.previousPath}`}${AREA_TITLES[file.area] === KIND_LABELS[file.kind] ? "" : `, ${AREA_TITLES[file.area]}`}${counts === "" ? "" : `, ${counts}`}${viewed ? ", viewed" : ""}`}
+											aria-keyshortcuts={own === null ? undefined : INDEX_KEY_NAME}
+											title={file.previousPath === null ? file.path : `${file.previousPath} → ${file.path}`}
+											tabIndex={isTabStop ? 0 : -1}
+											ref={element => {
+												if (element) buttons.current.set(key, element);
+												else buttons.current.delete(key);
+											}}
+											onFocus={() => setFocused(key)}
+											onClick={() => void store.selectChangedFile(file)}
+											onKeyDown={event => {
+												if (own === null || event.key !== INDEX_KEY || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+												// Space stages or unstages, where Enter opens the diff.
+												event.preventDefault();
+												if (!event.repeat) write(own.action, [file], file);
+											}}
+										>
+											<span className="change-file-name">{name}</span>
+											{folder !== "" && <span className="change-file-folder">{folder}</span>}
+											{viewed && <ViewedMark />}
+											<LineCounts file={file} />
+											<KindLetter file={file} />
+										</button>
+										{own !== null && (
+											<button
+												type="button"
+												className="text-button change-file-action"
+												title={describeIndexCommand(indexCommand(own.action, [file], view.hasCommit))}
+												aria-label={`${own.label} ${file.path}`}
+												aria-disabled={view.writing || undefined}
+												tabIndex={isTabStop ? 0 : -1}
+												onFocus={() => setFocused(key)}
+												onClick={() => write(own.action, [file], file)}
+											>
+												{own.label}
+											</button>
+										)}
+									</li>
+								);
+							})}
+						</ul>
+					</section>
+				);
+			})}
 		</div>
 	);
 }
@@ -272,6 +342,13 @@ function WorktreeChanges({ repository, worktree }: { repository: Repository; wor
 					<div className="sidebar-error" role="alert">
 						<p className="sidebar-error-title">Could not read the changes</p>
 						<p className="sidebar-error-text">{view.problem}</p>
+					</div>
+				)}
+				{view?.writeProblem != null && (
+					<div className="sidebar-error" role="alert">
+						<p className="sidebar-error-title">{INDEX_WRITE_FAILED[view.writeProblem.action]}</p>
+						{view.writeProblem.command !== null && <p className="sidebar-error-text"><code>{view.writeProblem.command}</code></p>}
+						<p className="sidebar-error-text">{view.writeProblem.message}</p>
 					</div>
 				)}
 				{view !== null && files !== null && (files.length === 0

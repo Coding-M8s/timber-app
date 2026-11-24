@@ -7,6 +7,7 @@ import type { BackupDeleteRequest, BackupRestoreRequest } from "./backups";
 import type { Engine } from "./engine";
 import type { ForcePushSeen, RepositoryFetch } from "./git-fetch";
 import type { FileChangesRequest, FileDiffRequest } from "./file-changes";
+import type { IndexWriteRequest } from "./index-writes";
 import type { WorktreeFileRequest, WorktreeFileWriteRequest } from "./worktree-files";
 import type { WorktreeFolderChange, WorktreeFolderRequest, WorktreeFolderWatch } from "./worktree-folders";
 import type { Layout } from "./layout";
@@ -128,6 +129,8 @@ export type AppRPC = {
 			applyDone: { params: DoneApplyRequest; response: Answer<"applyDone"> };
 			readFileChanges: { params: FileChangesRequest; response: Answer<"readFileChanges"> };
 			readFileDiff: { params: FileDiffRequest; response: Answer<"readFileDiff"> };
+			stageFiles: { params: IndexWriteRequest; response: Answer<"stageFiles"> };
+			unstageFiles: { params: IndexWriteRequest; response: Answer<"unstageFiles"> };
 			readWorktreeFile: { params: WorktreeFileRequest; response: Answer<"readWorktreeFile"> };
 			writeWorktreeFile: { params: WorktreeFileWriteRequest; response: Answer<"writeWorktreeFile"> };
 			listWorktreeFolder: { params: WorktreeFolderRequest; response: Answer<"listWorktreeFolder"> };

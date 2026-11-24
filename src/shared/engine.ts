@@ -7,6 +7,7 @@ import type { BackupDeleteRequest, BackupDeleteResult, BackupList, BackupRestore
 import type { Attention } from "./attention";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "./git-fetch";
 import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffResult } from "./file-changes";
+import type { IndexWriteRequest, IndexWriteResult } from "./index-writes";
 import type { WorktreeFileRequest, WorktreeFileResult, WorktreeFileWriteRequest, WorktreeFileWriteResult } from "./worktree-files";
 import type { WorktreeFolderChange, WorktreeFolderRequest, WorktreeFolderResult, WorktreeFolderWatch } from "./worktree-folders";
 import type { WorktreeHandoff } from "./handoff";
@@ -594,6 +595,26 @@ export interface Engine {
 	 * diff comes without its text. Read-only and safe to call again.
 	 */
 	readFileDiff(request: FileDiffRequest): Promise<FileDiffResult>;
+	/**
+	 * Stage files of the Uncommitted list: `git add -- <paths>`, which for a
+	 * conflicted file marks it resolved. Only files listed now as unstaged,
+	 * untracked, or conflicted: the main process reads the status again and
+	 * takes every path from it, never from the request, and refuses a file
+	 * that is not there. `shown` must be the command `indexCommand` in
+	 * ./index-writes.ts gives for the same files, as the window showed it, or
+	 * nothing runs. Writes only the index, never a ref, a commit, or a file on
+	 * disk. Runs once and is never retried; when Git fails, as when another
+	 * Git holds `index.lock`, nothing changed and the answer has Git's
+	 * message. Read the changes again after every outcome.
+	 */
+	stageFiles(request: IndexWriteRequest): Promise<IndexWriteResult>;
+	/**
+	 * Unstage files listed now as staged, as `stageFiles` stages them: `git
+	 * restore --staged -- <paths>`, with a rename's old path too, or `git rm
+	 * --cached -f -- <paths>` before the first commit, which leaves the files
+	 * on disk as untracked.
+	 */
+	unstageFiles(request: IndexWriteRequest): Promise<IndexWriteResult>;
 	/**
 	 * One file of a worktree of a repository in the list, for the File tab. The path is relative to the worktree, and neither it nor a
 	 * link it is may lead outside the worktree. Only a plain file is read, up

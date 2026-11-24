@@ -810,6 +810,21 @@ logins. The app never reads a tracker login and never signs in.
   shows only when it has files. A new file is never listed under Unstaged,
   so it is not lost among edited ones, and a screen reader hears its row
   as "Untracked" once, not with the group's name again.
+- With Uncommitted, each file can be staged or unstaged from the list. A
+  file of Unstaged or Untracked has Stage, a file of Staged has Unstage,
+  and a file of Merge conflicts has "Mark resolved", since that is what
+  `git add` does to it. The button shows over the end of the row, in place
+  of its counts, while the pointer is on the row or the keyboard is on it;
+  Tab goes from the file to its button. Space on a file does the same as
+  its button, and Enter still opens its diff. Each group's heading ends
+  with Stage all, Unstage all, or Mark all resolved, for the files the
+  group shows through the filter. Every button's tooltip is the command it
+  runs, such as `git add -- src/a.ts`. The list reads again at once, and
+  the keyboard stays on the file in its new group; a diff tab open on it
+  stays open on its new entry. When Git refuses, as when another Git holds
+  `index.lock`, an alert under the counts says "Could not stage" or "Could
+  not unstage" with the command and Git's message, and the list is as it
+  was. Base is review only and has no write buttons.
 - Each file's row shows its lines added and removed, `+12 -3`, as Git
   counts them for its diff; an untracked file counts all its lines as
   added. A binary file, and a conflict, show none. A screen reader hears

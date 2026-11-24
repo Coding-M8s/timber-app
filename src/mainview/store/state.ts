@@ -1,3 +1,4 @@
+import type { IndexAction } from "../../shared/index-writes";
 import type { AgentLocation } from "../../shared/agent-lookup";
 import type { StatusHookView } from "../../shared/status-hooks";
 import type { ChopArrangements, ChopRename } from "../../shared/chop-order";
@@ -143,6 +144,12 @@ export interface ChangesView {
 	base: BaseComparison | null;
 	/** Why the latest read failed. Null once one worked. */
 	problem: string | null;
+	/** Whether the worktree has a commit, from the latest read that worked: before the first one, unstaging is `git rm --cached`. */
+	hasCommit: boolean;
+	/** A stage or unstage is running: the list's write buttons wait for it. */
+	writing: boolean;
+	/** Why the latest stage or unstage did not happen, with the command when Git ran and failed. Null once one worked, or for another worktree. */
+	writeProblem: { action: IndexAction; command: string | null; message: string } | null;
 	/** The file whose diff is read: the file of the worktree's diff tab while it is listed, otherwise null. */
 	selected: FileChangeTarget | null;
 	/** The diff of `selected`. Null while the first read of it runs. A newer read replaces it when it answers. */
