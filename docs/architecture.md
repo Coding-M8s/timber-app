@@ -3919,7 +3919,8 @@ box focused.
   that prints a lot never meets a closed pipe, and the last 64 KiB of each
   is kept, as the end of a hook's output says what failed. Git may run for
   ten minutes (`COMMIT_MILLISECONDS`), as a hook may run a test suite; the
-  desktop bridge waits fifteen. A commit holds the repository's turn while
+  desktop bridge waits fifteen. After that Git is stopped; a process the
+  hook started may outlive it, and reading ends at the same time. A commit holds the repository's turn while
   it runs, so a stage, a pull, or a Timber command waits for it; reading
   the list does not.
 - **Whether it committed.** `settleCommit` reads HEAD again in the same
@@ -3930,10 +3931,13 @@ box focused.
   then standard error.
 - **In the window.** The message is kept per worktree in
   `commitMessages`, in the window only, while it is open, until a commit
-  is made. `commitStaged` in the store sends it, keeps the box read-only
-  and the list's write buttons waiting while it runs (`changes.writing`
-  and `committing`), and then reads the list and the repository again at
-  once, so the row's ahead count moves. Made: the message clears and the
+  is made. The commit's state is kept per worktree too, in `commitRuns`,
+  not in `changes`, which is rebuilt when another worktree shows: a commit
+  whose hooks run for minutes keeps its box read-only and its Commit and
+  write buttons waiting (`writesWait`) when the person switches away and
+  back, and its outcome shows on return. `commitStaged` in the store sends
+  the message, and then reads the list, when that worktree still shows,
+  and the repository again at once, so the row's ahead count moves. Made: the message clears and the
   box says "Committed a1b2c3d", with the row's Push when the row offers one
   (`describeSyncControls`), which opens the same Push dialog, showing
   `timber publish` before it runs. Not made: an alert, "Could not commit",
@@ -3946,8 +3950,9 @@ box focused.
   does, and a commit removes the staged files and adds one to the branch's
   ahead count. `timberMock.failCommits(message)` makes every commit fail
   with that output, `timberMock.setOperation(path, operation)` pretends a
-  merge or rebase is in progress, and `timberMock.commits()` lists the
-  commits made.
+  merge or rebase is in progress, `timberMock.setCommitDelay(milliseconds)`
+  makes a commit take a while, as hooks do, and `timberMock.commits()`
+  lists the commits made.
 - **Tests.** `tests/commit-staged.test.ts` commits on real temporary
   repositories, in a linked worktree, with the person's Git config left
   out: a file staged and then edited again commits its staged version and
@@ -3956,8 +3961,8 @@ box focused.
   `pre-commit` hook with its output, HEAD, the files, and the index entries
   unchanged; a hook that prints about 400 KiB on each stream and passes,
   and one whose failure is at the end of its output; a hook that sees no
-  literal pathspecs, no `GIT_OPTIONAL_LOCKS`, and the person's locale; a
-  hook stopped after its time with no commit made; and every refusal
+  literal pathspecs, no `GIT_OPTIONAL_LOCKS`, and the person's locale; Git
+  stopped after its time while a hook sleeps, with no commit made; and every refusal
   (nothing staged, an empty message, `--amend` or `--no-verify` as the
   shown command, a merge, a rebase, a detached HEAD, an unlisted worktree,
   an incomplete request) running nothing. A failed commit still refreshes

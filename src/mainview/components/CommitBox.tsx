@@ -8,7 +8,7 @@ import {
 } from "../commit-format";
 import { describeSyncControls } from "../sync-action-format";
 import { useAppState, useStore } from "../store/react";
-import { type ChangesView, syncOptionsOf } from "../store/state";
+import { type ChangesView, syncOptionsOf, writesWait } from "../store/state";
 
 const mac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
 
@@ -38,8 +38,12 @@ export function CommitBox({ repository, worktree, view, focusWanted, onFocused }
 	const box = useRef<HTMLTextAreaElement>(null);
 	const message = state.commitMessages[worktree.id] ?? "";
 	const blocker = commitBlocker(commitStateOf(view, message));
-	const disabled = blocker !== null || view.writing;
-	const push = view.committed === null ? undefined : describeSyncControls(worktree, syncOptionsOf(state, repository.path, worktree.path)).find(control => control.action === "push");
+	const run = state.commitRuns[worktree.id];
+	const running = run?.running === true;
+	const disabled = blocker !== null || writesWait(state, view);
+	const committed = run?.committed ?? null;
+	const problem = run?.problem ?? null;
+	const push = committed === null ? undefined : describeSyncControls(worktree, syncOptionsOf(state, repository.path, worktree.path)).find(control => control.action === "push");
 
 	useEffect(() => {
 		if (!focusWanted) return;
@@ -61,7 +65,7 @@ export function CommitBox({ repository, worktree, view, focusWanted, onFocused }
 				rows={3}
 				placeholder={COMMIT_MESSAGE_PLACEHOLDER}
 				value={message}
-				readOnly={view.committing}
+				readOnly={running}
 				spellCheck={true}
 				aria-describedby={noteId}
 				onChange={event => store.setCommitMessage(worktree.id, event.target.value)}
@@ -72,14 +76,14 @@ export function CommitBox({ repository, worktree, view, focusWanted, onFocused }
 				}}
 			/>
 			<div className="commit-actions">
-				<p className="commit-note" id={noteId} role="status">{view.committing ? COMMITTING : blocker ?? ""}</p>
+				<p className="commit-note" id={noteId} role="status">{running ? COMMITTING : blocker ?? ""}</p>
 				<button type="button" className="button primary commit-button" disabled={disabled} title={describeCommitButton(mac)} aria-describedby={noteId} onClick={commit}>
 					{COMMIT_BUTTON}
 				</button>
 			</div>
-			{view.committed !== null && (
+			{committed !== null && (
 				<div className="commit-done">
-					<span role="status">{describeCommitted(view.committed.short)}</span>
+					<span role="status">{describeCommitted(committed.short)}</span>
 					{push && (
 						<button
 							type="button"
@@ -93,11 +97,11 @@ export function CommitBox({ repository, worktree, view, focusWanted, onFocused }
 					)}
 				</div>
 			)}
-			{view.commitProblem !== null && (
+			{problem !== null && (
 				<div className="sidebar-error" role="alert">
 					<p className="sidebar-error-title">{COMMIT_FAILED}</p>
-					{view.commitProblem.command !== null && <p className="sidebar-error-text"><code>{view.commitProblem.command}</code></p>}
-					<pre className="commit-output">{view.commitProblem.message}</pre>
+					{problem.command !== null && <p className="sidebar-error-text"><code>{problem.command}</code></p>}
+					<pre className="commit-output">{problem.message}</pre>
 				</div>
 			)}
 		</div>

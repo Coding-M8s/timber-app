@@ -4861,8 +4861,8 @@ Run for committing staged changes from the Changes view (issue 394), on
   on each stream that passed and committed, and one whose failure line at
   the end of its output was kept; a hook that saw no
   `GIT_LITERAL_PATHSPECS` or `GIT_OPTIONAL_LOCKS`, the test's own `LC_ALL`,
-  and a `'*.txt'` pathspec matching as a glob; a hook stopped after a 0.5
-  second limit with no commit made; and every refusal (nothing staged, a
+  and a `'*.txt'` pathspec matching as a glob; Git stopped after a 0.5
+  second limit while the hook slept, with no commit made; and every refusal (nothing staged, a
   message of spaces, `--amend` and `--no-verify` as the shown command, a
   merge in progress, a rebase stopped on a conflict, a detached HEAD, an
   unlisted worktree, an incomplete request) running nothing. The list read
@@ -4872,22 +4872,31 @@ Run for committing staged changes from the Changes view (issue 394), on
   the same: Git refreshes its cached file times before running the hook,
   as it does from a terminal. The test compares `git ls-files --stage`
   there.
-- `bun test tests/commit-box.test.tsx`: 9 passed. Over the mock engine:
+- `bun test tests/commit-box.test.tsx`: 11 passed. Over the mock engine:
   the box and Commit with its tooltip, disabled with "Write a commit
   message first." until there is one; "Nothing is staged." with nothing
   committed; a merge's note; a commit clearing the message, saying the
   hash with Push, leaving the unstaged and untracked files, and moving the
   row's ahead count from 2 to 3; a failure showing the output, keeping the
-  message and the files, then the same message committing; the message
-  kept across worktree switches; Commit… in Base.
+  message and the files, then the same message committing; a slow commit
+  started, another worktree shown and the first shown again while it ran,
+  with Commit, Unstage, and the box still waiting, then its failure shown
+  with the message kept; a commit that ended while another worktree showed
+  having its hash there on return, without reading the other's list; the
+  message kept across worktree switches; Commit… in Base.
 - `bun test tests/commit-box-browser.test.ts`: 3 passed in headless Chrome.
   Typing, Enter as a new line, and Ctrl+Enter committing; Push after it
   opening the Push dialog with `timber publish`; a failing hook's output
   in the alert with the message kept; Base's Commit… switching to
-  Uncommitted with the box focused.
-- `bun test` over the commit, staging, Changes, file changes, store, sync
-  action, app, review panel, files panel, and diff colors test files (20
-  files): 358 passed, 0 failed.
+  Uncommitted with the box focused. One run beside five other test files
+  failed once in the Ctrl+Enter test: it read the Staged group as soon as
+  "Committed" showed, before the list was read again. It now waits for the
+  list, and the same six files then passed 57 of 57 twice.
+- `bun test` over every test file that reads a changed file (the styles,
+  the README, the docs, the contract, the RPC, or the Git helpers), with
+  the commit, staging, Changes, file changes, store, sync action, app, and
+  diff colors test files (61 files): 1,006 ran, 990 passed, 0 failed, and
+  16 skipped, as they run only on Windows.
 - `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
 - Screenshots of the browser test page at 1200 pixels wide showed the box
   with its reason beside Commit, the failure alert with the hook's output,

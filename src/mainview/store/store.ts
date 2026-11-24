@@ -78,7 +78,7 @@ import { type FileEditMemory, createFileEditMemory } from "../text-editor-format
 import { afterSave, canEditFile, editableFileText, fileText, hasUnsavedEdits, initialFileMode, listedOnly, outsideResult, pathInWorktree, settleTabs, unsavedFileCount } from "../file-view-format";
 import {
 	type AppState, type ChangesView, type DialogRequest, type FileMode, type FileView, type Operation, type PullRequestForm, type Removal, type SessionAgent, type UnsavedFileStep, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood, syncOptionsOf,
-	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, canToggleSidePanel, chopsEnabled, filesPanelShown, offeredChops, sidePanelShown, sidePanelView, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, shownSession, timberReady, withTerminal, withoutSession, fileViewed, viewedKey } from "./state";
+	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, canToggleSidePanel, chopsEnabled, filesPanelShown, offeredChops, sidePanelShown, sidePanelView, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, shownSession, timberReady, withTerminal, withoutSession, fileViewed, viewedKey, type CommitRun, writesWait } from "./state";
 
 /** How `AppStore.runChop` runs a chop, beyond which one and where. */
 export interface RunChopOptions {
@@ -1948,7 +1948,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		if (!worktree) return;
 		const ticket = ++changesTicket;
 		if (state.changes?.worktree !== worktreeId || state.changes.repository !== repositoryPath) {
-			update({ changes: { repository: repositoryPath, worktree: worktreeId, files: null, more: false, compared: null, base: null, problem: null, hasCommit: true, operation: null, detached: false, writing: false, committing: false, commitProblem: null, committed: null, settledWrites: 0, writeProblem: null, selected: null, diff: null, unchanged: null } });
+			update({ changes: { repository: repositoryPath, worktree: worktreeId, files: null, more: false, compared: null, base: null, problem: null, hasCommit: true, operation: null, detached: false, writing: false, settledWrites: 0, writeProblem: null, selected: null, diff: null, unchanged: null } });
 		}
 		const compare = chosenComparison(state.layout, worktreeId);
 		let answer!: FileChangesResult;
@@ -2167,13 +2167,14 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	 */
 	async function writeIndex(action: IndexAction, files: readonly FileChangeTarget[]): Promise<IndexWriteResult | null> {
 		const view = state.changes;
-		if (!view?.files || view.compared !== "uncommitted" || view.writing || files.length === 0) return null;
+		if (!view?.files || view.compared !== "uncommitted" || writesWait(state, view) || files.length === 0) return null;
 		const worktree = worktreeOf(view.repository, view.worktree);
 		if (!worktree) return null;
 		const targets = files.map(file => ({ area: file.area, path: file.path, previousPath: file.previousPath }));
 		if (!targets.every(file => canWriteIndex(action, file.area) && view.files!.some(candidate => sameFileChange(candidate, file)))) return null;
 		const command = indexCommand(action, targets, view.hasCommit);
-		update({ changes: { ...view, writing: true, committed: null } });
+		const run = state.commitRuns[view.worktree];
+		update({ changes: { ...view, writing: true }, ...(run?.committed ? { commitRuns: { ...state.commitRuns, [view.worktree]: { ...run, committed: null } } } : {}) });
 		const request = { repository: view.repository, worktree: worktree.path, files: targets, shown: command.args };
 		let result: IndexWriteResult;
 		try {
@@ -2198,30 +2199,30 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 
 	async function commitStaged(): Promise<CommitResult | null> {
 		const view = state.changes;
-		if (!view?.files || view.compared !== "uncommitted" || view.writing) return null;
+		if (!view?.files || view.compared !== "uncommitted" || writesWait(state, view)) return null;
 		const worktree = worktreeOf(view.repository, view.worktree);
 		if (!worktree) return null;
 		const message = state.commitMessages[view.worktree] ?? "";
 		if (commitBlocker(commitStateOf({ ...view, files: view.files }, message)) !== null) return null;
-		update({ changes: { ...view, writing: true, committing: true, commitProblem: null, committed: null } });
+		const id = view.worktree;
+		const ran = (run: CommitRun) => update({ commitRuns: { ...state.commitRuns, [id]: run } });
+		ran({ running: true, problem: null, committed: null });
 		let result: CommitResult;
 		try {
 			result = await engine.commitStaged({ repository: view.repository, worktree: worktree.path, message, shown: [...COMMIT_ARGUMENTS] });
 		} catch (error) {
 			result = { outcome: "failed", command: COMMIT_COMMAND_LINE, message: unheard("the commit", error) };
 		}
-		const made = result.outcome === "committed";
-		if (made) {
-			const { [view.worktree]: _sent, ...others } = state.commitMessages;
+		// Kept for the worktree whichever shows now, so a commit that ran while another worktree showed says how it ended on return.
+		if (result.outcome === "committed") {
+			const { [id]: _sent, ...others } = state.commitMessages;
 			update({ commitMessages: others });
+			ran({ running: false, problem: null, committed: { commit: result.commit, short: result.short } });
+		} else {
+			ran({ running: false, problem: { command: result.outcome === "failed" ? result.command : null, message: result.message }, committed: null });
 		}
-		const now = state.changes;
-		if (now?.worktree === view.worktree) {
-			const commitProblem = result.outcome === "committed" ? null : { command: result.outcome === "failed" ? result.command : null, message: result.message };
-			update({ changes: { ...now, writing: false, committing: false, commitProblem, committed: result.outcome === "committed" ? { commit: result.commit, short: result.short } : null } });
-		}
-		// The list at once, and the repository for the row's counts.
-		await Promise.all([readChanges(view.repository, view.worktree), reloadOne(view.repository)]);
+		// The list at once while it shows, and the repository for the row's counts. Another worktree's list is read when it shows again.
+		await Promise.all([state.changes?.worktree === id ? readChanges(view.repository, id) : null, reloadOne(view.repository)]);
 		return result;
 	}
 

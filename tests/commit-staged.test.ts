@@ -201,7 +201,7 @@ describe.skipIf(windows)("committing in real repositories", () => {
 		expect(readFileSync(seen, "utf8")).toBe(`unset unset ${process.env.LC_ALL ?? "unset"}\nkeep.txt\n`);
 	});
 
-	test("a hook that takes too long is stopped, and no commit is made", async () => {
+	test("Git is stopped when a hook takes too long, and no commit is made", async () => {
 		const sampled = sample("slow", linked => {
 			writeFileSync(join(linked, "keep.txt"), "one\ntwo\n");
 			git(linked, "add", "keep.txt");

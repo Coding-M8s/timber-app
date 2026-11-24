@@ -151,14 +151,8 @@ export interface ChangesView {
 	operation: GitOperation | null;
 	/** Whether HEAD is detached, from the latest read that worked: there is no branch to commit on. */
 	detached: boolean;
-	/** A stage, unstage, or commit is running: the list's write buttons and Commit wait for it. */
+	/** A stage or unstage is running: the list's write buttons and Commit wait for it, as they do for a commit (`writesWait`). */
 	writing: boolean;
-	/** A commit is running, so the message box is read-only and says so. */
-	committing: boolean;
-	/** Why the latest commit was not made: what Git and the hooks printed, with the command when Git ran. Null once one was made, or for another worktree. */
-	commitProblem: { command: string | null; message: string } | null;
-	/** The commit the latest Commit made here, until the next write. */
-	committed: { commit: string; short: string } | null;
 	/** Counts the stage and unstage writes whose list was read again after they ended, so the list knows where the keyboard goes. */
 	settledWrites: number;
 	/** Why the latest stage or unstage did not happen, with the command when Git ran and failed. Null once one worked, or for another worktree. */
@@ -173,6 +167,21 @@ export interface ChangesView {
 	 * them (see ../diff-unchanged.ts). Null when they cannot be, or were not.
 	 */
 	unchanged: readonly string[] | null;
+}
+
+/** A worktree's latest commit from the Changes view. */
+export interface CommitRun {
+	/** The commit is running: the box is read-only, and Commit and the list's write buttons wait. */
+	running: boolean;
+	/** Why it was not made: what Git and the hooks printed, with the command when Git ran. */
+	problem: { command: string | null; message: string } | null;
+	/** The commit it made, until the next write in the worktree. */
+	committed: { commit: string; short: string } | null;
+}
+
+/** Whether the Changes view's writes wait: a stage or unstage runs, or a commit runs in its worktree. */
+export function writesWait(state: Pick<AppState, "commitRuns">, view: Pick<ChangesView, "worktree" | "writing">): boolean {
+	return view.writing || state.commitRuns[view.worktree]?.running === true;
 }
 
 /** How a viewed file is kept: its comparison and the file. */
@@ -559,6 +568,12 @@ export interface AppState {
 	/** What is typed in the Changes view's commit message box, by worktree, until a commit is made. Kept in the window only, while it is open. */
 	commitMessages: Readonly<Record<string, string>>;
 	/**
+	 * Each worktree's latest commit from the Changes view, by its identity:
+	 * kept here rather than in `changes`, since hooks may run for minutes
+	 * while another worktree shows, and the outcome must be there on return.
+	 */
+	commitRuns: Readonly<Record<string, CommitRun>>;
+	/**
 	 * The file open in the File tab of each worktree, by its identity. A
 	 * worktree with none has no File tab. Kept in the window only, never
 	 * saved, and forgotten when the worktree leaves the list.
@@ -723,6 +738,7 @@ export const initialState: AppState = {
 	viewed: {},
 	changeFilters: {},
 	commitMessages: {},
+	commitRuns: {},
 	files: {},
 	reviews: {},
 	noteInView: null,

@@ -13,7 +13,7 @@ import { chosenComparison } from "../../shared/layout";
 import { BASE_ACTION_TITLE, describeBaseAction } from "../base-change-format";
 import { ModeSwitch } from "./worktree-modes/ModeSwitch";
 import { useAppState, useStore } from "../store/react";
-import { type ChangesView, changesBusy, changesWanted, fileViewed, selectedWorktree } from "../store/state";
+import { type ChangesView, changesBusy, changesWanted, fileViewed, selectedWorktree, writesWait } from "../store/state";
 import type { AppStore } from "../store/store";
 import { StatusGlyph } from "./StatusGlyph";
 import { CommitBox, CommitFromBase } from "./CommitBox";
@@ -117,7 +117,7 @@ function FileList({ view, dimmed }: { view: ChangesView & { files: readonly File
 	});
 
 	const write = (action: IndexAction, files: readonly FileChange[], follow: FileChange) => {
-		if (view.writing) return;
+		if (writesWait(state, view)) return;
 		following.current = { path: follow.path, index: Math.max(0, order.findIndex(file => sameFileChange(file, follow))), settled: view.settledWrites };
 		void store.writeIndex(action, files).then(result => {
 			if (result === null) following.current = null;
@@ -151,7 +151,7 @@ function FileList({ view, dimmed }: { view: ChangesView & { files: readonly File
 									className="change-group-action"
 									title={describeIndexCommand(indexCommand(all.action, group.files, view.hasCommit))}
 									aria-label={`${all.label}: ${group.files.length} ${group.files.length === 1 ? "file" : "files"} in ${AREA_TITLES[group.area]}`}
-									aria-disabled={view.writing || undefined}
+									aria-disabled={writesWait(state, view) || undefined}
 									onClick={() => write(all.action, group.files, group.files[0]!)}
 								>
 									{all.label}
@@ -202,7 +202,7 @@ function FileList({ view, dimmed }: { view: ChangesView & { files: readonly File
 												className="change-file-action"
 												title={describeIndexCommand(indexCommand(own.action, [file], view.hasCommit))}
 												aria-label={`${own.label} ${file.path}`}
-												aria-disabled={view.writing || undefined}
+												aria-disabled={writesWait(state, view) || undefined}
 												tabIndex={isTabStop ? 0 : -1}
 												onFocus={() => setFocused(key)}
 												onClick={() => write(own.action, [file], file)}
