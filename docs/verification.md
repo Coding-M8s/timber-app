@@ -4843,6 +4843,10 @@ with Bun 1.4.5, on 2026-11-24:
   a solid outline; clicked, it had none.
 - `bun test tests/focus-rings.test.ts`: 6 passed. `bun test
   tests/text-editor.test.tsx tests/file-viewer.test.tsx`: 21 passed.
+- A scratch run compared a class-body hunk (`use HasX;`, `const K = 1;`,
+  `private string $name;`, an abstract method) with the same lines in the
+  whole file: `use HasX;` differed and is now fixed and tested; the typed
+  property's type and name still differ, a limit the docs state.
 - `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
 - Not run: the desktop app, Windows, and macOS.
 
@@ -4955,5 +4959,49 @@ x64 with Bun 1.4.5 and Git 2.56.1:
   dialogs, the mock's changes, or the Git helpers, with the stage, Changes,
   store, and app test files (66 files): 1,109 passed, 0 failed, 16 skipped,
   as they run only on Windows.
+- A scratch run compared a class-body hunk (`use HasX;`, `const K = 1;`,
+  `private string $name;`, an abstract method) with the same lines in the
+  whole file: `use HasX;` differed and is now fixed and tested; the typed
+  property's type and name still differ, a limit the docs state.
+- `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
+- Not run: the desktop app, Windows, and macOS.
+
+Run for coloring PHP in the Changes view and filling gaps in PHP's editor
+colors (issue 403), Linux x64 with Bun 1.4.5 and headless Chrome:
+
+- `bun test tests/diff-highlight.test.ts`: 17 passed. A hunk from inside a
+  method, with no `<?php`, colored as the same lines are when the whole
+  file is one hunk from `<?php`; added and removed lines inside a method
+  colored as code; `namespace` names, class names after `extends` and
+  `implements`, `$this` and `self` as keywords, parameters and a `foreach`
+  variable as definitions, and their uses plain, as TypeScript colors
+  them; the object before `->` a plain variable; a hunk opening with
+  `<?php`, a hunk of HTML with `<?= ?>`, and code that closes into HTML
+  with `?>`, each still colored; `use` of a class by one name colored as
+  a class; a hunk of HTML alone from a `.phtml` file
+  colored as HTML; and `isPhpCode` on each kind of side. The TypeScript,
+  CSS, Markdown, Shell, YAML, and TOML tests unchanged and passing. With
+  `editor-language.ts` and `diff-highlight.ts` put back as on main, the 5
+  new PHP coloring tests failed.
+- `bun test tests/text-editor-browser.test.ts -t PHP`: 1 passed in
+  headless Chrome. A PHP file in the File tab, in Timber Light and Timber
+  Dark, draws `$this` and `self` in the theme's magenta, `App`, `Models`,
+  `Model`, and `HasName` in its yellow, a parameter in its red, and the
+  parameter's use in the text color. With the two files put back as on
+  main, it failed: `$this` never took the keyword color.
+- By eye: a real `git diff` of a PHP class, editing inside a method and in
+  HTML after `?>`, shown in the Changes view over the mock engine in
+  headless Chrome and screenshotted in Timber Light and Timber Dark. Every
+  line was colored: keywords, `$this`, `static::`, strings, the comment,
+  and the HTML tags and attributes after `?>`.
+- `bun test --timeout=30000` over the editor, diff, Changes, Files, review,
+  and Markdown test files, browser ones included (18 files): 256 passed,
+  0 failed. One earlier run of a larger set had a drag test of
+  `tests/diff-split-browser.test.ts` time out; that file then passed 11 of
+  11 alone, and the set passed in full on the next run.
+- A scratch run compared a class-body hunk (`use HasX;`, `const K = 1;`,
+  `private string $name;`, an abstract method) with the same lines in the
+  whole file: `use HasX;` differed and is now fixed and tested; the typed
+  property's type and name still differ, a limit the docs state.
 - `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
 - Not run: the desktop app, Windows, and macOS.

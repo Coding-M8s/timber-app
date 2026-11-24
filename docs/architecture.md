@@ -3614,7 +3614,17 @@ Comparing against a backup is a later step.
   a diff colors before any editor opened; a theme change recolors it with
   no script, as in the editor. Known limit: a hunk that starts inside a
   multi-line comment or string is parsed from its first line, so it may be
-  colored wrongly. `src/mainview/diff-words.ts` pairs each run of removed
+  colored wrongly. A template language, which reads a file as a page
+  with code in it, gives a `hunkCode` hook: whether a side of a hunk is the
+  code itself, and the language that reads it as code. For PHP, a side
+  whose first tag is `?>`, or that has no tag and does not start with an
+  HTML tag, is parsed with PHP's `Program` top rule, as code from its first
+  character with HTML after `?>`; one whose first tag is `<?php` or `<?=`,
+  or that starts with an HTML tag, is parsed as the file is. Most hunks of
+  a PHP file, such as the inside of a method, have no `<?php`, and were
+  read as one HTML text before. Known limit: a hunk of a class's body with
+  no method around it is read as top-level code, so a typed property such
+  as `private string $name;` misses some colors. `src/mainview/diff-words.ts` pairs each run of removed
   lines with the run of added lines right after it, line by line, skipping
   Git's notes, and marks the stretch between their shared start and end,
   widened to whole words. A pair that shares fewer than 4 characters, or
@@ -4158,6 +4168,19 @@ edited and saved in a small editor.
   script. The parser reparses incrementally and colors only the lines in
   view; typing in a colored file of 10,000 lines stays under 50 ms per key
   (`tests/text-editor-browser.test.ts`).
+  PHP comes from `@codemirror/language-data` too, adapted once loaded:
+  `src/mainview/php-language.ts` adds tags its grammar leaves out (class
+  names after `extends`, `implements`, `new`, `use`, and `::`, namespace
+  names, parameters, `catch` variables, and declared properties as
+  definitions, and the object before `->` as a plain variable, as
+  TypeScript colors them), and `phpTokenTags` colors what a node's place
+  cannot tell: `$this`, and `self`, `static`, and `parent` before `::` or
+  after `new`, as keywords, and a `foreach` variable after `as` as a
+  definition. In the editor these are marks from a plugin inside PHP's
+  `LanguageSupport`, at the highest precedence, so they draw inside the
+  syntax colors and win. `languageHooks` gives these to the Changes view
+  as well, keyed by the parser's language name, and is where another
+  language would add its own.
   Tab is `indentWithTab`, with CodeMirror's own Escape then Tab to move
   the keyboard on, and `indentUnit` comes from the file (`indentUnitOf`
   in `src/mainview/text-editor-format.ts`). The editor is made once as it
