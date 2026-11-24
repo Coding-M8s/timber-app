@@ -31,7 +31,7 @@ const render = (store: ReturnType<typeof createAppStore>) => renderToStaticMarku
 const markdown = (text: string, path = "docs/plan.md") => renderToStaticMarkup(<MarkdownView text={text} path={path} onOpenLink={nothing} onOpenFile={nothing} />);
 
 const view = (change: Partial<FileView> = {}): FileView => ({
-	repository: "/work/timber", worktreePath: FEATURE.path, path: "notes.md", from: "workspace",
+	repository: "/work/timber", worktreePath: FEATURE.path, path: "notes.md", outside: false, from: "workspace",
 	result: { outcome: "read", path: "notes.md", content: { kind: "text", text: "a\r\nb\r\n", lines: 2 } },
 	mode: "edit", draft: null, saving: false, saveProblem: null, ...change,
 });
@@ -154,6 +154,15 @@ describe("rendering Markdown", () => {
 		for (const href of ["../../outside.md", "javascript:alert(1)", "JaVaScRiPt:alert(1)", "data:text/html,x", "file:///etc/passwd", "mailto:a@example.com", "vbscript:x", "//evil.example/x", "", "#", " "]) {
 			expect(markdownLink(href, "docs/a.md")).toEqual({ kind: "none" });
 		}
+	});
+
+	test("reads a link in a file outside the worktree from that file's folder, as a complete path", () => {
+		expect(markdownLink("run.log", "/tmp/notes/plan.md")).toEqual({ kind: "file", path: "/tmp/notes/run.log" });
+		expect(markdownLink("./deeper/a.md#part", "/tmp/notes/plan.md")).toEqual({ kind: "file", path: "/tmp/notes/deeper/a.md" });
+		expect(markdownLink("../other/b.md", "/tmp/notes/plan.md")).toEqual({ kind: "file", path: "/tmp/other/b.md" });
+		expect(markdownLink("/etc/hosts", "/tmp/notes/plan.md")).toEqual({ kind: "file", path: "/etc/hosts" });
+		expect(markdownLink("#Next", "/tmp/notes/plan.md")).toEqual({ kind: "heading", id: "markdown-next" });
+		expect(markdownLink("file:///etc/passwd", "/tmp/notes/plan.md")).toEqual({ kind: "none" });
 	});
 
 	test("gives headings ids as GitHub does, repeats numbered", () => {

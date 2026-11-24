@@ -27,7 +27,7 @@ async function started(engine: Engine = createMockEngine()) {
 const render = (store: ReturnType<typeof createAppStore>) => renderToStaticMarkup(<App store={store} />);
 
 const textView = (text: string, change: Partial<FileView> = {}): FileView => ({
-	repository: "/work/timber", worktreePath: FEATURE.path, path: "src/a.ts", from: "workspace",
+	repository: "/work/timber", worktreePath: FEATURE.path, path: "src/a.ts", outside: false, from: "workspace",
 	result: { outcome: "read", path: "src/a.ts", content: { kind: "text", text, lines: countLines(text) } },
 	mode: "source", draft: null, saving: false, saveProblem: null, ...change,
 });

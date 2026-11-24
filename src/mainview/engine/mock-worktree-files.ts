@@ -1,13 +1,40 @@
 import { relativePathProblem } from "../../shared/file-changes";
 import { type FolderEntry, type WorktreeFolderResult, entryPath, folderPathProblem, listedEntries } from "../../shared/worktree-folders";
-import { type WorktreeFileResult, type WorktreeFileWriteRequest, type WorktreeFileWriteResult, fileContentOf, textToSaveProblem } from "../../shared/worktree-files";
+import { type WorktreeFileResult, type WorktreeFileWriteRequest, type WorktreeFileWriteResult, fileContentOf, isCompletePath, normalCompletePath, textToSaveProblem } from "../../shared/worktree-files";
 import type { MockFileChange } from "./mock-file-changes";
 
 /**
  * A file on the pretend disk: its text, bytes that are not text, or a folder.
  * `null` in `setWorktreeFile` removes it.
  */
-export type MockWorktreeFile = string | { kind: "bytes"; bytes: number[] } | { kind: "folder" };
+export type MockWorktreeFile = string | { kind: "bytes"; bytes: number[] } | { kind: "folder" } | MockLink;
+
+/** A link to a file elsewhere on the pretend disk, by its complete path, as an agent may leave in a worktree. */
+export interface MockLink {
+	kind: "link";
+	target: string;
+}
+
+/** Where the pretend files outside every worktree are, as an agent's scratch folder. */
+export const MOCK_NOTES_FOLDER = "/tmp/timber-notes";
+
+/**
+ * The pretend disk outside every worktree, by complete path, read-only in
+ * the File tab: type one of these paths in a pretend terminal and click it.
+ */
+export const MOCK_OUTSIDE_FILES: Record<string, MockWorktreeFile> = {
+	[`${MOCK_NOTES_FOLDER}/plan.md`]: [
+		"# Scratch plan",
+		"",
+		"Notes an agent keeps outside the worktree. They open read-only here.",
+		"",
+		"- See the [log](run.log) of the last run.",
+		"",
+	].join("\n"),
+	[`${MOCK_NOTES_FOLDER}/run.log`]: "started\nchecked 120 lines\ndone\n",
+	[`${MOCK_NOTES_FOLDER}/trace.bin`]: { kind: "bytes", bytes: [0x00, 0x01, 0x02] },
+	[MOCK_NOTES_FOLDER]: { kind: "folder" },
+};
 
 /** What every pretend worktree holds, besides its changed files. */
 const SAMPLE_FILES: Record<string, MockWorktreeFile> = {
@@ -53,6 +80,8 @@ export interface MockWorktreeFiles {
 	set(worktree: string, path: string, file: MockWorktreeFile | null): void;
 	/** Save text over a file that is there, as the main process does, refusing as it does. */
 	write(request: Pick<WorktreeFileWriteRequest, "path" | "text" | "expected">, worktree: string, changes: readonly MockFileChange[]): WorktreeFileWriteResult;
+	/** A file outside every worktree by its complete path, as the main process reads one (`readFileOutside`). */
+	readOutside(path: string): WorktreeFileResult;
 	/** One folder of the pretend disk, as the main process lists one (see src/bun/worktree-folders.ts). */
 	list(worktree: string, folder: string, changes: readonly MockFileChange[], ignored: boolean): WorktreeFolderResult;
 }
@@ -75,6 +104,18 @@ export function createMockWorktreeFiles(): MockWorktreeFiles {
 			if (file === null) return { outcome: "missing", path, message: `${path} is not in this worktree. It may have been moved or deleted.` };
 			if (typeof file === "string") return { outcome: "read", path, content: fileContentOf(new TextEncoder().encode(file), new TextEncoder().encode(file).length) };
 			if (file.kind === "folder") return { outcome: "not-a-file", path, message: `${path} is a folder, not a file.` };
+			if (file.kind === "link") return { outcome: "outside", path, message: `${path} leads outside this worktree, to ${file.target}. The file was not read.`, target: file.target };
+			return { outcome: "read", path, content: fileContentOf(new Uint8Array(file.bytes), file.bytes.length) };
+		},
+		readOutside(path) {
+			if (typeof path !== "string" || !isCompletePath(path) || path.includes("\0")) {
+				return { outcome: "failed", message: `${typeof path === "string" && path !== "" ? path : "That"} is not a complete path, so it is not read outside the worktree. The file was not read.` };
+			}
+			const file = MOCK_OUTSIDE_FILES[normalCompletePath(path) ?? path];
+			if (file === undefined) return { outcome: "missing", path, message: `${path} is not there. It may have been moved or deleted.` };
+			if (typeof file === "string") return { outcome: "read", path, content: fileContentOf(new TextEncoder().encode(file), new TextEncoder().encode(file).length) };
+			if (file.kind === "folder") return { outcome: "not-a-file", path, message: `${path} is a folder, not a file.` };
+			if (file.kind === "link") return files.readOutside(file.target);
 			return { outcome: "read", path, content: fileContentOf(new Uint8Array(file.bytes), file.bytes.length) };
 		},
 		write({ path, text, expected }, worktree, changes) {

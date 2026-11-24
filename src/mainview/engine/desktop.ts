@@ -159,6 +159,7 @@ export function createDesktopEngine(): Engine {
 		// The main process waits its turn, then lets the hooks run for up to ten minutes before it stops Git.
 		commitStaged: request => rpc.request.commitStaged(request, { maxRequestTime: 15 * 60_000 }),
 		readWorktreeFile: request => rpc.request.readWorktreeFile(request, { maxRequestTime: 60_000 }),
+		readFileOutside: request => rpc.request.readFileOutside(request, { maxRequestTime: 60_000 }),
 		writeWorktreeFile: request => rpc.request.writeWorktreeFile(request, { maxRequestTime: 60_000 }),
 		listWorktreeFolder: request => rpc.request.listWorktreeFolder(request, { maxRequestTime: 60_000 }),
 		watchWorktreeFolders: folders => rpc.send.watchWorktreeFolders({ folders }),

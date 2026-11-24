@@ -17,6 +17,39 @@ export interface WorktreeFileRequest {
 	path: string;
 }
 
+/**
+ * Ask for a file anywhere on disk by its complete path, to show it read-only
+ * in the File tab. Never saved: `writeWorktreeFile` takes only files inside
+ * a worktree.
+ */
+export interface OutsideFileRequest {
+	/** A complete (absolute) path, as a terminal or a link printed it. */
+	path: string;
+}
+
+/** Whether a path is complete (absolute): from the top of the disk, or a Windows drive, not from some folder. */
+export function isCompletePath(path: string): boolean {
+	return path.startsWith("/") || path.startsWith("\\") || /^[A-Za-z]:/.test(path);
+}
+
+/**
+ * A complete path with `.` and `..` worked out, keeping its start (`/`, or a
+ * Windows drive) and using its own slash. Null when it is not complete, or
+ * has a NUL. `..` at the top stays at the top, as the disk reads it.
+ */
+export function normalCompletePath(path: string): string | null {
+	if (!isCompletePath(path) || path.includes("\0")) return null;
+	const drive = /^[A-Za-z]:/.test(path) ? path.slice(0, 2) : "";
+	const slash = drive !== "" || (path.startsWith("\\") && !path.includes("/")) ? "\\" : "/";
+	const resolved: string[] = [];
+	for (const part of path.slice(drive.length).split(/[\\/]/)) {
+		if (part === "" || part === ".") continue;
+		if (part === "..") resolved.pop();
+		else resolved.push(part);
+	}
+	return `${drive}${slash}${resolved.join(slash)}`;
+}
+
 /** A file larger than this is not shown. It is read up to one byte past it, so a growing file cannot slip by. */
 export const MAX_FILE_BYTES = 1024 * 1024;
 /** A file with more lines than this is not shown, so drawing it cannot freeze the window. */
@@ -37,8 +70,12 @@ export type WorktreeFileResult =
 	| { outcome: "missing"; path: string; message: string }
 	/** Something is there, but not a plain file: a folder, a device, or a pipe. */
 	| { outcome: "not-a-file"; path: string; message: string }
-	/** The path, or the link it is, leads outside the worktree. */
-	| { outcome: "outside"; path: string; message: string }
+	/**
+	 * The path, or the link it is, leads outside the worktree. `target` is the
+	 * real path a link inside the worktree leads to, when that is outside it,
+	 * so the window can open that file read-only (`readFileOutside`).
+	 */
+	| { outcome: "outside"; path: string; message: string; target?: string }
 	/** The repository is not in the app's list, Timber does not list the worktree, or its folder is gone. */
 	| { outcome: "not-listed"; message: string }
 	| { outcome: "failed"; message: string };
@@ -89,7 +126,7 @@ const parts = (path: string) => path.split(/[\\/]/).filter(part => part !== "");
  */
 export function worktreeRelativePath(worktree: string, path: string): string | null {
 	if (path === "" || path.includes("\0")) return null;
-	const absolute = path.startsWith("/") || path.startsWith("\\") || /^[A-Za-z]:/.test(path);
+	const absolute = isCompletePath(path);
 	let rest: string[];
 	if (absolute) {
 		const base = parts(worktree);

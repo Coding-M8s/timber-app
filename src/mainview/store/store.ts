@@ -68,7 +68,7 @@ import { mergeOverlapping } from "./merge";
 import { keepEntries } from "./records";
 import { RESTORE_CONCURRENCY, RESTORE_QUIET_MILLISECONDS, type RestoreJob, goneSavedWorktrees, restoreJobs, restoreRequest, runLimited } from "./restore";
 import { type SavedSessions, pickShown } from "../../shared/saved-sessions";
-import { type WorktreeFileResult, textToSave } from "../../shared/worktree-files";
+import { type WorktreeFileResult, normalCompletePath, textToSave } from "../../shared/worktree-files";
 import { fileLines, fillUnchanged, linesMatchDiff, unchangedReadable } from "../diff-unchanged";
 import { filterFiles, listedOrder, movedEntry, steppedFile } from "../changes-format";
 import { COMMIT_ARGUMENTS, COMMIT_COMMAND_LINE, type CommitResult, commitBlocker } from "../../shared/commit-staged";
@@ -1740,13 +1740,29 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const ticket = (fileTickets.get(worktreeId) ?? 0) + 1;
 		fileTickets.set(worktreeId, ticket);
 		let result: WorktreeFileResult;
+		// A link in the worktree that leads out opens its target, read-only, as a file outside it.
+		let leadsTo: string | null = null;
 		try {
-			result = await engine.readWorktreeFile({ repository: view.repository, worktree: view.worktreePath, path: view.path });
+			if (view.outside) {
+				result = await engine.readFileOutside({ path: view.path });
+			} else {
+				result = await engine.readWorktreeFile({ repository: view.repository, worktree: view.worktreePath, path: view.path });
+				if (result.outcome === "outside" && result.target !== undefined) {
+					leadsTo = result.target;
+					result = await engine.readFileOutside({ path: leadsTo });
+				}
+			}
 		} catch (error) {
-			result = { outcome: "failed", message: unheard(`the file ${view.path}`, error) };
+			result = { outcome: "failed", message: unheard(`the file ${leadsTo ?? view.path}`, error) };
 		}
 		const now = state.files[worktreeId];
-		if (fileTickets.get(worktreeId) !== ticket || !now || now.path !== view.path || now.worktreePath !== view.worktreePath) return;
+		if (fileTickets.get(worktreeId) !== ticket || !now || now.path !== view.path || now.outside !== view.outside || now.worktreePath !== view.worktreePath) return;
+		if (leadsTo !== null) {
+			// Nothing could be edited before the target was known, as nothing was read.
+			forgetEditMemory(worktreeId);
+			update({ files: { ...state.files, [worktreeId]: { ...now, path: leadsTo, outside: true, mode: initialFileMode(leadsTo), draft: null, result } } });
+			return;
+		}
 		// Editing started while this read was on its way: the text the draft started from stays what a save checks the file
 		// against, so newer text on disk is reported as a change, never written over.
 		if (now.draft !== null && view.draft === null) return;
@@ -1776,22 +1792,25 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const worktree = state.repositories.find(repository => repository.path === selection?.repository)?.worktrees.find(candidate => candidate.id === worktreeId);
 		if (!selection || !worktree) return;
 		const relative = pathInWorktree(worktree, path);
+		// A complete path outside the worktree opens read-only; a relative one that steps out does not open.
+		const outside = relative === null ? normalCompletePath(path) : null;
 		const open = state.files[worktreeId];
+		const wanted = relative ?? outside;
 		// The file open already: shown as it is, edits and all, without reading it again.
-		if (open && relative !== null && open.path === relative && open.worktreePath === worktree.path) {
+		if (open && wanted !== null && open.path === wanted && open.outside === (outside !== null) && open.worktreePath === worktree.path) {
 			update({ selection, board: null, tab: "file" });
 			return;
 		}
 		if (!mayDropDraft(worktreeId, { kind: "open", path })) return;
 		const shownHere = state.selection?.worktree === worktreeId && state.board === null;
 		const from = shownHere && state.tab !== "file" ? state.tab : open?.from ?? "workspace";
-		const shownPath = relative ?? path;
+		const shownPath = wanted ?? path;
 		const view: FileView = {
-			repository: selection.repository, worktreePath: worktree.path, path: shownPath, from, result: relative === null ? outsideResult(path) : null,
+			repository: selection.repository, worktreePath: worktree.path, path: shownPath, outside: outside !== null, from, result: wanted === null ? outsideResult(path) : null,
 			mode: initialFileMode(shownPath), draft: null, saving: false, saveProblem: null,
 		};
 		update({ selection, board: null, files: { ...state.files, [worktreeId]: view }, tab: "file" });
-		if (relative !== null) void readOpenFile(worktreeId);
+		if (wanted !== null) void readOpenFile(worktreeId);
 	}
 
 	function closeFile(worktreeId: string): void {
@@ -1831,7 +1850,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 
 	async function saveFile(worktreeId: string, options: { overwrite?: boolean } = {}): Promise<boolean> {
 		const view = state.files[worktreeId];
-		if (!view || view.draft === null || view.saving) return false;
+		// A file outside the worktree is never saved here.
+		if (!view || view.draft === null || view.saving || view.outside) return false;
 		const original = fileText(view);
 		// A file that is not text any more is saved over only when asked to.
 		if (original === null && !options.overwrite) {

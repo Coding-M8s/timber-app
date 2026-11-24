@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createWorktreeFiles } from "../src/bun/worktree-files";
@@ -93,12 +93,89 @@ describe.skipIf(windows)("reading a worktree file from a real repository", () =>
 		expect(await read(outside)).toMatchObject({ outcome: "outside" });
 		expect(await read("docs/../../outside.txt")).toMatchObject({ outcome: "outside" });
 		const escape = await read("escape.txt");
-		expect(escape).toMatchObject({ outcome: "outside" });
+		// A link that leads out names its real target, for the window to open read-only, but is not read here.
+		expect(escape).toMatchObject({ outcome: "outside", path: "escape.txt", target: outside });
 		expect(JSON.stringify(escape)).not.toContain("not yours");
+		// A path that steps out says nothing of where it would lead.
+		expect(await read("../outside.txt")).not.toHaveProperty("target");
+	});
+
+	test("never saves through a link that leads outside the worktree", async () => {
+		const answer = await files().write({ repository: primary, worktree: linked, path: "escape.txt", text: "mine\n", expected: null });
+		expect(answer).toMatchObject({ outcome: "outside" });
+		expect(readFileSync(outside, "utf8")).toBe("not yours\n");
 	});
 
 	test("reads nothing in a worktree Timber does not list", async () => {
 		expect(await read("README.md", join(root, "elsewhere"))).toMatchObject({ outcome: "not-listed" });
 		expect(await files().read({ repository: join(root, "nope"), worktree: linked, path: "report.txt" })).toMatchObject({ outcome: "not-listed" });
+	});
+});
+
+/** Every entry under a folder, with its kind, size, time, and bytes, so a read that wrote anything shows. */
+function snapshot(folder: string): string {
+	const lines: string[] = [];
+	const walk = (directory: string) => {
+		for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+			const path = join(directory, entry.name);
+			const found = lstatSync(path);
+			const bytes = entry.isFile() ? readFileSync(path).toString("base64") : "";
+			lines.push(`${path} ${entry.isDirectory() ? "folder" : entry.isSymbolicLink() ? "link" : entry.isFIFO() ? "pipe" : "file"} ${found.size} ${found.mtimeMs} ${bytes}`);
+			if (entry.isDirectory()) walk(path);
+		}
+	};
+	walk(folder);
+	return lines.join("\n");
+}
+
+// The folder has a pipe and a link, which Windows makes only with extra rights.
+describe.skipIf(windows)("reading a file outside every worktree, by its complete path", () => {
+	let notes: string;
+	const readOutside = (path: string) => createWorktreeFiles({ findRepository: async () => null }).readOutside({ path });
+
+	beforeAll(() => {
+		notes = realpathSync(mkdtempSync(join(tmpdir(), "timber-app-notes-")));
+		writeFileSync(join(notes, "plan.md"), "# Plan\n\nRead me.\n");
+		writeFileSync(join(notes, "image.bin"), "\u0000\u0001\u0002");
+		writeFileSync(join(notes, "huge.txt"), "x".repeat(MAX_FILE_BYTES + 5));
+		writeFileSync(join(notes, "long.txt"), "row\n".repeat(MAX_FILE_LINES + 1));
+		mkdirSync(join(notes, "folder"));
+		symlinkSync("plan.md", join(notes, "plan-link.md"));
+		symlinkSync("nowhere.txt", join(notes, "dangling.txt"));
+		Bun.spawnSync(["mkfifo", join(notes, "pipe")]);
+	});
+
+	afterAll(() => {
+		rmSync(notes, { recursive: true, force: true });
+	});
+
+	test("reads a text file in no repository at all, as it is asked for", async () => {
+		expect(await readOutside(join(notes, "plan.md"))).toEqual({ outcome: "read", path: join(notes, "plan.md"), content: { kind: "text", text: "# Plan\n\nRead me.\n", lines: 3 } });
+		expect(await readOutside(join(notes, "plan-link.md"))).toMatchObject({ outcome: "read", content: { kind: "text" } });
+	});
+
+	test("gives the same notices as a file of a worktree", async () => {
+		expect(await readOutside(join(notes, "image.bin"))).toMatchObject({ outcome: "read", content: { kind: "binary" } });
+		expect(await readOutside(join(notes, "huge.txt"))).toMatchObject({ outcome: "read", content: { kind: "too-large", bytes: MAX_FILE_BYTES + 5, lines: null } });
+		expect(await readOutside(join(notes, "long.txt"))).toMatchObject({ outcome: "read", content: { kind: "too-large", lines: MAX_FILE_LINES + 1 } });
+		const gone = join(notes, "gone.txt");
+		expect(await readOutside(gone)).toEqual({ outcome: "missing", path: gone, message: `${gone} is not there. It may have been moved or deleted.` });
+		expect(await readOutside(join(notes, "dangling.txt"))).toMatchObject({ outcome: "missing", message: `${join(notes, "dangling.txt")} is a link to a file that is not there.` });
+		expect(await readOutside(join(notes, "folder"))).toMatchObject({ outcome: "not-a-file", message: `${join(notes, "folder")} is a folder, not a file.` });
+		// A pipe nobody writes to would hold a blocking read forever.
+		expect(await readOutside(join(notes, "pipe"))).toMatchObject({ outcome: "not-a-file" });
+	});
+
+	test("refuses a path that is not complete, without reading", async () => {
+		for (const path of ["plan.md", "../plan.md", "./plan.md", "", `${notes}/plan.md\0x`]) {
+			expect(await readOutside(path)).toMatchObject({ outcome: "failed" });
+		}
+		expect(await createWorktreeFiles({ findRepository: async () => null }).readOutside({ path: 42 } as never)).toMatchObject({ outcome: "failed" });
+	});
+
+	test("writes nothing: every file and folder is as it was", async () => {
+		const before = snapshot(notes);
+		for (const name of ["plan.md", "plan-link.md", "image.bin", "huge.txt", "long.txt", "folder", "dangling.txt", "pipe", "gone.txt"]) await readOutside(join(notes, name));
+		expect(snapshot(notes)).toBe(before);
 	});
 });

@@ -21,13 +21,17 @@ function useTerminalFont(): { fontFamily: string; fontSize: number } {
 
 const MARKDOWN_MODES: readonly FileMode[] = ["rendered", "source", "edit"];
 const MARKDOWN_LABELS = ["Rendered", "Source", "Edit"];
+/** A Markdown file that cannot be edited here still shows rendered and as its source. */
+const READ_ONLY_LABELS = MARKDOWN_LABELS.slice(0, 2);
 
 /**
  * The File tab: one file of the worktree, in the terminal's font. Any text
  * file shows in the small editor (`TextEditor`), ready to type, or read-only
- * with the reason when its line endings could not be saved as they were. A
- * Markdown file shows rendered first, with a switch to its source, read-only,
- * and to Edit.
+ * with the reason when it is outside the worktree or its line endings could
+ * not be saved as they were. A Markdown file shows rendered first, with a
+ * switch to its source, read-only, and to Edit when it can be edited. A file
+ * outside the worktree shows its complete path above it, and has no Save and
+ * no Open in editor, which opens only files of the worktree.
  */
 export function FileViewer({ repository, worktree, view }: { repository: string; worktree: Worktree; view: FileView }) {
 	const store = useStore();
@@ -72,7 +76,20 @@ export function FileViewer({ repository, worktree, view }: { repository: string;
 							}}
 						/>
 					)
-					: onDisk !== null && !editable && view.draft === null && <span className="diff-area" title={refusal ?? undefined}>Read-only</span>}
+					: onDisk !== null && !editable && view.draft === null && (
+						<>
+							{markdown && (
+								<ModeSwitch
+									labels={READ_ONLY_LABELS}
+									selected={mode === "source" ? 1 : 0}
+									disabled={false}
+									label={`How to show ${view.path}`}
+									onSelect={index => store.showFileAs(id, index === 1 ? "source" : "rendered")}
+								/>
+							)}
+							<span className="diff-area" title={refusal ?? undefined}>Read-only</span>
+						</>
+					)}
 				{unsaved && <span className="file-unsaved">Unsaved</span>}
 				{!markdown && (editable || view.draft !== null) && (
 					<>
@@ -93,7 +110,7 @@ export function FileViewer({ repository, worktree, view }: { repository: string;
 					</>
 				)}
 				<button type="button" className="button quiet diff-editor" disabled={view.saving} onClick={() => store.readFileAgain(id)}>Read again</button>
-				{result?.outcome === "read" && (
+				{result?.outcome === "read" && !view.outside && (
 					<button
 						type="button"
 						className="button quiet diff-editor"

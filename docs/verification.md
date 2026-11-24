@@ -4957,3 +4957,41 @@ x64 with Bun 1.4.5 and Git 2.56.1:
   as they run only on Windows.
 - `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
 - Not run: the desktop app, Windows, and macOS.
+
+Run for opening files outside the worktree read-only from a full path
+(issue 410), Linux x64 with Bun 1.4.5 and Git 2.56.1:
+
+- `bun test tests/worktree-files.test.ts`: passed. On a real temporary
+  folder in no repository, `readFileOutside` reads text and a link to
+  text; gives the same answers as inside for binary, over 1 MiB, over
+  20,000 lines, missing, a dangling link, a folder, and a pipe nobody
+  writes to; refuses a path that is not complete, `../plan.md` among them,
+  and a path with a NUL; and leaves every entry's bytes, size, and time as
+  they were. A link in a worktree that leads out is answered "outside" with
+  its real target and without its text, and a save through it is refused
+  with the target's bytes unchanged.
+- `bun test tests/file-viewer.test.tsx tests/markdown-reader.test.tsx
+  tests/terminal-paths.test.ts`: passed. Over the mock engine, a complete
+  path outside the worktree is read with `readFileOutside` only, shows its
+  full path above and its name on the tab, the read-only note, and no
+  Save or Open in editor; Edit, typing, and Save do nothing and nothing is
+  written; Read again reads it again. Markdown outside opens rendered with
+  Rendered and Source and no Edit, and its link to `run.log` leads beside
+  it. Binary, missing, and a folder outside get the usual notices. A link
+  in the worktree that leads out opens its target read-only. `../x.md`,
+  `docs/../../x.md`, and `./../x.md` are refused without any read. An
+  agent's scratchpad path is found whole in terminal text.
+- `bun test --timeout=60000 tests/outside-file-browser.test.ts`: passed
+  three runs in a row in headless Chrome. A full path echoed in a pretend
+  terminal, found under the pointer and clicked, opens in the File tab with
+  `outside` set, its full path above, the note, no Save, and typing into
+  the editor changes nothing.
+- `bun test --parallel=4 --timeout=30000` over the 106 test files that read
+  the contract, the RPC, the docs, the README, the mock engine, or the file
+  viewer's modules: 2,303 passed, 0 failed, 16 skipped, as they run only on
+  Windows. `tests/text-editor-browser.test.ts`,
+  `tests/files-panel-browser.test.ts`, and `tests/path-drop-browser.test.ts`
+  with the new browser test: 30 passed.
+- `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
+- Not run: the desktop app, Windows, and macOS. A full path with `:line`
+  opening at that line waits on issue 399.

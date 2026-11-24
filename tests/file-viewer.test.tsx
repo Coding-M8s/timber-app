@@ -9,6 +9,8 @@ import { createAppStore } from "../src/mainview/store/store";
 import { initialState } from "../src/mainview/store/state";
 import type { Engine } from "../src/shared/engine";
 import { MAX_FILE_BYTES, MAX_FILE_LINES } from "../src/shared/worktree-files";
+import { MOCK_NOTES_FOLDER } from "../src/mainview/engine/mock-worktree-files";
+import { OPEN_IN_EDITOR } from "../src/mainview/editor-format";
 
 const settle = () => Bun.sleep(0);
 const TIMBER = "/work/timber";
@@ -69,23 +71,118 @@ describe("the File tab", () => {
 		expect(render(store)).toContain("Written by an agent");
 	});
 
-	test("opens an absolute path inside the worktree, as a terminal prints it, and refuses one outside without reading", async () => {
+	test("opens an absolute path inside the worktree, as a terminal prints it, through the worktree's own read", async () => {
 		const engine = createMockEngine();
 		let reads = 0;
-		const counting: Engine = { ...engine, readWorktreeFile: request => (reads++, engine.readWorktreeFile(request)) };
+		let outsideReads = 0;
+		const counting: Engine = { ...engine, readWorktreeFile: request => (reads++, engine.readWorktreeFile(request)), readFileOutside: request => (outsideReads++, engine.readFileOutside(request)) };
 		const store = await started(counting);
 		store.openFile(FEATURE.id, `${FEATURE.path}/docs/plan.md`);
 		await settle();
-		expect(store.getState().files[FEATURE.id]?.path).toBe("docs/plan.md");
-		expect(store.getState().files[FEATURE.id]?.result?.outcome).toBe("read");
-		expect(reads).toBe(1);
+		expect(store.getState().files[FEATURE.id]).toMatchObject({ path: "docs/plan.md", outside: false, result: { outcome: "read" } });
+		expect([reads, outsideReads]).toEqual([1, 0]);
+	});
 
-		store.openFile(FEATURE.id, "/etc/passwd");
+	test("opens a complete path outside the worktree read-only, with the full path above and the name on the tab", async () => {
+		const engine = createMockEngine();
+		let reads = 0;
+		let outsideReads = 0;
+		let writes = 0;
+		const counting: Engine = {
+			...engine,
+			readWorktreeFile: request => (reads++, engine.readWorktreeFile(request)),
+			readFileOutside: request => (outsideReads++, engine.readFileOutside(request)),
+			writeWorktreeFile: request => (writes++, engine.writeWorktreeFile(request)),
+		};
+		const store = await started(counting);
+		store.select(FEATURE.id);
+		store.openFile(FEATURE.id, `${MOCK_NOTES_FOLDER}/run.log`);
 		await settle();
-		expect(reads).toBe(1);
+		expect([reads, outsideReads]).toEqual([0, 1]);
+		expect(store.getState().files[FEATURE.id]).toMatchObject({ path: `${MOCK_NOTES_FOLDER}/run.log`, outside: true, result: { outcome: "read" } });
+		const markup = render(store);
+		expect(tabs(markup)).toContain("run.log");
+		expect(markup).toContain(`<span class="diff-path" title="${MOCK_NOTES_FOLDER}/run.log">${MOCK_NOTES_FOLDER}/run.log</span>`);
+		expect(markup).toContain("Read-only here. It is outside this worktree. Open it in your own editor to change it.");
+		expect(markup).toContain("Read-only. Ctrl+F to find");
+		const viewer = markup.slice(markup.indexOf('<section class="file-viewer"'));
+		expect(viewer).not.toContain(">Save<");
+		expect(viewer).not.toContain(OPEN_IN_EDITOR);
+
+		// Nothing makes it editable, and nothing saves it.
+		store.editFile(FEATURE.id);
+		store.changeDraft(FEATURE.id, "mine\n");
+		expect(store.getState().files[FEATURE.id]?.draft).toBeNull();
+		expect(await store.saveFile(FEATURE.id)).toBe(false);
+		expect(writes).toBe(0);
+
+		// Read again reads it outside again; opening it again shows it as it is.
+		store.readFileAgain(FEATURE.id);
+		await settle();
+		expect(outsideReads).toBe(2);
+		store.openFile(FEATURE.id, `${MOCK_NOTES_FOLDER}/run.log`);
+		await settle();
+		expect(outsideReads).toBe(2);
+	});
+
+	test("opens a Markdown file outside the worktree rendered, with its source, and its links stay beside it", async () => {
+		const store = await started();
+		store.select(FEATURE.id);
+		store.openFile(FEATURE.id, `${MOCK_NOTES_FOLDER}/plan.md`);
+		await settle();
+		const markup = render(store);
+		expect(markup).toContain(">Scratch plan</h1>");
+		// Its link to run.log leads beside it, not into the worktree.
+		expect(markup).toContain(`title="Open ${MOCK_NOTES_FOLDER}/run.log here"`);
+		expect(markup).toContain(">Rendered<");
+		expect(markup).toContain(">Source<");
+		expect(markup).not.toContain(">Edit<");
+		store.showFileAs(FEATURE.id, "source");
+		expect(render(store)).toContain("Read-only. Ctrl+F to find");
+		store.editFile(FEATURE.id);
+		expect(store.getState().files[FEATURE.id]?.draft).toBeNull();
+	});
+
+	test("gives a file outside the worktree the same notices: binary, missing, and a folder", async () => {
+		const store = await started();
+		store.select(FEATURE.id);
+		store.openFile(FEATURE.id, `${MOCK_NOTES_FOLDER}/trace.bin`);
+		await settle();
+		expect(render(store)).toContain(`${MOCK_NOTES_FOLDER}/trace.bin is binary, so it is not shown here.`);
+		store.openFile(FEATURE.id, `${MOCK_NOTES_FOLDER}/gone.md`);
+		await settle();
+		expect(render(store)).toContain(`${MOCK_NOTES_FOLDER}/gone.md is not there. It may have been moved or deleted.`);
+		store.openFile(FEATURE.id, MOCK_NOTES_FOLDER);
+		await settle();
+		expect(render(store)).toContain(`${MOCK_NOTES_FOLDER} is a folder, not a file.`);
+	});
+
+	test("opens the target of a link in the worktree that leads out, read-only", async () => {
+		const engine = createMockEngine();
+		engine.setWorktreeFile(FEATURE.path, "notes.md", { kind: "link", target: `${MOCK_NOTES_FOLDER}/plan.md` });
+		const store = await started(engine);
+		store.select(FEATURE.id);
+		store.openFile(FEATURE.id, "notes.md");
+		await settle();
+		await settle();
+		expect(store.getState().files[FEATURE.id]).toMatchObject({ path: `${MOCK_NOTES_FOLDER}/plan.md`, outside: true, mode: "rendered", result: { outcome: "read" } });
+		expect(render(store)).toContain(">Scratch plan</h1>");
+	});
+
+	test("still refuses a relative path that steps out of the worktree, without reading", async () => {
+		const engine = createMockEngine();
+		let reads = 0;
+		const counting: Engine = { ...engine, readWorktreeFile: request => (reads++, engine.readWorktreeFile(request)), readFileOutside: request => (reads++, engine.readFileOutside(request)) };
+		const store = await started(counting);
+		for (const path of ["../x.md", "docs/../../x.md", "./../x.md"]) {
+			store.openFile(FEATURE.id, path);
+			await settle();
+			expect(store.getState().files[FEATURE.id]?.result?.outcome).toBe("outside");
+		}
+		expect(reads).toBe(0);
 		const markup = render(store);
 		expect(markup).toContain("Outside this worktree");
-		expect(markup).toContain("/etc/passwd is not inside this worktree.");
+		expect(markup).toContain("./../x.md is not inside this worktree. A path that steps out of the worktree does not open; its complete path opens it read-only.");
 	});
 
 	test("says clearly when a file is missing, binary, or too large", async () => {
@@ -148,7 +245,7 @@ describe("the File tab", () => {
 	});
 
 	test("an open file leaves with its worktree", () => {
-		const state = { ...initialState, tab: "file" as const, selection: { repository: TIMBER, worktree: FEATURE.id }, repositories: [], files: { [FEATURE.id]: { repository: TIMBER, worktreePath: FEATURE.path, path: "a.md", from: "workspace" as const, result: null, mode: "source" as const, draft: null, saving: false, saveProblem: null } } };
+		const state = { ...initialState, tab: "file" as const, selection: { repository: TIMBER, worktree: FEATURE.id }, repositories: [], files: { [FEATURE.id]: { repository: TIMBER, worktreePath: FEATURE.path, path: "a.md", outside: false, from: "workspace" as const, result: null, mode: "source" as const, draft: null, saving: false, saveProblem: null } } };
 		expect(settleTabs(state)).toEqual({ files: {}, tab: "workspace" });
 		expect(settleTabs({ ...state, repositories: sampleRepositories })).toBeNull();
 	});
@@ -174,6 +271,6 @@ describe("describeFileNotice", () => {
 
 	test("names the tab after the file", () => {
 		expect(fileTabLabel(undefined)).toBe("File");
-		expect(fileTabLabel({ repository: TIMBER, worktreePath: FEATURE.path, path: "docs/plan.md", from: "workspace", result: null, mode: "source", draft: null, saving: false, saveProblem: null })).toBe("plan.md");
+		expect(fileTabLabel({ repository: TIMBER, worktreePath: FEATURE.path, path: "docs/plan.md", outside: false, from: "workspace", result: null, mode: "source", draft: null, saving: false, saveProblem: null })).toBe("plan.md");
 	});
 });

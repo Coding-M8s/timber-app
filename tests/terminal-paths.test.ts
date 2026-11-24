@@ -13,6 +13,11 @@ describe("findFilePaths", () => {
 		]);
 	});
 
+	test("finds an agent's full path to scratch notes outside the worktree whole", () => {
+		const path = "/tmp/claude-1000/-home-me-Projects-app/3e425b87-a055/scratchpad/issue-worktree-tags.md";
+		expect(paths(`Wrote the notes to ${path}.`)).toEqual([path]);
+	});
+
 	test("finds a name alone, and keeps a line number apart", () => {
 		expect(findFilePaths("see README.md")).toEqual([{ start: 4, end: 13, path: "README.md", line: null }]);
 		expect(findFilePaths("src/app.ts:12:4 error")).toEqual([{ start: 0, end: 15, path: "src/app.ts", line: 12 }]);
