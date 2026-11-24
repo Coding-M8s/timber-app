@@ -29,6 +29,9 @@ Comparing against the base is designed but not built. See the
 
 ## Quick start
 
+To install the app on Windows, follow
+[installing on Windows](docs/install-windows.md). To work on it:
+
 You need Git and Bun 1.4.4. An installed app brings its own Timber. A
 development build uses the newest
 [Timber](https://github.com/Coding-M8s/timber#quick-start) release on your
@@ -109,7 +112,8 @@ Linux and Windows installers are attached to
 `SHA256SUMS.txt` to check them against. They are not signed during the
 beta. On Windows, SmartScreen is expected to say "Windows protected your
 PC" for an unsigned installer; choose "More info", then "Run anyway". Each
-release's notes give the install steps. How a release is made:
+release's notes give the install steps; for Windows, see
+[installing on Windows](docs/install-windows.md). How a release is made:
 [releasing](docs/releasing.md).
 
 ## Linux build
@@ -133,6 +137,7 @@ When the app does not start, run
 
 - [Architecture](docs/architecture.md): layers, the boundary with Timber, milestones, and what has been verified
 - [Design](docs/design.md): the agreed interface decisions
+- [Installing on Windows](docs/install-windows.md): from a release or from source, where it goes, and removing it
 - [Releasing](docs/releasing.md): one tag builds unsigned Linux and Windows installers into a draft release
 - [Development guidance](AGENTS.md)
 - [Contributing](CONTRIBUTING.md) and [security policy](SECURITY.md)
