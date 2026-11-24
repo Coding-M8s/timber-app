@@ -26,7 +26,7 @@ describe("parseStatus", () => {
 			["staged", `100644 ${HASH} 100644 ${other}`, null, null],
 			["unstaged", `100644 ${other}`, null, null],
 			["conflicted", `100644 100644 100644 100644 ${HASH} ${other} ${ZERO}`, null, null],
-			["unstaged", "", null, null],
+			["untracked", "", null, null],
 		]);
 	});
 
@@ -54,7 +54,7 @@ describe("parseStatus", () => {
 			{ area: "staged", kind: "renamed", path: "new name.txt", previousPath: "old name.txt" },
 			{ area: "staged", kind: "copied", path: "copy.txt", previousPath: "source.txt" },
 			{ area: "conflicted", kind: "conflicted", path: "both.txt", previousPath: null },
-			{ area: "unstaged", kind: "untracked", path: "d/new file.txt", previousPath: null },
+			{ area: "untracked", kind: "untracked", path: "d/new file.txt", previousPath: null },
 		]);
 	});
 
@@ -125,7 +125,7 @@ describe("statusArguments and diffArguments", () => {
 	});
 
 	test("compare an untracked file with nothing", () => {
-		expect(diffArguments(file("unstaged", "untracked"))).toEqual({ args: ["diff", ...plain, "--no-index", "--", "/dev/null", "-p.txt"], differencesExit: true });
+		expect(diffArguments(file("untracked", "untracked"))).toEqual({ args: ["diff", ...plain, "--no-index", "--", "/dev/null", "-p.txt"], differencesExit: true });
 	});
 });
 
@@ -276,8 +276,8 @@ describe("comparing with the base", () => {
 		const status: FileChange[] = [
 			{ area: "conflicted", kind: "conflicted", path: "both.txt", previousPath: null, added: null, removed: null, version: "" },
 			{ area: "staged", kind: "modified", path: "a.txt", previousPath: null, added: null, removed: null, version: "" },
-			{ area: "unstaged", kind: "untracked", path: "a.txt", previousPath: null, added: null, removed: null, version: "" },
-			{ area: "unstaged", kind: "untracked", path: "new.txt", previousPath: null, added: null, removed: null, version: "" },
+			{ area: "untracked", kind: "untracked", path: "a.txt", previousPath: null, added: null, removed: null, version: "" },
+			{ area: "untracked", kind: "untracked", path: "new.txt", previousPath: null, added: null, removed: null, version: "" },
 		];
 		const since: FileChange[] = [
 			{ area: "base", kind: "modified", path: "both.txt", previousPath: null, added: null, removed: null, version: "" },

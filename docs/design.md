@@ -792,6 +792,11 @@ logins. The app never reads a tracker login and never signs in.
   longer changed, and when "Compare with" switches, since the other
   comparison lists other files. Each worktree keeps its own diff tab. A
   layout saved before the Changes view moved here reads as it was.
+- With Uncommitted the groups are Merge conflicts, Staged, Unstaged, and
+  Untracked; with Base, Merge conflicts, Changed, and Untracked. A group
+  shows only when it has files. A new file is never listed under Unstaged,
+  so it is not lost among edited ones, and a screen reader hears its row
+  as "Untracked" once, not with the group's name again.
 - Each file's row shows its lines added and removed, `+12 -3`, as Git
   counts them for its diff; an untracked file counts all its lines as
   added. A binary file, and a conflict, show none. A screen reader hears

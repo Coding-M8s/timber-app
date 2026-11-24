@@ -10,8 +10,8 @@ import {
 
 /**
  * The groups of the list, in the order they show. Conflicts come first: they
- * block a commit. Comparing with the last commit lists staged and unstaged
- * files, comparing with the base lists changed and untracked ones.
+ * block a commit. Comparing with the last commit lists staged, unstaged, and
+ * untracked files, comparing with the base lists changed and untracked ones.
  */
 export const AREA_ORDER: readonly ChangeArea[] = ["conflicted", "staged", "unstaged", "base", "untracked"];
 

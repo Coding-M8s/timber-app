@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createFileChanges } from "../src/bun/file-changes";
 import { createWorktreeFiles } from "../src/bun/worktree-files";
 import { fileLines, fillUnchanged, linesMatchDiff, shownSections } from "../src/mainview/diff-unchanged";
+import { groupFileChanges } from "../src/mainview/changes-format";
 import { type ChangeArea, type FileChange, type FileDiffResult, MAX_DIFF_BYTES, MAX_DIFF_LINES, parseDiff } from "../src/shared/file-changes";
 import type { Repository } from "../src/shared/model";
 import { windows } from "./support/runtime";
@@ -122,7 +123,7 @@ describe.skipIf(windows)("reading changes from real repositories", () => {
 			// A rename or copy carries its original path as the next record.
 			if (x === "R" || x === "C" || y === "R" || y === "C") index++;
 			if (x === "?") {
-				entries.push(`unstaged ${path}`);
+				entries.push(`untracked ${path}`);
 			} else if (x === "U" || y === "U" || (x === "A" && y === "A") || (x === "D" && y === "D")) {
 				entries.push(`conflicted ${path}`);
 			} else {
@@ -161,14 +162,16 @@ describe.skipIf(windows)("reading changes from real repositories", () => {
 			"unstaged star*.txt": "modified",
 			"unstaged star-other.txt": "modified",
 			"unstaged lnk": "type-changed",
-			"unstaged new folder/deeper/new file.txt": "untracked",
-			"unstaged zażółć.txt": "untracked",
-			"unstaged empty.txt": "untracked",
-			"unstaged new.bin": "untracked",
-			"unstaged long.txt": "untracked",
-			"unstaged huge.txt": "untracked",
+			"untracked new folder/deeper/new file.txt": "untracked",
+			"untracked zażółć.txt": "untracked",
+			"untracked empty.txt": "untracked",
+			"untracked new.bin": "untracked",
+			"untracked long.txt": "untracked",
+			"untracked huge.txt": "untracked",
 		});
 		expect(read.files.find(file => file.kind === "renamed")?.previousPath).toBe("old name.txt");
+		// The list shows Staged, Unstaged, and Untracked, with every new file in the last.
+		expect(groupFileChanges(read.files).map(group => [group.area, group.files.length])).toEqual([["staged", 3], ["unstaged", 7], ["untracked", 6]]);
 
 		const conflict = await changes().read({ repository: primary, compare: "uncommitted", worktree: conflicted });
 		expect(conflict.outcome === "read" && asEntries(conflict.files)).toEqual(statusEntries(conflicted));
@@ -197,12 +200,12 @@ describe.skipIf(windows)("reading changes from real repositories", () => {
 			"unstaged star*.txt": [1, 1],
 			"unstaged star-other.txt": [1, 1],
 			"unstaged lnk": [1, 1],
-			"unstaged new folder/deeper/new file.txt": [2, 0],
-			"unstaged zażółć.txt": [1, 0],
-			"unstaged empty.txt": [0, 0],
-			"unstaged new.bin": [null, null],
-			"unstaged long.txt": [MAX_DIFF_LINES + 10, 0],
-			"unstaged huge.txt": [1, 0],
+			"untracked new folder/deeper/new file.txt": [2, 0],
+			"untracked zażółć.txt": [1, 0],
+			"untracked empty.txt": [0, 0],
+			"untracked new.bin": [null, null],
+			"untracked long.txt": [MAX_DIFF_LINES + 10, 0],
+			"untracked huge.txt": [1, 0],
 		});
 		// The counts agree with every diff the tab draws.
 		for (const file of read.files) {
@@ -295,27 +298,27 @@ describe.skipIf(windows)("reading changes from real repositories", () => {
 	});
 
 	test("shows an untracked file as all additions, also in a new folder and with an unusual name", async () => {
-		const nested = await diff(linked, "unstaged", "new folder/deeper/new file.txt");
+		const nested = await diff(linked, "untracked", "new folder/deeper/new file.txt");
 		expect(nested.outcome === "read" && nested.diff.kind === "text" && nested.diff.sections[0]!.hunks[0]!.lines).toEqual([
 			{ kind: "added", text: "n1", oldLine: null, newLine: 1 },
 			{ kind: "added", text: "n2", oldLine: null, newLine: 2 },
 			{ kind: "note", text: "No newline at end of file", oldLine: null, newLine: null },
 		]);
-		const named = await diff(linked, "unstaged", "zażółć.txt");
+		const named = await diff(linked, "untracked", "zażółć.txt");
 		expect(named.outcome === "read" && named.diff.kind === "text" && named.diff.sections[0]!.hunks[0]!.lines.map(line => line.text)).toEqual(["gęś"]);
-		const empty = await diff(linked, "unstaged", "empty.txt");
+		const empty = await diff(linked, "untracked", "empty.txt");
 		expect(empty.outcome === "read" && empty.diff).toEqual({ kind: "text", sections: [{ header: ["new file mode 100644"], hunks: [] }] });
 	});
 
 	test("says binary for binary files, tracked or not", async () => {
 		expect(await diff(linked, "unstaged", "b.bin")).toEqual({ outcome: "read", file: expect.objectContaining({ path: "b.bin" }), diff: { kind: "binary" } });
-		expect(await diff(linked, "unstaged", "new.bin")).toEqual({ outcome: "read", file: expect.objectContaining({ path: "new.bin" }), diff: { kind: "binary" } });
+		expect(await diff(linked, "untracked", "new.bin")).toEqual({ outcome: "read", file: expect.objectContaining({ path: "new.bin" }), diff: { kind: "binary" } });
 	});
 
 	test("says too large for many lines, and stops Git at the byte limit", async () => {
-		expect(await diff(linked, "unstaged", "long.txt")).toEqual({ outcome: "read", file: expect.objectContaining({ path: "long.txt" }), diff: { kind: "too-large", lines: MAX_DIFF_LINES + 10 + 6 } });
+		expect(await diff(linked, "untracked", "long.txt")).toEqual({ outcome: "read", file: expect.objectContaining({ path: "long.txt" }), diff: { kind: "too-large", lines: MAX_DIFF_LINES + 10 + 6 } });
 		const started = Date.now();
-		expect(await diff(linked, "unstaged", "huge.txt")).toEqual({ outcome: "read", file: expect.objectContaining({ path: "huge.txt" }), diff: { kind: "too-large", lines: null } });
+		expect(await diff(linked, "untracked", "huge.txt")).toEqual({ outcome: "read", file: expect.objectContaining({ path: "huge.txt" }), diff: { kind: "too-large", lines: null } });
 		expect(Date.now() - started).toBeLessThan(5000);
 	});
 

@@ -21,13 +21,13 @@ export type Comparison = "base" | "uncommitted";
 export type ChangeArea =
 	/** Between the last commit and the index: `git diff --cached`. */
 	| "staged"
-	/** Between the index and the files on disk, untracked files included: `git diff`. */
+	/** Between the index and the files on disk: `git diff`. */
 	| "unstaged"
 	/** A file with merge conflicts. Its diff is Git's combined diff. */
 	| "conflicted"
 	/** Comparing with the base: between the branch point and the files on disk, `git diff <commit>`. */
 	| "base"
-	/** Comparing with the base: a file Git does not track, listed on its own. */
+	/** A file Git does not track, listed on its own in either comparison. */
 	| "untracked";
 
 export type ChangeKind = "modified" | "added" | "deleted" | "renamed" | "copied" | "type-changed" | "untracked" | "conflicted";
@@ -396,7 +396,7 @@ export function sinceBase(status: readonly FileChange[], since: readonly FileCha
 	return [
 		...conflicted,
 		...since.filter(file => !conflictedPaths.has(file.path)),
-		...status.filter(file => file.kind === "untracked").map(file => ({ ...file, area: "untracked" as const })),
+		...status.filter(file => file.area === "untracked"),
 	];
 }
 
@@ -425,7 +425,7 @@ function splitEntry(record: string, fields: number): { fields: string[]; path: s
 /**
  * Parse `git status --porcelain=v2 -z` (see `statusArguments`) into changed
  * files, in Git's order. A file with both staged and unstaged changes comes
- * once for each. Untracked files are unstaged additions of the kind
+ * once for each. Untracked files are in the area and of the kind
  * "untracked". Ignored files and header lines are left out, and so is a
  * record that does not fit. Output that was cut short loses its last,
  * partial record, and a rename whose original path was cut off.
@@ -440,7 +440,7 @@ export function parseStatus(output: string): FileChange[] {
 		const type = record.charAt(0);
 		if (type === "?") {
 			const path = record.slice(2);
-			if (record.charAt(1) === " " && path !== "") files.push({ area: "unstaged", kind: "untracked", path, previousPath: null, added: null, removed: null, version: "" });
+			if (record.charAt(1) === " " && path !== "") files.push({ area: "untracked", kind: "untracked", path, previousPath: null, added: null, removed: null, version: "" });
 		} else if (type === "1") {
 			const entry = splitEntry(record, 8);
 			if (entry) pushTracked(files, entry.fields, entry.path, null);

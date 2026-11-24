@@ -10,7 +10,7 @@ import {
 import { FOLDER_MISSING_CHANGES } from "../src/mainview/components/ChangesList";
 import { codeHighlightStyle, pickLanguage } from "../src/mainview/editor-language";
 import { browserSampleRepositories, createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
-import { GALLERY_WORKTREE, MOCK_BRANCH_POINT, type MockFileChange, sampleNewFilePatch, samplePatch } from "../src/mainview/engine/mock-file-changes";
+import { derivedFileChanges, GALLERY_WORKTREE, MOCK_BRANCH_POINT, type MockFileChange, sampleNewFilePatch, samplePatch } from "../src/mainview/engine/mock-file-changes";
 import { changesBusy } from "../src/mainview/store/state";
 import { createAppStore } from "../src/mainview/store/store";
 import type { Engine } from "../src/shared/engine";
@@ -193,13 +193,13 @@ describe("the Changes tab", () => {
 		return store;
 	}
 
-	test("lists conflicts, staged, and unstaged files apart, each with its letter", async () => {
+	test("lists conflicts, staged, unstaged, and untracked files apart, each with its letter", async () => {
 		const markup = render(await gallery());
 		const titles = [...markup.matchAll(/<h3 class="change-group-title">([^<]+)<span class="change-group-count">(\d+)<\/span><\/h3>/g)].map(match => `${match[1]} ${match[2]}`);
-		expect(titles).toEqual(["Merge conflicts 1", "Staged 4", "Unstaged 13"]);
-		expect(markup).toContain("1 conflicted, 4 staged, 13 unstaged");
+		expect(titles).toEqual(["Merge conflicts 1", "Staged 4", "Unstaged 8", "Untracked 5"]);
+		expect(markup).toContain("1 conflicted, 4 staged, 8 unstaged, 5 untracked");
 		expect(markup).toContain('aria-label="src/tax/brackets.ts, Renamed from src/tax/bands.ts, Staged, 1 line added, 1 removed"');
-		expect(markup).toContain('aria-label="src/tax/zażółć.ts, Untracked, Unstaged, 2 lines added, 0 removed"');
+		expect(markup).toContain('aria-label="src/tax/zażółć.ts, Untracked, 2 lines added, 0 removed"');
 		for (const letter of ["!", "M", "R", "A", "D", "T", "U"]) expect(markup).toContain(`aria-hidden="true">${letter}</span>`);
 		// Nothing is open yet: the first file listed is the only tab stop of the list, and none is marked.
 		expect(markup).not.toContain('class="change-file selected"');
@@ -252,12 +252,12 @@ describe("the Changes tab", () => {
 			return render(store);
 		};
 		expect(await shown(file("unstaged", "modified", "assets/logo.png"))).toContain("Binary file");
-		expect(await shown(file("unstaged", "untracked", "assets/icon.ico"))).toContain("Binary file");
+		expect(await shown(file("untracked", "untracked", "assets/icon.ico"))).toContain("Binary file");
 		const large = await shown(file("unstaged", "modified", "src/generated/rows.ts"));
 		expect(large).toContain("This diff is too large to show");
 		expect(large).toContain("It is 6,005 lines, more than 5,000. Run git diff -- src/generated/rows.ts in a terminal to see it.");
 		expect(large).not.toContain("diff-line");
-		expect(await shown(file("unstaged", "untracked", "notes/empty.txt"))).toContain("Empty file");
+		expect(await shown(file("untracked", "untracked", "notes/empty.txt"))).toContain("Empty file");
 		const renamed = await shown(file("staged", "renamed", "src/tax/brackets.ts", "src/tax/bands.ts"));
 		expect(renamed).toContain("<div>rename from src/tax/bands.ts</div>");
 		expect(renamed).toContain('<span class="diff-previous">src/tax/bands.ts → </span>src/tax/brackets.ts');
@@ -266,7 +266,7 @@ describe("the Changes tab", () => {
 	test("offers Open in editor for the selected file with its exact command, but not for a deleted file", async () => {
 		const store = await gallery();
 		await store.savePreferences({ editor: { command: "code", terminal: false } });
-		await store.selectChangedFile(file("unstaged", "untracked", "src/tax/new rules.ts"));
+		await store.selectChangedFile(file("untracked", "untracked", "src/tax/new rules.ts"));
 		const markup = render(store);
 		expect(markup).toContain(`title="${escaped(`Open in editor: code '${GALLERY_WORKTREE}/src/tax/new rules.ts'`)}"`);
 
@@ -311,14 +311,14 @@ describe("the Changes tab", () => {
 
 	test("says when only some files are listed", async () => {
 		const engine = await uncommittedEngine();
-		engine.setFileChanges(FEATURE.path, Array.from({ length: 5001 }, (_, index) => mock(file("unstaged", "untracked", `n/${index}.ts`), sampleNewFilePatch(`n/${index}.ts`))));
+		engine.setFileChanges(FEATURE.path, Array.from({ length: 5001 }, (_, index) => mock(file("untracked", "untracked", `n/${index}.ts`), sampleNewFilePatch(`n/${index}.ts`))));
 		const store = await started(engine);
 		store.select(FEATURE.id);
 		store.showSidePanel("changes");
 		await store.readChanges(TIMBER, FEATURE.id);
 		const markup = render(store);
 		expect(markup).toContain(MORE_FILES_NOTE);
-		expect(markup).toContain("5000 unstaged, and more");
+		expect(markup).toContain("5000 untracked, and more");
 	});
 });
 
@@ -354,7 +354,7 @@ describe("refreshing the Changes tab", () => {
 		const settled = bar(markup);
 		expect(settled).not.toContain("changes-spinner");
 		expect(settled).toContain(QUIET);
-		expect(settled).toContain('<span class="changes-count" role="status">1 conflicted, 4 staged, 13 unstaged<span class="visually-hidden">, 6020 lines added, 11 removed</span></span>');
+		expect(settled).toContain('<span class="changes-count" role="status">1 conflicted, 4 staged, 8 unstaged, 5 untracked<span class="visually-hidden">, 6020 lines added, 11 removed</span></span>');
 		expect(settled).toMatch(/<button type="button" class="text-button" title="[^"]+">Refresh<\/button>/);
 		expect(markup).toContain('<div class="change-groups">');
 	});
@@ -365,7 +365,7 @@ describe("refreshing the Changes tab", () => {
 		const markup = render(store);
 		const busy = bar(markup);
 		expect(busy).toContain(SPINNER);
-		expect(busy).toContain("1 conflicted, 4 staged, 13 unstaged");
+		expect(busy).toContain("1 conflicted, 4 staged, 8 unstaged, 5 untracked");
 		// One live region says it; the counts' own does not change.
 		expect(busy.split(REFRESHING_CHANGES)).toHaveLength(2);
 		expect(busy).toContain(ANNOUNCED);
@@ -460,14 +460,15 @@ describe("refreshing the Changes tab", () => {
 });
 
 describe("words and keys of the Changes tab", () => {
-	const files = [file("unstaged", "modified", "z.ts"), file("staged", "added", "a.ts"), file("conflicted", "conflicted", "c.ts"), file("unstaged", "untracked", "n.ts")];
+	const files = [file("unstaged", "modified", "z.ts"), file("staged", "added", "a.ts"), file("conflicted", "conflicted", "c.ts"), file("untracked", "untracked", "n.ts")];
 
-	test("groups conflicts, then staged, then unstaged, and leaves out empty groups", () => {
+	test("groups conflicts, then staged, then unstaged, then untracked, and leaves out empty groups", () => {
 		expect(groupFileChanges(files).map(group => [group.area, group.files.map(entry => entry.path)])).toEqual([
-			["conflicted", ["c.ts"]], ["staged", ["a.ts"]], ["unstaged", ["z.ts", "n.ts"]],
+			["conflicted", ["c.ts"]], ["staged", ["a.ts"]], ["unstaged", ["z.ts"]], ["untracked", ["n.ts"]],
 		]);
 		expect(groupFileChanges([files[0]!]).map(group => group.area)).toEqual(["unstaged"]);
-		expect(describeFileCounts(files, false)).toBe("1 conflicted, 1 staged, 2 unstaged");
+		expect(groupFileChanges([files[3]!]).map(group => group.area)).toEqual(["untracked"]);
+		expect(describeFileCounts(files, false)).toBe("1 conflicted, 1 staged, 1 unstaged, 1 untracked");
 		expect(describeFileCounts([], false)).toBe("No changes");
 	});
 
@@ -492,7 +493,7 @@ describe("words and keys of the Changes tab", () => {
 		expect(diffCommand(file("staged", "modified", "a b.ts"))).toBe("git diff --cached -- 'a b.ts'");
 		expect(diffCommand(file("unstaged", "modified", "a.ts"))).toBe("git diff -- a.ts");
 		expect(diffCommand(file("staged", "renamed", "new.ts", "old.ts"))).toBe("git diff --cached -- old.ts new.ts");
-		expect(diffCommand(file("unstaged", "untracked", "n.ts"))).toBe("git diff --no-index -- /dev/null n.ts");
+		expect(diffCommand(file("untracked", "untracked", "n.ts"))).toBe("git diff --no-index -- /dev/null n.ts");
 	});
 
 	test("says nothing extra for a diff with lines or a header", () => {
@@ -502,6 +503,30 @@ describe("words and keys of the Changes tab", () => {
 		expect(describeDiffNotice({ kind: "text", sections: [] }, modified)?.title).toBe("No line changes");
 		expect(describeDiffNotice({ kind: "too-large", lines: null }, modified)?.text).toBe("It is more than 512 KiB. Run git diff -- a.ts in a terminal to see it.");
 		expect(describeDiffNotice({ kind: "unchanged" }, modified)?.title).toBe("No longer changed");
+	});
+
+	test("Uncommitted lists untracked files in their own group after Unstaged, as the mock engine does", async () => {
+		const engine = await uncommittedEngine();
+		engine.setFileChanges(FEATURE.path, [
+			mock(file("staged", "added", "a.ts"), sampleNewFilePatch("a.ts")),
+			mock(file("unstaged", "modified", "b.ts")),
+			mock(file("untracked", "untracked", "n.ts"), sampleNewFilePatch("n.ts")),
+			mock(file("base", "modified", "committed.ts")),
+		]);
+		const store = await started(engine);
+		await store.readChanges(TIMBER, FEATURE.id);
+		const view = store.getState().changes!;
+		expect(view.compared).toBe("uncommitted");
+		expect(groupFileChanges(view.files!).map(group => [group.area, group.files.map(entry => entry.path)])).toEqual([
+			["staged", ["a.ts"]], ["unstaged", ["b.ts"]], ["untracked", ["n.ts"]],
+		]);
+		await store.selectChangedFile(file("untracked", "untracked", "n.ts"));
+		const diff = store.getState().changes?.diff;
+		expect(diff?.outcome === "read" && diff.file?.path).toBe("n.ts");
+
+		// A sample worktree's own untracked files are listed the same way.
+		const sample = { ...FEATURE, changes: { kind: "known" as const, modified: ["m.ts"], untracked: ["u.ts"] }, base: null };
+		expect(derivedFileChanges(sample).map(({ change }) => `${change.area} ${change.kind} ${change.path}`)).toEqual(["unstaged modified m.ts", "untracked untracked u.ts"]);
 	});
 });
 
@@ -514,7 +539,7 @@ describe("comparing with the base", () => {
 			mock(file("base", "modified", "committed.ts")),
 			mock(file("staged", "added", "a.ts"), sampleNewFilePatch("a.ts")),
 			mock(file("unstaged", "modified", "a.ts")),
-			mock(file("unstaged", "untracked", "n.ts"), sampleNewFilePatch("n.ts")),
+			mock(file("untracked", "untracked", "n.ts"), sampleNewFilePatch("n.ts")),
 		]);
 		const store = await started(engine);
 		await store.readChanges(TIMBER, FEATURE.id);

@@ -124,7 +124,7 @@ function FileList({ view, dimmed }: { view: ChangesView & { files: readonly File
 										type="button"
 										className={`change-file${selected ? " selected" : ""}${viewed ? " viewed" : ""}`}
 										aria-current={selected ? "true" : undefined}
-										aria-label={`${file.path}, ${KIND_LABELS[file.kind]}${file.previousPath === null ? "" : ` from ${file.previousPath}`}, ${AREA_TITLES[file.area]}${counts === "" ? "" : `, ${counts}`}${viewed ? ", viewed" : ""}`}
+										aria-label={`${file.path}, ${KIND_LABELS[file.kind]}${file.previousPath === null ? "" : ` from ${file.previousPath}`}${AREA_TITLES[file.area] === KIND_LABELS[file.kind] ? "" : `, ${AREA_TITLES[file.area]}`}${counts === "" ? "" : `, ${counts}`}${viewed ? ", viewed" : ""}`}
 										title={file.previousPath === null ? file.path : `${file.previousPath} → ${file.path}`}
 										tabIndex={tabStop !== null && sameFileChange(tabStop, file) ? 0 : -1}
 										ref={element => {

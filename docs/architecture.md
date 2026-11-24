@@ -3489,7 +3489,9 @@ discards, or commits. Comparing against a backup is a later step.
   --untracked-files=all`. Each untracked file is listed on its own, not its
   folder, so it can show its content. A file with staged and unstaged
   changes is listed once in each group. Groups show conflicts first, then
-  staged, then unstaged (untracked included). With Base, the groups are
+  staged, then unstaged, then untracked: `parseStatus` puts untracked
+  files in an area of their own, so a window never reads them as unstaged
+  edits. With Base, the groups are
   conflicts, changed, and untracked (below). Kinds: modified, added, deleted, renamed, copied, type changed,
   untracked, and conflicted. At most 5,000 files are listed, with a note
   when there are more.
