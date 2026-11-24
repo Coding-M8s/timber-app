@@ -27,8 +27,15 @@ export type TimberStatus =
 
 /** How a branch stands against its upstream, as of the last fetch. */
 export type SyncState =
-	/** No upstream is configured: the branch has never been published. */
-	| { kind: "unpublished" }
+	/**
+	 * No upstream is configured: the branch has never been published.
+	 * `unpushed` counts the commits on the branch that no remote branch has,
+	 * as of the last fetch, as `git rev-list --count <head> --not --remotes`
+	 * does. Push publishes a branch with one or more. Absent when it was not
+	 * counted, as on a branch with no commit yet or when Git did not answer:
+	 * the branch then gets no Push.
+	 */
+	| { kind: "unpublished"; unpushed?: number }
 	/** An upstream is configured, but its remote-tracking ref no longer exists. */
 	| { kind: "gone"; upstream: string }
 	| {

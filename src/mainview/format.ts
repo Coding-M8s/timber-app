@@ -181,7 +181,7 @@ export function worktreeLabel(worktree: Worktree): string {
 
 /** One plain sentence for how a branch stands against its upstream. */
 export function describeSync(sync: SyncState): string {
-	if (sync.kind === "unpublished") return "Not published yet";
+	if (sync.kind === "unpublished") return sync.unpushed ? `Not published yet: ${sync.unpushed} to push` : "Not published yet";
 	if (sync.kind === "gone") return `Upstream ${sync.upstream} was deleted`;
 	if (sync.forcePushed) return `${sync.upstream} was rewritten: ${sync.ahead} ahead, ${sync.behind} behind`;
 	if (sync.ahead > 0 && sync.behind > 0) return `${sync.ahead} ahead, ${sync.behind} behind ${sync.upstream}`;
@@ -266,7 +266,11 @@ function syncMarkers(worktree: Worktree): RowMarker[] {
 	const marker = (kind: RowMarkerKind, text: string, tooltip: string): RowMarker => ({ kind, place: "branch", text, tooltip });
 	// Not knowing is said, so that it is never read as "nothing to push or pull".
 	if (sync === null) return [marker("sync-unknown", "sync unknown", "Git could not say how this branch stands against its upstream. It may have commits to push or to pull.")];
-	if (sync.kind === "unpublished") return [marker("local-only", "local only", "This branch has no upstream. It has not been published.")];
+	if (sync.kind === "unpublished") {
+		// A branch with commits no remote has is something to push, drawn as the arrow Push replaces.
+		if (sync.unpushed) return [marker("ahead", String(sync.unpushed), `${counted(sync.unpushed, "commit")} that no remote branch has, as of the last fetch. This branch has not been published yet.`)];
+		return [marker("local-only", "local only", "This branch has no upstream. It has not been published.")];
+	}
 	if (sync.kind === "gone") return [marker("upstream-gone", "upstream gone", `The upstream branch ${sync.upstream} no longer exists, as of the last fetch.`)];
 	const markers: RowMarker[] = [];
 	// First: a rewritten upstream changes what pulling or pushing would do.

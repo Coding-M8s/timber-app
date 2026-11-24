@@ -3,7 +3,7 @@ import { NOTHING_CONFIGURED, fallbackBaseOf, mayFallBackToUpstream } from "../sh
 import { type BaseCounts, type Repository, type SetupState, type SyncState, type TimberStatus, type Worktree, worktreeId } from "../shared/model";
 import type { ListedWorktree } from "../shared/timber-ls";
 import { type ConfiguredBaseReader, createConfiguredBaseReader } from "./configured-base";
-import { commonDirectory, readBaseCounts, readBranchSync, readRemoteDefaults } from "./git-engine";
+import { commonDirectory, readBaseCounts, readBranchSync, readRemoteDefaults, readUnpushedCount } from "./git-engine";
 import { readSetupState } from "./setup-state";
 import { describeTimberStatus } from "./timber";
 import { listWorktrees } from "./timber-ls";
@@ -19,8 +19,9 @@ export type RepositoryRead =
 /**
  * Reads repositories for the sidebar. The worktrees are exactly the ones
  * `timber ls --json` lists, in its order. Git adds only what Timber does not
- * report: how each branch stands against its upstream, how each worktree
- * stands against its saved base, and the remotes' cached default branches.
+ * report: how each branch stands against its upstream, how many commits of
+ * an unpublished branch no remote has, how each worktree stands against its
+ * saved base, and the remotes' cached default branches.
  * Timber's settings are read only for `fallbackBase`. Everything is read-only.
  */
 export interface RepositoryReader {
@@ -52,6 +53,25 @@ export function syncOf(listed: Pick<ListedWorktree, "branch" | "head">, branches
 export const BASE_COUNTS_AT_ONCE = 4;
 
 /**
+ * Ask `count` once for each distinct key, in the order given, with at most
+ * `atOnce` asks at the same time, and give every item its key's answer.
+ */
+async function countEach<Item, Answer>(items: readonly Item[], keyOf: (item: Item) => string, count: (item: Item) => Promise<Answer>, atOnce: number): Promise<Answer[]> {
+	const keys = items.map(keyOf);
+	const distinct = [...new Map(items.map((item, index) => [keys[index]!, item])).entries()];
+	const answers = new Map<string, Answer>();
+	let next = 0;
+	const work = async () => {
+		while (next < distinct.length) {
+			const [key, item] = distinct[next++]!;
+			answers.set(key, await count(item));
+		}
+	};
+	await Promise.all(Array.from({ length: Math.min(atOnce, distinct.length) }, work));
+	return keys.map(key => answers.get(key)!);
+}
+
+/**
  * Count every listed worktree against its saved base, in the order listed.
  * Worktrees with the same base and head are counted once, and at most
  * `atOnce` counts run at the same time.
@@ -62,18 +82,30 @@ export async function countAgainstBases(
 	count: typeof readBaseCounts = readBaseCounts,
 	atOnce = BASE_COUNTS_AT_ONCE,
 ): Promise<(BaseCounts | null)[]> {
-	const keys = listed.map(({ base, head }) => JSON.stringify([base, head]));
-	const distinct = [...new Map(listed.map((worktree, index) => [keys[index]!, worktree])).entries()];
-	const answers = new Map<string, BaseCounts | null>();
-	let next = 0;
-	const work = async () => {
-		while (next < distinct.length) {
-			const [key, { base, head }] = distinct[next++]!;
-			answers.set(key, await count(commonGitDir, base, head));
-		}
-	};
-	await Promise.all(Array.from({ length: Math.min(atOnce, distinct.length) }, work));
-	return keys.map(key => answers.get(key) ?? null);
+	return countEach(listed, ({ base, head }) => JSON.stringify([base, head]), ({ base, head }) => count(commonGitDir, base, head), atOnce);
+}
+
+/**
+ * The sync states with each unpublished branch's commits that no remote has
+ * counted (`unpushed`), in the order given. Only a branch with no upstream
+ * and a commit is counted; one Git could not count stays as it was, with no
+ * Push. Branches at the same commit are counted once, and at most `atOnce`
+ * counts run at the same time.
+ */
+export async function countUnpushed(
+	commonGitDir: string,
+	listed: readonly { head: string | null; sync: SyncState | null }[],
+	count: typeof readUnpushedCount = readUnpushedCount,
+	atOnce = BASE_COUNTS_AT_ONCE,
+): Promise<(SyncState | null)[]> {
+	const counted = (item: { head: string | null; sync: SyncState | null }) => item.sync?.kind === "unpublished" && item.head !== null;
+	const toCount = listed.filter(counted);
+	const answers = await countEach(toCount, item => item.head!, item => count(commonGitDir, item.head), atOnce);
+	const byHead = new Map(toCount.map((item, index) => [item.head!, answers[index] ?? null]));
+	return listed.map(item => {
+		const unpushed = counted(item) ? byHead.get(item.head!) ?? null : null;
+		return unpushed === null ? item.sync : { kind: "unpublished", unpushed };
+	});
 }
 
 /** Where the fallback base of one repository is read from. */
@@ -132,10 +164,11 @@ export function createRepositoryReader(
 			readSetupState(primaryWorktreeRoot, environment),
 			countAgainstBases(commonGitDir, listing.worktrees),
 		]);
+		const syncs = await countUnpushed(commonGitDir, listing.worktrees.map(listed => ({ head: listed.head, sync: syncOf(listed, branches) })));
 		const worktrees: Worktree[] = listing.worktrees.map((listed, index) => ({
 			id: worktreeId(commonGitDir, listed),
 			...listed,
-			sync: syncOf(listed, branches),
+			sync: syncs[index] ?? null,
 			baseCounts: baseCounts[index] ?? null,
 		}));
 		const fallbackBase = await readFallbackBase(worktrees, { commonGitDir, primaryRoot: primaryWorktreeRoot, setup, timber: status.path, configuredBase });

@@ -2,13 +2,13 @@ import { useEffect, useId, useState } from "react";
 import { confirmsPull, withPullSkipped } from "../../shared/pull-confirm-setting";
 import { pullsInsteadOfRebase } from "../../shared/fallback-base";
 import type { Worktree } from "../../shared/model";
-import type { SyncActionKind, SyncActionResult } from "../../shared/sync-actions";
+import { type SyncActionKind, type SyncActionResult, isNoUpstream } from "../../shared/sync-actions";
 import { worktreeLabel } from "../format";
 import { useAppState, useStore, useSubmission } from "../store/react";
 import type { DialogRequest } from "../store/state";
 import type { SubmissionOutcome, SubmissionState } from "../store/submission";
 import {
-	SYNC_ACTION_WORDS, describeSyncCommands, describeSyncIntro, describeSyncRefusalNote, describeSyncTitle, presentSyncResult, syncTargetOfWorktree,
+	SYNC_ACTION_WORDS, actionTargetOfWorktree, describeSyncCommands, describeSyncIntro, describeSyncRefusalNote, describeSyncTitle, presentPublishResult, presentSyncResult,
 } from "../sync-action-format";
 import { OperationDialog } from "./OperationDialog";
 import { focusWorktreeRow } from "../sidebar-focus";
@@ -44,7 +44,7 @@ export function SyncActionDialogView({ action, worktree, path, result, rebaseOff
 	const skipHintId = useId();
 	// After a run, something did run: the notes for a worktree or upstream that went say only what is so now.
 	const ran = result !== null && !(result.outcome === "failed" && !result.ran);
-	const target = syncTargetOfWorktree(worktree);
+	const target = actionTargetOfWorktree(action, worktree);
 	const commands = target && worktree ? describeSyncCommands(action, target, worktree.path) : null;
 	const note = result ? describeSyncRefusalNote(result, rebaseOffered) : null;
 	return (
@@ -82,8 +82,9 @@ export function SyncActionDialogView({ action, worktree, path, result, rebaseOff
 
 /**
  * The dialog of a sync action, Pull or Push, for one worktree. Submitting
- * runs the commands shown, with the remote and upstream they name; the main
- * process runs nothing when those changed since. One that worked closes the
+ * runs the commands shown, with the remote and upstream they name, or with
+ * no upstream yet for a Push that publishes the branch; the main process
+ * runs nothing when those changed since. One that worked closes the
  * dialog with a toast, which for a pull also says when the fetch failed. A
  * refusal or a failure stays in the dialog with Git's or Timber's words. The repository is read
  * again after every outcome (`runSyncAction` in ../store/store.ts).
@@ -125,10 +126,10 @@ export function SyncActionDialog({ request }: { request: Extract<DialogRequest, 
 	if (!worktree && path === "") return null;
 
 	const run = () => {
-		const target = syncTargetOfWorktree(worktree);
-		if (!worktree || !target || worktree.sync?.kind !== "tracking") return;
+		const target = actionTargetOfWorktree(request.action, worktree);
+		if (!worktree || !target) return;
 		const label = worktreeLabel(worktree);
-		const upstream = worktree.sync.upstream;
+		const upstream = worktree.sync?.kind === "tracking" ? worktree.sync.upstream : null;
 		setResult(null);
 		setEnded(null);
 		if (offerSkip && skipTicked !== skipSaved) {
@@ -141,6 +142,11 @@ export function SyncActionDialog({ request }: { request: Extract<DialogRequest, 
 		void submission.submit(async (): Promise<SubmissionOutcome> => {
 			const ended = await store.runSyncAction({ action: request.action, repository: request.repository, worktree: worktree.path, target });
 			setResult(ended);
+			if (isNoUpstream(target) || upstream === null) {
+				// The list was read again after the push, so it names the upstream Timber set.
+				const after = store.getState().repositories.find(candidate => candidate.path === request.repository)?.worktrees.find(candidate => candidate.id === request.worktree)?.sync;
+				return presentPublishResult(label, after?.kind === "tracking" ? after.upstream : null, ended);
+			}
 			return presentSyncResult(request.action, label, upstream, ended);
 		});
 	};

@@ -1,7 +1,7 @@
 import { pullsInsteadOfRebase } from "../shared/fallback-base";
 import type { Repository, Worktree } from "../shared/model";
 import {
-	type SyncActionKind, type SyncActionResult, type SyncTarget, applicableSyncActions, describeSyncStep, syncActionSteps, syncTargetOf,
+	type ActionTarget, type SyncActionKind, type SyncActionResult, actionTargetOf, applicableSyncActions, describeSyncStep, isPublishable, syncActionSteps, syncTargetOf,
 } from "../shared/sync-actions";
 import { worktreeLabel } from "./format";
 import type { SubmissionOutcome } from "./store/submission";
@@ -65,11 +65,29 @@ export const ASKING_SYNC: SyncOptions = { pullAsks: true, pulling: false };
 /** Why Pull is off while a pull without a dialog runs in the worktree. */
 export const PULLING_REASON = "Pulling now.";
 
-/** The controls a row shows for its worktree, one per action that applies, in the order of the table. */
+/** Push's control for a branch that was never published and has commits no remote has (`isPublishable`). */
+function publishControl(name: string, unpushed: number): SyncControl {
+	return {
+		action: "push",
+		text: String(unpushed),
+		label: `Push ${counted(unpushed, "commit")} from ${name}, publishing it`,
+		title: `${counted(unpushed, "commit")} that no remote branch has, as of the last fetch. ${name} has not been published yet. Click to see the Timber command, then publish it and set its upstream.`,
+		opensDialog: true,
+		busy: false,
+	};
+}
+
+/**
+ * The controls a row shows for its worktree, one per action that applies, in
+ * the order of the table. A branch that was never published and has commits
+ * no remote has gets Push, which publishes it.
+ */
 export function describeSyncControls(worktree: Worktree, options: SyncOptions = ASKING_SYNC): SyncControl[] {
 	const { sync } = worktree;
-	if (worktree.branch === null || sync?.kind !== "tracking") return [];
+	if (worktree.branch === null) return [];
 	const name = worktreeLabel(worktree);
+	if (isPublishable(sync)) return [publishControl(name, sync.unpushed)];
+	if (sync?.kind !== "tracking") return [];
 	return applicableSyncActions(sync).map(action => {
 		switch (action) {
 			case "pull":
@@ -146,7 +164,7 @@ export interface SyncDialogCommands {
 }
 
 /** `worktree` is the worktree's registered path, which Push names. */
-export function describeSyncCommands(action: SyncActionKind, target: SyncTarget, worktree: string): SyncDialogCommands {
+export function describeSyncCommands(action: SyncActionKind, target: ActionTarget, worktree: string): SyncDialogCommands {
 	const [first, ...rest] = syncActionSteps(action, target, worktree).map(describeSyncStep);
 	switch (action) {
 		case "pull":
@@ -175,6 +193,12 @@ export function describeSyncIntro(action: SyncActionKind, worktree: Worktree): s
 			];
 		}
 		case "push": {
+			if (isPublishable(sync)) {
+				return [
+					`${counted(sync.unpushed, "commit")} that no remote branch has. ${worktreeLabel(worktree)} has not been published yet.`,
+					`Push runs timber publish, which publishes ${worktreeLabel(worktree)} under its own name and sets its upstream. Timber picks the remote: the one set in its configuration, or the repository's only remote. It never force-pushes, never asks for a password, and refuses when it cannot tell which remote to use.`,
+				];
+			}
 			const upstream = sync?.kind === "tracking" ? sync.upstream : "its upstream";
 			const ahead = sync?.kind === "tracking" ? `${counted(sync.ahead, "commit")} ahead of ${upstream}. ` : "";
 			return [
@@ -204,6 +228,17 @@ export function describeSyncRefusalNote(result: SyncActionResult, rebaseOffered 
 	}
 }
 
+/**
+ * How a Push that published a branch with no upstream is told. `upstream` is
+ * the branch's upstream as the list read it again afterwards, or null when
+ * the list does not say.
+ */
+export function presentPublishResult(label: string, upstream: string | null, result: SyncActionResult): SubmissionOutcome {
+	if (result.outcome !== "done") return { ok: false, failure: result.failure };
+	const where = upstream === null ? "" : ` to ${upstream}`;
+	return { ok: true, toast: result.moved ? `Published ${label}${where} and set its upstream.` : `${label} was already published${where}.`, problem: false };
+}
+
 /** How a result is told: a toast when it worked, Git's words in the dialog otherwise. */
 export function presentSyncResult(action: SyncActionKind, label: string, upstream: string, result: SyncActionResult): SubmissionOutcome {
 	if (result.outcome !== "done") return { ok: false, failure: result.failure };
@@ -220,5 +255,5 @@ export function presentSyncResult(action: SyncActionKind, label: string, upstrea
 	}
 }
 
-/** The target a dialog shows and sends, read from the worktree as the list has it. */
-export const syncTargetOfWorktree = (worktree: Worktree | null): SyncTarget | null => worktree === null ? null : syncTargetOf(worktree.sync);
+/** The target a dialog shows and sends for an action, read from the worktree as the list has it. */
+export const actionTargetOfWorktree = (action: SyncActionKind, worktree: Worktree | null): ActionTarget | null => worktree === null ? null : actionTargetOf(action, worktree.sync);

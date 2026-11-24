@@ -369,7 +369,10 @@ change them here first when they change.
 - Branch state follows VS Code conventions: a down arrow with a count for
   commits to pull, an up arrow for commits to push, "force-pushed" when the
   remote branch was rewritten, "upstream gone" when it was deleted, and "local
-  only" when it was never published. "force-pushed" is amber, as its mark:
+  only" when it was never published and has no commits of its own. A branch
+  never published that has commits no remote has shows them as an up arrow
+  with their count instead, as `git rev-list --count <head> --not --remotes`
+  counts them. "force-pushed" is amber, as its mark:
   red is for closed pull requests and failing checks. It stays until the
   person has selected that worktree and moved on. Modified and untracked counts use
   the yellow `M` and green `U`.
@@ -392,6 +395,14 @@ change them here first when they change.
   `timber publish --result-file <temporary file> -- <worktree>` before it
   runs. Push is also in the row's menu and the command palette while it
   applies. Neither control shows for a diverged or force-pushed branch.
+- A branch never published that has commits no remote has gets the same
+  Push control in place of its up arrow and count, in the row's menu and
+  the palette too, and beside "Committed a1b2c3d" in the commit box. Its
+  dialog shows the same `timber publish` command and says it publishes the
+  branch under its own name and sets its upstream. Timber picks the
+  remote and refuses when there is none or it cannot tell which; the
+  dialog shows its words. A toast names the new upstream, and the row reads
+  again tracking it.
   A sync control never moves when the row is pointed at: the row's other
   controls show to its right, in room the first line always keeps.
 - A row whose branch has a pull request shows it with its state, on the

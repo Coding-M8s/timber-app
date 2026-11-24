@@ -9,9 +9,13 @@ import { type BrowserPage, browserPath, openSidebarPage } from "./support/browse
  */
 
 const CONTROL = ".sync.behind.row-sync-button";
-const PUSH_CONTROL = ".sync.ahead.row-sync-button";
 /** The sample worktree that is ahead of its upstream and not behind. */
 const AHEAD = "/work/timber-worktrees/feat-github-issue-lookup";
+/** Its Push control. Another row, on a branch never published, has one too. */
+const PUSH_CONTROL = `[data-worktree-path="${AHEAD}"] .sync.ahead.row-sync-button`;
+/** The sample worktree on a branch never published, with one commit no remote has. */
+const UNPUBLISHED = "/work/timber-worktrees/spike-new-idea";
+const UNPUBLISHED_CONTROL = `[data-worktree-path="${UNPUBLISHED}"] .sync.ahead.row-sync-button`;
 const DIALOG_OPEN = `document.querySelector("dialog[open]") !== null`;
 const DIALOG_CLOSED = `document.querySelector("dialog[open]") === null`;
 
@@ -144,6 +148,24 @@ describe.skipIf(browserPath === null || process.platform === "win32")("Push in a
 		await page.press("Enter");
 		await page.until(DIALOG_OPEN, "the dialog opened");
 		expect(await page.evaluate<string>(`document.querySelector("dialog[open] .dialog-title").textContent`)).toBe("Push feat/github-issue-lookup");
+	}, 30_000);
+
+	test("a branch never published gets the control in place of local only, by keyboard from its menu too, and after publishing it tracks its new upstream", async () => {
+		expect(await page.evaluate<string>(`document.querySelector(${JSON.stringify(UNPUBLISHED_CONTROL)}).getAttribute("aria-label")`)).toBe("Push 1 commit from spike/new-idea, publishing it");
+		expect(await page.evaluate<boolean>(`document.querySelector('[data-worktree-path="${UNPUBLISHED}"]').textContent.includes("local only")`)).toBe(false);
+		await page.evaluate(`document.querySelector('[data-worktree-path="${UNPUBLISHED}"] .row').focus()`);
+		await page.press("F10", "shift");
+		await page.until(`document.querySelector("[role=menu]") !== null`, "the menu opened");
+		expect(await page.evaluate<string[]>(`[...document.querySelectorAll("[role=menuitem]")].map(item => item.textContent.trim())`)).toEqual(["Push", "Done"]);
+		await page.press("Enter");
+		await page.until(DIALOG_OPEN, "the dialog opened");
+		expect(await page.evaluate<string[]>(`[...document.querySelectorAll("dialog[open] .dialog-command")].map(command => command.textContent)`)).toEqual([`timber publish --result-file <temporary file> -- ${UNPUBLISHED}`]);
+		expect(await page.evaluate<string>(`document.querySelector("dialog[open]").textContent`)).toContain("publishes spike/new-idea under its own name and sets its upstream");
+		await page.click("dialog[open] button[type=submit]");
+		await page.until(DIALOG_CLOSED, "the dialog closed");
+		await page.until(`document.querySelector(${JSON.stringify(UNPUBLISHED_CONTROL)}) === null`, "the control went once the branch was published");
+		await page.until(`[...document.querySelectorAll(".toast-text")].some(toast => toast.textContent === "Published spike/new-idea to origin/spike/new-idea and set its upstream.")`, "the toast named the new upstream");
+		expect(await page.evaluate<boolean>(`document.querySelector('[data-worktree-path="${UNPUBLISHED}"]').textContent.includes("local only")`)).toBe(false);
 	}, 30_000);
 });
 

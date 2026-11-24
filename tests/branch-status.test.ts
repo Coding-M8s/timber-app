@@ -93,6 +93,11 @@ beforeAll(() => {
 
 	git(primary, "worktree", "add", "-b", "local", tree("local"));
 
+	// Never published, with two commits of its own that no remote has.
+	git(primary, "worktree", "add", "-b", "fresh", tree("fresh"));
+	commit(tree("fresh"), "Fresh one");
+	commit(tree("fresh"), "Fresh two");
+
 	const deleted = published("deleted");
 	git(deleted, "push", "origin", "--delete", "deleted");
 
@@ -193,6 +198,16 @@ describe.skipIf(realTimber === null)("branch status with the installed Timber, o
 		expect(describeRowMarkers(at(repository, "deleted"))[0]!.tooltip).toBe("The upstream branch origin/deleted no longer exists, as of the last fetch.");
 	});
 
+	test("a branch never published with commits shows how many no remote has as the up arrow, counted as Git counts them", async () => {
+		const repository = await read();
+		expect(git(primary, "for-each-ref", "--format=%(upstream)", "refs/heads/fresh").trim()).toBe("");
+		expect(git(tree("fresh"), "rev-list", "--count", "HEAD", "--not", "--remotes").trim()).toBe("2");
+		expect(at(repository, "fresh").sync).toEqual({ kind: "unpublished", unpushed: 2 });
+		expect(shown(at(repository, "fresh"))).toEqual(["up 2"]);
+		// Ones with no commits of their own are counted as none, and keep local only.
+		expect(at(repository, "local").sync).toEqual({ kind: "unpublished", unpushed: 0 });
+	});
+
 	test("a clean worktree that is level with its upstream shows no markers", async () => {
 		expect(statusCounts(primary)).toEqual({ tracked: 0, untracked: 0 });
 		expect(revListCounts("main")).toEqual({ ahead: 0, behind: 0 });
@@ -210,7 +225,7 @@ describe.skipIf(realTimber === null)("branch status with the installed Timber, o
 	});
 
 	test("reading the status leaves every file, ref, and index untouched", async () => {
-		const folders = [primary, tree("changes"), tree("ahead"), tree("behind"), tree("both"), tree("deleted"), tree("moved"), tree("kept")];
+		const folders = [primary, tree("changes"), tree("ahead"), tree("behind"), tree("both"), tree("deleted"), tree("moved"), tree("kept"), tree("fresh")];
 		const before = folders.map(fingerprint);
 		const repository = await read();
 		repository.worktrees.forEach(worktree => describeRowMarkers(worktree));

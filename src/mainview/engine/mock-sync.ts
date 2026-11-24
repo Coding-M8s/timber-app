@@ -1,5 +1,7 @@
 import type { SyncState, Worktree } from "../../shared/model";
-import { type SyncActionKind, type SyncActionRequest, type SyncActionResult, type SyncTarget, describeSyncStep, syncActionSteps, syncNotRun, syncTargetOf } from "../../shared/sync-actions";
+import {
+	type SyncActionKind, type SyncActionRequest, type SyncActionResult, type SyncTarget, describeSyncStep, isNoUpstream, isPublishable, syncActionSteps, syncNotRun, syncTargetOf,
+} from "../../shared/sync-actions";
 
 /**
  * How the mock engine acts out a sync action, for the browser build and for
@@ -21,6 +23,7 @@ export const pushEndings = {
 	"remote-moved": "Timber refuses: the remote branch has moved on",
 	"offline": "Timber cannot reach the remote",
 	"sign-in": "Timber stops: the remote needs a sign-in",
+	"no-remote": "Timber refuses to publish a branch with no upstream: the remote is missing or ambiguous",
 	"failed": "Timber leaves no result, so what it did is unknown",
 } as const;
 
@@ -46,6 +49,10 @@ type Acted = { result: SyncActionResult; sync: SyncState | null };
 /** The worktree's target and tracking state when they match what the request showed, or the result that ran nothing. */
 function checkedTarget(worktree: Worktree, request: SyncActionRequest): { target: SyncTarget; sync: Extract<SyncState, { kind: "tracking" }> } | Acted {
 	const target = syncTargetOf(worktree.sync);
+	if (isNoUpstream(request.target)) {
+		const now = target === null ? "has an upstream now" : `now has the upstream ${target.upstreamRef}`;
+		return { result: syncNotRun(request.action, `The branch ${worktree.branch ?? worktree.path} ${now}, and had none when the command was shown. Look at the command again.`), sync: null };
+	}
 	if (worktree.branch === null || target === null || worktree.sync?.kind !== "tracking") {
 		return { result: syncNotRun(request.action, `The branch of ${worktree.path} has no upstream on a remote.`), sync: null };
 	}
@@ -97,7 +104,8 @@ export function actOutPull(worktree: Worktree, request: SyncActionRequest, endin
  * branch that is behind is refused as moved on whatever the ending, as
  * Timber would.
  */
-export function actOutPush(worktree: Worktree, request: SyncActionRequest, ending: SyncEnding, _at: number): Acted {
+export function actOutPush(worktree: Worktree, request: SyncActionRequest, ending: SyncEnding, at: number): Acted {
+	if (isNoUpstream(request.target) && worktree.branch !== null && worktree.sync?.kind === "unpublished") return actOutPublish(worktree, worktree.branch, ending, at);
 	const checked = checkedTarget(worktree, request);
 	if ("result" in checked) return checked;
 	const { target, sync } = checked;
@@ -124,6 +132,41 @@ export function actOutPush(worktree: Worktree, request: SyncActionRequest, endin
 			return { result: { outcome: "failed", action: "push", ran: true, failure: { command, diagnostic: "timber publish exited with code 1 and left no result, so what it did is unknown. The details below show what it printed.", output: null } }, sync: null };
 		default:
 			return { result: { outcome: "done", action: "push", moved: true, fetchFailure: null }, sync: { ...sync, ahead: 0 } };
+	}
+}
+
+/**
+ * What a push of a branch with no upstream comes to, as `timber publish`
+ * would end: the sample remote is `origin`, so the branch is published to
+ * `origin/<branch>`, level with it. A branch with no commits a remote does
+ * not have is refused before anything runs, as the main process does.
+ */
+function actOutPublish(worktree: Worktree, branch: string, ending: SyncEnding, _at: number): Acted {
+	if (!isPublishable(worktree.sync)) return { result: syncNotRun("push", `The branch ${branch} has no commits that a remote does not have.`), sync: null };
+	const [step] = syncActionSteps("push", { kind: "no-upstream" }, worktree.path);
+	const command = describeSyncStep(step!);
+	const printed = (lines: string) => ({ text: `Worktree: ${worktree.path}\nBranch: ${branch}\n${lines}`, truncated: false });
+	const published: SyncState = { kind: "tracking", upstream: `origin/${branch}`, ahead: 0, behind: 0, remote: "origin", upstreamRef: `refs/remotes/origin/${branch}` };
+	switch (ending) {
+		case "no-remote": {
+			const diagnostic = "Remote is missing or ambiguous; set remote in Timber configuration, or set the branch upstream with Git.";
+			return { result: { outcome: "refused", action: "push", reason: "timber-refused", fetchFailure: null, failure: { command, diagnostic, output: printed(`error: ${diagnostic}`) } }, sync: null };
+		}
+		case "offline": {
+			const diagnostic = "Git push to origin failed (network, remote, hook or another Git error). Nothing was forced; read Git's output above, then publish again.";
+			return { result: { outcome: "failed", action: "push", ran: true, failure: { command, diagnostic, output: printed("fatal: unable to access 'https://example.com/timber.git/': Could not resolve host: example.com") } }, sync: null };
+		}
+		case "sign-in": {
+			const diagnostic = "The remote origin needs a sign-in, and Timber never prompts for credentials. Sign in outside Timber (for example with a Git credential helper, an SSH agent or gh auth login), then publish again. Nothing was pushed.";
+			return { result: { outcome: "failed", action: "push", ran: true, failure: { command, diagnostic, output: printed("fatal: could not read Username for 'https://example.com': terminal prompts disabled") } }, sync: null };
+		}
+		case "failed":
+			return { result: { outcome: "failed", action: "push", ran: true, failure: { command, diagnostic: "timber publish exited with code 1 and left no result, so what it did is unknown. The details below show what it printed.", output: null } }, sync: null };
+		case "push-up-to-date":
+			return { result: { outcome: "done", action: "push", moved: false, fetchFailure: null }, sync: published };
+		default:
+			// A new remote branch cannot have moved on, so "remote-moved" publishes too, as do Pull's endings.
+			return { result: { outcome: "done", action: "push", moved: true, fetchFailure: null }, sync: published };
 	}
 }
 

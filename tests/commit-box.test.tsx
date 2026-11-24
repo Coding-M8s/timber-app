@@ -115,6 +115,29 @@ describe("committing from the Changes view", () => {
 		expect(markup).toContain("Nothing is staged. Stage the files to commit first.");
 	});
 
+	test("a commit on a branch never published says its hash with Push, which opens the same Push dialog", async () => {
+		// A new branch with no commits of its own yet: "local only" and no Push.
+		const repositories = structuredClone(sampleRepositories);
+		repositories[0]!.worktrees[1]!.sync = { kind: "unpublished", unpushed: 0 };
+		const engine = createMockEngine(repositories);
+		await engine.saveLayout({ ...defaultLayout(), uncommittedChanges: [FEATURE.id] });
+		engine.setFileChanges(FEATURE.path, FILES.map(mock));
+		const store = createAppStore(engine, () => () => {});
+		store.start();
+		await settle();
+		store.select(FEATURE.id);
+		store.showSidePanel("changes");
+		await store.readChanges(TIMBER, FEATURE.id);
+		expect(render(store)).not.toMatch(/aria-haspopup="dialog">Push<\/button>/);
+		store.setCommitMessage(FEATURE.id, "Start the rules");
+		const result = await store.commitStaged();
+		if (result?.outcome !== "committed") throw new Error("not committed");
+		expect(feature(store).sync).toEqual({ kind: "unpublished", unpushed: 1 });
+		const markup = render(store);
+		expect(markup).toContain(`Committed ${result.short}`);
+		expect(markup).toMatch(/title="1 commit that no remote branch has, as of the last fetch\. feat\/github-issue-lookup has not been published yet\. Click to see the Timber command, then publish it and set its upstream\."[^>]*aria-haspopup="dialog">Push<\/button>/);
+	});
+
 	test("a failing hook shows what it printed, keeps the message, and commits nothing", async () => {
 		const { engine, store } = await started();
 		engine.failCommits("lint: 2 problems in src/rules.ts");
