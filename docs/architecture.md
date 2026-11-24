@@ -4441,8 +4441,10 @@ that run when the app quits open again when it starts.
   `https` link with no spaces or control characters in it, in the person's
   browser (`openLink`, `src/bun/open-link.ts`). The link goes, as the URL
   parser writes it out, as the one argument of `xdg-open` on Linux or `open`
-  on macOS, never through a shell, because it is whatever a program printed.
-  Elsewhere nothing opens yet. One click opens a link once: xterm activates
+  on macOS, or the last argument of `rundll32.exe url.dll,FileProtocolHandler`
+  on Windows, never through a shell, because it is whatever a program
+  printed. On Windows `cmd /c start` is not used, as cmd reads `&`, `^`, and
+  `%` in the link. Elsewhere nothing opens yet. One click opens a link once: xterm activates
   only the link under the pointer, whether a program marked it (OSC 8) or it
   is a plain URL. A program that tracks the mouse, such as Claude Code in
   fullscreen, may open a clicked link itself, so a press that opens a link
