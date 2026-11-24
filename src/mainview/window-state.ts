@@ -15,7 +15,8 @@ export function readWindowState(source: WindowSource): WindowState {
  * Report how the window is now, and again whenever it is hidden, shown,
  * focused, or loses the focus. Returns a function that stops reporting.
  *
- * Whether the desktop webview fires these events on every platform is not
+ * The desktop webview was seen firing the window's focus and blur on Linux
+ * under Hyprland (docs/verification.md, issue 392); other platforms are not
  * verified. Without them the window counts as shown, so changes still come
  * through, only without the pause while hidden.
  */

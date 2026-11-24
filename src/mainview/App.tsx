@@ -21,8 +21,10 @@ import { ChopsKeeper } from "./components/settings/ChopsSection";
 import { Toasts } from "./components/Toasts";
 import { Workspace } from "./components/Workspace";
 import { StoreProvider, useAppState, useStore } from "./store/react";
-import { isRunning, sidePanelShown, sidePanelView, timberReady } from "./store/state";
+import { isRunning, sessionOnScreen, sidePanelShown, sidePanelView, timberReady } from "./store/state";
 import type { AppStore } from "./store/store";
+import { followFocusReturn } from "./focus-return";
+import { wantTerminalFocus } from "./terminal-focus";
 import { setTerminalAppearance } from "./terminal-look";
 import { applySavedTheme } from "./theme-apply";
 import { zoomKey } from "./zoom-keys";
@@ -100,6 +102,37 @@ function TerminalLookKeeper() {
 }
 
 /**
+ * Puts the keyboard back when the window gets the focus again, by the rule
+ * in ./focus-return.ts: where it was while that still shows, else the shown
+ * file's editor or the shown session's terminal. See docs/design.md.
+ */
+function FocusReturn() {
+	const store = useStore();
+	useEffect(() => followFocusReturn({
+		dialogOpen: () => {
+			const state = store.getState();
+			return state.dialog !== null || state.quitRequest !== null || document.querySelector("dialog[open]") !== null;
+		},
+		shownEditor: () => {
+			const state = store.getState();
+			if (state.tab !== "file" || state.board !== null) return null;
+			// The text of a file in Source or Edit, or a rendered Markdown file, which scrolls by keyboard.
+			return document.querySelector<HTMLElement>("#workspace-panel .cm-content, #workspace-panel .file-viewer-rendered");
+		},
+		sessionShows: () => {
+			const state = store.getState();
+			return state.board === null && sessionOnScreen(state) !== null;
+		},
+		focusTerminal: () => {
+			const worktree = store.getState().selection?.worktree;
+			// The shown terminal hears the wish at once and takes the keyboard.
+			if (worktree) wantTerminalFocus(worktree);
+		},
+	}), [store]);
+	return null;
+}
+
+/**
  * The zoom keys, anywhere in the window. The window hears them first, before
  * a terminal or a field, so they always zoom and never reach the program in
  * a terminal. See docs/architecture.md, "Interface zoom".
@@ -150,6 +183,7 @@ export function App({ store, children }: { store: AppStore; children?: ReactNode
 				<ThemeKeeper />
 				<TerminalLookKeeper />
 				<ZoomKeys />
+				<FocusReturn />
 			</div>
 		</StoreProvider>
 	);

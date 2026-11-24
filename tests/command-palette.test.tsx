@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { matchEntries, paletteEntries } from "../src/mainview/palette";
-import { runPaletteEntry } from "../src/mainview/palette-run";
+import { keyboardToTerminal, runPaletteEntry } from "../src/mainview/palette-run";
+import { takeTerminalFocus } from "../src/mainview/terminal-focus";
 import { createAppStore } from "../src/mainview/store/store";
 
 const settle = () => Bun.sleep(0);
@@ -25,6 +26,12 @@ const renderPalette = (store: ReturnType<typeof createAppStore>) => {
 	const markup = render(store);
 	const start = markup.indexOf('<dialog class="dialog palette"');
 	return markup.slice(start, markup.indexOf("</dialog>", start));
+};
+/** Open a session in the worktree at `worktree` of the sample repository at `repository`, and wait for it. */
+const withSession = async (store: Awaited<ReturnType<typeof startedStore>>, repository: number, worktree: number) => {
+	const listed = sampleRepositories[repository]!;
+	await store.openTerminal({ repository: listed.path, worktree: listed.worktrees[worktree]!.path, ...size() });
+	await settle();
 };
 const choose = (store: Awaited<ReturnType<typeof startedStore>>, label: string) => {
 	const entry = paletteEntries(store.getState()).find(candidate => candidate.label === label)!;
@@ -95,6 +102,59 @@ describe("the command palette", () => {
 		runPaletteEntry(store, match.entry, size);
 		expect(store.getState().dialog).toBeNull();
 		expect(store.getState().selection?.worktree).toBe(sampleRepositories[1]!.worktrees[1]!.id);
+	});
+
+	test("choosing a worktree asks for the keyboard in its shown terminal once the palette has closed", async () => {
+		const target = sampleRepositories[1]!.worktrees[1]!.id;
+		// The wish is the window's one; let an earlier test's choice settle and forget it.
+		await Bun.sleep(5);
+		takeTerminalFocus(target);
+		const store = await startedStore();
+		await withSession(store, 1, 1);
+		store.openDialog({ kind: "palette" });
+		const match = matchEntries(paletteEntries(store.getState()), "rate-limit")[0]!;
+		runPaletteEntry(store, match.entry, size);
+		// Not yet: a terminal on screen would try while the palette still holds the keyboard.
+		expect(takeTerminalFocus(target)).toBe(false);
+		await Bun.sleep(5);
+		expect(takeTerminalFocus(target)).toBe(true);
+	});
+
+	test("the keyboard goes to the terminal only while the Workspace tab and that worktree still show", async () => {
+		const store = await startedStore();
+		await withSession(store, 0, 1);
+		await withSession(store, 1, 0);
+		const runs: (() => void)[] = [];
+		const later = (run: () => void) => void runs.push(run);
+		store.select(FEATURE_ID);
+		keyboardToTerminal(store, FEATURE_ID, later);
+		store.select(API_MAIN_ID);
+		runs.shift()!();
+		expect(takeTerminalFocus(FEATURE_ID)).toBe(false);
+
+		store.showTab("pull-request");
+		keyboardToTerminal(store, API_MAIN_ID, later);
+		runs.shift()!();
+		expect(takeTerminalFocus(API_MAIN_ID)).toBe(false);
+
+		store.showTab("workspace");
+		keyboardToTerminal(store, API_MAIN_ID, later);
+		runs.shift()!();
+		expect(takeTerminalFocus(API_MAIN_ID)).toBe(true);
+	});
+
+	test("a worktree with no session to show, and none starting, gets no wish that would wait for a later one", async () => {
+		await Bun.sleep(5);
+		const store = await startedStore();
+		const runs: (() => void)[] = [];
+		const later = (run: () => void) => void runs.push(run);
+		const empty = sampleRepositories[1]!.worktrees[1]!.id;
+		takeTerminalFocus(empty);
+		store.select(empty);
+		expect(store.getState().terminals.some(session => session.worktree === empty)).toBe(false);
+		keyboardToTerminal(store, empty, later);
+		runs.shift()!();
+		expect(takeTerminalFocus(empty)).toBe(false);
 	});
 
 	test("Rebase opens the rebase dialog for the selected worktree", async () => {

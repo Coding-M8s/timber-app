@@ -4745,3 +4745,34 @@ on 2026-11-24, Linux x64 with Git 2.56.1 and Bun 1.4.5.
   it fails the same way on `origin/main` (78dd30c), so it is not from this
   change.
 - Not run: the desktop app, and the browser build by hand.
+
+Run for the keyboard back in the session's terminal (issue 392), on
+2026-11-24, Linux x64 (Hyprland) with Bun 1.4.5 and Electrobun 2.0.6.
+
+- `bun test tests/focus-return.test.ts tests/command-palette.test.tsx
+  tests/terminal-focus.test.ts tests/waiting.test.tsx
+  tests/window-state.test.ts tests/agent-status.test.tsx
+  tests/worktree-handoff-store.test.ts`: 99 passed, 0 failed.
+  `tests/command-palette.test.tsx` alone was run 5 times in a row with 0
+  failures.
+- `bun test tests/changes-panel.test.tsx tests/chops-panel.test.tsx` and the
+  issues board tests, which run palette entries and chops: 91 passed, 0
+  failed.
+- `bun test tests/focus-return-browser.test.ts` (headless Chrome over the
+  mock engine; the window's own `blur` and `focus` events are fired in the
+  page): 10 passed, 0 failed, including arrows in the sidebar and on the
+  session chips keeping the keyboard there. An earlier 9-test version, with
+  `src/mainview/App.tsx` and `src/mainview/palette-run.ts` as on
+  `origin/main`, failed 4: the palette on the worktree already shown, both
+  returns to the window, and the return to a file in the editor.
+- `bun run typecheck`: exited 0.
+- The desktop webview's focus events: `bun run dev`, with a temporary log of
+  each `attend` the main process heard, logged `focused` going true and
+  false while the dev window opened and other windows took the focus during
+  ordinary use of the desktop. So the page does hear the window's `focus`
+  and `blur` on Linux under Hyprland. The scripted switch with `hyprctl
+  dispatch focuswindow` failed, as this Hyprland takes Lua dispatches, so
+  no switch was made on purpose. Not observed: where the keyboard lands in
+  the desktop window after Alt+Tab or a click back, and whether the
+  window's `focus` comes before the click's `pointerdown`. macOS and Windows
+  were not tried.
