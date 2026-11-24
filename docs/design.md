@@ -926,7 +926,10 @@ logins. The app never reads a tracker login and never signs in.
   (see Markdown reader).
 - Editor: the text with line numbers, in the terminal's font, colored by
   its language, the caret's line marked, and a status line with the
-  caret's line and column, the line count, and the language. It is for
+  caret's line and column, the line count, and the language. With the
+  keyboard in it, clicked or tabbed into, the caret and its marked line
+  show where typing goes; no outline is drawn around the editor, in Edit
+  or in Markdown's Source. It is for
   small fixes, and does only these things: typing, undo and redo (Ctrl+Z,
   Ctrl+Shift+Z or Ctrl+Y; Cmd on macOS), search (Ctrl+F), Save (Ctrl+S),
   matching and closing brackets and quotes, and Ctrl+/ (Cmd+/) to toggle
@@ -961,7 +964,8 @@ logins. The app never reads a tracker login and never signs in.
   interface's font, with a Rendered / Source / Edit switch in the File tab's
   title line. Source is the editor above, read-only, and Edit the editor
   itself, both colored as Markdown, so switching does not change how the
-  text looks. Saving, unsaved edits, and changes
+  text looks. Rendered has no caret, so it shows a focus outline when
+  reached with Tab, and none when clicked. Saving, unsaved edits, and changes
   on disk work the same for every file: Save (Ctrl+S, Cmd+S on macOS) and
   Discard; once saved, Discard reads "Done". "Unsaved" shows while the text
   differs from the file. The edits are kept when another tab or worktree

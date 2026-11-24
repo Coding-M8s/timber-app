@@ -25,6 +25,14 @@ const KEYWORD_COLOR = `(() => {
 	const word = [...document.querySelectorAll(".cm-line span")].find(span => span.textContent === "const");
 	return word ? getComputedStyle(word).color : "none";
 })()`;
+/** The outline around the editor and around its text, which CodeMirror would ring by itself. */
+const EDITOR_OUTLINE = `["cm-editor", "cm-content"].map(name => getComputedStyle(document.querySelector("." + name)).outlineStyle).join(" ")`;
+/** The caret is drawn and the caret's line is marked. */
+const CARET_SHOWS = `(() => {
+	const line = document.querySelector(".cm-activeLine");
+	return document.querySelector(".cm-cursor") !== null && line !== null && getComputedStyle(line).backgroundColor !== "rgba(0, 0, 0, 0)";
+})()`;
+const RENDERED_OUTLINE = `getComputedStyle(document.querySelector(".file-viewer-rendered")).outlineStyle`;
 const rgb = (color: string) => {
 	const { r, g, b } = parseColor(color)!;
 	return `rgb(${r}, ${g}, ${b})`;
@@ -37,6 +45,26 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the edito
 	beforeAll(async () => {
 		page = await openSidebarPage();
 	}, 60_000);
+
+	/** Presses Tab, a few times at most, until the element with this class name has the keyboard. */
+	async function tabTo(className: string) {
+		for (let step = 0; step < 40 && await page.evaluate<string>(ACTIVE) !== className; step++) await page.press("Tab");
+		expect(await page.evaluate<string>(ACTIVE)).toBe(className);
+	}
+
+	/** Opens a Markdown file, which shows rendered, in a theme so the focus colors are set. */
+	async function openMarkdown() {
+		// The saved choice may already be dark, and saving it again changes nothing; light first puts a theme on.
+		await page.evaluate(`${STORE}.savePreferences({ theme: { mode: "fixed", theme: "timber-light" } })`);
+		await page.evaluate(`${STORE}.savePreferences({ theme: { mode: "fixed", theme: "timber-dark" } })`);
+		await page.until(`getComputedStyle(document.documentElement).getPropertyValue("--focus") !== ""`, "the theme was put on");
+		await page.evaluate(`(() => {
+			const feature = ${STORE}.getState().repositories[0].worktrees[1];
+			${ENGINE}.setWorktreeFile(feature.path, "notes.md", "# Notes\\n\\nA line to read.\\n");
+			${STORE}.openFile(feature.id, "notes.md");
+		})()`);
+		await page.until(`document.querySelector(".file-viewer-rendered") !== null`, "the Markdown file showed rendered");
+	}
 
 	afterAll(async () => {
 		await page?.close();
@@ -230,5 +258,42 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the edito
 		test("the window's own keys still work from the editor: Ctrl+Shift+P opens the palette", async () => {
 		await page.press("P", "ctrlShift");
 		await page.until(`${STORE}.getState().dialog?.kind === "palette"`, "the palette opened");
+	}, 30_000);
+
+	test("draws no outline around the editor, clicked or tabbed into, in either theme; the caret and its line show where typing goes", async () => {
+		for (const theme of ["timber-light", "timber-dark"]) {
+			await page.evaluate(`${STORE}.savePreferences({ theme: { mode: "fixed", theme: "${theme}" } })`);
+			await page.click(".cm-content");
+			await page.until(`document.querySelector(".cm-editor").classList.contains("cm-focused")`, "the click gave the editor the keyboard");
+			expect(await page.evaluate<string>(EDITOR_OUTLINE)).toBe("none none");
+			expect(await page.evaluate<boolean>(CARET_SHOWS)).toBe(true);
+			// Back to the title line, then Tab until the text has the keyboard again.
+			await page.click(".file-viewer-title button");
+			await tabTo("cm-content");
+			await page.until(`document.querySelector(".cm-editor").classList.contains("cm-focused")`, "Tab gave the editor the keyboard");
+			expect(await page.evaluate<string>(EDITOR_OUTLINE)).toBe("none none");
+			expect(await page.evaluate<boolean>(CARET_SHOWS)).toBe(true);
+		}
+	}, 30_000);
+
+	test("Markdown's read-only Source draws no outline either, and marks the caret's line", async () => {
+		await openMarkdown();
+		await page.evaluate(`${STORE}.showFileAs(${STORE}.getState().selection.worktree, "source")`);
+		await page.until(`document.querySelector(".cm-content") !== null`, "Source showed the editor");
+		await page.click(".cm-content");
+		await page.until(`document.querySelector(".cm-editor").classList.contains("cm-focused")`, "the click gave Source the keyboard");
+		expect(await page.evaluate<string>(EDITOR_OUTLINE)).toBe("none none");
+		expect(await page.evaluate<boolean>(CARET_SHOWS)).toBe(true);
+	}, 30_000);
+
+	test("rendered Markdown shows a focus outline when tabbed to, and none when clicked", async () => {
+		await openMarkdown();
+		await page.click(".file-viewer-rendered");
+		expect(await page.evaluate<string>(ACTIVE)).toBe("file-viewer-body file-viewer-rendered");
+		expect(await page.evaluate<string>(RENDERED_OUTLINE)).toBe("none");
+		await page.click(".file-viewer-title button");
+		await tabTo("file-viewer-body file-viewer-rendered");
+		expect(await page.evaluate<boolean>(`document.activeElement.matches(":focus-visible")`)).toBe(true);
+		expect(await page.evaluate<string>(RENDERED_OUTLINE)).toBe("solid");
 	}, 30_000);
 });

@@ -7837,9 +7837,9 @@ pre:focus-visible {
 	color: var(--text);
 }
 
+/* No ring around the editor, for Edit and for Markdown's Source: the caret and its marked line show where typing goes. CodeMirror would draw its own dotted one. */
 .text-editor-host .cm-editor.cm-focused {
-	outline: 2px solid var(--focus);
-	outline-offset: -2px;
+	outline: none;
 }
 
 .text-editor-host .cm-scroller {
