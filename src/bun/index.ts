@@ -29,6 +29,7 @@ import { createChops } from "./chops";
 import { createSavedChopApprovals } from "./chop-approvals";
 import { createChopsWatcher } from "./chops-watcher";
 import { createFileChanges } from "./file-changes";
+import { createTextGenerator } from "./generate-text";
 import { createGitWrites } from "./git-writes";
 import { createWorktreeFiles } from "./worktree-files";
 import { createWorktreeFolders } from "./worktree-folders";
@@ -467,6 +468,16 @@ const statusHooks = createStatusHookFiles({
 	// OpenCode's plugins folder moves with XDG_CONFIG_HOME; the app's own environment is what its sessions start with.
 	xdgConfigHome: process.env.XDG_CONFIG_HOME,
 });
+// An agent that writes a commit message or a pull request's text, run once, outside every worktree (see ./generate-text.ts).
+const textGenerator = createTextGenerator({
+	findRepository: path => repositories.findRecent(path),
+	changes: fileChanges,
+	settings: async () => {
+		const { agents, generateWith } = await preferences.load();
+		return { agents, choice: generateWith };
+	},
+	locate: agent => terminals.locateAgent(agent),
+});
 // Ports are read for the selected worktree on request only, never on a timer (see ./ports.ts).
 const ports = createPorts({ listWorktrees: createWorktreePaths({ targets: () => watchTargets }), leaders: () => terminals.leaders(), attention: () => attention });
 
@@ -642,6 +653,9 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			unstageFiles: request => fileChanges.unstage(request),
 			discardFiles: request => fileChanges.discard(request),
 			commitStaged: request => fileChanges.commit(request),
+			// Runs the agent picked in the saved Settings, never one the window names. It holds file contents: never log it (see ./generate-text.ts).
+			generateText: request => textGenerator.generate(request),
+			stopGenerating: async ({ id }) => textGenerator.stop(id),
 			// Reads one file, only inside a worktree Timber lists, links included (see ./worktree-files.ts). It holds file contents: never log it.
 			readWorktreeFile: request => worktreeFiles.read(request),
 			readFileOutside: request => worktreeFiles.readOutside(request),
@@ -739,6 +753,8 @@ function guardQuit(event: unknown): void {
 		sessionLayout.save();
 		// The app goes away in a moment, so there is no time to wait for anything to end by itself.
 		terminals.killAll();
+		// Its agent is in a process group of its own, so it would outlive the app.
+		textGenerator.stopAll();
 		alerts.stop();
 		void desktopNotices.stopAll();
 		sounds.stopAll();

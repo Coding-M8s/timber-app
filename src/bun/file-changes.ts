@@ -7,6 +7,7 @@ import {
 	parseStatus, baseName, readDiffOutput, relativePathProblem, sameFileChange, savedBaseRef, sinceBase, statusArguments, uncommittedContentArguments, withChangedContent, withLineCounts,
 } from "../shared/file-changes";
 import { type IndexAction, type IndexWriteRequest, type IndexWriteResult, canWriteIndex, indexCommand } from "../shared/index-writes";
+import { type GenerateKind, MAX_GENERATE_LOG_BYTES, type WorktreePart, NO_COMMITS_AHEAD, commitGenerateBlocker, cutDiff } from "../shared/generate-text";
 import { type DiscardRequest, type DiscardResult, canDiscard, discardCommand } from "../shared/discard-files";
 import type { GitWritePlan, GitWriteRan, GitWrites } from "./git-writes";
 import type { Worktree } from "../shared/model";
@@ -55,7 +56,31 @@ export interface FileChanges {
 	unstage(request: IndexWriteRequest): Promise<IndexWriteResult>;
 	discard(request: DiscardRequest): Promise<DiscardResult>;
 	commit(request: CommitRequest): Promise<CommitResult>;
+	/**
+	 * What an agent is given to write text from, read-only, or why there is
+	 * nothing to give: the staged diff, or the commit messages and the
+	 * committed diff of the branch since it left its base. `base` is the pull
+	 * request form's, as a branch on the remote, or null for the saved one.
+	 */
+	generationInput(kind: GenerateKind, worktree: Worktree, base: string | null): Promise<GenerationInput>;
+	/** What an agent must not change, as one text for each part, to compare before and after. A part Git could not read is null. Read-only. */
+	worktreeState(worktree: string): Promise<WorktreeState>;
 }
+
+export type GenerationInput = { ok: true; data: string; leftOut: number | null } | { ok: false; message: string };
+
+export type WorktreeState = Record<WorktreePart, string | null>;
+
+/** Two reads of a worktree that differ, in the order they are told. A part that could not be read in either counts as changed: nothing shows that it is not. */
+export function changedParts(before: WorktreeState, after: WorktreeState): WorktreePart[] {
+	return (["files", "index", "HEAD", "refs", "stash"] as const).filter(part => before[part] === null || before[part] !== after[part]);
+}
+
+/** A whole diff is read up to this many bytes before it is cut: far more than an agent is given. */
+const MAX_GENERATE_READ_BYTES = 8 * 1024 * 1024;
+
+/** A whole diff as `diffArguments` gives one file's, with renames found, and nothing of the person's config run: no external diff, no text conversion. */
+const WHOLE_DIFF = ["-c", "diff.autoRefreshIndex=false", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "-M"];
 
 type GitRun = { ok: true; text: string; truncated: boolean } | { ok: false; message: string };
 
@@ -422,7 +447,89 @@ export function createFileChanges(dependencies: FileChangesDependencies): FileCh
 		return writes.write({ repository, worktree, shown, consequence: NOT_WRITTEN[action], plan: listed => planIndexWrite(action, request, listed.path) });
 	}
 
+	/** The branch point to describe a pull request from: the form's base, a branch on the remote, or the saved base. */
+	async function pullRequestBase(worktree: Worktree, base: string | null): Promise<{ ok: true; commit: string } | { ok: false; message: string }> {
+		if (base === null) {
+			const saved = await baseOf(worktree);
+			return saved.usable ? { ok: true, commit: saved.commit } : { ok: false, message: saved.reason };
+		}
+		const missing = `The base ${base} is not a branch on the remote in this repository. Fetch, or check the Base field.`;
+		// Only ever a remote-tracking ref, by its full name, so what is typed cannot be an option or another revision.
+		if (base === "" || /[\0\s~^:?*[\\]|\.\.|@\{/.test(base)) return { ok: false, message: missing };
+		const found = await commitOf(worktree.path, `refs/remotes/${base}`);
+		if (!found.ok) return { ok: false, message: `Git could not read the base ${base}: ${found.message}` };
+		if (found.commit === null) return { ok: false, message: missing };
+		const answer = await run(worktree.path, ["merge-base", found.commit, "HEAD"], HASH_BYTES, [0, 1]);
+		if (!answer.ok) return { ok: false, message: `Git could not find where this branch left ${base}: ${answer.message}` };
+		const commit = answer.text.trim();
+		return isCommitHash(commit) ? { ok: true, commit } : { ok: false, message: `This branch and ${base} share no history.` };
+	}
+
+	async function generationInput(kind: GenerateKind, worktree: Worktree, base: string | null): Promise<GenerationInput> {
+		const refuse = (message: string): GenerationInput => ({ ok: false, message });
+		const [operation, detached] = await Promise.all([operationNow(worktree.path), detachedNow(worktree.path)]);
+		if (!operation.ok) return refuse(`Git could not say whether a merge or rebase is in progress: ${operation.message}`);
+		if (!detached.ok) return refuse(`Git could not read this worktree's branch: ${detached.message}`);
+		let args: string[];
+		let log = "";
+		if (kind === "commit") {
+			const staged = await stagedNow(worktree.path);
+			if (!staged.ok) return refuse(`Git could not say what is staged: ${staged.message}`);
+			const blocker = commitGenerateBlocker({ operation: operation.operation, detached: detached.detached, staged: staged.staged ? 1 : 0 });
+			if (blocker !== null) return refuse(blocker);
+			args = [...WHOLE_DIFF, "--cached", "--"];
+		} else {
+			if (detached.detached) return refuse("HEAD is detached, so there is no branch to open a pull request from.");
+			const from = await pullRequestBase(worktree, base);
+			if (!from.ok) return refuse(from.message);
+			const range = `${from.commit}..HEAD`;
+			const commits = await run(worktree.path, ["log", "--no-color", "--no-show-signature", "--no-notes", "--no-decorate", "--no-mailmap", "--format=%B", range, "--"], MAX_GENERATE_LOG_BYTES, [0]);
+			if (!commits.ok) return refuse(`Git could not read this branch's commits: ${commits.message}`);
+			const count = await run(worktree.path, ["rev-list", "--count", range, "--"], HASH_BYTES, [0]);
+			if (!count.ok) return refuse(`Git could not count this branch's commits: ${count.message}`);
+			if (count.text.trim() === "0") return refuse(NO_COMMITS_AHEAD);
+			log = `Commit messages, newest first:\n${commits.text}\n\nDiff:\n`;
+			args = [...WHOLE_DIFF, from.commit, "HEAD", "--"];
+		}
+		const diff = await run(worktree.path, args, MAX_GENERATE_READ_BYTES, [0]);
+		if (!diff.ok) return refuse(`Git could not read the diff: ${diff.message}`);
+		const cut = cutDiff(diff.text, diff.truncated);
+		return { ok: true, data: `${log}${cut.text}`, leftOut: diff.truncated ? null : cut.leftOut };
+	}
+
+	async function worktreeState(worktree: string): Promise<WorktreeState> {
+		const read = async (args: string[]) => {
+			const answer = await run(worktree, args, MAX_STATUS_BYTES, [0]);
+			return answer.ok && !answer.truncated ? answer.text : null;
+		};
+		const [status, index, head, branch, refs, stash] = await Promise.all([
+			statusOnly(worktree),
+			read(["ls-files", "--stage", "-z"]),
+			read(["rev-parse", "--verify", "--quiet", "HEAD"]).then(text => text ?? "none"),
+			run(worktree, ["symbolic-ref", "-q", "HEAD"], HASH_BYTES, [0, 1]),
+			// A branch checked out in another worktree moves by what is done there, and a fetch moves only remote-tracking refs: neither is told.
+			read(["for-each-ref", "--format=%(refname)%00%(objectname)%00%(worktreepath)", "refs/heads", "refs/tags"]),
+			run(worktree, ["rev-parse", "--verify", "--quiet", "refs/stash"], HASH_BYTES, [0, 1]),
+		]);
+		const own = branch.ok ? branch.text.trim() : "";
+		const told = refs?.split("\n").filter(line => {
+			const [name, , elsewhere] = line.split("\0");
+			return line !== "" && (name === own || !elsewhere);
+		}).join("\n") ?? null;
+		const listedFiles = status.ok && !status.truncated ? await inBatches(status.files, async file => `${file.area}\0${file.kind}\0${file.previousPath ?? ""}\0${file.path}\0${await stamp(worktree, file.path)}`) : null;
+		return {
+			"files": listedFiles === null ? null : listedFiles.join("\n"),
+			index,
+			"HEAD": branch.ok ? `${own} ${head}` : null,
+			"refs": told,
+			"stash": stash.ok ? stash.text.trim() : null,
+		};
+	}
+
 	return {
+		generationInput,
+		worktreeState,
+
 		async read(request) {
 			const listed = await findListedWorktree(findRepository, request.repository, request.worktree, NOT_READ);
 			if (!listed.ok) return { outcome: "not-listed", message: listed.message };

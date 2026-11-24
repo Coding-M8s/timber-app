@@ -755,6 +755,21 @@ logins. The app never reads a tracker login and never signs in.
   no command, and only opens links. Offline, sign-in needed, not on
   GitHub, or an answer that could not be read is said in its place with
   the reason, never as a dialog. It follows each new read.
+- An agent can write the form's text. Generate, with a spark, sits inside
+  the Description box at its lower right and writes the title and the
+  description; Stop takes its place, with a progress bar and who is writing
+  under it. "Generate and create" is beside Publish and open. Text that was
+  typed is never replaced without agreeing: what the agent wrote then waits
+  in a panel with Replace mine and Keep mine, or Use it anyway and Discard
+  it when the worktree changed meanwhile. A failure shows the agent's
+  message. A disabled button gives its reason in the tooltip, which
+  otherwise shows the exact command.
+- "Create pull request", in the commit box, and "Generate and create" open
+  one dialog: the agent writes, then "Open this pull request?" shows the
+  title and description, editable, the files that are not committed, links,
+  mentions, images, HTML, and closing words under "Check before you
+  publish", and the `timber pr` command, with Cancel and Publish and open.
+  Nothing is published before that. Cancel leaves the form as it was.
 - A worktree on a branch with no pull request yet gets a form in the tab,
   "Open a pull request": Title (the last commit's subject, else the
   branch; with a saved Jira or Linear link it starts with the issue's key,
@@ -853,6 +868,14 @@ logins. The app never reads a tracker login and never signs in.
   and the keyboard goes to the file that took the discarded one's place. A
   failure, such as a held `index.lock`, stays in the dialog with Git's
   message.
+- Generate, with a spark, sits inside the commit message box at its lower
+  right and writes a message from the staged diff, with Stop in its place
+  while it runs. Above the box is one more button, "Create pull request",
+  which opens the one-click dialog of the Pull request tab. The form itself
+  is in that tab only.
+- Settings, Agents ends with "Generate text with": First agent found that
+  can, or one of the saved agents that can, the command it runs, what it
+  keeps or can still reach, and the fixed instructions, folded.
 - With Uncommitted, the top of the Changes view has a commit message box
   and Commit, which commits only what is staged; it never stages anything
   itself and never amends. Ctrl+Enter, or Cmd+Enter on macOS, commits from

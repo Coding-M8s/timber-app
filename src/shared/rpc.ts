@@ -9,6 +9,7 @@ import type { ForcePushSeen, RepositoryFetch } from "./git-fetch";
 import type { FileChangesRequest, FileDiffRequest } from "./file-changes";
 import type { IndexWriteRequest } from "./index-writes";
 import type { CommitRequest } from "./commit-staged";
+import type { GenerateTextRequest } from "./generate-text";
 import type { DiscardRequest } from "./discard-files";
 import type { OutsideFileRequest, WorktreeFileRequest, WorktreeFileWriteRequest } from "./worktree-files";
 import type { WorktreeFolderChange, WorktreeFolderRequest, WorktreeFolderWatch } from "./worktree-folders";
@@ -136,6 +137,9 @@ export type AppRPC = {
 			discardFiles: { params: DiscardRequest; response: Answer<"discardFiles"> };
 			/** Answers when Git and the hooks have ended, which the main process allows up to ten minutes. */
 			commitStaged: { params: CommitRequest; response: Answer<"commitStaged"> };
+			/** Answers when the agent has ended, which the main process allows up to five minutes. */
+			generateText: { params: GenerateTextRequest; response: Answer<"generateText"> };
+			stopGenerating: { params: { id: string }; response: Answer<"stopGenerating"> };
 			readWorktreeFile: { params: WorktreeFileRequest; response: Answer<"readWorktreeFile"> };
 			readFileOutside: { params: OutsideFileRequest; response: Answer<"readFileOutside"> };
 			writeWorktreeFile: { params: WorktreeFileWriteRequest; response: Answer<"writeWorktreeFile"> };

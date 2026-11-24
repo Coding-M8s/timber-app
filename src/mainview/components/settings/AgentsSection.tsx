@@ -3,9 +3,10 @@ import { type AgentSetting, configFolderProblem } from "../../../shared/agent";
 import type { AgentLocation } from "../../../shared/agent-lookup";
 import { SESSION_NAME_LIMIT } from "../../../shared/terminal";
 import {
-	AGENT_CHOICES, type AgentDraft, type AgentDraftChange, addAgentDraft, agentDraftsOf, agentLookupLine, agentsDraftModel, editAgentDraft, presetsToAdd, removeAgentDraft,
+	AGENT_CHOICES, type AgentDraft, type AgentDraftChange, addAgentDraft, agentDraftsOf, agentLookupLine, agentsDraftModel, generateOptions, editAgentDraft, presetsToAdd, removeAgentDraft,
 } from "../../agent-format";
 import type { AgentId } from "../../../shared/agent-registry";
+import { GENERATE_INSTRUCTIONS } from "../../../shared/generate-text";
 import { useAppState, useStore } from "../../store/react";
 import { type SectionSave, SettingsSavingContext, SettingsSection, useDraftSection } from "./SettingsSection";
 import type { StatusHookRequest, StatusHookResult, StatusHookView } from "../../../shared/status-hooks";
@@ -22,6 +23,8 @@ export interface AgentsSectionViewProps {
 	onEdit: (key: string, change: AgentDraftChange) => void;
 	onRemove: (key: string) => void;
 	onSave: () => void;
+	/** The row that writes commit messages and pull requests' text, by its key, or "" for the first found that can, and whether it differs from what is saved. The choice is not drawn when left out. */
+	generateWith?: { key: string; changed: boolean; onChange: (key: string) => void };
 	/** How each saved agent reports its status (`AppState.statusHooks`), by name. None shown when left out. */
 	hooks?: readonly StatusHookView[] | null;
 	/** Turn on or take out a hook as shown. */
@@ -39,7 +42,7 @@ function viewOf(agent: AgentSetting | undefined, saved: readonly AgentSetting[],
 const blank = (draft: AgentDraft) => draft.name.trim() === "" && draft.command.trim() === "";
 
 /** The Agents section as drawn from its data, so it can be tested without a window. */
-export function AgentsSectionView({ drafts, saved, locations, save, onAdd, onEdit, onRemove, onSave, hooks, onHook, onCopy }: AgentsSectionViewProps) {
+export function AgentsSectionView({ drafts, saved, locations, save, onAdd, onEdit, onRemove, onSave, generateWith, hooks, onHook, onCopy }: AgentsSectionViewProps) {
 	const { reportSaving } = useContext(SettingsSavingContext);
 	// The hook dialog shows the hook of an agent as last read, so it follows every answer.
 	const [dialog, setDialog] = useState<{ name: string; action: HookAction; opener: { button: string; line: string }; problem: string | null; running: boolean } | null>(null);
@@ -101,7 +104,7 @@ export function AgentsSectionView({ drafts, saved, locations, save, onAdd, onEdi
 			title="Agents"
 			description="Coding agents that the + menu of a worktree's sessions starts, each in a session of its own in the worktree's folder, beside its terminals. The app starts the command without a shell and never reads or answers what an agent prints."
 			save={save}
-			canSave={model.canSave}
+			canSave={model.canSave || (generateWith?.changed === true && model.rows.every(row => row.problem === null) && model.error === null)}
 			onSave={onSave}
 		>
 			<p id={hintId} className="field-hint">
@@ -225,6 +228,30 @@ export function AgentsSectionView({ drafts, saved, locations, save, onAdd, onEdi
 					onSwitch={action => setDialog({ ...dialog, action, problem: null })}
 				/>
 			)}
+			{generateWith && (() => {
+				const options = generateOptions(drafts, model.agents);
+				const shown = options.find(option => option.key === generateWith.key) ?? (generateWith.key === "" ? options[0] : undefined);
+				return (
+					<div className="field agent-generate">
+						<label className="field-label" htmlFor={`${idPrefix}-generate`}>Generate text with</label>
+						<select id={`${idPrefix}-generate`} className="field-input" value={generateWith.key} onChange={event => generateWith.onChange(event.target.value)}>
+							<option value="">First agent found that can</option>
+							{options.map(option => <option key={option.key} value={option.key}>{option.name}</option>)}
+							{generateWith.key !== "" && shown === undefined && <option value={generateWith.key}>An agent that cannot</option>}
+						</select>
+						<p className="field-hint">
+							Writes commit messages, and pull requests' titles and descriptions, when you press Generate or Create pull request. The diff goes to that agent's provider.
+							Only its executable and config folder are used, never the other words of its command. A picked agent that is not found is never replaced by another.
+						</p>
+						{shown && <pre className="dialog-command" aria-label="Command that writes text">{shown.command}</pre>}
+						{shown?.caveat && <p className="field-hint">{shown.caveat}</p>}
+						<details>
+							<summary className="field-hint">The instructions it is given</summary>
+							<pre className="commit-output">{`${GENERATE_INSTRUCTIONS.commit.join("\n")}\n\n${GENERATE_INSTRUCTIONS["pull-request"].join("\n")}`}</pre>
+						</details>
+					</div>
+				);
+			})()}
 			<div className="agent-add">
 				{presets.map(preset => (
 					<button key={preset.name} type="button" className="button quiet" onClick={() => add(preset)}>Add {preset.name}</button>
@@ -238,7 +265,7 @@ export function AgentsSectionView({ drafts, saved, locations, save, onAdd, onEdi
 /** The Agents section of Settings: the list of agents, edited row by row and saved with its own Save. */
 export function AgentsSection() {
 	const store = useStore();
-	const { preferences: { agents: saved }, agentLocations, statusHooks } = useAppState();
+	const { preferences: { agents: saved, generateWith }, agentLocations, statusHooks } = useAppState();
 	// Looked for again whenever the section shows, as one may have been installed since. Nothing runs.
 	// Each agent's status hook is read again too: a file may have changed since. Nothing is written.
 	useEffect(() => {
@@ -250,12 +277,21 @@ export function AgentsSection() {
 	const fromSaved = shown.saved === saved ? shown.drafts : agentDraftsOf(saved);
 	if (shown.saved !== saved) setShown({ saved, drafts: fromSaved });
 	// The rows only ever differ from what is saved by what the person did.
-	const { draft: drafts, save, change, commit } = useDraftSection(fromSaved);
+	const { draft: drafts, save, change, commit, reset } = useDraftSection(fromSaved);
+
+	// The row picked to write text, by its key, so a rename keeps it and a removal clears it. Null while not changed.
+	const [pickedKey, setPickedKey] = useState<string | null>(null);
+	const savedKey = generateWith === "" ? "" : fromSaved.find(draft => draft.name === generateWith)?.key ?? "gone";
+	const chosen = pickedKey ?? savedKey;
+	const generateKey = chosen === "" || drafts.some(draft => draft.key === chosen) ? chosen : pickedKey === null && savedKey === "gone" ? "gone" : "";
+	const { agents: draftAgents } = agentsDraftModel(drafts, saved);
+	const generateName = generateKey === "" ? "" : generateKey === "gone" ? generateWith : draftAgents[drafts.findIndex(draft => draft.key === generateKey)]?.name ?? "";
+	const generateChanged = generateName !== generateWith;
 
 	const onSave = async () => {
-		const { agents, canSave } = agentsDraftModel(drafts, saved);
-		if (!canSave) return;
-		await commit({ agents });
+		const { agents, canSave, rows, error } = agentsDraftModel(drafts, saved);
+		if (!canSave && !(generateChanged && error === null && rows.every(row => row.problem === null))) return;
+		await commit({ agents, generateWith: generateName }, () => setPickedKey(null));
 	};
 
 	return (
@@ -268,6 +304,14 @@ export function AgentsSection() {
 			onEdit={(key, edit) => change(editAgentDraft(drafts, key, edit))}
 			onRemove={key => change(removeAgentDraft(drafts, key))}
 			onSave={() => void onSave()}
+			generateWith={{
+				key: generateKey,
+				changed: generateChanged,
+				onChange: key => {
+					setPickedKey(key);
+					reset();
+				},
+			}}
 			hooks={statusHooks}
 			onHook={(action, request) => action === "install" ? store.installStatusHook(request) : store.removeStatusHook(request)}
 			onCopy={text => void store.copyText(text)}

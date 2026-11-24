@@ -40,6 +40,22 @@ export interface AgentResume {
 	conversations: { store: ConversationStore; folderVariable: string; folder: string; xdgFolder?: string };
 }
 
+/**
+ * How an agent runs once to write text, with its tools switched off as far
+ * as it lets the app: only these arguments after its executable, never the
+ * ones typed in Settings, in a new empty folder, with the prompt on standard
+ * input and the answer on standard output.
+ */
+export interface AgentGenerate {
+	arguments: readonly string[];
+	/** Files written to that folder first, such as a settings file that denies every tool. Paths are parts. */
+	files: readonly { path: readonly string[]; text: string }[];
+	/** The version this was run with, and when. */
+	checked: string;
+	/** What the agent keeps or can still reach that the person should know, or null for nothing. Settings says it. */
+	caveat: string | null;
+}
+
 /** The layouts of conversation folders the app can read. */
 export type ConversationStore = "claude-projects" | "codex-sessions" | "grok-sessions" | "cursor-chats";
 
@@ -103,6 +119,11 @@ export interface AgentDefinition {
 	 * when not known yet. Nothing reads these yet.
 	 */
 	signIn: { status: readonly string[] | null; login: readonly string[] | null };
+	/**
+	 * How it runs once, without a session, to write text (./generate-text.ts),
+	 * or null when that is not known yet. Given only after running it.
+	 */
+	generate: AgentGenerate | null;
 	/**
 	 * How it reports its status: the Program Status Protocol (OSC 7501), a
 	 * status hook the person turns on in Settings, Agents, or not at all, and
@@ -203,6 +224,13 @@ const ROWS = [
 			conversations: { store: "claude-projects", folderVariable: "CLAUDE_CONFIG_DIR", folder: ".claude" },
 		},
 		signIn: { status: null, login: null },
+		generate: {
+			// `--tools ""` leaves no tool; the rest leaves out settings, hooks, MCP servers, CLAUDE.md, and the saved conversation.
+			arguments: ["-p", "--tools", "", "--restricted", "--safe-mode", "--strict-mcp-config", "--no-session-persistence"],
+			files: [],
+			checked: "Claude Code 2.1.331 on 2026-11-24",
+			caveat: null,
+		},
 		status: { source: "osc-7501", app: "claude", reports: ["working", "blocked", "done"] },
 	},
 	{
@@ -235,6 +263,17 @@ const ROWS = [
 			conversations: { store: "codex-sessions", folderVariable: "CODEX_HOME", folder: ".codex" },
 		},
 		signIn: { status: null, login: null },
+		generate: {
+			// Codex has no switch for every tool: the read-only sandbox stays under the ones that remain.
+			arguments: [
+				"exec", "--sandbox", "read-only", "--ephemeral", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules", "--color", "never",
+				"--disable", "shell_tool", "--disable", "unified_exec", "--disable", "apps", "--disable", "plugins", "--disable", "image_generation", "--disable", "multi_agent",
+				"-c", 'web_search="disabled"', "-",
+			],
+			files: [],
+			checked: "Codex CLI 0.169.0 on 2026-11-24",
+			caveat: "Codex cannot switch off every tool. Its shell, web search, and apps are off, and a read-only sandbox is under the rest.",
+		},
 		status: { source: "osc-7501", app: "codex", reports: ["working", "done"] },
 	},
 	{
@@ -272,6 +311,16 @@ const ROWS = [
 			conversations: { store: "cursor-chats", folderVariable: "CURSOR_CONFIG_DIR", folder: ".cursor", xdgFolder: "cursor" },
 		},
 		signIn: { status: null, login: null },
+		generate: {
+			// Ask mode alone still reads files and runs commands, so a file in the folder denies every tool.
+			arguments: ["-p", "--mode", "ask", "--sandbox", "enabled", "--trust", "--output-format", "text"],
+			files: [{
+				path: [".cursor", "cli.json"],
+				text: `${JSON.stringify({ permissions: { allow: [], deny: ["Shell(*)", "Read(**)", "Read(/**)", "Write(**)", "Write(/**)", "WebFetch(*)", "Mcp(*:*)"] } })}\n`,
+			}],
+			checked: "Cursor CLI 2026.11.22-e9042b2 on 2026-11-24",
+			caveat: "Cursor CLI has no switch for its tools: a settings file denies them. It may keep the chat, and your MCP servers may connect.",
+		},
 		/*
 		 * Cursor CLI writes no OSC 7501. Checked with 2026.11.22-e9042b2 on
 		 * 2026-11-22 by running it interactively: it reads its user hooks from
@@ -326,6 +375,7 @@ const ROWS = [
 		},
 		resume: null,
 		signIn: { status: null, login: null },
+		generate: null,
 		/*
 		 * Gemini CLI writes no OSC 7501: no `]7501` in its 0.70.0 package.
 		 * Not run: its hooks were read from that package's source and docs on
@@ -392,6 +442,13 @@ const ROWS = [
 			conversations: { store: "grok-sessions", folderVariable: "GROK_HOME", folder: ".grok" },
 		},
 		signIn: { status: null, login: null },
+		generate: {
+			// `--tools ""` means every tool to Grok, so one harmless tool is all it is left.
+			arguments: ["--no-memory", "--no-subagents", "--disable-web-search", "--no-plan", "--tools", "todo_write", "--permission-mode", "dontAsk", "--output-format", "plain", "-p"],
+			files: [],
+			checked: "Grok Build 1.0.92 on 2026-11-24",
+			caveat: "Grok Build keeps each run as a session in its own folder, with the diff in it, and your MCP servers may connect.",
+		},
 		status: { source: "osc-7501", app: "grok", reports: ["working", "blocked", "done"] },
 	},
 	{
@@ -415,6 +472,7 @@ const ROWS = [
 		},
 		resume: null,
 		signIn: { status: null, login: null },
+		generate: null,
 		/*
 		 * OpenCode writes no OSC 7501 that is known of. Built from the source
 		 * of OpenCode 1.19.6 (github.com/anomalyco/opencode, tag v1.19.6) on
@@ -467,6 +525,7 @@ const ROWS = [
 		},
 		resume: null,
 		signIn: { status: null, login: null },
+		generate: null,
 		status: { source: "none", app: null },
 	},
 ] as const satisfies readonly AgentDefinition[];

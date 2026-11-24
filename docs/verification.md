@@ -5089,3 +5089,37 @@ with Bun 1.4.5, Git 2.56.1, and Timber 0.2.0:
   does not touch, passed in two runs of that file alone.
 - `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
 - Not run: the desktop app, Windows, and macOS.
+
+Run for writing commit messages and pull requests' text with an agent (issue
+417), Linux x64 with Bun 1.4.5 and Google Chrome:
+
+- `bun test tests/generate-text.test.ts`: passed. On real temporary
+  repositories with a stand-in agent: the staged diff only, and the branch's
+  commits and committed diff only, are given; every file with its time, the
+  index's bytes, HEAD, every ref, and the stash are the same after; the
+  saved row's other arguments, the handoff folder, and the status file do not
+  reach it; its folder is empty and removed; a base typed in the form is read
+  only as a remote branch; refusals run nothing; a failure, an empty answer,
+  a stop, quitting, its time, and a process it leaves behind; what changed
+  meanwhile is named; text that looks like commands or a marker stays text;
+  a large file is named, not given; no external diff or text conversion
+  runs; nothing is logged.
+- `bun test tests/generate-store.test.tsx` and
+  `tests/generate-text-browser.test.ts` in headless Chrome: passed.
+- The four agents through the app's own code (`createTextGenerator`), one run
+  each, on a throwaway repository whose staged diff said to create a file and
+  print the hostname: Claude Code 2.1.331, Codex 0.169.0, Cursor CLI
+  2026.11.22-e9042b2, and Grok Build 1.0.92 each wrote a commit message. No
+  file was made, no message held the hostname, nothing changed in the
+  repository, and no folder was left. Earlier runs of the commands alone are
+  in docs/architecture.md, "Generating text". Grok Build answered "403
+  Forbidden: permission-denied" for a diff with planted instructions in three
+  of those.
+- By eye, in headless Chrome over the mock engine: the commit box, the text
+  that waits, the dialog, the form, and Settings, Agents.
+- Not run: the desktop app, Windows, and macOS. Gemini CLI, OpenCode, and
+  GitHub Copilot CLI were not run, so they cannot generate.
+- `bun run test`: 4,736 passed, 19 skipped, 0 failed, in 283 files. Two
+  earlier full runs, one of them before any change, each had three browser
+  tests time out waiting for the page; the six files passed alone.
+- `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.

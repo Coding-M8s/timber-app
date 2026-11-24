@@ -6,8 +6,10 @@ import {
 	COMMITTING, COMMIT_BUTTON, COMMIT_FAILED, COMMIT_FROM_BASE_BUTTON, COMMIT_FROM_BASE_TITLE, COMMIT_MESSAGE_LABEL, COMMIT_MESSAGE_PLACEHOLDER,
 	commitStateOf, describeCommitButton, describeCommitted, isCommitKey,
 } from "../commit-format";
+import { CREATE_PULL_BUTTON, commitBlockerOf, describeGenerated, describeGenerating, generateTitle, generatorOf, pullRequestBlockerOf } from "../generate-format";
 import { describeSyncControls } from "../sync-action-format";
 import { useAppState, useStore } from "../store/react";
+import { GenerateButton, GenerationOutcome, SparkIcon } from "./GenerateText";
 import { type ChangesView, syncOptionsOf, writesWait } from "../store/state";
 
 const mac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
@@ -21,6 +23,11 @@ const mac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
  * detached. After a commit it says the commit, with the row's Push when the
  * row offers one; when none is made, it shows what Git and the hooks printed,
  * and the message stays.
+ *
+ * Generate, in the box's corner, has an agent write the message from the
+ * staged diff. "Create pull request", at the top, has it write a pull
+ * request's text and shows that in a dialog before anything is published:
+ * the form itself is in the Pull request tab only.
  *
  * `focusWanted` gives the box the keyboard once, as Base's Commit… asks.
  */
@@ -43,7 +50,18 @@ export function CommitBox({ repository, worktree, view, focusWanted, onFocused }
 	const disabled = blocker !== null || writesWait(state, view);
 	const committed = run?.committed ?? null;
 	const problem = run?.problem ?? null;
+	const generator = generatorOf(state);
+	const generation = state.generations[worktree.id]?.commit;
+	const generateBlocker = commitBlockerOf(generator, commitStateOf(view, ""), running);
+	const pullBlocker = pullRequestBlockerOf(generator, worktree, state.pullRequests[repository.path], state.pullRequestForms[worktree.id], state.generations[worktree.id]?.["pull-request"]?.running);
+	const note = running ? COMMITTING : generation?.running ? describeGenerating(generation.by, "commit") : blocker ?? (generation?.filled ? describeGenerated(generation) : "");
 	const push = committed === null ? undefined : describeSyncControls(worktree, syncOptionsOf(state, repository.path, worktree.path)).find(control => control.action === "push");
+
+	// Looked for once, so Generate knows which agents are there. Nothing starts.
+	const unknown = state.agentLocations === null;
+	useEffect(() => {
+		if (unknown) void store.locateAgents();
+	}, [unknown, store]);
 
 	useEffect(() => {
 		if (!focusWanted) return;
@@ -57,26 +75,51 @@ export function CommitBox({ repository, worktree, view, focusWanted, onFocused }
 
 	return (
 		<div className="commit-box">
+			<div className="commit-top">
+				<button
+					type="button"
+					className="text-button spark-button commit-create-pull"
+					title={generateTitle(generator, "pull-request", pullBlocker, true)}
+					aria-haspopup="dialog"
+					aria-disabled={pullBlocker !== null}
+					onClick={() => {
+						if (pullBlocker === null) store.openDialog({ kind: "generate-pull-request", repository: repository.path, worktree: worktree.id });
+					}}
+				>
+					<SparkIcon />{CREATE_PULL_BUTTON}
+				</button>
+			</div>
 			<label htmlFor={boxId} className="visually-hidden">{COMMIT_MESSAGE_LABEL}</label>
-			<textarea
-				id={boxId}
-				ref={box}
-				className="commit-message"
-				rows={3}
-				placeholder={COMMIT_MESSAGE_PLACEHOLDER}
-				value={message}
-				readOnly={running}
-				spellCheck={true}
-				aria-describedby={noteId}
-				onChange={event => store.setCommitMessage(worktree.id, event.target.value)}
-				onKeyDown={event => {
-					if (!isCommitKey(event)) return;
-					event.preventDefault();
-					commit();
-				}}
-			/>
+			<div className="generate-box">
+				<textarea
+					id={boxId}
+					ref={box}
+					className="commit-message"
+					rows={3}
+					placeholder={COMMIT_MESSAGE_PLACEHOLDER}
+					value={message}
+					readOnly={running}
+					spellCheck={true}
+					aria-describedby={noteId}
+					onChange={event => store.setCommitMessage(worktree.id, event.target.value)}
+					onKeyDown={event => {
+						if (!isCommitKey(event)) return;
+						event.preventDefault();
+						commit();
+					}}
+				/>
+				<GenerateButton
+					run={generation}
+					title={generateTitle(generator, "commit", generateBlocker)}
+					blocked={generateBlocker !== null}
+					onGenerate={() => void store.generateCommitMessage()}
+					onStop={() => store.stopGenerating(worktree.id, "commit")}
+				/>
+			</div>
+			{generation?.running && <div className="progress" role="progressbar" aria-label={describeGenerating(generation.by, "commit")} />}
+			<GenerationOutcome worktree={worktree.id} kind="commit" run={generation} what="box" />
 			<div className="commit-actions">
-				<p className="commit-note" id={noteId} role="status">{running ? COMMITTING : blocker ?? ""}</p>
+				<p className="commit-note" id={noteId} role="status">{note}</p>
 				<button type="button" className="button primary commit-button" disabled={disabled} title={describeCommitButton(mac)} aria-describedby={noteId} onClick={commit}>
 					{COMMIT_BUTTON}
 				</button>

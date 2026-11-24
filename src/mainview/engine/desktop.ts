@@ -158,6 +158,9 @@ export function createDesktopEngine(): Engine {
 		discardFiles: request => rpc.request.discardFiles(request, { maxRequestTime: 120_000 }),
 		// The main process waits its turn, then lets the hooks run for up to ten minutes before it stops Git.
 		commitStaged: request => rpc.request.commitStaged(request, { maxRequestTime: 15 * 60_000 }),
+		// The main process reads Git first, then lets the agent run for up to five minutes before it stops it.
+		generateText: request => rpc.request.generateText(request, { maxRequestTime: 10 * 60_000 }),
+		stopGenerating: id => rpc.request.stopGenerating({ id }, { maxRequestTime: 30_000 }),
 		readWorktreeFile: request => rpc.request.readWorktreeFile(request, { maxRequestTime: 60_000 }),
 		readFileOutside: request => rpc.request.readFileOutside(request, { maxRequestTime: 60_000 }),
 		writeWorktreeFile: request => rpc.request.writeWorktreeFile(request, { maxRequestTime: 60_000 }),
