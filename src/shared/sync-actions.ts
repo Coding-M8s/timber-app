@@ -7,7 +7,8 @@ import { RESULT_FILE_PLACEHOLDER, describeTimberCommand } from "./timber-result"
 /**
  * Sync actions: commands that bring a worktree's branch and its upstream
  * together, started from the worktree's row. Pull fast-forwards a branch that
- * is behind; Push publishes a branch that is ahead. Each is one entry in
+ * is behind; Push publishes a branch that is ahead, or one that was never
+ * published and has commits no remote has. Each is one entry in
  * `SYNC_ACTIONS`. Pure: the interface words the commands from the same
  * functions the main process runs them from (see src/bun/sync-actions.ts), so
  * the commands shown are the commands that run.
@@ -31,6 +32,21 @@ export interface SyncTarget {
 	upstreamRef: string;
 }
 
+/**
+ * What Push names for a branch with no upstream yet: `timber publish` picks
+ * the remote, pushes the branch under its own name, and sets its upstream.
+ */
+export interface NoUpstreamTarget {
+	kind: "no-upstream";
+}
+
+export const NO_UPSTREAM: NoUpstreamTarget = { kind: "no-upstream" };
+
+/** What a request names: an upstream on a remote, or no upstream yet. */
+export type ActionTarget = SyncTarget | NoUpstreamTarget;
+
+export const isNoUpstream = (target: ActionTarget): target is NoUpstreamTarget => "kind" in target && target.kind === "no-upstream";
+
 /** Run one sync action in one worktree. */
 export interface SyncActionRequest {
 	action: SyncActionKind;
@@ -39,10 +55,12 @@ export interface SyncActionRequest {
 	/** The worktree's registered path, exactly as Timber lists it. Git runs there. */
 	worktree: string;
 	/**
-	 * The remote and upstream the shown commands named. The main process reads
-	 * them from Git again and runs nothing when they no longer match.
+	 * The remote and upstream the shown commands named, or no upstream yet for
+	 * a Push that publishes the branch. The main process reads them from Git
+	 * again and runs nothing when they no longer match, such as a branch that
+	 * gained an upstream since.
 	 */
-	target: SyncTarget;
+	target: ActionTarget;
 }
 
 /**
@@ -78,6 +96,21 @@ export function syncTargetOf(sync: SyncState | null): SyncTarget | null {
 	return { remote: sync.remote, upstreamRef: sync.upstreamRef };
 }
 
+/** Whether a branch was never published and has commits no remote has, so Push publishes it. */
+export function isPublishable(sync: SyncState | null): sync is { kind: "unpublished"; unpushed: number } {
+	return sync?.kind === "unpublished" && sync.unpushed !== undefined && sync.unpushed > 0;
+}
+
+/**
+ * What an action's commands name for a branch in this sync state: no upstream
+ * yet for a Push that publishes the branch, and otherwise its upstream on a
+ * remote. Null when there is nothing to name.
+ */
+export function actionTargetOf(action: SyncActionKind, sync: SyncState | null): ActionTarget | null {
+	if (action === "push" && isPublishable(sync)) return NO_UPSTREAM;
+	return syncTargetOf(sync);
+}
+
 /**
  * Pull: fetch the remote, then fast-forward the branch to its upstream. Online
  * this is what `git pull --ff-only` does. The merge runs even when the fetch
@@ -85,7 +118,9 @@ export function syncTargetOf(sync: SyncState | null): SyncTarget | null {
  * behind count was made from. `--no-autostash` keeps Git from putting local
  * changes away and back: when they are in the way, Git refuses and leaves them.
  */
-function pullSteps(target: SyncTarget): SyncStep[] {
+function pullSteps(target: ActionTarget): SyncStep[] {
+	// Pull needs an upstream to fetch and fast-forward to. It is never offered without one.
+	if (isNoUpstream(target)) return [];
 	return [
 		{ program: "git", args: ["fetch", target.remote], network: true },
 		{ program: "git", args: ["merge", "--ff-only", "--no-autostash", target.upstreamRef], network: false },
@@ -103,26 +138,31 @@ function pullApplies(sync: SyncState | null): boolean {
 }
 
 /**
- * Push: `timber publish` for the worktree's registered path. Timber pushes the
- * branch under its own name to its upstream, never forces, never prompts, and
- * refuses a remote branch that has moved on.
+ * Push: `timber publish` for the worktree's registered path, the same command
+ * for either target. Timber pushes the branch under its own name to its
+ * upstream, or, with none yet, to the configured or only remote and sets the
+ * upstream. It never forces, never prompts, and refuses a remote branch that
+ * has moved on, and a remote it cannot pick.
  */
-function pushSteps(_target: SyncTarget, worktree: string): SyncStep[] {
+function pushSteps(_target: ActionTarget, worktree: string): SyncStep[] {
 	return [{ program: "timber", args: publishResultArguments(worktree, RESULT_FILE_PLACEHOLDER), network: true }];
 }
 
 /**
- * Push is offered only to a branch that is ahead and not behind, whose
- * upstream was not rewritten: one that is behind or diverged would be refused,
- * and one whose upstream was force-pushed needs a look first.
+ * Push is offered to a branch that is ahead and not behind, whose upstream
+ * was not rewritten: one that is behind or diverged would be refused, and one
+ * whose upstream was force-pushed needs a look first. It is offered too to a
+ * branch that was never published and has commits no remote has
+ * (`isPublishable`). One with none of its own keeps "local only".
  */
 function pushApplies(sync: SyncState | null): boolean {
+	if (isPublishable(sync)) return true;
 	return sync?.kind === "tracking" && sync.ahead > 0 && sync.behind === 0 && sync.forcePushed === undefined && syncTargetOf(sync) !== null;
 }
 
 /** What each sync action runs, for a target and the worktree's registered path, and when it is offered. Each has a runner in the main process. */
 export interface SyncActionSpec {
-	steps(target: SyncTarget, worktree: string): SyncStep[];
+	steps(target: ActionTarget, worktree: string): SyncStep[];
 	applies(sync: SyncState | null): boolean;
 }
 
@@ -132,7 +172,7 @@ export const SYNC_ACTIONS: Readonly<Record<SyncActionKind, SyncActionSpec>> = {
 };
 
 /** The steps of an action for a target, in the worktree at this registered path. */
-export function syncActionSteps(action: SyncActionKind, target: SyncTarget, worktree: string): SyncStep[] {
+export function syncActionSteps(action: SyncActionKind, target: ActionTarget, worktree: string): SyncStep[] {
 	return SYNC_ACTIONS[action].steps(target, worktree);
 }
 

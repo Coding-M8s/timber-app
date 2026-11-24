@@ -5049,3 +5049,43 @@ Run for opening files outside the worktree read-only from a full path
 - `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
 - Not run: the desktop app, Windows, and macOS. A full path with `:line`
   opening at that line waits on issue 399.
+
+Run for pushing a branch that was never published (issue 412), Linux x64
+with Bun 1.4.5, Git 2.56.1, and Timber 0.2.0:
+
+- By hand, in a temporary repository: `timber publish --result-file` on a
+  new branch with one commit and one remote pushed it as `origin/<branch>`
+  and set its upstream (`published`); with no remote, and with two remotes
+  and none configured, it refused with "Remote is missing or ambiguous; set
+  remote in Timber configuration, or set the branch upstream with Git."
+  and changed nothing.
+- `bun test tests/sync-actions.test.ts`: 15 passed. On real temporary
+  repositories with a local bare remote and the installed Timber: a branch
+  never published with two commits is counted as Git counts it, published
+  with `{ kind: "no-upstream" }`, and then read tracking `origin/fresh`
+  with no ahead count; with no remote Timber refuses with its words and no
+  ref changes; a branch that gained an upstream after the command was shown
+  runs nothing and says to look again; a branch with no commits of its own,
+  a Pull with no upstream, and a target of another shape run nothing.
+- `bun test tests/branch-status.test.ts`: 8 passed. The reader counts a
+  branch never published with two commits as 2, the row shows "up 2", one
+  with no commits of its own keeps "local only", and reading leaves every
+  file, ref, and index as it was, the new worktree included.
+- `bun test tests/base-counts.test.ts tests/format.test.ts`: 13 and 49
+  passed. `countUnpushed` counts only unpublished branches with a commit,
+  once per commit, and leaves one Git could not count as it was; the row
+  marker is the up arrow with the count.
+- `bun test tests/sync-action-ui.test.tsx tests/commit-box.test.tsx`: 62
+  passed. The row's control, its menu entry, the palette entry, the
+  dialog's `timber publish` command and words, Timber's refusal, the
+  toast, the mock's publish and its endings, and Push beside "Committed"
+  after a commit on a branch never published. A detached HEAD and an
+  upstream that is gone are unchanged.
+- `bun test tests/sync-action-browser.test.ts`: 14 passed in headless
+  Chrome, with the new test opening Push from the row's menu by keyboard,
+  publishing, and seeing the control go and the toast name the upstream.
+- `bun run test`: 4,709 passed, 19 skipped, 1 failed: the file explorer's
+  keyboard test in `tests/files-panel-browser.test.ts`, which this change
+  does not touch, passed in two runs of that file alone.
+- `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
+- Not run: the desktop app, Windows, and macOS.

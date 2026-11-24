@@ -144,8 +144,9 @@ export const sampleRepositories: Repository[] = [
 				changes: sampleChanges(0, 2),
 				// Based on a local branch, which Timber saves by its full ref.
 				base: { kind: "assigned", ref: "refs/heads/main" },
-				sync: { kind: "unpublished" },
-				// One commit on a branch not published yet: the base says how far it went.
+				// One commit on a branch not published yet, which no remote has: Push publishes it.
+				sync: { kind: "unpublished", unpushed: 1 },
+				// The base says how far it went.
 				baseCounts: { kind: "counted", ahead: 1, behind: 0 },
 			}),
 		],
@@ -987,7 +988,7 @@ export function createMockEngine(
 	let commitDelay = 0;
 	const operations = new Map<string, GitOperation>();
 	const commitLog: { worktree: string; message: string; commit: string }[] = [];
-	/** Commit on the pretend files, as the main process would: the staged files leave the list and the branch is one more commit ahead of its upstream. */
+	/** Commit on the pretend files, as the main process would: the staged files leave the list and the branch is one more commit ahead of its upstream, or, never published, has one more commit no remote has. */
 	const commitStaged = async (request: CommitRequest): Promise<CommitResult> => {
 		if (commitDelay > 0) await new Promise(resolve => setTimeout(resolve, commitDelay));
 		const listed = listedForChanges(request.repository, request.worktree);
@@ -999,7 +1000,14 @@ export function createMockEngine(
 		fileChangeLists.set(listed.worktree.path, files);
 		commitLog.push({ worktree: listed.worktree.path, message: request.message, commit });
 		const { branch } = listed.worktree;
-		if (branch !== null) changeSync(request.repository, branch, sync => (sync?.kind === "tracking" ? { ...sync, ahead: sync.ahead + 1 } : sync));
+		if (branch !== null) {
+			changeSync(request.repository, branch, sync => {
+				if (sync?.kind === "tracking") return { ...sync, ahead: sync.ahead + 1 };
+				// A commit on a branch never published is one more that no remote has.
+				if (sync?.kind === "unpublished") return { kind: "unpublished", unpushed: (sync.unpushed ?? 0) + 1 };
+				return sync;
+			});
+		}
 		return result;
 	};
 	const worktreeFiles = createMockWorktreeFiles();

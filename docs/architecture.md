@@ -235,7 +235,12 @@ The sidebar shows exactly the worktrees Timber lists, in Timber's order
 - **Upstream state.** Version 1 does not report ahead, behind, upstream gone,
   or local only. One read-only `git for-each-ref` per repository, run against
   the common Git directory from the record, gives it for every branch
-  (`readBranchSync` in `src/bun/git-engine.ts`). A detached HEAD has none.
+  (`readBranchSync` in `src/bun/git-engine.ts`). For a listed worktree on a
+  branch with no upstream, a read-only
+  `git rev-list --count <head> --not --remotes --` counts the commits no
+  remote branch has (`readUnpushedCount`, through `countUnpushed` in
+  `src/bun/repository-reader.ts`, once per commit and four at a time), as
+  `unpushed` on the `unpublished` state. A detached HEAD has none.
   A branch Git did not answer about has none either, and its row says "sync
   unknown" instead of looking up to date, and so does the workspace header.
   The counts are as of the last fetch, because the app does not fetch yet.
@@ -285,7 +290,8 @@ The sidebar shows exactly the worktrees Timber lists, in Timber's order
 - **Row markers.** `describeRowMarkers` in `src/mainview/format.ts` is pure
   and turns one worktree into the markers its row shows, each with a kind, a
   short text, and a sentence in plain words. `WorktreeRow` only draws them.
-  Beside the branch: a down arrow and an up arrow with counts, "local only",
+  Beside the branch: a down arrow and an up arrow with counts (for a branch
+  never published, the commits no remote has), "local only",
   "upstream gone", or "sync unknown". Below it: how far the worktree is
   from its saved base, such as "4 ahead, 1 behind base", "detached HEAD", "folder
   missing" or "status unknown", "locked", "prunable", and "base unknown" for
@@ -1408,10 +1414,17 @@ engine call, one dialog, and one kind of row control.
 - **Push.** One step, shown before it runs:
   `timber publish --result-file <temporary file> -- <worktree>`, in the
   repository's primary checkout. Timber pushes the branch under its own
-  name to its upstream, never force-pushes, never asks for a password, and
-  refuses a remote branch that has moved on; the app repeats none of these
-  rules. It runs through `Fetcher.whileNotFetching`, the same turn as
-  Pull's fetch, because a push moves the upstream's remote-tracking ref too:
+  name to its upstream, or, for a branch with none yet, to the configured
+  or only remote and sets the upstream. It never force-pushes, never asks
+  for a password, and refuses a remote branch that has moved on and a
+  remote it cannot pick; the app repeats none of these rules and never
+  picks a remote itself. The request names the upstream the dialog showed,
+  or `{ kind: "no-upstream" }` (`NO_UPSTREAM` in
+  `src/shared/sync-actions.ts`) for a branch never published. In the
+  repository's turn the main process reads the branch again and runs
+  nothing when a branch shown with no upstream has one now, saying to look
+  at the command again, as it does when the upstream changed. It runs
+  through `Fetcher.whileNotFetching`, the same turn as Pull's fetch, because a push moves the upstream's remote-tracking ref too:
   it never runs beside a fetch of the repository. The record's `publish`
   object decides the result: `published` is done and moved, `up-to-date`
   done and not moved, `refused` a refusal (nothing pushed and no local ref
@@ -1422,8 +1435,10 @@ engine call, one dialog, and one kind of row control.
 - **When it is offered.** Pull is offered for a branch that is behind and not
   ahead, Push for one that is ahead and not behind, each only when the
   upstream is a remote-tracking branch that was not marked force-pushed.
-  Neither for a diverged, force-pushed, gone, unpublished, or detached
-  branch, nor while Timber removes the worktree. The one exception is the
+  Push is offered too for a branch never published that has commits no
+  remote has (`isPublishable`). Neither for a diverged, force-pushed, or
+  gone branch, an unpublished one with no commits of its own, or a detached
+  HEAD, nor while Timber removes the worktree. The one exception is the
   Pull that takes Rebase's place on a primary checkout whose base is its
   upstream (`pullInsteadOfRebase` in `src/mainview/sync-action-format.ts`,
   see "Fallback base" under [the worktree list](#the-worktree-list)): the

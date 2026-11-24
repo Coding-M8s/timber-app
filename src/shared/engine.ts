@@ -217,9 +217,12 @@ export interface Engine {
 	 * fetch runs as one fetch of the repository, never beside another, and a
 	 * force-push it brings in is marked. Push runs `timber publish` with a
 	 * result file, never beside a fetch; Timber decides what may be pushed and
-	 * never force-pushes. Nothing runs when the branch's remote or upstream is
-	 * no longer the one in `request.target`. It runs once and is never retried
-	 * here. Read the list after every outcome.
+	 * never force-pushes. A Push whose `request.target` is `NO_UPSTREAM`
+	 * publishes a branch with no upstream yet: Timber picks the remote and
+	 * sets the upstream. Nothing runs when the branch's remote or upstream is
+	 * no longer the one in `request.target`, such as a branch shown with no
+	 * upstream that has one now. It runs once and is never retried here. Read
+	 * the list after every outcome.
 	 */
 	runSyncAction(request: SyncActionRequest): Promise<SyncActionResult>;
 	/**

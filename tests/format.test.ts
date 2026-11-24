@@ -101,6 +101,16 @@ describe("describeRowMarkers", () => {
 		]);
 	});
 
+	test("a branch never published with commits no remote has shows them as commits to push, and with none keeps local only", () => {
+		expect(describeRowMarkers({ ...linked, sync: { kind: "unpublished", unpushed: 2 } })).toEqual([
+			{ kind: "ahead", place: "branch", text: "2", tooltip: "2 commits that no remote branch has, as of the last fetch. This branch has not been published yet." },
+		]);
+		expect(describeRowMarkers({ ...linked, sync: { kind: "unpublished", unpushed: 0 } }).map(marker => marker.kind)).toEqual(["local-only"]);
+		expect(describeRowMarkers({ ...linked, branch: null, detached: true, sync: null }).map(marker => marker.kind)).not.toContain("ahead");
+		expect(describeSync({ kind: "unpublished", unpushed: 2 })).toBe("Not published yet: 2 to push");
+		expect(describeSync({ kind: "unpublished", unpushed: 0 })).toBe("Not published yet");
+	});
+
 	test("upstream gone, for a branch whose upstream was deleted", () => {
 		expect(describeRowMarkers({ ...linked, sync: { kind: "gone", upstream: "origin/feat/x" } })).toEqual([
 			{ kind: "upstream-gone", place: "branch", text: "upstream gone", tooltip: "The upstream branch origin/feat/x no longer exists, as of the last fetch." },

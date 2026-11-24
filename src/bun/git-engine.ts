@@ -57,6 +57,19 @@ export async function readBranchSync(commonGitDir: string): Promise<Map<string, 
 }
 
 /**
+ * How many commits reachable from `head` no remote-tracking branch has, as of
+ * the last fetch: what publishing a branch with no upstream would push. Only
+ * a full commit hash reaches Git, so it cannot be read as an option. Null when
+ * `head` is not one or Git could not count.
+ */
+export async function readUnpushedCount(commonGitDir: string, head: string | null): Promise<number | null> {
+	if (head === null || !isCommitHash(head)) return null;
+	const output = await git(["--git-dir", commonGitDir, "rev-list", "--count", head, "--not", "--remotes", "--"]);
+	const match = output === null ? null : /^(\d+)\r?\n?$/.exec(output);
+	return match ? Number(match[1]) : null;
+}
+
+/**
  * How a worktree's commit stands against its saved base, counted by Git in
  * the repository's common Git directory, so it needs nothing from the
  * worktree's folder. (Timber reports the base of a missing folder as stale,

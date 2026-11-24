@@ -5,11 +5,14 @@ import { WorktreeRow } from "../src/mainview/components/WorktreeRow";
 import { createMockEngine, sampleRepositories, sampleTimberStatuses } from "../src/mainview/engine/mock";
 import type { SyncEnding } from "../src/mainview/engine/mock-sync";
 import { createAppStore } from "../src/mainview/store/store";
-import { describeSyncCommands, describeSyncControls, describeSyncIntro, describeSyncRefusalNote, presentSyncResult, pullInsteadOfRebase, syncMenuEntries } from "../src/mainview/sync-action-format";
+import {
+	actionTargetOfWorktree, describeSyncCommands, describeSyncControls, describeSyncIntro, describeSyncRefusalNote, presentPublishResult, presentSyncResult, pullInsteadOfRebase, syncMenuEntries,
+} from "../src/mainview/sync-action-format";
 import { worktreeMenuChoice, worktreeMenuItems } from "../src/mainview/worktree-menu-format";
 import { BEING_REMOVED_REASON } from "../src/mainview/done-format";
 import type { SyncState, TimberStatus, Worktree } from "../src/shared/model";
-import type { SyncActionResult } from "../src/shared/sync-actions";
+import { NO_UPSTREAM, type SyncActionResult } from "../src/shared/sync-actions";
+import { paletteEntries } from "../src/mainview/palette";
 
 const settle = async () => {
 	for (let round = 0; round < 5; round += 1) await Bun.sleep(0);
@@ -525,5 +528,132 @@ describe("Pull in place of Rebase, for a primary checkout whose base is its upst
 		expect(pullInsteadOfRebase(repository, { ...primary, primary: false }, asking)).toBeNull();
 		expect(pullInsteadOfRebase({ fallbackBase: null }, primary, asking)).toBeNull();
 		expect(pullInsteadOfRebase(repository, withSync({ kind: "unpublished" }), asking)).toBeNull();
+	});
+});
+
+const unpublished = (unpushed?: number): Worktree => ({ ...behind, sync: unpushed === undefined ? { kind: "unpublished" } : { kind: "unpublished", unpushed } });
+
+describe("Push for a branch that was never published", () => {
+	test("one with commits no remote has gets the blue up arrow with its count as the Push control, in place of local only", () => {
+		const markup = renderRow(unpublished(3));
+		const control = /<span class="row-sync"><button type="button" class="sync ahead row-sync-button" aria-haspopup="dialog" aria-label="([^"]+)" title="([^"]+)">(.*?)<\/button><\/span>/.exec(markup);
+		expect(control).not.toBeNull();
+		expect(control![1]).toBe("Push 3 commits from feat/x, publishing it");
+		expect(control![2]).toBe("3 commits that no remote branch has, as of the last fetch. feat/x has not been published yet. Click to see the Timber command, then publish it and set its upstream.");
+		expect(control![3]!.replace(/<svg.*?<\/svg>/, "")).toBe("3");
+		expect(markup).not.toContain("local only");
+		expect(markup).toContain("3 commits that no remote branch has, as of the last fetch. This branch has not been published yet.");
+		// Without a way to act, the count stays a marker with the arrow.
+		expect(renderRow(unpublished(3), false)).toContain("<span class=\"sync ahead\"");
+	});
+
+	test("one with no commits of its own, or not counted, keeps local only and gets no Push; a detached HEAD and an upstream that is gone are unchanged", () => {
+		for (const worktree of [unpublished(0), unpublished()]) {
+			expect(describeSyncControls(worktree)).toEqual([]);
+			expect(worktreeMenuItems(worktree).map(item => item.id)).toEqual(["done"]);
+			const markup = renderRow(worktree);
+			expect(markup).toContain("local only");
+			expect(markup).not.toContain("row-sync");
+			expect(actionTargetOfWorktree("push", worktree)).toBeNull();
+		}
+		for (const worktree of [{ ...behind, branch: null, detached: true, sync: null }, { ...behind, sync: { kind: "gone", upstream: "origin/feat/x" } } satisfies Worktree]) {
+			expect(describeSyncControls(worktree)).toEqual([]);
+			expect(renderRow(worktree)).not.toContain("row-sync");
+		}
+	});
+
+	test("Push is in the row's menu, before Done, and opens the same dialog; Pull is never offered", () => {
+		const worktree = unpublished(1);
+		expect(worktreeMenuItems(worktree).map(item => item.id)).toEqual(["sync:push", "done"]);
+		expect(worktreeMenuItems(worktree)[0]).toMatchObject({ label: "Push", disabled: false, note: null });
+		expect(worktreeMenuChoice("/work/app", worktree, "sync:push")).toEqual({ kind: "sync-action", action: "push", repository: "/work/app", worktree: worktree.id });
+		expect(worktreeMenuChoice("/work/app", worktree, "sync:pull")).toBeNull();
+		expect(actionTargetOfWorktree("push", worktree)).toEqual(NO_UPSTREAM);
+		expect(actionTargetOfWorktree("pull", worktree)).toBeNull();
+	});
+
+	test("the dialog shows timber publish before it runs, and says it publishes the branch and sets its upstream", () => {
+		const worktree = unpublished(2);
+		expect(describeSyncCommands("push", NO_UPSTREAM, worktree.path)).toEqual({ command: `timber publish --result-file <temporary file> -- ${worktree.path}`, followUps: [] });
+		expect(describeSyncIntro("push", worktree)).toEqual([
+			"2 commits that no remote branch has. feat/x has not been published yet.",
+			"Push runs timber publish, which publishes feat/x under its own name and sets its upstream. Timber picks the remote: the one set in its configuration, or the repository's only remote. It never force-pushes, never asks for a password, and refuses when it cannot tell which remote to use.",
+		]);
+		const markup = renderToStaticMarkup(
+			<SyncActionDialogView action="push" worktree={worktree} path={worktree.path} result={null} submission={{ running: false, failure: null }} onSubmit={() => {}} onClose={() => {}} />,
+		);
+		expect(markup).toContain(`<pre class="dialog-command" aria-label="Command that will run">timber publish --result-file &lt;temporary file&gt; -- ${worktree.path}</pre>`);
+		expect(markup).toContain("publishes feat/x under its own name and sets its upstream");
+		expect(markup).not.toContain("disabled");
+	});
+
+	test("a Timber refusal shows Timber's words, and a publish that worked names the new upstream in its toast", () => {
+		const worktree = unpublished(2);
+		const diagnostic = "Remote is missing or ambiguous; set remote in Timber configuration, or set the branch upstream with Git.";
+		const refused: SyncActionResult = { outcome: "refused", action: "push", reason: "timber-refused", fetchFailure: null, failure: { command: "timber publish", diagnostic, output: null } };
+		const markup = renderToStaticMarkup(
+			<SyncActionDialogView action="push" worktree={worktree} path={worktree.path} result={refused} submission={{ running: false, failure: refused.failure }} onSubmit={() => {}} onClose={() => {}} />,
+		);
+		expect(markup).toContain("Remote is missing or ambiguous");
+		expect(markup).toContain("Timber refused, so nothing was pushed and no branch changed.");
+		const done: SyncActionResult = { outcome: "done", action: "push", moved: true, fetchFailure: null };
+		expect(presentPublishResult("feat/x", "origin/feat/x", done)).toEqual({ ok: true, toast: "Published feat/x to origin/feat/x and set its upstream.", problem: false });
+		expect(presentPublishResult("feat/x", null, done)).toEqual({ ok: true, toast: "Published feat/x and set its upstream.", problem: false });
+		expect(presentPublishResult("feat/x", null, refused)).toEqual({ ok: false, failure: refused.failure });
+	});
+});
+
+describe("publishing through the store and the mock engine", () => {
+	const TIMBER = "/work/timber";
+	const spike = sampleRepositories[0]!.worktrees.find(worktree => worktree.branch === "spike/new-idea")!;
+	const request = { action: "push" as const, repository: TIMBER, worktree: spike.path, target: NO_UPSTREAM };
+
+	async function started(ending: SyncEnding = "pushed") {
+		const engine = createMockEngine(structuredClone(sampleRepositories), sampleTimberStatuses.ready);
+		engine.endSyncActions(ending);
+		const store = createAppStore(engine, () => () => {});
+		store.start();
+		await settle();
+		return { store, engine };
+	}
+	const listed = (store: Awaited<ReturnType<typeof started>>["store"]) => store.getState().repositories[0]!.worktrees.find(worktree => worktree.id === spike.id)!;
+
+	test("the sample's spike/new-idea was never published and has a commit, so it offers Push, also in the palette", async () => {
+		expect(spike.sync).toEqual({ kind: "unpublished", unpushed: 1 });
+		expect(describeSyncControls(spike).map(control => control.action)).toEqual(["push"]);
+		const { store } = await started();
+		store.select(spike.id);
+		const push = paletteEntries(store.getState()).find(entry => entry.label === "Push");
+		expect(push).toMatchObject({ section: "worktree", icon: "push", repository: TIMBER, hint: "Opens Push for spike/new-idea, which shows the Timber command before it runs." });
+		expect(push?.action).toEqual({ kind: "dialog", request: { kind: "sync-action", action: "push", repository: TIMBER, worktree: spike.id } });
+	});
+
+	test("after a publish the row reads again and tracks its new upstream with no ahead count, without a manual refresh", async () => {
+		const { store, engine } = await started();
+		expect(await store.runSyncAction(request)).toEqual({ outcome: "done", action: "push", moved: true, fetchFailure: null });
+		expect(listed(store).sync).toMatchObject({ kind: "tracking", upstream: "origin/spike/new-idea", ahead: 0, behind: 0 });
+		expect(describeSyncControls(listed(store))).toEqual([]);
+		expect(engine.syncActionRequests()).toEqual([request]);
+	});
+
+	test("a refusal or a failure, no remote and offline included, changes nothing", async () => {
+		for (const ending of ["no-remote", "offline", "sign-in", "failed"] as const) {
+			const { store } = await started(ending);
+			const result = await store.runSyncAction(request);
+			expect(result.outcome).toBe(ending === "no-remote" ? "refused" : "failed");
+			if (result.outcome === "done") throw new Error("unreachable");
+			expect(result.failure.command).toBe(`timber publish --result-file <temporary file> -- ${spike.path}`);
+			if (ending === "no-remote") expect(result.failure.diagnostic).toBe("Remote is missing or ambiguous; set remote in Timber configuration, or set the branch upstream with Git.");
+			expect(listed(store).sync).toEqual({ kind: "unpublished", unpushed: 1 });
+		}
+	});
+
+	test("a branch that gained an upstream since the dialog opened is refused with a message to look again", async () => {
+		const { store } = await started();
+		const lookup = sampleRepositories[0]!.worktrees.find(worktree => worktree.branch === "feat/github-issue-lookup")!;
+		const result = await store.runSyncAction({ ...request, worktree: lookup.path });
+		expect(result).toMatchObject({ outcome: "failed", action: "push", ran: false });
+		if (result.outcome !== "failed") throw new Error("unreachable");
+		expect(result.failure.diagnostic).toContain("Look at the command again.");
 	});
 });

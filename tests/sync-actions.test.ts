@@ -5,10 +5,11 @@ import { join } from "node:path";
 import { createGitRunner } from "../src/bun/fetch-git";
 import { createFetcher } from "../src/bun/fetcher";
 import { readBranchSync } from "../src/bun/git-engine";
+import { countUnpushed } from "../src/bun/repository-reader";
 import { createRepositoryTurns } from "../src/bun/repository-turns";
 import { createSyncActions } from "../src/bun/sync-actions";
 import type { Repository, TimberStatus, Worktree } from "../src/shared/model";
-import { type SyncActionRequest, syncTargetOf } from "../src/shared/sync-actions";
+import { NO_UPSTREAM, type SyncActionRequest, actionTargetOf, syncTargetOf } from "../src/shared/sync-actions";
 import { windows } from "./support/runtime";
 import { REAL_TIMBER_TIMEOUT_MS, git, isolatedEnvironment, ready, realTimber } from "./support/timber";
 
@@ -37,7 +38,10 @@ describe.skipIf(windows)("Pull and Push against real repositories", () => {
 		git(theirs, "push", "-q", "origin", "feature");
 	};
 
-	/** Stands in for the app's list: the two worktrees of `mine`, with how their branches stand as the sidebar reads it. */
+	/** A worktree on a branch never published, made by `addFresh`, listed third when it is there. */
+	let fresh: string | null;
+
+	/** Stands in for the app's list: the worktrees of `mine`, with how their branches stand as the sidebar reads it. */
 	async function findRepository(path: string): Promise<Repository | null> {
 		if (path !== mine) return null;
 		const branches = await readBranchSync(join(mine, ".git"));
@@ -45,8 +49,21 @@ describe.skipIf(windows)("Pull and Push against real repositories", () => {
 			id: folder, path: folder, canonicalPath: folder, branch, head: head(folder), primary, detached: false, locked: false, prunable: false, pathExists: true,
 			changes: { kind: "known", modified: [], untracked: [] }, base: null, issue: null, sync: branches?.get(branch) ?? null, baseCounts: null,
 		});
-		return { path: mine, name: "mine", available: true, failure: null, setup: "unknown", fallbackBase: null, worktrees: [worktree(mine, "main", true), worktree(feature, "feature", false)] };
+		const worktrees = [worktree(mine, "main", true), worktree(feature, "feature", false), ...(fresh === null ? [] : [worktree(fresh, "fresh", false)])];
+		// As the sidebar reads them: an unpublished branch's commits that no remote has are counted.
+		const syncs = await countUnpushed(join(mine, ".git"), worktrees);
+		return { path: mine, name: "mine", available: true, failure: null, setup: "unknown", fallbackBase: null, worktrees: worktrees.map((listed, index) => ({ ...listed, sync: syncs[index] ?? null })) };
 	}
+
+	/** Add a worktree on a new branch `fresh` from main, never published. */
+	function addFresh(): string {
+		fresh = join(root, "mine-fresh");
+		git(mine, "worktree", "add", "-q", "-b", "fresh", fresh, "main");
+		return fresh;
+	}
+
+	/** The fresh worktree as the list has it now. */
+	const listedFresh = async () => (await findRepository(mine))!.worktrees.find(worktree => worktree.branch === "fresh")!;
 
 	function setUp(timber: TimberStatus = realTimber ? ready(realTimber) : { state: "not-found", source: "path", path: null }) {
 		const runGit = createGitRunner("git", testEnvironment);
@@ -85,6 +102,7 @@ describe.skipIf(windows)("Pull and Push against real repositories", () => {
 
 	beforeEach(() => {
 		changed = [];
+		fresh = null;
 		root = realpathSync(mkdtempSync(join(tmpdir(), "timber-app-pull-")));
 		timberEnvironment = { ...isolatedEnvironment(root), GIT_SSH_COMMAND: undefined, GIT_SSH: undefined };
 		remote = join(root, "remote.git");
@@ -268,5 +286,89 @@ describe.skipIf(windows)("Pull and Push against real repositories", () => {
 		const moved = await setUp().actions.run({ action: "push", repository: mine, worktree: feature, target: { remote: "origin", upstreamRef: "refs/remotes/origin/main" } });
 		expect(moved).toMatchObject({ outcome: "failed", action: "push", ran: false });
 		expect(refs(remote)).toBe(remoteRefs);
+	});
+
+	describe("publishing a branch that was never published", () => {
+		test.skipIf(!realTimber)("counts its commits no remote has, publishes it with timber publish, and the list then reads it tracking its new upstream", async () => {
+			const folder = addFresh();
+			commit(folder, "one.md", "one\n");
+			commit(folder, "two.md", "two\n");
+			const before = await listedFresh();
+			// The count is Git's own: the commits on the branch that no remote branch has.
+			expect(git(folder, "rev-list", "--count", "HEAD", "--not", "--remotes").trim()).toBe("2");
+			expect(before.sync).toEqual({ kind: "unpublished", unpushed: 2 });
+			expect(actionTargetOf("push", before.sync)).toEqual(NO_UPSTREAM);
+			expect(actionTargetOf("pull", before.sync)).toBeNull();
+
+			const result = await setUp().actions.run({ action: "push", repository: mine, worktree: folder, target: NO_UPSTREAM });
+
+			expect(result).toEqual({ outcome: "done", action: "push", moved: true, fetchFailure: null });
+			expect(git(folder, "rev-parse", "--abbrev-ref", "fresh@{upstream}").trim()).toBe("origin/fresh");
+			expect(git(remote, "rev-parse", "refs/heads/fresh").trim()).toBe(head(folder));
+			expect((await listedFresh()).sync).toEqual({ kind: "tracking", upstream: "origin/fresh", ahead: 0, behind: 0, remote: "origin", upstreamRef: "refs/remotes/origin/fresh" });
+		}, REAL_TIMBER_TIMEOUT_MS);
+
+		test.skipIf(!realTimber)("with no remote, Timber refuses with its own words and no ref changes", async () => {
+			const folder = addFresh();
+			commit(folder, "one.md", "one\n");
+			git(mine, "remote", "remove", "origin");
+			// With no remote at all, every commit of the branch is one no remote has.
+			expect((await listedFresh()).sync).toEqual({ kind: "unpublished", unpushed: 2 });
+			const mineRefs = refs(mine);
+
+			const result = await setUp().actions.run({ action: "push", repository: mine, worktree: folder, target: NO_UPSTREAM });
+
+			expect(result).toMatchObject({ outcome: "refused", action: "push", reason: "timber-refused" });
+			if (result.outcome !== "refused") throw new Error("unreachable");
+			expect(result.failure.diagnostic).toContain("Remote is missing or ambiguous");
+			expect(refs(mine)).toBe(mineRefs);
+			expect(git(mine, "for-each-ref", "--format=%(upstream)", "refs/heads/fresh").trim()).toBe("");
+		}, REAL_TIMBER_TIMEOUT_MS);
+
+		test("runs nothing when the branch gained an upstream since the command was shown", async () => {
+			const folder = addFresh();
+			commit(folder, "one.md", "one\n");
+			expect(actionTargetOf("push", (await listedFresh()).sync)).toEqual(NO_UPSTREAM);
+			// Published by hand after the dialog showed the command.
+			git(folder, "push", "-q", "--set-upstream", "origin", "fresh");
+			commit(folder, "two.md", "two\n");
+			const remoteRefs = refs(remote);
+
+			const result = await setUp().actions.run({ action: "push", repository: mine, worktree: folder, target: NO_UPSTREAM });
+
+			expect(result).toMatchObject({ outcome: "failed", action: "push", ran: false });
+			if (result.outcome !== "failed") throw new Error("unreachable");
+			expect(result.failure.diagnostic).toBe("The branch fresh now has the upstream refs/remotes/origin/fresh, and had none when the command was shown. Look at the command again. Nothing was run.");
+			expect(refs(remote)).toBe(remoteRefs);
+		});
+
+		test("a branch with no commits of its own gets no Push, and a request to publish it runs nothing", async () => {
+			const folder = addFresh();
+			const listed = await listedFresh();
+			expect(listed.sync).toEqual({ kind: "unpublished", unpushed: 0 });
+			expect(actionTargetOf("push", listed.sync)).toBeNull();
+			const remoteRefs = refs(remote);
+
+			const result = await setUp().actions.run({ action: "push", repository: mine, worktree: folder, target: NO_UPSTREAM });
+
+			expect(result).toMatchObject({ outcome: "failed", action: "push", ran: false });
+			if (result.outcome !== "failed") throw new Error("unreachable");
+			expect(result.failure.diagnostic).toBe("The branch fresh has no commits that a remote does not have. Nothing was run.");
+			expect(refs(remote)).toBe(remoteRefs);
+		});
+
+		test("a tracking branch asked with no upstream yet, a Pull with no upstream, and a target of another shape run nothing", async () => {
+			commit(feature, "mine.md", "mine\n");
+			const remoteRefs = refs(remote);
+			const { actions } = setUp();
+			const tracking = await actions.run({ action: "push", repository: mine, worktree: feature, target: NO_UPSTREAM });
+			expect(tracking).toMatchObject({ outcome: "failed", ran: false });
+			if (tracking.outcome !== "failed") throw new Error("unreachable");
+			expect(tracking.failure.diagnostic).toContain("now has the upstream refs/remotes/origin/feature");
+			expect(await actions.run({ action: "pull", repository: mine, worktree: feature, target: NO_UPSTREAM })).toMatchObject({ outcome: "failed", ran: false });
+			const odd = { kind: "no-upstream", remote: "origin" } as unknown as SyncActionRequest["target"];
+			expect(await actions.run({ action: "push", repository: mine, worktree: feature, target: odd })).toMatchObject({ outcome: "failed", ran: false, failure: { diagnostic: "The request for a sync action is not complete. Nothing was run." } });
+			expect(refs(remote)).toBe(remoteRefs);
+		});
 	});
 });

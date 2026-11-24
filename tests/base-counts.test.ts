@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, realpathSync, renameSync, rmSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readBaseCounts } from "../src/bun/git-engine";
-import { countAgainstBases, createRepositoryReader } from "../src/bun/repository-reader";
+import { countAgainstBases, countUnpushed, createRepositoryReader } from "../src/bun/repository-reader";
 import type { BaseCounts, Repository, SavedBase } from "../src/shared/model";
 import { REAL_TIMBER_TIMEOUT_MS, fingerprint, git, isolatedEnvironment, makeRepository, ready, realTimber } from "./support/timber";
 
@@ -80,6 +80,33 @@ describe("readBaseCounts", () => {
 		await readBaseCounts(commonGitDir, onMain, head(feat));
 		await readBaseCounts(commonGitDir, { kind: "assigned", ref: "refs/heads/no-such-branch" }, head(feat));
 		expect([primary, feat].map(fingerprint)).toEqual(before);
+	});
+});
+
+describe("countUnpushed", () => {
+	test("counts only unpublished branches with a commit, once per commit, and leaves one Git could not count as it was", async () => {
+		const asked: (string | null)[] = [];
+		const a = "a".repeat(40);
+		const b = "b".repeat(40);
+		const c = "c".repeat(40);
+		const count = async (_directory: string, at: string | null): Promise<number | null> => {
+			asked.push(at);
+			return at === a ? 2 : at === b ? 0 : null;
+		};
+		const tracking = { kind: "tracking", upstream: "origin/x", ahead: 1, behind: 0 } as const;
+		const answers = await countUnpushed("/work/.git", [
+			{ head: a, sync: { kind: "unpublished" } },
+			{ head: a, sync: tracking },
+			{ head: b, sync: { kind: "unpublished" } },
+			{ head: a, sync: { kind: "unpublished" } },
+			{ head: null, sync: { kind: "unpublished" } },
+			{ head: c, sync: { kind: "unpublished" } },
+			{ head: c, sync: null },
+		], count);
+		expect(answers).toEqual([
+			{ kind: "unpublished", unpushed: 2 }, tracking, { kind: "unpublished", unpushed: 0 }, { kind: "unpublished", unpushed: 2 }, { kind: "unpublished" }, { kind: "unpublished" }, null,
+		]);
+		expect(asked).toEqual([a, b, c]);
 	});
 });
 
