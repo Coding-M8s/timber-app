@@ -9,6 +9,7 @@ import { RunChopDialog } from "./RunChopDialog";
 import { DeleteBackupDialog, RestoreBackupDialog } from "./BackupDialogs";
 import { DiscardFilesDialog } from "./DiscardFilesDialog";
 import { DoneDialog } from "./DoneDialog";
+import { GeneratePullRequestDialog } from "./GeneratePullRequestDialog";
 import { NewWorktreeDialog } from "./NewWorktreeDialog";
 import { RebaseDialog } from "./RebaseDialog";
 import { SendReviewDialog } from "./ReviewNotes";
@@ -45,6 +46,8 @@ export function Dialogs() {
 			return <RebaseDialog key={`${dialog.repository}\n${dialog.worktree}`} request={dialog} />;
 		case "sync-action":
 			return <SyncActionDialog key={`${dialog.action}\n${dialog.repository}\n${dialog.worktree}`} request={dialog} />;
+		case "generate-pull-request":
+			return <GeneratePullRequestDialog key={`${dialog.repository}\n${dialog.worktree}`} request={dialog} />;
 		case "set-base":
 			return <SetBaseDialog key={`${dialog.repository}\n${dialog.worktree}`} request={dialog} />;
 		case "clean-up-merged":

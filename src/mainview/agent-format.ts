@@ -2,6 +2,8 @@ import { AGENT_LIMIT, AGENT_PRESETS, type AgentSetting, agentCommand, agentProbl
 import { AGENTS, type AgentId, executableName } from "../shared/agent-registry";
 import { resumableAgent } from "../shared/agent-resume";
 import { type AgentLocation, describeAgentLookup, lookupOf } from "../shared/agent-lookup";
+import { generateOf } from "../shared/generate-text";
+import { describeCommandLine } from "../shared/command-line";
 import { cleanSessionName } from "../shared/terminal";
 import type { TerminalProblem } from "./store/state";
 
@@ -194,6 +196,24 @@ export function agentsDraftModel(drafts: readonly AgentDraft[], saved: readonly 
 	const error = drafts.length > AGENT_LIMIT ? `The list can hold ${AGENT_LIMIT} agents at most. Remove ${drafts.length - AGENT_LIMIT}.` : null;
 	const valid = error === null && rows.every(row => row.problem === null);
 	return { rows, agents, error, canSave: valid && !sameAgentSettings(agents, saved) };
+}
+
+/** The agents the Agents section offers to write text: every row the registry says how to run once. Keys, so a rename or removal is followed. */
+export interface GenerateOption {
+	key: string;
+	name: string;
+	/** What it keeps or can still reach, or null. */
+	caveat: string | null;
+	command: string;
+}
+
+export function generateOptions(drafts: readonly AgentDraft[], agents: readonly AgentSetting[]): GenerateOption[] {
+	return drafts.flatMap((draft, index) => {
+		const setting = agents[index]!;
+		const found = generateOf(setting);
+		const command = agentCommand(setting);
+		return found === null || !command.ok || setting.name === "" ? [] : [{ key: draft.key, name: setting.name, caveat: found.generate.caveat, command: describeCommandLine([command.executable, ...found.generate.arguments]) }];
+	});
 }
 
 /** What a row of the Agents section says about its agent's executable, and whether that is a problem. */

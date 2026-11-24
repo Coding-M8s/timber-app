@@ -10,6 +10,7 @@ import type { PullRequestCreationFailure, PullRequestFields, ReportedPullRequest
 import type { ChopList, ListedChop } from "../../shared/chops";
 import type { PortClash, PortsResult } from "../../shared/ports";
 import type { BaseComparison, Comparison, FileChange, FileChangeTarget, FileDiffResult } from "../../shared/file-changes";
+import type { GenerateKind, GeneratedText, WorktreePart } from "../../shared/generate-text";
 import type { WorktreeFileResult } from "../../shared/worktree-files";
 import type { ReviewNote } from "../../shared/review";
 import { type Layout, type SidePanelView, defaultLayout } from "../../shared/layout";
@@ -175,6 +176,25 @@ export interface ChangesView {
 	unchanged: readonly string[] | null;
 }
 
+/** A worktree's latest run of an agent that writes one kind of text (../../shared/generate-text.ts). */
+export interface GenerationRun {
+	/** The run's id, so a late answer of an earlier run changes nothing. */
+	id: string;
+	running: boolean;
+	/** The agent's name in Settings. */
+	by: string;
+	/** Text that waits beside the field, as the person typed there or the worktree changed meanwhile. */
+	held: GeneratedText | null;
+	/** What changed in the worktree meanwhile. */
+	changed: readonly WorktreePart[];
+	/** As `GenerateTextResult` says. */
+	leftOut: number | null;
+	/** Whether its text went into the field. */
+	filled: boolean;
+	/** Why it wrote nothing, with the command when the agent ran. */
+	problem: { command: string | null; message: string } | null;
+}
+
 /** A worktree's latest commit from the Changes view. */
 export interface CommitRun {
 	/** The commit is running: the box is read-only, and Commit and the list's write buttons wait. */
@@ -310,6 +330,8 @@ export type DialogRequest =
 	 * dialog and Git refused or it failed: the dialog opens on that outcome.
 	 */
 	| { kind: "sync-action"; action: SyncActionKind; repository: string; worktree: string; ended?: Exclude<SyncActionResult, { outcome: "done" }> }
+	/** Have an agent write a pull request's title and description, then open it once the person agreed. Named as for Done. */
+	| { kind: "generate-pull-request"; repository: string; worktree: string }
 	/** Save the base Timber keeps for a worktree, from the Changes view. Named as for Done. */
 	| { kind: "set-base"; repository: string; worktree: string }
 	/** Remove every linked worktree of one repository whose pull request merged. `repository` is the path of the primary checkout. */
@@ -585,6 +607,8 @@ export interface AppState {
 	 * while another worktree shows, and the outcome must be there on return.
 	 */
 	commitRuns: Readonly<Record<string, CommitRun>>;
+	/** Each worktree's latest run of an agent for each kind of text, by its identity. In the window only. */
+	generations: Readonly<Record<string, Partial<Record<GenerateKind, GenerationRun>>>>;
 	/**
 	 * The file open in the File tab of each worktree, by its identity. A
 	 * worktree with none has no File tab. Kept in the window only, never
@@ -751,6 +775,7 @@ export const initialState: AppState = {
 	changeFilters: {},
 	commitMessages: {},
 	commitRuns: {},
+	generations: {},
 	files: {},
 	reviews: {},
 	noteInView: null,

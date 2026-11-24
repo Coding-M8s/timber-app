@@ -48,7 +48,7 @@ import { confirmsPull, forgetPullRepository } from "../../shared/pull-confirm-se
 import { SYNC_ACTION_WORDS, presentSyncResult } from "../sync-action-format";
 import type { SetBaseRequest, SetBaseResult } from "../../shared/timber-base";
 import { type CreatePullRequestResult, initialPullRequestBase, pullRequestBaseFromText, pullRequestReviewersFromText } from "../../shared/timber-pr";
-import { type PullRequestFields, defaultPullRequestTitle, presentPullRequestCreation, pullRequestTitleWithKey, titleKeyOf } from "../pull-request-create-format";
+import { type PullRequestFields, defaultPullRequestTitle, type PullRequestCreationView, presentPullRequestCreation, pullRequestTitleWithKey, titleKeyOf } from "../pull-request-create-format";
 import type { WorkflowList } from "../../shared/workflows";
 import type { IssueTrackers } from "../../shared/issue-trackers";
 import { type Draw, createTerminalFeed } from "../terminal-feed";
@@ -73,13 +73,15 @@ import { fileLines, fillUnchanged, linesMatchDiff, unchangedReadable } from "../
 import { filterFiles, listedOrder, movedEntry, steppedFile } from "../changes-format";
 import { COMMIT_ARGUMENTS, COMMIT_COMMAND_LINE, type CommitResult, commitBlocker } from "../../shared/commit-staged";
 import { commitStateOf } from "../commit-format";
+import { commitBlockerOf, generatorOf, pullRequestBlockerOf } from "../generate-format";
+import { type GenerateKind, type GenerateTextResult, type GeneratedText, describeGenerateCommand, generateCommand } from "../../shared/generate-text";
 import { type IndexAction, type IndexWriteResult, canWriteIndex, describeGitCommand, indexCommand } from "../../shared/index-writes";
 import { type DiscardResult, discardCommand, discardPaths, fileDiscardable } from "../../shared/discard-files";
 import { type FileEditMemory, createFileEditMemory } from "../text-editor-format";
 import { afterSave, canEditFile, editableFileText, fileText, hasUnsavedEdits, initialFileMode, listedOnly, outsideResult, pathInWorktree, settleTabs, unsavedFileCount } from "../file-view-format";
 import {
 	type AppState, type ChangesView, type DialogRequest, type FileMode, type FileView, type Operation, type PullRequestForm, type Removal, type SessionAgent, type UnsavedFileStep, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood, syncOptionsOf,
-	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, canToggleSidePanel, chopsEnabled, filesPanelShown, offeredChops, sidePanelShown, sidePanelView, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, shownSession, timberReady, withTerminal, withoutSession, fileViewed, viewedKey, type CommitRun, writesWait } from "./state";
+	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, canToggleSidePanel, chopsEnabled, filesPanelShown, offeredChops, sidePanelShown, sidePanelView, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, shownSession, timberReady, withTerminal, withoutSession, fileViewed, viewedKey, type CommitRun, type GenerationRun, writesWait } from "./state";
 
 /** How `AppStore.runChop` runs a chop, beyond which one and where. */
 export interface RunChopOptions {
@@ -390,6 +392,33 @@ export interface AppStore {
 	 */
 	commitStaged(): Promise<CommitResult | null>;
 	/**
+	 * Have the agent picked in Settings write a commit message for what is
+	 * staged in the worktree the Changes view shows. It goes into the box when
+	 * that is still empty and nothing changed in the worktree meanwhile; else
+	 * it waits beside it (`generations`). A failure or a stop leaves the box.
+	 * Does nothing while one runs, or when the button may not be pressed.
+	 */
+	generateCommitMessage(): Promise<void>;
+	/**
+	 * The same for the title and description of a worktree's pull request
+	 * form, by worktree id. The title starts with the linked issue's key.
+	 */
+	generatePullRequestText(worktreeId: string): Promise<void>;
+	/** Stop a worktree's run for one kind of text. */
+	stopGenerating(worktreeId: string, kind: GenerateKind): void;
+	/** Put the text that waits into its field. */
+	fillHeld(worktreeId: string, kind: GenerateKind): void;
+	/** Drop the text that waits, or a failure shown. */
+	dropGenerated(worktreeId: string, kind: GenerateKind): void;
+	/**
+	 * For the one-click dialog: start the worktree's form when there is none,
+	 * and have the agent write its title and description, which come back and
+	 * go nowhere else. `id` is the run's, for `stopRun`. Never throws.
+	 */
+	writePullRequest(repository: string, worktreeId: string, id: string): Promise<GenerateTextResult>;
+	/** Stop a run started with `writePullRequest`. */
+	stopRun(id: string): void;
+	/**
 	 * Read the chops of a repository, named by the path of its primary
 	 * checkout, into `chops`. The latest read wins, and another repository
 	 * starts afresh. Never throws.
@@ -663,9 +692,12 @@ export interface AppStore {
 	 * it. Created: a toast. Already open: a note above it. Reviewers Timber
 	 * could not request stay in the form under either, until put away or the
 	 * next run. Refused or failed: the failure stays in the form for a retry.
-	 * Never throws.
+	 * Never throws. Answers what the ending shows, or null when nothing ran.
+	 * Without `announce` the caller shows the toast. With
+	 * `text`, that title and description run in place of the form's, which
+	 * stay as typed, and the caller shows a failure.
 	 */
-	createPullRequest(worktreeId: string): Promise<void>;
+	createPullRequest(worktreeId: string, options?: { announce?: boolean; text?: { title: string; body: string } }): Promise<PullRequestCreationView | null>;
 	/** Put away the reviewers a worktree's last run could not request. */
 	dismissReviewerFailures(worktreeId: string): void;
 	/**
@@ -2283,6 +2315,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		if (result.outcome === "committed") {
 			const { [id]: _sent, ...others } = state.commitMessages;
 			update({ commitMessages: others });
+			if (state.generations[id]?.commit?.running === false) changeGeneration(id, "commit", null);
 			ran({ running: false, problem: null, committed: { commit: result.commit, short: result.short } });
 		} else {
 			ran({ running: false, problem: { command: result.outcome === "failed" ? result.command : null, message: result.message }, committed: null });
@@ -2290,6 +2323,102 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		// The list at once while it shows, and the repository for the row's counts. Another worktree's list is read when it shows again.
 		await Promise.all([state.changes?.worktree === id ? readChanges(view.repository, id) : null, reloadOne(view.repository)]);
 		return result;
+	}
+
+	function changeGeneration(worktreeId: string, kind: GenerateKind, run: GenerationRun | null): void {
+		const { [kind]: _before, ...others } = state.generations[worktreeId] ?? {};
+		update({ generations: { ...state.generations, [worktreeId]: run === null ? others : { ...others, [kind]: run } } });
+	}
+
+	/** Ask the engine once, naming the agent and the command as the window has them. Never throws. */
+	async function askGenerator(id: string, kind: GenerateKind, repository: string, worktree: string, base: string | null): Promise<GenerateTextResult> {
+		const choice = generatorOf(state);
+		if (!choice.ok) return { outcome: "refused", message: choice.reason };
+		try {
+			return await engine.generateText({ id, kind, repository, worktree, base, shown: generateCommand(choice.generator) });
+		} catch (error) {
+			return { outcome: "failed", command: describeGenerateCommand(choice.generator), message: unheard("the agent", error) };
+		}
+	}
+
+	/** One run whose text goes into a field, or waits beside it when `free` says the field is not as it was, or the worktree changed. */
+	async function generateInto(worktreeId: string, kind: GenerateKind, repository: string, worktree: string, base: string | null, free: () => boolean): Promise<void> {
+		const choice = generatorOf(state);
+		if (!choice.ok) return;
+		const started: GenerationRun = { id: crypto.randomUUID(), running: true, by: choice.generator.setting.name, held: null, changed: [], leftOut: 0, filled: false, problem: null };
+		changeGeneration(worktreeId, kind, started);
+		const result = await askGenerator(started.id, kind, repository, worktree, base);
+		if (state.generations[worktreeId]?.[kind]?.id !== started.id) return;
+		const ended = { ...started, running: false };
+		switch (result.outcome) {
+			case "stopped":
+				changeGeneration(worktreeId, kind, null);
+				return;
+			case "refused":
+				changeGeneration(worktreeId, kind, { ...ended, problem: { command: null, message: result.message } });
+				return;
+			case "failed":
+				changeGeneration(worktreeId, kind, { ...ended, problem: { command: result.command, message: result.message } });
+				return;
+			case "generated": {
+				const { changed, leftOut } = result;
+				const waits = changed.length > 0 || !free();
+				changeGeneration(worktreeId, kind, { ...ended, changed, leftOut, held: waits ? result.text : null });
+				if (!waits) fillGenerated(worktreeId, kind, result.text);
+			}
+		}
+	}
+
+	/** Put generated text in its field, and say so. */
+	function fillGenerated(worktreeId: string, kind: GenerateKind, text: GeneratedText): void {
+		const run = state.generations[worktreeId]?.[kind];
+		if (text.kind === "commit") setCommitMessage(worktreeId, text.message);
+		else {
+			const form = state.pullRequestForms[worktreeId];
+			// Timber runs with what was typed: the text waits until it ended.
+			if (!form || form.running) return;
+			editPullRequestForm(worktreeId, { title: pullRequestTitleWithKey(text.title, null, form.titleKey), body: text.body });
+		}
+		if (run) changeGeneration(worktreeId, kind, { ...run, held: null, changed: [], filled: true });
+	}
+
+	async function generateCommitMessage(): Promise<void> {
+		const view = state.changes;
+		if (!view?.files || view.compared !== "uncommitted") return;
+		const id = view.worktree;
+		const worktree = worktreeOf(view.repository, id);
+		if (!worktree || state.generations[id]?.commit?.running) return;
+		const committing = state.commitRuns[id]?.running === true;
+		if (commitBlockerOf(generatorOf(state), commitStateOf({ ...view, files: view.files }, ""), committing) !== null) return;
+		// The box must still be empty when the text comes. What was typed before it stays too.
+		await generateInto(id, "commit", view.repository, worktree.path, null, () => (state.commitMessages[id] ?? "").trim() === "" && state.commitRuns[id]?.running !== true);
+	}
+
+	async function generatePullRequestText(worktreeId: string): Promise<void> {
+		const form = state.pullRequestForms[worktreeId];
+		const worktree = form && worktreeOf(form.repository, worktreeId);
+		if (!form || !worktree || state.generations[worktreeId]?.["pull-request"]?.running) return;
+		if (pullRequestBlockerOf(generatorOf(state), worktree, state.pullRequests[form.repository], form) !== null) return;
+		await generateInto(worktreeId, "pull-request", form.repository, form.worktree, pullRequestBaseFromText(form.base), () => {
+			const now = state.pullRequestForms[worktreeId];
+			return now !== undefined && !now.running && !now.titleEdited && now.body.trim() === "";
+		});
+	}
+
+	async function writePullRequest(repository: string, worktreeId: string, id: string): Promise<GenerateTextResult> {
+		const worktree = worktreeOf(repository, worktreeId);
+		if (!worktree) return { outcome: "refused", message: "The worktree is no longer listed." };
+		startPullRequestForm(repository, worktree);
+		const form = state.pullRequestForms[worktreeId];
+		const blocker = pullRequestBlockerOf(generatorOf(state), worktree, state.pullRequests[repository], form);
+		if (!form || blocker !== null) return { outcome: "refused", message: blocker ?? "There is no pull request form for this worktree." };
+		const result = await askGenerator(id, "pull-request", repository, worktree.path, pullRequestBaseFromText(form.base));
+		if (result.outcome !== "generated" || result.text.kind !== "pull-request") return result;
+		return { ...result, text: { ...result.text, title: pullRequestTitleWithKey(result.text.title, null, state.pullRequestForms[worktreeId]?.titleKey ?? null) } };
+	}
+
+	function stopRun(id: string): void {
+		void engine.stopGenerating(id).catch(() => {});
 	}
 
 	async function selectChangedFile(file: FileChangeTarget): Promise<void> {
@@ -3269,6 +3398,9 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const forms = Object.entries(state.pullRequestForms);
 		const kept = forms.filter(([id, form]) => listed.has(id) || form.running);
 		if (kept.length !== forms.length) update({ pullRequestForms: Object.fromEntries(kept) });
+		const generations = Object.entries(state.generations);
+		const left = generations.filter(([id, runs]) => listed.has(id) || Object.values(runs).some(run => run.running));
+		if (left.length !== generations.length) update({ generations: Object.fromEntries(left) });
 	}
 
 	/**
@@ -3337,11 +3469,12 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		if (state.pullRequestForms[worktreeId]?.reviewerFailures) changeForm(worktreeId, { reviewerFailures: null });
 	}
 
-	async function createPullRequest(worktreeId: string): Promise<void> {
+	async function createPullRequest(worktreeId: string, { announce = true, text }: { announce?: boolean; text?: { title: string; body: string } } = {}): Promise<PullRequestCreationView | null> {
 		const form = state.pullRequestForms[worktreeId];
-		if (!form || form.running) return;
+		if (!form || form.running) return null;
 		changeForm(worktreeId, { running: true, failure: null, reported: null, reviewerFailures: null });
-		const { repository, worktree, title, body, base, draft, reviewers } = form;
+		const { repository, worktree, base, draft, reviewers } = form;
+		const { title, body } = text ?? form;
 		let result: CreatePullRequestResult;
 		try {
 			result = await engine.createPullRequest({ repository, worktree, title, body, base: pullRequestBaseFromText(base), draft, reviewers: pullRequestReviewersFromText(reviewers) });
@@ -3352,8 +3485,9 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		// Even a failure can come after the push, or after the host opened the pull request.
 		if (result.outcome !== "failed" || result.ran) await Promise.all([reloadOne(repository), refreshPullRequests(repository)]);
 		const shown = presentPullRequestCreation(result);
-		changeForm(worktreeId, { running: false, failure: shown.failure, reported: shown.reported, reviewerFailures: shown.reviewerFailures });
-		if (shown.toast) showToast(shown.toast);
+		changeForm(worktreeId, { running: false, failure: text === undefined ? shown.failure : null, reported: shown.reported, reviewerFailures: shown.reviewerFailures });
+		if (shown.toast && announce) showToast(shown.toast);
+		return shown;
 	}
 
 	async function restoreBackup(request: BackupRestoreRequest): Promise<BackupRestoreResult> {
@@ -3908,6 +4042,21 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		setChangesFilter,
 		setCommitMessage,
 		commitStaged,
+		generateCommitMessage,
+		generatePullRequestText,
+		stopGenerating(worktreeId, kind) {
+			const run = state.generations[worktreeId]?.[kind];
+			if (run?.running) stopRun(run.id);
+		},
+		fillHeld(worktreeId, kind) {
+			const held = state.generations[worktreeId]?.[kind]?.held;
+			if (held) fillGenerated(worktreeId, kind, held);
+		},
+		dropGenerated(worktreeId, kind) {
+			if (state.generations[worktreeId]?.[kind]?.running !== true) changeGeneration(worktreeId, kind, null);
+		},
+		writePullRequest,
+		stopRun,
 		openFile,
 		readFileAgain,
 		closeFile,

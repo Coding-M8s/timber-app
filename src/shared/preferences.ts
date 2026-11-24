@@ -17,7 +17,7 @@ import { type PullConfirmSetting, defaultPullConfirmSetting, readPullConfirmSett
 import { type StateSounds, defaultStateSounds, legacyStateSounds, readStateSounds, salvageStateSounds, sameStateSounds, writeStateSounds } from "./sound-setting";
 import { ALERT_STATES, type AlertState } from "./status-notices";
 import { type ShortcutSettings, readShortcuts, salvageShortcuts, sameShortcuts, writeShortcuts } from "./shortcuts";
-import { type SessionNaming, readSessionNaming } from "./terminal";
+import { type SessionNaming, cleanSessionName, readSessionNaming } from "./terminal";
 import { type DmabufChoice, readDmabufChoice } from "./rendering";
 import { type TimberChoice, defaultTimberChoice, readTimberChoice, sameTimberChoice, writeTimberChoice } from "./timber-choice";
 import { type TerminalAppearance, defaultTerminalAppearance, readTerminalAppearance, salvageTerminalAppearance, sameTerminalAppearance, writeTerminalAppearance } from "./terminal-appearance";
@@ -39,6 +39,13 @@ export interface Preferences {
 	 * presets back, and the next save of the Agents section writes them.
 	 */
 	agents: readonly AgentSetting[];
+	/**
+	 * The name of the agent that writes commit messages and pull requests'
+	 * text (./generate-text.ts), or "" for the first saved one that can and is
+	 * found. Saved with the agents, so it follows a rename and is cleared when
+	 * its agent is removed.
+	 */
+	generateWith: string;
 	/**
 	 * The person's own chops (./chops.ts), for every repository or for one,
 	 * in the order of Settings, Chops. None until some are saved. An entry
@@ -208,6 +215,13 @@ export const PREFERENCE_PARTS: { [Key in keyof Preferences]: PreferencePart<Pref
 		read: readAgentSettings,
 		same: sameAgentSettings,
 		write: writeAgentSettings,
+	},
+	generateWith: {
+		fallback: () => "",
+		// "" or a clean name, as an agent's is.
+		read: value => typeof value === "string" && (value === "" || cleanSessionName(value) === value) ? value : undefined,
+		same: (one, other) => one === other,
+		write: value => value,
 	},
 	chops: {
 		fallback: () => [],

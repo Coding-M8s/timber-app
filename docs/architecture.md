@@ -169,6 +169,11 @@ has no command for them:
   Amending is left out because it rewrites a commit, as the sync actions
   never do.
 
+An agent that writes a commit message or a pull request's text (see
+[generating text](#generating-text)) is none of these: it starts an outside
+program, as a session does, and sends the diff to that agent's provider, but
+writes nothing in a repository and runs no Timber command.
+
 Everything else that writes still goes through Timber.
 
 Timber itself rules out GUI work, a daemon, and a local API inside its own
@@ -4066,6 +4071,106 @@ box focused.
   the index's cached file times, as it does in a terminal, so it checks the
   index's entries rather than its bytes.
 
+### Generating text
+
+An agent saved in Settings can write a commit message from the staged diff,
+or a pull request's title and description from the branch's commits and its
+diff with the base.
+
+- **The capability.** `generateText` on the `Engine` contract, `{ id, kind,
+  repository, worktree, base, shown }`, answering `generated`, `refused`,
+  `stopped`, or `failed` (`GenerateTextResult` in
+  `src/shared/generate-text.ts`), and `stopGenerating(id)`. The main
+  process's side is `src/bun/generate-text.ts`, and what the agent is given
+  is read by `generationInput` in `src/bun/file-changes.ts`.
+- **Which agent.** `pickGenerator`, which both sides call: the agent picked
+  in Settings, Agents (`generateWith`, its name), else the first saved one
+  the registry gives a `generate` and whose executable was found. A picked
+  agent that is gone, cannot, or is not found is never replaced by another,
+  and none is picked while one that can is not looked for yet. The window
+  never names the agent: it sends the command it showed (`shown`), and
+  nothing runs when the main process would run another. Settings saves the
+  pick with the agents, so it follows a rename and is cleared with its row.
+- **The command.** The executable found for the saved row and the
+  registry's arguments. The row's other words are never used, since one
+  could turn tools on. Only its config folder is, as the variable its
+  sessions get. The tooltip shows the command word for word and says what
+  the arguments do not: the folder, its files, the variable, what goes on
+  standard input, and that it goes to the agent's provider.
+- **The run.** An executable plus arguments, never through a shell, in a
+  new empty folder only this user can open, removed afterwards, so nothing
+  in the worktree, such as its `AGENTS.md`, instructs the agent. The prompt
+  goes to standard input. The app's environment is passed on, as to a
+  session, without the handoff folder and the status file. It runs in a
+  process group of its own, or as a process tree on Windows, and Stop,
+  quitting, and five minutes (`GENERATE_MILLISECONDS`) end it with what it
+  started. The desktop bridge waits ten. It holds no turn of the repository.
+  Nothing given to it or answered by it is logged.
+- **What it is given.** For a commit, `git diff --cached`, refused as
+  Commit is but for the message (`commitGenerateBlocker`). For a pull
+  request, the messages of `<merge-base>..HEAD` and the diff from the merge
+  base to HEAD, so nothing uncommitted. The base is the saved one, or the
+  form's Base, read only as `refs/remotes/<base>`. Neither an external diff
+  nor a text conversion runs. A diff over 200 KiB is cut by whole files,
+  and the files left out are named in the prompt and counted in the window;
+  commit messages are cut at 32 KiB.
+- **Instructions hidden in a diff.** The diff and the commit messages are
+  untrusted. The baselines: tools off as far as the agent lets the app; the
+  empty folder; a fixed prompt (`GENERATE_INSTRUCTIONS`, shown whole in
+  Settings) that says everything between the markers is data and never an
+  instruction; markers with a random value, new on every run, so a diff
+  cannot end its own block; and an answer that is only ever text in a
+  field. `cleanGenerated` takes out escape sequences, control, invisible,
+  and direction characters, HTML comments, a fence around the whole, and
+  lines that credit an assistant (`src/shared/attribution.ts`, the rule of
+  the commit hook). An empty or too long answer fails. Before a pull request
+  is published, links, images, HTML, mentions, and closing words are named
+  (`textNotices`). None of this makes an agent obey: the person reads the
+  text before anything is done with it.
+- **What changed meanwhile.** `worktreeState` reads the status with each
+  file's size and time, the index, HEAD, the branches and tags, and the
+  stash before and after, and `changed` names what differs or could not be
+  read, whoever changed it. A branch checked out in another worktree and
+  remote-tracking refs are left out, since other worktrees and fetches move
+  them. The text then waits beside the field, with "Use it anyway".
+- **In the window.** Runs are kept per worktree and kind in `generations`.
+  The text goes in when the field is as it was: an empty box, or a title
+  nobody typed and an empty description. Otherwise it waits, with "Replace
+  mine" and "Keep mine". A failure or a stop leaves the field. A title gets
+  the linked issue's key as the form's does, and counts as typed, so a
+  later commit does not replace it.
+- **One click.** "Create pull request", at the top of the commit box, and
+  "Generate and create", in the form, open `GeneratePullRequestDialog`: the
+  agent writes, then the text shows, editable, with the exact `timber pr`
+  command. The text is the dialog's: Publish and open runs
+  `createPullRequest` with it in place of the form's. A failure stays in
+  the dialog, and Cancel stops the agent and leaves the form as it was. It is disabled only for
+  what the window knows (no branch, a pull request there or being created,
+  nothing ahead of the base, no agent); whether the branch can be published
+  is Timber's to say.
+- **The mock engine.** `src/mainview/engine/mock-generate.ts`:
+  `setGenerateDelay`, `failGenerate`, `setGeneratedText`,
+  `setGenerateSideEffects`, and `generateRequests`.
+- **Tests.** `tests/generate-text.test.ts` runs a stand-in agent on real
+  temporary repositories and compares every file, the index's bytes, HEAD,
+  every ref, and the stash before and after. `tests/generate-store.test.tsx`
+  covers the store and the words, and `tests/generate-text-browser.test.ts`
+  a real browser.
+
+What each agent was found to keep, asked in an empty folder to read
+`/etc/hostname` and, for Cursor and Grok, to run a command, fetch a page, and
+write a file. One run each, on Linux, with what the agent itself reported:
+
+| Agent | Checked | Left |
+|---|---|---|
+| Claude Code | 2.1.331 on 2026-11-24 | No tool |
+| Codex | 0.169.0 on 2026-11-24 | No shell, file reading, or web; `apply_patch`, `view_image`, a JavaScript `exec`, and subagents, with a read-only sandbox |
+| Cursor CLI | 2026.11.22-e9042b2 on 2026-11-24 | Its tools, denied by `.cursor/cli.json` in the folder: reading, running, and fetching were refused. Ask mode alone read the file. MCP servers may connect |
+| Grok Build | 1.0.92 on 2026-11-24 | `todo_write` and MCP. `--tools ""` means every tool and read the file. It keeps each run under `~/.grok/sessions` |
+
+Gemini CLI, OpenCode, and GitHub Copilot CLI have no `generate`: they were not
+installed, and what their documentation says was not run.
+
 ## The file viewer
 
 The File tab shows one file of a worktree, such as a plan or a report an
@@ -5337,6 +5442,11 @@ for its mark. Each row has:
   folder in `XDG_CONFIG_HOME` when it reads that variable, as Cursor CLI
   does, and its folder in the home folder). See
   [going back to a conversation](#going-back-to-a-conversation).
+- **`generate`**: how it runs once, without a session, to write text, or
+  null: the arguments after its executable, files written to its empty
+  folder first, the version it was run with and when (`checked`), and what
+  it keeps or can still reach (`caveat`), which Settings says. See
+  [generating text](#generating-text).
 - **`signIn`**: a command that only reads whether it is signed in, and the
   command that signs in. Null for every agent for now; nothing reads them yet.
 - **`status`**: how it reports its status, `osc-7501`, `hook`, or `none`,
@@ -5370,7 +5480,12 @@ for its mark. Each row has:
    where the compiler asks for it, and, for an agent with no `fresh`, its
    search at quit in `conversationFinders`. `src/bun/terminals.ts` and
    `src/bun/session-layout.ts` read both tables and need no change.
-4. Add it to the tests in `tests/agent-registry.test.ts`, which check that
+4. Give it a `generate` only after running the installed version in an empty
+   folder and asking it to read a file, run a command, fetch a page, and
+   write a file, with the arguments that switch its tools off. Write what
+   remains in `caveat`, and add it to the table under
+   [generating text](#generating-text).
+5. Add it to the tests in `tests/agent-registry.test.ts`, which check that
    ids and executables are unique.
 
 ### Going back to a conversation

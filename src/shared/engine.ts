@@ -9,6 +9,7 @@ import type { FetchResult, ForcePushSeen, RepositoryFetch } from "./git-fetch";
 import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffResult } from "./file-changes";
 import type { IndexWriteRequest, IndexWriteResult } from "./index-writes";
 import type { CommitRequest, CommitResult } from "./commit-staged";
+import type { GenerateTextRequest, GenerateTextResult } from "./generate-text";
 import type { DiscardRequest, DiscardResult } from "./discard-files";
 import type { OutsideFileRequest, WorktreeFileRequest, WorktreeFileResult, WorktreeFileWriteRequest, WorktreeFileWriteResult } from "./worktree-files";
 import type { WorktreeFolderChange, WorktreeFolderRequest, WorktreeFolderResult, WorktreeFolderWatch } from "./worktree-folders";
@@ -650,6 +651,23 @@ export interface Engine {
 	 * every outcome.
 	 */
 	commitStaged(request: CommitRequest): Promise<CommitResult>;
+	/**
+	 * Have an agent saved in Settings write a commit message from the staged
+	 * diff, or a pull request's title and description from the branch's
+	 * commits and its diff with the base (./generate-text.ts). It runs once,
+	 * without a session, under the person's own login, in an empty folder,
+	 * with its tools switched off as far as it lets the app and the diff on
+	 * standard input. Which agent is the main process's to say, from the saved
+	 * settings: nothing runs unless `shown` is its command. Commits, pushes,
+	 * and opens nothing, and changes nothing in the worktree: what changed
+	 * meanwhile, by whatever did it, is named in `changed`. Refuses when there
+	 * is nothing to describe, and while a merge or rebase is in progress for
+	 * a commit. Never retried, and stopped after five minutes. The diff and
+	 * the text are private: never log them.
+	 */
+	generateText(request: GenerateTextRequest): Promise<GenerateTextResult>;
+	/** Stop a `generateText` by the request's id, which then answers "stopped". False when no such run is under way. */
+	stopGenerating(id: string): Promise<boolean>;
 	/**
 	 * One file of a worktree of a repository in the list, for the File tab. The path is relative to the worktree, and neither it nor a
 	 * link it is may lead outside the worktree: a link that does is answered

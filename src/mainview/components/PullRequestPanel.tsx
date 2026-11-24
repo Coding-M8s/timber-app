@@ -6,6 +6,9 @@ import { NO_DESCRIPTION, OPEN_IN_BROWSER, RUN_STATUS_LABELS, describePullRequest
 import { pullRequestHostName } from "../pull-request-format";
 import { useAppState, useStore } from "../store/react";
 import type { PullRequestForm } from "../store/state";
+import type { GenerationRun } from "../store/state";
+import { GENERATE_AND_CREATE_BUTTON, describeGenerated, describeGenerating, generateTitle, generatorOf, pullRequestBlockerOf } from "../generate-format";
+import { GenerateButton, GeneratedNotices, GenerationOutcome, SparkIcon } from "./GenerateText";
 import { IssueSection, issueOf } from "./IssueSummary";
 import { ReviewersField } from "./ReviewersField";
 import { TimberFailureDetails } from "./TimberFailureDetails";
@@ -30,6 +33,14 @@ export function PullRequestPanel({ repository, worktree }: { repository: Reposit
 	const issue = issueOf(state, worktree);
 	const form = state.pullRequestForms[worktree.id];
 	const offersForm = view.kind === "none" && worktree.branch !== null;
+
+	const generator = generatorOf(state);
+	const generateBlocker = pullRequestBlockerOf(generator, worktree, list, form);
+	// Looked for once, so Generate knows which agents are there. Nothing starts.
+	const unknown = offersForm && state.agentLocations === null;
+	useEffect(() => {
+		if (unknown) void store.locateAgents();
+	}, [unknown, store]);
 
 	useEffect(() => {
 		if (offersForm) store.startPullRequestForm(repository.path, worktree);
@@ -56,6 +67,16 @@ export function PullRequestPanel({ repository, worktree }: { repository: Reposit
 							host={list?.ok ? list.host : undefined}
 							onChange={change => store.editPullRequestForm(worktree.id, change)}
 							onSubmit={() => void store.createPullRequest(worktree.id)}
+							generation={{
+								worktree: worktree.id,
+								run: state.generations[worktree.id]?.["pull-request"],
+								blocked: generateBlocker !== null,
+								title: generateTitle(generator, "pull-request", generateBlocker),
+								oneClickTitle: generateTitle(generator, "pull-request", generateBlocker, true),
+								onGenerate: () => void store.generatePullRequestText(worktree.id),
+								onStop: () => store.stopGenerating(worktree.id, "pull-request"),
+								onOneClick: () => store.openDialog({ kind: "generate-pull-request", repository: repository.path, worktree: worktree.id }),
+							}}
 						/>
 					)}
 				</div>
@@ -197,6 +218,18 @@ export interface PullRequestFormViewProps {
 	host?: PullRequestHost | undefined;
 	onChange: (change: Partial<PullRequestFields>) => void;
 	onSubmit: () => void;
+	/** Having an agent write the title and description. No buttons for it when left out. */
+	generation?: {
+		worktree: string;
+		run: GenerationRun | undefined;
+		blocked: boolean;
+		/** The tooltips: the reason, or the exact command. */
+		title: string;
+		oneClickTitle: string;
+		onGenerate: () => void;
+		onStop: () => void;
+		onOneClick: () => void;
+	};
 }
 
 /**
@@ -207,8 +240,9 @@ export interface PullRequestFormViewProps {
  * what Timber printed in a details area that starts closed, until a field
  * changes or the next run.
  */
-export function PullRequestFormView({ form, afterIssue, mentionHint, suggestions, host, onChange, onSubmit }: PullRequestFormViewProps) {
+export function PullRequestFormView({ form, afterIssue, mentionHint, suggestions, host, onChange, onSubmit, generation }: PullRequestFormViewProps) {
 	const headingId = useId();
+	const bodyId = useId();
 	const { running, failure } = form;
 	const submit = (event: SubmitEvent<HTMLFormElement>) => {
 		event.preventDefault();
@@ -223,11 +257,27 @@ export function PullRequestFormView({ form, afterIssue, mentionHint, suggestions
 					<span className="field-label">Title</span>
 					<input className="field-input" name="title" value={form.title} onChange={event => onChange({ title: event.target.value })} />
 				</label>
-				<label className="field">
-					<span className="field-label">Description</span>
-					<textarea className="field-input pull-create-body" name="body" rows={6} value={form.body} onChange={event => onChange({ body: event.target.value })} />
+				<div className="field">
+					<label className="field-label" htmlFor={bodyId}>Description</label>
+					<div className="generate-box">
+						<textarea id={bodyId} className="field-input pull-create-body" name="body" rows={6} value={form.body} onChange={event => onChange({ body: event.target.value })} />
+						{generation && <GenerateButton run={generation.run} title={generation.title} blocked={generation.blocked} onGenerate={generation.onGenerate} onStop={generation.onStop} />}
+					</div>
+					{generation?.run?.running && (
+						<>
+							<div className="progress" role="progressbar" aria-label={describeGenerating(generation.run.by, "pull-request")} />
+							<span className="field-hint" role="status">{describeGenerating(generation.run.by, "pull-request")}</span>
+						</>
+					)}
+					{generation && <GenerationOutcome worktree={generation.worktree} kind="pull-request" run={generation.run} what="form" />}
+					{generation?.run?.filled && (
+						<>
+							<span className="field-hint" role="status">{describeGenerated(generation.run)}</span>
+							<GeneratedNotices text={`${form.title}\n${form.body}`} />
+						</>
+					)}
 					{mentionHint && <span className="field-hint">{mentionHint}</span>}
-				</label>
+				</div>
 				<label className="field">
 					<span className="field-label">Base</span>
 					<input className="field-input mono" name="base" value={form.base} placeholder="Saved base" spellCheck={false} onChange={event => onChange({ base: event.target.value })} />
@@ -253,6 +303,11 @@ export function PullRequestFormView({ form, afterIssue, mentionHint, suggestions
 			<footer className="pull-create-foot">
 				<pre className="dialog-command" aria-label="Command that will run">{pullRequestCommandFor(form.worktree, form)}</pre>
 				<div className="dialog-buttons">
+					{generation && (
+						<button type="button" className="button spark-button" title={generation.oneClickTitle} aria-haspopup="dialog" aria-disabled={generation.blocked || generation.run?.running === true} onClick={() => !generation.blocked && !generation.run?.running && generation.onOneClick()}>
+							<SparkIcon />{GENERATE_AND_CREATE_BUTTON}
+						</button>
+					)}
 					<button type="submit" className="button primary" disabled={running}>{running ? CREATE_RUNNING : CREATE_SUBMIT}</button>
 				</div>
 			</footer>

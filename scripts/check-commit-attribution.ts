@@ -1,44 +1,7 @@
 import { readFile } from "node:fs/promises";
+import { assistantIdentity, hasAIAttribution } from "../src/shared/attribution";
 
-const assistantRoots = new Set([
-	"claude", "codex", "chatgpt", "gpt", "openai", "anthropic", "cursor", "composer",
-	"copilot", "gemini", "grok", "windsurf", "codeium", "devin", "aider", "ai",
-]);
-const assistantSuffixes = new Set([
-	"code", "codex", "ai", "assistant", "agent", "bot", "swe", "opus", "sonnet",
-	"haiku", "luna", "sol", "astra", "composer",
-]);
-const assistantEmail = /(?:^(?:[^@]*\+)?(?:claude|codex|chatgpt|copilot|cursor|gemini|grok|devin|ai)(?:\[bot\])?@users\.noreply\.github\.com$|^noreply@(?:anthropic\.com|openai\.com|cursor\.com|cursor\.sh)$)/iu;
-
-/** Tokenize identities without overlapping nested regex repetitions. */
-function assistantIdentity(name: string, email: string): boolean {
-	if (assistantEmail.test(email)) return true;
-	let normalized = name.trim().toLowerCase();
-	if (normalized.startsWith("🤖")) normalized = normalized.slice("🤖".length).trimStart();
-	if (normalized.endsWith("[bot]")) normalized = normalized.slice(0, -"[bot]".length).trimEnd();
-	const words = normalized.split(/[\s._-]+/u).filter(Boolean);
-	const root = words.shift();
-	if (root === "github" || root === "amazon") {
-		if (words.shift() !== (root === "github" ? "copilot" : "q")) return false;
-	} else if (!root || !assistantRoots.has(root)) return false;
-	return words.every(word => assistantSuffixes.has(word) || /^\d\w*$/u.test(word));
-}
-
-/** Inspect attribution lines only; normal AI feature descriptions and human credits remain valid. */
-export function hasAIAttribution(message: string): boolean {
-	return message.split(/\r?\n/u).some(line => {
-		const trailer = /^\s*(?:co[- ]?authored[- ]by|generated[- ]by|assisted[- ]by|signed[- ]off[- ]by):\s*(.+)$/iu.exec(line);
-		if (trailer) {
-			const identity = trailer[1]!;
-			const email = /<([^<>]+)>/u.exec(identity)?.[1] ?? "";
-			const angle = identity.indexOf("<");
-			return assistantIdentity((angle === -1 ? identity : identity.slice(0, angle)).trim(), email);
-		}
-		const generated = /^\s*(?:🤖\s*)?generated (?:with|by)\s+(.+)$/iu.exec(line);
-		const name = generated?.[1]?.replace(/\[([^\]]+)\]\([^)]*\)/gu, "$1").trim();
-		return name !== undefined && assistantIdentity(name, "");
-	});
-}
+export { hasAIAttribution };
 
 function git(args: readonly string[]): string {
 	const result = Bun.spawnSync(["git", ...args], { stdin: "ignore", stdout: "pipe", stderr: "pipe" });

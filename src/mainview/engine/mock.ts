@@ -45,7 +45,7 @@ import { type SyncActionKind, type SyncActionRequest, isSyncActionKind, syncNotR
 import { actOutSetBase, sampleBaseCounts } from "./mock-base";
 import { type PullRequestEnding, actOutPullRequest, isPullRequestEnding } from "./mock-pr";
 import type { CreatePullRequestResult } from "../../shared/timber-pr";
-import { type MockFileChange, answerMockCommit, answerMockDiscard, answerMockIndexWrite, derivedFileChanges, diffMockFileChange, listMockFileChanges } from "./mock-file-changes";
+import { type MockFileChange, answerMockCommit, answerMockDiscard, answerMockIndexWrite, compareMockFiles, derivedFileChanges, diffMockFileChange, listMockFileChanges } from "./mock-file-changes";
 import { type MockWorktreeFile, createMockWorktreeFiles } from "./mock-worktree-files";
 import { MOCK_PATH, type TerminalControls, createMockTerminals } from "./mock-terminals";
 import { type AppUpdateInstallRequest, type AppUpdateState, UPDATES_FROM_SOURCE } from "../../shared/app-update";
@@ -56,6 +56,7 @@ import type { TimberConfigScope } from "../../shared/timber-config";
 import { type WorkflowControls, createMockWorkflows } from "./mock-workflows";
 import { type IssueControls, createMockIssues, sampleIssueLinks } from "./mock-issues";
 import { type IssueListControls, createMockIssueLists } from "./mock-issue-lists";
+import { type MockGenerateControls, createMockGenerate } from "./mock-generate";
 import { type PullRequestControls, createMockPullRequests } from "./mock-pull-requests";
 import { type BackupControls, createMockBackups } from "./mock-backups";
 import { type ArenaControls, createMockArenas } from "./mock-arenas";
@@ -365,7 +366,7 @@ export const sampleTimberStatuses = {
 /** The mock engine, plus the controls a test or the browser build uses to act out changes. */
 /** The controls for terminals are in ./mock-terminals.ts. */
 /** The controls for Timber's settings are in ./mock-timber-config.ts, for workflows in ./mock-workflows.ts, for issue trackers in ./mock-issue-trackers.ts, for pull requests in ./mock-pull-requests.ts, for issues in ./mock-issues.ts, for the issues board in ./mock-issue-lists.ts, for backups in ./mock-backups.ts, and for arenas in ./mock-arenas.ts. */
-export interface MockEngine extends Engine, TerminalControls, TimberConfigControls, IssueTrackerControls, WorkflowControls, PullRequestControls, IssueControls, IssueListControls, BackupControls, ArenaControls, ThemeFileControls, ChopsControls, PortControls, SidebarIconControls, StatusHookControls {
+export interface MockEngine extends Engine, TerminalControls, TimberConfigControls, IssueTrackerControls, WorkflowControls, PullRequestControls, IssueControls, IssueListControls, BackupControls, ArenaControls, ThemeFileControls, ChopsControls, PortControls, SidebarIconControls, StatusHookControls, MockGenerateControls {
 	/** Replace the data, without telling the interface. */
 	setRepositories(repositories: Repository[]): void;
 	/** Report that a repository changed, as the main process would. */
@@ -984,6 +985,7 @@ export function createMockEngine(
 		fileChangeLists.set(listed.worktree.path, files);
 		return result;
 	};
+	const mockGenerate = createMockGenerate();
 	let commitFailure: string | null = null;
 	let commitDelay = 0;
 	const operations = new Map<string, GitOperation>();
@@ -1466,6 +1468,20 @@ export function createMockEngine(
 			else operations.set(path, operation);
 		},
 		commits: () => structuredClone(commitLog),
+		async generateText(request) {
+			const listed = listedForChanges(request.repository, request.worktree);
+			if (!listed.ok) return { outcome: "refused", message: listed.message.replace("No changes were read.", "Nothing was generated.").replace("so no changes were read", "so nothing was generated") };
+			return mockGenerate.generate(structuredClone(request), {
+				worktree: listed.worktree,
+				agents: preferences.agents,
+				locations: await terminals.locateAgents(),
+				choice: preferences.generateWith,
+				staged: compareMockFiles(filesOf(listed.worktree), "uncommitted").filter(file => file.change.area === "staged").length,
+				operation: operations.get(listed.worktree.path) ?? null,
+			});
+		},
+		stopGenerating: id => mockGenerate.stop(id),
+		...mockGenerate.controls,
 		async readWorktreeFile(request) {
 			const listed = listedForChanges(request.repository, request.worktree);
 			if (!listed.ok) return { outcome: listed.outcome, message: listed.message.replace("No changes were read.", "The file was not read.").replace("so no changes were read", "so the file was not read") };
