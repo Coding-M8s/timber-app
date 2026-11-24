@@ -4360,9 +4360,18 @@ that run when the app quits open again when it starts.
   when nothing else has it, or when it was asked for
   (`src/mainview/terminal-focus.ts`): choosing its worktree's row by click,
   Enter, or Space, choosing its chip, or a session the app started there,
-  such as the agent of a new worktree after its dialog closed. Moving
-  through the sidebar with Tab keeps the keyboard there. A worktree with no
-  session to show, and none starting, forgets the wish.
+  such as the agent of a new worktree after its dialog closed. The command
+  palette asks for it once the palette has closed (`keyboardToTerminal` in
+  `src/mainview/palette-run.ts`), since a terminal on screen would try while
+  the palette still holds the keyboard; the issues board asks as a row does.
+  Moving through the sidebar with Tab keeps the keyboard there. A worktree
+  with no session to show, and none starting, forgets the wish. When the
+  window gets the focus back, `src/mainview/focus-return.ts` decides where
+  the keyboard goes (`returnTarget`, pure): an open dialog keeps it, what had
+  it, or had it when the window lost the focus, keeps it while it is in the
+  page and drawn, then the File tab's editor, then the shown terminal. It
+  acts in the window's `focus` event, and once more after the first click
+  when that click left the keyboard on the page.
 - **Terminal appearance.** The `terminal`
   preference holds a font family, a text size, and a cursor shape
   (`src/shared/terminal-appearance.ts`, pure). The family is one name as

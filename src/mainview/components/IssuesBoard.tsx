@@ -13,6 +13,7 @@ import {
 import { OPEN_WORKTREE_LABEL, START_WORK_LABEL, startWorkChoice } from "../start-work-format";
 import { type BoardView, boardToggles, boardView, emptyBoard, hiddenDiagnostic } from "../store/issue-board";
 import { useAppState, useStore } from "../store/react";
+import { wantTerminalFocus } from "../terminal-focus";
 
 /** The view of one repository's board, as the store holds it now. */
 function useBoard(repository: string): BoardView {
@@ -191,7 +192,11 @@ export function IssuesBoard({ repository }: { repository: string }) {
 	const jumpTo = (issue: SuggestedIssue) => {
 		const path = issue.worktree?.path;
 		const worktree = path === undefined ? undefined : listed?.worktrees.find(candidate => candidate.path === path);
-		return worktree ? () => store.select(worktree.id) : null;
+		return worktree ? () => {
+			// Choosing a worktree from the board puts the keyboard in its shown session, as its row does.
+			if (state.tab === "workspace") wantTerminalFocus(worktree.id);
+			store.select(worktree.id);
+		} : null;
 	};
 	const openIssue = (issue: SuggestedIssue) => void store.openLink(issue.url);
 	const githubRepository = trackers?.ok ? trackers.githubRepository : null;

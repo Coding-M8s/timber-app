@@ -614,6 +614,19 @@ logins. The app never reads a tracker login and never signs in.
   changed file's diff is open, and a File tab while a file is. The changed
   files are in the side panel's Changes view, so the agent stays in sight
   while they are read.
+- When the terminal takes the keyboard. The shown session's terminal takes
+  it when a worktree is chosen by any route but the arrows in the sidebar: a
+  click, Enter, or Space on its row, its chip, the command palette (also for
+  the worktree already shown), the issues board, or the jump to the next
+  waiting session, and when the app starts a session. Arrows in the sidebar
+  keep the keyboard in the sidebar, and arrows on the chips keep it on the
+  chips. When the window gets the focus back, by Alt+Tab or a click from
+  another app, the keyboard goes back where it was while that still shows.
+  Otherwise the open file's editor takes it on a File tab, or the shown
+  session's terminal on the Workspace tab, also after a click that brought
+  the window back and landed where nothing takes the keyboard. An open
+  dialog or palette keeps it, and with no session or file showing it is not
+  moved.
 - The header's first line is the worktree's name, a quiet label after it
   ("Primary checkout" for the primary checkout, "Removing" while Timber
   removes the worktree), and one action bar at its end: "Open in editor",
