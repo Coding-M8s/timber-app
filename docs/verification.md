@@ -4979,16 +4979,22 @@ Run for opening files outside the worktree read-only from a full path
   Rendered and Source and no Edit, and its link to `run.log` leads beside
   it. Binary, missing, and a folder outside get the usual notices. A link
   in the worktree that leads out opens its target read-only. `../x.md`,
-  `docs/../../x.md`, and `./../x.md` are refused without any read. An
-  agent's scratchpad path is found whole in terminal text.
+  `docs/../../x.md`, and `./../x.md` are refused without any read. Edits
+  typed while a read again finds the file has become a link that leads out
+  are kept (this test failed with the first version of the store change).
+  An agent's scratchpad path is found whole in terminal text.
+- `bun test tests/worktree-files-parse.test.ts`: passed. `isCompletePath`
+  and `normalCompletePath` on POSIX, UNC, and drive paths, `..` at the
+  top, doubled slashes, and a NUL.
 - `bun test --timeout=60000 tests/outside-file-browser.test.ts`: passed
-  three runs in a row in headless Chrome. A full path echoed in a pretend
+  three runs in a row in headless Chrome, sweeping the row until the link
+  is under the pointer rather than waiting a fixed time. A full path echoed in a pretend
   terminal, found under the pointer and clicked, opens in the File tab with
   `outside` set, its full path above, the note, no Save, and typing into
   the editor changes nothing.
 - `bun test --parallel=4 --timeout=30000` over the 106 test files that read
   the contract, the RPC, the docs, the README, the mock engine, or the file
-  viewer's modules: 2,303 passed, 0 failed, 16 skipped, as they run only on
+  viewer's modules: 2,306 passed, 0 failed, 16 skipped, as they run only on
   Windows. `tests/text-editor-browser.test.ts`,
   `tests/files-panel-browser.test.ts`, and `tests/path-drop-browser.test.ts`
   with the new browser test: 30 passed.

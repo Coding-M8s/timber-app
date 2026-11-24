@@ -947,8 +947,9 @@ logins. The app never reads a tracker login and never signs in.
   that starts inside a multi-line comment or string may be colored
   wrongly, since only the hunk's own lines are parsed.
 - File viewer: a File tab after Pull request shows one file of the worktree,
-  read-only, with line numbers, in the terminal's font. The tab is there only
-  while a file is open in that worktree, named after the file, with a close
+  or one outside it by its complete path (below), with line numbers, in
+  the terminal's font. The tab is there only while a file is open in that
+  worktree, named after the file, with a close
   button beside it; closing goes back to the tab the file was opened from.
   A file opens from "View file" beside the diff in the diff tab, or by
   a plain click on a file path in a terminal, read from the worktree's

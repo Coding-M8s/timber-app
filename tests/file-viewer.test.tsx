@@ -169,6 +169,33 @@ describe("the File tab", () => {
 		expect(render(store)).toContain(">Scratch plan</h1>");
 	});
 
+	test("keeps edits typed while a read finds the file has become a link that leads out", async () => {
+		const engine = createMockEngine();
+		let release = () => {};
+		let hold = false;
+		const held: Engine = {
+			...engine,
+			readWorktreeFile: async request => {
+				const answer = await engine.readWorktreeFile(request);
+				if (hold) await new Promise<void>(resolve => (release = resolve));
+				return answer;
+			},
+		};
+		const store = await started(held);
+		store.select(FEATURE.id);
+		store.openFile(FEATURE.id, "report.txt");
+		await settle();
+		hold = true;
+		engine.setWorktreeFile(FEATURE.path, "report.txt", { kind: "link", target: `${MOCK_NOTES_FOLDER}/run.log` });
+		store.readFileAgain(FEATURE.id);
+		await settle();
+		store.changeDraft(FEATURE.id, "typed meanwhile\n");
+		release();
+		await settle();
+		await settle();
+		expect(store.getState().files[FEATURE.id]).toMatchObject({ path: "report.txt", outside: false, draft: "typed meanwhile\n" });
+	});
+
 	test("still refuses a relative path that steps out of the worktree, without reading", async () => {
 		const engine = createMockEngine();
 		let reads = 0;
