@@ -4702,3 +4702,29 @@ Run for the command palette's shortcuts (issue 335), Windows 11 with Bun
   chops, and Run a chop did what each says.
 - Not run: the desktop app; Linux and macOS. Cmd on macOS is checked only by
   the unit tests, which pass `mac` directly.
+
+Run for the Windows install guide (`docs/install-windows.md`), on
+2026-11-24, Windows 11 Home x64 (10.0.26200) with Git 2.50.1, reading what
+an earlier `Timber-Setup.exe` (app 0.1.0-beta.1) left on this machine. No
+build or install was run for this change.
+
+- `unzip -l artifacts/win-x64-Timber-Setup.zip`: `Timber-Setup.exe`,
+  `.installer\Timber-Setup.metadata.json`, and
+  `.installer\Timber-Setup.tar.zst`.
+- `%LOCALAPPDATA%\com.codingm8s.timber-app\stable` held `app`,
+  `self-extraction`, `uninstall.exe`, and `WebView2`; `app` held `bin` and
+  `Resources`, and `app\Resources\app\timber` a Timber that printed 0.2.0
+  for `--version`.
+- `reg query HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\com.codingm8s.timber-app.stable`:
+  DisplayName `Timber`, DisplayVersion `0.1.0-beta.1`, UninstallString
+  `"...\stable\uninstall.exe" --uninstall`, and QuietUninstallString with
+  `--quiet` added.
+- `Timber.lnk` was in the Start menu's Programs folder and on the desktop.
+- `%APPDATA%\timber-app` held `settings.json`, `sessions.json`, and
+  `timber-release.json`.
+- `gh release list`: the only release, v0.1.0-beta.1, was a draft.
+- `bun test tests/release-workflow.test.ts`, after editing
+  `.github/release-notes.md`: 14 passed.
+- Not run: installing from a downloaded release, the SmartScreen prompt,
+  uninstalling through Settings, Apps, Installed apps, and the clone, Bun
+  install, and build steps on a clean machine.
