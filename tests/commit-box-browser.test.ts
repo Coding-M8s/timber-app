@@ -61,7 +61,8 @@ describe.skipIf(browserPath === null || process.platform === "win32")("committin
 		await page.until(`document.querySelector(".commit-done")?.textContent.startsWith("Committed ") === true`, "the commit showed");
 		expect(await page.evaluate<{ message: string }[]>(`${ENGINE}.commits()`)).toMatchObject([{ message: "Add the rules\nSecond line" }]);
 		expect(await page.evaluate<string>(`${BOX}.value`)).toBe("");
-		expect(await page.evaluate<number>(`document.querySelectorAll(".change-group[aria-label=Staged] .change-file").length`)).toBe(0);
+		// The note shows as the commit answers; the list is read again just after.
+		await page.until(`document.querySelectorAll(".change-group[aria-label=Staged] .change-file").length === 0`, "the list was read again without the staged file");
 		// Push opens the row's Push dialog, which shows timber publish before anything runs.
 		await page.click(".commit-done .text-button");
 		await page.until(`document.querySelector("dialog[open]")?.textContent.includes("timber publish") === true`, "the Push dialog showed its command");

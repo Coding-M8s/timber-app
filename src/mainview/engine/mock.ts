@@ -542,6 +542,8 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	 * "lint: 2 problems in src/a.ts".
 	 */
 	failCommits(message: string | null): void;
+	/** Make every later commit take this long before it answers, as hooks that run tests do. */
+	setCommitDelay(milliseconds: number): void;
 	/** Pretend a merge, rebase, cherry-pick, or revert is in progress in the worktree at `path`, or pass null to end it. */
 	setOperation(path: string, operation: GitOperation | null): void;
 	/** Every commit that was made, oldest first, with its message. */
@@ -970,10 +972,12 @@ export function createMockEngine(
 		return result;
 	};
 	let commitFailure: string | null = null;
+	let commitDelay = 0;
 	const operations = new Map<string, GitOperation>();
 	const commitLog: { worktree: string; message: string; commit: string }[] = [];
 	/** Commit on the pretend files, as the main process would: the staged files leave the list and the branch is one more commit ahead of its upstream. */
 	const commitStaged = async (request: CommitRequest): Promise<CommitResult> => {
+		if (commitDelay > 0) await new Promise(resolve => setTimeout(resolve, commitDelay));
 		const listed = listedForChanges(request.repository, request.worktree);
 		if (!listed.ok) return { outcome: "refused", message: listed.message.replace("No changes were read.", "Nothing was committed.").replace("so no changes were read", "so nothing was committed") };
 		const commit = pretendHash(`${listed.worktree.path}\0${commitLog.length}\0${request.message}`);
@@ -1432,6 +1436,9 @@ export function createMockEngine(
 		commitStaged,
 		failCommits(message) {
 			commitFailure = message;
+		},
+		setCommitDelay(milliseconds) {
+			commitDelay = milliseconds;
 		},
 		setOperation(path, operation) {
 			if (operation === null) operations.delete(path);

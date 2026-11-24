@@ -104,7 +104,7 @@ describe("committing from the Changes view", () => {
 		if (result?.outcome !== "committed") return;
 		expect(engine.commits()).toEqual([{ worktree: FEATURE.path, message: "Add the rules\n\nAnd a new file.", commit: result.commit }]);
 		expect(store.getState().commitMessages[FEATURE.id]).toBeUndefined();
-		expect(store.getState().changes?.committed).toEqual({ commit: result.commit, short: result.short });
+		expect(store.getState().commitRuns[FEATURE.id]).toEqual({ running: false, problem: null, committed: { commit: result.commit, short: result.short } });
 		// The unstaged edit of a staged file stays, as do the others.
 		expect(listed(store)).toEqual(["unstaged src/rules.ts", "unstaged src/total.ts", "untracked notes/todo.md"]);
 		expect(feature(store).sync).toMatchObject({ ahead: 3, behind: 0 });
@@ -122,7 +122,7 @@ describe("committing from the Changes view", () => {
 		const result = await store.commitStaged();
 		expect(result).toEqual({ outcome: "failed", command: "git commit -F -, with the message on standard input", message: "lint: 2 problems in src/rules.ts" });
 		expect(store.getState().commitMessages[FEATURE.id]).toBe("Add the rules");
-		expect(store.getState().changes?.commitProblem).toEqual({ command: "git commit -F -, with the message on standard input", message: "lint: 2 problems in src/rules.ts" });
+		expect(store.getState().commitRuns[FEATURE.id]?.problem).toEqual({ command: "git commit -F -, with the message on standard input", message: "lint: 2 problems in src/rules.ts" });
 		expect(listed(store)).toEqual(FILES.map(file => `${file.area} ${file.path}`));
 		expect(feature(store).sync).toMatchObject({ ahead: 2 });
 		const markup = render(store);
@@ -132,7 +132,51 @@ describe("committing from the Changes view", () => {
 		// Fixed, the same message commits.
 		engine.failCommits(null);
 		expect((await store.commitStaged())?.outcome).toBe("committed");
-		expect(store.getState().changes?.commitProblem).toBeNull();
+		expect(store.getState().commitRuns[FEATURE.id]?.problem).toBeNull();
+	});
+
+	test("a commit still running when another worktree shows keeps waiting there, and says how it ended on return", async () => {
+		const { engine, store } = await started();
+		const other = sampleRepositories[0]!.worktrees[2]!;
+		engine.setCommitDelay(50);
+		engine.failCommits("pre-commit: tests failed");
+		store.setCommitMessage(FEATURE.id, "Add the rules");
+		const running = store.commitStaged();
+		store.select(other.id);
+		await store.readChanges(TIMBER, other.id);
+		store.select(FEATURE.id);
+		await store.readChanges(TIMBER, FEATURE.id);
+		// Back while the hook still runs: Commit and the list's buttons wait, and the box is read-only.
+		expect(store.getState().commitRuns[FEATURE.id]?.running).toBe(true);
+		let markup = render(store);
+		expect(markup).toMatch(/commit-button" disabled=""/);
+		expect(markup).toMatch(/readOnly=""|readonly=""/);
+		expect(markup).toContain("Committing: git commit -F -");
+		expect(await store.commitStaged()).toBeNull();
+		expect(await store.writeIndex("unstage", [store.getState().changes!.files!.find(file => file.area === "staged")!])).toBeNull();
+		await running;
+		markup = render(store);
+		expect(markup).toContain("pre-commit: tests failed");
+		expect(markup).toContain(">Add the rules</textarea>");
+		expect(engine.commits()).toEqual([]);
+	});
+
+	test("a commit that ends while another worktree shows has its hash there on return, and the other list is left alone", async () => {
+		const { engine, store } = await started();
+		const other = sampleRepositories[0]!.worktrees[2]!;
+		engine.setCommitDelay(30);
+		store.setCommitMessage(FEATURE.id, "Add the rules");
+		const running = store.commitStaged();
+		store.select(other.id);
+		await store.readChanges(TIMBER, other.id);
+		const result = await running;
+		expect(result?.outcome).toBe("committed");
+		expect(store.getState().changes?.worktree).toBe(other.id);
+		store.select(FEATURE.id);
+		await store.readChanges(TIMBER, FEATURE.id);
+		expect(render(store)).toContain(`Committed ${result?.outcome === "committed" ? result.short : ""}`);
+		expect(store.getState().commitMessages[FEATURE.id]).toBeUndefined();
+		expect(feature(store).sync).toMatchObject({ ahead: 3 });
 	});
 
 	test("the message is kept for each worktree while switching between them", async () => {
