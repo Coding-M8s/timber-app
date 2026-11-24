@@ -825,6 +825,23 @@ logins. The app never reads a tracker login and never signs in.
   `index.lock`, an alert under the counts says "Could not stage" or "Could
   not unstage" with the command and Git's message, and the list is as it
   was. Base is review only and has no write buttons.
+- With Uncommitted, each file of Unstaged, Staged, and Untracked also has
+  Discard, beside its Stage or Unstage, and each of those groups Discard
+  all; Delete on a file does the same as its Discard. Merge conflicts has
+  none, nor a staged file before the first commit, nor an untracked folder
+  such as a nested repository. Discard turns red only under the pointer.
+  Its tooltip is the command, and it always asks first: the dialog lists
+  the files and the exact command, says the changes cannot be undone, and
+  starts with the keyboard on Cancel, as the app's other destructive
+  dialogs do; Escape cancels and changes nothing. Its title and button say
+  Delete for untracked files ("Delete notes/todo.md?"), since that is what
+  happens, and Discard for the others ("Discard staged changes to 2
+  files?"). It says when a staged file's unstaged changes are lost too, and
+  names a file open in the editor with unsaved edits, which the editor then
+  drops to show the file as it is on disk. Afterwards the list reads again
+  and the keyboard goes to the file that took the discarded one's place. A
+  failure, such as a held `index.lock`, stays in the dialog with Git's
+  message.
 - With Uncommitted, the top of the Changes view has a commit message box
   and Commit, which commits only what is staged; it never stages anything
   itself and never amends. Ctrl+Enter, or Cmd+Enter on macOS, commits from

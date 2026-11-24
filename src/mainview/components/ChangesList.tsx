@@ -7,6 +7,8 @@ import {
 	groupIndexAction, listedOrder, movedEntry, nextRefreshSpan, speakLineCounts, splitPath, totalLineCounts,
 } from "../changes-format";
 import { type IndexAction, indexCommand } from "../../shared/index-writes";
+import { discardCommand, fileDiscardable } from "../../shared/discard-files";
+import { DISCARD_ALL_LABEL, DISCARD_KEY, DISCARD_KEY_NAME, DISCARD_LABEL } from "../discard-format";
 import { CHANGES_CLOSE_LABEL, CHANGES_PANEL_TITLE, describeChangesPanelEmpty, takesChangesPanelKey } from "../changes-panel-format";
 import { CHOPS_PANEL_ID } from "../chops-panel-format";
 import { chosenComparison } from "../../shared/layout";
@@ -89,7 +91,11 @@ function ViewedMark() {
  * hover and keyboard focus, and Space on the file does the same; each group
  * has Stage all, Unstage all, or Mark all resolved, for the files it shows.
  * Each button's tooltip is the command it runs. Afterwards the keyboard
- * stays on the file, in its new group.
+ * stays on the file, in its new group. Each file of Unstaged, Staged (once
+ * there is a commit), and Untracked also has Discard, and Delete on the file
+ * does the same; each of those groups has Discard all. They open a dialog
+ * that asks first; afterwards the keyboard goes to the file that took the
+ * discarded one's place.
  */
 function FileList({ view, dimmed }: { view: ChangesView & { files: readonly FileChange[] }; dimmed: string }) {
 	const store = useStore();
@@ -106,8 +112,8 @@ function FileList({ view, dimmed }: { view: ChangesView & { files: readonly File
 
 	useEffect(() => {
 		const follow = following.current;
-		// Only once the list was read again after the write ended.
-		if (follow === null || view.settledWrites === follow.settled) return;
+		// Only once the list was read again after the write ended, and the Discard dialog has closed.
+		if (follow === null || view.settledWrites === follow.settled || state.dialog !== null) return;
 		following.current = null;
 		// The file in its new group, else whatever took its place.
 		const next = movedEntry(view.files, follow.path) ?? order[Math.min(follow.index, order.length - 1)];
@@ -124,6 +130,18 @@ function FileList({ view, dimmed }: { view: ChangesView & { files: readonly File
 		});
 	};
 
+	/** Ask before discarding `files`; once the list is read again after it, the keyboard follows `follow` as after a write. */
+	const discard = (files: readonly FileChange[], follow: FileChange) => {
+		if (writesWait(state, view) || files.length === 0) return;
+		following.current = { path: follow.path, index: Math.max(0, order.findIndex(file => sameFileChange(file, follow))), settled: view.settledWrites };
+		store.openDialog({ kind: "discard-files", repository: view.repository, worktree: view.worktree, files: files.map(file => ({ area: file.area, path: file.path, previousPath: file.previousPath })) });
+	};
+	/** A Discard button's tooltip: the command, or why the files cannot be discarded together. */
+	const discardTitle = (files: readonly FileChange[]) => {
+		const planned = discardCommand(files, view.hasCommit);
+		return planned.ok ? describeIndexCommand(planned.command) : planned.message;
+	};
+
 	const onKey = (event: KeyboardEvent<HTMLDivElement>) => {
 		// Alt+Up and Alt+Down open the previous and next file (see ./DiffTab.tsx), so they do not move the keyboard here too.
 		if (event.altKey || event.ctrlKey || event.metaKey) return;
@@ -138,6 +156,7 @@ function FileList({ view, dimmed }: { view: ChangesView & { files: readonly File
 		<div className={`change-groups${dimmed}`} onKeyDown={onKey}>
 			{groupFileChanges(view.files).map(group => {
 				const all = writable ? groupIndexAction(group.area) : null;
+				const discardable = writable ? group.files.filter(file => fileDiscardable(file, view.hasCommit)) : [];
 				return (
 					<section key={group.area} className="change-group" aria-label={AREA_TITLES[group.area]}>
 						<div className="change-group-head">
@@ -145,6 +164,19 @@ function FileList({ view, dimmed }: { view: ChangesView & { files: readonly File
 								{AREA_TITLES[group.area]}
 								<span className="change-group-count">{group.files.length}</span>
 							</h3>
+							{discardable.length > 0 && (
+								<button
+									type="button"
+									className="change-group-action discard"
+									title={discardTitle(discardable)}
+									aria-label={`${DISCARD_ALL_LABEL}: ${discardable.length} ${discardable.length === 1 ? "file" : "files"} in ${AREA_TITLES[group.area]}`}
+									aria-haspopup="dialog"
+									aria-disabled={writesWait(state, view) || undefined}
+									onClick={() => discard(discardable, discardable[0]!)}
+								>
+									{DISCARD_ALL_LABEL}
+								</button>
+							)}
 							{all !== null && (
 								<button
 									type="button"
@@ -162,19 +194,20 @@ function FileList({ view, dimmed }: { view: ChangesView & { files: readonly File
 							{group.files.map(file => {
 								const key = fileKey(file);
 								const own = writable ? fileIndexAction(file) : null;
+								const discards = writable && fileDiscardable(file, view.hasCommit);
 								const isTabStop = tabStop !== null && sameFileChange(tabStop, file);
 								const selected = view.selected !== null && sameFileChange(view.selected, file);
 								const viewed = fileViewed(state, view.worktree, view.compared, file);
 								const { name, folder } = splitPath(file.path);
 								const counts = speakLineCounts(file);
 								return (
-									<li key={key} className={`change-row${own === null ? "" : " writable"}`}>
+									<li key={key} className={`change-row${own === null && !discards ? "" : " writable"}`}>
 										<button
 											type="button"
 											className={`change-file${selected ? " selected" : ""}${viewed ? " viewed" : ""}`}
 											aria-current={selected ? "true" : undefined}
 											aria-label={`${file.path}, ${KIND_LABELS[file.kind]}${file.previousPath === null ? "" : ` from ${file.previousPath}`}${AREA_TITLES[file.area] === KIND_LABELS[file.kind] ? "" : `, ${AREA_TITLES[file.area]}`}${counts === "" ? "" : `, ${counts}`}${viewed ? ", viewed" : ""}`}
-											aria-keyshortcuts={own === null ? undefined : INDEX_KEY_NAME}
+											aria-keyshortcuts={[own === null ? null : INDEX_KEY_NAME, discards ? DISCARD_KEY_NAME : null].filter(Boolean).join(" ") || undefined}
 											title={file.previousPath === null ? file.path : `${file.previousPath} → ${file.path}`}
 											tabIndex={isTabStop ? 0 : -1}
 											ref={element => {
@@ -184,7 +217,14 @@ function FileList({ view, dimmed }: { view: ChangesView & { files: readonly File
 											onFocus={() => setFocused(key)}
 											onClick={() => void store.selectChangedFile(file)}
 											onKeyDown={event => {
-												if (own === null || event.key !== INDEX_KEY || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+												if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+												if (discards && event.key === DISCARD_KEY) {
+													// Delete asks to discard, as the row's Discard does.
+													event.preventDefault();
+													if (!event.repeat) discard([file], file);
+													return;
+												}
+												if (own === null || event.key !== INDEX_KEY) return;
 												// Space stages or unstages, where Enter opens the diff.
 												event.preventDefault();
 												if (!event.repeat) write(own.action, [file], file);
@@ -196,19 +236,38 @@ function FileList({ view, dimmed }: { view: ChangesView & { files: readonly File
 											<LineCounts file={file} />
 											<KindLetter file={file} />
 										</button>
-										{own !== null && (
-											<button
-												type="button"
-												className="change-file-action"
-												title={describeIndexCommand(indexCommand(own.action, [file], view.hasCommit))}
-												aria-label={`${own.label} ${file.path}`}
-												aria-disabled={writesWait(state, view) || undefined}
-												tabIndex={isTabStop ? 0 : -1}
-												onFocus={() => setFocused(key)}
-												onClick={() => write(own.action, [file], file)}
-											>
-												{own.label}
-											</button>
+										{(own !== null || discards) && (
+											<span className="change-file-actions">
+												{own !== null && (
+													<button
+														type="button"
+														className="change-file-action"
+														title={describeIndexCommand(indexCommand(own.action, [file], view.hasCommit))}
+														aria-label={`${own.label} ${file.path}`}
+														aria-disabled={writesWait(state, view) || undefined}
+														tabIndex={isTabStop ? 0 : -1}
+														onFocus={() => setFocused(key)}
+														onClick={() => write(own.action, [file], file)}
+													>
+														{own.label}
+													</button>
+												)}
+												{discards && (
+													<button
+														type="button"
+														className="change-file-action discard"
+														title={discardTitle([file])}
+														aria-label={`${DISCARD_LABEL} ${file.path}`}
+														aria-haspopup="dialog"
+														aria-disabled={writesWait(state, view) || undefined}
+														tabIndex={isTabStop ? 0 : -1}
+														onFocus={() => setFocused(key)}
+														onClick={() => discard([file], file)}
+													>
+														{DISCARD_LABEL}
+													</button>
+												)}
+											</span>
 										)}
 									</li>
 								);
@@ -391,7 +450,7 @@ function WorktreeChanges({ repository, worktree }: { repository: Repository; wor
 
 /**
  * The side panel's Changes view: what changed in the selected worktree,
- * with Stage, Unstage, and Commit in Uncommitted and the review of its notes at its foot. Choosing a file opens
+ * with Stage, Unstage, Discard, and Commit in Uncommitted and the review of its notes at its foot. Choosing a file opens
  * its diff in the diff tab. The changes are read by `ChangesReader`.
  */
 export function ChangesList() {

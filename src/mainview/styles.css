@@ -4766,15 +4766,22 @@ pre:focus-visible {
 	cursor: default;
 }
 
-/* A file's Stage, Unstage, or Mark resolved: over the end of its row, on hover and keyboard focus only. */
+/* A file's Stage, Unstage, or Mark resolved, and Discard: over the end of its row, on hover and keyboard focus only. */
 .change-row {
 	position: relative;
 }
 
-.change-file-action {
+.change-file-actions {
 	position: absolute;
 	top: 50%;
 	right: 28px;
+	display: flex;
+	gap: 4px;
+	transform: translateY(-50%);
+	visibility: hidden;
+}
+
+.change-file-action {
 	margin: 0;
 	padding: 1px 7px;
 	border: 1px solid var(--line);
@@ -4782,10 +4789,8 @@ pre:focus-visible {
 	/* Solid, so the folder name under it never shows through. */
 	background: var(--bg-pane);
 	color: var(--text-2);
-	transform: translateY(-50%);
 	font-size: 11px;
 	white-space: nowrap;
-	visibility: hidden;
 }
 
 .change-file-action:hover {
@@ -4793,8 +4798,14 @@ pre:focus-visible {
 	color: var(--text);
 }
 
-.change-row:hover .change-file-action,
-.change-row:focus-within .change-file-action {
+/* Discard loses work, so it turns red under the pointer, never at rest. */
+.change-file-action.discard:hover,
+.change-group-action.discard:hover {
+	color: var(--error);
+}
+
+.change-row:hover .change-file-actions,
+.change-row:focus-within .change-file-actions {
 	visibility: visible;
 }
 
@@ -8289,4 +8300,18 @@ pre:focus-visible {
 
 .sidebar-icon-problem {
 	color: var(--error);
+}
+
+/* The files a Discard dialog names, scrolling when there are many. */
+.discard-files {
+	max-height: 160px;
+	margin: 0;
+	padding: 6px 10px;
+	overflow-y: auto;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	list-style: none;
+	font-family: var(--font-mono);
+	font-size: 12px;
+	overflow-wrap: anywhere;
 }

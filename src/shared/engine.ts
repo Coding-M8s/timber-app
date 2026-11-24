@@ -9,6 +9,7 @@ import type { FetchResult, ForcePushSeen, RepositoryFetch } from "./git-fetch";
 import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffResult } from "./file-changes";
 import type { IndexWriteRequest, IndexWriteResult } from "./index-writes";
 import type { CommitRequest, CommitResult } from "./commit-staged";
+import type { DiscardRequest, DiscardResult } from "./discard-files";
 import type { WorktreeFileRequest, WorktreeFileResult, WorktreeFileWriteRequest, WorktreeFileWriteResult } from "./worktree-files";
 import type { WorktreeFolderChange, WorktreeFolderRequest, WorktreeFolderResult, WorktreeFolderWatch } from "./worktree-folders";
 import type { WorktreeHandoff } from "./handoff";
@@ -616,6 +617,21 @@ export interface Engine {
 	 * on disk as untracked.
 	 */
 	unstageFiles(request: IndexWriteRequest): Promise<IndexWriteResult>;
+	/**
+	 * Discard the changes of files of one group of the Uncommitted list, with
+	 * the command `discardCommand` in ./discard-files.ts gives: `git restore
+	 * --worktree` for unstaged files, `git restore --staged --worktree
+	 * --source=HEAD` for staged ones (never before the first commit), and `git
+	 * clean -f` for untracked ones, which deletes only those files, never a
+	 * folder or an ignored file. Conflicted files cannot be discarded. As
+	 * `stageFiles`, the main process reads the status again, takes every path
+	 * from it, refuses a file not listed now in a group that can be
+	 * discarded, and runs nothing unless `shown` is the command. Writes only
+	 * the files named, on disk and in the index, never a ref or a commit, and
+	 * cannot be undone: the window asks first. Read the changes again after
+	 * every outcome.
+	 */
+	discardFiles(request: DiscardRequest): Promise<DiscardResult>;
 	/**
 	 * Commit what is staged in a worktree, on its current branch: `git commit
 	 * -F -` with `message` on standard input, so no editor opens. Never `-a`,

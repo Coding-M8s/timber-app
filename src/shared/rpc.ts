@@ -9,6 +9,7 @@ import type { ForcePushSeen, RepositoryFetch } from "./git-fetch";
 import type { FileChangesRequest, FileDiffRequest } from "./file-changes";
 import type { IndexWriteRequest } from "./index-writes";
 import type { CommitRequest } from "./commit-staged";
+import type { DiscardRequest } from "./discard-files";
 import type { WorktreeFileRequest, WorktreeFileWriteRequest } from "./worktree-files";
 import type { WorktreeFolderChange, WorktreeFolderRequest, WorktreeFolderWatch } from "./worktree-folders";
 import type { Layout } from "./layout";
@@ -132,6 +133,7 @@ export type AppRPC = {
 			readFileDiff: { params: FileDiffRequest; response: Answer<"readFileDiff"> };
 			stageFiles: { params: IndexWriteRequest; response: Answer<"stageFiles"> };
 			unstageFiles: { params: IndexWriteRequest; response: Answer<"unstageFiles"> };
+			discardFiles: { params: DiscardRequest; response: Answer<"discardFiles"> };
 			/** Answers when Git and the hooks have ended, which the main process allows up to ten minutes. */
 			commitStaged: { params: CommitRequest; response: Answer<"commitStaged"> };
 			readWorktreeFile: { params: WorktreeFileRequest; response: Answer<"readWorktreeFile"> };

@@ -640,6 +640,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			// The app's own index writes, only with paths from the status read again (see ./file-changes.ts and ./git-writes.ts).
 			stageFiles: request => fileChanges.stage(request),
 			unstageFiles: request => fileChanges.unstage(request),
+			discardFiles: request => fileChanges.discard(request),
 			commitStaged: request => fileChanges.commit(request),
 			// Reads one file, only inside a worktree Timber lists, links included (see ./worktree-files.ts). It holds file contents: never log it.
 			readWorktreeFile: request => worktreeFiles.read(request),

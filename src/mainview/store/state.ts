@@ -334,6 +334,12 @@ export type DialogRequest =
 	 * place. Asks to save, discard, or keep editing. `worktree` is `Worktree.id`.
 	 */
 	| { kind: "unsaved-file"; worktree: string; then: UnsavedFileStep }
+	/**
+	 * Discard the changes of files of one group of a worktree's Uncommitted
+	 * list, after asking. `worktree` is `Worktree.id`; `files` are as the list
+	 * showed them when Discard was pressed.
+	 */
+	| { kind: "discard-files"; repository: string; worktree: string; files: readonly FileChangeTarget[] }
 	/** Preview a worktree's review notes as one message, and paste it into one of its agents or copy it. `worktree` is `Worktree.id`. */
 	| { kind: "send-review"; worktree: string }
 	/** Compare an arena's attempts and keep one. `arena` is the arena's name as Timber lists it. */

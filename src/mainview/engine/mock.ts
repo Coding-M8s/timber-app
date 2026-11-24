@@ -5,6 +5,7 @@ import { type AlertSettings, type StatusNotice, createAlertRunner } from "../../
 import { type ChooseSoundResult, type SoundChoice, type SoundOutcome, readSoundChoice } from "../../shared/sound-setting";
 import type { Engine } from "../../shared/engine";
 import type { IndexWriteRequest, IndexWriteResult } from "../../shared/index-writes";
+import type { DiscardRequest, DiscardResult } from "../../shared/discard-files";
 import type { CommitRequest, CommitResult, GitOperation } from "../../shared/commit-staged";
 import { type Layout, defaultLayout, forgetGroup, forgetRepository, readLayout } from "../../shared/layout";
 import { type AddRepositoryResult, type BranchSuggestion, type IssueLink, type OpenInEditorRequest, type OpenInEditorResult, type Repository, type RepositoryGroupsResult, type SavedBase, type SyncState, type TimberStatus, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
@@ -44,7 +45,7 @@ import { type SyncActionKind, type SyncActionRequest, isSyncActionKind, syncNotR
 import { actOutSetBase, sampleBaseCounts } from "./mock-base";
 import { type PullRequestEnding, actOutPullRequest, isPullRequestEnding } from "./mock-pr";
 import type { CreatePullRequestResult } from "../../shared/timber-pr";
-import { type MockFileChange, answerMockCommit, answerMockIndexWrite, derivedFileChanges, diffMockFileChange, listMockFileChanges } from "./mock-file-changes";
+import { type MockFileChange, answerMockCommit, answerMockDiscard, answerMockIndexWrite, derivedFileChanges, diffMockFileChange, listMockFileChanges } from "./mock-file-changes";
 import { type MockWorktreeFile, createMockWorktreeFiles } from "./mock-worktree-files";
 import { MOCK_PATH, type TerminalControls, createMockTerminals } from "./mock-terminals";
 import { type AppUpdateInstallRequest, type AppUpdateState, UPDATES_FROM_SOURCE } from "../../shared/app-update";
@@ -529,12 +530,12 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	/** Make every later read of changed files and diffs fail with this message, or pass null to let them work again. */
 	failFileChanges(message: string | null): void;
 	/**
-	 * Make every later stage and unstage fail with this message, as Git says
+	 * Make every later stage, unstage, and discard fail with this message, as Git says
 	 * it, and change nothing, or pass null to let them work again. Try
 	 * "fatal: Unable to create '/work/.git/index.lock': File exists."
 	 */
 	failIndexWrites(message: string | null): void;
-	/** Every stage and unstage that ran, oldest first, with the command, as the window showed it. */
+	/** Every stage, unstage, and discard that ran, oldest first, with the command, as the window showed it. */
 	indexWrites(): { worktree: string; command: string }[];
 	/**
 	 * Make every later commit fail with this message, as Git and a hook print
@@ -965,6 +966,17 @@ export function createMockEngine(
 		const ending = action === "stage" ? "Nothing was staged." : "Nothing was unstaged.";
 		if (!listed.ok) return { outcome: "refused", message: listed.message.replace("No changes were read.", ending).replace("so no changes were read", `so ${ending.charAt(0).toLowerCase()}${ending.slice(1, -1)}`) };
 		const { result, files } = answerMockIndexWrite(filesOf(listed.worktree), action, structuredClone(request));
+		if (result.outcome !== "written" || files === null) return result;
+		indexWriteLog.push({ worktree: listed.worktree.path, command: result.command });
+		if (indexWriteFailure !== null) return { outcome: "failed", command: result.command, message: indexWriteFailure };
+		fileChangeLists.set(listed.worktree.path, files);
+		return result;
+	};
+	/** Discard on the pretend files, as the main process would. */
+	const discardFiles = async (request: DiscardRequest): Promise<DiscardResult> => {
+		const listed = listedForChanges(request.repository, request.worktree);
+		if (!listed.ok) return { outcome: "refused", message: listed.message.replace("No changes were read.", "Nothing was discarded.").replace("so no changes were read", "so nothing was discarded") };
+		const { result, files } = answerMockDiscard(filesOf(listed.worktree), structuredClone(request));
 		if (result.outcome !== "written" || files === null) return result;
 		indexWriteLog.push({ worktree: listed.worktree.path, command: result.command });
 		if (indexWriteFailure !== null) return { outcome: "failed", command: result.command, message: indexWriteFailure };
@@ -1429,6 +1441,7 @@ export function createMockEngine(
 		},
 		stageFiles: request => writeIndex("stage", request),
 		unstageFiles: request => writeIndex("unstage", request),
+		discardFiles,
 		failIndexWrites(message) {
 			indexWriteFailure = message;
 		},

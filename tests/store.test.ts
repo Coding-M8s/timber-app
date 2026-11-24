@@ -179,6 +179,7 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		readFileDiff: async () => ({ outcome: "read", file: null, diff: { kind: "unchanged" } }),
 		stageFiles: async () => ({ outcome: "refused", message: "Nothing was staged." }),
 		unstageFiles: async () => ({ outcome: "refused", message: "Nothing was unstaged." }),
+		discardFiles: async () => ({ outcome: "refused", message: "Nothing was discarded." }),
 		commitStaged: async () => ({ outcome: "refused", message: "Nothing was committed." }),
 		readWorktreeFile: async request => ({ outcome: "missing", path: request.path, message: `${request.path} is not in this worktree.` }),
 		writeWorktreeFile: async request => ({ outcome: "missing", path: request.path, message: `${request.path} is not in this worktree.` }),

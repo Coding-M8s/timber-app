@@ -7,6 +7,7 @@ import { ArenaCompareDialog } from "./ArenaCompareDialog";
 import { CommandPalette } from "./CommandPalette";
 import { RunChopDialog } from "./RunChopDialog";
 import { DeleteBackupDialog, RestoreBackupDialog } from "./BackupDialogs";
+import { DiscardFilesDialog } from "./DiscardFilesDialog";
 import { DoneDialog } from "./DoneDialog";
 import { NewWorktreeDialog } from "./NewWorktreeDialog";
 import { RebaseDialog } from "./RebaseDialog";
@@ -70,6 +71,9 @@ export function Dialogs() {
 		case "unsaved-file":
 			// A key per worktree and step, so another question starts from nothing.
 			return <UnsavedFileDialog key={`${dialog.worktree}\n${JSON.stringify(dialog.then)}`} worktree={dialog.worktree} then={dialog.then} />;
+		case "discard-files":
+			// A key per worktree and files, so another discard starts from nothing.
+			return <DiscardFilesDialog key={`${dialog.worktree}\n${JSON.stringify(dialog.files)}`} request={dialog} />;
 		case "send-review":
 			// A key per worktree, so another review starts from nothing.
 			return <SendReviewDialog key={dialog.worktree} worktree={dialog.worktree} />;
