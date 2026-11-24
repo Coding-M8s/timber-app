@@ -4905,3 +4905,48 @@ Run for committing staged changes from the Changes view (issue 394), on
 - The real-repository tests skip on Windows, where the hooks are shell
   scripts.
 - Not run: the desktop app, a signed commit, Windows, and macOS.
+
+Run for discarding files' changes from the Changes view (issue 395), Linux
+x64 with Bun 1.4.5 and Git 2.56.1:
+
+- `bun test tests/discard-files.test.ts`: 12 passed. The commands for each
+  group, a staged rename with its old path, 400 unstaged paths on standard
+  input, 400 untracked paths still on the command line, and too many
+  untracked paths refused. On real temporary repositories, in a linked
+  worktree, with every other file (bytes, modes, times), every folder, the
+  other index entries, the refs, HEAD, and the stash checked unchanged: an
+  unstaged edit back to its staged version and an unstaged deletion back to
+  HEAD, staged entries kept; a staged rename, a file staged and then
+  edited, and a staged new file back to HEAD, the new file deleted; two
+  untracked files deleted, their emptied folder, a sibling untracked file,
+  an ignored file, and a nested repository kept; `star*.txt` discarded with
+  `star-other.txt` left; 300 unstaged files through standard input; a held
+  `index.lock` failing with Git's message and nothing changed; and the
+  refusals (a file not listed, the wrong group, mixed groups, a path
+  outside, a command not shown, nothing named, a staged file before the
+  first commit, a conflict mid-merge) running nothing.
+- `bun test tests/discard-files-view.test.tsx`: 9 passed. Over the mock
+  engine: Discard on each unstaged, staged, and untracked row and Discard
+  all on each group, with the command as the tooltip; none on a conflict, a
+  folder entry, a staged file before the first commit, or in Base; the
+  dialog listing the file and command, naming a staged file's unstaged
+  changes, and Cancel; nothing run until confirmed; each group's discard;
+  a failure with Git's message; and a file open with unsaved edits named in
+  the dialog, its draft dropped, and read again after the discard.
+- `bun test tests/discard-files-browser.test.ts`: 4 passed in headless
+  Chrome. The dialog with the file and command and the keyboard on Cancel;
+  Escape closing it with nothing run; Delete on a file asking, Discard
+  removing it, and the keyboard on the next file; Delete for an untracked
+  file with a failure kept in the dialog; and both buttons of a row inside
+  it, a conflict having no Discard.
+- `bun test --parallel=4 --timeout=30000` over every test file that reads
+  the styles, the docs, the README, the contract, the RPC, the Changes
+  list, the dialogs, the mock's changes, or the Git helpers, with the
+  stage, Changes, store, and app test files (66 files): 1,107 passed, 0
+  failed, 16 skipped, as they run only on Windows. Run serially in one
+  process instead, the same files gave one failure, the Split layout test
+  of `tests/review-notes.test.tsx`, whose colored numbers depend on the
+  order the files run in; it passes alone and beside each new file, and
+  the same serial run on `origin/main` without the new files passed.
+- `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
+- Not run: the desktop app, Windows, and macOS.

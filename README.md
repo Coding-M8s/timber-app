@@ -15,7 +15,7 @@ quick fixes; real work happens in your own editor.
 - **Workspace tab:** several terminals and coding agents, such as Claude Code
   and Codex, per worktree. On Windows an agent must be its own `.exe`, not a
   `.cmd` launcher.
-- **Changes:** staged, unstaged, and untracked files in the side panel, staged, unstaged, and committed from there, each with a read-only diff in its own tab.
+- **Changes:** staged, unstaged, and untracked files in the side panel, staged, unstaged, discarded, and committed from there, each with a read-only diff in its own tab.
 - **Fetching:** in the background or on "Fetch now", updating only
   remote-tracking branches, with marks for upstreams that moved, were
   force-pushed, or were deleted.

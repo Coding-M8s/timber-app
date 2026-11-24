@@ -3,6 +3,7 @@ import {
 	baseName, parseDiff, readDiffOutput, relativePathProblem, sameFileChange, savedBaseRef,
 } from "../../shared/file-changes";
 import { COMMIT_ARGUMENTS, COMMIT_COMMAND_LINE, type CommitRequest, type CommitResult, type GitOperation, NOT_COMMITTED, commitBlocker } from "../../shared/commit-staged";
+import { type DiscardRequest, type DiscardResult, discardCommand } from "../../shared/discard-files";
 import { type IndexAction, type IndexWriteRequest, type IndexWriteResult, canWriteIndex, describeGitCommand, indexCommand, sameArguments } from "../../shared/index-writes";
 import type { Worktree } from "../../shared/model";
 
@@ -383,6 +384,35 @@ export function answerMockIndexWrite(all: readonly MockFileChange[], action: Ind
 	const line = describeGitCommand(command);
 	if (!sameArguments(command.args, request.shown)) return refuse(`The command is now ${line}, not the one that was shown.`);
 	return { result: { outcome: "written", command: line }, files: writeMockIndex(all, action, found) };
+}
+
+/**
+ * Answer a discard from the pretend files, as the main process would: every
+ * file must be in the Uncommitted list now, all in one group that can be
+ * discarded, and `shown` must be the command for them. An unstaged file
+ * leaves Unstaged and keeps what is staged; a staged one leaves Staged and
+ * Unstaged both, as HEAD's version comes back on disk; an untracked one is
+ * gone. Gives the files after the discard, or null when nothing changed.
+ */
+export function answerMockDiscard(all: readonly MockFileChange[], request: DiscardRequest): { result: DiscardResult; files: MockFileChange[] | null } {
+	const refuse = (message: string) => ({ result: { outcome: "refused" as const, message: `${message} Nothing was discarded.` }, files: null });
+	if (request.files.length === 0) return refuse("No file was named.");
+	const listed = compareMockFiles(all, "uncommitted");
+	const found: MockFileChange[] = [];
+	for (const target of request.files) {
+		const problem = relativePathProblem(target.path);
+		if (problem !== null) return refuse(problem);
+		const file = listed.find(candidate => sameFileChange(candidate.change, target));
+		if (!file || file.change.area === "conflicted") return refuse(`${target.path} is no longer a change that can be discarded in this worktree.`);
+		found.push(file);
+	}
+	const planned = discardCommand(found.map(file => file.change), true);
+	if (!planned.ok) return refuse(planned.message);
+	const line = describeGitCommand(planned.command);
+	if (!sameArguments(planned.command.args, request.shown)) return refuse(`The command is now ${line}, not the one that was shown.`);
+	const staged = new Set(found.filter(file => file.change.area === "staged").map(file => file.change.path));
+	const gone = (file: MockFileChange) => found.some(target => sameFileChange(target.change, file.change)) || (file.change.area === "unstaged" && staged.has(file.change.path));
+	return { result: { outcome: "written", command: line }, files: all.filter(file => !gone(file)) };
 }
 
 /**

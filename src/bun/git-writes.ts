@@ -57,7 +57,7 @@ export type GitWriteRan = Exclude<GitWriteResult, { outcome: "refused" }>;
 
 /**
  * The app's own Git writes (see docs/architecture.md): staging, unstaging,
- * and committing, and the helper the discard action builds on.
+ * discarding, and committing.
  *
  * - Only in a worktree Timber lists, in a repository in the app's list, whose
  *   folder is there (`findListedWorktree`), read again for every write.

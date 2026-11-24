@@ -140,7 +140,7 @@ Timber's safety logic must exist once. The app follows two rules:
    [watching for changes](#watching-for-changes)). Git is invoked as an
    executable plus an argument array.
 
-Four things are not read-only and do not go through Timber, because Timber
+Five things are not read-only and do not go through Timber, because Timber
 has no command for them:
 
 - **Fetching** (see [fetching](#fetching)). It writes only remote-tracking
@@ -156,6 +156,12 @@ has no command for them:
   resolved, and Unstage (`git restore --staged`, or `git rm --cached -f`
   before the first commit). They write only the index of a worktree Timber
   lists, never a ref, a commit, or a working tree file.
+- **Discards** (see [discarding](#discarding)), from the Changes view,
+  after a confirmation: working tree restores of listed files (`git restore
+  --worktree`, or `git restore --staged --worktree --source=HEAD` for a
+  staged file) and deleting listed untracked files (`git clean -f`, never
+  `-d` or `-x`). They write only the files named, on disk and in the index,
+  never a ref or a commit, and never a folder or an ignored file.
 - **Commits** (see [committing](#committing)), from the Changes view:
   `git commit -F -`, which adds one commit of what is staged on the
   worktree's current branch. It never amends, stages, or pushes, and never
@@ -3489,7 +3495,9 @@ with its last commit, and opens each file's diff in a diff tab beside
 Workspace and Pull request. Reading it is read-only. In Uncommitted, Stage
 and Unstage write the index (see
 [staging and unstaging](#staging-and-unstaging)), and Commit commits what is
-staged (see [committing](#committing)); nothing in it discards. Comparing against a backup is a later step.
+staged (see [committing](#committing)), and Discard puts files back or
+deletes untracked ones after asking (see [discarding](#discarding)).
+Comparing against a backup is a later step.
 
 - **The capabilities.** `readFileChanges({ repository, worktree, compare })`
   and `readFileDiff({ repository, worktree, compare, file })` on the
@@ -3836,8 +3844,8 @@ time. Base is review only and offers neither.
   When the command is not word for word the one shown, as when the first
   commit was made since, nothing runs and the answer says so.
 - **One helper for the app's own Git writes.** `createGitWrites` in
-  `src/bun/git-writes.ts`, which the commit uses too (see
-  [committing](#committing)) and the discard action is to reuse:
+  `src/bun/git-writes.ts`, which the commit and the discard use too (see
+  [committing](#committing) and [discarding](#discarding)):
   in the repository's turn (`RepositoryTurns`, shared with Timber's
   commands and Pull), it checks the worktree is listed
   (`findListedWorktree`, read again), asks the action's `plan` for the
@@ -3873,6 +3881,70 @@ time. Base is review only and offers neither.
   conflict marked resolved, `MERGE_HEAD` kept; unstaging before the first
   commit; a held `index.lock`, with the index bytes unchanged; and every
   refusal, with the index bytes unchanged and nothing run.
+
+### Discarding
+
+In Uncommitted, each file of Unstaged, Staged, and Untracked has Discard,
+and each of those groups Discard all. Merge conflicts has none: finish or
+abort the merge in a terminal. Nor does a staged file before the first
+commit, as there is no HEAD to put it back to (unstage it, then discard it
+as untracked), or a folder entry such as an untracked nested repository
+(`nested/`). Base is review only.
+
+- **The capability.** `discardFiles({ repository, worktree, files, shown })`
+  on the `Engine` contract, as `stageFiles` (`DiscardRequest` in
+  `src/shared/discard-files.ts`), answering `written`, `refused`, or
+  `failed`. All the files are of one group, so one command runs.
+- **The commands.** `discardCommand` in `src/shared/discard-files.ts`, which
+  the window and the main process both call:
+  - Unstaged: `git restore --worktree -- <paths>`, which puts each file back
+    as it is staged, or as HEAD has it when nothing of it is.
+  - Staged: `git restore --staged --worktree --source=HEAD -- <paths>`, with
+    a rename's old path, which puts each file back as HEAD has it in the
+    index and on disk, and deletes one HEAD does not have. A file staged and
+    then edited loses its unstaged edits too; the dialog names it.
+  - Untracked: `git clean -f -- <paths>`. Without `-d` it never removes a
+    folder, even one it emptied, and without `-x` never an ignored file.
+  - The restores take more than 8,000 characters of paths on standard
+    input, as staging does. `git clean` cannot, so more than 30,000
+    characters of untracked paths are refused (`TOO_MANY_TO_DELETE`), and
+    the tooltip and the dialog say to filter the list to fewer.
+- **Paths from Git, never the window.** `planDiscard` in
+  `src/bun/file-changes.ts` reads `git status` and HEAD again, finds each
+  named file there in a group that can be discarded, refuses a folder
+  entry, and builds the command from what Git lists. Then `createGitWrites`
+  runs it, as for staging: in the repository's turn, in a listed worktree,
+  only when it is word for word the command shown, once, with
+  `GIT_LITERAL_PATHSPECS=1`.
+- **In the window.** Discard, Discard all, and Delete on a file open the
+  Discard dialog (`DiscardFilesDialog` in
+  `src/mainview/components/DiscardFilesDialog.tsx`), an `OperationDialog`
+  marked destructive, so the keyboard starts on Cancel and Escape closes it
+  without running anything. It lists the files and the command, says it
+  cannot be undone, names a staged file whose unstaged changes go too, and
+  names the file open in the File tab when it has unsaved edits. It runs
+  only for the files as listed when it opened. `discardFiles` in the store
+  runs it, drops the open file's draft when the discard named it and reads
+  it again, so the editor shows the file as it is on disk, and reads the
+  list again. A failure stays in the dialog with Git's message. The words
+  are in `src/mainview/discard-format.ts`.
+- **The mock engine.** `answerMockDiscard` in
+  `src/mainview/engine/mock-file-changes.ts`; `failIndexWrites` and
+  `indexWrites` cover discards too.
+- **Tests.** `tests/discard-files.test.ts` runs each group on real temporary
+  repositories, in a linked worktree, and checks that every other file
+  (bytes, modes, and times), every folder, the other index entries, the
+  refs, HEAD, and the stash are as they were: an unstaged edit and deletion
+  back to their staged and committed versions; a staged rename, a file
+  staged and edited, and a staged new file back to HEAD; two untracked
+  files deleted with their emptied folder, a sibling, an ignored file, and
+  a nested repository kept; a `*` taken literally; 300 paths through
+  standard input; a held `index.lock`; and every refusal (a conflict, a
+  file not listed, the wrong group, mixed groups, a staged file before the
+  first commit, a path outside, a command not shown) running nothing.
+  `tests/discard-files-view.test.tsx` covers the buttons, the dialog, the
+  store, the open file, and the mock, and `tests/discard-files-browser.test.ts`
+  the dialog's focus, Escape, Delete, and where the keyboard goes after.
 
 ### Committing
 

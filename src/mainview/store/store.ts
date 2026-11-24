@@ -74,6 +74,7 @@ import { filterFiles, listedOrder, movedEntry, steppedFile } from "../changes-fo
 import { COMMIT_ARGUMENTS, COMMIT_COMMAND_LINE, type CommitResult, commitBlocker } from "../../shared/commit-staged";
 import { commitStateOf } from "../commit-format";
 import { type IndexAction, type IndexWriteResult, canWriteIndex, describeGitCommand, indexCommand } from "../../shared/index-writes";
+import { type DiscardResult, discardCommand, discardPaths, fileDiscardable } from "../../shared/discard-files";
 import { type FileEditMemory, createFileEditMemory } from "../text-editor-format";
 import { afterSave, canEditFile, editableFileText, fileText, hasUnsavedEdits, initialFileMode, listedOnly, outsideResult, pathInWorktree, settleTabs, unsavedFileCount } from "../file-view-format";
 import {
@@ -365,6 +366,17 @@ export interface AppStore {
 	 * group that takes the action. Never throws.
 	 */
 	writeIndex(action: IndexAction, files: readonly FileChangeTarget[]): Promise<IndexWriteResult | null>;
+	/**
+	 * Discard the changes of files of one group of the Uncommitted list, as
+	 * `Engine.discardFiles` does, with the command `discardCommand` gives.
+	 * The Discard dialog calls it once the person confirmed. A file open in
+	 * the File tab that it names drops its unsaved edits and is read again,
+	 * so it shows as it is on disk. Then the list is read again at once.
+	 * Does nothing (null) outside Uncommitted, while another write runs, or
+	 * for a file not listed now in a group that can be discarded. Never
+	 * throws.
+	 */
+	discardFiles(files: readonly FileChangeTarget[]): Promise<DiscardResult | null>;
 	/** Keep what is typed in the commit message box of a worktree, until a commit is made there. */
 	setCommitMessage(worktreeId: string, text: string): void;
 	/**
@@ -2192,6 +2204,39 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		return result;
 	}
 
+	async function discardFiles(files: readonly FileChangeTarget[]): Promise<DiscardResult | null> {
+		const view = state.changes;
+		if (!view?.files || view.compared !== "uncommitted" || writesWait(state, view) || files.length === 0) return null;
+		const worktree = worktreeOf(view.repository, view.worktree);
+		if (!worktree) return null;
+		const targets = files.map(file => ({ area: file.area, path: file.path, previousPath: file.previousPath }));
+		if (!targets.every(file => fileDiscardable(file, view.hasCommit) && view.files!.some(candidate => sameFileChange(candidate, file)))) return null;
+		const planned = discardCommand(targets, view.hasCommit);
+		if (!planned.ok) return { outcome: "refused", message: planned.message };
+		const run = state.commitRuns[view.worktree];
+		update({ changes: { ...view, writing: true }, ...(run?.committed ? { commitRuns: { ...state.commitRuns, [view.worktree]: { ...run, committed: null } } } : {}) });
+		let result: DiscardResult;
+		try {
+			result = await engine.discardFiles({ repository: view.repository, worktree: worktree.path, files: targets, shown: planned.command.args });
+		} catch (error) {
+			result = { outcome: "failed", command: describeGitCommand(planned.command), message: unheard("the discard", error) };
+		}
+		const now = state.changes;
+		// A failure shows in the dialog, which stays open; an earlier stage's alert goes once a write works.
+		if (now?.worktree === view.worktree) update({ changes: { ...now, writing: false, ...(result.outcome === "written" ? { writeProblem: null } : {}) } });
+		const paths = discardPaths(targets);
+		const open = state.files[view.worktree];
+		if (result.outcome === "written" && open && open.worktreePath === worktree.path && paths.includes(open.path)) {
+			// Not through readFileAgain, which keeps unsaved edits while a dialog is open: the person chose to lose them.
+			forgetEditMemory(view.worktree);
+			changeFile(view.worktree, { draft: null, saveProblem: null, mode: open.mode === "edit" ? initialFileMode(open.path) : open.mode });
+			void readOpenFile(view.worktree);
+		}
+		movedByWrite = { worktree: view.worktree, paths, after: changesTicket };
+		await readChanges(view.repository, view.worktree);
+		return result;
+	}
+
 	function setCommitMessage(worktreeId: string, text: string): void {
 		if ((state.commitMessages[worktreeId] ?? "") === text) return;
 		update({ commitMessages: { ...state.commitMessages, [worktreeId]: text } });
@@ -3863,6 +3908,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		readPorts,
 		selectChangedFile,
 		writeIndex,
+		discardFiles,
 		compareChanges,
 		chooseDiffLayout,
 		addReviewNote(worktreeId, note) {
