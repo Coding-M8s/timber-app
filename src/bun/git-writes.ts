@@ -83,7 +83,7 @@ export function createGitWrites(dependencies: GitWritesDependencies): GitWrites 
 				git,
 				cwd: listed.worktree.path,
 				timeoutMs: timeoutMilliseconds,
-				limitBytes: 64 * 1024,
+				// Never cut short: stopping Git part way through a write is worse than reading what it printed, at most a line a path (`git rm`).
 				stderrBytes: STDERR_BYTES,
 				environment: { GIT_LITERAL_PATHSPECS: "1" },
 				...(command.input === null ? {} : { input: command.input }),

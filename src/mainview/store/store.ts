@@ -1921,12 +1921,20 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		return state.repositories.find(candidate => candidate.path === repositoryPath)?.worktrees.find(candidate => candidate.path === worktreePath) ?? null;
 	}
 
-	async function readChanges(repositoryPath: string, worktreeId: string, moved: readonly string[] = []): Promise<void> {
+	/**
+	 * The files of the last stage or unstage, for the first read of the list
+	 * that starts after it ended, whichever asked for it: the write's own, the
+	 * watcher's, or a Refresh. A read that started earlier lists them as they were.
+	 */
+	let movedByWrite: { worktree: string; paths: string[]; after: number } | null = null;
+	let settledWrites = 0;
+
+	async function readChanges(repositoryPath: string, worktreeId: string): Promise<void> {
 		const worktree = worktreeOf(repositoryPath, worktreeId);
 		if (!worktree) return;
 		const ticket = ++changesTicket;
 		if (state.changes?.worktree !== worktreeId || state.changes.repository !== repositoryPath) {
-			update({ changes: { repository: repositoryPath, worktree: worktreeId, files: null, more: false, compared: null, base: null, problem: null, hasCommit: true, writing: false, writeProblem: null, selected: null, diff: null, unchanged: null } });
+			update({ changes: { repository: repositoryPath, worktree: worktreeId, files: null, more: false, compared: null, base: null, problem: null, hasCommit: true, writing: false, settledWrites: 0, writeProblem: null, selected: null, diff: null, unchanged: null } });
 		}
 		const compare = chosenComparison(state.layout, worktreeId);
 		let answer!: FileChangesResult;
@@ -1946,13 +1954,16 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		// Only the diff tab's diff is read: nothing is read for a file no tab shows.
 		const open = state.diffs[worktreeId];
 		const wanted = open?.file ?? null;
+		const move = movedByWrite?.worktree === worktreeId && ticket > movedByWrite.after ? movedByWrite : null;
+		if (move) movedByWrite = null;
+		const moved = move?.paths ?? [];
 		// A file just staged or unstaged keeps its diff tab, now on its new group's entry.
 		const kept = wanted === null ? undefined : answer.files.find(file => sameFileChange(file, wanted)) ?? (moved.includes(wanted.path) ? movedEntry(answer.files, wanted.path) : undefined);
 		const selected = kept ? { area: kept.area, path: kept.path, previousPath: kept.previousPath } : null;
 		// The same file keeps its diff on screen until the new one answers, so it does not flicker.
 		const sameComparison = view.compared === answer.compared;
 		const keptDiff = kept && view.selected !== null && sameFileChange(view.selected, kept) && sameComparison ? view.diff : null;
-		const next: ChangesView = { ...view, files: answer.files, more: answer.more, compared: answer.compared, base: answer.base, hasCommit: answer.hasCommit, problem: null, selected, diff: keptDiff, unchanged: keptDiff === null ? null : view.unchanged };
+		const next: ChangesView = { ...view, files: answer.files, more: answer.more, compared: answer.compared, base: answer.base, hasCommit: answer.hasCommit, settledWrites: move ? ++settledWrites : view.settledWrites, problem: null, selected, diff: keptDiff, unchanged: keptDiff === null ? null : view.unchanged };
 		// A viewed file whose diff changed since, or that left the list, is no longer viewed.
 		const viewed = keptViewed(worktreeId, answer.compared, answer.files);
 		if (viewed !== state.viewed) update({ viewed });
@@ -2161,7 +2172,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			const writeProblem = result.outcome === "written" ? null : { action, command: result.outcome === "failed" ? result.command : null, message: result.message };
 			update({ changes: { ...now, writing: false, writeProblem } });
 		}
-		await readChanges(view.repository, view.worktree, targets.flatMap(file => (file.previousPath === null ? [file.path] : [file.path, file.previousPath])));
+		movedByWrite = { worktree: view.worktree, paths: targets.flatMap(file => (file.previousPath === null ? [file.path] : [file.path, file.previousPath])), after: changesTicket };
+		await readChanges(view.repository, view.worktree);
 		return result;
 	}
 

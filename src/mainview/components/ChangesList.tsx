@@ -97,7 +97,7 @@ function FileList({ view, dimmed }: { view: ChangesView & { files: readonly File
 	const order = listedOrder(view.files);
 	const [focused, setFocused] = useState<string | null>(null);
 	// The file the keyboard follows after a stage or unstage, by path, and where it was in the list.
-	const following = useRef<{ path: string; index: number; files: readonly FileChange[] } | null>(null);
+	const following = useRef<{ path: string; index: number; settled: number } | null>(null);
 	const focusedFile = focused === null ? undefined : order.find(file => fileKey(file) === focused);
 	// The file the keyboard was on, else the open one, else the first, takes the tab stop.
 	const tabStop = focusedFile ?? (view.selected === null ? undefined : order.find(file => sameFileChange(file, view.selected!))) ?? order[0] ?? null;
@@ -105,8 +105,8 @@ function FileList({ view, dimmed }: { view: ChangesView & { files: readonly File
 
 	useEffect(() => {
 		const follow = following.current;
-		// Only once the list was read again after the write.
-		if (follow === null || view.writing || state.changes?.files === follow.files) return;
+		// Only once the list was read again after the write ended.
+		if (follow === null || view.settledWrites === follow.settled) return;
 		following.current = null;
 		// The file in its new group, else whatever took its place.
 		const next = movedEntry(view.files, follow.path) ?? order[Math.min(follow.index, order.length - 1)];
@@ -117,7 +117,7 @@ function FileList({ view, dimmed }: { view: ChangesView & { files: readonly File
 
 	const write = (action: IndexAction, files: readonly FileChange[], follow: FileChange) => {
 		if (view.writing) return;
-		following.current = { path: follow.path, index: Math.max(0, order.findIndex(file => sameFileChange(file, follow))), files: state.changes?.files ?? [] };
+		following.current = { path: follow.path, index: Math.max(0, order.findIndex(file => sameFileChange(file, follow))), settled: view.settledWrites };
 		void store.writeIndex(action, files).then(result => {
 			if (result === null) following.current = null;
 		});
@@ -198,7 +198,7 @@ function FileList({ view, dimmed }: { view: ChangesView & { files: readonly File
 										{own !== null && (
 											<button
 												type="button"
-												className="text-button change-file-action"
+												className="change-file-action"
 												title={describeIndexCommand(indexCommand(own.action, [file], view.hasCommit))}
 												aria-label={`${own.label} ${file.path}`}
 												aria-disabled={view.writing || undefined}
@@ -377,7 +377,7 @@ function WorktreeChanges({ repository, worktree }: { repository: Repository; wor
 
 /**
  * The side panel's Changes view: what changed in the selected worktree,
- * read-only, with the review of its notes at its foot. Choosing a file opens
+ * with Stage and Unstage in Uncommitted and the review of its notes at its foot. Choosing a file opens
  * its diff in the diff tab. The changes are read by `ChangesReader`.
  */
 export function ChangesList() {
