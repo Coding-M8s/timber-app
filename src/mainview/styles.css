@@ -4696,11 +4696,19 @@ pre:focus-visible {
 	margin: 0;
 	padding: 1px 7px;
 	border: 1px solid var(--line);
+	border-radius: 5px;
+	/* Solid, so the folder name under it never shows through. */
 	background: var(--bg-pane);
+	color: var(--text-2);
 	transform: translateY(-50%);
 	font-size: 11px;
 	white-space: nowrap;
 	visibility: hidden;
+}
+
+.change-file-action:hover {
+	border-color: var(--text-3);
+	color: var(--text);
 }
 
 .change-row:hover .change-file-action,

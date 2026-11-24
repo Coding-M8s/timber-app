@@ -163,4 +163,18 @@ describe("staging and unstaging from the Changes view", () => {
 		expect(store.getState().diffs[FEATURE.id]?.file).toEqual({ area: "staged", path: "src/total.ts", previousPath: null });
 		expect(store.getState().changes?.selected).toEqual({ area: "staged", path: "src/total.ts", previousPath: null });
 	});
+
+	test("a read the watcher starts while the write runs does not lose the diff tab, and the list counts the write once it is read again", async () => {
+		const { store } = await started();
+		await store.selectChangedFile(file(store, "unstaged", "src/total.ts"));
+		const before = store.getState().changes!.settledWrites;
+		const writing = store.writeIndex("stage", [file(store, "unstaged", "src/total.ts")]);
+		const watcher = store.readChanges(TIMBER, FEATURE.id);
+		await Promise.all([writing, watcher]);
+		expect(store.getState().diffs[FEATURE.id]?.file).toEqual({ area: "staged", path: "src/total.ts", previousPath: null });
+		expect(store.getState().changes!.settledWrites).toBe(before + 1);
+		// A later read with nothing written moves nothing.
+		await store.readChanges(TIMBER, FEATURE.id);
+		expect(store.getState().changes!.settledWrites).toBe(before + 1);
+	});
 });

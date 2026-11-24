@@ -11,6 +11,7 @@ import {
 	type IndexAction, MAX_ARGUMENT_CHARACTERS, canWriteIndex, describeGitCommand, indexActionOf, indexCommand, indexPaths,
 } from "../src/shared/index-writes";
 import type { Repository } from "../src/shared/model";
+import { windows } from "./support/runtime";
 import { git } from "./support/timber";
 
 const target = (area: FileChange["area"], path: string, previousPath: string | null = null): FileChangeTarget => ({ area, path, previousPath });
@@ -124,7 +125,8 @@ async function listed(sampled: Sample) {
 	return read;
 }
 
-describe("staging and unstaging in real repositories", () => {
+// The sample has a `*` in a file name, which Windows does not allow, as in ./file-changes.test.ts.
+describe.skipIf(windows)("staging and unstaging in real repositories", () => {
 	beforeAll(() => {
 		root = realpathSync(mkdtempSync(join(tmpdir(), "timber-app-index-")));
 	});
@@ -236,6 +238,21 @@ describe("staging and unstaging in real repositories", () => {
 		expect(snapshot(sampled.linked)).toBe(before);
 		expect(readFileSync(join(sampled.linked, "second.txt"), "utf8")).toBe("second, edited after staging\n");
 	});
+
+	test("unstages thousands of files before the first commit through standard input, though git rm prints a line for each", async () => {
+		const names = Array.from({ length: 5000 }, (_, index) => `many/file-${index}.txt`);
+		const sampled = sample("unborn-many", linked => {
+			mkdirSync(join(linked, "many"));
+			for (const name of names) writeFileSync(join(linked, name), "new\n");
+			git(linked, "add", "many");
+		}, { commit: false });
+		const files = names.map(name => target("staged", name));
+		const answer = await write(sampled, "unstage", files, false);
+		expect(answer).toEqual({ outcome: "written", command: "git rm --cached -f --pathspec-from-file=- --pathspec-file-nul, with 5000 paths on standard input" });
+		const lines = status(sampled.linked).trimEnd().split("\n");
+		expect(lines).toHaveLength(5000);
+		expect(lines.every(line => line.startsWith("?? many/"))).toBe(true);
+	}, 30_000);
 
 	test("a held index.lock fails with Git's message and changes nothing", async () => {
 		const sampled = sample("locked", linked => writeFileSync(join(linked, "keep.txt"), "one\ntwo\n"));

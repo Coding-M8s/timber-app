@@ -148,6 +148,8 @@ export interface ChangesView {
 	hasCommit: boolean;
 	/** A stage or unstage is running: the list's write buttons wait for it. */
 	writing: boolean;
+	/** Counts the stage and unstage writes whose list was read again after they ended, so the list knows where the keyboard goes. */
+	settledWrites: number;
 	/** Why the latest stage or unstage did not happen, with the command when Git ran and failed. Null once one worked, or for another worktree. */
 	writeProblem: { action: IndexAction; command: string | null; message: string } | null;
 	/** The file whose diff is read: the file of the worktree's diff tab while it is listed, otherwise null. */
