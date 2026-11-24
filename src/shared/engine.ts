@@ -8,6 +8,7 @@ import type { Attention } from "./attention";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "./git-fetch";
 import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffResult } from "./file-changes";
 import type { IndexWriteRequest, IndexWriteResult } from "./index-writes";
+import type { CommitRequest, CommitResult } from "./commit-staged";
 import type { WorktreeFileRequest, WorktreeFileResult, WorktreeFileWriteRequest, WorktreeFileWriteResult } from "./worktree-files";
 import type { WorktreeFolderChange, WorktreeFolderRequest, WorktreeFolderResult, WorktreeFolderWatch } from "./worktree-folders";
 import type { WorktreeHandoff } from "./handoff";
@@ -615,6 +616,21 @@ export interface Engine {
 	 * on disk as untracked.
 	 */
 	unstageFiles(request: IndexWriteRequest): Promise<IndexWriteResult>;
+	/**
+	 * Commit what is staged in a worktree, on its current branch: `git commit
+	 * -F -` with `message` on standard input, so no editor opens. Never `-a`,
+	 * `--amend`, or `--no-verify`: only what is staged, as a new commit, with
+	 * the person's hooks and signing as in a terminal, in their environment.
+	 * The main process reads Git again and refuses, running nothing, while a
+	 * merge, rebase, cherry-pick, or revert is in progress, on a detached
+	 * HEAD, with nothing staged, or with an empty message (`commitBlocker` in
+	 * ./commit-staged.ts), and when `shown` is not `COMMIT_ARGUMENTS`. A
+	 * commit is made when HEAD moved; otherwise, as when a hook fails, the
+	 * answer has what Git and the hooks printed and nothing changed. Runs once
+	 * and is never retried. Read the changes and the repository again after
+	 * every outcome.
+	 */
+	commitStaged(request: CommitRequest): Promise<CommitResult>;
 	/**
 	 * One file of a worktree of a repository in the list, for the File tab. The path is relative to the worktree, and neither it nor a
 	 * link it is may lead outside the worktree. Only a plain file is read, up

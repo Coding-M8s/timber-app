@@ -277,7 +277,7 @@ function watchRepositories(): Promise<void> {
 void watchRepositories();
 
 const done = createDone({ timber: () => timber.current(), findRepository: path => repositories.find(path) });
-// Staging and unstaging write only the index, in the repository's turn, and the window reads the repository again (see ./git-writes.ts).
+// Staging, unstaging, and committing run in the repository's turn, and the window reads the repository again (see ./git-writes.ts).
 const gitWrites = createGitWrites({ findRepository: path => repositories.find(path), turns, onWritten: heard });
 const fileChanges = createFileChanges({ findRepository: path => repositories.findRecent(path), writes: gitWrites });
 const worktreeFiles = createWorktreeFiles({ findRepository: path => repositories.findRecent(path) });
@@ -640,6 +640,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			// The app's own index writes, only with paths from the status read again (see ./file-changes.ts and ./git-writes.ts).
 			stageFiles: request => fileChanges.stage(request),
 			unstageFiles: request => fileChanges.unstage(request),
+			commitStaged: request => fileChanges.commit(request),
 			// Reads one file, only inside a worktree Timber lists, links included (see ./worktree-files.ts). It holds file contents: never log it.
 			readWorktreeFile: request => worktreeFiles.read(request),
 			// Writes only that file, in place, and only a file that is there (see ./worktree-files.ts). It holds file contents: never log it.

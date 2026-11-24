@@ -20,12 +20,15 @@ export interface GitWritesDependencies {
 	onWritten?: (repository: string) => void;
 	/** The Git executable. Tests may pass another. */
 	git?: string;
-	/** How long Git may take. Tests shorten it. */
+	/** How long Git may take, unless a write says otherwise. Tests shorten it. */
 	timeoutMilliseconds?: number;
+	/** Variables added to Git's environment for every write. Tests use it to leave out the person's own Git config. */
+	environment?: Record<string, string>;
 }
 
 /** The command to run in a listed worktree, or why nothing may run. */
-export type GitWritePlan = { ok: true; command: GitCommand } | { ok: false; message: string };
+/** `line` is how the window shows the command, when `describeGitCommand` would not say it well, as for a message on standard input. */
+export type GitWritePlan = { ok: true; command: GitCommand; line?: string } | { ok: false; message: string };
 
 export interface GitWrite {
 	/** The path of the repository's primary checkout, as in the app's list. */
@@ -38,11 +41,23 @@ export interface GitWrite {
 	consequence: string;
 	/** The command, from what Git says now about the worktree (never from the window's paths), or why nothing may run. */
 	plan: (worktree: Worktree) => Promise<GitWritePlan>;
+	/**
+	 * "index" (the default): paths taken literally, `LC_ALL=C`, and Git stopped
+	 * after the helper's time. "terminal": as Git would run from a terminal,
+	 * for a command that runs hooks (a commit), which must see the person's
+	 * own environment, may print a lot, and may take long (`timeoutMilliseconds`).
+	 */
+	runAs?: "index" | "terminal";
+	/** How long Git may take for this write, in place of the helper's. */
+	timeoutMilliseconds?: number;
 }
 
+/** A write that was not refused, as Git ran it. */
+export type GitWriteRan = Exclude<GitWriteResult, { outcome: "refused" }>;
+
 /**
- * The app's own Git writes (see docs/architecture.md): today staging and
- * unstaging, and the helper the commit and discard actions build on.
+ * The app's own Git writes (see docs/architecture.md): staging, unstaging,
+ * and committing, and the helper the discard action builds on.
  *
  * - Only in a worktree Timber lists, in a repository in the app's list, whose
  *   folder is there (`findListedWorktree`), read again for every write.
@@ -58,13 +73,25 @@ export interface GitWrite {
  */
 export interface GitWrites {
 	write(request: GitWrite): Promise<GitWriteResult>;
+	/**
+	 * As `write`, then `settle` in the same turn once Git ran, whether it
+	 * worked, failed, or was stopped, to read what Git did, such as where a
+	 * commit's HEAD now points. Nothing else writes in between.
+	 */
+	writeAndSettle<Settled>(request: GitWrite, settle: (ran: GitWriteRan, worktree: Worktree) => Promise<Settled>): Promise<Settled | { outcome: "refused"; message: string }>;
 }
 
-export function createGitWrites(dependencies: GitWritesDependencies): GitWrites {
-	const { findRepository, turns, onWritten, git = "git", timeoutMilliseconds = GIT_MILLISECONDS } = dependencies;
+/** Bytes kept of each stream of a write that runs as from a terminal: the end of a hook's output is where it says what failed. */
+const TERMINAL_TAIL_BYTES = 64 * 1024;
 
-	async function write({ repository, worktree, shown, consequence, plan }: GitWrite): Promise<GitWriteResult> {
-		return turns.inTurn(repository, async (): Promise<GitWriteResult> => {
+export function createGitWrites(dependencies: GitWritesDependencies): GitWrites {
+	const { findRepository, turns, onWritten, git = "git", timeoutMilliseconds: helperMilliseconds = GIT_MILLISECONDS, environment = {} } = dependencies;
+
+	async function writeAndSettle<Settled>(
+		{ repository, worktree, shown, consequence, plan, runAs = "index", timeoutMilliseconds = helperMilliseconds }: GitWrite,
+		settle: (ran: GitWriteRan, worktree: Worktree) => Promise<Settled>,
+	): Promise<Settled | { outcome: "refused"; message: string }> {
+		return turns.inTurn(repository, async () => {
 			const listed = await findListedWorktree(findRepository, repository, worktree, consequence);
 			if (!listed.ok) return { outcome: "refused", message: listed.message };
 			let planned: GitWritePlan;
@@ -75,30 +102,37 @@ export function createGitWrites(dependencies: GitWritesDependencies): GitWrites 
 			}
 			if (!planned.ok) return { outcome: "refused", message: planned.message };
 			const { command } = planned;
-			const line = describeGitCommand(command);
+			const line = planned.line ?? describeGitCommand(command);
 			if (!sameArguments(command.args, shown)) {
 				return { outcome: "refused", message: `The command is now ${line}, not the one that was shown. ${consequence} Look at the list again.` };
 			}
+			const terminal = runAs === "terminal";
 			const answer = await readGit(command.args, {
 				git,
 				cwd: listed.worktree.path,
 				timeoutMs: timeoutMilliseconds,
 				// Never cut short: stopping Git part way through a write is worse than reading what it printed, at most a line a path (`git rm`).
 				stderrBytes: STDERR_BYTES,
-				environment: { GIT_LITERAL_PATHSPECS: "1" },
+				// A hook's own pathspecs must keep their globs, so only an index write takes paths literally.
+				environment: terminal ? environment : { ...environment, GIT_LITERAL_PATHSPECS: "1" },
+				...(terminal ? { asTerminal: { tailBytes: TERMINAL_TAIL_BYTES } } : {}),
 				...(command.input === null ? {} : { input: command.input }),
 			});
-			if (!answer.started) return { outcome: "failed", command: line, message: `Could not start Git: ${messageOf(answer.error)}` };
-			// Stopped part way, Git may or may not have written: the window reads again either way.
-			onWritten?.(repository);
-			if (answer.timedOut) return { outcome: "failed", command: line, message: `Git took longer than ${timeoutMilliseconds / 1000} seconds and was stopped.` };
-			if (answer.exitCode !== 0) {
-				const said = answer.stderr.trim();
-				return { outcome: "failed", command: line, message: said === "" ? `Git ended with exit code ${answer.exitCode ?? "unknown"}.` : said };
-			}
-			return { outcome: "written", command: line };
+			const ran = await (async (): Promise<GitWriteRan> => {
+				if (!answer.started) return { outcome: "failed", command: line, message: `Could not start Git: ${messageOf(answer.error)}` };
+				// Stopped part way, Git may or may not have written: the window reads again either way.
+				onWritten?.(repository);
+				const said = terminal ? [answer.stdout.trim(), answer.stderr.trim()].filter(text => text !== "").join("\n") : answer.stderr.trim();
+				if (answer.timedOut) return { outcome: "failed", command: line, message: `Git took longer than ${timeoutMilliseconds / 1000} seconds and was stopped.${said === "" ? "" : `\n${said}`}` };
+				if (answer.exitCode !== 0) return { outcome: "failed", command: line, message: said === "" ? `Git ended with exit code ${answer.exitCode ?? "unknown"}.` : said };
+				return { outcome: "written", command: line };
+			})();
+			return settle(ran, listed.worktree);
 		});
 	}
 
-	return { write };
+	return {
+		write: request => writeAndSettle(request, async ran => ran),
+		writeAndSettle,
+	};
 }

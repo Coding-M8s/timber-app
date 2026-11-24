@@ -1,4 +1,5 @@
 import type { IndexAction } from "../../shared/index-writes";
+import type { GitOperation } from "../../shared/commit-staged";
 import type { AgentLocation } from "../../shared/agent-lookup";
 import type { StatusHookView } from "../../shared/status-hooks";
 import type { ChopArrangements, ChopRename } from "../../shared/chop-order";
@@ -146,8 +147,18 @@ export interface ChangesView {
 	problem: string | null;
 	/** Whether the worktree has a commit, from the latest read that worked: before the first one, unstaging is `git rm --cached`. */
 	hasCommit: boolean;
-	/** A stage or unstage is running: the list's write buttons wait for it. */
+	/** The merge, rebase, cherry-pick, or revert in progress, from the latest read that worked: Commit waits until it ends. */
+	operation: GitOperation | null;
+	/** Whether HEAD is detached, from the latest read that worked: there is no branch to commit on. */
+	detached: boolean;
+	/** A stage, unstage, or commit is running: the list's write buttons and Commit wait for it. */
 	writing: boolean;
+	/** A commit is running, so the message box is read-only and says so. */
+	committing: boolean;
+	/** Why the latest commit was not made: what Git and the hooks printed, with the command when Git ran. Null once one was made, or for another worktree. */
+	commitProblem: { command: string | null; message: string } | null;
+	/** The commit the latest Commit made here, until the next write. */
+	committed: { commit: string; short: string } | null;
 	/** Counts the stage and unstage writes whose list was read again after they ended, so the list knows where the keyboard goes. */
 	settledWrites: number;
 	/** Why the latest stage or unstage did not happen, with the command when Git ran and failed. Null once one worked, or for another worktree. */
@@ -545,6 +556,8 @@ export interface AppState {
 	viewed: Readonly<Record<string, Readonly<Record<string, string>>>>;
 	/** What is typed in the Changes view's "Filter files" box, by worktree. Kept in the window only. */
 	changeFilters: Readonly<Record<string, string>>;
+	/** What is typed in the Changes view's commit message box, by worktree, until a commit is made. Kept in the window only, while it is open. */
+	commitMessages: Readonly<Record<string, string>>;
 	/**
 	 * The file open in the File tab of each worktree, by its identity. A
 	 * worktree with none has no File tab. Kept in the window only, never
@@ -709,6 +722,7 @@ export const initialState: AppState = {
 	diffs: {},
 	viewed: {},
 	changeFilters: {},
+	commitMessages: {},
 	files: {},
 	reviews: {},
 	noteInView: null,

@@ -1,12 +1,13 @@
 import { lstat, readlink } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
+import { COMMIT_ARGUMENTS, COMMIT_COMMAND_LINE, type CommitRequest, type CommitResult, type GitOperation, NOT_COMMITTED, OPERATION_MARKERS, commitBlocker, emptyMessage, operationOf } from "../shared/commit-staged";
 import {
 	type BaseComparison, type FileChange, type FileChangesRequest, type FileChangesResult, type FileDiffRequest, type FileDiffResult, type LineCounts,
 	MAX_DIFF_BYTES, MAX_LISTED_FILES, MAX_STATUS_BYTES, baseContentArguments, baseNamesArguments, commitArguments, countAddedLines, diffArguments, isCommitHash, parseNameStatus, parseNumstat,
 	parseStatus, baseName, readDiffOutput, relativePathProblem, sameFileChange, savedBaseRef, sinceBase, statusArguments, uncommittedContentArguments, withChangedContent, withLineCounts,
 } from "../shared/file-changes";
 import { type IndexAction, type IndexWriteRequest, type IndexWriteResult, canWriteIndex, indexCommand } from "../shared/index-writes";
-import type { GitWritePlan, GitWrites } from "./git-writes";
+import type { GitWritePlan, GitWriteRan, GitWrites } from "./git-writes";
 import type { Worktree } from "../shared/model";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
 import { messageOf } from "../shared/error-message";
@@ -20,6 +21,9 @@ const STDERR_BYTES = 4096;
 
 const NOT_READ = "No changes were read.";
 
+/** A commit runs the person's hooks, which may run a whole test suite: Git is stopped only after this long. */
+export const COMMIT_MILLISECONDS = 10 * 60_000;
+
 const NOT_WRITTEN: Record<IndexAction, string> = { stage: "Nothing was staged.", unstage: "Nothing was unstaged." };
 
 export interface FileChangesDependencies {
@@ -29,20 +33,23 @@ export interface FileChangesDependencies {
 	git?: string;
 	/** How long Git may take. Tests shorten it. */
 	timeoutMilliseconds?: number;
-	/** Runs staging and unstaging (see ./git-writes.ts). Without it, both are refused. */
+	/** Runs staging, unstaging, and committing (see ./git-writes.ts). Without it, all three are refused. */
 	writes?: GitWrites;
+	/** How long a commit may take. Tests shorten it. */
+	commitMilliseconds?: number;
 }
 
 /**
  * The Changes view's side in the main process: the changed files of a
- * worktree and the diff of one, read-only, and staging and unstaging files,
- * which write only the index.
+ * worktree and the diff of one, read-only; staging and unstaging files,
+ * which write only the index; and committing what is staged.
  */
 export interface FileChanges {
 	read(request: FileChangesRequest): Promise<FileChangesResult>;
 	diff(request: FileDiffRequest): Promise<FileDiffResult>;
 	stage(request: IndexWriteRequest): Promise<IndexWriteResult>;
 	unstage(request: IndexWriteRequest): Promise<IndexWriteResult>;
+	commit(request: CommitRequest): Promise<CommitResult>;
 }
 
 type GitRun = { ok: true; text: string; truncated: boolean } | { ok: false; message: string };
@@ -133,12 +140,15 @@ async function withVersions(worktree: string, files: readonly FileChange[], comm
  *   `git merge-base <base> HEAD`, worked out again for every list and diff.
  *   A base that cannot be used answers with the uncommitted list and the
  *   reason, never a failure.
- * - Staging and unstaging are the only writes, through `writes`, and only to
- *   the index: the paths come from the status read again, never from the
+ * - Staging and unstaging are writes through `writes`, and only to the
+ *   index: the paths come from the status read again, never from the
  *   window (see `planIndexWrite`).
+ * - Committing is the other write: one commit of what is staged on the
+ *   current branch, refused unless Git says now that something is staged,
+ *   HEAD is on a branch, and no operation is in progress (see `planCommit`).
  */
 export function createFileChanges(dependencies: FileChangesDependencies): FileChanges {
-	const { findRepository, git = "git", timeoutMilliseconds = GIT_MILLISECONDS, writes } = dependencies;
+	const { findRepository, git = "git", timeoutMilliseconds = GIT_MILLISECONDS, writes, commitMilliseconds = COMMIT_MILLISECONDS } = dependencies;
 
 	async function run(cwd: string, args: readonly string[], limit: number, okExits: readonly number[]): Promise<GitRun> {
 		// No index lock, and Git's own words in English, which `readDiffOutput` reads ("Binary files ... differ").
@@ -202,6 +212,79 @@ export function createFileChanges(dependencies: FileChangesDependencies): FileCh
 		if (!answer.ok) return { ok: false, message: answer.message };
 		const commit = answer.text.trim();
 		return { ok: true, commit: isCommitHash(commit) ? commit : null };
+	}
+
+	/** The merge, rebase, cherry-pick, or revert in progress in a worktree, from the files Git keeps for it there, or why Git could not say. */
+	async function operationNow(worktree: string): Promise<{ ok: true; operation: GitOperation | null } | { ok: false; message: string }> {
+		// Asked of Git, since a linked worktree keeps these in its own folder, not in the shared one.
+		const answer = await run(worktree, ["rev-parse", ...OPERATION_MARKERS.flatMap(marker => ["--git-path", marker])], HASH_BYTES * OPERATION_MARKERS.length * 4, [0]);
+		if (!answer.ok) return { ok: false, message: answer.message };
+		const paths = answer.text.split("\n").filter(line => line !== "");
+		if (paths.length !== OPERATION_MARKERS.length) return { ok: false, message: "Git did not name where it keeps the state of a merge or rebase." };
+		const present = await Promise.all(paths.map(path => lstat(isAbsolute(path) ? path : join(worktree, path)).then(() => true, () => false)));
+		return { ok: true, operation: operationOf(present) };
+	}
+
+	/** Whether HEAD is detached, or why Git could not say. */
+	async function detachedNow(worktree: string): Promise<{ ok: true; detached: boolean } | { ok: false; message: string }> {
+		const answer = await run(worktree, ["symbolic-ref", "-q", "HEAD"], HASH_BYTES, [0, 1]);
+		return answer.ok ? { ok: true, detached: answer.text.trim() === "" } : answer;
+	}
+
+	/** Whether anything is staged: the index differs from HEAD, or from nothing before the first commit. Never cut short by a long list. */
+	async function stagedNow(worktree: string): Promise<{ ok: true; staged: boolean } | { ok: false; message: string }> {
+		const answer = await readGit(["diff", "--cached", "--quiet", "--no-ext-diff"], { git, cwd: worktree, timeoutMs: timeoutMilliseconds, stderrBytes: STDERR_BYTES });
+		if (!answer.started) return { ok: false, message: `Could not start Git: ${messageOf(answer.error)}` };
+		if (answer.timedOut) return { ok: false, message: `Git took longer than ${timeoutMilliseconds / 1000} seconds and was stopped.` };
+		if (answer.exitCode === 0 || answer.exitCode === 1) return { ok: true, staged: answer.exitCode === 1 };
+		const said = answer.stderr.trim();
+		return { ok: false, message: said === "" ? `Git ended with exit code ${answer.exitCode ?? "unknown"}.` : said };
+	}
+
+	/**
+	 * The commit command, from what Git says now: refused while an operation
+	 * is in progress, on a detached HEAD, with nothing staged, or with an
+	 * empty message, the same reasons the window gives (`commitBlocker`).
+	 * `before` gets the commit HEAD points at, to tell afterwards whether a
+	 * commit was made.
+	 */
+	async function planCommit(message: string, worktree: string, before: { commit: string | null }): Promise<GitWritePlan> {
+		const refuse = (text: string): GitWritePlan => ({ ok: false, message: `${text} ${NOT_COMMITTED}` });
+		const [operation, detached, staged, head] = await Promise.all([operationNow(worktree), detachedNow(worktree), stagedNow(worktree), commitOf(worktree, "HEAD")]);
+		if (!operation.ok) return refuse(`Git could not say whether a merge or rebase is in progress: ${operation.message}`);
+		if (!detached.ok) return refuse(`Git could not read this worktree's branch: ${detached.message}`);
+		if (!staged.ok) return refuse(`Git could not say what is staged: ${staged.message}`);
+		if (!head.ok) return refuse(`Git could not read this worktree's HEAD: ${head.message}`);
+		const blocker = commitBlocker({ operation: operation.operation, detached: detached.detached, staged: staged.staged ? 1 : 0, message });
+		if (blocker !== null) return refuse(blocker);
+		before.commit = head.commit;
+		return { ok: true, command: { args: [...COMMIT_ARGUMENTS], input: message }, line: COMMIT_COMMAND_LINE };
+	}
+
+	/** How a commit ended: made when HEAD moved, whatever Git's exit code, since a hook after the commit, or a stop, can follow it. */
+	async function settleCommit(ran: GitWriteRan, worktree: string, before: string | null): Promise<CommitResult> {
+		const after = await commitOf(worktree, "HEAD");
+		if (after.ok && after.commit !== null && after.commit !== before) {
+			const short = await run(worktree, ["rev-parse", "--short", after.commit], HASH_BYTES, [0]);
+			return { outcome: "committed", command: ran.command, commit: after.commit, short: short.ok && short.text.trim() !== "" ? short.text.trim() : after.commit.slice(0, 7) };
+		}
+		if (ran.outcome === "failed") return ran;
+		return { outcome: "failed", command: ran.command, message: after.ok ? "Git ended without making a commit." : `Git ended, and could not read this worktree's HEAD: ${after.message}` };
+	}
+
+	async function commit(request: CommitRequest): Promise<CommitResult> {
+		const { repository, worktree, message, shown } = (request ?? {}) as Partial<CommitRequest>;
+		// Only text reaches Git: the request comes over the bridge.
+		if (typeof repository !== "string" || typeof worktree !== "string" || typeof message !== "string" || !Array.isArray(shown) || shown.some(word => typeof word !== "string")) {
+			return { outcome: "refused", message: `The request is not complete. ${NOT_COMMITTED}` };
+		}
+		if (emptyMessage(message)) return { outcome: "refused", message: `Write a commit message first. ${NOT_COMMITTED}` };
+		if (!writes) return { outcome: "refused", message: `This app cannot commit. ${NOT_COMMITTED}` };
+		const before: { commit: string | null } = { commit: null };
+		return writes.writeAndSettle(
+			{ repository, worktree, shown, consequence: NOT_COMMITTED, runAs: "terminal", timeoutMilliseconds: commitMilliseconds, plan: listed => planCommit(message, listed.path, before) },
+			(ran, listed) => settleCommit(ran, listed.path, before.commit),
+		);
 	}
 
 	/** Whether the worktree can be compared with the base Timber saved for it, and its branch point. */
@@ -292,18 +375,20 @@ export function createFileChanges(dependencies: FileChangesDependencies): FileCh
 		async read(request) {
 			const listed = await findListedWorktree(findRepository, request.repository, request.worktree, NOT_READ);
 			if (!listed.ok) return { outcome: "not-listed", message: listed.message };
-			const [base, head] = await Promise.all([baseOf(listed.worktree), commitOf(request.worktree, "HEAD")]);
+			const [base, head, operation, detached] = await Promise.all([baseOf(listed.worktree), commitOf(request.worktree, "HEAD"), operationNow(request.worktree), detachedNow(request.worktree)]);
 			const compared = request.compare === "base" && base.usable ? "base" : "uncommitted";
 			const read = base.usable && compared === "base" ? await changedSince(request.worktree, base.commit) : await status(request.worktree);
 			if (!read.ok) return { outcome: "failed", message: read.message };
 			const more = read.truncated || read.files.length > MAX_LISTED_FILES;
 			// When HEAD cannot be read, unstaging is offered as `git restore`, and Git's message says why it fails.
 			const hasCommit = !head.ok || head.commit !== null;
-			return { outcome: "read", files: read.files.slice(0, MAX_LISTED_FILES), more, compared, base, hasCommit };
+			// When Git cannot say, Commit is offered, and the main process asks again before it runs.
+			return { outcome: "read", files: read.files.slice(0, MAX_LISTED_FILES), more, compared, base, hasCommit, operation: operation.ok ? operation.operation : null, detached: detached.ok && detached.detached };
 		},
 
 		stage: request => writeIndex("stage", request),
 		unstage: request => writeIndex("unstage", request),
+		commit,
 
 		async diff(request) {
 			const { file } = request;

@@ -391,7 +391,7 @@ describe.skipIf(windows)("reading changes from real repositories", () => {
 			findRepository: async () => ({ ...listed([fresh]), path: fresh }),
 		});
 		const read = await reader.read({ repository: fresh, compare: "uncommitted", worktree: fresh });
-		expect(read).toEqual({ outcome: "read", files: [{ area: "staged", kind: "added", path: "first.txt", previousPath: null, added: 1, removed: 0, version: expect.any(String) }], more: false, compared: "uncommitted", base: { usable: false, reason: "Timber did not report a base for this worktree." }, hasCommit: false });
+		expect(read).toEqual({ outcome: "read", files: [{ area: "staged", kind: "added", path: "first.txt", previousPath: null, added: 1, removed: 0, version: expect.any(String) }], more: false, compared: "uncommitted", base: { usable: false, reason: "Timber did not report a base for this worktree." }, hasCommit: false, operation: null, detached: false });
 		const answer = await reader.diff({ repository: fresh, compare: "uncommitted", worktree: fresh, file: { area: "staged", path: "first.txt", previousPath: null } });
 		expect(answer.outcome === "read" && answer.diff.kind === "text" && answer.diff.sections[0]!.hunks[0]!.lines.map(line => line.text)).toEqual(["hello"]);
 	});

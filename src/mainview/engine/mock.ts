@@ -5,6 +5,7 @@ import { type AlertSettings, type StatusNotice, createAlertRunner } from "../../
 import { type ChooseSoundResult, type SoundChoice, type SoundOutcome, readSoundChoice } from "../../shared/sound-setting";
 import type { Engine } from "../../shared/engine";
 import type { IndexWriteRequest, IndexWriteResult } from "../../shared/index-writes";
+import type { CommitRequest, CommitResult, GitOperation } from "../../shared/commit-staged";
 import { type Layout, defaultLayout, forgetGroup, forgetRepository, readLayout } from "../../shared/layout";
 import { type AddRepositoryResult, type BranchSuggestion, type IssueLink, type OpenInEditorRequest, type OpenInEditorResult, type Repository, type RepositoryGroupsResult, type SavedBase, type SyncState, type TimberStatus, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
 import { applyOrder } from "../../shared/repository-order";
@@ -43,7 +44,7 @@ import { type SyncActionKind, type SyncActionRequest, isSyncActionKind, syncNotR
 import { actOutSetBase, sampleBaseCounts } from "./mock-base";
 import { type PullRequestEnding, actOutPullRequest, isPullRequestEnding } from "./mock-pr";
 import type { CreatePullRequestResult } from "../../shared/timber-pr";
-import { type MockFileChange, answerMockIndexWrite, derivedFileChanges, diffMockFileChange, listMockFileChanges } from "./mock-file-changes";
+import { type MockFileChange, answerMockCommit, answerMockIndexWrite, derivedFileChanges, diffMockFileChange, listMockFileChanges } from "./mock-file-changes";
 import { type MockWorktreeFile, createMockWorktreeFiles } from "./mock-worktree-files";
 import { MOCK_PATH, type TerminalControls, createMockTerminals } from "./mock-terminals";
 import { type AppUpdateInstallRequest, type AppUpdateState, UPDATES_FROM_SOURCE } from "../../shared/app-update";
@@ -63,6 +64,17 @@ import type { ChopList } from "../../shared/chops";
 import type { WorktreeFolderChange, WorktreeFolderWatch } from "../../shared/worktree-folders";
 import { type ChopsControls, createMockChops } from "./mock-chops";
 import { type PortControls, createMockPorts } from "./mock-ports";
+
+/** A 40 digit hex name for a pretend commit, the same for the same text. Works in the browser, which has no Bun. */
+function pretendHash(text: string): string {
+	let digits = "";
+	for (let round = 0; digits.length < 40; round++) {
+		let hash = 0x811c9dc5 ^ round;
+		for (const character of text) hash = Math.imul(hash ^ character.charCodeAt(0), 0x01000193);
+		digits += (hash >>> 0).toString(16).padStart(8, "0");
+	}
+	return digits.slice(0, 40);
+}
 
 const inSync = (branch: string): SyncState => ({ kind: "tracking", upstream: `origin/${branch}`, ahead: 0, behind: 0 });
 
@@ -525,6 +537,16 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	/** Every stage and unstage that ran, oldest first, with the command, as the window showed it. */
 	indexWrites(): { worktree: string; command: string }[];
 	/**
+	 * Make every later commit fail with this message, as Git and a hook print
+	 * it, and change nothing, or pass null to let them work again. Try
+	 * "lint: 2 problems in src/a.ts".
+	 */
+	failCommits(message: string | null): void;
+	/** Pretend a merge, rebase, cherry-pick, or revert is in progress in the worktree at `path`, or pass null to end it. */
+	setOperation(path: string, operation: GitOperation | null): void;
+	/** Every commit that was made, oldest first, with its message. */
+	commits(): { worktree: string; message: string; commit: string }[];
+	/**
 	 * Put a file on the pretend disk of the worktree at `worktree`, for the
 	 * file viewer: its text, bytes that are not text, or a folder. Pass null
 	 * to remove it, so the viewer says it is missing. `failFileChanges` makes
@@ -945,6 +967,23 @@ export function createMockEngine(
 		indexWriteLog.push({ worktree: listed.worktree.path, command: result.command });
 		if (indexWriteFailure !== null) return { outcome: "failed", command: result.command, message: indexWriteFailure };
 		fileChangeLists.set(listed.worktree.path, files);
+		return result;
+	};
+	let commitFailure: string | null = null;
+	const operations = new Map<string, GitOperation>();
+	const commitLog: { worktree: string; message: string; commit: string }[] = [];
+	/** Commit on the pretend files, as the main process would: the staged files leave the list and the branch is one more commit ahead of its upstream. */
+	const commitStaged = async (request: CommitRequest): Promise<CommitResult> => {
+		const listed = listedForChanges(request.repository, request.worktree);
+		if (!listed.ok) return { outcome: "refused", message: listed.message.replace("No changes were read.", "Nothing was committed.").replace("so no changes were read", "so nothing was committed") };
+		const commit = pretendHash(`${listed.worktree.path}\0${commitLog.length}\0${request.message}`);
+		const { result, files } = answerMockCommit(filesOf(listed.worktree), structuredClone(request), listed.worktree, operations.get(listed.worktree.path) ?? null, commit);
+		if (result.outcome !== "committed" || files === null) return result;
+		if (commitFailure !== null) return { outcome: "failed", command: result.command, message: commitFailure };
+		fileChangeLists.set(listed.worktree.path, files);
+		commitLog.push({ worktree: listed.worktree.path, message: request.message, commit });
+		const { branch } = listed.worktree;
+		if (branch !== null) changeSync(request.repository, branch, sync => (sync?.kind === "tracking" ? { ...sync, ahead: sync.ahead + 1 } : sync));
 		return result;
 	};
 	const worktreeFiles = createMockWorktreeFiles();
@@ -1377,7 +1416,7 @@ export function createMockEngine(
 		async readFileChanges(request) {
 			const listed = listedForChanges(request.repository, request.worktree);
 			if (!listed.ok) return { outcome: listed.outcome, message: listed.message };
-			return listMockFileChanges(filesOf(listed.worktree), listed.worktree, request.compare);
+			return listMockFileChanges(filesOf(listed.worktree), listed.worktree, request.compare, operations.get(listed.worktree.path) ?? null);
 		},
 		async readFileDiff(request) {
 			const listed = listedForChanges(request.repository, request.worktree);
@@ -1390,6 +1429,15 @@ export function createMockEngine(
 			indexWriteFailure = message;
 		},
 		indexWrites: () => structuredClone(indexWriteLog),
+		commitStaged,
+		failCommits(message) {
+			commitFailure = message;
+		},
+		setOperation(path, operation) {
+			if (operation === null) operations.delete(path);
+			else operations.set(path, operation);
+		},
+		commits: () => structuredClone(commitLog),
 		async readWorktreeFile(request) {
 			const listed = listedForChanges(request.repository, request.worktree);
 			if (!listed.ok) return { outcome: listed.outcome, message: listed.message.replace("No changes were read.", "The file was not read.").replace("so no changes were read", "so the file was not read") };

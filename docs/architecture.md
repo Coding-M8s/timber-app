@@ -140,7 +140,7 @@ Timber's safety logic must exist once. The app follows two rules:
    [watching for changes](#watching-for-changes)). Git is invoked as an
    executable plus an argument array.
 
-Three things are not read-only and do not go through Timber, because Timber
+Four things are not read-only and do not go through Timber, because Timber
 has no command for them:
 
 - **Fetching** (see [fetching](#fetching)). It writes only remote-tracking
@@ -156,6 +156,12 @@ has no command for them:
   resolved, and Unstage (`git restore --staged`, or `git rm --cached -f`
   before the first commit). They write only the index of a worktree Timber
   lists, never a ref, a commit, or a working tree file.
+- **Commits** (see [committing](#committing)), from the Changes view:
+  `git commit -F -`, which adds one commit of what is staged on the
+  worktree's current branch. It never amends, stages, or pushes, and never
+  runs on a detached HEAD or during a merge, rebase, cherry-pick, or revert.
+  Amending is left out because it rewrites a commit, as the sync actions
+  never do.
 
 Everything else that writes still goes through Timber.
 
@@ -3482,8 +3488,8 @@ as `git status` and `git diff` see it, compared with the worktree's base or
 with its last commit, and opens each file's diff in a diff tab beside
 Workspace and Pull request. Reading it is read-only. In Uncommitted, Stage
 and Unstage write the index (see
-[staging and unstaging](#staging-and-unstaging)); nothing in it discards or
-commits. Comparing against a backup is a later step.
+[staging and unstaging](#staging-and-unstaging)), and Commit commits what is
+staged (see [committing](#committing)); nothing in it discards. Comparing against a backup is a later step.
 
 - **The capabilities.** `readFileChanges({ repository, worktree, compare })`
   and `readFileDiff({ repository, worktree, compare, file })` on the
@@ -3830,7 +3836,8 @@ time. Base is review only and offers neither.
   When the command is not word for word the one shown, as when the first
   commit was made since, nothing runs and the answer says so.
 - **One helper for the app's own Git writes.** `createGitWrites` in
-  `src/bun/git-writes.ts`, for the commit and discard actions to reuse:
+  `src/bun/git-writes.ts`, which the commit uses too (see
+  [committing](#committing)) and the discard action is to reuse:
   in the repository's turn (`RepositoryTurns`, shared with Timber's
   commands and Pull), it checks the worktree is listed
   (`findListedWorktree`, read again), asks the action's `plan` for the
@@ -3839,7 +3846,8 @@ time. Base is review only and offers neither.
   answers with the command as shown and, when Git fails, Git's own message,
   and then tells the refresh policy (`heard`), so the sidebar reads the
   repository again. One run means a failure, such as `index.lock` held by an
-  agent's Git, changes nothing.
+  agent's Git, changes nothing. A stage or unstage runs as `runAs: "index"`,
+  the default.
 - **In the window.** `writeIndex` in the store builds the command from the
   list on screen, runs it, keeps a refusal or Git's failure in
   `changes.writeProblem` until a write works (an alert under the counts,
@@ -3865,6 +3873,96 @@ time. Base is review only and offers neither.
   conflict marked resolved, `MERGE_HEAD` kept; unstaging before the first
   commit; a held `index.lock`, with the index bytes unchanged; and every
   refusal, with the index bytes unchanged and nothing run.
+
+### Committing
+
+In Uncommitted, the top of the Changes view has a commit message box and
+Commit. Base has Commit… in its place, which switches to Uncommitted with the
+box focused.
+
+- **The capability.** `commitStaged` on the `Engine` contract,
+  `{ repository, worktree, message, shown }`, answering `committed` with
+  the commit's full and short hash, `refused`, or `failed` (`CommitResult`
+  in `src/shared/commit-staged.ts`).
+- **The command.** `git commit -F -`, with the message on standard input
+  (`COMMIT_ARGUMENTS`), so no editor opens and the command is the same for
+  every message: the tooltip and the note while it runs show it word for
+  word, and the main process refuses any other `shown`, such as one with
+  `--amend` or `--no-verify`. A message file would do the same, but its
+  path cannot be shown before it is made. With `-F`, Git keeps the message
+  as typed but for its blank lines at the ends (`--cleanup=whitespace`), so
+  a line starting with `#` stays. No path and no `-a`: only the index is
+  committed, and the files on disk, staged again or not, stay as they are.
+- **When it may not run.** `commitBlocker` in `src/shared/commit-staged.ts`,
+  which both sides call, gives the reason, in this order: a merge, rebase,
+  cherry-pick, or revert in progress ("Finish it in the terminal"); a
+  detached HEAD, where there is no branch to commit on; nothing staged; an
+  empty message (only spaces and line ends). The window disables Commit and
+  shows the reason beside it. Each read of the list says the operation and
+  whether HEAD is detached (`operation` and `detached`): the operation from
+  which of `MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`, `rebase-merge`,
+  and `rebase-apply` are there, located with `git rev-parse --git-path`, as
+  a linked worktree keeps its own. When more files changed than are listed
+  and none listed is staged, Commit is offered, and the main process says
+  whether anything is.
+- **Read again before it runs.** `planCommit` in `src/bun/file-changes.ts`
+  asks Git again, in the repository's turn: the operation, `git
+  symbolic-ref -q HEAD`, `git diff --cached --quiet` (exit 1 when
+  something is staged, before the first commit too), and HEAD's commit.
+  Any reason refuses, with nothing run.
+- **Hooks as in a terminal.** The commit runs with `runAs: "terminal"` in
+  the write helper: the app's own environment, without the
+  `GIT_LITERAL_PATHSPECS=1`, `GIT_OPTIONAL_LOCKS=0`, and `LC_ALL=C` the
+  other queries and writes use, since hooks inherit them and a hook's own
+  pathspecs such as `'*.ts'` must keep their globs. Hooks and signing run,
+  as without `--no-verify`. Both streams are read to the end, so a hook
+  that prints a lot never meets a closed pipe, and the last 64 KiB of each
+  is kept, as the end of a hook's output says what failed. Git may run for
+  ten minutes (`COMMIT_MILLISECONDS`), as a hook may run a test suite; the
+  desktop bridge waits fifteen. A commit holds the repository's turn while
+  it runs, so a stage, a pull, or a Timber command waits for it; reading
+  the list does not.
+- **Whether it committed.** `settleCommit` reads HEAD again in the same
+  turn: a commit was made when it moved, whatever Git's exit code, since a
+  `post-commit` hook's failure or a stop can come after it. Then `git
+  rev-parse --short` gives the hash shown. When HEAD did not move, the
+  answer is `failed` with what Git and the hooks printed, standard output
+  then standard error.
+- **In the window.** The message is kept per worktree in
+  `commitMessages`, in the window only, while it is open, until a commit
+  is made. `commitStaged` in the store sends it, keeps the box read-only
+  and the list's write buttons waiting while it runs (`changes.writing`
+  and `committing`), and then reads the list and the repository again at
+  once, so the row's ahead count moves. Made: the message clears and the
+  box says "Committed a1b2c3d", with the row's Push when the row offers one
+  (`describeSyncControls`), which opens the same Push dialog, showing
+  `timber publish` before it runs. Not made: an alert, "Could not commit",
+  shows the command and the output, scrolled when long, and the message
+  stays. Ctrl+Enter or Cmd+Enter in the box commits (`isCommitKey` in
+  `src/mainview/commit-format.ts`). `CommitBox` in
+  `src/mainview/components/CommitBox.tsx` draws it.
+- **The mock engine.** `answerMockCommit` in
+  `src/mainview/engine/mock-file-changes.ts` refuses as the main process
+  does, and a commit removes the staged files and adds one to the branch's
+  ahead count. `timberMock.failCommits(message)` makes every commit fail
+  with that output, `timberMock.setOperation(path, operation)` pretends a
+  merge or rebase is in progress, and `timberMock.commits()` lists the
+  commits made.
+- **Tests.** `tests/commit-staged.test.ts` commits on real temporary
+  repositories, in a linked worktree, with the person's Git config left
+  out: a file staged and then edited again commits its staged version and
+  keeps its edit, other unstaged and untracked files stay, and the primary
+  checkout's branch does not move; the first commit of a branch; a failing
+  `pre-commit` hook with its output, HEAD, the files, and the index entries
+  unchanged; a hook that prints about 400 KiB on each stream and passes,
+  and one whose failure is at the end of its output; a hook that sees no
+  literal pathspecs, no `GIT_OPTIONAL_LOCKS`, and the person's locale; a
+  hook stopped after its time with no commit made; and every refusal
+  (nothing staged, an empty message, `--amend` or `--no-verify` as the
+  shown command, a merge, a rebase, a detached HEAD, an unlisted worktree,
+  an incomplete request) running nothing. A failed commit still refreshes
+  the index's cached file times, as it does in a terminal, so it checks the
+  index's entries rather than its bytes.
 
 ## The file viewer
 

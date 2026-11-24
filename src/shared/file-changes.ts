@@ -6,6 +6,7 @@
  */
 
 import type { SavedBase } from "./model";
+import type { GitOperation } from "./commit-staged";
 
 /**
  * What the Changes view compares the worktree with:
@@ -106,9 +107,11 @@ export type FileChangesResult =
 	 * only the first are listed. `compared` is the comparison the files come
 	 * from: "uncommitted" when "base" was asked for and cannot be used.
 	 * `hasCommit` is false before the worktree's first commit, when unstaging
-	 * is `git rm --cached` (see ./index-writes.ts).
+	 * is `git rm --cached` (see ./index-writes.ts). `operation` is the merge,
+	 * rebase, cherry-pick, or revert in progress, and `detached` whether HEAD
+	 * is detached: either keeps Commit from running (see ./commit-staged.ts).
 	 */
-	| { outcome: "read"; files: FileChange[]; more: boolean; compared: Comparison; base: BaseComparison; hasCommit: boolean }
+	| { outcome: "read"; files: FileChange[]; more: boolean; compared: Comparison; base: BaseComparison; hasCommit: boolean; operation: GitOperation | null; detached: boolean }
 	/** The repository is not in the app's list, Timber does not list the worktree, or its folder is gone. */
 	| { outcome: "not-listed"; message: string }
 	| { outcome: "failed"; message: string };
