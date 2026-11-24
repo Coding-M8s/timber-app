@@ -212,16 +212,16 @@ function gallery(): MockFileChange[] {
 			"",
 		].join("\n")),
 		tracked("unstaged", "modified", "src/invoice/format.ts", samplePatch("src/invoice/format.ts")),
-		tracked("unstaged", "untracked", "src/tax/new rules.ts", sampleNewFilePatch("src/tax/new rules.ts")),
-		tracked("unstaged", "untracked", "src/tax/zażółć.ts", sampleNewFilePatch("src/tax/zażółć.ts")),
-		tracked("unstaged", "untracked", "notes/todo.md", sampleNewFilePatch("notes/todo.md", ["- check rounding", "- ask finance"])),
-		tracked("unstaged", "untracked", "notes/empty.txt", [
+		tracked("untracked", "untracked", "src/tax/new rules.ts", sampleNewFilePatch("src/tax/new rules.ts")),
+		tracked("untracked", "untracked", "src/tax/zażółć.ts", sampleNewFilePatch("src/tax/zażółć.ts")),
+		tracked("untracked", "untracked", "notes/todo.md", sampleNewFilePatch("notes/todo.md", ["- check rounding", "- ask finance"])),
+		tracked("untracked", "untracked", "notes/empty.txt", [
 			"diff --git a/notes/empty.txt b/notes/empty.txt",
 			"new file mode 100644",
 			"index 0000000..e69de29",
 			"",
 		].join("\n")),
-		tracked("unstaged", "untracked", "assets/icon.ico", [
+		tracked("untracked", "untracked", "assets/icon.ico", [
 			"diff --git a/assets/icon.ico b/assets/icon.ico",
 			"new file mode 100644",
 			"index 0000000..88768ef",
@@ -245,7 +245,7 @@ export function derivedFileChanges(worktree: Worktree): MockFileChange[] {
 	return [
 		...(worktree.base?.kind === "assigned" || worktree.base?.kind === "commit" ? [tracked("base", "modified", "README.md", samplePatch("README.md"))] : []),
 		...worktree.changes.modified.map(path => tracked("unstaged", "modified", path, samplePatch(path))),
-		...worktree.changes.untracked.map(path => tracked("unstaged", "untracked", path, sampleNewFilePatch(path))),
+		...worktree.changes.untracked.map(path => tracked("untracked", "untracked", path, sampleNewFilePatch(path))),
 	];
 }
 
@@ -265,16 +265,15 @@ export function mockBase(worktree: Worktree): BaseComparison {
  * in the "base" area, and untracked files in their own.
  */
 export function compareMockFiles(files: readonly MockFileChange[], compare: Comparison): MockFileChange[] {
-	if (compare === "uncommitted") return files.filter(file => file.change.area !== "base" && file.change.area !== "untracked");
+	if (compare === "uncommitted") return files.filter(file => file.change.area !== "base");
 	const listed: MockFileChange[] = files.filter(file => file.change.area === "conflicted" || file.change.area === "base");
 	const seen = new Set(listed.map(file => file.change.path));
 	for (const file of files) {
-		if (file.change.kind === "untracked" || (file.change.area !== "staged" && file.change.area !== "unstaged") || seen.has(file.change.path)) continue;
+		if ((file.change.area !== "staged" && file.change.area !== "unstaged") || seen.has(file.change.path)) continue;
 		seen.add(file.change.path);
 		listed.push({ ...file, change: { ...file.change, area: "base" } });
 	}
-	const untracked = files.filter(file => file.change.kind === "untracked").map(file => ({ ...file, change: { ...file.change, area: "untracked" as const } }));
-	return [...listed, ...untracked];
+	return [...listed, ...files.filter(file => file.change.area === "untracked")];
 }
 
 /** The comparison the main process would answer with: "base" only when the base can be used. */

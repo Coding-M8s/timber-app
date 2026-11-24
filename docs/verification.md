@@ -4728,3 +4728,20 @@ build or install was run for this change.
 - Not run: installing from a downloaded release, the SmartScreen prompt,
   uninstalling through Settings, Apps, Installed apps, and the clone, Bun
   install, and build steps on a clean machine.
+
+Run for untracked files in their own group in Uncommitted mode (issue 330),
+on 2026-11-24, Linux x64 with Git 2.56.1 and Bun 1.4.5.
+
+- `bun test tests/changes-tab.test.tsx tests/file-changes.test.ts
+  tests/file-changes-parse.test.ts tests/file-changes-base.test.ts
+  tests/base-format.test.ts tests/changes-panel.test.tsx`: 145 passed, 0
+  failed. The real repository test reads a worktree with staged, unstaged,
+  and untracked files and finds the groups Staged 3, Unstaged 7, and
+  Untracked 6, each untracked diff read under the new area, and files,
+  refs, and the index unchanged.
+- `bun run typecheck`: exited 0.
+- `bun test tests/review*.test.* tests/diff-*.test.*`: "the diff tab's Split
+  layout" failed when run together with the other files, and passed alone;
+  it fails the same way on `origin/main` (78dd30c), so it is not from this
+  change.
+- Not run: the desktop app, and the browser build by hand.

@@ -225,8 +225,8 @@ describe.skipIf(windows)("comparing a worktree with its base, in real repositori
 			"staged deleted untracked-again.txt",
 			"staged modified staged.txt",
 			"unstaged modified unstaged.txt",
-			"unstaged untracked new.txt",
-			"unstaged untracked untracked-again.txt",
+			"untracked untracked new.txt",
+			"untracked untracked untracked-again.txt",
 		]);
 	});
 
