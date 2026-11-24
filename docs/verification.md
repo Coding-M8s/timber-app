@@ -4939,14 +4939,21 @@ x64 with Bun 1.4.5 and Git 2.56.1:
   removing it, and the keyboard on the next file; Delete for an untracked
   file with a failure kept in the dialog; and both buttons of a row inside
   it, a conflict having no Discard.
-- `bun test --parallel=4 --timeout=30000` over every test file that reads
-  the styles, the docs, the README, the contract, the RPC, the Changes
-  list, the dialogs, the mock's changes, or the Git helpers, with the
-  stage, Changes, store, and app test files (66 files): 1,107 passed, 0
-  failed, 16 skipped, as they run only on Windows. Run serially in one
-  process instead, the same files gave one failure, the Split layout test
-  of `tests/review-notes.test.tsx`, whose colored numbers depend on the
-  order the files run in; it passes alone and beside each new file, and
-  the same serial run on `origin/main` without the new files passed.
+- `bun test tests/discard-files-view.test.tsx` again with the File tab
+  read through a wrapped engine: the open file shows the text read after the
+  discard, an open untracked file shows as missing once deleted, and a
+  failed discard keeps the draft. With the store's reload of the open file
+  removed, the first two of these failed.
+- The Split layout test of `tests/review-notes.test.tsx` failed when run in
+  one process after these test files: its static render runs no effects, so
+  the diff is colored only when an earlier test loaded the TypeScript
+  parser, and it expected `retries = ` as plain text. It now checks each
+  side's changed word whether or not the code is colored.
+- `bun test --timeout=30000`, serially in one process, and `bun test
+  --parallel=4 --timeout=30000` over every test file that reads the styles,
+  the docs, the README, the contract, the RPC, the Changes list, the
+  dialogs, the mock's changes, or the Git helpers, with the stage, Changes,
+  store, and app test files (66 files): 1,109 passed, 0 failed, 16 skipped,
+  as they run only on Windows.
 - `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
 - Not run: the desktop app, Windows, and macOS.

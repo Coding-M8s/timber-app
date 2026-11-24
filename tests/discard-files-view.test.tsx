@@ -150,20 +150,63 @@ describe("discarding from the Changes view", () => {
 		expect(listed(store)).toEqual(before);
 	});
 
-	test("a file open with unsaved edits is named in the dialog, drops them after the discard, and is read again from disk", async () => {
-		const { store } = await started();
+	/** The disk as the File tab reads it: `src/total.ts` holds `text` until a discard, then `after`; `notes/todo.md` is gone after its discard. */
+	function disk(engine: ReturnType<typeof createMockEngine>) {
+		const discarded = new Set<string>();
+		const discard = engine.discardFiles.bind(engine);
+		engine.discardFiles = async request => {
+			const answer = await discard(request);
+			if (answer.outcome === "written") for (const target of request.files) discarded.add(target.path);
+			return answer;
+		};
+		engine.readWorktreeFile = async request => {
+			if (request.path === "notes/todo.md" && discarded.has(request.path)) return { outcome: "missing", path: request.path, message: "Nothing is at notes/todo.md." };
+			const text = discarded.has(request.path) ? "as committed\n" : "edited on disk\n";
+			return { outcome: "read", path: request.path, content: { kind: "text", text, lines: 1 } };
+		};
+	}
+
+	test("a file open with unsaved edits is named in the dialog, drops them after the discard, and shows the file as it is on disk", async () => {
+		const { engine, store } = await started();
+		disk(engine);
 		store.openFile(FEATURE.id, "src/total.ts");
 		await settle();
+		expect(store.getState().files[FEATURE.id]?.result).toMatchObject({ content: { text: "edited on disk\n" } });
 		store.editFile(FEATURE.id);
 		store.changeDraft(FEATURE.id, "unsaved text\n");
 		expect(store.getState().files[FEATURE.id]?.draft).toBe("unsaved text\n");
 		store.openDialog({ kind: "discard-files", repository: TIMBER, worktree: FEATURE.id, files: [file(store, "unstaged", "src/total.ts")] });
 		expect(render(store)).toContain("src/total.ts is open in the editor with unsaved edits. They are lost too");
+		store.closeDialog();
 		await store.discardFiles([file(store, "unstaged", "src/total.ts")]);
 		await settle();
 		const open = store.getState().files[FEATURE.id]!;
 		expect(open.draft).toBeNull();
-		expect(open.result).not.toBeNull();
+		expect(open.result).toMatchObject({ outcome: "read", content: { text: "as committed\n" } });
+	});
+
+	test("a failed discard keeps the open file's unsaved edits", async () => {
+		const { engine, store } = await started();
+		disk(engine);
+		store.openFile(FEATURE.id, "src/total.ts");
+		await settle();
+		store.editFile(FEATURE.id);
+		store.changeDraft(FEATURE.id, "unsaved text\n");
+		engine.failIndexWrites("fatal: Unable to create '/work/.git/index.lock': File exists.");
+		await store.discardFiles([file(store, "unstaged", "src/total.ts")]);
+		await settle();
+		expect(store.getState().files[FEATURE.id]?.draft).toBe("unsaved text\n");
+	});
+
+	test("an open untracked file that is deleted shows as missing", async () => {
+		const { engine, store } = await started();
+		disk(engine);
+		store.openFile(FEATURE.id, "notes/todo.md");
+		await settle();
+		expect(store.getState().files[FEATURE.id]?.result?.outcome).toBe("read");
+		await store.discardFiles([file(store, "untracked", "notes/todo.md")]);
+		await settle();
+		expect(store.getState().files[FEATURE.id]?.result?.outcome).toBe("missing");
 	});
 
 	test("the mock refuses a conflict and a command other than the one shown, as the main process does", () => {
