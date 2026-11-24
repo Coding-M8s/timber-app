@@ -4827,3 +4827,21 @@ Run for staging and unstaging files in the Changes view (issue 393), on
 - The real-repository tests skip on Windows, as `star*.txt` cannot be
   made there.
 - Not run: the desktop app, Windows, and macOS.
+
+Run for dropping the outline around the file editor (issue 397), Linux x64
+with Bun 1.4.5, on 2026-11-24:
+
+- `bun test tests/text-editor-browser.test.ts -t "outline"` before the style
+  change: the two editor tests failed, the editor's computed outline style
+  read `solid` after a click and after Tab, and the rendered Markdown test
+  passed, as its ring was already only for `:focus-visible`.
+- `bun test tests/text-editor-browser.test.ts` after it: 17 passed, 0
+  failed. In headless Chrome, clicking into the editor and tabbing into it
+  in Timber Light and Timber Dark, and clicking into Markdown's Source, left
+  no outline on the editor or its text, with the caret drawn and its line
+  marked. Rendered Markdown reached with Tab matched `:focus-visible` and had
+  a solid outline; clicked, it had none.
+- `bun test tests/focus-rings.test.ts`: 6 passed. `bun test
+  tests/text-editor.test.tsx tests/file-viewer.test.tsx`: 21 passed.
+- `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
+- Not run: the desktop app, Windows, and macOS.

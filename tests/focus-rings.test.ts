@@ -58,4 +58,9 @@ describe("focus rings inside a scrolling container", () => {
 	test("keep the space between the filter and the first repository header as it was", () => {
 		expect(paddingBottom(rule(".sidebar-tools")) + paddingTop(rule(".groups"))).toBe(8);
 	});
+
+	test("draw no ring around the file editor, over CodeMirror's own, and ring rendered Markdown only for the keyboard", () => {
+		expect(rule(".text-editor-host .cm-editor.cm-focused")).toContain("outline: none;");
+		expect(rule(".file-viewer-body:focus-visible")).toContain("outline: 2px solid var(--focus);");
+	});
 });
