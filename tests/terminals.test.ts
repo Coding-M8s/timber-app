@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openWebLink } from "../src/bun/open-link";
+import { openerCommand, openWebLink } from "../src/bun/open-link";
 import { processTreeKillCommand, sessionMembers, sessionOfStat } from "../src/bun/process-session";
 import { conversationExists } from "../src/bun/agent-conversations";
 import { endedKey } from "../src/bun/session-layout";
@@ -1679,7 +1679,25 @@ describe.skipIf(!posix)("opening a link from a terminal", () => {
 	test("anything that is not a plain web link, and any other system, opens nothing", async () => {
 		expect(await opened(" http://x/", "linux")).toBeNull();
 		expect(await opened("file:///etc/passwd", "linux")).toBeNull();
-		expect(await opened("https://example.com/", "win32")).toBeNull();
+		expect(await opened("https://example.com/", "freebsd")).toBeNull();
 		expect(openWebLink("https://example.com/", "linux", "")).toBe(false);
+	});
+});
+
+describe("the command that opens a link", () => {
+	test("on Windows, rundll32 hands the link whole to the default browser, with no cmd to read & ^ or %", () => {
+		const link = "https://example.com/a?b=1&c=%5E^d%PATH%";
+		expect(openerCommand("win32", link)).toEqual(["rundll32.exe", "url.dll,FileProtocolHandler", link]);
+	});
+
+	test("Linux and macOS keep their openers, and other systems have none", () => {
+		expect(openerCommand("linux", "https://x/")).toEqual(["xdg-open", "https://x/"]);
+		expect(openerCommand("darwin", "https://x/")).toEqual(["open", "https://x/"]);
+		expect(openerCommand("freebsd", "https://x/")).toBeNull();
+	});
+
+	test("on Windows, a link that is not a plain web link starts nothing, and a missing rundll32 answers false", () => {
+		expect(openWebLink("file:///C:/Windows/win.ini", "win32")).toBe(false);
+		expect(openWebLink("https://example.com/", "win32", "")).toBe(false);
 	});
 });
