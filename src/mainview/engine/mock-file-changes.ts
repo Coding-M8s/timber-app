@@ -1,7 +1,8 @@
 import {
 	type BaseComparison, type Comparison, type FileChange, type FileChangesResult, type FileDiffResult, MAX_DIFF_BYTES, MAX_LISTED_FILES, type FileDiffRequest,
-	baseName, parseDiff, readDiffOutput, relativePathProblem, savedBaseRef,
+	baseName, parseDiff, readDiffOutput, relativePathProblem, sameFileChange, savedBaseRef,
 } from "../../shared/file-changes";
+import { type IndexAction, type IndexWriteRequest, type IndexWriteResult, canWriteIndex, describeGitCommand, indexCommand, sameArguments } from "../../shared/index-writes";
 import type { Worktree } from "../../shared/model";
 
 /**
@@ -292,6 +293,7 @@ export function listMockFileChanges(all: readonly MockFileChange[], worktree: Wo
 		more: files.length > MAX_LISTED_FILES,
 		compared,
 		base,
+		hasCommit: true,
 	};
 }
 
@@ -307,4 +309,75 @@ export function diffMockFileChange(all: readonly MockFileChange[], worktree: Wor
 	if (!found) return { outcome: "read", file: null, diff: { kind: "unchanged" } };
 	const tooLarge = new TextEncoder().encode(found.patch).byteLength > MAX_DIFF_BYTES;
 	return { outcome: "read", file: answered(found), diff: readDiffOutput(tooLarge ? "" : found.patch, tooLarge) };
+}
+
+/** The patch of a file staged whole: a new file stays new, a conflict becomes the edit it was resolved to. */
+function stagedPatch(file: MockFileChange): string {
+	if (file.change.kind === "conflicted") return samplePatch(file.change.path);
+	return file.patch;
+}
+
+/**
+ * The pretend files after `git add` or `git restore --staged`, as Git would
+ * list them. Staging moves a file to Staged, or into its staged entry when it
+ * has one; a new file is staged as added, and a conflict as modified.
+ * Unstaging moves a file to Unstaged, or leaves only its unstaged entry when
+ * it has one; an added file becomes untracked, and a rename an unstaged
+ * deletion of the old path and an untracked new one.
+ */
+export function writeMockIndex(all: readonly MockFileChange[], action: IndexAction, targets: readonly MockFileChange[]): MockFileChange[] {
+	const moved = (file: MockFileChange) => targets.some(target => sameFileChange(target.change, file.change));
+	const kept = all.filter(file => !moved(file));
+	const has = (area: FileChange["area"], path: string) => kept.some(file => file.change.area === area && file.change.path === path);
+	const added: MockFileChange[] = [];
+	for (const file of targets) {
+		const { path } = file.change;
+		if (action === "stage") {
+			if (has("staged", path)) continue;
+			const kind = file.change.kind === "untracked" ? "added" : file.change.kind === "conflicted" ? "modified" : file.change.kind;
+			added.push({ ...file, change: { ...file.change, area: "staged", kind, previousPath: null }, patch: stagedPatch(file) });
+			continue;
+		}
+		if (file.change.kind === "renamed" && file.change.previousPath !== null) {
+			const previous = file.change.previousPath;
+			added.push(tracked("unstaged", "deleted", previous, `diff --git a/${previous} b/${previous}\ndeleted file mode 100644\nindex 1a2b3c4..0000000\n`));
+			if (!has("untracked", path)) added.push(tracked("untracked", "untracked", path, sampleNewFilePatch(path)));
+			continue;
+		}
+		if (file.change.kind === "added") {
+			// A file edited again after it was staged: its new content is all of it now, untracked.
+			const edited = kept.findIndex(other => other.change.area === "unstaged" && other.change.path === path);
+			if (edited >= 0) kept.splice(edited, 1);
+			added.push({ ...file, change: { ...file.change, area: "untracked", kind: "untracked" }, patch: sampleNewFilePatch(path) });
+			continue;
+		}
+		if (has("unstaged", path)) continue;
+		added.push({ ...file, change: { ...file.change, area: "unstaged" } });
+	}
+	return [...kept, ...added];
+}
+
+/**
+ * Answer a stage or unstage from the pretend files, as the main process
+ * would: every file must be in the Uncommitted list now, in a group that can
+ * take the action, and `shown` must be the command for them. Gives the files
+ * after the write, or null when nothing changed.
+ */
+export function answerMockIndexWrite(all: readonly MockFileChange[], action: IndexAction, request: IndexWriteRequest): { result: IndexWriteResult; files: MockFileChange[] | null } {
+	const ending = action === "stage" ? "Nothing was staged." : "Nothing was unstaged.";
+	const refuse = (message: string) => ({ result: { outcome: "refused" as const, message: `${message} ${ending}` }, files: null });
+	if (request.files.length === 0) return refuse("No file was named.");
+	const listed = compareMockFiles(all, "uncommitted");
+	const found: MockFileChange[] = [];
+	for (const target of request.files) {
+		const problem = relativePathProblem(target.path);
+		if (problem !== null) return refuse(problem);
+		const file = listed.find(candidate => sameFileChange(candidate.change, target));
+		if (!file || !canWriteIndex(action, file.change.area)) return refuse(`${target.path} is no longer ${action === "stage" ? "a change that can be staged" : "staged"} in this worktree.`);
+		found.push(file);
+	}
+	const command = indexCommand(action, found.map(file => file.change), true);
+	const line = describeGitCommand(command);
+	if (!sameArguments(command.args, request.shown)) return refuse(`The command is now ${line}, not the one that was shown.`);
+	return { result: { outcome: "written", command: line }, files: writeMockIndex(all, action, found) };
 }

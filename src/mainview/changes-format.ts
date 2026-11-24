@@ -1,4 +1,5 @@
 import { describeCommandLine } from "../shared/command-line";
+import { type GitCommand, type IndexAction, describeGitCommand, indexActionOf } from "../shared/index-writes";
 import {
 	type BaseComparison, type ChangeArea, type ChangeKind, type Comparison, type FileChange, type FileChangeTarget, type FileDiff, isCommitHash, MAX_DIFF_BYTES, MAX_DIFF_LINES, MAX_LISTED_FILES, sameFileChange, shortCommit,
 } from "../shared/file-changes";
@@ -133,6 +134,15 @@ export function groupFileChanges(files: readonly FileChange[]): { area: ChangeAr
 
 /** The files in the order the list shows them, for moving through it by keyboard. */
 export const listedOrder = (files: readonly FileChange[]) => groupFileChanges(files).flatMap(group => group.files);
+
+/**
+ * Where a file is in the list after it was staged or unstaged: its first
+ * entry with that path, in the list's order. Undefined when it left the
+ * list, as a conflict resolved to the last commit's text does.
+ */
+export function movedEntry(files: readonly FileChange[], path: string): FileChange | undefined {
+	return listedOrder(files).find(file => file.path === path);
+}
 
 /** A path as its file name and the folder it is in, which is empty at the top of the worktree. */
 export function splitPath(path: string): { name: string; folder: string } {
@@ -280,3 +290,32 @@ export function describeDiffNotice(diff: FileDiff, file: FileChange, commit: str
 		}
 	}
 }
+
+/** The key on a focused file that stages or unstages it, as its button does. */
+export const INDEX_KEY = " ";
+/** The key as docs/design.md names it, and as a file's `aria-keyshortcuts` says it. */
+export const INDEX_KEY_NAME = "Space";
+
+/** What a file's button does and says: Stage, Unstage, or Mark resolved for a conflict, which is what `git add` does to it. Null where it has none. */
+export function fileIndexAction(file: Pick<FileChange, "area">): { action: IndexAction; label: string } | null {
+	const action = indexActionOf(file.area);
+	if (action === null) return null;
+	if (file.area === "conflicted") return { action, label: "Mark resolved" };
+	return { action, label: action === "stage" ? "Stage" : "Unstage" };
+}
+
+/** What a group's button does and says: Stage all, Unstage all, or Mark all resolved. Null for Base's Changed group. */
+export function groupIndexAction(area: ChangeArea): { action: IndexAction; label: string } | null {
+	const one = fileIndexAction({ area });
+	if (one === null) return null;
+	return { action: one.action, label: area === "conflicted" ? "Mark all resolved" : `${one.label} all` };
+}
+
+/** A write button's tooltip: the exact command it runs, before it runs. */
+export const describeIndexCommand = (command: GitCommand) => `Runs ${describeGitCommand(command)}`;
+
+/** Said when a stage or unstage did not happen, as the list's alert title. */
+export const INDEX_WRITE_FAILED: Record<IndexAction, string> = {
+	stage: "Could not stage",
+	unstage: "Could not unstage",
+};

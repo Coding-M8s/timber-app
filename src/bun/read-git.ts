@@ -1,5 +1,6 @@
 /**
- * Running Git for a read-only query. Git is run as an executable plus an
+ * Running Git for a read-only query, and for the app's own index writes
+ * (see ./git-writes.ts), which add what they need with `environment`. Git is run as an executable plus an
  * argument array, never through a shell, with standard input closed unless
  * the query is given `input`, and:
  *
@@ -23,6 +24,8 @@ export interface ReadGitOptions {
 	stderrBytes?: number;
 	/** Given to Git on standard input, such as the paths for `--stdin`. Standard input is closed without it. */
 	input?: string;
+	/** Variables set on top of the usual ones, such as `GIT_LITERAL_PATHSPECS`. */
+	environment?: Record<string, string>;
 }
 
 export type ReadGitRun =
@@ -80,7 +83,7 @@ async function readUpTo(stream: ReadableStream<Uint8Array>, limit: number, onOve
 
 /** Run one read-only Git query. Nothing it printed is logged here. */
 export async function readGit(args: readonly string[], options: ReadGitOptions = {}): Promise<ReadGitRun> {
-	const { git = "git", cwd, timeoutMs, limitBytes = Number.POSITIVE_INFINITY, stderrBytes, input } = options;
+	const { git = "git", cwd, timeoutMs, limitBytes = Number.POSITIVE_INFINITY, stderrBytes, input, environment } = options;
 	let child: Bun.Subprocess<"ignore" | Blob, "pipe", "pipe" | "ignore">;
 	try {
 		child = Bun.spawn([git, ...args], {
@@ -88,7 +91,7 @@ export async function readGit(args: readonly string[], options: ReadGitOptions =
 			stdin: input === undefined ? "ignore" : new Blob([input]),
 			stdout: "pipe",
 			stderr: stderrBytes === undefined ? "ignore" : "pipe",
-			env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C" },
+			env: { ...process.env, ...environment, GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C" },
 			// Bun stops Git itself once it takes too long.
 			...(timeoutMs === undefined ? {} : { timeout: timeoutMs }),
 		});

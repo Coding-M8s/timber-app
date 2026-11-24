@@ -140,7 +140,7 @@ Timber's safety logic must exist once. The app follows two rules:
    [watching for changes](#watching-for-changes)). Git is invoked as an
    executable plus an argument array.
 
-Two things are not read-only and do not go through Timber, because Timber
+Three things are not read-only and do not go through Timber, because Timber
 has no command for them:
 
 - **Fetching** (see [fetching](#fetching)). It writes only remote-tracking
@@ -151,6 +151,11 @@ has no command for them:
   branch to its upstream, and Push, which runs `timber publish`. Neither
   creates, rebases, or removes a worktree, makes a merge commit, or
   rewrites a branch, and Push never force-pushes.
+- **Index writes** (see [staging and unstaging](#staging-and-unstaging)),
+  from the Changes view: Stage (`git add`), which also marks a conflict
+  resolved, and Unstage (`git restore --staged`, or `git rm --cached -f`
+  before the first commit). They write only the index of a worktree Timber
+  lists, never a ref, a commit, or a working tree file.
 
 Everything else that writes still goes through Timber.
 
@@ -3475,8 +3480,10 @@ Open always pass `--no-editor` to Timber (see
 The side panel's Changes view shows what changed in the selected worktree,
 as `git status` and `git diff` see it, compared with the worktree's base or
 with its last commit, and opens each file's diff in a diff tab beside
-Workspace and Pull request. It is read-only: nothing in it stages,
-discards, or commits. Comparing against a backup is a later step.
+Workspace and Pull request. Reading it is read-only. In Uncommitted, Stage
+and Unstage write the index (see
+[staging and unstaging](#staging-and-unstaging)); nothing in it discards or
+commits. Comparing against a backup is a later step.
 
 - **The capabilities.** `readFileChanges({ repository, worktree, compare })`
   and `readFileDiff({ repository, worktree, compare, file })` on the
@@ -3787,6 +3794,77 @@ checks a ref.
   stale metadata, and checks that a refusal leaves the files, the refs, and
   the saved base unchanged. `tests/set-base.test.tsx` covers the control,
   the dialog, the mock, and the store.
+
+
+### Staging and unstaging
+
+In Uncommitted, each file of Merge conflicts, Unstaged, and Untracked can
+be staged, and each file of Staged unstaged, one at a time or a group at a
+time. Base is review only and offers neither.
+
+- **The capabilities.** `stageFiles` and `unstageFiles` on the `Engine`
+  contract, both `{ repository, worktree, files, shown }`, answering
+  `written`, `refused`, or `failed` (`IndexWriteResult` in
+  `src/shared/index-writes.ts`). `files` names each file by group and path,
+  as the list showed it. `shown` is the argument array the window showed.
+- **The commands.** `indexCommand` in `src/shared/index-writes.ts`, which
+  both sides call, so the tooltip is the command that runs:
+  - Stage: `git add -- <paths>`. For a conflicted file this is what marks it
+    resolved, so its button says "Mark resolved".
+  - Unstage: `git restore --staged -- <paths>`, with a rename's old path too,
+    so its deletion is unstaged with it. Before the first commit `git
+    restore` fails ("could not resolve 'HEAD'"), so it is `git rm --cached
+    -f -- <paths>`, which leaves the file on disk, untracked. Plain `git rm
+    --cached` refuses a file edited again after it was staged; `-f` only
+    lifts that check, so it loses no more than `git restore --staged` does:
+    the staged version, never the file on disk. Each read of the list says
+    whether the worktree has a commit (`hasCommit`), so the window shows the
+    right one.
+  - More than 8,000 characters of paths go on standard input instead
+    (`--pathspec-from-file=- --pathspec-file-nul`), as a Windows command
+    line holds only about 32,000; the tooltip then says how many paths.
+- **Paths from Git, never the window.** `planIndexWrite` in
+  `src/bun/file-changes.ts` reads `git status` again and finds each named
+  file there, in a group that takes the action, or refuses the whole
+  request with nothing run. The paths of the command are the status's.
+  When the command is not word for word the one shown, as when the first
+  commit was made since, nothing runs and the answer says so.
+- **One helper for the app's own Git writes.** `createGitWrites` in
+  `src/bun/git-writes.ts`, for the commit and discard actions to reuse:
+  in the repository's turn (`RepositoryTurns`, shared with Timber's
+  commands and Pull), it checks the worktree is listed
+  (`findListedWorktree`, read again), asks the action's `plan` for the
+  command, compares it with the one shown, runs Git once in the worktree as
+  an executable plus arguments with `GIT_LITERAL_PATHSPECS=1` and `LC_ALL=C`,
+  answers with the command as shown and, when Git fails, Git's own message,
+  and then tells the refresh policy (`heard`), so the sidebar reads the
+  repository again. One run means a failure, such as `index.lock` held by an
+  agent's Git, changes nothing.
+- **In the window.** `writeIndex` in the store builds the command from the
+  list on screen, runs it, keeps a refusal or Git's failure in
+  `changes.writeProblem` until a write works (an alert under the counts,
+  "Could not stage" or "Could not unstage", with the command and Git's
+  message), and reads the list again at once. A diff tab whose file moved
+  stays open on its new entry. `FileList` in
+  `src/mainview/components/ChangesList.tsx` draws each row's button, over
+  the end of the row on hover and keyboard focus, each group's button, and
+  takes Space on a file; afterwards it puts the keyboard on the file's
+  first entry with the same path (`movedEntry`), else where it was in the
+  list. A group's button acts on the files it shows, through the filter.
+- **The mock engine.** `answerMockIndexWrite` and `writeMockIndex` in
+  `src/mainview/engine/mock-file-changes.ts` check and move the pretend
+  files as Git would. `timberMock.failIndexWrites(message)` makes every
+  write fail with that message, and `timberMock.indexWrites()` lists the
+  commands that ran.
+- **Tests.** `tests/index-writes.test.ts` runs every case on real temporary
+  repositories, in a linked worktree, and checks that the files on disk
+  (bytes, modes, and times), the refs, HEAD, and the stash are as they were:
+  an edit, a deletion, and a new file staged at once; a `*` in a name taken
+  literally; 400 paths through standard input; a staged rename and a file
+  edited after staging unstaged; a content conflict and a modify/delete
+  conflict marked resolved, `MERGE_HEAD` kept; unstaging before the first
+  commit; a held `index.lock`, with the index bytes unchanged; and every
+  refusal, with the index bytes unchanged and nothing run.
 
 ## The file viewer
 

@@ -4643,6 +4643,77 @@ pre:focus-visible {
 	font-weight: 400;
 }
 
+/* A group's heading, with Stage all, Unstage all, or Mark all resolved at its end in Uncommitted. */
+.change-group-head {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin: 8px 8px 2px 12px;
+}
+
+.change-group-head .change-group-title {
+	flex: 1 1 auto;
+	margin: 0;
+}
+
+.change-group-action {
+	flex: none;
+	padding: 1px 6px;
+	border: 0;
+	border-radius: 4px;
+	background: transparent;
+	color: var(--text-3);
+	font-size: 11px;
+}
+
+.change-group-action:hover,
+.change-group-action:focus-visible {
+	background: var(--fill-hover);
+	color: var(--text);
+}
+
+.change-group-action:focus-visible,
+.change-file-action:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: -2px;
+}
+
+.change-group-action[aria-disabled="true"],
+.change-file-action[aria-disabled="true"] {
+	color: var(--text-3);
+	cursor: default;
+}
+
+/* A file's Stage, Unstage, or Mark resolved: over the end of its row, on hover and keyboard focus only. */
+.change-row {
+	position: relative;
+}
+
+.change-file-action {
+	position: absolute;
+	top: 50%;
+	right: 28px;
+	margin: 0;
+	padding: 1px 7px;
+	border: 1px solid var(--line);
+	background: var(--bg-pane);
+	transform: translateY(-50%);
+	font-size: 11px;
+	white-space: nowrap;
+	visibility: hidden;
+}
+
+.change-row:hover .change-file-action,
+.change-row:focus-within .change-file-action {
+	visibility: visible;
+}
+
+/* The counts make room for it; the kind letter stays. */
+.change-row.writable:hover .change-counts,
+.change-row.writable:focus-within .change-counts {
+	visibility: hidden;
+}
+
 .change-files {
 	margin: 0;
 	padding: 0 4px;

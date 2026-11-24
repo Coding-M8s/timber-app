@@ -3,8 +3,10 @@ import { join } from "node:path";
 import {
 	type BaseComparison, type FileChange, type FileChangesRequest, type FileChangesResult, type FileDiffRequest, type FileDiffResult, type LineCounts,
 	MAX_DIFF_BYTES, MAX_LISTED_FILES, MAX_STATUS_BYTES, baseContentArguments, baseNamesArguments, commitArguments, countAddedLines, diffArguments, isCommitHash, parseNameStatus, parseNumstat,
-	parseStatus, baseName, readDiffOutput, relativePathProblem, savedBaseRef, sinceBase, statusArguments, uncommittedContentArguments, withChangedContent, withLineCounts,
+	parseStatus, baseName, readDiffOutput, relativePathProblem, sameFileChange, savedBaseRef, sinceBase, statusArguments, uncommittedContentArguments, withChangedContent, withLineCounts,
 } from "../shared/file-changes";
+import { type IndexAction, type IndexWriteRequest, type IndexWriteResult, canWriteIndex, indexCommand } from "../shared/index-writes";
+import type { GitWritePlan, GitWrites } from "./git-writes";
 import type { Worktree } from "../shared/model";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
 import { messageOf } from "../shared/error-message";
@@ -18,6 +20,8 @@ const STDERR_BYTES = 4096;
 
 const NOT_READ = "No changes were read.";
 
+const NOT_WRITTEN: Record<IndexAction, string> = { stage: "Nothing was staged.", unstage: "Nothing was unstaged." };
+
 export interface FileChangesDependencies {
 	/** The repository in the app's list, read again (see ./listed-worktree.ts). */
 	findRepository: FindRepository;
@@ -25,12 +29,20 @@ export interface FileChangesDependencies {
 	git?: string;
 	/** How long Git may take. Tests shorten it. */
 	timeoutMilliseconds?: number;
+	/** Runs staging and unstaging (see ./git-writes.ts). Without it, both are refused. */
+	writes?: GitWrites;
 }
 
-/** The Changes view's side in the main process: the changed files of a worktree, and the diff of one. Read-only. */
+/**
+ * The Changes view's side in the main process: the changed files of a
+ * worktree and the diff of one, read-only, and staging and unstaging files,
+ * which write only the index.
+ */
 export interface FileChanges {
 	read(request: FileChangesRequest): Promise<FileChangesResult>;
 	diff(request: FileDiffRequest): Promise<FileDiffResult>;
+	stage(request: IndexWriteRequest): Promise<IndexWriteResult>;
+	unstage(request: IndexWriteRequest): Promise<IndexWriteResult>;
 }
 
 type GitRun = { ok: true; text: string; truncated: boolean } | { ok: false; message: string };
@@ -110,7 +122,7 @@ async function withVersions(worktree: string, files: readonly FileChange[], comm
  *   write the index as it otherwise does to refresh it, and every diff of
  *   tracked files with `diff.autoRefreshIndex` off, since `git diff` writes
  *   it even then. Paths are literal (`--literal-pathspecs`). Nothing here
- *   changes the repository.
+ *   changes the repository except staging and unstaging, below.
  * - Output is read up to a limit, and Git is stopped beyond it or after
  *   `GIT_MILLISECONDS`.
  * - A diff names its file by area and path. The status of that file is read
@@ -121,9 +133,12 @@ async function withVersions(worktree: string, files: readonly FileChange[], comm
  *   `git merge-base <base> HEAD`, worked out again for every list and diff.
  *   A base that cannot be used answers with the uncommitted list and the
  *   reason, never a failure.
+ * - Staging and unstaging are the only writes, through `writes`, and only to
+ *   the index: the paths come from the status read again, never from the
+ *   window (see `planIndexWrite`).
  */
 export function createFileChanges(dependencies: FileChangesDependencies): FileChanges {
-	const { findRepository, git = "git", timeoutMilliseconds = GIT_MILLISECONDS } = dependencies;
+	const { findRepository, git = "git", timeoutMilliseconds = GIT_MILLISECONDS, writes } = dependencies;
 
 	async function run(cwd: string, args: readonly string[], limit: number, okExits: readonly number[]): Promise<GitRun> {
 		// No index lock, and Git's own words in English, which `readDiffOutput` reads ("Binary files ... differ").
@@ -233,17 +248,62 @@ export function createFileChanges(dependencies: FileChangesDependencies): FileCh
 		return { ok: true, files: await withVersions(worktree, counted, commit), truncated: read.truncated || answer.truncated || all.length > MAX_LISTED_FILES };
 	}
 
+	/**
+	 * The command that stages or unstages the files the window named, built
+	 * from the status Git reports now: every file must be listed there, in a
+	 * group that can take the action, or nothing runs.
+	 */
+	async function planIndexWrite(action: IndexAction, request: IndexWriteRequest, worktree: string): Promise<GitWritePlan> {
+		const refuse = (message: string): GitWritePlan => ({ ok: false, message: `${message} ${NOT_WRITTEN[action]}` });
+		const files = Array.isArray(request.files) ? request.files : [];
+		if (files.length === 0) return refuse("No file was named.");
+		for (const file of files) {
+			if (typeof file?.path !== "string" || (file.previousPath !== null && typeof file.previousPath !== "string")) return refuse("A file in the request is not complete.");
+			for (const path of [file.path, file.previousPath]) {
+				const problem = path === null ? null : relativePathProblem(path);
+				if (problem !== null) return refuse(problem);
+			}
+		}
+		const read = await statusOnly(worktree);
+		if (!read.ok) return refuse(read.message);
+		if (read.truncated) return refuse("The status of this worktree is too long to read whole.");
+		const found: FileChange[] = [];
+		for (const file of files) {
+			const current = read.files.find(candidate => sameFileChange(candidate, file));
+			if (!current || !canWriteIndex(action, current.area)) return refuse(`${file.path} is no longer ${action === "stage" ? "a change that can be staged" : "staged"} in this worktree.`);
+			found.push(current);
+		}
+		const head = await commitOf(worktree, "HEAD");
+		if (!head.ok) return refuse(`Git could not read this worktree's HEAD: ${head.message}`);
+		return { ok: true, command: indexCommand(action, found, head.commit !== null) };
+	}
+
+	async function writeIndex(action: IndexAction, request: IndexWriteRequest): Promise<IndexWriteResult> {
+		const { repository, worktree, shown } = (request ?? {}) as Partial<IndexWriteRequest>;
+		// Only text becomes an argument: the request comes over the bridge.
+		if (typeof repository !== "string" || typeof worktree !== "string" || !Array.isArray(shown) || shown.some(word => typeof word !== "string")) {
+			return { outcome: "refused", message: `The request is not complete. ${NOT_WRITTEN[action]}` };
+		}
+		if (!writes) return { outcome: "refused", message: `This app cannot write the index. ${NOT_WRITTEN[action]}` };
+		return writes.write({ repository, worktree, shown, consequence: NOT_WRITTEN[action], plan: listed => planIndexWrite(action, request, listed.path) });
+	}
+
 	return {
 		async read(request) {
 			const listed = await findListedWorktree(findRepository, request.repository, request.worktree, NOT_READ);
 			if (!listed.ok) return { outcome: "not-listed", message: listed.message };
-			const base = await baseOf(listed.worktree);
+			const [base, head] = await Promise.all([baseOf(listed.worktree), commitOf(request.worktree, "HEAD")]);
 			const compared = request.compare === "base" && base.usable ? "base" : "uncommitted";
 			const read = base.usable && compared === "base" ? await changedSince(request.worktree, base.commit) : await status(request.worktree);
 			if (!read.ok) return { outcome: "failed", message: read.message };
 			const more = read.truncated || read.files.length > MAX_LISTED_FILES;
-			return { outcome: "read", files: read.files.slice(0, MAX_LISTED_FILES), more, compared, base };
+			// When HEAD cannot be read, unstaging is offered as `git restore`, and Git's message says why it fails.
+			const hasCommit = !head.ok || head.commit !== null;
+			return { outcome: "read", files: read.files.slice(0, MAX_LISTED_FILES), more, compared, base, hasCommit };
 		},
+
+		stage: request => writeIndex("stage", request),
+		unstage: request => writeIndex("unstage", request),
 
 		async diff(request) {
 			const { file } = request;

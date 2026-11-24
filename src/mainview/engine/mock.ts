@@ -4,6 +4,7 @@ import { type Attention, assumedAttention } from "../../shared/attention";
 import { type AlertSettings, type StatusNotice, createAlertRunner } from "../../shared/status-notices";
 import { type ChooseSoundResult, type SoundChoice, type SoundOutcome, readSoundChoice } from "../../shared/sound-setting";
 import type { Engine } from "../../shared/engine";
+import type { IndexWriteRequest, IndexWriteResult } from "../../shared/index-writes";
 import { type Layout, defaultLayout, forgetGroup, forgetRepository, readLayout } from "../../shared/layout";
 import { type AddRepositoryResult, type BranchSuggestion, type IssueLink, type OpenInEditorRequest, type OpenInEditorResult, type Repository, type RepositoryGroupsResult, type SavedBase, type SyncState, type TimberStatus, type Worktree, type WorktreeCommandResult, worktreeId } from "../../shared/model";
 import { applyOrder } from "../../shared/repository-order";
@@ -42,7 +43,7 @@ import { type SyncActionKind, type SyncActionRequest, isSyncActionKind, syncNotR
 import { actOutSetBase, sampleBaseCounts } from "./mock-base";
 import { type PullRequestEnding, actOutPullRequest, isPullRequestEnding } from "./mock-pr";
 import type { CreatePullRequestResult } from "../../shared/timber-pr";
-import { type MockFileChange, derivedFileChanges, diffMockFileChange, listMockFileChanges } from "./mock-file-changes";
+import { type MockFileChange, answerMockIndexWrite, derivedFileChanges, diffMockFileChange, listMockFileChanges } from "./mock-file-changes";
 import { type MockWorktreeFile, createMockWorktreeFiles } from "./mock-worktree-files";
 import { MOCK_PATH, type TerminalControls, createMockTerminals } from "./mock-terminals";
 import { type AppUpdateInstallRequest, type AppUpdateState, UPDATES_FROM_SOURCE } from "../../shared/app-update";
@@ -516,6 +517,14 @@ export interface MockEngine extends Engine, TerminalControls, TimberConfigContro
 	/** Make every later read of changed files and diffs fail with this message, or pass null to let them work again. */
 	failFileChanges(message: string | null): void;
 	/**
+	 * Make every later stage and unstage fail with this message, as Git says
+	 * it, and change nothing, or pass null to let them work again. Try
+	 * "fatal: Unable to create '/work/.git/index.lock': File exists."
+	 */
+	failIndexWrites(message: string | null): void;
+	/** Every stage and unstage that ran, oldest first, with the command, as the window showed it. */
+	indexWrites(): { worktree: string; command: string }[];
+	/**
 	 * Put a file on the pretend disk of the worktree at `worktree`, for the
 	 * file viewer: its text, bytes that are not text, or a folder. Pass null
 	 * to remove it, so the viewer says it is missing. `failFileChanges` makes
@@ -924,6 +933,20 @@ export function createMockEngine(
 		return { ok: true, worktree: target };
 	};
 	const filesOf = (worktree: Worktree) => fileChangeLists.get(worktree.path) ?? derivedFileChanges(worktree);
+	let indexWriteFailure: string | null = null;
+	const indexWriteLog: { worktree: string; command: string }[] = [];
+	/** Stage or unstage on the pretend files, as the main process would, which then lists them as changed. */
+	const writeIndex = async (action: "stage" | "unstage", request: IndexWriteRequest): Promise<IndexWriteResult> => {
+		const listed = listedForChanges(request.repository, request.worktree);
+		const ending = action === "stage" ? "Nothing was staged." : "Nothing was unstaged.";
+		if (!listed.ok) return { outcome: "refused", message: listed.message.replace("No changes were read.", ending).replace("so no changes were read", `so ${ending.charAt(0).toLowerCase()}${ending.slice(1, -1)}`) };
+		const { result, files } = answerMockIndexWrite(filesOf(listed.worktree), action, structuredClone(request));
+		if (result.outcome !== "written" || files === null) return result;
+		indexWriteLog.push({ worktree: listed.worktree.path, command: result.command });
+		if (indexWriteFailure !== null) return { outcome: "failed", command: result.command, message: indexWriteFailure };
+		fileChangeLists.set(listed.worktree.path, files);
+		return result;
+	};
 	const worktreeFiles = createMockWorktreeFiles();
 	let watchedFolders: WorktreeFolderWatch | null = null;
 	const folderListeners = new Set<(change: WorktreeFolderChange) => void>();
@@ -1361,6 +1384,12 @@ export function createMockEngine(
 			if (!listed.ok) return { outcome: listed.outcome, message: listed.message };
 			return diffMockFileChange(filesOf(listed.worktree), listed.worktree, structuredClone(request));
 		},
+		stageFiles: request => writeIndex("stage", request),
+		unstageFiles: request => writeIndex("unstage", request),
+		failIndexWrites(message) {
+			indexWriteFailure = message;
+		},
+		indexWrites: () => structuredClone(indexWriteLog),
 		async readWorktreeFile(request) {
 			const listed = listedForChanges(request.repository, request.worktree);
 			if (!listed.ok) return { outcome: listed.outcome, message: listed.message.replace("No changes were read.", "The file was not read.").replace("so no changes were read", "so the file was not read") };
