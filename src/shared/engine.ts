@@ -10,7 +10,7 @@ import type { FileChangesRequest, FileChangesResult, FileDiffRequest, FileDiffRe
 import type { IndexWriteRequest, IndexWriteResult } from "./index-writes";
 import type { CommitRequest, CommitResult } from "./commit-staged";
 import type { DiscardRequest, DiscardResult } from "./discard-files";
-import type { WorktreeFileRequest, WorktreeFileResult, WorktreeFileWriteRequest, WorktreeFileWriteResult } from "./worktree-files";
+import type { OutsideFileRequest, WorktreeFileRequest, WorktreeFileResult, WorktreeFileWriteRequest, WorktreeFileWriteResult } from "./worktree-files";
 import type { WorktreeFolderChange, WorktreeFolderRequest, WorktreeFolderResult, WorktreeFolderWatch } from "./worktree-folders";
 import type { WorktreeHandoff } from "./handoff";
 import type { Layout } from "./layout";
@@ -649,11 +649,23 @@ export interface Engine {
 	commitStaged(request: CommitRequest): Promise<CommitResult>;
 	/**
 	 * One file of a worktree of a repository in the list, for the File tab. The path is relative to the worktree, and neither it nor a
-	 * link it is may lead outside the worktree. Only a plain file is read, up
-	 * to `MAX_FILE_BYTES`; a larger or binary file comes without its text.
-	 * Writes nothing and runs no Git. Safe to call again.
+	 * link it is may lead outside the worktree: a link that does is answered
+	 * "outside" with its real target, which `readFileOutside` may read. Only a
+	 * plain file is read, up to `MAX_FILE_BYTES`; a larger or binary file
+	 * comes without its text. Writes nothing and runs no Git. Safe to call
+	 * again.
 	 */
 	readWorktreeFile(request: WorktreeFileRequest): Promise<WorktreeFileResult>;
+	/**
+	 * A file anywhere on disk, by its complete path, for the File tab to show
+	 * read-only, as an agent's notes or a link's target outside the worktree.
+	 * A path that is not complete is refused. The same limits as
+	 * `readWorktreeFile`: only a plain file, opened without blocking, up to
+	 * `MAX_FILE_BYTES`; a larger or binary file comes without its text.
+	 * Writes nothing and runs no Git. Safe to call again. There is no way to
+	 * save such a file here.
+	 */
+	readFileOutside(request: OutsideFileRequest): Promise<WorktreeFileResult>;
 	/**
 	 * Save new text into one file of a worktree, from the File tab's edit
 	 * mode, under the same rules as `readWorktreeFile`: only a plain file

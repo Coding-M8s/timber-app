@@ -1,7 +1,7 @@
 import type { AppState, FileMode, FileView, UnsavedFileStep, WorkspaceTab } from "./store/state";
 import type { Worktree } from "../shared/model";
 import { describeQuitRequest } from "../shared/terminal";
-import { MAX_FILE_BYTES, MAX_FILE_LINES, type WorktreeFileResult, type WorktreeFileWriteResult, editableText, isMarkdownPath, lineEndingProblem, worktreeRelativePath } from "../shared/worktree-files";
+import { MAX_FILE_BYTES, MAX_FILE_LINES, type WorktreeFileResult, type WorktreeFileWriteResult, editableText, isCompletePath, isMarkdownPath, lineEndingProblem, worktreeRelativePath } from "../shared/worktree-files";
 
 /**
  * The File tab's rules and words. Pure, so they can be tested without a
@@ -40,7 +40,7 @@ export function describeFileNotice(result: WorktreeFileResult): { title: string;
 		case "not-a-file":
 			return { title: "Not a file", text: result.message };
 		case "outside":
-			return { title: "Outside this worktree", text: `${result.message} The viewer only reads files inside the worktree.` };
+			return { title: "Outside this worktree", text: `${result.message} A path that steps out of the worktree does not open; its complete path opens it read-only.` };
 		case "not-listed":
 			return { title: "Worktree not available", text: result.message };
 		case "failed":
@@ -86,11 +86,10 @@ export function settleTabs(state: Pick<AppState, "tab" | "selection" | "files" |
 export function pathInWorktree(worktree: Pick<Worktree, "path" | "canonicalPath">, path: string): string | null {
 	const relative = worktreeRelativePath(worktree.path, path);
 	if (relative !== null || worktree.canonicalPath === null || worktree.canonicalPath === worktree.path) return relative;
-	const absolute = path.startsWith("/") || path.startsWith("\\") || /^[A-Za-z]:/.test(path);
-	return absolute ? worktreeRelativePath(worktree.canonicalPath, path) : null;
+	return isCompletePath(path) ? worktreeRelativePath(worktree.canonicalPath, path) : null;
 }
 
-/** Why the viewer was asked to open something that is not a path inside the worktree. */
+/** Why the viewer was asked to open a path that steps out of the worktree without being complete. */
 export function outsideResult(path: string): WorktreeFileResult {
 	return { outcome: "outside", path, message: `${path} is not inside this worktree.` };
 }
@@ -117,13 +116,18 @@ export function editableFileText(view: Pick<FileView, "result">): string | null 
 	return text;
 }
 
+/** Why a file outside the worktree shows read-only. */
+export const OUTSIDE_READ_ONLY = "It is outside this worktree. Open it in your own editor to change it.";
+
 /**
  * Why a file read as text cannot be edited here, or null when it can, or is
- * not text at all (the viewer says why in place of the text).
+ * not text at all (the viewer says why in place of the text): it is outside
+ * the worktree, or its line endings could not be saved as they were.
  */
-export function editRefusal(view: Pick<FileView, "result">): string | null {
+export function editRefusal(view: Pick<FileView, "result"> & Partial<Pick<FileView, "outside">>): string | null {
 	const { result } = view;
 	if (result?.outcome !== "read" || result.content.kind !== "text") return null;
+	if (view.outside) return OUTSIDE_READ_ONLY;
 	let problem = endingProblems.get(result.content);
 	if (problem === undefined) {
 		problem = lineEndingProblem(result.content.text);
@@ -132,8 +136,8 @@ export function editRefusal(view: Pick<FileView, "result">): string | null {
 	return problem === null ? null : `${problem} Open it in your editor to change it.`;
 }
 
-/** Whether the file can be edited here: any file read as text, unless its line endings could not be saved as they were. */
-export function canEditFile(view: Pick<FileView, "result">): boolean {
+/** Whether the file can be edited here: any file of the worktree read as text, unless its line endings could not be saved as they were. */
+export function canEditFile(view: Pick<FileView, "result"> & Partial<Pick<FileView, "outside">>): boolean {
 	return fileText(view) !== null && editRefusal(view) === null;
 }
 

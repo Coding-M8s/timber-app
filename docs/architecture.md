@@ -4058,8 +4058,24 @@ edited and saved in a small editor.
 - **Staying inside.** The path must be relative and must not step out
   (`relativePathProblem`). Then the real path of the file, every link
   followed, must be inside the real path of the worktree, so a link to a
-  file elsewhere is refused as "outside" without reading it. A link whose
-  target is gone is "missing".
+  file elsewhere is answered "outside" without reading it, with its real
+  target (`target`), which the window then opens read-only (below). A link
+  whose target is gone is "missing".
+- **Files outside the worktree.** `readFileOutside({ path })` on the
+  `Engine` contract reads a file anywhere by its complete path, for showing
+  only. A path that is not complete is refused before anything is looked
+  at. It uses the same `realpath`, `stat`, non-blocking open, and read
+  limits as `readWorktreeFile` (`readPlainFile` in
+  `src/bun/worktree-files.ts`), lists no worktree, runs no Git, and writes
+  nothing; a test on a real temporary folder compares every entry's bytes,
+  size, and time before and after every kind of read. Nothing saves such a
+  file: `writeWorktreeFile` is unchanged and refuses a complete path and a
+  link that leads out. In the window the open file is marked `outside`, so
+  it is read with `readFileOutside`, `canEditFile` is false, and `saveFile`
+  does nothing. A link in such a Markdown file leads beside it, as a
+  complete path (`markdownLink`). The mock engine serves a pretend folder,
+  `/tmp/timber-notes`, with Markdown, a log, a binary file, and the folder
+  itself, and acts out links that lead out.
 - **What is read.** Only a plain file: a folder or a pipe is refused before
   it is opened, and the file is opened without blocking and checked again.
   At most `MAX_FILE_BYTES` (1 MiB) and one more byte are read, whatever size
@@ -4085,7 +4101,10 @@ edited and saved in a small editor.
   same click. A relative path is taken from the
   worktree's folder, not the shell's current folder, which the app does
   not know. A path that wraps onto the next row is not found. An absolute
-  path outside the worktree is refused in the window, without a read.
+  path inside the worktree, under its registered or real path, is read as
+  its relative path; any other complete path opens read-only through
+  `readFileOutside`. A relative path that steps out is refused in the
+  window, without a read.
 - **Saving.** `writeWorktreeFile({ repository, worktree, path, text,
   expected })` on the `Engine` contract goes through the same checks as a
   read (`locate` in `src/bun/worktree-files.ts`): a listed worktree, a path

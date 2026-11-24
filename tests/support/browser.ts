@@ -71,6 +71,10 @@ export interface BrowserPage {
 	type(text: string): Promise<void>;
 	/** Move the pointer over the first element that matches, without pressing. */
 	hover(selector: string): Promise<void>;
+	/** Move the pointer to a point of the page, without pressing. */
+	pointAt(at: { x: number; y: number }): Promise<void>;
+	/** A real click at a point of the page, the pointer moved there first. */
+	clickAt(at: { x: number; y: number }): Promise<void>;
 	/** What the page looks like now, as PNG bytes, for looking at a layout by eye. */
 	screenshot(): Promise<Uint8Array>;
 	/** Lay the page out at this window size, as a window resized to it would be. */
@@ -211,6 +215,16 @@ export async function openSidebarPage(page = "sidebar-page.tsx"): Promise<Browse
 		async hover(selector) {
 			const at = await middle(selector);
 			await mouse("mouseMoved", at, false);
+			pointer = at;
+		},
+		async pointAt(at) {
+			await mouse("mouseMoved", at, false);
+			pointer = at;
+		},
+		async clickAt(at) {
+			await mouse("mouseMoved", at, false);
+			await mouse("mousePressed", at, true);
+			await mouse("mouseReleased", at, false);
 			pointer = at;
 		},
 		async screenshot() {

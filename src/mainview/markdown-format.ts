@@ -1,6 +1,6 @@
 import { type Token, Lexer } from "marked";
 import { webLink } from "../shared/terminal";
-import { worktreeRelativePath } from "../shared/worktree-files";
+import { isCompletePath, normalCompletePath, worktreeRelativePath } from "../shared/worktree-files";
 
 /**
  * The Markdown reader's rules. Pure, so they can be tested without a window.
@@ -20,7 +20,7 @@ export function markdownTokens(text: string): Token[] {
 export type MarkdownLink =
 	/** A web page, opened in the person's browser. */
 	| { kind: "web"; url: string }
-	/** Another file of the same worktree, opened in the File tab. Relative to the worktree. */
+	/** Another file, opened in the File tab. Relative to the worktree, or a complete path when read from a file outside it. */
 	| { kind: "file"; path: string }
 	/** A heading of the same file, scrolled to. */
 	| { kind: "heading"; id: string }
@@ -29,9 +29,11 @@ export type MarkdownLink =
 
 /**
  * Where a link's address leads, read from the file at `from` (relative to
- * the worktree). Only web addresses, files of the same worktree, and
- * headings of the same file are followed; everything else is shown and not
- * followed.
+ * the worktree, or a complete path for a file outside it). Only web
+ * addresses, files of the same worktree, and headings of the same file are
+ * followed; everything else is shown and not followed. From a file outside
+ * the worktree, a path leads beside that file, as a complete path, which
+ * opens read-only.
  */
 export function markdownLink(href: string, from: string): MarkdownLink {
 	const address = href.trim();
@@ -43,6 +45,10 @@ export function markdownLink(href: string, from: string): MarkdownLink {
 	if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(address) || address.startsWith("//") || address.startsWith("\\\\")) return { kind: "none" };
 	const bare = decoded(address.replace(/[?#].*$/, ""));
 	if (bare === "") return { kind: "none" };
+	if (isCompletePath(from)) {
+		const complete = isCompletePath(bare) ? normalCompletePath(bare) : normalCompletePath(`${from.slice(0, Math.max(from.lastIndexOf("/"), from.lastIndexOf("\\")))}/${bare}`);
+		return complete === null ? { kind: "none" } : { kind: "file", path: complete };
+	}
 	const folder = from.includes("/") ? from.slice(0, from.lastIndexOf("/")) : "";
 	// A path starting with / is from the top of the worktree, as GitHub reads it in a repository.
 	const joined = bare.startsWith("/") ? bare.replace(/^\/+/, "") : folder === "" ? bare : `${folder}/${bare}`;

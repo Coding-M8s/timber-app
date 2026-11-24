@@ -954,8 +954,20 @@ logins. The app never reads a tracker login and never signs in.
   a plain click on a file path in a terminal, read from the worktree's
   folder. A web link still needs Ctrl+click (Cmd+click on macOS), since it
   leaves the app; a file stays in it. Binary files, files over 1 MB or 20,000 lines,
-  missing files, folders, and paths outside the worktree get a plain notice
-  in place of the text. "Read again" reads it as it is now. Any text file
+  missing files, and folders get a plain notice in place of the text.
+  "Read again" reads it as it is now.
+- Files outside the worktree: a complete path to a file anywhere, such as
+  an agent's scratch notes, a plan, or a log, opens in the File tab too,
+  and so does the target of a link in the worktree that leads out. Such a
+  file is read-only: no Edit, no Save, and no Open in editor, with the note
+  "Read-only here. It is outside this worktree. Open it in your own editor
+  to change it." The title line shows its complete path; the tab shows its
+  name. The same notices and limits apply as inside. A Markdown file
+  outside opens rendered, with a Rendered / Source switch, and its links to
+  files lead beside it. A relative path is still read from the worktree's
+  folder, and one that steps out, such as `../x`, is still refused with a
+  notice; only a complete path reaches outside. Saving takes only files
+  inside the worktree. Any text file
   but Markdown opens straight in the editor, ready to type, with no switch:
   the editor is the view. Markdown has a Rendered / Source / Edit switch
   (see Markdown reader).
@@ -993,7 +1005,8 @@ logins. The app never reads a tracker login and never signs in.
   lines, or search across files; "Open in editor" is there for those. A
   file whose lines end in both CR LF and LF, or that has a lone CR, opens
   in the same editor read-only, with that reason, since saving here would
-  change lines nobody touched. Save shows beside the file once it can be
+  change lines nobody touched. A file outside the worktree shows read-only
+  the same way. Save shows beside the file once it can be
   edited, and Discard once it has unsaved edits.
 - Markdown reader: a `.md` or `.markdown` file opens rendered, in the
   interface's font, with a Rendered / Source / Edit switch in the File tab's

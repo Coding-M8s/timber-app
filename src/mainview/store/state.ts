@@ -111,8 +111,14 @@ export interface FileView {
 	repository: string;
 	/** The worktree's registered path, as Timber lists it. */
 	worktreePath: string;
-	/** Relative to the worktree, with `/` between folders. */
+	/** Relative to the worktree, with `/` between folders, or the complete path of a file outside it (`outside`). */
 	path: string;
+	/**
+	 * True for a file outside the worktree, opened by its complete path or
+	 * through a link in the worktree that leads out: read with
+	 * `readFileOutside`, read-only, and never saved.
+	 */
+	outside: boolean;
 	/** The tab that showed when the file was opened, shown again when it is closed. */
 	from: Exclude<WorkspaceTab, "file">;
 	/** Null while the first read is under way. */

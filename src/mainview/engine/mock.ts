@@ -1463,6 +1463,9 @@ export function createMockEngine(
 			if (!listed.ok) return { outcome: listed.outcome, message: listed.message.replace("No changes were read.", "The file was not read.").replace("so no changes were read", "so the file was not read") };
 			return worktreeFiles.read(listed.worktree.path, request.path, filesOf(listed.worktree));
 		},
+		async readFileOutside(request) {
+			return worktreeFiles.readOutside(request.path);
+		},
 		async writeWorktreeFile(request) {
 			const listed = listedForChanges(request.repository, request.worktree);
 			if (!listed.ok) return { outcome: listed.outcome, message: listed.message.replace("No changes were read.", "Nothing was saved.").replace("so no changes were read", "so nothing was saved") };
