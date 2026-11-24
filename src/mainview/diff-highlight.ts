@@ -2,7 +2,7 @@ import type { Language } from "@codemirror/language";
 import { highlightTree } from "@lezer/highlight";
 import type { DiffLine, DiffSection } from "../shared/file-changes";
 import type { WordRange } from "./diff-words";
-import { type EditorLanguage, codeHighlightStyle, pickLanguage } from "./editor-language";
+import { type EditorLanguage, codeHighlightStyle, languageHooks, pickLanguage, tokenClass } from "./editor-language";
 
 /**
  * How the Changes tab colors a diff: as the File tab's editor colors the
@@ -10,7 +10,9 @@ import { type EditorLanguage, codeHighlightStyle, pickLanguage } from "./editor-
  * hunk's old side (context and removed lines) and new side (context and
  * added lines) is parsed as one piece of code. A hunk that starts inside a
  * multi-line comment or string is parsed from where it starts, so it may be
- * colored wrongly. Pure but for loading the language's parser.
+ * colored wrongly. A template language such as PHP reads a hunk without its
+ * opening tag as code, through its hooks in `editor-language.ts`. Pure but
+ * for loading the language's parser.
  */
 
 /** A stretch of a line's text with the class that colors it. */
@@ -38,9 +40,17 @@ export function colorHunk(language: Language, lines: readonly DiffLine[]): CodeS
 			length += lines[index]!.text.length + 1;
 		}
 		const text = members.map(index => lines[index]!.text).join("\n");
-		const tree = language.parser.parse(text);
+		const hooks = languageHooks(language);
+		const reader = hooks?.hunkCode?.isCode(text) ? hooks.hunkCode.language(language) : language;
+		const tree = reader.parser.parse(text);
+		const tokens: CodeSpan[] = [];
+		highlightTree(tree, codeHighlightStyle, (from, to, className) => tokens.push({ from, to, className }));
+		const extra = (hooks?.tokenTags?.(tree, (from, to) => text.slice(from, to), 0, text.length) ?? []).flatMap(token => {
+			const className = tokenClass(token.tag);
+			return className === null ? [] : [{ from: token.from, to: token.to, className }];
+		});
 		let at = 0;
-		highlightTree(tree, codeHighlightStyle, (from, to, className) => {
+		for (const { from, to, className } of overlay(tokens, extra)) {
 			while (at + 1 < starts.length && starts[at + 1]! <= from) at++;
 			// A token can run over several lines: it is cut at each line's end.
 			for (let line = at; line < starts.length && starts[line]! < to; line++) {
@@ -49,9 +59,26 @@ export function colorHunk(language: Language, lines: readonly DiffLine[]): CodeS
 				const piece = { from: Math.max(from, start) - start, to: Math.min(to, end) - start, className };
 				if (piece.to > piece.from && keeps(members[line]!)) spans[members[line]!]!.push(piece);
 			}
-		});
+		}
 	}
 	return spans;
+}
+
+/** Spans in order with `top` laid over `base`: where they meet, `top`'s class wins. */
+function overlay(base: readonly CodeSpan[], top: readonly CodeSpan[]): CodeSpan[] {
+	if (top.length === 0) return [...base];
+	const covers = [...top].sort((one, other) => one.from - other.from);
+	const pieces: CodeSpan[] = [...top];
+	for (const span of base) {
+		let from = span.from;
+		for (const cover of covers) {
+			if (cover.to <= from || cover.from >= span.to) continue;
+			if (cover.from > from) pieces.push({ from, to: cover.from, className: span.className });
+			from = Math.max(from, cover.to);
+		}
+		if (from < span.to) pieces.push({ from, to: span.to, className: span.className });
+	}
+	return pieces.sort((one, other) => one.from - other.from);
 }
 
 /**

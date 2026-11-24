@@ -105,6 +105,36 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the edito
 		await page.evaluate(`${STORE}.savePreferences({ theme: { mode: "fixed", theme: "timber-dark" } })`);
 	}, 30_000);
 
+	test("colors PHP's $this and self as keywords, class and namespace names as types, and parameters as definitions, in either theme", async () => {
+		const php = "<?php\nnamespace App\\Models;\n\nclass User extends Model implements HasName\n{\n    public function greet(string $who): string\n    {\n        return self::format($this->name, $who);\n    }\n}\n";
+		await page.evaluate(`(() => {
+			const feature = ${STORE}.getState().repositories[0].worktrees[1];
+			${ENGINE}.setWorktreeFile(feature.path, "src/User.php", ${JSON.stringify(php)});
+			${STORE}.openFile(feature.id, "src/User.php");
+		})()`);
+		await page.until(`document.querySelector(".text-editor-language")?.textContent === "PHP"`, "the status line named PHP");
+		/** The color of the innermost piece of the line drawn with exactly this text. */
+		const colorOf = (text: string, nth = 0) => `(() => {
+			const pieces = [...document.querySelectorAll(".cm-line span")].filter(span => span.textContent === ${JSON.stringify(text)} && span.children.length === 0);
+			return pieces[${nth}] ? getComputedStyle(pieces[${nth}]).color : "none";
+		})()`;
+		for (const theme of [DEFAULT_LIGHT_THEME, DEFAULT_DARK_THEME]) {
+			await page.evaluate(`${STORE}.savePreferences({ theme: { mode: "fixed", theme: ${JSON.stringify(theme.id)} } })`);
+			const { magenta, yellow, red, foreground } = theme.terminal;
+			await page.until(`${colorOf("$this")} === ${JSON.stringify(rgb(magenta))}`, `$this took ${theme.name}'s keyword color`);
+			expect({
+				self: await page.evaluate<string>(colorOf("self")),
+				App: await page.evaluate<string>(colorOf("App")),
+				Models: await page.evaluate<string>(colorOf("Models")),
+				Model: await page.evaluate<string>(colorOf("Model")),
+				HasName: await page.evaluate<string>(colorOf("HasName")),
+				parameter: await page.evaluate<string>(colorOf("$who", 0)),
+				use: await page.evaluate<string>(colorOf("$who", 1)),
+			}).toEqual({ self: rgb(magenta), App: rgb(yellow), Models: rgb(yellow), Model: rgb(yellow), HasName: rgb(yellow), parameter: rgb(red), use: rgb(foreground) });
+		}
+		await page.evaluate(`${STORE}.savePreferences({ theme: { mode: "fixed", theme: "timber-dark" } })`);
+	}, 30_000);
+
 	test("changing the theme, to a built-in one or a custom one, recolors the open file", async () => {
 		await page.until(`${KEYWORD_COLOR} !== "none"`, "the file was colored");
 		const nord = BUILT_IN_THEMES.find(theme => theme.id === "nord")!;

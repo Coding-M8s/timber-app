@@ -946,6 +946,16 @@ logins. The app never reads a tracker login and never signs in.
   readable in every theme; a line rewritten almost entirely is not marked. A kind of file the editor does not color stays plain. A hunk
   that starts inside a multi-line comment or string may be colored
   wrongly, since only the hunk's own lines are parsed.
+- A PHP hunk is colored as PHP even without the `<?php` that opens the file,
+  such as the inside of a method, and HTML in it after `?>` as HTML. A hunk
+  of HTML alone from a PHP file colors as HTML. A hunk of a class's body
+  with no method in it may miss some colors, such as a typed property's
+  type.
+- PHP reads like TypeScript in the editor and the diff: `$this`, `self`,
+  `static`, and `parent` in the keyword color, class names after `extends`,
+  `implements`, `new`, `use`, and `::` and namespace names in the type
+  color, and parameters and `foreach` variables in the definition color,
+  with other variables plain, as TypeScript's are.
 - File viewer: a File tab after Pull request shows one file of the worktree,
   or one outside it by its complete path (below), with line numbers, in
   the terminal's font. The tab is there only while a file is open in that
