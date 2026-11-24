@@ -4845,3 +4845,54 @@ with Bun 1.4.5, on 2026-11-24:
   tests/text-editor.test.tsx tests/file-viewer.test.tsx`: 21 passed.
 - `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
 - Not run: the desktop app, Windows, and macOS.
+
+Run for committing staged changes from the Changes view (issue 394), on
+2026-11-24, Linux x64 with Git 2.56.1 and Bun 1.4.5.
+
+- `bun test tests/commit-staged.test.ts`: 12 passed, 0 failed. The order of
+  the refusal reasons and the operation markers, then, on real temporary
+  repositories in a linked worktree with the person's Git config left out:
+  a file staged and then edited again committed its staged version and
+  kept its edit on disk, with the other unstaged and untracked files left
+  as they were and the primary checkout's branch unmoved; a message with a
+  `#` line kept as typed; the first commit of an orphan branch; a failing
+  `pre-commit` hook answering with both its streams, with HEAD, the refs,
+  the files, and the index entries unchanged; a hook printing about 400 KiB
+  on each stream that passed and committed, and one whose failure line at
+  the end of its output was kept; a hook that saw no
+  `GIT_LITERAL_PATHSPECS` or `GIT_OPTIONAL_LOCKS`, the test's own `LC_ALL`,
+  and a `'*.txt'` pathspec matching as a glob; a hook stopped after a 0.5
+  second limit with no commit made; and every refusal (nothing staged, a
+  message of spaces, `--amend` and `--no-verify` as the shown command, a
+  merge in progress, a rebase stopped on a conflict, a detached HEAD, an
+  unlisted worktree, an incomplete request) running nothing. The list read
+  reported `merge`, then `rebase` with a detached HEAD, then a detached
+  HEAD alone.
+- A failed commit rewrote the index file's bytes while its entries stayed
+  the same: Git refreshes its cached file times before running the hook,
+  as it does from a terminal. The test compares `git ls-files --stage`
+  there.
+- `bun test tests/commit-box.test.tsx`: 9 passed. Over the mock engine:
+  the box and Commit with its tooltip, disabled with "Write a commit
+  message first." until there is one; "Nothing is staged." with nothing
+  committed; a merge's note; a commit clearing the message, saying the
+  hash with Push, leaving the unstaged and untracked files, and moving the
+  row's ahead count from 2 to 3; a failure showing the output, keeping the
+  message and the files, then the same message committing; the message
+  kept across worktree switches; Commit… in Base.
+- `bun test tests/commit-box-browser.test.ts`: 3 passed in headless Chrome.
+  Typing, Enter as a new line, and Ctrl+Enter committing; Push after it
+  opening the Push dialog with `timber publish`; a failing hook's output
+  in the alert with the message kept; Base's Commit… switching to
+  Uncommitted with the box focused.
+- `bun test` over the commit, staging, Changes, file changes, store, sync
+  action, app, review panel, files panel, and diff colors test files (20
+  files): 358 passed, 0 failed.
+- `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
+- Screenshots of the browser test page at 1200 pixels wide showed the box
+  with its reason beside Commit, the failure alert with the hook's output,
+  and "Committed" with Push after a commit. That page has no theme colors,
+  so the look in the app's themes was not checked.
+- The real-repository tests skip on Windows, where the hooks are shell
+  scripts.
+- Not run: the desktop app, a signed commit, Windows, and macOS.

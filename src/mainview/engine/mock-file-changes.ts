@@ -2,6 +2,7 @@ import {
 	type BaseComparison, type Comparison, type FileChange, type FileChangesResult, type FileDiffResult, MAX_DIFF_BYTES, MAX_LISTED_FILES, type FileDiffRequest,
 	baseName, parseDiff, readDiffOutput, relativePathProblem, sameFileChange, savedBaseRef,
 } from "../../shared/file-changes";
+import { COMMIT_ARGUMENTS, COMMIT_COMMAND_LINE, type CommitRequest, type CommitResult, type GitOperation, NOT_COMMITTED, commitBlocker } from "../../shared/commit-staged";
 import { type IndexAction, type IndexWriteRequest, type IndexWriteResult, canWriteIndex, describeGitCommand, indexCommand, sameArguments } from "../../shared/index-writes";
 import type { Worktree } from "../../shared/model";
 
@@ -283,8 +284,8 @@ const comparedFor = (worktree: Worktree, compare: Comparison): { compared: Compa
 	return { compared: compare === "base" && base.usable ? "base" : "uncommitted", base };
 };
 
-/** Answer a listing from the pretend files, as the main process would. */
-export function listMockFileChanges(all: readonly MockFileChange[], worktree: Worktree, compare: Comparison): FileChangesResult {
+/** Answer a listing from the pretend files, as the main process would. `operation` is the pretend merge or rebase in progress. */
+export function listMockFileChanges(all: readonly MockFileChange[], worktree: Worktree, compare: Comparison, operation: GitOperation | null = null): FileChangesResult {
 	const { compared, base } = comparedFor(worktree, compare);
 	const files = compareMockFiles(all, compared);
 	return {
@@ -294,6 +295,8 @@ export function listMockFileChanges(all: readonly MockFileChange[], worktree: Wo
 		compared,
 		base,
 		hasCommit: true,
+		operation,
+		detached: worktree.detached,
 	};
 }
 
@@ -380,4 +383,20 @@ export function answerMockIndexWrite(all: readonly MockFileChange[], action: Ind
 	const line = describeGitCommand(command);
 	if (!sameArguments(command.args, request.shown)) return refuse(`The command is now ${line}, not the one that was shown.`);
 	return { result: { outcome: "written", command: line }, files: writeMockIndex(all, action, found) };
+}
+
+/**
+ * Answer a commit from the pretend files, as the main process would: refused
+ * for the reasons the window gives (`commitBlocker`) and when `shown` is not
+ * `COMMIT_ARGUMENTS`. Committed, the staged files leave the list. Gives the
+ * files after the commit, or null when nothing changed.
+ */
+export function answerMockCommit(all: readonly MockFileChange[], request: CommitRequest, worktree: Worktree, operation: GitOperation | null, hash: string): { result: CommitResult; files: MockFileChange[] | null } {
+	const refuse = (message: string) => ({ result: { outcome: "refused" as const, message: `${message} ${NOT_COMMITTED}` }, files: null });
+	const staged = compareMockFiles(all, "uncommitted").filter(file => file.change.area === "staged");
+	const blocker = commitBlocker({ staged: staged.length, operation, detached: worktree.detached, message: request.message });
+	if (blocker !== null) return refuse(blocker);
+	if (!sameArguments(COMMIT_ARGUMENTS, request.shown)) return refuse(`The command is now ${COMMIT_COMMAND_LINE}, not the one that was shown.`);
+	const files = all.filter(file => !staged.includes(file));
+	return { result: { outcome: "committed", command: COMMIT_COMMAND_LINE, commit: hash, short: hash.slice(0, 7) }, files };
 }

@@ -4615,6 +4615,88 @@ pre:focus-visible {
 	color: var(--text-3);
 }
 
+/* The commit message box and Commit, at the top of Uncommitted; Base's Commit… in its place. */
+.commit-box {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 8px 8px 8px 12px;
+	border-bottom: 1px solid var(--line);
+}
+
+.commit-from-base {
+	align-items: flex-start;
+	padding-top: 6px;
+	padding-bottom: 6px;
+}
+
+.commit-message {
+	width: 100%;
+	box-sizing: border-box;
+	min-height: 54px;
+	max-height: 40vh;
+	padding: 6px 8px;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: var(--bg-pane);
+	color: var(--text);
+	font: inherit;
+	font-size: 12.5px;
+	line-height: 1.4;
+	resize: vertical;
+}
+
+.commit-message:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: -2px;
+}
+
+.commit-message[readonly] {
+	color: var(--text-2);
+}
+
+.commit-actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.commit-note {
+	flex: 1 1 auto;
+	min-width: 0;
+	margin: 0;
+	font-size: 12px;
+	color: var(--text-3);
+}
+
+.commit-button {
+	flex: none;
+}
+
+.commit-done {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 12px;
+	color: var(--text-2);
+}
+
+/* What Git and the hooks printed: kept as printed, and scrolled when long. */
+.commit-output {
+	margin: 0;
+	max-height: 220px;
+	overflow: auto;
+	font-family: var(--font-mono);
+	font-size: 11.5px;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	color: var(--text-2);
+}
+
+.commit-box > .sidebar-error {
+	margin: 0;
+}
+
 .changes-files > .sidebar-error {
 	margin: 8px;
 }

@@ -71,6 +71,8 @@ import { type SavedSessions, pickShown } from "../../shared/saved-sessions";
 import { type WorktreeFileResult, textToSave } from "../../shared/worktree-files";
 import { fileLines, fillUnchanged, linesMatchDiff, unchangedReadable } from "../diff-unchanged";
 import { filterFiles, listedOrder, movedEntry, steppedFile } from "../changes-format";
+import { COMMIT_ARGUMENTS, COMMIT_COMMAND_LINE, type CommitResult, commitBlocker } from "../../shared/commit-staged";
+import { commitStateOf } from "../commit-format";
 import { type IndexAction, type IndexWriteResult, canWriteIndex, describeGitCommand, indexCommand } from "../../shared/index-writes";
 import { type FileEditMemory, createFileEditMemory } from "../text-editor-format";
 import { afterSave, canEditFile, editableFileText, fileText, hasUnsavedEdits, initialFileMode, listedOnly, outsideResult, pathInWorktree, settleTabs, unsavedFileCount } from "../file-view-format";
@@ -363,6 +365,18 @@ export interface AppStore {
 	 * group that takes the action. Never throws.
 	 */
 	writeIndex(action: IndexAction, files: readonly FileChangeTarget[]): Promise<IndexWriteResult | null>;
+	/** Keep what is typed in the commit message box of a worktree, until a commit is made there. */
+	setCommitMessage(worktreeId: string, text: string): void;
+	/**
+	 * Commit what is staged in the worktree the Changes view shows, with its
+	 * message, as `Engine.commitStaged` does. Made: the message clears, the
+	 * view says the commit, and the list and the repository are read again,
+	 * so the row's counts move. Not made: the message stays and the view says
+	 * what Git and the hooks printed. Does nothing (null) outside
+	 * Uncommitted, while another write runs, or when `commitBlocker` gives a
+	 * reason. Never throws.
+	 */
+	commitStaged(): Promise<CommitResult | null>;
 	/**
 	 * Read the chops of a repository, named by the path of its primary
 	 * checkout, into `chops`. The latest read wins, and another repository
@@ -1934,7 +1948,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		if (!worktree) return;
 		const ticket = ++changesTicket;
 		if (state.changes?.worktree !== worktreeId || state.changes.repository !== repositoryPath) {
-			update({ changes: { repository: repositoryPath, worktree: worktreeId, files: null, more: false, compared: null, base: null, problem: null, hasCommit: true, writing: false, settledWrites: 0, writeProblem: null, selected: null, diff: null, unchanged: null } });
+			update({ changes: { repository: repositoryPath, worktree: worktreeId, files: null, more: false, compared: null, base: null, problem: null, hasCommit: true, operation: null, detached: false, writing: false, committing: false, commitProblem: null, committed: null, settledWrites: 0, writeProblem: null, selected: null, diff: null, unchanged: null } });
 		}
 		const compare = chosenComparison(state.layout, worktreeId);
 		let answer!: FileChangesResult;
@@ -1963,7 +1977,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		// The same file keeps its diff on screen until the new one answers, so it does not flicker.
 		const sameComparison = view.compared === answer.compared;
 		const keptDiff = kept && view.selected !== null && sameFileChange(view.selected, kept) && sameComparison ? view.diff : null;
-		const next: ChangesView = { ...view, files: answer.files, more: answer.more, compared: answer.compared, base: answer.base, hasCommit: answer.hasCommit, settledWrites: move ? ++settledWrites : view.settledWrites, problem: null, selected, diff: keptDiff, unchanged: keptDiff === null ? null : view.unchanged };
+		const next: ChangesView = { ...view, files: answer.files, more: answer.more, compared: answer.compared, base: answer.base, hasCommit: answer.hasCommit, operation: answer.operation, detached: answer.detached, settledWrites: move ? ++settledWrites : view.settledWrites, problem: null, selected, diff: keptDiff, unchanged: keptDiff === null ? null : view.unchanged };
 		// A viewed file whose diff changed since, or that left the list, is no longer viewed.
 		const viewed = keptViewed(worktreeId, answer.compared, answer.files);
 		if (viewed !== state.viewed) update({ viewed });
@@ -2159,7 +2173,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const targets = files.map(file => ({ area: file.area, path: file.path, previousPath: file.previousPath }));
 		if (!targets.every(file => canWriteIndex(action, file.area) && view.files!.some(candidate => sameFileChange(candidate, file)))) return null;
 		const command = indexCommand(action, targets, view.hasCommit);
-		update({ changes: { ...view, writing: true } });
+		update({ changes: { ...view, writing: true, committed: null } });
 		const request = { repository: view.repository, worktree: worktree.path, files: targets, shown: command.args };
 		let result: IndexWriteResult;
 		try {
@@ -2174,6 +2188,40 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		}
 		movedByWrite = { worktree: view.worktree, paths: targets.flatMap(file => (file.previousPath === null ? [file.path] : [file.path, file.previousPath])), after: changesTicket };
 		await readChanges(view.repository, view.worktree);
+		return result;
+	}
+
+	function setCommitMessage(worktreeId: string, text: string): void {
+		if ((state.commitMessages[worktreeId] ?? "") === text) return;
+		update({ commitMessages: { ...state.commitMessages, [worktreeId]: text } });
+	}
+
+	async function commitStaged(): Promise<CommitResult | null> {
+		const view = state.changes;
+		if (!view?.files || view.compared !== "uncommitted" || view.writing) return null;
+		const worktree = worktreeOf(view.repository, view.worktree);
+		if (!worktree) return null;
+		const message = state.commitMessages[view.worktree] ?? "";
+		if (commitBlocker(commitStateOf({ ...view, files: view.files }, message)) !== null) return null;
+		update({ changes: { ...view, writing: true, committing: true, commitProblem: null, committed: null } });
+		let result: CommitResult;
+		try {
+			result = await engine.commitStaged({ repository: view.repository, worktree: worktree.path, message, shown: [...COMMIT_ARGUMENTS] });
+		} catch (error) {
+			result = { outcome: "failed", command: COMMIT_COMMAND_LINE, message: unheard("the commit", error) };
+		}
+		const made = result.outcome === "committed";
+		if (made) {
+			const { [view.worktree]: _sent, ...others } = state.commitMessages;
+			update({ commitMessages: others });
+		}
+		const now = state.changes;
+		if (now?.worktree === view.worktree) {
+			const commitProblem = result.outcome === "committed" ? null : { command: result.outcome === "failed" ? result.command : null, message: result.message };
+			update({ changes: { ...now, writing: false, committing: false, commitProblem, committed: result.outcome === "committed" ? { commit: result.commit, short: result.short } : null } });
+		}
+		// The list at once, and the repository for the row's counts.
+		await Promise.all([readChanges(view.repository, view.worktree), reloadOne(view.repository)]);
 		return result;
 	}
 
@@ -3791,6 +3839,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		stepChangedFile,
 		toggleViewed,
 		setChangesFilter,
+		setCommitMessage,
+		commitStaged,
 		openFile,
 		readFileAgain,
 		closeFile,

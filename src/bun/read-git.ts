@@ -1,6 +1,7 @@
 /**
- * Running Git for a read-only query, and for the app's own index writes
- * (see ./git-writes.ts), which add what they need with `environment`. Git is run as an executable plus an
+ * Running Git for a read-only query, and for the app's own writes (see
+ * ./git-writes.ts), which add what they need with `environment`, and a
+ * commit, which runs as from a terminal (`asTerminal`). Git is run as an executable plus an
  * argument array, never through a shell, with standard input closed unless
  * the query is given `input`, and:
  *
@@ -26,6 +27,13 @@ export interface ReadGitOptions {
 	input?: string;
 	/** Variables set on top of the usual ones, such as `GIT_LITERAL_PATHSPECS`. */
 	environment?: Record<string, string>;
+	/**
+	 * Run as Git would from a terminal: without `GIT_OPTIONAL_LOCKS=0` and
+	 * `LC_ALL=C`, which hooks would otherwise inherit, and with both streams
+	 * read to the end, so a hook that prints a lot never meets a closed pipe.
+	 * Only the last `tailBytes` of each are kept. For a commit.
+	 */
+	asTerminal?: { tailBytes: number };
 }
 
 export type ReadGitRun =
@@ -81,17 +89,37 @@ async function readUpTo(stream: ReadableStream<Uint8Array>, limit: number, onOve
 	return { bytes, over };
 }
 
+/** Read a stream to its end, keeping only its last `limit` bytes. `stops` is as for `readUpTo`. */
+async function readTail(stream: ReadableStream<Uint8Array>, limit: number, stops: (() => void)[]): Promise<Uint8Array> {
+	let kept = new Uint8Array(0);
+	const reader = stream.getReader();
+	stops.push(() => void reader.cancel().catch(() => {}));
+	try {
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			const joined = new Uint8Array(kept.byteLength + value.byteLength);
+			joined.set(kept);
+			joined.set(value, kept.byteLength);
+			kept = joined.byteLength > limit ? joined.slice(joined.byteLength - limit) : joined;
+		}
+	} finally {
+		await reader.cancel().catch(() => {});
+	}
+	return kept;
+}
+
 /** Run one read-only Git query. Nothing it printed is logged here. */
 export async function readGit(args: readonly string[], options: ReadGitOptions = {}): Promise<ReadGitRun> {
-	const { git = "git", cwd, timeoutMs, limitBytes = Number.POSITIVE_INFINITY, stderrBytes, input, environment } = options;
+	const { git = "git", cwd, timeoutMs, limitBytes = Number.POSITIVE_INFINITY, stderrBytes, input, environment, asTerminal } = options;
 	let child: Bun.Subprocess<"ignore" | Blob, "pipe", "pipe" | "ignore">;
 	try {
 		child = Bun.spawn([git, ...args], {
 			...(cwd === undefined ? {} : { cwd }),
 			stdin: input === undefined ? "ignore" : new Blob([input]),
 			stdout: "pipe",
-			stderr: stderrBytes === undefined ? "ignore" : "pipe",
-			env: { ...process.env, ...environment, GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C" },
+			stderr: stderrBytes === undefined && asTerminal === undefined ? "ignore" : "pipe",
+			env: asTerminal === undefined ? { ...process.env, ...environment, GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C" } : { ...process.env, ...environment },
 			// Bun stops Git itself once it takes too long.
 			...(timeoutMs === undefined ? {} : { timeout: timeoutMs }),
 		});
@@ -107,12 +135,17 @@ export async function readGit(args: readonly string[], options: ReadGitOptions =
 	}, timeoutMs);
 	try {
 		const { stderr } = child;
+		const decoder = new TextDecoder();
+		if (asTerminal !== undefined && stderr instanceof ReadableStream) {
+			const [out, err] = await Promise.all([readTail(child.stdout, asTerminal.tailBytes, stops), readTail(stderr, asTerminal.tailBytes, stops), child.exited]);
+			// A cut can fall inside a character: the decoder shows it as one replacement mark at the start.
+			return { started: true, exitCode: child.exitCode, timedOut, stdout: decoder.decode(out), truncated: false, stderr: decoder.decode(err) };
+		}
 		const [out, err] = await Promise.all([
 			readUpTo(child.stdout, limitBytes, () => child.kill(), stops),
 			stderr instanceof ReadableStream ? readUpTo(stderr, stderrBytes ?? 0, () => {}, stops) : null,
 			child.exited,
 		]);
-		const decoder = new TextDecoder();
 		return { started: true, exitCode: child.exitCode, timedOut, stdout: decoder.decode(out.bytes), truncated: out.over, stderr: err === null ? "" : decoder.decode(err.bytes) };
 	} finally {
 		clearTimeout(deadline);

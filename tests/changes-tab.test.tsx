@@ -161,9 +161,9 @@ describe("the store's Changes view", () => {
 		const first = store.readChanges(TIMBER, FEATURE.id);
 		const second = store.readChanges(TIMBER, FEATURE.id);
 		await settle();
-		pending[1]!({ outcome: "read", files: [file("unstaged", "modified", "new.ts")], more: false, compared: "uncommitted", base: { usable: false, reason: "No base." }, hasCommit: true });
+		pending[1]!({ outcome: "read", files: [file("unstaged", "modified", "new.ts")], more: false, compared: "uncommitted", base: { usable: false, reason: "No base." }, hasCommit: true, operation: null, detached: false });
 		await second;
-		pending[0]!({ outcome: "read", files: [file("unstaged", "modified", "old.ts")], more: false, compared: "uncommitted", base: { usable: false, reason: "No base." }, hasCommit: true });
+		pending[0]!({ outcome: "read", files: [file("unstaged", "modified", "old.ts")], more: false, compared: "uncommitted", base: { usable: false, reason: "No base." }, hasCommit: true, operation: null, detached: false });
 		await first;
 		expect(store.getState().changes?.files?.map(entry => entry.path)).toEqual(["new.ts"]);
 		const opening = store.selectChangedFile(file("unstaged", "modified", "new.ts"));
@@ -175,7 +175,7 @@ describe("the store's Changes view", () => {
 		diffs[0]!({ outcome: "read", file: file("unstaged", "modified", "new.ts"), diff: { kind: "binary" } });
 		await opening;
 		expect(store.getState().changes).toMatchObject({ worktree: main.id, diff: null });
-		pending[2]!({ outcome: "read", files: [], more: false, compared: "uncommitted", base: { usable: false, reason: "No base." }, hasCommit: true });
+		pending[2]!({ outcome: "read", files: [], more: false, compared: "uncommitted", base: { usable: false, reason: "No base." }, hasCommit: true, operation: null, detached: false });
 		await third;
 		expect(store.getState().changes).toMatchObject({ worktree: main.id, files: [] });
 	});

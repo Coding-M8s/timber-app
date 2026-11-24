@@ -825,6 +825,24 @@ logins. The app never reads a tracker login and never signs in.
   `index.lock`, an alert under the counts says "Could not stage" or "Could
   not unstage" with the command and Git's message, and the list is as it
   was. Base is review only and has no write buttons.
+- With Uncommitted, the top of the Changes view has a commit message box
+  and Commit, which commits only what is staged; it never stages anything
+  itself and never amends. Ctrl+Enter, or Cmd+Enter on macOS, commits from
+  the box, and Enter is a new line. Commit's tooltip is the command it
+  runs, `git commit -F -`, with the message on standard input, and while it
+  runs the box is read-only and the note beside Commit says that command
+  and that hooks may take a while. Commit is disabled, with the reason
+  beside it, while nothing is staged, while the message is empty, while a
+  merge, rebase, cherry-pick, or revert is in progress (finish it in the
+  terminal), and on a detached HEAD. Hooks and signing run as they would in
+  a terminal. When one fails, an alert says "Could not commit" with the
+  command and what Git and the hook printed, and the message stays. After
+  a commit the message clears, the list reads again, the row's ahead count
+  moves, and the box says "Committed a1b2c3d", with Push when the row
+  offers it, which opens the same Push dialog showing `timber publish`
+  first. The message is kept for each worktree while the window is open,
+  until a commit is made. Base has Commit… in place of the box, which
+  switches to Uncommitted with the box focused.
 - Each file's row shows its lines added and removed, `+12 -3`, as Git
   counts them for its diff; an untracked file counts all its lines as
   added. A binary file, and a conflict, show none. A screen reader hears

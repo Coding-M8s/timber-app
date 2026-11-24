@@ -175,10 +175,11 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		savePreferences: async change => ({ outcome: "saved", preferences: { ...defaultPreferences(), ...change } }),
 		openInEditor: async () => ({ outcome: "not-configured" }),
 		// The Changes tab has its own tests in file-changes-store.test.ts.
-		readFileChanges: async () => ({ outcome: "read", files: [], more: false, compared: "uncommitted", base: { usable: false, reason: "No base." }, hasCommit: true }),
+		readFileChanges: async () => ({ outcome: "read", files: [], more: false, compared: "uncommitted", base: { usable: false, reason: "No base." }, hasCommit: true, operation: null, detached: false }),
 		readFileDiff: async () => ({ outcome: "read", file: null, diff: { kind: "unchanged" } }),
 		stageFiles: async () => ({ outcome: "refused", message: "Nothing was staged." }),
 		unstageFiles: async () => ({ outcome: "refused", message: "Nothing was unstaged." }),
+		commitStaged: async () => ({ outcome: "refused", message: "Nothing was committed." }),
 		readWorktreeFile: async request => ({ outcome: "missing", path: request.path, message: `${request.path} is not in this worktree.` }),
 		writeWorktreeFile: async request => ({ outcome: "missing", path: request.path, message: `${request.path} is not in this worktree.` }),
 		listWorktreeFolder: async request => ({ outcome: "listed", folder: request.folder, entries: [], more: 0 }),

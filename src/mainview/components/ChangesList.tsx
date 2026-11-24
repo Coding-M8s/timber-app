@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import { type KeyboardEvent, useCallback, useEffect, useId, useRef, useState } from "react";
 import { type FileChange, sameFileChange } from "../../shared/file-changes";
 import type { Repository, Worktree } from "../../shared/model";
 import {
@@ -16,6 +16,7 @@ import { useAppState, useStore } from "../store/react";
 import { type ChangesView, changesBusy, changesWanted, fileViewed, selectedWorktree } from "../store/state";
 import type { AppStore } from "../store/store";
 import { StatusGlyph } from "./StatusGlyph";
+import { CommitBox, CommitFromBase } from "./CommitBox";
 import { KindLetter, fileKey } from "./KindLetter";
 import { ReviewSection } from "./ReviewNotes";
 import { SidePanelTitle, hideSidePanel, toggleSidePanel, useSidePanelFocus } from "./SidePanel";
@@ -220,7 +221,7 @@ function FileList({ view, dimmed }: { view: ChangesView & { files: readonly File
 	);
 }
 
-/** What the Changes view lists for a worktree: Compare with, the base, the counts and Refresh, the files, and the Review section. */
+/** What the Changes view lists for a worktree: Compare with, the base, the commit box (or Base's Commit…), the counts and Refresh, the files, and the Review section. */
 function WorktreeChanges({ repository, worktree }: { repository: Repository; worktree: Worktree }) {
 	const store = useStore();
 	const state = useAppState();
@@ -231,6 +232,9 @@ function WorktreeChanges({ repository, worktree }: { repository: Repository; wor
 	const listed = state.changes?.worktree === worktree.id && state.changes.files !== null;
 	const overList = useRefreshSpan(worktree.id, refreshing, listed).overList;
 	const list = useRef<HTMLDivElement>(null);
+	// Base's Commit… asks for the message box, which takes the keyboard once Uncommitted shows.
+	const [commitFocus, setCommitFocus] = useState(false);
+	const commitFocused = useCallback(() => setCommitFocus(false), []);
 
 	if (!worktree.pathExists) {
 		return (
@@ -282,6 +286,16 @@ function WorktreeChanges({ repository, worktree }: { repository: Repository; wor
 					</button>
 				</div>
 				{unavailable !== null && <p className="changes-base-note" id={baseNote}>{unavailable}</p>}
+				{view?.compared != null && files !== null && (view.compared === "uncommitted"
+					? <CommitBox repository={repository} worktree={worktree} view={{ ...view, files }} focusWanted={commitFocus} onFocused={commitFocused} />
+					: (
+						<CommitFromBase
+							onChoose={() => {
+								setCommitFocus(true);
+								void store.compareChanges("uncommitted");
+							}}
+						/>
+					))}
 				{files !== null && files.length > 0 && (
 					<div className="changes-filter">
 						<label htmlFor={filterId} className="visually-hidden">Filter changed files</label>
@@ -377,7 +391,7 @@ function WorktreeChanges({ repository, worktree }: { repository: Repository; wor
 
 /**
  * The side panel's Changes view: what changed in the selected worktree,
- * with Stage and Unstage in Uncommitted and the review of its notes at its foot. Choosing a file opens
+ * with Stage, Unstage, and Commit in Uncommitted and the review of its notes at its foot. Choosing a file opens
  * its diff in the diff tab. The changes are read by `ChangesReader`.
  */
 export function ChangesList() {
