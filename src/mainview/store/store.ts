@@ -1757,15 +1757,16 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		}
 		const now = state.files[worktreeId];
 		if (fileTickets.get(worktreeId) !== ticket || !now || now.path !== view.path || now.outside !== view.outside || now.worktreePath !== view.worktreePath) return;
+		// Editing started while this read was on its way: the text the draft started from stays what a save checks the file
+		// against, so newer text on disk is reported as a change, never written over.
+		if (now.draft !== null && view.draft === null) return;
 		if (leadsTo !== null) {
-			// Nothing could be edited before the target was known, as nothing was read.
+			// The file is now a link that leads out: its target shows read-only in its place, and a draft, which held nothing
+			// unsaved as reading again asked first, goes with the editor.
 			forgetEditMemory(worktreeId);
 			update({ files: { ...state.files, [worktreeId]: { ...now, path: leadsTo, outside: true, mode: initialFileMode(leadsTo), draft: null, result } } });
 			return;
 		}
-		// Editing started while this read was on its way: the text the draft started from stays what a save checks the file
-		// against, so newer text on disk is reported as a change, never written over.
-		if (now.draft !== null && view.draft === null) return;
 		// With no draft, the editor shows the file as read: a new read makes a new editor, so it never shows text older than
 		// what a save checks the file against.
 		if (now.draft === null) forgetEditMemory(worktreeId);

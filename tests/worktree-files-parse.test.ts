@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { MAX_FILE_BYTES, MAX_FILE_LINES, countLines, fileContentOf, textLines, worktreeRelativePath } from "../src/shared/worktree-files";
+import { MAX_FILE_BYTES, MAX_FILE_LINES, countLines, fileContentOf, isCompletePath, normalCompletePath, textLines, worktreeRelativePath } from "../src/shared/worktree-files";
 
 const bytes = (text: string) => new TextEncoder().encode(text);
 
@@ -66,5 +66,20 @@ describe("worktreeRelativePath", () => {
 		expect(worktreeRelativePath("C:\\Code\\app", "c:\\code\\app\\src\\a.ts")).toBe("src/a.ts");
 		expect(worktreeRelativePath("C:\\Code\\app", "src\\a.ts")).toBe("src/a.ts");
 		expect(worktreeRelativePath("C:\\Code\\app", "D:\\a.ts")).toBeNull();
+	});
+});
+
+describe("complete paths", () => {
+	test("are from the top of the disk or a Windows drive, never from some folder", () => {
+		for (const path of ["/tmp/a.md", "\\\\server\\share\\a.md", "C:\\notes\\a.md", "c:/notes/a.md"]) expect(isCompletePath(path)).toBe(true);
+		for (const path of ["a.md", "./a.md", "../a.md", "", "~/a.md"]) expect(isCompletePath(path)).toBe(false);
+	});
+
+	test("work out . and .., doubled slashes, and keep their start", () => {
+		expect(normalCompletePath("/tmp//notes/./deeper/../plan.md")).toBe("/tmp/notes/plan.md");
+		expect(normalCompletePath("/../../etc/hosts")).toBe("/etc/hosts");
+		expect(normalCompletePath("C:\\notes\\..\\plan.md")).toBe("C:\\plan.md");
+		expect(normalCompletePath("relative/plan.md")).toBeNull();
+		expect(normalCompletePath("/tmp/a\0b.md")).toBeNull();
 	});
 });

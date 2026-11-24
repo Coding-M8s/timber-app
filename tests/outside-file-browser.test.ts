@@ -37,18 +37,18 @@ describe.skipIf(browserPath === null || process.platform === "win32")("a full pa
 		await page.until(`document.querySelector(".terminal-screen .xterm") !== null`, "the session's terminal showed");
 		// The pretend shell clears the screen, then echoes the path after its prompt on the first row.
 		await page.evaluate(`${STORE}.writeTerminal(${JSON.stringify(session)}, "clear\\r")`);
-		await Bun.sleep(200);
 		await page.evaluate(`${STORE}.writeTerminal(${JSON.stringify(session)}, ${JSON.stringify(PATH)})`);
-		await Bun.sleep(300);
 
-		// Sweep the first row until the pointer is over the link, as a person moving the mouse would.
+		// Sweep the first row until the pointer is over the link, as a person moving the mouse would, until the echo has drawn.
 		const screen = await page.middle(".terminal-screen .xterm-screen");
 		const left = await page.evaluate<number>(`document.querySelector(".terminal-screen .xterm-screen").getBoundingClientRect().left`);
 		const y = screen.top + 6;
 		let over: { x: number; y: number } | null = null;
-		for (let x = left + 2; x < left + 900 && over === null; x += 6) {
-			await page.pointAt({ x, y });
-			if (await page.evaluate<boolean>(`document.querySelector(".terminal-screen .xterm-cursor-pointer") !== null`)) over = { x, y };
+		for (const deadline = Date.now() + 10_000; over === null && Date.now() < deadline;) {
+			for (let x = left + 2; x < left + 900 && over === null; x += 6) {
+				await page.pointAt({ x, y });
+				if (await page.evaluate<boolean>(`document.querySelector(".terminal-screen .xterm-cursor-pointer") !== null`)) over = { x, y };
+			}
 		}
 		expect(over).not.toBeNull();
 		await page.clickAt(over!);
