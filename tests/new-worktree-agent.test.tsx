@@ -69,7 +69,7 @@ async function openedDialog(engine: MockEngine = createMockEngine()) {
 		return worked;
 	};
 	const render = () => renderToStaticMarkup(
-		<WorktreeDialogFrame
+		<WorktreeDialogFrame repositoryAgent={null}
 			repository={repository} modes={modes()} selected={controller.getState().selected} submission={submission.getState()}
 			agents={store.getState().preferences.agents} agentLocations={store.getState().agentLocations} plan={controller.plan}
 			onSelect={controller.select} onPickAgent={controller.pickAgent} onSubmit={mode => void controller.submit(mode)} onClose={() => {}}
@@ -89,52 +89,52 @@ async function openedDialog(engine: MockEngine = createMockEngine()) {
 
 describe("the agent to start", () => {
 	test("is the first saved agent found until the person picks one, and None is no agent", () => {
-		expect(chosenAgent(DEFAULT_AGENTS, undefined, FOUND)).toEqual(DEFAULT_AGENTS[0]!);
-		expect(chosenAgent(DEFAULT_AGENTS, "Codex", FOUND)).toEqual(DEFAULT_AGENTS[1]!);
-		expect(chosenAgent(DEFAULT_AGENTS, null, FOUND)).toBeNull();
+		expect(chosenAgent(DEFAULT_AGENTS, undefined, FOUND, null)).toEqual(DEFAULT_AGENTS[0]!);
+		expect(chosenAgent(DEFAULT_AGENTS, "Codex", FOUND, null)).toEqual(DEFAULT_AGENTS[1]!);
+		expect(chosenAgent(DEFAULT_AGENTS, null, FOUND, null)).toBeNull();
 	});
 
 	test("falls back to the first agent found when the picked one is no longer saved, and is none with no agents", () => {
-		expect(chosenAgent(DEFAULT_AGENTS, "Removed", FOUND)).toEqual(DEFAULT_AGENTS[0]!);
-		expect(chosenAgent(DEFAULT_AGENTS, "Removed", locations({ "Claude Code": "not-found" }))).toEqual(DEFAULT_AGENTS[1]!);
-		expect(chosenAgent([], undefined, FOUND)).toBeNull();
-		expect(chosenAgent([], "Codex", FOUND)).toBeNull();
+		expect(chosenAgent(DEFAULT_AGENTS, "Removed", FOUND, null)).toEqual(DEFAULT_AGENTS[0]!);
+		expect(chosenAgent(DEFAULT_AGENTS, "Removed", locations({ "Claude Code": "not-found" }), null)).toEqual(DEFAULT_AGENTS[1]!);
+		expect(chosenAgent([], undefined, FOUND, null)).toBeNull();
+		expect(chosenAgent([], "Codex", FOUND, null)).toBeNull();
 	});
 
 	test("never picks on its own an agent that was not found, or cannot start, and picks none when none was found", () => {
-		expect(chosenAgent(DEFAULT_AGENTS, undefined, locations({ "Claude Code": "not-found" }))).toEqual(DEFAULT_AGENTS[1]!);
-		expect(chosenAgent(DEFAULT_AGENTS, undefined, locations({ "Claude Code": "unusable" }))).toEqual(DEFAULT_AGENTS[1]!);
-		expect(chosenAgent(DEFAULT_AGENTS, undefined, locations({ "Claude Code": "not-found", Codex: "not-found" }))).toBeNull();
+		expect(chosenAgent(DEFAULT_AGENTS, undefined, locations({ "Claude Code": "not-found" }), null)).toEqual(DEFAULT_AGENTS[1]!);
+		expect(chosenAgent(DEFAULT_AGENTS, undefined, locations({ "Claude Code": "unusable" }), null)).toEqual(DEFAULT_AGENTS[1]!);
+		expect(chosenAgent(DEFAULT_AGENTS, undefined, locations({ "Claude Code": "not-found", Codex: "not-found" }), null)).toBeNull();
 	});
 
 	test("picks none while an agent is not known yet: before the first look, or after its command changed", () => {
-		expect(chosenAgent(DEFAULT_AGENTS, undefined, null)).toBeNull();
-		expect(chosenAgent(DEFAULT_AGENTS, undefined, [FOUND[1]!])).toBeNull();
+		expect(chosenAgent(DEFAULT_AGENTS, undefined, null, null)).toBeNull();
+		expect(chosenAgent(DEFAULT_AGENTS, undefined, [FOUND[1]!], null)).toBeNull();
 		const changed = [{ name: "Claude Code", command: "claude --old", lookup: FOUND[0]!.lookup }, FOUND[1]!];
-		expect(chosenAgent(DEFAULT_AGENTS, undefined, changed)).toBeNull();
+		expect(chosenAgent(DEFAULT_AGENTS, undefined, changed, null)).toBeNull();
 	});
 
 	test("an agent that was not found can still be picked, and is marked in its option and the hint", () => {
 		const missing = locations({ "Claude Code": "not-found", Codex: "unusable" });
-		expect(chosenAgent(DEFAULT_AGENTS, "Claude Code", missing)).toEqual(DEFAULT_AGENTS[0]!);
+		expect(chosenAgent(DEFAULT_AGENTS, "Claude Code", missing, null)).toEqual(DEFAULT_AGENTS[0]!);
 		expect(agentOptionLabel(DEFAULT_AGENTS[0]!, missing)).toBe("Claude Code (not found)");
 		expect(agentOptionLabel(DEFAULT_AGENTS[1]!, missing)).toBe("Codex (cannot start)");
 		expect(agentOptionLabel(DEFAULT_AGENTS[0]!, FOUND)).toBe("Claude Code");
 		// Not known yet is not marked: it may well be there.
 		expect(agentOptionLabel(DEFAULT_AGENTS[0]!, null)).toBe("Claude Code");
 		const pick = (agent: (typeof DEFAULT_AGENTS)[number] | null) => ({ source: "pick" as const, agent, workflow: null, unread: false });
-		expect(agentPickHint(DEFAULT_AGENTS, missing, pick(DEFAULT_AGENTS[0]!))).toBe("Claude Code was not found on the PATH the app was started with, so it will not start. Install it, or give its full path in Settings, Agents. A change to PATH needs a restart of the app.");
+		expect(agentPickHint(DEFAULT_AGENTS, missing, pick(DEFAULT_AGENTS[0]!), null)).toBe("Claude Code was not found on the PATH the app was started with, so it will not start. Install it, or give its full path in Settings, Agents. A change to PATH needs a restart of the app.");
 		const fullPath = { name: "Tool", command: "/opt/tool/bin/tool --x" };
-		expect(agentPickHint([fullPath], [{ ...fullPath, lookup: { state: "not-found" } }], pick(fullPath))).toBe("There is no executable file at /opt/tool/bin/tool, so Tool will not start. Change its command in Settings, Agents.");
-		expect(agentPickHint(DEFAULT_AGENTS, missing, pick(DEFAULT_AGENTS[1]!))).toBe("Codex cannot start: Found C:\\npm\\codex.cmd, a batch file.");
-		expect(agentPickHint(DEFAULT_AGENTS, locations({ "Claude Code": "not-found", Codex: "not-found" }), pick(null))).toBe(
+		expect(agentPickHint([fullPath], [{ ...fullPath, lookup: { state: "not-found" } }], pick(fullPath), null)).toBe("There is no executable file at /opt/tool/bin/tool, so Tool will not start. Change its command in Settings, Agents.");
+		expect(agentPickHint(DEFAULT_AGENTS, missing, pick(DEFAULT_AGENTS[1]!), null)).toBe("Codex cannot start: Found C:\\npm\\codex.cmd, a batch file.");
+		expect(agentPickHint(DEFAULT_AGENTS, locations({ "Claude Code": "not-found", Codex: "not-found" }), pick(null), null)).toBe(
 			"None of the agents was found on the PATH the app was started with, so none is picked. Install one, or give its full path in Settings, Agents. A change to PATH needs a restart of the app.",
 		);
 		// Found but refused, as npm's .cmd files on Windows: not said to be missing.
-		expect(agentPickHint(DEFAULT_AGENTS, locations({ "Claude Code": "unusable", Codex: "not-found" }), pick(null))).toBe("None of the agents can start, so none is picked. Settings, Agents says why for each.");
-		expect(agentPickHint(DEFAULT_AGENTS, null, pick(null))).toBe("The app has not found out yet which agents are installed, so none is picked. Pick one to start it.");
-		expect(agentPickHint(DEFAULT_AGENTS, FOUND, pick(null))).toBe("No agent starts. Start one later from the worktree.");
-		expect(agentPickHint(DEFAULT_AGENTS, FOUND, pick(DEFAULT_AGENTS[0]!))).toBe("Starts in the worktree once this dialog has created it, never in one that was already there.");
+		expect(agentPickHint(DEFAULT_AGENTS, locations({ "Claude Code": "unusable", Codex: "not-found" }), pick(null), null)).toBe("None of the agents can start, so none is picked. Settings, Agents says why for each.");
+		expect(agentPickHint(DEFAULT_AGENTS, null, pick(null), null)).toBe("The app has not found out yet which agents are installed, so none is picked. Pick one to start it.");
+		expect(agentPickHint(DEFAULT_AGENTS, FOUND, pick(null), null)).toBe("No agent starts. Start one later from the worktree.");
+		expect(agentPickHint(DEFAULT_AGENTS, FOUND, pick(DEFAULT_AGENTS[0]!), null)).toBe("Starts in the worktree once this dialog has created it, never in one that was already there.");
 	});
 
 	test("is shown under the Timber command as its own line, after setup, worded for when it starts", () => {
@@ -168,27 +168,27 @@ describe("the agent a workflow sets", () => {
 	};
 
 	test("a workflow with a command decides, and the pick does not count", () => {
-		expect(plannedAgent(DEFAULT_AGENTS, FOUND, "Codex", WORKFLOWS, "review")).toEqual({
+		expect(plannedAgent(DEFAULT_AGENTS, FOUND, "Codex", WORKFLOWS, "review", null)).toEqual({
 			source: "workflow", workflow: "review", kind: "command", command: "claude --permission-mode plan --note 'two words'",
 		});
 	});
 
 	test("a workflow that turns the agent off decides too: no agent", () => {
-		expect(plannedAgent(DEFAULT_AGENTS, FOUND, "Codex", WORKFLOWS, "triage")).toEqual({ source: "workflow", workflow: "triage", kind: "none" });
+		expect(plannedAgent(DEFAULT_AGENTS, FOUND, "Codex", WORKFLOWS, "triage", null)).toEqual({ source: "workflow", workflow: "triage", kind: "none" });
 	});
 
 	test("no workflow, or one that sets no agent, leaves it to the pick", () => {
-		expect(plannedAgent(DEFAULT_AGENTS, FOUND, "Codex", WORKFLOWS, null)).toEqual({ source: "pick", agent: DEFAULT_AGENTS[1]!, workflow: null, unread: false });
-		expect(plannedAgent(DEFAULT_AGENTS, FOUND, "Codex", WORKFLOWS, "explore")).toEqual({ source: "pick", agent: DEFAULT_AGENTS[1]!, workflow: "explore", unread: false });
-		expect(plannedAgent(DEFAULT_AGENTS, FOUND, null, WORKFLOWS, "explore")).toEqual({ source: "pick", agent: null, workflow: "explore", unread: false });
-		expect(plannedAgent(DEFAULT_AGENTS, FOUND, "Codex", undefined, null)).toEqual({ source: "pick", agent: DEFAULT_AGENTS[1]!, workflow: null, unread: false });
+		expect(plannedAgent(DEFAULT_AGENTS, FOUND, "Codex", WORKFLOWS, null, null)).toEqual({ source: "pick", agent: DEFAULT_AGENTS[1]!, workflow: null, unread: false });
+		expect(plannedAgent(DEFAULT_AGENTS, FOUND, "Codex", WORKFLOWS, "explore", null)).toEqual({ source: "pick", agent: DEFAULT_AGENTS[1]!, workflow: "explore", unread: false });
+		expect(plannedAgent(DEFAULT_AGENTS, FOUND, null, WORKFLOWS, "explore", null)).toEqual({ source: "pick", agent: null, workflow: "explore", unread: false });
+		expect(plannedAgent(DEFAULT_AGENTS, FOUND, "Codex", undefined, null, null)).toEqual({ source: "pick", agent: DEFAULT_AGENTS[1]!, workflow: null, unread: false });
 	});
 
 	test("a workflow the list does not have, or any while there is no list, leaves it to the pick, unread", () => {
 		const unread = (workflow: string) => ({ source: "pick" as const, agent: DEFAULT_AGENTS[1]!, workflow, unread: true });
-		expect(plannedAgent(DEFAULT_AGENTS, FOUND, "Codex", WORKFLOWS, "gone")).toEqual(unread("gone"));
-		expect(plannedAgent(DEFAULT_AGENTS, FOUND, "Codex", undefined, "review")).toEqual(unread("review"));
-		expect(plannedAgent(DEFAULT_AGENTS, FOUND, "Codex", { ok: false, message: "no" }, "review")).toEqual(unread("review"));
+		expect(plannedAgent(DEFAULT_AGENTS, FOUND, "Codex", WORKFLOWS, "gone", null)).toEqual(unread("gone"));
+		expect(plannedAgent(DEFAULT_AGENTS, FOUND, "Codex", undefined, "review", null)).toEqual(unread("review"));
+		expect(plannedAgent(DEFAULT_AGENTS, FOUND, "Codex", { ok: false, message: "no" }, "review", null)).toEqual(unread("review"));
 	});
 
 	test("each plan starts the agent it says, named by the request as a saved agent or a workflow", () => {
@@ -212,7 +212,7 @@ describe("the agent a workflow sets", () => {
 	});
 
 	test("is shown under the Timber command with the workflow's command as Timber reports it", () => {
-		const agent = startingAgent(plannedAgent(DEFAULT_AGENTS, FOUND, "Codex", WORKFLOWS, "review"));
+		const agent = startingAgent(plannedAgent(DEFAULT_AGENTS, FOUND, "Codex", WORKFLOWS, "review", null));
 		expect(followUps(agent, "always", "always", null, "review")).toEqual([
 			{ note: "Then runs setup in a terminal in the worktree, without waiting for it:", command: "timber open --setup --workflow review --no-editor --no-agent -- <worktree>" },
 			{ note: "And starts the review workflow's agent beside setup, in the new worktree:", command: "claude --permission-mode plan --note 'two words'" },

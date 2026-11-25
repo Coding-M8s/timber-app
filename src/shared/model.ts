@@ -1,4 +1,5 @@
 import type { Preferences } from "./preferences";
+import type { RepositoryAgents } from "./repository-agents";
 import type { RepositoryGroups } from "./repository-groups";
 import type { TerminalSession } from "./terminal";
 
@@ -262,9 +263,12 @@ export type SaveLayoutResult =
 	| { outcome: "saved" }
 	| { outcome: "failed"; message: string };
 
-/** How saving a change to the preferences ended. Saved carries every preference as saved, not only the changed ones. */
+/**
+ * How saving a change to the preferences ended. Saved carries every preference as saved, not only the changed ones, and
+ * every repository's default agent when the save named the agents or one of those.
+ */
 export type SavePreferencesResult =
-	| { outcome: "saved"; preferences: Preferences }
+	| { outcome: "saved"; preferences: Preferences; repositoryAgents?: RepositoryAgents }
 	| { outcome: "failed"; message: string };
 
 /** Open a worktree in the person's editor. The editor command is never part of the request: it is the saved setting. */

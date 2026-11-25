@@ -1,6 +1,7 @@
+import { repositoryPick } from "../../store/state";
 import type { AppStore } from "../../store/store";
 import type { Submission } from "../../store/submission";
-import { agentsLocated } from "../../../shared/agent-lookup";
+import { defaultAgentKnown } from "../../../shared/agent-lookup";
 import { type AgentPick, type AgentPlan, defaultAgent, plannedAgent, runAndStart, startingAgent } from "./agent-choice";
 import type { WorktreeDialogMode } from "./mode";
 import type { WorkflowOptions } from "./workflow-choice";
@@ -39,7 +40,7 @@ export interface WorktreeDialogController {
 	 * had picked it, so a later look never changes the pick under them; it
 	 * only changes the marks. Until this look answers, the pick follows what
 	 * the app knew, and may change once when it does. Nothing is held when
-	 * the look got no answer, or an agent is still not known. Never throws.
+	 * the look got no answer, or the default agent is still not known. Never throws.
 	 */
 	locateAgents(): Promise<void>;
 	/**
@@ -87,15 +88,16 @@ export function createWorktreeDialogController(
 
 	const plan = (workflow: string | null) => {
 		const { preferences, agentLocations } = store.getState();
-		return plannedAgent(preferences.agents, agentLocations, state.pick, state.workflows, workflow);
+		return plannedAgent(preferences.agents, agentLocations, state.pick, state.workflows, workflow, repositoryPick(store.getState(), repository));
 	};
 
 	async function locateAgents(): Promise<void> {
 		// Held only from an answer this look got: never from what was known before it, which may be out of date.
 		if (!(await store.locateAgents())) return;
 		const { preferences: { agents }, agentLocations } = store.getState();
-		if (state.pick !== undefined || !agentsLocated(agentLocations, agents)) return;
-		update({ pick: defaultAgent(agents, agentLocations)?.name ?? null });
+		const own = repositoryPick(store.getState(), repository);
+		if (state.pick !== undefined || !defaultAgentKnown(agents, agentLocations, own)) return;
+		update({ pick: defaultAgent(agents, agentLocations, own)?.name ?? null });
 	}
 
 	return {

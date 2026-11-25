@@ -77,6 +77,7 @@ export function createDesktopEngine(): Engine {
 		deleteRepositoryGroup: id => rpc.request.deleteRepositoryGroup({ id }),
 		moveRepositoryGroup: (id, parent, before) => rpc.request.moveRepositoryGroup({ id, parent, before }),
 		placeRepository: (path, group, order) => rpc.request.placeRepository({ path, group, order: order ?? null }),
+		listRepositoryAgents: () => rpc.request.listRepositoryAgents({}),
 		listSidebarIcons: () => rpc.request.listSidebarIcons({}),
 		readRemoteIconSource: path => rpc.request.readRemoteIconSource({ path }),
 		// The file picker stays open for as long as the person likes.
@@ -110,7 +111,7 @@ export function createDesktopEngine(): Engine {
 		loadLayout: () => rpc.request.loadLayout({}),
 		saveLayout: layout => rpc.request.saveLayout({ layout }),
 		loadPreferences: () => rpc.request.loadPreferences({}),
-		savePreferences: change => rpc.request.savePreferences({ change }),
+		savePreferences: (change, repositoryAgents) => rpc.request.savePreferences({ change, repositoryAgents: repositoryAgents ?? null }),
 		locateAgents: () => rpc.request.locateAgents({}),
 		statusHooks: () => rpc.request.statusHooks({}),
 		installStatusHook: request => rpc.request.installStatusHook(request),

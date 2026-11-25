@@ -1,9 +1,10 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { findAgent } from "../../shared/agent";
-import { defaultAgent, whyNoDefaultAgent } from "../../shared/agent-lookup";
+import { defaultAgent, defaultAgentName, whyNoDefaultAgent } from "../../shared/agent-lookup";
 import { findListedChop, listedChops } from "../../shared/chops";
 import { runningAgents, waitsOnPerson } from "../agent-sessions";
 import { PROMPT_WAITS_WARNING, describeNewAgentChoice, noNewPromptAgent } from "../chop-format";
+import { repositoryPick } from "../store/state";
 import { useAppState, useStore } from "../store/react";
 import { AgentChoices } from "./AgentChoices";
 import { estimateTerminalSize } from "./TerminalPanel";
@@ -14,8 +15,8 @@ const NEW_AGENT = "\0new";
 /**
  * Where a prompt chop goes, asked when the worktree has several running
  * agents, or only one that waits on the person: one of them, or a new agent,
- * the chop's or the default agent, the first saved one found. Nothing is picked at first, so Send
- * needs a choice. The prompt is shown as it is listed, or as the person
+ * the chop's or the default agent, the repository's or the first saved one found. Nothing is picked at
+ * first, so Send needs a choice. The prompt is shown as it is listed, or as the person
  * edited it for this run in the chop search, which is then what is sent;
  * otherwise the main process sends the text it reads, never this one.
  */
@@ -29,10 +30,11 @@ export function SendPromptDialog({ request }: { request: { repository: string; w
 	const list = state.chops?.repository === request.repository ? state.chops.list : null;
 	const chop = findListedChop(listedChops(list), request.chop);
 	const agents = state.preferences.agents;
-	// The chop's agent, found or not, or the default agent: the first saved one found.
-	const newAgent = chop?.agent ? findAgent(agents, chop.agent) : defaultAgent(agents, state.agentLocations);
+	const pick = repositoryPick(state, request.repository);
+	// The chop's agent, found or not, or the default agent: the repository's, or the first saved one found.
+	const newAgent = chop?.agent ? findAgent(agents, chop.agent) : defaultAgent(agents, state.agentLocations, pick);
 	// While the app does not know which agents are installed, a new agent can still be picked: the main process looks, and decides.
-	const why = whyNoDefaultAgent(agents, state.agentLocations);
+	const why = whyNoDefaultAgent(agents, state.agentLocations, pick);
 	const newReason = newAgent === null && (chop?.agent || why !== "not-known") ? noNewPromptAgent(chop?.agent || null, why) : null;
 	const chosen = sessions.find(session => session.id === picked) ?? null;
 
@@ -77,7 +79,7 @@ export function SendPromptDialog({ request }: { request: { repository: string; w
 					<AgentChoices sessions={sessions} picked={picked} onPick={setPicked} name="prompt-agent" legend="Send to" disabled={false}>
 						<label className="review-agent" title={newReason ?? undefined}>
 							<input type="radio" name="prompt-agent" checked={picked === NEW_AGENT} disabled={newReason !== null} onChange={() => setPicked(NEW_AGENT)} />
-							<span className="review-agent-name">{describeNewAgentChoice(newAgent?.name ?? chop?.agent ?? null)}</span>
+							<span className="review-agent-name">{describeNewAgentChoice(newAgent?.name ?? chop?.agent ?? defaultAgentName(agents, state.agentLocations, pick))}</span>
 							<span className="review-agent-state">{newReason ?? "Starts it here, then sends the prompt once it is ready"}</span>
 						</label>
 					</AgentChoices>

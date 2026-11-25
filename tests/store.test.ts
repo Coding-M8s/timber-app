@@ -81,6 +81,8 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 	const engine: Engine = {
 		// Theme files as the mock acts them out. Their own tests are in theme-files.test.ts.
 		...createMockThemeFiles(),
+		// No repository names a default agent. Their own tests are in repository-agents.test.tsx.
+		listRepositoryAgents: async () => ({}),
 		// Icons as the mock acts them out. Their own tests are in sidebar-icons-ui.test.tsx.
 		...createMockSidebarIcons({ knows: () => true }),
 		// Status hooks as the mock acts them out, with no agents. Their own tests are in status-hooks-ui.test.tsx.

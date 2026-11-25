@@ -54,7 +54,7 @@ async function openedDialog(engine = createMockEngine()) {
 		pickAgent: controller.pickAgent,
 		submit: () => controller.submit(mode()),
 		render: () => renderToStaticMarkup(
-			<WorktreeDialogFrame
+			<WorktreeDialogFrame repositoryAgent={null}
 				repository={repository} modes={[mode()]} selected={0} submission={submission.getState()}
 				agents={store.getState().preferences.agents} agentLocations={store.getState().agentLocations} plan={controller.plan}
 				onSelect={controller.select} onPickAgent={controller.pickAgent} onSubmit={mode => void controller.submit(mode)} onClose={() => {}}
@@ -389,7 +389,7 @@ describe("the mode switch", () => {
 	const modes = [fake("New branch"), fake("Existing branch")];
 	const repository = sampleRepositories[0]!;
 	const frame = (selected: number, running = false, shown = modes) => renderToStaticMarkup(
-		<WorktreeDialogFrame repository={repository} modes={shown} selected={selected} submission={{ running, failure: null }} agents={[]} agentLocations={[]} plan={() => ({ source: "pick", agent: null, workflow: null, unread: false })} onSelect={() => {}} onPickAgent={() => {}} onSubmit={() => {}} onClose={() => {}} />,
+		<WorktreeDialogFrame repositoryAgent={null} repository={repository} modes={shown} selected={selected} submission={{ running, failure: null }} agents={[]} agentLocations={[]} plan={() => ({ source: "pick", agent: null, workflow: null, unread: false })} onSelect={() => {}} onPickAgent={() => {}} onSubmit={() => {}} onClose={() => {}} />,
 	);
 
 	test("is a group of radio buttons, one per mode, with the selected one checked", () => {
@@ -520,7 +520,7 @@ describe("the keyboard when the dialog opens", () => {
 			existingBranchMode(form, form.getState(), TIMBER, submission.getState().running),
 		];
 		return renderToStaticMarkup(
-			<WorktreeDialogFrame
+			<WorktreeDialogFrame repositoryAgent={null}
 				repository={repository} modes={modes} selected={selected} submission={submission.getState()}
 				agents={[]} agentLocations={[]} plan={() => ({ source: "pick", agent: null, workflow: null, unread: false })} onSelect={() => {}} onPickAgent={() => {}} onSubmit={() => {}} onClose={() => {}}
 			/>,

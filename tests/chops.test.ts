@@ -136,12 +136,15 @@ describe.skipIf(windows)("reading a worktree's chops from real repositories", ()
 				agents: async () => agents,
 				// The agents are looked for as a session looks for them, on a real PATH: a temporary folder of executables.
 				locate: agent => locateAgent(agent, bin, false),
+				repositoryAgent: async checkout => checkout === primary ? picked : null,
 				warn: () => {},
 			});
 			return { runner, opened, prompts, approvals: () => approvals };
 		};
 		const prompts: { id: string; repository: string; worktree: string; text: string }[] = [];
 		let agents: { name: string; command: string }[] = [{ name: "Claude Code", command: "claude" }, { name: "Codex", command: "codex" }];
+		// The agent the repository names as its default.
+		let picked: string | null = null;
 		// Read once the repositories exist.
 		let request: { repository: string; worktree: string; cols: number; rows: number };
 		// The PATH the agents are looked for on: a folder with both agents' executables, made again by the tests that take one away.
@@ -275,6 +278,33 @@ describe.skipIf(windows)("reading a worktree's chops from real repositories", ()
 				// A prompt to a running agent needs no new one, so it still goes.
 				expect(await runner.run({ ...request, chop: "Ask", session: "s1" })).toMatchObject({ outcome: "sent" });
 			} finally {
+				installed(["claude", "codex"]);
+			}
+		});
+
+		test("a prompt that names no agent starts the repository's default agent, and nothing when it is not found", async () => {
+			try {
+				picked = "Codex";
+				personal = [{ name: "Ask", kind: "prompt", text: "Write tests", description: "", agent: null, repository: null, sound: null }];
+				const { runner, opened } = setUp();
+				await runner.run({ ...request, chop: "Ask" });
+				expect(opened).toEqual([{ request: { ...request, agent: "Codex" }, chop: { kind: "prompt", text: "Write tests" } }]);
+				// A chop that names its agent keeps it.
+				personal = [{ ...personal[0]!, agent: "Claude Code" }];
+				await runner.run({ ...request, chop: "Ask" });
+				expect(opened.at(-1)?.request.agent).toBe("Claude Code");
+				// Not found, or not saved: nothing starts, though another agent was found.
+				personal = [{ ...personal[0]!, agent: null }];
+				installed(["claude"]);
+				expect(await runner.run({ ...request, chop: "Ask" })).toEqual({
+					outcome: "not-configured",
+					message: "Codex, this repository's default agent, was not found, so the prompt has no agent to go to. Copy it instead, or see why in Settings, Agents.",
+				});
+				picked = "Aider";
+				expect(await runner.run({ ...request, chop: "Ask" })).toMatchObject({ outcome: "not-configured", message: expect.stringContaining("Aider, this repository's default agent, is not saved") });
+				expect(opened).toHaveLength(2);
+			} finally {
+				picked = null;
 				installed(["claude", "codex"]);
 			}
 		});

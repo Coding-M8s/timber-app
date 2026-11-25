@@ -300,8 +300,9 @@ const chops = createChops({
 	session: id => terminals.list().find(session => session.id === id) ?? null,
 	// A prompt chop's agent comes from the saved Settings only, as any agent's does.
 	agents: async () => (await preferences.load()).agents,
-	// The default agent is the first saved one found, looked for as its session will look for it.
+	// The default agent is the one the repository names, or the first saved one found, looked for as its session will look for it.
 	locate: agent => terminals.locateAgent(agent),
+	repositoryAgent: checkout => repositories.agentOf(checkout),
 	// A chop's sound comes from the saved preferences only, never from the window.
 	chopSounds: async () => {
 		const saved = await preferences.load();
@@ -567,6 +568,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			moveRepositoryGroup: ({ id, parent, before }) => repositories.moveGroup(id, parent, before),
 			placeRepository: ({ path, group, order }) => repositories.place(path, group, order ?? undefined),
 			// Icons only change the settings file too. Setting one waits on the file picker or the network, so it is not timed out.
+			listRepositoryAgents: () => repositories.listAgents(),
 			listSidebarIcons: () => sidebarIcons.list(),
 			readRemoteIconSource: ({ path }) => sidebarIcons.remoteSource(path),
 			setSidebarIcon: ({ target, choice }) => sidebarIcons.set(target, choice),
@@ -589,9 +591,9 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			loadLayout: () => layout.load(),
 			saveLayout: ({ layout: next }) => layout.save(next),
 			loadPreferences: () => preferences.load(),
-			savePreferences: async ({ change }) => {
+			savePreferences: async ({ change, repositoryAgents }) => {
 				const before = await preferences.load();
-				const result = await preferences.save(change);
+				const result = await preferences.save(change, repositoryAgents);
 				if (result.outcome === "saved") {
 					if (!sameTimberChoice(before.timber, result.preferences.timber)) void lookForTimberAgain();
 					fetcher.configure(result.preferences.fetch);

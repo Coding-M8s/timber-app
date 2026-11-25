@@ -9,8 +9,9 @@ import { cleanLine } from "../../shared/safe-text";
 import { splitPath } from "../changes-format";
 import { PASTE_TEXT_LIMIT, type PasteResult } from "../../shared/terminal";
 import { useAppState, useStore } from "../store/react";
+import { repositoryPick } from "../store/state";
 import {
-	EMPTY_LINE, NEW_REVIEW_AGENT_NOTE, OUTDATED_REFERENCE, noReviewAgent, REVIEW_NOT_COPIED, REVIEW_PASTE_NOTE, REVIEW_WAITS_WARNING,
+	EMPTY_LINE, NEW_REVIEW_AGENT_NOTE, OUTDATED_REFERENCE, noNewReviewChoice, noReviewAgent, REVIEW_NOT_COPIED, REVIEW_PASTE_NOTE, REVIEW_WAITS_WARNING,
 	describeNewReviewAgent, describeNoteCount, describeReference, reviewAlreadyWaiting, reviewTooLong,
 } from "../review-format";
 import { NO_NOTES_HINT } from "../changes-panel-format";
@@ -320,9 +321,8 @@ export function ReviewSection({ worktree, onGone }: { worktree: string; onGone: 
 /**
  * The preview of a review before it goes anywhere: the agent to paste it
  * into, and the message exactly as it will be pasted. The choices are the
- * worktree's running agents and a new one, the default agent (the first
- * saved agent found), with the
- * command that starts it. What is picked at first is as for a prompt chop
+ * worktree's running agents and a new one, the default agent (the one the
+ * repository names, or the first saved agent found), with the command that starts it. What is picked at first is as for a prompt chop
  * (`promptTarget`): the new agent when none runs, the only one when it does
  * not wait on the person, and otherwise nothing, so the person picks.
  * Nothing is sent or started until Send. With no agent running and none
@@ -336,7 +336,11 @@ export function SendReviewDialog({ worktree }: { worktree: string }) {
 	const [message, setMessage] = useState<string | null>(null);
 	const [prepared, setPrepared] = useState(false);
 	const sessions = runningAgents(state.terminals, worktree);
-	const newAgent = defaultAgent(state.preferences.agents, state.agentLocations);
+	// The worktree's repository may name its default agent.
+	const repository = state.repositories.find(candidate => candidate.worktrees.some(each => each.id === worktree))?.path;
+	const pick = repository === undefined ? undefined : repositoryPick(state, repository);
+	const newAgent = defaultAgent(state.preferences.agents, state.agentLocations, pick);
+	const whyNoNew = whyNoDefaultAgent(state.preferences.agents, state.agentLocations, pick);
 	const waiting = reviewWaiting(state.terminals, worktree);
 	const firstPick = () => {
 		const target = promptTarget(state.terminals, worktree);
@@ -423,7 +427,7 @@ export function SendReviewDialog({ worktree }: { worktree: string }) {
 				</header>
 				<div className="dialog-fields">
 					{!canSend ? (
-						<p className="dialog-note">{noReviewAgent(whyNoDefaultAgent(state.preferences.agents, state.agentLocations))}</p>
+						<p className="dialog-note">{noReviewAgent(whyNoNew)}</p>
 					) : (
 						<AgentChoices sessions={sessions} picked={picked} onPick={setPicked} name="review-agent" legend="Paste into" disabled={sending}>
 							{newAgent !== null && (
@@ -437,6 +441,7 @@ export function SendReviewDialog({ worktree }: { worktree: string }) {
 							)}
 						</AgentChoices>
 					)}
+					{canSend && newAgent === null && typeof whyNoNew === "object" && <p className="dialog-note">{noNewReviewChoice(whyNoNew)}</p>}
 					{chosen !== null && waitsOnPerson(chosen) && <p className="review-warning" role="alert">{REVIEW_WAITS_WARNING}</p>}
 					{message === null ? (
 						<p className="dialog-note" role="status">Checking the noted lines</p>

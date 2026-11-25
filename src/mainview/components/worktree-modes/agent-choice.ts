@@ -1,5 +1,5 @@
 import { type AgentSetting, agentCommand, describeAgentCommand, findAgent } from "../../../shared/agent";
-import { type AgentLocation, agentFound, agentMark, agentsLocated, defaultAgent, isFullPath, lookupOf } from "../../../shared/agent-lookup";
+import { type AgentLocation, type RepositoryPick, agentFound, agentMark, agentsLocated, defaultAgent, describeMissingPick, isFullPath, lookupOf, whyNoDefaultAgent } from "../../../shared/agent-lookup";
 import { describeCommandLine } from "../../../shared/command-line";
 import type { ReportedWorktree } from "../../../shared/model";
 import { WORKTREE_PLACEHOLDER, describeTimberCommand } from "../../../shared/timber-result";
@@ -34,15 +34,16 @@ export { defaultAgent };
 /**
  * The agent that will start, or null for none. Any saved agent can be
  * picked, found or not. A picked name that is no longer saved falls back to
- * the default agent.
+ * the default agent: the one the repository names, `repositoryAgent`, or the
+ * first found.
  */
-export function chosenAgent(agents: readonly AgentSetting[], pick: AgentPick, locations: readonly AgentLocation[] | null): AgentSetting | null {
+export function chosenAgent(agents: readonly AgentSetting[], pick: AgentPick, locations: readonly AgentLocation[] | null, repositoryAgent: RepositoryPick): AgentSetting | null {
 	if (pick === null) return null;
 	if (pick !== undefined) {
 		const picked = findAgent(agents, pick);
 		if (picked) return picked;
 	}
-	return defaultAgent(agents, locations);
+	return defaultAgent(agents, locations, repositoryAgent);
 }
 
 /**
@@ -65,8 +66,8 @@ export type AgentPlan =
  * have, or any workflow while the list is not there, leaves it to the pick
  * too, marked `unread`: the main process reads the workflow when it starts.
  */
-export function plannedAgent(agents: readonly AgentSetting[], locations: readonly AgentLocation[] | null, pick: AgentPick, workflows: WorkflowOptions, workflow: string | null): AgentPlan {
-	const agent = chosenAgent(agents, pick, locations);
+export function plannedAgent(agents: readonly AgentSetting[], locations: readonly AgentLocation[] | null, pick: AgentPick, workflows: WorkflowOptions, workflow: string | null, repositoryAgent: RepositoryPick): AgentPlan {
+	const agent = chosenAgent(agents, pick, locations, repositoryAgent);
 	if (workflow === null) return { source: "pick", agent, workflow: null, unread: false };
 	const found = workflows?.ok ? workflows.workflows.find(candidate => candidate.name === workflow) : undefined;
 	if (found === undefined) return { source: "pick", agent, workflow, unread: true };
@@ -83,11 +84,24 @@ export function agentOptionLabel(agent: AgentSetting, locations: readonly AgentL
 	return mark === null ? agent.name : `${agent.name} (${mark})`;
 }
 
-/** The hint under the Agent field while the pick decides (`plan.source` is "pick"). */
-export function agentPickHint(agents: readonly AgentSetting[], locations: readonly AgentLocation[] | null, plan: Extract<AgentPlan, { source: "pick" }>): string {
+/**
+ * The hint under the Agent field while the pick decides (`plan.source` is
+ * "pick"). It names the repository's default agent, `repositoryAgent`, when
+ * that one is chosen, and when it cannot start, so none is picked.
+ */
+export function agentPickHint(agents: readonly AgentSetting[], locations: readonly AgentLocation[] | null, plan: Extract<AgentPlan, { source: "pick" }>, repositoryAgent: RepositoryPick): string {
 	if (agents.length === 0) return "No agents are set up. Add one in Settings, Agents.";
 	const chosen = plan.agent;
 	if (chosen === null) {
+		const why = whyNoDefaultAgent(agents, locations, repositoryAgent);
+		if (typeof why === "object") {
+			const missing = describeMissingPick(why);
+			if (why.state === "not-saved") return `${missing}, so none is picked. Choose another there.`;
+			if (why.state === "unusable") return `${missing}, so none is picked. Settings, Agents says why.`;
+			const command = agentCommand(findAgent(agents, why.name)!);
+			if (command.ok && isFullPath(command.executable)) return `${missing} at ${command.executable}, so none is picked. Change its command in Settings, Agents.`;
+			return `${missing} on the PATH the app was started with, so none is picked. Install it, or give its full path in Settings, Agents. ${PATH_RESTART}`;
+		}
 		if (agents.some(agent => agentFound(locations, agent))) return "No agent starts. Start one later from the worktree.";
 		if (agentsLocated(locations, agents)) {
 			if (agents.every(agent => lookupOf(locations, agent)?.state === "not-found")) {
@@ -97,6 +111,7 @@ export function agentPickHint(agents: readonly AgentSetting[], locations: readon
 		}
 		return "The app has not found out yet which agents are installed, so none is picked. Pick one to start it.";
 	}
+	const own = chosen.name === repositoryAgent ? "This repository's default agent. " : "";
 	const lookup = lookupOf(locations, chosen);
 	if (lookup?.state === "not-found") {
 		const command = agentCommand(chosen);
@@ -104,8 +119,8 @@ export function agentPickHint(agents: readonly AgentSetting[], locations: readon
 		return `${chosen.name} was not found on the PATH the app was started with, so it will not start. Install it, or give its full path in Settings, Agents. ${PATH_RESTART}`;
 	}
 	if (lookup?.state === "unusable") return `${chosen.name} cannot start: ${lookup.message}`;
-	if (plan.unread && plan.workflow !== null) return `The ${plan.workflow} workflow could not be read yet. If it sets an agent, that one starts instead, once this dialog has created the worktree.`;
-	return "Starts in the worktree once this dialog has created it, never in one that was already there.";
+	if (plan.unread && plan.workflow !== null) return `${own}The ${plan.workflow} workflow could not be read yet. If it sets an agent, that one starts instead, once this dialog has created the worktree.`;
+	return `${own}Starts in the worktree once this dialog has created it, never in one that was already there.`;
 }
 
 /** The agent that starts: what to call it in the footer and toasts, its command for showing, and what the request names. */

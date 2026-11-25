@@ -3,7 +3,7 @@ import { type AgentSetting, configFolderProblem } from "../../../shared/agent";
 import type { AgentLocation } from "../../../shared/agent-lookup";
 import { SESSION_NAME_LIMIT } from "../../../shared/terminal";
 import {
-	AGENT_CHOICES, type AgentDraft, type AgentDraftChange, addAgentDraft, agentDraftsOf, agentLookupLine, agentsDraftModel, generateOptions, editAgentDraft, presetsToAdd, removeAgentDraft,
+	AGENT_CHOICES, type AgentDraft, type AgentDraftChange, addAgentDraft, GONE_PICK, type RepositoryDefaultRow, agentDraftsOf, agentLookupLine, agentsDraftModel, generateOptions, editAgentDraft, presetsToAdd, removeAgentDraft, repositoryDefaultChange, repositoryDefaultRows,
 } from "../../agent-format";
 import type { AgentId } from "../../../shared/agent-registry";
 import { GENERATE_INSTRUCTIONS } from "../../../shared/generate-text";
@@ -23,8 +23,12 @@ export interface AgentsSectionViewProps {
 	onEdit: (key: string, change: AgentDraftChange) => void;
 	onRemove: (key: string) => void;
 	onSave: () => void;
+	/** Why nothing can be saved now, or null. */
+	blocked?: string | null;
 	/** The row that writes commit messages and pull requests' text, by its key, or "" for the first found that can, and whether it differs from what is saved. The choice is not drawn when left out. */
 	generateWith?: { key: string; changed: boolean; onChange: (key: string) => void };
+	/** "Default agent by repository": a row for each listed repository, and whether any differs from what is saved. Not drawn when left out. */
+	repositoryDefaults?: { rows: readonly RepositoryDefaultRow[]; changed: boolean; onChange: (path: string, key: string) => void };
 	/** How each saved agent reports its status (`AppState.statusHooks`), by name. None shown when left out. */
 	hooks?: readonly StatusHookView[] | null;
 	/** Turn on or take out a hook as shown. */
@@ -42,7 +46,7 @@ function viewOf(agent: AgentSetting | undefined, saved: readonly AgentSetting[],
 const blank = (draft: AgentDraft) => draft.name.trim() === "" && draft.command.trim() === "";
 
 /** The Agents section as drawn from its data, so it can be tested without a window. */
-export function AgentsSectionView({ drafts, saved, locations, save, onAdd, onEdit, onRemove, onSave, generateWith, hooks, onHook, onCopy }: AgentsSectionViewProps) {
+export function AgentsSectionView({ drafts, saved, locations, save, onAdd, onEdit, onRemove, onSave, blocked = null, generateWith, repositoryDefaults, hooks, onHook, onCopy }: AgentsSectionViewProps) {
 	const { reportSaving } = useContext(SettingsSavingContext);
 	// The hook dialog shows the hook of an agent as last read, so it follows every answer.
 	const [dialog, setDialog] = useState<{ name: string; action: HookAction; opener: { button: string; line: string }; problem: string | null; running: boolean } | null>(null);
@@ -51,6 +55,7 @@ export function AgentsSectionView({ drafts, saved, locations, save, onAdd, onEdi
 	const idPrefix = useId();
 	const model = agentsDraftModel(drafts, saved);
 	const presets = presetsToAdd(drafts);
+	const choicesChanged = generateWith?.changed === true || repositoryDefaults?.changed === true;
 	const addAnotherId = `${idPrefix}-add`;
 	const removeId = (key: string) => `${idPrefix}-remove-${key}`;
 
@@ -104,7 +109,7 @@ export function AgentsSectionView({ drafts, saved, locations, save, onAdd, onEdi
 			title="Agents"
 			description="Coding agents that the + menu of a worktree's sessions starts, each in a session of its own in the worktree's folder, beside its terminals. The app starts the command without a shell and never reads or answers what an agent prints."
 			save={save}
-			canSave={model.canSave || (generateWith?.changed === true && model.rows.every(row => row.problem === null) && model.error === null)}
+			canSave={blocked === null && (model.canSave || (choicesChanged && model.rows.every(row => row.problem === null) && model.error === null))}
 			onSave={onSave}
 		>
 			<p id={hintId} className="field-hint">
@@ -252,6 +257,29 @@ export function AgentsSectionView({ drafts, saved, locations, save, onAdd, onEdi
 					</div>
 				);
 			})()}
+			{blocked !== null && <p className="dialog-note">{blocked}</p>}
+			{repositoryDefaults && (
+				<div className="field agent-defaults" role="group" aria-labelledby={`${idPrefix}-defaults`} aria-describedby={`${idPrefix}-defaults-hint`}>
+					<p id={`${idPrefix}-defaults`} className="field-label">Default agent by repository</p>
+					<span id={`${idPrefix}-defaults-hint`} className="field-hint">
+						The agent that starts in a repository's worktrees when none was picked or named. Kept in the app's settings, never in the repository.
+						A picked agent that is not found is never replaced by another.
+					</span>
+					{repositoryDefaults.rows.length === 0
+						? <p className="dialog-note">No repositories are in the app yet.</p>
+						: repositoryDefaults.rows.map(row => (
+							<label key={row.path} className="field">
+								<span className="field-label">{row.name}</span>
+								<span className="field-hint">{row.path}</span>
+								<select className="field-input" value={row.key} onChange={event => repositoryDefaults.onChange(row.path, event.target.value)}>
+									<option value="">First agent found</option>
+									{drafts.map((draft, index) => model.agents[index]!.name !== "" && <option key={draft.key} value={draft.key}>{model.agents[index]!.name}</option>)}
+									{row.key === GONE_PICK && <option value={GONE_PICK}>{`${row.agent} (not saved)`}</option>}
+								</select>
+							</label>
+						))}
+				</div>
+			)}
 			<div className="agent-add">
 				{presets.map(preset => (
 					<button key={preset.name} type="button" className="button quiet" onClick={() => add(preset)}>Add {preset.name}</button>
@@ -262,10 +290,13 @@ export function AgentsSectionView({ drafts, saved, locations, save, onAdd, onEdi
 	);
 }
 
+/** Why the agents cannot be saved while the repositories' picks are unread. */
+const PICKS_UNREAD = "The repositories' default agents were not read yet, so the agents cannot be saved. Refresh the repositories if this stays.";
+
 /** The Agents section of Settings: the list of agents, edited row by row and saved with its own Save. */
 export function AgentsSection() {
 	const store = useStore();
-	const { preferences: { agents: saved, generateWith }, agentLocations, statusHooks } = useAppState();
+	const { preferences: { agents: saved, generateWith }, agentLocations, statusHooks, repositories, repositoryAgents } = useAppState();
 	// Looked for again whenever the section shows, as one may have been installed since. Nothing runs.
 	// Each agent's status hook is read again too: a file may have changed since. Nothing is written.
 	useEffect(() => {
@@ -288,10 +319,23 @@ export function AgentsSection() {
 	const generateName = generateKey === "" ? "" : generateKey === "gone" ? generateWith : draftAgents[drafts.findIndex(draft => draft.key === generateKey)]?.name ?? "";
 	const generateChanged = generateName !== generateWith;
 
+	// The rows picked as default agents, by repository, held by key for the same reason. Empty while none was changed.
+	const [pickedDefaults, setPickedDefaults] = useState<Readonly<Record<string, string>>>({});
+	const picks = repositoryAgents ?? {};
+	// Only listed repositories, so one removed meanwhile is never written back.
+	const defaultRows = repositoryDefaultRows(repositories, picks, fromSaved, drafts, draftAgents, pickedDefaults);
+	const defaultsChange = repositoryDefaultChange(defaultRows, picks);
+	const defaultsChanged = Object.keys(defaultsChange).length > 0;
+
 	const onSave = async () => {
+		// A rename saved without its picks would clear them.
+		if (repositoryAgents === null) return;
 		const { agents, canSave, rows, error } = agentsDraftModel(drafts, saved);
-		if (!canSave && !(generateChanged && error === null && rows.every(row => row.problem === null))) return;
-		await commit({ agents, generateWith: generateName }, () => setPickedKey(null));
+		if (!canSave && !((generateChanged || defaultsChanged) && error === null && rows.every(row => row.problem === null))) return;
+		await commit({ agents, generateWith: generateName }, () => {
+			setPickedKey(null);
+			setPickedDefaults({});
+		}, defaultsChanged ? defaultsChange : undefined);
 	};
 
 	return (
@@ -312,6 +356,16 @@ export function AgentsSection() {
 					reset();
 				},
 			}}
+			{...(repositoryAgents === null ? { blocked: PICKS_UNREAD } : {
+				repositoryDefaults: {
+					rows: defaultRows,
+					changed: defaultsChanged,
+					onChange: (path: string, key: string) => {
+						setPickedDefaults({ ...pickedDefaults, [path]: key });
+						reset();
+					},
+				},
+			})}
 			hooks={statusHooks}
 			onHook={(action, request) => action === "install" ? store.installStatusHook(request) : store.removeStatusHook(request)}
 			onCopy={text => void store.copyText(text)}

@@ -60,28 +60,78 @@ export function agentMark(lookup: AgentLookup | null): string | null {
 }
 
 /**
+ * The agent a repository names as its default (./repository-agents.ts): its
+ * name, null when it names none, or undefined while the app does not know,
+ * which starts nothing rather than an agent the repository may not want.
+ */
+export type RepositoryPick = string | null | undefined;
+
+/**
  * The default agent: the one that starts wherever no agent was picked or
  * named (the New worktree and Start work dialogs, the timber new handoff, a
- * review sent to a new agent, a prompt chop that names no agent). It is the
- * first saved agent whose executable was found. None when no agent was
- * found, and none while any agent is not known yet, so an agent that turns
- * out to be missing is never started, and a known one is never passed over
- * for a later one. The main process applies the same rule to its own look.
+ * review sent to a new agent, a prompt chop that names no agent).
+ *
+ * In a repository that names one of the saved agents, it is that agent, when
+ * its executable was found, whatever is known of the others. When it was
+ * not, there is none: another agent never takes its place.
+ *
+ * In any other repository, it is the first saved agent whose executable was
+ * found. None when no agent was found, and none while any agent is not known
+ * yet, so an agent that turns out to be missing is never started, and a
+ * known one is never passed over for a later one. The main process applies
+ * the same rule to its own look.
  */
-export function defaultAgent(agents: readonly AgentSetting[], locations: readonly AgentLocation[] | null): AgentSetting | null {
+export function defaultAgent(agents: readonly AgentSetting[], locations: readonly AgentLocation[] | null, pick: RepositoryPick): AgentSetting | null {
+	if (pick === undefined) return null;
+	if (pick !== null) {
+		const picked = agents.find(agent => agent.name === pick) ?? null;
+		return picked !== null && agentFound(locations, picked) ? picked : null;
+	}
 	if (!agentsLocated(locations, agents)) return null;
 	return agents.find(agent => agentFound(locations, agent)) ?? null;
+}
+
+/** A repository's default agent that cannot start: its executable was not found, the app does not start it, or no agent of that name is saved. */
+export interface MissingPick {
+	name: string;
+	state: "not-found" | "unusable" | "not-saved";
 }
 
 /**
  * Why there is no default agent: none is saved, the app has not found out
  * yet which are installed (no look, a look that failed, or one from before
- * an agent's command changed), or every one was looked for and none can start.
+ * an agent's command changed), every one was looked for and none can start,
+ * or the one the repository names cannot start.
  */
-export type NoDefaultAgent = "none-saved" | "not-known" | "none-found";
+export type NoDefaultAgent = "none-saved" | "not-known" | "none-found" | MissingPick;
 
-/** Why `defaultAgent` gives none for these agents and locations. Only meaningful when it does. */
-export function whyNoDefaultAgent(agents: readonly AgentSetting[], locations: readonly AgentLocation[] | null): NoDefaultAgent {
+/** Why `defaultAgent` gives none for these agents, locations, and pick. Only meaningful when it does. */
+export function whyNoDefaultAgent(agents: readonly AgentSetting[], locations: readonly AgentLocation[] | null, pick: RepositoryPick): NoDefaultAgent {
 	if (agents.length === 0) return "none-saved";
-	return agentsLocated(locations, agents) ? "none-found" : "not-known";
+	if (pick === undefined) return "not-known";
+	if (pick === null) return agentsLocated(locations, agents) ? "none-found" : "not-known";
+	const picked = agents.find(agent => agent.name === pick) ?? null;
+	if (picked === null) return { name: pick, state: "not-saved" };
+	const lookup = lookupOf(locations, picked);
+	return lookup === null || lookup.state === "found" ? "not-known" : { name: pick, state: lookup.state };
+}
+
+/** Whether the default agent is settled: which it is, or that there is none to start. A later look can still change it. */
+export function defaultAgentKnown(agents: readonly AgentSetting[], locations: readonly AgentLocation[] | null, pick: RepositoryPick): boolean {
+	return defaultAgent(agents, locations, pick) !== null || whyNoDefaultAgent(agents, locations, pick) !== "not-known";
+}
+
+/** The name of the agent that starts by default, or that is meant to: the repository's, found or not, else the default agent's, or null while none is known. */
+export function defaultAgentName(agents: readonly AgentSetting[], locations: readonly AgentLocation[] | null, pick: RepositoryPick): string | null {
+	return pick ?? defaultAgent(agents, locations, pick)?.name ?? null;
+}
+
+/** That a repository's default agent cannot start, as the first half of a sentence. */
+export function describeMissingPick(missing: MissingPick): string {
+	const whose = `${missing.name}, this repository's default agent,`;
+	switch (missing.state) {
+		case "not-found": return `${whose} was not found`;
+		case "unusable": return `${whose} cannot start`;
+		case "not-saved": return `${whose} is not saved in Settings, Agents`;
+	}
 }

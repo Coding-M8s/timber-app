@@ -43,15 +43,15 @@ describe("reading a handoff record", () => {
 		const located = (missing: string[]): AgentLocation[] => DEFAULT_AGENTS.map(agent => ({
 			name: agent.name, command: agent.command, lookup: missing.includes(agent.name) ? { state: "not-found" } : { state: "found", path: `/bin/${agent.command}` },
 		}));
-		expect(handoffSession(handoff, DEFAULT_AGENTS, located([]))).toEqual({ kind: "agent", agent: DEFAULT_AGENTS[0]! });
+		expect(handoffSession(handoff, DEFAULT_AGENTS, located([]), null)).toEqual({ kind: "agent", agent: DEFAULT_AGENTS[0]! });
 		// Never a missing agent ahead of one that is there.
-		expect(handoffSession(handoff, DEFAULT_AGENTS, located([DEFAULT_AGENTS[0]!.name]))).toEqual({ kind: "agent", agent: DEFAULT_AGENTS[1]! });
-		expect(handoffSession(handoff, DEFAULT_AGENTS, located(DEFAULT_AGENTS.map(agent => agent.name)))).toEqual({ kind: "terminal", toast: HANDOFF_NO_AGENT["none-found"] });
-		expect(handoffSession(handoff, DEFAULT_AGENTS, null)).toEqual({ kind: "terminal", toast: HANDOFF_NO_AGENT["not-known"] });
+		expect(handoffSession(handoff, DEFAULT_AGENTS, located([DEFAULT_AGENTS[0]!.name]), null)).toEqual({ kind: "agent", agent: DEFAULT_AGENTS[1]! });
+		expect(handoffSession(handoff, DEFAULT_AGENTS, located(DEFAULT_AGENTS.map(agent => agent.name)), null)).toEqual({ kind: "terminal", toast: HANDOFF_NO_AGENT["none-found"] });
+		expect(handoffSession(handoff, DEFAULT_AGENTS, null, null)).toEqual({ kind: "terminal", toast: HANDOFF_NO_AGENT["not-known"] });
 		// A look from before an agent's command changed does not know the agent as it is now.
-		expect(handoffSession(handoff, [{ ...DEFAULT_AGENTS[0]!, command: "claude --fast" }], located([]))).toEqual({ kind: "terminal", toast: HANDOFF_NO_AGENT["not-known"] });
-		expect(handoffSession(handoff, [], [])).toEqual({ kind: "terminal", toast: HANDOFF_NO_AGENT["none-saved"] });
-		expect(handoffSession({ ...handoff, agent: false }, DEFAULT_AGENTS, located([]))).toEqual({ kind: "terminal", toast: null });
+		expect(handoffSession(handoff, [{ ...DEFAULT_AGENTS[0]!, command: "claude --fast" }], located([]), null)).toEqual({ kind: "terminal", toast: HANDOFF_NO_AGENT["not-known"] });
+		expect(handoffSession(handoff, [], [], null)).toEqual({ kind: "terminal", toast: HANDOFF_NO_AGENT["none-saved"] });
+		expect(handoffSession({ ...handoff, agent: false }, DEFAULT_AGENTS, located([]), null)).toEqual({ kind: "terminal", toast: null });
 	});
 
 	test("a path that is not listed is shown cleaned and quoted for the shell", () => {

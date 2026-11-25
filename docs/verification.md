@@ -5123,3 +5123,25 @@ Run for writing commit messages and pull requests' text with an agent (issue
   earlier full runs, one of them before any change, each had three browser
   tests time out waiting for the page; the six files passed alone.
 - `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
+
+Run for a default agent per repository (issue 388), Linux x64 with Bun 1.4.5
+and Google Chrome:
+
+- `bun test tests/repository-agents.test.tsx`: passed. The rule with and
+  without a pick; saving, renaming, clearing, and refusing picks; the settings
+  file, one written before this and one edited by hand; on real temporary
+  repositories, a restart, moving and removing a repository, and the
+  development override, with the repository's `git status` unchanged; the
+  Settings list; and each place the default agent starts, with the pick there
+  and missing, over the mock engine: both dialogs, the handoff, a review,
+  Send prompt, Approve chop, and a prompt chop.
+- `bun test tests/chops.test.ts`: passed. The main process starts the
+  repository's agent as found on a real PATH, and nothing when it is missing.
+- `bun test tests/generate-text-browser.test.ts` in headless Chrome: passed.
+  Settings, Agents saves a pick, follows a rename as it is typed and once
+  saved, and clears it with its row and by hand.
+- By eye, in headless Chrome over the mock engine: "Default agent by
+  repository" in Settings, Agents.
+- `bun run test`: 4,789 passed, 19 skipped, 0 failed, in 284 files.
+- `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
+- Not run: the desktop app, Windows, and macOS.

@@ -873,9 +873,17 @@ logins. The app never reads a tracker login and never signs in.
   while it runs. Above the box is one more button, "Create pull request",
   which opens the one-click dialog of the Pull request tab. The form itself
   is in that tab only.
-- Settings, Agents ends with "Generate text with": First agent found that
-  can, or one of the saved agents that can, the command it runs, what it
-  keeps or can still reach, and the fixed instructions, folded.
+- Settings, Agents has "Generate text with" under the saved agents: First
+  agent found that can, or one of the saved agents that can, the command it
+  runs, what it keeps or can still reach, and the fixed instructions, folded.
+- Below it, "Default agent by repository" lists each repository with its
+  path and a choice of First agent found, the default, or one of the saved
+  agents. It starts wherever nobody picked or named an agent: the New
+  worktree and Start work dialogs, the `timber new` handoff, a review sent
+  to a new agent, and a prompt chop that names none. It is saved with the
+  section's Save, follows a renamed agent, and is cleared when its agent or
+  its repository is removed. One that is not found is never replaced by
+  another: nothing starts on its own, and the text names it.
 - With Uncommitted, the top of the Changes view has a commit message box
   and Commit, which commits only what is staged; it never stages anything
   itself and never amends. Ctrl+Enter, or Cmd+Enter on macOS, commits from
@@ -1134,8 +1142,8 @@ logins. The app never reads a tracker login and never signs in.
   and the agent's pane shows. An agent that has not turned on bracketed
   paste gets nothing, with the reason. Text already in the agent's input
   stays in front of the review. The dialog also offers a new agent, the
-  first one saved in Settings that was found, with the command that starts
-  it (none when none was found, and the dialog says so), and picks
+  repository's default or the first one saved in Settings that was found, with the command that starts
+  it (none when none was found or the repository's is missing, and the dialog says so), and picks
   as a prompt chop does: the new agent when none runs, the only one when
   it does not wait on the person and is not still starting, and otherwise
   nothing, so the person
@@ -1232,13 +1240,15 @@ logins. The app never reads a tracker login and never signs in.
   their descriptions; a pick adds `--workflow <name>`, and the Setup
   terminal and "Run setup" repeat it. With no workflows there is no field,
   and a list that cannot be read leaves a short note. An Agent field, the
-  first saved agent whose executable was found by default or None, starts
+  repository's default agent, or the first saved agent whose executable was
+  found, or None, starts
   that agent beside setup, without waiting for it, once the dialog has
   created the worktree. An agent that was not found is marked "(not
   found)", or "(cannot start)" for a relative path or a batch file on
   Windows, and can still be picked; the hint then says it will not start.
-  With none that can start, or before the app has looked, None is picked
-  and the hint says why. A
+  The hint says when the picked agent is the repository's default. With none
+  that can start, the repository's default missing, or before the app has
+  looked, None is picked and the hint says why, naming the missing one. A
   workflow that sets an agent, or turns it off, decides instead: the Agent
   field follows it, locked, and says why. The footer shows each command
   that follows under Timber's. The Name hint names
@@ -1419,8 +1429,9 @@ logins. The app never reads a tracker login and never signs in.
   section's Save (on its own while the rows are as saved), removes the
   chops panel, its title bar button, the chop shortcuts, and every other
   place chops are offered when off, and keeps the saved chops. A chop has a name, a kind (Command or Prompt), its text, and an
-  optional description; a prompt can name the agent that gets it, or the
-  first saved agent that was found ("First agent found"). The person's own chops are rows with Remove and "Add a
+  optional description; a prompt can name the agent that gets it, or leave
+  it to the default agent ("Default agent"): the repository's, or the first
+  saved agent that was found. The person's own chops are rows with Remove and "Add a
   chop", each for every repository or for one, saved with the section's
   Save. The chops panel makes, changes, and deletes the same chops. Below, "From the repository" lists the chops the selected
   worktree's repository shares in `.timber/chops.json` in its main
@@ -1451,7 +1462,8 @@ logins. The app never reads a tracker login and never signs in.
   always goes to an agent in the active worktree, as typed input: one
   paste, so its line breaks do not submit it early, then Enter. With no
   agent running there, it starts the chop's agent, found or not, or the
-  first saved agent that was found, in a new session, with nothing added to its command line, and
+  default agent (the repository's, or the first saved agent that was found),
+  in a new session, with nothing added to its command line, and
   sends the prompt once the agent is ready: when it reports it is idle, or,
   for an agent that reports nothing, once it has drawn its input and gone
   quiet. A toast says when it was sent, or why not. With one agent running,
@@ -1462,7 +1474,7 @@ logins. The app never reads a tracker login and never signs in.
   an answer. With no agent saved in Settings, the chop shows "Copy prompt",
   which puts exactly its text on the clipboard. A chop that names no agent,
   sent where a new agent would start while none of the saved agents was
-  found, is copied the same way, and the toast says why. A prompt from the
+  found, or the repository's default agent missing, is copied the same way, and the toast says why. A prompt from the
   repository's file asks first, as a command does, with Send, and says
   where it goes, naming the agent a new session starts; a change to its
   text or its agent asks again. Right-clicking a session's chip, or

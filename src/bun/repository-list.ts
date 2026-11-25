@@ -3,6 +3,7 @@ import type { AddRepositoryResult, RemoveRepositoryResult, ReorderRepositoriesRe
 import { applyOrder, sameOrder } from "../shared/repository-order";
 import { forgetGroup, forgetRepository } from "../shared/layout";
 import { forgetPullRepository } from "../shared/pull-confirm-setting";
+import { type RepositoryAgents, pickOf, repositoryAgentsOf } from "../shared/repository-agents";
 import { withIcon } from "../shared/sidebar-icons";
 import {
 	type GroupChange,
@@ -84,6 +85,10 @@ export interface RepositoryList {
 	watchTargets(): Promise<WatchTarget[]>;
 	/** The saved groups. See `Engine.listRepositoryGroups`. */
 	listGroups(): Promise<RepositoryGroups>;
+	/** The default agent each repository names. See `Engine.listRepositoryAgents`. */
+	listAgents(): Promise<RepositoryAgents>;
+	/** The default agent one repository names, or null for none. */
+	agentOf(path: string): Promise<string | null>;
 	/** See `Engine.createRepositoryGroup`. */
 	createGroup(name: string, repository?: string, parent?: string): Promise<RepositoryGroupsResult>;
 	/** See `Engine.renameRepositoryGroup`. */
@@ -256,6 +261,16 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 			return groupsOf(await settings());
 		},
 
+		async listAgents() {
+			if (overridden()) return {};
+			return repositoryAgentsOf((await settings()).repositories);
+		},
+
+		async agentOf(path) {
+			if (overridden()) return null;
+			return pickOf(repositoryAgentsOf((await settings()).repositories), path);
+		},
+
 		createGroup: (name, repository, parent) => changeGroups(list => createGroupIn(list, crypto.randomUUID(), name, repository, parent ?? null)),
 
 		renameGroup: (id, name) => changeGroups(list => renameGroupIn(list, id, name)),
@@ -277,7 +292,7 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 				const current = await settings();
 				const repositories = current.repositories.filter(entry => entry.path !== path);
 				if (repositories.length === current.repositories.length) return { outcome: "removed" };
-				// A collapsed group, a dismissed setup prompt, the board's list, its "Skip pull confirmation", and its icon are remembered by this path, so they go with the entry.
+				// A collapsed group, a dismissed setup prompt, the board's list, its "Skip pull confirmation", and its icon are remembered by this path, so they go with the entry, as its default agent does.
 				const next: Settings = { ...current, repositories };
 				if (current.layout) next.layout = forgetRepository(current.layout, path);
 				if (current.preferences) next.preferences = { ...current.preferences, pull: forgetPullRepository(current.preferences.pull, path) };

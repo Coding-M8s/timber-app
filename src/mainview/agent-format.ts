@@ -1,5 +1,6 @@
 import { AGENT_LIMIT, AGENT_PRESETS, type AgentSetting, agentCommand, agentProblem, conversationsOf, describeAgentCommand, rowAgent, sameAgentName, sameAgentSettings } from "../shared/agent";
 import { AGENTS, type AgentId, executableName } from "../shared/agent-registry";
+import { type RepositoryAgentChange, type RepositoryAgents, pickOf } from "../shared/repository-agents";
 import { resumableAgent } from "../shared/agent-resume";
 import { type AgentLocation, describeAgentLookup, lookupOf } from "../shared/agent-lookup";
 import { generateOf } from "../shared/generate-text";
@@ -214,6 +215,46 @@ export function generateOptions(drafts: readonly AgentDraft[], agents: readonly 
 		const command = agentCommand(setting);
 		return found === null || !command.ok || setting.name === "" ? [] : [{ key: draft.key, name: setting.name, caveat: found.generate.caveat, command: describeCommandLine([command.executable, ...found.generate.arguments]) }];
 	});
+}
+
+/** One repository of "Default agent by repository": its pick by the row's key, or "" for the first agent found, or GONE_PICK. */
+export interface RepositoryDefaultRow {
+	path: string;
+	name: string;
+	key: string;
+	/** The name that would be saved, or null for none. */
+	agent: string | null;
+}
+
+/** The key of a saved pick that names no saved agent, as after an edit of the settings file by hand. */
+export const GONE_PICK = "gone";
+
+/**
+ * The rows of "Default agent by repository". A saved pick is held by the key
+ * of its agent's row, and one just made by `picked`, so a rename is followed
+ * and a removed row clears it.
+ */
+export function repositoryDefaultRows(
+	repositories: readonly { path: string; name: string }[],
+	picks: RepositoryAgents,
+	fromSaved: readonly AgentDraft[],
+	drafts: readonly AgentDraft[],
+	agents: readonly AgentSetting[],
+	picked: Readonly<Record<string, string>>,
+): RepositoryDefaultRow[] {
+	return repositories.map(({ path, name }) => {
+		const saved = pickOf(picks, path);
+		const savedKey = saved === null ? "" : fromSaved.find(draft => draft.name === saved)?.key ?? GONE_PICK;
+		const wanted = Object.hasOwn(picked, path) ? picked[path]! : savedKey;
+		const at = drafts.findIndex(draft => draft.key === wanted);
+		if (wanted === GONE_PICK) return { path, name, key: GONE_PICK, agent: saved };
+		return at === -1 ? { path, name, key: "", agent: null } : { path, name, key: wanted, agent: agents[at]!.name };
+	});
+}
+
+/** The picks that differ from what is saved, for the save. */
+export function repositoryDefaultChange(rows: readonly RepositoryDefaultRow[], picks: RepositoryAgents): RepositoryAgentChange {
+	return Object.fromEntries(rows.flatMap(({ path, agent }) => agent === pickOf(picks, path) ? [] : [[path, agent]]));
 }
 
 /** What a row of the Agents section says about its agent's executable, and whether that is a problem. */
