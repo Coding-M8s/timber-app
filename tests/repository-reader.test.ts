@@ -133,6 +133,20 @@ describe.skipIf(realTimber === null)("with the installed Timber, on a real repos
 		expect(await reader().find(plain)).toEqual({ outcome: "not-a-repository" });
 	});
 
+	test("marks a repository with nothing to fetch only while no branch of it tracks a remote", async () => {
+		expect((await read()).nothingToFetch).toBeUndefined();
+		const local = makeRepository(root, "local only");
+		const folders = () => fingerprint(local);
+		const before = folders();
+		expect((await reader().reload(local))?.nothingToFetch).toBe(true);
+		expect(folders()).toBe(before);
+		git(local, "remote", "add", "origin", join(root, "remote.git"));
+		git(local, "fetch", "origin");
+		expect((await reader().reload(local))?.nothingToFetch).toBe(true);
+		git(local, "branch", "--set-upstream-to=origin/main", "main");
+		expect((await reader().reload(local))?.nothingToFetch).toBeUndefined();
+	});
+
 	test("leaves every file, ref, and index untouched", async () => {
 		const folders = [primary, tree("feat-x"), tree("zażółć gęślą jaźń"), tree("kept")];
 		const before = folders.map(fingerprint);

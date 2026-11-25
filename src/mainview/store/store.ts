@@ -61,7 +61,7 @@ import { describeOpenedInEditor } from "../editor-format";
 import { describeHandoffNotListed, handoffSession } from "../handoff-format";
 import { describeAdded, describeRemoved, folderName, worktreeLabel } from "../format";
 import { workflowAgentLabel } from "../agent-format";
-import { describeFetched } from "../fetch-format";
+import { describeFetched, describeNothingFetched } from "../fetch-format";
 import { wantTerminalFocus } from "../terminal-focus";
 import { withSeenStatuses } from "../seen-status";
 import { nextWaitingSession, withFinishedOrder, withWaitingOrder } from "../waiting";
@@ -123,8 +123,9 @@ export interface AppStore {
 	reloadRepository(path: string): Promise<void>;
 	/**
 	 * Fetch a repository now, named by the path of its primary checkout, or
-	 * wait for the fetch that runs. Fetched: a toast. Failed: the quiet marker
-	 * on the repository, through `fetches`, never a dialog. Never throws.
+	 * wait for the fetch that runs. Fetched: a toast. Nothing to fetch: a
+	 * toast that says so, never "Fetched". Failed: the quiet marker on the
+	 * repository, through `fetches`, never a dialog. Never throws.
 	 * Answers with what the engine said, or null when one was already asked.
 	 */
 	fetchNow(path: string): Promise<FetchResult | null>;
@@ -1358,7 +1359,9 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	/*
 	 * Pull requests come from GitHub or Bitbucket through Timber, so they are read as often
 	 * as the repository is fetched: once when it is first listed, then each
-	 * time a fetch of it ends, in the background or after Fetch now. Reads of
+	 * time a fetch of it ends, in the background or after Fetch now. A
+	 * repository with nothing to fetch has no fetch that ends, so after the
+	 * first read only a sync action reads it again. Reads of
 	 * one repository never overlap. Nothing is read while Timber is not ready,
 	 * as the Timber notice already says why.
 	 */
@@ -2658,6 +2661,10 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			case "fetched":
 				showFetch(answer.fetch);
 				showToast(describeFetched(name));
+				break;
+			case "nothing-to-fetch":
+				showFetch(answer.fetch);
+				showToast(describeNothingFetched(name));
 				break;
 			case "failed":
 				showFetch(answer.fetch);

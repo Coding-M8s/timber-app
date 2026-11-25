@@ -5,6 +5,7 @@ import { chopsPanelShortcut } from "./chops-panel-format";
 import { type EditorAction, OPEN_IN_EDITOR, describeEditorAction } from "./editor-format";
 import { CLEAN_UP_LABEL, CLEAN_UP_TITLE, cleanUpUnavailableReason, mergedCandidates } from "./clean-up-format";
 import { BEING_REMOVED_REASON, DONE_PRIMARY_NOTE } from "./done-format";
+import { fetchUnavailable } from "./fetch-format";
 import { COLLAPSE_FOLDERS_LABEL, collapseUnavailable, filesPanelShortcut } from "./files-panel-format";
 import { worktreeLabel } from "./format";
 import { REBASE_FOLDER_MISSING } from "./rebase-format";
@@ -292,7 +293,7 @@ function actionEntries(state: AppState, mac: boolean): PaletteEntry[] {
 			{ kind: "dialog", request: { kind: "new-worktree", repository: repository.path, mode: "arena" } }, ["attempts", "agents", "compare"]);
 		const fetching = state.fetches[repository.path]?.fetching === true
 			|| state.operations.some(operation => operation.kind === "fetch-repository" && operation.repository === repository.path);
-		add(inRepository("fetch"), "fetch", "Fetch now", `Fetches ${repository.name} from its remotes.`, fetching ? FETCHING_NOW : null, { kind: "fetch", repository: repository.path }, ["pull", "remote"]);
+		add(inRepository("fetch"), "fetch", "Fetch now", `Fetches ${repository.name} from its remotes.`, fetching ? FETCHING_NOW : fetchUnavailable(repository), { kind: "fetch", repository: repository.path }, ["pull", "remote"]);
 	}
 	// One per repository, whatever is selected: it is about the repository, never one worktree.
 	for (const repository of state.repositories) {

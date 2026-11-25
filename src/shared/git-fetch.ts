@@ -1,3 +1,4 @@
+import { isRemoteTracking } from "./git-parse";
 import type { Repository, Worktree } from "./model";
 
 /**
@@ -14,7 +15,11 @@ export interface RepositoryFetch {
 	fetching: boolean;
 	/** When a fetch last worked, in milliseconds since 1970. Null when none has worked since the app started. */
 	lastFetched: number | null;
-	/** Why the latest fetch failed, or null when it worked or none ran yet. Cleared by the next fetch that works. */
+	/**
+	 * Why the latest fetch failed, or null when it worked or none ran yet.
+	 * Cleared by the next fetch that works, and by one that found nothing to
+	 * fetch, since no remote it could have been about is tracked anymore.
+	 */
 	failure: FetchFailure | null;
 }
 
@@ -41,6 +46,13 @@ export type FetchResult =
 	| { outcome: "fetched"; fetch: RepositoryFetch }
 	/** The fetch ran and failed. Its failure is in `fetch.failure`. */
 	| { outcome: "failed"; fetch: RepositoryFetch }
+	/**
+	 * No local branch tracks a remote that can be fetched into
+	 * remote-tracking refs, so nothing reached the network. Not a fetch that
+	 * worked: `fetch.lastFetched` stays as it was. Any earlier failure is
+	 * cleared.
+	 */
+	| { outcome: "nothing-to-fetch"; fetch: RepositoryFetch }
 	/**
 	 * The repository is not in the app's list, so nothing ran, or the fetch
 	 * was stopped before every remote was fetched, because the repository
@@ -188,7 +200,7 @@ export function parseTrackedBranches(output: string): TrackedBranch[] {
 		const [ref, object, upstream, upstreamName, remote, ...rest] = line.split("\0");
 		if (ref === undefined || object === undefined || upstream === undefined || upstreamName === undefined || remote === undefined || rest.length > 0) continue;
 		if (!ref.startsWith(headsPrefix) || ref.length === headsPrefix.length || !/^[0-9a-f]{40,64}$/.test(object)) continue;
-		if (!upstream.startsWith(remotesPrefix) || upstream.length === remotesPrefix.length || remote === "" || remote === ".") continue;
+		if (!isRemoteTracking(upstream, remote)) continue;
 		tracked.push({ branch: ref.slice(headsPrefix.length), object, upstream, upstreamName, remote });
 	}
 	return tracked;

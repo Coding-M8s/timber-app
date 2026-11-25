@@ -203,6 +203,14 @@ export interface Repository {
 	 * chooses between Rebase and Pull for the primary checkout.
 	 */
 	fallbackBase: string | null;
+	/**
+	 * Set when the latest read found that no local branch tracks a branch of a
+	 * remote, so Fetch now has nothing to fetch: the repository has no remote,
+	 * or none of its branches tracks one. Absent when a branch does, and when
+	 * it is not known, as for a repository Git or Timber could not read; Fetch
+	 * now is offered then.
+	 */
+	nothingToFetch?: true;
 	worktrees: Worktree[];
 }
 

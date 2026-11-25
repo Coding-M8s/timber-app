@@ -12,6 +12,15 @@ const branchPrefix = "refs/heads/";
 const remotesPrefix = "refs/remotes/";
 
 /**
+ * Whether an upstream is a branch of a remote: its full ref is a
+ * remote-tracking ref and it comes from a remote, not from the repository
+ * itself (`.`). The fetcher fetches only the remotes of such upstreams.
+ */
+export function isRemoteTracking(upstreamRef: string, remote: string): boolean {
+	return upstreamRef.startsWith(remotesPrefix) && upstreamRef.length > remotesPrefix.length && remote !== "" && remote !== ".";
+}
+
+/**
  * Parse `git for-each-ref --format=<BRANCH_SYNC_FORMAT> refs/heads` into the
  * sync state of each branch, by exact branch name.
  *
@@ -37,11 +46,23 @@ export function parseBranchSync(output: string): Map<string, SyncState> {
 			const match = /^(?:ahead (\d+))?(?:, )?(?:behind (\d+))?$/.exec(track);
 			if (!match) continue;
 			const tracking: SyncState = { kind: "tracking", upstream, ahead: Number(match[1] ?? 0), behind: Number(match[2] ?? 0) };
-			const remoteTracking = upstreamRef.startsWith(remotesPrefix) && upstreamRef.length > remotesPrefix.length && remote !== "" && remote !== ".";
+			const remoteTracking = isRemoteTracking(upstreamRef, remote);
 			branches.set(branch, remoteTracking ? { ...tracking, remote, upstreamRef } : tracking);
 		}
 	}
 	return branches;
+}
+
+/**
+ * Whether any local branch in `git for-each-ref --format=<BRANCH_SYNC_FORMAT>
+ * refs/heads` tracks a branch of a remote, gone or not, by the same rule the
+ * fetcher picks remotes with. False means Fetch now has nothing to fetch.
+ */
+export function tracksARemote(output: string): boolean {
+	return output.split("\n").some(line => {
+		const [ref, , , upstreamRef, remote, ...rest] = line.split("\0");
+		return ref !== undefined && ref.startsWith(branchPrefix) && rest.length === 0 && isRemoteTracking(upstreamRef ?? "", remote ?? "");
+	});
 }
 
 /**

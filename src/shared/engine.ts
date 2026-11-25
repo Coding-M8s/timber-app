@@ -315,7 +315,9 @@ export interface Engine {
 	 * is on. A fetch only updates remote-tracking refs: it never pulls,
 	 * merges, rebases, or changes a local branch, a tag, or a working tree,
 	 * and it never asks for credentials. What changed is reported through
-	 * `onRepositoryChanged`. Safe to call again.
+	 * `onRepositoryChanged`. When no local branch tracks a remote it can
+	 * fetch, nothing runs and the answer is `nothing-to-fetch`, never
+	 * `fetched` (see `Repository.nothingToFetch`). Safe to call again.
 	 */
 	fetchNow(repository: string): Promise<FetchResult>;
 	/** Hear where fetching stands for a repository whenever it changes. Returns a function that stops listening. */

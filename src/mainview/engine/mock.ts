@@ -309,6 +309,32 @@ export const samplePickableRepository: Repository = {
 };
 
 /**
+ * A repository with no remote: its only branch was never published, so Fetch
+ * now has nothing to fetch. Not in the default list; tests add it.
+ */
+export const sampleLocalRepository: Repository = {
+	path: "/work/scratch",
+	name: "scratch",
+	available: true,
+	failure: null,
+	setup: "none",
+	fallbackBase: null,
+	nothingToFetch: true,
+	worktrees: [worktree("scratch", "main", { primary: true, sync: { kind: "unpublished", unpushed: 2 } })],
+};
+
+/**
+ * As a read of the main process says it: a repository with nothing to fetch
+ * has it again once one of its branches tracks a remote, as after a publish
+ * or opening a remote branch.
+ */
+function withFetchFlag(repository: Repository): Repository {
+	if (!repository.nothingToFetch || !repository.worktrees.some(worktree => worktree.sync?.kind === "tracking" || worktree.sync?.kind === "gone")) return repository;
+	const { nothingToFetch: _tracked, ...rest } = repository;
+	return rest;
+}
+
+/**
  * Branches on the pretend disk that have no worktree yet, by repository path.
  * The mock's branch list offers them beside the branches of the worktrees.
  */
@@ -681,7 +707,10 @@ export function createMockEngine(
 	// As the main process does: a failed listing brings the diagnostic and no worktrees.
 	const asRead = (repository: Repository): Repository => {
 		const diagnostic = timberFailures.get(repository.path);
-		return diagnostic === undefined || !repository.available ? repository : { ...repository, failure: diagnostic, setup: "unknown", fallbackBase: null, worktrees: [] };
+		if (diagnostic === undefined || !repository.available) return repository;
+		// A failed read does not know whether there is anything to fetch.
+		const { nothingToFetch: _unknown, ...rest } = repository;
+		return { ...rest, failure: diagnostic, setup: "unknown", fallbackBase: null, worktrees: [] };
 	};
 	let picked: string | null = samplePickableRepository.path;
 	// Everything on the pretend disk: whatever was ever listed, plus one repository to add.
@@ -761,14 +790,14 @@ export function createMockEngine(
 	/** Change the sync state of every worktree of `path` on `branch`. Answers whether one was there. */
 	const changeSync = (path: string, branch: string, change: (sync: SyncState | null) => SyncState | null): boolean => {
 		let found = false;
-		current = current.map(repository => repository.path !== path ? repository : {
+		current = current.map(repository => repository.path !== path ? repository : withFetchFlag({
 			...repository,
 			worktrees: repository.worktrees.map(candidate => {
 				if (candidate.branch !== branch) return candidate;
 				found = true;
 				return { ...candidate, sync: change(candidate.sync) };
 			}),
-		});
+		}));
 		return found;
 	};
 
@@ -1082,7 +1111,7 @@ export function createMockEngine(
 		const { result, created, replaced } = act(repository);
 		if (created || replaced) {
 			const kept = repository.worktrees.map(worktree => (replaced && worktree.path === replaced.path ? replaced : worktree));
-			const changed = { ...repository, worktrees: inTimberOrder(created ? [...kept, created] : kept) };
+			const changed = withFetchFlag({ ...repository, worktrees: inTimberOrder(created ? [...kept, created] : kept) });
 			current = current.map(candidate => candidate === repository ? changed : candidate);
 			onDisk.set(path, changed);
 		}
@@ -1677,10 +1706,17 @@ export function createMockEngine(
 			if (!current.some(repository => repository.path === path && repository.available)) {
 				return Promise.resolve({ outcome: "not-listed", message: `${path} is not a repository in this app's list. Nothing was fetched.` });
 			}
+			const nothing = current.some(repository => repository.path === path && repository.nothingToFetch === true);
 			const run = (async (): Promise<FetchResult> => {
 				tellFetch({ ...fetchOf(path), fetching: true });
 				if (fetchDelay > 0) await new Promise(resolve => setTimeout(resolve, fetchDelay));
 				const before = fetchOf(path);
+				// As the main process does: nothing reaches a network, it does not count as a fetch that worked, and an old failure goes.
+				if (nothing) {
+					const fetch = { ...before, fetching: false, failure: null };
+					tellFetch(fetch);
+					return { outcome: "nothing-to-fetch", fetch: structuredClone(fetch) };
+				}
 				if (fetchEnding === "fetches") {
 					const fetch = { ...before, fetching: false, lastFetched: Date.now(), failure: null };
 					tellFetch(fetch);

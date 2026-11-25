@@ -3,8 +3,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { FetchSectionView, type FetchSectionViewProps } from "../src/mainview/components/settings/FetchSection";
 import { WorktreeRow } from "../src/mainview/components/WorktreeRow";
-import { createMockEngine } from "../src/mainview/engine/mock";
-import { describeAgo, describeFetchAction, describeFetchMarker, fetchDraftModel, fetchDraftOf } from "../src/mainview/fetch-format";
+import { createMockEngine, sampleLocalRepository, sampleRepositories } from "../src/mainview/engine/mock";
+import { describeAgo, describeFetchAction, describeFetchMarker, fetchDraftModel, fetchDraftOf, fetchUnavailable } from "../src/mainview/fetch-format";
+import { paletteEntries } from "../src/mainview/palette";
+import { keepLastGood } from "../src/mainview/store/state";
 import { describeRowMarkers, describeSync } from "../src/mainview/format";
 import { createAppStore } from "../src/mainview/store/store";
 import type { RepositoryFetch } from "../src/shared/git-fetch";
@@ -150,6 +152,67 @@ describe("the store, when fetching", () => {
 		expect(markup).toContain('aria-label="Fetch timber now. Not fetched since the app started. Only remote-tracking branches change."');
 		expect(markup).toContain('aria-label="Fetch api-server now.');
 		expect(markup.match(/class="icon-button group-fetch"/g)?.length).toBe(2);
+	});
+});
+
+describe("a repository with nothing to fetch", () => {
+	const SCRATCH = sampleLocalRepository.path;
+	const REASON = "No branch of scratch tracks a remote, so there is nothing to fetch.";
+	const withLocal = () => createMockEngine([...sampleRepositories, sampleLocalRepository]);
+	const fetchEntry = (store: ReturnType<typeof createAppStore>, repository: string) => {
+		const worktree = store.getState().repositories.find(candidate => candidate.path === repository)!.worktrees[0]!;
+		store.select(worktree.id);
+		return paletteEntries(store.getState()).find(entry => entry.label === "Fetch now")!;
+	};
+
+	test("says why Fetch now is off only when a read found no branch tracking a remote", () => {
+		expect(fetchUnavailable(sampleLocalRepository)).toBe(REASON);
+		expect(fetchUnavailable(sampleRepositories[0]!)).toBeNull();
+	});
+
+	test("offers its header control and palette entry disabled, with the reason, and the others as before", async () => {
+		const { store } = await startedStore(withLocal());
+		const markup = render(store);
+		expect(markup).toContain(`aria-label="${REASON}" title="${REASON}" aria-busy="false" aria-disabled="true"`);
+		expect(markup).toContain('aria-label="Fetch timber now. Not fetched since the app started. Only remote-tracking branches change." title="Fetch timber now. Not fetched since the app started. Only remote-tracking branches change." aria-busy="false" aria-disabled="false"');
+		expect(fetchEntry(store, SCRATCH).disabledReason).toBe(REASON);
+		expect(fetchEntry(store, TIMBER).disabledReason).toBeNull();
+	});
+
+	test("Fetch now asked all the same never says Fetched: it says there was nothing, counts no fetch, and clears an old failure", async () => {
+		const engine = withLocal();
+		const { store } = await startedStore(engine);
+		engine.endFetches("offline");
+		const answer = await store.fetchNow(SCRATCH);
+		expect(answer).toEqual({ outcome: "nothing-to-fetch", fetch: { repository: SCRATCH, fetching: false, lastFetched: null, failure: null } });
+		expect(store.getState().toasts.map(toast => toast.text)).toEqual(["Nothing to fetch for scratch"]);
+		expect(store.getState().fetches[SCRATCH]).toEqual({ repository: SCRATCH, fetching: false, lastFetched: null, failure: null });
+		expect(render(store)).not.toContain("fetch-failed");
+		// A repository with a remote fetches and reports as before.
+		engine.endFetches("fetches");
+		expect((await store.fetchNow(TIMBER))?.outcome).toBe("fetched");
+		expect(store.getState().toasts.map(toast => toast.text)).toContain("Fetched timber");
+	});
+
+	test("is offered again once a publish makes its branch track a remote", async () => {
+		const engine = withLocal();
+		const { store } = await startedStore(engine);
+		const worktree = store.getState().repositories.find(candidate => candidate.path === SCRATCH)!.worktrees[0]!;
+		expect(await engine.runSyncAction({ action: "push", repository: SCRATCH, worktree: worktree.path, target: { kind: "no-upstream" } })).toMatchObject({ outcome: "done" });
+		await store.reloadRepository(SCRATCH);
+		expect(store.getState().repositories.find(candidate => candidate.path === SCRATCH)!.nothingToFetch).toBeUndefined();
+		expect(fetchEntry(store, SCRATCH).disabledReason).toBeNull();
+		expect((await store.fetchNow(SCRATCH))?.outcome).toBe("fetched");
+	});
+
+	test("a read that Timber could not list keeps what the last good list said", () => {
+		const failed = { ...sampleLocalRepository, failure: "timber ls failed", worktrees: [] };
+		const { nothingToFetch: _unknown, ...unknown } = failed;
+		expect(keepLastGood(sampleLocalRepository, unknown).nothingToFetch).toBe(true);
+		expect(keepLastGood(sampleRepositories[0], unknown).nothingToFetch).toBeUndefined();
+		// A good read says it again for itself.
+		const { nothingToFetch: _tracked, ...published } = sampleLocalRepository;
+		expect(keepLastGood(sampleLocalRepository, published).nothingToFetch).toBeUndefined();
 	});
 });
 

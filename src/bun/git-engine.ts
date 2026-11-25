@@ -1,7 +1,7 @@
 import { realpath } from "node:fs/promises";
 import { delimiter } from "node:path";
 import { isCommitHash, savedBaseRef } from "../shared/file-changes";
-import { BRANCH_LIST_FORMAT, BRANCH_SYNC_FORMAT, parseBranchList, parseBranchSync, parseLeftRightCount } from "../shared/git-parse";
+import { BRANCH_LIST_FORMAT, BRANCH_SYNC_FORMAT, parseBranchList, parseBranchSync, parseLeftRightCount, tracksARemote } from "../shared/git-parse";
 import { REMOTE_HEADS_FORMAT, REMOTE_HEADS_PATTERN, parseRemoteHeads, parseRemoteNames } from "../shared/fallback-base";
 import type { BaseCounts, BranchSuggestion, SavedBase, SyncState } from "../shared/model";
 import { readGit } from "./read-git";
@@ -52,8 +52,17 @@ export async function commonDirectory(path: string): Promise<string | null> {
  * Null when Git could not answer.
  */
 export async function readBranchSync(commonGitDir: string): Promise<Map<string, SyncState> | null> {
+	return (await readBranchUpstreams(commonGitDir))?.sync ?? null;
+}
+
+/**
+ * What one look at every local branch's upstream tells: how each branch
+ * stands (as `readBranchSync`), and whether any of them tracks a branch of a
+ * remote, which is what Fetch now fetches. Null when Git could not answer.
+ */
+export async function readBranchUpstreams(commonGitDir: string): Promise<{ sync: Map<string, SyncState>; tracksARemote: boolean } | null> {
 	const output = await git(["--git-dir", commonGitDir, "for-each-ref", `--format=${BRANCH_SYNC_FORMAT}`, "refs/heads"]);
-	return output === null ? null : parseBranchSync(output);
+	return output === null ? null : { sync: parseBranchSync(output), tracksARemote: tracksARemote(output) };
 }
 
 /**

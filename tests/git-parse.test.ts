@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseBranchList, parseBranchSync, parseLeftRightCount } from "../src/shared/git-parse";
+import { isRemoteTracking, parseBranchList, parseBranchSync, parseLeftRightCount, tracksARemote } from "../src/shared/git-parse";
 
 const line = (ref: string, upstream = "", track = "") => `${[ref, upstream, track].join("\0")}\n`;
 
@@ -41,6 +41,31 @@ describe("parseBranchSync", () => {
 		].join("");
 		expect([...parseBranchSync(output).keys()]).toEqual(["fine"]);
 		expect(parseBranchSync("").size).toBe(0);
+	});
+});
+
+/** One full line of the branch sync format: the ref, the short upstream, the tracking state, the upstream's full ref, and its remote. */
+const full = (ref: string, upstream = "", track = "", upstreamRef = "", remote = "") => `${[ref, upstream, track, upstreamRef, remote].join("\0")}\n`;
+
+describe("tracksARemote", () => {
+	test("is true when any branch tracks a branch of a remote, gone or not, whatever its tracking state says", () => {
+		expect(tracksARemote(full("refs/heads/spike") + full("refs/heads/main", "origin/main", "", "refs/remotes/origin/main", "origin"))).toBe(true);
+		expect(tracksARemote(full("refs/heads/done", "origin/done", "gone", "refs/remotes/origin/done", "origin"))).toBe(true);
+		expect(tracksARemote(full("refs/heads/odd", "origin/odd", "somewhere else", "refs/remotes/origin/odd", "origin"))).toBe(true);
+	});
+
+	test("is false with no upstream, an upstream that is a local branch, or nothing at all", () => {
+		expect(tracksARemote(full("refs/heads/main") + full("refs/heads/spike"))).toBe(false);
+		expect(tracksARemote(full("refs/heads/topic", "main", "", "refs/heads/main", "."))).toBe(false);
+		expect(tracksARemote(full("refs/tags/v1", "origin/main", "", "refs/remotes/origin/main", "origin"))).toBe(false);
+		expect(tracksARemote("")).toBe(false);
+	});
+
+	test("uses the rule the fetcher picks remotes with", () => {
+		expect(isRemoteTracking("refs/remotes/origin/main", "origin")).toBe(true);
+		expect(isRemoteTracking("refs/remotes/", "origin")).toBe(false);
+		expect(isRemoteTracking("refs/heads/main", ".")).toBe(false);
+		expect(isRemoteTracking("refs/remotes/origin/main", "")).toBe(false);
 	});
 });
 

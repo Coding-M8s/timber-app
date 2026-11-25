@@ -251,7 +251,11 @@ change them here first when they change.
   remembered between runs.
 - Each repository header has a "+" that opens the New worktree dialog
   directly, and a "Fetch now" control. Both, and More, always show, without
-  pointing at the header first. An unavailable repository's header has
+  pointing at the header first. When no branch of the repository tracks a
+  remote, Fetch now is disabled, and its tooltip and the palette entry say
+  "No branch of <name> tracks a remote, so there is nothing to fetch."; a
+  fetch that finds nothing anyway says "Nothing to fetch for <name>" in a
+  toast, never "Fetched". An unavailable repository's header has
   only More. An "Add repository" control sits
   below the list. The dialog's Arena (Beta) mode is disabled, with the reason
   as its tooltip, when the Timber found has no arenas for apps.
