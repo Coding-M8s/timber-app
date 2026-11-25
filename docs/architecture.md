@@ -806,7 +806,10 @@ not start; started anyway, it fails in its pane as before. The dialog looks
 for the agents again as it opens (`locateAgents` in its controller). Until
 that look answers, the pick follows what the app knew, and may change once
 when it does; then the dialog holds the pick it made as if the person had
-made it, so a later look changes only the marks. A look that got no answer,
+made it, so a later look changes only the marks. An agent that says it is
+signed out is marked "(signed out)", unless it was not found or cannot start,
+with a hint when picked; that never changes the pick
+([signed in or not](#signed-in-or-not)). A look that got no answer,
 or an answer older than one already shown, holds nothing. With no saved agents it offers only None and
 points to Settings. Timber still runs
 with `--no-agent`. The app starts the picked agent itself
@@ -5334,7 +5337,8 @@ as a control sequence, as it would a window title or a bell (see
   opens, as an agent may have been installed since. Settings, Agents says
   under each saved row "Found at <path>", "Not found on PATH", "No
   executable file at <path>", or why it cannot start; a row changed since
-  the save says to save first.
+  the save says to save first. Whether it is signed in is a question of its
+  own: see [signed in or not](#signed-in-or-not).
 - **Starting.** `openTerminal` with `agent` set to the agent's name. The main
   process takes the command from the saved preferences only, never from the
   request. A name that is not saved starts nothing, not even a shell. Or
@@ -5485,8 +5489,11 @@ for its mark. Each row has:
   folder first, the version it was run with and when (`checked`), and what
   it keeps or can still reach (`caveat`), which Settings says. See
   [generating text](#generating-text).
-- **`signIn`**: a command that only reads whether it is signed in, and the
-  command that signs in. Null for every agent for now; nothing reads them yet.
+- **`signIn`**: how its executable is asked whether it is signed in
+  (`status`: the arguments, the kind of `answer`, keys in the environment it
+  works with but the command does not count, and the version and system it
+  was run with), or null, and the arguments that sign in (`login`), null for
+  every agent for now. See [signed in or not](#signed-in-or-not).
 - **`status`**: how it reports its status, `osc-7501`, `hook`, or `none`,
   and the start of the `app` it reports, such as `claude` for `claude-code`,
   which gives its mark to any session that reports it. Claude Code, Codex,
@@ -5523,8 +5530,67 @@ for its mark. Each row has:
    write a file, with the arguments that switch its tools off. Write what
    remains in `caveat`, and add it to the table under
    [generating text](#generating-text).
-5. Add it to the tests in `tests/agent-registry.test.ts`, which check that
+5. Give it a `signIn.status` only after running the command signed in, signed
+   out in an empty home folder, and with settings it cannot read, and add it
+   to the table under [signed in or not](#signed-in-or-not). A new kind of
+   answer needs a reader in `src/shared/agent-sign-in.ts`.
+6. Add it to the tests in `tests/agent-registry.test.ts`, which check that
    ids and executables are unique.
+
+### Signed in or not
+
+`Engine.agentSignIns` asks each saved agent whether it is signed in, with the
+agent's own status command from the registry (`src/bun/agent-sign-in.ts`).
+The app reads none of an agent's files and holds no login.
+
+| Agent | Command | Signed in | Signed out |
+| --- | --- | --- | --- |
+| Claude Code 2.1.332 | `claude auth status --json` | exit code 0 and `loggedIn` true; an API key, a token, or Bedrock in the environment counts | exit code 1 and `loggedIn` false |
+| Codex CLI 0.169.0 | `codex login status` | exit code 0 and a line "Logged in ..." on standard error | exit code 1 and the line "Not logged in" |
+| Cursor CLI 2026.11.22-e9042b2 | `cursor-agent status --format json` | exit code 0, `status` "authenticated", `isAuthenticated` true | exit code 0, `status` "unauthenticated", `isAuthenticated` false |
+
+Checked on Linux on 2026-11-25, signed in and in an empty home folder. Codex
+also exits 1 for a `config.toml` it cannot read, so its exit code alone says
+nothing. Gemini CLI, Grok Build, and GitHub Copilot CLI have no status
+command that is known of. OpenCode 1.19.6 has `opencode auth list`, but from
+its source it prints a drawn list with no `--format`; it was not run. All
+four are not known.
+
+- **States.** Signed in or signed out only when the exit code and the answer
+  both say so (`readSignIn` in `src/shared/agent-sign-in.ts`). Anything else
+  is not known, with the reason: no command, not asked, could not start, over
+  its time, an answer that is not known (or over 64 KiB), or a key that the
+  command does not count. Cursor says signed out while `CURSOR_API_KEY` is
+  set, so that is not known; only whether the variable is set is looked at.
+- **Which rows.** Saved rows whose agent the registry knows, picked or by
+  name, and whose executable was found as a session finds it. A row whose
+  executable is not named as that agent's own, such as a `claude-work`
+  wrapper with Claude Code picked, is not run: a wrapper that ignores its
+  arguments would start a session nobody sees.
+- **How it runs.** The found executable with the registry's arguments only,
+  never the row's other words, as an argument array without a shell
+  (`runOnce` in `src/bun/run-agent.ts`, which generating text uses too). No
+  terminal and nothing on standard input, so it has nobody to ask; in a new
+  empty folder only this user can open, removed afterwards; with the app's
+  environment and the row's config folder, without the session variables;
+  killed with its process group after 5 seconds, and when the app quits.
+  Rows that ask the same, and a read during another, share one run.
+- **What leaves.** Only the state. The output can hold an email address and
+  an organization: it stays in the main process's memory, is never logged or
+  stored, and no part of it is in the answer.
+- **What the agents do.** The command reads its own login, and may write what
+  any run of it writes: in an empty home folder Claude Code made
+  `~/.claude.json` and a backup, and Cursor CLI `~/.cursor/cli-config.json`
+  and a compile cache. Cursor CLI asks its server who is signed in. None
+  wrote an entry for the folder it ran in.
+- **When.** The store (`agentSignIns`) asks when Settings, Agents shows and
+  after a save that changes the agents, and when the New worktree or Start
+  work dialog opens if it last asked over 60 seconds ago. Never at start and
+  never on a timer. An older answer never replaces a newer one, and one for a
+  row as it was before a save is not shown for it.
+- **Platforms.** It runs on every platform and was run on Linux only. On
+  macOS an agent may keep its login in the system keychain, and the system
+  may then show a dialog of its own, which the app cannot keep from showing.
 
 ### Going back to a conversation
 

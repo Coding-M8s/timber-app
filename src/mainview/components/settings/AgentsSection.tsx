@@ -1,9 +1,10 @@
 import { useContext, useEffect, useId, useRef, useState } from "react";
 import { type AgentSetting, configFolderProblem } from "../../../shared/agent";
 import type { AgentLocation } from "../../../shared/agent-lookup";
+import type { AgentSignIn } from "../../../shared/agent-sign-in";
 import { SESSION_NAME_LIMIT } from "../../../shared/terminal";
 import {
-	AGENT_CHOICES, type AgentDraft, type AgentDraftChange, addAgentDraft, GONE_PICK, type RepositoryDefaultRow, agentDraftsOf, agentLookupLine, agentsDraftModel, generateOptions, editAgentDraft, presetsToAdd, removeAgentDraft, repositoryDefaultChange, repositoryDefaultRows,
+	AGENT_CHOICES, type AgentDraft, type AgentDraftChange, addAgentDraft, GONE_PICK, type RepositoryDefaultRow, agentDraftsOf, agentLookupLine, agentSignInLine, agentsDraftModel, generateOptions, editAgentDraft, presetsToAdd, removeAgentDraft, repositoryDefaultChange, repositoryDefaultRows,
 } from "../../agent-format";
 import type { AgentId } from "../../../shared/agent-registry";
 import { GENERATE_INSTRUCTIONS } from "../../../shared/generate-text";
@@ -18,6 +19,8 @@ export interface AgentsSectionViewProps {
 	saved: readonly AgentSetting[];
 	/** Whether each saved agent's executable was found (`AppState.agentLocations`). */
 	locations: readonly AgentLocation[] | null;
+	/** Whether each saved agent is signed in (`AppState.agentSignIns`). None shown when left out. */
+	signIns?: readonly AgentSignIn[] | null;
 	save: SectionSave;
 	onAdd: (preset?: AgentSetting) => void;
 	onEdit: (key: string, change: AgentDraftChange) => void;
@@ -46,7 +49,7 @@ function viewOf(agent: AgentSetting | undefined, saved: readonly AgentSetting[],
 const blank = (draft: AgentDraft) => draft.name.trim() === "" && draft.command.trim() === "";
 
 /** The Agents section as drawn from its data, so it can be tested without a window. */
-export function AgentsSectionView({ drafts, saved, locations, save, onAdd, onEdit, onRemove, onSave, blocked = null, generateWith, repositoryDefaults, hooks, onHook, onCopy }: AgentsSectionViewProps) {
+export function AgentsSectionView({ drafts, saved, locations, signIns = null, save, onAdd, onEdit, onRemove, onSave, blocked = null, generateWith, repositoryDefaults, hooks, onHook, onCopy }: AgentsSectionViewProps) {
 	const { reportSaving } = useContext(SettingsSavingContext);
 	// The hook dialog shows the hook of an agent as last read, so it follows every answer.
 	const [dialog, setDialog] = useState<{ name: string; action: HookAction; opener: { button: string; line: string }; problem: string | null; running: boolean } | null>(null);
@@ -199,6 +202,17 @@ export function AgentsSectionView({ drafts, saved, locations, save, onAdd, onEdi
 								return line && <p className={line.missing ? "field-error" : "field-hint"}>{line.text}</p>;
 							})()}
 							{row.problem === null && (() => {
+								const line = agentSignInLine(model.agents[index]!, saved, locations, signIns);
+								if (line === null) return null;
+								return (
+									<div className="agent-sign-in">
+										{line.signedOut
+											? <p className="field-error" role="status">Sign-in: {line.text}</p>
+											: <p className="field-hint"><span className="agent-status-label">Sign-in</span> {line.text}</p>}
+									</div>
+								);
+							})()}
+							{row.problem === null && (() => {
 								const view = viewOf(model.agents[index], saved, hooks);
 								return view && (
 									<StatusHookLine
@@ -296,11 +310,13 @@ const PICKS_UNREAD = "The repositories' default agents were not read yet, so the
 /** The Agents section of Settings: the list of agents, edited row by row and saved with its own Save. */
 export function AgentsSection() {
 	const store = useStore();
-	const { preferences: { agents: saved, generateWith }, agentLocations, statusHooks, repositories, repositoryAgents } = useAppState();
-	// Looked for again whenever the section shows, as one may have been installed since. Nothing runs.
+	const { preferences: { agents: saved, generateWith }, agentLocations, agentSignIns, statusHooks, repositories, repositoryAgents } = useAppState();
+	// Looked for again whenever the section shows, as one may have been installed since. Nothing runs to look.
+	// Each agent found is asked again whether it is signed in, with its own status command, which its line shows.
 	// Each agent's status hook is read again too: a file may have changed since. Nothing is written.
 	useEffect(() => {
 		void store.locateAgents();
+		void store.loadAgentSignIns();
 		void store.loadStatusHooks();
 	}, [store]);
 	const [shown, setShown] = useState<{ saved: readonly AgentSetting[]; drafts: AgentDraft[] }>(() => ({ saved, drafts: agentDraftsOf(saved) }));
@@ -343,6 +359,7 @@ export function AgentsSection() {
 			drafts={drafts}
 			saved={saved}
 			locations={agentLocations}
+			signIns={agentSignIns}
 			save={save}
 			onAdd={preset => change(addAgentDraft(drafts, preset))}
 			onEdit={(key, edit) => change(editAgentDraft(drafts, key, edit))}

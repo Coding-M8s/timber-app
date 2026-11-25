@@ -5542,6 +5542,7 @@ pre:focus-visible {
 	gap: 6px;
 }
 
+.agent-sign-in p,
 .agent-status p {
 	margin: 0;
 }
@@ -5553,6 +5554,7 @@ pre:focus-visible {
 	gap: 4px 10px;
 }
 
+.agent-sign-in p,
 .agent-status-inline .field-hint {
 	min-width: 0;
 	overflow-wrap: anywhere;

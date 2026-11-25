@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createMockStatusHooks } from "../src/mainview/engine/mock-status-hooks";
+import { createMockSignIns } from "../src/mainview/engine/mock-sign-in";
 import { createMockSidebarIcons } from "../src/mainview/engine/mock-sidebar-icons";
 import { createMockThemeFiles } from "../src/mainview/engine/mock-theme-files";
 import { createMockTerminals } from "../src/mainview/engine/mock-terminals";
@@ -87,6 +88,8 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		...createMockSidebarIcons({ knows: () => true }),
 		// Status hooks as the mock acts them out, with no agents. Their own tests are in status-hooks-ui.test.tsx.
 		...createMockStatusHooks(() => []),
+		// Sign-in states as the mock acts them out, with no agents. Their own tests are in agent-sign-in.test.tsx.
+		...createMockSignIns(() => [], async () => []),
 		// Terminals as the mock acts them out. Their own tests are in terminal-store.test.ts.
 		...createMockTerminals(() => null),
 		onShowSession: () => () => {},

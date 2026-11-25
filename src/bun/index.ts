@@ -30,6 +30,7 @@ import { createSavedChopApprovals } from "./chop-approvals";
 import { createChopsWatcher } from "./chops-watcher";
 import { createFileChanges } from "./file-changes";
 import { createTextGenerator } from "./generate-text";
+import { createSignInReader } from "./agent-sign-in";
 import { createGitWrites } from "./git-writes";
 import { createWorktreeFiles } from "./worktree-files";
 import { createWorktreeFolders } from "./worktree-folders";
@@ -479,6 +480,11 @@ const textGenerator = createTextGenerator({
 	},
 	locate: agent => terminals.locateAgent(agent),
 });
+// Asks the saved agents whether they are signed in, each with its own status command (see ./agent-sign-in.ts).
+const signIns = createSignInReader({
+	agents: async () => (await preferences.load()).agents,
+	locate: agent => terminals.locateAgent(agent),
+});
 // Ports are read for the selected worktree on request only, never on a timer (see ./ports.ts).
 const ports = createPorts({ listWorktrees: createWorktreePaths({ targets: () => watchTargets }), leaders: () => terminals.leaders(), attention: () => attention });
 
@@ -604,6 +610,8 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			},
 			// Looks for the saved agents' executables only; nothing starts (see ./terminals.ts).
 			locateAgents: () => terminals.locateAgents(),
+			// Runs the saved agents' status commands from the registry. Their output can hold an email address: only the state leaves (see ./agent-sign-in.ts).
+			agentSignIns: () => signIns.read(),
 			// Reads and writes only the app's entries in an agent's file the registry names, for an agent a saved row runs (see ./status-hook-files.ts).
 			statusHooks: () => statusHooks.list(),
 			installStatusHook: request => statusHooks.install(request),
@@ -755,8 +763,9 @@ function guardQuit(event: unknown): void {
 		sessionLayout.save();
 		// The app goes away in a moment, so there is no time to wait for anything to end by itself.
 		terminals.killAll();
-		// Its agent is in a process group of its own, so it would outlive the app.
+		// Its agent is in a process group of its own, so it would outlive the app. So are the status commands.
 		textGenerator.stopAll();
+		signIns.stopAll();
 		alerts.stop();
 		void desktopNotices.stopAll();
 		sounds.stopAll();

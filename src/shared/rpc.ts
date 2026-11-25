@@ -86,6 +86,7 @@ export type AppRPC = {
 			loadPreferences: { params: {}; response: Answer<"loadPreferences"> };
 			savePreferences: { params: { change: Partial<Preferences>; repositoryAgents: RepositoryAgentChange | null }; response: Answer<"savePreferences"> };
 			locateAgents: { params: {}; response: Answer<"locateAgents"> };
+			agentSignIns: { params: {}; response: Answer<"agentSignIns"> };
 			statusHooks: { params: {}; response: Answer<"statusHooks"> };
 			installStatusHook: { params: StatusHookRequest; response: Answer<"installStatusHook"> };
 			removeStatusHook: { params: StatusHookRequest; response: Answer<"removeStatusHook"> };

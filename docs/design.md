@@ -1246,6 +1246,9 @@ logins. The app never reads a tracker login and never signs in.
   created the worktree. An agent that was not found is marked "(not
   found)", or "(cannot start)" for a relative path or a batch file on
   Windows, and can still be picked; the hint then says it will not start.
+  One that was found but says it is signed out is marked "(signed out)", and
+  the hint of a picked one says "Codex says it is signed out."; it is
+  picked and started as before. Signed in and not known are not marked.
   The hint says when the picked agent is the repository's default. With none
   that can start, the repository's default missing, or before the app has
   looked, None is picked and the hint says why, naming the missing one. A
@@ -1359,6 +1362,15 @@ logins. The app never reads a tracker login and never signs in.
   going back to its conversation after a restart; Detect goes by the
   executable's name. Config folder is where that agent keeps its
   conversations."
+  Under the line that says where it was found, a saved row whose agent is
+  known and found gets a Sign-in line (issue 347), in the status line's look:
+  "Sign-in  Signed in, says claude auth status --json.", with the command
+  that was run; "Sign-in: Signed out, says codex login status." in the error
+  color; or "Sign-in  Not known." and why, such as "The app knows no command
+  of Gemini CLI that says.", "codex login status took longer than 5
+  seconds.", "codex login status gave an answer the app does not know.", or,
+  for a wrapper, "The app does not ask claude-work, as it is not named
+  claude." A row being edited, not found, or not asked yet has none.
   A saved row whose agent is known gets a status line under its other
   lines (issue 350); a row being edited shows none until it is saved. An
   agent that reports through OSC 7501 says "Status  Reports working, needs
