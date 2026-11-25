@@ -1,3 +1,4 @@
+import { type NoDefaultAgent, describeMissingPick } from "./agent-lookup";
 import type { FileChopSound } from "./chop-sounds";
 import { isSafeLine, isSafeText } from "./safe-text";
 import { type SoundChoice, defaultSoundChoice, readSoundChoice, sameSoundChoice, writeSoundChoice } from "./sound-setting";
@@ -42,7 +43,7 @@ export interface Chop {
 	/**
 	 * For a prompt, the name of the agent from Settings, Agents that gets it,
 	 * or null for the default agent (`defaultAgent` in ./agent-lookup.ts: the
-	 * first saved agent whose executable was found). A name the person has no agent for
+	 * one the repository names, or the first saved one whose executable was found). A name the person has no agent for
 	 * is still a valid chop: running it says so, and never falls back to
 	 * another agent. Always null for a command.
 	 */
@@ -385,7 +386,7 @@ export function readChopApprovals(value: unknown): Record<string, string[]> {
  * person's shell there, named after the chop, and types the chop's text into
  * it. A prompt chop: the main process sends the text to the running agent
  * session `session` names, or, without one, starts the chop's agent (the
- * default agent, the first saved one found, when it names none) and sends it once the agent is
+ * default agent, the repository's or the first saved one found, when it names none) and sends it once the agent is
  * ready. The text is looked up by name, from the same list `listChops`
  * answers. A repository chop runs only once its text was approved for the
  * repository: otherwise the answer is `needs-approval` with the text to
@@ -416,11 +417,14 @@ export interface RunChopRequest {
 /**
  * Why a prompt chop starts no new agent, said the same by the main process
  * and the mock: the agent it names is not saved, or, naming none, no agent
- * is saved, or none of the saved agents was found. Nothing starts either way.
+ * is saved, none of the saved agents was found, or the repository's default
+ * agent cannot start. `why` says which for a chop that names none. Nothing starts in any case.
  */
-export function noPromptAgent(chop: Pick<Chop, "name" | "agent">, agentsSaved: boolean): string {
+export function noPromptAgent(chop: Pick<Chop, "name" | "agent">, why: NoDefaultAgent): string {
 	if (chop.agent !== null) return `No agent called "${chop.agent}" is saved in Settings, Agents, so ${chop.name} cannot start it. Nothing was started.`;
-	if (!agentsSaved) return "No agent is saved in Settings, Agents, so the prompt has no agent to go to. Copy it instead.";
+	if (typeof why === "object") return `${describeMissingPick(why)}, so the prompt has no agent to go to. Copy it instead, or see why in Settings, Agents.`;
+	if (why === "none-saved") return "No agent is saved in Settings, Agents, so the prompt has no agent to go to. Copy it instead.";
+	if (why === "not-known") return "The app has not found out yet which agents are installed, so the prompt has no agent to go to. Copy it instead, or send it again.";
 	return "None of the agents in Settings, Agents was found, so the prompt has no agent to go to. Copy it instead, or see why in Settings, Agents.";
 }
 

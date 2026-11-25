@@ -25,6 +25,7 @@ import { describeCommandLine } from "../../shared/command-line";
 import { editorCommand, editorSessionName, editorTarget, otherExecutableNames } from "../../shared/editor";
 import { notFoundOnPath } from "../../shared/search-path";
 import { type Preferences, applyPreferenceChange, defaultPreferences } from "../../shared/preferences";
+import { type RepositoryAgents, forgetRepositoryAgent, pickOf, readRepositoryAgentChange, repositoryAgentsOf, withRepositoryAgents } from "../../shared/repository-agents";
 import { forgetPullRepository } from "../../shared/pull-confirm-setting";
 import {
 	type DoneApplyResult, type DoneOptions, type DonePreviewResult, DONE_PREVIEW_MINUTES, describeDoneApply, describeDonePreview, readDonePreview,
@@ -696,6 +697,8 @@ export function createMockEngine(
 		current = [...current, found];
 		return { outcome: "added", repository: found };
 	};
+	// The default agents repositories name live in memory too, by the primary checkout. None to start with.
+	let repositoryAgents: RepositoryAgents = {};
 	// The groups live in memory too, beside the list, by the same rules as the main process. None to start with.
 	let groups: RepositoryGroup[] = [];
 	let membership: Record<string, string> = {};
@@ -1189,6 +1192,7 @@ export function createMockEngine(
 			layout = forgetRepository(layout, path);
 			preferences = { ...preferences, pull: forgetPullRepository(preferences.pull, path) };
 			forgetIcon({ kind: "repository", path });
+			repositoryAgents = forgetRepositoryAgent(repositoryAgents, path);
 			// Its group stays, as it does on disk.
 			delete membership[path];
 			return { outcome: "removed" };
@@ -1197,6 +1201,7 @@ export function createMockEngine(
 			current = applyOrder(current, order);
 			return { outcome: "saved" };
 		},
+		listRepositoryAgents: async () => structuredClone(repositoryAgents),
 		listRepositoryGroups: async () => groupsOfList(groupedList()),
 		async createRepositoryGroup(name, repository, parent) {
 			// Numbered in the order they are made: an id is used up only by a group that was made.
@@ -1360,16 +1365,23 @@ export function createMockEngine(
 			layoutFailure = message;
 		},
 		loadPreferences: async () => structuredClone(preferences),
-		async savePreferences(change) {
+		async savePreferences(change, repositoryPicks) {
 			if (preferencesFailure !== null) return { outcome: "failed", message: preferencesFailure };
 			const { preferences: next, unreadable } = applyPreferenceChange(preferences, structuredClone(change));
 			if (unreadable.length > 0) return { outcome: "failed", message: `Nothing was saved, because these settings could not be read: ${unreadable.join(", ")}.` };
+			// As the main process: the picks are saved with the agents, or nothing is.
+			const picks = readRepositoryAgentChange(structuredClone(repositoryPicks ?? {}));
+			if (picks === undefined) return { outcome: "failed", message: "Nothing was saved, because the default agents of the repositories could not be read." };
+			const entries = current.map(({ path }) => ({ path, ...(pickOf(repositoryAgents, path) === null ? {} : { agent: pickOf(repositoryAgents, path)! }) }));
+			const picked = withRepositoryAgents(entries, picks, preferences.agents, next.agents);
+			if (!picked.ok) return { outcome: "failed", message: picked.message };
+			repositoryAgents = repositoryAgentsOf(picked.entries);
 			const timberChanged = !sameTimberChoice(preferences.timber, next.timber);
 			preferences = next;
 			alerts.review();
 			// As the main process does: another Timber is looked for at once, and the window told.
 			if (timberChanged) for (const listener of [...timberListeners]) listener();
-			return { outcome: "saved", preferences: structuredClone(preferences) };
+			return { outcome: "saved", preferences: structuredClone(preferences), ...(change.agents !== undefined || repositoryPicks !== undefined ? { repositoryAgents: structuredClone(repositoryAgents) } : {}) };
 		},
 		failPreferenceSaves(message) {
 			preferencesFailure = message;
@@ -1518,7 +1530,7 @@ export function createMockEngine(
 			// The pretend terminals check the worktree is listed, with its folder there, as the main process does.
 			// The default agent is looked for as the pretend terminals look (their `missing` executables), with the agents as saved now.
 			const agents = preferences.agents;
-			return chopFiles.run(structuredClone(request), listMockChops(request.repository), terminals, agents, await terminals.locateAgents(), preferences.playChopSounds);
+			return chopFiles.run(structuredClone(request), listMockChops(request.repository), terminals, agents, await terminals.locateAgents(), preferences.playChopSounds, pickOf(repositoryAgents, request.repository));
 		},
 		...chopFiles.controls,
 		async readPorts(request) {

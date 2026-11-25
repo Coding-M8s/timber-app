@@ -146,4 +146,36 @@ describe.skipIf(browserPath === null || process.platform === "win32")("an agent 
 		await save();
 		await page.until(`${STORE}.getState().preferences.generateWith === ""`, "the pick was cleared");
 	}, 30_000);
+
+	test("Settings saves a repository's default agent, follows a rename, and clears it with its row", async () => {
+		await page.evaluate(`${STORE}.openDialog({ kind: "settings", section: "agents" })`);
+		const choose = `document.querySelector(".agent-defaults select")`;
+		const pick = `${STORE}.getState().repositoryAgents["/work/timber"]`;
+		await page.until(`${choose} !== null`, "the list showed");
+		const save = () => page.evaluate(`document.querySelector(".agent-defaults").closest(".settings-section").querySelector(".settings-section-foot button[type=submit]").click()`);
+		expect(await page.evaluate<string[]>(`[...${choose}.options].map(option => option.text)`)).toEqual(["First agent found", "Claude Code", "Codex"]);
+		// Nothing runs past the section, whatever the length of a path.
+		expect(await page.evaluate<boolean>(`(() => { const list = document.querySelector(".agent-defaults"); return list.scrollWidth <= list.clientWidth; })()`)).toBe(true);
+		const choosing = (index: number) => page.evaluate(`(() => { const select = ${choose}; select.selectedIndex = ${index}; select.dispatchEvent(new Event("change", { bubbles: true })); })()`);
+		await choosing(2);
+		await save();
+		await page.until(`${pick} === "Codex"`, "the pick was saved");
+		await page.until(`${choose}.selectedOptions[0].text === "Codex"`, "the pick shows");
+		await page.evaluate(`(() => { const name = document.querySelectorAll(".agent-name input")[1]; name.focus(); name.select(); })()`);
+		await page.type("My Codex");
+		await page.until(`${choose}.selectedOptions[0].text === "My Codex"`, "the list follows the rename as it is typed");
+		await save();
+		await page.until(`${pick} === "My Codex"`, "the pick followed the rename");
+		await page.evaluate(`document.querySelectorAll(".agent-remove")[1].click()`);
+		await page.until(`${choose}.selectedOptions[0].text === "First agent found"`, "the list follows the removal");
+		await save();
+		await page.until(`${pick} === undefined`, "the pick was cleared");
+		// And cleared by hand.
+		await choosing(1);
+		await save();
+		await page.until(`${pick} === "Claude Code"`, "another pick was saved");
+		await choosing(0);
+		await save();
+		await page.until(`${pick} === undefined`, "the pick was cleared by hand");
+	}, 30_000);
 });

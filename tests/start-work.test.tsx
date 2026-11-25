@@ -242,7 +242,7 @@ async function startWork(pick: (engine: ReturnType<typeof createMockEngine>) => 
 		checkedOut: () => checkedOut,
 		submit: () => controller.submit(mode()),
 		render: () => renderToStaticMarkup(
-			<WorktreeDialogFrame
+			<WorktreeDialogFrame repositoryAgent={null}
 				title="Start work" repository={repository} modes={[mode()]} selected={0} submission={submission.getState()}
 				agents={store.getState().preferences.agents} agentLocations={store.getState().agentLocations} plan={controller.plan}
 				onSelect={() => {}} onPickAgent={() => {}} onSubmit={() => {}} onClose={() => {}}

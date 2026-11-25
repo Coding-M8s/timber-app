@@ -740,13 +740,17 @@ workflow's `post_create` scripts after the ordinary ones.
   sets one.
 
 **The default agent.** Wherever an agent starts that nobody picked or
-named, it is the default agent: the first saved agent, in Settings order,
-whose executable was found (`defaultAgent` in `src/shared/agent-lookup.ts`).
-None when none was found, and none while any agent is not known yet (never
+named, it is the default agent (`defaultAgent` in
+`src/shared/agent-lookup.ts`). In a repository that names one of the saved
+agents (below), it is that agent, when its executable was found, whatever is
+known of the others. In any other, it is the first saved agent, in Settings
+order, whose executable was found. None when none was found, and none while any agent is not known yet (never
 looked for, a look that failed, or a look from before its command changed),
-so a missing agent is never started ahead of one that is there.
-In the window, `whyNoDefaultAgent` says which of none saved, none found, or
-not known it is, and the messages that say why no agent started key off it;
+so a missing agent is never started ahead of one that is there. A
+repository's agent that was not found, cannot start, or is not saved under
+that name is none too: no other agent takes its place.
+`whyNoDefaultAgent` says which of none saved, none found, not known, or the
+repository's agent missing (with its name) it is, and the messages that say why no agent started key off it;
 the main process and the mock say the same with `noPromptAgent`. The one rule
 serves the New worktree and Start work dialogs' Agent field, the `timber new`
 handoff, a review sent to a new agent, and a prompt chop that names no
@@ -759,11 +763,43 @@ process applies the same rule itself for prompt chops, with
 on the PATH the app was started with), since it picks the agent there; the
 mock engine applies it to its own look. An agent picked in a dialog, or
 named by a chop, is never replaced: it starts found or not, and a missing
-one fails in its pane.
+one fails in its pane. An arena's agents are as Timber says, and Generate's
+agent is `generateWith`; neither uses the default agent.
+
+**A repository's default agent.** Settings, Agents, "Default agent by
+repository", lists each repository with First agent found or one of the
+saved agents. The pick is the agent's name, saved as `agent` beside the
+repository in the app's settings (`SavedRepository` in
+`src/shared/settings.ts`, the rules in `src/shared/repository-agents.ts`),
+never in the repository, and never in Timber's `[agent]` table. It is
+written only once one is picked, so a file without picks stays as it was,
+and one written before this reads as none picked.
+
+- **Saving.** The picks go with the agents in one save
+  (`Engine.savePreferences` and its `repositoryAgents`), so a rename and its
+  picks are never half saved. The section holds each pick by its row, so a
+  renamed row keeps it and a removed one clears it. A save of the agents
+  that takes one away clears its picks, whoever asks. A name no agent is
+  saved under saves nothing, and a repository that left the list meanwhile
+  is skipped. Removing a repository drops its pick with its entry; moving it
+  keeps it.
+- **Reading.** `Engine.listRepositoryAgents` is read beside the repository
+  list and shown in the same update. A read that fails keeps what was known;
+  while none was ever read, the default agent is not known, none starts, and
+  Settings, Agents saves nothing, as a rename could not take its picks along.
+  A read asked for before a save answered is dropped.
+- **A name edited by hand.** One that no saved agent has is kept, starts
+  nothing, and shows in Settings as "(not saved)" until another is chosen.
+  One that is not a name is dropped, and the repository kept.
+- **Development override.** None are kept for its repositories: none are
+  listed, a pick is refused, and a save of the agents leaves the saved picks
+  as they are.
 
 Both modes share an **Agent** field under their own fields: the agents from
-Settings, Agents, in menu order, then None. The default agent is picked;
-with none found, or while any agent is not known yet, None is. An agent not found is marked "(not
+Settings, Agents, in menu order, then None. The default agent is picked,
+and the hint says when it is the repository's own;
+with none found, the repository's own missing, or while the default agent is
+not known yet, None is, and the hint says why, naming the missing agent. An agent not found is marked "(not
 found)", one found but refused (a relative path, or a Windows batch file)
 "(cannot start)", and either can still be picked, with a hint that it will
 not start; started anyway, it fails in its pane as before. The dialog looks
@@ -2033,7 +2069,7 @@ every machine agrees. The rules are pure, in
   or `prompt`. `text` is never blank and at most 10,000 characters.
   `description` is one line, at most 200 characters, or empty. `agent` is
   only for a prompt: an agent's name from Settings, Agents, or none for the
-  default agent (the first saved agent found). A name no saved agent has is still a valid chop, since
+  default agent (the repository's, or the first saved agent found). A name no saved agent has is still a valid chop, since
   a shared file names agents other people may not have; running it must
   say so, never fall back to another agent.
 - **Text is checked, not cleaned.** It may hold line breaks and tabs, and
@@ -4548,11 +4584,12 @@ the Send prompt dialog, `src/mainview/components/AgentChoices.tsx`.
   none runs in the worktree, the only one when it does not wait on the
   person and is not still waiting for text of its own, and otherwise
   nothing, so the person picks. The choices are the running agents and a
-  new one, the default agent (the first saved agent found), with its
-  command line (`describeAgentCommand`). With none saved, none found, or
-  none known yet, no new one is offered; with no new one and none running,
-  Copy review is the only way, and the dialog says which of the three it is
-  (`noReviewAgent`). The dialog looks for the agents again as it opens, and
+  new one, the default agent (the repository's, or the first saved agent found), with its
+  command line (`describeAgentCommand`). With none saved, none found, none
+  known yet, or the repository's missing, no new one is offered; with no new one and none running,
+  Copy review is the only way, and the dialog says which of the four it is
+  (`noReviewAgent`). With agents running, it still names the repository's
+  missing one (`noNewReviewChoice`). The dialog looks for the agents again as it opens, and
   its first pick follows the default agent once the look answers.
 - **Sending** (`sendReview`). The dialog shows the message from
   `prepareReview` and sends that string. Once pasted, the worktree's notes
@@ -5363,13 +5400,14 @@ terminals"); the app's side is `src/bun/handoffs.ts`,
   warning in the app's log.
 - **Opening.** The window reads the repository again, then looks for the
   worktree in the list. Found: it selects it, shows the Workspace tab, and
-  starts the default agent there (the first saved agent found, looked for
-  again beside the read) when Timber wanted its agent, or a shell, which
+  starts the default agent there (the repository's, or the first saved agent
+  found, looked for again beside the read) when Timber wanted its agent, or a shell, which
   takes the keyboard (`startSessionsIn`, `openTerminalIn`, `handoffSession`).
   Timber says whether an agent starts, the app says which; Timber's own
   agent setting may name another. With no default agent a shell opens and a
-  toast says why (`HANDOFF_NO_AGENT`): none saved, none found, or the app
-  could not find out which agents are installed. A worktree that is not in the list, such
+  toast says why (`handoffNoAgent`): none saved, none found, the app
+  could not find out which agents are installed, or the repository's default
+  agent, by name, is missing. A worktree that is not in the list, such
   as one in a repository the app does not show, opens nothing; the toast
   gives `timber open --agent --no-editor -- '<path>'`. The terminal it was
   typed in keeps running, untouched.

@@ -3,7 +3,7 @@ import {
 	chopDigestInput, findListedChop, isChopApproved, listedChops, mergeChops, noPromptAgent, parseChopsFile, textToRun, withChopApproval,
 } from "../../shared/chops";
 import { type AgentSetting, findAgent } from "../../shared/agent";
-import { type AgentLocation, defaultAgent } from "../../shared/agent-lookup";
+import { type AgentLocation, defaultAgent, whyNoDefaultAgent } from "../../shared/agent-lookup";
 import { type FileChopSounds, chopSoundToPlay } from "../../shared/chop-sounds";
 import type { SoundChoice } from "../../shared/sound-setting";
 import type { ChopTerminals } from "./mock-terminals";
@@ -64,10 +64,10 @@ export function createMockChops() {
 	 * As the main process: the chop is read once, a repository chop runs once
 	 * its text is approved, a command's shell is named after it, and a prompt
 	 * goes to the session named or to a new agent: the chop's, or the default
-	 * agent, the first saved one `locations` found (`defaultAgent`). Once it started, its sound plays, unless chop sounds are off.
+	 * agent, the one the repository names (`pick`) or the first saved one `locations` found (`defaultAgent`). Once it started, its sound plays, unless chop sounds are off.
 	 */
-	async function run(request: RunChopRequest, listed: ChopList, terminals: ChopTerminals, agents: readonly AgentSetting[], locations: readonly AgentLocation[], playChopSounds = true): Promise<RunChopResult> {
-		const result = await start(request, listed, terminals, agents, locations);
+	async function run(request: RunChopRequest, listed: ChopList, terminals: ChopTerminals, agents: readonly AgentSetting[], locations: readonly AgentLocation[], playChopSounds = true, pick: string | null = null): Promise<RunChopResult> {
+		const result = await start(request, listed, terminals, agents, locations, pick);
 		if (result.outcome === "opened" || result.outcome === "sent") {
 			const chop = findListedChop(listedChops(listed), request.chop);
 			const sound = chop === null ? null : chopSoundToPlay(chop, playChopSounds);
@@ -76,7 +76,7 @@ export function createMockChops() {
 		return result;
 	}
 
-	async function start(request: RunChopRequest, listed: ChopList, terminals: ChopTerminals, agents: readonly AgentSetting[], locations: readonly AgentLocation[]): Promise<RunChopResult> {
+	async function start(request: RunChopRequest, listed: ChopList, terminals: ChopTerminals, agents: readonly AgentSetting[], locations: readonly AgentLocation[], pick: string | null): Promise<RunChopResult> {
 		if (listed.outcome !== "listed") return { outcome: listed.outcome === "not-listed" ? "not-listed" : "failed", message: listed.message };
 		const chop = findListedChop(listedChops(listed), request.chop);
 		if (chop === null) return { outcome: "no-chop", message: `No chop called "${request.chop}" is in ${request.repository} now. Nothing was started.` };
@@ -88,8 +88,8 @@ export function createMockChops() {
 		if (!edited.ok) return { outcome: "no-chop", message: edited.message };
 		let agent: AgentSetting | null = null;
 		if (chop.kind === "prompt" && request.session === undefined) {
-			agent = chop.agent === null ? defaultAgent(agents, locations) : findAgent(agents, chop.agent);
-			if (agent === null) return { outcome: "not-configured", message: noPromptAgent(chop, agents.length > 0) };
+			agent = chop.agent === null ? defaultAgent(agents, locations, pick) : findAgent(agents, chop.agent);
+			if (agent === null) return { outcome: "not-configured", message: noPromptAgent(chop, whyNoDefaultAgent(agents, locations, pick)) };
 		}
 		// The browser has no SHA-256 to call at once; the digest input stands in, in memory only.
 		const digest = chopDigestInput(chop);

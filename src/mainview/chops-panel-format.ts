@@ -1,5 +1,5 @@
 import { type ArrangedChop, type ChopArrangement, type ChopRename, NO_CHOP_ARRANGEMENT, arrangeChops, chopArrangementOf, renameInArrangements } from "../shared/chop-order";
-import { defaultAgent, whyNoDefaultAgent } from "../shared/agent-lookup";
+import { defaultAgent, defaultAgentName, describeMissingPick, whyNoDefaultAgent } from "../shared/agent-lookup";
 import { DEFAULT_SHORTCUTS, type ShortcutLetter, describeChord, matchesChord, shortcutLetter } from "../shared/shortcuts";
 import { type ChopKind, type ChopList, type ChopSource, type ListedChop, listedChops } from "../shared/chops";
 import { promptTarget } from "./agent-sessions";
@@ -7,7 +7,7 @@ import { type ChopAction, chopAction, chopButtonLabel, describeChopSource } from
 import { worktreeLabel } from "./format";
 import { soundName } from "./notifications-format";
 import { chopBlockedReason, chopPlace } from "./palette";
-import { type AppState, canToggleChopsPanel, offeredChops, selectedWorktree, shownChopOrder } from "./store/state";
+import { type AppState, canToggleChopsPanel, offeredChops, repositoryPick, selectedWorktree, shownChopOrder } from "./store/state";
 
 /**
  * Words and keys of the chops panel: the title bar's Chops button, the
@@ -219,14 +219,19 @@ function describeTarget(state: AppState, kind: ChopKind, action: ChopAction): st
 			return `Prompts go to ${session?.name ?? "the agent running"} in ${where}.`;
 		}
 		case "new": {
-			// The default agent: the first saved one found.
+			// The default agent: the repository's, or the first saved one found.
 			const { agents } = state.preferences;
-			const fallback = defaultAgent(agents, state.agentLocations);
+			const pick = repositoryPick(state, selection.repository.path);
+			const fallback = defaultAgent(agents, state.agentLocations, pick);
 			if (fallback !== null) return `Prompts start a new agent in ${where}: the one the chop names, or ${fallback.name}.`;
-			if (whyNoDefaultAgent(agents, state.agentLocations) === "none-found") {
+			const why = whyNoDefaultAgent(agents, state.agentLocations, pick);
+			if (typeof why === "object") {
+				return `Prompts start the agent the chop names in ${where}. ${describeMissingPick(why)}, so a prompt that names none is copied to the clipboard.`;
+			}
+			if (why === "none-found") {
 				return `Prompts start the agent the chop names in ${where}. None of the agents in Settings, Agents was found, so a prompt that names none is copied to the clipboard.`;
 			}
-			return `Prompts start a new agent in ${where}: the one the chop names, or the first agent found.`;
+			return `Prompts start a new agent in ${where}: the one the chop names, or ${defaultAgentName(agents, state.agentLocations, pick) ?? "the first agent found"}.`;
 		}
 		case "ask":
 			return `You pick the agent in ${where} when you send a prompt.`;

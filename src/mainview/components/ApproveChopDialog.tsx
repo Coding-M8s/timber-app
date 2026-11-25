@@ -1,6 +1,7 @@
-import { defaultAgent } from "../../shared/agent-lookup";
+import { defaultAgentName } from "../../shared/agent-lookup";
 import type { ListedChop } from "../../shared/chops";
 import { describeChopApproval, describeEditedApproval } from "../chop-format";
+import { repositoryPick } from "../store/state";
 import { useAppState, useStore } from "../store/react";
 import { OperationDialog } from "./OperationDialog";
 import { estimateTerminalSize } from "./TerminalPanel";
@@ -63,7 +64,7 @@ export function ApproveChopDialog({ request }: { request: { repository: string; 
 			chop={request.chop}
 			path={request.path}
 			target={session?.name ?? null}
-			defaultName={defaultAgent(state.preferences.agents, state.agentLocations)?.name ?? null}
+			defaultName={defaultAgentName(state.preferences.agents, state.agentLocations, repositoryPick(state, request.repository))}
 			{...(request.text === undefined ? {} : { edited: request.text })}
 			onRun={() => {
 				// Closed first: if the text changed meanwhile, the run asks again with a new dialog.

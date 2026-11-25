@@ -368,7 +368,7 @@ describe("prompt chops in the app (mock engine)", () => {
 		expect(await engine.readClipboard()).toBe(ASK);
 		expect(toastTexts(store)).toContain(describePromptCopiedNoAgentFound("Ask"));
 		// Asked straight, the engine starts nothing and says why, in the main process's words.
-		expect(await engine.runChop({ repository: TIMBER, worktree: FEATURE.path, chop: "Ask", ...size() })).toEqual({ outcome: "not-configured", message: noPromptAgent(askChop(null), true) });
+		expect(await engine.runChop({ repository: TIMBER, worktree: FEATURE.path, chop: "Ask", ...size() })).toEqual({ outcome: "not-configured", message: noPromptAgent(askChop(null), "none-found") });
 		expect(store.getState().terminals).toEqual([]);
 	});
 

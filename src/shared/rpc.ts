@@ -27,6 +27,7 @@ import type { IssueListRequest } from "./issue-lists";
 import type { IssueRequest } from "./issues";
 import type { Theme } from "./theme";
 import type { SoundChoice } from "./sound-setting";
+import type { RepositoryAgentChange } from "./repository-agents";
 import type { StatusHookRequest } from "./status-hooks";
 import type { OpenTerminalRequest, TerminalChange, TerminalOutput } from "./terminal";
 import type { TimberConnectionCheckRequest, TimberSettingsRequest, TimberSettingsSaveRequest } from "./timber-config";
@@ -60,6 +61,7 @@ export type AppRPC = {
 			deleteRepositoryGroup: { params: { id: string }; response: Answer<"deleteRepositoryGroup"> };
 			moveRepositoryGroup: { params: { id: string; parent: string | null; before: string | null }; response: Answer<"moveRepositoryGroup"> };
 			placeRepository: { params: { path: string; group: string | null; order: string[] | null }; response: Answer<"placeRepository"> };
+			listRepositoryAgents: { params: {}; response: Answer<"listRepositoryAgents"> };
 			listSidebarIcons: { params: {}; response: Answer<"listSidebarIcons"> };
 			readRemoteIconSource: { params: { path: string }; response: Answer<"readRemoteIconSource"> };
 			/** Answers only when the file picker closes or the fetch ends, so the caller must not time it out. */
@@ -82,7 +84,7 @@ export type AppRPC = {
 			loadLayout: { params: {}; response: Answer<"loadLayout"> };
 			saveLayout: { params: { layout: Layout }; response: Answer<"saveLayout"> };
 			loadPreferences: { params: {}; response: Answer<"loadPreferences"> };
-			savePreferences: { params: { change: Partial<Preferences> }; response: Answer<"savePreferences"> };
+			savePreferences: { params: { change: Partial<Preferences>; repositoryAgents: RepositoryAgentChange | null }; response: Answer<"savePreferences"> };
 			locateAgents: { params: {}; response: Answer<"locateAgents"> };
 			statusHooks: { params: {}; response: Answer<"statusHooks"> };
 			installStatusHook: { params: StatusHookRequest; response: Answer<"installStatusHook"> };

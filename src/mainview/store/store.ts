@@ -1,6 +1,6 @@
 import { sameAgentSettings } from "../../shared/agent";
 import { type StatusHookRequest, type StatusHookResult, hookedAgent } from "../../shared/status-hooks";
-import { defaultAgent, whyNoDefaultAgent } from "../../shared/agent-lookup";
+import { type MissingPick, defaultAgent, whyNoDefaultAgent } from "../../shared/agent-lookup";
 import type { IssueSearchRequest, IssueSearchResult } from "../../shared/issue-search";
 import type { IssueList, IssueListResult } from "../../shared/issue-lists";
 import type { IssueTracker } from "../../shared/model";
@@ -44,6 +44,7 @@ import type { TimberConnectionCheckRequest, TimberConnectionCheckResult, TimberS
 import type { DoneApplyRequest, DoneApplyResult, DonePreview, DonePreviewRequest, DonePreviewResult } from "../../shared/timber-done";
 import type { RebaseRequest, RebaseResult } from "../../shared/timber-rebase";
 import { type SyncActionRequest, type SyncActionResult, syncTargetOf } from "../../shared/sync-actions";
+import { type RepositoryAgentChange, forgetRepositoryAgent } from "../../shared/repository-agents";
 import { confirmsPull, forgetPullRepository } from "../../shared/pull-confirm-setting";
 import { SYNC_ACTION_WORDS, presentSyncResult } from "../sync-action-format";
 import type { SetBaseRequest, SetBaseResult } from "../../shared/timber-base";
@@ -81,7 +82,7 @@ import { type FileEditMemory, createFileEditMemory } from "../text-editor-format
 import { afterSave, canEditFile, editableFileText, fileText, hasUnsavedEdits, initialFileMode, listedOnly, outsideResult, pathInWorktree, settleTabs, unsavedFileCount } from "../file-view-format";
 import {
 	type AppState, type ChangesView, type DialogRequest, type FileMode, type FileView, type Operation, type PullRequestForm, type Removal, type SessionAgent, type UnsavedFileStep, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood, syncOptionsOf,
-	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, canToggleSidePanel, chopsEnabled, filesPanelShown, offeredChops, sidePanelShown, sidePanelView, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, shownSession, timberReady, withTerminal, withoutSession, fileViewed, viewedKey, type CommitRun, type GenerationRun, writesWait } from "./state";
+	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, canToggleSidePanel, chopsEnabled, filesPanelShown, offeredChops, sidePanelShown, sidePanelView, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, shownSession, timberReady, withTerminal, withoutSession, fileViewed, viewedKey, type CommitRun, type GenerationRun, writesWait, repositoryPick } from "./state";
 
 /** How `AppStore.runChop` runs a chop, beyond which one and where. */
 export interface RunChopOptions {
@@ -264,9 +265,10 @@ export interface AppStore {
 	 * Save the preferences that `change` names, keeping the others. What is on
 	 * screen follows only once the engine says it saved, so a failed save
 	 * changes nothing. Never throws: an engine that could not answer is a
-	 * failed save with the reason.
+	 * failed save with the reason. `repositoryAgents` sets or clears default
+	 * agents of repositories in the same save (`Engine.savePreferences`).
 	 */
-	savePreferences(change: Partial<Preferences>): Promise<SavePreferencesResult>;
+	savePreferences(change: Partial<Preferences>, repositoryAgents?: RepositoryAgentChange): Promise<SavePreferencesResult>;
 	/**
 	 * Look again for the saved agents' executables (`agentLocations`), as
 	 * after installing one. An answer older than the one shown is dropped.
@@ -518,8 +520,8 @@ export interface AppStore {
 	 */
 	sendReview(worktreeId: string, sessionId: string, message: string): Promise<PasteResult>;
 	/**
-	 * Start the default agent (the first saved agent found, looked for again
-	 * now) as a new session of the worktree, to paste `message`, as the preview showed it, once the agent
+	 * Start the default agent (the one the repository names, or the first
+	 * saved agent found, looked for again now) as a new session of the worktree, to paste `message`, as the preview showed it, once the agent
 	 * is ready, with no Enter (`OpenTerminalRequest.review`). Once started,
 	 * the dialog closes, the session shows, saying it waits, and a toast says
 	 * so. Once pasted, the notes that were sent are gone, unless changed
@@ -1248,6 +1250,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	// before one answered may be older than it, so it is not shown.
 	let iconChanges = 0;
 	let iconAnswers = 0;
+	// How many saves of the repositories' default agents have answered, so an older read of them is dropped too.
+	let pickAnswers = 0;
 
 	/** The saved groups, read beside the list. They come from the settings, so this is no second read of a repository. */
 	const readGroups = () => engine.listRepositoryGroups().catch(() => null);
@@ -1256,7 +1260,12 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const ticket = ++lastTicket;
 		try {
 			const answersBefore = iconAnswers;
-			const [listed, groups, icons] = await Promise.all([engine.listRepositories(), readGroups(), engine.listSidebarIcons().catch(() => null)]);
+			const picksBefore = pickAnswers;
+			const [listed, groups, icons, picks] = await Promise.all([
+				engine.listRepositories(), readGroups(), engine.listSidebarIcons().catch(() => null),
+				// Unread, what was known stays. Never read, no default agent is known, and none starts.
+				engine.listRepositoryAgents().catch(() => null),
+			]);
 			if (groups && groupChanges === 0) {
 				savedGroups = groups;
 				update({ repositoryGroups: groups });
@@ -1273,6 +1282,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			listTicket = ticket;
 			update({
 				repositories,
+				// With the repositories, so one is never shown without its default agent.
+				...(picks && picksBefore === pickAnswers ? { repositoryAgents: picks } : {}),
 				loaded: true,
 				selection: reconcileSelection(repositories, state.selection),
 				board: state.board !== null && repositories.some(repository => repository.path === state.board) ? state.board : null,
@@ -1536,11 +1547,11 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		}
 	}
 
-	async function savePreferences(change: Partial<Preferences>): Promise<SavePreferencesResult> {
+	async function savePreferences(change: Partial<Preferences>, repositoryAgents?: RepositoryAgentChange): Promise<SavePreferencesResult> {
 		const ticket = ++lastPreferenceTicket;
 		let result: SavePreferencesResult;
 		try {
-			result = await engine.savePreferences(change);
+			result = await (repositoryAgents === undefined ? engine.savePreferences(change) : engine.savePreferences(change, repositoryAgents));
 		} catch (error) {
 			result = { outcome: "failed", message: messageOf(error) };
 		}
@@ -1548,7 +1559,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			shownPreferenceTicket = ticket;
 			preferencesSaved = true;
 			const agentsChanged = !sameAgentSettings(state.preferences.agents, result.preferences.agents);
-			update({ preferences: result.preferences, preferencesProblem: null });
+			if (result.repositoryAgents !== undefined) pickAnswers++;
+			update({ preferences: result.preferences, preferencesProblem: null, ...(result.repositoryAgents === undefined ? {} : { repositoryAgents: result.repositoryAgents }) });
 			if (agentsChanged) {
 				void locateAgents();
 				void loadStatusHooks();
@@ -2087,7 +2099,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	}
 
 	/** Put a prompt chop's text, as listed or as edited for this run, on the clipboard. */
-	async function copyPrompt(repositoryPath: string, name: string, text?: string, noAgentFound = false): Promise<void> {
+	async function copyPrompt(repositoryPath: string, name: string, text?: string, noAgent: "none-found" | MissingPick | null = null): Promise<void> {
 		const offered = offeredChops(state);
 		const list = offered?.repository === repositoryPath ? offered.list : null;
 		const chop = findListedChop(listedChops(list), name);
@@ -2101,7 +2113,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			showToast(`${chop.name} could not be put on the clipboard.`, true);
 			return;
 		}
-		if (noAgentFound) showToast(describePromptCopiedNoAgentFound(chop.name), true);
+		if (noAgent !== null) showToast(describePromptCopiedNoAgentFound(chop.name, noAgent), true);
 		else showToast(describePromptCopied(chop.name));
 	}
 
@@ -2153,13 +2165,13 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			}
 			if (where.session !== null) return sendPromptChop(repositoryPath, worktreeId, worktree.path, name, size, where.session, approve, text);
 			if (listed.agent === null) {
-				// A new agent, the default one: looked for again now. With none found the prompt is copied, as with none saved.
+				// A new agent, the default one: looked for again now. With none found, or the repository's not there, the prompt is copied, as with none saved.
 				// While not known, the main process, which looks itself, decides.
 				await locateAgents();
 				const { agents } = state.preferences;
-				if (agents.length > 0 && defaultAgent(agents, state.agentLocations) === null && whyNoDefaultAgent(agents, state.agentLocations) === "none-found") {
-					return copyPrompt(repositoryPath, name, text, true);
-				}
+				const pick = repositoryPick(state, repositoryPath);
+				const why = defaultAgent(agents, state.agentLocations, pick) === null ? whyNoDefaultAgent(agents, state.agentLocations, pick) : null;
+				if (why === "none-found" || (why !== null && typeof why === "object")) return copyPrompt(repositoryPath, name, text, why);
 			}
 		}
 		const worktree = worktreeOf(repositoryPath, worktreeId);
@@ -2700,7 +2712,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 							notice: null,
 							layout: forgetRepository(state.layout, path),
 							preferences: { ...state.preferences, pull: forgetPullRepository(state.preferences.pull, path) },
-							// The engine dropped its icon in the same save.
+							// The engine dropped its default agent and its icon in the same save.
+							repositoryAgents: state.repositoryAgents && forgetRepositoryAgent(state.repositoryAgents, path),
 							sidebarIcons: withIcon(state.sidebarIcons, { kind: "repository", path }, null),
 						});
 						await reloadAll("all");
@@ -3597,8 +3610,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	/**
 	 * Open the session of a worktree that `timber new` in a terminal handed
 	 * over, as the New worktree dialog does: select it, show the Workspace
-	 * tab, and start the default agent (the first saved agent found, looked
-	 * for again now) when Timber wanted its agent, or a shell, with a toast
+	 * tab, and start the default agent (the one the repository names, or the
+	 * first saved agent found, looked for again now) when Timber wanted its agent, or a shell, with a toast
 	 * when the shell opened in place of the agent. The repository is read again first, since the worktree is new.
 	 * Only a worktree in the list opens; otherwise a toast says how to open it.
 	 * The terminal it was typed in is left alone.
@@ -3614,7 +3627,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			showToast(describeHandoffNotListed(handoff), true);
 			return;
 		}
-		const session = handoffSession(handoff, state.preferences.agents, state.agentLocations);
+		const session = handoffSession(handoff, state.preferences.agents, state.agentLocations, repositoryPick(state, handoff.repository));
 		if (session.kind === "agent") {
 			startSessionsIn(handoff.repository, { id: worktree.id, path: worktree.path, branch: worktree.branch }, { setup: false, agent: { kind: "saved", name: session.agent.name } });
 			return;
@@ -4132,10 +4145,11 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		async startReviewAgent(worktreeId, message, size) {
 			// The default agent, looked for again now: never a missing one ahead of one that is there.
 			if (state.preferences.agents.length > 0) await locateAgents();
-			const agent = defaultAgent(state.preferences.agents, state.agentLocations);
-			if (agent === null) return noNewReviewAgent(whyNoDefaultAgent(state.preferences.agents, state.agentLocations));
 			const listed = listedWorktree(worktreeId);
 			if (listed === null) return "The worktree is no longer listed.";
+			const pick = repositoryPick(state, listed.repository);
+			const agent = defaultAgent(state.preferences.agents, state.agentLocations, pick);
+			if (agent === null) return noNewReviewAgent(whyNoDefaultAgent(state.preferences.agents, state.agentLocations, pick));
 			if (isBeingRemoved(state, listed.repository, listed.worktree.path)) return BEING_REMOVED_REASON;
 			if (startingReview.has(worktreeId) || state.operations.some(operation => operation.kind === "open-terminal" && operation.worktree === worktreeId)) {
 				return "Another session is starting there. Send the review again in a moment.";

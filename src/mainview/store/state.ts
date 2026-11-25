@@ -1,6 +1,6 @@
 import type { IndexAction } from "../../shared/index-writes";
 import type { GitOperation } from "../../shared/commit-staged";
-import type { AgentLocation } from "../../shared/agent-lookup";
+import type { AgentLocation, RepositoryPick } from "../../shared/agent-lookup";
 import type { StatusHookView } from "../../shared/status-hooks";
 import type { ChopArrangements, ChopRename } from "../../shared/chop-order";
 import type { SuggestedIssue } from "../../shared/issue-search";
@@ -30,6 +30,7 @@ import type { SeenStatuses } from "../seen-status";
 import { type RepositoryGroups, emptyGroups } from "../../shared/repository-groups";
 import { type IconTarget, type SidebarIcons, emptyIcons } from "../../shared/sidebar-icons";
 import type { SyncActionKind, SyncActionResult } from "../../shared/sync-actions";
+import { type RepositoryAgents, pickOf } from "../../shared/repository-agents";
 import { confirmsPull } from "../../shared/pull-confirm-setting";
 import type { SyncOptions } from "../sync-action-format";
 
@@ -463,6 +464,12 @@ export interface AppState {
 	repositoryGroups: RepositoryGroups;
 	/** Why the last group name typed was not saved. Null once one saved, or when editing again. */
 	groupNameProblem: GroupNameProblem | null;
+	/**
+	 * The default agent each repository names, as the engine last read or
+	 * saved them, by primary checkout. Null until read: no default agent is
+	 * known then, so none starts (`repositoryPick`).
+	 */
+	repositoryAgents: RepositoryAgents | null;
 	/** The icons of repositories and groups, as the engine last saved them. */
 	sidebarIcons: SidebarIcons;
 	/**
@@ -741,6 +748,7 @@ export const initialState: AppState = {
 	notice: null,
 	repositoryGroups: emptyGroups(),
 	groupNameProblem: null,
+	repositoryAgents: null,
 	sidebarIcons: emptyIcons(),
 	toasts: [],
 	removals: [],
@@ -1105,4 +1113,9 @@ export function reconcileRemovals(repositories: readonly Repository[], removals:
 		kept.push(removal);
 	}
 	return changed ? kept : removals;
+}
+
+/** The default agent a repository names, by its primary checkout, as `defaultAgent` takes it: null for none, undefined while not read. */
+export function repositoryPick(state: Pick<AppState, "repositoryAgents">, repository: string): RepositoryPick {
+	return state.repositoryAgents === null ? undefined : pickOf(state.repositoryAgents, repository);
 }

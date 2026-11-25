@@ -17,6 +17,7 @@ import type { WorktreeHandoff } from "./handoff";
 import type { Layout } from "./layout";
 import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, RepositoryGroupsResult, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
 import type { Preferences } from "./preferences";
+import type { RepositoryAgentChange, RepositoryAgents } from "./repository-agents";
 import type { RepositoryGroups } from "./repository-groups";
 import type { IconChoice, IconTarget, RemoteIconSource, SidebarIconResult, SidebarIcons } from "./sidebar-icons";
 import type { RestartPlan, RestartResult } from "./restart";
@@ -138,6 +139,13 @@ export interface Engine {
 	 * anything in a repository or its folder.
 	 */
 	placeRepository(path: string, group: string | null, order?: string[]): Promise<RepositoryGroupsResult>;
+	/**
+	 * The default agent each repository names, by the path of its primary
+	 * checkout (./repository-agents.ts). None while the development override
+	 * is set. Read from the app's saved list without asking Git or Timber. Set
+	 * with `savePreferences`.
+	 */
+	listRepositoryAgents(): Promise<RepositoryAgents>;
 	/**
 	 * The icons of repositories, by the path of their primary checkout, and of
 	 * groups, by id. None while the development override is set. Read from the
@@ -339,8 +347,14 @@ export interface Engine {
 	 * Save the preferences that `change` names and keep every other one as it
 	 * was saved, so each section of the Settings dialog saves only its own.
 	 * Saved answers with every preference as it now is. Safe to call again.
+	 * `repositoryAgents` sets or clears the default agents of listed
+	 * repositories in the same save, so a renamed agent keeps its picks. A
+	 * save that takes an agent away clears the picks of it. A name no agent is
+	 * saved under saves nothing, and so does any pick while the development
+	 * override is set. The answer carries every pick when the save named
+	 * the agents or a pick.
 	 */
-	savePreferences(change: Partial<Preferences>): Promise<SavePreferencesResult>;
+	savePreferences(change: Partial<Preferences>, repositoryAgents?: RepositoryAgentChange): Promise<SavePreferencesResult>;
 	/**
 	 * Whether each agent saved in Settings, Agents can start: its executable
 	 * found on the PATH the app was started with, or at its full path, and
@@ -759,13 +773,14 @@ export interface Engine {
 	 * and the command run again. A prompt chop: with `session`, the text
 	 * goes at once to that running agent session of the worktree, as one
 	 * paste and then Enter, and the answer is `sent`; without it, the chop's
-	 * agent, or the default agent (the first saved agent found,
-	 * `defaultAgent` in ./agent-lookup.ts), starts as a new session with nothing
+	 * agent, or the default agent (the one the repository names, or the first
+	 * saved agent found: `defaultAgent` in ./agent-lookup.ts), starts as a new session with nothing
 	 * added to its command line, and gets the text once it is ready
 	 * (`TerminalSession.prompt` says how that stands, see
 	 * ./agent-prompt.ts). A chop that names an agent gets that one, found or
 	 * not. A chop that names an agent not saved, or one that names none
-	 * with no agent saved or none found, starts nothing (`not-configured`). The text comes from
+	 * with no agent saved, none found, or the repository's default not
+	 * found, starts nothing (`not-configured`). The text comes from
 	 * the chop list as the machine reads it for this call, once, unless the
 	 * request carries `text`, the person's edit for this one run, which is
 	 * typed or sent in its place (`textToRun` refuses one that is blank or

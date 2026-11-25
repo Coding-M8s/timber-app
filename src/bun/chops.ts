@@ -8,7 +8,7 @@ import {
 	chopDigestInput, findListedChop, noPromptAgent, textToRun, isChopApproved, listedChops, mergeChops, parseChopsFile,
 } from "../shared/chops";
 import { type AgentSetting, findAgent } from "../shared/agent";
-import { type AgentLookup, defaultAgent } from "../shared/agent-lookup";
+import { type AgentLookup, defaultAgent, whyNoDefaultAgent } from "../shared/agent-lookup";
 import { type FileChopSounds, chopSoundToPlay } from "../shared/chop-sounds";
 import type { SoundChoice } from "../shared/sound-setting";
 import type { OpenTerminalRequest, OpenTerminalResult, PasteResult, TerminalSession } from "../shared/terminal";
@@ -34,10 +34,12 @@ export interface ChopsDependencies {
 	/**
 	 * Whether a saved agent can start, looked for as its session looks for it
 	 * (`TerminalSessions.locateAgent`). A prompt chop that names no agent
-	 * starts the default agent: the first saved one this finds
-	 * (`defaultAgent` in ../shared/agent-lookup.ts).
+	 * starts the default agent: the one `repositoryAgent` names, or the first
+	 * saved one this finds (`defaultAgent` in ../shared/agent-lookup.ts).
 	 */
 	locate: (agent: AgentSetting) => AgentLookup;
+	/** The name of the agent a repository has as its default, by its primary checkout, or null for none. None when left out. */
+	repositoryAgent?: (checkout: string) => Promise<string | null>;
 	/** The sounds kept for file chops, and whether chop sounds play, as saved now. None, and on, when left out. */
 	chopSounds?: () => Promise<{ play: boolean; file: FileChopSounds }>;
 	/** Play a chop's sound as it starts, without waiting, through the app's one sound player. Without it, nothing plays. */
@@ -146,7 +148,7 @@ export async function readChopsFile(checkout: string): Promise<ChopsFileRead> {
  * cached, so a change to it shows on the next read.
  */
 export function createChops({
-	findRepository, personal, approvals = async () => ({}), approve = async () => {}, openTerminal, sendPrompt, session: sessionOf = () => null, agents = async () => [], locate,
+	findRepository, personal, approvals = async () => ({}), approve = async () => {}, openTerminal, sendPrompt, session: sessionOf = () => null, agents = async () => [], locate, repositoryAgent = async () => null,
 	chopSounds = async () => ({ play: true, file: {} }), playSound, warn = console.warn,
 }: ChopsDependencies): Chops {
 	/** The chop sounds as saved, or none with a warning when they cannot be read: a sound never stops a chop. */
@@ -217,14 +219,17 @@ export function createChops({
 			let agent: AgentSetting | null = null;
 			if (chop.kind === "prompt" && request.session === undefined) {
 				let saved: readonly AgentSetting[];
+				let pick: string | null;
 				try {
+					pick = await repositoryAgent(checkout);
 					saved = await agents();
 				} catch (error) {
 					return { outcome: "failed", message: `Could not read the agents in Settings: ${messageOf(error)}. Nothing was started.` };
 				}
-				// A chop that names an agent gets that one, found or not, or none, never another. One that names none gets the default agent: the first saved one found.
-				agent = chop.agent === null ? defaultAgent(saved, saved.map(each => ({ name: each.name, command: each.command, lookup: locate(each) }))) : findAgent(saved, chop.agent);
-				if (agent === null) return { outcome: "not-configured", message: noPromptAgent(chop, saved.length > 0) };
+				// A chop that names an agent gets that one, found or not, or none, never another. One that names none gets the default agent: the repository's, or the first saved one found.
+				const locations = saved.map(each => ({ name: each.name, command: each.command, lookup: locate(each) }));
+				agent = chop.agent === null ? defaultAgent(saved, locations, pick) : findAgent(saved, chop.agent);
+				if (agent === null) return { outcome: "not-configured", message: noPromptAgent(chop, whyNoDefaultAgent(saved, locations, pick)) };
 			}
 			const digest = chopDigest(chop);
 			let saved: ChopApprovals;

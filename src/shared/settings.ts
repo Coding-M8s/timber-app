@@ -2,6 +2,7 @@ import { type ChopApprovals, readChopApprovals } from "./chops";
 import { type ForcePushMarks, readForcePushMarks } from "./git-fetch";
 import { DEFAULT_CHOPS_WIDTH, type Layout, readLayout } from "./layout";
 import { type RepositoryGroup, readGroups } from "./repository-groups";
+import { isAgentName } from "./repository-agents";
 import { type Preferences, readPreferences, writePreferences } from "./preferences";
 import { type SidebarIcons, hasIcons, readIcons, writeIcons } from "./sidebar-icons";
 import { type SavedWindow, readSavedWindow } from "./window-frame";
@@ -21,6 +22,12 @@ export interface SavedRepository {
 	commonDir: string;
 	/** The id of the group it is shown in. Absent when it is not in a group. */
 	group?: string;
+	/**
+	 * The name of the saved agent that is its default (see
+	 * ./repository-agents.ts). Absent for the first agent found, and in files
+	 * written before repositories could name one.
+	 */
+	agent?: string;
 }
 
 export interface Settings {
@@ -91,7 +98,7 @@ function readRepository(value: unknown): SavedRepository | null {
  * The groups, the layout, the preferences, the force-push marks, the window, the chop approvals, and the icons are the exception,
  * because they are only a convenience: a part that cannot be read falls back to the defaults (see
  * `readGroups`, `readLayout`, `readPreferences`, and `readSavedWindow`) and never costs the
- * repository list. A repository's group that names no readable group is dropped, and the repository kept. A group's
+ * repository list. A repository's group that names no readable group is dropped, and the repository kept, and so is a default agent that is not a name. A group's
  * `parent` that is unknown, loops, or nests too deep is dropped, and the group goes to the top level. An icon that cannot be
  * read, or whose repository or group is not listed, is dropped on its own (see `readIcons`).
  */
@@ -114,8 +121,10 @@ export function parseSettings(text: string): Settings | null {
 		// A file edited by hand may repeat a repository. Keep the first.
 		if (!repositories.some(known => known.path === repository.path || known.commonDir === repository.commonDir)) {
 			// A group that names none of the groups read is dropped, never the repository.
-			const { group } = entry as Record<string, unknown>;
+			const { group, agent } = entry as Record<string, unknown>;
 			if (typeof group === "string" && groups.some(known => known.id === group)) repository.group = group;
+			// One that is no agent's name is dropped too. One that names no saved agent is kept: it starts nothing, rather than another agent.
+			if (isAgentName(agent)) repository.agent = agent;
 			repositories.push(repository);
 		}
 	}
@@ -140,7 +149,7 @@ export function parseSettings(text: string): Settings | null {
 
 /** The text of a settings file, readable and stable enough to edit by hand. */
 export function serializeSettings(settings: Settings): string {
-	const repositories = settings.repositories.map(({ path, commonDir, group }) => ({ path, commonDir, ...(group === undefined ? {} : { group }) }));
+	const repositories = settings.repositories.map(({ path, commonDir, group, agent }) => ({ path, commonDir, ...(group === undefined ? {} : { group }), ...(agent === undefined ? {} : { agent }) }));
 	const groups = settings.groups && settings.groups.length > 0 ? settings.groups.map(({ id, name, parent }) => ({ id, name, ...(parent === undefined ? {} : { parent }) })) : null;
 	const layout = settings.layout && {
 		sidebarWidth: settings.layout.sidebarWidth,

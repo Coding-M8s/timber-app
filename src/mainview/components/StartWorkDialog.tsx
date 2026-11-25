@@ -4,7 +4,7 @@ import type { Repository } from "../../shared/model";
 import { issueKeyLabel } from "../issue-format";
 import { CHECK_OUT_THEIRS_LABEL, branchPrefix, describeQuestion, offersCheckOut, startWorkChoice } from "../start-work-format";
 import { useAppState, useStore, useSubmission } from "../store/react";
-import type { DialogRequest } from "../store/state";
+import { type DialogRequest, repositoryPick } from "../store/state";
 import type { Submission } from "../store/submission";
 import { WorktreeDialogFrame } from "./NewWorktreeDialog";
 import { createWorktreeDialogController } from "./worktree-modes/dialog-controller";
@@ -158,6 +158,7 @@ export function StartWorkDialog({ request, repository }: { request: Extract<Dial
 			agents={state.preferences.agents}
 			agentLocations={state.agentLocations}
 			plan={controller.plan}
+			repositoryAgent={repositoryPick(state, repository.path)}
 			onSelect={controller.select}
 			onPickAgent={controller.pickAgent}
 			onSubmit={chosen => void controller.submit(chosen)}

@@ -20,7 +20,7 @@ export interface WorktreeHandoff {
 	repository: string;
 	/** The worktree's folder, as Timber reports it. */
 	worktree: string;
-	/** Whether Timber would have started its agent. The app picks which agent: the default agent, the first saved one found. */
+	/** Whether Timber would have started its agent. The app picks which agent: the default agent, the one the repository names or the first saved one found. */
 	agent: boolean;
 }
 

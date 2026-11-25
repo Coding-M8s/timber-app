@@ -3,12 +3,12 @@ import type { AgentSetting } from "../../shared/agent";
 import type { Repository } from "../../shared/model";
 import { arenasUnavailable } from "../arena-format";
 import { useAppState, useStore, useSubmission } from "../store/react";
-import type { NewWorktreeMode } from "../store/state";
+import { type NewWorktreeMode, repositoryPick } from "../store/state";
 import type { SubmissionState } from "../store/submission";
 import { OperationDialog } from "./OperationDialog";
 import { ModeSwitch } from "./worktree-modes/ModeSwitch";
 import { useArenaMode } from "./worktree-modes/arena";
-import type { AgentLocation } from "../../shared/agent-lookup";
+import type { AgentLocation, RepositoryPick } from "../../shared/agent-lookup";
 import { type AgentPlan, agentOptionLabel, agentPickHint, followUps, startingAgent } from "./worktree-modes/agent-choice";
 import { createWorktreeDialogController, pickOfOption } from "./worktree-modes/dialog-controller";
 import { useExistingBranchMode } from "./worktree-modes/existing-branch";
@@ -22,6 +22,8 @@ interface AgentFieldProps {
 	locations: readonly AgentLocation[] | null;
 	/** Where the agent that will start comes from: the pick, or the workflow, which locks the field. */
 	plan: AgentPlan;
+	/** The agent the repository names as its default. */
+	repositoryAgent: RepositoryPick;
 	onPick: (pick: string | null) => void;
 }
 
@@ -31,7 +33,7 @@ interface AgentFieldProps {
  * the picked workflow decides the agent, the field shows what it decided,
  * locked, and says why.
  */
-export function AgentField({ agents, locations, plan, onPick }: AgentFieldProps) {
+export function AgentField({ agents, locations, plan, repositoryAgent, onPick }: AgentFieldProps) {
 	if (plan.source === "workflow") {
 		const { workflow } = plan;
 		const [option, hint] = plan.kind === "command"
@@ -55,7 +57,7 @@ export function AgentField({ agents, locations, plan, onPick }: AgentFieldProps)
 				{agents.map(agent => <option key={agent.name} value={agent.name}>{agentOptionLabel(agent, locations)}</option>)}
 				<option value="">None</option>
 			</select>
-			<span className="field-hint">{agentPickHint(agents, locations, plan)}</span>
+			<span className="field-hint">{agentPickHint(agents, locations, plan, repositoryAgent)}</span>
 		</label>
 	);
 }
@@ -74,6 +76,8 @@ interface WorktreeDialogFrameProps {
 	agentLocations: readonly AgentLocation[] | null;
 	/** Where the agent that will start after a worktree is created comes from, for a run with the given workflow. */
 	plan: (workflow: string | null) => AgentPlan;
+	/** The agent the repository names as its default (`repositoryPick`). */
+	repositoryAgent: RepositoryPick;
 	onSelect: (index: number) => void;
 	onPickAgent: (pick: string | null) => void;
 	/** Run the mode on screen. */
@@ -121,7 +125,7 @@ export function WorktreeDialogFrame(props: WorktreeDialogFrameProps) {
 		>
 			{/* Keyed by mode, so a switch mounts the new mode's fields and its first field's autoFocus takes the keyboard. */}
 			<Fragment key={mode.label}>{mode.fields}</Fragment>
-			{!mode.ownFollowUps && <AgentField agents={agents} locations={agentLocations} plan={plan} onPick={onPickAgent} />}
+			{!mode.ownFollowUps && <AgentField agents={agents} locations={agentLocations} plan={plan} repositoryAgent={props.repositoryAgent} onPick={onPickAgent} />}
 		</OperationDialog>
 	);
 }
@@ -162,7 +166,8 @@ export function NewWorktreeDialog({ repository, initialMode = "new" }: { reposit
 		useExistingBranchMode(repository, submission, workflows),
 		useArenaMode(repository, submission, selected === MODE_INDEX.arena),
 	];
-	const { preferences: { agents }, agentLocations } = useAppState();
+	const app = useAppState();
+	const { preferences: { agents }, agentLocations } = app;
 	return (
 		<WorktreeDialogFrame
 			repository={repository}
@@ -172,6 +177,7 @@ export function NewWorktreeDialog({ repository, initialMode = "new" }: { reposit
 			agents={agents}
 			agentLocations={agentLocations}
 			plan={controller.plan}
+			repositoryAgent={repositoryPick(app, repository.path)}
 			onSelect={controller.select}
 			onPickAgent={controller.pickAgent}
 			onSubmit={mode => void controller.submit(mode)}

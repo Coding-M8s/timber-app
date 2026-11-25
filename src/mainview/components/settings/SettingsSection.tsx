@@ -1,4 +1,5 @@
 import { type ReactNode, type SubmitEvent, createContext, useContext, useEffect, useId, useRef, useState } from "react";
+import type { RepositoryAgentChange } from "../../../shared/repository-agents";
 import { type Preferences, restartNeededFor } from "../../../shared/preferences";
 import { useStore } from "../../store/react";
 import { RestartPrompt } from "./RestartPrompt";
@@ -29,14 +30,14 @@ export function useSectionSave() {
 	// A ref, not the state: a second Enter can arrive before the next render.
 	const running = useRef(false);
 
-	const run = async (change: Partial<Preferences>): Promise<boolean> => {
+	const run = async (change: Partial<Preferences>, repositoryAgents?: RepositoryAgentChange): Promise<boolean> => {
 		if (running.current) return false;
 		running.current = true;
 		// Told at once, not after a render, so an Escape right after Save cannot close the dialog in between.
 		reportSaving(true);
 		setSave({ state: "saving" });
 		try {
-			const result = await store.savePreferences(change);
+			const result = await (repositoryAgents === undefined ? store.savePreferences(change) : store.savePreferences(change, repositoryAgents));
 			setSave(result.outcome === "saved" ? { state: "saved", restart: needsRestart(store.getState().preferencesAtStart, result.preferences, change) } : { state: "failed", message: result.message });
 			return result.outcome === "saved";
 		} finally {
@@ -66,9 +67,9 @@ export function useDraftSection<Draft>(fromSaved: Draft) {
 		setEdited(current => typeof next === "function" ? (next as (current: Draft) => Draft)(current ?? fromSaved) : next);
 		reset();
 	};
-	/** Save `preferences`. When it worked, the draft follows what is saved, and `saved` runs alongside. */
-	const commit = async (preferences: Partial<Preferences>, saved?: () => void) => {
-		if (!await run(preferences)) return;
+	/** Save `preferences`, and `repositoryAgents` in the same save. When it worked, the draft follows what is saved, and `saved` runs alongside. */
+	const commit = async (preferences: Partial<Preferences>, saved?: () => void, repositoryAgents?: RepositoryAgentChange) => {
+		if (!await run(preferences, repositoryAgents)) return;
 		setEdited(null);
 		saved?.();
 	};
