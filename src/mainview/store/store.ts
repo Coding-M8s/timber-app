@@ -354,7 +354,9 @@ export interface AppStore {
 	/**
 	 * Save the draft of the open file, only that file, through the engine.
 	 * Nothing is written when the file changed on disk since it was read,
-	 * unless `overwrite` says to write over it. Answers whether it saved.
+	 * unless `overwrite` says to write over it. Once saved, the repository
+	 * reloads for the row's counts, which is not waited for. Answers whether
+	 * it saved.
 	 */
 	saveFile(worktreeId: string, options?: { overwrite?: boolean }): Promise<boolean>;
 	/** Drop the draft of the open file, and show the file as it is on disk. */
@@ -1948,6 +1950,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		} catch (error) {
 			answer = { outcome: "failed", message: `${unheard(`the save of ${view.path}`, error)} It may or may not have been saved; read it again to see.` };
 		}
+		// The row's counts follow at once, also when the file was closed meanwhile. Not waited for: the save has ended.
+		if (answer.outcome === "saved" && state.repositories.some(repository => repository.path === view.repository)) void reloadOne(view.repository);
 		const now = state.files[worktreeId];
 		// Closed or replaced meanwhile: nothing here to tell.
 		if (!now || now.path !== view.path || now.worktreePath !== view.worktreePath) return answer.outcome === "saved";

@@ -88,6 +88,9 @@ export function sampleNewFilePatch(path: string, lines: readonly string[] = ["ex
 const tracked = (area: FileChange["area"], kind: FileChange["kind"], path: string, patch: string, previousPath: string | null = null): MockFileChange =>
 	({ change: { area, kind, path, previousPath, added: null, removed: null, version: "" }, patch });
 
+/** A file modified on disk and not staged, as a small edit. */
+export const modifiedSample = (path: string): MockFileChange => tracked("unstaged", "modified", path, samplePatch(path));
+
 /**
  * The counts Git would give for a pretend patch: its added and removed lines,
  * none for a binary file or a conflict, and as many for a patch too large to
@@ -247,7 +250,7 @@ export function derivedFileChanges(worktree: Worktree): MockFileChange[] {
 	if (worktree.changes.kind !== "known") return [];
 	return [
 		...(worktree.base?.kind === "assigned" || worktree.base?.kind === "commit" ? [tracked("base", "modified", "README.md", samplePatch("README.md"))] : []),
-		...worktree.changes.modified.map(path => tracked("unstaged", "modified", path, samplePatch(path))),
+		...worktree.changes.modified.map(modifiedSample),
 		...worktree.changes.untracked.map(path => tracked("untracked", "untracked", path, sampleNewFilePatch(path))),
 	];
 }

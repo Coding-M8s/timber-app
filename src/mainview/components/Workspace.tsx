@@ -6,7 +6,7 @@ import { describeChanges, describeWorktreeSync, worktreeLabel } from "../format"
 import { describeOpenPullRequest, describePullRequestMarkers, describeWorktreePullRequestProblem } from "../pull-request-format";
 import { pullRequestOf } from "../../shared/pull-requests";
 import { TAB_LABELS, tabAfterKey, visibleTabs } from "../shell";
-import { fileTabLabel } from "../file-view-format";
+import { fileTabLabel, fileTabTitle, hasUnsavedEdits } from "../file-view-format";
 import { FileViewer } from "./FileViewer";
 import { useAppState, useStore } from "../store/react";
 import { type WorkspaceTab, isBeingRemoved, isRunning, selectedWorktree } from "../store/state";
@@ -143,7 +143,18 @@ export function Workspace() {
 								onClick={() => store.showTab(tab)}
 							>
 								{tab === "file"
-									? <span className="tab-name" title={file?.path}><span className="tab-label">{fileTabLabel(file)}</span></span>
+									? (
+										<span className="tab-name" title={file && fileTabTitle(file)}>
+											<span className="tab-label">{fileTabLabel(file)}</span>
+											{/* After the name, not in it, so a long name's ellipsis does not take it. */}
+											{file && hasUnsavedEdits(file) && (
+												<>
+													<span className="tab-unsaved" aria-hidden="true">●</span>
+													<span className="visually-hidden"> (unsaved)</span>
+												</>
+											)}
+										</span>
+									)
 									: tab === "diff" && diff
 										? (
 											<span className="tab-name" title={diffTabTitle(diff.file)}>

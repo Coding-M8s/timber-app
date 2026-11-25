@@ -649,6 +649,11 @@ logins. The app never reads a tracker login and never signs in.
   their own width if that is less, they go on the next line. Workspace, Pull request,
   the "diff" marker, the close buttons, and the switch are never shortened,
   and nothing in the row passes the workspace's edges.
+- While the open file has unsaved edits, the File tab has a dot after the
+  name, whichever tab shows. The dot is never shortened with the name, the
+  tab's tooltip ends in "(unsaved)", and assistive technology hears the same
+  word after the name. Saving or discarding the edits, or undoing them all,
+  takes it away.
 - When the terminal takes the keyboard. The shown session's terminal takes
   it when a worktree is chosen by any route but the arrows in the sidebar: a
   click, Enter, or Space on its row, its chip, the command palette (also for
@@ -1095,7 +1100,8 @@ logins. The app never reads a tracker login and never signs in.
   Discard; once saved, Discard reads "Done". "Unsaved" shows while the text
   differs from the file. The edits are kept when another tab or worktree
   shows, and Rendered shows them before they are saved. Saving writes only
-  that file, with its own line endings. When the file changed on disk since
+  that file, with its own line endings, and the worktree's change counts
+  follow at once. When the file changed on disk since
   it was opened, as when an agent wrote it, nothing is written: the reason
   shows above the text with "Save over it", and the edits stay. Closing the
   file, Read again, or opening another file in its place asks first while

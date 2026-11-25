@@ -248,6 +248,54 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the tab r
 		expect(await at(1000)).toMatchObject({ switchBeside: false, lines: 2, closeBeside: true });
 	}, 30_000);
 
+	test("the unsaved mark is whole after a name at any width, says so, and goes with a save, which the sidebar's row shows at once", async () => {
+		const MARK = `document.querySelector("#tab-file .tab-unsaved")`;
+		const ROW = `[...document.querySelectorAll(".row-item.selected *")]`;
+		const change = `${STORE}.editFile(${STORE}.getState().selection.worktree); ${STORE}.changeDraft(${STORE}.getState().selection.worktree, "edited\\n")`;
+		const name = LONG_FILE.slice(LONG_FILE.lastIndexOf("/") + 1);
+		await open(LONG, LONG_FILE);
+		expect(await page.evaluate<boolean>(`${MARK} === null`)).toBe(true);
+		await page.evaluate(change);
+		await page.until(`${MARK} !== null`, "the mark showed while the diff tab does");
+		for (const size of SIZES) {
+			await layOut(size);
+			for (const tab of ["diff", "file"]) {
+				await page.evaluate(`${STORE}.showTab("${tab}")`);
+				await page.until(`document.querySelector("#tab-${tab}.selected") !== null`, `the ${tab} tab was selected`);
+				expect({ size, tab, misfits: await page.evaluate<string[]>(MISFITS) }).toEqual({ size, tab, misfits: [] });
+				expect({ size, tab, shortened: await page.evaluate<boolean>(SHORTENED("file")) }).toEqual({ size, tab, shortened: true });
+				const mark = await page.evaluate<{ drawn: boolean; afterName: boolean; inTab: boolean; reached: boolean }>(`(() => {
+					const mark = ${MARK};
+					const box = mark.getBoundingClientRect();
+					const tab = document.querySelector("#tab-file").getBoundingClientRect();
+					return {
+						drawn: box.width > 3 && box.height > 3,
+						afterName: box.left >= document.querySelector("#tab-file .tab-label").getBoundingClientRect().right,
+						inTab: box.right <= tab.right && box.top >= tab.top && box.bottom <= tab.bottom,
+						reached: mark.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)),
+					};
+				})()`);
+				expect({ size, tab, ...mark }).toEqual({ size, tab, drawn: true, afterName: true, inTab: true, reached: true });
+			}
+		}
+		expect(await page.accessibleName("#tab-file")).toBe(`${name} (unsaved)`);
+		await page.hover("#tab-file .tab-unsaved");
+		expect(await page.evaluate<string | null>(`[...document.querySelectorAll(":hover")].at(-1).closest("[title]")?.title ?? null`)).toBe(`${LONG_FILE} (unsaved)`);
+		expect(await page.accessibleName("#tab-file + .tab-close")).toBe(`Close ${name}`);
+
+		await page.resize(1500, 900);
+		expect(await page.evaluate<boolean>(`${ROW}.some(element => element.textContent === "3M")`)).toBe(true);
+		// The other file is no longer changed, which only reading the Changes list again shows.
+		const patch = [`diff --git a/${LONG_FILE} b/${LONG_FILE}`, "index 1111111..2222222 100644", `--- a/${LONG_FILE}`, `+++ b/${LONG_FILE}`, "@@ -1 +1 @@", "-old", "+new", ""].join("\n");
+		await page.evaluate(`${ENGINE}.setFileChanges(${STORE}.getState().repositories[0].worktrees[1].path, ${JSON.stringify([{ change: { area: "unstaged", kind: "modified", path: LONG_FILE, previousPath: null }, patch }])})`);
+		expect(await page.evaluate<number>(`document.querySelectorAll(".change-file").length`)).toBe(2);
+		await page.evaluate(`${STORE}.saveFile(${STORE}.getState().selection.worktree)`);
+		await page.until(`${ROW}.some(element => element.textContent === "4M")`, "the row counted the saved file");
+		await page.until(`[...document.querySelectorAll(".change-file")].map(button => button.title).join() === ${JSON.stringify(LONG_FILE)}`, "the Changes list was read again");
+		expect(await page.evaluate<boolean>(`${MARK} === null`)).toBe(true);
+		expect(await page.accessibleName("#tab-file")).toBe(name);
+	}, 60_000);
+
 	test("the arrows, Home, and End move between the tabs, and each focused one draws its ring inside the workspace", async () => {
 		// The main process writes the theme before the app's page is drawn; this page has none, so the ring's color is set by hand.
 		await page.evaluate(`document.documentElement.style.setProperty("--focus", "rgb(80, 140, 255)")`);
