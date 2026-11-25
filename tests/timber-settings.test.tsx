@@ -8,8 +8,8 @@ import { createMockEngine, sampleTimberStatuses } from "../src/mainview/engine/m
 import { MOCK_MACHINE_CONFIG, sampleMachineValues } from "../src/mainview/engine/mock-timber-config";
 import { createAppStore } from "../src/mainview/store/store";
 import {
-	type GroupOutcome, type TrackingDraft, credentialsToCheck, credentialsToSave, describeCheck, draftsOf, groupChanged, groupMessages, jiraDefault, outcomeOfSave,
-	scopePlaceholder, typingPutsAway, valuesWith, withJiraMode, withPreset, EDITOR_PRESETS,
+	type GroupOutcome, type TrackingDraft, credentialsToCheck, credentialsToSave, describeCheck, draftsOf, groupChanged, groupMessages, jiraDefault, jiraTokenProblem, loginsChange,
+	outcomeOfSave, scopePlaceholder, typingPutsAway, valuesWith, withJiraMode, withPreset, EDITOR_PRESETS, JIRA_TOKEN_PROBLEM,
 } from "../src/mainview/timber-settings-format";
 import type { TimberCredentialStates, TimberValues } from "../src/shared/timber-config";
 
@@ -112,14 +112,59 @@ describe("a group of Timber's settings as data", () => {
 
 	test("a login typed is saved, removing one sends null, and neither is ever part of the settings", () => {
 		const tracking: TrackingDraft = { ...draftsOf(READ).tracking, linearKey: SECRET };
-		expect(credentialsToSave(tracking)).toEqual({ linear: { token: SECRET } });
+		expect(credentialsToSave(tracking, null)).toEqual({ credentials: { linear: { token: SECRET } } });
 		expect(groupChanged("tracking", tracking, READ)).toBe(true);
 		expect(JSON.stringify(valuesWith("tracking", tracking, READ))).not.toContain(SECRET);
-		expect(credentialsToSave({ ...tracking, linearKey: "", removeLinear: true, removeJira: true })).toEqual({ linear: null, jira: null });
-		expect(credentialsToCheck(tracking, "linear")).toEqual({ linear: { token: SECRET } });
-		expect(credentialsToCheck({ ...tracking, removeLinear: true }, "linear")).toBeUndefined();
-		expect(credentialsToCheck(tracking, "jira")).toBeUndefined();
-		expect(credentialsToSave(draftsOf(READ).tracking)).toBeUndefined();
+		expect(credentialsToSave({ ...tracking, linearKey: "", removeLinear: true, removeJira: true }, null)).toEqual({ credentials: { linear: null, jira: null } });
+		expect(credentialsToCheck(tracking, "linear", null)).toEqual({ credentials: { linear: { token: SECRET } } });
+		expect(credentialsToCheck({ ...tracking, removeLinear: true }, "linear", null)).toEqual({});
+		expect(credentialsToCheck(tracking, "jira", null)).toEqual({});
+		expect(credentialsToSave(draftsOf(READ).tracking, null)).toEqual({});
+		const jira = { ...tracking, linearKey: "", jiraEmail: "sam@example.com", jiraToken: "ATATT3xFfGF0" };
+		expect(credentialsToSave(jira, null)).toEqual({ credentials: { jira: { email: "sam@example.com", token: "ATATT3xFfGF0" } } });
+		expect(credentialsToCheck(jira, "jira", null)).toEqual({ credentials: { jira: { email: "sam@example.com", token: "ATATT3xFfGF0" } } });
+		expect(credentialsToCheck({ ...jira, removeJira: true }, "jira", null)).toEqual({});
+	});
+
+	describe("a Jira token that is the site address", () => {
+		const SITE = "https://example.atlassian.net";
+		const MACHINE: TimberValues = { jira: { site_url: "https://machine.atlassian.net" } };
+		const typed = (change: Partial<TrackingDraft>): TrackingDraft => ({ ...draftsOf({}).tracking, jiraMode: "set", siteUrl: SITE, jiraEmail: "sam@example.com", ...change });
+
+		test("is refused to save and to check, and a Linear key typed with it is still checked", () => {
+			for (const jiraToken of [SITE, "http://anywhere.example", "HTTPS://Other.example/path", ` ${SITE} `, `${SITE}/`, "https://", "example.atlassian.net", "Example.Atlassian.net/"]) {
+				const draft = typed({ jiraToken, linearKey: SECRET });
+				expect(jiraTokenProblem(draft, null)).toBe(JIRA_TOKEN_PROBLEM);
+				expect(credentialsToSave(draft, null)).toEqual({ refused: JIRA_TOKEN_PROBLEM });
+				expect(credentialsToCheck(draft, "jira", null)).toEqual({ refused: JIRA_TOKEN_PROBLEM });
+				expect(credentialsToCheck(draft, "linear", null)).toEqual({ credentials: { linear: { token: SECRET } } });
+				expect(credentialsToCheck(draft, "github", null)).toEqual({});
+				// Still a change, so Save is held back with a reason rather than looking as if there were nothing to save.
+				expect(loginsChange(draft)).toBe(true);
+				expect(groupChanged("tracking", draft, {})).toBe(true);
+			}
+			expect(JIRA_TOKEN_PROBLEM).toBe("This looks like the site address, not an API token. Create one at id.atlassian.com.");
+		});
+
+		test("is told by the machine's site while the repository inherits it, and by no site when Jira is off or it was not read", () => {
+			const jiraToken = "machine.atlassian.net";
+			expect(credentialsToSave(typed({ jiraMode: "inherit", siteUrl: "", jiraToken }), MACHINE)).toEqual({ refused: JIRA_TOKEN_PROBLEM });
+			// The site left in the field is not the one used while inheriting.
+			expect(jiraTokenProblem(typed({ jiraMode: "inherit", jiraToken: "example.atlassian.net" }), MACHINE)).toBeNull();
+			expect(jiraTokenProblem(typed({ jiraToken }), MACHINE)).toBeNull();
+			expect(jiraTokenProblem(typed({ jiraMode: "off", jiraToken }), MACHINE)).toBeNull();
+			expect(jiraTokenProblem(typed({ jiraMode: "inherit", jiraToken }), { jira: false })).toBeNull();
+			expect(jiraTokenProblem(typed({ jiraMode: "inherit", jiraToken }), null)).toBeNull();
+			expect(jiraTokenProblem(typed({ jiraMode: "off", jiraToken: SITE }), null)).toBe(JIRA_TOKEN_PROBLEM);
+		});
+
+		test("is not seen in a real token, a blank one, a blank site, or a login being removed", () => {
+			for (const jiraToken of ["ATATT3xFfGF0_http://x", "httpstoken", "example", ""]) expect(jiraTokenProblem(typed({ jiraToken }), null)).toBeNull();
+			for (const siteUrl of ["", "  ", "https://"]) expect(jiraTokenProblem(typed({ siteUrl, jiraToken: "" }), null)).toBeNull();
+			expect(credentialsToSave(typed({ jiraToken: SITE, removeJira: true }), null)).toEqual({ credentials: { jira: null } });
+			// An email alone is Timber's to refuse.
+			expect(credentialsToSave(typed({}), null)).toEqual({ credentials: { jira: { email: "sam@example.com", token: "" } } });
+		});
 	});
 
 	test("Timber's messages go to the field they name, the rest to the group", () => {
@@ -188,6 +233,27 @@ describe("the fields of a group on screen", () => {
 		expect(markup).toContain("timber __app-config check github --scope global --input-file &lt;settings draft&gt;");
 		expect(markup).toContain("timber __app-config check jira --scope global --input-file &lt;settings draft&gt;");
 		expect(markup).toContain("Remove the saved Jira login");
+	});
+
+	test("the Jira email shows as it is typed, and the Jira token is hidden and opts out of being filled in", () => {
+		const draft: TrackingDraft = { ...draftsOf(READ).tracking, jiraEmail: "sam@example.com", jiraToken: "ATATT3xFfGF0" };
+		const markup = renderToStaticMarkup(<TrackingFields draft={draft} onChange={noop} scope="machine" machine={null} messages={[]} values={READ} credentials={CREDENTIALS} checks={{}} onCheck={noop} busy={false} />);
+		expect(markup).toMatch(/>Jira email<\/label><input[^>]*type="email"[^>]*autoComplete="off" aria-invalid="false"[^>]*value="sam@example.com"\/>/);
+		expect(markup).toMatch(/>Jira API token<\/label><input[^>]*type="password"[^>]*autoComplete="new-password" aria-invalid="false"/);
+		expect(markup).not.toContain(JIRA_TOKEN_PROBLEM);
+		expect(markup).not.toMatch(/disabled=""[^>]*>Test connection</);
+	});
+
+	test("a Jira token that is the site address is told at the field, beside Timber's own words, and holds only Jira's test", () => {
+		const draft: TrackingDraft = { ...draftsOf(READ).tracking, jiraToken: "https://example.atlassian.net" };
+		const fields = (messages: string[]) => renderToStaticMarkup(<TrackingFields draft={draft} onChange={noop} scope="machine" machine={null} messages={messages} values={READ} credentials={CREDENTIALS} checks={{}} onCheck={noop} busy={false} />);
+		const markup = fields([]);
+		const [, errorId] = /aria-describedby="([^"]+)" value="https:\/\/example.atlassian.net"/.exec(markup)!;
+		expect(markup).toMatch(/>Jira API token<\/label><input[^>]*aria-invalid="true"/);
+		expect(markup).toContain(`<span id="${errorId}" class="field-error" role="alert">${JIRA_TOKEN_PROBLEM}</span>`);
+		expect(markup.match(/disabled=""[^>]*>Test connection</g)).toHaveLength(1);
+		expect(markup).toMatch(/aria-label="Jira check command">[^<]*<\/pre><button[^>]*disabled=""[^>]*>Test connection</);
+		expect(fields(["credentials.jira is invalid"])).toContain(`${JIRA_TOKEN_PROBLEM} Timber does not accept this value.</span>`);
 	});
 
 	const form = (outcome: GroupOutcome, editTracked = false, blocked: string | null = null) => renderToStaticMarkup(

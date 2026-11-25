@@ -17,6 +17,10 @@ import {
  * same holds inside a table a group sets, such as `[agent]`: the group
  * replaces only the keys it draws, and keys such as `resolve_handoff` stay
  * as read.
+ *
+ * Values go to Timber as typed, and Timber decides what is valid. The one
+ * exception is a Jira API token that is the site address, which is refused
+ * here (`jiraTokenProblem`).
  */
 
 export const TIMBER_GROUPS = ["editor", "agent", "git", "scripts", "tracking"] as const;
@@ -275,24 +279,67 @@ export function valuesWithAll(drafts: GroupDrafts, values: TimberValues): Timber
 	return TIMBER_GROUPS.reduce((next, group) => valuesWith(group, drafts[group], next), values);
 }
 
+export const JIRA_TOKEN_PROBLEM = "This looks like the site address, not an API token. Create one at id.atlassian.com.";
+
+/** A site address as it is compared: without its scheme, the slashes after it, the spaces around it, and its case. */
+const bareSite = (address: string): string => address.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/+$/, "");
+
 /**
- * The logins to save with the issue tracking group: what was typed, or null
- * to remove a saved one. Undefined when nothing changes.
+ * Why the Jira API token typed cannot be one, or null. The field hides what
+ * it holds, and Timber accepts any token without spaces, so a site address
+ * pasted into it would be saved for every repository on the site. The site
+ * is the one typed, or the machine's while the repository inherits it.
+ * `machine` is null when it was not read, and then only the scheme tells.
  */
-export function credentialsToSave(draft: TrackingDraft): TimberCredentialsDraft | undefined {
+export function jiraTokenProblem(draft: TrackingDraft, machine: TimberValues | null): string | null {
+	if (draft.removeJira) return null;
+	const token = draft.jiraToken.trim();
+	if (/^https?:\/\//i.test(token)) return JIRA_TOKEN_PROBLEM;
+	const inherited = machine?.jira ? machine.jira.site_url : "";
+	const site = bareSite(draft.jiraMode === "set" ? draft.siteUrl : draft.jiraMode === "inherit" ? inherited : "");
+	return site !== "" && bareSite(token) === site ? JIRA_TOKEN_PROBLEM : null;
+}
+
+/** The logins a save or a check sends, as the request carries them, or why none may be sent. */
+export type TypedLogins = { credentials?: TimberCredentialsDraft } | { refused: string };
+
+/** What was typed for each login, or null to remove a saved one. */
+function typedLogins(draft: TrackingDraft): TimberCredentialsDraft {
 	const credentials: TimberCredentialsDraft = {};
 	if (draft.removeJira) credentials.jira = null;
 	else if (draft.jiraEmail !== "" || draft.jiraToken !== "") credentials.jira = { email: draft.jiraEmail, token: draft.jiraToken };
 	if (draft.removeLinear) credentials.linear = null;
 	else if (draft.linearKey !== "") credentials.linear = { token: draft.linearKey };
-	return Object.keys(credentials).length === 0 ? undefined : credentials;
+	return credentials;
 }
 
-/** The logins typed for one service, to check them before saving. A removal is not something to check. */
-export function credentialsToCheck(draft: TrackingDraft, integration: Integration): TimberCredentialsDraft | undefined {
-	if (integration === "jira" && !draft.removeJira && (draft.jiraEmail !== "" || draft.jiraToken !== "")) return { jira: { email: draft.jiraEmail, token: draft.jiraToken } };
-	if (integration === "linear" && !draft.removeLinear && draft.linearKey !== "") return { linear: { token: draft.linearKey } };
-	return undefined;
+/** Whether saving would change a login, sent or refused. */
+export const loginsChange = (draft: TrackingDraft): boolean => Object.keys(typedLogins(draft)).length > 0;
+
+/**
+ * The logins to save with the issue tracking group: what was typed, or null
+ * to remove a saved one. No `credentials` when nothing changes. Refused, the
+ * save sends nothing at all.
+ */
+export function credentialsToSave(draft: TrackingDraft, machine: TimberValues | null): TypedLogins {
+	const problem = jiraTokenProblem(draft, machine);
+	if (problem !== null) return { refused: problem };
+	return loginsChange(draft) ? { credentials: typedLogins(draft) } : {};
+}
+
+/**
+ * The logins typed for one service, to check them before saving. A removal
+ * is not something to check. A refused Jira token holds only Jira's check.
+ */
+export function credentialsToCheck(draft: TrackingDraft, integration: Integration, machine: TimberValues | null): TypedLogins {
+	const { jira, linear } = typedLogins(draft);
+	if (integration === "jira") {
+		const problem = jiraTokenProblem(draft, machine);
+		if (problem !== null) return { refused: problem };
+		if (jira) return { credentials: { jira } };
+	}
+	if (integration === "linear" && linear) return { credentials: { linear } };
+	return {};
 }
 
 /** Key order is not meaning: Timber writes its own order. */
@@ -309,7 +356,7 @@ function sameValue(left: unknown, right: unknown): boolean {
 
 /** Whether saving the group would change anything. */
 export function groupChanged<Group extends TimberGroup>(group: Group, draft: GroupDrafts[Group], values: TimberValues): boolean {
-	if (group === "tracking" && credentialsToSave(draft as TrackingDraft) !== undefined) return true;
+	if (group === "tracking" && loginsChange(draft as TrackingDraft)) return true;
 	return !sameValue(valuesWith(group, draft, values), values);
 }
 

@@ -1429,7 +1429,10 @@ logins. The app never reads a tracker login and never signs in.
   in groups (editor, coding assistant, branch and remote and folder,
   scripts, issue tracking) that each have their own Save and show the exact
   Timber command it runs. Timber validates and writes; its messages show at
-  the field they name. A tracked `.timber.toml` is changed only when the
+  the field they name. The app itself refuses one value: a Jira API token that
+  is the site address, told at the hidden field as it is typed, with Test
+  connection and Save held until it is corrected, here and in the setup
+  wizard. A tracked `.timber.toml` is changed only when the
   person ticks the box for that save. Issue tracking has "Test connection"
   for GitHub, Jira, and Linear, and sets where each one's current sprint
   comes from: a Jira Scrum board or JQL (one or the other) and project, a

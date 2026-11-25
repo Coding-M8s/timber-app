@@ -2596,8 +2596,19 @@ the private login stores stay Timber's.
 - **Logins.** A Jira email and token and a Linear key are typed only to save
   or check them. They go to the main process in the request and on to
   Timber only inside the private input file, never as arguments, and are
-  never logged. The fields are password fields, never filled in, and
-  cleared once a save went through. The section shows only what Timber
+  never logged. The fields are never filled in and are cleared once a save
+  went through. The token and the key are password fields; the email shows as
+  it is typed. A Jira token that starts with `http://` or `https://`, or is
+  the site address without its scheme, is refused at its field as it is typed
+  (`jiraTokenProblem` in `src/mainview/timber-settings-format.ts`), since the
+  field hides it and Timber 0.2.0 accepts it. The site is the one typed, or
+  the machine's while the repository inherits it; with machine defaults that
+  were not read, only the scheme tells. Until it is corrected, Jira's check
+  and Save are held, in Settings and in the setup wizard, and
+  `credentialsToSave` and `credentialsToCheck` answer a refusal, so nothing
+  is sent. It is the one value the window refuses itself; Timber checks every
+  other, an email included, so the forms switch the webview's own field checks
+  off (`noValidate`). The section shows only what Timber
   reports: whether a login is saved, whether its store is unreadable, and
   whether an environment variable replaces it. A saved login can be removed.
   Timber stores no GitHub token: GitHub uses the GitHub CLI login or

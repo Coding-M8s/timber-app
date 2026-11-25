@@ -5183,3 +5183,45 @@ and Google Chrome:
 - `bun run test`: 4,815 passed, 19 skipped, 0 failed, in 286 files, after
   rebasing onto the default agent per repository (issue 388).
 - `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
+
+Run for a Jira login saved with the site address as its token (issue 387),
+Linux x64 (Pop!_OS 24.04) with Bun 1.4.5, Google Chrome, Timber 0.2.0, and
+WebKitGTK 2.52.6:
+
+- `bun test tests/timber-settings.test.tsx tests/setup-wizard.test.ts
+  tests/setup-prompt.test.tsx tests/jira-token-browser.test.ts`: passed. The
+  rule, with the typed site, the machine's, and neither; `credentialsToSave`,
+  `credentialsToCheck`, and the wizard's request refuse it; the fields' types
+  and the message at the field; and in headless Chrome, in Settings and in the
+  wizard, Test connection, Save, and Enter send nothing until the token is
+  corrected, and an email that is none still reaches the engine.
+- The desktop app built from this change with `electrobun build`, run on
+  `Xvfb :87` under `dbus-run-session` with its own `HOME` and XDG folders and
+  a temporary repository, driven by `xdotool`, with an invented login, and
+  looked at in screenshots, in Settings, Machine:
+  - The Jira email shows as typed. Nothing filled the email or the token: not
+    when the section first showed, not after a login was saved, and not after
+    quitting and starting again with the same folders; with a login saved, a
+    click and Down in either field offered nothing.
+  - After the save, the token and the email were in Timber's
+    `credentials/jira.json` as typed and in no other file of those folders, so
+    the webview had kept no copy to fill in.
+  - WebKitGTK does no filling in of its own: its library fills a form only for
+    a web process extension (`webkit_web_form_manager_input_element_auto_fill`
+    in `nm -D`), and Electrobun's `libNativeWrapper.so` imports nothing that
+    loads one, nor form submission or libsecret. So `new-password` on the
+    token is kept, and nothing stronger was added.
+  - What does put the site address there unseen: with the address selected in
+    Site address, a middle click in the token field pasted it, as Ctrl+V did
+    after Ctrl+C. Both times the field showed only dots, and the message and
+    the disabled Test connection showed at once. Enter there left Timber's
+    folder without a file.
+  - A drag of the selected address onto the token field emptied Site address
+    and put nothing in the token. Whether a person's own pointer does the same
+    was not checked.
+- `bun run test`: 4,823 passed, 19 skipped, 0 failed, in 287 files, after
+  rebasing onto the agents' sign in state (817280f).
+- `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
+- Not run: the setup wizard in the desktop app, a check against a real Jira
+  site, a Wayland session, an input method or a password manager that types
+  into other windows, Windows, and macOS.

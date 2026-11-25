@@ -14,6 +14,7 @@
     "tests/worktree-commands.test.ts": 9001,
     "tests/review-panel-browser.test.ts": 8436,
     "tests/files-panel-browser.test.ts": 5291,
+    "tests/jira-token-browser.test.ts": 5256,
     "tests/worktree-set-base.test.ts": 5130,
     "tests/fetcher.test.ts": 4327,
     "tests/repository-watcher.test.ts": 4111,
