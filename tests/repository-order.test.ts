@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { DRAG_THRESHOLD, type DropSlot, type GroupDropSlot, dropPlace, groupDropPlace, moveStep } from "../src/mainview/repository-drag";
-import { applyOrder, moveInOrder, sameOrder } from "../src/shared/repository-order";
+import { DRAG_THRESHOLD, type DropSlot, type GroupDropSlot, canMoveWorktrees, dropPlace, groupDropPlace, moveStep, worktreeDropPlace, worktreeStaysPut } from "../src/mainview/repository-drag";
+import { applyOrder, moveBefore, moveInOrder, orderWithShown, sameOrder, stepBefore } from "../src/shared/repository-order";
 
 const items = (...paths: string[]) => paths.map(path => ({ path }));
 
@@ -161,5 +161,81 @@ describe("dropPlace", () => {
 
 	test("with nothing else shown, lands loose", () => {
 		expect(dropPlace([], 50)).toEqual({ group: null, before: null });
+	});
+});
+
+describe("moveBefore", () => {
+	test("puts a path just before another, or at the end for null", () => {
+		expect(moveBefore(["a", "b", "c"], "c", "a")).toEqual(["c", "a", "b"]);
+		expect(moveBefore(["a", "b", "c"], "a", "c")).toEqual(["b", "a", "c"]);
+		expect(moveBefore(["a", "b", "c"], "a", null)).toEqual(["b", "c", "a"]);
+		expect(moveBefore(["a", "b", "c"], "b", "c")).toEqual(["a", "b", "c"]);
+	});
+
+	test("treats a before that is not listed as the end, and leaves an unknown path alone", () => {
+		expect(moveBefore(["a", "b"], "a", "z")).toEqual(["b", "a"]);
+		expect(moveBefore(["a", "b"], "z", "a")).toEqual(["a", "b"]);
+	});
+});
+
+describe("stepBefore", () => {
+	test("names the sibling to go before for one place up or down", () => {
+		expect(stepBefore(["a", "b", "c"], "b", -1)).toBe("a");
+		expect(stepBefore(["a", "b", "c"], "a", 1)).toBe("c");
+		expect(stepBefore(["a", "b", "c"], "b", 1)).toBeNull();
+	});
+
+	test("is undefined at either end and for an unknown path", () => {
+		expect(stepBefore(["a", "b", "c"], "a", -1)).toBeUndefined();
+		expect(stepBefore(["a", "b", "c"], "c", 1)).toBeUndefined();
+		expect(stepBefore(["a", "b", "c"], "z", 1)).toBeUndefined();
+	});
+});
+
+describe("orderWithShown", () => {
+	test("puts the moved rows first and every other path after them in the order it had", () => {
+		expect(orderWithShown(["a", "x", "b", "y"], ["b", "a"])).toEqual(["b", "a", "x", "y"]);
+		expect(orderWithShown(["a", "b"], ["b", "a"])).toEqual(["b", "a"]);
+	});
+});
+
+describe("worktreeDropPlace", () => {
+	// Three other rows, each 20 high, from the top: their middles are 10, 30, 50.
+	const slots = [{ path: "a", middle: 10 }, { path: "b", middle: 30 }, { path: "c", middle: 50 }];
+
+	test("lands before the first row whose middle is below the pointer", () => {
+		expect(worktreeDropPlace(slots, 5)).toBe("a");
+		expect(worktreeDropPlace(slots, 10)).toBe("b");
+		expect(worktreeDropPlace(slots, 29)).toBe("b");
+		expect(worktreeDropPlace(slots, 31)).toBe("c");
+	});
+
+	test("clamps to the ends of its own list: far above is first, far below is the end", () => {
+		expect(worktreeDropPlace(slots, -500)).toBe("a");
+		expect(worktreeDropPlace(slots, 50)).toBeNull();
+		expect(worktreeDropPlace(slots, 5000)).toBeNull();
+		// Over a neighboring repository, a group, or the top level there are no slots to land in: the same two ends.
+		expect(worktreeDropPlace([], 5)).toBeNull();
+	});
+});
+
+describe("worktreeStaysPut", () => {
+	test("is true where the drop would leave the rows as they are", () => {
+		expect(worktreeStaysPut(["a", "b", "c"], "b", "c")).toBe(true);
+		expect(worktreeStaysPut(["a", "b", "c"], "c", null)).toBe(true);
+		expect(worktreeStaysPut(["a", "b", "c"], "b", "b")).toBe(true);
+	});
+
+	test("is false where it moves", () => {
+		expect(worktreeStaysPut(["a", "b", "c"], "b", "a")).toBe(false);
+		expect(worktreeStaysPut(["a", "b", "c"], "a", null)).toBe(false);
+	});
+});
+
+describe("canMoveWorktrees", () => {
+	test("needs two rows and no filter typed", () => {
+		expect(canMoveWorktrees(2, "")).toBe(true);
+		expect(canMoveWorktrees(1, "")).toBe(false);
+		expect(canMoveWorktrees(3, "feat")).toBe(false);
 	});
 });

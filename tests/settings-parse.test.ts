@@ -128,3 +128,22 @@ describe("repository groups", () => {
 		expect(JSON.parse(serializeSettings(settings)).layout.collapsedGroups).toEqual([work.id]);
 	});
 });
+
+describe("the worktree order of a repository", () => {
+	const order = ["/work/timber-worktrees/feat", "/work/timber"];
+
+	test("round-trips with its repository, and is written only once there is one", () => {
+		const settings = { repositories: [{ ...one, worktreeOrder: order }, two] };
+		expect(JSON.parse(serializeSettings(settings)).repositories).toEqual([{ ...one, worktreeOrder: order }, two]);
+		expect(parseSettings(serializeSettings(settings))).toEqual(settings);
+		// A file without one serializes as it always did.
+		expect(JSON.parse(serializeSettings({ repositories: [{ ...one, worktreeOrder: [] }] })).repositories).toEqual([one]);
+	});
+
+	test("a part that cannot be read costs only itself, never the repository or the file", () => {
+		const text = (worktreeOrder: unknown) => JSON.stringify({ version: 1, repositories: [{ ...one, worktreeOrder }] });
+		expect(parseSettings(text("nope"))).toEqual({ repositories: [one] });
+		expect(parseSettings(text({ a: 1 }))).toEqual({ repositories: [one] });
+		expect(parseSettings(text([1, "", "/a", "/a", null, "/b"]))).toEqual({ repositories: [{ ...one, worktreeOrder: ["/a", "/b"] }] });
+	});
+});

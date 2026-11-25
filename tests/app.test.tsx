@@ -154,7 +154,7 @@ describe("App", () => {
 	test("a worktree with a missing folder still has a row, marked as such", async () => {
 		const { store } = await startedStore();
 		const markup = renderToStaticMarkup(<App store={store} />);
-		expect(markup).toMatch(/title="\/work\/api-server-worktrees\/old-removed-folder \(Base origin\/main\)\. Tag: Work"[^>]*>.*?old\/removed-folder.*?folder missing/);
+		expect(markup).toMatch(/title="\/work\/api-server-worktrees\/old-removed-folder \(Base origin\/main\)\. Tag: Work[^"]*"[^>]*>.*?old\/removed-folder.*?folder missing/);
 		expect(markup).toContain("The folder is missing: /work/api-server-worktrees/old-removed-folder. Its status is unknown.");
 		store.select(sampleRepositories[1]!.worktrees[2]!.id);
 		expect(renderToStaticMarkup(<App store={store} />)).toContain("Status unknown: Worktree path is missing");
@@ -233,7 +233,10 @@ describe("repository headers", () => {
 		store.start();
 		await Bun.sleep(0);
 		const markup = renderToStaticMarkup(<App store={store} />);
-		expect(markup).not.toContain("aria-keyshortcuts=\"Alt+ArrowUp");
-		expect(markup).not.toContain("Drag to reorder");
+		// The header cannot move. Its worktrees, which can, say so for themselves.
+		const headers = markup.match(/<button[^>]*class="group-header"[^>]*>/g) ?? [];
+		expect(headers.length).toBe(1);
+		expect(headers[0]).not.toContain("Alt+ArrowUp");
+		expect(headers[0]).not.toContain("Drag to reorder");
 	});
 });

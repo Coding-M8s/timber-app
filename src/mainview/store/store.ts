@@ -23,13 +23,15 @@ import { type Comparison, type FileChange, type FileChangeTarget, type FileChang
 import type { PortsResult } from "../../shared/ports";
 import { type DiffLayout, type Layout, type SidePanelView, chooseComparison, chooseIssueList, chosenComparison, clampChopsWidth, clampSidebarWidth, dismissSetup, forgetGroup, forgetRepository, sameLayout, toggleCollapsed, toggleGroupCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RepositoryGroupsResult, ReportedWorktree, SavePreferencesResult, TimberFailure, TimberStatus, Worktree, WorktreeCommandResult } from "../../shared/model";
+import type { Repository } from "../../shared/model";
 import { type Preferences, defaultPreferences } from "../../shared/preferences";
 import type { ChopArrangements, ChopRename } from "../../shared/chop-order";
 import type { IssueLookup } from "../../shared/issues";
 import type { BackupDeleteRequest, BackupDeleteResult, BackupList, BackupRestoreRequest, BackupRestoreResult } from "../../shared/backups";
 import type { ArenaInspection, ArenaList, ArenaPresetList, ArenaToolList, NewArenaRequest, NewArenaResult, PickArenaRequest, PickArenaResult } from "../../shared/arenas";
 import type { PullRequestList } from "../../shared/pull-requests";
-import { applyOrder, moveInOrder } from "../../shared/repository-order";
+import { applyOrder, moveBefore, moveInOrder, orderWithShown, stepBefore } from "../../shared/repository-order";
+import { groupArenaRows } from "../arena-format";
 import { type IconChoice, type IconTarget, type RemoteIconSource, type SidebarIconResult, withIcon } from "../../shared/sidebar-icons";
 import { type HeaderTarget, type SidebarTagsResult, type TagColor, WORK_TAG_ID, describeTagsProblem } from "../../shared/worktree-tags";
 import { type RepositoryGroups, emptyGroups, moveGroupAmong, placeInOrder, shownOrder, stepAmongSiblings, stepGroupAmongSiblings } from "../../shared/repository-groups";
@@ -145,6 +147,17 @@ export interface AppStore {
 	 * the app's settings.
 	 */
 	moveRepository(path: string, index: number): Promise<void>;
+	/**
+	 * Move a worktree inside its own repository, to just before the worktree
+	 * at `before` (null for the end of the rows it moves among: the ones that
+	 * are not an arena's attempts), and save that repository's order. The list
+	 * shows it at once; a save that fails puts the saved order back and says
+	 * why in `notice`. A worktree or `before` that the repository does not
+	 * list changes nothing. Nothing on disk changes but the app's settings.
+	 */
+	moveWorktree(repository: string, path: string, before: string | null): Promise<void>;
+	/** Move a worktree one place up (-1) or down (1) among its repository's rows. Nothing happens at either end. */
+	stepWorktree(repository: string, path: string, step: -1 | 1): Promise<void>;
 	/*
 	 * Repository groups. Each only changes the app's saved list, and none reads
 	 * a repository again: the engine answers with the groups as saved, and the
@@ -1361,6 +1374,14 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	let orderTicket = 0;
 	// Saves run one after another, so the last move is the one saved last.
 	let orderSaves: Promise<void> = Promise.resolve();
+	// The same for each repository's worktrees, until the engine has saved the order the person moved them into.
+	const pendingWorktreeOrders = new Map<string, { order: string[]; ticket: number }>();
+	let worktreeTicket = 0;
+	/** `repository` with its worktrees in the order that is waiting to be saved, if one is. */
+	const withPendingWorktrees = (repository: Repository): Repository => {
+		const pending = pendingWorktreeOrders.get(repository.path);
+		return pending ? { ...repository, worktrees: applyOrder(repository.worktrees, pending.order) } : repository;
+	};
 	const repositoryTickets = new Map<string, number>();
 	// The groups as the engine last saved them, so a save that fails can put them back.
 	let savedGroups: RepositoryGroups = emptyGroups();
@@ -1406,7 +1427,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			const read = listed.map(repository => {
 				const current = state.repositories.find(candidate => candidate.path === repository.path);
 				const newer = (repositoryTickets.get(repository.path) ?? 0) > ticket;
-				return (newer && current) || keepLastGood(current, repository);
+				return withPendingWorktrees((newer && current) || keepLastGood(current, repository));
 			});
 			const repositories = pendingOrder ? applyOrder(read, pendingOrder) : read;
 			listTicket = ticket;
@@ -1596,7 +1617,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			if (!repository) throw new Error(`Git could not read ${path}`);
 			if (!state.repositories.some(current => current.path === path)) return;
 			repositoryTickets.set(path, ticket);
-			const repositories = state.repositories.map(current => current.path === path ? keepLastGood(current, repository) : current);
+			const repositories = state.repositories.map(current => current.path === path ? withPendingWorktrees(keepLastGood(current, repository)) : current);
 			update({
 				repositories,
 				selection: reconcileSelection(repositories, state.selection),
@@ -3128,6 +3149,58 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		return order ? showPlaced(path, group, order) : Promise.resolve();
 	}
 
+	/** The rows of a repository that move among each other, as the sidebar draws them: every worktree but an arena's attempts. */
+	function movableWorktrees(repository: Repository): string[] {
+		return groupArenaRows(repository.worktrees, state.arenas[repository.path]).plain.map(worktree => worktree.path);
+	}
+
+	function showWorktreeOrder(repository: Repository, moved: string[]): Promise<void> {
+		// The rows moved among, then the rest (an arena's attempts) as they were.
+		const order = orderWithShown(repository.worktrees.map(worktree => worktree.path), moved);
+		if (order.every((path, at) => path === repository.worktrees[at]?.path)) return Promise.resolve();
+		const ticket = ++worktreeTicket;
+		pendingWorktreeOrders.set(repository.path, { order, ticket });
+		update({ notice: null, repositories: state.repositories.map(candidate => candidate.path === repository.path ? { ...candidate, worktrees: applyOrder(candidate.worktrees, order) } : candidate) });
+
+		const save = async () => {
+			// A later move of this repository is already on screen and will save itself.
+			if (pendingWorktreeOrders.get(repository.path)?.ticket !== ticket) return;
+			let failure: AppState["notice"] = null;
+			try {
+				const result = await engine.reorderWorktrees(repository.path, order);
+				if (result.outcome === "overridden") failure = { kind: "overridden" };
+				if (result.outcome === "failed") failure = { kind: "failed", action: "reorder", message: result.message };
+			} catch (error) {
+				failure = { kind: "failed", action: "reorder", message: messageOf(error) };
+			}
+			if (pendingWorktreeOrders.get(repository.path)?.ticket !== ticket) return;
+			pendingWorktreeOrders.delete(repository.path);
+			if (failure) {
+				update({ notice: failure });
+				// Read the repository again, so it shows the order that is saved.
+				await reloadOne(repository.path);
+			}
+		};
+		orderSaves = orderSaves.then(save);
+		return orderSaves;
+	}
+
+	function moveWorktree(repository: string, path: string, before: string | null): Promise<void> {
+		const listed = state.repositories.find(candidate => candidate.path === repository);
+		if (!listed) return Promise.resolve();
+		const shown = movableWorktrees(listed);
+		if (!shown.includes(path) || before === path || (before !== null && !shown.includes(before))) return Promise.resolve();
+		return showWorktreeOrder(listed, moveBefore(shown, path, before));
+	}
+
+	function stepWorktree(repository: string, path: string, step: -1 | 1): Promise<void> {
+		const listed = state.repositories.find(candidate => candidate.path === repository);
+		if (!listed) return Promise.resolve();
+		const shown = movableWorktrees(listed);
+		const before = stepBefore(shown, path, step);
+		return before === undefined ? Promise.resolve() : showWorktreeOrder(listed, moveBefore(shown, path, before));
+	}
+
 	function stepRepository(path: string, step: -1 | 1): Promise<void> {
 		const order = stepAmongSiblings(pathsOnScreen(), state.repositoryGroups, path, step);
 		if (!order) return Promise.resolve();
@@ -4242,6 +4315,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		stepGroup,
 		placeRepository,
 		stepRepository,
+		moveWorktree,
+		stepWorktree,
 		toggleRepositoryGroup(id) {
 			changeLayout(toggleGroupCollapsed(state.layout, id));
 			void saveLayout("layout");

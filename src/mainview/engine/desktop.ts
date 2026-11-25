@@ -71,6 +71,7 @@ export function createDesktopEngine(): Engine {
 		addRepository: () => rpc.request.addRepository({}, { maxRequestTime: Infinity }),
 		removeRepository: path => rpc.request.removeRepository({ path }),
 		reorderRepositories: order => rpc.request.reorderRepositories({ order }),
+		reorderWorktrees: (repository, order) => rpc.request.reorderWorktrees({ repository, order }),
 		listRepositoryGroups: () => rpc.request.listRepositoryGroups({}),
 		createRepositoryGroup: (name, repository, parent) => rpc.request.createRepositoryGroup({ name, repository: repository ?? null, parent: parent ?? null }),
 		renameRepositoryGroup: (id, name) => rpc.request.renameRepositoryGroup({ id, name }),

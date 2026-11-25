@@ -6,7 +6,7 @@ import { pullRequestOf } from "../../shared/pull-requests";
 import type { Repository, Worktree } from "../../shared/model";
 import { REMOVE_REPOSITORY_HINT, TIMBER_LIST_FAILURE_TITLE, worktreeLabel } from "../format";
 import { describeRepository } from "../shell";
-import { MOVE_REPOSITORY_HINT, MOVE_REPOSITORY_SHORTCUTS } from "../repository-drag";
+import { MOVE_REPOSITORY_HINT, MOVE_REPOSITORY_SHORTCUTS, canMoveWorktrees } from "../repository-drag";
 import { mostUrgent, summarizeStatuses } from "../../shared/session-status";
 import { unseenStatuses } from "../seen-status";
 import { type AppState, isBeingRemoved, removalAt, sessionsOf, syncOptionsOf } from "../store/state";
@@ -18,6 +18,7 @@ import { OpenInEditorIconButton } from "./OpenInEditor";
 import { wantTerminalFocus } from "../terminal-focus";
 import { BackupsSection } from "./BackupsSection";
 import { WorktreeRow } from "./WorktreeRow";
+import { WorktreeRows } from "./WorktreeRows";
 import { SidebarIconView } from "./SidebarIcon";
 import { repositoryIcon } from "../../shared/sidebar-icons";
 import { IssuesRow } from "./IssuesBoard";
@@ -238,13 +239,15 @@ export function RepositorySection({ state, store, repository, matches, open, que
 			{open && repository.available && (() => {
 				// Attempts sit together under their arena, matched by path as Timber lists them; the rest as before.
 				const grouped = groupArenaRows(matches, state.arenas[repository.path]);
-				const row = (worktree: Worktree, label?: string) => {
+				// Rows can be moved among each other unless a filter is typed. Attempts of an arena stay where its attempts are.
+				const movable = canMoveWorktrees(grouped.plain.length, query);
+				const rowOf = (worktree: Worktree, label?: string, canMove = false) => {
 					const removal = removalAt(state, repository.path, worktree.path);
 					return (
-					<li key={worktree.id}>
 						<WorktreeRow
 							worktree={worktree}
 							label={label}
+							movable={canMove}
 							selected={worktree.id === selectedId}
 							onSelect={() => {
 								// Choosing a worktree, by click, Enter, or Space, puts the keyboard in its shown session, as a chip does.
@@ -289,16 +292,19 @@ export function RepositorySection({ state, store, repository, matches, open, que
 								if (request) store.openDialog(request);
 							}}
 						/>
-					</li>
 					);
 				};
+				const row = (worktree: Worktree, label?: string) => <li key={worktree.id}>{rowOf(worktree, label)}</li>;
 				return (
 					<>
-						<ul className="rows">
-							{/* The board comes first in each repository. While a filter is typed, only worktrees are searched, so it steps aside. */}
-							{query === "" && <li><IssuesRow repository={repository.path} /></li>}
-							{grouped.plain.map(worktree => row(worktree))}
-						</ul>
+						<WorktreeRows
+							repository={repository.path}
+							worktrees={grouped.plain}
+							movable={movable}
+							// The board comes first in each repository. While a filter is typed, only worktrees are searched, so it steps aside.
+							first={query === "" && <li><IssuesRow repository={repository.path} /></li>}
+							render={worktree => rowOf(worktree, undefined, movable)}
+						/>
 						{grouped.arenas.map(arena => {
 							const header = describeArenaHeader(arena);
 							return (

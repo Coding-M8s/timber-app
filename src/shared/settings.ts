@@ -37,6 +37,12 @@ export interface SavedRepository {
 	worktreeTags?: Record<string, string>;
 	/** The color of its header in the sidebar, one of the theme's tag colors. Absent for none. */
 	color?: TagColor;
+	/**
+	 * The paths of the repository's worktrees in the order the person arranged
+	 * them in the sidebar. A worktree it does not name is shown after the ones
+	 * it names. Absent until a worktree is moved, and in older files.
+	 */
+	worktreeOrder?: string[];
 }
 
 export interface Settings {
@@ -92,6 +98,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** The paths of a saved worktree order: strings that are not empty, each once. Anything else is dropped. */
+export function readWorktreeOrder(value: unknown): string[] {
+	if (!Array.isArray(value)) return [];
+	const paths: string[] = [];
+	for (const path of value) {
+		if (typeof path === "string" && path !== "" && !paths.includes(path)) paths.push(path);
+	}
+	return paths;
+}
+
 function readRepository(value: unknown): SavedRepository | null {
 	if (!isRecord(value)) return null;
 	const { path, commonDir } = value;
@@ -130,7 +146,7 @@ export function parseSettings(text: string): Settings | null {
 		// A file edited by hand may repeat a repository. Keep the first.
 		if (!repositories.some(known => known.path === repository.path || known.commonDir === repository.commonDir)) {
 			// A group that names none of the groups read is dropped, never the repository.
-			const { group, agent, worktreeTags, color } = entry as Record<string, unknown>;
+			const { group, agent, worktreeTags, color, worktreeOrder } = entry as Record<string, unknown>;
 			if (typeof group === "string" && groups.some(known => known.id === group)) repository.group = group;
 			// One that is no agent's name is dropped too. One that names no saved agent is kept: it starts nothing, rather than another agent.
 			if (isAgentName(agent)) repository.agent = agent;
@@ -138,6 +154,9 @@ export function parseSettings(text: string): Settings | null {
 			const tags = readWorktreeTags(worktreeTags);
 			if (Object.keys(tags).length > 0) repository.worktreeTags = tags;
 			if (isTagColor(color)) repository.color = color;
+			// An order that cannot be read costs only itself.
+			const order = readWorktreeOrder(worktreeOrder);
+			if (order.length > 0) repository.worktreeOrder = order;
 			repositories.push(repository);
 		}
 	}
@@ -162,7 +181,7 @@ export function parseSettings(text: string): Settings | null {
 
 /** The text of a settings file, readable and stable enough to edit by hand. */
 export function serializeSettings(settings: Settings): string {
-	const repositories = settings.repositories.map(({ path, commonDir, group, agent, worktreeTags, color }) => ({
+	const repositories = settings.repositories.map(({ path, commonDir, group, agent, worktreeTags, color, worktreeOrder }) => ({
 		path,
 		commonDir,
 		...(group === undefined ? {} : { group }),
@@ -170,6 +189,8 @@ export function serializeSettings(settings: Settings): string {
 		// Written only once a worktree has a tag other than Work, or the header a color, so an older file stays as it was.
 		...(worktreeTags && Object.keys(worktreeTags).length > 0 ? { worktreeTags: readWorktreeTags(worktreeTags) } : {}),
 		...(isTagColor(color) ? { color } : {}),
+		// Written only once a worktree was moved, so an older file stays as it was.
+		...(worktreeOrder && worktreeOrder.length > 0 ? { worktreeOrder: readWorktreeOrder(worktreeOrder) } : {}),
 	}));
 	const groups = settings.groups && settings.groups.length > 0 ? settings.groups.map(({ id, name, parent, color }) => ({ id, name, ...(parent === undefined ? {} : { parent }), ...(isTagColor(color) ? { color } : {}) })) : null;
 	const layout = settings.layout && {

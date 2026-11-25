@@ -36,3 +36,38 @@ export function applyOrder<Item extends { path: string }>(items: readonly Item[]
 export function sameOrder(one: readonly { path: string }[], other: readonly { path: string }[]): boolean {
 	return one.length === other.length && one.every((item, index) => item.path === other[index]!.path);
 }
+
+/**
+ * `paths` with `path` moved to sit just before `before`, or to the end when
+ * `before` is null. A `before` that is not in `paths`, or is `path` itself,
+ * counts as the end. A path that is not in `paths` gives them unchanged.
+ */
+export function moveBefore(paths: readonly string[], path: string, before: string | null): string[] {
+	if (!paths.includes(path)) return [...paths];
+	const rest = paths.filter(candidate => candidate !== path);
+	const at = before === null ? -1 : rest.indexOf(before);
+	return at < 0 ? [...rest, path] : [...rest.slice(0, at), path, ...rest.slice(at)];
+}
+
+/**
+ * The sibling `path` goes before to move it one place, as `moveBefore` takes
+ * it: undefined when it cannot move that way (first going up, last going
+ * down, or not in `paths`), null for the end.
+ */
+export function stepBefore(paths: readonly string[], path: string, step: -1 | 1): string | null | undefined {
+	const at = paths.indexOf(path);
+	if (at < 0) return undefined;
+	if (step === -1) return at === 0 ? undefined : paths[at - 1];
+	if (at === paths.length - 1) return undefined;
+	return paths[at + 2] ?? null;
+}
+
+/**
+ * The whole order of a repository's worktrees after the ones in `moved`, a
+ * reordering of `shown`, were arranged: `moved` first, then every other path
+ * of `all` (such as an arena's attempts) in the order it had.
+ */
+export function orderWithShown(all: readonly string[], moved: readonly string[]): string[] {
+	const named = new Set(moved);
+	return [...moved, ...all.filter(path => !named.has(path))];
+}

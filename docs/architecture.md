@@ -1010,6 +1010,25 @@ The app keeps its own list of repositories, so it is the same after a restart.
   one after another, and a move overtaken by a later one is not saved on its
   own. A save that fails reads the list again, so the saved order comes back,
   and says why. No Git command runs.
+- **Worktree order.** Each saved repository may hold `worktreeOrder`, the
+  paths of its worktrees in the order the person arranged them (issue 418),
+  written only once one was moved, so an older file is unchanged and one
+  whose `worktreeOrder` cannot be read loses only that. `Engine.reorderWorktrees`
+  (repository, order) saves what the interface sends, each path once, with no
+  Timber or Git command; an order that changes nothing writes nothing, an
+  empty one forgets it, a repository that is not listed saves nothing, and
+  the override refuses. `RepositoryList` applies it with `applyOrder` to
+  every read that answers the interface (`list`, `reload`, `find`,
+  `findRecent`), after the reader and its recent listings, which stay in
+  Timber's order, so a save needs no invalidation. A worktree the order does
+  not name follows the ones it names, so a new one is last, and a path that
+  names no worktree is skipped. Removing the repository removes its order.
+  The store (`moveWorktree`, `stepWorktree`) moves among the rows that are not
+  an arena's attempts, shows the move at once, saves the whole order of that
+  repository with the attempts after the rest, and keeps it over a list or
+  single read that answers while the save runs; a failed save reads that
+  repository again and says why. `WorktreeRows` measures only the rows of its
+  own list, which is why a drop cannot leave it.
 - **Groups.** The person can gather repositories into named groups, such as
   Work and Personal (issue 130). There are none until the person makes one.
   The file gets an ordered `groups` list, and each grouped entry a `group`

@@ -5833,3 +5833,42 @@ Linux x64 with Bun 1.4.5:
   nothing, and the section fitting at every width.
 - `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
 - Not run: the full suite (left to CI), the desktop app, Windows, and macOS.
+
+Run for moving worktree rows inside their repository (issue 418), Linux x64
+with Bun 1.4.2, Git, Timber at `~/.local/bin/timber`, and Google Chrome:
+
+- `bun test tests/repository-order.test.ts`: passed, with `moveBefore`,
+  `stepBefore`, `orderWithShown`, `worktreeDropPlace` (the pointer above the
+  first row, between rows, and far below, and no rows to land in),
+  `worktreeStaysPut`, and `canMoveWorktrees`.
+- `bun test tests/settings-parse.test.ts`: passed. `worktreeOrder` round-trips
+  and is written only when there is one; a value that cannot be read, or has
+  repeated or empty paths, costs only itself.
+- `bun test tests/repository-list.test.ts`: passed, on real temporary
+  repositories. A saved order is read back by a new list through `list`,
+  `reload`, `find`, and `findRecent`; a worktree added later with
+  `git worktree add` is last; one removed with `git worktree remove` drops out
+  and the rest stay in order; an order that changes nothing, a repository that
+  is not listed, and the override write nothing; an empty order and removing
+  the repository forget it; a save that fails is reported and leaves the order;
+  every file, the index, and every ref are the same after.
+- `bun test tests/store.test.ts`: passed. A move shows at once and saves that
+  repository's whole order only; moves that change nothing ask nothing; steps;
+  a list read while the save runs keeps the move; a failed save says why and
+  reads the repository again.
+- `bun test tests/worktree-order-mock.test.ts`: passed, the mock engine keeps
+  the order for a list and a single read.
+- `bun test tests/worktree-order-browser.test.ts` in headless Chrome: 6
+  passed. A drag shows the mark and moves the first row to the end; the click
+  that ends it selects nothing and a click still selects; a drag over another
+  repository or far above stays in its list, below the Issues row; Alt+Down and
+  Alt+Up move a row and the keyboard stays on it; the tooltip and
+  `aria-keyshortcuts` say it can move; with a filter typed none of that works.
+- Existing tests for a row's tooltip (`tests/issue-link.test.tsx`,
+  `tests/app.test.tsx`) now expect the sentence the tooltip ends with.
+- `bun run test`: 4,757 passed, 19 skipped, 9 failed. Three were the tooltip
+  tests above, fixed. The other six were browser tests that timed out or missed
+  a timing under the parallel run (the 10,000-line typing test, the Changes
+  view's notes, and four others); each passed when its file was run alone.
+- `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
+- Not run: the desktop app, Windows, and macOS.

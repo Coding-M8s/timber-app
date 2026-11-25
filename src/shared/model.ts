@@ -248,6 +248,12 @@ export type ReorderRepositoriesResult =
 	| { outcome: "overridden" }
 	| { outcome: "failed"; message: string };
 
+/** What came of asking to save a new order of one repository's worktrees. Nothing on disk changes but the app's settings. */
+export type ReorderWorktreesResult =
+	| { outcome: "saved" }
+	| { outcome: "overridden" }
+	| { outcome: "failed"; message: string };
+
 /**
  * What came of asking to change the repository groups. Nothing on disk changes but the app's settings.
  * Saved carries every group as saved, which is what the sidebar shows from then on.

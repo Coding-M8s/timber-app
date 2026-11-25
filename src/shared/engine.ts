@@ -16,7 +16,7 @@ import type { OutsideFileRequest, WorktreeFileRequest, WorktreeFileResult, Workt
 import type { WorktreeFolderChange, WorktreeFolderRequest, WorktreeFolderResult, WorktreeFolderWatch } from "./worktree-folders";
 import type { WorktreeHandoff } from "./handoff";
 import type { Layout } from "./layout";
-import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, RepositoryGroupsResult, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
+import type { AddRepositoryResult, BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RemoveRepositoryResult, ReorderRepositoriesResult, ReorderWorktreesResult, Repository, RepositoryGroupsResult, SaveLayoutResult, SavePreferencesResult, TimberStatus, WorktreeCommandResult } from "./model";
 import type { Preferences } from "./preferences";
 import type { RepositoryAgentChange, RepositoryAgents } from "./repository-agents";
 import type { RepositoryGroups } from "./repository-groups";
@@ -90,6 +90,17 @@ export interface Engine {
 	 * repository or its folder.
 	 */
 	reorderRepositories(order: string[]): Promise<ReorderRepositoriesResult>;
+	/**
+	 * Save the order of one repository's worktrees, each named by its path, so
+	 * `listRepositories` and `loadRepository` answer with that repository's
+	 * worktrees in that order from now on, after a restart too. A worktree the
+	 * order leaves out is shown after the ones it names, so one made later
+	 * appears at the end, and a path that names no worktree is skipped, so a
+	 * removed worktree drops out. A repository that is not listed changes
+	 * nothing. This only changes the app's saved list, never anything in a
+	 * repository or its folder.
+	 */
+	reorderWorktrees(repository: string, order: string[]): Promise<ReorderWorktreesResult>;
 	/**
 	 * The groups the sidebar gathers repositories into, in order, each with
 	 * the group it sits inside, if any, and the group of each grouped

@@ -56,6 +56,7 @@ export type AppRPC = {
 			addRepository: { params: {}; response: Answer<"addRepository"> };
 			removeRepository: { params: { path: string }; response: Answer<"removeRepository"> };
 			reorderRepositories: { params: { order: string[] }; response: Answer<"reorderRepositories"> };
+			reorderWorktrees: { params: { repository: string; order: string[] }; response: Answer<"reorderWorktrees"> };
 			listRepositoryGroups: { params: {}; response: Answer<"listRepositoryGroups"> };
 			createRepositoryGroup: { params: { name: string; repository: string | null; parent: string | null }; response: Answer<"createRepositoryGroup"> };
 			renameRepositoryGroup: { params: { id: string; name: string }; response: Answer<"renameRepositoryGroup"> };
