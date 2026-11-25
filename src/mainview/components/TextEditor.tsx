@@ -9,7 +9,8 @@ import { createPortal } from "react-dom";
 import { codeHighlighting, describeLanguage, pickLanguage } from "../editor-language";
 import { hasUnsavedEdits } from "../file-view-format";
 import { useStore } from "../store/react";
-import { MAX_MATCHES, describeCaret, describeLineCount, describeMatches, indentUnitOf } from "../text-editor-format";
+import type { FilePlace } from "../store/state";
+import { MAX_MATCHES, describeCaret, describeLineCount, describeMatches, indentUnitOf, placeOffset } from "../text-editor-format";
 
 /** After this long without typing, the text goes to the store. */
 const COMMIT_MILLISECONDS = 150;
@@ -82,8 +83,13 @@ const caretOf = (state: EditorState) => {
  * Save, and when the editor goes. So a keystroke renders nothing but this
  * editor's status line. The editor's whole state, undo history included,
  * is kept between showings in the store's `fileEditMemory`.
+ *
+ * A place to go to (`goTo`), as a terminal link such as `src/a.ts:45:4`
+ * asks, puts the caret there, its line in the middle of the view and the
+ * keyboard in the text, then tells the store it is done. It is a line of
+ * the text shown, the draft while there is one.
  */
-export function TextEditor({ worktreeId, path, draft, base, editable, saving, font, onSave }: {
+export function TextEditor({ worktreeId, path, draft, base, editable, saving, font, goTo, onSave }: {
 	worktreeId: string;
 	path: string;
 	/** The text when the editor appears: the store's draft, or the file as read while there is none. */
@@ -94,6 +100,8 @@ export function TextEditor({ worktreeId, path, draft, base, editable, saving, fo
 	editable: boolean;
 	saving: boolean;
 	font: { fontFamily: string; fontSize: number };
+	/** Where to put the caret, once; null when nowhere. */
+	goTo: FilePlace | null;
 	onSave: () => void;
 }) {
 	const store = useStore();
@@ -238,6 +246,15 @@ export function TextEditor({ worktreeId, path, draft, base, editable, saving, fo
 		};
 		// Made once as the editor appears: later drafts come from this editor itself.
 	}, []);
+
+	// Before paint, so the scroll kept from the last showing never flashes first.
+	useLayoutEffect(() => {
+		if (!view || goTo === null) return;
+		const at = placeOffset(view.state.doc, goTo);
+		view.dispatch({ selection: { anchor: at }, effects: EditorView.scrollIntoView(at, { y: "center" }) });
+		view.focus();
+		store.wentTo(worktreeId, goTo);
+	}, [goTo, store, view, worktreeId]);
 
 	useEffect(() => {
 		view?.dispatch({ effects: readOnly.reconfigure(EditorState.readOnly.of(!editable || saving)) });

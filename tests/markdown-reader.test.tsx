@@ -33,7 +33,7 @@ const markdown = (text: string, path = "docs/plan.md") => renderToStaticMarkup(<
 const view = (change: Partial<FileView> = {}): FileView => ({
 	repository: "/work/timber", worktreePath: FEATURE.path, path: "notes.md", outside: false, from: "workspace",
 	result: { outcome: "read", path: "notes.md", content: { kind: "text", text: "a\r\nb\r\n", lines: 2 } },
-	mode: "edit", draft: null, saving: false, saveProblem: null, ...change,
+	mode: "edit", draft: null, saving: false, saveProblem: null, goTo: null, ...change,
 });
 
 describe("rendering Markdown", () => {

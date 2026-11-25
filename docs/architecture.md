@@ -4310,7 +4310,25 @@ edited and saved in a small editor.
   click opens it, since it stays in the app; web links still take Ctrl (Cmd
   on macOS). Over a path, a left click is kept from a program that tracks
   the mouse, such as Claude Code in fullscreen, so it does not act on the
-  same click. A relative path is taken from the
+  same click. A `:line` or `:line:column` after the path (`line` and
+  `column` of `FoundPath`) goes to `openFile(worktree, path, { line,
+  column })`, which keeps it in the open file's `goTo`, a new object per
+  link. Markdown with a line opens in Source (`openFileMode` in
+  `src/mainview/file-view-format.ts`), also when a link in the worktree
+  leads out to it; open Markdown in Rendered goes to Source, or to Edit
+  when it has a draft, and in Edit stays there. A file open already keeps
+  its draft and only gets the new `goTo`; a click on it without a line
+  drops a `goTo` not followed yet. `TextEditor` puts the caret there in a layout effect, before
+  paint, so the scroll kept from the last showing never shows first: it
+  keeps the place inside the text (`placeOffset` in
+  `src/mainview/text-editor-format.ts`), scrolls its line to the middle,
+  takes the keyboard, and calls `wentTo`, which drops `goTo` unless a newer
+  one came meanwhile. `goTo` is dropped where no editor will show the file:
+  a read that is not text, a path that does not open, and Markdown
+  switched to Rendered. One still waiting when the person left the File
+  tab before the read answered is followed when the tab shows again. A
+  link held back by the question about unsaved edits keeps its place in
+  the question's step (`UnsavedFileStep`). A relative path is taken from the
   worktree's folder, not the shell's current folder, which the app does
   not know. A path that wraps onto the next row is not found. An absolute
   path inside the worktree, under its registered or real path, is read as

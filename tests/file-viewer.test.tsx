@@ -272,7 +272,7 @@ describe("the File tab", () => {
 	});
 
 	test("an open file leaves with its worktree", () => {
-		const state = { ...initialState, tab: "file" as const, selection: { repository: TIMBER, worktree: FEATURE.id }, repositories: [], files: { [FEATURE.id]: { repository: TIMBER, worktreePath: FEATURE.path, path: "a.md", outside: false, from: "workspace" as const, result: null, mode: "source" as const, draft: null, saving: false, saveProblem: null } } };
+		const state = { ...initialState, tab: "file" as const, selection: { repository: TIMBER, worktree: FEATURE.id }, repositories: [], files: { [FEATURE.id]: { repository: TIMBER, worktreePath: FEATURE.path, path: "a.md", outside: false, from: "workspace" as const, result: null, mode: "source" as const, draft: null, saving: false, saveProblem: null, goTo: null } } };
 		expect(settleTabs(state)).toEqual({ files: {}, tab: "workspace" });
 		expect(settleTabs({ ...state, repositories: sampleRepositories })).toBeNull();
 	});
@@ -298,6 +298,6 @@ describe("describeFileNotice", () => {
 
 	test("names the tab after the file", () => {
 		expect(fileTabLabel(undefined)).toBe("File");
-		expect(fileTabLabel({ repository: TIMBER, worktreePath: FEATURE.path, path: "docs/plan.md", outside: false, from: "workspace", result: null, mode: "source", draft: null, saving: false, saveProblem: null })).toBe("plan.md");
+		expect(fileTabLabel({ repository: TIMBER, worktreePath: FEATURE.path, path: "docs/plan.md", outside: false, from: "workspace", result: null, mode: "source", draft: null, saving: false, saveProblem: null, goTo: null })).toBe("plan.md");
 	});
 });

@@ -29,7 +29,7 @@ const render = (store: ReturnType<typeof createAppStore>) => renderToStaticMarku
 const textView = (text: string, change: Partial<FileView> = {}): FileView => ({
 	repository: "/work/timber", worktreePath: FEATURE.path, path: "src/a.ts", outside: false, from: "workspace",
 	result: { outcome: "read", path: "src/a.ts", content: { kind: "text", text, lines: countLines(text) } },
-	mode: "source", draft: null, saving: false, saveProblem: null, ...change,
+	mode: "source", draft: null, saving: false, saveProblem: null, goTo: null, ...change,
 });
 
 /** Run a command such as undo on a state, and give back the state after it. */

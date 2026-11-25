@@ -79,9 +79,9 @@ import { type GenerateKind, type GenerateTextResult, type GeneratedText, describ
 import { type IndexAction, type IndexWriteResult, canWriteIndex, describeGitCommand, indexCommand } from "../../shared/index-writes";
 import { type DiscardResult, discardCommand, discardPaths, fileDiscardable } from "../../shared/discard-files";
 import { type FileEditMemory, createFileEditMemory } from "../text-editor-format";
-import { afterSave, canEditFile, editableFileText, fileText, hasUnsavedEdits, initialFileMode, listedOnly, outsideResult, pathInWorktree, settleTabs, unsavedFileCount } from "../file-view-format";
+import { afterSave, canEditFile, editableFileText, fileText, hasUnsavedEdits, initialFileMode, listedOnly, openFileMode, outsideResult, pathInWorktree, settleTabs, unsavedFileCount } from "../file-view-format";
 import {
-	type AppState, type ChangesView, type DialogRequest, type FileMode, type FileView, type Operation, type PullRequestForm, type Removal, type SessionAgent, type UnsavedFileStep, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood, syncOptionsOf,
+	type AppState, type ChangesView, type DialogRequest, type FileMode, type FilePlace, type FileView, type Operation, type PullRequestForm, type Removal, type SessionAgent, type UnsavedFileStep, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood, syncOptionsOf,
 	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, canToggleSidePanel, chopsEnabled, filesPanelShown, offeredChops, sidePanelShown, sidePanelView, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, shownSession, timberReady, withTerminal, withoutSession, fileViewed, viewedKey, type CommitRun, type GenerationRun, writesWait, repositoryPick } from "./state";
 
 /** How `AppStore.runChop` runs a chop, beyond which one and where. */
@@ -340,14 +340,19 @@ export interface AppStore {
 	 * Open a file of a worktree, named by its identity, in its File tab, and
 	 * show that tab. The path is relative to the worktree, or absolute inside
 	 * it; anything else is refused without a read. Replaces the file open there.
+	 * With `at`, as a terminal link such as `src/a.ts:45:4` gives, the editor
+	 * puts the caret there, Markdown showing its source; a file open already
+	 * keeps its unsaved edits and only moves the caret.
 	 */
-	openFile(worktreeId: string, path: string): void;
+	openFile(worktreeId: string, path: string, at?: { line: number; column?: number | null }): void;
 	/** Read the open file of a worktree again, as it is on disk now. With unsaved edits, asks first. */
 	readFileAgain(worktreeId: string): void;
 	/** Close the file of a worktree, which hides its File tab and shows the tab it was opened from. With unsaved edits, asks first. */
 	closeFile(worktreeId: string): void;
-	/** Show the open file rendered or as its source. Any draft stays, and shows in either. */
+	/** Show the open file rendered or as its source. Any draft stays, and shows in either. Rendered drops a place to go to, as it has no lines. */
 	showFileAs(worktreeId: string, mode: Exclude<FileMode, "edit">): void;
+	/** The editor put the caret where the open file's `goTo` asked: drop it, unless a newer one came meanwhile. */
+	wentTo(worktreeId: string, goTo: FilePlace): void;
 	/** Edit the open file's text, starting from the file as read, or from the draft kept since. */
 	editFile(worktreeId: string): void;
 	/** The edited text of the open file, as typed. A file other than Markdown gets its draft from the first change. */
@@ -1849,13 +1854,15 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			// The file is now a link that leads out: its target shows read-only in its place, and a draft, which held nothing
 			// unsaved as reading again asked first, goes with the editor.
 			forgetEditMemory(worktreeId);
-			update({ files: { ...state.files, [worktreeId]: { ...now, path: leadsTo, outside: true, mode: initialFileMode(leadsTo), draft: null, result } } });
+			const goTo = fileText({ result }) === null ? null : now.goTo;
+			update({ files: { ...state.files, [worktreeId]: { ...now, path: leadsTo, outside: true, mode: openFileMode(leadsTo, goTo), draft: null, result, goTo } } });
 			return;
 		}
 		// With no draft, the editor shows the file as read: a new read makes a new editor, so it never shows text older than
 		// what a save checks the file against.
 		if (now.draft === null) forgetEditMemory(worktreeId);
-		update({ files: { ...state.files, [worktreeId]: { ...now, result } } });
+		// A file shown as a notice, such as binary or too large, has no lines to go to.
+		update({ files: { ...state.files, [worktreeId]: { ...now, result, ...(fileText({ result }) === null ? { goTo: null } : {}) } } });
 	}
 
 	/**
@@ -1873,7 +1880,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		return false;
 	}
 
-	function openFile(worktreeId: string, path: string): void {
+	function openFile(worktreeId: string, path: string, at?: { line: number; column?: number | null }): void {
 		const selection = selectionFor(state.repositories, worktreeId);
 		const worktree = state.repositories.find(repository => repository.path === selection?.repository)?.worktrees.find(candidate => candidate.id === worktreeId);
 		if (!selection || !worktree) return;
@@ -1882,18 +1889,27 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const outside = relative === null ? normalCompletePath(path) : null;
 		const open = state.files[worktreeId];
 		const wanted = relative ?? outside;
-		// The file open already: shown as it is, edits and all, without reading it again.
+		// A new object for every link, so the same place asked twice is gone to twice.
+		const place: FilePlace | null = at === undefined ? null : { line: at.line, column: at.column ?? null };
+		// The file open already: shown as it is, edits and all, without reading it again. A place to go to moves the caret there.
 		if (open && wanted !== null && open.path === wanted && open.outside === (outside !== null) && open.worktreePath === worktree.path) {
-			update({ selection, board: null, tab: "file" });
+			// A click without a line drops a place not gone to yet, so the file shows where it was left.
+			const goTo = place !== null && (open.result === null || fileText(open) !== null || open.draft !== null) ? place : null;
+			// Rendered has no lines: an edited file goes back to Edit, where its draft can be typed in, any other to Source.
+			const mode = goTo !== null && open.mode === "rendered" ? (open.draft !== null ? "edit" : openFileMode(open.path, goTo)) : open.mode;
+			const files = goTo !== open.goTo || mode !== open.mode ? { files: { ...state.files, [worktreeId]: { ...open, goTo, mode } } } : {};
+			update({ selection, board: null, tab: "file", ...files });
 			return;
 		}
-		if (!mayDropDraft(worktreeId, { kind: "open", path })) return;
+		if (!mayDropDraft(worktreeId, { kind: "open", path, ...(place !== null ? { at: place } : {}) })) return;
 		const shownHere = state.selection?.worktree === worktreeId && state.board === null;
 		const from = shownHere && state.tab !== "file" ? state.tab : open?.from ?? "workspace";
 		const shownPath = wanted ?? path;
+		// A path that does not open has no lines to go to.
+		const goTo = wanted === null ? null : place;
 		const view: FileView = {
 			repository: selection.repository, worktreePath: worktree.path, path: shownPath, outside: outside !== null, from, result: wanted === null ? outsideResult(path) : null,
-			mode: initialFileMode(shownPath), draft: null, saving: false, saveProblem: null,
+			mode: openFileMode(shownPath, goTo), draft: null, saving: false, saveProblem: null, goTo,
 		};
 		update({ selection, board: null, files: { ...state.files, [worktreeId]: view }, tab: "file" });
 		if (wanted !== null) void readOpenFile(worktreeId);
@@ -1966,7 +1982,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	function continueAfterDraft(worktreeId: string, then: UnsavedFileStep): void {
 		if (then.kind === "close") closeFile(worktreeId);
 		else if (then.kind === "read-again") readFileAgain(worktreeId);
-		else openFile(worktreeId, then.path);
+		else openFile(worktreeId, then.path, then.at);
 	}
 
 	async function answerUnsavedFile(answer: "save" | "discard" | "keep"): Promise<void> {
@@ -4127,7 +4143,10 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		openFile,
 		readFileAgain,
 		closeFile,
-		showFileAs: (worktreeId, mode) => changeFile(worktreeId, { mode }),
+		showFileAs: (worktreeId, mode) => changeFile(worktreeId, mode === "rendered" ? { mode, goTo: null } : { mode }),
+		wentTo: (worktreeId, goTo) => {
+			if (state.files[worktreeId]?.goTo === goTo) changeFile(worktreeId, { goTo: null });
+		},
 		editFile,
 		changeDraft: (worktreeId, text) => {
 			const view = state.files[worktreeId];
