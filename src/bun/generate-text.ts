@@ -22,7 +22,7 @@ export interface TextGeneratorDependencies {
 	settings: () => Promise<{ agents: readonly AgentSetting[]; choice: string }>;
 	/** Where a saved agent's executable is, as its session looks for it. */
 	locate: (agent: AgentSetting) => AgentLookup;
-	/** The app's environment, which the agent gets, as its sessions do. */
+	/** The app's environment, which the agent gets. */
 	environment?: Record<string, string | undefined>;
 	platform?: NodeJS.Platform;
 	/** Where the empty folder is made. The system's temporary folder by default. */
@@ -55,7 +55,7 @@ const ERROR_BYTES = 8 * 1024;
  *   empty folder only this user can open, never in the worktree, so it reads
  *   no instruction file from there. The folder is removed afterwards.
  * - The prompt, with the diff, goes to its standard input. The app's
- *   environment is passed on, as to a session, with the row's config folder
+ *   environment is passed on, with the row's config folder
  *   and without what ties a process to one of the app's sessions.
  * - It holds no turn of the repository: it writes nothing there. What it
  *   must not change is read before and after, and the difference is told.

@@ -150,6 +150,21 @@ describe.skipIf(!posix)("status hooks in a temporary home folder", () => {
 		expect(snapshot()).toEqual(before);
 	});
 
+	test("Grok Build reports itself: its row offers no hook, and nothing of its own is read into the answer, written, or removed", async () => {
+		mkdirSync(join(home, ".grok", "hooks"), { recursive: true });
+		writeFileSync(join(home, ".grok", "config.toml"), "[ui]\nyolo = false\n");
+		writeFileSync(join(home, ".grok", "hooks", "mine.json"), '{ "hooks": { "Stop": [] } }\n');
+		rows = [{ name: "Cursor CLI", agent: "cursor" }, { name: "Grok Build", agent: "grok" }];
+		const files = hooks();
+		const before = snapshot();
+		const views = await files.list();
+		expect(views[1]).toEqual({ name: "Grok Build", agent: "grok", source: "osc-7501", reports: ["working", "blocked", "done"], hook: null });
+		const { token } = cursorOf(views);
+		expect(await files.install({ agent: "grok", token })).toMatchObject({ outcome: "refused", message: "That agent has no status hook. Nothing was written." });
+		expect(await files.remove({ agent: "grok", token })).toMatchObject({ outcome: "refused", message: "That agent has no status hook. Nothing was written." });
+		expect(snapshot()).toEqual(before);
+	});
+
 	test("a link is never written: its entries are added by hand, and Turn on only puts the script in place", async () => {
 		const target = join(home, "dotfiles", "hooks.json");
 		mkdirSync(join(home, "dotfiles"));

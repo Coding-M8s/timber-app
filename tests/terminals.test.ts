@@ -7,11 +7,14 @@ import { processTreeKillCommand, sessionMembers, sessionOfStat } from "../src/bu
 import { conversationExists } from "../src/bun/agent-conversations";
 import { endedKey } from "../src/bun/session-layout";
 import type { ConversationStore } from "../src/shared/agent-registry";
-import { type AgentLaunch, PART_LIMIT, type TerminalDependencies, type TerminalSessions, createTerminalSessions } from "../src/bun/terminals";
+import { type AgentLaunch, OTHER_TERMINAL_VARIABLES, PART_LIMIT, type TerminalDependencies, type TerminalSessions, createTerminalSessions } from "../src/bun/terminals";
 import type { AgentSetting } from "../src/shared/agent";
 import type { Repository } from "../src/shared/model";
 import { describeSearchPath } from "../src/shared/search-path";
 import { PROBE_ANSWER } from "../src/shared/program-status";
+import { agentBrand } from "../src/shared/session-status";
+import { defaultStateSounds } from "../src/shared/sound-setting";
+import { createStatusAlerts } from "../src/shared/status-notices";
 import { PROMPT_STILL_STARTING } from "../src/shared/agent-prompt";
 import { CHOP_NOT_TYPED, type OpenTerminalRequest, PASTE_NOT_READY, type SessionNaming, type TerminalChange, type TerminalOutput, TERMINAL_UNSUPPORTED_REASON, WORKTREE_SETUP_SESSION_NAME, bracketedPaste } from "../src/shared/terminal";
 
@@ -156,6 +159,34 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 		await run(result.session.id, 'echo "handoff:$TIMBER_APP_HANDOFF:end"', "handoff:/run/handoff-now:end");
 	});
 
+	test("a session, and the shell an agent ends into, never see the terminal or multiplexer the app was started from", async () => {
+		const bin = join(root, "ender bin");
+		mkdirSync(bin, { recursive: true });
+		// Prints which of them, and which that is kept, it was given.
+		const names = [...OTHER_TERMINAL_VARIABLES, "SSH_TTY"].map(name => `-e ${name}`).join(" ");
+		writeFileSync(join(bin, "fake-ender"), `#!/bin/sh\necho "given:$(env | cut -d= -f1 | grep -x ${names} | tr '\\n' ' '):end"\n`);
+		chmodSync(join(bin, "fake-ender"), 0o755);
+		start({
+			environment: {
+				PATH: `${bin}:${process.env.PATH}`, HOME: root, SHELL: "/bin/sh", PS1: "$ ", LANG: "C.UTF-8", SSH_TTY: "/dev/pts/9",
+				...Object.fromEntries(OTHER_TERMINAL_VARIABLES.map(name => [name, "inherited"])),
+			},
+			agents: async () => [{ name: "Ender", command: "fake-ender" }],
+		});
+		const agent = await sessions.open({ repository, worktree, cols: 80, rows: 24, agent: "Ender" });
+		if (agent.outcome !== "opened") throw new Error(`Not opened: ${JSON.stringify(agent)}`);
+		const { id } = agent.session;
+		expect(await until(() => printed(id).includes("This is now a shell in"))).toBe(true);
+		const given = (session: string) => [...printed(session).matchAll(/given:([^:]*):end/g)].map(match => match[1]);
+		expect(given(id)).toEqual(["SSH_TTY "]);
+		sessions.write(id, "fake-ender\r");
+		expect(await until(() => given(id).length === 2)).toBe(true);
+		const shell = await opened();
+		sessions.write(shell.session.id, "fake-ender\r");
+		expect(await until(() => given(shell.session.id).length === 1)).toBe(true);
+		expect([...given(id), ...given(shell.session.id)]).toEqual(["SSH_TTY ", "SSH_TTY ", "SSH_TTY "]);
+	});
+
 	describe("the Program Status Protocol (OSC 7501)", () => {
 		const statusOf = (id: string) => changes.filter(change => change.id === id).at(-1)?.session?.status ?? null;
 
@@ -170,6 +201,49 @@ describe.skipIf(!posix)("terminal sessions in a real temporary repository", () =
 				/got:[0-9a-f]+:end/,
 			);
 			expect(printed(session.id)).toContain(`got:${Buffer.from(PROBE_ANSWER).toString("hex")}:end`);
+		});
+
+		test("the reports Grok Build writes show and alert as the same ones from Claude Code do", async () => {
+			// What Grok Build 1.0.92 wrote, in the order it wrote it (see docs/verification.md): nothing until its probe is answered.
+			const steps: [report: string, state: string, shown: object | null][] = [
+				["state=blocked:kind=permission:app=APP:msg=VHJ1c3QgdGhpcyBmb2xkZXI/", "blocked", { title: "NAME needs you", body: "In feat login: Trust this folder?" }],
+				["state=idle:app=APP", "idle", null],
+				["state=working:app=APP:msg=VGhpbmtpbmc=", "working", null],
+				["state=blocked:kind=question:app=APP:msg=UmVkIG9yIGJsdWU/", "blocked", { title: "NAME needs you", body: "In feat login: Red or blue?" }],
+				["state=working:app=APP", "working", null],
+				["state=done:app=APP:msg=VHVybiBjb21wbGV0ZSBpbiA0LjBzLg==", "done", { title: "NAME is done", body: "In feat login: Turn complete in 4.0s." }],
+			];
+			const bin = join(root, "reporting bin");
+			mkdirSync(bin, { recursive: true });
+			for (const name of ["grok", "claude"]) {
+				const reports = steps.map(([report]) => `printf '\\033]7501;${report.replace("APP", name)}\\033\\\\'; head -c 1 > /dev/null`).join("\n");
+				writeFileSync(join(bin, name), `#!/bin/sh\nstty raw -echo\nprintf '\\033]7501;?\\033\\\\'\nhead -c ${PROBE_ANSWER.length} > /dev/null\n${reports}\nprintf '\\033]7501;state=clear\\033\\\\'\nhead -c 1 > /dev/null\n`);
+				chmodSync(join(bin, name), 0o755);
+			}
+			start({
+				environment: { PATH: `${bin}:${process.env.PATH}`, HOME: root, SHELL: "/bin/sh", PS1: "$ ", LANG: "C.UTF-8" },
+				agents: async () => [{ name: "Grok Build", command: "grok" }, { name: "Claude Code", command: "claude" }],
+			});
+			for (const [name, brand] of [["Grok Build", "grok"], ["Claude Code", "claude"]] as const) {
+				const result = await sessions.open({ repository, worktree, cols: 80, rows: 24, agent: name });
+				if (result.outcome !== "opened") throw new Error(`Not opened: ${JSON.stringify(result)}`);
+				const { id } = result.session;
+				for (const [report, state] of steps) {
+					expect([report, await until(() => statusOf(id)?.state === state)]).toEqual([report, true]);
+					expect(statusOf(id)!.app).toBe(brand);
+					sessions.write(id, "n");
+				}
+				// Quitting, Grok takes its report back.
+				expect(await until(() => statusOf(id) === null)).toBe(true);
+				// The same policy and settings the main process decides notifications with, for a window that is not shown.
+				const alerts = createStatusAlerts();
+				let now = 0;
+				const shown = changes.filter(change => change.id === id).flatMap(change => alerts.changed(change, { visible: false, focused: false, selected: null, session: null }, { notify: true, notifyStates: ["needs-you", "done", "error", "crashed"], sounds: defaultStateSounds() }, now += 60_000));
+				expect(shown.flatMap(action => action.kind === "show" ? [action.notice] : [])).toEqual(steps.flatMap(([, , notice]) => notice === null ? [] : [JSON.parse(JSON.stringify({ session: id, ...notice }).replace("NAME", name))]));
+				const session = sessions.list().find(session => session.id === id)!;
+				expect(session.program).toBe(brand);
+				expect(agentBrand(session)).toBe(brand);
+			}
 		});
 
 		test("reports set the session's status, a new prompt ends working, and done stays through the exit", async () => {

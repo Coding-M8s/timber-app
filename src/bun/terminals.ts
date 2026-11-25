@@ -93,7 +93,7 @@ export interface TerminalDependencies {
 	onOutput: (output: TerminalOutput) => void;
 	/** Hears every session that started, ended, or is gone. */
 	onChange: (change: TerminalChange) => void;
-	/** The environment the app was started with. The shell gets all of it, with `TERM` set. */
+	/** The environment the app was started with. The shell gets it as `sessionEnvironment` changes it. */
 	environment?: Record<string, string | undefined>;
 	/**
 	 * The folder where `timber new` typed in a session hands the app the
@@ -479,9 +479,28 @@ function signalSession(live: Live, signal: NodeJS.Signals): void {
 	else if (running(live.process)) signalGroup(live.process.pid, signal);
 }
 
-/** What a session's program gets: the app's environment, with the terminal's own variables, the handoff folder, and the session's status file. */
+/**
+ * Variables by which another terminal or multiplexer tells a program it runs
+ * inside it, as they are when the app was started from there, such as `bun
+ * run dev` in a tmux pane. The app's sessions are not in it, and with any one
+ * of these Grok Build 1.0.92 takes a session for that terminal and never asks
+ * whether it reads OSC 7501, so it reports no status (issue 355). Those that
+ * did not stop it, such as kitty's, are passed on. So is VS Code's
+ * `VSCODE_GIT_ASKPASS_MAIN`, which did, since Git asks for a password through
+ * it (see docs/architecture.md, "Agent status").
+ */
+export const SILENCING_VARIABLES = [
+	"ALACRITTY_SOCKET", "CURSOR_TRACE_ID", "HERDR_ENV", "STY", "TERMINAL_EMULATOR", "TERMINATOR_UUID", "TERM_SESSION_ID", "TMUX", "VTE_VERSION", "WT_SESSION", "ZELLIJ", "ZELLIJ_SESSION_NAME",
+] as const;
+/** What says nothing without one of those, or names the version of a `TERM_PROGRAM` that is replaced. None stopped Grok Build by itself. */
+const COMPANION_VARIABLES = ["ALACRITTY_WINDOW_ID", "TERM_PROGRAM_VERSION", "TMUX_PANE", "ZELLIJ_PANE_ID"] as const;
+/** What no session gets from the app's own environment. */
+export const OTHER_TERMINAL_VARIABLES = [...SILENCING_VARIABLES, ...COMPANION_VARIABLES] as const;
+
+/** What a session's program gets: the app's environment without `OTHER_TERMINAL_VARIABLES`, with the terminal's own variables, the handoff folder, and the session's status file. */
 export function sessionEnvironment(environment: Record<string, string | undefined>, handoff: string | null, status: string | null = null): Record<string, string | undefined> {
 	const env: Record<string, string | undefined> = { ...environment, TERM: "xterm-256color", COLORTERM: "truecolor", TERM_PROGRAM: "timber-app" };
+	for (const name of OTHER_TERMINAL_VARIABLES) delete env[name];
 	// A folder or file from the app's own environment, as when it was started from one of its terminals, belongs to another run or session.
 	delete env[HANDOFF_VARIABLE];
 	delete env[STATUS_VARIABLE];
@@ -495,9 +514,10 @@ export function sessionEnvironment(environment: Record<string, string | undefine
  *
  * - A session is the person's shell (`SHELL`, or `/bin/sh`) in a pseudo
  *   terminal (`Bun.Terminal`), started in the worktree's folder with the
- *   app's environment, `TERM=xterm-256color`, and the handoff folder in
- *   `TIMBER_APP_HANDOFF` (see `sessionEnvironment`). The shell leads a
- *   session of processes of its own.
+ *   app's environment, without `OTHER_TERMINAL_VARIABLES`,
+ *   `TERM=xterm-256color`, and the handoff folder in `TIMBER_APP_HANDOFF`
+ *   (see `sessionEnvironment`). The shell leads a session of processes of
+ *   its own.
  * - An agent session starts an agent's command from the saved Settings in
  *   place of the shell, split without a shell, its executable found on the
  *   app's PATH. A request names the agent, never the command. An agent whose

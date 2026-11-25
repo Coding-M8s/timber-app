@@ -4152,8 +4152,8 @@ diff with the base.
 - **The run.** An executable plus arguments, never through a shell, in a
   new empty folder only this user can open, removed afterwards, so nothing
   in the worktree, such as its `AGENTS.md`, instructs the agent. The prompt
-  goes to standard input. The app's environment is passed on, as to a
-  session, without the handoff folder and the status file. It runs in a
+  goes to standard input. The app's environment is passed on,
+  without the handoff folder and the status file. It runs in a
   process group of its own, or as a process tree on Windows, and Stop,
   quitting, and five minutes (`GENERATE_MILLISECONDS`) end it with what it
   started. The desktop bridge waits ten. It holds no turn of the repository.
@@ -4762,7 +4762,14 @@ that run when the app quits open again when it starts.
   a pseudo terminal from `Bun.Terminal`, started with `SHELL` when that is a
   full path to an executable, otherwise `/bin/sh`, in the worktree's
   registered path, with the app's environment and `TERM=xterm-256color`. The
-  shell leads a process session of its own.
+  shell leads a process session of its own. Some of
+  the variables by which another terminal or multiplexer says a program runs
+  inside it are left out (`OTHER_TERMINAL_VARIABLES`): those that kept Grok
+  Build from reporting its status, `TMUX` and `VTE_VERSION` among them, and a
+  few that say nothing without one of those (see
+  [agent status](#agent-status)). The app has them when it was started from
+  there, and its sessions are not in it. A multiplexer started in a session
+  sets its own.
 - **Which worktrees.** As for "Open in editor": only a repository in the
   app's list and a full path that `timber ls --json` lists for it at that
   moment, whose folder is there (`findListedWorktree` in
@@ -5839,7 +5846,7 @@ answered; Codex CLI 0.169.0 without a probe, from its prompt on (`idle`,
 with a short `working` and `idle` as it starts, then `working` and `done`
 for a turn; nothing before its first screen is passed, and `blocked` was
 not seen); Grok Build 1.0.92 once the probe is answered, by default
-(its `program_status = "auto"`). Cursor CLI does not. Gemini CLI 0.70.0
+(its `program_status = "auto"`; issue 355, below). Cursor CLI does not. Gemini CLI 0.70.0
 does not either: its package holds no `]7501` (read, not run; issue 351).
 OpenCode 1.19.6's source holds none either, so it gets a status hook (read,
 not run; issue 353, below). GitHub Copilot CLI 1.0.116 reports itself,
@@ -5884,6 +5891,37 @@ run, so an older one should show only running or exited.
   app's.
 - `/usr/bin/copilot` may be VS Code's shim, which is not Copilot CLI but has
   its name, so a row for it says it reports itself.
+
+**Grok Build** (issue 355), run with 1.0.92 on Linux x64 on 2026-11-25,
+through the app's own sessions and in the desktop app. It needs no status
+hook: one would only repeat what it reports. It reports `blocked` with
+`permission` at "Trust this folder?" and when it asks to run a tool or start
+a subagent, with `question` and the question when it asks one, and with
+`auth` when it asks to sign in (seen with `program_status = "on"`); `working`
+with what it does; `done` at the end of a turn, and `idle` once the person
+has seen it, which Grok knows from the terminal's focus, so Done holds and
+alerts while its worktree is not on screen; `idle` when a turn is stopped
+with Ctrl+C; a child record for each subagent; and `clear` when it quits.
+With its servers unreachable it stays `working`, retrying, as Cursor does.
+
+- *It asks only in a terminal it does not know.* Grok sends its probe from
+  `TERM_PROGRAM=timber-app`, but not when the environment also names another
+  terminal or multiplexer, as it does when the app was started from one; it
+  then shows only running or exited. Each alone kept 1.0.92 from asking:
+  `ALACRITTY_SOCKET`, `CURSOR_TRACE_ID`, `HERDR_ENV`, `STY`,
+  `TERMINAL_EMULATOR` (JetBrains), `TERMINATOR_UUID`, `TERM_SESSION_ID`,
+  `TMUX`, `VTE_VERSION` (GNOME Terminal and others), `WT_SESSION`, `ZELLIJ`,
+  and `ZELLIJ_SESSION_NAME`. `sessionEnvironment` leaves these out of every
+  session, with `ALACRITTY_WINDOW_ID`, `TERM_PROGRAM_VERSION`, `TMUX_PANE`,
+  and `ZELLIJ_PANE_ID`, which say nothing without them. Claude Code 2.1.332
+  asked with each of those tried.
+- *Started from VS Code or an editor made from it,*
+  `VSCODE_GIT_ASKPASS_MAIN` keeps it from asking too. It is passed on, since
+  Git asks for a password through it and the `GIT_ASKPASS` beside it. There,
+  and in a multiplexer started inside a session, `program_status = "on"`
+  under `[ui.notifications]` in Grok's own `config.toml` is the person's way
+  to turn the reports on; checked for VS Code's variable, not in a
+  multiplexer. `"off"` turns them off. The app writes neither.
 
 **Why this is not reading agent output.** OSC 7501 is a terminal control
 sequence the program addresses to the terminal, like a title (OSC 0) or a
@@ -6243,7 +6281,7 @@ Off for every agent until the person turns it on.
   again once an approved tool ran (`BeforeTool` runs before the person is
   asked, so it cannot), and `AfterAgent` done, once per prompt after the
   last reply. Codex, Grok Build, and GitHub Copilot CLI report themselves
-  and get no hook.
+  and get no hook (Grok Build's is under [agent status](#agent-status)).
 - **Gemini CLI's hook that is On but reports nothing** (as read in 0.70.0):
   - *A folder Gemini CLI does not trust.* With folder trust on, as by
     default, Gemini CLI runs no hooks from its settings in a folder it does

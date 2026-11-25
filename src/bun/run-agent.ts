@@ -87,8 +87,8 @@ export async function runOnce({ command, cwd, env, input, outputBytes, errorByte
 }
 
 /**
- * The environment a saved row's agent runs once with: the app's, as its
- * sessions get, with the row's config folder, and without what ties a
+ * The environment a saved row's agent runs once with: the app's, with the
+ * row's config folder, and without what ties a
  * process to one of the app's sessions.
  */
 export function agentRunEnvironment(environment: Record<string, string | undefined>, agent: AgentDefinition | null, configFolder: AgentSetting["configFolder"]): Record<string, string | undefined> {

@@ -17,7 +17,7 @@ export interface SignInReaderDependencies {
 	agents: () => Promise<readonly AgentSetting[]>;
 	/** Where a saved agent's executable is, as its session looks for it. */
 	locate: (agent: AgentSetting) => AgentLookup;
-	/** The app's environment, which the command gets, as the agent's sessions do. */
+	/** The app's environment, which the command gets. */
 	environment?: Record<string, string | undefined>;
 	platform?: NodeJS.Platform;
 	/** Where the empty folder is made. The system's temporary folder by default. */
