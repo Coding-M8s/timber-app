@@ -5879,3 +5879,35 @@ with Bun 1.4.2, Git, Timber at `~/.local/bin/timber`, and Google Chrome:
   view's notes, and four others); each passed when its file was run alone.
 - `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
 - Not run: the desktop app, Windows, and macOS.
+
+Run for stopping the Changes list flashing on every background read (issue
+416), Linux x64 with Bun 1.4.2 and Google Chrome:
+
+- Cause confirmed by reading the code: the file watch's reload was a tracked
+  `reload-repository`, and the read that `ChangesReader` then made was a
+  tracked `read-changes`, so `changesBusy` was true for every one and the list
+  got `refreshing`, the spinner, and a disabled Refresh.
+- `bun test tests/changes-tab.test.tsx tests/store.test.ts`: passed. New
+  window tests: five reports of a change, each with the read that follows,
+  never give the list `refreshing`, the spinner, the announcement, or a
+  disabled Refresh; the read after the person's own reload shows the spinner,
+  with the watch's reload running first; a read with the same result leaves
+  `changes` the same object; a new file still shows; a failed background read
+  shows its problem. With `readsQuietly` made to answer false (the reload of the watch
+  stayed untracked, so this is not the old code itself), six of the new window
+  and browser tests failed, as the old behavior would make them.
+- `bun test tests/changes-quiet-browser.test.ts` in headless Chrome: passed.
+  `timberMock.announceChangesEvery` adds a file every 300 ms; a mutation
+  observer and a frame loop saw no `.refreshing`, no `.changes-spinner`, and an
+  opacity of 1 throughout, and the same through 30 seconds of a file added
+  every second; eight files showed; the keyboard stayed on its file,
+  Refresh stayed enabled, an open dialog stayed with the same list
+  reported every 200 ms, and a list of 80 files kept its scroll and its
+  focused file; Refresh still dimmed and showed the spinner.
+- `bun run test`: 4,748 passed, 19 skipped, 9 failed. All nine were browser
+  tests that timed out under the load of the full run (a different set in each
+  of three runs). The files of the first two runs' failures, and the chops
+  panel's, passed when run alone; the rest of the third run's were not rerun.
+- `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
+- Not run: the desktop app, a real agent writing for 30 seconds, Windows, and
+  macOS.

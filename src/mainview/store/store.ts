@@ -85,7 +85,7 @@ import { type DiscardResult, discardCommand, discardPaths, fileDiscardable } fro
 import { type FileEditMemory, createFileEditMemory } from "../text-editor-format";
 import { afterSave, canEditFile, editableFileText, fileText, hasUnsavedEdits, initialFileMode, listedOnly, openFileMode, outsideResult, pathInWorktree, sameFileResult, settleTabs, unsavedFileCount } from "../file-view-format";
 import {
-	type AppState, type ChangesView, type DialogRequest, type FileMode, type FilePlace, type FileView, type Operation, type PullRequestForm, type Removal, type SessionAgent, type UnsavedFileStep, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood, syncOptionsOf,
+	type AppState, type ChangesView, type DialogRequest, type FileMode, type FilePlace, type FileView, type Operation, type PullRequestForm, type ReadChangesOptions, type Removal, type SessionAgent, type UnsavedFileStep, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood, readsQuietly, syncOptionsOf,
 	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, canToggleSidePanel, chopsEnabled, filesPanelShown, offeredChops, sidePanelShown, sidePanelView, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, shownSession, timberReady, withTerminal, withoutSession, fileViewed, viewedKey, type CommitRun, type GenerationRun, writesWait, repositoryPick } from "./state";
 
 /** How `AppStore.runChop` runs a chop, beyond which one and where. */
@@ -411,7 +411,7 @@ export interface AppStore {
 	 * Another worktree starts the view afresh. The latest read wins. Never
 	 * throws.
 	 */
-	readChanges(repository: string, worktreeId: string): Promise<void>;
+	readChanges(repository: string, worktreeId: string, options?: ReadChangesOptions): Promise<void>;
 	/**
 	 * Stage or unstage files of the Uncommitted list, as `Engine.stageFiles`
 	 * and `Engine.unstageFiles` do, with the command `indexCommand` gives,
@@ -928,6 +928,11 @@ const scheduleWithTimer: Schedule = (task, milliseconds) => {
 	return () => clearTimeout(timer);
 };
 
+/** Whether two plain values hold the same data. */
+function sameJson(a: unknown, b: unknown): boolean {
+	return JSON.stringify(a) === JSON.stringify(b);
+}
+
 function messageOf(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
@@ -1431,6 +1436,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			});
 			const repositories = pendingOrder ? applyOrder(read, pendingOrder) : read;
 			listTicket = ticket;
+			// A refresh of everything is the person's: the reads of the changes that follow show it.
+			for (const repository of repositories) loudFollow.add(repository.path);
 			update({
 				repositories,
 				// With the repositories, so one is never shown without its default agent.
@@ -1606,7 +1613,14 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		}
 	}
 
-	const reloadOne = mergeOverlapping<string>(path => track({ kind: "reload-repository", repository: path }, async () => {
+	/**
+	 * Repositories reloaded because the person asked (their own reload, or Refresh), whose next read of the
+	 * changes is part of that refresh and shows it. A reload the file watch started leaves no mark.
+	 */
+	const loudFollow = new Set<string>();
+
+	/** One reload of a repository, untracked: `reloadOne` shows it as an operation, the file watch does not. Overlapping calls merge, so reloads stay in order. */
+	const reloadMerged = mergeOverlapping<string>(async path => {
 		const ticket = ++lastTicket;
 		// A full list asked for after this reload has already answered: it is the newer picture.
 		const stale = () => ticket < listTicket;
@@ -1617,6 +1631,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			if (!repository) throw new Error(`Git could not read ${path}`);
 			if (!state.repositories.some(current => current.path === path)) return;
 			repositoryTickets.set(path, ticket);
+			if (state.operations.some(operation => operation.kind === "reload-all" || (operation.kind === "reload-repository" && operation.repository === path))) loudFollow.add(path);
 			const repositories = state.repositories.map(current => current.path === path ? withPendingWorktrees(keepLastGood(current, repository)) : current);
 			update({
 				repositories,
@@ -1635,7 +1650,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			if (stale()) return;
 			update({ error: { repository: path, message: messageOf(error) } });
 		}
-	}));
+	});
+	const reloadOne = (path: string): Promise<void> => track({ kind: "reload-repository", repository: path }, () => reloadMerged(path));
 
 	/*
 	 * The layout as the engine holds it, null until it answered. A change made
@@ -1888,6 +1904,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		if (judged !== null && view.compared !== null) markNotes(view.worktree, view.compared, file, judged);
 		const now = state.changes;
 		if (ticket !== diffTicket || now?.worktree !== view.worktree || now.selected === null || !sameFileChange(now.selected, file)) return;
+		// The same diff again leaves the view as it is, so the diff pane is not drawn again.
+		if (sameJson(now.diff, answer) && sameJson(now.unchanged, unchanged)) return;
 		update({ changes: { ...now, diff: answer, unchanged } });
 	}
 
@@ -2320,22 +2338,28 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	let movedByWrite: { worktree: string; paths: string[]; after: number } | null = null;
 	let settledWrites = 0;
 
-	async function readChanges(repositoryPath: string, worktreeId: string): Promise<void> {
+	async function readChanges(repositoryPath: string, worktreeId: string, options: ReadChangesOptions = {}): Promise<void> {
 		const worktree = worktreeOf(repositoryPath, worktreeId);
 		if (!worktree) return;
 		const ticket = ++changesTicket;
+		// Whether the person asked for what this read follows (see `loudFollow`); read before the view is touched.
+		const asked = loudFollow.delete(repositoryPath);
+		const quiet = options.follows === true && readsQuietly(state.changes, worktreeId, asked);
 		if (state.changes?.worktree !== worktreeId || state.changes.repository !== repositoryPath) {
 			update({ changes: { repository: repositoryPath, worktree: worktreeId, files: null, more: false, compared: null, base: null, problem: null, hasCommit: true, operation: null, detached: false, writing: false, settledWrites: 0, writeProblem: null, selected: null, diff: null, unchanged: null } });
 		}
 		const compare = chosenComparison(state.layout, worktreeId);
 		let answer!: FileChangesResult;
-		await track({ kind: "read-changes", worktree: worktreeId }, async () => {
+		const ask = async () => {
 			try {
 				answer = await engine.readFileChanges({ repository: repositoryPath, worktree: worktree.path, compare });
 			} catch (error) {
 				answer = { outcome: "failed", message: unheard("the changed files", error) };
 			}
-		});
+		};
+		// A read the file watch started draws nothing: it is not an operation, so no spinner, dim, or announcement.
+		if (quiet) await ask();
+		else await track({ kind: "read-changes", worktree: worktreeId }, ask);
 		const view = state.changes;
 		if (ticket !== changesTicket || view?.worktree !== worktreeId) return;
 		if (answer.outcome !== "read") {
@@ -2354,13 +2378,20 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		// The same file keeps its diff on screen until the new one answers, so it does not flicker.
 		const sameComparison = view.compared === answer.compared;
 		const keptDiff = kept && view.selected !== null && sameFileChange(view.selected, kept) && sameComparison ? view.diff : null;
-		const next: ChangesView = { ...view, files: answer.files, more: answer.more, compared: answer.compared, base: answer.base, hasCommit: answer.hasCommit, operation: answer.operation, detached: answer.detached, settledWrites: move ? ++settledWrites : view.settledWrites, problem: null, selected, diff: keptDiff, unchanged: keptDiff === null ? null : view.unchanged };
+		// The same list again keeps the list on screen: its rows, and so the keyboard and scroll, are not drawn again.
+		const files = view.files !== null && sameJson(view.files, answer.files) ? view.files : answer.files;
+		const next: ChangesView = { ...view, files, more: answer.more, compared: answer.compared, base: answer.base, hasCommit: answer.hasCommit, operation: answer.operation, detached: answer.detached, settledWrites: move ? ++settledWrites : view.settledWrites, problem: null, selected, diff: keptDiff, unchanged: keptDiff === null ? null : view.unchanged };
 		// A viewed file whose diff changed since, or that left the list, is no longer viewed.
 		const viewed = keptViewed(worktreeId, answer.compared, answer.files);
 		if (viewed !== state.viewed) update({ viewed });
 		// A diff tab whose file is no longer changed has nothing to show: it closes, back to where it was opened from.
 		const retargeted = open && selected !== null && !sameFileChange(open.file, selected) ? { diffs: { ...state.diffs, [worktreeId]: { ...open, file: selected } } } : {};
-		update(open && !kept ? { ...closedDiff(worktreeId), changes: next } : { ...retargeted, changes: next });
+		const unchanged = files === view.files && move === null && view.problem === null && !(open && !kept) && Object.keys(retargeted).length === 0
+			&& next.more === view.more && next.compared === view.compared && next.hasCommit === view.hasCommit && sameJson(next.operation, view.operation)
+			&& next.detached === view.detached && sameJson(next.base, view.base)
+			&& (selected === null ? view.selected === null : view.selected !== null && sameFileChange(view.selected, selected))
+			&& keptDiff === view.diff && next.unchanged === view.unchanged;
+		if (!unchanged) update(open && !kept ? { ...closedDiff(worktreeId), changes: next } : { ...retargeted, changes: next });
 		if (selected) await readDiff(next, selected, worktree.path);
 	}
 
@@ -4169,7 +4200,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				}),
 				engine.onRepositoryChanged(path => {
 					// Only a repository on screen can be refreshed. Reload everything to pick up a new one.
-					if (state.repositories.some(repository => repository.path === path)) void reloadOne(path);
+					if (state.repositories.some(repository => repository.path === path)) void reloadMerged(path);
 					// What Git ignores may have changed with it, in folders the watch does not see.
 					if (watchedTree !== null && state.fileTree.trees[watchedTree]?.repository === path) readShownFolders(watchedTree);
 				}),

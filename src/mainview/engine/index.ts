@@ -42,6 +42,7 @@ export async function createEngine(): Promise<Engine> {
 	// For Uninstall in About: timberMock.endUninstalls("fails"), ("keeps-settings"), or ("unavailable").
 	// For Restart now after saving a setting read at start: timberMock.endRestarts("fails") or ("unavailable"), and
 	// timberMock.restartCount() counts the restarts acted out. Nothing quits.
+	// For an agent writing files: timberMock.announceChangesEvery("/work/timber", 1000, true) reports a change every second and adds a file each time (null stops it).
 	// For the Changes view: timberMock.failFileChanges("Git is busy"), or timberMock.setFileChanges(path, files).
 	// For the file viewer: timberMock.setWorktreeFile(worktree, "notes.md", "text"), { kind: "bytes", bytes: [0] }, or null for a missing file.
 	// Changing the open file acts out an agent writing it: the File tab shows it within a few seconds, or, while it holds

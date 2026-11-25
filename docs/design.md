@@ -1081,18 +1081,24 @@ logins. The app never reads a tracker login and never signs in.
   no shared history), Base is disabled, a quiet line under the switch gives the
   reason, and the tab shows Uncommitted. The choice is remembered for each
   worktree. Comparing with a backup comes later.
-- While the Changes view reads again (its Refresh, the sidebar's Refresh, a
-  change the repository watcher reports, or a switch of "Compare with"), a
-  small spinner shows beside the counts in the bar: the working ring of a
-  session, turning, and standing still when the system asks for less
-  motion. The list on screen stays, slightly dimmed, so nothing jumps. The
+- While the Changes view reads again because the person asked (its Refresh,
+  the sidebar's Refresh, a switch of "Compare with", its first read, or after
+  a stage, unstage, commit, or discard), a small spinner shows beside the
+  counts in the bar: the working ring of a session, turning, and standing
+  still when the system asks for less motion. The list on screen stays, slightly dimmed, so nothing jumps. The
   first read, and a switch of "Compare with", which reads a different list,
   have no list to keep: the bar says "Reading changes" instead, and nothing
   is dimmed or announced as a refresh. Refresh keeps its label and is
   disabled while the spinner shows. A hidden polite status says
   "Refreshing…" once for each refresh: the spinner stays a moment after a
   read ends, so the reload of the repository and the read of its changes
-  that follows count as one.
+  that follows count as one. Reads that the file watch starts, as an agent
+  writes files, draw nothing: no dim, no spinner, no announcement, and
+  Refresh stays enabled. A new or changed file still shows within a moment,
+  and a read with the same result changes nothing on screen, so the
+  keyboard, the scroll position, and an open dialog stay. A background read
+  that fails still shows its problem. A reload of every repository that
+  Timber starting or a stopped session causes shows the spinner as before.
 - At the end of the Compare with row, a quiet "Set base…" (no saved base,
   or one Timber cannot use) or "Change base…" (a saved base) opens the Set
   base dialog. Once Timber saves the base, the view moves to Base, its header
