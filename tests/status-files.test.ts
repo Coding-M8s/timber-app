@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type StatusFolder, openStatusFolder } from "../src/bun/status-files";
 import { type TerminalChange, type TerminalOutput } from "../src/shared/terminal";
+import { agentBrand } from "../src/shared/session-status";
+import type { StatusKind, StatusState } from "../src/shared/program-status";
 import { type TerminalSessions, createTerminalSessions, sessionEnvironment } from "../src/bun/terminals";
 import { OPENCODE_STATUS_PLUGIN, STATUS_FILE_LIMIT, STATUS_HOOK_SCRIPT, STATUS_VARIABLE, type StatusLine } from "../src/shared/status-hooks";
 import type { AgentSetting } from "../src/shared/agent";
@@ -266,6 +268,28 @@ describe.skipIf(!posix)("status hook lines in a real session", () => {
 		sessions.hookLine(session.id, { agent: "cursor", event: "beforeSubmitPrompt" });
 		await Bun.sleep(50);
 		expect(changes.length).toBe(count);
+	});
+
+	test("GitHub Copilot CLI's own reports, as 1.0.116 writes them with no probe, set the session's status with its mark", async () => {
+		// Copilot itself is not run: a stand-in writes what it was seen to write, one report for each line typed.
+		writeFileSync(join(root, "bin", "copilot"), String.raw`#!/bin/sh
+stty -echo
+report() { printf '\033]7501;state=%s:app=copilot%s\033\\' "$1" "$2"; }
+report idle
+while read -r state kind; do report "$state" "$kind"; done
+`, { mode: 0o755 });
+		await start([{ name: "GitHub Copilot CLI", command: "copilot" }]);
+		const session = await opened("GitHub Copilot CLI");
+		expect(session.program).toBe("copilot");
+		expect(await until(() => statusOf(session.id)?.state === "idle")).toBe(true);
+		const steps: [StatusState, StatusKind | null][] = [["working", null], ["blocked", "permission"], ["working", null], ["blocked", "question"], ["working", null], ["done", null], ["working", null], ["error", null]];
+		for (const [state, kind] of steps) {
+			sessions.write(session.id, `${state}${kind === null ? "" : ` :kind=${kind}`}\r`);
+			expect(await until(() => statusOf(session.id)?.state === state)).toBe(true);
+			expect(statusOf(session.id)).toEqual({ state, kind, progress: null, app: "copilot", title: null, message: null });
+		}
+		// The same in a shell the person typed copilot in: the mark comes from the report.
+		expect(agentBrand({ kind: "terminal", shell: "/bin/sh", status: statusOf(session.id) })).toBe("copilot");
 	});
 
 	test("OpenCode's plugin, driven as OpenCode 1.19.6 would, sets the session's status with OpenCode's mark", async () => {

@@ -37,6 +37,14 @@ describe("an agent row's status line", () => {
 		expect(describeStatusLine({ ...VIEWS[0]!, reports: [] })?.text).toBe("Reports its status itself.");
 	});
 
+	test("GitHub Copilot CLI reports itself (issue 354), in the mock engine as in the main process, so no hook is offered", async () => {
+		const engine = createMockEngine();
+		await engine.savePreferences({ agents: [{ name: "Copilot", command: "copilot" }] });
+		const view = (await engine.statusHooks()).find(each => each.agent === "copilot")!;
+		expect(describeStatusLine(view)).toEqual({ label: "Status", text: "Reports working, needs you, and done itself.", tone: "hint", actions: [] });
+		expect(await engine.installStatusHook({ agent: "copilot", token: "missing" })).toMatchObject({ outcome: "refused" });
+	});
+
 	test("an agent that cannot report, or one not known, shows none", () => {
 		expect(describeStatusLine(VIEWS[3]!)).toBeNull();
 		expect(describeStatusLine({ name: "Odd", agent: null, source: "none", reports: [], hook: null })).toBeNull();

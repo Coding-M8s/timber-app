@@ -33,7 +33,7 @@ Spiked on 2026-11-22 (see [the spike](#the-spike)):
 | Cursor CLI 2026.11.22 | no: none sent in a turn, and no `]7501` in its files | yes |
 | Gemini CLI 0.70.0 | no: no `]7501` in its package (read, not run, #351) | yes |
 | OpenCode 1.19.6 | no OSC 7501 in its source; not run (#353) | yes, a plugin |
-| GitHub Copilot CLI | not spiked: not installed here | to be found in #354 |
+| GitHub Copilot CLI 1.0.116 | yes, without a probe: idle, working, needs you, done, error (run in #354) | no |
 | Pi | yes, by its maker's account (issue 343) | no |
 
 Codex's reports were missed before because it writes nothing until its
@@ -43,10 +43,10 @@ there. Grok Build reports by default: its own guide
 `program_status` the default `"auto"`, which reports where the terminal
 answers the probe, as the app does, and the spike ran with nothing set.
 
-So hooks are for Cursor for certain, for Gemini CLI and OpenCode (their
-sources hold no OSC 7501; #351, #353), and for Copilot if its spike finds
-no native reports. For Codex and Grok Build no hook is
-installed.
+So hooks are for Cursor for certain, and for Gemini CLI and OpenCode (their
+sources hold no OSC 7501; #351, #353). For Codex, Grok Build, and Copilot
+no hook is installed: #354 found that Copilot CLI reports itself, from
+1.0.106 on by its changelog.
 
 ## What any choice must do
 
@@ -181,7 +181,6 @@ a repository or worktree:
 | --- | --- | --- |
 | Cursor CLI | `~/.cursor/hooks.json` | entries added to a shared file |
 | Gemini CLI | `~/.gemini/settings.json` | entries added to a shared file |
-| GitHub Copilot CLI | `~/.copilot/hooks/` | a file of the app's own |
 | OpenCode | `~/.config/opencode/plugins/timber-app-status.js` (under `XDG_CONFIG_HOME` when set), confirmed from source in #353 | a plugin file of the app's own |
 
 The script the entries run lives in the app's own data folder, so the entry
@@ -314,7 +313,9 @@ the agent asks the person.
   busy and idle, `permission.asked` and `.replied`, and `question.asked`,
   `.replied`, and `.rejected`. Its plugin gives working, needs you, and
   done; it waits for no answer, so no event decides anything.
-- **Copilot CLI:** not spiked. Its events are decided in its ticket.
+- **Copilot CLI:** no hook, as it reports itself (#354). Its `idle` while it
+  asks whether to trust a folder is its own report; a hook's line would be
+  dropped, since a session that reported natively takes none.
 
 Settings says, beside each hook, which states it can report, so a missing
 Needs you is not a surprise.
@@ -392,7 +393,8 @@ docs/verification.md. In short:
 - **Gemini CLI:** not installed on this machine; #351 read 0.70.0's npm
   package instead (see above).
 - **OpenCode, GitHub Copilot CLI:** not installed on this
-  machine (the `copilot` on its `PATH` is VS Code's shim), so not spiked.
+  machine (the `copilot` on its `PATH` is VS Code's shim), so not spiked
+  then. #354 ran Copilot CLI 1.0.116 from its npm package in a sandbox.
 
 ## Before the build
 
@@ -400,6 +402,10 @@ docs/verification.md. In short:
   (`isReadyForPrompt` in `src/shared/agent-prompt.ts`) counts an agent as
   reporting only once it probed, so Codex still gets its first prompt by the
   quiet rule. A follow-up, not part of hooks.
+- Copilot reports `idle` both at its prompt and while it asks whether to
+  trust a folder, without probing (#354). So counting `idle` without a probe
+  as ready, as that follow-up might for Codex, would not stop a prompt
+  chop's Enter from trusting the folder there. Also a follow-up.
 - Each agent's ticket confirms its file, the variable that moves its config,
   its events, how it treats a missing hook command and unread input, and
   whether its hooks run when its folder is not trusted.
@@ -423,8 +429,10 @@ docs/verification.md. In short:
 - #353 OpenCode: a plugin of the app's own that appends the line itself,
   built from OpenCode 1.19.6's source; running it in OpenCode is still to
   do.
-- #351 Gemini CLI, #354 Copilot CLI: spike first, then a
-  hook only if it does not report natively.
+- #351 Gemini CLI: spike first, then a hook only if it does not report
+  natively.
+- #354 Copilot CLI: no hook. Its spike found that it reports through OSC
+  7501, and its registry row says so.
 - #352 Cursor CLI: found no event for Needs you and recorded how `stop`
   runs; the events #350 installs stay as they are.
 - #355 Grok Build: no hook. Its registry row now says it reports through

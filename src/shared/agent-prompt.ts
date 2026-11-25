@@ -17,7 +17,8 @@ import type { ProgramStatus } from "./program-status";
  *   a spinner or a clock, once bracketed paste was on for
  *   `PROMPT_BUSY_MILLISECONDS`. The app never reads what an agent prints,
  *   so it cannot tell that first prompt from a first-run screen that also
- *   takes Enter, such as a sign-in.
+ *   takes Enter, such as a sign-in or GitHub Copilot CLI's question whether
+ *   to trust the folder, where it reports `idle`.
  */
 
 /** How long an agent that never probed must stay quiet, with bracketed paste on, before it gets the prompt. */
