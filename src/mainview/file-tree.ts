@@ -63,6 +63,11 @@ export function withFolder(tree: WorktreeTree, folder: string, open: boolean): W
 	return { ...tree, expanded, listings };
 }
 
+/** The tree with every folder closed, nested ones too, so only the worktree's own entries show. The same tree when none is open. */
+export function withAllClosed(tree: WorktreeTree): WorktreeTree {
+	return tree.expanded.reduce((now, folder) => withFolder(now, folder, false), tree);
+}
+
 export type TreeRow =
 	| {
 		kind: "entry";
@@ -111,6 +116,14 @@ export function treeRows(tree: WorktreeTree): TreeRow[] {
 	const root = tree.listings[""];
 	if (root?.entries !== null && root !== undefined) add("", 1);
 	return rows;
+}
+
+/**
+ * Whether a folder that shows is open. By the rows, since a folder can be
+ * open and not show: an ignored one, once ignored entries are hidden again.
+ */
+export function hasOpenFolder(rows: readonly TreeRow[]): boolean {
+	return rows.some(row => row.kind === "entry" && row.expanded === true);
 }
 
 /** What a key does in the tree, by the WAI-ARIA tree pattern. */

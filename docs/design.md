@@ -18,7 +18,8 @@ change them here first when they change.
     repeat them. Backspace in the empty box, or the chip, widens it to every
     repository. With nothing selected it starts unscoped.
   - With nothing typed, entries are in sections: In the worktree (terminal,
-    agents, Rebase, Open in editor, Done), In the repository (New worktree,
+    agents, Rebase, Open in editor, Done, and Collapse all folders while the
+    Files view shows), In the repository (New worktree,
     Open existing branch, New arena, Fetch now, Clean up merged), the
     repository's worktrees with the current one marked and their sessions'
     marks, and App (next session, Show chops, Run a chop, Show files,
@@ -69,6 +70,20 @@ change them here first when they change.
   more than 1,000 entries shows the first ones and says how many more there
   are. What shows updates when files are made or removed in a folder that
   is open. Links are listed as links and never opened as folders.
+  Under the header, in the Files view only, is a row for the files' own
+  controls, with room for later ones. At its right edge, under Close, is
+  Collapse all folders, which closes every open folder of the selected
+  worktree's tree in one press, nested ones too, so only the top-level
+  entries show. A folder opened after that is read again. The open file
+  stays open, and its row is marked again once its folder is open. The
+  tree's tab stop moves from a row that is hidden to its top-level folder;
+  a keyboard press leaves the keyboard on the button. The button is dimmed
+  and says why, in its tooltip and to a screen reader, while no folder that
+  shows is open, the tree is empty, is not read yet, or could not be read,
+  or no worktree is selected; it stays in the Tab order then. A tree that is
+  read again, or fails to be, keeps it on while its folders still show. The
+  command palette has "Collapse all folders", for the selected worktree,
+  while the Files view shows; after it the keyboard is in the tree.
   Each row shows an icon before its name, from Material Icon Theme. A file
   is matched by its exact name first (`package.json`, `Dockerfile`,
   `.gitignore`), then by its extension, longest first, so `store.test.ts`

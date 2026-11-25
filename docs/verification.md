@@ -5252,3 +5252,25 @@ Bun 1.4.5 and Google Chrome:
 - `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
 - Not run: the desktop app and its WebKit and WebView2 views, Windows, and
   macOS.
+
+Run for Collapse all folders in the Files panel (issue 401), Linux x64 with
+Bun 1.4.5 and Google Chrome 151:
+
+- `bun test tests/file-tree.test.ts tests/files-panel.test.tsx
+  tests/files-panel-browser.test.ts`: 49 passed. The pure step and which
+  folders count as open; over the mock engine, the row in the Files view
+  only, the button's state and reasons, nested folders, reading again, an
+  answer that comes late, the open file's mark, another worktree's tree, and
+  the palette's entry. In headless Chrome: a click, a keyboard press, the
+  palette from a nested row, a press that moves no focus, and at 240 pixels,
+  in Timber Light and Timber Dark, the header, the row, and the tree apart.
+  Without the palette's step that gives the keyboard to the tree, its test
+  fails.
+- By eye, in headless Chrome over the mock engine: the row at 240 pixels,
+  with the button on in Timber Light and off in Timber Dark. The header's
+  own Changes and Ignored draw over each other at that width, as they did
+  before; issue 390 removes Ignored.
+- `bun run test`: 4,847 passed, 19 skipped, 0 failed, in 288 files.
+- `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
+- Not run: the desktop app and its WebKit and WebView2 views, where a click
+  on a button may not focus it, a screen reader, Windows, and macOS.

@@ -551,6 +551,27 @@ pre:focus-visible {
 	color: var(--text);
 }
 
+/* The files' own controls, in a row of their own under the header, at its right edge. The last one ends where Close does. */
+.files-panel-tools {
+	flex: none;
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 2px;
+	padding: 3px 8px;
+	border-bottom: 1px solid var(--line);
+}
+
+.files-panel-tools .icon-button {
+	height: 24px;
+}
+
+.files-panel-tools .icon-button[aria-disabled="true"] {
+	background: transparent;
+	opacity: 0.5;
+	cursor: default;
+}
+
 .files-panel-body {
 	padding: 6px 0;
 }

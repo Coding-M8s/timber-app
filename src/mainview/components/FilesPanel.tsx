@@ -3,7 +3,10 @@ import { FILE_PATHS_TYPE, worktreeFilePath } from "../terminal-drop";
 import { CHOPS_PANEL_ID } from "../chops-panel-format";
 import { fileIconUrl, iconFor } from "../file-icons";
 import { type TreeRow, keptFocus, treeKeyAction, treeRows } from "../file-tree";
-import { FILES_CLOSE_LABEL, FILES_IGNORED_LABEL, FILES_PANEL_TITLE, describeFilesPanelEmpty, takesFilesPanelKey } from "../files-panel-format";
+import {
+	COLLAPSE_FOLDERS_LABEL, FILES_CLOSE_LABEL, FILES_IGNORED_LABEL, FILES_PANEL_TITLE, FILES_TOOLS_LABEL,
+	collapseUnavailable, describeFilesPanelEmpty, takesFilesPanelKey,
+} from "../files-panel-format";
 import { worktreeLabel } from "../format";
 import { useAppState, useStore } from "../store/react";
 import { currentAppearance, onAppearanceChange } from "../theme-apply";
@@ -14,6 +17,22 @@ import { SidePanelTitle, hideSidePanel, toggleSidePanel, useSidePanelFocus } fro
 /** Show the file explorer when it is hidden and hide it when it shows, from the title bar button or the shortcut (see ./SidePanel.tsx). */
 export function toggleFilesPanel(store: AppStore): boolean {
 	return toggleSidePanel(store, "files");
+}
+
+/**
+ * Give the keyboard to the tree's tab stop after its folders collapsed, when
+ * that left the keyboard nowhere: on the page, as after the palette closes or
+ * a press that does not focus the button hides the row that had it, or on the
+ * panel itself, where a webview that does not focus a clicked button may put
+ * it. Asked for once the palette has closed and the rows are drawn again.
+ * Anything else that has the keyboard keeps it.
+ */
+export function keyboardToFileTree(later: (run: () => void) => void = run => void setTimeout(run, 0)): void {
+	later(() => {
+		const active = document.activeElement;
+		if (active !== null && active !== document.body && active.id !== CHOPS_PANEL_ID) return;
+		document.querySelector<HTMLElement>('.files-tree [role="treeitem"][tabindex="0"]')?.focus();
+	});
 }
 
 function Chevron({ open }: { open: boolean }) {
@@ -54,6 +73,7 @@ export function FilesPanel() {
 	const empty = describeFilesPanelEmpty(selected ? { name: worktreeLabel(selected.worktree), pathExists: selected.worktree.pathExists } : null);
 	const root = tree?.listings[""];
 	const rows = tree && empty === null ? treeRows(tree) : [];
+	const noCollapse = collapseUnavailable(state);
 	const openPath = worktreeId === null ? null : state.files[worktreeId]?.path ?? null;
 
 	// The focused row stays when the rows change, or moves to the nearest one that still shows; the keyboard follows it.
@@ -177,6 +197,27 @@ export function FilesPanel() {
 				<button type="button" className="icon-button chops-panel-close" aria-label={FILES_CLOSE_LABEL} title={FILES_CLOSE_LABEL} onClick={() => hideSidePanel(store)}>
 					<svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
 						<path d="M4 4l8 8M12 4l-8 8" />
+					</svg>
+				</button>
+			</div>
+			<div className="files-panel-tools" role="group" aria-label={FILES_TOOLS_LABEL}>
+				{/* Not `disabled`, which would drop the keyboard to the page as a press on it turns it off. */}
+				<button
+					type="button"
+					className="icon-button files-panel-collapse"
+					aria-label={COLLAPSE_FOLDERS_LABEL}
+					title={noCollapse === null ? COLLAPSE_FOLDERS_LABEL : `${COLLAPSE_FOLDERS_LABEL}. ${noCollapse}`}
+					aria-disabled={noCollapse !== null}
+					onClick={() => {
+						if (noCollapse !== null || worktreeId === null) return;
+						store.closeAllFolders(worktreeId);
+						keyboardToFileTree();
+					}}
+				>
+					<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+						<path d="M8 4h11a1 1 0 0 1 1 1v11" />
+						<rect x="4" y="8" width="12" height="12" rx="1" />
+						<path d="M7.5 14h5" />
 					</svg>
 				</button>
 			</div>

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { isRunChopShortcut } from "../src/mainview/run-chop-format";
 import { DEFAULT_SHORTCUTS } from "../src/shared/shortcuts";
-import { type FolderListing, type TreeRow, type WorktreeTree, describeMore, keptFocus, shownFolders, treeKeyAction, treeRows, withFolder } from "../src/mainview/file-tree";
+import { type FolderListing, type TreeRow, type WorktreeTree, describeMore, hasOpenFolder, keptFocus, shownFolders, treeKeyAction, treeRows, withAllClosed, withFolder } from "../src/mainview/file-tree";
 import {
 	FILES_PANEL_SHORTCUT, FILES_PANEL_SHORTCUT_MAC, describeFilesPanelEmpty, filesButtonHint, isFilesPanelShortcut,
 } from "../src/mainview/files-panel-format";
@@ -61,6 +61,34 @@ describe("opening and closing folders", () => {
 		expect(Object.keys(closed.listings)).toEqual([""]);
 	});
 
+	test("closing all forgets every open folder, nested ones and ones that do not show too, and keeps the worktree's own listing", () => {
+		const opened = tree({
+			expanded: ["src", "src/lib", "src/lib/deep", "docs", "node_modules"],
+			listings: { ...tree().listings, "src/lib": listed(folder("src/lib/deep")), "src/lib/deep": listed(file("src/lib/deep/a.ts")), docs: listed(file("docs/plan.md")), node_modules: listed() },
+		});
+		const before = structuredClone(opened);
+		const closed = withAllClosed(opened);
+		expect(closed.expanded).toEqual([]);
+		expect(Object.keys(closed.listings)).toEqual([""]);
+		expect(closed.listings[""]).toBe(opened.listings[""]!);
+		expect(ids(treeRows(closed))).toEqual(["docs", "src", "README.md"]);
+		expect({ repository: closed.repository, worktree: closed.worktree }).toEqual({ repository: opened.repository, worktree: opened.worktree });
+		expect(opened).toEqual(before);
+		// Nothing open: the same tree, so nothing is drawn again.
+		expect(withAllClosed(closed)).toBe(closed);
+	});
+
+	test("a folder counts as open only while its row shows", () => {
+		expect(hasOpenFolder(treeRows(tree()))).toBe(true);
+		expect(hasOpenFolder(treeRows(withAllClosed(tree())))).toBe(false);
+		expect(hasOpenFolder([])).toBe(false);
+		// Opened while ignored entries showed, then hidden again.
+		expect(hasOpenFolder(treeRows(tree({ expanded: ["node_modules"] })))).toBe(false);
+		// Open and still being read, or not readable.
+		expect(hasOpenFolder(treeRows(tree({ expanded: ["docs"] })))).toBe(true);
+		expect(hasOpenFolder(treeRows(tree({ listings: { ...tree().listings, src: { entries: null, more: 0, reading: false, failure: "Could not list src." } } })))).toBe(true);
+	});
+
 	test("the folders that show are the worktree's own and each open one whose parents are open", () => {
 		expect(shownFolders(tree({ expanded: ["src", "src/lib", "docs/old"] }))).toEqual(["", "src", "src/lib"]);
 	});
@@ -104,6 +132,10 @@ describe("the tree by keyboard", () => {
 		expect(keptFocus(rows, closed, "README.md")).toBe("README.md");
 		expect(keptFocus(rows, closed, "src/app.ts")).toBe("src");
 		expect(keptFocus(rows, closed, null)).toBe("docs");
+		// All closed, a row deep in a folder gives way to its top-level folder.
+		const deep = tree({ expanded: ["src", "src/lib"], listings: { ...tree().listings, "src/lib": listed(file("src/lib/a.ts"), file("src/lib/b.ts")) } });
+		expect(keptFocus(treeRows(deep), treeRows(withAllClosed(deep)), "src/lib/b.ts")).toBe("src");
+		expect(keptFocus(treeRows(deep), treeRows(withAllClosed(deep)), "README.md")).toBe("README.md");
 		expect(keptFocus(rows, [], "src")).toBeNull();
 	});
 });

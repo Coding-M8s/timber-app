@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { MIN_CHOPS_WIDTH } from "../src/shared/layout";
+import { COLLAPSE_FOLDERS_LABEL } from "../src/mainview/files-panel-format";
 import { type BrowserPage, browserPath, openSidebarPage } from "./support/browser";
 
 /**
@@ -50,8 +52,8 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the file 
 	test("the tree works by keyboard: the arrows move, open, and close, and Enter opens a file in the File tab", async () => {
 		await page.press("E", "ctrlShift");
 		await page.until(`document.querySelector(${JSON.stringify(ROW("docs"))}) !== null`, "the tree was read");
-		// Tab goes through the switch, Ignored, and Close, then reaches the tree's one tab stop: its first row.
-		for (const expected of ["side-panel-view-chops", "side-panel-view-files", "side-panel-view-changes", "files-panel-ignored", "Hide the files panel", "docs"]) {
+		// Tab goes through the switch, Ignored, Close, and Collapse all folders, then reaches the tree's one tab stop: its first row.
+		for (const expected of ["side-panel-view-chops", "side-panel-view-files", "side-panel-view-changes", "files-panel-ignored", "Hide the files panel", COLLAPSE_FOLDERS_LABEL, "docs"]) {
 			await page.press("Tab");
 			expect(await page.evaluate<string>(ACTIVE)).toBe(expected);
 		}
@@ -135,6 +137,108 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the file 
 		await page.until(LOADED, "the light drawing was drawn");
 		await page.evaluate(`${STORE}.savePreferences({ theme: { mode: "fixed", theme: "timber-dark" } })`);
 		await page.until(`${ICON("bun.lock")}.getAttribute("src") === "/assets/material-icons/bun.svg"`, "the dark theme took the dark drawing back");
+	}, 30_000);
+
+	const COLLAPSE = ".files-panel-collapse";
+	const NESTED_ROWS = `[...document.querySelectorAll("[data-row]")].filter(row => row.getAttribute("aria-level") !== "1").length`;
+	const COLLAPSE_OFF = `document.querySelector("${COLLAPSE}").getAttribute("aria-disabled") === "true"`;
+	const TAB_STOPS = `[...document.querySelectorAll('[role="treeitem"][tabindex="0"]')].map(row => row.dataset.row)`;
+	/** Show the files with node_modules and its left-pad open, and docs, and the row of `node_modules/left-pad/index.js` with the keyboard. */
+	async function openNested() {
+		await page.click(BUTTON);
+		await page.until(`document.querySelector(${JSON.stringify(ROW("docs"))}) !== null`, "the tree was read");
+		expect(await page.evaluate<boolean>(COLLAPSE_OFF)).toBe(true);
+		await page.click(".files-panel-ignored");
+		for (const path of ["node_modules", "node_modules/left-pad", "docs"]) {
+			await page.until(`document.querySelector(${JSON.stringify(ROW(path))}) !== null`, `${path} showed`);
+			await page.click(ROW(path));
+		}
+		await page.until(`document.querySelector(${JSON.stringify(ROW("docs/plan.md"))}) !== null`, "docs opened");
+		await page.evaluate(`document.querySelector(${JSON.stringify(ROW("node_modules/left-pad/index.js"))}).focus()`);
+		expect(await page.evaluate<string>(ACTIVE)).toBe("node_modules/left-pad/index.js");
+	}
+
+	test("a click on Collapse all folders closes every folder, and the tree's tab stop is the top-level folder of the row that had it", async () => {
+		await openNested();
+		await page.click(COLLAPSE);
+		await page.until(`${NESTED_ROWS} === 0`, "every folder closed");
+		expect(await page.evaluate<boolean>(COLLAPSE_OFF)).toBe(true);
+		expect(await page.evaluate<string[]>(TAB_STOPS)).toEqual(["node_modules"]);
+		await page.press("Tab");
+		expect(await page.evaluate<string>(ACTIVE)).toBe("node_modules");
+		await page.press("ArrowRight");
+		await page.until(`document.querySelector(${JSON.stringify(ROW("node_modules/left-pad"))}) !== null`, "the folder opened again");
+		expect(await page.evaluate<boolean>(COLLAPSE_OFF)).toBe(false);
+	}, 30_000);
+
+	test("pressed by keyboard, Collapse all folders keeps the keyboard, and pressed again while off it does nothing", async () => {
+		await openNested();
+		await page.evaluate(`document.querySelector("${COLLAPSE}").focus()`);
+		await page.press("Enter");
+		await page.until(`${NESTED_ROWS} === 0`, "every folder closed");
+		expect(await page.evaluate<string>(ACTIVE)).toBe(COLLAPSE_FOLDERS_LABEL);
+		await page.press("Enter");
+		expect(await page.evaluate<string>(ACTIVE)).toBe(COLLAPSE_FOLDERS_LABEL);
+		expect(await page.evaluate<string[]>(TAB_STOPS)).toEqual(["node_modules"]);
+	}, 30_000);
+
+	test("a press that leaves the keyboard on the hidden row, or on the panel, puts it on the top-level folder; one from elsewhere leaves it", async () => {
+		// As a screen reader's press, which moves no focus.
+		const press = `document.querySelector("${COLLAPSE}").click()`;
+		await openNested();
+		await page.evaluate(press);
+		await page.until(`document.activeElement?.dataset?.row === "node_modules"`, "the keyboard went from the row to the top-level folder");
+		await page.press("ArrowRight");
+		await page.until(`${NESTED_ROWS} > 0`, "the folder opened again");
+		// As a webview that gives a click on a button to the panel around it.
+		await page.evaluate(`document.querySelector("#chops-panel").focus()`);
+		await page.evaluate(press);
+		await page.until(`document.activeElement?.dataset?.row === "node_modules"`, "the keyboard went from the panel to the top-level folder");
+		await page.press("ArrowRight");
+		await page.until(`${NESTED_ROWS} > 0`, "the folder opened once more");
+		await page.evaluate(`document.querySelector(".group-header").focus()`);
+		const before = await page.evaluate<string>(ACTIVE);
+		await page.evaluate(press);
+		await page.until(`${NESTED_ROWS} === 0`, "every folder closed");
+		await Bun.sleep(50);
+		expect(await page.evaluate<string>(ACTIVE)).toBe(before);
+	}, 30_000);
+
+	test("chosen in the command palette from a nested row, the keyboard lands on that row's top-level folder", async () => {
+		await openNested();
+		await page.press("P", "ctrlShift");
+		await page.until(`document.querySelector("dialog.palette[open]") !== null`, "the palette opened");
+		await page.type("collapse all");
+		await page.press("Enter");
+		await page.until(`${NESTED_ROWS} === 0`, "every folder closed");
+		await page.until(`document.activeElement?.dataset?.row === "node_modules"`, "the keyboard went to the top-level folder");
+	}, 30_000);
+
+	test("at the narrowest panel, the header, the row, and the tree do not overlap, in Timber Light and Timber Dark", async () => {
+		await openNested();
+		await page.evaluate(`${STORE}.resizeChopsPanel(${MIN_CHOPS_WIDTH})`);
+		for (const theme of ["timber-light", "timber-dark"]) {
+			await page.evaluate(`${STORE}.savePreferences({ theme: { mode: "fixed", theme: ${JSON.stringify(theme)} } })`);
+			const drawn = await page.evaluate<Record<"panel" | "head" | "tools" | "button" | "close" | "body", { left: number; right: number; top: number; bottom: number }> & { reached: boolean }>(`(() => {
+				const box = selector => { const { left, right, top, bottom } = document.querySelector(selector).getBoundingClientRect(); return { left, right, top, bottom }; };
+				const button = box("${COLLAPSE}");
+				const reached = document.elementFromPoint((button.left + button.right) / 2, (button.top + button.bottom) / 2);
+				return {
+					panel: box("#chops-panel"), head: box(".files-panel .chops-panel-head"), tools: box(".files-panel-tools"), button,
+					close: box(".files-panel .chops-panel-close"), body: box(".files-panel-body"), reached: document.querySelector("${COLLAPSE}").contains(reached),
+				};
+			})()`);
+			expect(drawn.panel.right - drawn.panel.left).toBe(MIN_CHOPS_WIDTH);
+			expect(drawn.head.bottom).toBeLessThanOrEqual(drawn.tools.top);
+			expect(drawn.tools.bottom).toBeLessThanOrEqual(drawn.body.top);
+			expect(drawn.close.bottom).toBeLessThanOrEqual(drawn.button.top);
+			expect(drawn.button.top).toBeGreaterThanOrEqual(drawn.tools.top);
+			expect(drawn.button.bottom).toBeLessThanOrEqual(drawn.tools.bottom);
+			expect(drawn.button.left).toBeGreaterThanOrEqual(drawn.panel.left);
+			// At the row's right edge, inside the panel.
+			expect(drawn.panel.right - drawn.button.right).toBe(8);
+			expect(drawn.reached).toBe(true);
+		}
 	}, 30_000);
 
 	test("the shortcut hides the files and gives the keyboard back where it was", async () => {

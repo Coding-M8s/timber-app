@@ -11,7 +11,7 @@ import type { RestartPlan, RestartResult } from "../../shared/restart";
 import type { AppUpdateInstallRequest, AppUpdateInstallResult } from "../../shared/app-update";
 import { readableEditorSetting } from "../../shared/editor";
 import type { Engine } from "../../shared/engine";
-import { type FolderListing, type WorktreeTree, readingListing, shownFolders, withFolder } from "../file-tree";
+import { type FolderListing, type WorktreeTree, readingListing, shownFolders, withAllClosed, withFolder } from "../file-tree";
 import type { WorktreeFolderResult, WorktreeFolderWatch } from "../../shared/worktree-folders";
 import type { WorktreeHandoff } from "../../shared/handoff";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "../../shared/git-fetch";
@@ -245,6 +245,12 @@ export interface AppStore {
 	 * one forgets its entries and its open folders.
 	 */
 	setFolderOpen(worktreeId: string, folder: string, open: boolean): void;
+	/**
+	 * Close every open folder in the file explorer of a worktree, by its
+	 * identity, nested ones too, also those that do not show. Each is read
+	 * again when it opens. The open file is left alone.
+	 */
+	closeAllFolders(worktreeId: string): void;
 	/** Show or hide the entries Git ignores in the file explorer, and read the folders that show again. */
 	toggleIgnoredFiles(): void;
 	/** Read every folder the file explorer shows for a worktree again, as after a failure. */
@@ -4032,6 +4038,12 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			if (next === tree) return;
 			changeTree(worktreeId, next);
 			if (open) void readFolder(worktreeId, folder);
+		},
+		closeAllFolders(worktreeId) {
+			const tree = state.fileTree.trees[worktreeId];
+			if (!tree) return;
+			const next = withAllClosed(tree);
+			if (next !== tree) changeTree(worktreeId, next);
 		},
 		toggleIgnoredFiles() {
 			update({ fileTree: { ...state.fileTree, showIgnored: !state.fileTree.showIgnored } });
