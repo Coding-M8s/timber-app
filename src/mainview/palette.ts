@@ -5,7 +5,7 @@ import { chopsPanelShortcut } from "./chops-panel-format";
 import { type EditorAction, OPEN_IN_EDITOR, describeEditorAction } from "./editor-format";
 import { CLEAN_UP_LABEL, CLEAN_UP_TITLE, cleanUpUnavailableReason, mergedCandidates } from "./clean-up-format";
 import { BEING_REMOVED_REASON, DONE_PRIMARY_NOTE } from "./done-format";
-import { filesPanelShortcut } from "./files-panel-format";
+import { COLLAPSE_FOLDERS_LABEL, collapseUnavailable, filesPanelShortcut } from "./files-panel-format";
 import { worktreeLabel } from "./format";
 import { REBASE_FOLDER_MISSING } from "./rebase-format";
 import { RUN_CHOP_LABEL, runChopShortcut } from "./run-chop-format";
@@ -39,7 +39,9 @@ export type PaletteAction =
 	/** Run a command chop of the repository in a worktree: `worktree` is its identity. */
 	| { kind: "chop"; repository: string; worktree: string; chop: string }
 	/** Show, switch to, or hide this view of the side panel, as its title bar button does. */
-	| { kind: "side-panel"; view: SidePanelView };
+	| { kind: "side-panel"; view: SidePanelView }
+	/** Close every folder in the file explorer of a worktree, by its identity. */
+	| { kind: "collapse-folders"; worktree: string };
 
 /**
  * Where an entry is listed: actions for the selected worktree, actions for a
@@ -50,7 +52,7 @@ export type PaletteSection = "worktree" | "repository" | "worktrees" | "app";
 /** The picture beside an entry's label. */
 export type PaletteIcon =
 	| "terminal" | "agent" | "rebase" | "done" | "editor" | "new" | "branch" | "arena" | "fetch" | "push" | "clean-up"
-	| "worktree" | "next" | "settings" | "add-repository" | "changes" | "files" | "chops" | "search";
+	| "worktree" | "next" | "settings" | "add-repository" | "changes" | "files" | "chops" | "search" | "collapse";
 
 export interface PaletteEntry {
 	/** Unique in the list, so rows have a stable key. */
@@ -90,6 +92,7 @@ export const STARTING_SESSION = "A session is already starting in this worktree.
 export const FETCHING_NOW = "This repository is being fetched.";
 export const OPENING_IN_EDITOR = "The editor is being opened for this worktree.";
 export const FOLDER_MISSING_FOR_SESSION = "The worktree's folder is missing, so a terminal cannot start there.";
+const COLLAPSE_KEYWORDS: readonly string[] = ["close folders", "files", "explorer", "tree"];
 export const OTHER_REPOSITORIES = "Other repositories";
 export const NOTHING_MATCHES = "Nothing matches.";
 
@@ -223,6 +226,7 @@ function actionEntries(state: AppState, mac: boolean): PaletteEntry[] {
 		add(inWorktree("rebase"), "rebase", "Rebase", "", none, idle);
 		add(inWorktree("editor"), "editor", OPEN_IN_EDITOR, "", none, idle, ["code"]);
 		add(inWorktree("done"), "done", "Done", "", none, idle, ["remove", "finish", "delete"]);
+		if (filesPanelShown(state)) add(inWorktree("collapse"), "collapse-folders", COLLAPSE_FOLDERS_LABEL, "", none, idle, COLLAPSE_KEYWORDS);
 		// The chops last read stay listed, so they can be found and say why they cannot run.
 		for (const chop of chopEntries(offeredChops(state)?.list)) {
 			add(inWorktree(chop.kind === "prompt" ? "agent" : "terminal"), `chop:${chop.name}`, runChopLabel(chop.name, chopAction(chop.kind, state.preferences.agents.length)), "", none, idle, [chop.title, "chop", chop.kind]);
@@ -275,6 +279,11 @@ function actionEntries(state: AppState, mac: boolean): PaletteEntry[] {
 			{ kind: "editor", repository: repository.path, worktree: worktree.path }, ["code"]);
 		add(inWorktree("done"), "done", "Done", `Opens Done for ${name}, which shows the Timber command before it runs.`, worktree.primary ? DONE_PRIMARY_NOTE : null,
 			{ kind: "dialog", request: { kind: "done-worktree", repository: repository.path, worktree: worktree.id } }, ["remove", "finish", "delete"]);
+		// Only while the tree it closes shows, as its button.
+		if (filesPanelShown(state)) {
+			add(inWorktree("collapse"), "collapse-folders", COLLAPSE_FOLDERS_LABEL, `Closes every open folder of ${name} in the Files view.`, collapseUnavailable(state),
+				{ kind: "collapse-folders", worktree: worktree.id }, COLLAPSE_KEYWORDS);
+		}
 		add(inRepository("new"), "new", "New worktree", `Opens New worktree for ${repository.name}.`, null,
 			{ kind: "dialog", request: { kind: "new-worktree", repository: repository.path, mode: "new" } }, ["create", "branch"]);
 		add(inRepository("branch"), "open", "Open existing branch", `Opens a worktree for a branch ${repository.name} already has.`, null,

@@ -1645,8 +1645,8 @@ pure functions in `src/mainview/shell.ts`.
   Done, Open in editor, Open terminal, Start each saved agent, Show next
   session that needs you or is done, Clean up merged for each repository,
   Show or hide chops and Run a chop while chops are in use, Show or hide
-  files and changes, Settings, Add repository), then every worktree of every
-  available repository. An entry's optional `shortcut` comes from the same
+  files and changes, Collapse all folders while the files show, Settings,
+  Add repository), then every worktree of every available repository. An entry's optional `shortcut` comes from the same
   function as that feature's tooltip, so it follows the platform and a key
   set in Settings. Matching is
   case-insensitive and fuzzy over the label, the branch, the folder name, and
@@ -4463,8 +4463,9 @@ wrote and never mentioned can be found.
   whether ignored entries show (not saved). The pure model is
   `src/mainview/file-tree.ts`: the rows that show (`treeRows`), opening and
   closing a folder (`withFolder`, which forgets what is open below a closed
-  one), and where each key goes (`treeKeyAction`). Each read of a folder
-  counts, so only the latest answer for it lands, and an answer for a
+  one), closing them all (`withAllClosed`, over `withFolder`; the store's
+  `closeAllFolders`), and where each key goes (`treeKeyAction`). Each read of
+  a folder counts, so only the latest answer for it lands, and an answer for a
   folder closed meanwhile is dropped. A folder that went away closes; a
   failure says why and keeps what showed. A tree of a worktree that left
   the list is forgotten.
@@ -4477,6 +4478,20 @@ wrote and never mentioned can be found.
   the store's `openFile`, the path every other way of opening a file takes,
   so unsaved edits are asked about first. The keyboard stays in the tree.
   The open file's row is `aria-current`. Ignored entries are dimmed.
+- **Collapse all folders.** A button in the row under the panel's header
+  (`files-panel-tools`), and an entry of the command palette while the Files
+  view shows. Both ask `collapseUnavailable`, in `files-panel-format.ts`,
+  whether it can be done and why not. It goes by the rows that show
+  (`hasOpenFolder`): a folder left open among ignored entries that are
+  hidden again does not turn it on, and is closed with the rest. The button
+  is `aria-disabled`, not `disabled`, so a press that turns it off keeps the
+  keyboard on it. Nothing asks the engine: closing only forgets, the watch
+  narrows to the worktree's own folder, and an answer still on its way is
+  dropped as for any closed folder. Where that leaves the keyboard nowhere
+  (the palette does as it closes, and so does a press that does not focus
+  the button, when the row with the keyboard is hidden), `keyboardToFileTree`
+  gives it to the tree's tab stop, which is the top-level folder of the row
+  that had it.
 - **Icons.** `iconFor(name, kind, open, appearance)` in
   `src/mainview/file-icons.ts` picks each row's icon from the manifest of
   `material-icon-theme` (pinned to one version, MIT, notice in

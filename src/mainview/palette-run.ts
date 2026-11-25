@@ -1,5 +1,6 @@
 import type { PaletteEntry } from "./palette";
 import type { AppStore } from "./store/store";
+import { keyboardToFileTree } from "./components/FilesPanel";
 import { toggleSidePanel } from "./components/SidePanel";
 import { shownSession } from "./store/state";
 import { wantTerminalFocus } from "./terminal-focus";
@@ -53,6 +54,10 @@ export function runPaletteEntry(store: AppStore, entry: PaletteEntry, size: Sess
 			return;
 		case "side-panel":
 			toggleSidePanel(store, action.view);
+			return;
+		case "collapse-folders":
+			store.closeAllFolders(action.worktree);
+			keyboardToFileTree();
 			return;
 	}
 }
