@@ -65,12 +65,30 @@ describe("the setup wizard as data", () => {
 		const drafts = draftsOf({});
 		drafts.tracking = { ...drafts.tracking, linearKey: "lin_key" };
 		const settings = { revision: null, values: {}, tracked: false };
-		expect(wizardSaveRequest("repository", "/work/docs-site", settings, drafts, true)).toEqual({
+		expect(wizardSaveRequest("repository", "/work/docs-site", settings, drafts, true, null)).toEqual({
 			scope: "repository", repository: "/work/docs-site", revision: null, values: {}, credentials: { linear: { token: "lin_key" } }, editTracked: false,
 		});
-		const machine = wizardSaveRequest("machine", "/work/docs-site", { ...settings, revision: "abc" }, draftsOf({}), false);
+		const machine = wizardSaveRequest("machine", "/work/docs-site", { ...settings, revision: "abc" }, draftsOf({}), false, null);
 		expect(machine).toEqual({ scope: "machine", repository: null, revision: "abc", values: {}, editTracked: false });
-		expect(wizardSaveRequest("repository", "/work/timber", { ...settings, tracked: true }, draftsOf({}), true).editTracked).toBe(true);
+		expect(wizardSaveRequest("repository", "/work/timber", { ...settings, tracked: true }, draftsOf({}), true, null)?.editTracked).toBe(true);
+	});
+
+	test("a Jira token that is the site address leaves nothing to send, and the last step still says only that logins change", () => {
+		const settings = { revision: null, values: {}, tracked: false };
+		const machine = { jira: { site_url: "https://machine.atlassian.net" } };
+		const drafts = draftsOf({});
+		drafts.git = { ...drafts.git, base_branch: "main" };
+		drafts.tracking = { ...drafts.tracking, jiraEmail: "sam@example.com", jiraToken: "https://example.atlassian.net" };
+		expect(wizardSaveRequest("machine", "/work/docs-site", settings, drafts, false, null)).toBeNull();
+		drafts.tracking = { ...drafts.tracking, jiraToken: "machine.atlassian.net" };
+		expect(wizardSaveRequest("repository", "/work/docs-site", settings, drafts, false, machine)).toBeNull();
+		const words = JSON.stringify(describeChoices(drafts, "repository"));
+		expect(words).toContain("logins change");
+		expect(words).not.toContain("atlassian.net");
+		drafts.tracking = { ...drafts.tracking, jiraToken: "ATATT3xFfGF0" };
+		expect(wizardSaveRequest("repository", "/work/docs-site", settings, drafts, false, machine)).toMatchObject({
+			values: { base_branch: "main" }, credentials: { jira: { email: "sam@example.com", token: "ATATT3xFfGF0" } },
+		});
 	});
 
 	test("the last step says each choice in words, and never a login", () => {

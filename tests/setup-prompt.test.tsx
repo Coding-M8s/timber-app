@@ -46,7 +46,9 @@ async function saveFromWizard(store: Store, scope: TimberConfigScope, edit: (dra
 	if (read.outcome !== "read") throw new Error(`Not read: ${JSON.stringify(read)}`);
 	const drafts = draftsOf(read.settings.values);
 	edit(drafts);
-	return store.saveTimberSettings(wizardSaveRequest(scope, DOCS, read.settings, drafts, false));
+	const request = wizardSaveRequest(scope, DOCS, read.settings, drafts, false, null);
+	if (request === null) throw new Error("A login was refused.");
+	return store.saveTimberSettings(request);
 }
 
 describe("a repository that was never set up for Timber", () => {

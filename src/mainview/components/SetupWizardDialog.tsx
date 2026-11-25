@@ -4,7 +4,7 @@ import { type Integration, type TimberConfigScope, REPOSITORY_CONFIG_FILE, shown
 import { describeTimberCommand } from "../../shared/timber-result";
 import { WIZARD_STEPS, WIZARD_STEP_TITLES, type WizardStep, describeChoices, describeScope, firstStepOf, wizardSaveRequest } from "../setup-wizard-format";
 import { useStore } from "../store/react";
-import { type GroupDrafts, type GroupOutcome, type TimberGroup, DRAWN_PATHS, IDLE_OUTCOME as IDLE, TIMBER_GROUP_TITLES, draftsOf, groupMessages, outcomeOfSave } from "../timber-settings-format";
+import { type GroupDrafts, type GroupOutcome, type TimberGroup, DRAWN_PATHS, IDLE_OUTCOME as IDLE, TIMBER_GROUP_TITLES, draftsOf, groupMessages, jiraTokenProblem, outcomeOfSave } from "../timber-settings-format";
 import { GitFields, LauncherFields, SaveOutcomeNotes, ScriptsFields, TrackingFields, useTimberDrafts, useTimberRead } from "./settings/TimberSections";
 import { reservedLabels } from "./OperationDialog";
 import { TimberFailureDetails } from "./TimberFailureDetails";
@@ -79,6 +79,7 @@ export function SetupWizardDialog({ repository }: { repository: Repository }) {
 	const index = WIZARD_STEPS.indexOf(step);
 	const messages = outcome.state === "invalid" ? outcome.fields : [];
 	const needsTracked = settings !== null && settings.tracked && !editTracked;
+	const tokenRefused = drafts !== null && jiraTokenProblem(drafts.tracking, machine) !== null;
 
 	const change = <Group extends TimberGroup>(group: Group, draft: GroupDrafts[Group]) => timberDrafts.change(group, draft, outcome, () => setOutcome(IDLE));
 
@@ -92,10 +93,12 @@ export function SetupWizardDialog({ repository }: { repository: Repository }) {
 
 	const save = async () => {
 		if (saving.current || settings === null || drafts === null || needsTracked) return;
+		const request = wizardSaveRequest(scope, repository.path, settings, drafts, editTracked, machine);
+		if (request === null) return;
 		saving.current = true;
 		setOutcome({ state: "saving" });
 		try {
-			const answer = await store.saveTimberSettings(wizardSaveRequest(scope, repository.path, settings, drafts, editTracked));
+			const answer = await store.saveTimberSettings(request);
 			if (answer.outcome === "saved") {
 				saving.current = false;
 				store.closeDialog();
@@ -110,7 +113,7 @@ export function SetupWizardDialog({ repository }: { repository: Repository }) {
 
 	const check = async (integration: Integration) => {
 		if (settings === null || drafts === null) return;
-		await timberDrafts.check(integration, { scope, repository: scope === "repository" ? repository.path : null, tracking: drafts.tracking, values: settings.values });
+		await timberDrafts.check(integration, { scope, repository: scope === "repository" ? repository.path : null, tracking: drafts.tracking, values: settings.values, machine });
 	};
 
 	const submit = (event: SubmitEvent<HTMLFormElement>) => {
@@ -224,7 +227,8 @@ export function SetupWizardDialog({ repository }: { repository: Repository }) {
 				close();
 			}}
 		>
-			<form className="dialog-form" aria-busy={busy} aria-describedby={stepTitleId} onSubmit={submit}>
+			{/* Timber decides what is valid, an email included, so the webview's own checks never hold a step back. */}
+			<form className="dialog-form" aria-busy={busy} aria-describedby={stepTitleId} onSubmit={submit} noValidate>
 				<header className="dialog-head">
 					<h2 id={titleId} className="dialog-title">Set up Timber for {repository.name}</h2>
 				</header>
@@ -247,11 +251,12 @@ export function SetupWizardDialog({ repository }: { repository: Repository }) {
 					{step === "review" && (
 						<pre className="dialog-command" aria-label="Command that will run">{describeTimberCommand(shownApplyArguments(scope, settings?.tracked === true && editTracked))}</pre>
 					)}
+					{step === "review" && tokenRefused && <p className="dialog-note">The Jira API token looks like the site address. Go back to {TIMBER_GROUP_TITLES.tracking} to correct it.</p>}
 					{step === "review" && needsTracked && <p className="dialog-note">Tick "Change the tracked file" above to save.</p>}
 					<div className="dialog-buttons">
 						<button type="button" className="button quiet" disabled={busy} onClick={close}>Cancel</button>
 						<button type="button" className="button quiet" disabled={busy || index === 0} onClick={() => setStep(WIZARD_STEPS[index - 1]!)}>Back</button>
-						<button type="submit" className="button primary" data-reserve={NEXT_LABELS} disabled={busy || !ready || (step === "review" && needsTracked)}>
+						<button type="submit" className="button primary" data-reserve={NEXT_LABELS} disabled={busy || !ready || (step === "review" && (needsTracked || tokenRefused))}>
 							{step === "review" ? (busy ? "Saving" : "Save") : "Next"}
 						</button>
 					</div>

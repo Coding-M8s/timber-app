@@ -1,8 +1,8 @@
 import { describeCommandLine } from "../shared/command-line";
-import { type TimberConfigScope, type TimberSettingsSaveRequest, type TimberSettingsSnapshot, invalidFieldsAt } from "../shared/timber-config";
+import { type TimberConfigScope, type TimberSettingsSaveRequest, type TimberSettingsSnapshot, type TimberValues, invalidFieldsAt } from "../shared/timber-config";
 import {
 	type GroupDrafts, type LauncherDraft, type TimberGroup, type TrackingDraft, DRAWN_PATHS, TIMBER_GROUPS, TIMBER_GROUP_TITLES, TRACKER_CHOICES, credentialsToSave,
-	describeJiraSprint, valuesWithAll,
+	describeJiraSprint, loginsChange, valuesWithAll,
 } from "./timber-settings-format";
 
 /**
@@ -75,14 +75,13 @@ export function describeChoices(drafts: GroupDrafts, scope: TimberConfigScope): 
 	].filter(part => part !== null);
 	const plural = (count: number, one: string) => `${count} ${one}${count === 1 ? "" : "s"}`;
 	const tracker = TRACKER_CHOICES.find(choice => choice.value === tracking.tracker)?.label;
-	const credentials = credentialsToSave(tracking);
 	const trackingParts = [
 		tracker !== undefined ? `${tracker} issues` : null,
 		describeJira(tracking),
 		tracking.githubProject.trim() !== "" ? `GitHub project ${tracking.githubProject.trim()}` : null,
 		tracking.githubMilestone.trim() !== "" ? `milestone ${tracking.githubMilestone.trim()}` : null,
 		tracking.linearTeam.trim() !== "" ? `Linear team ${tracking.linearTeam.trim()}` : null,
-		credentials !== undefined ? "logins change" : null,
+		loginsChange(tracking) ? "logins change" : null,
 	].filter(part => part !== null);
 	return [
 		{ group: "editor", text: describeLauncher(editor, inherit, "opens by itself") },
@@ -101,7 +100,8 @@ export function describeChoices(drafts: GroupDrafts, scope: TimberConfigScope): 
  * The one save at the end of the wizard: every group's fields on top of the
  * scope's settings as last read, with the revision they were read at, so a
  * change made outside the app in between is refused as a conflict. A
- * tracked file changes only with the person's say-so.
+ * tracked file changes only with the person's say-so. Null when a login
+ * typed is refused (`credentialsToSave`): then nothing may be sent.
  */
 export function wizardSaveRequest(
 	scope: TimberConfigScope,
@@ -109,14 +109,16 @@ export function wizardSaveRequest(
 	settings: Pick<TimberSettingsSnapshot, "revision" | "values" | "tracked">,
 	drafts: GroupDrafts,
 	editTracked: boolean,
-): TimberSettingsSaveRequest {
-	const credentials = credentialsToSave(drafts.tracking);
+	machine: TimberValues | null,
+): TimberSettingsSaveRequest | null {
+	const logins = credentialsToSave(drafts.tracking, machine);
+	if ("refused" in logins) return null;
 	return {
 		scope,
 		repository: scope === "repository" ? repository : null,
 		revision: settings.revision,
 		values: valuesWithAll(drafts, settings.values),
-		...(credentials === undefined ? {} : { credentials }),
+		...logins,
 		editTracked: settings.tracked && editTracked,
 	};
 }

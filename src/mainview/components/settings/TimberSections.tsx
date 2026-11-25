@@ -9,7 +9,7 @@ import {
 	type CheckOutcome, type GitDraft, type GroupDrafts, type GroupOutcome, type LauncherDraft, type LauncherPreset, type Mode, type ScriptsDraft, type TimberGroup,
 	type TrackingDraft, AGENT_PRESETS, DRAWN_PATHS, EDITOR_PRESETS, IDLE_OUTCOME as IDLE, INTEGRATION_LABELS, TIMBER_GROUPS, TIMBER_GROUP_TITLES, TRACKER_CHOICES,
 	credentialsToCheck, credentialsToSave, describeCheck, describeJiraLogin, describeLinearLogin, draftsOf, fieldMessage, groupChanged, groupMessages, inheritLabel,
-	jiraDefault, machineDefault, outcomeOfSave, placeholderFor, scopePlaceholder, trackerPlaceholder, typingPutsAway, valuesWith, withJiraMode, withPreset,
+	jiraDefault, jiraTokenProblem, machineDefault, outcomeOfSave, placeholderFor, scopePlaceholder, trackerPlaceholder, typingPutsAway, valuesWith, withJiraMode, withPreset,
 	type SprintSource,
 } from "../../timber-settings-format";
 import { TimberFailureDetails } from "../TimberFailureDetails";
@@ -21,6 +21,8 @@ interface CheckTarget {
 	repository: string | null;
 	tracking: TrackingDraft;
 	values: TimberValues;
+	/** The machine defaults, for the Jira site a repository inherits. Null for the machine scope, or when they could not be read. */
+	machine: TimberValues | null;
 }
 
 /**
@@ -40,15 +42,17 @@ export function useTimberDrafts() {
 		if (group === "tracking") setChecks({});
 	};
 
-	const check = async (integration: Integration, { scope, repository, tracking, values }: CheckTarget) => {
+	const check = async (integration: Integration, { scope, repository, tracking, values, machine }: CheckTarget) => {
+		const logins = credentialsToCheck(tracking, integration, machine);
+		// The field says why. Nothing is sent, and the check never starts.
+		if ("refused" in logins) return;
 		setChecks(previous => ({ ...previous, [integration]: { state: "checking" } }));
-		const credentials = credentialsToCheck(tracking, integration);
 		const answer = await store.checkTimberConnection({
 			scope,
 			repository,
 			integration,
 			values: valuesWith("tracking", tracking, values),
-			...(credentials === undefined ? {} : { credentials }),
+			...logins,
 		});
 		setChecks(previous => ({ ...previous, [integration]: { state: "done", result: answer } }));
 	};
@@ -90,42 +94,46 @@ interface FieldProps {
 	placeholder?: string;
 	hint?: string;
 	mono?: boolean;
-	secret?: boolean;
+	/** "secret" hides what is typed. No kind is ever filled in from what is saved, or by the webview. */
+	kind?: "text" | "email" | "secret";
+	/** What this app itself says about the value, in its own words, before Timber's. */
+	problem?: string | null;
 	/** The keyboard a touch screen shows, such as "numeric" for a board number. */
 	inputMode?: "numeric" | "text";
 }
 
 /** One text field, with Timber's words about it beside it. */
-function TextField({ label, value, onChange, messages, placeholder, hint, mono = true, secret = false, inputMode }: FieldProps) {
+function TextField({ label, value, onChange, messages, placeholder, hint, mono = true, kind = "text", problem = null, inputMode }: FieldProps) {
 	const id = useId();
 	const hintId = useId();
 	const errorId = useId();
-	const described = [hint ? hintId : null, messages.length > 0 ? errorId : null].filter(Boolean).join(" ") || undefined;
+	const invalid = problem !== null || messages.length > 0;
+	const described = [hint ? hintId : null, invalid ? errorId : null].filter(Boolean).join(" ") || undefined;
 	return (
 		<div className="field">
 			<label className="field-label" htmlFor={id}>{label}</label>
 			<input
 				id={id}
 				className={mono ? "field-input mono" : "field-input"}
-				type={secret ? "password" : "text"}
+				type={kind === "secret" ? "password" : kind}
 				spellCheck={false}
-				autoComplete={secret ? "new-password" : "off"}
+				autoComplete={kind === "secret" ? "new-password" : "off"}
 				placeholder={placeholder}
 				inputMode={inputMode}
-				aria-invalid={messages.length > 0}
+				aria-invalid={invalid}
 				aria-describedby={described}
 				value={value}
 				onChange={event => onChange(event.target.value)}
 			/>
 			{hint && <span id={hintId} className="field-hint">{hint}</span>}
-			<FieldMessages id={errorId} messages={messages} />
+			<FieldMessages id={errorId} messages={messages} problem={problem} />
 		</div>
 	);
 }
 
-function FieldMessages({ id, messages }: { id?: string; messages: readonly string[] }) {
-	if (messages.length === 0) return null;
-	return <span id={id} className="field-error" role="alert">{messages.map(fieldMessage).join(" ")}</span>;
+function FieldMessages({ id, messages, problem = null }: { id?: string; messages: readonly string[]; problem?: string | null }) {
+	if (problem === null && messages.length === 0) return null;
+	return <span id={id} className="field-error" role="alert">{[...(problem === null ? [] : [problem]), ...messages.map(fieldMessage)].join(" ")}</span>;
 }
 
 /**
@@ -388,6 +396,7 @@ function JiraSprintFields({ draft, set, at }: { draft: TrackingDraft; set: (chan
 export function TrackingFields({ draft, onChange, scope, machine, messages, values, credentials, checks, onCheck, busy }: TrackingFieldsProps) {
 	const { at } = groupMessages(messages, []);
 	const trackerId = useId();
+	const tokenProblem = jiraTokenProblem(draft, machine);
 	const set = (change: Partial<TrackingDraft>) => onChange({ ...draft, ...change });
 	return (
 		<>
@@ -432,15 +441,15 @@ export function TrackingFields({ draft, onChange, scope, machine, messages, valu
 			)}
 			{draft.jiraMode !== "set" && <p className="field-hint">The sprint board or JQL and the project are set with the site: choose "This site" to set them.</p>}
 			<p className="dialog-note">{describeJiraLogin(credentials)}</p>
-			<TextField label="Jira email" value={draft.jiraEmail} onChange={jiraEmail => set({ jiraEmail, removeJira: false })} messages={[]} mono={false} secret hint="Kept by Timber in its private store, for this site, on this machine." />
-			<TextField label="Jira API token" value={draft.jiraToken} onChange={jiraToken => set({ jiraToken, removeJira: false })} messages={at("credentials.jira")} secret />
+			<TextField label="Jira email" value={draft.jiraEmail} onChange={jiraEmail => set({ jiraEmail, removeJira: false })} messages={[]} mono={false} kind="email" hint="Kept by Timber in its private store, for this site, on this machine." />
+			<TextField label="Jira API token" value={draft.jiraToken} onChange={jiraToken => set({ jiraToken, removeJira: false })} messages={at("credentials.jira")} kind="secret" problem={tokenProblem} />
 			{credentials.jira.state === "saved" && (
 				<label className="check">
 					<input type="checkbox" checked={draft.removeJira} onChange={event => set({ removeJira: event.target.checked, jiraEmail: "", jiraToken: "" })} />
 					<span className="check-text">Remove the saved Jira login</span>
 				</label>
 			)}
-			<ConnectionTest integration="jira" scope={scope} outcome={checks.jira} onCheck={() => onCheck("jira")} busy={busy} />
+			<ConnectionTest integration="jira" scope={scope} outcome={checks.jira} onCheck={() => onCheck("jira")} busy={busy || tokenProblem !== null} />
 
 			<h5 className="timber-subtitle">Linear</h5>
 			<TextField
@@ -452,7 +461,7 @@ export function TrackingFields({ draft, onChange, scope, machine, messages, valu
 				hint="A team key, such as ENG: up to 7 letters and digits. Its current cycle is the sprint."
 			/>
 			<p className="dialog-note">{describeLinearLogin(credentials)}</p>
-			<TextField label="Linear API key" value={draft.linearKey} onChange={linearKey => set({ linearKey, removeLinear: false })} messages={at("credentials.linear")} secret hint="Kept by Timber in its private store, for every repository on this machine." />
+			<TextField label="Linear API key" value={draft.linearKey} onChange={linearKey => set({ linearKey, removeLinear: false })} messages={at("credentials.linear")} kind="secret" hint="Kept by Timber in its private store, for every repository on this machine." />
 			{credentials.linear.state === "saved" && (
 				<label className="check">
 					<input type="checkbox" checked={draft.removeLinear} onChange={event => set({ removeLinear: event.target.checked, linearKey: "" })} />
@@ -525,7 +534,8 @@ export function TimberGroupForm({ group, scope, outcome, canSave, blocked, editT
 	};
 	const rest = outcome.state === "invalid" ? groupMessages(outcome.fields, DRAWN_PATHS[group]).rest : [];
 	return (
-		<form className="timber-group" aria-labelledby={titleId} aria-busy={saving} onSubmit={submit}>
+		// Timber decides what is valid, an email included, so the webview's own checks never hold a save back.
+		<form className="timber-group" aria-labelledby={titleId} aria-busy={saving} onSubmit={submit} noValidate>
 			<h4 id={titleId} ref={titleRef} tabIndex={titleRef ? -1 : undefined} className="timber-block-title">{TIMBER_GROUP_TITLES[group]}</h4>
 			<fieldset className="dialog-fields" disabled={saving}>{children}</fieldset>
 			<SaveOutcomeNotes outcome={outcome} rest={rest} onReadAgain={onReadAgain} />
@@ -607,19 +617,21 @@ export function TimberScopeSettings({ scope, repository, focusGroup = null }: {
 
 	const save = async (group: TimberGroup) => {
 		if (running.current) return;
+		const draft = drafts[group];
+		const logins = group === "tracking" ? credentialsToSave(draft as TrackingDraft, machine) : {};
+		// The field says why. Nothing is sent, and the save never starts.
+		if ("refused" in logins) return;
 		running.current = true;
 		// Told at once, not after a render, so an Escape right after Save cannot close the dialog in between.
 		reportSaving(true);
 		setOutcome(group, { state: "saving" });
 		try {
-			const draft = drafts[group];
-			const credentials = group === "tracking" ? credentialsToSave(draft as TrackingDraft) : undefined;
 			const answer = await store.saveTimberSettings({
 				scope,
 				repository,
 				revision: settings.revision,
 				values: valuesWith(group, draft, settings.values),
-				...(credentials === undefined ? {} : { credentials }),
+				...logins,
 				editTracked: settings.tracked && editTracked,
 			});
 			if (answer.outcome === "saved") {
@@ -677,6 +689,7 @@ export function TimberScopeSettings({ scope, repository, focusGroup = null }: {
 				const outcome = outcomes[group] ?? IDLE;
 				const changed = groupChanged(group, drafts[group], settings.values);
 				const blocked = !changed ? null
+					: group === "tracking" && jiraTokenProblem(drafts.tracking, machine) !== null ? "Correct the Jira API token above to save."
 					: needsTracked ? "Tick \"Change the tracked file\" above to save." : anySaving && outcome.state !== "saving" ? "Another group is saving." : null;
 				return (
 					<TimberGroupForm
@@ -698,7 +711,7 @@ export function TimberScopeSettings({ scope, repository, focusGroup = null }: {
 						{group === "git" && <GitFields {...groupProps("git")} />}
 						{group === "scripts" && <ScriptsFields {...groupProps("scripts")} />}
 						{group === "tracking" && (
-							<TrackingFields {...groupProps("tracking")} values={settings.values} credentials={settings.credentials} checks={checks} onCheck={integration => void check(integration, { scope, repository, tracking: drafts.tracking, values: settings.values })} busy={anySaving} />
+							<TrackingFields {...groupProps("tracking")} values={settings.values} credentials={settings.credentials} checks={checks} onCheck={integration => void check(integration, { scope, repository, tracking: drafts.tracking, values: settings.values, machine })} busy={anySaving} />
 						)}
 					</TimberGroupForm>
 				);
