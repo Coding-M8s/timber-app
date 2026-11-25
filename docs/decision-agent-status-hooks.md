@@ -29,7 +29,7 @@ Spiked on 2026-11-22 (see [the spike](#the-spike)):
 | --- | --- | --- |
 | Claude Code | yes, once the terminal answers its probe (issue 111) | no |
 | Codex CLI 0.169.0 | yes, without a probe: idle, working, done | no |
-| Grok Build 1.0.92 | yes, once the terminal answers its probe | no |
+| Grok Build 1.0.92 | yes, once the terminal answers its probe, which it sends unless the environment names another terminal (#355) | no |
 | Cursor CLI 2026.11.22 | no: none sent in a turn, and no `]7501` in its files | yes |
 | Gemini CLI 0.70.0 | no: no `]7501` in its package (read, not run, #351) | yes |
 | OpenCode 1.19.6 | no OSC 7501 in its source; not run (#353) | yes, a plugin |
@@ -42,6 +42,10 @@ there. Grok Build reports by default: its own guide
 (`~/.grok/docs/user-guide/05-configuration.md` in 1.0.92) gives
 `program_status` the default `"auto"`, which reports where the terminal
 answers the probe, as the app does, and the spike ran with nothing set.
+It ran in an environment that named no other terminal. #355 found that Grok
+does not send its probe where one is named, as when the app was started from
+tmux or GNOME Terminal, and took those variables out of the app's sessions
+(see "Agent status" in docs/architecture.md).
 
 So hooks are for Cursor for certain, and for Gemini CLI and OpenCode (their
 sources hold no OSC 7501; #351, #353). For Codex, Grok Build, and Copilot
@@ -53,6 +57,8 @@ no hook is installed: #354 found that Copilot CLI reports itself, from
 1. **Off changes nothing.** Until the person turns a hook on for an agent,
    no file outside the app's own folders is written, and sessions behave as
    today, but for one more variable in their environment (see below).
+   (Since #355 every session also goes without the variables of another
+   terminal that kept Grok Build silent, hook or no hook.)
 2. **The person sees the change first.** The exact file and the exact text
    added are shown before anything is written, in the spirit of the rule
    that every Timber command is shown before it runs.
@@ -435,7 +441,12 @@ docs/verification.md. In short:
   7501, and its registry row says so.
 - #352 Cursor CLI: found no event for Needs you and recorded how `stop`
   runs; the events #350 installs stay as they are.
-- #355 Grok Build: no hook. Its registry row now says it reports through
-  OSC 7501; what is left is checking it in the desktop app.
+- #355 Grok Build: no hook. Its registry row says it reports through
+  OSC 7501. Checked in the desktop app on Linux x64 with 1.0.92: working,
+  needs you, and done show, and raise the notifications. It was silent when
+  the app was started from some terminals and multiplexers; the session
+  environment now leaves out the variables that name them. Started from a
+  VS Code or Cursor terminal it still is, since the variable that does it,
+  `VSCODE_GIT_ASKPASS_MAIN`, is how Git asks for a password there.
 - Each of them adds its capabilities to `src/shared/engine.ts`, the main
   process, the mock engine, and `src/shared/rpc.ts`, as AGENTS.md asks.

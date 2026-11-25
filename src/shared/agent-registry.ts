@@ -483,6 +483,11 @@ const ROWS = [
 			checked: "Grok Build 1.0.92 on 2026-11-24",
 			caveat: "Grok Build keeps each run as a session in its own folder, with the diff in it, and your MCP servers may connect.",
 		},
+		/*
+		 * Run with Grok Build 1.0.92 on 2026-11-25 on Linux x64, through the
+		 * app's own sessions (see docs/verification.md): it reports an approval,
+		 * a question, and the end of a turn itself, so it gets no status hook.
+		 */
 		status: { source: "osc-7501", app: "grok", reports: ["working", "blocked", "done"] },
 	},
 	{

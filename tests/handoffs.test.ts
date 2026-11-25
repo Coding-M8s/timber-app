@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BURST_LIMIT, BURST_WINDOW_MS, type HandoffFolder, openHandoffFolder } from "../src/bun/handoffs";
-import { sessionEnvironment } from "../src/bun/terminals";
+import { OTHER_TERMINAL_VARIABLES, SILENCING_VARIABLES, sessionEnvironment } from "../src/bun/terminals";
 import { HANDOFF_SIZE_LIMIT, HANDOFF_VARIABLE, type WorktreeHandoff, isHandoffName, parseHandoff } from "../src/shared/handoff";
 import { HANDOFF_NO_AGENT, describeHandoffNotListed, handoffSession } from "../src/mainview/handoff-format";
 import type { AgentLocation } from "../src/shared/agent-lookup";
@@ -67,6 +67,18 @@ describe("a terminal session's environment", () => {
 		const inherited = { PATH: "/bin", [HANDOFF_VARIABLE]: "/old/run" };
 		expect(sessionEnvironment(inherited, "/run/now")).toMatchObject({ PATH: "/bin", TERM_PROGRAM: "timber-app", [HANDOFF_VARIABLE]: "/run/now" });
 		expect(HANDOFF_VARIABLE in sessionEnvironment(inherited, null)).toBe(false);
+	});
+
+	test("never says it is inside the terminal or multiplexer the app was started from, and keeps everything else", () => {
+		// Each of these, inherited, kept Grok Build 1.0.92 from asking whether the terminal reads OSC 7501.
+		expect<string[]>([...SILENCING_VARIABLES]).toEqual(["ALACRITTY_SOCKET", "CURSOR_TRACE_ID", "HERDR_ENV", "STY", "TERMINAL_EMULATOR", "TERMINATOR_UUID", "TERM_SESSION_ID", "TMUX", "VTE_VERSION", "WT_SESSION", "ZELLIJ", "ZELLIJ_SESSION_NAME"]);
+		expect<string[]>([...OTHER_TERMINAL_VARIABLES]).toEqual([...SILENCING_VARIABLES, "ALACRITTY_WINDOW_ID", "TERM_PROGRAM_VERSION", "TMUX_PANE", "ZELLIJ_PANE_ID"]);
+		// Git asks for a password through VS Code's, and ssh through the agent's socket.
+		const kept = { PATH: "/bin", HOME: "/home/a", SSH_AUTH_SOCK: "/run/ssh", SSH_TTY: "/dev/pts/1", GIT_ASKPASS: "/code/askpass.sh", VSCODE_GIT_ASKPASS_MAIN: "/code/askpass-main.js", GROK_HOME: "/home/a/.grok" };
+		const inherited = { ...kept, TERM: "tmux-256color", TERM_PROGRAM: "tmux", ...Object.fromEntries(OTHER_TERMINAL_VARIABLES.map(name => [name, "1"])) };
+		const before = { ...inherited };
+		expect(sessionEnvironment(inherited, null)).toEqual({ ...kept, TERM: "xterm-256color", COLORTERM: "truecolor", TERM_PROGRAM: "timber-app" });
+		expect(inherited).toEqual(before);
 	});
 });
 

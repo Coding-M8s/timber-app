@@ -5354,3 +5354,81 @@ with Bun 1.4.5, on 2026-11-25:
 - Not run: Copilot CLI signed in or with a real model, 1.0.106 to 1.0.115,
   its sign-in screen, a prompt chop, the desktop app by hand, Windows, and
   macOS.
+
+Run for Grok Build's status (issue 355), Linux x64 (Pop!_OS 24.04) with Bun
+1.4.5 and Grok Build 1.0.92, the installed version, on 2026-11-25. No hook was
+built: it reports through OSC 7501 itself.
+
+- A scratch Bun script started the real `grok`, its config untouched but for
+  the folder it was told to trust, through
+  `createTerminalSessions` and `createStatusAlerts` in a scratch repository
+  (120 by 40), and answered `CSI 6n`, `CSI c`, OSC 10, and OSC 11. The app's
+  own code answered the probe. Before the change:
+  - A new folder: `blocked`, `permission`, "Trust this folder?", and the notice
+    "Grok Build needs you", withdrawn on Enter; then `idle`.
+  - A prompt: `working` with "Waiting for response" and "Thinking", `done` with
+    "Turn complete in 4.0s.", and the notice "Grok Build is done".
+  - `touch spike.txt` with `ask = ["Bash(touch *)"]` under `[permission]` in
+    the repository's `.grok/config.toml`: `blocked`, `permission`, "Create empty
+    spike.txt file", and the notice; after Enter `working`, then `done`.
+    Without that rule Grok ran it without asking, with
+    `--permission-mode default` too.
+  - A question it was told to ask: `blocked`, `question`, "Red or blue?", and
+    the notice; `working` and `done` once answered.
+  - Ctrl+C in a turn: `idle`, no notice. Ctrl+C twice at its prompt: `clear`,
+    and it exited. A subagent: `blocked` to start it, then a child record
+    `s0/<id>` with its title, `working` and `done`, cleared after the turn.
+    With `HTTPS_PROXY` at a closed port: `working`, "Connection failed |
+    Retrying (6/50)" after 60 seconds, no error seen.
+  - No BEL, OSC 9 notification, OSC 99, or OSC 777 in these runs.
+- The same script with one more variable at a time in the app's environment,
+  before the change, waiting 3 to 5 seconds for a probe. None came with
+  `ALACRITTY_SOCKET`, `CURSOR_TRACE_ID`, `HERDR_ENV`, `STY`,
+  `TERMINAL_EMULATOR=JetBrains-JediTerm`, `TERMINATOR_UUID`,
+  `TERM_SESSION_ID`, `TMUX`, `VTE_VERSION`, `WT_SESSION`, `ZELLIJ`,
+  `ZELLIJ_SESSION_NAME`, or `VSCODE_GIT_ASKPASS_MAIN`. One came, and reports
+  with it, with `ALACRITTY_LOG`, `ALACRITTY_WINDOW_ID`, `BYOBU_BACKEND`,
+  `CMUX_PANEL_ID`, `GHOSTTY_RESOURCES_DIR`, `HC_TERMINAL_ID`, `INSIDE_EMACS`,
+  `ITERM_SESSION_ID`, `KITTY_WINDOW_ID`, `KONSOLE_VERSION`, `LC_TERMINAL`,
+  `NVIM`, `REX_SESSION`, `SSH_TTY`, `TERM_FEATURES`, `TERM_PROGRAM_VERSION`,
+  `TILIX_ID`, `TMUX_PANE`, `VIM_TERMINAL`, `VSCODE_PID`,
+  `WARP_IS_LOCAL_SHELL_SESSION`, `WEZTERM_PANE`, `WT_PROFILE_ID`,
+  `ZED_TERM`, `ZELLIJ_PANE_ID`, and others. The values were stand-ins: no
+  such terminal was run.
+- Claude Code 2.1.332, the same way, with none, `TMUX`, `VTE_VERSION`, `STY`,
+  `WT_SESSION`, `ZELLIJ`, and `TERMINAL_EMULATOR`: it probed and reported each
+  time.
+- After the change, with all of the twelve left out, `TMUX_PANE`,
+  `TERM_PROGRAM_VERSION`, and `TERM_PROGRAM=tmux` in the app's environment at
+  once: one probe, `idle`, `working`, `done`, and the notice.
+- With `VSCODE_GIT_ASKPASS_MAIN` and a `GROK_HOME` of its own, signed out: no
+  report with `program_status = "auto"`; `blocked`, `auth`, "Sign in to Grok"
+  with `"on"`.
+- The desktop app built with `bunx electrobun build`, run on `Xvfb :93` under
+  `dbus-run-session` with its own `HOME` and XDG folders, the real `GROK_HOME`,
+  a temporary repository with two worktrees, and `TMUX`, `TMUX_PANE`, and
+  `VTE_VERSION` in its environment, driven by XTEST and looked at in
+  screenshots, with a stand-in notification server that logged each call:
+  - "Start Grok Build" showed Needs you: approval at the trust screen on the
+    chip, the row, and the title bar, then Idle, with Grok's mark. A tool's
+    approval showed Needs you again.
+  - With the other worktree shown when the turn ended: Done on the row and in
+    the title bar, still there 9 seconds later, and `Notify` "Grok Build is
+    done", "In repo: Turn complete in 1.3s."; `CloseNotification` on going
+    back. With it shown when Grok asked to run a tool: `Notify` "Grok Build
+    needs you", "In repo: Create empty spike-two.txt file".
+  - With Grok's own worktree on screen, Done was already Idle a few seconds
+    after the turn, since Grok had been seen.
+  - `/proc/<pid>/environ` held `TMUX`, `TMUX_PANE`, and `VTE_VERSION` for the
+    app and not for its `grok`.
+  - Settings, Agents: "Reports working, needs you, and done itself.", with no
+    button.
+- The stand-in tests of the session's environment fail with the line that
+  leaves the variables out taken away.
+- `bun run test`: 4,872 passed, 19 skipped, 0 failed, in 289 files, after
+  rebasing onto GitHub Copilot CLI's status (8429830). One of two runs before
+  the change had two failures, not looked at; the other had none.
+- `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
+- Not run: Windows and macOS; a real Windows Terminal, VS Code, JetBrains, Alacritty,
+  GNOME Terminal, tmux, or zellij; a failed turn; `grok` typed in a shell
+  session; Grok's hooks, since none is used.
