@@ -5274,3 +5274,29 @@ Bun 1.4.5 and Google Chrome 151:
 - `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
 - Not run: the desktop app and its WebKit and WebView2 views, where a click
   on a button may not focus it, a screen reader, Windows, and macOS.
+
+Run for the unsaved mark on the File tab and the status after a save (issue
+328), Linux x64 with Bun 1.4.5 and Google Chrome:
+
+- `bun test tests/unsaved-tab.test.tsx`: 15 passed: the mark and its words
+  while the file has unsaved edits, whichever tab shows, and gone after a
+  save, Save over it, Discard, the Changes list's Discard, and typing back;
+  one reload of the repository after a save, which the save does not wait
+  for, none after a save that wrote nothing or was not heard; and the mock's
+  status. With the reload taken out of `saveFile` 4 of them failed, and with
+  the mock's marking taken out 7.
+- `bun test tests/tab-names-browser.test.ts` in headless Chrome: 7 passed.
+  The new test has long names in both tabs and the mark at the six window
+  sizes, down to the 107 pixel workspace: the dot is whole, after the name,
+  inside the tab, and what the pointer reaches, and nothing passes the row's
+  edges. Chrome's accessibility tree names the tab with "(unsaved)" and, once
+  saved, without it. After the save the sidebar's row goes from 3M to 4M and
+  the Changes list is read again. The test failed with the reload taken out.
+- By eye, in headless Chrome over the mock engine at 1000 pixels: the dot
+  after a short name.
+- `bun run test`: 4,863 passed, 19 skipped, 0 failed, in 289 files, after
+  rebasing onto Collapse all folders (f171635); 4,829 passed, 19 skipped, 0
+  failed, in 288 files before the change and that rebase.
+- `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
+- Not run: the desktop app and its WebKit and WebView2 views, a screen reader,
+  forced colors, Windows, and macOS.

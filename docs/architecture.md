@@ -1277,7 +1277,8 @@ repository through the path described [above](#shared-state-and-live-updates).
 - **No double reloads.** Before the selected worktree's repository is
   reported, its stamp is read again, and the next check compares against
   that. So a commit is reloaded once, by the watcher, and not again by the
-  check.
+  check. A save in the File tab is the exception (see **After a save** in
+  [the file viewer](#the-file-viewer)).
 - **No locks.** Every read here runs Git with `GIT_OPTIONAL_LOCKS=0`, as the
   other status reads do, and Timber's `timber ls` does the same for its own
   Git calls. So the app never takes the index lock from a Git command the
@@ -4306,11 +4307,22 @@ edited and saved in a small editor.
   edited as `editableText` and saved as `textToSave`, and saving unedited
   text writes the same bytes. `hasUnsavedEdits` decides when to ask: before
   `closeFile`, `readFileAgain`, and `openFile` of another path, which leave
-  an `unsaved-file` dialog instead. The store tells the main process how
-  many files hold unsaved edits (`reportUnsavedFiles`, the `unsavedFiles`
-  message); the quit guard asks while that is above zero as it does while
-  sessions run, and Restart now and restarting into an update ask in the
-  window.
+  an `unsaved-file` dialog instead. It also decides whether the File tab has
+  its unsaved mark (`Workspace.tsx`): a dot that is a character, so forced
+  colors keep it, beside `.tab-label` rather than in it, hidden from
+  assistive technology, which hears "(unsaved)" instead. The store tells the
+  main process how many files hold unsaved edits (`reportUnsavedFiles`, the
+  `unsavedFiles` message); the quit guard asks while that is above zero as it
+  does while sessions run, and Restart now and restarting into an update ask
+  in the window.
+- **After a save.** `saveFile` reloads the repository (`reloadOne`) once the
+  engine answered "saved", also when the file was closed meanwhile, so the
+  row's counts follow without waiting for the poll, and the Changes list with
+  them while it is wanted (`ChangesReader`). The save does not wait for it,
+  and one that lands during a reload gets a follow-up reload. A save that
+  wrote nothing, or was not heard, reloads nothing. The main process does not
+  know of this reload, so its next check of the selected worktree sees the
+  edit and announces it once more, which shows the same again.
 - **What can be edited.** `canEditFile` in `src/mainview/file-view-format.ts`:
   any file read as text, unless `lineEndingProblem`
   (`src/shared/worktree-files.ts`) finds CR LF mixed with LF, or a lone CR.
@@ -4413,7 +4425,10 @@ edited and saved in a small editor.
   `logo.png` (binary), and a `docs` folder, besides its changed files.
   `timberMock.setWorktreeFile(worktreePath, path, text)` puts a file there, `{ kind: "bytes", bytes: [0] }` a binary one, and `null`
   removes it. Changing a file while it is edited acts out an agent writing
-  it, and `timberMock.delayFileSaves(milliseconds)` slows saves down.
+  it, and `timberMock.delayFileSaves(milliseconds)` slows saves down. A save
+  lists the file as modified in the mock's status and Changes list, with a
+  made up diff, unless it was changed on disk already or is ignored. The mock
+  knows no committed text, so saving the first text again leaves it listed.
 
 ## The file explorer
 

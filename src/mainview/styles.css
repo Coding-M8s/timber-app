@@ -3417,6 +3417,16 @@ pre:focus-visible {
 	font-weight: 400;
 }
 
+/* The dot after the File tab's name while its edits are not saved. A character, so it shows in forced colors too. */
+.tab-unsaved {
+	flex: none;
+	align-self: center;
+	margin-left: 5px;
+	color: var(--modified);
+	font-size: 9px;
+	line-height: 1;
+}
+
 /* Closes the diff or File tab beside it. */
 .tab-close {
 	flex: none;

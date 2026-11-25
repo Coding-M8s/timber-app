@@ -46,8 +46,8 @@ import { type SyncActionKind, type SyncActionRequest, isSyncActionKind, syncNotR
 import { actOutSetBase, sampleBaseCounts } from "./mock-base";
 import { type PullRequestEnding, actOutPullRequest, isPullRequestEnding } from "./mock-pr";
 import type { CreatePullRequestResult } from "../../shared/timber-pr";
-import { type MockFileChange, answerMockCommit, answerMockDiscard, answerMockIndexWrite, compareMockFiles, derivedFileChanges, diffMockFileChange, listMockFileChanges } from "./mock-file-changes";
-import { type MockWorktreeFile, createMockWorktreeFiles } from "./mock-worktree-files";
+import { type MockFileChange, answerMockCommit, answerMockDiscard, answerMockIndexWrite, compareMockFiles, derivedFileChanges, diffMockFileChange, listMockFileChanges, modifiedSample } from "./mock-file-changes";
+import { type MockWorktreeFile, createMockWorktreeFiles, mockIgnored } from "./mock-worktree-files";
 import { MOCK_PATH, type TerminalControls, createMockTerminals } from "./mock-terminals";
 import { type AppUpdateInstallRequest, type AppUpdateState, UPDATES_FROM_SOURCE } from "../../shared/app-update";
 import type { MockSessionStorage } from "./mock-session-storage";
@@ -1025,6 +1025,27 @@ export function createMockEngine(
 		const change = { repository: watchedFolders.repository, worktree, folder };
 		for (const listener of [...folderListeners]) listener(change);
 	};
+	/**
+	 * A saved file, as Git would list it next: modified in the row's counts,
+	 * and in the Changes list where that is kept apart from them, unless it
+	 * was changed on disk already. A status that could not be read stays so.
+	 */
+	const markModified = (repositoryPath: string, worktreePath: string, path: string) => {
+		const marked = (worktree: Worktree): Worktree => {
+			const { changes } = worktree;
+			if (changes.kind !== "known" || changes.modified.includes(path) || changes.untracked.includes(path)) return worktree;
+			return { ...worktree, changes: { ...changes, modified: [...changes.modified, path] } };
+		};
+		current = current.map(repository => repository.path !== repositoryPath ? repository : {
+			...repository,
+			worktrees: repository.worktrees.map(worktree => (worktree.path === worktreePath ? marked(worktree) : worktree)),
+		});
+		const saved = current.find(repository => repository.path === repositoryPath)?.worktrees.find(worktree => worktree.path === worktreePath);
+		if (!saved || saved.changes.kind !== "known") return;
+		const files = filesOf(saved);
+		const onDiskAlready = files.some(({ change }) => change.path === path && (change.area === "unstaged" || change.area === "untracked" || change.area === "conflicted"));
+		if (!onDiskAlready) fileChangeLists.set(worktreePath, [...files, modifiedSample(path)]);
+	};
 	let writeDelay = 0;
 	const chopFiles = createMockChops();
 	/** As the main process: a repository in the list, its main checkout's file. The mock's main checkouts are always there. */
@@ -1509,7 +1530,12 @@ export function createMockEngine(
 			const listed = listedForChanges(request.repository, request.worktree);
 			if (!listed.ok) return { outcome: listed.outcome, message: listed.message.replace("No changes were read.", "Nothing was saved.").replace("so no changes were read", "so nothing was saved") };
 			if (writeDelay > 0) await new Promise(resolve => setTimeout(resolve, writeDelay));
-			return worktreeFiles.write(request, listed.worktree.path, filesOf(listed.worktree));
+			const files = filesOf(listed.worktree);
+			const before = worktreeFiles.read(listed.worktree.path, request.path, files);
+			const answer = worktreeFiles.write(request, listed.worktree.path, files);
+			const rewritten = before.outcome === "read" && before.content.kind === "text" && before.content.text === request.text;
+			if (answer.outcome === "saved" && !rewritten && !mockIgnored(request.path)) markModified(request.repository, listed.worktree.path, request.path);
+			return answer;
 		},
 		async listWorktreeFolder(request) {
 			const listed = listedForChanges(request.repository, request.worktree);

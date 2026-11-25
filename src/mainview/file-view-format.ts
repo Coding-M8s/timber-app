@@ -153,6 +153,11 @@ export function hasUnsavedEdits(view: Pick<FileView, "draft" | "result">): boole
 	return text === null || text !== view.draft;
 }
 
+/** The File tab's tooltip: the open file's path, and that it has unsaved edits while it does. */
+export function fileTabTitle(view: Pick<FileView, "path" | "draft" | "result">): string {
+	return hasUnsavedEdits(view) ? `${view.path} (unsaved)` : view.path;
+}
+
 /** How many open files hold unsaved edits, as quitting asks about. */
 export function unsavedFileCount(files: AppState["files"]): number {
 	return Object.values(files).filter(hasUnsavedEdits).length;

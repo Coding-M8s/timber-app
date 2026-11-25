@@ -53,6 +53,8 @@ export interface BrowserPage {
 	reload(): Promise<void>;
 	/** Run an expression in the page and answer its value. A promise is waited for. */
 	evaluate<Value>(expression: string): Promise<Value>;
+	/** The name assistive technology hears for the first element that matches, as the browser works it out. */
+	accessibleName(selector: string): Promise<string>;
 	/** Wait until an expression is true in the page. Throws with `what` when it never is. */
 	until(expression: string, what: string): Promise<void>;
 	/** The middle of the first element that matches, scrolled into view first. */
@@ -165,6 +167,13 @@ export async function openSidebarPage(page = "sidebar-page.tsx"): Promise<Browse
 		return answer.result.value;
 	}
 
+	async function accessibleName(selector: string): Promise<string> {
+		const { result } = await send<{ result: { objectId?: string } }>("Runtime.evaluate", { expression: `document.querySelector(${JSON.stringify(selector)})` });
+		if (result.objectId === undefined) throw new Error(`Nothing matches ${selector}`);
+		const { nodes } = await send<{ nodes: { name?: { value: string } }[] }>("Accessibility.getPartialAXTree", { objectId: result.objectId, fetchRelatives: false });
+		return nodes[0]?.name?.value ?? "";
+	}
+
 	async function until(expression: string, what: string): Promise<void> {
 		for (let round = 0; round < 200; round += 1) {
 			if (await evaluate<boolean>(`Boolean(${expression})`)) return;
@@ -203,6 +212,7 @@ export async function openSidebarPage(page = "sidebar-page.tsx"): Promise<Browse
 	return {
 		reload: load,
 		evaluate,
+		accessibleName,
 		until,
 		middle,
 		async click(selector) {
