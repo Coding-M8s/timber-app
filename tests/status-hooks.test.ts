@@ -74,6 +74,9 @@ describe("a line a hook appended", () => {
 		expect(statusFromLine({ agent: "claude", event: "stop" })).toBeNull();
 		expect(statusFromLine({ agent: "someone", event: "stop" })).toBeNull();
 		expect(hookedAgent("codex")).toBeNull();
+		// GitHub Copilot CLI reports through OSC 7501 itself (issue 354), so it has no hook and no line of its name is read.
+		expect(hookedAgent("copilot")).toBeNull();
+		expect(statusFromLine({ agent: "copilot", event: "agentStop" })).toBeNull();
 	});
 
 	test("a hooked session raises the same alerts as one that reports through its stream", () => {
@@ -123,6 +126,35 @@ describe("a line a hook appended", () => {
 		expect(hooked).toEqual(streamed);
 		expect(hooked.filter(action => action.kind === "show").map(action => action.kind === "show" ? action.notice.title : "")).toEqual(["Gemini CLI needs you", "Gemini CLI is done"]);
 	});
+
+	test("GitHub Copilot CLI's own reports raise the same alerts as Claude Code's do, and a turn stopped with Ctrl+C none", () => {
+		const run = (app: string, reports: string[]) => {
+			const acted: AlertAction[] = [];
+			const runner = createAlertRunner({ attention: () => AWAY, settings: () => ALL, act: action => acted.push(action), now: () => 0, setTimer: () => null, clearTimer: () => {} });
+			for (const text of reports) {
+				const report = parseStatusReport(`${text}:app=${app}`);
+				if (report === null || report.state === "clear") throw new Error("a report");
+				const { id: _id, ...status } = report;
+				runner.changed({ id: "s", session: { ...SESSION, name: "The agent", program: "copilot", status } });
+			}
+			runner.stop();
+			return acted;
+		};
+		const titles = (acted: AlertAction[]) => acted.filter(action => action.kind === "show").map(action => action.kind === "show" ? action.notice.title : "");
+		// As 1.0.116 reported them: a shell command approved, then a question answered.
+		const turn = ["state=idle", "state=working", "state=blocked:kind=permission", "state=working", "state=done"];
+		const asked = ["state=working", "state=blocked:kind=question", "state=working", "state=done"];
+		for (const reports of [turn, asked]) {
+			expect(run("copilot", reports)).toEqual(run("claude-code", reports));
+			expect(titles(run("copilot", reports))).toEqual(["The agent needs you", "The agent is done"]);
+		}
+		expect(titles(run("copilot", ["state=working", "state=idle"]))).toEqual([]);
+		// Esc at an approval: the needs you it raised, and no done.
+		expect(titles(run("copilot", ["state=working", "state=blocked:kind=permission", "state=working", "state=idle"]))).toEqual(["The agent needs you"]);
+		// A request the model refused.
+		expect(titles(run("copilot", ["state=working", "state=error"]))).toEqual(titles(run("claude-code", ["state=working", "state=error"])));
+		expect(titles(run("copilot", ["state=working", "state=error"]))).toHaveLength(1);
+	});
 });
 
 describe("the states an agent reports", () => {
@@ -130,6 +162,7 @@ describe("the states an agent reports", () => {
 		expect(reportedStates(cursor)).toEqual(["working", "done"]);
 		expect(reportedStates(agentById("claude"))).toEqual(["working", "blocked", "done"]);
 		expect(reportedStates(agentById("codex"))).toEqual(["working", "done"]);
+		expect(reportedStates(agentById("copilot"))).toEqual(["working", "blocked", "done"]);
 		expect(reportedStates(gemini)).toEqual(["working", "blocked", "done"]);
 		expect(reportedStates(agentById("opencode"))).toEqual(["working", "blocked", "done"]);
 	});

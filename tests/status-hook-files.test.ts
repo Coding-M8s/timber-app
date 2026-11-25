@@ -137,6 +137,19 @@ describe.skipIf(!posix)("status hooks in a temporary home folder", () => {
 		expect(existsSync(file)).toBe(false);
 	});
 
+	test("GitHub Copilot CLI reports itself: no hook is offered, written, or removed, and another tool's hooks in ~/.copilot/hooks stay", async () => {
+		mkdirSync(join(home, ".copilot", "hooks"), { recursive: true });
+		writeFileSync(join(home, ".copilot", "hooks", "other-tool.json"), JSON.stringify({ version: 1, hooks: { agentStop: [{ type: "command", bash: "other-tool stop" }] } }));
+		rows = [{ name: "GitHub Copilot CLI", agent: "copilot" }];
+		const before = snapshot();
+		const files = hooks();
+		expect(await files.list()).toEqual([{ name: "GitHub Copilot CLI", agent: "copilot", source: "osc-7501", reports: ["working", "blocked", "done"], hook: null }]);
+		for (const change of [files.install, files.remove]) {
+			expect(await change({ agent: "copilot", token: "missing" })).toMatchObject({ outcome: "refused", message: "That agent has no status hook. Nothing was written." });
+		}
+		expect(snapshot()).toEqual(before);
+	});
+
 	test("a link is never written: its entries are added by hand, and Turn on only puts the script in place", async () => {
 		const target = join(home, "dotfiles", "hooks.json");
 		mkdirSync(join(home, "dotfiles"));

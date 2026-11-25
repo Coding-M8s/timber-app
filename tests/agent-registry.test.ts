@@ -139,4 +139,12 @@ describe("the agent registry", () => {
 		expect(agentBrand({ kind: "agent", shell: "/home/me/.grok/bin/agent", status: grok })).toBe("grok");
 		expect(agentBrand({ kind: "terminal", shell: "/bin/bash", status: grok })).toBe("grok");
 	});
+
+	test("GitHub Copilot CLI's reports name it copilot, which gives its mark in a shell and under a wrapper, and no other agent's", () => {
+		const copilot = { state: "working" as const, kind: null, progress: null, app: "copilot", title: null, message: null };
+		expect(agentById("copilot").status).toEqual({ source: "osc-7501", app: "copilot", reports: ["working", "blocked", "done"] });
+		expect(agentBrand({ kind: "terminal", shell: "/bin/bash", status: copilot })).toBe("copilot");
+		expect(agentBrand({ kind: "agent", shell: "/home/me/bin/copilot-work", status: null })).toBeNull();
+		expect(agentBrand({ kind: "agent", shell: "/home/me/bin/copilot-work", status: copilot })).toBe("copilot");
+	});
 });

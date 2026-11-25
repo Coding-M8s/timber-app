@@ -33,7 +33,7 @@ export function NotificationsSectionView({ draft, saved, save, problem, customPa
 	return (
 		<SettingsSection
 			title="Notifications"
-			description="Agents that support the Program Status Protocol, such as Claude Code, Codex, and Grok Build, tell the app when they work and when they are done, and Claude Code and Grok Build also when they need you. The sidebar always shows it. A desktop notification and a sound can say it too, for a worktree that is not on screen. Agents that do not report their status themselves, such as Cursor CLI and OpenCode, need a status hook, turned on in Settings, Agents."
+			description="Agents that support the Program Status Protocol, such as Claude Code, Codex, Grok Build, and GitHub Copilot CLI, tell the app when they work and when they are done, and Claude Code, Grok Build, and GitHub Copilot CLI also when they need you. The sidebar always shows it. A desktop notification and a sound can say it too, for a worktree that is not on screen. Agents that do not report their status themselves, such as Cursor CLI and OpenCode, need a status hook, turned on in Settings, Agents."
 			save={save}
 			canSave={!sameNotificationsDraft(draft, saved)}
 			onSave={onSave}

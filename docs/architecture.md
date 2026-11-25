@@ -2275,7 +2275,8 @@ every machine agrees. The rules are pure, in
     ms, or, if it keeps redrawing, once bracketed paste was on for 5
     seconds. The app never reads what an agent prints, so it cannot tell that
     first prompt from a first-run screen that also takes Enter, such as a
-    sign-in. A prompt with a line break also waits for bracketed paste. An
+    sign-in or GitHub Copilot CLI's folder trust question (see
+    [agent status](#agent-status)). A prompt with a line break also waits for bracketed paste. An
     agent not ready after two minutes, or that ended first, gets nothing,
     and `prompt` says why.
   - *The bytes* (`promptBytes` in `src/shared/terminal.ts`): the paste as
@@ -4220,7 +4221,7 @@ write a file. One run each, on Linux, with what the agent itself reported:
 | Grok Build | 1.0.92 on 2026-11-24 | `todo_write` and MCP. `--tools ""` means every tool and read the file. It keeps each run under `~/.grok/sessions` |
 
 Gemini CLI, OpenCode, and GitHub Copilot CLI have no `generate`: they were not
-installed, and what their documentation says was not run.
+installed, and what their documentation says about it was not run.
 
 ## The file viewer
 
@@ -5538,8 +5539,8 @@ for its mark. Each row has:
 - **`status`**: how it reports its status, `osc-7501`, `hook`, or `none`,
   and the start of the `app` it reports, such as `claude` for `claude-code`,
   which gives its mark to any session that reports it. Claude Code, Codex,
-  and Grok Build report through OSC 7501 (`app` `claude`, `codex`, `grok`),
-  with the states each reports (`reports`), which Settings, Agents names.
+  Grok Build, and GitHub Copilot CLI report through OSC 7501 (`app`
+  `claude`, `codex`, `grok`, `copilot`), with the states each reports (`reports`), which Settings, Agents names.
   Cursor CLI and Gemini CLI report through a status hook (`hook`: its file
   in the home folder, its format, the events, the state each gives and any
   matcher, the timeout in seconds, and the version checked); see
@@ -5651,7 +5652,7 @@ Verified on Linux, against each installed version:
 | Cursor CLI 2026.11.19-f005e9d, 2026.11.22-e9042b2 | 2026-11-22 | `cursor-agent <args>`; no documented flag sets the id | `cursor-agent --resume <chat id> <args>` | `cursor-agent --help`: "`--resume [chatId]` Select a session to resume"; run, both `--resume <id>` and `--resume=<id>` went back to a chat |
 | Gemini CLI | not verified | `gemini <args>` | starts fresh | not installed on the machine it was checked on, so not run. Its 0.70.0 package shows `--session-id <uuid>` and `--resume <uuid>`, for a later change |
 | OpenCode | not verified | `opencode <args>` | starts fresh | not installed on the machine it was checked on, so not run |
-| GitHub Copilot CLI | not verified | `copilot <args>` | starts fresh | only the editor's `copilot` stub was installed, so not run |
+| GitHub Copilot CLI | not verified | `copilot <args>` | starts fresh | only the editor's `copilot` stub was installed; 1.0.116 was run for its status only (issue 354), and its ways back were not checked |
 
 An agent the table marks not verified has `resume: null` in the registry:
 it starts as typed and fresh after a restart, like a custom agent, until
@@ -5841,7 +5842,48 @@ not seen); Grok Build 1.0.92 once the probe is answered, by default
 (its `program_status = "auto"`). Cursor CLI does not. Gemini CLI 0.70.0
 does not either: its package holds no `]7501` (read, not run; issue 351).
 OpenCode 1.19.6's source holds none either, so it gets a status hook (read,
-not run; issue 353, below). GitHub Copilot CLI was not tried.
+not run; issue 353, below). GitHub Copilot CLI 1.0.116 reports itself,
+without a probe (issue 354, next), so it gets no hook.
+
+**GitHub Copilot CLI.** Run with 1.0.116 on Linux x64 (Pop!_OS 24.04) on
+2026-11-25, in a sandbox with no network, no sign-in, and a stand-in model
+(see [verification](verification.md)). It writes
+`ESC ] 7501 ; state=<state>:app=copilot ESC \`, with `:kind=permission` or
+`:kind=question` when blocked, wherever its output is a terminal and `TERM`
+is not `dumb`; no setting of its own turns that off. Inside tmux it wraps
+the report for tmux to pass through, which tmux has to allow. Its changelog
+first lists this in 1.0.106 (published to npm on 2026-11-06), which was not
+run, so an older one should show only running or exited.
+
+- `idle` at its prompt, `working` once a prompt is sent, `blocked` with
+  `permission` at a shell command's approval and with `question` while it
+  asks a question, `working` again once answered, `done` at the end of the
+  turn, and `error` when the model refused the request. These raise the
+  same alerts as Claude Code's. From its source, not seen: the one report
+  also counts Copilot's other sessions and background tasks, so a question,
+  an error, or an unread end of another session shows too.
+- It reports nothing as it quits. A session the app started clears its
+  records then, as for any agent. In a shell where the person typed
+  `copilot`, its last report stays by the usual rules: `done` and `error`
+  stay, and the others go at the shell's next prompt (OSC 133 `A`), if the
+  shell sends it.
+- Ctrl+C in a turn gives `idle`, and Esc at an approval `working` and then
+  `idle`, so a turn that was stopped raises no Done.
+- **Folder trust is not needs you.** In a folder it does not know it first
+  asks "Do you trust the files in this folder?", and reports `idle`
+  meanwhile, where Claude Code and Grok Build report `blocked`. Each new
+  worktree is a new folder. Because it never probes, a prompt chop's text
+  for a new Copilot session goes by the quiet rule (`isReadyForPrompt`),
+  and bracketed paste is already on at that question. The text and Enter,
+  typed there by the test script as the app would, trusted the folder,
+  since Enter takes "Yes", and the text was lost. The chop itself was not
+  run; it would say the prompt was sent. This was so before its row said it
+  reports. A review sends no Enter.
+- Its sign-in screen was not seen. Its own desktop notifications
+  (`terminalNotifications`) are its own setting, and can come beside the
+  app's.
+- `/usr/bin/copilot` may be VS Code's shim, which is not Copilot CLI but has
+  its name, so a row for it says it reports itself.
 
 **Why this is not reading agent output.** OSC 7501 is a terminal control
 sequence the program addresses to the terminal, like a title (OSC 0) or a
@@ -6200,7 +6242,8 @@ Off for every agent until the person turns it on.
   written but 0.70.0 does not apply it to this event), `AfterTool` working
   again once an approved tool ran (`BeforeTool` runs before the person is
   asked, so it cannot), and `AfterAgent` done, once per prompt after the
-  last reply. Codex and Grok Build report themselves and get no hook.
+  last reply. Codex, Grok Build, and GitHub Copilot CLI report themselves
+  and get no hook.
 - **Gemini CLI's hook that is On but reports nothing** (as read in 0.70.0):
   - *A folder Gemini CLI does not trust.* With folder trust on, as by
     default, Gemini CLI runs no hooks from its settings in a folder it does

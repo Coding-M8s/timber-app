@@ -560,7 +560,13 @@ const ROWS = [
 		resume: null,
 		signIn: { status: null, login: null },
 		generate: null,
-		status: { source: "none", app: null },
+		/*
+		 * Run with 1.0.116 on Linux x64 on 2026-11-25 (see docs/architecture.md,
+		 * "Agent status"): it reports without a probe. Its changelog first lists
+		 * this in 1.0.106, which was not run, so an older one should show only
+		 * running or exited. While it asks whether to trust a folder it reports `idle`.
+		 */
+		status: { source: "osc-7501", app: "copilot", reports: ["working", "blocked", "done"] },
 	},
 ] as const satisfies readonly AgentDefinition[];
 

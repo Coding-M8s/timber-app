@@ -5300,3 +5300,57 @@ Run for the unsaved mark on the File tab and the status after a save (issue
 - `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
 - Not run: the desktop app and its WebKit and WebView2 views, a screen reader,
   forced colors, Windows, and macOS.
+
+Run for GitHub Copilot CLI's status (issue 354), Linux x64 (Pop!_OS 24.04)
+with Bun 1.4.5, on 2026-11-25:
+
+- Copilot CLI is not installed on this machine (`/usr/bin/copilot` is VS
+  Code's shim). `@github/copilot` and `@github/copilot-linux-x64` 1.0.116
+  were downloaded from npm into a scratch folder, their SHA-512 compared with
+  the registry's `dist.integrity`, and the JavaScript bundle inside the
+  executable unpacked and searched before anything was run.
+  - `cli-main.js` writes `]7501;state=<state>:app=copilot`, with
+    `:kind=<kind>` when blocked, when standard output is a terminal and `TERM`
+    is not `dumb`. No probe is in it. Its changelog lists "Interactive CLI
+    reports program status to supporting terminals" under 1.0.106-6, 1.0.106,
+    and 1.0.107, and not under 1.0.105.
+- The executable was run under `bwrap` with every namespace unshared, so no
+  network but its own loopback, an empty temporary home, and no access to the
+  real one. A Python script gave it a pseudo terminal of 120 by 40 with
+  `TERM=xterm-256color` and `TERM_PROGRAM=timber-app`, `COPILOT_OFFLINE=true`,
+  and `COPILOT_PROVIDER_BASE_URL` at a stand-in model server of its own in the
+  sandbox, answered cursor position, device attribute, and color queries, typed
+  prompts as bracketed pastes and Enter, and kept what was written. Seen:
+  - `idle` about 2 seconds after the start, with no probe, and nothing else
+    while "Confirm folder trust" was on screen. Bracketed paste was on before
+    that screen. The first paste and Enter went to it: Enter took "Yes", and
+    the text did not start a turn.
+  - A plain prompt: `working`, `done`.
+  - A shell command: `working`, `blocked:kind=permission` at the approval,
+    `working` at Enter, `done`, and the command had run.
+  - A question (`ask_user`): `working`, `blocked:kind=question`, `working` at
+    Enter, `done`.
+  - Ctrl+C in a turn: `idle`. Esc at an approval: `working`, then `idle`.
+    Esc twice, four seconds apart, during a slow reply reported nothing.
+  - HTTP 400 from the model: `error`.
+  - `/exit` after that error: no report as it ended.
+  - The whole stream of the run with the question, Ctrl+C, and the error, read
+    by `createStatusScanner`, gave exactly its reports and no dropped one.
+- `bun test tests/agent-registry.test.ts tests/status-hooks.test.ts
+  tests/status-hook-files.test.ts tests/status-hooks-ui.test.tsx
+  tests/status-files.test.ts`: 93 pass; before the registry row changed, five
+  of the new or changed cases failed. New cases: the row, and the mark
+  in a shell and under a wrapper; no hook, and no line read for Copilot; its
+  alerts compared with Claude Code's for a turn, a question, Ctrl+C, Esc, and
+  an error; in a temporary home folder, no hook offered, written, or removed,
+  and another tool's file in `~/.copilot/hooks` unchanged; the status line in
+  the mock engine; and a stand-in `copilot` in a real session, whose reports
+  set the status with its mark.
+- `bun run test`: 4,868 passed, 19 skipped, 0 failed, in 289 files, after
+  rebasing onto the unsaved mark on the File tab (6922c51). The run
+  before any change had one browser test fail waiting for the page; its file,
+  `tests/text-editor-browser.test.ts`, passed alone.
+- `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
+- Not run: Copilot CLI signed in or with a real model, 1.0.106 to 1.0.115,
+  its sign-in screen, a prompt chop, the desktop app by hand, Windows, and
+  macOS.
