@@ -147,6 +147,8 @@ interface Acted {
 	conversation: string | null;
 	/** Whether the person gave the session its name. */
 	renamed: boolean;
+	/** What a terminal of its worktree is called before it is numbered. */
+	terminalBase: string;
 	/** The saved session it opened again, when it did. */
 	restored: RestoreTag | null;
 	/** Every prompt sent, with Enter after it, in order, as given. */
@@ -294,7 +296,10 @@ export function createMockTerminals(
 			const { program: _agentProgram, ...shellSession } = acted.session;
 			// Only an agent leaves its mark on the shell; an editor that quit leaves a plain shell.
 			const mark = acted.session.kind === "agent" ? { endedAgent } : {};
-			acted.session = { ...shellSession, kind: "terminal", shell, command: describeCommandLine([shell]), state: { kind: "running" }, status: null, children: [], ...mark, ...dropped };
+			// A chip shows what runs in it now: an agent's chip is a numbered terminal's, unless the person renamed it.
+			const taken = [...sessions.values()].filter(other => other !== acted && other.session.worktree === acted.session.worktree).map(other => other.session.name);
+			const name = acted.session.kind === "agent" && !acted.renamed ? defaultSessionName(acted.terminalBase, taken) : acted.session.name;
+			acted.session = { ...shellSession, name, kind: "terminal", shell, command: describeCommandLine([shell]), state: { kind: "running" }, status: null, children: [], ...mark, ...dropped };
 			announce({ id: acted.session.id, session: acted.session });
 			print(acted, prompt(acted));
 			return;
@@ -501,7 +506,7 @@ export function createMockTerminals(
 		const acted: Acted = {
 			session, scrollback: createScrollback(), line: "", typed: "", size: { cols: request.cols, rows: request.rows }, drawn: 0,
 			scanner: createStatusScanner(), records: createStatusRecords(), answers: [], pasteMode: createPasteModeScanner(), pasted: [], prompts: [],
-			agent: agent?.name ?? null, launchName: attempt ? attempt.label : launch ? launch.name : "", resumable, conversation, renamed: savedName !== null, restored,
+			agent: agent?.name ?? null, launchName: attempt ? attempt.label : launch ? launch.name : "", resumable, conversation, renamed: savedName !== null, terminalBase: sessionNameBase(sessionNaming(), "Terminal", worktree.branch, false), restored,
 			waiting: chop?.kind === "prompt" ? { text: chop.text, review: chop.review === true } : null,
 		};
 		sessions.set(session.id, acted);

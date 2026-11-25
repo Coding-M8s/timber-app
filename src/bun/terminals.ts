@@ -346,6 +346,8 @@ interface Live {
 	startedAt: number;
 	/** Whether the name is one the person gave, not a default. */
 	renamed: boolean;
+	/** What a terminal of this worktree is called before it is numbered, for the name a chip takes once its agent ended and a shell went on. */
+	terminalBase: string;
 	restored: RestoreTag | null;
 	/**
 	 * A prompt chop's text, or a review, still to send to a new agent, with
@@ -576,8 +578,8 @@ export function sessionEnvironment(environment: Record<string, string | undefine
  *   until it is closed.
  * - When an agent's process ends by itself (not a Timber setup command, and
  *   not closed from the app), the same session goes on as the person's shell
- *   in the worktree's folder, so the chip stays usable. It keeps its id and
- *   name, and what the agent printed stays above, followed by a note. It
+ *   in the worktree's folder, so the chip stays usable. It keeps its id, and
+ *   its name unless the person left it a default, which becomes a terminal's, and what the agent printed stays above, followed by a note. It
  *   becomes a terminal session: it counts as one, and a restart opens it as a
  *   terminal. What the agent ended with stays on the session as `endedAgent`.
  *   What the agent left running is still hung up on and still ended when the
@@ -1029,10 +1031,14 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 		// The note goes after what the agent printed and is kept with it, so drawing the session again shows it too.
 		live.pending += agentEndedNote(live.launchName, endedAgent, live.session.path);
 		flush(live);
-		// The agent's own name goes with it: the shell keeps its mark through `endedAgent`.
+		// The agent's own program goes with it: rows keep its mark through `endedAgent`.
 		const { program: _agentProgram, ...shellSession } = live.session;
 		const mark = live.session.kind === "agent" ? { endedAgent } : {};
-		changed(live, { ...shellSession, kind: "terminal", shell, command: describeCommandLine([shell]), state: { kind: "running" }, status: null, children: [], ...mark, ...notSent });
+		// A chip shows what runs in it now: an agent's chip is a numbered terminal's, unless the person renamed it. The name was taken by no other session.
+		const name = live.session.kind === "agent" && !live.renamed
+			? defaultSessionName(live.terminalBase, inWorktree(live.session.worktree).filter(other => other !== live).map(other => other.session.name))
+			: live.session.name;
+		changed(live, { ...shellSession, name, kind: "terminal", shell, command: describeCommandLine([shell]), state: { kind: "running" }, status: null, children: [], ...mark, ...notSent });
 		return true;
 	}
 
@@ -1183,7 +1189,7 @@ export function createTerminalSessions(dependencies: TerminalDependencies): Term
 			session, process: started.child, scrollback: createScrollback(), pending: "", flushTimer: null, undrawn: [], undrawnSize: 0, held: false, leftovers: null, former: null, ended: started.ended,
 			environment: baseEnvironment, cols, rows, launchName: start.base,
 			scanner: createStatusScanner(), records: createStatusRecords(), pasteMode: createPasteModeScanner(), statusChanged: false, native: false, probedAt: Number.NEGATIVE_INFINITY, chop: null, prompt: null,
-			agent: agent?.name ?? null, resumable: start.resumable, program: start.program, conversation: start.conversation, conversationFolder: start.conversationFolder, startedAt: now(), renamed: savedName !== null, restored,
+			agent: agent?.name ?? null, resumable: start.resumable, program: start.program, conversation: start.conversation, conversationFolder: start.conversationFolder, startedAt: now(), renamed: savedName !== null, terminalBase: sessionNameBase(naming, "Terminal", listed.worktree.branch, false), restored,
 		};
 		if (chop?.kind === "command") {
 			live.chop = { text: chop.text, timer: null, deadline: Date.now() + chopWaitMilliseconds };

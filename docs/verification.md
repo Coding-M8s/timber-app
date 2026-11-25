@@ -5879,3 +5879,23 @@ with Bun 1.4.2, Git, Timber at `~/.local/bin/timber`, and Google Chrome:
   view's notes, and four others); each passed when its file was run alone.
 - `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
 - Not run: the desktop app, Windows, and macOS.
+
+## An agent's chip as a terminal once it exits to a shell (issue 419)
+
+- `bun test tests/sessions.test.tsx tests/agent-status.test.tsx
+  tests/terminals.test.ts tests/workflow-agent-session.test.ts
+  tests/status-alerts.test.ts`: passed. Main process, with real stand-in
+  agents: the chip's session takes "Terminal 2" beside a plain terminal, a
+  renamed one keeps its name and its saved name, and a fresh restart saves it
+  as a terminal. Window tests over the mock engine: the agent exits and the
+  chip shows `>_`, "Terminal", no exit mark, and the description "Terminal,
+  mock-shell. Claude Code ended. Exited with code 0. Now a shell"; a renamed
+  chip keeps its name; the shell then exits and the chip shows "exit 2".
+  Unit tests: `chipBrand`, `shortExit`, and `describeSessionStatus`, which
+  still names the agent for a crash.
+- `bun run test`: the second full run was 4,756 passed, 0 skipped counted, 3
+  failed, in 283 files; the failures were three headless-browser tests that
+  timed out waiting for the page, and different ones failed in each run. Their
+  three files passed alone: 34 passed, 0 failed.
+- `bun run typecheck`: exited 0. No em dash in the diff.
+- Not run: the desktop app, Windows, and macOS.

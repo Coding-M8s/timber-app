@@ -134,7 +134,7 @@ describe.skipIf(!posix)("a workflow's agent in a terminal session", () => {
 		expect(reads).toBe(1);
 	});
 
-	test("a workflow's agent that ends by itself goes on as a shell in the worktree, named after the workflow", async () => {
+	test("a workflow's agent that ends by itself goes on as a shell in the worktree, named as a terminal", async () => {
 		const quitter = join(bin, "fake-quitter");
 		writeFileSync(quitter, "#!/bin/sh\necho quitter-out\nexit 3\n");
 		chmodSync(quitter, 0o755);
@@ -144,7 +144,7 @@ describe.skipIf(!posix)("a workflow's agent in a terminal session", () => {
 		if (result.outcome !== "opened") throw new Error(`Not opened: ${JSON.stringify(result)}`);
 		expect(await until(() => sessions.list()[0]?.kind === "terminal")).toBe(true);
 		expect(sessions.list()[0]).toMatchObject({
-			id: result.session.id, name: "review", state: { kind: "running" }, path: worktree,
+			id: result.session.id, name: "Terminal", state: { kind: "running" }, path: worktree,
 			endedAgent: { name: "review", agent: null, program: null, resumable: null, conversation: null, exitCode: 3 },
 		});
 		expect(changes.filter(change => change.session?.state.kind === "exited")).toEqual([]);
