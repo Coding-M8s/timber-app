@@ -10,6 +10,7 @@ import type { SeenStatuses } from "../seen-status";
 import { type RowSessionMark, describeRowSessions } from "../terminal-format";
 import { WORKTREE_MENU_SHORTCUTS, type WorktreeMenuItemId, describeWorktreeMenu, opensWorktreeMenu, worktreeMenuItems } from "../worktree-menu-format";
 import { DEFAULT_TAGS, type Tag, describeTag, tagColorVariable } from "../../shared/worktree-tags";
+import { MOVE_WORKTREE_HINT, MOVE_WORKTREE_SHORTCUTS } from "../repository-drag";
 import { AgentIcon } from "./AgentIcon";
 import { ChildBadge } from "./ChildTasks";
 import { describeOpenPullRequest } from "../pull-request-format";
@@ -157,6 +158,8 @@ interface WorktreeRowProps {
 	tag?: Tag;
 	/** The saved tags, for the Tag entry of the row's menu. No Tag entry when left out. */
 	tags?: readonly Tag[];
+	/** Whether the row can be moved among its repository's rows: it says so in its tooltip and `aria-keyshortcuts`. The keys and the drag are the list's. */
+	movable?: boolean;
 	/** The sentence of a port this worktree shares with another, or null. Only then does the row show a warning. */
 	portClash?: string | null;
 	/**
@@ -212,7 +215,7 @@ function SyncActionButton({ control, onChoose, onFocus, onBlur }: { control: Syn
 }
 
 /** One worktree in the sidebar. What it is marked with comes from `describeRowMarkers`; this only draws it. */
-export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest = null, pullRequestHost, onOpenPullRequest, issue, removal = null, sessions = [], seen = {}, tag = DEFAULT_TAGS[0]!, tags, portClash = null, actions, onMenuChoice, onSyncAction, syncOptions = ASKING_SYNC }: WorktreeRowProps) {
+export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest = null, pullRequestHost, onOpenPullRequest, issue, removal = null, sessions = [], seen = {}, tag = DEFAULT_TAGS[0]!, tags, portClash = null, movable = false, actions, onMenuChoice, onSyncAction, syncOptions = ASKING_SYNC }: WorktreeRowProps) {
 	const descriptionId = useId();
 	const button = useRef<HTMLButtonElement>(null);
 	// Where the open menu was asked to be, or null while it is closed.
@@ -266,7 +269,7 @@ export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest =
 			: <Marker key={marker.kind} marker={marker} />);
 	const flags = [...at("state"), ...at("pull-request")];
 	// No tooltip while the row's menu is open: it would cover the menu.
-	const title = menuAt !== null ? undefined : `${describeRowTitle(worktree, linked && issueTitlePart(linked))}. ${describeTag(tag)}`;
+	const title = menuAt !== null ? undefined : `${describeRowTitle(worktree, linked && issueTitlePart(linked))}. ${describeTag(tag)}${movable ? `. ${MOVE_WORKTREE_HINT}` : ""}`;
 	const name = label ?? worktreeLabel(worktree);
 	const kind = describeWorktreeKind(worktree);
 	const row = (
@@ -277,7 +280,7 @@ export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest =
 			// The kind sits on the second line, beside the button, so the name says it as it did when both lines were inside.
 			aria-label={`${name} ${kind}`}
 			aria-describedby={description !== "" ? descriptionId : undefined}
-			aria-keyshortcuts={onMenuChoice ? WORKTREE_MENU_SHORTCUTS : undefined}
+			aria-keyshortcuts={[movable ? MOVE_WORKTREE_SHORTCUTS : "", onMenuChoice ? WORKTREE_MENU_SHORTCUTS : ""].filter(Boolean).join(" ") || undefined}
 			title={title}
 			ref={button}
 			onClick={onSelect}

@@ -634,3 +634,107 @@ describe("groups", () => {
 		expect(readFileSync(settingsFile, "utf8")).toBe(text);
 	});
 });
+
+describe.skipIf(realTimber === null)("reordering worktrees", () => {
+	const names = async (list: ReturnType<typeof listOn>, path = primary) => (await list.find(path))!.worktrees.map(worktree => worktree.path);
+
+	test("saves the order of one repository, which a restart keeps, and changes nothing on disk", async () => {
+		const list = listOn();
+		await list.addFolder(primary);
+		await list.addFolder(other);
+		const natural = await names(list);
+		expect(natural[0]).toBe(primary);
+		const before = [fingerprint(primary), fingerprint(linked), fingerprint(other)];
+		const refsBefore = git(primary, "for-each-ref");
+
+		expect(await list.reorderWorktrees(primary, [linked, primary])).toEqual({ outcome: "saved" });
+		expect(await names(list)).toEqual([linked, primary]);
+		// A restart reads the file again, and every read path shows the order: the list, a single read, and the read for views.
+		const restarted = listOn();
+		expect(await names(restarted)).toEqual([linked, primary]);
+		expect((await restarted.list()).find(repository => repository.path === primary)!.worktrees.map(worktree => worktree.path)).toEqual([linked, primary]);
+		expect((await restarted.reload(primary))!.worktrees.map(worktree => worktree.path)).toEqual([linked, primary]);
+		expect((await restarted.findRecent(primary))!.worktrees.map(worktree => worktree.path)).toEqual([linked, primary]);
+		// The other repository, and the saved paths of the repositories, are as they were.
+		expect(await names(restarted, other)).toEqual([other]);
+		expect(JSON.parse(readFileSync(settingsFile, "utf8")).repositories[0].worktreeOrder).toEqual([linked, primary]);
+
+		expect([fingerprint(primary), fingerprint(linked), fingerprint(other)]).toEqual(before);
+		expect(git(primary, "for-each-ref")).toBe(refsBefore);
+	});
+
+	test("the repository order and a group move keep it", async () => {
+		const list = listOn();
+		await list.addFolder(primary);
+		await list.addFolder(other);
+		await list.reorderWorktrees(primary, [linked, primary]);
+		await list.reorder([other, primary]);
+		expect(await names(listOn())).toEqual([linked, primary]);
+		const group = await list.createGroup("Work", primary);
+		expect(group.outcome).toBe("saved");
+		expect(await names(listOn())).toEqual([linked, primary]);
+	});
+
+	test("a worktree made later appears at the end, and a removed one drops out with the rest kept in order", async () => {
+		const list = listOn();
+		await list.addFolder(primary);
+		await list.reorderWorktrees(primary, [linked, primary]);
+		const added = join(root, "sample-worktrees", "feat-y");
+		git(primary, "worktree", "add", "-b", "feat/y", added);
+		try {
+			expect(await names(listOn())).toEqual([linked, primary, added]);
+			await list.reorderWorktrees(primary, [added, linked, primary]);
+			git(primary, "worktree", "remove", "--force", linked);
+			expect(await names(listOn())).toEqual([added, primary]);
+		} finally {
+			git(primary, "worktree", "remove", "--force", added);
+			git(primary, "worktree", "add", "-B", "feat/x", linked);
+		}
+	});
+
+	test("an order that changes nothing writes nothing, and an empty one forgets it", async () => {
+		const list = listOn();
+		await list.addFolder(primary);
+		await list.reorderWorktrees(primary, [linked, primary]);
+		const text = readFileSync(settingsFile, "utf8");
+		const saved = statSync(settingsFile).mtimeMs;
+		expect(await list.reorderWorktrees(primary, [linked, primary, linked])).toEqual({ outcome: "saved" });
+		expect(readFileSync(settingsFile, "utf8")).toBe(text);
+		expect(statSync(settingsFile).mtimeMs).toBe(saved);
+		expect(await list.reorderWorktrees(primary, [])).toEqual({ outcome: "saved" });
+		expect(JSON.parse(readFileSync(settingsFile, "utf8")).repositories[0].worktreeOrder).toBeUndefined();
+		expect(await names(listOn())).toEqual([primary, linked]);
+	});
+
+	test("a repository that is not listed changes nothing, and the override refuses", async () => {
+		const list = listOn();
+		await list.addFolder(primary);
+		const text = readFileSync(settingsFile, "utf8");
+		expect(await list.reorderWorktrees(other, [other])).toEqual({ outcome: "saved" });
+		expect(readFileSync(settingsFile, "utf8")).toBe(text);
+		const overridden = listOn({ environment: { TIMBER_APP_REPOS: primary } });
+		expect(await overridden.reorderWorktrees(primary, [linked, primary])).toEqual({ outcome: "overridden" });
+		expect(readFileSync(settingsFile, "utf8")).toBe(text);
+	});
+
+	test("forgetting the repository forgets its order", async () => {
+		const list = listOn();
+		await list.addFolder(primary);
+		await list.reorderWorktrees(primary, [linked, primary]);
+		await list.remove(primary);
+		await list.addFolder(primary);
+		expect(await names(listOn())).toEqual([primary, linked]);
+	});
+
+	test("a save that fails is reported, and the order stays as it was", async () => {
+		const list = listOn();
+		await list.addFolder(primary);
+		const folder = join(settingsFile, "..");
+		renameSync(folder, `${folder}-moved`);
+		writeFileSync(folder, "in the way");
+		const result = await list.reorderWorktrees(primary, [linked, primary]);
+		expect(result.outcome).toBe("failed");
+		expect(result.outcome === "failed" && result.message).toContain("Could not save settings to");
+		expect(await names(list)).toEqual([primary, linked]);
+	});
+});

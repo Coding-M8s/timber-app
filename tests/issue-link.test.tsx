@@ -225,8 +225,9 @@ describe("the issue on screen", () => {
 	test("the row's tooltip shows the key and status", async () => {
 		const { store } = await startedStore();
 		const markup = selecting(store, MAC);
-		expect(markup).toContain(`title="${MAC} (Base origin/main) (TIM-88 · In Review). Tag: Work"`);
-		expect(markup).toContain(`title="${LOOKUP} (Base origin/main) (#41 · Open). Tag: Work"`);
+		// The rows can be moved, which their tooltip ends by saying.
+		expect(markup).toContain(`title="${MAC} (Base origin/main) (TIM-88 · In Review). Tag: Work. Drag to reorder, or press Alt+Up or Alt+Down."`);
+		expect(markup).toContain(`title="${LOOKUP} (Base origin/main) (#41 · Open). Tag: Work. Drag to reorder, or press Alt+Up or Alt+Down."`);
 	});
 
 	test("the link opens the saved address in the browser", async () => {

@@ -1,5 +1,5 @@
 import { basename } from "node:path";
-import type { AddRepositoryResult, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, RepositoryGroupsResult } from "../shared/model";
+import type { AddRepositoryResult, RemoveRepositoryResult, ReorderRepositoriesResult, ReorderWorktreesResult, Repository, RepositoryGroupsResult } from "../shared/model";
 import { applyOrder, sameOrder } from "../shared/repository-order";
 import { forgetGroup, forgetRepository } from "../shared/layout";
 import { forgetPullRepository } from "../shared/pull-confirm-setting";
@@ -17,7 +17,7 @@ import {
 	placeIn,
 	renameGroupIn,
 } from "../shared/repository-groups";
-import type { SavedRepository, Settings } from "../shared/settings";
+import { type SavedRepository, type Settings, readWorktreeOrder } from "../shared/settings";
 import { commonDirectory, overrideRepositoryPaths } from "./git-engine";
 import { type RepositoryReader, failedRepository } from "./repository-reader";
 import type { WatchTarget } from "./repository-watcher";
@@ -60,6 +60,8 @@ export interface RepositoryList {
 	remove(path: string): Promise<RemoveRepositoryResult>;
 	/** Save the list in the order `order` names, by primary checkout. See `Engine.reorderRepositories`. */
 	reorder(order: readonly string[]): Promise<ReorderRepositoriesResult>;
+	/** Save the order of one repository's worktrees, by path. See `Engine.reorderWorktrees`. */
+	reorderWorktrees(repository: string, order: readonly string[]): Promise<ReorderWorktreesResult>;
 	/** Read one repository again, named by the path of its primary checkout. See `RepositoryReader.reload`. */
 	reload(path: string): Promise<Repository | null>;
 	/** Whether `path` is the primary checkout of a repository in the list. Commands that change a repository run only in these. */
@@ -106,6 +108,14 @@ const groupedList = (settings: Settings): GroupedList<SavedRepository> => ({ gro
 
 /** What the interface is told about the saved groups. */
 const groupsOf = (settings: Settings): RepositoryGroups => groupsOfList(groupedList(settings));
+
+/** `repository` with its worktrees in the order saved for it, if any. */
+function inSavedOrder(repository: Repository, saved: readonly SavedRepository[]): Repository {
+	const order = saved.find(entry => entry.path === repository.path)?.worktreeOrder;
+	if (!order || order.length === 0) return repository;
+	const worktrees = applyOrder(repository.worktrees, order);
+	return sameOrder(worktrees, repository.worktrees) ? repository : { ...repository, worktrees };
+}
 
 function unavailable(path: string): Repository {
 	return { path, name: basename(path) || path, available: false, failure: null, setup: "unknown", fallbackBase: null, worktrees: [] };
@@ -189,7 +199,8 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 			const override = overrideRepositoryPaths(environment);
 			if (override) return listOverride(override);
 			const { repositories } = await settings();
-			return Promise.all(repositories.map(async entry => await reader.reload(entry.path) ?? unavailable(entry.path)));
+			// The order is read after the repository is, so a save that finished while Git was read still shows.
+			return Promise.all(repositories.map(async entry => inSavedOrder(await reader.reload(entry.path) ?? unavailable(entry.path), (await settings()).repositories)));
 		},
 
 		async add() {
@@ -205,7 +216,10 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 
 		addFolder,
 
-		reload: path => reader.reload(path),
+		async reload(path) {
+			const repository = await reader.reload(path);
+			return repository && inSavedOrder(repository, (await settings()).repositories);
+		},
 
 		async includes(path) {
 			const override = overrideRepositoryPaths(environment);
@@ -218,7 +232,7 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 			if (override) return (await listOverride(override)).find(repository => repository.path === path) ?? null;
 			const { repositories } = await settings();
 			if (!repositories.some(entry => entry.path === path)) return null;
-			return await reader.reload(path) ?? unavailable(path);
+			return inSavedOrder(await reader.reload(path) ?? unavailable(path), (await settings()).repositories);
 		},
 
 		async findRecent(path) {
@@ -226,7 +240,7 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 			if (override) return (await listOverride(override)).find(repository => repository.path === path) ?? null;
 			const { repositories } = await settings();
 			if (!repositories.some(entry => entry.path === path)) return null;
-			return await (reader.recent ?? reader.reload)(path) ?? unavailable(path);
+			return inSavedOrder(await (reader.recent ?? reader.reload)(path) ?? unavailable(path), (await settings()).repositories);
 		},
 
 		async watchTargets() {
@@ -249,6 +263,27 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 				if (sameOrder(repositories, current.repositories)) return { outcome: "saved" };
 				try {
 					await save({ ...current, repositories });
+				} catch (error) {
+					return { outcome: "failed", message: `Could not save settings to ${settingsFile}: ${messageOf(error)}` };
+				}
+				return { outcome: "saved" };
+			});
+		},
+
+		reorderWorktrees(repository, order) {
+			if (overridden()) return Promise.resolve({ outcome: "overridden" });
+			return inTurn(async () => {
+				const current = await settings();
+				const entry = current.repositories.find(candidate => candidate.path === repository);
+				// A repository that is not listed has nothing to save an order for.
+				if (!entry) return { outcome: "saved" };
+				const worktreeOrder = readWorktreeOrder(order);
+				const saved = entry.worktreeOrder ?? [];
+				if (worktreeOrder.length === saved.length && worktreeOrder.every((path, at) => path === saved[at])) return { outcome: "saved" };
+				const { worktreeOrder: _, ...rest } = entry;
+				const next: SavedRepository = worktreeOrder.length > 0 ? { ...rest, worktreeOrder } : rest;
+				try {
+					await save({ ...current, repositories: current.repositories.map(candidate => candidate === entry ? next : candidate) });
 				} catch (error) {
 					return { outcome: "failed", message: `Could not save settings to ${settingsFile}: ${messageOf(error)}` };
 				}

@@ -16,7 +16,7 @@ import { createMockPullRequests } from "../src/mainview/engine/mock-pull-request
 import type { Engine } from "../src/shared/engine";
 import { type Layout, defaultLayout } from "../src/shared/layout";
 import { defaultPreferences } from "../src/shared/preferences";
-import type { AddRepositoryResult, RemoveRepositoryResult, ReorderRepositoriesResult, Repository, RepositoryGroupsResult, TimberStatus, WorktreeCommandResult } from "../src/shared/model";
+import type { AddRepositoryResult, RemoveRepositoryResult, ReorderRepositoriesResult, ReorderWorktreesResult, Repository, RepositoryGroupsResult, TimberStatus, WorktreeCommandResult } from "../src/shared/model";
 import type { DoneApplyRequest, DoneApplyResult, DonePreviewRequest, DonePreviewResult } from "../src/shared/timber-done";
 import { createMockEngine, mockTimberFor, sampleChanges, samplePickableRepository, sampleRepositories, sampleTimberStatuses, sampleUnavailableRepository } from "../src/mainview/engine/mock";
 import { isRunning, selectedWorktree } from "../src/mainview/store/state";
@@ -77,6 +77,7 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 	const adds: Pending<AddRepositoryResult>[] = [];
 	const removes: Pending<RemoveRepositoryResult>[] = [];
 	const reorders: (Pending<ReorderRepositoriesResult> & { order: string[] })[] = [];
+	const worktreeReorders: (Pending<ReorderWorktreesResult> & { order: string[] })[] = [];
 	const commands: (Pending<WorktreeCommandResult> & { kind: "new" | "open"; request: object })[] = [];
 	const previews: (Pending<DonePreviewResult> & { request: DonePreviewRequest })[] = [];
 	const applies: (Pending<DoneApplyResult> & { request: DoneApplyRequest })[] = [];
@@ -140,6 +141,9 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		}),
 		reorderRepositories: order => new Promise((resolve, reject) => {
 			reorders.push({ path: null, order, resolve, reject });
+		}),
+		reorderWorktrees: (repository, order) => new Promise((resolve, reject) => {
+			worktreeReorders.push({ path: repository, order, resolve, reject });
 		}),
 		// Groups have their own tests in "repository groups" below, on the mock engine.
 		listRepositoryGroups: async () => ({ groups: [], membership: {} }),
@@ -208,7 +212,7 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 	const push = (path: string) => {
 		for (const listener of [...listeners]) listener(path);
 	};
-	return { engine, lists, loads, adds, removes, reorders, commands, previews, applies, push, listeners };
+	return { engine, lists, loads, adds, removes, reorders, worktreeReorders, commands, previews, applies, push, listeners };
 }
 
 /** A store on a manual engine, started and past its first load of the sample data. */
@@ -1496,5 +1500,93 @@ describe("repository groups", () => {
 		await store.placeRepository(TIMBER, "group-1");
 		expect(store.getState().repositoryGroups).toEqual({ groups: [], membership: {} });
 		expect(store.getState().notice).toBeNull();
+	});
+});
+
+describe("moving a worktree inside its repository", () => {
+	const worktreePaths = (store: ReturnType<typeof createAppStore>, repository = TIMBER) =>
+		store.getState().repositories.find(candidate => candidate.path === repository)!.worktrees.map(worktree => worktree.path);
+	const first = sampleRepositories[0]!.worktrees.map(worktree => worktree.path);
+
+	test("shows the move at once, saves the whole order of that repository, and leaves the others alone", async () => {
+		const { store, worktreeReorders } = await loadedStore();
+		const others = worktreePaths(store, API_SERVER);
+		const moving = store.moveWorktree(TIMBER, first[0]!, null);
+		expect(worktreePaths(store)).toEqual([...first.slice(1), first[0]!]);
+		await settle();
+		expect(worktreeReorders.map(pending => [pending.path, pending.order])).toEqual([[TIMBER, [...first.slice(1), first[0]!]]]);
+		worktreeReorders.shift()!.resolve({ outcome: "saved" });
+		await moving;
+		expect(worktreePaths(store)).toEqual([...first.slice(1), first[0]!]);
+		expect(worktreePaths(store, API_SERVER)).toEqual(others);
+	});
+
+	test("a move to where it already is, or of a worktree the repository does not list, asks nothing", async () => {
+		const { store, worktreeReorders } = await loadedStore();
+		await store.moveWorktree(TIMBER, first[0]!, first[1]!);
+		await store.moveWorktree(TIMBER, first[0]!, first[0]!);
+		await store.moveWorktree(TIMBER, "/work/never-listed", null);
+		await store.moveWorktree(TIMBER, first[0]!, "/work/never-listed");
+		await store.moveWorktree("/work/never-listed", first[0]!, null);
+		await store.stepWorktree(TIMBER, first[0]!, -1);
+		await store.stepWorktree(TIMBER, first[first.length - 1]!, 1);
+		expect(worktreeReorders).toEqual([]);
+		expect(worktreePaths(store)).toEqual(first);
+	});
+
+	test("steps one place up or down", async () => {
+		const { store, worktreeReorders } = await loadedStore();
+		const stepping = store.stepWorktree(TIMBER, first[0]!, 1);
+		expect(worktreePaths(store).slice(0, 2)).toEqual([first[1]!, first[0]!]);
+		await settle();
+		worktreeReorders.shift()!.resolve({ outcome: "saved" });
+		await stepping;
+		const back = store.stepWorktree(TIMBER, first[0]!, -1);
+		expect(worktreePaths(store)).toEqual(first);
+		await settle();
+		worktreeReorders.shift()!.resolve({ outcome: "saved" });
+		await back;
+	});
+
+	test("a list or a repository read while the save runs keeps the new order", async () => {
+		const { store, worktreeReorders, lists, loads } = await loadedStore();
+		const moving = store.moveWorktree(TIMBER, first[0]!, null);
+		await settle();
+		const refreshing = store.refresh();
+		await settle();
+		lists.shift()!.resolve(structuredClone(sampleRepositories));
+		await refreshing;
+		expect(worktreePaths(store)).toEqual([...first.slice(1), first[0]!]);
+		worktreeReorders.shift()!.resolve({ outcome: "saved" });
+		await moving;
+		expect(loads).toEqual([]);
+	});
+
+	test("a single read of the repository while the save runs keeps the new order", async () => {
+		const { store, worktreeReorders, loads } = await loadedStore();
+		const moving = store.moveWorktree(TIMBER, first[0]!, null);
+		await settle();
+		const reading = store.reloadRepository(TIMBER);
+		await settle();
+		loads.shift()!.resolve(structuredClone(sampleRepositories[0]!));
+		await reading;
+		expect(worktreePaths(store)).toEqual([...first.slice(1), first[0]!]);
+		worktreeReorders.shift()!.resolve({ outcome: "saved" });
+		await moving;
+	});
+
+	test("a save that fails puts the saved order back and says why", async () => {
+		const { store, worktreeReorders, loads } = await loadedStore();
+		const moving = store.moveWorktree(TIMBER, first[0]!, null);
+		await settle();
+		worktreeReorders.shift()!.resolve({ outcome: "failed", message: "Could not save settings to /x." });
+		await settle();
+		expect(store.getState().notice).toEqual({ kind: "failed", action: "reorder", message: "Could not save settings to /x." });
+		// The repository is read again, so it shows what is saved.
+		expect(loads.map(pending => pending.path)).toEqual([TIMBER]);
+		loads.shift()!.resolve(structuredClone(sampleRepositories[0]!));
+		await moving;
+		await settle();
+		expect(worktreePaths(store)).toEqual(first);
 	});
 });

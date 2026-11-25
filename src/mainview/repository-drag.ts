@@ -81,3 +81,44 @@ export function dropPlace(slots: readonly DropSlot[], y: number): { group: strin
 	}
 	return { group, before: null };
 }
+
+/** The keys that move a focused worktree row one place, as `aria-keyshortcuts` names them. */
+export const MOVE_WORKTREE_SHORTCUTS = MOVE_REPOSITORY_SHORTCUTS;
+
+/** The sentence a worktree row's tooltip ends with while it can be moved. */
+export const MOVE_WORKTREE_HINT = MOVE_REPOSITORY_HINT;
+
+/**
+ * Whether the worktree rows of a repository can be moved: nothing is typed
+ * in the filter, and at least two rows share the list they move in.
+ */
+export function canMoveWorktrees(rowCount: number, query: string): boolean {
+	return query === "" && rowCount >= 2;
+}
+
+/** A worktree row drawn, with the vertical middle of the row and its second line together. */
+export interface WorktreeSlot {
+	path: string;
+	middle: number;
+}
+
+/**
+ * Where a dragged worktree would land for a pointer at `y`: the path of the
+ * row it goes before, or null for the end. `slots` are the rows of its own
+ * repository's list, top to bottom, without the dragged row, so a place can
+ * never fall outside that list: above the first row is before the first,
+ * below the last is the end.
+ */
+export function worktreeDropPlace(slots: readonly WorktreeSlot[], y: number): string | null {
+	for (const slot of slots) {
+		if (y < slot.middle) return slot.path;
+	}
+	return null;
+}
+
+/** Whether dropping `path` before `before` leaves `paths` as they are. */
+export function worktreeStaysPut(paths: readonly string[], path: string, before: string | null): boolean {
+	const at = paths.indexOf(path);
+	if (at < 0) return true;
+	return before === null ? at === paths.length - 1 : before === path || paths[at + 1] === before;
+}

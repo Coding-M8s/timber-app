@@ -745,7 +745,11 @@ export function createMockEngine(
 	let failure: string | null = null;
 	const timberFailures = new Map<string, string>();
 	// As the main process does: a failed listing brings the diagnostic and no worktrees.
+	// Each repository's worktrees in the order the person moved them into. Kept apart from the list, which stays in Timber's order.
+	const worktreeOrders = new Map<string, string[]>();
 	const asRead = (repository: Repository): Repository => {
+		const saved = worktreeOrders.get(repository.path);
+		if (saved) repository = { ...repository, worktrees: applyOrder(repository.worktrees, saved) };
 		const diagnostic = timberFailures.get(repository.path);
 		if (diagnostic === undefined || !repository.available) return repository;
 		// A failed read does not know whether there is anything to fetch.
@@ -1294,6 +1298,7 @@ export function createMockEngine(
 			forgetIcon({ kind: "repository", path });
 			forgetTarget({ kind: "repository", path });
 			repositoryAgents = forgetRepositoryAgent(repositoryAgents, path);
+			worktreeOrders.delete(path);
 			// Its group stays, as it does on disk.
 			delete membership[path];
 			return { outcome: "removed" };
@@ -1303,6 +1308,13 @@ export function createMockEngine(
 			return { outcome: "saved" };
 		},
 		listRepositoryAgents: async () => structuredClone(repositoryAgents),
+		async reorderWorktrees(repository, order) {
+			if (current.some(listed => listed.path === repository)) {
+				if (order.length > 0) worktreeOrders.set(repository, [...order]);
+				else worktreeOrders.delete(repository);
+			}
+			return { outcome: "saved" };
+		},
 		listRepositoryGroups: async () => groupsOfList(groupedList()),
 		async createRepositoryGroup(name, repository, parent) {
 			// Numbered in the order they are made: an id is used up only by a group that was made.

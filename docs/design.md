@@ -278,6 +278,28 @@ change them here first when they change.
 - Drag a repository header to move it; a line shows where it will land.
   Alt+Up and Alt+Down move a focused header one place. The order is
   remembered between runs.
+- Drag a worktree row up or down to move it inside its own repository (issue
+  418), the primary checkout too, so `main` can sit at the bottom. A press
+  becomes a drag after a few pixels, so a click still selects, and the click
+  that ends a drag selects nothing. The pointer may be over the row's second
+  line, but not over a control beside it, such as the pull request's number
+  or Pull. A line shows where it will land, and nothing shows where it would
+  stay. Alt+Up and Alt+Down move a focused row one place and the keyboard
+  stays on it; the row's tooltip ends with "Drag to reorder, or press Alt+Up
+  or Alt+Down." and its `aria-keyshortcuts` names the keys. A row never
+  leaves its repository: the places are the other rows of its own list, so a
+  pointer above them lands first, below them last, and over another
+  repository, a group, or outside the sidebar lands at one of those two ends,
+  never in another place. The Issues row stays first, backups stay last, and
+  an arena's attempts keep to their arena and do not move. While a filter is
+  typed nothing moves, the rows do not say they can, and with only one row
+  there is nothing to move. The order is saved per repository by worktree
+  path, next to the repository order, and survives a restart; a worktree
+  made later shows at the end, and one removed drops out and leaves the rest
+  in order. A worktree removed and made again at the same path returns to its
+  old place until the next move.
+  The first worktree selected when the app opens is the top row, so with
+  `main` moved down it is no longer the primary checkout.
 - Each repository header has a "+" that opens the New worktree dialog
   directly, and a "Fetch now" control. Both, and More, always show, without
   pointing at the header first. When no branch of the repository tracks a
