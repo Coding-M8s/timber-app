@@ -113,6 +113,8 @@ export function createDesktopEngine(): Engine {
 		loadPreferences: () => rpc.request.loadPreferences({}),
 		savePreferences: (change, repositoryAgents) => rpc.request.savePreferences({ change, repositoryAgents: repositoryAgents ?? null }),
 		locateAgents: () => rpc.request.locateAgents({}),
+		// The main process gives each status command a few seconds; this leaves it time to end them.
+		agentSignIns: () => rpc.request.agentSignIns({}, { maxRequestTime: 30_000 }),
 		statusHooks: () => rpc.request.statusHooks({}),
 		installStatusHook: request => rpc.request.installStatusHook(request),
 		removeStatusHook: request => rpc.request.removeStatusHook(request),

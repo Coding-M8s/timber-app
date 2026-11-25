@@ -2,6 +2,7 @@ import { repositoryPick } from "../../store/state";
 import type { AppStore } from "../../store/store";
 import type { Submission } from "../../store/submission";
 import { defaultAgentKnown } from "../../../shared/agent-lookup";
+import { SIGN_IN_FRESH_MILLISECONDS } from "../../../shared/agent-sign-in";
 import { type AgentPick, type AgentPlan, defaultAgent, plannedAgent, runAndStart, startingAgent } from "./agent-choice";
 import type { WorktreeDialogMode } from "./mode";
 import type { WorkflowOptions } from "./workflow-choice";
@@ -43,6 +44,8 @@ export interface WorktreeDialogController {
 	 * the look got no answer, or the default agent is still not known. Never throws.
 	 */
 	locateAgents(): Promise<void>;
+	/** Ask whether the agents are signed in, as the dialog opens, unless that was asked within the last minute. It only changes the marks and the hint. */
+	readSignIns(): void;
 	/**
 	 * Where the agent that starts after a worktree is created comes from, for
 	 * a run with `workflow` (null for none): the pick, from the agents saved
@@ -65,7 +68,7 @@ export function pickOfOption(value: string): string | null {
 
 /** `repository` is the path of the primary checkout. */
 export function createWorktreeDialogController(
-	store: Pick<AppStore, "getState" | "startSessionsIn" | "listWorkflows" | "locateAgents">,
+	store: Pick<AppStore, "getState" | "startSessionsIn" | "listWorkflows" | "locateAgents" | "loadAgentSignIns">,
 	repository: string,
 	submission: Pick<Submission, "getState" | "submit" | "clearFailure">,
 	/** The mode to start on, by position. The first unless given. */
@@ -114,6 +117,7 @@ export function createWorktreeDialogController(
 		pickAgent: pick => update({ pick }),
 		readWorkflows,
 		locateAgents,
+		readSignIns: () => void store.loadAgentSignIns(SIGN_IN_FRESH_MILLISECONDS),
 		plan,
 		async submit(mode) {
 			// A second submit while one runs does nothing, so it reads nothing either.

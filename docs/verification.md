@@ -5145,3 +5145,41 @@ and Google Chrome:
 - `bun run test`: 4,789 passed, 19 skipped, 0 failed, in 284 files.
 - `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
 - Not run: the desktop app, Windows, and macOS.
+
+Run for whether each agent is signed in (issue 347), Linux x64 with Bun 1.4.5
+and Google Chrome:
+
+- The status commands alone, each signed in and in an empty home folder, with
+  their output cut to its shape: Claude Code 2.1.332 (`claude auth status
+  --json`), Codex CLI 0.169.0 (`codex login status`), and Cursor CLI
+  2026.11.22-e9042b2 (`cursor-agent status --format json`). Codex with a
+  `config.toml` it cannot read exits 1, as it does signed out. Claude Code
+  counts an API key, a token, and Bedrock in the environment as logged in;
+  Cursor CLI does not count `CURSOR_API_KEY`. With no network and an empty
+  home, Claude Code and Cursor CLI say signed out. None wrote an entry for
+  the folder it ran in.
+- The same three, and Cursor CLI as `agent`, through the app's own code
+  (`createSignInReader`): all signed in with this machine's logins, in 0.9
+  seconds together, all signed out in an empty home folder, and no folder
+  left. Grok Build 1.0.92 was not known and was not run.
+- `bun test tests/agent-sign-in.test.tsx`: 23 passed. With stand-in agents:
+  only the registry's arguments, nothing to read, no terminal, an empty
+  folder that is removed, the config folder, and no session variables; a
+  wrapper is not run; one that hangs is killed with what it started and is
+  not known; one that cannot start, fails, or prints without end is not
+  known; one that answered in time is read though a process it left holds
+  its output (that test fails without the fix in `runOnce`); rows share a
+  run; quitting ends it; no output is in the answer or
+  logged. Each answer's shapes, the Settings line, the Agent field, and when
+  the store asks, over the mock engine.
+- `bun test tests/agent-sign-in-browser.test.ts`: 3 passed in headless
+  Chrome. Settings, Agents, the New worktree dialog, and the Start work
+  dialog ask as they open and show the answer; a dialog opened again at once
+  does not ask again.
+- By eye, in headless Chrome over the mock engine: Settings, Agents in Timber
+  Dark.
+- Not run: the desktop app, Windows, and macOS, where an agent may ask the
+  system keychain. OpenCode, Gemini CLI, and GitHub Copilot CLI were not run.
+- `bun run test`: 4,815 passed, 19 skipped, 0 failed, in 286 files, after
+  rebasing onto the default agent per repository (issue 388).
+- `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.

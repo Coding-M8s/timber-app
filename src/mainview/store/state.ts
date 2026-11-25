@@ -1,6 +1,7 @@
 import type { IndexAction } from "../../shared/index-writes";
 import type { GitOperation } from "../../shared/commit-staged";
 import type { AgentLocation, RepositoryPick } from "../../shared/agent-lookup";
+import type { AgentSignIn } from "../../shared/agent-sign-in";
 import type { StatusHookView } from "../../shared/status-hooks";
 import type { ChopArrangements, ChopRename } from "../../shared/chop-order";
 import type { SuggestedIssue } from "../../shared/issue-search";
@@ -506,6 +507,13 @@ export interface AppState {
 	 */
 	agentLocations: readonly AgentLocation[] | null;
 	/**
+	 * Whether each saved agent is signed in, as the engine last said
+	 * (`Engine.agentSignIns`), by the row as it was saved then. Null until it
+	 * has answered: it is asked only by Settings, Agents and the dialogs that
+	 * pick an agent, never at start.
+	 */
+	agentSignIns: readonly AgentSignIn[] | null;
+	/**
 	 * How each saved agent reports its status, and its status hook as the
 	 * engine last read it (`Engine.statusHooks`), by the row's name. Null
 	 * until it has answered.
@@ -757,6 +765,7 @@ export const initialState: AppState = {
 	preferences: defaultPreferences(),
 	preferencesProblem: null,
 	agentLocations: null,
+	agentSignIns: null,
 	statusHooks: null,
 	chopOrderAim: null,
 	chopRenaming: null,

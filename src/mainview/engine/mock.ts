@@ -57,6 +57,7 @@ import type { TimberConfigScope } from "../../shared/timber-config";
 import { type WorkflowControls, createMockWorkflows } from "./mock-workflows";
 import { type IssueControls, createMockIssues, sampleIssueLinks } from "./mock-issues";
 import { type IssueListControls, createMockIssueLists } from "./mock-issue-lists";
+import { type MockSignInControls, createMockSignIns } from "./mock-sign-in";
 import { type MockGenerateControls, createMockGenerate } from "./mock-generate";
 import { type PullRequestControls, createMockPullRequests } from "./mock-pull-requests";
 import { type BackupControls, createMockBackups } from "./mock-backups";
@@ -367,7 +368,7 @@ export const sampleTimberStatuses = {
 /** The mock engine, plus the controls a test or the browser build uses to act out changes. */
 /** The controls for terminals are in ./mock-terminals.ts. */
 /** The controls for Timber's settings are in ./mock-timber-config.ts, for workflows in ./mock-workflows.ts, for issue trackers in ./mock-issue-trackers.ts, for pull requests in ./mock-pull-requests.ts, for issues in ./mock-issues.ts, for the issues board in ./mock-issue-lists.ts, for backups in ./mock-backups.ts, and for arenas in ./mock-arenas.ts. */
-export interface MockEngine extends Engine, TerminalControls, TimberConfigControls, IssueTrackerControls, WorkflowControls, PullRequestControls, IssueControls, IssueListControls, BackupControls, ArenaControls, ThemeFileControls, ChopsControls, PortControls, SidebarIconControls, StatusHookControls, MockGenerateControls {
+export interface MockEngine extends Engine, TerminalControls, TimberConfigControls, IssueTrackerControls, WorkflowControls, PullRequestControls, IssueControls, IssueListControls, BackupControls, ArenaControls, ThemeFileControls, ChopsControls, PortControls, SidebarIconControls, StatusHookControls, MockGenerateControls, MockSignInControls {
 	/** Replace the data, without telling the interface. */
 	setRepositories(repositories: Repository[]): void;
 	/** Report that a repository changed, as the main process would. */
@@ -1157,10 +1158,12 @@ export function createMockEngine(
 		delay: () => options.commandMilliseconds ?? 0,
 	});
 	const statusHooks = createMockStatusHooks(() => preferences.agents);
+	const signIns = createMockSignIns(() => preferences.agents, () => terminals.locateAgents());
 	return {
 		...terminals,
 		...arenas,
 		...statusHooks,
+		...signIns,
 		...timberConfig,
 		...createMockThemeFiles(),
 		...sidebarIcons,

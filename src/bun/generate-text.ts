@@ -1,20 +1,17 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { type AgentSetting, conversationsOf, expandConfigFolder } from "../shared/agent";
+import type { AgentSetting } from "../shared/agent";
 import type { AgentLookup } from "../shared/agent-lookup";
-import { createOutputCapture } from "../shared/captured-output";
 import { messageOf } from "../shared/error-message";
 import {
 	GENERATE_MILLISECONDS, type GenerateTextRequest, type GenerateTextResult, NOT_GENERATED, describeGenerateCommand, generateCommand, generateMarker, generateOf, generatePrompt, pickGenerator,
 	readGenerated,
 } from "../shared/generate-text";
-import { HANDOFF_VARIABLE } from "../shared/handoff";
 import { sameArguments } from "../shared/index-writes";
-import { STATUS_VARIABLE } from "../shared/status-hooks";
 import { type FileChanges, changedParts } from "./file-changes";
 import { type FindRepository, findListedWorktree } from "./listed-worktree";
-import { killProcessTree, signalGroup } from "./process-session";
+import { agentRunEnvironment, runOnce } from "./run-agent";
 
 export interface TextGeneratorDependencies {
 	/** The repository in the app's list, read again, so its worktrees are the ones Timber lists right now. */
@@ -45,8 +42,6 @@ export interface TextGenerator {
 /** An answer is far shorter than this; the end of a longer one is kept, and is refused. */
 const ANSWER_BYTES = 256 * 1024;
 const ERROR_BYTES = 8 * 1024;
-/** How long what the agent printed may stay open after it ended, as when a process of its own holds it. */
-const STREAM_GRACE_MILLISECONDS = 1000;
 
 /**
  * Runs an agent once to write a commit message, or a pull request's title
@@ -124,64 +119,25 @@ export function createTextGenerator(dependencies: TextGeneratorDependencies): Te
 	async function runAgent(
 		command: string[], cwd: string, setting: AgentSetting, prompt: string, state: { stopped: boolean; kill: (() => void) | null },
 	): Promise<{ ok: true; text: string } | { ok: false; message: string }> {
-		const windows = platform === "win32";
-		const env: Record<string, string | undefined> = { ...environment };
-		// A folder or file from one of the app's terminals belongs to a session there.
-		delete env[HANDOFF_VARIABLE];
-		delete env[STATUS_VARIABLE];
-		const kept = conversationsOf(generateOf(setting)?.agent ?? null);
-		const own = kept === null ? null : expandConfigFolder(setting.configFolder, environment.HOME || homedir());
-		if (kept !== null && own !== null) env[kept.folderVariable] = own;
 		if (state.stopped) return { ok: false, message: "" };
-		let child: Bun.Subprocess<Blob, "pipe", "pipe">;
 		try {
-			// In a process group of its own, so that stopping it stops what it started too.
-			child = Bun.spawn(command, { cwd, stdin: new Blob([prompt]), stdout: "pipe", stderr: "pipe", env, detached: !windows });
-		} catch (error) {
-			return { ok: false, message: `Could not start it: ${messageOf(error)}` };
-		}
-		const readers: ReadableStreamDefaultReader<Uint8Array>[] = [];
-		const kill = () => {
-			if (windows) killProcessTree(child.pid, environment);
-			else signalGroup(child.pid, "SIGKILL");
-			child.kill("SIGKILL");
-			// A process that left the group can hold the streams open.
-			for (const reader of readers) void reader.cancel().catch(() => {});
-		};
-		const collect = async (stream: ReadableStream<Uint8Array>, limit: number) => {
-			const capture = createOutputCapture(limit);
-			const reader = stream.getReader();
-			readers.push(reader);
-			for (;;) {
-				const { done, value } = await reader.read();
-				if (done) return capture.finish();
-				capture.add(value);
-			}
-		};
-		let late = false;
-		const timer = setTimeout(() => {
-			late = true;
-			kill();
-		}, timeoutMilliseconds);
-		state.kill = kill;
-		if (state.stopped) kill();
-		// Once it ended, what it left running must not hold its answer open.
-		let grace: ReturnType<typeof setTimeout> | undefined;
-		void child.exited.then(() => {
-			if (!windows) signalGroup(child.pid, "SIGKILL");
-			grace = setTimeout(() => readers.forEach(reader => void reader.cancel().catch(() => {})), STREAM_GRACE_MILLISECONDS);
-		});
-		try {
-			const [out, err] = await Promise.all([collect(child.stdout, ANSWER_BYTES), collect(child.stderr, ERROR_BYTES), child.exited]);
-			if (late) return { ok: false, message: `${setting.name} took longer than ${Math.round(timeoutMilliseconds / 1000)} seconds and was stopped.` };
-			if (child.exitCode !== 0) {
+			const ran = await runOnce({
+				command, cwd, env: agentRunEnvironment(environment, generateOf(setting)?.agent ?? null, setting.configFolder), input: prompt,
+				outputBytes: ANSWER_BYTES, errorBytes: ERROR_BYTES, timeoutMilliseconds, platform,
+				onStart: kill => {
+					state.kill = kill;
+					if (state.stopped) kill();
+				},
+			});
+			if (!ran.started) return { ok: false, message: `Could not start it: ${ran.message}` };
+			const { out, err, exitCode } = ran;
+			if (ran.late) return { ok: false, message: `${setting.name} took longer than ${Math.round(timeoutMilliseconds / 1000)} seconds and was stopped.` };
+			if (exitCode !== 0) {
 				const said = (err.text.trim() || out.text.trim()).slice(-4000);
-				return { ok: false, message: said === "" ? `${setting.name} ended with exit code ${child.exitCode ?? "unknown"}.` : said };
+				return { ok: false, message: said === "" ? `${setting.name} ended with exit code ${exitCode ?? "unknown"}.` : said };
 			}
 			return out.truncated ? { ok: false, message: "The agent's answer is too long." } : { ok: true, text: out.text };
 		} finally {
-			clearTimeout(timer);
-			clearTimeout(grace);
 			state.kill = null;
 		}
 	}

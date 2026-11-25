@@ -140,6 +140,7 @@ export function StartWorkDialog({ request, repository }: { request: Extract<Dial
 		else {
 			void controller.readWorkflows();
 			void controller.locateAgents();
+			controller.readSignIns();
 		}
 	}, [controller, selector, store]);
 	if (selector === null) return null;
@@ -157,6 +158,7 @@ export function StartWorkDialog({ request, repository }: { request: Extract<Dial
 			submission={submissionState}
 			agents={state.preferences.agents}
 			agentLocations={state.agentLocations}
+			agentSignIns={state.agentSignIns}
 			plan={controller.plan}
 			repositoryAgent={repositoryPick(state, repository.path)}
 			onSelect={controller.select}

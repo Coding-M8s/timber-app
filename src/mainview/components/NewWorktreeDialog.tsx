@@ -9,6 +9,7 @@ import { OperationDialog } from "./OperationDialog";
 import { ModeSwitch } from "./worktree-modes/ModeSwitch";
 import { useArenaMode } from "./worktree-modes/arena";
 import type { AgentLocation, RepositoryPick } from "../../shared/agent-lookup";
+import type { AgentSignIn } from "../../shared/agent-sign-in";
 import { type AgentPlan, agentOptionLabel, agentPickHint, followUps, startingAgent } from "./worktree-modes/agent-choice";
 import { createWorktreeDialogController, pickOfOption } from "./worktree-modes/dialog-controller";
 import { useExistingBranchMode } from "./worktree-modes/existing-branch";
@@ -20,6 +21,8 @@ interface AgentFieldProps {
 	agents: readonly AgentSetting[];
 	/** Whether each agent's executable was found, as last looked for, or null before the first look. */
 	locations: readonly AgentLocation[] | null;
+	/** Whether each agent is signed in, as last asked, or null before that. */
+	signIns: readonly AgentSignIn[] | null;
 	/** Where the agent that will start comes from: the pick, or the workflow, which locks the field. */
 	plan: AgentPlan;
 	/** The agent the repository names as its default. */
@@ -29,11 +32,11 @@ interface AgentFieldProps {
 
 /**
  * The Agent field, shared by every mode: each saved agent, marked when its
- * executable was not found or cannot start, then None. When
+ * executable was not found or cannot start, or it is signed out, then None. When
  * the picked workflow decides the agent, the field shows what it decided,
  * locked, and says why.
  */
-export function AgentField({ agents, locations, plan, repositoryAgent, onPick }: AgentFieldProps) {
+export function AgentField({ agents, locations, signIns, plan, repositoryAgent, onPick }: AgentFieldProps) {
 	if (plan.source === "workflow") {
 		const { workflow } = plan;
 		const [option, hint] = plan.kind === "command"
@@ -54,10 +57,10 @@ export function AgentField({ agents, locations, plan, repositoryAgent, onPick }:
 		<label className="field">
 			<span className="field-label">Agent</span>
 			<select className="field-input" name="agent" value={chosen?.name ?? ""} onChange={event => onPick(pickOfOption(event.target.value))}>
-				{agents.map(agent => <option key={agent.name} value={agent.name}>{agentOptionLabel(agent, locations)}</option>)}
+				{agents.map(agent => <option key={agent.name} value={agent.name}>{agentOptionLabel(agent, locations, signIns)}</option>)}
 				<option value="">None</option>
 			</select>
-			<span className="field-hint">{agentPickHint(agents, locations, plan, repositoryAgent)}</span>
+			<span className="field-hint">{agentPickHint(agents, locations, plan, repositoryAgent, signIns)}</span>
 		</label>
 	);
 }
@@ -74,6 +77,8 @@ interface WorktreeDialogFrameProps {
 	agents: readonly AgentSetting[];
 	/** Whether each agent's executable was found (`AppState.agentLocations`). */
 	agentLocations: readonly AgentLocation[] | null;
+	/** Whether each agent is signed in (`AppState.agentSignIns`). Nothing is marked signed out when left out. */
+	agentSignIns?: readonly AgentSignIn[] | null;
 	/** Where the agent that will start after a worktree is created comes from, for a run with the given workflow. */
 	plan: (workflow: string | null) => AgentPlan;
 	/** The agent the repository names as its default (`repositoryPick`). */
@@ -93,7 +98,7 @@ interface WorktreeDialogFrameProps {
  * across modes and steps, so the buttons never move.
  */
 export function WorktreeDialogFrame(props: WorktreeDialogFrameProps) {
-	const { repository, modes, selected, submission, agents, agentLocations, onSelect, onPickAgent, onSubmit, onClose } = props;
+	const { repository, modes, selected, submission, agents, agentLocations, agentSignIns = null, onSelect, onPickAgent, onSubmit, onClose } = props;
 	const mode = modes[selected] ?? modes[0];
 	if (!mode) return null;
 	const plan = props.plan(mode.workflow);
@@ -125,7 +130,7 @@ export function WorktreeDialogFrame(props: WorktreeDialogFrameProps) {
 		>
 			{/* Keyed by mode, so a switch mounts the new mode's fields and its first field's autoFocus takes the keyboard. */}
 			<Fragment key={mode.label}>{mode.fields}</Fragment>
-			{!mode.ownFollowUps && <AgentField agents={agents} locations={agentLocations} plan={plan} repositoryAgent={props.repositoryAgent} onPick={onPickAgent} />}
+			{!mode.ownFollowUps && <AgentField agents={agents} locations={agentLocations} signIns={agentSignIns} plan={plan} repositoryAgent={props.repositoryAgent} onPick={onPickAgent} />}
 		</OperationDialog>
 	);
 }
@@ -156,10 +161,12 @@ export function NewWorktreeDialog({ repository, initialMode = "new" }: { reposit
 	const { selected, workflows } = useSyncExternalStore(controller.subscribe, controller.getState, controller.getState);
 	// Read once when the dialog opens: each read runs Timber, and file watching reads the repository again often.
 	// The controller reads again after a run fails, when the settings may have changed.
-	// The agents are looked for again too, as one may have been installed since the app started. Nothing runs.
+	// The agents are looked for again too, as one may have been installed since the app started, and asked whether
+	// they are signed in unless that was asked a moment ago.
 	useEffect(() => {
 		void controller.readWorkflows();
 		void controller.locateAgents();
+		controller.readSignIns();
 	}, [controller]);
 	const modes = [
 		useNewBranchMode(repository, submission, workflows),
@@ -167,7 +174,7 @@ export function NewWorktreeDialog({ repository, initialMode = "new" }: { reposit
 		useArenaMode(repository, submission, selected === MODE_INDEX.arena),
 	];
 	const app = useAppState();
-	const { preferences: { agents }, agentLocations } = app;
+	const { preferences: { agents }, agentLocations, agentSignIns } = app;
 	return (
 		<WorktreeDialogFrame
 			repository={repository}
@@ -176,6 +183,7 @@ export function NewWorktreeDialog({ repository, initialMode = "new" }: { reposit
 			submission={state}
 			agents={agents}
 			agentLocations={agentLocations}
+			agentSignIns={agentSignIns}
 			plan={controller.plan}
 			repositoryAgent={repositoryPick(app, repository.path)}
 			onSelect={controller.select}

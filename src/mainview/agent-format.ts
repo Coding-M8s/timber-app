@@ -1,8 +1,9 @@
 import { AGENT_LIMIT, AGENT_PRESETS, type AgentSetting, agentCommand, agentProblem, conversationsOf, describeAgentCommand, rowAgent, sameAgentName, sameAgentSettings } from "../shared/agent";
-import { AGENTS, type AgentId, executableName } from "../shared/agent-registry";
+import { AGENTS, type AgentId, agentById, executableName } from "../shared/agent-registry";
 import { type RepositoryAgentChange, type RepositoryAgents, pickOf } from "../shared/repository-agents";
 import { resumableAgent } from "../shared/agent-resume";
 import { type AgentLocation, describeAgentLookup, lookupOf } from "../shared/agent-lookup";
+import { type AgentSignIn, SIGN_IN_MILLISECONDS, type SignInState, signInOf } from "../shared/agent-sign-in";
 import { generateOf } from "../shared/generate-text";
 import { describeCommandLine } from "../shared/command-line";
 import { cleanSessionName } from "../shared/terminal";
@@ -275,4 +276,43 @@ export function agentLookupLine(setting: AgentSetting, saved: readonly AgentSett
 	if (lookup === null) return null;
 	const command = agentCommand(setting);
 	return { text: describeAgentLookup(command.ok ? command.executable : setting.command, lookup), missing: lookup.state !== "found" };
+}
+
+/** What a row of the Agents section says about its agent's sign-in, and whether it is signed out. */
+export interface AgentSignInLine {
+	text: string;
+	signedOut: boolean;
+}
+
+/**
+ * Whether a row's agent is signed in, as it was saved and last asked. Null
+ * for a row that differs from what is saved, an agent not found or not
+ * known, and while it has not been asked.
+ */
+export function agentSignInLine(setting: AgentSetting, saved: readonly AgentSetting[], locations: readonly AgentLocation[] | null, signIns: readonly AgentSignIn[] | null): AgentSignInLine | null {
+	if (!saved.some(agent => sameAgentSettings([agent], [setting]))) return null;
+	if (lookupOf(locations, setting)?.state !== "found") return null;
+	const answer = signInOf(signIns, setting);
+	if (answer === null) return null;
+	return { text: describeSignIn(setting, answer), signedOut: answer.signIn.state === "signed-out" };
+}
+
+function describeSignIn(setting: AgentSetting, { agent, shown, signIn }: AgentSignIn): string {
+	if (signIn.state === "not-known") return `Not known. ${whyNotKnown(setting, agent, shown ?? "", signIn)}`;
+	return signIn.state === "signed-in" ? `Signed in, says ${shown}.` : `Signed out, says ${shown}.`;
+}
+
+function whyNotKnown(setting: AgentSetting, id: AgentId, shown: string, why: Extract<SignInState, { state: "not-known" }>): string {
+	const agent = agentById(id);
+	switch (why.reason) {
+		case "no-command": return `The app knows no command of ${agent.name} that says.`;
+		case "not-asked": {
+			const command = agentCommand(setting);
+			return `The app does not ask ${command.ok ? executableName(command.executable) : setting.command}, as it is not named ${agent.executables.join(" or ")}.`;
+		}
+		case "key-set": return `${shown} says signed out, but ${why.variable} is set.`;
+		case "too-long": return `${shown} took longer than ${SIGN_IN_MILLISECONDS / 1000} seconds.`;
+		case "not-started": return `${shown} could not be started.`;
+		case "unreadable": return `${shown} gave an answer the app does not know.`;
+	}
 }

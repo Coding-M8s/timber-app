@@ -56,6 +56,18 @@ export interface AgentGenerate {
 	caveat: string | null;
 }
 
+/** How an agent's own command says whether it is signed in, without changing that and without asking anything. */
+export interface AgentSignInStatus {
+	/** The arguments after its executable, never the ones typed in Settings. */
+	arguments: readonly string[];
+	/** The kind of answer, which needs code of its own to read. */
+	answer: "claude-json" | "codex-text" | "cursor-json";
+	/** Environment variables that hold a key the agent works with but this command does not count. */
+	keysNotCounted: readonly string[];
+	/** The version and system this was run with, and when. */
+	checked: string;
+}
+
 /** The layouts of conversation folders the app can read. */
 export type ConversationStore = "claude-projects" | "codex-sessions" | "grok-sessions" | "cursor-chats";
 
@@ -114,11 +126,12 @@ export interface AgentDefinition {
 	/** How it goes back to a conversation, or null when it always starts as typed. */
 	resume: AgentResume | null;
 	/**
-	 * Its sign-in: a command that only reads whether it is signed in, and the
-	 * command that signs in, each an executable and its arguments, or null
-	 * when not known yet. Nothing reads these yet.
+	 * Its sign-in: how its executable is asked whether it is signed in
+	 * (./agent-sign-in.ts), given only after running it, and the arguments
+	 * after the executable that sign in, each null when not known. Nothing
+	 * reads `login` yet.
 	 */
-	signIn: { status: readonly string[] | null; login: readonly string[] | null };
+	signIn: { status: AgentSignInStatus | null; login: readonly string[] | null };
 	/**
 	 * How it runs once, without a session, to write text (./generate-text.ts),
 	 * or null when that is not known yet. Given only after running it.
@@ -223,7 +236,14 @@ const ROWS = [
 			pickingLetters: "crphv",
 			conversations: { store: "claude-projects", folderVariable: "CLAUDE_CONFIG_DIR", folder: ".claude" },
 		},
-		signIn: { status: null, login: null },
+		/*
+		 * Exit code 0 with `loggedIn` true, 1 with it false. An API key, a token,
+		 * or a cloud provider in the environment counts as logged in.
+		 */
+		signIn: {
+			status: { arguments: ["auth", "status", "--json"], answer: "claude-json", keysNotCounted: [], checked: "Claude Code 2.1.332 on Linux on 2026-11-25" },
+			login: null,
+		},
 		generate: {
 			// `--tools ""` leaves no tool; the rest leaves out settings, hooks, MCP servers, CLAUDE.md, and the saved conversation.
 			arguments: ["-p", "--tools", "", "--restricted", "--safe-mode", "--strict-mcp-config", "--no-session-persistence"],
@@ -262,7 +282,14 @@ const ROWS = [
 			pickingLetters: "hV",
 			conversations: { store: "codex-sessions", folderVariable: "CODEX_HOME", folder: ".codex" },
 		},
-		signIn: { status: null, login: null },
+		/*
+		 * Exit code 0 with a line "Logged in using ..." on standard error, 1 with
+		 * "Not logged in". It also ends with 1 when its settings cannot be read.
+		 */
+		signIn: {
+			status: { arguments: ["login", "status"], answer: "codex-text", keysNotCounted: [], checked: "Codex CLI 0.169.0 on Linux on 2026-11-25" },
+			login: null,
+		},
 		generate: {
 			// Codex has no switch for every tool: the read-only sandbox stays under the ones that remain.
 			arguments: [
@@ -310,7 +337,14 @@ const ROWS = [
 			pickingLetters: "pcbwhv",
 			conversations: { store: "cursor-chats", folderVariable: "CURSOR_CONFIG_DIR", folder: ".cursor", xdgFolder: "cursor" },
 		},
-		signIn: { status: null, login: null },
+		/*
+		 * Exit code 0 either way; `status` says which. It asks Cursor's server
+		 * who is signed in, and still says signed in when that fails.
+		 */
+		signIn: {
+			status: { arguments: ["status", "--format", "json"], answer: "cursor-json", keysNotCounted: ["CURSOR_API_KEY"], checked: "Cursor CLI 2026.11.22-e9042b2 on Linux on 2026-11-25" },
+			login: null,
+		},
 		generate: {
 			// Ask mode alone still reads files and runs commands, so a file in the folder denies every tool.
 			arguments: ["-p", "--mode", "ask", "--sandbox", "enabled", "--trust", "--output-format", "text"],

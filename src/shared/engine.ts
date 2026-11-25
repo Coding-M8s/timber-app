@@ -1,4 +1,5 @@
 import type { AgentLocation } from "./agent-lookup";
+import type { AgentSignIn } from "./agent-sign-in";
 import type { AppInfo } from "./app-info";
 import type { AppUpdateInstallRequest, AppUpdateInstallResult, AppUpdateState } from "./app-update";
 import type { ArenaInspection, ArenaList, ArenaPresetList, NewArenaRequest, NewArenaResult, PickArenaRequest, PickArenaResult } from "./arenas";
@@ -363,6 +364,17 @@ export interface Engine {
 	 * starts. Safe to call again, as after installing an agent.
 	 */
 	locateAgents(): Promise<AgentLocation[]>;
+	/**
+	 * Whether each agent saved in Settings, Agents is signed in, for those the
+	 * registry knows and whose executable was found: signed in, signed out, or
+	 * not known and why (./agent-sign-in.ts). Runs each agent's own status
+	 * command from the registry, without a shell, a terminal, or anything to
+	 * read, and gives it a few seconds; an agent whose executable is not named
+	 * as its own is not run. Only the state is answered, never what a command
+	 * printed. The app reads no credential file. Safe to call again, as after
+	 * signing in.
+	 */
+	agentSignIns(): Promise<AgentSignIn[]>;
 	/**
 	 * How each agent saved in Settings, Agents reports its status, in the order
 	 * saved: itself through OSC 7501, a status hook, or neither (see

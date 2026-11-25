@@ -277,6 +277,14 @@ export interface AppStore {
 	 */
 	locateAgents(): Promise<boolean>;
 	/**
+	 * Ask again whether each saved agent is signed in (`agentSignIns`), which
+	 * runs the agents' status commands. With `maxAge`, in milliseconds, only
+	 * when the last time it asked is older. An answer older than the one shown
+	 * is dropped. Never throws: when the engine cannot answer, what was known
+	 * stays.
+	 */
+	loadAgentSignIns(maxAge?: number): Promise<void>;
+	/**
 	 * Read again how each saved agent reports its status (`statusHooks`). An
 	 * answer older than the one shown is dropped. Never throws: when the
 	 * engine cannot answer, what was known stays.
@@ -1564,6 +1572,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			if (agentsChanged) {
 				void locateAgents();
 				void loadStatusHooks();
+				void loadAgentSignIns();
 			}
 		}
 		return result;
@@ -1584,6 +1593,27 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		} catch {
 			// What was known stays. The Agent field says when an agent is not known.
 			return false;
+		}
+	}
+
+	let lastSignInLook = 0;
+	let shownSignInLook = 0;
+	/** When the engine was last asked, or null before that and once a look failed. */
+	let signInsAskedAt: number | null = null;
+
+	async function loadAgentSignIns(maxAge = 0): Promise<void> {
+		const now = Date.now();
+		if (maxAge > 0 && signInsAskedAt !== null && now >= signInsAskedAt && now - signInsAskedAt < maxAge) return;
+		const ticket = ++lastSignInLook;
+		signInsAskedAt = now;
+		try {
+			const agentSignIns = await engine.agentSignIns();
+			if (ticket < shownSignInLook) return;
+			shownSignInLook = ticket;
+			update({ agentSignIns });
+		} catch {
+			// What was known stays, and the next to show it asks again.
+			if (ticket === lastSignInLook) signInsAskedAt = null;
 		}
 	}
 
@@ -4031,6 +4061,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		},
 		savePreferences,
 		locateAgents,
+		loadAgentSignIns,
 		loadStatusHooks,
 		installStatusHook: request => changeStatusHook(request, "install"),
 		removeStatusHook: request => changeStatusHook(request, "remove"),

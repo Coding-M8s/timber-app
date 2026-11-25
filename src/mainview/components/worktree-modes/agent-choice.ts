@@ -1,5 +1,6 @@
 import { type AgentSetting, agentCommand, describeAgentCommand, findAgent } from "../../../shared/agent";
 import { type AgentLocation, type RepositoryPick, agentFound, agentMark, agentsLocated, defaultAgent, describeMissingPick, isFullPath, lookupOf, whyNoDefaultAgent } from "../../../shared/agent-lookup";
+import { type AgentSignIn, isSignedOut } from "../../../shared/agent-sign-in";
 import { describeCommandLine } from "../../../shared/command-line";
 import type { ReportedWorktree } from "../../../shared/model";
 import { WORKTREE_PLACEHOLDER, describeTimberCommand } from "../../../shared/timber-result";
@@ -78,9 +79,9 @@ export function plannedAgent(agents: readonly AgentSetting[], locations: readonl
 
 const PATH_RESTART = "A change to PATH needs a restart of the app.";
 
-/** An agent's option in the Agent field: its name, marked when its executable was not found or cannot start. */
-export function agentOptionLabel(agent: AgentSetting, locations: readonly AgentLocation[] | null): string {
-	const mark = agentMark(lookupOf(locations, agent));
+/** An agent's option in the Agent field: its name, marked when its executable was not found or cannot start, or else when it is signed out. */
+export function agentOptionLabel(agent: AgentSetting, locations: readonly AgentLocation[] | null, signIns: readonly AgentSignIn[] | null = null): string {
+	const mark = agentMark(lookupOf(locations, agent)) ?? (isSignedOut(signIns, agent) ? "signed out" : null);
 	return mark === null ? agent.name : `${agent.name} (${mark})`;
 }
 
@@ -89,7 +90,7 @@ export function agentOptionLabel(agent: AgentSetting, locations: readonly AgentL
  * "pick"). It names the repository's default agent, `repositoryAgent`, when
  * that one is chosen, and when it cannot start, so none is picked.
  */
-export function agentPickHint(agents: readonly AgentSetting[], locations: readonly AgentLocation[] | null, plan: Extract<AgentPlan, { source: "pick" }>, repositoryAgent: RepositoryPick): string {
+export function agentPickHint(agents: readonly AgentSetting[], locations: readonly AgentLocation[] | null, plan: Extract<AgentPlan, { source: "pick" }>, repositoryAgent: RepositoryPick, signIns: readonly AgentSignIn[] | null = null): string {
 	if (agents.length === 0) return "No agents are set up. Add one in Settings, Agents.";
 	const chosen = plan.agent;
 	if (chosen === null) {
@@ -119,8 +120,10 @@ export function agentPickHint(agents: readonly AgentSetting[], locations: readon
 		return `${chosen.name} was not found on the PATH the app was started with, so it will not start. Install it, or give its full path in Settings, Agents. ${PATH_RESTART}`;
 	}
 	if (lookup?.state === "unusable") return `${chosen.name} cannot start: ${lookup.message}`;
-	if (plan.unread && plan.workflow !== null) return `${own}The ${plan.workflow} workflow could not be read yet. If it sets an agent, that one starts instead, once this dialog has created the worktree.`;
-	return `${own}Starts in the worktree once this dialog has created it, never in one that was already there.`;
+	// It may still be started: its own screen is where a person signs in.
+	const signedOut = isSignedOut(signIns, chosen) ? `${chosen.name} says it is signed out. ` : "";
+	if (plan.unread && plan.workflow !== null) return `${own}${signedOut}The ${plan.workflow} workflow could not be read yet. If it sets an agent, that one starts instead, once this dialog has created the worktree.`;
+	return `${own}${signedOut}Starts in the worktree once this dialog has created it, never in one that was already there.`;
 }
 
 /** The agent that starts: what to call it in the footer and toasts, its command for showing, and what the request names. */
