@@ -105,8 +105,18 @@ export type FileSaveProblem =
 	| { kind: "changed"; message: string }
 	| { kind: "failed"; message: string };
 
+/**
+ * A place in a file to put the caret, as a terminal link such as
+ * `src/a.ts:45:4` gives it: a line and a column, both counted from 1, the
+ * column in characters as the status line counts it.
+ */
+export interface FilePlace {
+	line: number;
+	column: number | null;
+}
+
 /** What a question about unsaved edits holds back until it is answered. */
-export type UnsavedFileStep = { kind: "close" } | { kind: "read-again" } | { kind: "open"; path: string };
+export type UnsavedFileStep = { kind: "close" } | { kind: "read-again" } | { kind: "open"; path: string; at?: FilePlace };
 
 /** The file open in a worktree's File tab. */
 export interface FileView {
@@ -137,6 +147,13 @@ export interface FileView {
 	/** True while a save is under way. */
 	saving: boolean;
 	saveProblem: FileSaveProblem | null;
+	/**
+	 * Where the editor should put the caret next, as a terminal link asked,
+	 * until the editor has done it. A new object for every link, so the same
+	 * place asked twice is gone to twice. Dropped where no editor will show
+	 * the file: a notice in its place, or Markdown switched to Rendered.
+	 */
+	goTo: FilePlace | null;
 }
 
 export interface ChangesView {

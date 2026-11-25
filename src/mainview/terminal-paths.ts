@@ -11,6 +11,8 @@ export interface FoundPath {
 	path: string;
 	/** The line number written after the path, if any. */
 	line: number | null;
+	/** The column written after the line number, if any. */
+	column: number | null;
 }
 
 /** A web address, which the URL links handle; a path inside one is not a file. */
@@ -23,7 +25,7 @@ const URL = /\b[a-z][a-z0-9+.-]*:\/\/\S+/gi;
  * `.superpowers/plan.md` too, then maybe `:12` or `:12:4`. A name alone needs its extension,
  * so plain words and version numbers such as `1.2.3` are not paths.
  */
-const PATH = /(?:\.{1,2}\/|\/)?(?:\.?[\w@+-][\w.@+-]*\/)*\.?[\w@+-][\w.@+-]*\.[A-Za-z][\w-]*(?::(\d+)(?::\d+)?)?/g;
+const PATH = /(?:\.{1,2}\/|\/)?(?:\.?[\w@+-][\w.@+-]*\/)*\.?[\w@+-][\w.@+-]*\.[A-Za-z][\w-]*(?::(\d+)(?::(\d+))?)?/g;
 
 /** Characters that may come before a path: not part of a word or another path. */
 const BEFORE = /[\s"'`(<[{=,;]/;
@@ -41,9 +43,14 @@ export function findFilePaths(text: string): FoundPath[] {
 		if (match[0].includes("@") && !match[0].includes("/")) continue;
 		const colon = match[0].search(/:\d/);
 		const path = colon === -1 ? match[0] : match[0].slice(0, colon);
-		found.push({ start, end, path, line: match[1] === undefined ? null : Number(match[1]) });
+		found.push({ start, end, path, line: match[1] === undefined ? null : Number(match[1]), column: match[2] === undefined ? null : Number(match[2]) });
 	}
 	return found;
+}
+
+/** Where a found path asks the file to open, for `openFile`: its line and column, or nothing without a line. */
+export function placeOf(found: Pick<FoundPath, "line" | "column">): { line: number; column: number | null } | undefined {
+	return found.line === null ? undefined : { line: found.line, column: found.column };
 }
 
 /** One cell of a terminal row: its characters, empty for the second half of a wide one, and its width. */

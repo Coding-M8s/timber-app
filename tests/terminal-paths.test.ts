@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { findFilePaths, rowText } from "../src/mainview/terminal-paths";
+import { findFilePaths, placeOf, rowText } from "../src/mainview/terminal-paths";
 
 const paths = (text: string) => findFilePaths(text).map(found => found.path);
 
@@ -7,9 +7,9 @@ describe("findFilePaths", () => {
 	test("finds relative and absolute paths with their place in the line", () => {
 		const text = "Wrote docs/plan.md and ./notes/report.txt to /home/me/app/out.log";
 		expect(findFilePaths(text)).toEqual([
-			{ start: 6, end: 18, path: "docs/plan.md", line: null },
-			{ start: 23, end: 41, path: "./notes/report.txt", line: null },
-			{ start: 45, end: 65, path: "/home/me/app/out.log", line: null },
+			{ start: 6, end: 18, path: "docs/plan.md", line: null, column: null },
+			{ start: 23, end: 41, path: "./notes/report.txt", line: null, column: null },
+			{ start: 45, end: 65, path: "/home/me/app/out.log", line: null, column: null },
 		]);
 	});
 
@@ -19,9 +19,24 @@ describe("findFilePaths", () => {
 	});
 
 	test("finds a name alone, and keeps a line number apart", () => {
-		expect(findFilePaths("see README.md")).toEqual([{ start: 4, end: 13, path: "README.md", line: null }]);
-		expect(findFilePaths("src/app.ts:12:4 error")).toEqual([{ start: 0, end: 15, path: "src/app.ts", line: 12 }]);
-		expect(findFilePaths("at (src/app.ts:7)")).toEqual([{ start: 4, end: 16, path: "src/app.ts", line: 7 }]);
+		expect(findFilePaths("see README.md")).toEqual([{ start: 4, end: 13, path: "README.md", line: null, column: null }]);
+		expect(findFilePaths("src/app.ts:12:4 error")).toEqual([{ start: 0, end: 15, path: "src/app.ts", line: 12, column: 4 }]);
+		expect(findFilePaths("at (src/app.ts:7)")).toEqual([{ start: 4, end: 16, path: "src/app.ts", line: 7, column: null }]);
+	});
+
+	test("keeps the line and the column an agent points at", () => {
+		const at = (text: string) => findFilePaths(text).map(({ path, line, column }) => ({ path, line, column }));
+		expect(at("See src/shared/engine.ts:45.")).toEqual([{ path: "src/shared/engine.ts", line: 45, column: null }]);
+		expect(at("in src/mainview/store/store.ts:1770:4, then")).toEqual([{ path: "src/mainview/store/store.ts", line: 1770, column: 4 }]);
+		expect(at("docs/design.md:120 and docs/design.md")).toEqual([
+			{ path: "docs/design.md", line: 120, column: null },
+			{ path: "docs/design.md", line: null, column: null },
+		]);
+	});
+
+	test("gives the file the line and column to open at, and nothing without a line", () => {
+		const [line, column, none] = findFilePaths("src/a.ts:45 src/b.ts:1770:4 README.md");
+		expect([line, column, none].map(found => placeOf(found!))).toEqual([{ line: 45, column: null }, { line: 1770, column: 4 }, undefined]);
 	});
 
 	test("leaves out a full stop or a bracket after the path", () => {

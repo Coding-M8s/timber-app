@@ -1,4 +1,5 @@
-import type { EditorState } from "@codemirror/state";
+import type { EditorState, Text } from "@codemirror/state";
+import type { FilePlace } from "./store/state";
 
 /**
  * The File tab editor's rules and words. Pure, so they can be tested
@@ -25,6 +26,19 @@ export function describeCaret(line: number, column: number): string {
 /** The line count, as the status line says it. */
 export function describeLineCount(lines: number): string {
 	return lines === 1 ? "1 line" : `${lines.toLocaleString("en-US")} lines`;
+}
+
+/**
+ * Where in the text a link's place puts the caret, as an offset: a line
+ * below 1 is the first, and one past the end the start of the last; a
+ * column counts characters from 1, as the status line does, and one past
+ * the line's end is its end. No column is the line's start.
+ */
+export function placeOffset(doc: Text, place: FilePlace): number {
+	if (place.line > doc.lines) return doc.line(doc.lines).from;
+	const line = doc.line(Math.max(1, Math.floor(place.line)));
+	const column = place.column === null ? 1 : Math.max(1, Math.floor(place.column));
+	return line.from + Math.min(column - 1, line.length);
 }
 
 /**

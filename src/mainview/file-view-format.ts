@@ -1,4 +1,4 @@
-import type { AppState, FileMode, FileView, UnsavedFileStep, WorkspaceTab } from "./store/state";
+import type { AppState, FileMode, FilePlace, FileView, UnsavedFileStep, WorkspaceTab } from "./store/state";
 import type { Worktree } from "../shared/model";
 import { describeQuitRequest } from "../shared/terminal";
 import { MAX_FILE_BYTES, MAX_FILE_LINES, type WorktreeFileResult, type WorktreeFileWriteResult, editableText, isCompletePath, isMarkdownPath, lineEndingProblem, worktreeRelativePath } from "../shared/worktree-files";
@@ -144,6 +144,11 @@ export function canEditFile(view: Pick<FileView, "result"> & Partial<Pick<FileVi
 /** The mode a file opens in: Markdown rendered, anything else in the editor, which is how it shows. */
 export function initialFileMode(path: string): FileMode {
 	return isMarkdownPath(path) ? "rendered" : "edit";
+}
+
+/** The mode a file opens in from a link: Markdown with a line to go to shows its source, since Rendered has no lines. */
+export function openFileMode(path: string, goTo: FilePlace | null): FileMode {
+	return goTo !== null && isMarkdownPath(path) ? "source" : initialFileMode(path);
 }
 
 /** Whether the file holds edits that are not saved: a draft that differs from the file as read, or any draft once the file is no longer text. */

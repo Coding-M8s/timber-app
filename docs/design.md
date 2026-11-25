@@ -1038,8 +1038,19 @@ logins. The app never reads a tracker login and never signs in.
   button beside it; closing goes back to the tab the file was opened from.
   A file opens from "View file" beside the diff in the diff tab, or by
   a plain click on a file path in a terminal, read from the worktree's
-  folder. A web link still needs Ctrl+click (Cmd+click on macOS), since it
-  leaves the app; a file stays in it. Binary files, files over 1 MB or 20,000 lines,
+  folder. A path with a line, such as `src/shared/engine.ts:45` or
+  `src/a.ts:1770:4`, as agents write them, opens with the caret on that
+  line, and at that column when one is given, the line in the middle of
+  the view and marked as the caret's line, and the keyboard in the text.
+  A Markdown file linked with a line, such as `docs/design.md:120`, opens
+  in Source, since Rendered has no lines; without a line it opens rendered
+  as before, and one being edited goes to, or stays in, Edit. A link into the file open
+  already moves the caret and keeps its unsaved edits, with no question;
+  the line is then a line of the edited text. A line past the end goes to
+  the start of the last line, and a column past a line's end to its end. A
+  file shown as a notice ignores the line. A web link still needs
+  Ctrl+click (Cmd+click on macOS), since it leaves the app; a file stays
+  in it. Binary files, files over 1 MB or 20,000 lines,
   missing files, and folders get a plain notice in place of the text.
   "Read again" reads it as it is now.
 - Files outside the worktree: a complete path to a file anywhere, such as
@@ -1087,8 +1098,10 @@ logins. The app never reads a tracker login and never signs in.
   and the selected one stands out even while the bar has the keyboard.
   Lines do not wrap. Typing stays smooth in a colored file of 10,000
   lines. It has no completion, language servers, linting, plugins,
-  replace, multiple cursors, go to line, block comments, moving or copying
-  lines, or search across files; "Open in editor" is there for those. A
+  replace, multiple cursors, go to line (no Ctrl+G or dialog for it; only
+  a terminal link's line is followed, see File viewer), block comments,
+  moving or copying lines, or search across files; "Open in editor" is
+  there for those. A
   file whose lines end in both CR LF and LF, or that has a lone CR, opens
   in the same editor read-only, with that reason, since saving here would
   change lines nobody touched. A file outside the worktree shows read-only

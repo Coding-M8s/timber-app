@@ -32,6 +32,14 @@ const CARET_SHOWS = `(() => {
 	const line = document.querySelector(".cm-activeLine");
 	return document.querySelector(".cm-cursor") !== null && line !== null && getComputedStyle(line).backgroundColor !== "rgba(0, 0, 0, 0)";
 })()`;
+/** The caret's line is about the middle of the editor's view. */
+const CARET_LINE_CENTERED = `(() => {
+	const line = document.querySelector(".cm-activeLine");
+	if (line === null) return false;
+	const at = line.getBoundingClientRect();
+	const view = ${VIEW}.scrollDOM.getBoundingClientRect();
+	return Math.abs((at.top + at.bottom) / 2 - (view.top + view.bottom) / 2) <= at.height * 2;
+})()`;
 const RENDERED_OUTLINE = `getComputedStyle(document.querySelector(".file-viewer-rendered")).outlineStyle`;
 const rgb = (color: string) => {
 	const { r, g, b } = parseColor(color)!;
@@ -179,6 +187,70 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the edito
 		await page.until(`!(${UNSAVED})`, "the file was saved");
 		const saved = await page.evaluate<string>(`${ENGINE}.readWorktreeFileNow(${STORE}.getState().repositories[0].worktrees[1].path, "src/long.ts")`);
 		expect(saved.length).toBe("const fresh = 1;\n".length + 1);
+	}, 30_000);
+
+	/** Opens a file of the worktree at a place, as a terminal link with a line does. */
+	async function openAt(path: string, at: string) {
+		await page.evaluate(`(() => {
+			const feature = ${STORE}.getState().repositories[0].worktrees[1];
+			${STORE}.openFile(feature.id, ${JSON.stringify(path)}, ${at});
+		})()`);
+	}
+
+	test("a link's line and column put the caret there, its line in the middle of the view, with the keyboard in the text", async () => {
+		// A theme on, so the caret's line is marked in a color; light first, as the saved choice may already be dark.
+		await page.evaluate(`${STORE}.savePreferences({ theme: { mode: "fixed", theme: "timber-light" } })`);
+		await page.evaluate(`${STORE}.savePreferences({ theme: { mode: "fixed", theme: "timber-dark" } })`);
+		await page.evaluate(`${STORE}.showTab("workspace")`);
+		await openAt("src/long.ts", "{ line: 8000, column: 4 }");
+		await page.until(`${STATUS} === "Ln 8,000, Col 4"`, "the caret went to line 8,000, column 4");
+		await page.until(CARET_LINE_CENTERED, "the caret's line was in the middle of the view");
+		expect(await page.evaluate<string>(ACTIVE)).toBe("cm-content");
+		expect(await page.evaluate<boolean>(CARET_SHOWS)).toBe(true);
+		expect(await page.evaluate<boolean>(`${STORE}.getState().files[${STORE}.getState().selection.worktree].goTo === null`)).toBe(true);
+
+		// Asked again while the File tab shows, the editor that is there goes.
+		await openAt("src/long.ts", "{ line: 120 }");
+		await page.until(`${STATUS} === "Ln 120, Col 1"`, "the caret went to line 120");
+		await page.until(CARET_LINE_CENTERED, "line 120 was in the middle of the view");
+		expect(await page.evaluate<string>(ACTIVE)).toBe("cm-content");
+	}, 30_000);
+
+	test("a second link into the open file moves the caret and keeps unsaved edits", async () => {
+		await page.type("abc");
+		await page.until(UNSAVED, "the file showed as unsaved");
+		await page.evaluate(`${STORE}.showTab("workspace")`);
+		await openAt("src/long.ts", "{ line: 20, column: 2 }");
+		await page.until(`${STATUS} === "Ln 20, Col 2"`, "the caret went to line 20, column 2");
+		expect(await page.evaluate<boolean>(`${STORE}.getState().dialog === null`)).toBe(true);
+		expect(await page.evaluate<boolean>(UNSAVED)).toBe(true);
+		expect(await page.evaluate<number>(DOC_LENGTH)).toBe(LONG.length + 3);
+		// The undo history came along too.
+		await page.press("Z", "ctrl");
+		await page.until(`${DOC_LENGTH} === ${LONG.length}`, "undo took the typing away");
+	}, 30_000);
+
+	test("a line past the end goes to the last line, and a column past a line's end to its end", async () => {
+		await page.evaluate(`${STORE}.showTab("workspace")`);
+		await openAt("src/long.ts", "{ line: 99999, column: 7 }");
+		await page.until(`${STATUS} === "Ln 10,001, Col 1"`, "the caret went to the last line");
+		await openAt("src/long.ts", "{ line: 3, column: 999 }");
+		const end = LONG.split("\n")[2]!.length + 1;
+		await page.until(`${STATUS} === "Ln 3, Col ${end}"`, "the caret went to the end of line 3");
+	}, 30_000);
+
+	test("Markdown with a line opens in Source, read-only, at that line", async () => {
+		const notes = Array.from({ length: 200 }, (_, index) => `Line ${index + 1} of the notes.`).join("\n") + "\n";
+		await page.evaluate(`(() => {
+			const feature = ${STORE}.getState().repositories[0].worktrees[1];
+			${ENGINE}.setWorktreeFile(feature.path, "docs/design.md", ${JSON.stringify(notes)});
+		})()`);
+		await openAt("docs/design.md", "{ line: 120 }");
+		await page.until(`${STATUS} === "Ln 120, Col 1"`, "the caret went to line 120 of the source");
+		expect(await page.evaluate<string>(`document.querySelector(".file-viewer .mode-option.selected")?.textContent ?? "none"`)).toBe("Source");
+		expect(await page.evaluate<string>(`document.querySelector(".text-editor-hint").textContent`)).toStartWith("Read-only.");
+		expect(await page.evaluate<string>(ACTIVE)).toBe("cm-content");
+		await page.until(CARET_LINE_CENTERED, "line 120 was in the middle of the view");
 	}, 30_000);
 
 	test("types quickly in a colored file of 10,000 lines, and the file turns unsaved", async () => {

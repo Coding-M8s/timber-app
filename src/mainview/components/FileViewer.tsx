@@ -155,6 +155,7 @@ export function FileViewer({ repository, worktree, view }: { repository: string;
 					editable={mode === "edit" && (editable || view.draft !== null)}
 					saving={view.saving}
 					font={font}
+					goTo={view.goTo}
 					onSave={save}
 				/>
 			)}

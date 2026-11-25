@@ -5461,3 +5461,37 @@ and the installed Timber:
   repository groups, file explorer, chops), not looked at.
 - `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
 - Not run: the desktop app, Windows, and macOS.
+
+Run for opening a terminal link such as `src/shared/engine.ts:45` at that
+line (issue 399), Linux x64 with Bun 1.4.5 and Google Chrome 151:
+
+- `bun test tests/terminal-paths.test.ts`: 11 passed, with the column kept
+  apart from the line (`src/mainview/store/store.ts:1770:4`), a path without
+  one, and `placeOf`, which gives `openFile` the place a click asks for.
+- `bun test tests/file-link-line.test.tsx`: 14 passed: `placeOffset` keeps a
+  line below 1, past the end, and a column past a line's end inside the
+  text; Markdown with a line opens in Source and without one rendered; the
+  store keeps the place until the editor says it went there, a second link
+  into the open file keeps the draft with no question, an edited Markdown
+  file previewed rendered goes back to Edit, a click without a line drops
+  a place not gone to yet, Rendered drops it, and binary, missing, and
+  stepping-out paths ignore the line; a link that leads out to Markdown
+  shows its target's source; Save and Discard in the question about unsaved
+  edits carry the place to the new file, and Keep drops it.
+- `bun test tests/text-editor-browser.test.ts` in headless Chrome: 22
+  passed, 4 of them new, on the 10,000-line file: line 8,000, column 4 from
+  the Workspace tab puts the caret there ("Ln 8,000, Col 4"), its line
+  within two lines of the middle of the view, drawn and marked, with the
+  keyboard in the text; a second link while the File tab shows moves it to
+  line 120; one after typing keeps the edits, "Unsaved", and the undo
+  history; line 99,999 goes to the last line and a column past line 3's end
+  to its end; `docs/design.md` with line 120 opens in Source, read-only, at
+  that line, in the middle of the view.
+- `bun run test`: 4,892 passed, 19 skipped, 0 failed, in 290 files. An
+  earlier run, while another worktree's suite ran beside it, had one
+  failure in `tests/diff-split-browser.test.ts`, which this change does not
+  touch; that file then passed alone twice, 11 of 11.
+- `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
+- Not run: the desktop app and its WebKit and WebView2 views, a real click
+  on a link in a terminal (the click's wiring is `placeOf` plus the store,
+  each tested), a screen reader, Windows, and macOS.

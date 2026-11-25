@@ -16,7 +16,7 @@ import { TERMINAL_MINIMUM_CONTRAST, terminalColors, watchTerminalColors } from "
 import { terminalAppearance, watchTerminalAppearance } from "./terminal-look";
 import { NEW_LINE_INPUT, clipboardKey, leftInAlternateScreen, newLineKey, sessionChipId, sessionKey } from "./terminal-format";
 import { terminalLinks } from "./terminal-links";
-import { type Cell, findFilePaths, rowText } from "./terminal-paths";
+import { type Cell, findFilePaths, placeOf, rowText } from "./terminal-paths";
 
 /**
  * The drawn terminal of one session.
@@ -111,7 +111,7 @@ function createView(store: AppStore, id: string): TerminalView {
 		event.preventDefault();
 		links.activate(event, uri);
 	}, { hover: () => links.hover(), leave: () => links.leave() }));
-	// File paths, such as `docs/plan.md` an agent wrote, open in the file viewer of the session's worktree with a plain click: they stay in the app.
+	// File paths, such as `docs/plan.md` or `src/a.ts:45` an agent wrote, open in the file viewer of the session's worktree with a plain click: they stay in the app.
 	// A path that wraps onto the next row is not found: each row is read on its own.
 	terminal.registerLinkProvider({
 		provideLinks(row, callback) {
@@ -130,7 +130,8 @@ function createView(store: AppStore, id: string): TerminalView {
 				activate: (event: MouseEvent) => links.activateFile(event, () => {
 					event.preventDefault();
 					const worktree = store.getState().terminals.find(session => session.id === id)?.worktree;
-					if (worktree) store.openFile(worktree, path.path);
+					// A line written after the path, as in `src/a.ts:45:4`, puts the caret there.
+					if (worktree) store.openFile(worktree, path.path, placeOf(path));
 				}),
 				hover: () => links.hover("file"),
 				leave: () => links.leave(),
