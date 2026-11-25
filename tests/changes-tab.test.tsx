@@ -214,7 +214,7 @@ describe("the Changes tab", () => {
 		expect(markup.match(/class="change-file selected" aria-current="true"[^>]*tabindex="0"/g)).toHaveLength(1);
 		const tabs = [...markup.matchAll(/role="tab" id="tab-([a-z-]+)"/g)].map(match => match[1]);
 		expect(tabs).toEqual(["workspace", "pull-request", "diff"]);
-		expect(markup).toContain('<span title="Diff of src/tax/rules.ts"><span class="tab-kind" aria-hidden="true">diff</span><span class="visually-hidden">Diff of </span>rules.ts</span>');
+		expect(markup).toContain('<span class="tab-name" title="Diff of src/tax/rules.ts"><span class="tab-kind" aria-hidden="true">diff</span><span class="visually-hidden">Diff of </span><span class="tab-label">rules.ts</span></span>');
 		expect(markup).toContain('aria-label="Close the diff of rules.ts"');
 		expect(markup).toContain('aria-label="Diff of src/tax/rules.ts"');
 	});

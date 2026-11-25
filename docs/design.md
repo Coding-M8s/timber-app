@@ -625,6 +625,15 @@ logins. The app never reads a tracker login and never signs in.
   changed file's diff is open, and a File tab while a file is. The changed
   files are in the side panel's Changes view, so the agent stays in sight
   while they are read.
+- The diff and File tabs show a file's name, whole while it fits. A tab is
+  never wider than 260 pixels, so one long name does not take the row, and
+  a name with less room than it needs ends in an ellipsis; hovering gives
+  the full path. Where the row is too narrow, the Unified | Split switch
+  goes under the tabs first, then the file names shrink, and once a file's
+  tab and its close button would together have under 120 pixels, or under
+  their own width if that is less, they go on the next line. Workspace, Pull request,
+  the "diff" marker, the close buttons, and the switch are never shortened,
+  and nothing in the row passes the workspace's edges.
 - When the terminal takes the keyboard. The shown session's terminal takes
   it when a worktree is chosen by any route but the arrows in the sidebar: a
   click, Enter, or Space on its row, its chip, the command palette (also for
