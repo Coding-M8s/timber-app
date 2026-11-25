@@ -154,7 +154,7 @@ describe("the diff tab", () => {
 		expect(store.getState().changes?.selected?.path).toBe("src/deep/b.ts");
 		const markup = render(store);
 		expect(markup).toContain('aria-label="Diff of src/deep/b.ts"');
-		expect(markup).toContain('<span title="Diff of src/deep/b.ts"><span class="tab-kind" aria-hidden="true">diff</span><span class="visually-hidden">Diff of </span>b.ts</span>');
+		expect(markup).toContain('<span class="tab-name" title="Diff of src/deep/b.ts"><span class="tab-kind" aria-hidden="true">diff</span><span class="visually-hidden">Diff of </span><span class="tab-label">b.ts</span></span>');
 		expect(markup).toContain(">Close</button>");
 	});
 

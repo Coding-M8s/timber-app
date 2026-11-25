@@ -5225,3 +5225,30 @@ WebKitGTK 2.52.6:
 - Not run: the setup wizard in the desktop app, a check against a real Jira
   site, a Wayland session, an input method or a password manager that types
   into other windows, Windows, and macOS.
+
+Run for long file names in the diff and File tabs (issue 421), Linux x64 with
+Bun 1.4.5 and Google Chrome:
+
+- `bun test tests/tab-names-browser.test.ts` in headless Chrome: passed. Over
+  the code before this change the four tests of the row's layout with long
+  names failed. With names over 60 characters in both tabs, and in one alone,
+  at six window sizes down to the narrowest workspace the layout allows (107
+  pixels, in a window 641 wide) and stacked at 480: nothing in the row passes
+  the workspace's edges, each tab, close button, marker, and choice of the
+  switch is what the pointer reaches at its middle, the names end in a whole
+  ellipsis, and Workspace and Pull request keep their width. Also the 260
+  pixel limit, the order in which the row gives way, the tooltips, real
+  clicks on the switch and both close buttons, the arrows, Home, and End, the
+  focus ring, and short names.
+- Screenshots of short names in both tabs, before and after the change, in
+  headless Chrome at 1500, 1280, and 1000 pixels: not one pixel differs.
+- By eye, in headless Chrome over the mock engine: long names at 1280 and at
+  the narrowest width.
+- `bun run test`: 4,829 passed, 19 skipped, 0 failed, in 288 files, after
+  rebasing onto the Jira token check (fe731ec). The run before any change, and
+  one after that rebase, each had one browser test time out waiting for the
+  page; the file of the later one, `tests/path-drop-browser.test.ts`, passed
+  three times alone.
+- `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
+- Not run: the desktop app and its WebKit and WebView2 views, Windows, and
+  macOS.

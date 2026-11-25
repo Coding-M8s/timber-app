@@ -3280,6 +3280,7 @@ pre:focus-visible {
 
 /* The worktree's tabs, and at the row's end what goes with the tab that shows, such as the diff's Unified | Split switch. */
 .tabs-row {
+	container-type: inline-size;
 	flex: none;
 	display: flex;
 	flex-wrap: wrap;
@@ -3289,15 +3290,37 @@ pre:focus-visible {
 	border-bottom: 1px solid var(--line);
 }
 
-/* Never squeezed: where the row is too narrow, what follows the tabs wraps under them instead. */
+/*
+ * Where the row is too narrow for the tabs and what follows them, that wraps
+ * under the tabs. Then the file names shrink, and last the tabs wrap. Clip
+ * rather than hidden: hidden also cuts the line under the selected tab, and
+ * lets a focused tab scroll the rest away.
+ */
 .tabs {
-	flex: 1 0 auto;
+	flex: 1 1 auto;
+	min-width: 0;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0 2px;
+	padding: 0 8px;
+	overflow-x: clip;
+}
+
+/*
+ * The diff or File tab with its close button: as wide as its name needs where
+ * there is room. Where there is not, the tabs wrap once this would be under
+ * 120px, or its name's own width if that is less.
+ */
+.tab-file {
+	flex: 1 1 120px;
+	min-width: 0;
+	max-width: max-content;
 	display: flex;
 	gap: 2px;
-	padding: 0 8px;
 }
 
 .tab {
+	flex: none;
 	position: relative;
 	height: 34px;
 	padding: 0 10px;
@@ -3307,6 +3330,40 @@ pre:focus-visible {
 	color: var(--text-3);
 	font-size: 12.5px;
 	font-weight: 500;
+	white-space: nowrap;
+}
+
+.tab-file .tab {
+	flex: 0 1 auto;
+	min-width: 0;
+	max-width: 260px;
+}
+
+/* In the narrowest workspace, so a letter and the ellipsis fit after the diff's marker. */
+@container (max-width: 160px) {
+	.tab-file .tab {
+		padding: 0 3px;
+	}
+
+	.tab-file .tab.selected::after {
+		left: 3px;
+		right: 3px;
+	}
+}
+
+/* What a diff or File tab says: what must stay whole, such as the diff's marker, and the file's name, which shrinks. */
+.tab-name {
+	display: flex;
+	align-items: baseline;
+}
+
+/* A name too long for its tab ends in an ellipsis. The 2px at each side are room for a letter's edge that would be cut. */
+.tab-label {
+	min-width: 0;
+	margin: 0 -2px;
+	padding: 0 2px;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .tab:hover,
@@ -3328,6 +3385,7 @@ pre:focus-visible {
 
 /* The small "diff" before the diff tab's file name, so it is not taken for the File tab. */
 .tab-kind {
+	flex: none;
 	margin-right: 6px;
 	padding: 0 4px;
 	border-radius: 4px;
@@ -3340,6 +3398,7 @@ pre:focus-visible {
 
 /* Closes the diff or File tab beside it. */
 .tab-close {
+	flex: none;
 	align-self: center;
 	width: 22px;
 	height: 22px;

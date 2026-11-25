@@ -1,4 +1,4 @@
-import { Fragment, type KeyboardEvent } from "react";
+import { type KeyboardEvent } from "react";
 import { BEING_REMOVED_REASON } from "../done-format";
 import { workspaceKindLabel } from "../workspace-actions-format";
 import { describeSavedBase } from "../base-format";
@@ -128,9 +128,10 @@ export function Workspace() {
 			<SetupPrompt repository={repository} />
 			<div className="tabs-row">
 				<div className="tabs" role="tablist" aria-label="Views of this worktree" onKeyDown={onTabKey}>
-					{tabs.map(tab => (
-						<Fragment key={tab}>
+					{tabs.map(tab => {
+						const button = (
 							<button
+								key={tab}
 								type="button"
 								role="tab"
 								id={tabId(tab)}
@@ -142,30 +143,36 @@ export function Workspace() {
 								onClick={() => store.showTab(tab)}
 							>
 								{tab === "file"
-									? <span title={file?.path}>{fileTabLabel(file)}</span>
+									? <span className="tab-name" title={file?.path}><span className="tab-label">{fileTabLabel(file)}</span></span>
 									: tab === "diff" && diff
 										? (
-											<span title={diffTabTitle(diff.file)}>
+											<span className="tab-name" title={diffTabTitle(diff.file)}>
 												<span className="tab-kind" aria-hidden="true">diff</span>
 												<span className="visually-hidden">Diff of </span>
-												{diffTabLabel(diff.file)}
+												<span className="tab-label">{diffTabLabel(diff.file)}</span>
 											</span>
 										)
 										: TAB_LABELS[tab]}
 							</button>
-							{/* Beside the tab, not inside it: a button may not hold another. The diff's and the viewer's own Close reach it by keyboard. */}
-							{tab === "diff" && diff && (
-								<button type="button" className="tab-close" tabIndex={-1} aria-label={`Close the diff of ${diffTabLabel(diff.file)}`} title={`Close the diff of ${diff.file.path}`} onClick={() => store.closeDiff(worktree.id)}>
-									<span aria-hidden="true">×</span>
-								</button>
-							)}
-							{tab === "file" && file && (
-								<button type="button" className="tab-close" tabIndex={-1} aria-label={`Close ${fileTabLabel(file)}`} title={`Close ${file.path}`} onClick={() => store.closeFile(worktree.id)}>
-									<span aria-hidden="true">×</span>
-								</button>
-							)}
-						</Fragment>
-					))}
+						);
+						if (tab !== "diff" && tab !== "file") return button;
+						return (
+							<div key={tab} className="tab-file" role="presentation">
+								{button}
+								{/* Beside the tab, not inside it: a button may not hold another. The diff's and the viewer's own Close reach it by keyboard. */}
+								{tab === "diff" && diff && (
+									<button type="button" className="tab-close" tabIndex={-1} aria-label={`Close the diff of ${diffTabLabel(diff.file)}`} title={`Close the diff of ${diff.file.path}`} onClick={() => store.closeDiff(worktree.id)}>
+										<span aria-hidden="true">×</span>
+									</button>
+								)}
+								{tab === "file" && file && (
+									<button type="button" className="tab-close" tabIndex={-1} aria-label={`Close ${fileTabLabel(file)}`} title={`Close ${file.path}`} onClick={() => store.closeFile(worktree.id)}>
+										<span aria-hidden="true">×</span>
+									</button>
+								)}
+							</div>
+						);
+					})}
 				</div>
 				{/* Beside the tabs, not among them: a tab list holds only tabs. */}
 				{state.tab === "diff" && diff && <DiffLayoutSwitch />}
