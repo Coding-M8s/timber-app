@@ -667,7 +667,9 @@ export interface AppState {
 	 * Each worktree's pull request, by the path of its repository's primary
 	 * checkout, as `timber __app-pr` last answered. A repository missing here
 	 * was not read yet. Read when a repository is first listed and after each
-	 * fetch of it ends, so on the fetch interval and after Fetch now.
+	 * fetch of it ends, so on the fetch interval and after Fetch now. A
+	 * repository with nothing to fetch (`Repository.nothingToFetch`) has no
+	 * fetch that ends, so it is read again only after a sync action.
 	 */
 	pullRequests: Readonly<Record<string, PullRequestList>>;
 	/**
@@ -942,11 +944,13 @@ export function selectionFor(repositories: readonly Repository[], worktreeId: st
 /**
  * What to show for a repository after reading it again. A read in which
  * Timber could not list the worktrees brings its diagnostic and no worktrees,
- * so the last good list stays on screen beside the diagnostic.
+ * so the last good list stays on screen beside the diagnostic, and with it
+ * what that list said about having nothing to fetch.
  */
 export function keepLastGood(previous: Repository | undefined, next: Repository): Repository {
 	if (next.failure === null || !previous || previous.worktrees.length === 0) return next;
-	return { ...next, worktrees: previous.worktrees };
+	const { nothingToFetch: _unknown, ...rest } = next;
+	return { ...rest, worktrees: previous.worktrees, ...previous.nothingToFetch ? { nothingToFetch: true as const } : {} };
 }
 
 /**

@@ -1335,6 +1335,22 @@ the remote's configured refspecs and may also fetch tags and write
   never pulls, merges, rebases, or touches a local branch, a tag, the index,
   the stash, or a working tree, and it writes no `FETCH_HEAD`, so a fetch
   that brings nothing new changes no file the watcher hears.
+- **Nothing to fetch.** When no remote is left to fetch that way, as in a
+  repository with no remote, one whose branches track none, or one whose
+  only tracked remote has no refspec that writes `refs/remotes/`, nothing
+  reaches the network and the answer is `nothing-to-fetch`, never
+  `fetched`. It is not a fetch that worked, so `lastFetched` stays as it
+  was, but an earlier failure is cleared, since no tracked remote is left
+  for it to be about. The background keeps the usual interval, with no
+  backoff. The repository reader (`src/bun/repository-reader.ts`) tells
+  this ahead of time from the `for-each-ref refs/heads` it already runs:
+  `Repository.nothingToFetch` is set when no local branch tracks a branch
+  of a remote (`tracksARemote` in `src/shared/git-parse.ts`, by the same
+  `isRemoteTracking` rule the fetcher picks remotes with; a gone upstream
+  still counts). It is absent when Git could not answer and for a failed
+  read, which keeps what the last good list said (`keepLastGood`). The
+  watcher hears `.git/config`, so adding a remote and an upstream reads the
+  repository again and the flag goes.
 - **Never asking (`src/bun/fetch-git.ts`).** Git runs in a session of its
   own with nothing on standard input, so neither Git nor SSH has a terminal
   to ask on, with `GIT_TERMINAL_PROMPT=0`, `GIT_ASKPASS`, `SSH_ASKPASS`
@@ -1397,7 +1413,13 @@ the remote's configured refspecs and may also fetch tags and write
   reloads. Where fetching stands (running, when it last worked, and the
   latest failure) goes to the window directly as `fetchChanged`, without a
   reload. "Fetch now" on a repository's header runs a fetch whether or not
-  background fetching is on; one that worked says so in a toast.
+  background fetching is on; one that worked says so in a toast. For a
+  repository with `nothingToFetch`, the header control and the palette entry
+  are disabled, with "No branch of <name> tracks a remote, so there is
+  nothing to fetch." as the tooltip and the palette's reason
+  (`fetchUnavailable` in `src/mainview/fetch-format.ts`). A Fetch now that
+  is asked all the same, or that finds nothing the read did not foresee,
+  shows "Nothing to fetch for <name>" in a toast, never "Fetched".
 
 ## Sync actions
 
@@ -1570,7 +1592,9 @@ main process: `timberMock.setRepositories(list)`,
 the interface last said through `attend`; the mock watches nothing),
 `timberMock.endFetches("offline")` (or `"authentication"`, `"failed"`, and
 `"fetches"` again) to choose how Fetch now ends (the mock fetches nothing in
-the background), `timberMock.forcePush("/work/timber", "main")` to act out a
+the background; a repository with `nothingToFetch`, such as the exported
+`sampleLocalRepository` that tests add, always answers `nothing-to-fetch`,
+and a publish or an opened remote branch takes the flag away), `timberMock.forcePush("/work/timber", "main")` to act out a
 fetch that found that branch's upstream rewritten, and
 `timberMock.seenForcePushes()` for what the interface said was seen,
 `timberMock.failReads("Git is busy")` (pass `null` to let reads work again),
@@ -2756,8 +2780,14 @@ its Bitbucket pull requests.
   fetch of it ends, worked or failed. So they follow the background fetch
   interval, wait while the window is hidden as fetches do, and are read
   again after Fetch now. With background fetching off, only Fetch now reads
-  them again. Reads of one repository never overlap, and a removed
-  repository's answer is forgotten. Background fetches are at least a
+  them again. A repository with nothing to fetch has no fetch that ends, so
+  after it is first listed only a sync action reads them again, and the
+  states of its linked issues, which are read when a fetch ends too, are
+  not read again on the interval either. That is chosen: with no branch
+  tracking a remote, a pull request is unlikely, and counting a fetch that
+  never ran as one that worked is what issue 327 fixed. Reads of one
+  repository never overlap, and a removed repository's answer is
+  forgotten. Background fetches are at least a
   minute apart, so a Bitbucket repository is not read in the background
   more often than Timber asks (Bitbucket allows a user about 1,000
   requests an hour); a read that hit the limit fails every entry, shown

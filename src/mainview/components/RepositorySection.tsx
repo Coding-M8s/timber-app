@@ -1,6 +1,6 @@
 import type { ButtonHTMLAttributes, MouseEvent, ReactNode, Ref } from "react";
 import { describeBackupsProblem } from "../backup-format";
-import { describeFetchAction, describeFetchMarker } from "../fetch-format";
+import { describeFetchAction, describeFetchMarker, fetchUnavailable } from "../fetch-format";
 import { describeRepositoryPullRequestProblem } from "../pull-request-format";
 import { pullRequestOf } from "../../shared/pull-requests";
 import type { Repository, Worktree } from "../../shared/model";
@@ -87,7 +87,9 @@ export function RepositorySection({ state, store, repository, matches, open, que
 	const summary = summarizeStatuses(statuses);
 	const summaryId = `${idBase}-summary-${index}`;
 	const describedBy = [fetchMarker ? fetchMarkerId : "", pullProblem ? pullProblemId : "", backupProblem ? backupProblemId : "", summary ? summaryId : ""].filter(Boolean).join(" ");
-	const fetchLabel = describeFetchAction(repository.name, fetching ? { repository: repository.path, fetching: true, lastFetched: null, failure: null } : fetch, now);
+	// A fetch that runs still shows as one; otherwise a repository whose branches track no remote says why there is nothing to fetch.
+	const nothingToFetch = fetching ? null : fetchUnavailable(repository);
+	const fetchLabel = nothingToFetch ?? describeFetchAction(repository.name, fetching ? { repository: repository.path, fetching: true, lastFetched: null, failure: null } : fetch, now);
 	return (
 		<section
 			ref={sectionRef}
@@ -158,9 +160,9 @@ export function RepositorySection({ state, store, repository, matches, open, que
 						aria-label={fetchLabel}
 						title={fetchLabel}
 						aria-busy={fetching}
-						aria-disabled={fetching}
+						aria-disabled={fetching || nothingToFetch !== null}
 						onClick={() => {
-							if (!fetching) void store.fetchNow(repository.path);
+							if (!fetching && nothingToFetch === null) void store.fetchNow(repository.path);
 						}}
 					>
 						<svg aria-hidden="true" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

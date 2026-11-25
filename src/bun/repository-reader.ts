@@ -3,7 +3,7 @@ import { NOTHING_CONFIGURED, fallbackBaseOf, mayFallBackToUpstream } from "../sh
 import { type BaseCounts, type Repository, type SetupState, type SyncState, type TimberStatus, type Worktree, worktreeId } from "../shared/model";
 import type { ListedWorktree } from "../shared/timber-ls";
 import { type ConfiguredBaseReader, createConfiguredBaseReader } from "./configured-base";
-import { commonDirectory, readBaseCounts, readBranchSync, readRemoteDefaults, readUnpushedCount } from "./git-engine";
+import { commonDirectory, readBaseCounts, readBranchUpstreams, readRemoteDefaults, readUnpushedCount } from "./git-engine";
 import { readSetupState } from "./setup-state";
 import { describeTimberStatus } from "./timber";
 import { listWorktrees } from "./timber-ls";
@@ -159,11 +159,12 @@ export function createRepositoryReader(
 
 		const { commonGitDir, primaryWorktreeRoot } = listing.repository;
 		// Timber reads its settings with the same environment it lists with, so the same machine defaults count.
-		const [branches, setup, baseCounts] = await Promise.all([
-			readBranchSync(commonGitDir),
+		const [upstreams, setup, baseCounts] = await Promise.all([
+			readBranchUpstreams(commonGitDir),
 			readSetupState(primaryWorktreeRoot, environment),
 			countAgainstBases(commonGitDir, listing.worktrees),
 		]);
+		const branches = upstreams?.sync ?? null;
 		const syncs = await countUnpushed(commonGitDir, listing.worktrees.map(listed => ({ head: listed.head, sync: syncOf(listed, branches) })));
 		const worktrees: Worktree[] = listing.worktrees.map((listed, index) => ({
 			id: worktreeId(commonGitDir, listed),
@@ -174,7 +175,11 @@ export function createRepositoryReader(
 		const fallbackBase = await readFallbackBase(worktrees, { commonGitDir, primaryRoot: primaryWorktreeRoot, setup, timber: status.path, configuredBase });
 		return {
 			outcome: "read",
-			repository: { path: primaryWorktreeRoot, name: basename(primaryWorktreeRoot), available: true, failure: null, setup, fallbackBase, worktrees },
+			repository: {
+				path: primaryWorktreeRoot, name: basename(primaryWorktreeRoot), available: true, failure: null, setup, fallbackBase, worktrees,
+				// Only when Git answered and no branch tracks a remote: when Git could not say, Fetch now stays offered.
+				...upstreams?.tracksARemote === false ? { nothingToFetch: true as const } : {},
+			},
 		};
 	}
 

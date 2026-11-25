@@ -5432,3 +5432,32 @@ built: it reports through OSC 7501 itself.
 - Not run: Windows and macOS; a real Windows Terminal, VS Code, JetBrains, Alacritty,
   GNOME Terminal, tmux, or zellij; a failed turn; `grok` typed in a shell
   session; Grok's hooks, since none is used.
+
+Run for Fetch now with nothing to fetch (issue 327), Linux x64 with Bun 1.4.5
+and the installed Timber:
+
+- `tests/fetcher.test.ts`: on a real temporary repository with no remote,
+  Fetch now answers `nothing-to-fetch` with no `lastFetched` and no failure,
+  runs no Git command that reaches the network, and leaves every file and ref
+  as it was; with a remote added that no branch tracks it is still nothing to
+  fetch, and once `main` tracks `origin/main` it is `fetched`. Scripted Git:
+  a repository whose branch stops tracking its remote clears its old offline
+  failure and keeps the plain interval in the background, and a tracked
+  remote whose only refspecs write local branches or tags fetches nothing.
+- `tests/git-engine.test.ts` and `tests/repository-reader.test.ts` (with the
+  real Timber): a repository with no remote, or with a remote no branch
+  tracks, reads with `nothingToFetch`; an upstream that is gone, or one set
+  with `git branch --set-upstream-to`, takes it away; the reads change no ref
+  or file.
+- `tests/fetch-store.test.tsx`, on the mock engine with
+  `sampleLocalRepository`: the header control is `aria-disabled` with "No
+  branch of scratch tracks a remote, so there is nothing to fetch." as its
+  label and tooltip, and the palette entry has that reason; Fetch now asked
+  all the same toasts "Nothing to fetch for scratch", never "Fetched"; timber
+  still toasts "Fetched timber"; a publish offers Fetch now again; a failed
+  read keeps the last good list's flag.
+- `bun run test`: 4,886 passed, 19 skipped, 0 failed. The run before the
+  change had 7 failures, all headless Chrome tests (text editor, diff gutter,
+  repository groups, file explorer, chops), not looked at.
+- `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
+- Not run: the desktop app, Windows, and macOS.

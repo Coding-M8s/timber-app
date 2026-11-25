@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
-import { commonDirectory, overrideRepositoryPaths, readBranchSync, readBranches } from "../src/bun/git-engine";
+import { commonDirectory, overrideRepositoryPaths, readBranchSync, readBranchUpstreams, readBranches } from "../src/bun/git-engine";
 import { git, makeRepository } from "./support/timber";
 
 let root: string;
@@ -91,6 +91,32 @@ describe("readBranchSync", () => {
 		expect(await readBranches(primary)).not.toBeNull();
 		expect(await readBranches(linked)).not.toBeNull();
 		expect(fingerprint()).toBe(before);
+	});
+});
+
+describe("readBranchUpstreams", () => {
+	test("says whether any branch tracks a remote, from real repositories, and changes nothing", async () => {
+		const upstreams = await readBranchUpstreams(join(primary, ".git"));
+		expect(upstreams?.tracksARemote).toBe(true);
+		expect(upstreams?.sync).toEqual((await readBranchSync(join(primary, ".git")))!);
+
+		const local = makeRepository(root, "local");
+		git(local, "branch", "spike");
+		const before = git(local, "for-each-ref") + git(local, "status", "--porcelain");
+		expect((await readBranchUpstreams(join(local, ".git")))?.tracksARemote).toBe(false);
+		// A remote no branch tracks is still nothing to fetch, and a branch whose upstream is another local branch neither.
+		git(local, "remote", "add", "origin", join(root, "remote.git"));
+		git(local, "branch", "--set-upstream-to=main", "spike");
+		expect((await readBranchUpstreams(join(local, ".git")))?.tracksARemote).toBe(false);
+		// An upstream whose remote branch is gone is still a remote to fetch.
+		git(local, "config", "branch.main.remote", "origin");
+		git(local, "config", "branch.main.merge", "refs/heads/never-pushed");
+		expect((await readBranchUpstreams(join(local, ".git")))?.tracksARemote).toBe(true);
+		expect(git(local, "for-each-ref") + git(local, "status", "--porcelain")).toBe(before);
+	});
+
+	test("answers null where there is no repository", async () => {
+		expect(await readBranchUpstreams(join(root, "does-not-exist", ".git"))).toBeNull();
 	});
 });
 

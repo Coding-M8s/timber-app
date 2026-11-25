@@ -1,5 +1,6 @@
 import { type FetchSetting, MAX_FETCH_MINUTES, MIN_FETCH_MINUTES, isFetchInterval, sameFetchSetting } from "../shared/fetch-setting";
 import type { FetchFailureKind, RepositoryFetch } from "../shared/git-fetch";
+import type { Repository } from "../shared/model";
 
 /**
  * Words and rules for fetching: the Fetch now control and the quiet marker on
@@ -9,6 +10,21 @@ import type { FetchFailureKind, RepositoryFetch } from "../shared/git-fetch";
 
 /** The toast after Fetch now worked. */
 export const describeFetched = (name: string) => `Fetched ${name}`;
+
+/** The toast after Fetch now found no remote to fetch, so nothing ran. */
+export const describeNothingFetched = (name: string) => `Nothing to fetch for ${name}`;
+
+/** Why Fetch now is not offered for a repository whose branches track no remote. */
+export const describeNothingToFetch = (name: string) => `No branch of ${name} tracks a remote, so there is nothing to fetch.`;
+
+/**
+ * Why Fetch now cannot be used for a repository, or null when it can. Only a
+ * read that found no branch tracking a remote turns it off; when that is not
+ * known, Fetch now is offered.
+ */
+export function fetchUnavailable(repository: Pick<Repository, "name" | "nothingToFetch">): string | null {
+	return repository.nothingToFetch ? describeNothingToFetch(repository.name) : null;
+}
 
 /** How long ago a moment was, in a few words. */
 export function describeAgo(at: number, now: number): string {

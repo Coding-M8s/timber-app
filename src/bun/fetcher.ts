@@ -55,7 +55,9 @@ export interface FetcherOptions {
  *   empty `--refmap`, so a refspec that would write a local branch is never
  *   used. `--prune` then removes only remote-tracking refs whose branch is
  *   gone from the remote. No tags, no submodules, no `FETCH_HEAD`, no
- *   automatic maintenance.
+ *   automatic maintenance. When no remote is left to fetch that way, as in a
+ *   repository with no remote, nothing runs and the answer is
+ *   `nothing-to-fetch`, never `fetched`.
  * - When the upstream of a local branch moved to a commit its previous commit
  *   is not an ancestor of, the branch is marked force-pushed until the person
  *   saw it (`acknowledge`) or it is no longer true (`forget`).
@@ -233,14 +235,15 @@ export function createFetcher(options: FetcherOptions): Fetcher {
 	 * `asked` is true when the person asked for it: a background fetch stops
 	 * before the next remote once background fetching is turned off, unless
 	 * the person asked for it meanwhile. `cutShort` says that a remote was
-	 * left out that way, or because the repository left the list.
+	 * left out that way, or because the repository left the list. `ran`
+	 * counts the remotes Git was asked to fetch.
 	 */
-	async function fetchAll(entry: Entry, asked: boolean): Promise<{ failure: FetchFailure | null; cutShort: boolean }> {
+	async function fetchAll(entry: Entry, asked: boolean): Promise<{ failure: FetchFailure | null; cutShort: boolean; ran: number }> {
 		const gitDir = entry.target.commonDir;
 		const unreadable = (): FetchFailure => ({ kind: "failed", message: `Git could not read the repository at ${entry.target.path}.`, at: now() });
 		const listed = await read(["--git-dir", gitDir, "for-each-ref", `--format=${BRANCH_UPSTREAM_FORMAT}`, "refs/heads"]);
 		const before = listed === null ? null : await remoteRefs(gitDir);
-		if (listed === null || before === null) return { failure: unreadable(), cutShort: false };
+		if (listed === null || before === null) return { failure: unreadable(), cutShort: false, ran: 0 };
 		const branches = parseTrackedBranches(listed);
 		// `git config` answers 1 when the key is not set.
 		const sshCommand = await runGit(["--git-dir", gitDir, "config", "--get", "core.sshCommand"], { network: false, signal: stopping.signal });
@@ -248,6 +251,7 @@ export function createFetcher(options: FetcherOptions): Fetcher {
 
 		let failure: FetchFailure | null = null;
 		let cutShort = false;
+		let ran = 0;
 		for (const remote of trackedRemotes(branches)) {
 			// The repository left the list, or background fetching was turned off, while an earlier remote was fetched.
 			if (stopped() || !current(entry) || (!asked && !entry.asked && !setting?.background)) {
@@ -257,6 +261,7 @@ export function createFetcher(options: FetcherOptions): Fetcher {
 			const configured = await read(["--git-dir", gitDir, "config", "--get-all", `remote.${remote}.fetch`]);
 			const refspecs = remoteTrackingRefspecs((configured ?? "").split("\n"));
 			if (refspecs.length === 0) continue;
+			ran++;
 			const answer = await runGit([
 				"--git-dir", gitDir, "-c", "credential.interactive=false", "fetch",
 				"--prune", "--no-prune-tags", "--no-tags", "--no-write-fetch-head", "--recurse-submodules=no", "--no-auto-gc", "--refmap=",
@@ -265,10 +270,10 @@ export function createFetcher(options: FetcherOptions): Fetcher {
 			if (answer.exitCode !== 0 && failure === null) failure = readFetchFailure(answer.stderr, now());
 		}
 		const after = await afterFetch(entry, branches, before);
-		if (after === "unreadable") return { failure: failure ?? unreadable(), cutShort };
+		if (after === "unreadable") return { failure: failure ?? unreadable(), cutShort, ran };
 		// A repository that left the list meanwhile keeps no marks and reports nothing.
-		if (after === "left") return { failure, cutShort: true };
-		return { failure, cutShort };
+		if (after === "left") return { failure, cutShort: true, ran };
+		return { failure, cutShort, ran };
 	}
 
 	/**
@@ -385,8 +390,9 @@ export function createFetcher(options: FetcherOptions): Fetcher {
 			entry.asked = false;
 			let failure: FetchFailure | null;
 			let cutShort = false;
+			let ran = 0;
 			try {
-				({ failure, cutShort } = await fetchAll(entry, asked));
+				({ failure, cutShort, ran } = await fetchAll(entry, asked));
 			} catch (error) {
 				failure = { kind: "failed", message: messageOf(error), at: now() };
 			} finally {
@@ -400,8 +406,12 @@ export function createFetcher(options: FetcherOptions): Fetcher {
 				if (current(entry)) plan(entry, waitAfter(entry));
 				return { outcome: "not-listed", message: "Fetching stopped before every remote was fetched, because background fetching was turned off or the repository left the list." };
 			}
+			// No remote to fetch: nothing reached the network, so it is not a fetch that worked, and an old failure no longer applies.
+			const nothing = failure === null && ran === 0;
 			entry.failure = failure;
-			if (failure === null) {
+			if (nothing) {
+				entry.failures = 0;
+			} else if (failure === null) {
 				entry.failures = 0;
 				entry.lastFetched = now();
 			} else {
@@ -412,6 +422,7 @@ export function createFetcher(options: FetcherOptions): Fetcher {
 			tell(entry);
 			if (current(entry)) plan(entry, waitAfter(entry));
 			const fetch = statusOf(entry);
+			if (nothing) return { outcome: "nothing-to-fetch", fetch };
 			return failure === null ? { outcome: "fetched", fetch } : { outcome: "failed", fetch };
 		})();
 		entry.running = running;

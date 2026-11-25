@@ -292,6 +292,46 @@ describe("createFetcher, when it fetches", () => {
 		expect(scripted.fetches()[0]!.env).toEqual({ GIT_SSH_COMMAND: BATCH_SSH_COMMAND });
 	});
 
+	test("with no remote left to fetch, nothing reaches the network and it says so: not fetched, and an old failure goes", async () => {
+		const state = { offline: true, branches: tracks("main") };
+		const scripted = scriptedGit((args, network) => {
+			if (args.includes("refs/heads")) return { stdout: state.branches };
+			return plainAnswer(state)(args, network);
+		});
+		const { fetcher, statuses, advance } = scheduled(scripted.runGit);
+		fetcher.sync([REPO]);
+		expect((await fetcher.fetchNow(REPO.path)).outcome).toBe("failed");
+		expect(fetcher.statuses()[0]!.failure?.kind).toBe("offline");
+
+		// The branch stopped tracking its remote, so there is nothing left to fetch.
+		state.branches = `refs/heads/main\0${"c".repeat(40)}\0\0\0\n`;
+		const fetchesBefore = scripted.fetches().length;
+		const result = await fetcher.fetchNow(REPO.path);
+		expect(result).toEqual({ outcome: "nothing-to-fetch", fetch: { repository: REPO.path, fetching: false, lastFetched: null, failure: null } });
+		expect(scripted.fetches().length).toBe(fetchesBefore);
+		expect(statuses.at(-1)).toEqual({ repository: REPO.path, fetching: false, lastFetched: null, failure: null });
+
+		// In the background too, on the interval itself rather than after a backoff.
+		fetcher.configure({ background: true, intervalMinutes: 5 });
+		await advance(5 * MINUTE);
+		expect(scripted.fetches().length).toBe(fetchesBefore);
+		expect(fetcher.statuses()[0]).toMatchObject({ lastFetched: null, failure: null });
+	});
+
+	test("a tracked remote whose refspecs would write only local branches or tags is nothing to fetch, never fetched", async () => {
+		const scripted = scriptedGit((args, network) => {
+			if (network) return {};
+			if (args.includes("refs/heads")) return { stdout: tracks("copy", "mirror") };
+			if (args.includes("core.sshCommand")) return { exitCode: 1 };
+			if (args.includes("remote.mirror.fetch")) return { stdout: "+refs/heads/*:refs/heads/*\n+refs/tags/*:refs/tags/*\n" };
+			return {};
+		});
+		const { fetcher } = scheduled(scripted.runGit);
+		fetcher.sync([REPO]);
+		expect((await fetcher.fetchNow(REPO.path)).outcome).toBe("nothing-to-fetch");
+		expect(scripted.fetches()).toEqual([]);
+	});
+
 	test("a repository that leaves the list is no longer fetched or reported", async () => {
 		const scripted = plainRepository();
 		const { fetcher, advance, statuses } = scheduled(scripted.runGit);
@@ -836,6 +876,37 @@ describe("createFetcher against real repositories", () => {
 		git(mine, "remote", "add", "forgotten", "https://127.0.0.1:9/nothing.git");
 		const { fetcher } = realFetcher();
 		expect(await fetcher.fetchNow(mine)).toMatchObject({ outcome: "fetched" });
+	});
+
+	test("a repository with no remote has nothing to fetch, runs no fetch, and keeps its files and refs", async () => {
+		const local = join(root, "local");
+		git(root, "init", "-q", "-b", "main", local);
+		commit(local, "readme.md", "one\n");
+		git(local, "branch", "-q", "spike");
+		const before = fingerprint(local);
+		const environment = { ...testEnvironment };
+		const runner = createGitRunner("git", environment);
+		const network: (readonly string[])[] = [];
+		const fetcher = createFetcher({
+			runGit: (args, options) => {
+				if (options.network) network.push(args);
+				return runner(args, options);
+			},
+			onChanged: () => {}, onStatus: () => {}, environment,
+		});
+		fetcher.sync([{ path: local, commonDir: join(local, ".git") }]);
+		const result = await fetcher.fetchNow(local);
+		expect(result).toEqual({ outcome: "nothing-to-fetch", fetch: { repository: local, fetching: false, lastFetched: null, failure: null } });
+		expect(network).toEqual([]);
+		expect(fingerprint(local)).toBe(before);
+
+		// A remote that no branch tracks is still nothing to fetch; once a branch tracks it, it is fetched as usual.
+		git(local, "remote", "add", "origin", remote);
+		expect((await fetcher.fetchNow(local)).outcome).toBe("nothing-to-fetch");
+		git(local, "fetch", "-q", "origin");
+		git(local, "branch", "-q", "--set-upstream-to=origin/main", "main");
+		expect(await fetcher.fetchNow(local)).toMatchObject({ outcome: "fetched", fetch: { failure: null } });
+		expect(network.length).toBe(1);
 	});
 
 	test("an unreachable remote fails as offline, at once and without asking for anything", async () => {
