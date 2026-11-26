@@ -167,6 +167,7 @@ export function createDesktopEngine(): Engine {
 		stopGenerating: id => rpc.request.stopGenerating({ id }, { maxRequestTime: 30_000 }),
 		readWorktreeFile: request => rpc.request.readWorktreeFile(request, { maxRequestTime: 60_000 }),
 		readFileOutside: request => rpc.request.readFileOutside(request, { maxRequestTime: 60_000 }),
+		readFileStamp: request => rpc.request.readFileStamp(request, { maxRequestTime: 60_000 }),
 		writeWorktreeFile: request => rpc.request.writeWorktreeFile(request, { maxRequestTime: 60_000 }),
 		listWorktreeFolder: request => rpc.request.listWorktreeFolder(request, { maxRequestTime: 60_000 }),
 		watchWorktreeFolders: folders => rpc.send.watchWorktreeFolders({ folders }),

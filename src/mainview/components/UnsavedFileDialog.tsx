@@ -4,7 +4,7 @@ import { useAppState, useStore } from "../store/react";
 import type { UnsavedFileStep } from "../store/state";
 
 /**
- * Asked before closing a file, reading it again, or opening another in its
+ * Asked before closing a file, loading it from disk, or opening another in its
  * place while it holds unsaved edits. Nothing is dropped until Discard is
  * pressed. Focus starts on Save; Escape keeps editing.
  */

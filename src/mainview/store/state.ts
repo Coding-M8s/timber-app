@@ -116,7 +116,7 @@ export interface FilePlace {
 }
 
 /** What a question about unsaved edits holds back until it is answered. */
-export type UnsavedFileStep = { kind: "close" } | { kind: "read-again" } | { kind: "open"; path: string; at?: FilePlace };
+export type UnsavedFileStep = { kind: "close" } | { kind: "load" } | { kind: "open"; path: string; at?: FilePlace };
 
 /** The file open in a worktree's File tab. */
 export interface FileView {
@@ -154,6 +154,13 @@ export interface FileView {
 	 * the file: a notice in its place, or Markdown switched to Rendered.
 	 */
 	goTo: FilePlace | null;
+	/**
+	 * The file changed on disk, or was deleted, while the draft held unsaved
+	 * edits: the text and the file as read stay as they were, so a save still
+	 * checks against the text the edits started from, and the File tab says
+	 * so. Null otherwise, and once the draft holds nothing unsaved.
+	 */
+	diskChange: "changed" | "deleted" | null;
 }
 
 export interface ChangesView {
@@ -377,7 +384,7 @@ export type DialogRequest =
 	| { kind: "set-up-timber"; repository: string }
 	/**
 	 * A worktree's open file has unsaved edits, and something would drop
-	 * them: closing it, reading it again, or opening another file in its
+	 * them: closing it, loading it from disk, or opening another file in its
 	 * place. Asks to save, discard, or keep editing. `worktree` is `Worktree.id`.
 	 */
 	| { kind: "unsaved-file"; worktree: string; then: UnsavedFileStep }

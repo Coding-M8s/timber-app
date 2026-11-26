@@ -1052,7 +1052,16 @@ logins. The app never reads a tracker login and never signs in.
   Ctrl+click (Cmd+click on macOS), since it leaves the app; a file stays
   in it. Binary files, files over 1 MB or 20,000 lines,
   missing files, and folders get a plain notice in place of the text.
-  "Read again" reads it as it is now.
+  The open file keeps up with the disk by itself, as other editors do, so
+  there is no button to read it again. While its File tab shows, it is
+  checked every 2 seconds, and an edit an agent makes, a second one to a
+  file that is modified already too, shows in place: the caret line and
+  column, the scroll, an open search bar, and the Markdown view (Rendered,
+  Source, Edit) stay as they were, kept inside the text when it got
+  shorter. Undo starts again from the new text, so it never brings the old
+  one back. A deleted file shows the missing-file notice, and its text
+  shows again once it is back. A file whose text did not change is not
+  loaded into the editor again.
 - Files outside the worktree: a complete path to a file anywhere, such as
   an agent's scratch notes, a plan, or a log, opens in the File tab too,
   and so does the target of a link in the worktree that leads out. Such a
@@ -1118,10 +1127,15 @@ logins. The app never reads a tracker login and never signs in.
   differs from the file. The edits are kept when another tab or worktree
   shows, and Rendered shows them before they are saved. Saving writes only
   that file, with its own line endings, and the worktree's change counts
-  follow at once. When the file changed on disk since
-  it was opened, as when an agent wrote it, nothing is written: the reason
-  shows above the text with "Save over it", and the edits stay. Closing the
-  file, Read again, or opening another file in its place asks first while
+  follow at once. While the text holds unsaved edits, a change on disk
+  leaves it untouched: a note above it says the file changed on disk since
+  editing started, with "Load from disk" and "Save over it" (or, when the
+  file was deleted, that the edits cannot be saved while it is gone, with
+  "Load from disk" only). Undoing every edit, or Discard, then shows the
+  text on disk. A save that finds the file changed on disk writes nothing:
+  the reason shows above the text with "Save over it", "or Load from disk
+  to see the new text", and the edits stay. Closing the
+  file, Load from disk, or opening another file in its place asks first while
   edits are unsaved (Save, Discard, or Keep editing, focus on Save), and so
   do quitting, closing the window, Restart now in Settings, restarting into
   an update, and uninstalling, even with no session running. An open file

@@ -18,7 +18,7 @@ import type { FetchResult, ForcePushSeen, RepositoryFetch } from "../../shared/g
 import { type ChopList, type RunChopResult, commandChops, findListedChop, listedChops } from "../../shared/chops";
 import { promptTarget, reviewWaiting } from "../agent-sessions";
 import { describePromptCopied, describePromptCopiedNoAgentFound, describePromptSent } from "../chop-format";
-import { type Comparison, type FileChange, type FileChangeTarget, type FileChangesResult, type FileDiff, type FileDiffResult, sameFileChange } from "../../shared/file-changes";
+import { type Comparison, type FileChange, type FileChangeTarget, type FileChangesResult, type FileDiff, type FileDiffResult, relativePathProblem, sameFileChange } from "../../shared/file-changes";
 import type { PortsResult } from "../../shared/ports";
 import { type DiffLayout, type Layout, type SidePanelView, chooseComparison, chooseIssueList, chosenComparison, clampChopsWidth, clampSidebarWidth, dismissSetup, forgetGroup, forgetRepository, sameLayout, toggleCollapsed, toggleGroupCollapsed } from "../../shared/layout";
 import type { BranchSuggestion, NewWorktreeRequest, OpenInEditorRequest, OpenInEditorResult, OpenWorktreeRequest, RepositoryGroupsResult, ReportedWorktree, SavePreferencesResult, TimberFailure, TimberStatus, Worktree, WorktreeCommandResult } from "../../shared/model";
@@ -69,7 +69,7 @@ import { mergeOverlapping } from "./merge";
 import { keepEntries } from "./records";
 import { RESTORE_CONCURRENCY, RESTORE_QUIET_MILLISECONDS, type RestoreJob, goneSavedWorktrees, restoreJobs, restoreRequest, runLimited } from "./restore";
 import { type SavedSessions, pickShown } from "../../shared/saved-sessions";
-import { type WorktreeFileResult, normalCompletePath, textToSave } from "../../shared/worktree-files";
+import { type OutsideFileRequest, type WorktreeFileRequest, type WorktreeFileResult, isMarkdownPath, normalCompletePath, textToSave } from "../../shared/worktree-files";
 import { fileLines, fillUnchanged, linesMatchDiff, unchangedReadable } from "../diff-unchanged";
 import { filterFiles, listedOrder, movedEntry, steppedFile } from "../changes-format";
 import { COMMIT_ARGUMENTS, COMMIT_COMMAND_LINE, type CommitResult, commitBlocker } from "../../shared/commit-staged";
@@ -79,7 +79,7 @@ import { type GenerateKind, type GenerateTextResult, type GeneratedText, describ
 import { type IndexAction, type IndexWriteResult, canWriteIndex, describeGitCommand, indexCommand } from "../../shared/index-writes";
 import { type DiscardResult, discardCommand, discardPaths, fileDiscardable } from "../../shared/discard-files";
 import { type FileEditMemory, createFileEditMemory } from "../text-editor-format";
-import { afterSave, canEditFile, editableFileText, fileText, hasUnsavedEdits, initialFileMode, listedOnly, openFileMode, outsideResult, pathInWorktree, settleTabs, unsavedFileCount } from "../file-view-format";
+import { afterSave, canEditFile, editableFileText, fileText, hasUnsavedEdits, initialFileMode, listedOnly, openFileMode, outsideResult, pathInWorktree, sameFileResult, settleTabs, unsavedFileCount } from "../file-view-format";
 import {
 	type AppState, type ChangesView, type DialogRequest, type FileMode, type FilePlace, type FileView, type Operation, type PullRequestForm, type Removal, type SessionAgent, type UnsavedFileStep, type WorkspaceTab, TOAST_MILLISECONDS, initialState, isBeingRemoved, keepLastGood, syncOptionsOf,
 	reconcileRemovals, removalAt, reconcileSelection, runningSessionCount, canToggleSidePanel, chopsEnabled, filesPanelShown, offeredChops, sidePanelShown, sidePanelView, selectedWorktree, selectionFor, selectionForRepository, sessionOnScreen, sessionsOf, sessionsToVisit, shownSession, timberReady, withTerminal, withoutSession, fileViewed, viewedKey, type CommitRun, type GenerationRun, writesWait, repositoryPick } from "./state";
@@ -345,8 +345,13 @@ export interface AppStore {
 	 * keeps its unsaved edits and only moves the caret.
 	 */
 	openFile(worktreeId: string, path: string, at?: { line: number; column?: number | null }): void;
-	/** Read the open file of a worktree again, as it is on disk now. With unsaved edits, asks first. */
-	readFileAgain(worktreeId: string): void;
+	/**
+	 * Drop the open file's draft and show the file as it is on disk now, as
+	 * the File tab offers once it changed on disk while it held unsaved
+	 * edits. With unsaved edits, asks first. Without, the File tab keeps up
+	 * with the disk by itself (`FILE_CHECK_MILLISECONDS`).
+	 */
+	loadFromDisk(worktreeId: string): void;
 	/** Close the file of a worktree, which hides its File tab and shows the tab it was opened from. With unsaved edits, asks first. */
 	closeFile(worktreeId: string): void;
 	/** Show the open file rendered or as its source. Any draft stays, and shows in either. Rendered drops a place to go to, as it has no lines. */
@@ -370,7 +375,7 @@ export interface AppStore {
 	/**
 	 * The editor's undo history, caret, and scroll for the open file of a
 	 * worktree, kept outside the state so typing does not render the window.
-	 * It is forgotten with the draft: on Discard, Read again, closing the
+	 * It is forgotten with the draft: on Discard, Load from disk, closing the
 	 * file, opening another, and when the worktree leaves the list.
 	 */
 	fileEditMemory(worktreeId: string, path: string): FileEditMemory;
@@ -919,6 +924,9 @@ export const BACKUP_READ_SPACING_MS = 15_000;
 /** As `BACKUP_READ_SPACING_MS`, for arenas: listing them asks Git about every attempt. */
 export const ARENA_READ_SPACING_MS = 15_000;
 
+/** How often the open file of the File tab that shows is checked on disk, so an agent's edit shows by itself. */
+export const FILE_CHECK_MILLISECONDS = 2000;
+
 /** The part of a request that names a new worktree's agent: a saved one, or a workflow's, with the pick it falls back to. */
 function agentRequest(agent: SessionAgent): Pick<OpenTerminalRequest, "agent" | "workflowAgent"> {
 	if (agent.kind === "saved") return { agent: agent.name };
@@ -1128,7 +1136,24 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		attend();
 		noteForcePush();
 		followFileTree();
+		followOpenFile();
 	}
+
+	/*
+	 * The open file of the File tab that shows is checked on disk (see
+	 * docs/architecture.md, "The file viewer"): at once when it comes into
+	 * view, then every `FILE_CHECK_MILLISECONDS` after the last check
+	 * answered, through `readFileStamp`, which only looks at the file's
+	 * metadata. A new stamp reads the file, and `readOpenFile` decides what
+	 * changes. `checkedFile` is the file that shows and its last stamp; it
+	 * starts from the stamp `readOpenFile` took before its latest read
+	 * (`stampsRead`, by worktree), so a file read just now is not read again.
+	 */
+	const stampsRead = new Map<string, { key: string; stamp: string }>();
+	let checkedFile: { key: string; worktreeId: string; stamp: string | null } | null = null;
+	let cancelFileCheck: (() => void) | null = null;
+	let checkingFile = false;
+	let checkFileSoon = false;
 
 	/*
 	 * The file explorer (see docs/architecture.md, "File explorer"). Each
@@ -1834,6 +1859,15 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		let result: WorktreeFileResult;
 		// A link in the worktree that leads out opens its target, read-only, as a file outside it.
 		let leadsTo: string | null = null;
+		// The stamp before the read, so the first check of the file finds it unchanged since, or reads it once more.
+		const check = fileCheckOf(worktreeId, view);
+		if (check !== null) {
+			try {
+				stampsRead.set(worktreeId, { key: check.key, stamp: await engine.readFileStamp(check.request) });
+			} catch {
+				stampsRead.delete(worktreeId);
+			}
+		}
 		try {
 			if (view.outside) {
 				result = await engine.readFileOutside({ path: view.path });
@@ -1848,23 +1882,113 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			result = { outcome: "failed", message: unheard(`the file ${leadsTo ?? view.path}`, error) };
 		}
 		const now = state.files[worktreeId];
-		if (fileTickets.get(worktreeId) !== ticket || !now || now.path !== view.path || now.outside !== view.outside || now.worktreePath !== view.worktreePath) return;
-		// Editing started while this read was on its way: the text the draft started from stays what a save checks the file
-		// against, so newer text on disk is reported as a change, never written over.
-		if (now.draft !== null && view.draft === null) return;
-		if (leadsTo !== null) {
-			// The file is now a link that leads out: its target shows read-only in its place, and a draft, which held nothing
-			// unsaved as reading again asked first, goes with the editor.
-			forgetEditMemory(worktreeId);
-			const goTo = fileText({ result }) === null ? null : now.goTo;
-			update({ files: { ...state.files, [worktreeId]: { ...now, path: leadsTo, outside: true, mode: openFileMode(leadsTo, goTo), draft: null, result, goTo } } });
+		// A save started or answered since this read began (it takes a ticket too): its answer says what the file is.
+		if (fileTickets.get(worktreeId) !== ticket || !now || now.saving || now.path !== view.path || now.outside !== view.outside || now.worktreePath !== view.worktreePath) return;
+		// A read that failed, or a worktree not listed for a moment, says nothing new about the file: the next check reads
+		// again, and the text shown, and unsaved edits, stay. Only a file never read yet shows why.
+		if (result.outcome === "failed" || result.outcome === "not-listed") {
+			forgetStamp(worktreeId);
+			if (now.result?.outcome === "read" || hasUnsavedEdits(now)) return;
+		}
+		// The same as shown: nothing is loaded into the editor again. The disk is back to what the edits started from.
+		if (sameFileResult(now.result, result)) {
+			if (now.diskChange !== null) changeFile(worktreeId, { diskChange: null });
 			return;
 		}
-		// With no draft, the editor shows the file as read: a new read makes a new editor, so it never shows text older than
-		// what a save checks the file against.
-		if (now.draft === null) forgetEditMemory(worktreeId);
+		// Unsaved edits are never touched by what happened on disk: the file as read stays what a save checks against, so
+		// newer text is reported as a change, never written over, and the File tab offers Load from disk and Save over it.
+		if (hasUnsavedEdits(now)) {
+			const diskChange = result.outcome === "missing" ? "deleted" : "changed";
+			if (now.diskChange !== diskChange) changeFile(worktreeId, { diskChange });
+			return;
+		}
+		if (leadsTo !== null) {
+			// The file is now a link that leads out: its target shows read-only in its place, and a draft, which holds nothing
+			// unsaved, goes with the editor.
+			forgetEditMemory(worktreeId);
+			const goTo = fileText({ result }) === null ? null : now.goTo;
+			update({ files: { ...state.files, [worktreeId]: { ...now, path: leadsTo, outside: true, mode: openFileMode(leadsTo, goTo), draft: null, diskChange: null, result, goTo } } });
+			return;
+		}
+		// Nothing unsaved: the new text shows in place. The editor's memory stays, so the editor keeps its caret line, scroll,
+		// and search (TextEditor follows `base`). A draft, or Markdown's Edit, follows the file while it can be edited.
 		// A file shown as a notice, such as binary or too large, has no lines to go to.
-		update({ files: { ...state.files, [worktreeId]: { ...now, result, ...(fileText({ result }) === null ? { goTo: null } : {}) } } });
+		const shown: FileView = { ...now, result, diskChange: null, saveProblem: null, ...(fileText({ result }) === null ? { goTo: null } : {}) };
+		const editing = now.draft !== null || (isMarkdownPath(now.path) && now.mode === "edit");
+		const draft = editing && canEditFile(shown) ? editableFileText(shown) : null;
+		update({ files: { ...state.files, [worktreeId]: { ...shown, draft } } });
+	}
+
+	/** Forget the stamp a worktree's open file was last checked or read at, so its next check reads it again. */
+	function forgetStamp(worktreeId: string): void {
+		stampsRead.delete(worktreeId);
+		if (checkedFile?.worktreeId === worktreeId) checkedFile = { ...checkedFile, stamp: null };
+	}
+
+	/** What checks an open file on disk, and a key that names it; null for a path that steps out of the worktree, which is never read. */
+	function fileCheckOf(worktreeId: string, view: FileView): { key: string; request: WorktreeFileRequest | OutsideFileRequest } | null {
+		if (!view.outside && relativePathProblem(view.path) !== null) return null;
+		const request = view.outside ? { path: view.path } : { repository: view.repository, worktree: view.worktreePath, path: view.path };
+		return { key: JSON.stringify([worktreeId, view.repository, view.worktreePath, view.path, view.outside]), request };
+	}
+
+	/** The open file of the File tab that shows, while the window shows, with what checks it; null when none does. */
+	function shownFile(): { key: string; worktreeId: string; request: WorktreeFileRequest | OutsideFileRequest } | null {
+		if (!attending || !windowState.visible || state.tab !== "file" || state.board !== null) return null;
+		const worktreeId = state.selection?.worktree;
+		const view = worktreeId === undefined ? undefined : state.files[worktreeId];
+		// Not while the first read runs.
+		if (worktreeId === undefined || !view || view.result === null) return null;
+		const check = fileCheckOf(worktreeId, view);
+		return check === null ? null : { ...check, worktreeId };
+	}
+
+	/** Check the shown file at once when another one shows, or it comes into view; stop checking while none shows. */
+	function followOpenFile(): void {
+		const shown = shownFile();
+		if (shown?.key === checkedFile?.key) return;
+		const read = shown === null ? undefined : stampsRead.get(shown.worktreeId);
+		checkedFile = shown === null ? null : { key: shown.key, worktreeId: shown.worktreeId, stamp: read?.key === shown.key ? read.stamp : null };
+		cancelFileCheck?.();
+		cancelFileCheck = null;
+		if (shown === null) return;
+		if (checkingFile) checkFileSoon = true;
+		else void checkOpenFile();
+	}
+
+	/**
+	 * One check of the shown file: its stamp, and a read when the stamp is new.
+	 * An engine that did not answer keeps the stamp, so it reads nothing. The
+	 * next check is at least `FILE_CHECK_MILLISECONDS` after this one ended,
+	 * and ten times as long as it took, so a slow disk is not kept busy.
+	 */
+	async function checkOpenFile(): Promise<void> {
+		cancelFileCheck = null;
+		const shown = shownFile();
+		if (shown === null || checkingFile) return;
+		checkingFile = true;
+		const began = Date.now();
+		let stamp: string | null = null;
+		try {
+			stamp = await engine.readFileStamp(shown.request);
+		} catch {
+			// Not heard: the next check asks again.
+		}
+		checkingFile = false;
+		const view = state.files[shown.worktreeId];
+		// A save under way changes the file itself: the stamp is not kept, so the next check after it reads.
+		if (stamp !== null && checkedFile?.key === shown.key && stamp !== checkedFile.stamp && view && !view.saving) {
+			checkedFile = { key: shown.key, worktreeId: shown.worktreeId, stamp };
+			void readOpenFile(shown.worktreeId);
+		}
+		if (checkFileSoon) {
+			checkFileSoon = false;
+			void checkOpenFile();
+			return;
+		}
+		if (shownFile() !== null && cancelFileCheck === null) {
+			cancelFileCheck = schedule(() => void checkOpenFile(), Math.max(FILE_CHECK_MILLISECONDS, (Date.now() - began) * 10));
+		}
 	}
 
 	/**
@@ -1911,7 +2035,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const goTo = wanted === null ? null : place;
 		const view: FileView = {
 			repository: selection.repository, worktreePath: worktree.path, path: shownPath, outside: outside !== null, from, result: wanted === null ? outsideResult(path) : null,
-			mode: openFileMode(shownPath, goTo), draft: null, saving: false, saveProblem: null, goTo,
+			mode: openFileMode(shownPath, goTo), draft: null, saving: false, saveProblem: null, diskChange: null, goTo,
 		};
 		update({ selection, board: null, files: { ...state.files, [worktreeId]: view }, tab: "file" });
 		if (wanted !== null) void readOpenFile(worktreeId);
@@ -1925,12 +2049,14 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		update(shown ? { files: others, tab: view.from } : { files: others });
 	}
 
-	function readFileAgain(worktreeId: string): void {
+	function loadFromDisk(worktreeId: string): void {
 		const view = state.files[worktreeId];
-		if (!view || !mayDropDraft(worktreeId, { kind: "read-again" })) return;
-		// Reading again drops the draft, which held nothing unsaved, and leaves edit mode.
+		if (!view || view.saving || !mayDropDraft(worktreeId, { kind: "load" })) return;
+		// Loading drops the draft, which holds nothing unsaved now, and leaves edit mode; a new editor starts from the file.
 		forgetEditMemory(worktreeId);
-		if (view.draft !== null || view.mode === "edit" || view.saveProblem !== null) changeFile(worktreeId, { draft: null, mode: view.mode === "edit" ? initialFileMode(view.path) : view.mode, saveProblem: null });
+		if (view.draft !== null || view.mode === "edit" || view.saveProblem !== null || view.diskChange !== null) {
+			changeFile(worktreeId, { draft: null, mode: view.mode === "edit" ? initialFileMode(view.path) : view.mode, saveProblem: null, diskChange: null });
+		}
 		void readOpenFile(worktreeId);
 	}
 
@@ -1950,6 +2076,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		if (!view) return;
 		forgetEditMemory(worktreeId);
 		changeFile(worktreeId, { draft: null, saveProblem: null, mode: view.mode === "edit" ? initialFileMode(view.path) : view.mode });
+		// The file changed on disk meanwhile: with nothing unsaved now, it shows as it is there.
+		if (view.diskChange !== null) void readOpenFile(worktreeId);
 	}
 
 	async function saveFile(worktreeId: string, options: { overwrite?: boolean } = {}): Promise<boolean> {
@@ -1964,13 +2092,19 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		}
 		const draft = view.draft;
 		const text = textToSave(original ?? "", draft);
+		// A read on its way may be from before the write or after it: the save's answer says what the file is.
+		const dropReads = () => fileTickets.set(worktreeId, (fileTickets.get(worktreeId) ?? 0) + 1);
+		dropReads();
 		changeFile(worktreeId, { saving: true, saveProblem: null });
 		let answer: Awaited<ReturnType<Engine["writeWorktreeFile"]>>;
 		try {
 			answer = await engine.writeWorktreeFile({ repository: view.repository, worktree: view.worktreePath, path: view.path, text, expected: options.overwrite ? null : original });
 		} catch (error) {
-			answer = { outcome: "failed", message: `${unheard(`the save of ${view.path}`, error)} It may or may not have been saved; read it again to see.` };
+			answer = { outcome: "failed", message: `${unheard(`the save of ${view.path}`, error)} It may or may not have been saved.` };
 		}
+		dropReads();
+		// Nothing written: a read dropped while the save ran may have had news, so the next check reads again.
+		if (answer.outcome !== "saved") forgetStamp(worktreeId);
 		// The row's counts follow at once, also when the file was closed meanwhile. Not waited for: the save has ended.
 		if (answer.outcome === "saved" && state.repositories.some(repository => repository.path === view.repository)) void reloadOne(view.repository);
 		const now = state.files[worktreeId];
@@ -1983,7 +2117,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	/** Take the step a question about unsaved edits held back, now that the draft may go. */
 	function continueAfterDraft(worktreeId: string, then: UnsavedFileStep): void {
 		if (then.kind === "close") closeFile(worktreeId);
-		else if (then.kind === "read-again") readFileAgain(worktreeId);
+		else if (then.kind === "load") loadFromDisk(worktreeId);
 		else openFile(worktreeId, then.path, then.at);
 	}
 
@@ -2353,7 +2487,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const paths = discardPaths(targets);
 		const open = state.files[view.worktree];
 		if (result.outcome === "written" && open && open.worktreePath === worktree.path && paths.includes(open.path)) {
-			// Not through readFileAgain, which keeps unsaved edits while a dialog is open: the person chose to lose them.
+			// Not through loadFromDisk, which keeps unsaved edits while a dialog is open: the person chose to lose them.
 			forgetEditMemory(view.worktree);
 			changeFile(view.worktree, { draft: null, saveProblem: null, mode: open.mode === "edit" ? initialFileMode(open.path) : open.mode });
 			void readOpenFile(view.worktree);
@@ -3961,6 +4095,9 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			return () => {
 				attending = false;
 				for (const stop of stops) stop();
+				cancelFileCheck?.();
+				cancelFileCheck = null;
+				checkedFile = null;
 			};
 		},
 		windowChanged(next) {
@@ -4151,7 +4288,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		writePullRequest,
 		stopRun,
 		openFile,
-		readFileAgain,
+		loadFromDisk,
 		closeFile,
 		showFileAs: (worktreeId, mode) => changeFile(worktreeId, mode === "rendered" ? { mode, goTo: null } : { mode }),
 		wentTo: (worktreeId, goTo) => {
@@ -4161,7 +4298,11 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		changeDraft: (worktreeId, text) => {
 			const view = state.files[worktreeId];
 			// A file other than Markdown is edited where it shows, so its first change starts the draft.
-			if (view && (view.draft !== null || (view.mode === "edit" && canEditFile(view)))) changeFile(worktreeId, { draft: text });
+			if (!view || !(view.draft !== null || (view.mode === "edit" && canEditFile(view)))) return;
+			changeFile(worktreeId, { draft: text });
+			// Edits undone while the file changed on disk: with nothing unsaved now, it shows as it is there.
+			const now = state.files[worktreeId];
+			if (now?.diskChange && !hasUnsavedEdits(now)) void readOpenFile(worktreeId);
 		},
 		saveFile,
 		discardEdits,

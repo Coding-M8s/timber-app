@@ -724,6 +724,18 @@ export interface Engine {
 	 */
 	readFileOutside(request: OutsideFileRequest): Promise<WorktreeFileResult>;
 	/**
+	 * A short text that changes when the file a `readWorktreeFile` or
+	 * `readFileOutside` request names changes on disk, so the File tab can
+	 * keep up with the open file without reading it again and again: its
+	 * device, inode, size, and modification and change times, or what kind
+	 * of refusal it would get ("missing", "not-a-file", "outside" with the
+	 * real target, "failed"). It runs often, so it does not ask Timber or
+	 * Git and reads no bytes of the file; the read that follows a new stamp
+	 * still goes through every check of `readWorktreeFile`. Opaque: never
+	 * shown, never logged. Writes nothing. Safe to call again.
+	 */
+	readFileStamp(request: WorktreeFileRequest | OutsideFileRequest): Promise<string>;
+	/**
 	 * Save new text into one file of a worktree, from the File tab's edit
 	 * mode, under the same rules as `readWorktreeFile`: only a plain file
 	 * that is there already, inside the worktree, links included. Writes only

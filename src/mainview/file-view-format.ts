@@ -94,6 +94,23 @@ export function outsideResult(path: string): WorktreeFileResult {
 	return { outcome: "outside", path, message: `${path} is not inside this worktree.` };
 }
 
+/**
+ * Whether two reads of a file answered the same, so the second changes
+ * nothing on screen: the same outcome and text, or the same kind of
+ * content or refusal with the same words.
+ */
+export function sameFileResult(left: WorktreeFileResult | null, right: WorktreeFileResult): boolean {
+	if (left === null || left.outcome !== right.outcome) return false;
+	if (left.outcome === "read" && right.outcome === "read") {
+		const [a, b] = [left.content, right.content];
+		if (left.path !== right.path || a.kind !== b.kind) return false;
+		if (a.kind === "text" && b.kind === "text") return a.text === b.text;
+		if (a.kind === "too-large" && b.kind === "too-large") return a.bytes === b.bytes && a.lines === b.lines;
+		return true;
+	}
+	return JSON.stringify(left) === JSON.stringify(right);
+}
+
 /** The text of the file as last read or saved, or null when it is not text. */
 export function fileText(view: Pick<FileView, "result">): string | null {
 	const { result } = view;
@@ -158,6 +175,13 @@ export function hasUnsavedEdits(view: Pick<FileView, "draft" | "result">): boole
 	return text === null || text !== view.draft;
 }
 
+/** What the File tab says when the file changed on disk, or was deleted, while it held unsaved edits; null otherwise. */
+export function describeDiskChange(view: Pick<FileView, "path" | "diskChange">): string | null {
+	if (view.diskChange === "changed") return `${view.path} changed on disk since you started editing. Your edits are kept here, and the text on disk is not shown.`;
+	if (view.diskChange === "deleted") return `${view.path} was deleted on disk since you started editing. Your edits are kept here, but cannot be saved while the file is gone.`;
+	return null;
+}
+
 /** The File tab's tooltip: the open file's path, and that it has unsaved edits while it does. */
 export function fileTabTitle(view: Pick<FileView, "path" | "draft" | "result">): string {
 	return hasUnsavedEdits(view) ? `${view.path} (unsaved)` : view.path;
@@ -183,7 +207,7 @@ export function describeUnsavedFiles(paths: readonly string[]): string | null {
 /** The question about one file's unsaved edits, by what would drop them. */
 export function describeUnsavedFileQuestion(path: string, then: UnsavedFileStep): { title: string; text: string } {
 	const name = fileName(path);
-	const what = then.kind === "close" ? "Closing it" : then.kind === "read-again" ? "Reading it again" : `Opening ${fileName(then.path)} in its place`;
+	const what = then.kind === "close" ? "Closing it" : then.kind === "load" ? "Loading it from disk" : `Opening ${fileName(then.path)} in its place`;
 	return { title: `Save ${name}?`, text: `${path} has edits that are not saved. ${what} drops them unless you save first.` };
 }
 
@@ -191,7 +215,8 @@ export function describeUnsavedFileQuestion(path: string, then: UnsavedFileStep)
 export function afterSave(view: FileView, answer: WorktreeFileWriteResult): FileView {
 	switch (answer.outcome) {
 		case "saved":
-			return { ...view, saving: false, saveProblem: null, result: { outcome: "read", path: answer.path, content: answer.content } };
+			// The file is what was just saved, so what happened on disk before is behind it.
+			return { ...view, saving: false, saveProblem: null, diskChange: null, result: { outcome: "read", path: answer.path, content: answer.content } };
 		case "changed":
 			return { ...view, saving: false, saveProblem: { kind: "changed", message: answer.message } };
 		case "too-large":

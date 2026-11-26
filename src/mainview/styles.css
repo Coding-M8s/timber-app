@@ -8085,6 +8085,11 @@ pre:focus-visible {
 	margin: 0;
 }
 
+/* The file changed on disk while it holds unsaved edits: news, not an error, so in the text's own color. */
+.file-disk-change {
+	color: var(--text);
+}
+
 .file-save-choices {
 	display: flex;
 	flex-wrap: wrap;

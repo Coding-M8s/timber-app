@@ -55,6 +55,31 @@ export function indentUnitOf(text: string): string {
 }
 
 /**
+ * The change that turns `before` into `after`: only the part between what
+ * they start and end with alike, so the lines around it keep their
+ * coloring and nothing else is redrawn. Null when they are the same.
+ */
+export function changeBetween(before: string, after: string): { from: number; to: number; insert: string } | null {
+	if (before === after) return null;
+	const most = Math.min(before.length, after.length);
+	let start = 0;
+	while (start < most && before.charCodeAt(start) === after.charCodeAt(start)) start++;
+	let end = 0;
+	while (end < most - start && before.charCodeAt(before.length - 1 - end) === after.charCodeAt(after.length - 1 - end)) end++;
+	return { from: start, to: before.length - end, insert: after.slice(start, after.length - end) };
+}
+
+/**
+ * Where the caret goes in a file read again from disk: the same line and
+ * column as before, from 1, each kept inside the new text, so a file that
+ * got shorter puts it on its last line, at the end of a line that did.
+ */
+export function caretAfterReload(doc: Text, line: number, column: number): number {
+	const kept = doc.line(Math.min(Math.max(line, 1), doc.lines));
+	return kept.from + Math.min(Math.max(column, 1) - 1, kept.length);
+}
+
+/**
  * What the editor keeps of one open file between showings, beside the draft
  * in the store: the whole editor state (text, undo history, selection,
  * search) and the scroll. Kept out of the app's state, so typing changes

@@ -670,6 +670,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			// Reads one file, only inside a worktree Timber lists, links included (see ./worktree-files.ts). It holds file contents: never log it.
 			readWorktreeFile: request => worktreeFiles.read(request),
 			readFileOutside: request => worktreeFiles.readOutside(request),
+			readFileStamp: request => worktreeFiles.stamp(request),
 			// Writes only that file, in place, and only a file that is there (see ./worktree-files.ts). It holds file contents: never log it.
 			writeWorktreeFile: request => worktreeFiles.write(request),
 			// Lists one folder, only inside a worktree Timber lists, never following a link (see ./worktree-folders.ts). Git runs only to ask what it ignores.

@@ -2,7 +2,7 @@ import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { blockComment, copyLineDown, copyLineUp, defaultKeymap, deleteLine, history, historyKeymap, indentWithTab, lineComment, moveLineDown, moveLineUp, toggleBlockComment } from "@codemirror/commands";
 import { bracketMatching, indentUnit } from "@codemirror/language";
 import { SearchQuery, closeSearchPanel, findNext, findPrevious, getSearchQuery, gotoLine, search, searchKeymap, searchPanelOpen, selectNextOccurrence, selectSelectionMatches, setSearchQuery } from "@codemirror/search";
-import { Compartment, EditorState, type Extension, StateEffect, Text } from "@codemirror/state";
+import { Annotation, Compartment, EditorState, type Extension, StateEffect, Text, Transaction, type TransactionSpec } from "@codemirror/state";
 import { EditorView, type KeyBinding, drawSelection, highlightActiveLine, highlightActiveLineGutter, highlightSpecialChars, keymap, lineNumbers } from "@codemirror/view";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -10,7 +10,7 @@ import { codeHighlighting, describeLanguage, pickLanguage } from "../editor-lang
 import { hasUnsavedEdits } from "../file-view-format";
 import { useStore } from "../store/react";
 import type { FilePlace } from "../store/state";
-import { MAX_MATCHES, describeCaret, describeLineCount, describeMatches, indentUnitOf, placeOffset } from "../text-editor-format";
+import { MAX_MATCHES, caretAfterReload, changeBetween, describeCaret, describeLineCount, describeMatches, indentUnitOf, placeOffset } from "../text-editor-format";
 
 /** After this long without typing, the text goes to the store. */
 const COMMIT_MILLISECONDS = 150;
@@ -61,6 +61,30 @@ function countMatches(state: EditorState): { count: number; current: number } {
 	return { count, current };
 }
 
+/** Marks the change that shows the file as it is on disk now, which gives the store nothing. */
+const fromDisk = Annotation.define<boolean>();
+
+/**
+ * What shows `text`, the file as read again from disk, in place of the
+ * editor's text: only the part that differs, with the caret on the same
+ * line and column, kept inside the new text. Undo starts again from it:
+ * the history in `historySlot` is dropped and made anew, since steps
+ * recorded against the old text would put stray text into the new one.
+ * Null when the editor shows that text already.
+ */
+export function reloadFromDisk(state: EditorState, text: string, historySlot: Compartment): TransactionSpec[] | null {
+	const change = changeBetween(state.doc.toString(), text);
+	if (change === null) return null;
+	const head = state.selection.main.head;
+	const line = state.doc.lineAt(head);
+	const after = state.doc.replace(change.from, change.to, Text.of(change.insert.split("\n")));
+	const anchor = caretAfterReload(after, line.number, head - line.from + 1);
+	return [
+		{ changes: change, selection: { anchor }, effects: historySlot.reconfigure([]), annotations: [fromDisk.of(true), Transaction.addToHistory.of(false)] },
+		{ effects: historySlot.reconfigure(history()), annotations: fromDisk.of(true) },
+	];
+}
+
 const caretOf = (state: EditorState) => {
 	const head = state.selection.main.head;
 	const line = state.doc.lineAt(head);
@@ -92,7 +116,7 @@ const caretOf = (state: EditorState) => {
 export function TextEditor({ worktreeId, path, draft, base, editable, saving, font, goTo, onSave }: {
 	worktreeId: string;
 	path: string;
-	/** The text when the editor appears: the store's draft, or the file as read while there is none. */
+	/** The text to show: the store's draft, or the file as read while there is none. Taken when the editor appears, and again when the file is read again with nothing unsaved. */
 	draft: string;
 	/** The file as last read or saved, with plain new lines: the draft differs from it while unsaved. */
 	base: string;
@@ -121,6 +145,9 @@ export function TextEditor({ worktreeId, path, draft, base, editable, saving, fo
 	const fieldTakesKeyboard = useRef(true);
 	const [readOnly] = useState(() => new Compartment());
 	const [languageSlot] = useState(() => new Compartment());
+	const [historySlot] = useState(() => new Compartment());
+	// The file as read that the editor's text was last measured against, to tell when it was read again with new text.
+	const shownBase = useRef(baseText);
 	// The language is picked once, from the name and the text the editor starts with.
 	const [language] = useState(() => pickLanguage(path, { lines: draft.split("\n").length, length: draft.length }));
 	const [languageProblem, setLanguageProblem] = useState<string | null>(null);
@@ -155,7 +182,7 @@ export function TextEditor({ worktreeId, path, draft, base, editable, saving, fo
 			highlightSpecialChars(),
 			highlightActiveLine(),
 			drawSelection(),
-			history(),
+			historySlot.of(history()),
 			indentUnit.of(indentUnitOf(draft)),
 			EditorState.tabSize.of(4),
 			readOnly.of(EditorState.readOnly.of(!editable || saving)),
@@ -194,7 +221,12 @@ export function TextEditor({ worktreeId, path, draft, base, editable, saving, fo
 			EditorView.updateListener.of(update => {
 				const { state } = update;
 				if (update.docChanged || update.selectionSet) setCaret(caretOf(state));
-				if (update.docChanged) {
+				if (update.docChanged && update.transactions.some(transaction => transaction.annotation(fromDisk))) {
+					// The file as it is on disk now, which the store holds already: nothing to give it.
+					if (timer !== null) clearTimeout(timer);
+					timer = null;
+					committed = state.doc;
+				} else if (update.docChanged) {
 					// The file turning unsaved, or saved again, goes to the store at once, so quitting asks about it. What the store
 					// holds now is the measure, since a save changes the file without a change here.
 					const unsaved = !state.doc.eq(latest.current.baseText);
@@ -210,10 +242,16 @@ export function TextEditor({ worktreeId, path, draft, base, editable, saving, fo
 			}),
 		];
 
-		// The state kept from the last showing, undo history and all, while it still holds the draft. It takes this editor's
-		// handlers in place of the last one's.
-		const kept = memory.state !== null && memory.state.doc.toString() === draft ? memory.state : null;
-		const state = kept ? kept.update({ effects: StateEffect.reconfigure.of(extensions) }).state : EditorState.create({ doc: draft, extensions });
+		// The state kept from the last showing, undo history, caret, and search and all, with this editor's handlers in place of
+		// the last one's. It holds the draft, which was given to the store as the last editor went, unless the file was read
+		// again from disk meanwhile with nothing unsaved: then the new text goes into it in place, as while it shows.
+		let state: EditorState;
+		if (memory.state !== null) {
+			state = memory.state.update({ effects: StateEffect.reconfigure.of(extensions) }).state;
+			for (const spec of reloadFromDisk(state, draft, historySlot) ?? []) state = state.update(spec).state;
+		} else {
+			state = EditorState.create({ doc: draft, extensions });
+		}
 		const editor = new EditorView({ state, parent });
 		committed = state.doc;
 		commitNow.current = () => commit(editor);
@@ -246,6 +284,22 @@ export function TextEditor({ worktreeId, path, draft, base, editable, saving, fo
 		};
 		// Made once as the editor appears: later drafts come from this editor itself.
 	}, []);
+
+	// The file read again from disk with new text while the editor held nothing unsaved: the new text shows in place,
+	// with the caret line, scroll, and search kept. In a layout effect, so no keystroke lands between the store's new text
+	// and the editor's. A save changes the file to the editor's own text, which is left as it is. Before the place a link
+	// asks for, so a link that lands with new text goes to its line in the new text.
+	useLayoutEffect(() => {
+		const before = shownBase.current;
+		shownBase.current = baseText;
+		if (view === null || before === baseText || !view.state.doc.eq(before)) return;
+		const specs = reloadFromDisk(view.state, draft, historySlot);
+		if (specs === null) return;
+		const { scrollTop, scrollLeft } = view.scrollDOM;
+		for (const spec of specs) view.dispatch(spec);
+		view.scrollDOM.scrollTop = scrollTop;
+		view.scrollDOM.scrollLeft = scrollLeft;
+	}, [baseText, view]);
 
 	// Before paint, so the scroll kept from the last showing never flashes first.
 	useLayoutEffect(() => {

@@ -20,6 +20,8 @@ export interface WorktreeFiles {
 	/** A file anywhere on disk, by its complete path, read-only (see `readFileOutside` in src/shared/engine.ts). */
 	readOutside(request: OutsideFileRequest): Promise<WorktreeFileResult>;
 	write(request: WorktreeFileWriteRequest): Promise<WorktreeFileWriteResult>;
+	/** What the file is on disk now, as a short text that changes with it (see `readFileStamp` in src/shared/engine.ts). */
+	stamp(request: WorktreeFileRequest | OutsideFileRequest): Promise<string>;
 }
 
 const codeOf = (error: unknown) => (error as NodeJS.ErrnoException | null)?.code;
@@ -158,6 +160,52 @@ async function readPlainFile(real: string, path: string, gone: string): Promise<
 }
 
 /**
+ * The stamp of a file at `full`, links followed: its device, inode, size,
+ * and modification and change times in nanoseconds, or the kind of refusal
+ * a read would get. With `root`, a real path outside it is "outside", with
+ * that path, as a read answers a link that leads out.
+ */
+async function stampOf(full: string, root: string | null): Promise<string> {
+	let real: string;
+	try {
+		real = await realpath(full);
+	} catch (error) {
+		const code = codeOf(error);
+		return code === "ENOENT" || code === "ENOTDIR" ? "missing" : "failed";
+	}
+	if (root !== null && (!inside(root, real) || real === root)) return `outside:${real}`;
+	try {
+		const found = await stat(real, { bigint: true });
+		if (!found.isFile()) return "not-a-file";
+		return `file:${found.dev}:${found.ino}:${found.size}:${found.mtimeNs}:${found.ctimeNs}`;
+	} catch (error) {
+		return codeOf(error) === "ENOENT" ? "missing" : "failed";
+	}
+}
+
+/**
+ * The stamp of the file a read would read. It runs every few seconds while
+ * a file shows, so it does not ask Timber whether the worktree is listed,
+ * as a read does: it keeps to the path rules (relative, never stepping
+ * out, complete for a file outside) and only looks at the file's metadata.
+ * The read a new stamp leads to goes through `locate` as always.
+ */
+async function stampFile(request: WorktreeFileRequest | OutsideFileRequest): Promise<string> {
+	const asked = request as Partial<WorktreeFileRequest> | null;
+	if (typeof asked?.path !== "string" || asked.path.includes("\0")) return "failed";
+	if (!("worktree" in request)) return isCompletePath(asked.path) && isAbsolute(asked.path) ? stampOf(asked.path, null) : "failed";
+	const { worktree, path } = request;
+	if (typeof worktree !== "string" || !isAbsolute(worktree) || relativePathProblem(path) !== null) return "failed";
+	let root: string;
+	try {
+		root = await realpath(worktree);
+	} catch {
+		return "failed";
+	}
+	return stampOf(`${worktree}${worktree.endsWith(sep) ? "" : sep}${path.split("/").join(sep)}`, root);
+}
+
+/**
  * One file of a worktree, read from disk, or saved there.
  *
  * - Both go through `locate`, so only a plain file inside a listed worktree,
@@ -183,6 +231,8 @@ export function createWorktreeFiles(dependencies: WorktreeFilesDependencies): Wo
 			if (!located.ok) return located.refusal;
 			return readPlainFile(located.real, request.path, `${request.path} is not in this worktree. It may have been moved or deleted.`);
 		},
+
+		stamp: stampFile,
 
 		async readOutside(request) {
 			const located = await locateOutside((request as Partial<OutsideFileRequest> | null)?.path);

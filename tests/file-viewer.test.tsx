@@ -116,8 +116,8 @@ describe("the File tab", () => {
 		expect(await store.saveFile(FEATURE.id)).toBe(false);
 		expect(writes).toBe(0);
 
-		// Read again reads it outside again; opening it again shows it as it is.
-		store.readFileAgain(FEATURE.id);
+		// Load from disk reads it outside again; opening it again shows it as it is.
+		store.loadFromDisk(FEATURE.id);
 		await settle();
 		expect(outsideReads).toBe(2);
 		store.openFile(FEATURE.id, `${MOCK_NOTES_FOLDER}/run.log`);
@@ -187,13 +187,14 @@ describe("the File tab", () => {
 		await settle();
 		hold = true;
 		engine.setWorktreeFile(FEATURE.path, "report.txt", { kind: "link", target: `${MOCK_NOTES_FOLDER}/run.log` });
-		store.readFileAgain(FEATURE.id);
+		store.loadFromDisk(FEATURE.id);
 		await settle();
 		store.changeDraft(FEATURE.id, "typed meanwhile\n");
 		release();
 		await settle();
 		await settle();
-		expect(store.getState().files[FEATURE.id]).toMatchObject({ path: "report.txt", outside: false, draft: "typed meanwhile\n" });
+		// The edits stay, and the File tab says the file changed on disk.
+		expect(store.getState().files[FEATURE.id]).toMatchObject({ path: "report.txt", outside: false, draft: "typed meanwhile\n", diskChange: "changed" });
 	});
 
 	test("still refuses a relative path that steps out of the worktree, without reading", async () => {
@@ -234,14 +235,14 @@ describe("the File tab", () => {
 		expect(render(store)).toContain("docs is a folder, not a file.");
 	});
 
-	test("Read again shows the file as it is now", async () => {
+	test("Load from disk shows the file as it is now", async () => {
 		const engine = createMockEngine();
 		engine.setWorktreeFile(FEATURE.path, "notes.md", "first\n");
 		const store = await started(engine);
 		store.openFile(FEATURE.id, "notes.md");
 		await settle();
 		engine.setWorktreeFile(FEATURE.path, "notes.md", "second\n");
-		store.readFileAgain(FEATURE.id);
+		store.loadFromDisk(FEATURE.id);
 		await settle();
 		expect(render(store)).toContain("second");
 	});
@@ -272,7 +273,7 @@ describe("the File tab", () => {
 	});
 
 	test("an open file leaves with its worktree", () => {
-		const state = { ...initialState, tab: "file" as const, selection: { repository: TIMBER, worktree: FEATURE.id }, repositories: [], files: { [FEATURE.id]: { repository: TIMBER, worktreePath: FEATURE.path, path: "a.md", outside: false, from: "workspace" as const, result: null, mode: "source" as const, draft: null, saving: false, saveProblem: null, goTo: null } } };
+		const state = { ...initialState, tab: "file" as const, selection: { repository: TIMBER, worktree: FEATURE.id }, repositories: [], files: { [FEATURE.id]: { repository: TIMBER, worktreePath: FEATURE.path, path: "a.md", outside: false, from: "workspace" as const, result: null, mode: "source" as const, draft: null, saving: false, saveProblem: null, diskChange: null, goTo: null } } };
 		expect(settleTabs(state)).toEqual({ files: {}, tab: "workspace" });
 		expect(settleTabs({ ...state, repositories: sampleRepositories })).toBeNull();
 	});
@@ -298,6 +299,6 @@ describe("describeFileNotice", () => {
 
 	test("names the tab after the file", () => {
 		expect(fileTabLabel(undefined)).toBe("File");
-		expect(fileTabLabel({ repository: TIMBER, worktreePath: FEATURE.path, path: "docs/plan.md", outside: false, from: "workspace", result: null, mode: "source", draft: null, saving: false, saveProblem: null, goTo: null })).toBe("plan.md");
+		expect(fileTabLabel({ repository: TIMBER, worktreePath: FEATURE.path, path: "docs/plan.md", outside: false, from: "workspace", result: null, mode: "source", draft: null, saving: false, saveProblem: null, diskChange: null, goTo: null })).toBe("plan.md");
 	});
 });

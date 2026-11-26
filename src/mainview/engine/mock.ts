@@ -1555,6 +1555,12 @@ export function createMockEngine(
 		async readFileOutside(request) {
 			return worktreeFiles.readOutside(request.path);
 		},
+		async readFileStamp(request) {
+			// The pretend disk has no times: the stamp is what a read would answer, so any change of the text or the kind counts.
+			if (!("worktree" in request)) return JSON.stringify(worktreeFiles.readOutside(request.path));
+			const listed = listedForChanges(request.repository, request.worktree);
+			return listed.ok ? JSON.stringify(worktreeFiles.read(listed.worktree.path, request.path, filesOf(listed.worktree))) : "not-listed";
+		},
 		async writeWorktreeFile(request) {
 			const listed = listedForChanges(request.repository, request.worktree);
 			if (!listed.ok) return { outcome: listed.outcome, message: listed.message.replace("No changes were read.", "Nothing was saved.").replace("so no changes were read", "so nothing was saved") };
