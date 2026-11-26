@@ -1252,7 +1252,19 @@ logins. The app never reads a tracker login and never signs in.
 - **Arena (Beta), a mode of New worktree:** the palette's New arena opens
   the dialog on it. A name or ticket key, the task, one or more groups of
   attempts (a tool with an optional model and effort, or a saved preset, and
-  how many runs), and an optional start point. The footer shows the exact
+  how many runs), and an optional start point. The tools are the agents the
+  Timber found runs natively, by their names in Settings, Agents (Codex,
+  Claude Code, Cursor CLI, and, with a Timber that lists them, Gemini CLI,
+  Grok Build, OpenCode, and GitHub Copilot CLI), then "Manual (no agent)",
+  then the presets. The chosen tool's mark sits before its select, and a
+  preset shows its tool's mark when that is one of these agents. Every tool
+  takes a model; Effort is off, saying "Not for this tool", for one Timber
+  cannot ask for an effort, and an effort typed goes when the group changes
+  to such a tool. Until the Timber's tools are read, the first time the mode
+  shows, only Codex, Claude Code, and Cursor CLI are offered; a group whose
+  tool is then not offered takes the first one offered, without its model. When the Timber's tools cannot be read, a line
+  under the groups says so, and only Codex, Claude Code, and Cursor CLI are
+  offered. The footer shows the exact
   `timber arena new ... --no-editor --no-agent --result-file` command, with
   `<task file>` where the task goes: the task reaches Timber only in a
   private temporary file and never appears in a command. Under it, the

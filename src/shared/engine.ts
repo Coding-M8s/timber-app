@@ -2,7 +2,7 @@ import type { AgentLocation } from "./agent-lookup";
 import type { AgentSignIn } from "./agent-sign-in";
 import type { AppInfo } from "./app-info";
 import type { AppUpdateInstallRequest, AppUpdateInstallResult, AppUpdateState } from "./app-update";
-import type { ArenaInspection, ArenaList, ArenaPresetList, NewArenaRequest, NewArenaResult, PickArenaRequest, PickArenaResult } from "./arenas";
+import type { ArenaInspection, ArenaList, ArenaPresetList, ArenaToolList, NewArenaRequest, NewArenaResult, PickArenaRequest, PickArenaResult } from "./arenas";
 import type { ChopList, ChopsRequest, RunChopRequest, RunChopResult } from "./chops";
 import type { BackupDeleteRequest, BackupDeleteResult, BackupList, BackupRestoreRequest, BackupRestoreResult } from "./backups";
 import type { Attention } from "./attention";
@@ -568,6 +568,14 @@ export interface Engine {
 	 * Read-only and safe to call again.
 	 */
 	listArenaPresets(repository: string): Promise<ArenaPresetList>;
+	/**
+	 * The native arena tools of the Timber found, read with `timber
+	 * __app-arena tools` in a repository in the list (./arenas.ts): each
+	 * `--tool` value, and whether it takes an effort and stays open. `older`
+	 * for a Timber without that action, which runs codex, claude, and cursor
+	 * only. Read-only and safe to call again.
+	 */
+	listArenaTools(repository: string): Promise<ArenaToolList>;
 	/**
 	 * Compare an arena's attempts with `timber arena pick <arena> --inspect
 	 * --json`: for each, commits since the arena's base, committed and

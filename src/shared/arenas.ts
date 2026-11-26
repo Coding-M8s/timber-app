@@ -1,3 +1,4 @@
+import { AGENTS, type AgentId } from "./agent-registry";
 import type { TimberFailure } from "./model";
 import { type Fields, isFields, isTextOrNull } from "./timber-ls";
 import { TASK_FILE_PLACEHOLDER, type TimberRun, failureOf } from "./timber-result";
@@ -60,7 +61,7 @@ export interface ArenaBase {
 export interface ArenaAttempt {
 	/** The exact label for launch and pick, such as `codex-1`. */
 	label: string;
-	/** `codex`, `claude`, `cursor`, `wrapper`, or `manual`, as Timber names it. */
+	/** A native tool such as `codex` or `gemini`, `wrapper`, or `manual`, as Timber names it. */
 	tool: string;
 	preset: string;
 	/** Null when the tool's default was used. */
@@ -405,9 +406,86 @@ export function readArenaInspection(stdout: string, stderr: string, exitCode: nu
 	return { state: "inspected", arena, base, winner: record.winner, attempts };
 }
 
-/** The coding tools an attempt group can name. A saved preset names its own. */
-export const ARENA_GROUP_TOOLS = ["codex", "claude", "cursor", "manual"] as const;
-export type ArenaGroupTool = typeof ARENA_GROUP_TOOLS[number];
+export const ARENA_TOOLS_ARGUMENTS = ["__app-arena", "tools"] as const;
+export const ARENA_TOOLS_COMMAND = `timber ${ARENA_TOOLS_ARGUMENTS.join(" ")}`;
+
+/** One native tool as `timber __app-arena tools` lists it, with only what the app reads. */
+export interface ArenaToolEntry {
+	/** The value for `--tool`, such as `gemini`. */
+	tool: string;
+	/** Whether Timber can ask this tool for an effort level. */
+	effort: boolean;
+	/** Whether the agent stays open after the task. Absent from older records, which means it does. */
+	interactive: boolean;
+}
+
+/**
+ * The native tools of the Timber found: those it lists, `older` for a
+ * Timber that has no `tools` action and runs only codex, claude, and cursor,
+ * or why the list could not be read.
+ */
+export type ArenaToolList =
+	| { state: "listed"; tools: ArenaToolEntry[] }
+	| { state: "older" }
+	| { state: "failed"; message: string };
+
+/** What a Timber with arenas for apps but no `__app-arena tools` runs natively, as Timber's contract says. */
+export const OLDER_ARENA_TOOLS: readonly ArenaToolEntry[] = ["codex", "claude", "cursor"].map(tool => ({ tool, effort: true, interactive: true }));
+
+/**
+ * Read what one run of `timber __app-arena tools` printed. Exit 0 is the
+ * list. Any other exit with nothing on standard output is an older Timber,
+ * as Timber's contract says to read it: its error text is never read. A run
+ * that was stopped, or a record that cannot be read, is a failure.
+ */
+export function readArenaTools(stdout: string, stderr: string, exitCode: number | null): ArenaToolList {
+	const failed = (message: string): ArenaToolList => ({ state: "failed", message });
+	const unreadable = (detail: string) => failed(`${ARENA_TOOLS_COMMAND} did not answer with a record this app can read: ${detail}.`);
+	if (exitCode === null) return failed(describeFailedRun(ARENA_TOOLS_COMMAND, stderr, exitCode));
+	if (exitCode !== 0) return stdout.trim() === "" ? { state: "older" } : failed(describeFailedRun(ARENA_TOOLS_COMMAND, stderr, exitCode));
+	const envelope = readEnvelope(stdout, ARENA_TOOLS_COMMAND, 1);
+	if (!envelope.ok) return envelope.problem === "version" ? failed(envelope.message) : unreadable(envelope.detail);
+	const tools = readAll(envelope.record.tools, value => {
+		if (!isFields(value) || !isFilled(value.tool) || typeof value.effort !== "boolean") return null;
+		if (value.interactive !== undefined && typeof value.interactive !== "boolean") return null;
+		return { tool: value.tool, effort: value.effort, interactive: value.interactive ?? true };
+	});
+	if (tools === null) return unreadable("a tool in it cannot be read");
+	if (new Set(tools.map(entry => entry.tool)).size !== tools.length) return unreadable("it lists a tool twice");
+	return { state: "listed", tools };
+}
+
+/** A tool an arena group offers: an agent of the registry that the Timber found runs natively. */
+export interface OfferedArenaTool {
+	tool: string;
+	agent: AgentId;
+	/** The agent's name, as Settings, Agents says it. */
+	name: string;
+	effort: boolean;
+}
+
+/**
+ * The tools an arena group offers, in Timber's order: each agent of the
+ * registry whose `arenaTool` the Timber found lists, and only one that stays
+ * open for the person, since every attempt runs in a session of its own. An
+ * older Timber, and a list that could not be read, offer what every Timber
+ * with arenas for apps runs.
+ */
+export function offeredArenaTools(list: ArenaToolList): OfferedArenaTool[] {
+	const entries = list.state === "listed" ? list.tools : OLDER_ARENA_TOOLS;
+	return entries.flatMap(entry => {
+		const agent = AGENTS.find(candidate => candidate.arenaTool === entry.tool);
+		if (agent === undefined || !entry.interactive) return [];
+		return [{ tool: entry.tool, agent: agent.id, name: agent.name, effort: entry.effort }];
+	});
+}
+
+/**
+ * The tools an attempt group can name in any Timber: the registry's arena
+ * tools and `manual`. Only the shape of a request is checked with it; which
+ * the Timber found runs is Timber's to say. A saved preset names its own.
+ */
+export const ARENA_GROUP_TOOLS: readonly string[] = [...AGENTS.flatMap(agent => agent.arenaTool === null ? [] : [agent.arenaTool]), "manual"];
 
 /** The most runs one group may ask for. Each is a worktree and, mostly, an agent. */
 export const MAX_ARENA_RUNS = 8;
@@ -418,7 +496,7 @@ export const MAX_ARENA_RUNS = 8;
  * no model or effort.
  */
 export type ArenaGroup =
-	| { kind: "tool"; tool: ArenaGroupTool; model: string | null; effort: string | null; runs: number }
+	| { kind: "tool"; tool: string; model: string | null; effort: string | null; runs: number }
 	| { kind: "preset"; preset: string; runs: number };
 
 /** What `timber arena new` creates. */
@@ -451,7 +529,7 @@ export function newArenaProblem(request: Pick<NewArenaRequest, "name" | "task" |
 		if (group.kind === "preset") {
 			if (!isArenaName(group.preset)) return "A preset is named as Timber names it, such as fast-codex.";
 		} else if (group.kind === "tool") {
-			if (!isOneOf(ARENA_GROUP_TOOLS, group.tool)) return "Choose codex, claude, cursor, or manual.";
+			if (!isOneOf(ARENA_GROUP_TOOLS, group.tool)) return "Choose a coding tool Timber runs, or manual.";
 			if ((group.model !== null && !isPlainValue(group.model)) || (group.effort !== null && !isPlainValue(group.effort))) return "A model or effort is one line of text.";
 			if (group.tool === "manual" && (group.model !== null || group.effort !== null)) return "Manual attempts have no model or effort.";
 		} else {

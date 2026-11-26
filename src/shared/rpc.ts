@@ -125,6 +125,8 @@ export type AppRPC = {
 			/** As `listArenas`. */
 			listArenaPresets: { params: { repository: string }; response: Answer<"listArenaPresets"> };
 			/** As `listArenas`. */
+			listArenaTools: { params: { repository: string }; response: Answer<"listArenaTools"> };
+			/** As `listArenas`. */
 			inspectArena: { params: { repository: string; arena: string }; response: Answer<"inspectArena"> };
 			/** Answers only when Timber and every attempt's setup have ended, so the caller must not time it out. */
 			newArena: { params: NewArenaRequest; response: Answer<"newArena"> };

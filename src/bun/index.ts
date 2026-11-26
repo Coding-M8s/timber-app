@@ -647,6 +647,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			listArenas: ({ repository }) => arenas.list(repository),
 			// Only names and tools leave the main process, never a preset's command (see ./arenas.ts).
 			listArenaPresets: ({ repository }) => arenas.presets(repository),
+			listArenaTools: ({ repository }) => arenas.tools(repository),
 			inspectArena: request => arenas.inspect(request),
 			// The request holds the task: never log it (see ./arenas.ts).
 			newArena: request => arenas.create(request),

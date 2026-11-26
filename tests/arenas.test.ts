@@ -55,7 +55,7 @@ process.exit(step.exitCode ?? 0);
 `;
 
 interface Step { stdout?: string; stderr?: string; result?: string; exitCode?: number }
-type Plan = Partial<Record<"list" | "launch" | "new" | "pick", Step>>;
+type Plan = Partial<Record<"list" | "launch" | "new" | "pick" | "tools", Step>>;
 interface Run { arguments: string[]; cwd: string; taskFile: string | null; task: string | null; taskMode: number | null; taskFolderMode: number | null }
 
 function arenaStandIn(name: string, plan: Plan): { path: string; runs: () => Run[] } {
@@ -84,6 +84,25 @@ describe("ArenaCommands, with a stand-in Timber", () => {
 		const timber = arenaStandIn("unsupported", { list: { stderr: recordedArena.unknownCommand, exitCode: 1 } });
 		const commands = createArenaCommands({ timber: async () => ready(timber.path), isListed: listed, endSessionsIn: async () => [] });
 		expect(await commands.list(folder)).toEqual({ state: "unsupported" });
+	});
+
+	test("tools runs timber __app-arena tools in the repository and reads what it lists", async () => {
+		const timber = arenaStandIn("tools", { tools: { stdout: recordedArena.tools } });
+		const commands = createArenaCommands({ timber: async () => ready(timber.path), isListed: listed, endSessionsIn: async () => [] });
+		const tools = await commands.tools(folder);
+		expect(tools.state === "listed" && tools.tools.map(tool => tool.tool)).toEqual(["codex", "claude", "cursor", "gemini", "grok", "opencode", "copilot", "qwen", "amp", "pi"]);
+		expect(timber.runs()).toEqual([expect.objectContaining({ arguments: ["__app-arena", "tools"], cwd: folder })]);
+	});
+
+	test("a Timber without the tools action is older, and tools asks only for a listed repository with Timber ready", async () => {
+		const timber = arenaStandIn("tools-older", { tools: { stderr: recordedArena.toolsOlder, exitCode: 1 } });
+		const commands = createArenaCommands({ timber: async () => ready(timber.path), isListed: listed, endSessionsIn: async () => [] });
+		expect(await commands.tools(folder)).toEqual({ state: "older" });
+		expect((await commands.tools(join(root, "elsewhere"))).state).toBe("failed");
+		expect((await commands.tools("")).state).toBe("failed");
+		const missing = createArenaCommands({ timber: async () => ({ state: "not-found", source: "path", path: null }), isListed: listed, endSessionsIn: async () => [] });
+		expect((await missing.tools(folder)).state).toBe("failed");
+		expect(timber.runs()).toHaveLength(1);
 	});
 
 	test("only a repository in the app's list, and only while Timber is ready", async () => {
@@ -230,6 +249,10 @@ describe.skipIf(arenaTimber === null || windows)("ArenaCommands, with the real T
 		const commands = commandsFor();
 		expect(await commands.list(repository)).toEqual({ state: "listed", arenas: [] });
 		expect(await commands.presets(repository)).toEqual({ ok: true, presets: [{ name: "stub", tool: "wrapper" }] });
+		// The released 0.2.0 has no tools action, and a newer Timber lists at least the three every Timber runs.
+		const tools = await commands.tools(repository);
+		if (tools.state === "failed") throw new Error(tools.message);
+		if (tools.state === "listed") expect(tools.tools.map(tool => tool.tool)).toEqual(expect.arrayContaining(["codex", "claude", "cursor"]));
 
 		const created = await commands.create({ repository, name: "demo", task: TASK, groups, base: null });
 		if (created.outcome !== "created") throw new Error(JSON.stringify(created));

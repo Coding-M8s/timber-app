@@ -3440,6 +3440,32 @@ run from `src/bun/arenas.ts`.
   listed worktree under its arena only when an attempt of an arena read whole
   has its exact path and `git: "ok"`. Branch and folder names are never
   read.
+- **Which tools a group offers.** `listArenaTools` runs `timber __app-arena
+  tools` in the primary checkout (read-only, like the presets read, which
+  the dialog does not show either), and `readArenaTools` keeps each tool's
+  `--tool` value, whether Timber can ask it for an effort, and whether it
+  stays open after its task (`interactive`, true when the record leaves it
+  out). Exit 0 is the list. Any other exit with nothing on standard output
+  is an older Timber, as Timber's contract says to read it, which runs
+  `codex`, `claude`, and `cursor` only: the released 0.2.0 answers `error:
+  Unknown __app-arena action. Use list or launch.` with exit 1, and its text
+  is never read. So a newer Timber that fails this way for another reason,
+  such as a broken install, also reads as older, and the dialog offers the
+  three without a word. A run that was stopped, or a record that cannot be read, is
+  a failure. `offeredArenaTools` offers, in Timber's order, each agent of the
+  registry whose `arenaTool` the list has and that stays open, since every
+  attempt runs in a session of its own; a tool Timber lists without a row
+  (Qwen Code, Amp, and Pi on Timber's main branch) is not offered. An older
+  Timber, and a list that could not be read, offer the three every Timber
+  with arenas for apps runs, and the dialog says why for a failure. The
+  Arena mode reads the tools and the presets together, once, when it first
+  shows (`readChoices` in `worktree-modes/arena-form.ts`), and until then
+  offers the three; a group whose tool is not offered then takes the first
+  one offered, without the model typed for the other. `newArenaProblem` checks only that a tool is one of the
+  registry's or `manual`: which ones the Timber found runs, and which take an
+  effort, stay Timber's to say, so a request it would refuse gets Timber's
+  own diagnostic. The Timber version cannot tell them apart: Timber's main
+  branch, which has the action, still calls itself 0.2.0.
 - **Creating.** `newArena` runs `timber arena new` with each group's flags in
   order (a model, effort, or runs count belongs to the tool or preset before
   it), `--base`, `--prompt-file <task file>`, `--no-editor --no-agent
@@ -3460,7 +3486,11 @@ run from `src/bun/arenas.ts`.
   whole path, as an agent session named after the label. Timber's folder
   must be the worktree asked for. A manual attempt starts nothing. After a
   create in which every attempt is ready, the store starts one session per
-  attempt with an agent; after a failure it starts none.
+  attempt with an agent; after a failure it starts none. The session's agent,
+  and so its chip's mark, is the one its program is by name
+  (`agentByExecutable`), as for any agent that was not picked in Settings:
+  Timber starts `gemini`, `grok`, `opencode`, `copilot`, and Cursor's
+  `cursor-agent`, never the shared `agent`.
 - **Comparing.** `inspectArena` runs `timber arena pick <arena> --inspect
   --json`, which changes nothing, and the Compare dialog shows its counts as
   they are: committed and uncommitted apart, untracked as a count. "Open in
@@ -3481,7 +3511,8 @@ run from `src/bun/arenas.ts`.
   with Timber's reason, which makes the pick a failure to fix and run again.
   The repository and its arenas are read again after every outcome.
 - **Tests.** `tests/arenas-parse.test.ts` reads records recorded from
-  Timber's main branch (`tests/fixtures/timber-arena`). `tests/arenas.test.ts`
+  Timber's main branch (`tests/fixtures/timber-arena`), `tools.json` from
+  its commit 0d98eeb and the 0.2.0 release's answer to `tools` among them. `tests/arenas.test.ts`
   runs a stand-in Timber that notes each run, the task file's text and
   permission bits included, and, when the Timber found has arenas, the real
   one in a temporary repository with a stub wrapper preset: list, launch,
@@ -5567,6 +5598,11 @@ for its mark. Each row has:
   `src/shared/agent.ts` and in `src/mainview/timber-settings-format.ts`).
   Cursor's is `cursor-agent`, not `agent`, since `agent` may be another
   program's, as above.
+- **`arenaTool`**: its tool for `timber arena new --tool`, as Timber names
+  it, or null when Timber runs no arena of it natively. Every row has one
+  today, equal to its id. An arena group offers the tool only while the
+  Timber found lists it (see [arenas](#arenas), "Which tools a group
+  offers").
 - **`mark`**: the official mark as SVG path data (`paths`, each with its
   own `fillRule` or `opacity` when the maker's has one), its view box, its
   fill (a color, `currentColor` for the theme's text color, or the maker's

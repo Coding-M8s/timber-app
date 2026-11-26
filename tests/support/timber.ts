@@ -304,6 +304,10 @@ const arenaFixture = (name: string) => readFileSync(join(import.meta.dir, "..", 
  * - `appConfig`: `__app-config read --scope repository`, with the preset.
  * - `unknownCommand`: standard error of `timber __app-arena list` from the
  *   released 0.1.3, which has no arenas for apps (exit 1, nothing on stdout).
+ * - `tools`: `__app-arena tools` from Timber's main branch at 0d98eeb
+ *   (2026-11-25, which still calls itself 0.2.0): every native tool.
+ * - `toolsOlder`: its standard error from the released 0.2.0, which has no
+ *   `tools` action (exit 1, nothing on stdout).
  */
 export const recordedArena = {
 	newSucceeded: arenaFixture("new-succeeded.json"),
@@ -323,6 +327,8 @@ export const recordedArena = {
 	pickKept: arenaFixture("pick-kept.json"),
 	appConfig: arenaFixture("app-config-presets.json"),
 	unknownCommand: arenaFixture("unknown-command-0.1.3.stderr"),
+	tools: arenaFixture("tools.json"),
+	toolsOlder: arenaFixture("tools-older-0.2.0.stderr"),
 };
 
 /**

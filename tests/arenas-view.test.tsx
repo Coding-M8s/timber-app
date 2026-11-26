@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import {
-	type ArenaGroupDraft, describeAttemptSession, describeAttemptTool, describeComparison, describePickOutcome, firstGroupDraft, groupArenaRows, groupChoices, groupOf,
-	arenasUnavailable, newArenaCommandFor, pickCommandFor,
+	type ArenaGroupDraft, describeAttemptSession, describeAttemptTool, describeComparison, describePickOutcome, firstGroupDraft, fitGroups, groupAgent, groupArenaRows, groupChoices, groupOf,
+	arenasUnavailable, newArenaCommandFor, pickCommandFor, takesEffort, takesModel,
 } from "../src/mainview/arena-format";
 import { ArenaCompareView, type ArenaCompareViewProps, type CompareRow } from "../src/mainview/components/ArenaCompareDialog";
 import { WorktreeDialogFrame, openingMode } from "../src/mainview/components/NewWorktreeDialog";
@@ -14,8 +14,9 @@ import type { WorktreeDialogMode } from "../src/mainview/components/worktree-mod
 import { createSubmission } from "../src/mainview/store/submission";
 import type { SubmissionState } from "../src/mainview/store/submission";
 import { createMockEngine, sampleRepositories, sampleStatesRepository } from "../src/mainview/engine/mock";
+import { sampleArenaTools } from "../src/mainview/engine/mock-arenas";
 import { createAppStore } from "../src/mainview/store/store";
-import type { ArenaList, InspectedAttempt } from "../src/shared/arenas";
+import { type ArenaList, type InspectedAttempt, offeredArenaTools } from "../src/shared/arenas";
 import type { Worktree } from "../src/shared/model";
 import type { TerminalSession } from "../src/shared/terminal";
 import { manualClock } from "./support/clock";
@@ -26,6 +27,10 @@ const settle = async () => {
 const TIMBER = "/work/timber";
 const BILLING = "/work/billing";
 const TASK = "PRIVATE_TASK_SENTINEL: make login faster";
+/** What every Timber with arenas for apps runs, and what one with every native tool offers. */
+const OLDER = offeredArenaTools({ state: "older" });
+const EVERY = offeredArenaTools(sampleArenaTools);
+const NEW_TOOLS = ["gemini", "grok", "opencode", "copilot"] as const;
 
 async function startedStore(engine = createMockEngine([...sampleRepositories, sampleStatesRepository])) {
 	const clock = manualClock();
@@ -71,10 +76,59 @@ describe("arena words and rules", () => {
 		expect(newArenaCommandFor(" demo ", groups, " main ")).toBe(
 			"timber arena new --tool=claude --model=opus --effort=high --runs=2 --tool=manual --runs=1 --base=main --prompt-file <task file> --no-editor --no-agent --result-file <temporary file> -- demo",
 		);
-		expect(groupOf({ ...firstGroupDraft(), runs: "x" }).runs).toBeNaN();
+		expect(groupOf({ ...firstGroupDraft(OLDER), runs: "x" }).runs).toBeNaN();
 		expect(groupOf({ choice: "preset:fast", model: "m", effort: "e", runs: "3" })).toEqual({ kind: "preset", preset: "fast", runs: 3 });
-		expect(groupChoices([{ name: "fast", tool: "codex" }]).at(-1)).toEqual({ value: "preset:fast", label: "Preset: fast (codex)" });
+		expect(groupChoices(OLDER, [{ name: "fast", tool: "codex" }]).at(-1)).toEqual({ value: "preset:fast", label: "Preset: fast (codex)" });
 		expect(pickCommandFor("demo", "codex-1")).toBe("timber arena pick demo --winner codex-1 --result-file <temporary file>");
+	});
+
+	test("a group offers the tools the Timber found runs, by their agents' names, then a manual attempt, then the presets", () => {
+		expect(groupChoices(OLDER, []).map(choice => choice.label)).toEqual(["Codex", "Claude Code", "Cursor CLI", "Manual (no agent)"]);
+		expect(groupChoices(EVERY, [{ name: "stub", tool: "wrapper" }])).toEqual([
+			{ value: "tool:codex", label: "Codex" },
+			{ value: "tool:claude", label: "Claude Code" },
+			{ value: "tool:cursor", label: "Cursor CLI" },
+			{ value: "tool:gemini", label: "Gemini CLI" },
+			{ value: "tool:grok", label: "Grok Build" },
+			{ value: "tool:opencode", label: "OpenCode" },
+			{ value: "tool:copilot", label: "GitHub Copilot CLI" },
+			{ value: "tool:manual", label: "Manual (no agent)" },
+			{ value: "preset:stub", label: "Preset: stub (wrapper)" },
+		]);
+		// Each new tool takes a model; only the tools Timber can ask for an effort take one.
+		for (const tool of NEW_TOOLS) {
+			expect(takesModel(`tool:${tool}`)).toBe(true);
+			expect(takesEffort(`tool:${tool}`, EVERY)).toBe(false);
+			expect(groupAgent(`tool:${tool}`, EVERY, [])).toBe(tool);
+		}
+		expect(takesEffort("tool:codex", EVERY)).toBe(true);
+		expect(takesEffort("tool:manual", EVERY)).toBe(false);
+		// A preset shows its tool's mark when Timber says it runs a tool of the registry; a wrapper or manual shows none.
+		expect(groupAgent("preset:fast", EVERY, [{ name: "fast", tool: "grok" }])).toBe("grok");
+		expect(groupAgent("preset:stub", EVERY, [{ name: "stub", tool: "wrapper" }])).toBeNull();
+		expect(groupAgent("tool:manual", EVERY, [])).toBeNull();
+		// A tool the Timber found does not run has no mark either: it is not offered.
+		expect(groupAgent("tool:gemini", OLDER, [])).toBeNull();
+	});
+
+	test("a group whose tool is not offered takes the first one offered, and a tool without effort drops the effort typed", () => {
+		const groups: ArenaGroupDraft[] = [
+			{ choice: "tool:gemini", model: "gemini-3-pro", effort: "high", runs: "1" },
+			{ choice: "tool:claude", model: "opus", effort: "high", runs: "1" },
+			{ choice: "tool:manual", model: "x", effort: "y", runs: "1" },
+			{ choice: "preset:stub", model: "", effort: "", runs: "1" },
+		];
+		expect(fitGroups(groups, EVERY)).toEqual([
+			{ choice: "tool:gemini", model: "gemini-3-pro", effort: "", runs: "1" },
+			{ choice: "tool:claude", model: "opus", effort: "high", runs: "1" },
+			{ choice: "tool:manual", model: "", effort: "", runs: "1" },
+			{ choice: "preset:stub", model: "", effort: "", runs: "1" },
+		]);
+		// A group moved to another tool keeps no model typed for the one it had.
+		expect(fitGroups(groups, OLDER)[0]).toEqual({ choice: "tool:codex", model: "", effort: "", runs: "1" });
+		// With no tool offered at all, a fresh group is a manual one.
+		expect(firstGroupDraft([]).choice).toBe("tool:manual");
+		expect(firstGroupDraft(offeredArenaTools({ state: "listed", tools: [{ tool: "grok", effort: false, interactive: true }] })).choice).toBe("tool:grok");
 	});
 
 	test("comparisons, tools, sessions, and pick outcomes in words", () => {
@@ -114,7 +168,7 @@ describe("the Arena mode of the New worktree dialog", () => {
 	type Change = Partial<ArenaFormState> & { submission?: SubmissionState; unavailable?: string | null; selected?: number };
 	const frame = (change: Change = {}) => {
 		const { submission = { running: false, failure: null }, unavailable = null, selected = 2, ...fields } = change;
-		const state: ArenaFormState = { name: "demo", task: TASK, groups: [firstGroupDraft()], base: "", presets: [{ name: "stub", tool: "wrapper" }], presetsProblem: null, reserved: null, ...fields };
+		const state: ArenaFormState = { name: "demo", task: TASK, groups: [firstGroupDraft(OLDER)], base: "", tools: OLDER, toolsProblem: null, presets: [{ name: "stub", tool: "wrapper" }], presetsProblem: null, reserved: null, ...fields };
 		const modes = [fake("New branch"), fake("Existing branch"), arenaMode(form, state, TIMBER, unavailable)];
 		const agents = [{ name: "Codex", command: "codex", args: [] }];
 		return renderToStaticMarkup(
@@ -161,8 +215,38 @@ describe("the Arena mode of the New worktree dialog", () => {
 		const noTask = frame({ task: "" });
 		expect(noTask).toContain("Write the task the attempts work on.");
 		expect(noTask).toMatch(/<button type="submit" class="button primary" data-reserve="Create arena\nCreate worktree\nRunning" disabled="">Create arena<\/button>/);
-		const one = frame({ groups: [{ ...firstGroupDraft(), runs: "1" }] });
+		const one = frame({ groups: [{ ...firstGroupDraft(OLDER), runs: "1" }] });
 		expect(one).toContain("An arena has at least 2 attempts.");
+	});
+
+	test("offers each tool the Timber found runs, with its agent's mark, a model, and an effort only where Timber takes one", () => {
+		const older = frame();
+		for (const name of ["Codex", "Claude Code", "Cursor CLI"]) expect(older).toContain(`>${name}</option>`);
+		for (const name of ["Gemini CLI", "Grok Build", "OpenCode", "GitHub Copilot CLI"]) expect(older).not.toContain(name);
+		expect(older).toContain('class="agent-icon agent-icon-codex"');
+
+		for (const tool of NEW_TOOLS) {
+			const markup = frame({ tools: EVERY, groups: [{ choice: `tool:${tool}`, model: "some-model", effort: "", runs: "2" }] });
+			for (const name of ["Gemini CLI", "Grok Build", "OpenCode", "GitHub Copilot CLI"]) expect(markup).toContain(`>${name}</option>`);
+			expect(markup).toContain(`class="agent-icon agent-icon-${tool}"`);
+			expect(markup).toContain('<input class="field-input" placeholder="Tool default" spellCheck="false" value="some-model"/>');
+			expect(markup).toContain('<input class="field-input" disabled="" placeholder="Not for this tool" spellCheck="false" value=""/>');
+			expect(arenaMode({ setName() {}, setTask() {}, setGroups() {}, setBase() {}, run: async () => ({ outcome: { ok: true as const, toast: "" }, created: null, setup: null }) },
+				{ name: "demo", task: TASK, groups: [{ choice: `tool:${tool}`, model: "some-model", effort: "", runs: "2" }], base: "", tools: EVERY, toolsProblem: null, presets: [], presetsProblem: null, reserved: null }, TIMBER).command)
+				.toContain(`--tool=${tool} --model=some-model --runs=2`);
+		}
+		// A preset shows its tool's mark when that is an agent of the registry, and a wrapper preset none.
+		const presets = [{ name: "fast", tool: "grok" }, { name: "stub", tool: "wrapper" }];
+		expect(frame({ tools: EVERY, presets, groups: [{ choice: "preset:fast", model: "", effort: "", runs: "2" }] })).toContain('class="agent-icon agent-icon-grok"');
+		expect(frame({ tools: EVERY, presets, groups: [{ choice: "preset:stub", model: "", effort: "", runs: "2" }] })).not.toContain("agent-icon");
+		// A manual attempt shows no mark.
+		expect(frame({ groups: [{ choice: "tool:manual", model: "", effort: "", runs: "2" }] })).not.toContain("agent-icon");
+	});
+
+	test("a list of tools that could not be read says so, offers the three every Timber runs, and still lets the arena be made", () => {
+		const markup = frame({ toolsProblem: "timber __app-arena tools was stopped" });
+		expect(markup).toContain("The tools of the Timber found could not be read, so only Codex, Claude Code, and Cursor CLI are offered: timber __app-arena tools was stopped");
+		expect(markup).toMatch(/<button type="submit" class="button primary" data-reserve="Create arena\nCreate worktree\nRunning">Create arena<\/button>/);
 	});
 
 	test("after a create that stopped, says what Timber kept and does not offer the same name again", () => {
@@ -202,6 +286,51 @@ describe("creating an arena from the app", () => {
 		expect(markup).toContain('<span class="row-name">manual-1</span>');
 		// The first attempt is selected.
 		expect(markup).toMatch(/class="workspace-title" title="arena\/demo\/codex-1"/);
+	});
+
+	test("an arena of Gemini CLI, Grok Build, OpenCode, and Copilot CLI attempts, each with a model, gives each attempt's chip its agent's mark", async () => {
+		const { store, engine } = await startedStore();
+		const result = await store.newArena({
+			repository: TIMBER, name: "agents", task: TASK, base: null,
+			groups: NEW_TOOLS.map(tool => ({ kind: "tool" as const, tool, model: `${tool}-model`, effort: null, runs: 1 })),
+		});
+		await settle();
+		expect(result.outcome).toBe("created");
+		expect(engine.lastArenaTask()!.command).toContain("--tool=gemini --model=gemini-model --runs=1 --tool=grok --model=grok-model --runs=1 --tool=opencode --model=opencode-model --runs=1 --tool=copilot --model=copilot-model --runs=1");
+		const sessions = store.getState().terminals.filter(session => session.path.includes("arena-agents"));
+		expect(sessions.map(session => [session.name, session.kind, session.program])).toEqual(NEW_TOOLS.map(tool => [`${tool}-1`, "agent", tool]));
+		expect(sessions.map(session => session.command.split(" ").slice(0, 3).join(" "))).toEqual(NEW_TOOLS.map(tool => `/usr/local/bin/${tool} --model ${tool}-model`));
+
+		// Each attempt's chip, shown on its own worktree, carries its agent's mark.
+		for (const tool of NEW_TOOLS) {
+			store.select(sessions.find(session => session.program === tool)!.worktree);
+			await settle();
+			expect(render(store)).toMatch(new RegExp(`class="[^"]*session-chip[^"]*"[^>]*>(?:(?!</button>).)*agent-icon-${tool}`, "s"));
+		}
+	});
+
+	test("a Timber that does not list the new tools refuses them, so none is made", async () => {
+		const { store, engine } = await startedStore();
+		engine.setArenaTools({ state: "older" });
+		const result = await store.newArena({ repository: TIMBER, name: "older", task: TASK, base: null, groups: [{ kind: "tool", tool: "gemini", model: null, effort: null, runs: 2 }] });
+		await settle();
+		expect(result).toMatchObject({ outcome: "failed", arena: null, failure: { diagnostic: expect.stringContaining("No matching agent tool. Choices: codex, claude, cursor, manual.") } });
+		expect(store.getState().terminals.filter(session => session.path.includes("arena-older"))).toEqual([]);
+	});
+
+	test("an effort for a tool Timber asks for none is refused in Timber's words, so none is made", async () => {
+		const { store } = await startedStore();
+		const result = await store.newArena({ repository: TIMBER, name: "effort", task: TASK, base: null, groups: [{ kind: "tool", tool: "gemini", model: null, effort: "high", runs: 2 }] });
+		expect(result).toMatchObject({ outcome: "failed", arena: null, failure: { diagnostic: expect.stringContaining("Gemini CLI effort is not supported in arena; use its native default.") } });
+	});
+
+	test("the store never throws for the tools: an engine that is not heard is a failure with a message", async () => {
+		const { store, engine } = await startedStore();
+		engine.listArenaTools = async () => { throw new Error("gone"); };
+		expect(await store.listArenaTools(TIMBER)).toMatchObject({ state: "failed", message: expect.stringContaining("the arena tools") });
+		// A repository whose Timber has no arenas for apps has no tools action either.
+		const other = await startedStore();
+		expect(await other.engine.listArenaTools(BILLING)).toEqual({ state: "older" });
 	});
 
 	test("a create that stopped starts no agent", async () => {
@@ -293,10 +422,11 @@ describe("comparing and keeping an attempt", () => {
 describe("running the Arena mode through the New worktree dialog", () => {
 	async function opened() {
 		const engine = createMockEngine([...sampleRepositories, sampleStatesRepository]);
-		const asked = { arenas: 0, presets: 0 };
-		const { newArena, listArenaPresets } = engine;
+		const asked = { arenas: 0, presets: 0, tools: 0 };
+		const { newArena, listArenaPresets, listArenaTools } = engine;
 		engine.newArena = request => (asked.arenas++, newArena(request));
 		engine.listArenaPresets = repository => (asked.presets++, listArenaPresets(repository));
+		engine.listArenaTools = repository => (asked.tools++, listArenaTools(repository));
 		const { store } = await startedStore(engine);
 		store.openDialog({ kind: "new-worktree", repository: TIMBER, mode: "arena" });
 		const submission = createSubmission(toast => {
@@ -345,11 +475,36 @@ describe("running the Arena mode through the New worktree dialog", () => {
 		expect(markup).not.toContain('name="agent"');
 	});
 
-	test("reads the presets once, however often it is asked", async () => {
+	test("reads the tools and presets once, however often it is asked", async () => {
 		const { asked, form } = await opened();
-		await Promise.all([form.readPresets(), form.readPresets()]);
-		await form.readPresets();
-		expect(asked.presets).toBe(1);
+		await Promise.all([form.readChoices(), form.readChoices()]);
+		await form.readChoices();
+		expect(asked).toMatchObject({ presets: 1, tools: 1 });
 		expect(form.getState().presetsProblem).toBeNull();
+		expect(form.getState().toolsProblem).toBeNull();
+	});
+
+	test("offers the new tools only once the Timber found lists them, and a group of one no longer listed moves to the first one offered", async () => {
+		const { form, mode } = await opened();
+		expect(form.getState().tools.map(tool => tool.tool)).toEqual(["codex", "claude", "cursor"]);
+		await form.readChoices();
+		expect(form.getState().tools.map(tool => tool.tool)).toEqual(["codex", "claude", "cursor", ...NEW_TOOLS]);
+		expect(mode().command).toContain("--tool=codex");
+
+		const again = await opened();
+		again.engine.setArenaTools({ state: "older" });
+		again.form.setGroups([{ choice: "tool:grok", model: "grok-5", effort: "", runs: "2" }]);
+		await again.form.readChoices();
+		expect(again.form.getState().tools.map(tool => tool.tool)).toEqual(["codex", "claude", "cursor"]);
+		expect(again.form.getState().groups).toEqual([{ choice: "tool:codex", model: "", effort: "", runs: "2" }]);
+		expect(again.form.getState().toolsProblem).toBeNull();
+	});
+
+	test("a Timber that cannot be asked for its tools still offers the three, and says why", async () => {
+		const { engine, form } = await opened();
+		engine.listArenaTools = async () => ({ state: "failed", message: "timber __app-arena tools was stopped" });
+		await form.readChoices();
+		expect(form.getState().tools.map(tool => tool.tool)).toEqual(["codex", "claude", "cursor"]);
+		expect(form.getState().toolsProblem).toBe("timber __app-arena tools was stopped");
 	});
 });

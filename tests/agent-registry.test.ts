@@ -82,6 +82,19 @@ describe("the agent registry", () => {
 		}
 	});
 
+	test("each agent Timber runs in an arena names its Timber tool, once, and that tool starts the agent's own executable", () => {
+		expect(AGENTS.map(agent => [agent.id, agent.arenaTool])).toEqual([
+			["claude", "claude"], ["codex", "codex"], ["cursor", "cursor"], ["gemini", "gemini"], ["grok", "grok"], ["opencode", "opencode"], ["copilot", "copilot"],
+		]);
+		const tools = AGENTS.flatMap(agent => agent.arenaTool === null ? [] : [agent.arenaTool]);
+		expect(new Set(tools).size).toBe(tools.length);
+		expect(tools).not.toContain("manual");
+		expect(tools).not.toContain("wrapper");
+		// The executables Timber's own table starts (`timber __app-arena tools`), each the agent's: Cursor's is cursor-agent, never the shared `agent`.
+		const timberExecutables: Record<string, string> = { codex: "codex", claude: "claude", cursor: "cursor-agent", gemini: "gemini", grok: "grok", opencode: "opencode", copilot: "copilot" };
+		for (const agent of AGENTS) if (agent.arenaTool !== null) expect(idOf(timberExecutables[agent.arenaTool]!)).toBe(agent.id);
+	});
+
 	test("its rows, in order, with Claude Code and Codex the default ones", () => {
 		expect(AGENTS.map(agent => [agent.id, agent.name, agent.label, agent.command, agent.executables, agent.sharedExecutables, agent.default])).toEqual([
 			["claude", "Claude Code", "Claude", "claude", ["claude"], [], true],

@@ -1,5 +1,5 @@
-import type { ArenaCreation, ArenaPreset, NewArenaRequest } from "../../../shared/arenas";
-import { type ArenaGroupDraft, baseOf, describeCreated, firstGroupDraft, groupOf } from "../../arena-format";
+import { type ArenaCreation, type ArenaPreset, type NewArenaRequest, type OfferedArenaTool, offeredArenaTools } from "../../../shared/arenas";
+import { type ArenaGroupDraft, baseOf, describeCreated, firstGroupDraft, fitGroups, groupOf } from "../../arena-format";
 import type { AppStore } from "../../store/store";
 import type { Submission } from "../../store/submission";
 import type { ModeRun } from "./agent-choice";
@@ -12,6 +12,14 @@ export interface ArenaFormState {
 	groups: readonly ArenaGroupDraft[];
 	/** The ref every attempt starts from, as typed. Empty for Timber's default. */
 	base: string;
+	/**
+	 * The tools offered: the registry's agents the Timber found runs natively.
+	 * Until they are read, and when they cannot be, those every Timber with
+	 * arenas for apps runs.
+	 */
+	tools: readonly OfferedArenaTool[];
+	/** Why the tools could not be read, or null. The tools every such Timber runs are offered either way. */
+	toolsProblem: string | null;
 	/** The repository's saved presets, offered beside the tools. Empty until read. */
 	presets: readonly ArenaPreset[];
 	/** Why the presets could not be read, or null. The tools are offered either way. */
@@ -36,8 +44,8 @@ export interface ArenaForm {
 	setTask(task: string): void;
 	setGroups(groups: readonly ArenaGroupDraft[]): void;
 	setBase(base: string): void;
-	/** Read the repository's presets, once: later calls read nothing, as each read runs Timber. */
-	readPresets(): Promise<void>;
+	/** Read the Timber's tools and the repository's presets, once: later calls read nothing, as each read runs Timber. */
+	readChoices(): Promise<void>;
 	/**
 	 * Run `timber arena new` with the fields as they are now. The store starts
 	 * each attempt's agent itself, so the run reports no worktree for the
@@ -53,13 +61,14 @@ export function arenaRequest(repository: string, state: Pick<ArenaFormState, "na
 
 /** `repository` is the path of the primary checkout. */
 export function createArenaForm(
-	store: Pick<AppStore, "newArena" | "listArenaPresets">,
+	store: Pick<AppStore, "newArena" | "listArenaPresets" | "listArenaTools">,
 	repository: string,
 	submission: Pick<Submission, "clearFailure">,
 ): ArenaForm {
-	let state: ArenaFormState = { name: "", task: "", groups: [firstGroupDraft()], base: "", presets: [], presetsProblem: null, reserved: null };
+	const tools = offeredArenaTools({ state: "older" });
+	let state: ArenaFormState = { name: "", task: "", groups: [firstGroupDraft(tools)], base: "", tools, toolsProblem: null, presets: [], presetsProblem: null, reserved: null };
 	const listeners = new Set<() => void>();
-	let presetsAsked = false;
+	let choicesAsked = false;
 
 	function update(change: Partial<ArenaFormState>): void {
 		state = { ...state, ...change };
@@ -82,11 +91,18 @@ export function createArenaForm(
 		setTask: task => edit({ task }),
 		setGroups: groups => edit({ groups }),
 		setBase: base => edit({ base }),
-		async readPresets() {
-			if (presetsAsked) return;
-			presetsAsked = true;
-			const answer = await store.listArenaPresets(repository);
-			update(answer.ok ? { presets: answer.presets, presetsProblem: null } : { presets: [], presetsProblem: answer.message });
+		async readChoices() {
+			if (choicesAsked) return;
+			choicesAsked = true;
+			const [listed, answer] = await Promise.all([store.listArenaTools(repository), store.listArenaPresets(repository)]);
+			const tools = offeredArenaTools(listed);
+			update({
+				tools,
+				toolsProblem: listed.state === "failed" ? listed.message : null,
+				// A group typed meanwhile keeps what it can: a tool no longer offered becomes the first one offered.
+				groups: fitGroups(state.groups, tools),
+				...(answer.ok ? { presets: answer.presets, presetsProblem: null } : { presets: [], presetsProblem: answer.message }),
+			});
 		},
 		async run() {
 			const result = await store.newArena(arenaRequest(repository, state));

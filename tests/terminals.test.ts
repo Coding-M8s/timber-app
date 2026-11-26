@@ -1337,6 +1337,25 @@ sleep 5
 				expect(printed(result.session.id)).toContain("arena=demo attempt=codex-1 workflow=unset");
 			});
 
+			test("an attempt of Gemini CLI, Grok Build, OpenCode, or Copilot CLI is that agent's session, for its mark", async () => {
+				// Each pretend agent is named as the real one, and takes the prompt as Timber passes it to that tool.
+				const prompts: Record<string, string[]> = {
+					gemini: ["--model", "gemini-3-pro", "--prompt-interactive=Read the task"],
+					grok: ["--model", "grok-5", "--", "Read the task"],
+					opencode: ["--model", "provider/model", "--prompt=Read the task"],
+					copilot: ["--model", "gpt-6", "--interactive=Read the task"],
+				};
+				for (const [tool, rest] of Object.entries(prompts)) {
+					const script = join(root, "agent bin", tool);
+					writeFileSync(script, "#!/bin/sh\nwhile read line; do :; done\n");
+					chmodSync(script, 0o755);
+					startWithLaunch({ outcome: "ready", argv: [tool, ...rest], cwd: worktree, environment: { TIMBER_ARENA: "demo", TIMBER_ATTEMPT: `${tool}-1` }, unset: [] });
+					const result = await sessions.open({ repository, worktree, cols: 80, rows: 24, arenaAttempt: { arena: "demo", attempt: `${tool}-1` } });
+					if (result.outcome !== "opened") throw new Error(JSON.stringify(result));
+					expect(result.session).toMatchObject({ kind: "agent", name: `${tool}-1`, shell: script, program: tool });
+				}
+			});
+
 			test("a manual attempt, Timber's refusal, or another folder starts nothing", async () => {
 				startWithLaunch({ outcome: "no-agent" });
 				expect(await sessions.open({ repository, worktree, cols: 80, rows: 24, arenaAttempt: wanted })).toMatchObject({ outcome: "not-configured", message: expect.stringContaining("manual attempt") });

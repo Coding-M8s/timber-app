@@ -1,7 +1,7 @@
 import {
-	ARENA_LIST_ARGUMENTS, ARENA_LIST_COMMAND, type ArenaInspection, type ArenaLaunch, type ArenaList, type ArenaPresetList, type NewArenaRequest, type NewArenaResult,
+	ARENA_LIST_ARGUMENTS, ARENA_LIST_COMMAND, ARENA_TOOLS_ARGUMENTS, ARENA_TOOLS_COMMAND, type ArenaInspection, type ArenaLaunch, type ArenaList, type ArenaPresetList, type ArenaToolList, type NewArenaRequest, type NewArenaResult,
 	type PickArenaRequest, type PickArenaResult, TASK_FILE_PLACEHOLDER, arenaInspectArguments, arenaInspectCommand, arenaLaunchArguments, arenaNewArguments, arenaOf,
-	arenaPickArguments, isArenaName, isAttemptLabel, newArenaProblem, readArenaInspection, readArenaLaunch, readArenaList, readArenaPresets, readNewArenaResult,
+	arenaPickArguments, isArenaName, isAttemptLabel, newArenaProblem, readArenaInspection, readArenaLaunch, readArenaList, readArenaPresets, readArenaTools, readNewArenaResult,
 	readPickArenaResult,
 } from "../shared/arenas";
 import type { TimberStatus } from "../shared/model";
@@ -47,6 +47,8 @@ export interface ArenaCommands {
 	list(repository: string): Promise<ArenaList>;
 	/** The arena presets from `timber __app-config read --scope repository`. Read-only. */
 	presets(repository: string): Promise<ArenaPresetList>;
+	/** `timber __app-arena tools`, run in the repository. Read-only. */
+	tools(repository: string): Promise<ArenaToolList>;
 	/** `timber arena pick <arena> --inspect --json`. Read-only. */
 	inspect(request: { repository: string; arena: string }): Promise<ArenaInspection>;
 	/** `timber arena new ... --no-editor --no-agent --result-file`, in the repository's turn. */
@@ -110,6 +112,19 @@ export function createArenaCommands(options: ArenaCommandsOptions): ArenaCommand
 					const output = await record(executable, APP_CONFIG_READ_ARGUMENTS, repository, APP_CONFIG_READ_COMMAND, "a settings record holds. The presets were not read.");
 					if (!output.ok) return { ok: false, message: output.message };
 					return readArenaPresets(output.record, output.diagnostic, output.exitCode);
+				},
+			});
+		},
+
+		async tools(repository) {
+			if (!isFilled(repository)) return { state: "failed", message: "The request for arena tools names no repository." };
+			return withReadyTimber<ArenaToolList>({
+				timber, isListed, repository, couldNot: `read the arena tools of ${repository}`,
+				fail: message => ({ state: "failed", message }),
+				run: async executable => {
+					const output = await record(executable, ARENA_TOOLS_ARGUMENTS, repository, ARENA_TOOLS_COMMAND, "a list of tools holds. The tools were not read.");
+					if (!output.ok) return { state: "failed", message: output.message };
+					return readArenaTools(output.record, output.diagnostic, output.exitCode);
 				},
 			});
 		},

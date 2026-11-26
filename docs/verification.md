@@ -5526,3 +5526,66 @@ Bun and headless Chrome, on 2026-11-25:
   `bun run typecheck` and `bun run typecheck:desktop`: no errors.
 - Not run: the desktop app by hand, so no claim about the notifications on a
   desktop; a question or an error in OpenCode; macOS and Windows.
+
+Run for the arena tools of Gemini CLI, Grok Build, OpenCode, and GitHub
+Copilot CLI (issue 357), Linux x64 (Pop!_OS 24.04) with Bun 1.4.5, on
+2026-11-25:
+
+- Timbers: the released 0.2.0 at `~/.local/bin/timber`, and Timber's main
+  branch at commit 0d98eeb, run from source with Bun. Both call themselves
+  0.2.0, so only `timber __app-arena tools` tells them apart.
+  - 0.2.0: `error: Unknown __app-arena action. Use list or launch.`, exit 1,
+    nothing on standard output (`tests/fixtures/timber-arena/tools-older-0.2.0.stderr`).
+  - 0d98eeb: exit 0 with codex, claude, cursor, gemini, grok, opencode,
+    copilot, qwen, amp, and pi; effort for the first three only; amp with
+    `interactive: false` (`tests/fixtures/timber-arena/tools.json`).
+- Agents on this machine: Grok Build 1.0.92, Codex 0.169.0, Claude Code
+  2.1.332, Cursor CLI 2026.11.22. Gemini CLI, OpenCode, and Copilot CLI are
+  not installed (`/usr/bin/copilot` is VS Code's shim), so none of the three
+  was started.
+- A script in a scratch folder ran `createArenaCommands` (src/bun/arenas.ts)
+  against each Timber in a new temporary repository:
+  - 0.2.0: `tools` read as older; offered Codex, Claude Code, and Cursor CLI.
+  - 0d98eeb: `tools` listed all ten; offered Codex, Claude Code, Cursor CLI,
+    Gemini CLI, Grok Build, OpenCode, and GitHub Copilot CLI, the four new
+    ones without effort. `arena new` with one run each of grok, gemini,
+    opencode, and copilot, each with a model, created all four attempts with
+    their tools and models recorded. `__app-arena launch` gave
+    `grok --model grok-build-fast -- <prompt>` and
+    `copilot --model gpt-6 <prompt>` (the prompt argument not printed), which
+    `agentByExecutable` reads as grok and copilot, and the found
+    `~/.local/bin/grok`, a link to `grok-1.0.92-linux-x86_64`, is grok to
+    `agentProgram` as `startOf` calls it. Gemini and OpenCode were refused by
+    Timber: "Arena agent executable is unavailable for gemini-1. Restore its
+    recorded executable/PATH. Nothing was started." Gemini with an effort
+    was refused by Timber: "Gemini CLI effort is not supported in arena; use
+    its native default."
+- New tests: reading `tools` (listed, no `interactive`, older, stopped,
+  failed, other version, bad entries); the offered tools for every case, a
+  tool Timber does not list, and one that ends after its task; the stand-in
+  and the real Timber through `ArenaCommands.tools`; the registry's
+  `arenaTool`; the group's choices, marks, model, and effort, and groups moved
+  when the tools arrive; the dialog's markup for each new tool and for a list
+  that could not be read; through the mock engine, an arena of the four new
+  tools, each with a model, whose sessions are those agents' and whose chips
+  show their marks (failing when the mock's gemini program is renamed), and
+  an older Timber refusing gemini; and a stand-in `gemini`, `grok`,
+  `opencode`, and `copilot` started as arena attempts in real sessions,
+  each with its agent as `program`.
+- Also: a record that lists a tool twice is a failure; the mock refuses,
+  in Timber's words, a tool its Timber does not list and an effort for a
+  tool without one; the store answers a failure when the engine is not
+  heard; a preset shows its tool's mark.
+- `bun run test`: 4,894 passed, 19 skipped, 0 failed, in 289 files. The run
+  before the change had 9 browser failures, all timing or headless Chrome,
+  and one run during the change had one, the text editor's outline in a real
+  browser, which passed when run again alone. After rebasing onto 8f7039e:
+  4,907 passed, 19 skipped, 1 failed, the same test, which failed once more
+  with its file run alone, then passed in three runs of its file, as it did
+  in two runs on 8f7039e itself. After rebasing onto b362a9b: 4,927 passed,
+  19 skipped, 1 failed, the same test again. CI's Linux test jobs passed it
+  on the branch before that rebase.
+- `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
+- Not run: the desktop app, a real Gemini CLI, OpenCode, or Copilot CLI
+  session, a real Grok Build session started as an attempt, Windows, and
+  macOS.
