@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
 	type ArenaGroup, arenaInspectArguments, arenaLaunchArguments, arenaNewArguments, arenaPickArguments, attemptAt, isArenaName, isAttemptLabel, newArenaProblem,
-	readArenaInspection, readArenaLaunch, readArenaList, readArenaPresets, readNewArenaResult, readPickArenaResult,
+	offeredArenaTools, readArenaInspection, readArenaLaunch, readArenaList, readArenaPresets, readArenaTools, readNewArenaResult, readPickArenaResult,
 } from "../src/shared/arenas";
 import { RESULT_FILE_PLACEHOLDER, TASK_FILE_PLACEHOLDER, type TimberRun, describeTimberCommand, readTimberResult } from "../src/shared/timber-result";
 import { recordedArena } from "./support/timber";
@@ -190,6 +190,20 @@ describe("arena commands", () => {
 		expect(newArenaProblem({ ...request, groups: [{ kind: "tool", tool: "manual", model: "x", effort: null, runs: 2 }] })).toBe("Manual attempts have no model or effort.");
 		expect(newArenaProblem({ ...request, groups: [{ kind: "preset", preset: "stub", runs: 9 }] })).toBe("Each group runs from 1 to 8 times.");
 		expect(newArenaProblem({ ...request, base: "main\nx" })).toBe("The base is one line of text, such as main.");
+		// The shape only: which tools the Timber found runs, and which take an effort, is Timber's to say.
+		for (const tool of ["codex", "claude", "cursor", "gemini", "grok", "opencode", "copilot"]) {
+			expect(newArenaProblem({ ...request, groups: [{ kind: "tool", tool, model: "m", effort: "high", runs: 2 }] })).toBeNull();
+		}
+		expect(newArenaProblem({ ...request, groups: [{ kind: "tool", tool: "wrapper", model: null, effort: null, runs: 2 }] })).toBe("Choose a coding tool Timber runs, or manual.");
+		expect(newArenaProblem({ ...request, groups: [{ kind: "tool", tool: "--model=x", model: null, effort: null, runs: 2 }] })).toBe("Choose a coding tool Timber runs, or manual.");
+	});
+
+	test("arena new passes a new tool and its model as for any other tool", () => {
+		const args = arenaNewArguments({ name: "demo", base: null, groups: [
+			{ kind: "tool", tool: "gemini", model: "gemini-3-pro", effort: null, runs: 1 },
+			{ kind: "tool", tool: "copilot", model: null, effort: null, runs: 1 },
+		] }, "/t", "/r");
+		expect(args.slice(0, 7)).toEqual(["arena", "new", "--tool=gemini", "--model=gemini-3-pro", "--runs=1", "--tool=copilot", "--runs=1"]);
 	});
 });
 
@@ -261,6 +275,72 @@ describe("readArenaPresets", () => {
 		expect(readArenaPresets(edit(recordedArena.appConfig, record => { delete record.effective.arena; }), "", 0)).toEqual({ ok: true, presets: [] });
 		expect(readArenaPresets(edit(recordedArena.appConfig, record => { record.effective.arena.agents.stub = 1; }), "", 0).ok).toBe(false);
 		expect(readArenaPresets("", "error: boom", 1)).toEqual({ ok: false, message: "timber __app-config read --scope repository exited with code 1: boom" });
+	});
+});
+
+describe("readArenaTools", () => {
+	test("reads every tool Timber's main branch lists, with its effort and whether it stays open", () => {
+		const list = readArenaTools(recordedArena.tools, "", 0);
+		if (list.state !== "listed") throw new Error(JSON.stringify(list));
+		expect(list.tools.map(tool => tool.tool)).toEqual(["codex", "claude", "cursor", "gemini", "grok", "opencode", "copilot", "qwen", "amp", "pi"]);
+		expect(list.tools.find(tool => tool.tool === "gemini")).toEqual({ tool: "gemini", effort: false, interactive: true });
+		expect(list.tools.find(tool => tool.tool === "codex")).toEqual({ tool: "codex", effort: true, interactive: true });
+		expect(list.tools.find(tool => tool.tool === "amp")?.interactive).toBe(false);
+		// The label and executable are Timber's; the app names a tool by its registry agent.
+		expect(JSON.stringify(list)).not.toContain("Gemini CLI");
+	});
+
+	test("a record without interactive, as Timber's first contract had it, stays open", () => {
+		const list = readArenaTools(edit(recordedArena.tools, record => { for (const tool of record.tools) delete tool.interactive; }), "", 0);
+		expect(list.state === "listed" && list.tools.every(tool => tool.interactive)).toBe(true);
+	});
+
+	test("the released 0.2.0, which has no tools action, is an older Timber, read by its exit and empty output only", () => {
+		expect(recordedArena.toolsOlder).toContain("Unknown __app-arena action");
+		expect(readArenaTools("", recordedArena.toolsOlder, 1)).toEqual({ state: "older" });
+		expect(readArenaTools("", "", 2)).toEqual({ state: "older" });
+	});
+
+	test("a stopped run, output with a failure, another version, or a tool it cannot read is a failure", () => {
+		expect(readArenaTools("", "", null)).toEqual({ state: "failed", message: "timber __app-arena tools did not exit by itself without saying why." });
+		expect(readArenaTools("{}", "error: boom", 1)).toEqual({ state: "failed", message: "timber __app-arena tools exited with code 1: boom" });
+		expect(readArenaTools(edit(recordedArena.tools, record => { record.schemaVersion = 2; }), "", 0)).toMatchObject({ state: "failed", message: expect.stringContaining("schema version 2") });
+		expect(readArenaTools(edit(recordedArena.tools, record => { record.tools[0].effort = "yes"; }), "", 0)).toMatchObject({ state: "failed", message: expect.stringContaining("a tool in it cannot be read") });
+		expect(readArenaTools(edit(recordedArena.tools, record => { record.tools[0].interactive = 1; }), "", 0).state).toBe("failed");
+		expect(readArenaTools(edit(recordedArena.tools, record => { delete record.tools; }), "", 0).state).toBe("failed");
+		expect(readArenaTools("not json", "", 0).state).toBe("failed");
+		expect(readArenaTools(edit(recordedArena.tools, record => { record.tools.push(record.tools[3]); }), "", 0)).toMatchObject({ state: "failed", message: expect.stringContaining("it lists a tool twice") });
+	});
+});
+
+describe("offeredArenaTools", () => {
+	const listed = readArenaTools(recordedArena.tools, "", 0);
+
+	test("offers the registry's agents Timber lists, in Timber's order, by their names; none it has no row for, and none that ends after its task", () => {
+		expect(offeredArenaTools(listed)).toEqual([
+			{ tool: "codex", agent: "codex", name: "Codex", effort: true },
+			{ tool: "claude", agent: "claude", name: "Claude Code", effort: true },
+			{ tool: "cursor", agent: "cursor", name: "Cursor CLI", effort: true },
+			{ tool: "gemini", agent: "gemini", name: "Gemini CLI", effort: false },
+			{ tool: "grok", agent: "grok", name: "Grok Build", effort: false },
+			{ tool: "opencode", agent: "opencode", name: "OpenCode", effort: false },
+			{ tool: "copilot", agent: "copilot", name: "GitHub Copilot CLI", effort: false },
+		]);
+		// A registry agent that Timber lists but that would end after its task is not offered either.
+		const closing = { state: "listed" as const, tools: [{ tool: "codex", effort: true, interactive: true }, { tool: "grok", effort: false, interactive: false }] };
+		expect(offeredArenaTools(closing).map(tool => tool.tool)).toEqual(["codex"]);
+	});
+
+	test("a tool the Timber found does not list is not offered", () => {
+		const some = { state: "listed" as const, tools: [{ tool: "grok", effort: false, interactive: true }, { tool: "claude", effort: true, interactive: true }] };
+		expect(offeredArenaTools(some).map(tool => tool.tool)).toEqual(["grok", "claude"]);
+		expect(offeredArenaTools({ state: "listed", tools: [] })).toEqual([]);
+	});
+
+	test("an older Timber, or a list that could not be read, offers codex, claude, and cursor only", () => {
+		const older = offeredArenaTools({ state: "older" });
+		expect(older.map(tool => [tool.tool, tool.effort])).toEqual([["codex", true], ["claude", true], ["cursor", true]]);
+		expect(offeredArenaTools({ state: "failed", message: "boom" })).toEqual(older);
 	});
 });
 

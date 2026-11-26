@@ -2,9 +2,10 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { type ArenaCreation, MAX_ARENA_RUNS, newArenaProblem } from "../../../shared/arenas";
 import type { Repository } from "../../../shared/model";
 import {
-	AGENTS_FOLLOW_UP, ARENA_BETA_NOTE, ARENA_MODE_LABEL, type ArenaGroupDraft, LAUNCH_COMMAND, NEW_ARENA_NOTE, arenasUnavailable, firstGroupDraft, groupChoices,
-	newArenaCommandFor, takesModel,
+	AGENTS_FOLLOW_UP, ARENA_BETA_NOTE, ARENA_MODE_LABEL, type ArenaGroupDraft, LAUNCH_COMMAND, NEW_ARENA_NOTE, arenasUnavailable, firstGroupDraft, fitGroups, groupAgent,
+	groupChoices, newArenaCommandFor, takesEffort, takesModel, toolsUnreadNote,
 } from "../../arena-format";
+import { AgentIcon } from "../AgentIcon";
 import { useAppState, useStore } from "../../store/react";
 import type { Submission } from "../../store/submission";
 import { type ArenaForm, type ArenaFormState, arenaRequest, createArenaForm } from "./arena-form";
@@ -30,12 +31,13 @@ function Reserved({ arena }: { arena: ArenaCreation }) {
  * why the Timber found cannot make arenas, or is null when it can.
  */
 export function arenaMode(form: Pick<ArenaForm, "setName" | "setTask" | "setGroups" | "setBase" | "run">, state: ArenaFormState, repository: string, unavailable: string | null = null): WorktreeDialogMode {
-	const { name, task, groups, base, presets, presetsProblem, reserved } = state;
+	const { name, task, groups, base, tools, toolsProblem, presets, presetsProblem, reserved } = state;
 	const request = arenaRequest(repository, state);
 	const problem = newArenaProblem(request);
 	const taken = reserved !== null && reserved.name === name.trim().toLowerCase();
-	const change = (index: number, edit: Partial<ArenaGroupDraft>) => form.setGroups(groups.map((group, at) => at === index ? { ...group, ...edit } : group));
-	const choices = groupChoices(presets);
+	// A tool or preset that takes no model or effort drops what was typed in them.
+	const change = (index: number, edit: Partial<ArenaGroupDraft>) => form.setGroups(groups.map((group, at) => at === index ? fitGroups([{ ...group, ...edit }], tools)[0]! : group));
+	const choices = groupChoices(tools, presets);
 
 	const fields = (
 		<>
@@ -55,14 +57,19 @@ export function arenaMode(form: Pick<ArenaForm, "setName" | "setTask" | "setGrou
 				<legend className="field-label">Attempts</legend>
 				{groups.map((group, index) => {
 					const native = takesModel(group.choice);
+					const effort = takesEffort(group.choice, tools);
+					const agent = groupAgent(group.choice, tools, presets);
 					const label = `Group ${index + 1}`;
 					return (
 						<div key={index} className="arena-group" role="group" aria-label={label}>
 							<label className="field">
 								<span className="field-label">Tool or preset</span>
-								<select className="field-input" value={group.choice} onChange={event => change(index, { choice: event.target.value, ...(takesModel(event.target.value) ? {} : { model: "", effort: "" }) })}>
-									{choices.map(choice => <option key={choice.value} value={choice.value}>{choice.label}</option>)}
-								</select>
+								<span className="arena-tool-choice">
+									{agent !== null && <AgentIcon brand={agent} />}
+									<select className="field-input" value={group.choice} onChange={event => change(index, { choice: event.target.value })}>
+										{choices.map(choice => <option key={choice.value} value={choice.value}>{choice.label}</option>)}
+									</select>
+								</span>
 							</label>
 							<label className="field">
 								<span className="field-label">Model</span>
@@ -70,7 +77,7 @@ export function arenaMode(form: Pick<ArenaForm, "setName" | "setTask" | "setGrou
 							</label>
 							<label className="field">
 								<span className="field-label">Effort</span>
-								<input className="field-input" value={group.effort} disabled={!native} placeholder={native ? "Tool default" : "None"} spellCheck={false} onChange={event => change(index, { effort: event.target.value })} />
+								<input className="field-input" value={group.effort} disabled={!effort} placeholder={effort ? "Tool default" : native ? "Not for this tool" : "None"} spellCheck={false} onChange={event => change(index, { effort: event.target.value })} />
 							</label>
 							<label className="field arena-runs">
 								<span className="field-label">Runs</span>
@@ -82,7 +89,8 @@ export function arenaMode(form: Pick<ArenaForm, "setName" | "setTask" | "setGrou
 						</div>
 					);
 				})}
-				<button type="button" className="text-button" onClick={() => form.setGroups([...groups, { ...firstGroupDraft(), runs: "1" }])}>Add a group</button>
+				<button type="button" className="text-button" onClick={() => form.setGroups([...groups, { ...firstGroupDraft(tools), runs: "1" }])}>Add a group</button>
+				{toolsProblem && <p className="field-hint error">{toolsUnreadNote(toolsProblem)}</p>}
 				{presetsProblem && <p className="field-hint error">{`The saved presets could not be read: ${presetsProblem}`}</p>}
 			</fieldset>
 			<label className="field">
@@ -119,7 +127,7 @@ export function arenaMode(form: Pick<ArenaForm, "setName" | "setTask" | "setGrou
 /**
  * "Arena (Beta)": `timber arena new`. Two or more agents get the same task
  * from the same commit, each in its own worktree. `active` is true while the
- * mode is on screen: the presets are read only then, since each read runs
+ * mode is on screen: the tools and presets are read only then, since each read runs
  * Timber and most dialogs never show this mode.
  */
 export function useArenaMode(repository: Repository, submission: Submission, active: boolean): WorktreeDialogMode {
@@ -128,7 +136,7 @@ export function useArenaMode(repository: Repository, submission: Submission, act
 	const [form] = useState(() => createArenaForm(store, repository.path, submission));
 	const state = useSyncExternalStore(form.subscribe, form.getState, form.getState);
 	useEffect(() => {
-		if (active && unavailable === null) void form.readPresets();
+		if (active && unavailable === null) void form.readChoices();
 	}, [form, active, unavailable]);
 	return arenaMode(form, state, repository.path, unavailable);
 }

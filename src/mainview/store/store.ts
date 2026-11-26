@@ -26,7 +26,7 @@ import { type Preferences, defaultPreferences } from "../../shared/preferences";
 import type { ChopArrangements, ChopRename } from "../../shared/chop-order";
 import type { IssueLookup } from "../../shared/issues";
 import type { BackupDeleteRequest, BackupDeleteResult, BackupList, BackupRestoreRequest, BackupRestoreResult } from "../../shared/backups";
-import type { ArenaInspection, ArenaList, ArenaPresetList, NewArenaRequest, NewArenaResult, PickArenaRequest, PickArenaResult } from "../../shared/arenas";
+import type { ArenaInspection, ArenaList, ArenaPresetList, ArenaToolList, NewArenaRequest, NewArenaResult, PickArenaRequest, PickArenaResult } from "../../shared/arenas";
 import type { PullRequestList } from "../../shared/pull-requests";
 import { applyOrder, moveInOrder } from "../../shared/repository-order";
 import { type IconChoice, type IconTarget, type RemoteIconSource, type SidebarIconResult, withIcon } from "../../shared/sidebar-icons";
@@ -734,6 +734,8 @@ export interface AppStore {
 	deleteBackup(request: BackupDeleteRequest): Promise<BackupDeleteResult>;
 	/** A repository's saved arena presets, by name and tool. Never throws. */
 	listArenaPresets(repository: string): Promise<ArenaPresetList>;
+	/** The native arena tools of the Timber found. Never throws. */
+	listArenaTools(repository: string): Promise<ArenaToolList>;
 	/** Compare an arena's attempts with Timber. Read-only. Never throws. */
 	inspectArena(request: { repository: string; arena: string }): Promise<ArenaInspection>;
 	/**
@@ -3605,6 +3607,14 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		}
 	}
 
+	async function listArenaTools(repository: string): Promise<ArenaToolList> {
+		try {
+			return await engine.listArenaTools(repository);
+		} catch (error) {
+			return { state: "failed", message: notHeard("the arena tools", error) };
+		}
+	}
+
 	async function inspectArena(request: { repository: string; arena: string }): Promise<ArenaInspection> {
 		try {
 			return await engine.inspectArena(request);
@@ -4361,6 +4371,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		dismissReviewerFailures,
 		restoreBackup,
 		listArenaPresets,
+		listArenaTools,
 		inspectArena,
 		newArena,
 		pickArena,

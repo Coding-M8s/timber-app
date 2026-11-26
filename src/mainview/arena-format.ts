@@ -1,7 +1,8 @@
 import {
-	ARENA_GROUP_TOOLS, type Arena, type ArenaAttempt, type ArenaGroup, type ArenaGroupTool, type ArenaList, type ArenaPreset, type AttemptComparison, type AttemptState,
-	type PickedAttempt, TASK_FILE_PLACEHOLDER, arenaNewArguments, arenaPickArguments,
+	type Arena, type ArenaAttempt, type ArenaGroup, type ArenaList, type ArenaPreset, type AttemptComparison, type AttemptState, type OfferedArenaTool,
+	type PickedAttempt, offeredArenaTools, TASK_FILE_PLACEHOLDER, arenaNewArguments, arenaPickArguments,
 } from "../shared/arenas";
+import { AGENTS, type AgentId } from "../shared/agent-registry";
 import type { Worktree } from "../shared/model";
 import type { TerminalSession } from "../shared/terminal";
 import { RESULT_FILE_PLACEHOLDER, describeTimberCommand } from "../shared/timber-result";
@@ -35,30 +36,71 @@ export interface ArenaGroupDraft {
 	runs: string;
 }
 
-export const toolChoice = (tool: ArenaGroupTool) => `tool:${tool}`;
+export const toolChoice = (tool: string) => `tool:${tool}`;
 export const presetChoice = (preset: string) => `preset:${preset}`;
+const MANUAL = toolChoice("manual");
 
-/** A fresh group: Codex, run twice, so a new arena has the two attempts it needs. */
-export const firstGroupDraft = (): ArenaGroupDraft => ({ choice: toolChoice("codex"), model: "", effort: "", runs: "2" });
+/** What the dialog says when the Timber's tools could not be read, naming the tools it offers then. */
+export function toolsUnreadNote(problem: string): string {
+	const names = offeredArenaTools({ state: "older" }).map(tool => tool.name);
+	return `The tools of the Timber found could not be read, so only ${names.slice(0, -1).join(", ")}, and ${names.at(-1)} are offered: ${problem}`;
+}
 
-/** The choices a group offers: the tools, then the repository's saved presets. */
-export function groupChoices(presets: readonly ArenaPreset[]): { value: string; label: string }[] {
+/** A fresh group, run twice so a new arena has the two attempts it needs: the first tool offered, or a manual one when none is. */
+export const firstGroupDraft = (tools: readonly OfferedArenaTool[]): ArenaGroupDraft => ({ choice: tools[0] ? toolChoice(tools[0].tool) : MANUAL, model: "", effort: "", runs: "2" });
+
+/** The choices a group offers: the tools the Timber found runs, by their agents' names, then a manual attempt, then the repository's saved presets. */
+export function groupChoices(tools: readonly OfferedArenaTool[], presets: readonly ArenaPreset[]): { value: string; label: string }[] {
 	return [
-		...ARENA_GROUP_TOOLS.map(tool => ({ value: toolChoice(tool), label: tool === "manual" ? "Manual (no agent)" : tool })),
+		...tools.map(tool => ({ value: toolChoice(tool.tool), label: tool.name })),
+		{ value: MANUAL, label: "Manual (no agent)" },
 		...presets.map(preset => ({ value: presetChoice(preset.name), label: `Preset: ${preset.name} (${preset.tool})` })),
 	];
 }
 
-/** Whether a group's choice takes a model and effort: a coding tool does, a preset and a manual attempt do not. */
+const offeredOf = (choice: string, tools: readonly OfferedArenaTool[]) => tools.find(tool => toolChoice(tool.tool) === choice);
+
+/** Whether a group's choice takes a model: a coding tool does, a preset and a manual attempt do not. */
 export function takesModel(choice: string): boolean {
-	return choice.startsWith("tool:") && choice !== toolChoice("manual");
+	return choice.startsWith("tool:") && choice !== MANUAL;
+}
+
+/** Whether a group's choice takes an effort: only a coding tool Timber can ask for one. */
+export function takesEffort(choice: string, tools: readonly OfferedArenaTool[]): boolean {
+	return offeredOf(choice, tools)?.effort === true;
+}
+
+/**
+ * The agent whose mark a group shows: its tool's, or a saved preset's when
+ * Timber says it runs a tool of the registry. Null for a manual attempt, a
+ * wrapper preset, or anything else.
+ */
+export function groupAgent(choice: string, tools: readonly OfferedArenaTool[], presets: readonly ArenaPreset[]): AgentId | null {
+	if (choice.startsWith("preset:")) {
+		const tool = presets.find(preset => presetChoice(preset.name) === choice)?.tool;
+		return AGENTS.find(agent => agent.arenaTool !== null && agent.arenaTool === tool)?.id ?? null;
+	}
+	return offeredOf(choice, tools)?.agent ?? null;
+}
+
+/**
+ * The groups as they stand once the offered tools are known: a group whose
+ * tool is no longer offered takes the first one offered, without the model
+ * typed for the other, and a group whose tool takes no effort drops the
+ * effort typed.
+ */
+export function fitGroups(groups: readonly ArenaGroupDraft[], tools: readonly OfferedArenaTool[]): ArenaGroupDraft[] {
+	return groups.map(group => {
+		const kept = !takesModel(group.choice) || offeredOf(group.choice, tools) !== undefined ? group : { ...group, choice: firstGroupDraft(tools).choice, model: "", effort: "" };
+		return takesModel(kept.choice) ? { ...kept, effort: takesEffort(kept.choice, tools) ? kept.effort : "" } : { ...kept, model: "", effort: "" };
+	});
 }
 
 /** The group a draft stands for. A count that is not a whole number stays one, so Timber's rules say what is wrong. */
 export function groupOf(draft: ArenaGroupDraft): ArenaGroup {
 	const runs = /^\d+$/.test(draft.runs.trim()) ? Number(draft.runs.trim()) : Number.NaN;
 	if (draft.choice.startsWith("preset:")) return { kind: "preset", preset: draft.choice.slice("preset:".length), runs };
-	const tool = draft.choice.slice("tool:".length) as ArenaGroupTool;
+	const tool = draft.choice.slice("tool:".length);
 	const typed = (text: string) => takesModel(draft.choice) && text.trim() !== "" ? text.trim() : null;
 	return { kind: "tool", tool, model: typed(draft.model), effort: typed(draft.effort), runs };
 }

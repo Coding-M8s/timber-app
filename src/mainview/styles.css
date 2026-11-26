@@ -7493,6 +7493,18 @@ pre:focus-visible {
 	flex-basis: 100%;
 }
 
+/* A tool's mark sits before the select, inside its field, so the group's layout is unchanged. */
+.arena-tool-choice {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+}
+
+.arena-tool-choice .field-input {
+	flex: 1 1 auto;
+}
+
 .arena-group .arena-runs {
 	flex: 0 0 64px;
 }

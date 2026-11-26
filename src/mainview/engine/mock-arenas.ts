@@ -1,13 +1,14 @@
 import {
-	type ArenaAttempt, type ArenaLaunch, type ArenaList, type ArenaPreset, type InspectedAttempt, TASK_FILE_PLACEHOLDER, arenaNewArguments, arenaOf, arenaPickArguments,
+	type ArenaAttempt, type ArenaLaunch, type ArenaList, type ArenaPreset, type ArenaToolList, OLDER_ARENA_TOOLS, type InspectedAttempt, TASK_FILE_PLACEHOLDER, arenaNewArguments, arenaOf, arenaPickArguments,
 	isArenaName, isAttemptLabel, newArenaProblem, readNewArenaResult, readPickArenaResult,
 } from "../../shared/arenas";
+import { AGENTS } from "../../shared/agent-registry";
 import type { Engine } from "../../shared/engine";
 import type { Repository, TimberStatus } from "../../shared/model";
 import { RESULT_FILE_PLACEHOLDER, describeTimberCommand, readTimberResult } from "../../shared/timber-result";
 
 /** The part of the engine about arenas. */
-export type ArenaCapabilities = Pick<Engine, "listArenas" | "listArenaPresets" | "inspectArena" | "newArena" | "pickArena">;
+export type ArenaCapabilities = Pick<Engine, "listArenas" | "listArenaPresets" | "listArenaTools" | "inspectArena" | "newArena" | "pickArena">;
 
 /**
  * How an acted create or pick ends: as asked ("works"), with setup that
@@ -22,6 +23,8 @@ export interface ArenaControls {
 	setArenas(repository: string, list: ArenaList | null): void;
 	/** Decide the saved arena presets of a repository. */
 	setArenaPresets(repository: string, presets: ArenaPreset[]): void;
+	/** Decide what `timber __app-arena tools` answers from now on, or null for the sample, a Timber that lists every tool. */
+	setArenaTools(list: ArenaToolList | null): void;
 	/** Decide how creates and picks end from now on. "works" at the start. */
 	endArenaCommands(ending: ArenaEnding): void;
 	/** What the last create was asked, for tests: the command shown, and the task as Timber would get it in its file. */
@@ -49,8 +52,27 @@ interface MockArenaOptions {
 	delay: () => number;
 }
 
+/**
+ * What a Timber with every native tool lists, as `timber __app-arena tools`
+ * printed it on Timber's main branch: the registry's agents, and three it has
+ * no row for, one of which ends after its task.
+ */
+export const sampleArenaTools: ArenaToolList = {
+	state: "listed",
+	tools: [
+		...["codex", "claude", "cursor"].map(tool => ({ tool, effort: true, interactive: true })),
+		...["gemini", "grok", "opencode", "copilot", "qwen"].map(tool => ({ tool, effort: false, interactive: true })),
+		{ tool: "amp", effort: false, interactive: false },
+		{ tool: "pi", effort: false, interactive: true },
+	],
+};
+
 const COMMIT = "2222222222222222222222222222222222222222";
-const PROGRAMS: Record<string, string> = { codex: "codex", claude: "claude", cursor: "cursor-agent", wrapper: "/usr/local/bin/arena-wrapper" };
+/** The program Timber starts for each tool: the registry agent's own executable, as Timber's table has it. */
+const PROGRAMS: Record<string, string> = {
+	...Object.fromEntries(AGENTS.flatMap(agent => agent.arenaTool === null ? [] : [[agent.arenaTool, agent.executables[0]!]])),
+	wrapper: "/usr/local/bin/arena-wrapper",
+};
 
 /**
  * Arenas acted out in memory, for the browser build and tests. As the main
@@ -64,6 +86,7 @@ export function createMockArenas(options: MockArenaOptions): ArenaCapabilities &
 	const lists = new Map<string, ArenaList>();
 	const presets = new Map<string, ArenaPreset[]>();
 	let ending: ArenaEnding = "works";
+	let tools: ArenaToolList = sampleArenaTools;
 	let lastTask: { command: string; task: string } | null = null;
 
 	const listOf = (path: string): ArenaList => {
@@ -106,6 +129,14 @@ export function createMockArenas(options: MockArenaOptions): ArenaCapabilities &
 			return { ok: true, presets: structuredClone(presets.get(repository) ?? []) };
 		},
 
+		async listArenaTools(repository) {
+			const problem = problemOf(repository);
+			if (problem) return { state: "failed", message: problem };
+			// A Timber without arenas for apps has no tools action either.
+			if (listOf(repository).state === "unsupported") return { state: "older" };
+			return structuredClone(tools);
+		},
+
 		async inspectArena({ repository, arena }) {
 			const problem = problemOf(repository);
 			if (problem) return { state: "failed", message: problem };
@@ -140,6 +171,12 @@ export function createMockArenas(options: MockArenaOptions): ArenaCapabilities &
 			};
 			if (list.state === "unsupported") return { ...notRun("The Timber found has no arenas for apps."), arena: null };
 			if (!isArenaName(arenaName)) return ended(`Invalid arena name: ${typed}. Use lowercase letters, digits, - and _.`, {});
+			// As Timber does, in its words, a tool it does not run natively, or an effort for one that takes none, is refused before anything is made.
+			const native = tools.state === "listed" ? tools.tools : OLDER_ARENA_TOOLS;
+			const runs = [...native.map(entry => entry.tool), "manual"];
+			if (groups.some(group => group.kind === "tool" && !runs.includes(group.tool))) return ended(`No matching agent tool. Choices: ${runs.join(", ")}.`, {});
+			const effortless = groups.find(group => group.kind === "tool" && group.effort !== null && native.some(entry => entry.tool === group.tool && !entry.effort));
+			if (effortless?.kind === "tool") return ended(`${AGENTS.find(agent => agent.arenaTool === effortless.tool)?.name ?? effortless.tool} effort is not supported in arena; use its native default.`, {});
 			if (list.state === "listed" && arenaOf(list, arenaName)) return ended("Arena already exists; inspect its retained state or choose another name.", {});
 
 			const counts = new Map<string, number>();
@@ -227,6 +264,9 @@ export function createMockArenas(options: MockArenaOptions): ArenaCapabilities &
 		},
 		setArenaPresets(repository, next) {
 			presets.set(repository, structuredClone(next));
+		},
+		setArenaTools(next) {
+			tools = next === null ? sampleArenaTools : structuredClone(next);
 		},
 		endArenaCommands(next) {
 			ending = next;
