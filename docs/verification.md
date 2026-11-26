@@ -5589,3 +5589,78 @@ Copilot CLI (issue 357), Linux x64 (Pop!_OS 24.04) with Bun 1.4.5, on
 - Not run: the desktop app, a real Gemini CLI, OpenCode, or Copilot CLI
   session, a real Grok Build session started as an attempt, Windows, and
   macOS.
+Run for keeping the open file up to date with disk, with Read again removed
+(issue 398), Linux x64 (Pop!_OS 24.04) with Bun 1.4.5 and Google Chrome:
+
+- `bun test tests/open-file-disk.test.tsx`: 9 passed, three runs in a row.
+  The mock engine lists a real temporary repository, and every file call
+  goes to the main process's own `createWorktreeFiles`, with the clock moved
+  by hand: an edit with no unsaved edits shows at the next check in the
+  same editor memory; a second edit of a file Git lists as modified, of the
+  same size, shows too; a file that did not change is not read, and one
+  touched with the same text is read and changes nothing on screen; with
+  unsaved edits the text stays, the note has Load from disk and Save over
+  it, and Load from disk asks first (Keep editing keeps the edits, Discard
+  shows the text on disk); Save over it writes over the change and the note
+  goes; undoing every edit shows the new text; deleting the file shows "File
+  not found" and making it again shows its text; deleting it with unsaved
+  edits keeps them and says so; a file that turns into a link leading out
+  keeps unsaved edits; only the File tab that shows is checked, at once when
+  it shows, never while the window is hidden; checks leave every file, its
+  size and time, and `git status` as they were. With the unsaved-edits
+  check taken out of `readOpenFile`, 5 of them failed.
+- `bun test tests/worktree-files.test.ts`: 15 passed. The stamp changes with
+  an edit of the same size, stays while nothing changes, says "missing",
+  "not-a-file" (a folder, a pipe), and "outside:" with the target for a link
+  leading out, refuses paths that step out, are not relative, or hold a NUL,
+  stamps a file outside every worktree, never asks for the repository list,
+  and writes nothing.
+- `bun test tests/open-file-disk-format.test.ts`: 8 passed: the change
+  between two texts, the caret kept inside the new text, which reads change
+  nothing on screen, the note's and the question's words, the mock's stamp,
+  and, over the mock engine, `setWorktreeFile` on the open Markdown file
+  showing at the next check, still rendered. With reads failing and stamps
+  working, as when a read is not heard: the text and unsaved edits stay, no
+  disk change is claimed, and the next check reads again once reads work; a
+  first read that fails shows why and is read again; undoing every edit
+  after a refused save shows the text on disk and takes the refusal away.
+  With the stamp kept after a failed read, 2 of them failed.
+- `bun test tests/text-editor.test.tsx`: 12 passed. The new test applies the
+  reload to a real CodeMirror state whose history has steps recorded against
+  the old text: the caret keeps its line and column, and undo changes
+  nothing. With the history reset taken out, it failed (undo put stray text
+  in).
+- `bun test tests/text-editor-browser.test.ts` in headless Chrome: 22
+  passed, after rebasing onto opening a terminal link at its line. The new test changes `src/long.ts` (10,000 lines) through the mock
+  while the caret is on line 5,000 with the search bar open: the new text
+  shows with no button pressed, the status still says "Ln 5,000, Col 4", the
+  scroll moved less than 40 pixels, the search bar stayed, there is no Read
+  again, and undo does not bring the old text back. Then, with unsaved edits,
+  the note shows and the text stays, Load from disk asks "Loading it from
+  disk drops them unless you save first.", Discard shows the text on disk,
+  and a save writes the new text plus the typed key. "Rendered Markdown
+  shows a focus outline when tabbed to" failed in CI and in a whole run of
+  the file: it clicked the title line's first button, which was Read again
+  and is now Open in editor, which opens Settings with no editor set. It
+  clicks the path now. Run alone it still fails on "none" against "solid",
+  as it does alone on the commit before this change.
+- `bun test tests/file-viewer.test.tsx tests/markdown-reader.test.tsx
+  tests/unsaved-tab.test.tsx tests/store.test.ts`: all passed. With the
+  stamp before each read taken out, opening a file read it twice and two
+  file viewer tests failed.
+- `bun run test`: 4,958 passed, 19 skipped, 0 failed, in 292 files, after
+  rebasing onto the arena tools (94bf7d1); 4,936 passed, 0 failed, on
+  OpenCode's status (18755c2) before that; 4,928 passed, 0 failed, with the
+  focus outline test fixed, before that; 4,927 passed and that test failed before its fix,
+  in 292 files, after rebasing onto opening a terminal link at its
+  line (b362a9b). Before the rebase: 4,892 passed, 2 failed, the second
+  "draws no outline around the editor", which also failed before the change
+  and passed in an earlier run with it. Before
+  the change: 4,870 passed, 19 skipped, 2 failed, both in
+  `tests/text-editor-browser.test.ts` (typing speed and the editor's
+  outline).
+- `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
+- Not run: the desktop app and its WebKit and WebView2 views, a real agent
+  editing a file, an editor that saves through a rename, a network folder,
+  Windows, and macOS.
+- Older entries above still name Read again as it was when they were run.

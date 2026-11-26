@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createWorktreeFiles } from "../src/bun/worktree-files";
@@ -177,5 +177,65 @@ describe.skipIf(windows)("reading a file outside every worktree, by its complete
 		const before = snapshot(notes);
 		for (const name of ["plan.md", "plan-link.md", "image.bin", "huge.txt", "long.txt", "folder", "dangling.txt", "pipe", "gone.txt"]) await readOutside(join(notes, name));
 		expect(snapshot(notes)).toBe(before);
+	});
+});
+
+// Links, which Windows makes only with extra rights.
+describe.skipIf(windows)("the stamp of an open file", () => {
+	let folder: string;
+	let worktree: string;
+	let asked = 0;
+	const stamps = () => createWorktreeFiles({ findRepository: async () => (asked++, null) });
+	const stamp = (path: string) => stamps().stamp({ repository: "/nowhere", worktree, path });
+
+	beforeAll(() => {
+		folder = realpathSync(mkdtempSync(join(tmpdir(), "timber-app-stamps-")));
+		worktree = join(folder, "work tree");
+		mkdirSync(join(worktree, "docs"), { recursive: true });
+		writeFileSync(join(worktree, "a.txt"), "one\n");
+		writeFileSync(join(folder, "outside.txt"), "not yours\n");
+		symlinkSync(join(folder, "outside.txt"), join(worktree, "escape.txt"));
+		Bun.spawnSync(["mkfifo", join(worktree, "pipe")]);
+	});
+
+	afterAll(() => {
+		rmSync(folder, { recursive: true, force: true });
+	});
+
+	test("changes with an edit, even one of the same size, and stays while nothing changes", async () => {
+		const first = await stamp("a.txt");
+		expect(first).toStartWith("file:");
+		expect(await stamp("a.txt")).toBe(first);
+		writeFileSync(join(worktree, "a.txt"), "two\n");
+		utimesSync(join(worktree, "a.txt"), 5_000, 5_000);
+		const second = await stamp("a.txt");
+		expect(second).not.toBe(first);
+		writeFileSync(join(worktree, "a.txt"), "six\n");
+		utimesSync(join(worktree, "a.txt"), 6_000, 6_000);
+		expect(await stamp("a.txt")).not.toBe(second);
+	});
+
+	test("says what a read would refuse, without reading the file or asking for the list", async () => {
+		asked = 0;
+		expect(await stamp("gone.txt")).toBe("missing");
+		expect(await stamp("docs")).toBe("not-a-file");
+		expect(await stamp("pipe")).toBe("not-a-file");
+		expect(await stamp("escape.txt")).toBe(`outside:${join(folder, "outside.txt")}`);
+		for (const path of [".", "../outside.txt", "/etc/passwd", "a.txt\0x"]) expect(await stamp(path)).toBe("failed");
+		expect(await stamps().stamp({ repository: "/nowhere", worktree: "relative", path: "a.txt" })).toBe("failed");
+		expect(asked).toBe(0);
+	});
+
+	test("stamps a file outside every worktree by its complete path", async () => {
+		const path = join(folder, "outside.txt");
+		expect(await stamps().stamp({ path })).toStartWith("file:");
+		expect(await stamps().stamp({ path: join(folder, "gone.txt") })).toBe("missing");
+		expect(await stamps().stamp({ path: "outside.txt" })).toBe("failed");
+	});
+
+	test("writes nothing", async () => {
+		const before = snapshot(folder);
+		for (const path of ["a.txt", "gone.txt", "docs", "pipe", "escape.txt"]) await stamp(path);
+		expect(snapshot(folder)).toBe(before);
 	});
 });

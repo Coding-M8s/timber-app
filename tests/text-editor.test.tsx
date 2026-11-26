@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { history, redo, undo } from "@codemirror/commands";
-import { EditorState, StateEffect, Text, type Transaction } from "@codemirror/state";
+import { Compartment, EditorState, StateEffect, Text, type Transaction } from "@codemirror/state";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/mainview/App";
 import { canEditFile, editRefusal } from "../src/mainview/file-view-format";
 import { createMockEngine, sampleRepositories } from "../src/mainview/engine/mock";
 import { createAppStore } from "../src/mainview/store/store";
 import type { FileView } from "../src/mainview/store/state";
-import { editorKeys } from "../src/mainview/components/TextEditor";
+import { editorKeys, reloadFromDisk } from "../src/mainview/components/TextEditor";
 import { defaultKeymap, deleteLine, historyKeymap, moveLineUp, toggleBlockComment, toggleComment, undo as undoCommand } from "@codemirror/commands";
 import { gotoLine, searchKeymap, selectNextOccurrence } from "@codemirror/search";
 import { MAX_MATCHES, describeCaret, describeLineCount, describeMatches, indentUnitOf } from "../src/mainview/text-editor-format";
@@ -29,7 +29,7 @@ const render = (store: ReturnType<typeof createAppStore>) => renderToStaticMarku
 const textView = (text: string, change: Partial<FileView> = {}): FileView => ({
 	repository: "/work/timber", worktreePath: FEATURE.path, path: "src/a.ts", outside: false, from: "workspace",
 	result: { outcome: "read", path: "src/a.ts", content: { kind: "text", text, lines: countLines(text) } },
-	mode: "source", draft: null, saving: false, saveProblem: null, goTo: null, ...change,
+	mode: "source", draft: null, saving: false, saveProblem: null, diskChange: null, goTo: null, ...change,
 });
 
 /** Run a command such as undo on a state, and give back the state after it. */
@@ -139,7 +139,7 @@ describe("the editor in the File tab", () => {
 		expect(engine.readWorktreeFileNow(FEATURE.path, "src/a.ts")).toBe("const a = 10;\nconst b = 2;\n");
 	});
 
-	test("Read again and Discard stay in the editor, and forget it, so a new one starts from the file", async () => {
+	test("Load from disk and Discard stay in the editor, and forget it, so a new one starts from the file", async () => {
 		const engine = createMockEngine();
 		engine.setWorktreeFile(FEATURE.path, "src/a.ts", "x\n");
 		const store = await started(engine);
@@ -158,7 +158,7 @@ describe("the editor in the File tab", () => {
 
 		store.changeDraft(FEATURE.id, "y\n");
 		store.discardEdits(FEATURE.id);
-		store.readFileAgain(FEATURE.id);
+		store.loadFromDisk(FEATURE.id);
 		expect(store.getState().files[FEATURE.id]?.mode).toBe("edit");
 		expect(next.forgotten).toBe(true);
 		expect(store.fileEditMemory(FEATURE.id, "src/a.ts").state).toBeNull();
@@ -200,5 +200,34 @@ describe("typing in a long file", () => {
 		expect(perKeystroke).toBeLessThan(8);
 		state = run(state, undo);
 		expect(state.doc.eq(baseText)).toBe(true);
+	});
+});
+
+describe("the file read again from disk, in the editor", () => {
+	const showIn = (state: EditorState, text: string, slot: Compartment) => {
+		let next = state;
+		for (const spec of reloadFromDisk(next, text, slot) ?? []) next = next.update(spec).state;
+		return next;
+	};
+
+	test("puts the new text in, keeps the caret's line and column, and leaves undo nothing from before", () => {
+		const slot = new Compartment();
+		let state = EditorState.create({ doc: "alpha\nline2\nbeta\ngamma\n", extensions: [slot.of(history())], selection: { anchor: 14 } });
+		// Typed and taken back, so the text is as on disk, with steps in the history recorded against it.
+		state = state.update({ changes: { from: 6, to: 11 }, userEvent: "delete" }).state;
+		state = state.update({ changes: { from: 6, insert: "line2" }, userEvent: "input.type" }).state;
+		state = state.update({ selection: { anchor: 14 } }).state;
+		expect(state.doc.toString()).toBe("alpha\nline2\nbeta\ngamma\n");
+
+		const shown = showIn(state, "header\nalpha\nbeta\ngamma\ndelta\n", slot);
+		expect(shown.doc.toString()).toBe("header\nalpha\nbeta\ngamma\ndelta\n");
+		// Line 3, column 3, as before.
+		const head = shown.selection.main.head;
+		expect([shown.doc.lineAt(head).number, head - shown.doc.lineAt(head).from + 1]).toEqual([3, 3]);
+		expect(run(shown, undo).doc.toString()).toBe(shown.doc.toString());
+		// A shorter file keeps the caret inside it; the same text changes nothing.
+		const shorter = showIn(shown, "x\n", slot);
+		expect(shorter.selection.main.head).toBe(2);
+		expect(reloadFromDisk(shorter, "x\n", slot)).toBeNull();
 	});
 });

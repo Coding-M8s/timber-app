@@ -33,7 +33,7 @@ const markdown = (text: string, path = "docs/plan.md") => renderToStaticMarkup(<
 const view = (change: Partial<FileView> = {}): FileView => ({
 	repository: "/work/timber", worktreePath: FEATURE.path, path: "notes.md", outside: false, from: "workspace",
 	result: { outcome: "read", path: "notes.md", content: { kind: "text", text: "a\r\nb\r\n", lines: 2 } },
-	mode: "edit", draft: null, saving: false, saveProblem: null, goTo: null, ...change,
+	mode: "edit", draft: null, saving: false, saveProblem: null, diskChange: null, goTo: null, ...change,
 });
 
 describe("rendering Markdown", () => {
@@ -292,7 +292,7 @@ describe("the Markdown reader in the File tab", () => {
 		expect(store.getState().files[FEATURE.id]?.draft).toBeNull();
 	});
 
-	test("asks before closing, reading again, or opening another file over unsaved edits", async () => {
+	test("asks before closing, loading from disk, or opening another file over unsaved edits", async () => {
 		const engine = createMockEngine();
 		engine.setWorktreeFile(FEATURE.path, "notes.md", "# Notes\n");
 		const store = await started(engine);
@@ -303,7 +303,7 @@ describe("the Markdown reader in the File tab", () => {
 
 		for (const [act, then] of [
 			[() => store.closeFile(FEATURE.id), { kind: "close" }],
-			[() => store.readFileAgain(FEATURE.id), { kind: "read-again" }],
+			[() => store.loadFromDisk(FEATURE.id), { kind: "load" }],
 			[() => store.openFile(FEATURE.id, "docs/plan.md"), { kind: "open", path: "docs/plan.md" }],
 		] as const) {
 			act();
@@ -381,10 +381,10 @@ describe("the Markdown reader in the File tab", () => {
 		const store = await started(held);
 		store.openFile(FEATURE.id, "notes.md");
 		await settle();
-		// An agent writes the file; Read again starts and is held; editing starts from what was read before.
+		// An agent writes the file; Load from disk starts and is held; editing starts from what was read before.
 		engine.setWorktreeFile(FEATURE.path, "notes.md", "the agent's\n");
 		release = () => {};
-		store.readFileAgain(FEATURE.id);
+		store.loadFromDisk(FEATURE.id);
 		// The read has the new text and waits to be let go.
 		await settle();
 		store.editFile(FEATURE.id);
@@ -392,6 +392,8 @@ describe("the Markdown reader in the File tab", () => {
 		release!();
 		await settle();
 		await settle();
+		// The edits stay over the text they started from, and the File tab says the file changed on disk.
+		expect(store.getState().files[FEATURE.id]).toMatchObject({ draft: "first\nmine\n", diskChange: "changed" });
 		expect(await store.saveFile(FEATURE.id)).toBe(false);
 		expect(store.getState().files[FEATURE.id]?.saveProblem?.kind).toBe("changed");
 		expect(engine.readWorktreeFileNow(FEATURE.path, "notes.md")).toBe("the agent's\n");

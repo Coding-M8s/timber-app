@@ -1264,6 +1264,11 @@ repository through the path described [above](#shared-state-and-live-updates).
   It runs without Timber, so it first checks that the repository is in the
   list and that Git names the repository's own common directory for the
   folder. Nothing it reads leaves the main process or is logged.
+- **The open file (`readFileStamp`).** The File tab that shows checks its
+  own file every 2 seconds, from the window, apart from this (see
+  [the file viewer](#the-file-viewer), "Keeping up with the disk"), since
+  an ignored file, a file outside the worktree, or one past the first 200
+  changed files changes no stamp here.
 - **The window (`src/bun/refresh-policy.ts`).** The interface tells the
   engine through `attend` whether the window shows, whether it has the
   focus, and which worktree is selected, whenever one of them changes
@@ -4386,7 +4391,7 @@ edited and saved in a small editor.
   at CR LF, CR, and LF, and joins them with LF), so a file with CR LF is
   edited as `editableText` and saved as `textToSave`, and saving unedited
   text writes the same bytes. `hasUnsavedEdits` decides when to ask: before
-  `closeFile`, `readFileAgain`, and `openFile` of another path, which leave
+  `closeFile`, `loadFromDisk`, and `openFile` of another path, which leave
   an `unsaved-file` dialog instead. It also decides whether the File tab has
   its unsaved mark (`Workspace.tsx`): a dot that is a character, so forced
   colors keep it, beside `.tab-label` rather than in it, hidden from
@@ -4395,6 +4400,58 @@ edited and saved in a small editor.
   `unsavedFiles` message); the quit guard asks while that is above zero as it
   does while sessions run, and Restart now and restarting into an update ask
   in the window.
+- **Keeping up with the disk.** There is no Read again: the open file of
+  the File tab that shows is checked while the window shows, at once when
+  it comes into view and then `FILE_CHECK_MILLISECONDS` (2 s) after the
+  last check answered, or ten times as long as that check took
+  (`checkOpenFile` in `src/mainview/store/store.ts`). Only that file:
+  another worktree's open file is checked when its tab shows. A check is
+  `readFileStamp` on the `Engine` contract (`stamp` in
+  `src/bun/worktree-files.ts`): the device, inode, size, and modification
+  and change times in nanoseconds of the file, links followed, or the kind
+  of refusal a read would get ("missing", "not-a-file", "outside:" with the
+  real target, "failed"). It runs often, so, as the worktree stamp of the
+  selected worktree, it does not ask Timber: it keeps to the path rules
+  (relative and inside the worktree's real path, or complete for a file
+  outside), stats, and reads no byte; a test on a real folder checks it
+  asks for no listing and writes nothing. A new stamp reads the file with
+  `readWorktreeFile` (or `readFileOutside`), through every check of a read.
+  The repository's own change announcements are not enough: they see no
+  ignored file, no file outside the worktree, and only the first 200
+  changed files, and come with a reload of the whole repository.
+  `readOpenFile` takes the stamp before every read, so the first check
+  after opening a file finds it unchanged and reads nothing. When the read
+  answers, `sameFileResult` (`src/mainview/file-view-format.ts`) leaves a
+  file that did not change as it was, so nothing is loaded into the editor
+  again. With unsaved edits, the file as read and the draft stay, so a
+  save still checks against the text the edits started from, and the view
+  gets `diskChange` ("changed", or "deleted" for a missing file), which the
+  File tab shows as a note with Load from disk (`loadFromDisk`, which asks
+  first) and Save over it. That holds for a file that became a link leading
+  out too. Undoing every edit (`changeDraft`) or Discard reads it again,
+  and any save that worked clears it. A read that fails, or finds the
+  worktree not listed, is no news: the text shown and the edits stay, and
+  the stamp is forgotten, so the next check reads again; only a file never
+  read yet shows the failure. A save that wrote nothing forgets the stamp
+  too, since a read it dropped may have had news. Taking new text from disk
+  clears a save's problem. Without unsaved edits, the new answer
+  replaces the old, a draft (or Markdown's Edit) follows the new text, and
+  the editor's memory stays. A save takes a read ticket as it starts and as
+  it answers, and no stamp is kept while it runs, so a read from either
+  side of the write never lands over its answer. In the editor
+  (`TextEditor.tsx`), a layout effect sees the file as read (`base`) change
+  while the editor's text still equals the old one: it puts in only the
+  part that differs (`changeBetween` in
+  `src/mainview/text-editor-format.ts`), with the caret on the same line
+  and column (`caretAfterReload`), the scroll as it was, and an annotation
+  that keeps the change out of the store's draft. The history is in its
+  own compartment, which is emptied and made anew, since steps recorded
+  against the old text would put stray text into the new one. An editor
+  that appears from a kept memory whose text is not the draft any more
+  takes the new text the same way. The language and indent are not picked
+  again. The mock engine's stamp is what a read of its pretend disk would
+  answer, so `timberMock.setWorktreeFile` on the open file shows at the
+  next check.
 - **After a save.** `saveFile` reloads the repository (`reloadOne`) once the
   engine answered "saved", also when the file was closed meanwhile, so the
   row's counts follow without waiting for the poll, and the Changes list with
@@ -4412,8 +4469,8 @@ edited and saved in a small editor.
   modes are Rendered, Source, and Edit for Markdown; any other file is
   always in Edit (`initialFileMode`), with no switch, and its draft starts
   with its first change (`changeDraft` makes it while the file can be
-  edited). Read again and Discard go back to the mode the file opened in,
-  and drop the editor's memory, so a new editor starts from the file. What the file reads as, with plain new lines, is
+  edited). Load from disk and Discard go back to the mode the file opened
+  in, and drop the editor's memory, so a new editor starts from the file. What the file reads as, with plain new lines, is
   worked out once per read (`editableFileText`), since `hasUnsavedEdits`
   runs after every change to the open files.
 - **The editor.** `src/mainview/components/TextEditor.tsx`, on CodeMirror 6
@@ -4480,9 +4537,10 @@ edited and saved in a small editor.
   included, and its scroll are kept for each worktree's open file
   (`FileEditMemory`) in the store's closure, not its state
   (`fileEditMemory`), so typing changes no state. An editor that appears
-  takes the kept state while it still holds the draft, with its own
-  handlers in place of the last editor's (`StateEffect.reconfigure`,
-  which keeps the history). The memory goes on Discard and Read again, and
+  takes the kept state, with its own handlers in place of the last
+  editor's (`StateEffect.reconfigure`, which keeps the history); when the
+  file was read again with new text meanwhile, the new text goes into it as
+  it does while the editor shows (see "Keeping up with the disk"). The memory goes on Discard and Load from disk, and
   with the file when it closes, another opens in its place, or its
   worktree leaves the list.
 - **Search.** CodeMirror's search, with the bar drawn by React into its

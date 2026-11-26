@@ -190,6 +190,7 @@ function manualEngine(timber: TimberStatus = sampleTimberStatuses.ready) {
 		stopGenerating: async () => false,
 		readWorktreeFile: async request => ({ outcome: "missing", path: request.path, message: `${request.path} is not in this worktree.` }),
 		readFileOutside: async request => ({ outcome: "missing", path: request.path, message: `${request.path} is not there.` }),
+		readFileStamp: async () => "missing",
 		writeWorktreeFile: async request => ({ outcome: "missing", path: request.path, message: `${request.path} is not in this worktree.` }),
 		listWorktreeFolder: async request => ({ outcome: "listed", folder: request.folder, entries: [], more: 0 }),
 		watchWorktreeFolders: () => {},

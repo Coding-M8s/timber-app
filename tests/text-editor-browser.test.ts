@@ -178,16 +178,56 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the edito
 		await page.until(`${VIEW}.state.doc.line(5000).text.startsWith("\tconst value5000")`, "Ctrl+/ took the comment away");
 	}, 30_000);
 
-	test("Read again after the file changed on disk shows the new text, so a save never writes the old one back", async () => {
-		await page.evaluate(`${ENGINE}.setWorktreeFile(${STORE}.getState().repositories[0].worktrees[1].path, "src/long.ts", "const fresh = 1;\\n")`);
-		await page.evaluate(`${STORE}.readFileAgain(${STORE}.getState().selection.worktree)`);
-		await page.until(`${VIEW}.state.doc.toString() === "const fresh = 1;\\n"`, "the editor showed the new text");
+	test("an edit on disk shows by itself, in place: the caret line, scroll, and open search stay, and undo does not bring the old text back", async () => {
+		const feature = `${STORE}.getState().repositories[0].worktrees[1].path`;
+		await page.evaluate(`${VIEW}.dispatch({ selection: { anchor: ${VIEW}.state.doc.line(5000).from + 3 } })`);
+		// A key typed and taken away again: nothing unsaved, but a step in the history, recorded against the old text.
+		await page.type("q");
+		await page.evaluate(`(() => {
+			const view = ${VIEW};
+			const head = view.state.selection.main.head;
+			view.dispatch({ changes: { from: head - 1, to: head }, userEvent: "delete.backward" });
+		})()`);
+		await page.until(`!(${UNSAVED})`, "the file was as on disk again");
+		await page.press("F", "ctrl");
+		await page.until(`document.querySelector(".text-editor-find-field") !== null`, "the search bar showed");
+		await page.evaluate(`${VIEW}.focus()`);
+		const scrollBefore = await page.evaluate<number>(`${VIEW}.scrollDOM.scrollTop`);
+		expect(scrollBefore).toBeGreaterThan(1000);
+		// An agent puts a line at the top and changes line 4,000.
+		const changed = LONG.split("\n");
+		changed[3999] = "\tconst changed = 1;";
+		await page.evaluate(`${ENGINE}.setWorktreeFile(${feature}, "src/long.ts", ${JSON.stringify(`// header\n${changed.join("\n")}`)})`);
+		await page.until(`${VIEW}.state.doc.line(1).text === "// header"`, "the new text showed with no button pressed");
+		expect(await page.evaluate<string>(STATUS)).toBe("Ln 5,000, Col 4");
+		expect(Math.abs(await page.evaluate<number>(`${VIEW}.scrollDOM.scrollTop`) - scrollBefore)).toBeLessThan(40);
+		expect(await page.evaluate<boolean>(`document.querySelector(".text-editor-find-field") !== null`)).toBe(true);
+		expect(await page.evaluate<boolean>(UNSAVED)).toBe(false);
+		expect(await page.evaluate<boolean>(`[...document.querySelectorAll(".file-viewer-title button")].some(button => button.textContent === "Read again")`)).toBe(false);
+		// Undo has nothing from before the new text.
+		const reloaded = await page.evaluate<string>(`${VIEW}.state.doc.toString()`);
+		await page.evaluate(`${VIEW}.focus()`);
+		await page.press("Z", "ctrl");
+		await page.press("Z", "ctrl");
+		expect(await page.evaluate<string>(`${VIEW}.state.doc.toString()`) === reloaded).toBe(true);
+		expect(await page.evaluate<boolean>(UNSAVED)).toBe(false);
+
+		// With unsaved edits, the text stays, and the note offers Load from disk, which asks first.
+		await page.type("x");
+		await page.until(UNSAVED, "the file showed as unsaved");
+		await page.evaluate(`${ENGINE}.setWorktreeFile(${feature}, "src/long.ts", "const fresh = 1;\\n")`);
+		await page.until(`document.querySelector(".file-disk-change") !== null`, "the note said the file changed on disk");
+		expect(await page.evaluate<string>(`${VIEW}.state.doc.line(1).text`)).toBe("// header");
+		await page.evaluate(`[...document.querySelectorAll(".file-disk-change button")].find(button => button.textContent === "Load from disk").click()`);
+		await page.until(`document.querySelector('[role="alertdialog"]')?.textContent.includes("Loading it from disk drops them") === true`, "Load from disk asked first");
+		await page.evaluate(`[...document.querySelectorAll('[role="alertdialog"] button')].find(button => button.textContent === "Discard").click()`);
+		await page.until(`${VIEW}.state.doc.toString() === "const fresh = 1;\\n"`, "the editor showed the text on disk");
 		await page.type("x");
 		await page.press("S", "ctrl");
 		await page.until(`!(${UNSAVED})`, "the file was saved");
-		const saved = await page.evaluate<string>(`${ENGINE}.readWorktreeFileNow(${STORE}.getState().repositories[0].worktrees[1].path, "src/long.ts")`);
+		const saved = await page.evaluate<string>(`${ENGINE}.readWorktreeFileNow(${feature}, "src/long.ts")`);
 		expect(saved.length).toBe("const fresh = 1;\n".length + 1);
-	}, 30_000);
+	}, 60_000);
 
 	/** Opens a file of the worktree at a place, as a terminal link with a line does. */
 	async function openAt(path: string, at: string) {
@@ -393,7 +433,8 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the edito
 		await page.click(".file-viewer-rendered");
 		expect(await page.evaluate<string>(ACTIVE)).toBe("file-viewer-body file-viewer-rendered");
 		expect(await page.evaluate<string>(RENDERED_OUTLINE)).toBe("none");
-		await page.click(".file-viewer-title button");
+		// Back to the title line, on its path rather than a button, such as Open in editor, which may open Settings.
+		await page.click(".file-viewer-title .diff-path");
 		await tabTo("file-viewer-body file-viewer-rendered");
 		expect(await page.evaluate<boolean>(`document.activeElement.matches(":focus-visible")`)).toBe(true);
 		expect(await page.evaluate<string>(RENDERED_OUTLINE)).toBe("solid");

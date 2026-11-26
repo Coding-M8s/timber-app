@@ -3,7 +3,7 @@ import type { Worktree } from "../../shared/model";
 import { terminalFontStack } from "../../shared/terminal-appearance";
 import { isMarkdownPath } from "../../shared/worktree-files";
 import { OPEN_IN_EDITOR } from "../editor-format";
-import { canEditFile, describeFileNotice, editRefusal, editableFileText, hasUnsavedEdits } from "../file-view-format";
+import { canEditFile, describeDiskChange, describeFileNotice, editRefusal, editableFileText, hasUnsavedEdits } from "../file-view-format";
 import { useStore } from "../store/react";
 import type { FileMode, FileView } from "../store/state";
 import { terminalAppearance, watchTerminalAppearance } from "../terminal-look";
@@ -49,8 +49,10 @@ export function FileViewer({ repository, worktree, view }: { repository: string;
 	const notice = result === null || view.draft !== null ? null : describeFileNotice(result);
 	const unsaved = hasUnsavedEdits(view);
 	const id = worktree.id;
-	// A new memory, after Discard or Read again, makes a new editor, from the file as it is now.
+	// A new memory, after Discard or Load from disk, makes a new editor, from the file as it is now.
 	const memory = text === null ? null : store.fileEditMemory(id, view.path);
+	// The file changed on disk while it held unsaved edits; a save that found it changed, or gone, says so itself.
+	const diskNote = unsaved && view.saveProblem?.kind !== "changed" && !(view.diskChange === "deleted" && view.saveProblem !== null) ? describeDiskChange(view) : null;
 
 	// Ctrl+S (Cmd+S on macOS) saves, as in an editor. The editor has put its text in the store first.
 	const save = () => {
@@ -109,7 +111,6 @@ export function FileViewer({ repository, worktree, view }: { repository: string;
 						</button>
 					</>
 				)}
-				<button type="button" className="button quiet diff-editor" disabled={view.saving} onClick={() => store.readFileAgain(id)}>Read again</button>
 				{result?.outcome === "read" && !view.outside && (
 					<button
 						type="button"
@@ -131,9 +132,22 @@ export function FileViewer({ repository, worktree, view }: { repository: string;
 					{view.saveProblem.kind === "changed" && (
 						<p className="file-save-choices">
 							<button type="button" className="button danger" disabled={view.saving} onClick={() => void store.saveFile(id, { overwrite: true })}>Save over it</button>
-							<span>or copy your edits, then Discard and Read again to see the new text.</span>
+							<span>or</span>
+							<button type="button" className="button quiet" disabled={view.saving} onClick={() => store.loadFromDisk(id)}>Load from disk</button>
+							<span>to see the new text.</span>
 						</p>
 					)}
+				</div>
+			)}
+			{diskNote !== null && (
+				<div className="file-save-problem file-disk-change" role="status">
+					<p>{diskNote}</p>
+					<p className="file-save-choices">
+						<button type="button" className="button quiet" disabled={view.saving} onClick={() => store.loadFromDisk(id)}>Load from disk</button>
+						{view.diskChange === "changed" && (
+							<button type="button" className="button danger" disabled={view.saving} onClick={() => void store.saveFile(id, { overwrite: true })}>Save over it</button>
+						)}
+					</p>
 				</div>
 			)}
 			{refusal !== null && view.draft === null && <p className="file-edit-refusal">Read-only here. {refusal}</p>}

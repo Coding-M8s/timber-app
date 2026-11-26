@@ -147,6 +147,7 @@ export type AppRPC = {
 			stopGenerating: { params: { id: string }; response: Answer<"stopGenerating"> };
 			readWorktreeFile: { params: WorktreeFileRequest; response: Answer<"readWorktreeFile"> };
 			readFileOutside: { params: OutsideFileRequest; response: Answer<"readFileOutside"> };
+			readFileStamp: { params: WorktreeFileRequest | OutsideFileRequest; response: Answer<"readFileStamp"> };
 			writeWorktreeFile: { params: WorktreeFileWriteRequest; response: Answer<"writeWorktreeFile"> };
 			listWorktreeFolder: { params: WorktreeFolderRequest; response: Answer<"listWorktreeFolder"> };
 			readPorts: { params: PortsRequest; response: Answer<"readPorts"> };
