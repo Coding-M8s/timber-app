@@ -30,7 +30,7 @@ export function describeStatusLine(view: StatusHookView): StatusLineModel | null
 	switch (hook.state.kind) {
 		case "off":
 			return hook.byHand === null
-				? { label: "Status hook", text: "Off. Its sessions show only running or exited.", tone: "hint", actions: [{ action: "install", label: "Turn on…" }] }
+				? { label: "Status hook", text: `Off. ${(own && hookedAgent(hook.agent)?.status.hook.caveat) || "Its sessions show only running or exited."}`, tone: "hint", actions: [{ action: "install", label: "Turn on…" }] }
 				: { label: "Status hook", text: `Off. ${hook.byHand}`, tone: "hint", actions: [{ action: "add-by-hand", label: own ? "Show the plugin to add…" : "Show the entries to add…" }] };
 		case "on": {
 			const states = describeStates(view.reports);
@@ -156,13 +156,14 @@ function describePluginDialog(hook: HookDetails, reports: StatusHookView["report
 	const present = hook.present.join("\n");
 	const folder = hook.file.slice(0, hook.file.lastIndexOf("/") + 1) || hook.file;
 	const quiet = { note: null, copy: null, next: null };
+	const caveat = hookedAgent(hook.agent)?.status.hook.caveat;
 	switch (action) {
 		case "install":
 			return {
 				...quiet,
 				title: `Turn on the ${name} status hook?`,
-				lead: `${name} does not report its status. This adds a plugin of the app's, so its sessions in the app show ${states}, with their notifications and sounds. ${name} loads it in every terminal; outside the app it does nothing.`,
-				note: `Makes ${hook.file}. Nothing else in ${folder} changes.${notRun(hook)}`,
+				lead: `This adds a plugin of the app's, so its sessions in the app show ${states}, with their notifications and sounds. ${name} loads it in every terminal; outside the app it does nothing.`,
+				note: `${[`Makes ${hook.file}. Nothing else in ${folder} changes.`, caveat].filter(Boolean).join(" ")}${notRun(hook)}`,
 				blocks: [{ label: hook.file, text: hook.entries }],
 				confirm: { label: "Turn on", danger: false, running: "Turning on…" },
 				cancel: "Cancel",
@@ -171,7 +172,7 @@ function describePluginDialog(hook: HookDetails, reports: StatusHookView["report
 			return {
 				...quiet,
 				title: `Remove the ${name} status hook?`,
-				lead: `Deletes ${hook.file}, the app's plugin. Your other plugins stay as they are. ${name} sessions then show only running or exited.`,
+				lead: `Deletes ${hook.file}, the app's plugin. Your other plugins stay as they are. Sessions that need it then show only running or exited.`,
 				blocks: [{ label: `Deleted: ${hook.file}`, text: present }],
 				confirm: { label: "Remove", danger: true, running: "Removing…" },
 				cancel: "Cancel",

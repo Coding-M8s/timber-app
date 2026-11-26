@@ -39,7 +39,8 @@ describe("the OpenCode plugin's text", () => {
 		expect(new Set([...sent, "permission.asked", "question.asked"])).toEqual(new Set(HOOK.events.map(entry => entry.event)));
 		expect(reportedStates(opencode)).toEqual(["working", "blocked", "done"]);
 		expect(hookKind(HOOK)).toBe("file");
-		expect(HOOK.run).toBe(false);
+		expect(HOOK.run).toBe(true);
+		expect(HOOK.caveat).toBe("Only OpenCode 1 needs the plugin, and without it those sessions show only running or exited. OpenCode 2 reports its status itself and does not load it.");
 	});
 });
 
@@ -247,7 +248,7 @@ describe.skipIf(!posix)("the OpenCode plugin in a temporary home folder", () => 
 		const off = view.hook!;
 		expect(off).toMatchObject({
 			agent: "opencode", agentName: "OpenCode", file: "~/.config/opencode/plugins/timber-app-status.js", exists: false, state: { kind: "off" },
-			byHand: null, kind: "file", script: null, scriptPath: null, run: false, entries: OPENCODE_STATUS_PLUGIN,
+			byHand: null, kind: "file", script: null, scriptPath: null, run: true, entries: OPENCODE_STATUS_PLUGIN,
 		});
 		const on = await hooks.install({ agent: "opencode", token: off.token });
 		expect(on).toMatchObject({ outcome: "done", message: "The OpenCode status hook is on, in ~/.config/opencode/plugins/timber-app-status.js." });
@@ -257,7 +258,7 @@ describe.skipIf(!posix)("the OpenCode plugin in a temporary home folder", () => 
 		expect(existsSync(script)).toBe(false);
 		const onHook = hookOf(on.hooks);
 		expect(onHook.state).toEqual({ kind: "on" });
-		expect(describeStatusLine({ ...view, hook: onHook })?.text).toBe("On, in ~/.config/opencode/plugins/timber-app-status.js. Reports working, needs you, and done. Not yet checked by running OpenCode.");
+		expect(describeStatusLine({ ...view, hook: onHook })?.text).toBe("On, in ~/.config/opencode/plugins/timber-app-status.js. Reports working, needs you, and done.");
 		const removed = await hooks.remove({ agent: "opencode", token: onHook.token });
 		expect(removed).toMatchObject({ outcome: "done", message: "The OpenCode status hook is off: the app's plugin, ~/.config/opencode/plugins/timber-app-status.js, was deleted." });
 		expect(readdirSync(plugins)).toEqual(["other.js"]);
@@ -389,15 +390,15 @@ describe("the OpenCode dialogs", () => {
 	const off = {
 		agent: "opencode" as const, agentName: "OpenCode", file: "~/.config/opencode/plugins/timber-app-status.js", exists: false, state: { kind: "off" as const },
 		byHand: null, token: "missing", entries: OPENCODE_STATUS_PLUGIN, present: [], kind: "file" as const, script: null, scriptPath: null,
-		checked: "OpenCode 1.19.6's source on 2026-11-22", run: false,
+		checked: "OpenCode 1.19.6, run on 2026-11-25", run: true,
 	};
 	const reports = ["working", "blocked", "done"] as const;
 
-	test("Turn on shows the whole plugin and says it was never run", () => {
+	test("Turn on shows the whole plugin and says only OpenCode 1 needs it", () => {
 		expect(describeHookDialog(off, [...reports], "install")).toEqual({
 			title: "Turn on the OpenCode status hook?",
-			lead: "OpenCode does not report its status. This adds a plugin of the app's, so its sessions in the app show working, needs you, and done, with their notifications and sounds. OpenCode loads it in every terminal; outside the app it does nothing.",
-			note: "Makes ~/.config/opencode/plugins/timber-app-status.js. Nothing else in ~/.config/opencode/plugins/ changes. Not yet checked by running OpenCode.",
+			lead: "This adds a plugin of the app's, so its sessions in the app show working, needs you, and done, with their notifications and sounds. OpenCode loads it in every terminal; outside the app it does nothing.",
+			note: "Makes ~/.config/opencode/plugins/timber-app-status.js. Nothing else in ~/.config/opencode/plugins/ changes. Only OpenCode 1 needs the plugin, and without it those sessions show only running or exited. OpenCode 2 reports its status itself and does not load it.",
 			blocks: [{ label: "~/.config/opencode/plugins/timber-app-status.js", text: OPENCODE_STATUS_PLUGIN }],
 			confirm: { label: "Turn on", danger: false, running: "Turning on…" },
 			copy: null,
@@ -406,10 +407,14 @@ describe("the OpenCode dialogs", () => {
 		});
 	});
 
+	test("the Off line says which OpenCode needs the plugin", () => {
+		expect(describeStatusLine({ name: "OpenCode", agent: "opencode", source: "hook", reports: [...reports], hook: off })?.text).toBe("Off. Only OpenCode 1 needs the plugin, and without it those sessions show only running or exited. OpenCode 2 reports its status itself and does not load it.");
+	});
+
 	test("Remove shows the file it deletes", () => {
 		const on = { ...off, exists: true, state: { kind: "on" as const }, present: [OPENCODE_STATUS_PLUGIN] };
 		expect(describeHookDialog(on, [...reports], "remove")).toMatchObject({
-			lead: "Deletes ~/.config/opencode/plugins/timber-app-status.js, the app's plugin. Your other plugins stay as they are. OpenCode sessions then show only running or exited.",
+			lead: "Deletes ~/.config/opencode/plugins/timber-app-status.js, the app's plugin. Your other plugins stay as they are. Sessions that need it then show only running or exited.",
 			blocks: [{ label: "Deleted: ~/.config/opencode/plugins/timber-app-status.js", text: OPENCODE_STATUS_PLUGIN }],
 			confirm: { label: "Remove", danger: true, running: "Removing…" },
 		});
@@ -440,7 +445,7 @@ describe("OpenCode's hook in the mock engine", () => {
 	test("Turn on and Remove answer as the main process does", async () => {
 		const hooks = createMockStatusHooks(() => [{ name: "OpenCode", command: "opencode" }]);
 		const off = (await hooks.statusHooks())[0]!.hook!;
-		expect(off).toMatchObject({ kind: "file", script: null, scriptPath: null, run: false, state: { kind: "off" } });
+		expect(off).toMatchObject({ kind: "file", script: null, scriptPath: null, run: true, state: { kind: "off" } });
 		const on = await hooks.installStatusHook({ agent: "opencode", token: off.token });
 		expect(on).toMatchObject({ outcome: "done", message: "The OpenCode status hook is on, in ~/.config/opencode/plugins/timber-app-status.js." });
 		expect(hooks.statusHookFile("opencode").text).toBe(OPENCODE_STATUS_PLUGIN);

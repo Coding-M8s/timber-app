@@ -5599,7 +5599,8 @@ for its mark. Each row has:
   Cursor CLI and Gemini CLI report through a status hook (`hook`: its file
   in the home folder, its format, the events, the state each gives and any
   matcher, the timeout in seconds, and the version checked); see
-  [status hooks](#status-hooks). Any
+  [status hooks](#status-hooks). OpenCode's row is a `hook` too, for
+  OpenCode 1; OpenCode 2 reports through OSC 7501 under the same row. Any
   program may still report through OSC 7501, whatever its row says.
 
 **Adding an agent.**
@@ -5706,7 +5707,7 @@ Verified on Linux, against each installed version:
 | Grok Build 1.0.92 | 2026-11-22 | `grok --session-id <uuid> <args>`, with a UUID the app makes | `grok --resume <uuid> <args>` | `grok --help`: "`-s, --session-id <SESSION_ID>` Use a specific session UUID for a new conversation"; "`-r, --resume [<SESSION_ID_OR_TITLE>]` Resume a session by ID or title". Its README calls `--session-id` headless only, but the interactive screen honors it: run, it made that session and went back to it |
 | Cursor CLI 2026.11.19-f005e9d, 2026.11.22-e9042b2 | 2026-11-22 | `cursor-agent <args>`; no documented flag sets the id | `cursor-agent --resume <chat id> <args>` | `cursor-agent --help`: "`--resume [chatId]` Select a session to resume"; run, both `--resume <id>` and `--resume=<id>` went back to a chat |
 | Gemini CLI | not verified | `gemini <args>` | starts fresh | not installed on the machine it was checked on, so not run. Its 0.70.0 package shows `--session-id <uuid>` and `--resume <uuid>`, for a later change |
-| OpenCode | not verified | `opencode <args>` | starts fresh | not installed on the machine it was checked on, so not run |
+| OpenCode | not verified | `opencode <args>` | starts fresh | its ways back were not checked; 1.19.6 and 2.4.1 were run for their status only (issue 353) |
 | GitHub Copilot CLI | not verified | `copilot <args>` | starts fresh | only the editor's `copilot` stub was installed; 1.0.116 was run for its status only (issue 354), and its ways back were not checked |
 
 An agent the table marks not verified has `resume: null` in the registry:
@@ -5896,8 +5897,19 @@ for a turn; nothing before its first screen is passed, and `blocked` was
 not seen); Grok Build 1.0.92 once the probe is answered, by default
 (its `program_status = "auto"`; issue 355, below). Cursor CLI does not. Gemini CLI 0.70.0
 does not either: its package holds no `]7501` (read, not run; issue 351).
-OpenCode 1.19.6's source holds none either, so it gets a status hook (read,
-not run; issue 353, below). GitHub Copilot CLI 1.0.116 reports itself,
+OpenCode 1.19.6's source holds none either, so it gets a status hook (issue
+353, below). OpenCode 2.4.1 reports itself once the probe is answered (run on
+2026-11-25): `idle`, `working`, and `blocked` with `kind=permission`, as
+`app=opencode`, and `idle` again when a turn ends, never `done` or `error`.
+So the app reads its root record's `idle` after `working` or `blocked` as
+`done` (`src/shared/program-status.ts`); a turn stopped with Esc says done
+too. It also mirrors each busy or waiting session as a child record, and
+writes the root before the child, so a root `working` also takes needs you
+off its children: else an approval raised a second Needs you for the child.
+By its reporter's code, a root with one busy session copies that session's
+title and message, and one with several says how many; a record is written
+only when it changed; and quitting writes a root `clear`, which also takes
+the done away. GitHub Copilot CLI 1.0.116 reports itself,
 without a probe (issue 354, next), so it gets no hook.
 
 **GitHub Copilot CLI.** Run with 1.0.116 on Linux x64 (Pop!_OS 24.04) on
@@ -6354,10 +6366,12 @@ Off for every agent until the person turns it on.
     until `AfterTool`. Claude Code reports these itself.
 - **OpenCode** (issue 353). Built from the source of OpenCode 1.19.6
   (github.com/anomalyco/opencode, tag `v1.19.6`, released 2026-11-17) on
-  2026-11-22, and **not run**: OpenCode was not installed on the machine it
-  was built on. Its row says so (`run: false`), and Turn on and its On
-  line say "Not yet checked by running OpenCode.", as for any hook the
-  registry marks as never run (Gemini CLI's too). What the source says:
+  2026-11-22, and run with 1.19.6 on 2026-11-25 (see
+  [verification](verification.md)): a turn wrote `busy`,
+  `permission.asked`, `answered`, and `idle`; no question was asked. Its Off
+  line and Turn on note say "Only OpenCode 1 needs the plugin, and without it
+  those sessions show only running or exited. OpenCode 2 reports its status
+  itself and does not load it." (the hook's `caveat`). What the source says:
   - OpenCode loads every `.js` and `.ts` file in `plugin/` and `plugins/`
     of each config folder (`config/plugin.ts`), among them its global one,
     `opencode` in `XDG_CONFIG_HOME` (by `xdg-basedir`, so `~/.config`
@@ -6381,8 +6395,9 @@ Off for every agent until the person turns it on.
     session, a task's subsessions included; `permission.asked` and
     `permission.replied`; `question.asked`, `question.replied`, and
     `question.rejected` (`packages/schema`).
-  - OpenCode 2 renames its events, so the plugin reports nothing there: it
-    is for OpenCode 1 only.
+  - OpenCode 2 does not load the plugin: 2.4.1 logs "Plugin must export a
+    default definition with an id and an effect or setup function" and runs
+    on. The plugin is for OpenCode 1 only; OpenCode 2 reports itself.
 - **The OpenCode plugin** (`OPENCODE_STATUS_PLUGIN` in
   `src/shared/status-hooks.ts`). A file of the app's own, written whole and
   deleted whole, known by its first line (`OPENCODE_PLUGIN_MARKER`). It
@@ -6403,7 +6418,7 @@ Off for every agent until the person turns it on.
   throws. A turn stopped with Esc goes idle, and says done. No event comes
   when OpenCode starts, so a session shows running until its first prompt,
   not idle as Cursor's does. Its line says "On, in <file>. Reports working,
-  needs you, and done. Not yet checked by running OpenCode."
+  needs you, and done."
 - **The script.** `status-hook` in the app's settings folder
   (`~/.config/timber-app/status-hook` on Linux), written on Turn on with
   mode 0755 (`STATUS_HOOK_SCRIPT` in `src/shared/status-hooks.ts`). It does
@@ -6420,8 +6435,7 @@ Off for every agent until the person turns it on.
 - **Platforms.** Built and checked on Linux only. On Windows no status line
   shows for a hooked agent and nothing is written, since the script is `sh`
   and the agents' files there are not confirmed. macOS is not tried.
-  OpenCode's plugin was run under Bun with events shaped as OpenCode sends
-  them, never in OpenCode.
+  OpenCode's plugin was also run in OpenCode 1.19.6.
 - **The entries.** One per event, added after the entries already there.
   Cursor CLI: `{ "command": "'<script>' cursor <event>", "timeout": 5 }`.
   Gemini CLI: `{ "matcher": "ToolPermission", "hooks": [{ "type":

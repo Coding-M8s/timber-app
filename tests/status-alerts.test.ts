@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { type AlertAction, type AlertSettings, createAlertRunner, createStatusAlerts, onScreen } from "../src/shared/status-notices";
 import { type SoundChoice, defaultStateSounds } from "../src/shared/sound-setting";
 import type { TerminalSession } from "../src/shared/terminal";
+import { createStatusRecords, parseStatusReport } from "../src/shared/program-status";
 
 const TIMBER = "/work/timber";
 const FEATURE = "/work/timber-worktrees/feat-github-issue-lookup";
@@ -64,6 +65,26 @@ describe("which statuses are told about", () => {
 		alerts.changed(working, away, some, 0);
 		expect(alerts.changed(done, away, some, 0)).toEqual([]);
 		expect(alerts.changed(change({ status: status("blocked") }), away, some, 0)).toEqual([show("Codex needs you", "In feat-github-issue-lookup: Needs you")]);
+	});
+});
+
+describe("OpenCode 2's own reports", () => {
+	// The order 2.4.1 writes them in: the root, then the child that mirrors the session; its clear before the root's idle.
+	test("one needs you for an approval, and one done at the end of the turn", () => {
+		const alerts = createStatusAlerts(0);
+		const records = createStatusRecords();
+		const titles: string[] = [];
+		for (const report of [
+			"state=idle", "state=working", "state=working:id=ses_1",
+			"state=blocked:kind=permission", "state=blocked:kind=permission:id=ses_1",
+			"state=working", "state=working:id=ses_1",
+			"state=clear:id=ses_1", "state=idle",
+		]) {
+			records.apply({ type: "report", report: parseStatusReport(report.includes("clear") ? report : `${report}:app=opencode`) });
+			const actions = alerts.changed(change({ name: "OpenCode", status: records.root(), children: records.children() }), away, all, 0);
+			for (const action of actions) if (action.kind === "show") titles.push(action.notice.title);
+		}
+		expect(titles).toEqual(["OpenCode needs you", "OpenCode is done"]);
 	});
 });
 

@@ -88,7 +88,7 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the statu
 				await page.evaluate(`${STORE}.closeDialog()`);
 			}, 60_000);
 
-			// OpenCode's plugin (issue 353) is far longer than Cursor's entries: it scrolls in its box, and the dialog says it was never run.
+			// OpenCode's plugin (issue 353) is far longer than Cursor's entries: it scrolls in its box, and the dialog says which OpenCode needs it.
 			test(`the OpenCode plugin dialog in ${theme} at ${width} pixels wide`, async () => {
 				await page.reload();
 				await page.until(`${STORE}.getState().repositories.length > 0`, "the repositories were listed");
@@ -102,7 +102,7 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the statu
 				const look = await page.evaluate<Look>(LOOK);
 				expect(look).toMatchObject({ settingsOpen: true, hookOpen: true, title: "Turn on the OpenCode status hook?", sideways: 0, focused: "Cancel", scriptShown: false });
 				expect(look.labels).toEqual(["~/.config/opencode/plugins/timber-app-status.js"]);
-				expect(await page.evaluate<boolean>(`document.querySelector("dialog.status-hook-dialog[open]").textContent.includes("Not yet checked by running OpenCode.")`)).toBe(true);
+				expect(await page.evaluate<boolean>(`document.querySelector("dialog.status-hook-dialog[open]").textContent.includes("Only OpenCode 1 needs the plugin")`)).toBe(true);
 				// The plugin scrolls inside its own box, within the window's height.
 				expect(await page.evaluate<boolean>(`(() => { const dialog = document.querySelector("dialog.status-hook-dialog[open]").getBoundingClientRect(); return dialog.bottom <= innerHeight && dialog.top >= 0; })()`)).toBe(true);
 				await page.press("Escape");

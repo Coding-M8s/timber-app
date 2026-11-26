@@ -5495,3 +5495,34 @@ line (issue 399), Linux x64 with Bun 1.4.5 and Google Chrome 151:
 - Not run: the desktop app and its WebKit and WebView2 views, a real click
   on a link in a terminal (the click's wiring is `placeOf` plus the store,
   each tested), a screen reader, Windows, and macOS.
+
+Run for OpenCode 1 and 2 status (issue 353), Linux x64 (Pop!_OS 24.04) with
+Bun and headless Chrome, on 2026-11-25:
+
+- OpenCode 2.4.1 (`~/.opencode/bin/opencode`) and 1.19.6 (the
+  `opencode-linux-x64` package in Bun's cache), each with `HOME` and every
+  `XDG_*` folder in a temporary folder, `"permission": { "bash": "ask" }`,
+  and the free model `opencode/big-pickle`.
+- `opencode run --standalone --print-logs` with 2.4.1 and the app's plugin
+  installed: "failed to load plugin ... Plugin must export a default
+  definition with an id and an effect or setup function", the turn still ran,
+  and nothing was written to `TIMBER_APP_STATUS`.
+- 2.4.1 in a pseudo terminal that answers the probe wrote OSC 7501 with
+  `app=opencode`: `idle`; `working`; `blocked` with `kind=permission`;
+  `working`; then `idle`, with each busy session also as a child record that
+  `clear` removes. No `done`.
+- Both versions through `createTerminalSessions` and `createAlertRunner`, by a
+  script outside the repository: a prompt that ran `echo hi` showed working,
+  needs you (Needs you alert), working after approving, and done (done
+  alert). A second prompt stopped with Esc twice showed done, with its alert.
+  The harness set the alert interval to 0. A first run with 2.4.1 raised a
+  second Needs you for the child record on approving, withdrawn at once; a
+  root `working` now takes needs you off its children, and a rerun with
+  2.4.1 raised none.
+- The new tests in `tests/program-status.test.ts` and
+  `tests/opencode-status-hook.test.ts` failed before the change.
+- `bun run test`: 4914 pass, 19 skip, 0 fail, in 290 files, after rebasing onto
+  opening a terminal link at its line (b362a9b).
+  `bun run typecheck` and `bun run typecheck:desktop`: no errors.
+- Not run: the desktop app by hand, so no claim about the notifications on a
+  desktop; a question or an error in OpenCode; macOS and Windows.

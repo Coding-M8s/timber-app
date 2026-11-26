@@ -292,8 +292,27 @@ while read -r state kind; do report "$state" "$kind"; done
 		expect(agentBrand({ kind: "terminal", shell: "/bin/sh", status: statusOf(session.id) })).toBe("copilot");
 	});
 
+	test("OpenCode 2's own reports, as 2.4.1 writes them, end a turn in done with OpenCode's mark", async () => {
+		// OpenCode is not run here: a stand-in writes what 2.4.1 was seen to write, one report for each line typed.
+		writeFileSync(join(root, "bin", "opencode"), String.raw`#!/bin/sh
+stty -echo
+report() { printf '\033]7501;state=%s:app=opencode%s\033\\' "$1" "$2"; }
+report idle
+while read -r state kind; do report "$state" "$kind"; done
+`, { mode: 0o755 });
+		await start([{ name: "OpenCode", command: "opencode" }]);
+		const session = await opened("OpenCode");
+		expect(await until(() => statusOf(session.id)?.state === "idle")).toBe(true);
+		const steps: [string, StatusState][] = [["working", "working"], ["blocked :kind=permission", "blocked"], ["working", "working"], ["idle", "done"]];
+		for (const [line, state] of steps) {
+			sessions.write(session.id, `${line}\r`);
+			expect(await until(() => statusOf(session.id)?.state === state)).toBe(true);
+		}
+		expect(agentBrand({ kind: "terminal", shell: "/bin/sh", status: statusOf(session.id) })).toBe("opencode");
+	});
+
 	test("OpenCode's plugin, driven as OpenCode 1.19.6 would, sets the session's status with OpenCode's mark", async () => {
-		// OpenCode itself was not run: a Bun program loads the plugin as OpenCode 1 does and replays events shaped as its source sends them.
+		// OpenCode is not run here: a Bun program loads the plugin as OpenCode 1 does and replays events shaped as its source sends them.
 		writeFileSync(join(root, "timber-app-status.js"), OPENCODE_STATUS_PLUGIN);
 		writeFileSync(join(root, "opencode-events.mjs"), [
 			`const plugin = Object.values(await import(${JSON.stringify(join(root, "timber-app-status.js"))}))[0];`,
