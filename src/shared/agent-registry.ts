@@ -175,7 +175,11 @@ interface HookBase {
 	checked: string;
 	/** Whether the hook was checked by running the agent, or only built from its source; Turn on says so when not. */
 	run: boolean;
-	/** What keeps the hook from reporting that the person should know before turning it on, or absent. */
+	/**
+	 * What the person should know before turning the hook on, such as what
+	 * keeps it from reporting, or absent. A plugin file's also replaces the
+	 * rest of its Off line.
+	 */
 	caveat?: string;
 }
 
@@ -513,15 +517,18 @@ const ROWS = [
 		signIn: { status: null, login: null },
 		generate: null,
 		/*
-		 * OpenCode writes no OSC 7501 that is known of. Built from the source
-		 * of OpenCode 1.19.6 (github.com/anomalyco/opencode, tag v1.19.6) on
-		 * 2026-11-22, not run: OpenCode was not installed where it was built.
-		 * It loads every `.js` file in `plugins` of its config folder,
+		 * OpenCode 1 writes no OSC 7501. Built from the source of OpenCode
+		 * 1.19.6 (github.com/anomalyco/opencode, tag v1.19.6) on 2026-11-22,
+		 * and run with it on 2026-11-25: busy, permission.asked, answered, and
+		 * idle were written; no question was asked. It loads every `.js` file in `plugins` of its config folder,
 		 * `XDG_CONFIG_HOME/opencode` or `~/.config/opencode`, and gives a
 		 * plugin `session.status` (busy, idle), `permission.asked` and
 		 * `.replied`, and `question.asked`, `.replied`, and `.rejected`. The
 		 * plugin (`OPENCODE_STATUS_PLUGIN`) turns those into the events here.
-		 * OpenCode 2 renames its events, so this is for OpenCode 1 only.
+		 *
+		 * OpenCode 2 does not load this plugin and needs none: 2.4.1, run on
+		 * 2026-11-25, reports itself through OSC 7501 as `opencode`, with
+		 * `idle` where others say `done` (see ./program-status.ts).
 		 */
 		status: {
 			source: "hook",
@@ -537,8 +544,9 @@ const ROWS = [
 					{ event: "answered", state: "working" },
 					{ event: "idle", state: "done" },
 				],
-				checked: "OpenCode 1.19.6's source on 2026-11-22",
-				run: false,
+				checked: "OpenCode 1.19.6, run on 2026-11-25",
+				run: true,
+				caveat: "Only OpenCode 1 needs the plugin, and without it those sessions show only running or exited. OpenCode 2 reports its status itself and does not load it.",
 			},
 		},
 	},

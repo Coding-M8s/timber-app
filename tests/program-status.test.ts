@@ -243,6 +243,59 @@ describe("records", () => {
 		expect(records.size()).toBe(0);
 	});
 
+	// OpenCode 2 never reports done: a finished turn goes back to idle. The reports are the ones 2.4.1 wrote.
+	test("OpenCode's idle after a turn is done, and its idle at start is not", () => {
+		for (const turn of ["state=working:app=opencode", "state=blocked:kind=permission:app=opencode"]) {
+			const records = createStatusRecords();
+			records.apply(event("state=idle:app=opencode"));
+			expect(records.root()?.state).toBe("idle");
+			records.apply(event(turn));
+			expect(records.apply(event("state=idle:app=opencode"))).toBe(true);
+			expect(records.root()).toMatchObject({ state: "done", app: "opencode", kind: null, progress: null });
+			records.apply(event("state=working:app=opencode"));
+			expect(records.root()?.state).toBe("working");
+		}
+	});
+
+	// An OpenCode that died with no clear leaves its done behind, and the next one starts idle.
+	test("an OpenCode started after one that left done behind is idle, not done", () => {
+		const records = createStatusRecords();
+		records.apply(event("state=working:app=opencode"));
+		records.apply(event("state=idle:app=opencode"));
+		records.exited();
+		records.apply({ type: "prompt" });
+		expect(records.root()?.state).toBe("done");
+		records.apply(event("state=idle:app=opencode"));
+		expect(records.root()?.state).toBe("idle");
+	});
+
+	// OpenCode 2 writes its root before the child that mirrors the session, so after an approval the child is a report behind.
+	test("OpenCode's root working again takes needs you off its children", () => {
+		const records = createStatusRecords();
+		records.apply(event("state=blocked:kind=permission:app=opencode"));
+		records.apply(event("state=blocked:kind=permission:app=opencode:id=ses_1:msg=UGVybWlzc2lvbg=="));
+		records.apply(event("state=blocked:kind=question:app=other:id=elsewhere"));
+		expect(records.apply(event("state=working:app=opencode"))).toBe(true);
+		expect(records.children()).toMatchObject([
+			{ id: "elsewhere", state: "blocked", kind: "question" },
+			{ id: "ses_1", state: "working", kind: null, message: null },
+		]);
+	});
+
+	test("idle stays idle for other programs, for a child, and after a clear", () => {
+		const records = createStatusRecords();
+		records.apply(event("state=working:app=codex"));
+		records.apply(event("state=idle:app=codex"));
+		expect(records.root()?.state).toBe("idle");
+		records.apply(event("state=working:app=opencode:id=sub"));
+		records.apply(event("state=idle:app=opencode:id=sub"));
+		expect(records.children()[0]?.state).toBe("idle");
+		records.apply(event("state=working:app=opencode"));
+		records.apply(event("state=clear"));
+		records.apply(event("state=idle:app=opencode"));
+		expect(records.root()?.state).toBe("idle");
+	});
+
 	test("a new prompt also ends idle", () => {
 		const records = createStatusRecords();
 		records.apply(event("state=idle"));

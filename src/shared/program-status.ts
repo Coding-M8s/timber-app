@@ -13,6 +13,11 @@
  * - Each report replaces its record. `working`, `blocked`, and `idle` end
  *   when the process exits or a new shell prompt starts (OSC 133 `A`);
  *   `done` and `error` stay. A full reset (RIS, `ESC c`) clears every record.
+ * - OpenCode 2 never reports `done`: a finished turn goes back to `idle`. So
+ *   its root record's `idle` after `working` or `blocked` is read as `done`.
+ *   Its root also sums up its sessions, which it mirrors as children and
+ *   writes after the root: a root `working` means none of them still waits.
+ *   As it quits it writes a root `clear`, so its `done` does not outlive it.
  *
  * Spec: https://www.superlogical.com/rex/docs/build/program-status
  */
@@ -297,6 +302,23 @@ export interface StatusRecords {
 	size(): number;
 }
 
+/**
+ * The programs, by `app`, whose root record sums up their sessions: working or
+ * blocked while any is, and `idle`, never `done`, once none is.
+ */
+const SUMS_ITS_SESSIONS: ReadonlySet<string> = new Set(["opencode"]);
+
+/**
+ * Whether a root report is the end of a turn: `idle` right after `working` or
+ * `blocked`. OpenCode writes a record only when it changed, so no second
+ * `idle` follows, and one after `done` is a new OpenCode's first.
+ */
+function endsTurn(before: ProgramStatus | null, report: ProgramStatus): boolean {
+	return report.state === "idle" && report.app !== null && SUMS_ITS_SESSIONS.has(report.app)
+		&& before !== null && before.app === report.app
+		&& (before.state === "working" || before.state === "blocked");
+}
+
 export function sameProgramStatus(one: ProgramStatus | null, other: ProgramStatus | null): boolean {
 	if (one === null || other === null) return one === other;
 	return one.state === other.state && one.kind === other.kind && one.progress === other.progress
@@ -354,8 +376,17 @@ export function createStatusRecords(): StatusRecords {
 			// The same report again changes nothing the window shows, though it counts as the newest update.
 			const before = records.get(path) ?? null;
 			records.delete(path);
-			records.set(path, rest as ProgramStatus);
-			let changed = !sameProgramStatus(before, rest as ProgramStatus);
+			const reported = rest as ProgramStatus;
+			const record: ProgramStatus = path === "" && endsTurn(before, reported) ? { ...reported, state: "done" } : reported;
+			records.set(path, record);
+			let changed = !sameProgramStatus(before, record);
+			if (path === "" && record.state === "working" && record.app !== null && SUMS_ITS_SESSIONS.has(record.app)) {
+				for (const [key, child] of records) {
+					if (key === "" || child.state !== "blocked" || child.app !== record.app) continue;
+					records.set(key, { ...child, state: "working", kind: null, message: null });
+					changed = true;
+				}
+			}
 			if (records.size > STATUS_LIMITS.records) {
 				records.delete(records.keys().next().value!);
 				changed = true;

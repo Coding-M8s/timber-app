@@ -143,7 +143,7 @@ describe("Settings, Agents with status hooks", () => {
 		const markup = renderToStaticMarkup(
 			<NotificationsSectionView draft={draft} saved={draft} save={{ state: "idle" }} problem={null} customPaths={{}} onEdit={() => {}} onChooseFile={() => {}} onPlay={() => {}} onSave={() => {}} />,
 		);
-		expect(markup).toContain("Agents that do not report their status themselves, such as Cursor CLI and OpenCode, need a status hook, turned on in Settings, Agents.");
+		expect(markup).toContain("Agents that do not report their status themselves, such as Cursor CLI and OpenCode 1, need a status hook, turned on in Settings, Agents.");
 	});
 });
 

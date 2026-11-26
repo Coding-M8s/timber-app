@@ -32,7 +32,8 @@ Spiked on 2026-11-22 (see [the spike](#the-spike)):
 | Grok Build 1.0.92 | yes, once the terminal answers its probe, which it sends unless the environment names another terminal (#355) | no |
 | Cursor CLI 2026.11.22 | no: none sent in a turn, and no `]7501` in its files | yes |
 | Gemini CLI 0.70.0 | no: no `]7501` in its package (read, not run, #351) | yes |
-| OpenCode 1.19.6 | no OSC 7501 in its source; not run (#353) | yes, a plugin |
+| OpenCode 1.19.6 | no OSC 7501 in its source; the plugin run in it (#353) | yes, a plugin |
+| OpenCode 2.4.1 | yes, once the terminal answers its probe: idle, working, needs you; idle, not done, ends a turn (run in #353) | no |
 | GitHub Copilot CLI 1.0.116 | yes, without a probe: idle, working, needs you, done, error (run in #354) | no |
 | Pi | yes, by its maker's account (issue 343) | no |
 
@@ -47,7 +48,7 @@ does not send its probe where one is named, as when the app was started from
 tmux or GNOME Terminal, and took those variables out of the app's sessions
 (see "Agent status" in docs/architecture.md).
 
-So hooks are for Cursor for certain, and for Gemini CLI and OpenCode (their
+So hooks are for Cursor for certain, and for Gemini CLI and OpenCode 1 (their
 sources hold no OSC 7501; #351, #353). For Codex, Grok Build, and Copilot
 no hook is installed: #354 found that Copilot CLI reports itself, from
 1.0.106 on by its changelog.
@@ -315,7 +316,7 @@ the agent asks the person.
   but Gemini CLI has no Config folder field yet, so its hook is one per
   agent, in `~/.gemini/settings.json`, for now: a departure from a hook per
   config folder, left for a follow-up.
-- **OpenCode 1.19.6**, from its source, not run (#353): `session.status`
+- **OpenCode 1.19.6**, from its source, then run on 2026-11-25 (#353): `session.status`
   busy and idle, `permission.asked` and `.replied`, and `question.asked`,
   `.replied`, and `.rejected`. Its plugin gives working, needs you, and
   done; it waits for no answer, so no event decides anything.
@@ -433,8 +434,9 @@ docs/verification.md. In short:
   Cursor CLI, the only one spiked that needs a hook, not Codex, which
   reports itself.
 - #353 OpenCode: a plugin of the app's own that appends the line itself,
-  built from OpenCode 1.19.6's source; running it in OpenCode is still to
-  do.
+  built from OpenCode 1.19.6's source and run in it. OpenCode 2 reports
+  itself, so it needs no hook; the app reads its end-of-turn `idle` as
+  done.
 - #351 Gemini CLI: spike first, then a hook only if it does not report
   natively.
 - #354 Copilot CLI: no hook. Its spike found that it reports through OSC

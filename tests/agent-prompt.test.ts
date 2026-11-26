@@ -17,6 +17,12 @@ describe("when a new agent is ready for its prompt", () => {
 		expect(isReadyForPrompt({ ...probed, status: status("idle") })).toBe(true);
 	});
 
+	test("OpenCode's done, read from its idle after a turn, is ready too", () => {
+		const probed = { probed: true, pasteOn: true, quietMilliseconds: 0, pasteOnMilliseconds: 0 };
+		expect(isReadyForPrompt({ ...probed, status: { ...status("done"), app: "opencode" } })).toBe(true);
+		expect(isReadyForPrompt({ ...probed, status: { ...status("working"), app: "opencode" } })).toBe(false);
+	});
+
 	test("an agent that never probed gets it once bracketed paste is on and it stayed quiet long enough", () => {
 		const plain = { probed: false, status: null, pasteOnMilliseconds: 0 };
 		expect(isReadyForPrompt({ ...plain, pasteOn: false, quietMilliseconds: 10_000 })).toBe(false);
