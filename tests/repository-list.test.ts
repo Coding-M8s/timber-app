@@ -692,6 +692,66 @@ describe.skipIf(realTimber === null)("reordering worktrees", () => {
 		}
 	});
 
+	test("a worktree made again at a removed one's path appears at the end, as the saved order forgets the removed path", async () => {
+		const list = listOn();
+		await list.addFolder(primary);
+		await list.reorderWorktrees(primary, [linked, primary]);
+		const savedOrder = () => JSON.parse(readFileSync(settingsFile, "utf8")).repositories[0].worktreeOrder;
+		git(primary, "worktree", "remove", "--force", linked);
+		try {
+			// A single read tidies the order as a listing does.
+			expect((await list.reload(primary))!.worktrees.map(worktree => worktree.path)).toEqual([primary]);
+			expect(savedOrder()).toEqual([primary]);
+		} finally {
+			git(primary, "worktree", "add", "-B", "feat/x", linked);
+		}
+		expect(await names(listOn())).toEqual([primary, linked]);
+		expect((await list.list()).find(repository => repository.path === primary)!.worktrees.map(worktree => worktree.path)).toEqual([primary, linked]);
+	});
+
+	test("a listing that did not work, or that started before an order was saved, keeps the order", async () => {
+		const list = listOn();
+		await list.addFolder(primary);
+		await list.reorderWorktrees(primary, [linked, primary]);
+		const text = readFileSync(settingsFile, "utf8");
+		// Timber could not list the worktrees: the listing names none, and drops none.
+		const failing: RepositoryReader = { find: folder => reader.find(folder), reload: async path => ({ ...(await reader.reload(path))!, failure: "Timber could not list", worktrees: [] }) };
+		await listOn({ reader: failing }).list();
+		expect(readFileSync(settingsFile, "utf8")).toBe(text);
+
+		// A listing read before a worktree was made answers after the order that names it was saved.
+		let release = () => {};
+		const held = new Promise<void>(resolve => {
+			release = resolve;
+		});
+		let read = () => {};
+		const wasRead = new Promise<void>(resolve => {
+			read = resolve;
+		});
+		const stale: RepositoryReader = {
+			find: folder => reader.find(folder),
+			async reload(path) {
+				const repository = await reader.reload(path);
+				read();
+				await held;
+				return repository;
+			},
+		};
+		const slow = listOn({ reader: stale });
+		const listing = slow.list();
+		await wasRead;
+		const added = join(root, "sample-worktrees", "feat-z");
+		git(primary, "worktree", "add", "-b", "feat/z", added);
+		try {
+			expect(await slow.reorderWorktrees(primary, [added, linked, primary])).toEqual({ outcome: "saved" });
+			release();
+			await listing;
+			expect(JSON.parse(readFileSync(settingsFile, "utf8")).repositories[0].worktreeOrder).toEqual([added, linked, primary]);
+		} finally {
+			git(primary, "worktree", "remove", "--force", added);
+		}
+	});
+
 	test("an order that changes nothing writes nothing, and an empty one forgets it", async () => {
 		const list = listOn();
 		await list.addFolder(primary);

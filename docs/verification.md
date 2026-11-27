@@ -5852,6 +5852,13 @@ with Bun 1.4.2, Git, Timber at `~/.local/bin/timber`, and Google Chrome:
   is not listed, and the override write nothing; an empty order and removing
   the repository forget it; a save that fails is reported and leaves the order;
   every file, the index, and every ref are the same after.
+- After rebasing onto main (worktree tags, agents, and shortcuts), the saved
+  order forgets removed worktrees: `bun test tests/repository-list.test.ts`,
+  57 passed. A worktree removed and made again at the same path is last, after
+  a `reload` and a `list`; a listing that Timber could not list, and one that
+  read Git before an order naming a newer worktree was saved, leave the order
+  as it was. Each of the two new tests failed with its half of the change
+  taken out.
 - `bun test tests/store.test.ts`: passed. A move shows at once and saves that
   repository's whole order only; moves that change nothing ask nothing; steps;
   a list read while the save runs keeps the move; a failed save says why and

@@ -50,7 +50,10 @@ export interface RepositoryListOptions {
  * read-only, and nothing in a repository or its folder is touched.
  */
 export interface RepositoryList {
-	/** Every saved repository. One that Git cannot read any more is still listed, as unavailable. */
+	/**
+	 * Every saved repository. One that Git cannot read any more is still listed, as unavailable.
+	 * A saved worktree order loses the paths a listing that worked no longer names (see `withoutRemoved`).
+	 */
 	list(): Promise<Repository[]>;
 	/** Ask for a folder with the picker, then add the repository it belongs to. */
 	add(): Promise<AddRepositoryResult>;
@@ -62,7 +65,7 @@ export interface RepositoryList {
 	reorder(order: readonly string[]): Promise<ReorderRepositoriesResult>;
 	/** Save the order of one repository's worktrees, by path. See `Engine.reorderWorktrees`. */
 	reorderWorktrees(repository: string, order: readonly string[]): Promise<ReorderWorktreesResult>;
-	/** Read one repository again, named by the path of its primary checkout. See `RepositoryReader.reload`. */
+	/** Read one repository again, named by the path of its primary checkout. See `RepositoryReader.reload`. Its saved worktree order is tidied as `list` tidies it. */
 	reload(path: string): Promise<Repository | null>;
 	/** Whether `path` is the primary checkout of a repository in the list. Commands that change a repository run only in these. */
 	includes(path: string): Promise<boolean>;
@@ -117,6 +120,21 @@ function inSavedOrder(repository: Repository, saved: readonly SavedRepository[])
 	return sameOrder(worktrees, repository.worktrees) ? repository : { ...repository, worktrees };
 }
 
+/**
+ * `entry` without the paths of its worktree order that `listing` no longer
+ * names, so a worktree made later at the same path is shown at the end. Null
+ * when nothing would change: there is no order, or the listing did not work
+ * (a repository that is missing or that Timber could not list keeps it).
+ */
+export function withoutRemoved(entry: SavedRepository, listing: Repository): SavedRepository | null {
+	if (!entry.worktreeOrder || !listing.available || listing.failure !== null) return null;
+	const listed = new Set(listing.worktrees.map(worktree => worktree.path));
+	const kept = entry.worktreeOrder.filter(path => listed.has(path));
+	if (kept.length === entry.worktreeOrder.length) return null;
+	const { worktreeOrder: _, ...rest } = entry;
+	return kept.length > 0 ? { ...rest, worktreeOrder: kept } : rest;
+}
+
 function unavailable(path: string): Repository {
 	return { path, name: basename(path) || path, available: false, failure: null, setup: "unknown", fallbackBase: null, worktrees: [] };
 }
@@ -132,6 +150,39 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 	const inTurn = <Result>(task: () => Promise<Result>) => holder.inTurn(task);
 
 	const overridden = () => overrideRepositoryPaths(environment) !== null;
+
+	// A count of worktree orders saved, and the count each repository's was last saved at in this run.
+	// An order saved after a listing started may name a worktree newer than that listing, so tidying keeps it.
+	let orderSaves = 0;
+	const orderSavedAt = new Map<string, number>();
+
+	/** Drop the paths of saved worktree orders that `listings`, read since `mark`, no longer name. Only tidying: a save that fails waits for the next listing. */
+	async function forgetRemoved(listings: readonly Repository[], mark: number): Promise<void> {
+		const tidied = (current: Settings) => {
+			let changed = false;
+			const next = current.repositories.map(entry => {
+				const listing = listings.find(repository => repository.path === entry.path);
+				if (!listing || (orderSavedAt.get(entry.path) ?? 0) > mark) return entry;
+				const kept = withoutRemoved(entry, listing);
+				if (!kept) return entry;
+				changed = true;
+				return kept;
+			});
+			return changed ? next : null;
+		};
+		// Most listings drop nothing: those never wait for the other changes to the file.
+		if (tidied(await settings()) === null) return;
+		await inTurn(async () => {
+			const current = await settings();
+			const next = tidied(current);
+			if (next === null) return;
+			try {
+				await save({ ...current, repositories: next });
+			} catch {
+				// The next listing tries again.
+			}
+		});
+	}
 
 	function addFolder(folder: string): Promise<AddRepositoryResult> {
 		if (overridden()) return Promise.resolve({ outcome: "overridden" });
@@ -198,9 +249,12 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 		async list() {
 			const override = overrideRepositoryPaths(environment);
 			if (override) return listOverride(override);
+			const mark = orderSaves;
 			const { repositories } = await settings();
 			// The order is read after the repository is, so a save that finished while Git was read still shows.
-			return Promise.all(repositories.map(async entry => inSavedOrder(await reader.reload(entry.path) ?? unavailable(entry.path), (await settings()).repositories)));
+			const listed = await Promise.all(repositories.map(async entry => inSavedOrder(await reader.reload(entry.path) ?? unavailable(entry.path), (await settings()).repositories)));
+			await forgetRemoved(listed, mark);
+			return listed;
 		},
 
 		async add() {
@@ -217,8 +271,11 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 		addFolder,
 
 		async reload(path) {
+			const mark = orderSaves;
 			const repository = await reader.reload(path);
-			return repository && inSavedOrder(repository, (await settings()).repositories);
+			if (!repository) return null;
+			if (!overridden()) await forgetRemoved([repository], mark);
+			return inSavedOrder(repository, (await settings()).repositories);
 		},
 
 		async includes(path) {
@@ -287,6 +344,7 @@ export function createRepositoryList(options: RepositoryListOptions): Repository
 				} catch (error) {
 					return { outcome: "failed", message: `Could not save settings to ${settingsFile}: ${messageOf(error)}` };
 				}
+				orderSavedAt.set(repository, ++orderSaves);
 				return { outcome: "saved" };
 			});
 		},
