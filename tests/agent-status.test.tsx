@@ -258,7 +258,7 @@ describe("agent status in the app", () => {
 		const markup = render(store);
 		expect(markup).toContain('<span class="row-agent status-working branded" title="Codex: Working, 30%" aria-hidden="true"><svg class="status-glyph status-working"');
 		expect(markup).toContain('<span class="row-shells" title="1 other session running"><span class="row-sessions-dot"></span>1</span>');
-		expect(markup).toContain("Codex: Working, 30%. 1 other session running.</span>");
+		expect(markup).toContain("Codex: Working, 30%. 1 other session running. Tag: Work.</span>");
 	});
 
 	test("the chip shows the state, and its message is in the tooltip", async () => {

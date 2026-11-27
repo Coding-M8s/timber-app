@@ -81,6 +81,7 @@ import { createRepositoryTurns } from "./repository-turns";
 import { createWorkflowReader } from "./workflows";
 import { createIssueTrackerReader } from "./issue-trackers";
 import { createSidebarIcons } from "./sidebar-icons";
+import { createSidebarTags } from "./sidebar-tags";
 import { messageOf } from "../shared/error-message";
 
 const DEV_SERVER_URL = "http://localhost:5173";
@@ -147,6 +148,7 @@ const pace = createListingPace({
 const listings = createRecentListings(createRepositoryReader(() => timber.current()), { listing: pace.listing });
 const repositories = createRepositoryList({ settingsFile, settings, pickFolder, reader: listings });
 const sidebarIcons = createSidebarIcons({ settings, pickFile });
+const sidebarTags = createSidebarTags(settings);
 const layout = createSavedLayout(settings);
 /*
  * The sessions that ran when the app last quit open again (see ./session-layout.ts and docs/architecture.md, "After a
@@ -552,7 +554,11 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			recheckTimber: () => timber.refresh(),
 			listRepositories: async () => {
 				const marks = fetcher.allMarks();
-				return (await repositories.list()).map(repository => marked(repository, marks[repository.path]));
+				const tagMark = sidebarTags.mark();
+				const listed = await repositories.list();
+				// The tags of worktrees this listing no longer names go before it answers, so the window never shows one on a new worktree at the same path.
+				await sidebarTags.forgetRemoved(listed, tagMark);
+				return listed.map(repository => marked(repository, marks[repository.path]));
 			},
 			addRepository: async () => {
 				const result = await repositories.add();
@@ -578,9 +584,15 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			listSidebarIcons: () => sidebarIcons.list(),
 			readRemoteIconSource: ({ path }) => sidebarIcons.remoteSource(path),
 			setSidebarIcon: ({ target, choice }) => sidebarIcons.set(target, choice),
+			// Tags and header colors only change the settings file too, never Timber's metadata.
+			listSidebarTags: () => sidebarTags.list(),
+			setWorktreeTag: request => sidebarTags.setWorktreeTag(request),
+			setHeaderColor: ({ target, color }) => sidebarTags.setHeaderColor(target, color),
 			loadRepository: async ({ path }) => {
 				const marks = fetcher.marks(path);
+				const tagMark = sidebarTags.mark();
 				const repository = await repositories.reload(path);
+				if (repository) await sidebarTags.forgetRemoved([repository], tagMark);
 				return repository && marked(repository, marks);
 			},
 			// Read-only, and still only for a repository the app lists.

@@ -10,6 +10,7 @@ import { FetchSection } from "./settings/FetchSection";
 import { PullSection } from "./settings/PullSection";
 import { NotificationsSection } from "./settings/NotificationsSection";
 import { LayoutSection } from "./settings/LayoutSection";
+import { TagsSection } from "./settings/TagsSection";
 import { SettingsSavingContext } from "./settings/SettingsSection";
 import { CloseIcon, SettingsSectionIcon } from "./settings/SettingsIcons";
 import { RenderingSection } from "./settings/RenderingSection";
@@ -25,6 +26,7 @@ import { ThemeSection } from "./settings/ThemeSection";
  */
 const SECTION_VIEWS: Record<SettingsSection, ComponentType> = {
 	layout: LayoutSection,
+	tags: TagsSection,
 	theme: ThemeSection,
 	terminal: TerminalSection,
 	rendering: RenderingSection,

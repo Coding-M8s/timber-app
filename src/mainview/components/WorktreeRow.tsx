@@ -1,4 +1,4 @@
-import { type FocusEvent, type KeyboardEvent, type MouseEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { type CSSProperties, type FocusEvent, type KeyboardEvent, type MouseEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import type { Worktree } from "../../shared/model";
 import type { PullRequest, PullRequestEntry, PullRequestHost } from "../../shared/pull-requests";
 import type { TerminalSession } from "../../shared/terminal";
@@ -9,6 +9,7 @@ import { type RowMarker, type RowMarkerKind, describeRow, describeRowMarkers, de
 import type { SeenStatuses } from "../seen-status";
 import { type RowSessionMark, describeRowSessions } from "../terminal-format";
 import { WORKTREE_MENU_SHORTCUTS, type WorktreeMenuItemId, describeWorktreeMenu, opensWorktreeMenu, worktreeMenuItems } from "../worktree-menu-format";
+import { DEFAULT_TAGS, type Tag, describeTag, tagColorVariable } from "../../shared/worktree-tags";
 import { AgentIcon } from "./AgentIcon";
 import { ChildBadge } from "./ChildTasks";
 import { describeOpenPullRequest } from "../pull-request-format";
@@ -152,6 +153,10 @@ interface WorktreeRowProps {
 	sessions?: readonly TerminalSession[];
 	/** The Done, Error, and crash statuses the person has seen, which show quiet (see ../seen-status.ts). */
 	seen?: SeenStatuses;
+	/** The worktree's tag (issue 409), washed over the row in its color and said in its tooltip and description. Work unless given. */
+	tag?: Tag;
+	/** The saved tags, for the Tag entry of the row's menu. No Tag entry when left out. */
+	tags?: readonly Tag[];
 	/** The sentence of a port this worktree shares with another, or null. Only then does the row show a warning. */
 	portClash?: string | null;
 	/**
@@ -207,7 +212,7 @@ function SyncActionButton({ control, onChoose, onFocus, onBlur }: { control: Syn
 }
 
 /** One worktree in the sidebar. What it is marked with comes from `describeRowMarkers`; this only draws it. */
-export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest = null, pullRequestHost, onOpenPullRequest, issue, removal = null, sessions = [], seen = {}, portClash = null, actions, onMenuChoice, onSyncAction, syncOptions = ASKING_SYNC }: WorktreeRowProps) {
+export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest = null, pullRequestHost, onOpenPullRequest, issue, removal = null, sessions = [], seen = {}, tag = DEFAULT_TAGS[0]!, tags, portClash = null, actions, onMenuChoice, onSyncAction, syncOptions = ASKING_SYNC }: WorktreeRowProps) {
 	const descriptionId = useId();
 	const button = useRef<HTMLButtonElement>(null);
 	// Where the open menu was asked to be, or null while it is closed.
@@ -237,7 +242,9 @@ export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest =
 	const markers = describeRowMarkers(worktree, pullRequest, removal, pullRequestHost);
 	const linked = describeIssue(worktree.issue, issue);
 	const running = describeRowSessions(sessions, seen);
-	const description = [describeRow(markers), portClash, running.sentence].filter(Boolean).join(" ");
+	// The tag is said in words too, so it is never told by color alone.
+	// After the row's state, which matters more.
+	const description = [describeRow(markers), portClash, running.sentence, `${describeTag(tag)}.`].filter(Boolean).join(" ");
 	// No sync action starts on a worktree that Timber is removing.
 	const removing = removal?.kind === "running" || removal?.kind === "waiting";
 	const syncControls = onSyncAction && !removing ? describeSyncControls(worktree, syncOptions) : [];
@@ -259,7 +266,7 @@ export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest =
 			: <Marker key={marker.kind} marker={marker} />);
 	const flags = [...at("state"), ...at("pull-request")];
 	// No tooltip while the row's menu is open: it would cover the menu.
-	const title = menuAt !== null ? undefined : describeRowTitle(worktree, linked && issueTitlePart(linked));
+	const title = menuAt !== null ? undefined : `${describeRowTitle(worktree, linked && issueTitlePart(linked))}. ${describeTag(tag)}`;
 	const name = label ?? worktreeLabel(worktree);
 	const kind = describeWorktreeKind(worktree);
 	const row = (
@@ -317,7 +324,7 @@ export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest =
 	return (
 		// A right-click anywhere on the row, its actions included, opens its menu.
 		// A removal that failed keeps its Details in view (see styles.css).
-		<div className={itemClass} data-worktree-path={worktree.path} onContextMenu={onContextMenu}>
+		<div className={itemClass} data-worktree-path={worktree.path} data-tag={tag.id} style={{ "--tag": tagColorVariable(tag.color) } as CSSProperties} onContextMenu={onContextMenu}>
 			{row}
 			{meta}
 			{syncControls.length > 0 && onSyncAction && (
@@ -343,7 +350,7 @@ export function WorktreeRow({ worktree, label, selected, onSelect, pullRequest =
 			{menuAt !== null && onMenuChoice && (
 				<WorktreeMenu
 					label={describeWorktreeMenu(worktree)}
-					items={worktreeMenuItems(worktree, removing, syncOptions)}
+					items={worktreeMenuItems(worktree, removing, syncOptions, tags && { tags, current: tag.id })}
 					at={menuAt}
 					onClose={closeMenu}
 					onChoose={onMenuChoice}

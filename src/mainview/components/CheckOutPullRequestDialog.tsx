@@ -11,6 +11,8 @@ import type { AppStore } from "../store/store";
 import type { SubmissionOutcome, SubmissionState } from "../store/submission";
 import { OperationDialog } from "./OperationDialog";
 import { followUps } from "./worktree-modes/agent-choice";
+import { type TagChoice, TagField } from "./TagField";
+import { reviewTagId } from "../../shared/worktree-tags";
 
 /**
  * Run `timber open --issue <issue> -- <branch>` once for a pull request, and
@@ -26,8 +28,9 @@ export async function runCheckOut(
 	store: Pick<AppStore, "openWorktree" | "startSessionsIn" | "showTab" | "getState">,
 	request: OpenWorktreeRequest,
 	pullRequest: LinkedPullRequest,
+	tag?: string,
 ): Promise<SubmissionOutcome> {
-	const result = await store.openWorktree(request);
+	const result = await store.openWorktree(request, tag);
 	if (result.outcome === "cancelled") return { ok: false, failure: { command: null, diagnostic: "timber open was cancelled before anything was changed.", output: null } };
 	// A worktree Timber kept although it failed is already selected in the list (`openWorktree`); the failure stays here.
 	if (result.outcome === "failed") return { ok: false, failure: result.failure };
@@ -49,12 +52,14 @@ export interface CheckOutDialogViewProps {
 	picked: number;
 	onPick: (index: number) => void;
 	submission: SubmissionState;
+	/** The Tag field, starting on Review (issue 409). None when left out. */
+	tag?: TagChoice;
 	onSubmit: () => void;
 	onClose: () => void;
 }
 
 /** What the dialog shows for one state. It holds no state of its own (see `CheckOutPullRequestDialog`). */
-export function CheckOutDialogView({ repository, keyLabel, choice, picked, onPick, submission, onSubmit, onClose }: CheckOutDialogViewProps) {
+export function CheckOutDialogView({ repository, keyLabel, choice, picked, onPick, submission, tag, onSubmit, onClose }: CheckOutDialogViewProps) {
 	const option = choice.options[picked] ?? choice.options[0]!;
 	const command = describeTimberCommand(openWorktreeArguments(checkOutRequest(repository, choice, option.pullRequest), RESULT_FILE_PLACEHOLDER));
 	const several = choice.options.length > 1;
@@ -91,6 +96,7 @@ export function CheckOutDialogView({ repository, keyLabel, choice, picked, onPic
 					{describePullRequest(option.pullRequest).notes.length > 0 && <span className="review-agent-state"> ({describePullRequest(option.pullRequest).notes.join(", ")})</span>}
 				</p>
 			)}
+			{tag && <TagField tags={tag.tags} chosen={tag.chosen} disabled={submission.running} onPick={tag.onPick} />}
 			{option.refused !== null
 				? <p className="dialog-note" role="status">{option.refused}</p>
 				: <p className="dialog-note">Opens the pull request's branch in its own worktree and links it to {keyLabel}, then shows its Pull request tab. Timber never asks anything here: what it cannot decide, it says.</p>}
@@ -109,6 +115,8 @@ export function CheckOutPullRequestDialog({ request }: { request: Extract<Dialog
 	const trackers = state.issueBoards[request.repository]?.trackers;
 	const [choice] = useState(() => checkOutChoice(request.issue, trackers?.ok ? trackers.githubRepository : null));
 	const [picked, setPicked] = useState(() => (choice === null ? 0 : firstOption(choice)));
+	// A pull request checked out here is one to review, so it starts on Review while that tag exists.
+	const [tag, setTag] = useState(() => reviewTagId(state.preferences.tags));
 	const { submission, state: submissionState } = useSubmission(() => store.closeDialog());
 
 	useEffect(() => {
@@ -119,7 +127,7 @@ export function CheckOutPullRequestDialog({ request }: { request: Extract<Dialog
 	const run = () => {
 		const option = choice.options[picked];
 		if (!option || option.refused !== null) return;
-		void submission.submit(() => runCheckOut(store, checkOutRequest(request.repository, choice, option.pullRequest), option.pullRequest));
+		void submission.submit(() => runCheckOut(store, checkOutRequest(request.repository, choice, option.pullRequest), option.pullRequest, tag));
 	};
 
 	return (
@@ -133,6 +141,7 @@ export function CheckOutPullRequestDialog({ request }: { request: Extract<Dialog
 				submission.clearFailure();
 			}}
 			submission={submissionState}
+			tag={{ tags: state.preferences.tags, chosen: tag, onPick: setTag }}
 			onSubmit={run}
 			onClose={() => store.closeDialog()}
 		/>

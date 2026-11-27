@@ -31,6 +31,7 @@ import type { ArenaInspection, ArenaList, ArenaPresetList, ArenaToolList, NewAre
 import type { PullRequestList } from "../../shared/pull-requests";
 import { applyOrder, moveInOrder } from "../../shared/repository-order";
 import { type IconChoice, type IconTarget, type RemoteIconSource, type SidebarIconResult, withIcon } from "../../shared/sidebar-icons";
+import { type HeaderTarget, type SidebarTagsResult, type TagColor, WORK_TAG_ID, describeTagsProblem } from "../../shared/worktree-tags";
 import { type RepositoryGroups, emptyGroups, moveGroupAmong, placeInOrder, shownOrder, stepAmongSiblings, stepGroupAmongSiblings } from "../../shared/repository-groups";
 import { type ZoomStep, stepZoom, zoomLabel } from "../../shared/zoom";
 import type { Theme } from "../../shared/theme";
@@ -163,6 +164,14 @@ export interface AppStore {
 	 * is answered for the icon dialog to say, and changes nothing shown.
 	 */
 	setSidebarIcon(target: IconTarget, choice: IconChoice | null): Promise<SidebarIconResult>;
+	/**
+	 * Give a worktree one of the saved tags, or Work (see
+	 * `Engine.setWorktreeTag`). A saved tag shows at once; anything else
+	 * changes nothing shown and is a toast.
+	 */
+	setWorktreeTag(repository: string, worktree: string, tag: string): Promise<SidebarTagsResult>;
+	/** Give a repository's or group's header a tag color, or null for none (see `Engine.setHeaderColor`). As `setWorktreeTag` otherwise. */
+	setHeaderColor(target: HeaderTarget, color: TagColor | null): Promise<SidebarTagsResult>;
 	/** Where a repository can take its icon from, or null (see `Engine.readRemoteIconSource`). Null when it cannot be read. */
 	readRemoteIconSource(path: string): Promise<RemoteIconSource | null>;
 	/**
@@ -567,10 +576,17 @@ export interface AppStore {
 	 * repository is read again before this answers, and the worktree Timber
 	 * reported is selected when the list has it. The command runs once and is
 	 * never retried here. A request that did not get through is a failed result.
+	 * `tag`, the id of a saved tag, is given to the worktree when Timber
+	 * reports it created one, even by a run that failed after; Work, or none,
+	 * gives nothing.
 	 */
-	newWorktree(request: NewWorktreeRequest): Promise<WorktreeCommandResult>;
-	/** Open a branch or a worktree with `timber open`. Reads the repository again and selects as `newWorktree` does. */
-	openWorktree(request: OpenWorktreeRequest): Promise<WorktreeCommandResult>;
+	newWorktree(request: NewWorktreeRequest, tag?: string): Promise<WorktreeCommandResult>;
+	/**
+	 * Open a branch or a worktree with `timber open`. Reads the repository
+	 * again and selects as `newWorktree` does. `tag`, as there, is given only
+	 * to a worktree this run created, never to one that was there already.
+	 */
+	openWorktree(request: OpenWorktreeRequest, tag?: string): Promise<WorktreeCommandResult>;
 	/**
 	 * The branches of a repository to offer for picking. Null when they could
 	 * not be read, which only means there is nothing to pick from.
@@ -751,7 +767,7 @@ export interface AppStore {
 	 * `startAttemptAgent`), and the first attempt is selected. After a
 	 * failure nothing starts. Never throws.
 	 */
-	newArena(request: NewArenaRequest): Promise<NewArenaResult>;
+	newArena(request: NewArenaRequest, tag?: string): Promise<NewArenaResult>;
 	/** Keep one attempt of an arena, once. The repository and its arenas are read again after every outcome. Never throws. */
 	pickArena(request: PickArenaRequest): Promise<PickArenaResult>;
 	/**
@@ -1354,6 +1370,15 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	// before one answered may be older than it, so it is not shown.
 	let iconChanges = 0;
 	let iconAnswers = 0;
+	// The same for tags and header colors.
+	let tagChanges = 0;
+	let tagAnswers = 0;
+	/** Read the tags again, unless one was set while they were read: the store has that one already. Unread, what was known stays. */
+	async function readSidebarTags(): Promise<void> {
+		const before = tagAnswers;
+		const tags = await engine.listSidebarTags().catch(() => null);
+		if (tags && tagChanges === 0 && tagAnswers === before) update({ sidebarTags: tags });
+	}
 	// How many saves of the repositories' default agents have answered, so an older read of them is dropped too.
 	let pickAnswers = 0;
 
@@ -1366,7 +1391,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			const answersBefore = iconAnswers;
 			const picksBefore = pickAnswers;
 			const [listed, groups, icons, picks] = await Promise.all([
-				engine.listRepositories(), readGroups(), engine.listSidebarIcons().catch(() => null),
+				// The tags after the list: the listing drops the tags of worktrees that are gone before it answers.
+				engine.listRepositories().finally(() => void readSidebarTags()), readGroups(), engine.listSidebarIcons().catch(() => null),
 				// Unread, what was known stays. Never read, no default agent is known, and none starts.
 				engine.listRepositoryAgents().catch(() => null),
 			]);
@@ -1565,6 +1591,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		const stale = () => ticket < listTicket;
 		try {
 			const repository = await engine.loadRepository(path);
+			void readSidebarTags();
 			if (stale()) return;
 			if (!repository) throw new Error(`Git could not read ${path}`);
 			if (!state.repositories.some(current => current.path === path)) return;
@@ -1672,6 +1699,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				void loadStatusHooks();
 				void loadAgentSignIns();
 			}
+			// A tag removed moved its worktrees back to Work in the same save.
+			if (change.tags !== undefined) void readSidebarTags();
 		}
 		return result;
 	}
@@ -3164,6 +3193,33 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		return result;
 	}
 
+	async function changeTags(ask: () => Promise<SidebarTagsResult>, what: string): Promise<SidebarTagsResult> {
+		let result: SidebarTagsResult;
+		tagChanges++;
+		try {
+			result = await ask();
+		} catch (error) {
+			result = { outcome: "failed", message: messageOf(error) };
+		} finally {
+			tagChanges--;
+			tagAnswers++;
+		}
+		if (result.outcome === "saved") update({ sidebarTags: result.tags });
+		else showToast(describeTagsProblem(result, what), true);
+		return result;
+	}
+
+	const setWorktreeTag = (repository: string, worktree: string, tag: string) =>
+		changeTags(() => engine.setWorktreeTag({ repository, worktree, tag }), "the tag");
+	const setHeaderColor = (target: HeaderTarget, color: TagColor | null) =>
+		changeTags(() => engine.setHeaderColor(target, color), "the color");
+
+	/** Give the worktrees a run created a tag other than Work. A failure is a toast; the worktree stays. */
+	async function tagCreated(repository: string, paths: readonly string[], tag: string | undefined): Promise<void> {
+		if (tag === undefined || tag === WORK_TAG_ID) return;
+		for (const path of paths) await setWorktreeTag(repository, path, tag);
+	}
+
 	function select(worktreeId: string): void {
 		const selection = selectionFor(state.repositories, worktreeId);
 		if (!selection) return;
@@ -3245,7 +3301,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	 * asked for once. The repository is read again after every outcome,
 	 * because even a failure can leave a new worktree behind.
 	 */
-	async function runWorktreeCommand(repository: string, ask: () => Promise<WorktreeCommandResult>): Promise<WorktreeCommandResult> {
+	async function runWorktreeCommand(repository: string, ask: () => Promise<WorktreeCommandResult>, tag?: string): Promise<WorktreeCommandResult> {
 		let result: WorktreeCommandResult;
 		try {
 			result = await ask();
@@ -3253,6 +3309,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			const failure = notHeardFailure("how the command ended", error, ". What it did is unknown, so check the list before trying again.");
 			result = { outcome: "failed", failure, worktree: null, created: false, setupSkipped: false };
 		}
+		// Only a worktree this run made takes the tag: one that was there keeps its own.
+		if (result.outcome !== "cancelled" && result.created && result.worktree) await tagCreated(repository, [result.worktree.path], tag);
 		await reloadOne(repository);
 		if (result.outcome !== "cancelled" && result.worktree) selectReported(repository, result.worktree);
 		return result;
@@ -3812,7 +3870,7 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		}
 	}
 
-	async function newArena(request: NewArenaRequest): Promise<NewArenaResult> {
+	async function newArena(request: NewArenaRequest, tag?: string): Promise<NewArenaResult> {
 		let result: NewArenaResult;
 		try {
 			result = await engine.newArena(request);
@@ -3820,6 +3878,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 			const failure = notHeardFailure("how timber arena new ended", error, ". What it did is unknown, so check the list before trying again.");
 			result = { outcome: "failed", ran: true, arena: null, failure };
 		}
+		// Every attempt Timber made takes the tag, even when a later one failed.
+		await tagCreated(request.repository, (result.arena?.attempts ?? []).filter(attempt => attempt.created).map(attempt => attempt.path), tag);
 		// Even a failure can leave attempts behind.
 		await Promise.all([reloadOne(request.repository), refreshArenas(request.repository)]);
 		if (result.outcome !== "created") return result;
@@ -4175,6 +4235,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		renameGroup: (id, name) => changeGroups(() => engine.renameRepositoryGroup(id, name), null),
 		deleteGroup,
 		setSidebarIcon,
+		setWorktreeTag,
+		setHeaderColor,
 		readRemoteIconSource: path => engine.readRemoteIconSource(path).catch(() => null),
 		moveGroup,
 		stepGroup,
@@ -4217,8 +4279,8 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		},
 		showToast,
 		dismissToast,
-		newWorktree: request => runWorktreeCommand(request.repository, () => engine.newWorktree(request)),
-		openWorktree: request => runWorktreeCommand(request.repository, () => engine.openWorktree(request)),
+		newWorktree: (request, tag) => runWorktreeCommand(request.repository, () => engine.newWorktree(request), tag),
+		openWorktree: (request, tag) => runWorktreeCommand(request.repository, () => engine.openWorktree(request), tag),
 		async listBranches(repository) {
 			try {
 				return await engine.listBranches(repository);

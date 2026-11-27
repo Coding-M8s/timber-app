@@ -1,3 +1,4 @@
+import type { TagColor } from "../../shared/worktree-tags";
 import { type MenuEntry, WorktreeMenu } from "./WorktreeMenu";
 
 /** An entry of a repository's menu or of a group's menu, with what choosing it means. */
@@ -8,12 +9,27 @@ export interface ChoiceItem<Choice> {
 	description?: string | null;
 	disabled?: boolean;
 	note?: string | null;
+	/** A tag color before the label, or "none" for No color. */
+	swatch?: TagColor | "none";
+	/** Set for an entry of a choice of one: whether it is the one chosen now. */
+	checked?: boolean;
+	/** The entries of the menu this one opens beside it. Choosing this entry itself only opens it. */
+	submenu?: { label: string; items: readonly ChoiceItem<Choice>[] };
 	choice: Choice;
 }
 
 /** The entries as the menu draws them. An entry is enabled, with no note, unless it says otherwise. */
 export function repositoryMenuEntries(items: readonly ChoiceItem<unknown>[]): MenuEntry<string>[] {
-	return items.map(item => ({ id: item.id, label: item.label, disabled: item.disabled ?? false, note: item.note ?? null, description: item.description ?? null }));
+	return items.map(item => ({
+		id: item.id,
+		label: item.label,
+		disabled: item.disabled ?? false,
+		note: item.note ?? null,
+		description: item.description ?? null,
+		...(item.swatch === undefined ? {} : { swatch: item.swatch }),
+		...(item.checked === undefined ? {} : { checked: item.checked }),
+		...(item.submenu === undefined ? {} : { submenu: { label: item.submenu.label, items: repositoryMenuEntries(item.submenu.items) } }),
+	}));
 }
 
 interface RepositoryMenuProps<Choice> {
@@ -42,7 +58,7 @@ export function RepositoryMenu<Choice>({ label, items, at, onClose, onChoose }: 
 			at={at}
 			onClose={onClose}
 			onChoose={id => {
-				const item = items.find(candidate => candidate.id === id);
+				const item = items.flatMap(candidate => [candidate, ...(candidate.submenu?.items ?? [])]).find(candidate => candidate.id === id);
 				if (item) onChoose(item.choice);
 			}}
 		/>

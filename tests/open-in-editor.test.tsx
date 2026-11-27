@@ -1,3 +1,4 @@
+import { DEFAULT_TAGS, writeTags } from "../src/shared/worktree-tags";
 import { defaultTerminalAppearance } from "../src/shared/terminal-appearance";
 import { DEFAULT_AGENTS } from "../src/shared/agent";
 import { describe, expect, test } from "bun:test";
@@ -336,7 +337,7 @@ describe("the Editor section of Settings", () => {
 		expect(markup).toContain('<h3 id="');
 		expect(markup).toMatch(/class="settings-section-title">Editor</);
 		await store.savePreferences({ editor: { command: "zed", terminal: false } });
-		expect(await engine.loadPreferences()).toEqual({ sidebarSide: "left", editor: { command: "zed", terminal: false }, agents: DEFAULT_AGENTS, generateWith: "", chops: [], useChops: true, chopOrder: {}, fileChopSounds: {}, playChopSounds: true, shortcuts: {}, fetch: defaultFetchSetting(), pull: defaultPullConfirmSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), sessionNames: "plain" as const, statusNotifications: true, notifyStates: ["needs-you", "done", "error", "crashed"] as const, sounds: defaultStateSounds(), dmabuf: "auto" as const, timber: { kind: "bundled" as const } });
+		expect(await engine.loadPreferences()).toEqual({ sidebarSide: "left", tags: writeTags(DEFAULT_TAGS), editor: { command: "zed", terminal: false }, agents: DEFAULT_AGENTS, generateWith: "", chops: [], useChops: true, chopOrder: {}, fileChopSounds: {}, playChopSounds: true, shortcuts: {}, fetch: defaultFetchSetting(), pull: defaultPullConfirmSetting(), zoom: 1, theme: defaultThemeChoice(), customThemes: [], terminal: defaultTerminalAppearance(), sessionNames: "plain" as const, statusNotifications: true, notifyStates: ["needs-you", "done", "error", "crashed"] as const, sounds: defaultStateSounds(), dmabuf: "auto" as const, timber: { kind: "bundled" as const } });
 	});
 });
 

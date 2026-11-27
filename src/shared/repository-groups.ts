@@ -8,12 +8,15 @@
  */
 
 import { applyOrder } from "./repository-order";
+import { type TagColor, isTagColor } from "./worktree-tags";
 
 export interface RepositoryGroup {
 	id: string;
 	name: string;
 	/** The id of the group it sits inside. Absent for a group at the top level. */
 	parent?: string;
+	/** The color of its header in the sidebar, one of the theme's tag colors (issue 409). Absent for none. */
+	color?: TagColor;
 }
 
 /** What the interface is told: the groups in order, and the group of each grouped repository by primary checkout path. */
@@ -46,7 +49,8 @@ const parentOf = (group: RepositoryGroup): string | null => group.parent ?? null
 
 /** The group with `parent` in place of the one it had: none for null. */
 function withParent(group: RepositoryGroup, parent: string | null): RepositoryGroup {
-	return parent === null ? { id: group.id, name: group.name } : { id: group.id, name: group.name, parent };
+	const kept = { id: group.id, name: group.name, ...(group.color === undefined ? {} : { color: group.color }) };
+	return parent === null ? kept : { ...kept, parent };
 }
 
 /** Whether a group other than `except`, among those with this `parent` (null for the top level), already has this name, ignoring case. */
@@ -138,11 +142,13 @@ export function readGroups(value: unknown): RepositoryGroup[] {
 	if (!Array.isArray(value)) return read;
 	for (const entry of value) {
 		if (typeof entry !== "object" || entry === null || Array.isArray(entry)) continue;
-		const { id, name, parent } = entry as Record<string, unknown>;
+		const { id, name, parent, color } = entry as Record<string, unknown>;
 		if (typeof id !== "string" || id === "" || typeof name !== "string") continue;
 		const clean = cleanGroupName(name);
 		if (clean === null || read.some(group => group.id === id)) continue;
-		read.push(typeof parent === "string" && parent !== "" && parent !== id ? { id, name: clean, parent } : { id, name: clean });
+		// A color that cannot be read costs only itself.
+		const kept: RepositoryGroup = { id, name: clean, ...(isTagColor(color) ? { color } : {}) };
+		read.push(typeof parent === "string" && parent !== "" && parent !== id ? { ...kept, parent } : kept);
 	}
 	let groups = read.map(group => (group.parent !== undefined && !read.some(known => known.id === group.parent) ? withParent(group, null) : group));
 	// On a loop: following the parents from the group comes back to it.

@@ -4,6 +4,7 @@ import { menuIndexAfterKey } from "./agent-format";
 import { CLEAN_UP_LABEL, CLEAN_UP_TITLE, cleanUpUnavailableReason } from "./clean-up-format";
 import { BEING_REMOVED_REASON, DONE_CONTROL_TITLE, DONE_PRIMARY_NOTE } from "./done-format";
 import { worktreeLabel } from "./format";
+import { type Tag, type TagColor, tagOf } from "../shared/worktree-tags";
 import type { DialogRequest } from "./store/state";
 import { type SyncActionKind, isSyncActionKind } from "../shared/sync-actions";
 import { ASKING_SYNC, PULLING_REASON, type SyncOptions, syncMenuEntries } from "./sync-action-format";
@@ -24,7 +25,7 @@ export const WORKTREE_MENU_SHORTCUTS = "Shift+F10 ContextMenu";
  * merged a repository header's; "insert-chop:" and a chop's name are of a
  * session chip's menu (see ./chop-format.ts).
  */
-export type WorktreeMenuItemId = "done" | `sync:${SyncActionKind}` | "clean-up-merged" | `insert-chop:${string}`;
+export type WorktreeMenuItemId = "done" | `sync:${SyncActionKind}` | "clean-up-merged" | `insert-chop:${string}` | "tag" | `tag:${string}`;
 
 /** One entry of a row's menu. A disabled entry says why in `note`, shown under it. */
 export interface WorktreeMenuItem {
@@ -38,6 +39,12 @@ export interface WorktreeMenuItem {
 	 * cover the menu.
 	 */
 	description: string | null;
+	/** A tag color shown before the label (issue 409), or "none" for an empty mark, as No color has. Its words are the label. */
+	swatch?: TagColor | "none";
+	/** Set for an entry of a choice of one, such as a tag: whether it is the one chosen now. */
+	checked?: boolean;
+	/** The entries of the menu this entry opens beside it, such as the tags of Tag. Choosing the entry itself only opens it. */
+	submenu?: { label: string; items: readonly WorktreeMenuItem[] };
 }
 
 /**
@@ -47,13 +54,33 @@ export interface WorktreeMenuItem {
  * the workspace header, Done is never offered for a primary checkout, nor
  * while Timber removes the worktree.
  */
-export function worktreeMenuItems(worktree: Worktree, removing = false, options: SyncOptions = ASKING_SYNC): WorktreeMenuItem[] {
+export function worktreeMenuItems(worktree: Worktree, removing = false, options: SyncOptions = ASKING_SYNC, tags?: { tags: readonly Tag[]; current: string }): WorktreeMenuItem[] {
 	const reason = worktree.primary ? DONE_PRIMARY_NOTE : removing ? BEING_REMOVED_REASON : null;
 	const sync = syncMenuEntries(worktree, options).map((entry): WorktreeMenuItem => {
 		const off = removing ? BEING_REMOVED_REASON : entry.busy ? PULLING_REASON : null;
 		return { id: `sync:${entry.action}`, label: entry.label, disabled: off !== null, note: off, description: off === null ? entry.title : null };
 	});
-	return [...sync, { id: "done", label: "Done", disabled: reason !== null, note: reason, description: reason === null ? DONE_CONTROL_TITLE : null }];
+	// Tag, before Done, when the tags are known: a worktree's own label, so it is offered while Timber removes it too.
+	const tag: WorktreeMenuItem[] = tags === undefined ? [] : [{
+		id: "tag",
+		label: "Tag",
+		disabled: false,
+		note: null,
+		description: `Choose the tag of ${worktreeLabel(worktree)}. It is ${tagOf(tags.tags, tags.current).name} now.`,
+		submenu: { label: `Tag of ${worktreeLabel(worktree)}`, items: tagMenuItems(tags.tags, tags.current) },
+	}];
+	return [...sync, ...tag, { id: "done", label: "Done", disabled: reason !== null, note: reason, description: reason === null ? DONE_CONTROL_TITLE : null }];
+}
+
+/** The tags as entries of a Tag menu, each with its color and the current one checked. */
+export function tagMenuItems(tags: readonly Tag[], current: string): WorktreeMenuItem[] {
+	const chosen = tagOf(tags, current).id;
+	return tags.map(tag => ({ id: `tag:${tag.id}`, label: tag.name, disabled: false, note: null, description: null, swatch: tag.color, checked: tag.id === chosen }));
+}
+
+/** The tag id a Tag menu entry stands for, or null for any other entry. */
+export function tagOfMenuItem(id: string): string | null {
+	return id.startsWith("tag:") ? id.slice("tag:".length) : null;
 }
 
 /**
@@ -88,7 +115,8 @@ export function describeWorktreeMenu(worktree: Worktree): string {
  */
 export function worktreeMenuChoice(repository: string, worktree: Worktree, id: WorktreeMenuItemId, removing = false, options: SyncOptions = ASKING_SYNC): DialogRequest | null {
 	const item = worktreeMenuItems(worktree, removing, options).find(candidate => candidate.id === id);
-	if (!item || item.disabled) return null;
+	// Tag and its entries open no dialog: the row sets the tag itself.
+	if (!item || item.disabled || item.submenu !== undefined) return null;
 	if (item.id.startsWith("sync:")) {
 		const action = item.id.slice("sync:".length);
 		return isSyncActionKind(action) ? { kind: "sync-action", action, repository, worktree: worktree.id } : null;
@@ -109,9 +137,23 @@ export function opensWorktreeMenu(event: { key: string; shiftKey: boolean; altKe
  * nothing the menu handles. Escape and the moves stop the browser's own use
  * of the key; Tab keeps it.
  */
-export type WorktreeMenuKeyAction = { kind: "move"; index: number } | { kind: "close"; preventDefault: boolean } | null;
+export type WorktreeMenuKeyAction =
+	| { kind: "move"; index: number }
+	| { kind: "close"; preventDefault: boolean }
+	/** Open the focused entry's menu beside it, with the keyboard in it. */
+	| { kind: "open" }
+	/** Close this menu, opened beside an entry, and give the keyboard back to that entry. */
+	| { kind: "back" }
+	| null;
 
-export function worktreeMenuKeyAction(count: number, index: number, key: string): WorktreeMenuKeyAction {
+/**
+ * `place` says whether the focused entry opens a menu beside it, where Right
+ * opens it, and whether this is such a menu, where Left and Escape go back.
+ * Right and Left keep to these meanings when the menus open the other way.
+ */
+export function worktreeMenuKeyAction(count: number, index: number, key: string, place: { opens?: boolean; inner?: boolean } = {}): WorktreeMenuKeyAction {
+	if (place.inner && (key === "ArrowLeft" || key === "Escape")) return { kind: "back" };
+	if (place.opens && key === "ArrowRight") return { kind: "open" };
 	const next = menuIndexAfterKey(count, index, key);
 	if (next !== null) return { kind: "move", index: next };
 	if (key === "Escape") return { kind: "close", preventDefault: true };

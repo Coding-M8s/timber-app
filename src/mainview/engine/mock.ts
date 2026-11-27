@@ -64,6 +64,8 @@ import { type BackupControls, createMockBackups } from "./mock-backups";
 import { type ArenaControls, createMockArenas } from "./mock-arenas";
 import { type ThemeFileControls, createMockThemeFiles } from "./mock-theme-files";
 import { type SidebarIconControls, createMockSidebarIcons } from "./mock-sidebar-icons";
+import { createMockSidebarTags } from "./mock-sidebar-tags";
+import { DEFAULT_TAGS, type SidebarTags, type Tag, writeTags } from "../../shared/worktree-tags";
 import type { ChopList } from "../../shared/chops";
 import type { WorktreeFolderChange, WorktreeFolderWatch } from "../../shared/worktree-folders";
 import { type ChopsControls, createMockChops } from "./mock-chops";
@@ -664,7 +666,45 @@ export interface MockEngineOptions {
 	savedSessions?: MockSessionStorage;
 	/** How long an acted openTerminal takes. None by default. */
 	terminalMilliseconds?: number;
+	/**
+	 * Tags, header colors, and groups to start with (issue 409), as
+	 * `browserSampleTags` gives the browser build. None by default, so tests
+	 * start from a sidebar with every worktree Work and no group.
+	 */
+	sidebar?: MockSidebarSample;
 }
+
+/** What the sidebar starts with: tags in the preferences, tags and colors, and groups with the repositories in them. */
+export interface MockSidebarSample {
+	tags: Tag[];
+	sidebarTags: SidebarTags;
+	groups: RepositoryGroup[];
+	membership: Record<string, string>;
+}
+
+/**
+ * The browser build's sidebar: Work, Review, and three more tags, worktrees
+ * of each, the timber header colored, and a colored group, Clients, holding
+ * api-server.
+ */
+export const browserSampleTags: MockSidebarSample = {
+	tags: [...writeTags(DEFAULT_TAGS), { id: "tag-1", name: "Experiment", color: 3 }, { id: "tag-2", name: "Docs", color: 4 }, { id: "tag-3", name: "Release", color: 5 }],
+	sidebarTags: {
+		worktrees: {
+			"/work/timber": {
+				"/work/timber-worktrees/feat-github-issue-lookup": "review",
+				"/work/timber-worktrees/fix-macos-portability": "tag-1",
+				"/work/timber-worktrees/spike-new-idea": "tag-2",
+			},
+			"/work/api-server": { "/work/api-server-worktrees/feat-rate-limit-headers": "review" },
+			"/work/billing": { "/work/billing-worktrees/release-2.4": "tag-3", "/work/billing-worktrees/review-build": "review" },
+		},
+		repositories: { "/work/timber": 3 },
+		groups: { "group-1": 2 },
+	},
+	groups: [{ id: "group-1", name: "Clients", color: 2 }],
+	membership: { "/work/api-server": "group-1" },
+};
 
 /** A command the mock did not act out, with the reason. */
 function notRun(diagnostic: string): WorktreeCommandResult {
@@ -730,12 +770,17 @@ export function createMockEngine(
 	// The default agents repositories name live in memory too, by the primary checkout. None to start with.
 	let repositoryAgents: RepositoryAgents = {};
 	// The groups live in memory too, beside the list, by the same rules as the main process. None to start with.
-	let groups: RepositoryGroup[] = [];
-	let membership: Record<string, string> = {};
-	let groupIds = 0;
+	let groups: RepositoryGroup[] = structuredClone(options.sidebar?.groups ?? []);
+	let membership: Record<string, string> = { ...options.sidebar?.membership };
+	let groupIds = groups.length;
 	const groupedList = (): GroupedList<{ path: string; group?: string }> => ({
 		groups,
 		repositories: current.map(({ path }) => (Object.hasOwn(membership, path) ? { path, group: membership[path]! } : { path })),
+	});
+	const { forgetWorktree, forgetTarget, keepOnly, ...sidebarTagEngine } = createMockSidebarTags({
+		...(options.sidebar ? { initial: options.sidebar.sidebarTags } : {}),
+		knows: target => (target.kind === "repository" ? current.some(repository => repository.path === target.path) : groups.some(group => group.id === target.id)),
+		savedTags: () => preferences.tags,
 	});
 	const { forgetIcon, ...sidebarIcons } = createMockSidebarIcons({
 		knows: target => (target.kind === "repository" ? current.some(repository => repository.path === target.path) : groups.some(group => group.id === target.id)),
@@ -755,7 +800,7 @@ export function createMockEngine(
 	let layout: Layout = defaultLayout();
 	let layoutFailure: string | null = null;
 	// So do the preferences.
-	let preferences: Preferences = defaultPreferences();
+	let preferences: Preferences = options.sidebar ? { ...defaultPreferences(), tags: structuredClone(options.sidebar.tags) } : defaultPreferences();
 	let preferencesFailure: string | null = null;
 	const listeners = new Set<(path: string) => void>();
 	// The mock watches nothing: changes are acted out with `announceChange`. It only keeps what it was told.
@@ -887,7 +932,8 @@ export function createMockEngine(
 		const refusal = removalRefusals.get(path);
 		if (refusal !== undefined) return ended(refusal, `error: ${refusal}\n`);
 
-		// The folder goes, and with it the worktree's place in the list.
+		// The folder goes, and with it the worktree's place in the list and its tag.
+		forgetWorktree(repositoryPath, path);
 		current = current.map(repository => repository.path === repositoryPath
 			? { ...repository, worktrees: repository.worktrees.filter(candidate => candidate.path !== path) }
 			: repository);
@@ -1217,6 +1263,7 @@ export function createMockEngine(
 		...timberConfig,
 		...createMockThemeFiles(),
 		...sidebarIcons,
+		...sidebarTagEngine,
 		...workflows,
 		...createMockIssueTrackers(request => timberConfig.readTimberSettings(request)),
 		...pullRequests,
@@ -1245,6 +1292,7 @@ export function createMockEngine(
 			layout = forgetRepository(layout, path);
 			preferences = { ...preferences, pull: forgetPullRepository(preferences.pull, path) };
 			forgetIcon({ kind: "repository", path });
+			forgetTarget({ kind: "repository", path });
 			repositoryAgents = forgetRepositoryAgent(repositoryAgents, path);
 			// Its group stays, as it does on disk.
 			delete membership[path];
@@ -1267,7 +1315,10 @@ export function createMockEngine(
 		async deleteRepositoryGroup(id) {
 			const result = await changeGroups(list => deleteGroupIn(list, id));
 			layout = forgetGroup(layout, id);
-			if (result.outcome === "saved") forgetIcon({ kind: "group", id });
+			if (result.outcome === "saved") {
+				forgetIcon({ kind: "group", id });
+				forgetTarget({ kind: "group", id });
+			}
 			return result;
 		},
 		moveRepositoryGroup: (id, parent, before) => changeGroups(list => moveGroupIn(list, id, parent, before)),
@@ -1431,6 +1482,8 @@ export function createMockEngine(
 			repositoryAgents = repositoryAgentsOf(picked.entries);
 			const timberChanged = !sameTimberChoice(preferences.timber, next.timber);
 			preferences = next;
+			// As the main process: a tag removed takes its worktrees back to Work.
+			keepOnly(next.tags);
 			alerts.review();
 			// As the main process does: another Timber is looked for at once, and the window told.
 			if (timberChanged) for (const listener of [...timberListeners]) listener();

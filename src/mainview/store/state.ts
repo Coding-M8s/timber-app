@@ -30,6 +30,7 @@ import type { RenderingStatus } from "../../shared/rendering";
 import type { SeenStatuses } from "../seen-status";
 import { type RepositoryGroups, emptyGroups } from "../../shared/repository-groups";
 import { type IconTarget, type SidebarIcons, emptyIcons } from "../../shared/sidebar-icons";
+import { type SidebarTags, emptySidebarTags } from "../../shared/worktree-tags";
 import type { SyncActionKind, SyncActionResult } from "../../shared/sync-actions";
 import { type RepositoryAgents, pickOf } from "../../shared/repository-agents";
 import { confirmsPull } from "../../shared/pull-confirm-setting";
@@ -380,6 +381,8 @@ export type DialogRequest =
 	| { kind: "palette" }
 	/** Set, change, or remove the icon of a repository or a group, from its menu. */
 	| { kind: "sidebar-icon"; target: IconTarget }
+	/** Choose the tag of a worktree (issue 409), from the palette. `worktree` is `Worktree.id`. */
+	| { kind: "set-tag"; repository: string; worktree: string }
 	/** The setup wizard of a repository new to Timber, named by the path of its primary checkout. */
 	| { kind: "set-up-timber"; repository: string }
 	/**
@@ -431,7 +434,7 @@ export type DialogRequest =
 	| { kind: "start-work"; repository: string; issue: SuggestedIssue };
 
 /** The sections of the Settings dialog, in the order they are listed. */
-export const SETTINGS_SECTIONS = ["layout", "theme", "terminal", "rendering", "editor", "agents", "chops", "notifications", "fetch", "pull", "about", "executable", "machine", "repository"] as const;
+export const SETTINGS_SECTIONS = ["layout", "tags", "theme", "terminal", "rendering", "editor", "agents", "chops", "notifications", "fetch", "pull", "about", "executable", "machine", "repository"] as const;
 export type SettingsSection = typeof SETTINGS_SECTIONS[number];
 
 /**
@@ -497,6 +500,8 @@ export interface AppState {
 	repositoryAgents: RepositoryAgents | null;
 	/** The icons of repositories and groups, as the engine last saved them. */
 	sidebarIcons: SidebarIcons;
+	/** The tags of worktrees and the colors of headers (issue 409), as the engine last read or saved them. */
+	sidebarTags: SidebarTags;
 	/**
 	 * Outcomes, oldest first. A failure is never only a toast: it stays where
 	 * the person can act on it, and a toast can at most point there.
@@ -784,6 +789,7 @@ export const initialState: AppState = {
 	groupNameProblem: null,
 	repositoryAgents: null,
 	sidebarIcons: emptyIcons(),
+	sidebarTags: emptySidebarTags(),
 	toasts: [],
 	removals: [],
 	layout: defaultLayout(),

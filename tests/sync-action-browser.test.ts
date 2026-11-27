@@ -76,7 +76,7 @@ describe.skipIf(browserPath === null || process.platform === "win32")("Pull in a
 		await page.evaluate(`document.querySelector('[data-worktree-path="/work/timber"] .row').focus()`);
 		await page.press("F10", "shift");
 		await page.until(`document.querySelector("[role=menu]") !== null`, "the menu opened");
-		expect(await page.evaluate<string[]>(`[...document.querySelectorAll("[role=menuitem]")].map(item => item.textContent.trim())`)).toEqual(["Pull", "Done"]);
+		expect(await page.evaluate<string[]>(`[...document.querySelectorAll("[role=menuitem]")].map(item => item.textContent.trim())`)).toEqual(["Pull", "Tag\u203a", "Done"]);
 		// The keyboard starts on the first entry.
 		expect(await page.evaluate<string>(`document.activeElement.getAttribute("role") + " " + document.activeElement.textContent.trim()`)).toBe("menuitem Pull");
 		await page.press("Enter");
@@ -143,7 +143,7 @@ describe.skipIf(browserPath === null || process.platform === "win32")("Push in a
 		await page.evaluate(`document.querySelector('[data-worktree-path="${AHEAD}"] .row').focus()`);
 		await page.press("F10", "shift");
 		await page.until(`document.querySelector("[role=menu]") !== null`, "the menu opened");
-		expect(await page.evaluate<string[]>(`[...document.querySelectorAll("[role=menuitem]")].map(item => item.textContent.trim())`)).toEqual(["Push", "Done"]);
+		expect(await page.evaluate<string[]>(`[...document.querySelectorAll("[role=menuitem]")].map(item => item.textContent.trim())`)).toEqual(["Push", "Tag\u203a", "Done"]);
 		expect(await page.evaluate<string>(`document.activeElement.getAttribute("role") + " " + document.activeElement.textContent.trim()`)).toBe("menuitem Push");
 		await page.press("Enter");
 		await page.until(DIALOG_OPEN, "the dialog opened");
@@ -156,7 +156,7 @@ describe.skipIf(browserPath === null || process.platform === "win32")("Push in a
 		await page.evaluate(`document.querySelector('[data-worktree-path="${UNPUBLISHED}"] .row').focus()`);
 		await page.press("F10", "shift");
 		await page.until(`document.querySelector("[role=menu]") !== null`, "the menu opened");
-		expect(await page.evaluate<string[]>(`[...document.querySelectorAll("[role=menuitem]")].map(item => item.textContent.trim())`)).toEqual(["Push", "Done"]);
+		expect(await page.evaluate<string[]>(`[...document.querySelectorAll("[role=menuitem]")].map(item => item.textContent.trim())`)).toEqual(["Push", "Tag\u203a", "Done"]);
 		await page.press("Enter");
 		await page.until(DIALOG_OPEN, "the dialog opened");
 		expect(await page.evaluate<string[]>(`[...document.querySelectorAll("dialog[open] .dialog-command")].map(command => command.textContent)`)).toEqual([`timber publish --result-file <temporary file> -- ${UNPUBLISHED}`]);

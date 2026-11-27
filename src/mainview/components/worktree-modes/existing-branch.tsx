@@ -1,3 +1,4 @@
+import { type TagChoice, TagField } from "../TagField";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { Repository } from "../../../shared/model";
 import { RESULT_FILE_PLACEHOLDER, describeTimberCommand } from "../../../shared/timber-result";
@@ -21,6 +22,7 @@ export function existingBranchMode(
 	repository: string,
 	running: boolean,
 	workflows: WorkflowOptions = undefined,
+	tag: TagChoice | null = null,
 ): WorktreeDialogMode {
 	const { selector, setup, branches, kept } = state;
 	// The command and the run take the same workflow, so the footer shows what runs.
@@ -30,6 +32,8 @@ export function existingBranchMode(
 	const fields = (
 		<>
 			<BranchField label="Branch, ticket, or worktree path" value={selector} branches={branches} disabled={running} onChange={form.setSelector} />
+			{/* Only a worktree this run creates takes it: one that is there already keeps its own. */}
+			{tag && <TagField tags={tag.tags} chosen={tag.chosen} disabled={running} onPick={tag.onPick} />}
 			<WorkflowField options={workflows} chosen={workflow} disabled={running} onPick={form.setWorkflow} />
 			<label className="check">
 				<input type="checkbox" checked={setup} onChange={event => form.setSetup(event.target.checked)} />
@@ -65,7 +69,7 @@ export function existingBranchMode(
 		setupStart: setup ? "always" : "if-skipped",
 		worktree: kept?.worktree.path ?? null,
 		workflow,
-		run: () => form.run(workflow),
+		run: () => form.run(workflow, tag?.chosen),
 	};
 }
 
@@ -75,7 +79,7 @@ export function existingBranchMode(
  * Timber without the spaces around it and otherwise as given, and Timber
  * alone decides what it means.
  */
-export function useExistingBranchMode(repository: Repository, submission: Submission, workflows: WorkflowOptions): WorktreeDialogMode {
+export function useExistingBranchMode(repository: Repository, submission: Submission, workflows: WorkflowOptions, tag: TagChoice | null = null): WorktreeDialogMode {
 	const store = useStore();
 	const [form] = useState(() => createExistingBranchForm(store, repository.path, submission));
 	const state = useSyncExternalStore(form.subscribe, form.getState, form.getState);
@@ -83,5 +87,5 @@ export function useExistingBranchMode(repository: Repository, submission: Submis
 	useEffect(() => {
 		void form.readBranches();
 	}, [form, repository]);
-	return existingBranchMode(form, state, repository.path, submission.getState().running, workflows);
+	return existingBranchMode(form, state, repository.path, submission.getState().running, workflows, tag);
 }

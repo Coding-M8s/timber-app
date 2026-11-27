@@ -1130,6 +1130,33 @@ The app keeps its own list of repositories, so it is the same after a restart.
   each case the icon stays as it was. The app never reads Timber's
   credential stores for this, so Jira and Linear images, which need a login,
   are not offered.
+- **Worktree tags and header colors (issue 409).** The tags themselves are
+  a preference, `tags`: Work first, which cannot be removed, then each tag
+  by a stable id, name, and tag color 1 to 5 (`src/shared/worktree-tags.ts`).
+  A worktree's tag is kept beside its saved repository, as `worktreeTags`
+  by the worktree's path as Git registered it, and a header's color as
+  `color` on the saved repository or group, each written only once set, so
+  an older file stays as it was. A worktree not named is Work, and Work is
+  never written. Nothing about tags goes into Timber's metadata under
+  `.git/worktrees/<name>/timber/`, and nothing in a repository changes.
+  `Engine.listSidebarTags` answers them from the settings, only tags that
+  are saved; `setWorktreeTag` and `setHeaderColor` check the request's shape
+  in the main process, take their turn with the other changes to the file,
+  and answer `unknown` for a repository, group, or tag not in the settings
+  (`src/bun/sidebar-tags.ts`). Saving the preferences with a tag taken away
+  moves its worktrees back to Work in the same write. A worktree's tag is
+  dropped once a listing of its repository that worked no longer names it,
+  so a worktree made later at the same path, by any tool, is Work: a
+  repository that is missing or that Timber could not list keeps its tags.
+  A tag set while a listing ran is kept, as its worktree may be newer than
+  the listing: the main process takes a count of changes before each
+  listing and keeps any tag set after it. The listing drops tags before it
+  answers, and the interface reads the tags again after each listing, so it
+  never shows an old tag on a new worktree. The interface gives a tag to a
+  worktree only when Timber reports it created one, after `timber new`,
+  `timber open`, or `timber arena new`, failures that still created one
+  included. While `TIMBER_APP_REPOS` is set, there are none, and setting one
+  answers `overridden`.
 - **No reload.** Grouping changes only the settings file, never the set of
   repositories, so no Git or Timber command runs, nothing is watched or
   fetched anew, and the interface never reads the repositories again for it.

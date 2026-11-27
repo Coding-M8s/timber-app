@@ -1,4 +1,4 @@
-import { Fragment, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode, useId, useMemo, useRef, useState } from "react";
+import { type CSSProperties, Fragment, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode, useId, useMemo, useRef, useState } from "react";
 import { MOVE_GROUP_HINT, describeGroupNameProblem, describeListNotice, describeReloadError, worktreeLabel } from "../format";
 import { SETTINGS_LABEL, describeLayoutProblem } from "../shell";
 import { DRAG_THRESHOLD, type GroupDropPlace, MOVE_REPOSITORY_SHORTCUTS, dropPlace, groupDropPlace, moveStep } from "../repository-drag";
@@ -19,6 +19,7 @@ import { RepositoryMenu } from "./RepositoryMenu";
 import { RepositoryGroupName } from "./RepositoryGroupName";
 import { SidebarIconView } from "./SidebarIcon";
 import { groupIcon } from "../../shared/sidebar-icons";
+import { headerColor, tagColorVariable } from "../../shared/worktree-tags";
 
 /** The name field in the sidebar: for a new group, maybe with a repository to put in it or a group to make it inside, or to rename a group. */
 type Naming = { kind: "new"; repository?: string; parent?: string } | { kind: "rename"; id: string };
@@ -332,7 +333,7 @@ export function Sidebar() {
 				{menuOpen && (
 					<RepositoryMenu
 						label={describeRepositoryMenu(repository.name)}
-						items={repositoryMenuItems(repositoryGroups, repository.path, cleanUpMenuItems(repository, state.pullRequests[repository.path])[0])}
+						items={repositoryMenuItems(repositoryGroups, repository.path, cleanUpMenuItems(repository, state.pullRequests[repository.path])[0], { name: repository.name, current: headerColor(state.sidebarTags, { kind: "repository", path: repository.path }) })}
 						at={menu.at}
 						onClose={closeMenu}
 						onChoose={choice => {
@@ -379,6 +380,7 @@ export function Sidebar() {
 		const pendingHere = naming?.kind === "new" && naming.parent === group.id;
 		// Whatever opened a menu has no tooltip while it is open: the tooltip would cover the menu.
 		const groupMenuOpen = menu?.kind === "group" && menu.id === group.id;
+		const groupColor = headerColor(state.sidebarTags, { kind: "group", id: group.id });
 		return (
 			<section
 				key={group.id}
@@ -395,7 +397,8 @@ export function Sidebar() {
 				data-group={group.id}
 			>
 				<div
-					className="repository-group-head"
+					className={groupColor !== null ? "repository-group-head colored" : "repository-group-head"}
+					style={groupColor === null ? undefined : { "--tag": tagColorVariable(groupColor) } as CSSProperties}
 					ref={element => {
 						if (element) repositoryGroupHeads.current.set(group.id, element);
 						else repositoryGroupHeads.current.delete(group.id);
@@ -459,7 +462,7 @@ export function Sidebar() {
 					{groupMenuOpen && (
 						<RepositoryMenu
 							label={describeGroupMenu(group.name)}
-							items={groupMenuItems(repositoryGroups.groups, group.id)}
+							items={groupMenuItems(repositoryGroups.groups, group.id, headerColor(state.sidebarTags, { kind: "group", id: group.id }))}
 							at={menu.at}
 							onClose={closeMenu}
 							onChoose={choice => {
@@ -469,6 +472,9 @@ export function Sidebar() {
 										return;
 									case "icon":
 										store.openDialog({ kind: "sidebar-icon", target: { kind: "group", id: group.id } });
+										return;
+									case "color":
+										void store.setHeaderColor({ kind: "group", id: group.id }, choice.color);
 										return;
 									case "new-subgroup":
 										// The field goes at the end of the group, so a folded one opens.

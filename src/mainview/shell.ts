@@ -13,6 +13,7 @@ export const SETTINGS_LABEL = "Settings";
 /** The names of the Settings dialog's sections, as listed down its side. */
 export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
 	layout: "Layout",
+	tags: "Tags",
 	theme: "Theme",
 	terminal: "Terminal",
 	rendering: "Rendering",
@@ -36,7 +37,7 @@ export const TIMBER_SETTINGS_SECTIONS: readonly SettingsSection[] = ["executable
  * About is not in a group: it sits on its own at the foot of the list.
  */
 export const SETTINGS_NAV_GROUPS: readonly { label: string; sections: readonly SettingsSection[] }[] = [
-	{ label: "Appearance", sections: ["layout", "theme", "terminal", "rendering"] },
+	{ label: "Appearance", sections: ["layout", "tags", "theme", "terminal", "rendering"] },
 	{ label: "Workflow", sections: ["editor", "agents", "chops"] },
 	{ label: "Activity", sections: ["notifications", "fetch", "pull"] },
 	{ label: "Timber", sections: TIMBER_SETTINGS_SECTIONS },

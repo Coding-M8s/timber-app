@@ -107,7 +107,7 @@ const markOf = (markup: string) => /<span class="(row-progress [^"]*)" title="[^
 describe("a row's progress mark", () => {
 	test("leads the second line, outside the row's button, with its tooltip, hidden from assistive technology", () => {
 		const markup = render(worktree, found("merged"));
-		expect(markup).toContain('</button><div class="row-line row-meta" title="/work/app-worktrees/feat-x"><span class="row-progress progress-merged" title="Pull request #42 was merged into main: Make x. If nothing else is left in this worktree, it can go." aria-hidden="true"><svg');
+		expect(markup).toContain('</button><div class="row-line row-meta" title="/work/app-worktrees/feat-x. Tag: Work"><span class="row-progress progress-merged" title="Pull request #42 was merged into main: Make x. If nothing else is left in this worktree, it can go." aria-hidden="true"><svg');
 	});
 
 	test("draws each state in a shape of its own, not only a color", () => {
@@ -128,7 +128,7 @@ describe("a row's progress mark", () => {
 	test("leaves the row's description as it was: every marker's sentence", () => {
 		const markup = render(gone, found("merged"));
 		const sentences = describeRowMarkers(gone, found("merged")).map(marker => marker.tooltip).join(" ");
-		expect(markup).toContain(`class="row-description" hidden="">${sentences.replaceAll("'", "&#x27;")}</span>`);
+		expect(markup).toContain(`class="row-description" hidden="">${sentences.replaceAll("'", "&#x27;")} Tag: Work.</span>`);
 	});
 });
 

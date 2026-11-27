@@ -12,6 +12,7 @@ import { type EditorSetting, readEditorSetting, sameEditorSetting, writeEditorSe
 import { readCustomThemes, salvageCustomThemes, sameCustomThemes, writeCustomThemes } from "./custom-themes";
 import { type Theme, type ThemeChoice, defaultThemeChoice, readThemeChoice, sameThemeChoice, writeThemeChoice } from "./theme";
 import { DEFAULT_ZOOM, readZoom } from "./zoom";
+import { DEFAULT_TAGS, type Tag, readTags, salvageTags, sameTags, writeTags } from "./worktree-tags";
 import { type FetchSetting, defaultFetchSetting, readFetchSetting, salvageFetchSetting, sameFetchSetting, writeFetchSetting } from "./fetch-setting";
 import { type PullConfirmSetting, defaultPullConfirmSetting, readPullConfirmSetting, samePullConfirmSetting, writePullConfirmSetting } from "./pull-confirm-setting";
 import { type StateSounds, defaultStateSounds, legacyStateSounds, readStateSounds, salvageStateSounds, sameStateSounds, writeStateSounds } from "./sound-setting";
@@ -29,6 +30,11 @@ export type SidebarSide = typeof SIDEBAR_SIDES[number];
 export interface Preferences {
 	/** Which side of the window the sidebar is on. */
 	sidebarSide: SidebarSide;
+	/**
+	 * The tags a worktree can have (issue 409), Work first: it is the default
+	 * and cannot be removed. Work and Review until a list is saved.
+	 */
+	tags: Tag[];
 	/** The editor that "Open in editor" starts. Null until one is chosen. */
 	editor: EditorSetting | null;
 	/**
@@ -203,6 +209,13 @@ export const PREFERENCE_PARTS: { [Key in keyof Preferences]: PreferencePart<Pref
 		read: value => SIDEBAR_SIDES.includes(value as SidebarSide) ? value as SidebarSide : undefined,
 		same: (one, other) => one === other,
 		write: value => value,
+	},
+	tags: {
+		fallback: () => writeTags(DEFAULT_TAGS),
+		read: readTags,
+		same: sameTags,
+		write: writeTags,
+		salvage: salvageTags,
 	},
 	editor: {
 		fallback: () => null,

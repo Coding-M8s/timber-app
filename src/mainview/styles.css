@@ -8524,3 +8524,206 @@ pre:focus-visible {
 	font-size: 12px;
 	overflow-wrap: anywhere;
 }
+
+/*
+ * Worktree tags (issue 409): a light wash of the worktree's tag color over
+ * its row, drawn between the row's own fill and its words, so hover and
+ * selection still deepen the row beneath it and the words keep their colors.
+ * The focus ring is outside the row and stays as it is. The wash is the tag
+ * color at TAG_WASH_OPACITY (src/shared/theme.ts), which the contrast check
+ * checks every word over. It carries no status: it has no shape or word of
+ * its own, and the tag's name is in the row's tooltip and description.
+ */
+.row-item[data-tag],
+.group-head.colored,
+.repository-group-head.colored {
+	position: relative;
+	isolation: isolate;
+}
+
+.row-item[data-tag]::before,
+.group-head.colored::before,
+.repository-group-head.colored::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	z-index: -1;
+	border-radius: inherit;
+	background: var(--tag);
+	opacity: 0.07;
+	pointer-events: none;
+}
+
+/*
+ * The isolation above keeps a menu drawn inside the row or header within
+ * it, so while one is open the row or header goes over its neighbours, and
+ * the menu over the rows below it.
+ */
+.row-item[data-tag]:has(.worktree-menu),
+.group-head.colored:has(.worktree-menu),
+.repository-group-head.colored:has(.worktree-menu) {
+	z-index: 30;
+}
+
+/*
+ * A colored header takes the wash in place of its quiet surface: over that
+ * surface, the faint words would fall under the contrast check's minimum. It
+ * colors only the header; each worktree keeps its own tag.
+ */
+.group-head.colored {
+	background: transparent;
+}
+
+.repository-group-head.colored {
+	border-radius: 6px;
+}
+
+/* A tag color as a small mark beside the words that name it. */
+.tag-swatch {
+	flex: none;
+	display: inline-block;
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+}
+
+.tag-swatch.none {
+	box-shadow: inset 0 0 0 1.5px var(--text-3);
+}
+
+.worktree-menu-item .tag-swatch {
+	align-self: center;
+}
+
+.worktree-menu-check,
+.worktree-menu-more {
+	margin-left: auto;
+	color: var(--text-2);
+}
+
+.worktree-menu-check + .worktree-menu-more {
+	margin-left: 4px;
+}
+
+/* The Tag field of the worktree dialogs, and the tags of Set tag... */
+.tag-field {
+	margin: 0;
+	padding: 0;
+	border: 0;
+	min-width: 0;
+}
+
+.tag-field legend {
+	padding: 0;
+	margin-bottom: 5px;
+}
+
+.tag-choices {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.tag-choice {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 9px;
+	border: 1px solid var(--line);
+	border-radius: 7px;
+	font-size: 12.5px;
+	color: var(--text);
+	cursor: pointer;
+}
+
+.tag-choice:has(input:checked),
+.tag-choice[aria-pressed="true"] {
+	border-color: var(--text-3);
+	background: var(--fill-selected);
+}
+
+.tag-choice:has(input:focus-visible) {
+	outline: 2px solid var(--focus);
+	outline-offset: 1px;
+}
+
+.tag-choice input {
+	position: absolute;
+	opacity: 0;
+	pointer-events: none;
+}
+
+/* Settings, Tags: one row per tag, its colors, its name, and Remove. */
+.tag-rows {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.tag-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px;
+}
+
+.tag-colors {
+	display: flex;
+	gap: 2px;
+}
+
+.tag-color {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	border-radius: 50%;
+	cursor: pointer;
+}
+
+.tag-color .tag-swatch {
+	width: 14px;
+	height: 14px;
+}
+
+.tag-color:has(input:checked) {
+	box-shadow: 0 0 0 1.5px var(--text);
+}
+
+.tag-color:has(input:focus-visible) {
+	outline: 2px solid var(--focus);
+	outline-offset: 1px;
+}
+
+.tag-color input {
+	position: absolute;
+	inset: 0;
+	margin: 0;
+	opacity: 0;
+	cursor: pointer;
+}
+
+.tag-name {
+	flex: 1 1 160px;
+	min-width: 0;
+}
+
+.tag-default {
+	min-width: 60px;
+}
+
+.tag-problem {
+	flex-basis: 100%;
+}
+
+.tag-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px;
+}

@@ -4,6 +4,7 @@ import { type RepositoryAgentChange, readRepositoryAgentChange, repositoryAgents
 import { overrideRepositoryPaths } from "./git-engine";
 import type { SettingsHolder } from "./settings";
 import { messageOf } from "../shared/error-message";
+import { withoutRemovedTags } from "../shared/worktree-tags";
 
 /** The preferences part of the settings file: the app's own settings from the Settings dialog. */
 export interface SavedPreferences {
@@ -45,11 +46,13 @@ export function createSavedPreferences(settings: SettingsHolder, environment: Re
 				// Under the override the saved list is not the one shown, so its picks stay as they are.
 				const picked = overridden ? { ok: true as const, entries: current.repositories, changed: false } : withRepositoryAgents(current.repositories, picks, saved.agents, next.agents);
 				if (!picked.ok) return { outcome: "failed", message: picked.message };
+				// A tag removed takes its worktrees back to Work in the same write.
+				const retagged = withoutRemovedTags(picked.entries, next.tags);
 				const answer: SavePreferencesResult = { outcome: "saved", preferences: next };
 				if (change?.agents !== undefined || repositoryAgents !== null) answer.repositoryAgents = overridden ? {} : repositoryAgentsOf(picked.entries);
-				if (current.preferences && samePreferences(saved, next) && !picked.changed) return answer;
+				if (current.preferences && samePreferences(saved, next) && !picked.changed && !retagged.changed) return answer;
 				try {
-					await settings.save({ ...current, repositories: picked.entries, preferences: next });
+					await settings.save({ ...current, repositories: retagged.entries, preferences: next });
 				} catch (error) {
 					return { outcome: "failed", message: `Could not save settings to ${settings.file}: ${messageOf(error)}` };
 				}

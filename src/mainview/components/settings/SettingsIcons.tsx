@@ -4,6 +4,7 @@ import type { SettingsSection } from "../../store/state";
 /** The strokes of each section's icon in the Settings list, on a 24 by 24 grid. */
 const ICON_PATHS: Record<SettingsSection, ReactNode> = {
 	layout: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></>,
+	tags: <><path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z" /><circle cx="8" cy="8" r="1.5" /></>,
 	theme: <><circle cx="12" cy="12" r="8" /><path d="M12 4v16M12 8h5M12 12h8M12 16h5" /></>,
 	terminal: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="m7 9 3 3-3 3M13 15h4" /></>,
 	rendering: <path d="M12 3v3M12 18v3M3 12h3M18 12h3M6.3 6.3l2 2M15.7 15.7l2 2M6.3 17.7l2-2M15.7 8.3l2-2" />,

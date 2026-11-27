@@ -5707,3 +5707,66 @@ Run for change marks in the file explorer (issue 389), Linux x64 with Bun
 - `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
 - Not run: the whole suite, the desktop app, a real agent editing files,
   Windows, and macOS.
+
+Run for worktree tags and header colors (issue 409), Linux x64 with Bun
+1.4.5, Google Chrome, and Timber 0.2.0:
+
+- The look was chosen in an A/B test: Timber's own arena (`timber arena new
+  gh-409-tag-look --tool manual --runs 2 --no-agent`) made two worktrees from
+  one base commit with tag tokens and sample tags, one drawing a stripe down
+  the row's left edge and one a tint over the row. Both were drawn over the
+  mock engine in headless Chrome, in Timber Dark and Timber Light, with a
+  selected row, a row under the pointer, a row with the keyboard's focus
+  ring, the row flags, and colored repository and group headers, and the
+  maintainer picked the tint from the screenshots. They were not posted to
+  the issue, at the maintainer's word. The "not from Timber" flag of issue
+  324 is not built yet, so a stand-in word flag was drawn beside the
+  variants; this change has none.
+- The wash in those screenshots was the tag color at 10% opacity, which put
+  faint text at about 3.8:1 on a tinted row. At 7% every built-in theme keeps
+  4.5:1 for every text color and 3:1 for every meaning color over each tag
+  color's wash (`contrastWarnings` checks it now). Over a header's quiet
+  surface even 3% failed in Timber Light, so a colored header takes the wash
+  in place of that surface.
+- `bun test tests/theme.test.ts tests/theme-files.test.ts
+  tests/theme-maker.test.tsx`: all passed. Every built-in theme defines five
+  tag colors, distinct and none of them one of its status colors, and passes
+  the contrast check with the washes; a theme file without tag colors reads
+  whole with the built-in theme's.
+- `bun test tests/worktree-tags.test.ts`: 11 passed: the default tags, reading,
+  salvaging, and naming tags, the fallback to Work, the settings file with
+  tags and colors beside the repository and group (an older file stays as it
+  was), and the stylesheet's wash at the opacity the contrast check uses.
+- `bun test tests/sidebar-tags.test.ts`: 8 passed, on real temporary
+  repositories with `git worktree add`, with the repositories' files and
+  refs unchanged after setting tags. A tag that is not saved or a repository
+  not listed saves nothing; colors go beside the repository and group;
+  removing a tag in the preferences moves its worktrees to Work in the same
+  save; a listing that failed drops nothing, one that worked drops a removed
+  worktree's tag, and a tag set while a listing ran is kept. With the
+  installed Timber 0.2.0: a worktree made with `timber new` in a terminal is
+  Work, its tag set from the app leaves `.git/worktrees` unchanged, and after
+  `git worktree remove` and `timber new` again at the same path it is Work.
+- `bun test tests/worktree-tags-ui.test.tsx`: 22 passed, over the mock
+  engine: rows, the row's Tag menu and its keys, Color on repository and
+  group menus, the palette's Set tag..., the Tag field (Work by default,
+  kept across modes, Review for Check out PR), a new worktree, a failed run
+  that created one, and every arena attempt taking the tag, an existing one
+  keeping its own, Done dropping the tag, the Tags section, and the browser
+  build's sample. A tag added after another was removed in the same edit
+  takes a new id; before that fix it took the removed tag's and kept its
+  worktrees.
+- `bun test tests/worktree-tags-browser.test.ts` in headless Chrome: 9
+  passed. The wash isolates each row, so a menu drawn inside a row or a
+  colored group's header was under the rows after it: with the first row's
+  menu open, the test found entries of it under the rows below, until the
+  row with an open menu was lifted over its neighbours. In both themes each tag's wash is under the row's words, hover and
+  selection still change a tagged row, the focus ring goes around it, and a
+  colored header takes the wash. By keyboard, Shift+F10, Up, Up reaches
+  Tag, Right opens the tags on the current one, Left goes back, and Enter on
+  Review retags the row with the keyboard back on it; by pointer, resting on
+  Tag opens the tags beside the menu inside the window.
+- `bun run test`: 5,036 passed, 19 skipped, 0 failed, in 299 files, after rebasing onto the file explorer's change marks (703668d); 5,009 passed, 0 failed, in 296 files, before that.
+- `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
+- Not run: the desktop app and its WebKit and WebView2 views, where the wash
+  has not been seen; Windows; and macOS.

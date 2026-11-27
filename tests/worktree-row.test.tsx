@@ -58,29 +58,38 @@ function nameOf(markup: string): string {
 }
 
 describe("WorktreeRow", () => {
+	test("a tagged row is washed in its tag's color, and says its tag in its tooltip and description, never by color alone", () => {
+		const markup = renderToStaticMarkup(<WorktreeRow worktree={clean} selected={false} onSelect={() => {}} tag={{ id: "review", name: "Review", color: 2 }} />);
+		expect(markup).toStartWith('<div class="row-item" data-worktree-path="/work/app-worktrees/feat-x" data-tag="review" style="--tag:var(--tag-2)">');
+		expect(markup).toContain('title="/work/app-worktrees/feat-x. Tag: Review"');
+		expect(descriptionOf(markup)).toBe("Tag: Review.");
+		// The color is no marker: nothing on the row reads as a status.
+		expect(markersIn(markup)).toEqual([]);
+	});
+
 	test("a clean worktree that is level with its upstream shows its name and kind, and nothing else", () => {
 		const markup = render(clean);
 		expect(markersIn(markup)).toEqual([]);
-		expect(markup).not.toContain("aria-describedby");
-		expect(markup).not.toContain("row-description");
+		// Only its tag is described: Work, as every worktree with no other tag is.
+		expect(descriptionOf(markup)).toBe("Tag: Work.");
 		expect(markup).not.toContain("row-flags");
 		expect(nameOf(markup)).toBe("feat/x Worktree");
-		expect(markup).toContain('title="/work/app-worktrees/feat-x"');
+		expect(markup).toContain('title="/work/app-worktrees/feat-x. Tag: Work"');
 	});
 
 	test("the tooltip adds the saved base to the path, and nothing when Timber reported none", () => {
-		expect(render({ ...clean, base: { kind: "assigned", ref: "refs/remotes/origin/main" } })).toContain('title="/work/app-worktrees/feat-x (Base origin/main)"');
-		expect(render({ ...clean, base: { kind: "unassigned" } })).toContain('title="/work/app-worktrees/feat-x (No saved base)"');
-		expect(render({ ...clean, base: null })).toContain('title="/work/app-worktrees/feat-x"');
+		expect(render({ ...clean, base: { kind: "assigned", ref: "refs/remotes/origin/main" } })).toContain('title="/work/app-worktrees/feat-x (Base origin/main). Tag: Work"');
+		expect(render({ ...clean, base: { kind: "unassigned" } })).toContain('title="/work/app-worktrees/feat-x (No saved base). Tag: Work"');
+		expect(render({ ...clean, base: null })).toContain('title="/work/app-worktrees/feat-x. Tag: Work"');
 	});
 
 	test("saved base metadata Timber cannot use is a marker on the row, and in what the row tells assistive technology", () => {
 		const markup = render({ ...clean, base: { kind: "invalid", reason: "unreadable" } });
-		expect(markup).toContain('title="/work/app-worktrees/feat-x (Base unknown)"');
+		expect(markup).toContain('title="/work/app-worktrees/feat-x (Base unknown). Tag: Work"');
 		expect(markersIn(markup)).toEqual([
 			{ className: "row-flag", title: "Timber found a saved base for this worktree but cannot use it: it could not be read. The base is not known, and the app does not guess one.", text: "base unknown" },
 		]);
-		expect(markup).toContain("does not guess one.</span>");
+		expect(markup).toContain("does not guess one. Tag: Work.</span>");
 	});
 
 	test("every marker shows its short text and carries its sentence as a tooltip", () => {
@@ -105,18 +114,19 @@ describe("WorktreeRow", () => {
 			"Locked: Git will not prune, move, or remove this worktree until it is unlocked.",
 			"3 files with uncommitted changes: modified, added, deleted, or renamed.",
 			"1 untracked file: new, and not added to Git.",
+			"Tag: Work.",
 		].join(" "));
 	});
 
 	test("the row's button holds its first line, with nothing interactive inside it, and the second line sits beside it", () => {
 		const markup = render(busy, true);
-		expect(markup).toStartWith('<div class="row-item selected" data-worktree-path="/work/app-worktrees/feat-x"><button type="button" class="row selected" aria-current="true" aria-label="feat/x Worktree"');
+		expect(markup).toStartWith('<div class="row-item selected" data-worktree-path="/work/app-worktrees/feat-x" data-tag="work" style="--tag:var(--tag-1)"><button type="button" class="row selected" aria-current="true" aria-label="feat/x Worktree"');
 		const button = /<button type="button" class="row selected"[\s\S]*?<\/button>/.exec(markup)?.[0] ?? "";
 		expect(button).toContain('class="row-name"');
 		expect(button).toContain('class="sync behind"');
 		expect(button).not.toContain("row-meta");
 		// The second line has the row's tooltip too.
-		expect(markup).toContain('</button><div class="row-line row-meta" title="/work/app-worktrees/feat-x">');
+		expect(markup).toContain('</button><div class="row-line row-meta" title="/work/app-worktrees/feat-x. Tag: Work">');
 		expect(markup.match(/<button/g)?.length).toBe(1);
 		expect(markup).not.toMatch(/<a |<input|<select|tabindex|role=/);
 	});
@@ -138,7 +148,7 @@ describe("WorktreeRow", () => {
 
 	test("a branch whose upstream state is unknown says so in the row and in its description", () => {
 		const markup = render({ ...clean, sync: null });
-		expect(descriptionOf(markup)).toBe("Git could not say how this branch stands against its upstream. It may have commits to push or to pull.");
+		expect(descriptionOf(markup)).toBe("Git could not say how this branch stands against its upstream. It may have commits to push or to pull. Tag: Work.");
 	});
 
 	test("a detached HEAD, a locked, and a prunable worktree are marked in words", () => {
@@ -160,7 +170,7 @@ describe("WorktreeRow", () => {
 
 		const missing = render({ ...unread, pathExists: false, prunable: true, changes: { kind: "unknown", reason: "Worktree path is missing" } });
 		expect(markersIn(missing).map(marker => marker.text)).toEqual(["folder missing"]);
-		expect(descriptionOf(missing)).toBe("The folder is missing: /work/app-worktrees/feat-x. Its status is unknown.");
+		expect(descriptionOf(missing)).toBe("The folder is missing: /work/app-worktrees/feat-x. Its status is unknown. Tag: Work.");
 	});
 
 	test("every sample row draws exactly its markers, each with a tooltip, and describes them all", () => {
@@ -169,7 +179,7 @@ describe("WorktreeRow", () => {
 			const markup = render(worktree);
 			expect(markersIn(markup).map(marker => marker.text)).toEqual(markers.map(marker => marker.text));
 			expect(markersIn(markup).every(marker => marker.title.length > 0)).toBe(true);
-			expect(descriptionOf(markup)).toBe(markers.length > 0 ? markers.map(marker => marker.tooltip).join(" ") : null);
+			expect(descriptionOf(markup)).toBe([...markers.map(marker => marker.tooltip), "Tag: Work."].join(" "));
 		}
 	});
 });
@@ -179,5 +189,5 @@ test("the row draws how far it is from its base as a quiet word flag on its seco
 	const markup = renderToStaticMarkup(<WorktreeRow worktree={based} selected={false} onSelect={() => {}} />);
 	const meta = markup.slice(markup.indexOf('class="row-line row-meta"'));
 	expect(meta).toContain('<span class="row-flag base-counts" title="4 commits ahead of origin/main and 1 behind, as of the last fetch." aria-hidden="true">4 ahead, 1 behind base</span>');
-	expect(markup).toContain("4 commits ahead of origin/main and 1 behind, as of the last fetch.</span>");
+	expect(markup).toContain("4 commits ahead of origin/main and 1 behind, as of the last fetch. Tag: Work.</span>");
 });

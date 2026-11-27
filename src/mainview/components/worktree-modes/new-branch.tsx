@@ -8,6 +8,7 @@ import type { WorktreeDialogMode } from "./mode";
 import { type NewBranchModel, type NewBranchState, canCreate, createNewBranchModel, describeStep, reportedLabel, shownCommand } from "./new-branch-model";
 import { TrackerField, chosenTracker } from "./tracker-choice";
 import { WorkflowField, type WorkflowOptions, chosenWorkflow } from "./workflow-choice";
+import { type TagChoice, TagField } from "../TagField";
 
 /**
  * The "New branch" mode drawn from its model (see ./new-branch-model.ts).
@@ -26,6 +27,7 @@ export function newBranchMode(
 	submission: Pick<Submission, "clearFailure" | "getState">,
 	workflows: WorkflowOptions = undefined,
 	suggestions: Suggestions | null = null,
+	tag: TagChoice | null = null,
 ): WorktreeDialogMode {
 	const { fields, step } = state;
 	const edit = (change: Partial<NewBranchState["fields"]>) => {
@@ -47,7 +49,7 @@ export function newBranchMode(
 		setupStart: step.kind === "form" ? "if-skipped" : "never",
 		worktree: step.kind === "form" ? null : step.worktree.path,
 		workflow: step.kind === "form" ? workflow : step.workflow,
-		run: () => model.run(workflow, tracker),
+		run: () => model.run(workflow, tracker, tag?.chosen),
 		fields: step.kind === "form"
 			? (
 				<>
@@ -57,6 +59,7 @@ export function newBranchMode(
 						disabled={submission.getState().running}
 						onChange={name => edit({ name })}
 					/>
+					{tag && <TagField tags={tag.tags} chosen={tag.chosen} disabled={submission.getState().running} onPick={tag.onPick} />}
 					<TrackerField options={state.trackers} chosen={tracker} disabled={submission.getState().running} onPick={pick => edit({ tracker: pick })} />
 					<label className="field">
 						<span className="field-label">Start from</span>
@@ -100,7 +103,7 @@ export function newBranchMode(
 }
 
 /** The mode for creating a worktree on a new branch with `timber new`, in `repository`. */
-export function useNewBranchMode(repository: Repository, submission: Submission, workflows: WorkflowOptions): WorktreeDialogMode {
+export function useNewBranchMode(repository: Repository, submission: Submission, workflows: WorkflowOptions, tag: TagChoice | null = null): WorktreeDialogMode {
 	const store = useStore();
 	const [model] = useState(() => createNewBranchModel(store, repository.path));
 	const state = useSyncExternalStore(model.subscribe, model.getState, model.getState);
@@ -116,5 +119,5 @@ export function useNewBranchMode(repository: Repository, submission: Submission,
 		suggestions.type(state.step.kind === "form" ? state.fields.name : "", tracker);
 	}, [suggestions, state.fields.name, state.step.kind, tracker]);
 	useEffect(() => () => suggestions.pause(), [suggestions]);
-	return newBranchMode(model, state, repository, submission, workflows, { controller: suggestions, state: shown });
+	return newBranchMode(model, state, repository, submission, workflows, { controller: suggestions, state: shown }, tag);
 }
