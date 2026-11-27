@@ -1,4 +1,5 @@
 import type { FolderEntry } from "../shared/worktree-folders";
+import type { TreeMarks } from "./file-marks";
 
 /**
  * The file explorer's tree: what is listed of each folder, which folders are
@@ -27,6 +28,8 @@ export interface WorktreeTree {
 	expanded: readonly string[];
 	/** By folder, "" for the worktree's own. A folder not here was never read. */
 	listings: Readonly<Record<string, FolderListing>>;
+	/** The Git status marks of its rows, from the uncommitted changes (see ./file-marks.ts). Absent until first read. */
+	marks?: TreeMarks;
 }
 
 export interface FileTreeState {
