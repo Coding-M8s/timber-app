@@ -5244,7 +5244,10 @@ that run when the app quits open again when it starts.
   chip does not go dead. In the same step, with no wait between them,
   the session swaps to the person's shell (`shellOf()`) in the worktree's
   folder, started with the session's own environment and last pane size. It
-  keeps its id and name. What the agent printed stays in the scrollback,
+  keeps its id. Its name becomes a numbered terminal name (`terminalBase`,
+  fixed when the session opened, numbered by `defaultSessionName`) unless the
+  person renamed it, and the chip shows `>_` and no exit mark (`chipBrand`,
+  `shortExit`); rows and alerts still name the agent (`statusName`). What the agent printed stays in the scrollback,
   followed by a reset of the terminal modes the agent may have left on and a
   one-line note. The session becomes a terminal: one change tells the window
   its kind is now terminal, with the agent's name, program, conversation,

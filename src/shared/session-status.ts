@@ -275,7 +275,7 @@ export function agentBrand(session: Pick<TerminalSession, "kind" | "shell" | "st
 		const runs = session.kind === "agent" && (session.program !== undefined ? session.program === agent.id : agent.executables.includes(executable));
 		if (runs || reported) return agent.id;
 	}
-	// A shell an agent left behind keeps the agent's icon.
+	// A shell an agent left behind keeps the agent's icon on rows; a chip shows what runs now (`chipBrand`).
 	return session.endedAgent?.program ?? null;
 }
 
@@ -337,10 +337,20 @@ export function describeSessionState(session: Pick<TerminalSession, "state" | "s
  * approval, approve Write: src/a.ts. 2 tasks: 2 working", or "Codex: Done,
  * seen" once the person has seen it.
  */
+/**
+ * What words about a session's status call it. A shell an agent left behind
+ * (`endedAgent`) is a numbered terminal on its chip, but the agent's crash or
+ * stop is still the agent's, so it is named by the agent while the shell has no
+ * status of its own.
+ */
+export function statusName(session: Pick<TerminalSession, "name" | "state" | "status"> & Partial<Pick<TerminalSession, "endedAgent">>): string {
+	return session.state.kind === "running" && session.status === null && session.endedAgent !== undefined ? session.endedAgent.name : session.name;
+}
+
 export function describeSessionStatus(session: Pick<TerminalSession, "name" | "state" | "status"> & Partial<Pick<TerminalSession, "children" | "endedAgent">>, seen = false): string {
 	const words = describeSessionState(session, seen);
 	const full = session.state.kind === "running" ? session.status?.message ?? null : null;
 	const message = full === null ? null : shortMessage(full);
 	const children = describeNotableChildren(session);
-	return [`${session.name}: ${words}`, message, children].filter(Boolean).join(". ");
+	return [`${statusName(session)}: ${words}`, message, children].filter(Boolean).join(". ");
 }

@@ -245,6 +245,58 @@ describe("several sessions in one worktree", () => {
 		expect(markup).toContain("2 sessions running.");
 	});
 
+	describe("an agent that exits to a shell", () => {
+		const withAgent = async () => {
+			const engine = createMockEngine();
+			const store = createAppStore(engine, () => () => {});
+			store.start();
+			await settle();
+			store.select(featureId);
+			await store.openTerminal({ repository: TIMBER, worktree: FEATURE, cols: 80, rows: 24, agent: "Claude Code" });
+			await settle();
+			const [agent] = sessionsOf(store.getState(), featureId);
+			return { engine, store, agent: agent! };
+		};
+
+		test("its chip shows the shell's icon and a terminal name, with no exit mark", async () => {
+			const { engine, store, agent } = await withAgent();
+			expect(agent.name).toBe("Claude Code");
+			expect(render(store)).toContain("Claude Code");
+			engine.endTerminal(agent.id, 0);
+			await settle();
+			const chip = sessionsOf(store.getState(), featureId)[0]!;
+			expect(chip).toMatchObject({ kind: "terminal", name: "Terminal", state: { kind: "running" }, endedAgent: { exitCode: 0 } });
+			const markup = render(store);
+			expect(markup).toContain('<span class="session-kind" aria-hidden="true">&gt;_</span><span class="session-name">Terminal</span>');
+			expect(markup).not.toContain("session-exit");
+			expect(markup).not.toContain("branded");
+			expect(markup).not.toContain("Claude Code</span>");
+			// How the agent ended stays in the words of the chip.
+			expect(markup).toContain("Terminal, mock-shell. Claude Code ended. Exited with code 0. Now a shell");
+		});
+
+		test("a renamed chip keeps its name", async () => {
+			const { engine, store, agent } = await withAgent();
+			await store.renameTerminal(agent.id, "my agent");
+			await settle();
+			engine.endTerminal(agent.id, 0);
+			await settle();
+			expect(sessionsOf(store.getState(), featureId)[0]!.name).toBe("my agent");
+			expect(render(store)).not.toContain("session-exit");
+		});
+
+		test("when the shell ends, the chip shows the shell's exit", async () => {
+			const { engine, store, agent } = await withAgent();
+			engine.endTerminal(agent.id, 0);
+			await settle();
+			engine.endTerminal(agent.id, 2);
+			await settle();
+			const markup = render(store);
+			expect(markup).toContain('<span class="session-exit" aria-hidden="true">exit 2</span>');
+			expect(markup).toMatch(/class="session-chip [^"]*exited/);
+		});
+	});
+
 	test("the sidebar row says how many sessions run, and nothing when none do", async () => {
 		const { store, one, two, three } = await withThreeSessions();
 		const row = (markup: string) => markup.slice(markup.indexOf(`title="${FEATURE} (`), markup.indexOf("</li>", markup.indexOf(`title="${FEATURE} (`)));

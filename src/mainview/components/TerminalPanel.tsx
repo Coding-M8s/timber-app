@@ -3,7 +3,7 @@ import { type SessionMenuItem, describeSessionProblemTitle, describeStarting, me
 import type { Repository, Worktree } from "../../shared/model";
 import { SESSION_NAME_LIMIT, type TerminalSession } from "../../shared/terminal";
 import { estimateTerminalCells } from "../../shared/terminal-appearance";
-import { agentBrand, childBadge, hasStatusMark, shownStatus } from "../../shared/session-status";
+import { childBadge, hasStatusMark, shownStatus } from "../../shared/session-status";
 import { ChildBadge, ChildTasks } from "./ChildTasks";
 import { AgentIcon } from "./AgentIcon";
 import { isSeen } from "../seen-status";
@@ -22,7 +22,7 @@ import { WorktreeMenu } from "./WorktreeMenu";
 import { BEING_REMOVED_REASON } from "../done-format";
 import { dropTerminalFocus, onTerminalFocusWish, takeTerminalFocus, wantTerminalFocus } from "../terminal-focus";
 import {
-	chipAfterClose, chipAfterKey, chipButtonCommand, chipCommand, closeTerminalLabel, describeSessionChip, describeTerminalState, sessionChipId, shellName, shortExit,
+	chipAfterClose, chipAfterKey, chipBrand, chipButtonCommand, chipCommand, closeTerminalLabel, describeSessionChip, describeTerminalState, sessionChipId, shellName, shortExit,
 } from "../terminal-format";
 
 /** The drawn terminals load with xterm.js, the first time one shows, and stay loaded. */
@@ -284,7 +284,8 @@ function Chip({ session, selected, unseen, seen, ids, shownId, closing, closingI
 		setMenuAt({ left: event.clientX, top: event.clientY });
 	};
 	const running = session.state.kind === "running";
-	const exit = shortExit(session.state, session.endedAgent);
+	const exit = shortExit(session.state);
+	const brand = chipBrand(session);
 	const badge = childBadge(session);
 	const description = closing ? `${describeSessionChip(session, unseen, seen)}. Closing` : describeSessionChip(session, unseen, seen);
 
@@ -367,8 +368,8 @@ function Chip({ session, selected, unseen, seen, ids, shownId, closing, closingI
 					// A filled dot while it runs, a hollow one once it ended: the shape says it, not only the color.
 					: <span className="session-dot" aria-hidden="true" />}
 				{badge !== null && <ChildBadge badge={badge} />}
-				{agentBrand(session) !== null
-					? <span className="session-kind branded" aria-hidden="true"><AgentIcon brand={agentBrand(session)!} /></span>
+				{brand !== null
+					? <span className="session-kind branded" aria-hidden="true"><AgentIcon brand={brand} /></span>
 					: <span className="session-kind" aria-hidden="true">{session.kind === "agent" ? "\u2726" : ">_"}</span>}
 				<span className="session-name">{session.name}</span>
 				{exit !== null && <span className="session-exit" aria-hidden="true">{exit}</span>}

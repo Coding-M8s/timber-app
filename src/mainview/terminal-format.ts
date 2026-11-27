@@ -1,5 +1,5 @@
 import { type AgentBrand, type ShownStatus, agentBrand, childBadge, describeNotableChildren, describeSessionState, describeSessionStatus, hasStatusMark, sessionInitials, shortMessage, shownStatus, urgencyRank } from "../shared/session-status";
-import { type EndedAgent, type TerminalSession, describeAgentExit, describeTerminalExit, sessionKindName } from "../shared/terminal";
+import { type TerminalSession, describeAgentExit, describeTerminalExit, sessionKindName } from "../shared/terminal";
 import { type SeenStatuses, isSeen } from "./seen-status";
 import { DEFAULT_SHORTCUTS } from "../shared/shortcuts";
 
@@ -123,6 +123,16 @@ export function chipAfterClose(
 	return { show: next, focus: next };
 }
 
+/**
+ * The icon a chip shows, or null for the shell's `>_` (or an agent's star
+ * without a brand). A chip shows what runs in it now, so a shell an agent left
+ * behind (`endedAgent`) does not keep the agent's icon, unlike rows, which do.
+ */
+export function chipBrand(session: Pick<TerminalSession, "kind" | "shell" | "status"> & Partial<Pick<TerminalSession, "endedAgent" | "program">>): AgentBrand | null {
+	const { endedAgent: _ended, ...running } = session;
+	return agentBrand(running);
+}
+
 /** The element id of a session's chip, so focus can be put on it from anywhere. */
 export function sessionChipId(id: string): string {
 	return `session-chip-${id}`;
@@ -130,11 +140,12 @@ export function sessionChipId(id: string): string {
 
 /**
  * The short mark on the chip of a session that ended, such as "exit 0". A
- * running session that went on as a shell after its agent ended
- * (`endedAgent`) shows how the agent ended, until the shell itself ends.
+ * running session has none, also a shell that went on after its agent ended:
+ * nothing on the chip has exited, and how the agent ended is in the chip's
+ * description. When the shell ends, the mark is the shell's.
  */
-export function shortExit(state: TerminalSession["state"], endedAgent?: Pick<EndedAgent, "exitCode" | "signal">): string | null {
-	if (state.kind === "running") return endedAgent === undefined ? null : shortExit({ kind: "exited", exitCode: endedAgent.exitCode, signal: endedAgent.signal });
+export function shortExit(state: TerminalSession["state"]): string | null {
+	if (state.kind === "running") return null;
 	if (state.exitCode !== null) return `exit ${state.exitCode}`;
 	return state.signal ?? "ended";
 }

@@ -799,11 +799,17 @@ logins. The app never reads a tracker login and never signs in.
   session goes on as a shell in the worktree's folder, so the person can
   type at once: run the tests, look at `git diff`, or start the agent again.
   What the agent printed stays above, followed by a dim line saying it
-  exited and that this is now a shell. The chip keeps its name, and the
-  agent's mark when it was one the app knows (another agent's chip shows
-  the terminal mark). While the shell runs, the chip shows how the
-  agent ended ("exit 0", "exit 3", or the signal), and says "Claude ended.
-  Exited with code 0. Now a shell" to assistive technology. An agent that
+  exited and that this is now a shell. A chip shows what runs in it now:
+  it takes the shell's `>_` in place of the agent's mark, and a numbered
+  terminal name such as "Terminal 2" (after the terminal name the naming in
+  Settings gives, the first no other session of the worktree has), unless
+  the person renamed it, which keeps the name. It has no "exit 0" mark while
+  the shell runs, since nothing on the chip has exited; how the agent ended
+  stays in the chip's tooltip and accessible name, which say "Claude ended.
+  Exited with code 0. Now a shell", and in the dim line in the terminal.
+  When the shell exits, the chip shows the shell's exit, as any terminal's
+  does. Rows keep the agent's mark for a crashed agent, as before. A crash keeps its glyph on the chip, and its alert and row still name the agent. Bringing back the agent's icon and name when it
+  starts again in the chip is left to Resume (#284). An agent that
   ended with exit code 0 leaves a plain terminal, counted on its row with
   the other running sessions. One that crashed (another code, or a signal)
   still raises its alert and keeps a crashed mark on its row while the

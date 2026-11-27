@@ -1199,7 +1199,7 @@ sleep 5
 				expect(await fallen(quitter.id)).toBe(true);
 				const session = sessions.list()[0]!;
 				expect(session).toMatchObject({
-					id: quitter.id, name: "Quitter", kind: "terminal", path: worktree, shell: "/bin/sh", state: { kind: "running" }, status: null, children: [],
+					id: quitter.id, name: "Terminal", kind: "terminal", path: worktree, shell: "/bin/sh", state: { kind: "running" }, status: null, children: [],
 					endedAgent: { name: "Quitter", agent: "Quitter", program: null, resumable: null, conversation: null, exitCode: 3, signal: null },
 				});
 				expect(session.endedAgent!.command).toContain("fake-quitter");
@@ -1243,6 +1243,22 @@ sleep 5
 				expect(sessions.list()).toEqual([]);
 				expect(changes.filter(change => change.session?.kind === "terminal")).toEqual([]);
 				expect(changesOf(closed.id).at(-1)).toEqual({ id: closed.id, session: null });
+			});
+
+			test("takes a numbered terminal's name, and keeps one the person gave", async () => {
+				startWithAgents();
+				const plain = await sessions.open({ repository, worktree, cols: 80, rows: 24 });
+				if (plain.outcome !== "opened") throw new Error(JSON.stringify(plain));
+				const quitter = await openedAgent("Quitter");
+				expect(await fallen(quitter.id)).toBe(true);
+				// "Terminal" is taken by the plain terminal, so the shell that the agent left is "Terminal 2".
+				expect(sessions.list().find(session => session.id === quitter.id)?.name).toBe("Terminal 2");
+				const named = await openedAgent("Quitter");
+				sessions.rename(named.id, "my agent");
+				expect(await fallen(named.id)).toBe(true);
+				expect(sessions.list().find(session => session.id === named.id)?.name).toBe("my agent");
+				expect(sessions.running().find(session => session.id === named.id)?.name).toBe("my agent");
+				expect(sessions.running().find(session => session.id === quitter.id)?.name).toBeNull();
 			});
 
 			test("stays exited when the shell ends later, with the agent's end kept", async () => {
@@ -1379,12 +1395,12 @@ sleep 5
 				expect(result.outcome === "not-listed" && result.message).toContain("codex-1 was not started.");
 			});
 
-			test("an attempt whose agent ends goes on as a shell in its chip, named after its label", async () => {
+			test("an attempt whose agent ends goes on as a shell in its chip, named as a terminal", async () => {
 				startWithLaunch({ outcome: "ready", argv: ["fake-quitter"], cwd: worktree, environment: { TIMBER_ARENA: "demo" }, unset: [] });
 				const result = await sessions.open({ repository, worktree, cols: 80, rows: 24, arenaAttempt: wanted });
 				if (result.outcome !== "opened") throw new Error(JSON.stringify(result));
 				expect(await until(() => sessions.list()[0]?.kind === "terminal")).toBe(true);
-				expect(sessions.list()[0]).toMatchObject({ id: result.session.id, name: "codex-1", state: { kind: "running" }, endedAgent: { name: "codex-1", agent: null, exitCode: 3 } });
+				expect(sessions.list()[0]).toMatchObject({ id: result.session.id, name: "Terminal", state: { kind: "running" }, endedAgent: { name: "codex-1", agent: null, exitCode: 3 } });
 				expect(printed(result.session.id)).toContain("codex-1 exited with code 3.");
 				// The shell does not get the attempt's own environment changes.
 				sessions.write(result.session.id, "echo arena=${TIMBER_ARENA-unset}\r");

@@ -9,7 +9,8 @@ import { createMockEngine, sampleRepositories } from "../src/mainview/engine/moc
 import { sessionsOf } from "../src/mainview/store/state";
 import { takeTerminalFocus } from "../src/mainview/terminal-focus";
 import { createAppStore } from "../src/mainview/store/store";
-import { describeRowSessions, describeSessionChip, describeTerminalState, shortExit } from "../src/mainview/terminal-format";
+import { describeSessionStatus } from "../src/shared/session-status";
+import { chipBrand, describeRowSessions, describeSessionChip, describeTerminalState, shortExit } from "../src/mainview/terminal-format";
 import { PROBE_ANSWER } from "../src/shared/program-status";
 import { type ShownStatus, agentBrand, describeShownStatus, hasStatusMark, mostUrgent, sessionInitials, shortMessage, shownStatus, summarizeStatuses } from "../src/shared/session-status";
 import { type TerminalSession, agentEndedNote, describeAgentExit } from "../src/shared/terminal";
@@ -105,14 +106,19 @@ describe("a session's status as shown", () => {
 		expect(hasStatusMark({ ...ended(0), state: { kind: "exited", exitCode: 1, signal: null } })).toBe(false);
 		expect(agentBrand(ended(0))).toBe("codex");
 		expect(agentBrand(session({ kind: "terminal", shell: "/bin/zsh" }))).toBeNull();
-		expect(shortExit({ kind: "running" }, ended(3).endedAgent)).toBe("exit 3");
-		expect(shortExit({ kind: "running" }, ended(null, "SIGKILL").endedAgent)).toBe("SIGKILL");
+		// The chip shows what runs in it now: a shell has no mark and no agent icon, whatever ended before it.
 		expect(shortExit({ kind: "running" })).toBeNull();
+		expect(chipBrand(ended(0))).toBeNull();
+		expect(chipBrand(ended(3))).toBeNull();
+		expect(chipBrand(session({ kind: "agent", shell: "/usr/bin/codex", program: "codex" }))).toBe("codex");
 		expect(describeAgentExit({ exitCode: 3, signal: null })).toBe("Exited with code 3");
 		expect(describeAgentExit({ exitCode: null, signal: "SIGKILL" })).toBe("Stopped by SIGKILL");
 		expect(describeSessionChip(ended(0), false)).toBe("Terminal, zsh. Codex ended. Exited with code 0. Now a shell");
 		expect(describeSessionChip(ended(3), true)).toBe("Terminal, zsh. Codex ended. Exited with code 3. Now a shell. New output since you last looked");
 		expect(describeSessionChip({ ...ended(3), status: status("working") }, false)).toBe("Terminal, zsh. Codex ended. Exited with code 3. Now a shell. Working");
+		// Words about its status still name the agent that crashed, not the numbered terminal's name.
+		expect(describeSessionStatus({ ...ended(3), name: "Terminal 2" })).toStartWith("Codex: ");
+		expect(describeSessionStatus({ ...ended(3), name: "Terminal 2", status: status("working") })).toStartWith("Terminal 2: ");
 		expect(describeTerminalState(ended(0))).toBe("Running");
 		expect(describeTerminalState(ended(3))).toBe("Crashed. Exited with code 3");
 	});
@@ -140,7 +146,7 @@ describe("a session's status as shown", () => {
 		const { engine, store, agent, shell, current } = await withAgent();
 		engine.endTerminal(agent.id, 3);
 		await settle();
-		expect(current()).toMatchObject({ id: agent.id, name: agent.name, kind: "terminal", state: { kind: "running" }, status: null, children: [], endedAgent: { name: "Codex", agent: "Codex", exitCode: 3, signal: null } });
+		expect(current()).toMatchObject({ id: agent.id, name: "Terminal 2", kind: "terminal", state: { kind: "running" }, status: null, children: [], endedAgent: { name: "Codex", agent: "Codex", exitCode: 3, signal: null } });
 		expect(current().shell).not.toBe(agent.shell);
 		expect(store.getState().terminals.filter(session => session.state.kind === "running")).toHaveLength(2);
 		const printed = (await engine.readTerminal(agent.id))!.data;
@@ -148,7 +154,7 @@ describe("a session's status as shown", () => {
 		store.select(featureId);
 		await settle();
 		const markup = render(store);
-		expect(markup).toContain('<span class="session-exit" aria-hidden="true">exit 3</span>');
+		expect(markup).not.toContain('session-exit');
 		expect(markup).toContain("Terminal, mock-shell. Codex ended. Exited with code 3. Now a shell");
 		expect(engine.typedInto(agent.id)).toBe("");
 		engine.writeTerminal(agent.id, "pwd\r");

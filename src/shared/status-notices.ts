@@ -7,7 +7,7 @@
  */
 import type { Attention } from "./attention";
 import type { ChildStatus } from "./program-status";
-import { type ShownStatus, alertStatus, childName, describeShownStatus, hasStatusMark, shortMessage, shownChildStatus } from "./session-status";
+import { type ShownStatus, alertStatus, childName, describeShownStatus, hasStatusMark, shortMessage, shownChildStatus, statusName } from "./session-status";
 import type { SoundChoice, StateSounds } from "./sound-setting";
 import type { TerminalChange, TerminalSession } from "./terminal";
 
@@ -87,10 +87,10 @@ export function describeNotice(session: TerminalSession, status: ShownStatus, ch
 	const message = session.state.kind !== "running" ? null : child !== null ? child.message : session.status?.message ?? null;
 	const detail = message === null ? describeShownStatus(status) : shortMessage(message);
 	const headline = isAlertState(status.kind) ? HEADLINES[status.kind] : describeShownStatus(status).toLowerCase();
-	if (child === null) return { title: `${session.name} ${headline}`, body: `In ${folderName(session.path)}: ${detail}` };
+	if (child === null) return { title: `${statusName(session)} ${headline}`, body: `In ${folderName(session.path)}: ${detail}` };
 	const name = Array.from(childName(child));
 	const shortName = name.length <= CHILD_NAME_LIMIT ? name.join("") : `${name.slice(0, CHILD_NAME_LIMIT - 3).join("").trimEnd()}...`;
-	return { title: `${session.name}: task ${shortName} ${headline}`, body: `In ${folderName(session.path)}: ${detail}` };
+	return { title: `${statusName(session)}: task ${shortName} ${headline}`, body: `In ${folderName(session.path)}: ${detail}` };
 }
 
 export interface StatusAlerts {
