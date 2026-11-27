@@ -26,8 +26,8 @@ change them here first when they change.
     Show changes, Settings, Add repository). Actions that cannot run now are
     left out and named in one line under the list.
   - A command with a keyboard shortcut shows it at the end of its row, Ctrl
-    on Linux and Windows and Cmd on macOS, as its own tooltip names it, and
-    a chop key as set in Settings. The chip's tooltip gives the full
+    on Linux and Windows and Cmd on macOS, as its own tooltip names it, the
+    key as set in Settings, Shortcuts. The chip's tooltip gives the full
     repository and worktree names.
   - Typing ranks matches. Scoped, this repository's come first, then other
     repositories' worktrees under "Other repositories", never their actions.
@@ -113,7 +113,7 @@ change them here first when they change.
   shows it, and screen readers skip them; the name says what the row is.
 - The chops panel is the side panel's other view.
   The title bar's Chops button, or Ctrl+Shift+K (Cmd+Shift+K on macOS,
-  or the key set in Settings, Chops; the button's tooltip names the key
+  or the key set in Settings, Shortcuts; the button's tooltip names the key
   as set), shows or hides it from any focus, also from a terminal. Shown that way,
   it takes the keyboard; hidden while it has the keyboard, the keyboard
   goes back where it was, or to the Chops button when that is gone. Its
@@ -232,14 +232,28 @@ change them here first when they change.
   program, which cannot tell it from Ctrl+T. It is the new-tab key of
   several terminal apps, which Timber has no use for. Chosen by analysis;
   not yet checked against each desktop.
-- Settings, Chops sets both chop shortcuts, under "Use chops", by pressing
-  the new key in the field: Ctrl+Shift and a letter (Cmd+Shift on macOS).
-  A key the app or its text editor keeps (the palette, the next session,
-  the chips, the files, copy and paste in a terminal, redo, find
-  previous), or the other chop shortcut's, is refused with the reason, and
-  the key shown stays. Reset goes back to the default. They save with the
-  section. With "Use chops" off the fields are gone, as the shortcuts are.
-  The app's other shortcuts cannot be changed yet (#258).
+- Settings, Shortcuts, under Workflow after Chops, lists the app's
+  shortcuts with their keys as set: open the command palette
+  (Ctrl+Shift+P), the next session that needs you (Ctrl+Shift+J), the
+  session chips from a terminal (Ctrl+Shift+S), show or hide the files
+  (Ctrl+Shift+E) and the changes (Ctrl+Shift+G), and, while "Use chops" is
+  on, the chops panel (Ctrl+Shift+K) and the chop search (Ctrl+Shift+T).
+  These are the defaults; every key this document names is one of them,
+  and each can be set to another. A key is set by pressing it in the
+  field: Ctrl+Shift and a letter (Cmd+Shift on macOS). A key a terminal or
+  the text editor keeps (copy and paste in a terminal, redo, redo a
+  selection) or one another shortcut has now is refused with the reason,
+  and the key shown stays. Ctrl and a letter alone is refused as the
+  program's in a terminal, such as Ctrl+C. A chop shortcut keeps its key
+  with "Use chops" off, so turning chops on never puts two shortcuts on one
+  key; a clash with it says to turn chops on to change it. Reset goes back
+  to the default. They save with the section's Save, are kept in the app's
+  settings (`shortcuts`, only the ones that differ from the default), and
+  take effect at once: the window, a focused terminal, every tooltip, and
+  the palette follow the key as set, and a default set aside reaches the
+  page and the program as if the app had none. Below them the section
+  lists the keys that stay as they are: moving between sessions, copy and
+  paste in a terminal, and zoom.
 - No tooltip covers a menu. Whatever opened a menu (a More button, a
   chop's actions button, the terminal "+", a session chip, a worktree row,
   a repository or group header) has no tooltip while the menu is open, and

@@ -6350,23 +6350,52 @@ pre:focus-visible {
 	overflow-y: auto;
 }
 
-/* Settings, Chops: the two chop shortcuts side by side, as in the mock. */
-.chop-shortcuts {
+/* Settings, Shortcuts: the shortcuts side by side where there is room, then the keys that stay as they are. */
+.shortcut-fields {
 	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 	gap: 12px;
 }
 
-.chop-shortcut-row {
+.shortcut-row {
 	display: flex;
 	gap: 8px;
 	align-items: center;
 }
 
-.chop-shortcut-row .field-input {
+.shortcut-row .field-input {
 	flex: 1 1 auto;
 	min-width: 0;
 	cursor: pointer;
+}
+
+.shortcut-fixed {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.shortcut-fixed-list {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin: 0;
+}
+
+.shortcut-fixed-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 12px;
+}
+
+.shortcut-fixed-row dt {
+	min-width: 16em;
+	color: var(--text);
+}
+
+.shortcut-fixed-row dd {
+	margin: 0;
+	color: var(--text-3);
 }
 
 /* Done in the background (issue 98): a removal that runs is said in blue, as for work that runs, one that failed in red, always with words. */

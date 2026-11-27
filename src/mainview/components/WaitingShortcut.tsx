@@ -1,16 +1,18 @@
 import { useEffect } from "react";
 import { useStore } from "../store/react";
 import { isWaitingShortcut } from "../waiting";
+import { DEFAULT_SHORTCUTS, type ShortcutLetter, shortcutLetter } from "../../shared/shortcuts";
 
 type WaitingKey = Pick<KeyboardEvent, "type" | "key" | "ctrlKey" | "shiftKey" | "metaKey" | "altKey" | "repeat" | "preventDefault">;
 
 /**
  * What the window does with a key: the chord is always the app's, so it
  * never reaches the page's host, even with none waiting. A held chord shows
- * one session, not one per repeat. Answers whether it was the chord.
+ * one session, not one per repeat. Answers whether it was the chord, the
+ * one set in Settings, Shortcuts.
  */
-export function handleWaitingKey(event: WaitingKey, jump: () => boolean): boolean {
-	if (!isWaitingShortcut(event)) return false;
+export function handleWaitingKey(event: WaitingKey, jump: () => boolean, letter: ShortcutLetter = DEFAULT_SHORTCUTS["next-waiting"]): boolean {
+	if (!isWaitingShortcut(event, letter)) return false;
 	event.preventDefault();
 	if (!event.repeat) jump();
 	return true;
@@ -25,7 +27,7 @@ export function handleWaitingKey(event: WaitingKey, jump: () => boolean): boolea
 export function WaitingShortcut() {
 	const store = useStore();
 	useEffect(() => {
-		const onKeyDown = (event: KeyboardEvent) => void handleWaitingKey(event, () => store.jumpToWaiting());
+		const onKeyDown = (event: KeyboardEvent) => void handleWaitingKey(event, () => store.jumpToWaiting(), shortcutLetter(store.getState().preferences.shortcuts, "next-waiting"));
 		window.addEventListener("keydown", onKeyDown, true);
 		return () => window.removeEventListener("keydown", onKeyDown, true);
 	}, [store]);

@@ -1,6 +1,7 @@
 import type { SidePanelView } from "../shared/layout";
 import { hasOpenFolder, treeRows } from "./file-tree";
 import { worktreeLabel } from "./format";
+import { DEFAULT_SHORTCUTS, type ShortcutLetter, describeChord, matchesChord, shortcutLetter } from "../shared/shortcuts";
 import { type AppState, canToggleSidePanel, selectedWorktree } from "./store/state";
 
 /**
@@ -37,26 +38,26 @@ export const sidePanelViewButtonId = (view: SidePanelView) => `side-panel-view-$
 export const FILES_PANEL_SHORTCUT = "Ctrl+Shift+E";
 export const FILES_PANEL_SHORTCUT_MAC = "Cmd+Shift+E";
 
-export function filesPanelShortcut(mac: boolean): string {
-	return mac ? FILES_PANEL_SHORTCUT_MAC : FILES_PANEL_SHORTCUT;
+/** The key as set in Settings, Shortcuts, Ctrl+Shift+E until another is, for this platform. */
+export function filesPanelShortcut(mac: boolean, letter: ShortcutLetter = DEFAULT_SHORTCUTS["files-panel"]): string {
+	return describeChord(letter, mac);
 }
 
-/** The Files button's tooltip: what a click does now, and the shortcut for this platform. */
-export function filesButtonHint(open: boolean, mac: boolean): string {
-	return `${open ? "Hide" : "Show"} files (${filesPanelShortcut(mac)})`;
+/** The Files button's tooltip: what a click does now, and the key as set, for this platform. */
+export function filesButtonHint(open: boolean, mac: boolean, letter: ShortcutLetter = DEFAULT_SHORTCUTS["files-panel"]): string {
+	return `${open ? "Hide" : "Show"} files (${filesPanelShortcut(mac, letter)})`;
 }
 
 type Keys = Pick<KeyboardEvent, "type" | "key" | "ctrlKey" | "shiftKey" | "metaKey" | "altKey">;
 
-/** Ctrl+Shift+E, or Cmd+Shift+E on macOS. Either modifier counts, as for the chops panel's shortcut. */
-export function isFilesPanelShortcut(event: Keys): boolean {
-	if (event.type !== "keydown" || event.altKey || !event.shiftKey) return false;
-	return (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "e";
+/** Ctrl+Shift and the letter set, Ctrl+Shift+E until another is, or Cmd+Shift on macOS. Either modifier counts, as for the chops panel's shortcut. */
+export function isFilesPanelShortcut(event: Keys, letter: ShortcutLetter = DEFAULT_SHORTCUTS["files-panel"]): boolean {
+	return matchesChord(event, letter);
 }
 
-/** Whether the app takes this key from the page, and from a terminal's program, to show or hide the file explorer. */
+/** Whether the app takes this key from the page, and from a terminal's program, to show or hide the file explorer: the key as set. */
 export function takesFilesPanelKey(event: Keys, state: AppState): boolean {
-	return isFilesPanelShortcut(event) && canToggleSidePanel(state, "files");
+	return isFilesPanelShortcut(event, shortcutLetter(state.preferences.shortcuts, "files-panel")) && canToggleSidePanel(state, "files");
 }
 
 /** What the explorer says in place of the tree, or null when it shows the tree. */

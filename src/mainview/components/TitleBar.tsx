@@ -19,7 +19,8 @@ export function TitleBar() {
 	const state = useAppState();
 	const selection = selectedWorktree(state);
 	const mac = typeof navigator !== "undefined" && /Mac/.test(navigator.platform);
-	const hint = paletteHint(mac);
+	const keys = state.preferences.shortcuts;
+	const hint = paletteHint(mac, shortcutLetter(keys, "palette"));
 	// Hidden while Timber is not ready, as the rest of the window is.
 	const ready = timberReady(state);
 	const waitingCount = ready ? waitingSessions(state).length : 0;
@@ -47,7 +48,7 @@ export function TitleBar() {
 			</div>
 			{/* Shows the next session that needs you, or that finished, as its shortcut does. Its words name it, each with its shape so color is not alone. */}
 			{(waiting !== "" || finished !== "") && (
-				<button type="button" className="titlebar-waiting" aria-label={describeToVisit(waitingCount, finishedCount)} title={waitingHint(mac)} onClick={() => store.jumpToWaiting()}>
+				<button type="button" className="titlebar-waiting" aria-label={describeToVisit(waitingCount, finishedCount)} title={waitingHint(mac, shortcutLetter(keys, "next-waiting"))} onClick={() => store.jumpToWaiting()}>
 					{waiting !== "" && (
 						<span className="titlebar-waiting-part status-needs-you">
 							<StatusGlyph status={{ kind: "needs-you", reason: null }} />
@@ -70,7 +71,7 @@ export function TitleBar() {
 					className="titlebar-chops"
 					aria-pressed={chopsPanelShown(state)}
 					aria-controls={chopsPanelShown(state) ? CHOPS_PANEL_ID : undefined}
-					title={chopsButtonHint(chopsPanelShown(state), mac, shortcutLetter(state.preferences.shortcuts, "chops-panel"))}
+					title={chopsButtonHint(chopsPanelShown(state), mac, shortcutLetter(keys, "chops-panel"))}
 					onClick={() => void toggleChopsPanel(store)}
 				>
 					<svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -88,7 +89,7 @@ export function TitleBar() {
 					className="titlebar-files"
 					aria-pressed={filesPanelShown(state)}
 					aria-controls={filesPanelShown(state) ? CHOPS_PANEL_ID : undefined}
-					title={filesButtonHint(filesPanelShown(state), mac)}
+					title={filesButtonHint(filesPanelShown(state), mac, shortcutLetter(keys, "files-panel"))}
 					onClick={() => void toggleFilesPanel(store)}
 				>
 					<svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -105,7 +106,7 @@ export function TitleBar() {
 					className="titlebar-files titlebar-changes"
 					aria-pressed={changesPanelShown(state)}
 					aria-controls={changesPanelShown(state) ? CHOPS_PANEL_ID : undefined}
-					title={changesButtonHint(changesPanelShown(state), mac)}
+					title={changesButtonHint(changesPanelShown(state), mac, shortcutLetter(keys, "changes-panel"))}
 					onClick={() => void toggleChangesPanel(store)}
 				>
 					<svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

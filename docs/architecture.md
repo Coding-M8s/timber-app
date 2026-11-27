@@ -1693,7 +1693,7 @@ pure functions in `src/mainview/shell.ts`.
   changed file's diff (see [the Changes view](#the-changes-view)). Which tab
   shows is in the store and is not remembered between runs.
 - **Command palette.** The title bar button, and Ctrl+Shift+P (Cmd+Shift+P on
-  macOS), open the palette: a `{ kind: "palette" }` dialog in the store, drawn
+  macOS, or the key set in Settings, Shortcuts), open the palette: a `{ kind: "palette" }` dialog in the store, drawn
   by `CommandPalette.tsx`. `PaletteShortcut` listens on the window in the
   capture phase, and a drawn terminal lets the chord through, so it works
   from any focus. It opens only when no other dialog is open. What it lists
@@ -1766,7 +1766,7 @@ pure functions in `src/mainview/shell.ts`.
   third of the window; keys and drags step from the width on screen, so
   each one changes what is seen. Stacked in the narrow layout, it sits below the
   workspace. The title bar's Chops button (`aria-pressed`) and Ctrl+Shift+K
-  (Cmd+Shift+K, or the key set in Settings, Chops) call `toggleChopsPanel` in the panel's module, which asks
+  (Cmd+Shift+K, or the key set in Settings, Shortcuts) call `toggleChopsPanel` in the panel's module, which asks
   the store and moves the keyboard: shown that way, the panel takes focus
   and remembers what had it; hidden while focus is inside it, focus goes
   back there, or to the Chops button. Focus elsewhere stays where it is,
@@ -1875,7 +1875,7 @@ pure functions in `src/mainview/shell.ts`.
   and `insertChop` in the store do nothing then. The list is still read,
   so turning chops on shows it at once.
 - **Chop search.** Ctrl+Shift+T (Cmd+Shift+T), or the key set in
-  Settings, Chops, opens a `{ kind: "run-chop" }` dialog, drawn by
+  Settings, Shortcuts, opens a `{ kind: "run-chop" }` dialog, drawn by
   `RunChopDialog.tsx` on the palette's frame and classes, with the chops
   panel shown or hidden. `RunChopShortcut` listens on the window in the
   capture phase and takes the key only when it acts (`takesRunChopKey`):
@@ -2031,21 +2031,33 @@ Settings dialog and kept by the app. They are never Timber's configuration.
   [opening a worktree in an editor](#opening-a-worktree-in-an-editor)).
   Agents: the coding agents the "+" menu starts (see
   [agent sessions](#agent-sessions)). Chops: "Use chops" (`useChops`, on by
-  default), the two chop shortcuts (`shortcuts`, by id, only a key that
-  differs from the default, as "Ctrl+Shift+L"; see `src/shared/shortcuts.ts`),
-  "Play each chop's sound" (`playChopSounds`, on by default), and
+  default), "Play each chop's sound" (`playChopSounds`, on by default), and
   the person's saved commands and prompts (see [chops](#chops)); each
-  switch, and the shortcuts, save with the section's Save, on its own
+  switch saves with the section's Save, on its own
   while the rows are as saved (`chopsSectionChange`), so it never waits on
   rows nobody touched; with a changed row that cannot be saved, nothing is
-  saved until the row is fixed or removed. A shortcut is Ctrl+Shift and a
-  letter (either Ctrl or Cmd counts, read by `event.key`), set by pressing
-  it in its field (`ShortcutField`); a key the app or the text editor keeps
-  (`RESERVED_SHORTCUTS`, tied by a test to the app's key handlers and
-  CodeMirror's keymaps) or the other shortcut's is refused with the
-  reason, and never reaches the draft, so Save never holds a clash.
-  `readShortcuts` refuses such a save in the main process too, and a hand
-  edit keeps what it can (`salvageShortcuts`). Turning it off never touches
+  saved until the row is fixed or removed. Shortcuts: every app shortcut
+  (`shortcuts`, by id, only a key that differs from the default, as
+  "Ctrl+Shift+L"; see `src/shared/shortcuts.ts`): the palette, the next
+  session, the session chips, the files, the changes, and the two chop
+  shortcuts, which `ShortcutsSection.tsx` leaves out while "Use chops" is
+  off. It is the only section that saves `shortcuts`, so two drafts never
+  write over each other. A shortcut is Ctrl+Shift and a letter (either
+  Ctrl or Cmd counts, read by `event.key`), set by pressing it in its
+  field (`ShortcutField`); a key a terminal or the text editor keeps
+  (`RESERVED_SHORTCUTS`: copy and paste, redo, redo a selection, tied by a
+  test to the terminal's keys and CodeMirror's keymaps) or another
+  shortcut's as set is refused with the reason (`shortcutProblem`; a
+  chop shortcut keeps its key with chops off), and never reaches the
+  draft, so Save never holds a clash. Each place that matches or names a
+  key reads it from `preferences.shortcuts` when the key arrives or the
+  view draws: the window's listeners, a drawn terminal's
+  (`terminalLeavesToApp` and `sessionKey`), the title bar's tooltips, and
+  the palette's entries. `readShortcuts` refuses a clashing save in the
+  main process and the mock engine too, as `applyPreferenceChange` checks
+  every save, and a hand edit keeps what it can (`salvageShortcuts`). The
+  Engine contract and `rpc.ts` need no new call: `shortcuts` is a
+  preference like the rest. Turning chops off never touches
   `chops`, and turning sounds off keeps each chop's sound. The chops
   panel's order and favorites (`chopOrder`) and the sounds of
   `.timber/chops.json` chops (`fileChopSounds`) are preferences with no
@@ -4518,8 +4530,8 @@ edited and saved in a small editor.
   parts are used: line numbers, the active line, the drawn selection,
   special characters shown, history, search, and the default, history,
   and search keys (`editorKeys`), without the keys the window keeps
-  (Ctrl+Shift+P, K, and J, in any order of the modifiers; the chop
-  shortcuts set in Settings never take a key the editor binds, see
+  by default (Ctrl+Shift+P, K, J, and G, in any order of the modifiers;
+  the shortcuts set in Settings never take a key the editor binds, see
   `RESERVED_SHORTCUTS` in `src/shared/shortcuts.ts`) and without
   going to a line, selecting the next match or every match, block
   comments, and deleting, moving, or copying lines; Ctrl+/ (`toggleComment`)

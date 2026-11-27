@@ -1,6 +1,7 @@
 import { type AgentBrand, type ShownStatus, agentBrand, childBadge, describeNotableChildren, describeSessionState, describeSessionStatus, hasStatusMark, sessionInitials, shortMessage, shownStatus, urgencyRank } from "../shared/session-status";
 import { type EndedAgent, type TerminalSession, describeAgentExit, describeTerminalExit, sessionKindName } from "../shared/terminal";
 import { type SeenStatuses, isSeen } from "./seen-status";
+import { DEFAULT_SHORTCUTS } from "../shared/shortcuts";
 
 export { describeQuitRequest } from "../shared/terminal";
 
@@ -51,21 +52,22 @@ export function opensLink(event: Pick<MouseEvent, "ctrlKey" | "metaKey">, mac: b
  * leaving the keyboard: the previous or next session of the worktree, and
  * the chips, since Tab belongs to the program. Ctrl+PageUp and Ctrl+PageDown
  * as in most terminals and browsers, and Ctrl+Shift+S for the chips; on
- * macOS Cmd+Shift+[ and Cmd+Shift+], and Cmd+Shift+S.
+ * macOS Cmd+Shift+[ and Cmd+Shift+], and Cmd+Shift+S. The chips' letter is
+ * the one set in Settings, Shortcuts.
  */
-export function sessionKey(event: Keys, mac: boolean): "previous" | "next" | "chips" | null {
+export function sessionKey(event: Keys, mac: boolean, chipsLetter: string = DEFAULT_SHORTCUTS["session-chips"]): "previous" | "next" | "chips" | null {
 	if (event.type !== "keydown" || event.altKey) return null;
 	const key = event.key;
 	if (mac) {
 		if (!event.metaKey || event.ctrlKey || !event.shiftKey) return null;
 		if (key === "[" || key === "{") return "previous";
 		if (key === "]" || key === "}") return "next";
-		return key.toLowerCase() === "s" ? "chips" : null;
+		return key.toUpperCase() === chipsLetter ? "chips" : null;
 	}
 	if (!event.ctrlKey || event.metaKey) return null;
 	if (!event.shiftKey && key === "PageUp") return "previous";
 	if (!event.shiftKey && key === "PageDown") return "next";
-	return event.shiftKey && key.toLowerCase() === "s" ? "chips" : null;
+	return event.shiftKey && key.toUpperCase() === chipsLetter ? "chips" : null;
 }
 
 /**

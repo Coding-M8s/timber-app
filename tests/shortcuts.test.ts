@@ -10,8 +10,8 @@ import { clipboardKey, sessionKey } from "../src/mainview/terminal-format";
 import { isWaitingShortcut } from "../src/mainview/waiting";
 import { applyPreferenceChange, defaultPreferences, readPreferences, writePreferences } from "../src/shared/preferences";
 import {
-	DEFAULT_SHORTCUTS, RESERVED_SHORTCUTS, SHORTCUT_IDS, chordLetterOf, chordText, describeChord, matchesChord, readChord, readShortcuts, salvageShortcuts, sameShortcuts, shortcutLetter,
-	shortcutProblem, withShortcut, writeShortcuts,
+	DEFAULT_SHORTCUTS, RESERVED_SHORTCUTS, SHORTCUT_IDS, SHORTCUT_LABELS, SHORTCUT_WORDS, chordLetterOf, chordText, describeChord, isShortcut, matchesChord, pressedKeyProblem, readChord, readShortcuts,
+	salvageShortcuts, sameShortcuts, shortcutKeys, shortcutLetter, shortcutProblem, withShortcut, writeShortcuts,
 } from "../src/shared/shortcuts";
 
 const key = (key: string, modifiers: Partial<Record<"ctrlKey" | "shiftKey" | "metaKey" | "altKey", boolean>> = {}) =>
@@ -49,8 +49,9 @@ describe("a changeable shortcut's chord", () => {
 		expect(readChord(3)).toBeNull();
 	});
 
-	test("defaults to Ctrl+Shift+K for the panel and Ctrl+Shift+T to search and run a chop", () => {
-		expect(DEFAULT_SHORTCUTS).toEqual({ "chops-panel": "K", "run-chop": "T" });
+	test("each defaults to the key it always had", () => {
+		expect(DEFAULT_SHORTCUTS).toEqual({ palette: "P", "next-waiting": "J", "session-chips": "S", "files-panel": "E", "changes-panel": "G", "chops-panel": "K", "run-chop": "T" });
+		expect(SHORTCUT_IDS.every(id => SHORTCUT_LABELS[id] !== "" && SHORTCUT_WORDS[id] !== "")).toBe(true);
 		expect(shortcutLetter({}, "run-chop")).toBe("T");
 		expect(shortcutLetter({ "run-chop": "Ctrl+Shift+Y" }, "run-chop")).toBe("Y");
 		// Something that cannot be read is the default.
@@ -59,19 +60,21 @@ describe("a changeable shortcut's chord", () => {
 });
 
 describe("the keys a changeable shortcut cannot take", () => {
-	test("each app key in the table is one the app's own key handler takes", () => {
-		const takenByApp = (letter: string) =>
-			isPaletteShortcut(chord(letter)) || isWaitingShortcut(chord(letter)) || isFilesPanelShortcut(chord(letter)) || isChangesPanelShortcut(chord(letter))
-			|| sessionKey(chord(letter), false) !== null || clipboardKey(chord(letter), false) !== null;
-		const editorOnly = new Set(["Z", "U"]);
-		for (const letter of Object.keys(RESERVED_SHORTCUTS)) {
-			if (!editorOnly.has(letter)) expect(takenByApp(letter)).toBe(true);
-		}
-		// And every Ctrl+Shift letter the app takes is in the table.
+	test("the table holds only the terminal's copy and paste and the editor's keys; the app's own are shortcuts", () => {
+		expect(Object.keys(RESERVED_SHORTCUTS).sort()).toEqual(["C", "U", "V", "Z"]);
+		expect(clipboardKey(chord("C"), false)).toBe("copy");
+		expect(clipboardKey(chord("V"), false)).toBe("paste");
+		// Every Ctrl+Shift letter the app takes by default is a shortcut's default, or the terminal's copy and paste.
+		const defaults = new Set(Object.values(DEFAULT_SHORTCUTS));
 		for (const letter of "ABCDEFGHIJKLMNOPQRSTUVWXYZ") {
-			if (letter === DEFAULT_SHORTCUTS["chops-panel"]) continue;
-			if (takenByApp(letter)) expect(Object.keys(RESERVED_SHORTCUTS)).toContain(letter);
+			const taken = isPaletteShortcut(chord(letter)) || isWaitingShortcut(chord(letter)) || isFilesPanelShortcut(chord(letter)) || isChangesPanelShortcut(chord(letter))
+				|| sessionKey(chord(letter), false) !== null;
+			if (taken) expect(defaults.has(letter)).toBe(true);
+			if (clipboardKey(chord(letter), false) !== null) expect(Object.keys(RESERVED_SHORTCUTS)).toContain(letter);
 		}
+		// No default takes a kept key, and no two share one.
+		expect(defaults.size).toBe(SHORTCUT_IDS.length);
+		for (const id of SHORTCUT_IDS) expect(shortcutProblem(id, DEFAULT_SHORTCUTS[id], {})).toBeNull();
 	});
 
 	test("every Shift and Mod letter the text editor binds is in the table", () => {
@@ -93,29 +96,61 @@ describe("the keys a changeable shortcut cannot take", () => {
 				if (binding.shift) note(spec, true, mac);
 			}
 		}
-		// The window's own keys are taken out of the editor's (`WINDOW_KEYS`).
-		bound.delete("K");
-		bound.delete("P");
-		bound.delete("J");
+		// The window's own keys, as they are by default, are taken out of the editor's (`WINDOW_KEYS`).
 		for (const letter of bound) expect(Object.keys(RESERVED_SHORTCUTS)).toContain(letter);
 		expect([...bound].sort()).toEqual(["U", "Z"]);
 	});
 
-	test("a key the app keeps is refused with what it does", () => {
-		expect(shortcutProblem("run-chop", "P", {})).toBe("Ctrl+Shift+P opens the command palette, so it cannot be the key that searches and runs a chop.");
-		expect(shortcutProblem("chops-panel", "C", {})).toBe("Ctrl+Shift+C copies in a terminal, so it cannot be the key that shows or hides the chops panel.");
-		expect(shortcutProblem("run-chop", "Z", {})).toBe("Ctrl+Shift+Z redoes in the text editor, so it cannot be the key that searches and runs a chop.");
+	test("a key a terminal or the editor keeps is refused with what it does", () => {
+		expect(shortcutProblem("palette", "C", {})).toBe("Ctrl+Shift+C copies in a terminal on Linux and Windows, so it cannot be the key that opens the command palette.");
+		expect(shortcutProblem("chops-panel", "V", {})).toBe("Ctrl+Shift+V pastes in a terminal on Linux and Windows, so it cannot be the key that shows or hides the chops panel.");
+		expect(shortcutProblem("run-chop", "Z", {}, { mac: true })).toBe("Cmd+Shift+Z redoes in the text editor, so it cannot be the key that searches and runs a chop.");
 		for (const letter of Object.keys(RESERVED_SHORTCUTS)) {
 			for (const id of SHORTCUT_IDS) expect(shortcutProblem(id, letter, {})).not.toBeNull();
 		}
 	});
 
-	test("the other chop shortcut's key is refused with what it does", () => {
-		expect(shortcutProblem("run-chop", "K", {})).toBe("Ctrl+Shift+K already shows or hides the chops panel. Change that one first.");
+	test("another shortcut's key, as set, is refused with what it does", () => {
+		expect(shortcutProblem("run-chop", "P", {})).toBe("Ctrl+Shift+P already opens the command palette. Change that one first.");
+		expect(shortcutProblem("palette", "K", {})).toBe("Ctrl+Shift+K already shows or hides the chops panel. Change that one first.");
+		expect(shortcutProblem("files-panel", "S", {})).toBe("Ctrl+Shift+S already goes to the session chips. Change that one first.");
 		expect(shortcutProblem("chops-panel", "Y", { "run-chop": "Ctrl+Shift+Y" })).toBe("Ctrl+Shift+Y already searches and runs a chop. Change that one first.");
+		// A default set aside is free for another.
+		expect(shortcutProblem("files-panel", "P", { palette: "Ctrl+Shift+O" })).toBeNull();
 		// A shortcut keeps its own key.
 		expect(shortcutProblem("run-chop", "T", {})).toBeNull();
 		expect(shortcutProblem("run-chop", "R", {})).toBeNull();
+	});
+
+	test("a chop shortcut keeps its key with chops off, and the refusal says how to reach it", () => {
+		expect(shortcutProblem("palette", "K", {}, { useChops: false })).toBe("Ctrl+Shift+K shows or hides the chops panel while Use chops is on. To use it here, turn on Use chops in Settings, Chops, and change that one first.");
+		expect(shortcutProblem("palette", "J", {}, { useChops: false })).toBe("Ctrl+Shift+J already shows the next session that needs you or is done. Change that one first.");
+	});
+
+	test("a pressed key that is not a chord says what to press, and Ctrl and a letter says a terminal has it", () => {
+		expect(pressedKeyProblem(chord("K"), false)).toBeNull();
+		expect(pressedKeyProblem(key("c", { ctrlKey: true }), false)).toBe("Ctrl+C belongs to the program in a terminal, as Ctrl+C stops it, so a shortcut is Ctrl+Shift and a letter, such as Ctrl+Shift+T.");
+		expect(pressedKeyProblem(key("c", { metaKey: true }), true)).toBe("Cmd+C is kept for the system and the text editor, so a shortcut is Cmd+Shift and a letter, such as Cmd+Shift+T.");
+		expect(pressedKeyProblem(key("F5"), false)).toBe("Press Ctrl+Shift and a letter, such as Ctrl+Shift+T.");
+		expect(pressedKeyProblem(chord("!"), true)).toBe("Press Cmd+Shift and a letter, such as Cmd+Shift+T.");
+	});
+
+	test("each shortcut's key as set is named and matched", () => {
+		const set = { palette: "Ctrl+Shift+O", "session-chips": "Ctrl+Shift+A" };
+		expect(shortcutKeys(set, "palette", false)).toBe("Ctrl+Shift+O");
+		expect(shortcutKeys(set, "palette", true)).toBe("Cmd+Shift+O");
+		expect(shortcutKeys(set, "files-panel", false)).toBe("Ctrl+Shift+E");
+		expect(isShortcut(chord("o"), set, "palette")).toBe(true);
+		expect(isShortcut(chord("p"), set, "palette")).toBe(false);
+		expect(isPaletteShortcut(chord("O"), "O")).toBe(true);
+		expect(isWaitingShortcut(chord("X"), "X")).toBe(true);
+		expect(isFilesPanelShortcut(chord("E"), "X")).toBe(false);
+		expect(isChangesPanelShortcut(chord("X"), "X")).toBe(true);
+		expect(sessionKey(chord("A"), false, "A")).toBe("chips");
+		expect(sessionKey(chord("S"), false, "A")).toBeNull();
+		expect(sessionKey(key("a", { metaKey: true, shiftKey: true }), true, "A")).toBe("chips");
+		// The session keys that are not letters stay as they are.
+		expect(sessionKey(key("PageDown", { ctrlKey: true }), false, "A")).toBe("next");
 	});
 });
 
@@ -131,6 +166,11 @@ describe("the shortcuts as a preference", () => {
 	test("are read when each is a chord, none takes a kept key, and no two share one", () => {
 		expect(readShortcuts({})).toEqual({});
 		expect(readShortcuts({ "run-chop": "Ctrl+Shift+R", other: "Ctrl+Shift+Q" })).toEqual({ "run-chop": "Ctrl+Shift+R" });
+		// Every shortcut, moved round so each takes the last one's default.
+		const moved = { palette: "Ctrl+Shift+T", "next-waiting": "Ctrl+Shift+P", "session-chips": "Ctrl+Shift+J", "files-panel": "Ctrl+Shift+S", "changes-panel": "Ctrl+Shift+E", "chops-panel": "Ctrl+Shift+G", "run-chop": "Ctrl+Shift+K" };
+		expect(readShortcuts(moved)).toEqual(moved);
+		expect(readShortcuts({ palette: "Ctrl+Shift+J" })).toBeUndefined();
+		expect(readShortcuts({ "files-panel": "Ctrl+Shift+C" })).toBeUndefined();
 		// Swapped keys are read whole.
 		expect(readShortcuts({ "run-chop": "Ctrl+Shift+K", "chops-panel": "Ctrl+Shift+T" })).toEqual({ "run-chop": "Ctrl+Shift+K", "chops-panel": "Ctrl+Shift+T" });
 		expect(readShortcuts({ "run-chop": "Ctrl+Shift+P" })).toBeUndefined();
@@ -140,7 +180,7 @@ describe("the shortcuts as a preference", () => {
 	});
 
 	test("a save that clashes is refused, so the main process refuses it too", () => {
-		const { preferences, unreadable } = applyPreferenceChange(defaultPreferences(), { shortcuts: { "run-chop": "Ctrl+Shift+P" } });
+		const { preferences, unreadable } = applyPreferenceChange(defaultPreferences(), { shortcuts: { "palette": "Ctrl+Shift+V" } });
 		expect(unreadable).toEqual(["shortcuts"]);
 		expect(preferences.shortcuts).toEqual({});
 		expect(applyPreferenceChange(defaultPreferences(), { shortcuts: { "run-chop": "Ctrl+Shift+R" } }).preferences.shortcuts).toEqual({ "run-chop": "Ctrl+Shift+R" });

@@ -11,6 +11,8 @@ const ICON_PATHS: Record<SettingsSection, ReactNode> = {
 	editor: <path d="m8 8-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14" />,
 	agents: <><rect x="4" y="8" width="16" height="11" rx="3" /><path d="M12 4v4M9 13v1M15 13v1" /></>,
 	chops: <path d="M13 3 5 14h6l-1 7 8-11h-6l1-7z" />,
+	// A keyboard.
+	shortcuts: <><rect x="2" y="6" width="20" height="12" rx="2" /><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10" /></>,
 	notifications: <path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15L6 16zM10 20a2 2 0 0 0 4 0" />,
 	fetch: <path d="M20 11a8 8 0 0 0-14.6-4.4M4 4v4h4M4 13a8 8 0 0 0 14.6 4.4M20 20v-4h-4" />,
 	// An arrow down onto a line: commits coming into the branch.

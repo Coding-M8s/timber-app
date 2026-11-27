@@ -22,9 +22,9 @@ const MOD = isMac ? "Cmd" : "Ctrl";
 const keyParts = (key: string) => key.split("-").map(part => part.toLowerCase()).sort().join("-");
 /**
  * Keys the window keeps for itself (the palette, chops, the next session, the changes), taken out of the editor's own.
- * Ctrl+Shift+G is find previous in CodeMirror; Shift+Enter and Shift+F3 still do that here. The chop
- * shortcuts set in Settings are not followed here: they never take a key the editor binds (`RESERVED_SHORTCUTS` in
- * ../../shared/shortcuts.ts), and the window hears them first.
+ * Ctrl+Shift+G is find previous in CodeMirror; Shift+Enter and Shift+F3 still do that here. These are the
+ * defaults; the keys set in Settings, Shortcuts are not followed here: they never take a key the editor binds
+ * (`RESERVED_SHORTCUTS` in ../../shared/shortcuts.ts), and the window hears them first.
  */
 const WINDOW_KEYS = new Set(["Mod-Shift-p", "Mod-Shift-k", "Mod-Shift-j", "Mod-Shift-g"].map(keyParts));
 /**

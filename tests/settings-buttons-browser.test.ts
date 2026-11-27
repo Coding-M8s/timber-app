@@ -181,9 +181,9 @@ describe.skipIf(browserPath === null || process.platform === "win32")("Settings 
 			expect(misfits).toEqual([]);
 		}, 60_000);
 
-		test("Chops, with a shortcut changed so Reset shows", async () => {
-			await show(page, "chops");
-			await page.evaluate(`${PANEL}.querySelector(".chop-shortcut input").focus()`);
+		test("Shortcuts, with a shortcut changed so Reset shows", async () => {
+			await show(page, "shortcuts");
+			await page.evaluate(`${PANEL}.querySelector(".shortcut-field input").focus()`);
 			await page.press("Y", "ctrlShift");
 			await page.until(hasText("Reset"), "Reset showed");
 			const misfits = await misfitsAtEveryWidth("a changed shortcut");
