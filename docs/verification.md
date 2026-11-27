@@ -5789,3 +5789,19 @@ Run for worktree tags and header colors (issue 409), Linux x64 with Bun
 - `bun run test` after the stripe: 5,038 passed, 19 skipped, 0 failed, in
   299 files. `bun run typecheck` and `bun run typecheck:desktop`: both
   exited 0.
+
+Run for leaving out binary files that only have new times when comparing
+with the base, Linux x64 with Bun 1.4.5 and Git 2.56.1:
+
+- `bun run test tests/file-changes-base.test.ts tests/file-changes-parse.test.ts`:
+  58 passed. The new real-repository test rewrites five binary files with
+  their own bytes and stale times, and checks that only the one with
+  nothing else changed is left out: a same-size edit, a mode change, a
+  staged edit, and a committed change stay, and the index bytes, files, and
+  refs are unchanged. With the change to src/ stashed, it fails, listing
+  `touched.bin`.
+- `bun run typecheck`: no errors.
+- `createFileChanges` read the base comparison of a scratch clone of a real
+  project whose build copies 24 vendored `.woff2` fonts over themselves:
+  main listed all 24 as modified, this change listed none, and with one
+  font's bytes really changed it listed that one only.

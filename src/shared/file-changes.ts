@@ -270,10 +270,41 @@ export function baseNamesArguments(commit: string, paths: readonly string[] = []
 
 /**
  * The same comparison as `baseNamesArguments`, as line counts. Git compares
- * the content for these, so a file that only has new times is left out.
+ * the content of a text file for these, so one that only has new times is
+ * left out. A binary file is not compared: it gets a line, without counts,
+ * whether its content changed or not (see `withoutUnchangedBinaries`).
  */
 export function baseContentArguments(commit: string, paths: readonly string[] = []): string[] {
 	return [...NO_INDEX_REFRESH, ...LITERAL, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--numstat", "-z", "-M", commit, "--", ...paths];
+}
+
+/**
+ * The files the commits since the branch point `commit` changed, from tree to
+ * tree, so neither the index nor the files on disk are read. Renames are not
+ * looked for, so each file is named at its own path.
+ */
+export function committedNamesArguments(commit: string, paths: readonly string[] = []): string[] {
+	return [...LITERAL, "diff", "--no-color", "--no-ext-diff", "--name-status", "-z", "--no-renames", commit, "HEAD", "--", ...paths];
+}
+
+/**
+ * The binary files of a base comparison that `git diff` named only for new
+ * times. Git counts no lines for a binary file, and without the index refresh
+ * it names one whose times changed whatever its content. A modified binary
+ * file is left out when `git status` (`status`, which compares content) has
+ * no change for it and no commit since the branch point changed it
+ * (`committed`, from `committedNamesArguments`): then it is as it was at the
+ * branch point. Null `committed`, a failed or cut read, keeps every file.
+ */
+export function withoutUnchangedBinaries(changed: readonly FileChange[], counts: ReadonlyMap<string, LineCounts>, status: readonly FileChange[], committed: readonly FileChange[] | null): FileChange[] {
+	if (committed === null) return [...changed];
+	const touched = new Set([...status, ...committed].flatMap(file => (file.previousPath === null ? [file.path] : [file.path, file.previousPath])));
+	return changed.filter(file => !unchangedBinaryCandidate(file, counts) || touched.has(file.path));
+}
+
+/** Whether a base change may be a binary file with only new times: modified in place, with no line counts. */
+export function unchangedBinaryCandidate(file: FileChange, counts: ReadonlyMap<string, LineCounts>): boolean {
+	return file.area === "base" && file.kind === "modified" && counts.get(file.path)?.added === null;
 }
 
 /**

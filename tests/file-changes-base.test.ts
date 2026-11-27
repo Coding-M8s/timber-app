@@ -217,6 +217,54 @@ describe.skipIf(windows)("comparing a worktree with its base, in real repositori
 		expect(readFileSync(indexFile).equals(index)).toBe(true);
 	});
 
+	test("leaves out a binary file whose times changed but whose content did not, and keeps every binary file that changed", async () => {
+		// Its own repository, so the binary files are in no other test's lists.
+		const repo = join(root, "binary");
+		const work = join(root, "binary-worktrees", "feat");
+		git(root, "init", "--initial-branch=main", repo);
+		const bytes = (fill: number) => new Uint8Array([0, 1, 2, fill, 0, 255, fill, 0]);
+		for (const name of ["touched.bin", "edited.bin", "chmod.bin", "committed.bin", "staged.bin"]) writeFileSync(join(repo, name), bytes(7));
+		git(repo, "add", "--all");
+		git(repo, "commit", "-m", "Start");
+		git(repo, "update-ref", "refs/remotes/origin/main", "main");
+		git(repo, "worktree", "add", "-b", "feat", work, "origin/main");
+		const point = git(repo, "rev-parse", "main").trim();
+
+		// Committed on the branch, then put back on disk as it was: still a change since the branch point.
+		writeFileSync(join(work, "committed.bin"), bytes(9));
+		git(work, "commit", "-am", "Change committed.bin");
+		// Not committed: the same size with other bytes, a new mode, and a staged edit.
+		writeFileSync(join(work, "edited.bin"), bytes(8));
+		Bun.spawnSync(["chmod", "+x", join(work, "chmod.bin")]);
+		writeFileSync(join(work, "staged.bin"), bytes(3));
+		git(work, "add", "staged.bin");
+		// Rewritten with the same bytes, as a build's copy step does, so every file's times are stale.
+		const later = new Date(Date.now() + 5000);
+		for (const name of ["touched.bin", "edited.bin", "chmod.bin", "committed.bin", "staged.bin"]) {
+			writeFileSync(join(work, name), readFileSync(join(work, name)));
+			utimesSync(join(work, name), later, later);
+		}
+		// What made the bug: Git's own lists name the file that only has new times.
+		expect(plainGit(work, "-c", "diff.autoRefreshIndex=false", "diff", "--name-only", point)).toContain("touched.bin");
+		expect(plainGit(work, "-c", "diff.autoRefreshIndex=false", "diff", "--numstat", point)).toContain("touched.bin");
+		const indexFile = plainGit(work, "rev-parse", "--path-format=absolute", "--git-path", "index").trim();
+		const index = readFileSync(indexFile);
+		const before = [fingerprint(work), fingerprint(repo)];
+
+		const changes = createFileChanges({ findRepository: async path => path === repo ? listed(repo, [[work, ORIGIN_MAIN]]) : null });
+		const answer = await changes.read({ repository: repo, worktree: work, compare: "base" });
+		expect(answer.outcome).toBe("read");
+		if (answer.outcome !== "read") return;
+		expect(entries(answer.files)).toEqual([
+			"base modified chmod.bin",
+			"base modified committed.bin",
+			"base modified edited.bin",
+			"base modified staged.bin",
+		]);
+		expect([fingerprint(work), fingerprint(repo)]).toEqual(before);
+		expect(readFileSync(indexFile).equals(index)).toBe(true);
+	});
+
 	test("Uncommitted lists what git status lists, and still says the base can be used", async () => {
 		const answer = await read("uncommitted");
 		expect(answer.compared).toBe("uncommitted");

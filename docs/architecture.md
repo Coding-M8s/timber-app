@@ -3701,7 +3701,14 @@ Comparing against a backup is a later step.
   refreshed (see below), that list also names files whose times changed
   but whose content did not, so only the files that `git diff --numstat -z
   -M <branch point>` also names are kept; Git compares the content for
-  those counts. When the counts are cut short, every name is kept, which can
+  those counts. Git does not compare a binary file's content for the
+  counts: it names one that was only touched, as a build that copies
+  vendored fonts does, without counts. So a modified binary file is kept
+  only when the same `git status` lists it, or when `git diff --name-status
+  -z --no-renames <branch point> HEAD`, tree to tree, does: a commit since
+  the branch point changed it. That diff runs only when such a file is
+  named, and when it fails, is cut short, or the status was, every binary
+  file is kept. When the counts are cut short, every name is kept, which can
   list a file that was only touched, but never leaves out a real change.
   Comparing the content of every changed file costs more than the names
   alone, within the same 20 second limit; when the counts fail, every name
