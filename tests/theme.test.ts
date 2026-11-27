@@ -123,7 +123,7 @@ describe("contrastWarnings", () => {
 	test("name each color that is too close to a surface, with its ratio and the minimum", () => {
 		const faint = { ...DEFAULT_DARK_THEME, ui: { ...DEFAULT_DARK_THEME.ui, text3: "#3a3a40", error: "#2a1a1a" } };
 		const warnings = contrastWarnings(faint);
-		expect(warnings.filter(warning => warning.color === "text3").map(warning => warning.on)).toEqual(["bgApp", "bgMain", "bgPane", "bgRaised", "fillField", "tag1", "tag2", "tag3", "tag4", "tag5"]);
+		expect(warnings.filter(warning => warning.color === "text3").map(warning => warning.on)).toEqual(["bgApp", "bgMain", "bgPane", "bgRaised", "fillField"]);
 		expect(warnings.find(warning => warning.color === "error" && warning.on === "bgMain")).toEqual({ color: "error", on: "bgMain", ratio: expect.any(Number), minimum: 3 });
 		for (const warning of warnings) expect(warning.ratio).toBeLessThan(warning.minimum);
 		expect(warnings.every(warning => warning.color === "text3" || warning.color === "error")).toBe(true);

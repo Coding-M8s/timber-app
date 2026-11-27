@@ -4,7 +4,7 @@
  */
 import { formatColor, parseColor, readColor } from "../shared/color";
 import { copyName, nameIsFree, newThemeId } from "../shared/custom-themes";
-import { type Appearance, type ContrastWarning, type TerminalColor, type Theme, type ThemeChoice, type UiColor, TAG_COLORS, contrastWarnings, defaultTheme, findTheme, sameTheme } from "../shared/theme";
+import { type Appearance, type ContrastWarning, type TerminalColor, type Theme, type ThemeChoice, type UiColor, contrastWarnings, defaultTheme, findTheme, sameTheme } from "../shared/theme";
 
 export const THEME_MODE_LABELS: Record<ThemeChoice["mode"], string> = {
 	fixed: "One theme",
@@ -202,9 +202,7 @@ export function pickedColor(current: string, picked: string): string {
 /** What a contrast warning says, such as "Faint text on Sunken panes: 3.21:1, needs 4.5:1". */
 export function describeWarning(warning: ContrastWarning): string {
 	const label = (key: string) => key.startsWith("terminal.") ? `Terminal ${TERMINAL_COLOR_LABELS[key.slice(9) as TerminalColor].toLowerCase()}` : UI_COLOR_LABELS[key as UiColor];
-	// A tag color as the ground is a sidebar row washed with it.
-	const on = (TAG_COLORS as readonly string[]).includes(warning.on) ? `a row tinted in ${label(warning.on).toLowerCase()}` : label(warning.on).toLowerCase();
-	return `${label(warning.color)} on ${on}: ${warning.ratio}:1, needs ${warning.minimum}:1`;
+	return `${label(warning.color)} on ${label(warning.on).toLowerCase()}: ${warning.ratio}:1, needs ${warning.minimum}:1`;
 }
 
 /** The choice with this theme in use: as the one theme, or in the system's slot of its appearance. */

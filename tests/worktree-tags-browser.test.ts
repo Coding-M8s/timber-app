@@ -5,8 +5,8 @@ import { THEME_STYLE_ID, themeStyleSheet } from "../src/shared/theme";
 import { type BrowserPage, browserPath, openSidebarPage } from "./support/browser";
 
 /**
- * Worktree tags as drawn (issue 409): the wash of each tag over its row,
- * under the selection, hover, and the focus ring, a colored header, and the
+ * Worktree tags as drawn (issue 409): the stripe of each tag on its row, the
+ * border of the row on screen, hover and the focus ring, a colored header, and the
  * Tag menu of a row reached by keyboard and by pointer. The styles and the
  * contrast are tested without a window in worktree-tags.test.ts and
  * theme.test.ts. Skipped where no browser is installed.
@@ -16,7 +16,7 @@ const LOOKUP = "/work/timber-worktrees/feat-github-issue-lookup";
 const MAC = "/work/timber-worktrees/fix-macos-portability";
 const SPIKE = "/work/timber-worktrees/spike-new-idea";
 const item = (path: string) => `document.querySelector('[data-worktree-path="${path}"]')`;
-/** The color a row is painted in, wash included, read from its pixels' parts: its own background and the wash over it. */
+/** A row's own background, and its stripe: color, opacity, and whether it is drawn. */
 const painted = (path: string) => `(() => {
 	const row = ${item(path)};
 	const wash = getComputedStyle(row, "::before");
@@ -48,43 +48,37 @@ describe.skipIf(browserPath === null || process.platform === "win32")("worktree 
 				await page.hover("main.workspace");
 			});
 
-			test("each tag washes its row in its own color, under the words", async () => {
+			test("each tag draws a solid stripe in its own color at the row's left edge", async () => {
 				const review = await page.evaluate<{ wash: string; opacity: number; content: string }>(painted(LOOKUP));
 				const experiment = await page.evaluate<{ wash: string }>(painted(MAC));
 				expect(review.content).toBe('""');
-				expect(review.opacity).toBeCloseTo(0.07, 5);
+				expect(review.opacity).toBe(1);
 				expect(review.wash).not.toBe(experiment.wash);
 				expect(contrastRatio(review.wash, theme.ui.tag2)).toBeCloseTo(1, 1);
-				// The words sit above the wash: the row's name is not covered by it.
-				expect(await page.evaluate<number>(`Number(getComputedStyle(${item(LOOKUP)}, "::before").zIndex)`)).toBe(-1);
+				expect(await page.evaluate<string>(`getComputedStyle(${item(LOOKUP)}, "::before").width`)).toBe("3px");
 			});
 
-			test("selection and hover still change a tagged row, and the focus ring goes around it", async () => {
-				// Another row is selected, so this one starts plain.
+			test("the worktree on screen trades its stripe for a border all around in its tag color, and the focus ring still shows", async () => {
 				await page.click(`[data-worktree-path="${LOOKUP}"] .row`);
 				await page.hover("main.workspace");
+				expect(await page.evaluate<string>(`getComputedStyle(${item(LOOKUP)}).boxShadow`)).toContain("inset");
+				expect(await page.evaluate<string>(`getComputedStyle(${item(LOOKUP)}, "::before").display`)).toBe("none");
+				expect(await page.evaluate<string>(`getComputedStyle(${item(SPIKE)}).boxShadow`)).toBe("none");
+				expect(await page.evaluate<string>(`getComputedStyle(${item(SPIKE)}, "::before").display`)).toBe("block");
 				const before = await page.evaluate<{ fill: string }>(painted(SPIKE));
 				await page.hover(`[data-worktree-path="${SPIKE}"] .row`);
-				const hovered = await page.evaluate<{ fill: string; wash: string }>(painted(SPIKE));
-				expect(hovered.fill).not.toBe(before.fill);
+				expect((await page.evaluate<{ fill: string }>(painted(SPIKE))).fill).not.toBe(before.fill);
 				await page.hover("main.workspace");
-				await page.click(`[data-worktree-path="${SPIKE}"] .row`);
-				await page.hover("main.workspace");
-				const selected = await page.evaluate<{ fill: string }>(painted(SPIKE));
-				expect(selected.fill).not.toBe(before.fill);
-				expect(selected.fill).not.toBe(hovered.fill);
 				await page.press("Escape");
 				await page.evaluate(`${item(MAC)}.querySelector(".row").focus()`);
 				expect(await page.evaluate<string>(`getComputedStyle(${item(MAC)}).outlineStyle`)).toBe("solid");
 			});
 
-			test("a colored header takes the wash in place of its quiet surface", async () => {
+			test("a colored header has the same stripe and keeps its quiet surface", async () => {
 				const head = `document.querySelector('section.group[aria-label="timber"] .group-head')`;
 				expect(await page.evaluate<boolean>(`${head}.classList.contains("colored")`)).toBe(true);
-				expect(await page.evaluate<string>(`getComputedStyle(${head}).backgroundColor`)).toBe("rgba(0, 0, 0, 0)");
-				expect(await page.evaluate<string>(`getComputedStyle(${head}, "::before").backgroundColor`)).not.toBe("rgba(0, 0, 0, 0)");
-				// Drawn as the contrast check reckons it: the tag color at the wash's opacity over the sidebar.
-				expect(Number(await page.evaluate<string>(`getComputedStyle(${head}, "::before").opacity`))).toBeCloseTo(0.07, 5);
+				expect(await page.evaluate<string>(`getComputedStyle(${head}).backgroundColor`)).not.toBe("rgba(0, 0, 0, 0)");
+				expect(await page.evaluate<string>(`getComputedStyle(${head}, "::before").width`)).toBe("3px");
 			});
 		});
 	}
