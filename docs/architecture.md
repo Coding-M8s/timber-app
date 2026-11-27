@@ -4622,6 +4622,34 @@ wrote and never mentioned can be found.
   folder closed meanwhile is dropped. A folder that went away closes; a
   failure says why and keeps what showed. A tree of a worktree that left
   the list is forgotten.
+- **Change marks.** Each changed file's row ends in its Git status letter,
+  `KindLetter` as in the Changes list, and each folder above a change ends
+  in a dot. The pure mapping is `treeMarks` in `src/mainview/file-marks.ts`:
+  one kind per path, a conflict first, then the staged kind, then the
+  unstaged one, then untracked; a path deleted on disk is left out, and a
+  deletion only staged gives way to what is on disk, since the tree lists
+  the disk; every folder above a marked path counts it once; a folder Git
+  reports as one entry, such as a nested repository (`nested/`), is marked
+  under its path. `rowMark` gives a row its letter or its count, and
+  `describeRowMark` the words its tooltip and `aria-description` add, after
+  "Ignored" when it is. The store's `readFileMarks` asks the existing
+  `readFileChanges` with `compare: "uncommitted"` always, never the Changes
+  view's chosen comparison, and keeps the result as `marks` on the
+  worktree's tree, so it is forgotten with it. It is not an operation
+  (`track`), so nothing dims or spins for it, one runs at a time per
+  worktree with one more after it when asked meanwhile, a read that fails
+  or answers late for another worktree keeps the last marks, and the same
+  marks read again leave the tree alone (`sameTreeMarks`). It runs when the
+  file explorer shows a worktree, and again whenever that worktree is
+  listed as a new object, which is after every reload of its repository,
+  as `ChangesReader` follows it: a commit, stage, or discard, the watcher,
+  and the working tree check (`src/bun/worktree-stamp.ts`) all end in one.
+  A change heard in a folder that shows reads them too, sooner than that
+  check. Nothing is read while the panel does not show. When the list was
+  cut at `MAX_LISTED_FILES` (`more`), `MARKS_INCOMPLETE_NOTE` shows above
+  the tree as plain text. No Git logic, `Engine` capability, or `rpc.ts`
+  message is added; the mock engine's folders and changes come from the
+  same pretend files, so it shows the same marks.
 - **The panel.** `src/mainview/components/FilesPanel.tsx`, with its words
   and shortcut in `src/mainview/files-panel-format.ts`. It is a WAI-ARIA
   tree: the rows are `treeitem`s with their level, place, and whether a

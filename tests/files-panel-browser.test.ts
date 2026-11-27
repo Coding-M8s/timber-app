@@ -241,6 +241,61 @@ describe.skipIf(browserPath === null || process.platform === "win32")("the file 
 		}
 	}, 30_000);
 
+	test("change marks stay readable beside long names at the narrowest panel, in Timber Light and Timber Dark", async () => {
+		const LONG = "src/a-very-long-file-name-that-cannot-fit-in-the-narrowest-files-panel.ts";
+		await page.evaluate(`(() => {
+			const worktree = ${STORE}.getState().repositories[0].worktrees[0];
+			const change = { area: "untracked", kind: "untracked", path: ${JSON.stringify(LONG)}, previousPath: null, added: 1, removed: 0, version: "" };
+			window.timberTestEngine.setFileChanges(worktree.path, [{ change, patch: "" }]);
+			window.timberTestEngine.announceChange(${STORE}.getState().repositories[0].path);
+		})()`);
+		await page.click(BUTTON);
+		await page.until(`document.querySelector(${JSON.stringify(`${ROW("src")} .files-tree-dot`)}) !== null`, "the closed folder got its dot");
+		await page.click(ROW("src"));
+		await page.until(`document.querySelector(${JSON.stringify(`${ROW(LONG)} .change-letter`)}) !== null`, "the file got its letter");
+		await page.evaluate(`${STORE}.resizeChopsPanel(${MIN_CHOPS_WIDTH})`);
+		for (const theme of ["timber-light", "timber-dark"]) {
+			await page.evaluate(`${STORE}.savePreferences({ theme: { mode: "fixed", theme: ${JSON.stringify(theme)} } })`);
+			const brightness = `getComputedStyle(document.body).backgroundColor.match(/[\\d.]+/g).slice(0, 3).map(Number).reduce((sum, part) => sum + part, 0)`;
+			await page.until(theme === "timber-light" ? `${brightness} > 600` : `${brightness} < 200`, `${theme} showed`);
+			const drawn = await page.evaluate<{
+				row: { left: number; right: number }; name: { right: number }; letter: { left: number; right: number; width: number }; dot: { left: number; right: number; width: number; height: number };
+				folderRow: { right: number }; cut: boolean; letterText: string; contrast: number; dotContrast: number; description: string | null;
+			}>(`(() => {
+				const box = element => { const { left, right, width, height } = element.getBoundingClientRect(); return { left, right, width, height }; };
+				const row = document.querySelector(${JSON.stringify(ROW(LONG))});
+				const folder = document.querySelector(${JSON.stringify(ROW("src"))});
+				const name = row.querySelector(".files-tree-name");
+				const letter = row.querySelector(".change-letter");
+				const dot = folder.querySelector(".files-tree-dot");
+				const rgb = color => color.match(/[\\d.]+/g).slice(0, 3).map(Number);
+				const luminance = ([r, g, b]) => { const c = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * c(r) + 0.7152 * c(g) + 0.0722 * c(b); };
+				const background = element => { for (let at = element; at; at = at.parentElement) { const color = getComputedStyle(at).backgroundColor; if (!/rgba\\(.*, 0\\)$/.test(color) && color !== "transparent") return color; } return "rgb(255, 255, 255)"; };
+				const ratio = (a, b) => { const [x, y] = [luminance(rgb(a)), luminance(rgb(b))].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+				return {
+					row: box(row), name: box(name), letter: box(letter), dot: box(dot), folderRow: box(folder),
+					cut: name.scrollWidth > name.clientWidth, letterText: letter.textContent,
+					contrast: ratio(getComputedStyle(letter).color, background(row)),
+					dotContrast: ratio(getComputedStyle(dot).backgroundColor, background(folder)),
+					description: row.getAttribute("aria-description"),
+				};
+			})()`);
+			// The name gives way, cut short, and the letter keeps its place at the row's end, inside the panel.
+			expect(drawn.cut).toBe(true);
+			expect(drawn.letterText).toBe("U");
+			expect(drawn.letter.width).toBeGreaterThan(0);
+			expect(drawn.name.right).toBeLessThanOrEqual(drawn.letter.left);
+			expect(drawn.letter.right).toBeLessThanOrEqual(drawn.row.right);
+			expect(drawn.dot.width).toBeGreaterThan(0);
+			expect(drawn.dot.height).toBeGreaterThan(0);
+			expect(drawn.dot.right).toBeLessThanOrEqual(drawn.folderRow.right);
+			// Readable against the row: text at least 3:1, as large-text and UI marks need, and the dot visible.
+			expect(drawn.contrast).toBeGreaterThanOrEqual(3);
+			expect(drawn.dotContrast).toBeGreaterThanOrEqual(1.5);
+			expect(drawn.description).toBe("Untracked");
+		}
+	}, 30_000);
+
 	test("the shortcut hides the files and gives the keyboard back where it was", async () => {
 		await page.evaluate(`document.querySelector(".group-header").focus()`);
 		const before = await page.evaluate<string>(ACTIVE);

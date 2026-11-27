@@ -3,6 +3,8 @@ import { FILE_PATHS_TYPE, worktreeFilePath } from "../terminal-drop";
 import { CHOPS_PANEL_ID } from "../chops-panel-format";
 import { fileIconUrl, iconFor } from "../file-icons";
 import { type TreeRow, keptFocus, treeKeyAction, treeRows } from "../file-tree";
+import { MARKS_INCOMPLETE_NOTE, describeRowMark, rowMark } from "../file-marks";
+import { KindLetter } from "./KindLetter";
 import {
 	COLLAPSE_FOLDERS_LABEL, FILES_CLOSE_LABEL, FILES_IGNORED_LABEL, FILES_PANEL_TITLE, FILES_TOOLS_LABEL,
 	collapseUnavailable, describeFilesPanelEmpty, takesFilesPanelKey,
@@ -124,6 +126,8 @@ export function FilesPanel() {
 		}
 		const name = selected ? worktreeLabel(selected.worktree) : "";
 		return (
+			<>
+			{tree.marks?.more && <p className="dialog-note files-marks-note">{MARKS_INCOMPLETE_NOTE}</p>}
 			<ul ref={treeRef} className="files-tree" role="tree" aria-label={`Files of ${name}`} aria-busy={root.reading} onKeyDown={onKeyDown}>
 				{rows.map(row => {
 					const tabIndex = row.id === current ? 0 : -1;
@@ -139,7 +143,11 @@ export function FilesPanel() {
 					}
 					const { entry } = row;
 					const classes = ["files-tree-row", entry.ignored ? "ignored" : "", entry.path === openPath ? "current" : ""].filter(Boolean).join(" ");
-					const title = [entry.path, entry.kind === "link" ? "a link" : "", entry.ignored ? "ignored by Git" : ""].filter(Boolean).join(", ");
+					// Its Git status: a letter on a changed file, a dot on a folder above changes, both said in words too.
+					const mark = rowMark(tree.marks, entry.path, entry.kind === "folder");
+					const markWords = mark === null ? "" : describeRowMark(mark);
+					const title = [entry.path, entry.kind === "link" ? "a link" : "", entry.ignored ? "ignored by Git" : "", markWords].filter(Boolean).join(", ");
+					const description = [entry.ignored ? "Ignored" : "", markWords].filter(Boolean).join(", ");
 					return (
 						<li
 							key={row.id}
@@ -150,7 +158,7 @@ export function FilesPanel() {
 							aria-posinset={row.position}
 							aria-expanded={row.expanded ?? undefined}
 							aria-current={entry.path === openPath ? "true" : undefined}
-							aria-description={entry.ignored ? "Ignored" : undefined}
+							aria-description={description === "" ? undefined : description}
 							tabIndex={tabIndex}
 							className={classes}
 							style={indent}
@@ -174,10 +182,13 @@ export function FilesPanel() {
 							<RowIcon icon={iconFor(entry.name, row.expanded === null ? "file" : "folder", row.expanded === true, appearance)} />
 							<span className="files-tree-name">{entry.name}</span>
 							{entry.kind === "link" && <span className="files-tree-tag" aria-hidden="true">link</span>}
+							{mark?.kind === "file" && <KindLetter file={{ kind: mark.change }} />}
+							{mark?.kind === "folder" && <span className="files-tree-dot" aria-hidden="true" />}
 						</li>
 					);
 				})}
 			</ul>
+			</>
 		);
 	};
 

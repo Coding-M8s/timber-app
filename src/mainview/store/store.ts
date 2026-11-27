@@ -12,6 +12,7 @@ import type { AppUpdateInstallRequest, AppUpdateInstallResult } from "../../shar
 import { readableEditorSetting } from "../../shared/editor";
 import type { Engine } from "../../shared/engine";
 import { type FolderListing, type WorktreeTree, readingListing, shownFolders, withAllClosed, withFolder } from "../file-tree";
+import { sameTreeMarks, treeMarks } from "../file-marks";
 import type { WorktreeFolderResult, WorktreeFolderWatch } from "../../shared/worktree-folders";
 import type { WorktreeHandoff } from "../../shared/handoff";
 import type { FetchResult, ForcePushSeen, RepositoryFetch } from "../../shared/git-fetch";
@@ -1166,6 +1167,14 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 	let watchedFolders: string | null = null;
 	let watchedTree: string | null = null;
 	let followingTree = false;
+	/**
+	 * The worktree, as last listed, whose marks were read last. A reload of its
+	 * repository lists it as a new object, so the marks are read again then, as
+	 * the Changes view is. Null while the file explorer shows no worktree.
+	 */
+	let markedWorktree: Worktree | null = null;
+	/** The marks reads running, by worktree identity, and whether another was asked for meanwhile. */
+	const markReads = new Map<string, { again: boolean }>();
 
 	function toggleSidePanel(view: SidePanelView): boolean {
 		if (!canToggleSidePanel(state, view)) return false;
@@ -1204,6 +1213,47 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 		changeTree(worktreeId, { ...now, listings: { ...now.listings, [folder]: listing } });
 	}
 
+	/**
+	 * Read the Git status marks of a worktree's tree: its uncommitted changes,
+	 * whatever the Changes view compares with. Quiet: it is no operation, so
+	 * nothing dims or spins, and a read that fails keeps the last marks. One
+	 * runs at a time per worktree; one asked for meanwhile runs after it.
+	 */
+	function readFileMarks(worktreeId: string): void {
+		const running = markReads.get(worktreeId);
+		if (running) {
+			running.again = true;
+			return;
+		}
+		const run = { again: false };
+		markReads.set(worktreeId, run);
+		void (async () => {
+			try {
+				do {
+					run.again = false;
+					await readMarksOnce(worktreeId);
+				} while (run.again);
+			} finally {
+				markReads.delete(worktreeId);
+			}
+		})();
+	}
+
+	async function readMarksOnce(worktreeId: string): Promise<void> {
+		const tree = state.fileTree.trees[worktreeId];
+		if (!tree) return;
+		let answer: FileChangesResult;
+		try {
+			answer = await engine.readFileChanges({ repository: tree.repository, worktree: tree.worktree, compare: "uncommitted" });
+		} catch {
+			return;
+		}
+		const now = state.fileTree.trees[worktreeId];
+		if (answer.outcome !== "read" || !now || now.worktree !== tree.worktree || now.repository !== tree.repository) return;
+		const marks = treeMarks(answer.files, answer.more);
+		if (!sameTreeMarks(now.marks, marks)) changeTree(worktreeId, { ...now, marks });
+	}
+
 	/** Read the folders that show for a worktree again. */
 	function readShownFolders(worktreeId: string): void {
 		const tree = state.fileTree.trees[worktreeId];
@@ -1238,8 +1288,13 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				}
 				watchedTree = id;
 				watch = { repository: target.repository.path, worktree: target.worktree.path, folders: shownFolders(state.fileTree.trees[id]!) };
+				if (markedWorktree !== target.worktree) {
+					markedWorktree = target.worktree;
+					readFileMarks(id);
+				}
 			} else {
 				watchedTree = null;
+				markedWorktree = null;
 			}
 			const key = watch === null ? null : JSON.stringify(watch);
 			if (key === watchedFolders) return;
@@ -3989,7 +4044,10 @@ export function createAppStore(engine: Engine, schedule: Schedule = scheduleWith
 				engine.onWorktreeFolderChanged(change => {
 					const id = watchedTree;
 					const tree = id === null ? undefined : state.fileTree.trees[id];
-					if (id !== null && tree?.worktree === change.worktree && shownFolders(tree).includes(change.folder)) void readFolder(id, change.folder);
+					if (id === null || tree?.worktree !== change.worktree) return;
+					if (shownFolders(tree).includes(change.folder)) void readFolder(id, change.folder);
+					// A file made, removed, or saved there may change its mark before the repository is read again.
+					readFileMarks(id);
 				}),
 				engine.onTerminalChanged(change => {
 					// Until the first list answers, changes wait, and are applied on top of it.

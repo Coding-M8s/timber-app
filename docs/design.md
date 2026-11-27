@@ -70,6 +70,21 @@ change them here first when they change.
   more than 1,000 entries shows the first ones and says how many more there
   are. What shows updates when files are made or removed in a folder that
   is open. Links are listed as links and never opened as folders.
+  Each changed file shows its Git status letter at the right edge of its
+  row, in the letters and colors of the Changes list: M modified, A added,
+  R renamed, U untracked, ! conflicted, and the rest. A folder with changed
+  files anywhere below it shows a quiet dot at its right edge, open or
+  closed, so the dots lead down to each change; its tooltip and a screen
+  reader say how many, such as "3 changed files", and a file's say its
+  status, such as "Modified". The marks always show the uncommitted work,
+  what `git status` lists, even while the Changes view compares with the
+  base. A file staged and edited again has one mark, the staged one, and a
+  conflict wins over any other. Deleted files have no row, so no mark, and
+  no folder counts them; they stay in the Changes view. The marks follow
+  the disk without reopening the panel, as files are made, saved,
+  committed, or reverted. When more than 5,000 files changed, a line above
+  the tree says some may have no mark. The marks add no button, toggle, or
+  filter: they are always on.
   Under the header, in the Files view only, is a row for the files' own
   controls, with room for later ones. At its right edge, under Close, is
   Collapse all folders, which closes every open folder of the selected

@@ -5664,3 +5664,46 @@ Run for keeping the open file up to date with disk, with Read again removed
   editing a file, an editor that saves through a rename, a network folder,
   Windows, and macOS.
 - Older entries above still name Read again as it was when they were run.
+
+Run for change marks in the file explorer (issue 389), Linux x64 with Bun
+1.4.5 and Git 2.56.1:
+
+- `bun test tests/file-marks.test.ts`: 14 passed. The pure mapping: each
+  kind's letter, every folder above a change counted once, nested ones too,
+  one mark for a file staged and edited again, a conflict first, a rename on
+  its new path only, deletions left out, a new file in a new untracked
+  folder, a nested repository's `nested/` entry, the singular "1 changed
+  file", and the truncation note.
+- `bun test tests/file-marks-repository.test.ts`: 2 passed. A real temporary
+  repository with a conflict, a modified file, one staged and edited again,
+  one added, a rename, a deletion, and a new file two untracked folders
+  deep, read by the main process's `readFileChanges`: each gets its letter,
+  the folders their counts, the deleted file nothing. Three reads leave the
+  files, refs, worktree list, status, and index exactly as they were, with
+  stale index times.
+- `bun test tests/file-marks-panel.test.tsx`: 10 passed, over the mock
+  engine. A closed `src` shows the dot with "4 changed files" in its
+  tooltip and `aria-description`, and once open its files show M and U with
+  "Modified" and "Untracked"; an ignored file still says "Ignored". With the
+  Changes view comparing with the base, every read for the marks asks for
+  the uncommitted changes. Marks appear and clear after a change is
+  announced, without reopening the panel, and a change in a folder that
+  shows reads them again. A failed read keeps the last marks, no operation
+  runs while they are read, the truncation note has no control, the panel
+  has as many controls with marks as without, and nothing is read while the
+  Files view is hidden. With the read asking the chosen comparison instead,
+  3 of them failed; with the read on a new worktree object taken out, 7 did.
+- `bun test tests/files-panel-browser.test.ts` in headless Chrome: 12
+  passed. The new test gives a file a name far longer than the narrowest
+  panel: in Timber Light and Timber Dark the name is cut short, its U stays
+  at the row's end inside the panel without overlapping it, at 3:1 or more
+  against the row, and the closed folder's dot shows.
+- `bun test` over the other files that read changes or the tree
+  (`palette`, `store`, `changes-panel`, `changes-tab`, `chops-panel`,
+  `discard-files-view`, `files-panel`, `unsaved-tab`, `file-tree`,
+  `file-changes`, `stage-files`): all passed, 333 with the new ones; and
+  `stage-files-browser` and `discard-files-browser` with the Files browser
+  test: 21 passed.
+- `bun run typecheck` and `bun run typecheck:desktop`: both exited 0.
+- Not run: the whole suite, the desktop app, a real agent editing files,
+  Windows, and macOS.
