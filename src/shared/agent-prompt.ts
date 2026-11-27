@@ -12,6 +12,10 @@ import type { ProgramStatus } from "./program-status";
  *   such as on Claude Code's "trust this folder" question, or `working`, it
  *   waits, so an Enter never answers a question meant for the person.
  *   OpenCode's `done` counts as `idle`: it is its own `idle` after a turn.
+ *   An agent that probes but reports nothing until its first input (Amp,
+ *   `silentUntilInput` in the registry) is treated as one that never
+ *   probed until it has reported once, so a first-run or sign-in screen
+ *   with bracketed paste on gets the prompt, as for one that never probed.
  * - An agent that never probed gets it once it turned bracketed paste on,
  *   which is when it draws its input, and its output then stayed quiet for
  *   `PROMPT_QUIET_MILLISECONDS`, or, for one that keeps redrawing, such as
@@ -40,6 +44,8 @@ export interface PromptReadiness {
 	probed: boolean;
 	/** Its root record now, or null. */
 	status: ProgramStatus | null;
+	/** Whether the agent probes but reports nothing until its first input (`silentUntilInput`). Absent for any other. */
+	silentUntilInput?: boolean;
 	/** Whether it asked for bracketed paste. */
 	pasteOn: boolean;
 	/** How long its output has been quiet. */
@@ -50,7 +56,7 @@ export interface PromptReadiness {
 
 /** Whether a new agent is ready for its prompt (see above). */
 export function isReadyForPrompt(agent: PromptReadiness, quietNeeded = PROMPT_QUIET_MILLISECONDS, busyNeeded = PROMPT_BUSY_MILLISECONDS): boolean {
-	if (agent.probed) return agent.status?.state === "idle" || (agent.status?.state === "done" && agent.status.app === "opencode");
+	if (agent.probed && !(agent.silentUntilInput === true && agent.status === null)) return agent.status?.state === "idle" || (agent.status?.state === "done" && agent.status.app === "opencode");
 	return agent.pasteOn && (agent.quietMilliseconds >= quietNeeded || agent.pasteOnMilliseconds >= busyNeeded);
 }
 

@@ -54,8 +54,8 @@ interface MockArenaOptions {
 
 /**
  * What a Timber with every native tool lists, as `timber __app-arena tools`
- * printed it on Timber's main branch: the registry's agents, and three it has
- * no row for, one of which ends after its task.
+ * printed it on Timber's main branch: the registry's agents, one of which
+ * (Amp) ends after its task.
  */
 export const sampleArenaTools: ArenaToolList = {
 	state: "listed",

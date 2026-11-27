@@ -131,7 +131,7 @@ describe("the Agent and Config folder fields of Settings, Agents", () => {
 		expect(rowMarkup(markup, "Codex")).toContain("Detect from command (Codex)</option>");
 		expect(rowMarkup(markup, "Team agent")).toContain("Detect from command (not recognized)</option>");
 		expect(rowMarkup(markup, "Claude Work")).toContain('<option value="claude" selected="">Claude Code</option>');
-		for (const name of ["Claude Code", "Codex", "Cursor CLI", "Gemini CLI", "Grok Build", "OpenCode", "GitHub Copilot CLI"]) expect(rowMarkup(markup, "Team agent")).toContain(`>${name}</option>`);
+		for (const name of ["Claude Code", "Codex", "Cursor CLI", "Gemini CLI", "Grok Build", "OpenCode", "GitHub Copilot CLI", "Qwen Code", "Amp", "Pi"]) expect(rowMarkup(markup, "Team agent")).toContain(`>${name}</option>`);
 		expect(markup).toContain("Agent says which agent the command runs, for its mark and for going back to its conversation after a restart; Detect goes by the executable&#x27;s name.");
 		expect(markup).toContain("Config folder is where that agent keeps its conversations.");
 	});

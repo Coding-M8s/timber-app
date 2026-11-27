@@ -30,7 +30,7 @@ const TASK = "PRIVATE_TASK_SENTINEL: make login faster";
 /** What every Timber with arenas for apps runs, and what one with every native tool offers. */
 const OLDER = offeredArenaTools({ state: "older" });
 const EVERY = offeredArenaTools(sampleArenaTools);
-const NEW_TOOLS = ["gemini", "grok", "opencode", "copilot"] as const;
+const NEW_TOOLS = ["gemini", "grok", "opencode", "copilot", "qwen", "pi"] as const;
 
 async function startedStore(engine = createMockEngine([...sampleRepositories, sampleStatesRepository])) {
 	const clock = manualClock();
@@ -92,6 +92,8 @@ describe("arena words and rules", () => {
 			{ value: "tool:grok", label: "Grok Build" },
 			{ value: "tool:opencode", label: "OpenCode" },
 			{ value: "tool:copilot", label: "GitHub Copilot CLI" },
+			{ value: "tool:qwen", label: "Qwen Code" },
+			{ value: "tool:pi", label: "Pi" },
 			{ value: "tool:manual", label: "Manual (no agent)" },
 			{ value: "preset:stub", label: "Preset: stub (wrapper)" },
 		]);
@@ -222,12 +224,12 @@ describe("the Arena mode of the New worktree dialog", () => {
 	test("offers each tool the Timber found runs, with its agent's mark, a model, and an effort only where Timber takes one", () => {
 		const older = frame();
 		for (const name of ["Codex", "Claude Code", "Cursor CLI"]) expect(older).toContain(`>${name}</option>`);
-		for (const name of ["Gemini CLI", "Grok Build", "OpenCode", "GitHub Copilot CLI"]) expect(older).not.toContain(name);
+		for (const name of ["Gemini CLI", "Grok Build", "OpenCode", "GitHub Copilot CLI", "Qwen Code", "Pi"]) expect(older).not.toContain(name);
 		expect(older).toContain('class="agent-icon agent-icon-codex"');
 
 		for (const tool of NEW_TOOLS) {
 			const markup = frame({ tools: EVERY, groups: [{ choice: `tool:${tool}`, model: "some-model", effort: "", runs: "2" }] });
-			for (const name of ["Gemini CLI", "Grok Build", "OpenCode", "GitHub Copilot CLI"]) expect(markup).toContain(`>${name}</option>`);
+			for (const name of ["Gemini CLI", "Grok Build", "OpenCode", "GitHub Copilot CLI", "Qwen Code", "Pi"]) expect(markup).toContain(`>${name}</option>`);
 			expect(markup).toContain(`class="agent-icon agent-icon-${tool}"`);
 			expect(markup).toContain('<input class="field-input" placeholder="Tool default" spellCheck="false" value="some-model"/>');
 			expect(markup).toContain('<input class="field-input" disabled="" placeholder="Not for this tool" spellCheck="false" value=""/>');

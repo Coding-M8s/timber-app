@@ -692,6 +692,21 @@ printf ' done\r\n'
 sleep 5
 `);
 			chmodSync(reporter, 0o755);
+			// Probes and reads the answer, asks for bracketed paste, and then reports nothing, as Amp does until its first input;
+			// prints in hex the first bytes it is given. `amp` is named as Amp, `fake-silent` is an agent of no known name.
+			const silentBody = String.raw`#!/bin/sh
+stty raw -echo
+printf '\033[?2004h\033]7501;?\033\\'
+head -c ${PROBE_ANSWER.length} > /dev/null
+printf 'silent ready\r\n'
+head -c "$1" | od -An -tx1 | tr -d ' \n'
+printf ' done\r\n'
+sleep 5
+`;
+			for (const name of ["amp", "fake-silent"]) {
+				writeFileSync(join(bin, name), silentBody);
+				chmodSync(join(bin, name), 0o755);
+			}
 			return bin;
 		}
 
@@ -707,6 +722,8 @@ sleep 5
 			// The paste and the Enter after it.
 			{ name: "Prompted", command: `fake-paster ${bracketedPaste(PROMPT).length + 1}` },
 			{ name: "Reporter", command: `fake-reporter ${bracketedPaste(PROMPT).length + 1}` },
+			{ name: "Amp", command: `amp ${bracketedPaste(PROMPT).length + 1}` },
+			{ name: "Silent", command: `fake-silent ${bracketedPaste(PROMPT).length + 1}` },
 		];
 
 		function startWithAgents(overrides: Partial<TerminalDependencies> = {}): TerminalSessions {
@@ -1033,6 +1050,22 @@ sleep 5
 				await seen(session.id, " done");
 				expect(printed(session.id)).toContain(sent);
 				expect(await until(() => promptOf(session.id)?.state === "sent")).toBe(true);
+			});
+
+			test("Amp probes and reports nothing before its first input, so it gets its prompt by bracketed paste and quiet, while an unknown agent that acts the same still waits for idle", async () => {
+				startWithAgents({ promptQuietMilliseconds: 100, promptEnterMilliseconds: 20, promptWaitMilliseconds: 1500 });
+				const amp = await openedWithPrompt("Amp");
+				expect(amp.prompt).toEqual({ state: "pending" });
+				await seen(amp.id, " done");
+				expect(printed(amp.id)).toContain(sent);
+				expect(await until(() => promptOf(amp.id)?.state === "sent")).toBe(true);
+				// The same behavior from an agent the registry does not know is a probed agent that never says idle.
+				const silent = await openedWithPrompt("Silent");
+				await seen(silent.id, "silent ready");
+				await Bun.sleep(400);
+				expect(printed(silent.id)).not.toContain(" done");
+				expect(await until(() => promptOf(silent.id)?.state === "not-sent", 3000)).toBe(true);
+				expect(promptOf(silent.id)).toMatchObject({ message: expect.stringContaining("Silent was not ready for the prompt") });
 			});
 
 			test("an agent that is never ready gets nothing, and the session says why", async () => {
@@ -1399,13 +1432,13 @@ sleep 5
 		const GONE = "cccccccc-0000-4000-8000-000000000003";
 		const NOTE = "The saved conversation was not found, so";
 		/** Which agent each layout of conversation folders is, as the checks are written down. */
-		const STORE_AGENT: Record<ConversationStore, string> = { "claude-projects": "claude", "codex-sessions": "codex", "grok-sessions": "grok", "cursor-chats": "cursor" };
+		const STORE_AGENT: Record<ConversationStore, string> = { "claude-projects": "claude", "codex-sessions": "codex", "grok-sessions": "grok", "cursor-chats": "cursor", "qwen-projects": "qwen", "pi-sessions": "pi" };
 
 		/** Pretend `claude`, `codex`, `grok`, `cursor-agent`, and `timber` that print their arguments, then wait as a shell. */
 		function resumeBin(): string {
 			const bin = join(root, "resume bin");
 			mkdirSync(bin, { recursive: true });
-			for (const name of ["claude", "codex", "grok", "cursor-agent", "timber"]) {
+			for (const name of ["claude", "codex", "grok", "cursor-agent", "qwen", "pi", "amp", "timber"]) {
 				writeFileSync(join(bin, name), `#!/bin/sh\necho "ARGS:$*"\nexec /bin/sh\n`);
 				chmodSync(join(bin, name), 0o755);
 			}
@@ -1481,6 +1514,24 @@ sleep 5
 			expect(sessions.running().map(session => session.conversation)).toEqual([OLD, null, null]);
 			// Each agent's id is looked for only in that agent's own folder.
 			expect(asked).toEqual([`codex:${OLD}`, `codex:${GONE}`]);
+		});
+
+		test("Qwen Code, Pi, and Amp: Qwen Code resumes and starts fresh by their own words, Pi uses --session-id for both, Amp starts as typed", async () => {
+			const { asked } = startResumable([{ name: "Qwen Code", command: "qwen -m x" }, { name: "Pi", command: "pi --model y" }, { name: "Amp", command: "amp -m z" }]);
+			const qwenNew = await openWith({ agent: "Qwen Code" });
+			await shows(qwenNew.id, `ARGS:--session-id ${NEW} -m x`);
+			const qwenBack = await openWith({ agent: "Qwen Code", resume: OLD });
+			await shows(qwenBack.id, `ARGS:--resume ${OLD} -m x`);
+			const piNew = await openWith({ agent: "Pi" });
+			await shows(piNew.id, `ARGS:--session-id ${NEW} --model y`);
+			const piBack = await openWith({ agent: "Pi", resume: OLD });
+			await shows(piBack.id, `ARGS:--session-id ${OLD} --model y`);
+			const amp = await openWith({ agent: "Amp", resume: OLD });
+			await shows(amp.id, "ARGS:-m z");
+			expect(sessions.running().map(session => [session.program, session.conversation, session.conversationFolder])).toEqual([
+				["qwen", NEW, join(root, ".qwen")], ["qwen", OLD, join(root, ".qwen")], ["pi", NEW, join(root, ".pi/agent")], ["pi", OLD, join(root, ".pi/agent")], ["amp", null, null],
+			]);
+			expect(asked).toEqual([`qwen:${OLD}`, `pi:${OLD}`]);
 		});
 
 		test("a fresh Grok Build gets an id of the app's choosing, and goes back with --resume", async () => {

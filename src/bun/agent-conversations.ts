@@ -5,9 +5,10 @@ import { type AgentResume, type ConversationStore, agentById } from "../shared/a
 import { isConversationId } from "../shared/saved-sessions";
 
 /**
- * Where the agents of the registry keep their own conversations, read only
- * to know whether one is still there and, for an agent that cannot be given
- * the id of a new one (Codex, Cursor CLI), which one a session is in.
+ * Where the agents of the registry keep their own conversations (Claude
+ * Code, Codex, Cursor CLI, Grok Build, Qwen Code, Pi), read only to know
+ * whether one is still there and, for an agent that cannot be given the id
+ * of a new one (Codex, Cursor CLI), which one a session is in.
  * Nothing here writes to an agent's folders. Of a conversation nothing is
  * read but the first line of a Codex session file, which names its id and
  * folder, and a Cursor chat's small `meta.json`, which names its folder,
@@ -74,6 +75,21 @@ export function claudeConversationExists(id: string, configFolder: string): bool
 	if (!isConversationId(id)) return false;
 	const projects = join(configFolder, "projects");
 	return namesIn(projects).some(project => existsSync(join(projects, project, `${id}.jsonl`)));
+}
+
+/** Whether `<home>/projects/<any folder>/chats/<id>.jsonl` is there, as Qwen Code writes it with a first message; its `<id>.runtime.json` alone is not a conversation. False when the folder cannot be read. */
+export function qwenConversationExists(id: string, homeFolder: string): boolean {
+	if (!isConversationId(id)) return false;
+	const projects = join(homeFolder, "projects");
+	return namesIn(projects).some(project => existsSync(join(projects, project, "chats", `${id}.jsonl`)));
+}
+
+/** Whether `<agent folder>/sessions/<any folder>/<time>_<id>.jsonl` is there, as Pi writes it with a first message; the name is compared in lower case. False when the folder cannot be read. */
+export function piConversationExists(id: string, agentFolder: string): boolean {
+	if (!isConversationId(id)) return false;
+	const sessions = join(agentFolder, "sessions");
+	const ending = `_${id.toLowerCase()}.jsonl`;
+	return namesIn(sessions).some(folder => namesIn(join(sessions, folder)).some(name => name.toLowerCase().endsWith(ending)));
 }
 
 const DIGITS = (length: number) => new RegExp(`^\\d{${length}}$`);
@@ -295,6 +311,8 @@ export const conversationExists: Record<ConversationStore, (id: string, folder: 
 	"codex-sessions": codexConversationExists,
 	"grok-sessions": grokConversationExists,
 	"cursor-chats": cursorConversationExists,
+	"qwen-projects": qwenConversationExists,
+	"pi-sessions": piConversationExists,
 };
 
 /** The search at quit, for each layout of an agent whose id is not known when it starts. */

@@ -16,6 +16,12 @@ describe("the agent registry", () => {
 		expect(idOf("grok")).toBe("grok");
 		expect(idOf("opencode")).toBe("opencode");
 		expect(idOf("copilot")).toBe("copilot");
+		expect(idOf("qwen")).toBe("qwen");
+		expect(idOf("amp")).toBe("amp");
+		expect(idOf("pi")).toBe("pi");
+		expect(idOf("C:\\Tools\\pi.exe")).toBe("pi");
+		expect(idOf("/usr/bin/PI")).toBeNull();
+		for (const other of ["pipx", "ampx", "pine", "qwen-code", "ampere"]) expect(idOf(other)).toBeNull();
 	});
 
 	test("finds every agent by each of its executables, as a full path and as a Windows .exe", () => {
@@ -84,14 +90,14 @@ describe("the agent registry", () => {
 
 	test("each agent Timber runs in an arena names its Timber tool, once, and that tool starts the agent's own executable", () => {
 		expect(AGENTS.map(agent => [agent.id, agent.arenaTool])).toEqual([
-			["claude", "claude"], ["codex", "codex"], ["cursor", "cursor"], ["gemini", "gemini"], ["grok", "grok"], ["opencode", "opencode"], ["copilot", "copilot"],
+			["claude", "claude"], ["codex", "codex"], ["cursor", "cursor"], ["gemini", "gemini"], ["grok", "grok"], ["opencode", "opencode"], ["copilot", "copilot"], ["qwen", "qwen"], ["amp", "amp"], ["pi", "pi"],
 		]);
 		const tools = AGENTS.flatMap(agent => agent.arenaTool === null ? [] : [agent.arenaTool]);
 		expect(new Set(tools).size).toBe(tools.length);
 		expect(tools).not.toContain("manual");
 		expect(tools).not.toContain("wrapper");
 		// The executables Timber's own table starts (`timber __app-arena tools`), each the agent's: Cursor's is cursor-agent, never the shared `agent`.
-		const timberExecutables: Record<string, string> = { codex: "codex", claude: "claude", cursor: "cursor-agent", gemini: "gemini", grok: "grok", opencode: "opencode", copilot: "copilot" };
+		const timberExecutables: Record<string, string> = { codex: "codex", claude: "claude", cursor: "cursor-agent", gemini: "gemini", grok: "grok", opencode: "opencode", copilot: "copilot", qwen: "qwen", amp: "amp", pi: "pi" };
 		for (const agent of AGENTS) if (agent.arenaTool !== null) expect(idOf(timberExecutables[agent.arenaTool]!)).toBe(agent.id);
 	});
 
@@ -104,13 +110,16 @@ describe("the agent registry", () => {
 			["grok", "Grok Build", "Grok", "grok", ["grok"], [], false],
 			["opencode", "OpenCode", "OpenCode", "opencode", ["opencode"], [], false],
 			["copilot", "GitHub Copilot CLI", "Copilot", "copilot", ["copilot"], [], false],
+			["qwen", "Qwen Code", "Qwen Code", "qwen", ["qwen"], [], false],
+			["amp", "Amp", "Amp", "amp", ["amp"], [], false],
+			["pi", "Pi", "Pi", "pi", ["pi"], [], false],
 		]);
 	});
 
 	test("both preset lists are its rows, and the list before anything was saved is the default ones", () => {
 		expect(AGENT_PRESETS).toEqual(AGENTS.map(agent => ({ name: agent.name, command: agent.command })));
 		expect(TIMBER_AGENT_PRESETS).toEqual(AGENTS.map(agent => ({ label: agent.label, command: agent.command, args: [] })));
-		expect(TIMBER_AGENT_PRESETS.map(preset => preset.label)).toEqual(["Claude", "Codex", "Cursor", "Gemini", "Grok", "OpenCode", "Copilot"]);
+		expect(TIMBER_AGENT_PRESETS.map(preset => preset.label)).toEqual(["Claude", "Codex", "Cursor", "Gemini", "Grok", "OpenCode", "Copilot", "Qwen Code", "Amp", "Pi"]);
 		expect(DEFAULT_AGENTS).toEqual([{ name: "Claude Code", command: "claude" }, { name: "Codex", command: "codex" }]);
 	});
 
@@ -159,5 +168,26 @@ describe("the agent registry", () => {
 		expect(agentBrand({ kind: "terminal", shell: "/bin/bash", status: copilot })).toBe("copilot");
 		expect(agentBrand({ kind: "agent", shell: "/home/me/bin/copilot-work", status: null })).toBeNull();
 		expect(agentBrand({ kind: "agent", shell: "/home/me/bin/copilot-work", status: copilot })).toBe("copilot");
+	});
+
+	test("Qwen Code, Amp, and Pi are branded by the app they report, whole or before a dash, and a name that only starts the same is no agent", () => {
+		const reporting = (app: string) => ({ kind: "terminal" as const, shell: "/bin/bash", status: { state: "working" as const, kind: null, progress: null, app, title: null, message: null } });
+		expect(agentBrand(reporting("qwen-code"))).toBe("qwen");
+		expect(agentBrand(reporting("Qwen-Code"))).toBe("qwen");
+		expect(agentBrand(reporting("qwen"))).toBe("qwen");
+		expect(agentBrand(reporting("amp"))).toBe("amp");
+		expect(agentBrand(reporting("pi"))).toBe("pi");
+		// The agents that reported before keep their marks with the exact match.
+		for (const [app, id] of [["codex", "codex"], ["grok", "grok"], ["copilot", "copilot"], ["opencode", "opencode"], ["cursor", "cursor"], ["gemini", "gemini"], ["claude-code", "claude"]] as const) expect(agentBrand(reporting(app))).toBe(id);
+		expect(agentBrand(reporting("claude-code"))).toBe("claude");
+		for (const app of ["pine", "ampere", "pipx", "ampx", "qwenx", "claudette"]) expect(agentBrand(reporting(app))).toBeNull();
+	});
+
+	test("Qwen Code and Pi report without a hook, and Amp, which stays silent until its first input, says so", () => {
+		expect(agentById("qwen").status).toEqual({ source: "osc-7501", app: "qwen", reports: ["working", "blocked", "done"] });
+		expect(agentById("pi").status).toEqual({ source: "osc-7501", app: "pi", reports: ["working", "done"] });
+		expect(agentById("amp").status).toEqual({ source: "osc-7501", app: "amp", reports: ["working", "blocked", "done"], silentUntilInput: true });
+		for (const agent of AGENTS) if (agent.id !== "amp") expect("silentUntilInput" in agent.status).toBe(false);
+		expect(agentById("amp").signIn).toEqual({ status: null, login: ["login"] });
 	});
 });

@@ -69,7 +69,7 @@ export interface AgentSignInStatus {
 }
 
 /** The layouts of conversation folders the app can read. */
-export type ConversationStore = "claude-projects" | "codex-sessions" | "grok-sessions" | "cursor-chats";
+export type ConversationStore = "claude-projects" | "codex-sessions" | "grok-sessions" | "cursor-chats" | "qwen-projects" | "pi-sessions";
 
 /** One shape of an agent's mark. */
 export interface AgentMarkPath {
@@ -135,7 +135,7 @@ export interface AgentDefinition {
 	 * Its sign-in: how its executable is asked whether it is signed in
 	 * (./agent-sign-in.ts), given only after running it, and the arguments
 	 * after the executable that sign in, each null when not known. Nothing
-	 * reads `login` yet.
+	 * reads `login` yet, though Amp's is known.
 	 */
 	signIn: { status: AgentSignInStatus | null; login: readonly string[] | null };
 	/**
@@ -146,14 +146,18 @@ export interface AgentDefinition {
 	/**
 	 * How it reports its status: the Program Status Protocol (OSC 7501), a
 	 * status hook the person turns on in Settings, Agents, or not at all, and
-	 * the start of the `app` it reports, such as `claude` for `claude-code`,
-	 * which gives its mark to any session that reports it. Any program may
+	 * the `app` it reports, or that with a `-` and more after it, such as
+	 * `claude` for `claude-code`, which gives its mark to any session that
+	 * reports it. `silentUntilInput`, for an agent that probes but reports
+	 * nothing, not even `idle`, until it gets its first input (Amp), lets a
+	 * prompt wait for its bracketed paste, as for an agent that never probed,
+	 * until it has reported once. Any program may
 	 * still report through OSC 7501, whatever `source` says. `reports` lists
 	 * the states it can report, for Settings to say; with a hook, they are
 	 * the states of `hook.events`.
 	 */
 	status:
-		| { source: "osc-7501"; app: string; reports: readonly ReportedState[] }
+		| { source: "osc-7501"; app: string; reports: readonly ReportedState[]; silentUntilInput?: true }
 		| { source: "hook"; app: string; hook: AgentHook }
 		| { source: "none"; app: null };
 }
@@ -593,6 +597,142 @@ const ROWS = [
 		 * running or exited. While it asks whether to trust a folder it reports `idle`.
 		 */
 		status: { source: "osc-7501", app: "copilot", reports: ["working", "blocked", "done"] },
+	},
+	{
+		id: "qwen",
+		name: "Qwen Code",
+		label: "Qwen Code",
+		executables: ["qwen"],
+		sharedExecutables: [],
+		default: false,
+		command: "qwen",
+		arenaTool: "qwen",
+		mark: {
+			viewBox: "0 0 140 140",
+			paths: [
+				{ d: "M112.116 58.7549C114.875 58.7549 117.432 60.2262 118.815 62.6172L131.684 84.9109C133.065 87.3021 133.066 90.2533 131.684 92.644L127.479 99.9243C126.102 102.315 123.54 103.787 120.78 103.787H112.381C111.006 103.786 109.674 103.416 108.518 102.753L92.8213 129.943L92.8128 129.951C91.4355 132.342 88.8726 133.813 86.1135 133.813H77.7139C74.9553 133.812 72.397 132.342 71.0147 129.951L66.8191 122.671C65.4375 120.28 65.4381 117.329 66.8191 114.938L97.0169 62.6172C98.3933 60.2263 100.957 58.756 103.716 58.7549H112.116Z" },
+				{ d: "M27.615 39.9817C30.3724 39.9818 32.9221 41.4557 34.3057 43.844L64.512 96.1731C65.8944 98.5648 65.8947 101.515 64.512 103.906L60.3079 111.187C58.9308 113.577 56.3758 115.048 53.6172 115.049H27.8799C25.1213 115.048 22.563 113.577 21.1807 111.187L16.9766 103.906C15.5952 101.516 15.596 98.5638 16.9766 96.1731L21.1807 88.8928C21.8743 87.6952 22.8533 86.7206 24.009 86.0559L8.31202 58.866C6.93072 56.4757 6.93174 53.5235 8.31202 51.1328L12.5161 43.844C13.8923 41.456 16.4508 39.9841 19.2068 39.9817H27.615Z" },
+				{ d: "M68.7844 6.20361C71.5411 6.20513 74.0924 7.67766 75.4751 10.0659L79.6792 17.3547C80.3724 18.5469 80.7131 19.8828 80.7131 21.217H112.116C114.875 21.217 117.432 22.6883 118.815 25.0793L123.019 32.3596C124.401 34.7502 124.4 37.7016 123.019 40.0928L118.815 47.3816C117.438 49.7713 114.874 51.2439 112.116 51.2439H51.7117C48.9537 51.2428 46.395 49.7716 45.0125 47.3816L40.8169 40.0928C39.4354 37.7017 39.4352 34.7506 40.8169 32.3596L53.6856 10.0659C55.0626 7.67766 57.6194 6.20475 60.3762 6.20361H68.7844Z" },
+			],
+			// Qwen Code's mark is one color: here the theme's text color.
+			fill: "currentColor",
+			// A trademark of its maker, shown only to say which agent a session runs.
+			source: "Qwen Code's mark, sidebar-icon.svg of its VS Code companion, from https://github.com/QwenLM/qwen-code/blob/v0.28.4/packages/vscode-ide-companion/assets/sidebar-icon.svg, taken on 2026-11-27.",
+		},
+		/*
+		 * Verified with Qwen Code 0.28.4 on Linux x64, from its own `--help` and
+		 * by running it (see docs/architecture.md, "Going back to a conversation"):
+		 * `qwen --session-id <uuid>` starts a new conversation with an id the app
+		 * chose, and `qwen --resume <uuid>` goes back to it. The two are never
+		 * combined: it refuses an id that already exists under `--session-id`.
+		 * A conversation is `projects/<folder>/chats/<id>.jsonl`; before the
+		 * first message only a `.runtime.json` is there, which `--resume` refuses.
+		 */
+		resume: {
+			fresh: ["--session-id"],
+			resume: ["--resume"],
+			picks: ["--session-id", "--resume", "-r", "--continue", "-c", "--fork-session", "--worktree", "-p", "--prompt", "--acp", "--experimental-acp", "--input-format", "--output-format", "-o", "--list-extensions", "-l", "--help", "-h", "--version", "-v"],
+			pickingLetters: "rcpolhv",
+			conversations: { store: "qwen-projects", folderVariable: "QWEN_HOME", folder: ".qwen" },
+		},
+		signIn: { status: null, login: null },
+		generate: null,
+		/*
+		 * Run with Qwen Code 0.28.4 on Linux x64 on 2026-11-27 (see
+		 * docs/architecture.md, "Agent status"): it reports itself as
+		 * `qwen-code`, with no probe, so it gets no status hook. It reports
+		 * working, a permission it asks for, and the end of a turn.
+		 */
+		status: { source: "osc-7501", app: "qwen", reports: ["working", "blocked", "done"] },
+	},
+	{
+		id: "amp",
+		name: "Amp",
+		label: "Amp",
+		executables: ["amp"],
+		sharedExecutables: [],
+		default: false,
+		command: "amp",
+		arenaTool: "amp",
+		mark: {
+			viewBox: "0 0 281 144",
+			paths: [
+				{ d: "M236.014 20C260.431 20.0001 280.602 37.4115 280.603 64.7432C280.602 93.5337 260.065 114.166 233.52 114.166C224.158 114.166 215.639 112.422 208.63 108.49C202.886 105.27 198.203 100.605 194.919 94.3379L188.115 141.822L187.946 143.016H174.214L174.448 141.423L191.772 22.4941H205.372L203.937 31.3369C212.143 23.8608 223.2 20.0002 236.014 20ZM47.082 20.1543C56.4435 20.1543 65.0012 21.8991 72.0488 25.8486C77.8222 29.0831 82.5323 33.7713 85.8271 40.085L88.1201 23.6924L88.2861 22.4932H101.863L89.1611 110.633L88.9873 111.826H75.4092L76.7227 102.855C68.5854 110.456 57.3981 114.323 44.5889 114.323C20.1709 114.323 0.000167223 96.9087 0 69.5771C0.000149745 40.7854 20.54 20.1549 47.082 20.1543ZM116.234 110.636L116.061 111.827H102.485L115.351 23.6855L115.521 22.4941H129.083L116.234 110.636ZM140.673 110.636L140.499 111.827H126.924L139.789 23.6855L139.96 22.4941H153.521L140.673 110.636ZM177.958 22.4941L165.108 110.636L164.935 111.827H151.36L164.225 23.6855L164.396 22.4941H177.958ZM48.4854 31.9844C27.8638 31.985 14.0133 48.3799 14.0127 68.9521C14.0127 77.7907 16.8094 86.1771 22.3145 92.334C27.7973 98.4657 36.0631 102.493 47.2402 102.493C67.8534 102.493 81.7122 85.9487 81.7129 65.3682C81.7129 55.4076 78.2493 47.0792 72.4131 41.2441C66.5794 35.4088 58.2871 31.9844 48.4854 31.9844ZM233.362 31.8291C212.749 31.8297 198.89 48.3716 198.89 68.9521C198.89 78.9123 202.356 87.2403 208.189 93.0742C214.023 98.9107 222.315 102.336 232.116 102.336C252.738 102.335 266.589 85.9407 266.59 65.3682C266.59 56.5296 263.795 48.1424 258.29 41.9863C252.807 35.8551 244.542 31.8291 233.362 31.8291Z" },
+			],
+			// Amp's wordmark is one color, dark or light: here the theme's text color.
+			fill: "currentColor",
+			// A trademark of its maker, shown only to say which agent a session runs.
+			source: "Amp's wordmark, logo-light.svg in the press kit at https://ampcode.com/press-kit (from https://ampcode.com/logo-light.svg), taken on 2026-11-27.",
+		},
+		/*
+		 * Amp keeps its threads on its own servers, with ids such as `T-<uuid>`
+		 * that no flag sets for a new thread, and its only local record of a
+		 * terminal's thread is an undocumented file with a hashed name. So the
+		 * app cannot know a session's conversation, and Amp starts as typed.
+		 */
+		resume: null,
+		// `amp login` signs in; nothing reads `login` yet, and no command says whether it is signed in.
+		signIn: { status: null, login: ["login"] },
+		generate: null,
+		/*
+		 * Run with Amp 0.0.1795809628-g8ae72c on Linux x64 on 2026-11-27 (see
+		 * docs/architecture.md, "Agent status"): it probes, then reports working,
+		 * an approval it asks for (`blocked`, with no kind, seen with an ask rule
+		 * for its shell tool, since by default it asks none), and the end of a turn. It
+		 * reports nothing, not even `idle`, until it gets its first input, so
+		 * `silentUntilInput` lets a prompt wait for its bracketed paste instead.
+		 */
+		status: { source: "osc-7501", app: "amp", reports: ["working", "blocked", "done"], silentUntilInput: true },
+	},
+	{
+		id: "pi",
+		name: "Pi",
+		label: "Pi",
+		executables: ["pi"],
+		sharedExecutables: [],
+		default: false,
+		command: "pi",
+		arenaTool: "pi",
+		mark: {
+			viewBox: "0 0 560 560",
+			paths: [
+				{ d: "M420 280H280V140H0V0H420V280Z" },
+				{ d: "M560 560H420V280H560V560Z" },
+				{ d: "M140 560H0V140H140V280H280V420H140V560Z" },
+			],
+			// Pi's mark is one color, dark or light: here the theme's text color.
+			fill: "currentColor",
+			// A trademark of its maker, shown only to say which agent a session runs.
+			source: "Pi's mark, from https://pi.dev/favicon.svg, taken on 2026-11-27.",
+		},
+		/*
+		 * Verified with Pi 1.7.0 on Linux x64, from its own `--help` and by
+		 * running it (see docs/architecture.md, "Going back to a conversation"):
+		 * `pi --session-id <id>` goes back to the session with that id in the
+		 * working folder, creating it otherwise, so a new conversation and a
+		 * return to one both use it. It refuses `--session-id` with `--session`,
+		 * `--continue`, or `--resume`. A session file is written once there is a
+		 * message: `sessions/<folder>/<time>_<id>.jsonl`. On a fresh start it prints
+		 * "Warning: No project session found with id '<id>'; creating a new
+		 * session with that id." Pi reads no group of short options (`-cp` is an
+		 * unknown option) and has short options of several letters, such as `-nc`,
+		 * so `pickingLetters` is empty.
+		 */
+		resume: {
+			fresh: ["--session-id"],
+			resume: ["--session-id"],
+			picks: ["--continue", "-c", "--resume", "-r", "--session", "--session-id", "--fork", "--no-session", "--session-dir", "--agent-dir", "--print", "-p", "--mode", "--export", "--list-models", "--help", "-h", "--version", "-v"],
+			pickingLetters: "",
+			conversations: { store: "pi-sessions", folderVariable: "PI_CODING_AGENT_DIR", folder: ".pi/agent" },
+		},
+		signIn: { status: null, login: null },
+		generate: null,
+		/*
+		 * Run with Pi 1.7.0 on Linux x64 on 2026-11-27 (see docs/architecture.md,
+		 * "Agent status"): it reports after the app answers its probe, working and
+		 * the end of a turn, and `blocked` only for a dialog of an extension.
+		 */
+		status: { source: "osc-7501", app: "pi", reports: ["working", "done"] },
 	},
 ] as const satisfies readonly AgentDefinition[];
 

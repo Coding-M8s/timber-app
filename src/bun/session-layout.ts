@@ -34,7 +34,7 @@ import type { RunningSession } from "./terminals";
  *   session of the same agent since it started, running with the same
  *   folder, or ended. Otherwise nothing tells their conversations apart, so
  *   it keeps the id it was opened with, if any.
- * - The id of an agent that was given one (Claude Code, Grok Build) is saved
+ * - The id of an agent that was given one (Claude Code, Grok Build, Qwen Code, Pi) is saved
  *   only when the agent wrote that conversation, so one that never got a
  *   message, or never got that far, starts fresh, without a note that it was
  *   not found. Both are looked for in the folder the session's agent kept
